@@ -1,0 +1,44 @@
+{
+  "documents": [
+    {
+      "title": "Canova 1500m Training Methodology",
+      "category": "training",
+      "content": "[PASTE YOUR 1500M CANOVA CONTENT HERE]\n\nInclude:\n- Periodization structure\n- Key workout types\n- Special blocks\n- Pace zones relative to race pace\n- Weekly structure\n- Tapering approach"
+    },
+    {
+      "title": "Canova 5K Training Methodology",
+      "category": "training",
+      "content": "[PASTE YOUR 5K CANOVA CONTENT HERE]\n\nInclude:\n- Transition phase workouts\n- General conditioning phase\n- Fundamental phase specifics\n- Specific phase workouts\n- Signature workouts (progressive tempos, ladder intervals)\n- Race simulation sessions"
+    },
+    {
+      "title": "Canova 10K Training Methodology",
+      "category": "training",
+      "content": "[PASTE YOUR 10K CANOVA CONTENT HERE]\n\nInclude:\n- Long interval sessions\n- Tempo progressions\n- Race-pace specific work\n- Aerobic development principles\n- Transition from 5K to 10K focus"
+    },
+    {
+      "title": "Canova Half Marathon Training Methodology",
+      "category": "training",
+      "content": "[PASTE YOUR HALF MARATHON CANOVA CONTENT HERE]\n\nInclude:\n- Extended tempo runs\n- Specific endurance workouts\n- Long run progressions\n- Race pace integration\n- Recovery patterns between hard sessions"
+    },
+    {
+      "title": "Canova Marathon Training Methodology",
+      "category": "training",
+      "content": "[PASTE YOUR MARATHON CANOVA CONTENT HERE]\n\nInclude:\n- Four training phases\n- Progressive long runs\n- Special block structure\n- Marathon pace integration\n- Fuel strategies\n- Taper protocol"
+    },
+    {
+      "title": "Canova Periodization Principles",
+      "category": "training",
+      "content": "Renato Canova's periodization is built around natural progression and race-specific preparation.\n\nCore Principles:\n- Training should progress from general to specific\n- Volume before intensity in each phase\n- Quality sessions require full recovery\n- Rest days are training days\n\nThe Four Phases:\n1. TRANSITION (12+ weeks out): Rebuild after previous cycle, easy running, strides\n2. GENERAL CONDITIONING (8-12 weeks out): Build aerobic base, introduce tempos\n3. FUNDAMENTAL (4-8 weeks out): Event-specific endurance, longer intervals\n4. SPECIFIC (0-4 weeks out): Race-pace work, sharpening, taper\n\nKey Canova Concepts:\n- 'Special blocks' - clusters of race-specific workouts\n- 'Natural running' - relaxed form at pace\n- Progressive overload within workouts\n- Descending intervals (longer to shorter, faster)\n- Recovery matters as much as training"
+    },
+    {
+      "title": "Canova Signature Workouts",
+      "category": "training",
+      "content": "Canova's signature workouts develop race-specific fitness through progressive and descending structures.\n\nProgressive Tempo:\n- Start at easy pace, progress to tempo, finish at threshold\n- Teaches body to run fast when tired\n- Example: 12K as 4K easy -> 4K moderate -> 4K tempo\n\nDescending Ladder:\n- Longer intervals first, shorter intervals last\n- Each interval faster as distance decreases\n- Example: 3K, 2K, 1K, 1K with decreasing rest\n\nRace Pace Repeats:\n- Extended efforts at goal race pace\n- Builds confidence and pacing skill\n- Example: 6 x 1 mile at marathon pace with 90s rest\n\nLong Run with Tempo Finish:\n- Long slow distance followed by uptempo finish\n- Simulates racing on tired legs\n- Example: 20 miles with final 5 at marathon pace\n\nSpecial Blocks:\n- Multiple quality sessions in condensed timeframe\n- Forces adaptation under fatigue\n- Used sparingly in specific phase"
+    },
+    {
+      "title": "Canova Pace Zones",
+      "category": "training",
+      "content": "Canova uses pace zones relative to goal race pace (RP) rather than heart rate zones.\n\nMarathon Pace Zones:\n- Easy: 25-30% slower than RP (~75% RP pace)\n- Aerobic: 15-20% slower than RP (~82% RP pace)\n- Medium: 10% slower than RP (~90% RP pace)\n- Threshold: 5% faster than RP (~105% RP pace)\n- Fast: 10%+ faster than RP\n\nFor Shorter Races (5K/10K):\n- Same concept but RP is faster\n- Longer intervals at 95-100% RP\n- Shorter intervals at 102-105% RP\n- Recovery runs significantly slower\n\nHow to Calculate:\n- If marathon goal is 3:00 (6:52/mi), RP = 6:52/mi\n- Easy pace: 8:15-8:45/mi\n- Tempo: ~6:30/mi\n- Threshold: 6:15-6:20/mi\n\nKey Principle:\n- Easy runs must be truly easy to recover\n- Hard runs must be at specific target paces\n- No 'moderate' runs that are too hard to recover but too easy to adapt"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "documents": [
+    {
+      "title": "The Science of Rest Days",
+      "content": "Rest days are not about being lazy—they're when your body actually gets stronger. During training, you create micro-tears in muscle fibers and deplete glycogen stores. Rest days allow your body to repair these tissues and come back stronger through a process called supercompensation.\n\nMost runners benefit from 1-2 complete rest days per week. Signs you need more rest include: persistent fatigue, declining performance, elevated resting heart rate, irritability, and difficulty sleeping.\n\nActive recovery (light walking, swimming, or yoga) can be beneficial on rest days, keeping blood flowing without adding training stress. The key is keeping intensity very low—you should be able to hold a full conversation easily.",
+      "category": "rest",
+      "metadata": {
+        "tags": ["rest days", "recovery", "supercompensation"]
+      }
+    },
+    {
+      "title": "Sleep and Running Performance",
+      "content": "Sleep is the most powerful recovery tool available to runners. During deep sleep, your body releases human growth hormone (HGH), which is essential for muscle repair and adaptation.\n\nResearch shows that runners who get less than 7 hours of sleep have:\n- 1.7x higher injury risk\n- Reduced glycogen storage\n- Impaired reaction time and decision-making\n- Compromised immune function\n\nAim for 7-9 hours of sleep per night. Quality matters too: keep your room cool (65-68°F), dark, and avoid screens 1 hour before bed. If training for a race, prioritize sleep in the weeks leading up to it—sleep debt cannot be fully recovered in one night.",
+      "category": "recovery",
+      "metadata": {
+        "tags": ["sleep", "HGH", "injury prevention"]
+      }
+    },
+    {
+      "title": "Progressive Overload Principles",
+      "content": "Progressive overload is the gradual increase of stress placed on the body during training. Without it, your body has no reason to adapt and get stronger.\n\nThe 10% rule is a useful guideline: increase weekly mileage by no more than 10% per week. However, this should be applied thoughtfully—experienced runners may handle more, while beginners or those returning from injury may need less.\n\nWays to apply progressive overload:\n1. Increase weekly mileage gradually\n2. Add intensity (tempo runs, intervals) before adding volume\n3. Increase long run distance by 1-2 miles every 2-3 weeks\n4. Add a 'cutback week' every 3-4 weeks (reduce volume by 20-30%)\n\nThe key is consistency over intensity. Small, sustainable increases lead to long-term gains without injury.",
+      "category": "training",
+      "metadata": {
+        "tags": ["progressive overload", "10% rule", "training load"]
+      }
+    },
+    {
+      "title": "Mental Preparation for Runners",
+      "content": "Running is as much mental as physical. Developing mental skills is essential for both daily training and race performance.\n\nKey mental strategies:\n\n1. **Mantras**: Short phrases you repeat when things get hard. Examples: 'Relax and run,' 'One mile at a time,' 'I am strong.'\n\n2. **Chunking**: Break long runs or races into smaller segments. Instead of thinking about 20 miles, focus on reaching the next aid station.\n\n3. **Visualization**: Regularly visualize yourself running well—crossing the finish line, maintaining form when tired, conquering a tough hill.\n\n4. **Acceptance**: Not every run will feel good. Accept discomfort as part of the process rather than fighting it.\n\n5. **Present focus**: When anxiety creeps in, return focus to the current moment—your breathing, your footstrike, the scenery around you.",
+      "category": "mindset",
+      "metadata": {
+        "tags": ["mental training", "mantras", "visualization"]
+      }
+    },
+    {
+      "title": "Injury Warning Signs",
+      "content": "Learning to distinguish between normal training discomfort and potential injury is crucial for longevity in running.\n\n**Stop immediately if you experience:**\n- Sharp, sudden pain\n- Pain that causes you to alter your gait\n- Swelling or visible inflammation\n- Pain that worsens as you run\n\n**Caution signs (monitor closely):**\n- Persistent soreness lasting more than 3 days\n- Pain that improves during running but returns after\n- Asymmetrical discomfort (one side only)\n- Pain rating above 3/10 during activity\n\n**The 24-hour rule**: If pain persists 24 hours after a run, take an extra rest day. If it persists 48 hours, consider seeing a professional.\n\nCommon running injuries and their typical symptoms:\n- Runner's knee: Pain around or behind the kneecap, especially going downstairs\n- Shin splints: Diffuse pain along the shin bone\n- Plantar fasciitis: Heel pain, worst with first steps in the morning\n- IT band syndrome: Pain on the outside of the knee",
+      "category": "injury",
+      "metadata": {
+        "tags": ["injury prevention", "warning signs", "common injuries"]
+      }
+    }
+  ]
+}

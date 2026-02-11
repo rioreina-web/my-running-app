@@ -1,0 +1,11 @@
+"I am building postrundrip.com, a running editorial publication. I want to move away from a standard blog layout and toward a premium 'digital zine' aesthetic inspired by banditrunning.com and tempojournal.com.
+
+Please implement the following design shifts:
+
+Typography: Transition to a high-contrast pairing. Use a bold, aggressive sans-serif (like 'Inter' or 'Impact' variants) for headlines and a sophisticated serif or clean monospace for body/meta-data.
+
+Grids & Spacing: Move to an asymmetrical grid. I want large, 'hero' editorial blocks for featured stories and tight, clean borders for secondary news.
+
+Branding: Implement a 'sticky' but minimal navigation that feels like an app. Add a 'Breaking' or 'Ticker' style element (similar to Bandit's scrolling banners) for race results or new gear drops.
+
+Micro-interactions: Add subtle hover states on article cards—slight image scales or color shifts—to give it a premium, interactive feel."
