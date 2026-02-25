@@ -14,75 +14,67 @@ let supabaseURL = "https://aqdijapxmjqaetursrde.supabase.co"
 // swiftlint:disable:next line_length
 let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFxZGlqYXB4bWpxYWV0dXJzcmRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk0MzEyNzEsImV4cCI6MjA4NTAwNzI3MX0.bMqAvXDjtqyZXYDhPnyhJOm35l_2y3tIp82sLlALtBE"
 
-// MARK: - EmptyAuthStorage
-
-/// Custom storage that doesn't persist anything (no auth needed for this app)
-final class EmptyAuthStorage: AuthLocalStorage, @unchecked Sendable {
-    func store(key: String, value: Data) throws {}
-    func retrieve(key: String) throws -> Data? {
-        nil
-    }
-
-    func remove(key: String) throws {}
-}
-
 let supabase = SupabaseClient(
     supabaseURL: URL(string: supabaseURL)!, // swiftlint:disable:this force_unwrapping
-    supabaseKey: supabaseAnonKey,
-    options: SupabaseClientOptions(
-        auth: SupabaseClientOptions.AuthOptions(
-            storage: EmptyAuthStorage(),
-            autoRefreshToken: false,
-            emitLocalSessionAsInitialSession: true
-        )
-    )
+    supabaseKey: supabaseAnonKey
 )
 
 // MARK: - Edge Function Helper
 
-/// Makes a request to a Supabase Edge Function using the anon key
-/// Edge functions have their own service_role access via environment variables
-func callEdgeFunction(
-    name: String,
-    body: [String: Any],
-    completion: @escaping (Result<Data, Error>) -> Void
-) {
-    guard let url = URL(string: "\(supabaseURL)/functions/v1/\(name)") else {
-        completion(.failure(URLError(.badURL)))
-        return
-    }
-
-    var request = URLRequest(url: url)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-    request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-    URLSession.shared.dataTask(with: request) { data, _, error in
-        if let error {
-            completion(.failure(error))
-            return
-        }
-        guard let data else {
-            completion(.failure(URLError(.zeroByteResource)))
-            return
-        }
-        completion(.success(data))
-    }.resume()
-}
-
-/// Async version of callEdgeFunction
+/// Makes an authenticated request to a Supabase Edge Function using the user's JWT.
+/// Automatically retries once on transient network errors (timeout, connection lost, etc.).
 func callEdgeFunction(name: String, body: [String: Any]) async throws -> Data {
     guard let url = URL(string: "\(supabaseURL)/functions/v1/\(name)") else {
         throw URLError(.badURL)
     }
 
+    // Use JWT if authenticated, fall back to anon key for development
+    let bearerToken: String
+    if let session = try? await supabase.auth.session {
+        bearerToken = session.accessToken
+    } else {
+        bearerToken = supabaseAnonKey
+    }
+
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+    request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
     request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-    let (data, _) = try await URLSession.shared.data(for: request)
-    return data
+    var lastError: Error?
+    for attempt in 0 ..< 2 {
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            // Client errors (400-499): don't retry, return data for caller to handle
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode >= 400, httpResponse.statusCode < 500
+            {
+                return data
+            }
+
+            return data
+        } catch let error as URLError where isRetryableError(error) {
+            lastError = error
+            if attempt == 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    throw lastError ?? URLError(.unknown)
+}
+
+private func isRetryableError(_ error: URLError) -> Bool {
+    switch error.code {
+    case .timedOut,
+         .cannotConnectToHost,
+         .networkConnectionLost,
+         .notConnectedToInternet,
+         .dnsLookupFailed:
+        return true
+    default:
+        return false
+    }
 }

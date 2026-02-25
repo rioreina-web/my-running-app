@@ -1,5 +1,5 @@
 {
-  "originHash" : "a2b47b975283c007063016d75469b395d89f8763da1d376160fb8c6dcfdb6109",
+  "originHash" : "af2d2d1bde3d0ea4ccba90c709f7cbf0edd35be85eb1edca55ccfca6db51253e",
   "pins" : [
     {
       "identity" : "supabase-swift",
@@ -53,6 +53,15 @@
       "state" : {
         "revision" : "45eb0224913ea070ec4fba17291b9e7ecf4749ca",
         "version" : "1.5.1"
+      }
+    },
+    {
+      "identity" : "swifttasksvision",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/paescebu/SwiftTasksVision",
+      "state" : {
+        "revision" : "2cba94cf7d38ace98e32dc08d1de7a6895f05057",
+        "version" : "0.10.21"
       }
     },
     {

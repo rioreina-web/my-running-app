@@ -37,6 +37,11 @@ final class TrainingPlanViewModel {
     var errorMessage: String?
     var showError = false
 
+    // Import week state
+    var importedWorkouts: [ImportedDayWorkout]?
+    var isParsingImport = false
+    var importError: String?
+
     // MARK: - Computed Properties
 
     var racePaceSecondsPerMile: Double? {
@@ -45,6 +50,30 @@ final class TrainingPlanViewModel {
             return Double(goalTime) / 26.2188
         }
         return plan.racePaceSecondsPerMile
+    }
+
+    var equivalentPaces: EquivalentPaces? {
+        guard let plan = activePlan else { return nil }
+        return EquivalentPaces(
+            raceDistance: plan.raceDistance,
+            goalTimeSeconds: plan.targetTimeSeconds,
+            disabledPaces: disabledPaces
+        )
+    }
+
+    /// Named paces disabled for the active plan (persisted per plan ID)
+    var disabledPaces: Set<NamedPace> {
+        get {
+            guard let plan = activePlan else { return [] }
+            let key = "disabledPaces_\(plan.id.uuidString)"
+            guard let raw = UserDefaults.standard.stringArray(forKey: key) else { return [] }
+            return Set(raw.compactMap { NamedPace(rawValue: $0) })
+        }
+        set {
+            guard let plan = activePlan else { return }
+            let key = "disabledPaces_\(plan.id.uuidString)"
+            UserDefaults.standard.set(newValue.map(\.rawValue), forKey: key)
+        }
     }
 
     var currentPhase: CanovaTrainingPhase {
@@ -220,7 +249,7 @@ final class TrainingPlanViewModel {
         isGeneratingPlan = true
         errorMessage = nil
 
-        let userId = UIDevice.current.identifierForVendor?.uuidString ?? "anonymous"
+        let userId = AuthManager.shared.currentUserId ?? ""
 
         // Create the plan object
         let planId = UUID()
@@ -327,6 +356,135 @@ final class TrainingPlanViewModel {
             .update(["status": "archived"])
             .eq("status", value: "active")
             .execute()
+    }
+
+    // MARK: - Import Custom Plan
+
+    /// Import a custom plan built by the Plan Builder chat.
+    /// Takes pre-built plan data from the edge function and saves it as a real TrainingPlan.
+    /// - Parameter workoutDates: Parallel array of dates matching `importedWorkouts`, parsed from the edge function's ISO date strings.
+    @MainActor
+    func importCustomPlan(
+        name: String,
+        startDate: Date,
+        endDate: Date,
+        targetRaceDistance: String,
+        targetTimeSeconds: Int,
+        importedWorkouts: [ImportedDayWorkout],
+        workoutDates: [Date]
+    ) async -> Bool {
+        isGeneratingPlan = true
+        errorMessage = nil
+
+        let userId = AuthManager.shared.currentUserId ?? ""
+        let planId = UUID()
+        let now = Date()
+        let totalWeeks = max(1, (Calendar.current.dateComponents([.weekOfYear], from: startDate, to: endDate).weekOfYear ?? 0) + 1)
+
+        let createdPlan = TrainingPlan(
+            id: planId,
+            userId: userId,
+            goalId: activeGoal?.id,
+            name: name,
+            startDate: startDate,
+            endDate: endDate,
+            targetRaceDistance: targetRaceDistance,
+            targetTimeSeconds: targetTimeSeconds,
+            status: .active,
+            createdAt: now,
+            updatedAt: now
+        )
+
+        // Convert imported workouts to ScheduledWorkoutInserts
+        let calendar = Calendar.current
+        // Find the Monday of the week containing the start date
+        let startWeekday = calendar.component(.weekday, from: startDate)
+        let daysToMonday = (startWeekday == 1) ? 6 : startWeekday - 2
+        let planMonday = calendar.date(byAdding: .day, value: -daysToMonday, to: startDate) ?? startDate
+
+        let workoutInserts: [ScheduledWorkoutInsert] = importedWorkouts.enumerated().map { index, imported in
+            let workoutDate = index < workoutDates.count ? workoutDates[index] : startDate
+            let daysSinceStart = calendar.dateComponents([.day], from: planMonday, to: workoutDate).day ?? 0
+            let weekNumber = max(1, (daysSinceStart / 7) + 1)
+            let weeksOut = max(0, totalWeeks - weekNumber)
+            let phase = CanovaTrainingPhase.fromWeeksOut(weeksOut, totalWeeks: totalWeeks)
+            let workoutType = ScheduledWorkoutType.fromImportString(imported.workoutType)
+
+            return ScheduledWorkoutInsert(
+                planId: planId,
+                date: workoutDate,
+                dayOfWeek: imported.dayOfWeek,
+                weekNumber: weekNumber,
+                workoutData: workoutType == .rest ? nil : imported.toCanovaWorkout(phase: phase),
+                workoutType: workoutType,
+                notes: nil
+            )
+        }
+
+        // Convert inserts to full ScheduledWorkout objects for local use
+        let workouts = workoutInserts.map { insert in
+            ScheduledWorkout(
+                id: UUID(),
+                planId: insert.planId,
+                date: insert.date,
+                dayOfWeek: insert.dayOfWeek,
+                weekNumber: insert.weekNumber,
+                workout: insert.workoutData,
+                workoutType: insert.workoutType,
+                status: .scheduled,
+                completedWorkoutId: nil,
+                notes: insert.notes,
+                createdAt: now,
+                updatedAt: now
+            )
+        }
+
+        if !Self.useLocalMode {
+            do {
+                try await archiveExistingPlans()
+
+                let planInsert = TrainingPlanInsert(
+                    userId: userId,
+                    goalId: activeGoal?.id,
+                    name: name,
+                    startDate: startDate,
+                    endDate: endDate,
+                    targetRaceDistance: targetRaceDistance,
+                    targetTimeSeconds: targetTimeSeconds
+                )
+
+                Log.coach.info("Importing custom plan to Supabase...")
+                let _: [TrainingPlan] = try await supabase
+                    .from("training_plans")
+                    .insert(planInsert)
+                    .select()
+                    .execute()
+                    .value
+
+                Log.coach.info("Inserting \(workoutInserts.count) imported workouts to Supabase...")
+                try await supabase
+                    .from("scheduled_workouts")
+                    .insert(workoutInserts)
+                    .execute()
+
+                Log.coach.info("Successfully imported custom plan")
+            } catch {
+                Log.coach.error("Supabase error importing custom plan: \(error.localizedDescription)")
+                errorMessage = "Could not save plan: \(error.localizedDescription)"
+                isGeneratingPlan = false
+                return false
+            }
+        }
+
+        activePlan = createdPlan
+        allScheduledWorkouts = workouts
+        marathonGoalTime = targetTimeSeconds
+        initializeSelectedWeek()
+        initializeSelectedMonth()
+
+        isGeneratingPlan = false
+        Log.coach.info("Imported custom plan '\(name)' with \(workouts.count) workouts")
+        return true
     }
 
     // MARK: - Plan Generation Algorithm
@@ -486,6 +644,9 @@ final class TrainingPlanViewModel {
         case .base:
             // Base phase - building volume
             targetMileage = baseMileage * 1.05
+        case .support:
+            // Support phase - progressive build toward peak
+            targetMileage = baseMileage + (targetPeak - baseMileage) * 0.7
         case .specific:
             // Peak volume in specific phase
             targetMileage = targetPeak
@@ -516,7 +677,8 @@ final class TrainingPlanViewModel {
     ) -> ScheduledWorkoutType {
         let weeksOut = totalWeeks - weekNumber
         let isRecoveryWeek = weekNumber % 4 == 0 && weeksOut > 3
-        let baseWeeks = max(2, Int(Double(totalWeeks) * 0.20))
+        let baseWeeks = max(1, Int(Double(totalWeeks) * 0.10))
+        let supportWeeks = max(2, Int(Double(totalWeeks) * 0.40))
 
         // Race week (last week)
         if weeksOut == 0 {
@@ -574,8 +736,26 @@ final class TrainingPlanViewModel {
             }
         }
 
+        // Support phase - Race-supportive work at 90% and 110% of race pace
+        if phase == .support {
+            let supportWeekNumber = weekNumber - baseWeeks
+            let isTempoWeek = supportWeekNumber % 2 == 1 // Alternate tempo/intervals
+
+            switch dayOfWeek {
+            case 1: return .easy            // Monday: Easy
+            case 2:                         // Tuesday: Quality session
+                return isTempoWeek ? .tempo : .intervals
+            case 3: return .easy            // Wednesday: Easy
+            case 4: return .strides         // Thursday: Easy + Strides
+            case 5: return .easy            // Friday: Easy
+            case 6: return .longRun         // Saturday: Long Run (progressive)
+            case 7: return .recovery        // Sunday: Recovery
+            default: return .easy
+            }
+        }
+
         // Specific phase - Alternating workout types
-        let specificWeekNumber = weekNumber - baseWeeks
+        let specificWeekNumber = weekNumber - baseWeeks - supportWeeks
         let isThresholdWeek = specificWeekNumber % 2 == 1 // Odd weeks: threshold/alternations
 
         switch dayOfWeek {
@@ -608,9 +788,10 @@ final class TrainingPlanViewModel {
     ) -> CanovaWorkout {
         let weeksOut = totalWeeks - weekNumber
         let isRecoveryWeek = weekNumber % 4 == 0 && weeksOut > 3
-        let baseWeeks = max(2, Int(Double(totalWeeks) * 0.20))
+        let baseWeeks = max(1, Int(Double(totalWeeks) * 0.10))
+        let supportWeeks = max(2, Int(Double(totalWeeks) * 0.40))
         let taperWeeks = max(1, Int(Double(totalWeeks) * 0.10))
-        let specificWeeks = totalWeeks - baseWeeks - taperWeeks
+        let specificWeeks = totalWeeks - baseWeeks - supportWeeks - taperWeeks
 
         // Week within current phase (1-indexed)
         let weekInPhase: Int
@@ -618,11 +799,14 @@ final class TrainingPlanViewModel {
         if phase == .base {
             weekInPhase = weekNumber
             totalWeeksInPhase = baseWeeks
-        } else if phase == .specific {
+        } else if phase == .support {
             weekInPhase = weekNumber - baseWeeks
+            totalWeeksInPhase = supportWeeks
+        } else if phase == .specific {
+            weekInPhase = weekNumber - baseWeeks - supportWeeks
             totalWeeksInPhase = specificWeeks
         } else {
-            weekInPhase = weekNumber - baseWeeks - specificWeeks
+            weekInPhase = weekNumber - baseWeeks - supportWeeks - specificWeeks
             totalWeeksInPhase = taperWeeks
         }
 
@@ -1619,5 +1803,77 @@ final class TrainingPlanViewModel {
             return nil
         }
         return allScheduledWorkouts.first { calendar.isDate($0.date, inSameDayAs: date) }
+    }
+
+    // MARK: - Import Week from Text
+
+    @MainActor
+    func parseWeekFromText(_ text: String) async {
+        isParsingImport = true
+        importError = nil
+        importedWorkouts = nil
+
+        let goalTime = activePlan?.targetTimeSeconds ?? marathonGoalTime ?? 14400
+        let raceDistance = activePlan?.targetRaceDistance ?? "marathon"
+
+        let body: [String: Any] = [
+            "text": text,
+            "goalTimeSeconds": goalTime,
+            "raceDistance": raceDistance,
+            "currentPhase": currentPhase.rawValue,
+        ]
+
+        do {
+            let data = try await callEdgeFunction(name: "parse-training-week", body: body)
+
+            struct ParseResponse: Codable {
+                let days: [ImportedDayWorkout]?
+                let error: String?
+            }
+
+            let response = try JSONDecoder().decode(ParseResponse.self, from: data)
+
+            if let error = response.error {
+                importError = error
+            } else if let days = response.days {
+                importedWorkouts = days
+            } else {
+                importError = "No workouts returned"
+            }
+        } catch {
+            importError = error.localizedDescription
+        }
+
+        isParsingImport = false
+    }
+
+    @MainActor
+    func applyImportedWorkouts() async {
+        guard let imported = importedWorkouts else { return }
+        isSaving = true
+
+        let weekWorkouts = currentWeekWorkouts
+
+        for importedDay in imported {
+            guard let scheduled = weekWorkouts.first(where: { $0.dayOfWeek == importedDay.dayOfWeek }) else {
+                continue
+            }
+
+            if importedDay.workoutType == "rest" {
+                await convertToRestDay(scheduled)
+            } else {
+                let workout = importedDay.toCanovaWorkout(phase: currentPhase)
+                let workoutType = ScheduledWorkoutType.fromImportString(importedDay.workoutType)
+
+                var updated = scheduled
+                updated.workout = workout
+                updated.workoutType = workoutType
+                updated.status = .modified
+                await updateWorkout(updated)
+            }
+        }
+
+        importedWorkouts = nil
+        isSaving = false
     }
 }

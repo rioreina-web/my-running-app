@@ -11,13 +11,18 @@ import SwiftUI
 
 @main
 struct RunningLogApp: App {
+    @State private var authManager = AuthManager.shared
+
     init() {
         configureAppearance()
     }
 
     var body: some Scene {
         WindowGroup {
+            // TODO: Restore auth gate when Apple Developer Program is active
+            // if authManager.isLoading { ... } else if authManager.isAuthenticated { MainTabView() } else { SignInView() }
             MainTabView()
+            .preferredColorScheme(.dark)
         }
     }
 
@@ -26,8 +31,8 @@ struct RunningLogApp: App {
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
         tabBarAppearance.backgroundColor = UIColor(Color(hex: "0A0A0B"))
-        tabBarAppearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color(hex: "FF6B4A"))
-        tabBarAppearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: "FF6B4A"))]
+        tabBarAppearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color(hex: "FF2D2D"))
+        tabBarAppearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: "FF2D2D"))]
         tabBarAppearance.stackedLayoutAppearance.normal.iconColor = UIColor(Color(hex: "48484A"))
         tabBarAppearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: "48484A"))]
         UITabBar.appearance().standardAppearance = tabBarAppearance
@@ -51,16 +56,33 @@ struct MainTabView: View {
     @State private var selectedTab = 0
     @State private var showGoals = false
     @State private var showAnalysis = false
+    @State private var showInjuries = false
+    @State private var showFitnessPredictor = false
+    @State private var showPaceChart = false
+    @State private var showContentLibrary = false
+    @State private var showFormCheck = false
+    @State private var showPlanBuilder = false
+    @State private var showSettings = false
 
-    // Content Library state
+    // Sidebar state
     @State private var showSidebar = false
-    @State private var selectedCategory: ContentCategory?
 
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
                 NavigationStack {
                     VoiceLogView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button {
+                                    showSettings = true
+                                } label: {
+                                    Image(systemName: "gearshape")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundStyle(Color.drip.textSecondary)
+                                }
+                            }
+                        }
                 }
                 .tag(0)
                 .tabItem {
@@ -68,46 +90,17 @@ struct MainTabView: View {
                 }
 
                 NavigationStack {
-                    WorkoutsView()
+                    TrainingDashboardView()
                 }
                 .tag(1)
                 .tabItem {
-                    Label("Workouts", systemImage: "figure.run")
-                }
-
-                NavigationStack {
-                    HistoryView()
-                }
-                .tag(2)
-                .tabItem {
-                    Label("History", systemImage: "clock.arrow.circlepath")
+                    Label("Training", systemImage: "chart.bar.fill")
                 }
 
                 NavigationStack {
                     CoachView()
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Menu {
-                                    Button {
-                                        showGoals = true
-                                    } label: {
-                                        Label("Goals", systemImage: "target")
-                                    }
-
-                                    Button {
-                                        showAnalysis = true
-                                    } label: {
-                                        Label("Training Analysis", systemImage: "chart.bar.xaxis")
-                                    }
-                                } label: {
-                                    Image(systemName: "ellipsis")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundStyle(Color.drip.coral)
-                                }
-                            }
-                        }
                 }
-                .tag(3)
+                .tag(2)
                 .tabItem {
                     Label("Coach", systemImage: "message.fill")
                 }
@@ -115,7 +108,7 @@ struct MainTabView: View {
                 NavigationStack {
                     TrainingPlanView()
                 }
-                .tag(4)
+                .tag(3)
                 .tabItem {
                     Label("Plan", systemImage: "calendar")
                 }
@@ -123,11 +116,39 @@ struct MainTabView: View {
             .tint(Color.drip.coral)
             .environment(\.showSidebar, $showSidebar)
 
-            // Content Library Sidebar Overlay (must be after TabView in ZStack)
+            // App Menu Sidebar Overlay (must be after TabView in ZStack)
             ContentLibrarySidebar(
                 isPresented: $showSidebar,
-                selectedCategory: $selectedCategory
+                showGoals: $showGoals,
+                showAnalysis: $showAnalysis,
+                showInjuries: $showInjuries,
+                showFitnessPredictor: $showFitnessPredictor,
+                showPaceChart: $showPaceChart,
+                showFormCheck: $showFormCheck,
+                showPlanBuilder: $showPlanBuilder,
+                showContentLibrary: $showContentLibrary
             )
+
+            // Offline banner
+            VStack {
+                if !NetworkMonitor.shared.isConnected {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("No internet connection")
+                            .font(.dripCaption(12))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .padding(.top, 44)
+                    .background(Color.drip.tired)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                Spacer()
+            }
+            .animation(.spring(response: 0.3), value: NetworkMonitor.shared.isConnected)
+            .ignoresSafeArea(edges: .top)
         }
         .fullScreenCover(isPresented: $showGoals) {
             NavigationStack {
@@ -161,8 +182,104 @@ struct MainTabView: View {
                     }
             }
         }
-        .fullScreenCover(item: $selectedCategory) { category in
-            ContentLibraryView(category: category)
+        .fullScreenCover(isPresented: $showInjuries) {
+            NavigationStack {
+                InjuryListView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showInjuries = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .fullScreenCover(isPresented: $showFitnessPredictor) {
+            NavigationStack {
+                FitnessPredictorView(trainingViewModel: TrainingPlanViewModel())
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showFitnessPredictor = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .fullScreenCover(isPresented: $showPaceChart) {
+            NavigationStack {
+                PaceChartView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showPaceChart = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .fullScreenCover(isPresented: $showContentLibrary) {
+            NavigationStack {
+                ContentLibraryHubView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showContentLibrary = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .fullScreenCover(isPresented: $showFormCheck) {
+            NavigationStack {
+                FormCheckListView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showFormCheck = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .fullScreenCover(isPresented: $showPlanBuilder) {
+            NavigationStack {
+                CustomPlanBuilderView(trainingPlanViewModel: TrainingPlanViewModel())
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showPlanBuilder = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
     }
 }

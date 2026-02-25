@@ -1,8 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
+import { validateLength, validateEnum, internalErrorResponse } from "../_shared/validation.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -13,6 +13,29 @@ interface DocumentInput {
   metadata?: Record<string, unknown>;
 }
 
+// Generate 768-dim embedding via Gemini REST API (gemini-embedding-001)
+async function generateEmbedding(text: string, apiKey: string): Promise<number[]> {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: { parts: [{ text }] },
+        outputDimensionality: 768,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Embedding API error: ${err}`);
+  }
+
+  const data = await response.json();
+  return data.embedding.values;
+}
+
 Deno.serve(async (req: Request) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
@@ -20,14 +43,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { documents } = await req.json() as { documents: DocumentInput[] };
-
-    if (!documents || !Array.isArray(documents) || documents.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Documents array is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const body = await req.json();
 
     // Initialize clients
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -35,8 +51,51 @@ Deno.serve(async (req: Request) => {
     const geminiKey = Deno.env.get("GEMINI_API_KEY")!;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const genAI = new GoogleGenerativeAI(geminiKey);
-    const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+
+    // Re-embed mode: regenerate embeddings for all existing documents
+    if (body.action === "re-embed") {
+      const { data: allDocs, error: fetchErr } = await supabase
+        .from("coaching_documents")
+        .select("id, title, content");
+
+      if (fetchErr) {
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch documents: ${fetchErr.message}` }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      const results: { title: string; status: string }[] = [];
+      for (const doc of allDocs || []) {
+        try {
+          const textToEmbed = `${doc.title}\n\n${doc.content}`;
+          const embedding = await generateEmbedding(textToEmbed, geminiKey);
+          const { error: updateErr } = await supabase
+            .from("coaching_documents")
+            .update({ embedding: JSON.stringify(embedding) })
+            .eq("id", doc.id);
+          results.push({ title: doc.title, status: updateErr ? `error: ${updateErr.message}` : "updated" });
+        } catch (e) {
+          results.push({ title: doc.title, status: `error: ${e.message}` });
+        }
+      }
+
+      const updated = results.filter(r => r.status === "updated").length;
+      return new Response(
+        JSON.stringify({ message: `Re-embedded ${updated}/${results.length} documents`, results }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Standard ingest mode
+    const documents: DocumentInput[] = body.documents;
+
+    if (!documents || !Array.isArray(documents) || documents.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Documents array is required" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const results: { title: string; status: string; id?: string }[] = [];
 
@@ -48,11 +107,20 @@ Deno.serve(async (req: Request) => {
           continue;
         }
 
+        // Validate field lengths and enum
+        const titleErr = validateLength(doc.title, "title", 500);
+        if (titleErr) { results.push({ title: doc.title, status: `error: ${titleErr}` }); continue; }
+
+        const contentErr = validateLength(doc.content, "content", 50000);
+        if (contentErr) { results.push({ title: doc.title, status: `error: ${contentErr}` }); continue; }
+
+        const catErr = validateEnum(doc.category, "category", ["rest", "recovery", "mindset", "training", "injury", "nutrition"]);
+        if (catErr) { results.push({ title: doc.title, status: `error: ${catErr}` }); continue; }
+
         // Generate embedding for the document content
         // Combine title and content for better semantic representation
         const textToEmbed = `${doc.title}\n\n${doc.content}`;
-        const embeddingResult = await embeddingModel.embedContent(textToEmbed);
-        const embedding = embeddingResult.embedding.values;
+        const embedding = await generateEmbedding(textToEmbed, geminiKey);
 
         // Insert into database
         const { data, error } = await supabase
@@ -90,9 +158,6 @@ Deno.serve(async (req: Request) => {
 
   } catch (error) {
     console.error("Document ingestion error:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return internalErrorResponse(corsHeaders);
   }
 });

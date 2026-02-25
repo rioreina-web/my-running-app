@@ -16,10 +16,10 @@ struct DripColors {
     let cardBackground = Color(hex: "111111") // Card Background
     let cardBackgroundElevated = Color(hex: "1A1A1A") // Border Dark (elevated)
 
-    // Accents - Drip Orange (matched with WordPress)
-    let coral = Color(hex: "FF4D00") // Drip Orange - Primary accent
-    let coralLight = Color(hex: "FF6B33") // Lighter variant
-    let electric = Color(hex: "CC3D00") // Accent Dark (hover state)
+    // Accents - Red
+    let coral = Color(hex: "FF2D2D") // Primary accent
+    let coralLight = Color(hex: "FF5C5C") // Lighter variant
+    let electric = Color(hex: "D42121") // Accent Dark (hover state)
 
     // Mood colors
     let energized = Color(hex: "4AFF6B")

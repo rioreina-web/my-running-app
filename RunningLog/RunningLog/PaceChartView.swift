@@ -137,16 +137,17 @@ enum PaceCalculator {
 
     /// Format seconds per mile to MM:SS
     static func formatPace(_ seconds: Double) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
+        let totalSecs = Int(seconds.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return String(format: "%d:%02d", mins, secs)
     }
 
     /// Format pace in km (converts seconds/mile to seconds/km)
     static func formatPaceKm(_ secondsPerMile: Double) -> String {
-        let secondsPerKm = secondsPerMile / 1.60934
-        let mins = Int(secondsPerKm) / 60
-        let secs = Int(secondsPerKm) % 60
+        let totalSecs = Int((secondsPerMile / 1.60934).rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return String(format: "%d:%02d", mins, secs)
     }
 
@@ -161,7 +162,7 @@ enum PaceCalculator {
 
     /// Format split time (handles sub-minute times)
     static func formatSplit(_ seconds: Double) -> String {
-        let totalSeconds = Int(seconds)
+        let totalSeconds = Int(seconds.rounded())
         let mins = totalSeconds / 60
         let secs = totalSeconds % 60
         if mins == 0 {
@@ -1523,23 +1524,6 @@ struct PaceChartView: View {
                     )
                 }
 
-                Divider().background(Color.drip.divider)
-
-                // LT - Lactate Threshold (1-hour pace) (clickable)
-                if let ltPace = viewModel.ltPace {
-                    let displayPace = viewModel.weatherEnabled ? (viewModel.adjustedLtPace ?? ltPace) : ltPace
-                    trainingPaceRow(
-                        name: "LT",
-                        description: "1-Hour Pace",
-                        paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(ltPace) : PaceCalculator.formatPace(ltPace),
-                        adjustedPaceRange: viewModel.adjustedLtPace
-                            .map { viewModel.useKilometers ? PaceCalculator.formatPaceKm($0) : PaceCalculator.formatPace($0) },
-                        color: Color.drip.struggling,
-                        icon: "timer",
-                        isClickable: true,
-                        pace: displayPace
-                    )
-                }
             }
             .background(Color.drip.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -1651,10 +1635,6 @@ struct PaceChartView: View {
                     .foregroundStyle(Color.drip.textTertiary)
 
                 Text("HMP = Half Marathon Pace")
-                    .font(.dripCaption(12))
-                    .foregroundStyle(Color.drip.textTertiary)
-
-                Text("LT = Lactate Threshold (estimated 1-hour race pace)")
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
 

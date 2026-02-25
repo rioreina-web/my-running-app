@@ -52,9 +52,10 @@ struct HistoryLogEntry: Codable, Identifiable {
 
     var formattedWorkoutDuration: String? {
         guard let minutes = workoutDurationMinutes else { return nil }
-        let hours = Int(minutes) / 60
-        let mins = Int(minutes) % 60
-        let secs = Int((minutes - Double(Int(minutes))) * 60)
+        let totalSeconds = Int((minutes * 60).rounded())
+        let hours = totalSeconds / 3600
+        let mins = (totalSeconds % 3600) / 60
+        let secs = totalSeconds % 60
         if hours > 0 {
             return String(format: "%d:%02d:%02d", hours, mins, secs)
         }
@@ -63,9 +64,9 @@ struct HistoryLogEntry: Codable, Identifiable {
 
     var formattedWorkoutPace: String? {
         guard let miles = workoutDistanceMiles, let minutes = workoutDurationMinutes, miles > 0 else { return nil }
-        let pace = minutes / miles
-        let paceMinutes = Int(pace)
-        let paceSeconds = Int((pace - Double(paceMinutes)) * 60)
+        let totalSeconds = Int(((minutes / miles) * 60).rounded())
+        let paceMinutes = totalSeconds / 60
+        let paceSeconds = totalSeconds % 60
         return String(format: "%d:%02d /mi", paceMinutes, paceSeconds)
     }
 }
@@ -77,6 +78,9 @@ struct HistoryView: View {
     @State private var isLoading = false
     @State private var selectedEntry: HistoryLogEntry?
     @State private var showExport = false
+    @State private var showInjuries = false
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     var body: some View {
         ZStack {
@@ -136,12 +140,22 @@ struct HistoryView: View {
                     .tracking(2)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showExport = true
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(Color.drip.coral)
+                HStack(spacing: 16) {
+                    Button {
+                        showInjuries = true
+                    } label: {
+                        Image(systemName: "bandage.fill")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color.drip.coral)
+                    }
+
+                    Button {
+                        showExport = true
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(Color.drip.coral)
+                    }
                 }
             }
         }
@@ -160,6 +174,30 @@ struct HistoryView: View {
         }
         .sheet(isPresented: $showExport) {
             ExportView()
+        }
+        .fullScreenCover(isPresented: $showInjuries) {
+            NavigationStack {
+                InjuryListView()
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                showInjuries = false
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                            }
+                        }
+                    }
+            }
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) {}
+            Button("Retry") {
+                Task { await fetchEntries() }
+            }
+        } message: {
+            Text(errorMessage ?? "An error occurred")
         }
     }
 
@@ -186,7 +224,11 @@ struct HistoryView: View {
             }
         } catch {
             Log.database.error("Failed to fetch entries: \(error)")
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                isLoading = false
+                errorMessage = "Could not load training logs. Pull down to try again."
+                showError = true
+            }
         }
     }
 }
@@ -492,6 +534,15 @@ struct HistoryDetailSheet: View {
     @State private var isEditingWorkoutNotes = false
     @State private var isSavingWorkoutNotes = false
 
+    // Edit mode state
+    @State private var isEditing = false
+    @State private var isSavingEdits = false
+    @State private var editMood: String = ""
+    @State private var editWorkoutType: String = ""
+    @State private var editDistanceText: String = ""
+    @State private var editDurationText: String = ""
+    @State private var editNotesText: String = ""
+
     init(entry: HistoryLogEntry, onUpdate: @escaping () -> Void) {
         self.entry = entry
         self.onUpdate = onUpdate
@@ -503,6 +554,7 @@ struct HistoryDetailSheet: View {
     }
 
     var body: some View {
+        NavigationStack {
         ZStack {
             Color.drip.background.ignoresSafeArea()
 
@@ -518,7 +570,11 @@ struct HistoryDetailSheet: View {
                             .font(.dripBody(14))
                             .foregroundStyle(Color.drip.textSecondary)
 
-                        if let mood = currentEntry.mood, !mood.isEmpty {
+                        if isEditing {
+                            // Editable mood picker
+                            EditableMoodPicker(selectedMood: $editMood)
+                                .padding(.top, 4)
+                        } else if let mood = currentEntry.mood, !mood.isEmpty {
                             MoodBadge(mood: mood)
                                 .padding(.top, 4)
                         }
@@ -551,7 +607,8 @@ struct HistoryDetailSheet: View {
                         .padding(.horizontal, 20)
                     }
 
-                    // Coach Insight Section
+                    // Coach Insight Section (hidden in edit mode)
+                    if !isEditing {
                     CoachInsightSection(
                         entry: currentEntry,
                         coachInsight: $coachInsight,
@@ -561,9 +618,46 @@ struct HistoryDetailSheet: View {
                         }
                     )
                     .padding(.horizontal, 20)
+                    }
+
+                    // Workout Type (edit mode) or badge display
+                    if isEditing {
+                        EditableWorkoutTypeSection(selectedType: $editWorkoutType)
+                            .padding(.horizontal, 20)
+                    }
 
                     // Original notes
-                    if let notes = currentEntry.notes, !notes.isEmpty {
+                    if isEditing {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "text.alignleft")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                                Text("NOTES")
+                                    .font(.dripCaption(11))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                                    .tracking(1.2)
+                            }
+
+                            TextEditor(text: $editNotesText)
+                                .font(.dripBody(15))
+                                .foregroundStyle(Color.drip.textPrimary)
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 100)
+                                .padding(12)
+                                .background(Color.drip.cardBackgroundElevated)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(Color.drip.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.drip.divider, lineWidth: 1)
+                        )
+                        .padding(.horizontal, 20)
+                    } else if let notes = currentEntry.notes, !notes.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 6) {
                                 Image(systemName: "text.alignleft")
@@ -592,7 +686,14 @@ struct HistoryDetailSheet: View {
                     }
 
                     // Linked workout section OR link workout button
-                    if currentEntry.hasLinkedWorkout {
+                    if isEditing {
+                        // Editable workout stats
+                        EditableWorkoutStatsSection(
+                            distanceText: $editDistanceText,
+                            durationText: $editDurationText
+                        )
+                        .padding(.horizontal, 20)
+                    } else if currentEntry.hasLinkedWorkout {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 6) {
                                 Image(systemName: "figure.run.circle.fill")
@@ -632,7 +733,7 @@ struct HistoryDetailSheet: View {
                                 .stroke(Color.drip.energized.opacity(0.3), lineWidth: 1)
                         )
                         .padding(.horizontal, 20)
-                    } else {
+                    } else if !isEditing {
                         // Link workout button
                         Button {
                             showWorkoutPicker = true
@@ -681,6 +782,7 @@ struct HistoryDetailSheet: View {
                         .padding(.horizontal, 20)
                     }
 
+                    if !isEditing {
                     // Workout Notes section
                     WorkoutNotesSection(
                         workoutNotes: $workoutNotesText,
@@ -748,12 +850,65 @@ struct HistoryDetailSheet: View {
                     .disabled(isDeleting)
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
+                    } // end !isEditing
 
                     Spacer()
                         .frame(height: 40)
                 }
             }
         }
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if isEditing {
+                    Button("Cancel") {
+                        isEditing = false
+                    }
+                    .font(.dripBody(15))
+                    .foregroundStyle(Color.drip.textSecondary)
+                } else {
+                    Button("Edit") {
+                        enterEditMode()
+                    }
+                    .font(.dripBody(15))
+                    .foregroundStyle(Color.drip.coral)
+                }
+            }
+
+            ToolbarItem(placement: .principal) {
+                Text(isEditing ? "EDIT LOG" : "LOG DETAILS")
+                    .font(.dripCaption(12))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .tracking(2)
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                if isEditing {
+                    Button {
+                        Task { await saveEdits() }
+                    } label: {
+                        if isSavingEdits {
+                            ProgressView()
+                                .tint(Color.drip.coral)
+                        } else {
+                            Text("Save")
+                                .font(.dripLabel(15))
+                                .foregroundStyle(Color.drip.coral)
+                        }
+                    }
+                    .disabled(isSavingEdits)
+                } else {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .font(.dripBody(15))
+                    .foregroundStyle(Color.drip.textSecondary)
+                }
+            }
+        }
+        .toolbarBackground(Color.drip.background, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        } // end NavigationStack
         .onAppear {
             loadWorkouts()
         }
@@ -871,6 +1026,119 @@ struct HistoryDetailSheet: View {
                 Log.database.info("Coach insight saved to database")
             } catch {
                 Log.database.error("Failed to save coach insight: \(error)")
+            }
+        }
+    }
+
+    private func enterEditMode() {
+        editMood = currentEntry.mood ?? ""
+        editWorkoutType = currentEntry.workoutType ?? ""
+        editDistanceText = currentEntry.workoutDistanceMiles.map { String(format: "%.2f", $0) } ?? ""
+        editDurationText = currentEntry.workoutDurationMinutes.map { formatMinutesForEdit($0) } ?? ""
+        editNotesText = currentEntry.cleanedNotes ?? currentEntry.notes ?? ""
+        isEditing = true
+    }
+
+    private func formatMinutesForEdit(_ minutes: Double) -> String {
+        let totalSeconds = Int(minutes * 60)
+        let hrs = totalSeconds / 3600
+        let mins = (totalSeconds % 3600) / 60
+        let secs = totalSeconds % 60
+        if hrs > 0 {
+            return String(format: "%d:%02d:%02d", hrs, mins, secs)
+        }
+        return String(format: "%d:%02d", mins, secs)
+    }
+
+    private func parseDurationToMinutes(_ text: String) -> Double? {
+        let parts = text.split(separator: ":").compactMap { Double($0) }
+        switch parts.count {
+        case 3: // h:mm:ss
+            return parts[0] * 60 + parts[1] + parts[2] / 60.0
+        case 2: // mm:ss
+            return parts[0] + parts[1] / 60.0
+        case 1: // just minutes
+            return parts[0]
+        default:
+            return nil
+        }
+    }
+
+    private func saveEdits() async {
+        isSavingEdits = true
+
+        var updateData: [String: AnyJSON] = [:]
+
+        // Mood
+        let newMood = editMood.isEmpty ? nil : editMood
+        if newMood != currentEntry.mood {
+            updateData["mood"] = newMood.map { .string($0) } ?? .null
+        }
+
+        // Workout type
+        let newType = editWorkoutType.isEmpty ? nil : editWorkoutType
+        if newType != currentEntry.workoutType {
+            updateData["workout_type"] = newType.map { .string($0) } ?? .null
+        }
+
+        // Distance
+        let newDistance = Double(editDistanceText)
+        if newDistance != currentEntry.workoutDistanceMiles {
+            updateData["workout_distance_miles"] = newDistance.map { .double($0) } ?? .null
+        }
+
+        // Duration
+        let newDuration = parseDurationToMinutes(editDurationText)
+        if newDuration != currentEntry.workoutDurationMinutes {
+            updateData["workout_duration_minutes"] = newDuration.map { .double($0) } ?? .null
+        }
+
+        // Notes (update cleaned_notes since that's the primary display)
+        let newNotes = editNotesText.isEmpty ? nil : editNotesText
+        if newNotes != (currentEntry.cleanedNotes ?? currentEntry.notes) {
+            updateData["cleaned_notes"] = newNotes.map { .string($0) } ?? .null
+        }
+
+        guard !updateData.isEmpty else {
+            await MainActor.run {
+                isEditing = false
+                isSavingEdits = false
+            }
+            return
+        }
+
+        do {
+            try await supabase
+                .from("training_logs")
+                .update(updateData)
+                .eq("id", value: entry.id.uuidString)
+                .execute()
+
+            await MainActor.run {
+                // Update local entry to reflect changes
+                currentEntry = HistoryLogEntry(
+                    id: entry.id,
+                    createdAt: entry.createdAt,
+                    audioUrl: currentEntry.audioUrl,
+                    notes: currentEntry.notes,
+                    cleanedNotes: editNotesText.isEmpty ? currentEntry.cleanedNotes : editNotesText,
+                    mood: editMood.isEmpty ? nil : editMood,
+                    workoutDate: currentEntry.workoutDate,
+                    workoutDistanceMiles: Double(editDistanceText) ?? currentEntry.workoutDistanceMiles,
+                    workoutDurationMinutes: parseDurationToMinutes(editDurationText) ?? currentEntry.workoutDurationMinutes,
+                    coachInsight: coachInsight,
+                    workoutNotes: workoutNotesText.isEmpty ? nil : workoutNotesText,
+                    workoutType: editWorkoutType.isEmpty ? nil : editWorkoutType,
+                    workoutPacePerMile: currentEntry.workoutPacePerMile
+                )
+                isEditing = false
+                isSavingEdits = false
+                onUpdate()
+            }
+        } catch {
+            Log.database.error("Failed to save edits: \(error)")
+            await MainActor.run {
+                isSavingEdits = false
             }
         }
     }
@@ -1612,6 +1880,202 @@ struct WorkoutNotesSection: View {
                 isEditing = true
                 isTextFieldFocused = true
             }
+        }
+    }
+}
+
+// MARK: - EditableMoodPicker
+
+struct EditableMoodPicker: View {
+    @Binding var selectedMood: String
+
+    private let moods = ["energized", "positive", "neutral", "tired", "struggling", "injured"]
+
+    private func moodColor(_ mood: String) -> Color {
+        switch mood {
+        case "energized": return Color.drip.energized
+        case "positive": return Color.drip.positive
+        case "neutral": return Color.drip.neutral
+        case "tired": return Color.drip.tired
+        case "struggling": return Color.drip.struggling
+        case "injured": return Color.drip.injured
+        default: return Color.drip.neutral
+        }
+    }
+
+    private func moodIcon(_ mood: String) -> String {
+        switch mood {
+        case "energized": return "bolt.fill"
+        case "positive": return "face.smiling.fill"
+        case "neutral": return "minus.circle.fill"
+        case "tired": return "moon.fill"
+        case "struggling": return "exclamationmark.triangle.fill"
+        case "injured": return "bandage.fill"
+        default: return "circle.fill"
+        }
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(moods, id: \.self) { mood in
+                    Button {
+                        selectedMood = selectedMood == mood ? "" : mood
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: moodIcon(mood))
+                                .font(.system(size: 10, weight: .bold))
+                            Text(mood.capitalized)
+                                .font(.dripCaption(11))
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundStyle(selectedMood == mood ? .white : moodColor(mood))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(selectedMood == mood ? moodColor(mood) : moodColor(mood).opacity(0.15))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - EditableWorkoutTypeSection
+
+struct EditableWorkoutTypeSection: View {
+    @Binding var selectedType: String
+
+    private let workoutTypes = [
+        ("easy", "Easy"),
+        ("tempo", "Tempo"),
+        ("interval", "Intervals"),
+        ("long_run", "Long Run"),
+        ("recovery", "Recovery"),
+        ("race", "Race"),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "figure.run")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.drip.coral)
+                Text("WORKOUT TYPE")
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .tracking(1.2)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(workoutTypes, id: \.0) { type, label in
+                        Button {
+                            selectedType = selectedType == type ? "" : type
+                        } label: {
+                            Text(label)
+                                .font(.dripCaption(12))
+                                .fontWeight(.medium)
+                                .foregroundStyle(selectedType == type ? .white : Color.drip.coral)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(selectedType == type ? Color.drip.coral : Color.drip.coral.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.drip.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.drip.divider, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - EditableWorkoutStatsSection
+
+struct EditableWorkoutStatsSection: View {
+    @Binding var distanceText: String
+    @Binding var durationText: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "figure.run.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.drip.energized)
+                Text("WORKOUT STATS")
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .tracking(1.2)
+            }
+
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Distance (mi)")
+                        .font(.dripCaption(11))
+                        .foregroundStyle(Color.drip.textTertiary)
+                    TextField("0.00", text: $distanceText)
+                        .font(.dripStat(18))
+                        .foregroundStyle(Color.drip.textPrimary)
+                        .keyboardType(.decimalPad)
+                        .padding(10)
+                        .background(Color.drip.cardBackgroundElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .frame(maxWidth: .infinity)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Duration (m:ss)")
+                        .font(.dripCaption(11))
+                        .foregroundStyle(Color.drip.textTertiary)
+                    TextField("0:00", text: $durationText)
+                        .font(.dripStat(18))
+                        .foregroundStyle(Color.drip.textPrimary)
+                        .keyboardType(.numbersAndPunctuation)
+                        .padding(10)
+                        .background(Color.drip.cardBackgroundElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            // Computed pace display
+            if let distance = Double(distanceText),
+               let duration = parseDurationToMinutes(durationText),
+               distance > 0 {
+                let totalSecs = Int(((duration / distance) * 60).rounded())
+                let paceMinutes = totalSecs / 60
+                let paceSeconds = totalSecs % 60
+                Text("Pace: \(String(format: "%d:%02d", paceMinutes, paceSeconds)) /mi")
+                    .font(.dripCaption(12))
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color.drip.energized.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.drip.energized.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    private func parseDurationToMinutes(_ text: String) -> Double? {
+        let parts = text.split(separator: ":").compactMap { Double($0) }
+        switch parts.count {
+        case 3: return parts[0] * 60 + parts[1] + parts[2] / 60.0
+        case 2: return parts[0] + parts[1] / 60.0
+        case 1: return parts[0]
+        default: return nil
         }
     }
 }

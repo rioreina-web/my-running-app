@@ -15,6 +15,7 @@ struct TrainingPlanView: View {
     @State private var showPlanGenerator = false
     @State private var selectedWorkout: ScheduledWorkout?
     @State private var showPlanSettings = false
+    @State private var showImportWeek = false
 
     var body: some View {
         ZStack {
@@ -81,6 +82,12 @@ struct TrainingPlanView: View {
                 if viewModel.activePlan != nil {
                     Menu {
                         Button {
+                            showImportWeek = true
+                        } label: {
+                            Label("Import Week", systemImage: "doc.text")
+                        }
+
+                        Button {
                             showPlanGenerator = true
                         } label: {
                             Label("New Plan", systemImage: "plus.circle")
@@ -112,6 +119,14 @@ struct TrainingPlanView: View {
                 onGenerate: {
                     showPlanGenerator = false
                 }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showImportWeek) {
+            ImportWeekSheet(
+                viewModel: viewModel,
+                weekNumber: viewModel.selectedWeek
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)

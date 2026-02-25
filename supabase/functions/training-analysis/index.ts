@@ -8,8 +8,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
 
+import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
+import { validateEnum, validateRange, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -117,9 +121,9 @@ function getDateRange(request: AnalysisRequest): { start: Date; end: Date; label
 
 function formatPace(totalMinutes: number, totalMiles: number): string {
   if (totalMiles === 0) return "N/A";
-  const paceMinutes = totalMinutes / totalMiles;
-  const mins = Math.floor(paceMinutes);
-  const secs = Math.round((paceMinutes - mins) * 60);
+  const totalSecs = Math.round((totalMinutes / totalMiles) * 60);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}/mi`;
 }
 
@@ -379,7 +383,9 @@ MANDATORY FOR INCOMPLETE PERIODS:
 `
     : "";
 
-  return `You are Coach, analyzing a runner's training for ${periodLabel}. Your coaching is influenced by Renato Canova's methodologies.
+  return `You are Coach, analyzing a runner's training for ${periodLabel}.
+
+IMPORTANT: Never mention specific coaching methodologies, frameworks, or coach names (e.g., Canova, VDOT, Jack Daniels) in your response. Just apply the principles naturally.
 ${periodStatusNote}
 
 Coaching Philosophy to Apply:
@@ -464,14 +470,43 @@ Deno.serve(async (req: Request) => {
   const startTime = Date.now();
 
   try {
+    // Verify authenticated user from JWT
+    const userId = await getAuthenticatedUser(req);
+    if (!userId) {
+      return unauthorizedResponse(corsHeaders);
+    }
+
+    // Rate limiting
+    if (isRateLimitEnabled()) {
+      const rateLimit = await checkFeatureRateLimit(userId, "analysis");
+      if (!rateLimit.allowed) {
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded", remaining: 0, resetAt: rateLimit.resetAt.toISOString() }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const request = (await req.json()) as AnalysisRequest;
-    const { periodType, year, month, userId } = request;
+    const { periodType, year, month } = request;
 
     if (!periodType || !year) {
       return new Response(
         JSON.stringify({ error: "periodType and year are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Input validation
+    const periodErr = validateEnum(periodType, "periodType", ["month", "year", "custom"]);
+    if (periodErr) return validationErrorResponse(periodErr, corsHeaders);
+
+    const yearErr = validateRange(year, "year", 2020, 2030);
+    if (yearErr) return validationErrorResponse(yearErr, corsHeaders);
+
+    if (periodType === "month" && month !== undefined) {
+      const monthErr = validateRange(month, "month", 1, 12);
+      if (monthErr) return validationErrorResponse(monthErr, corsHeaders);
     }
 
     // Initialize clients
@@ -662,13 +697,6 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error) {
     console.error("Training analysis error:", error);
-
-    return new Response(
-      JSON.stringify({
-        error: "Failed to generate training analysis",
-        details: error.message,
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return internalErrorResponse(corsHeaders);
   }
 });

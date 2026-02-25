@@ -42,11 +42,13 @@ struct UserGoal: Codable, Identifiable {
 // MARK: - UserGoalInsert
 
 struct UserGoalInsert: Codable {
+    var userId: String?
     var goalTitle: String
     var targetDate: Date
     var status: String = "active"
 
     enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
         case goalTitle = "goal_title"
         case targetDate = "target_date"
         case status
@@ -481,6 +483,7 @@ struct AddGoalSheet: View {
 
         do {
             let newGoal = UserGoalInsert(
+                userId: AuthManager.shared.currentUserId,
                 goalTitle: goalTitle.trimmingCharacters(in: .whitespacesAndNewlines),
                 targetDate: targetDate
             )

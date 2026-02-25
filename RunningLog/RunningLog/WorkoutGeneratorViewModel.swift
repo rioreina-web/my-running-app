@@ -5,6 +5,7 @@
 //  View model for the Canova-inspired AI workout generator.
 //
 
+import Auth
 import Foundation
 import os
 import Supabase
@@ -41,8 +42,9 @@ final class WorkoutGeneratorViewModel {
     /// Formatted race pace string
     var formattedRacePace: String? {
         guard let pace = racePaceSecondsPerMile else { return nil }
-        let mins = Int(pace) / 60
-        let secs = Int(pace) % 60
+        let totalSecs = Int(pace.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
     }
 
@@ -165,7 +167,7 @@ final class WorkoutGeneratorViewModel {
 
         // Build request
         let request = WorkoutGenerationRequest(
-            userId: UIDevice.current.identifierForVendor?.uuidString ?? "anonymous",
+            userId: AuthManager.shared.currentUserId ?? "",
             goalRaceDistance: "marathon",
             goalTimeSeconds: goalTime,
             targetDate: activeGoal?.targetDate ?? Date().addingTimeInterval(86400 * 84), // 12 weeks default
@@ -184,7 +186,8 @@ final class WorkoutGeneratorViewModel {
             var urlRequest = URLRequest(url: url)
             urlRequest.httpMethod = "POST"
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            urlRequest.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+            let token = (try? await supabase.auth.session)?.accessToken ?? supabaseAnonKey
+            urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601

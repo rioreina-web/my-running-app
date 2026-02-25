@@ -169,6 +169,60 @@
       "title": "Canova Marathon Training",
       "category": "training",
       "content": "[PASTE YOUR MARATHON CANOVA CONTENT HERE]\n\nReplace this placeholder with your Canova marathon methodology including:\n- The four training phases in detail\n- Marathon-specific long runs\n- Progressive tempos\n- Special block structure\n- Fuel practice integration\n- 3-week taper protocol"
+    },
+    {
+      "title": "Full-Spectrum Percentage-Based Training System",
+      "category": "training",
+      "content": "Full-Spectrum / Percentage-Based Training is a system popularized by Renato Canova and the 'Italian School' of training. It uses a mathematical approach to training that calculates workout paces based on percentages of current race pace, rather than physiological zones like VO2 max or threshold.\n\nThe goal is to build a 'ladder of support' around race pace, enabling the athlete to run specific speeds for longer durations. The system applies universally to all distance events from 800m to the marathon.\n\nCore Philosophy: Training is primarily mathematical, not physiological. Workouts are derived from a mathematical calculation of current capabilities. The goal is to solve a specific problem: 'How do I run speed X for distance Y?' The answer is to improve the ability to run fractionally faster than X (speed support) and fractionally slower than X (endurance support). This creates a direct path to race performance without relying on abstract physiological proxies like VO2 max.\n\nThe main problem is supporting race-specific workouts. To improve a race-specific workout (e.g., 6 x 1 mile at race pace), you must build support at ±5% of that pace. Training at 105% of race pace (specific speed) and 95% of race pace (specific endurance) directly elevates your ability to sustain 100% of race pace.",
+      "metadata": {
+        "source": "Renato Canova / Italian School",
+        "tags": ["percentage-based", "canova", "race-pace", "mathematical-training"]
+      }
+    },
+    {
+      "title": "The Ladder of Support Concept",
+      "category": "training",
+      "content": "The Ladder of Support is a central concept in percentage-based training. Every speed supports the speeds immediately adjacent to it.\n\nThere is a cascading effect where 110% pace supports 105% pace, which in turn supports 100% pace (race pace). Conversely, 90% pace supports 95% pace. This 'ladder' ensures that improvements in one area mechanically transfer to race-specific capabilities. Gaps in the ladder break this chain of support.\n\nThe system is visualized as a pyramid where the base (endurance) must be wider than the peak (speed) to support the race pace in the middle.\n\nEndurance support matters most: Workouts slower than race pace (endurance support) are prioritized over those faster than race pace. Aerobic energy production is dominant in all distance events (800m and up). Empirically, neglecting endurance is a more fatal error than neglecting speed.\n\nThe limits of the ladder: Paces slower than 80% of race pace are considered 'general' conditioning rather than specific race preparation. Similarly, paces faster than 115% are too far removed from race pace to provide direct biomechanical or metabolic support. They are useful for general fitness and recovery but do not directly drive specific race performance.",
+      "metadata": {
+        "source": "Renato Canova / Italian School",
+        "tags": ["ladder-of-support", "percentage-based", "endurance-priority", "training-pyramid"]
+      }
+    },
+    {
+      "title": "Percentage-Based Periodization: General to Specific",
+      "category": "training",
+      "content": "In percentage-based training, the order of operations follows the principle of 'training to add, not to replace.' Training phases move from general fitness to 'special' (supportive) work, and finally to specific race simulation.\n\nPhase 1 — General: Focus on fundamental fitness at 70-90% of race pace and running mechanics. This builds the base of the pyramid.\n\nPhase 2 — Race-Supportive (Special): Focus on 90% of race pace (Special Endurance) and 110% of race pace (Special Speed). These paces directly support the race pace zone.\n\nPhase 3 — Race-Specific: Focus on 95%, 100%, and 105% of race pace. This is the sharpening phase where the athlete simulates and extends race-pace performance.\n\nThis ensures the athlete has the structural and metabolic capacity to handle the specific intensity of the final phase. Each phase builds on the previous one rather than replacing it.",
+      "metadata": {
+        "source": "Renato Canova / Italian School",
+        "tags": ["periodization", "general-to-specific", "percentage-based", "training-phases"]
+      }
+    },
+    {
+      "title": "Calculating Training Paces from Current Fitness",
+      "category": "training",
+      "content": "In percentage-based training, paces must be calculated based on what you can do today, not what you want to run in the future. Training adapts the body from its current state.\n\nTrying to train at a 'goal pace' that is significantly faster than current ability disconnects the mathematical ladder, causing the workout to target the wrong energy systems or lead to failure and injury. You must bridge the gap gradually.\n\nAs fitness improves, 100% of race pace becomes faster. Continuing to train at old paces effectively changes the workout from 'specific' to 'general' (or endurance support). Paces must be updated via race results or fitness assessments to keep the mathematical percentages accurate and the training stimulus effective.\n\nThe 5% Rule: Decreasing pace by 5% allows an athlete to sustain that pace for approximately twice the distance. For example, 10K pace is roughly 95% of 5K pace; Half Marathon pace is roughly 95% of 10K pace. This relationship helps calculate training paces across all percentage zones.\n\nExample pace zones relative to 5K race pace:\n- 110% = faster than 5K pace (speed support)\n- 105% = slightly faster than 5K pace (specific speed)\n- 100% = 5K race pace\n- 95% = approximately 10K pace (specific endurance)\n- 90% = approximately half marathon pace (special endurance)\n- 80-85% = general endurance pace",
+      "metadata": {
+        "source": "Renato Canova / Italian School",
+        "tags": ["pace-calculation", "5-percent-rule", "current-fitness", "pace-zones"]
+      }
+    },
+    {
+      "title": "Workout Progression: Volume, Extension, and Density",
+      "category": "training",
+      "content": "In percentage-based training, you should never repeat the exact same workout — always increase the stimulus. To force adaptation, the stress must increase. This is done via three levers:\n\n1. Volume: Increasing total distance at the target pace. For example, progressing from 5 miles to 6 miles of total work at 95% race pace.\n\n2. Extension: Increasing the length of individual repetitions at the same pace while keeping total volume similar. For example: Week 1: 10 x 600m at 105% pace → Week 3: 8 x 800m at 105% pace → Week 5: 6 x 1000m at 105% pace. Extension is highlighted as a vastly underused tool that increases physiological stimulus without increasing mechanical stress.\n\n3. Density: Decreasing recovery time between repetitions. For example, going from 3 minutes rest to 2 minutes rest between 1K repeats.\n\nExtension Progression is the primary method of improvement — extending the distance one can run at a specific speed. The progression example shows how the total work stays roughly similar (~6000m) but the rep length increases, demanding the athlete sustain the target pace for longer continuous efforts.\n\nAll three levers can be combined over a training cycle, but extension should be prioritized as it most directly supports the goal of running a specific pace for a longer distance.",
+      "metadata": {
+        "source": "Renato Canova / Italian School",
+        "tags": ["workout-progression", "extension", "volume", "density", "overload"]
+      }
+    },
+    {
+      "title": "Modulation: Balancing Workout Stress and Recovery",
+      "category": "training",
+      "content": "Modulation is a key principle in percentage-based training: as workouts become harder and more specific, the recovery time between them must increase. This is called 'increasing modulation.'\n\nA general workout at 80% of race pace might require only 1 day of recovery. But a highly specific, high-volume workout at 100-105% of race pace (like those done by top elites) might require 4-5 days of easy running afterward.\n\nBurnout occurs when athletes increase workout intensity without correspondingly increasing the recovery buffer. The more specific and demanding the training becomes in the final phase of preparation, the more recovery days are needed between quality sessions.\n\nPractical application:\n- General phase: Quality sessions every 2-3 days\n- Special phase: Quality sessions every 3-4 days\n- Specific phase: Quality sessions every 4-5 days (with easy/recovery running between)\n\nThe easy days between quality sessions are not wasted days — they allow the adaptations from the hard workout to take hold. Pair greater stress with greater recovery to avoid overtraining and maximize the benefit of each quality session.",
+      "metadata": {
+        "source": "Renato Canova / Italian School",
+        "tags": ["modulation", "recovery", "stress-recovery-balance", "periodization"]
+      }
     }
   ]
 }

@@ -98,11 +98,16 @@ struct TrainingPlan: Identifiable, Codable {
         raceDistance.racePaceSecondsPerMile(goalTimeSeconds: targetTimeSeconds)
     }
 
+    /// Pre-computed equivalent race paces for this plan's goal
+    var equivalentPaces: EquivalentPaces {
+        EquivalentPaces(raceDistance: raceDistance, goalTimeSeconds: targetTimeSeconds)
+    }
+
     /// Formatted race pace string
     var formattedRacePace: String {
-        let pace = racePaceSecondsPerMile
-        let mins = Int(pace) / 60
-        let secs = Int(pace) % 60
+        let totalSecs = Int(racePaceSecondsPerMile.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
     }
 }
@@ -466,5 +471,102 @@ extension ScheduledWorkout {
             createdAt: Date(),
             updatedAt: Date()
         )
+    }
+}
+
+// MARK: - Import Week Models
+
+/// A single day's workout parsed from user text by AI
+struct ImportedDayWorkout: Identifiable, Codable {
+    var id: UUID { UUID() }
+    let dayOfWeek: Int
+    let dayName: String
+    let workoutType: String
+    let name: String
+    let description: String
+    let totalDistanceMiles: Double?
+    let estimatedDurationMinutes: Double?
+    let steps: [ImportedStep]
+
+    struct ImportedStep: Codable {
+        let stepType: String
+        let durationType: String
+        let durationValue: Double
+        let pacePercentage: Double?
+        let notes: String?
+        let order: Int?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case dayOfWeek, dayName, workoutType, name, description
+        case totalDistanceMiles, estimatedDurationMinutes, steps
+    }
+
+    /// Convert to CanovaWorkout for the training plan
+    func toCanovaWorkout(phase: CanovaTrainingPhase) -> CanovaWorkout {
+        let category: CanovaWorkoutCategory = switch workoutType {
+        case "easy", "recovery": .regeneration
+        case "tempo", "progression", "strides": .special
+        case "intervals": .specific
+        case "long_run": .fundamental
+        default: .regeneration
+        }
+
+        let canovaSteps = steps.enumerated().map { index, step in
+            let stepType: CanovaWorkoutStep.StepType = switch step.stepType {
+            case "warmup": .warmup
+            case "rest": .rest
+            case "recovery": .recovery
+            case "cooldown": .cooldown
+            default: .active
+            }
+
+            let durationType: CanovaWorkoutStep.DurationType = switch step.durationType {
+            case "distance_km": .distanceKm
+            case "distance_meters": .distanceMeters
+            case "time_seconds": .timeSeconds
+            default: .distanceMiles
+            }
+
+            return CanovaWorkoutStep(
+                id: UUID(),
+                stepType: stepType,
+                durationType: durationType,
+                durationValue: step.durationValue,
+                targetPaceIntensity: step.pacePercentage.map { PaceIntensity(percentage: $0) },
+                notes: step.notes,
+                order: step.order ?? index
+            )
+        }
+
+        return CanovaWorkout(
+            id: UUID(),
+            name: name,
+            category: category,
+            trainingPhase: phase,
+            description: description,
+            steps: canovaSteps,
+            totalDistanceMiles: totalDistanceMiles,
+            estimatedDurationMinutes: estimatedDurationMinutes,
+            signatureType: nil,
+            createdAt: Date()
+        )
+    }
+}
+
+extension ScheduledWorkoutType {
+    static func fromImportString(_ str: String) -> ScheduledWorkoutType {
+        switch str.lowercased() {
+        case "easy": return .easy
+        case "tempo": return .tempo
+        case "intervals": return .intervals
+        case "long_run", "longrun": return .longRun
+        case "recovery": return .recovery
+        case "race": return .race
+        case "progression": return .progression
+        case "strides": return .strides
+        case "rest": return .rest
+        default: return .easy
+        }
     }
 }

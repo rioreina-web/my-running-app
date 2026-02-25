@@ -39,9 +39,9 @@ struct PlanGeneratorSheet: View {
     }
 
     private var racePacePerMile: String {
-        let paceSeconds = selectedRaceDistance.racePaceSecondsPerMile(goalTimeSeconds: goalTimeInSeconds)
-        let mins = Int(paceSeconds) / 60
-        let secs = Int(paceSeconds) % 60
+        let totalSecs = Int(selectedRaceDistance.racePaceSecondsPerMile(goalTimeSeconds: goalTimeInSeconds).rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
     }
 
@@ -560,6 +560,7 @@ struct TimePickerColumn: View {
                 ForEach(range, id: \.self) { num in
                     Text(String(format: "%02d", num))
                         .font(.dripStat(28))
+                        .foregroundStyle(Color.drip.textPrimary)
                         .tag(num)
                 }
             }
@@ -580,13 +581,15 @@ struct TrainingPhasesPreview: View {
     let totalWeeks: Int
 
     private var phases: [(name: String, weeks: Int, color: Color)] {
-        // Distribute weeks: Base 20%, Specific 70%, Taper 10%
+        // Distribute weeks: Base 10%, Support 40%, Specific 40%, Taper 10%
         let taperWeeks = max(1, Int(Double(totalWeeks) * 0.10))
-        let baseWeeks = max(2, Int(Double(totalWeeks) * 0.20))
-        let specificWeeks = totalWeeks - baseWeeks - taperWeeks
+        let baseWeeks = max(1, Int(Double(totalWeeks) * 0.10))
+        let supportWeeks = max(2, Int(Double(totalWeeks) * 0.40))
+        let specificWeeks = totalWeeks - baseWeeks - supportWeeks - taperWeeks
 
         return [
             ("Base", baseWeeks, CanovaTrainingPhase.base.color),
+            ("Support", supportWeeks, CanovaTrainingPhase.support.color),
             ("Specific", specificWeeks, CanovaTrainingPhase.specific.color),
             ("Taper", taperWeeks, CanovaTrainingPhase.taper.color),
         ]
@@ -606,7 +609,7 @@ struct TrainingPhasesPreview: View {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(phase.color)
                             .frame(height: 8)
-                            .frame(maxWidth: CGFloat(phase.weeks) * 20)
+                            .frame(maxWidth: max(1, CGFloat(phase.weeks) * 20))
                     }
                 }
 
@@ -622,7 +625,7 @@ struct TrainingPhasesPreview: View {
                                 .font(.dripCaption(8))
                                 .foregroundStyle(Color.drip.textTertiary)
                         }
-                        .frame(maxWidth: CGFloat(phase.weeks) * 20)
+                        .frame(maxWidth: max(1, CGFloat(phase.weeks) * 20))
                     }
                 }
                 .padding(.top, 8)

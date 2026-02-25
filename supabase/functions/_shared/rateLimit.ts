@@ -134,3 +134,62 @@ export function isRateLimitEnabled(): boolean {
 export function getTierLimit(tier: string): number {
   return TIER_LIMITS[tier] || TIER_LIMITS.free;
 }
+
+/**
+ * Per-feature rate limits (daily)
+ */
+const FEATURE_LIMITS: Record<string, Record<string, number>> = {
+  coaching: { free: 5, pro: 25, unlimited: 100 },
+  predictor: { free: 10, pro: 25, unlimited: 100 },
+  analysis: { free: 10, pro: 25, unlimited: 100 },
+  transcribe: { free: 20, pro: 50, unlimited: 200 },
+  parse: { free: 10, pro: 25, unlimited: 100 },
+  form_check_analysis: { free: 10, pro: 25, unlimited: 100 },
+};
+
+/**
+ * Check and increment rate limit for a specific feature
+ */
+export async function checkFeatureRateLimit(
+  userId: string,
+  feature: string,
+  tier: string = "free"
+): Promise<RateLimitResult> {
+  const limits = FEATURE_LIMITS[feature] || FEATURE_LIMITS.coaching;
+  const limit = limits[tier] || limits.free;
+
+  const resetAt = new Date();
+  resetAt.setUTCHours(24, 0, 0, 0);
+
+  const client = getRedis();
+  if (!client) {
+    return { allowed: true, remaining: limit, resetAt, current: 0, limit };
+  }
+
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const key = `ratelimit:${feature}:${userId}:${today}`;
+
+    const current = await client.incr(key);
+    if (current === 1) {
+      const secondsUntilMidnight = Math.floor(
+        (resetAt.getTime() - Date.now()) / 1000
+      );
+      await client.expire(key, secondsUntilMidnight);
+    }
+
+    const remaining = Math.max(0, limit - current);
+    const allowed = current <= limit;
+
+    if (!allowed) {
+      console.log(
+        `Rate limit exceeded for ${feature} user ${userId}: ${current}/${limit}`
+      );
+    }
+
+    return { allowed, remaining, resetAt, current, limit };
+  } catch (error) {
+    console.error(`Rate limit check failed for ${feature}:`, error);
+    return { allowed: true, remaining: limit, resetAt, current: 0, limit };
+  }
+}

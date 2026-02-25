@@ -478,8 +478,9 @@ final class FitnessPredictorService {
     }
 
     private func formatPaceLocal(_ secondsPerMile: Double) -> String {
-        let mins = Int(secondsPerMile) / 60
-        let secs = Int(secondsPerMile) % 60
+        let totalSecs = Int(secondsPerMile.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
     }
 

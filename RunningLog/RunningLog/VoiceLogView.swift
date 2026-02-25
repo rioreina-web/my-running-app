@@ -76,6 +76,7 @@ struct TrainingLog: Codable {
 // MARK: - TrainingLogInsert
 
 struct TrainingLogInsert: Codable {
+    var userId: String?
     var audioUrl: String?
     var notes: String?
     var workoutDate: Date?
@@ -84,6 +85,7 @@ struct TrainingLogInsert: Codable {
     var processingStatus: String?
 
     enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
         case audioUrl = "audio_url"
         case notes
         case workoutDate = "workout_date"
@@ -115,6 +117,9 @@ struct VoiceLogView: View {
     // History state
     @State private var historyLogs: [TrainingLog] = []
     @State private var isLoadingHistory = false
+
+    // Feed state
+    @State private var selectedHistoryEntry: HistoryLogEntry?
 
     var body: some View {
         ZStack {
@@ -214,21 +219,60 @@ struct VoiceLogView: View {
                     .padding(.horizontal, 24)
                     .padding(.bottom, 24)
 
-                    // History section
-                    VoiceLogHistorySection(
-                        logs: historyLogs,
-                        isLoading: isLoadingHistory,
-                        onRetry: { log in
-                            Task {
-                                await retryProcessing(log: log)
-                            }
-                        },
-                        onRefresh: {
-                            Task {
-                                await loadHistory()
+                    // Your Logs feed
+                    VStack(alignment: .leading, spacing: 16) {
+                        HStack {
+                            SectionHeader("Your Logs")
+                            Spacer()
+                            Button {
+                                Task { await loadHistory() }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundStyle(Color.drip.textSecondary)
                             }
                         }
-                    )
+
+                        if isLoadingHistory && historyLogs.isEmpty {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .tint(Color.drip.coral)
+                                Spacer()
+                            }
+                            .padding(.vertical, 40)
+                        } else if historyLogs.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "text.bubble")
+                                    .font(.system(size: 32))
+                                    .foregroundStyle(Color.drip.textTertiary)
+                                Text("No logs yet")
+                                    .font(.dripBody(14))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                                Text("Record a voice memo or type notes to get started")
+                                    .font(.dripCaption(12))
+                                    .foregroundStyle(Color.drip.textTertiary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 40)
+                        } else {
+                            LazyVStack(spacing: 12) {
+                                ForEach(historyLogs, id: \.id) { log in
+                                    if log.isPending || log.isFailed {
+                                        ProcessingLogCard(log: log) {
+                                            Task { await retryProcessing(log: log) }
+                                        }
+                                    } else {
+                                        HistoryEntryCard(entry: log.asHistoryEntry)
+                                            .onTapGesture {
+                                                selectedHistoryEntry = log.asHistoryEntry
+                                            }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     .padding(.horizontal, 24)
                     .padding(.bottom, 40)
                 }
@@ -265,9 +309,7 @@ struct VoiceLogView: View {
             Task {
                 _ = await healthKitManager.requestAuthorization()
                 let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-                await MainActor.run {
-                    healthKitManager.recentWorkouts = workouts
-                }
+                await MainActor.run { healthKitManager.recentWorkouts = workouts }
                 await loadHistory()
             }
         }
@@ -294,6 +336,13 @@ struct VoiceLogView: View {
                 SuccessOverlay()
                     .transition(.opacity.combined(with: .scale))
             }
+        }
+        .sheet(item: $selectedHistoryEntry) { entry in
+            HistoryDetailSheet(entry: entry) {
+                Task { await loadHistory() }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -393,17 +442,20 @@ struct VoiceLogView: View {
         do {
             let audioData = try Data(contentsOf: localURL)
             let fileName = localURL.lastPathComponent
+            let userId = AuthManager.shared.currentUserId ?? ""
+            let storagePath = "\(userId)/\(fileName)"
 
             try await supabase.storage
                 .from("training-memos")
-                .upload(fileName, data: audioData, options: FileOptions(contentType: "audio/m4a"))
+                .upload(storagePath, data: audioData, options: FileOptions(contentType: "audio/m4a"))
 
             let publicURL = try supabase.storage
                 .from("training-memos")
-                .getPublicURL(path: fileName)
+                .getPublicURL(path: storagePath)
 
             // Build insert data with optional workout fields
             var insertData = TrainingLogInsert(audioUrl: publicURL.absoluteString)
+            insertData.userId = userId
             insertData.processingStatus = "pending"
             if let workout = selectedWorkout {
                 insertData.workoutDate = workout.startDate
@@ -697,81 +749,33 @@ struct VoiceLogView: View {
     }
 }
 
-// MARK: - Voice Log History Section
+// MARK: - TrainingLog → HistoryLogEntry
 
-private struct VoiceLogHistorySection: View {
-    let logs: [TrainingLog]
-    let isLoading: Bool
-    let onRetry: (TrainingLog) -> Void
-    let onRefresh: () -> Void
-
-    @State private var expandedLogId: UUID?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                SectionHeader("Recent Logs")
-                Spacer()
-                Button(action: onRefresh) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Color.drip.textSecondary)
-                }
-            }
-
-            if isLoading && logs.isEmpty {
-                HStack {
-                    Spacer()
-                    ProgressView()
-                        .tint(Color.drip.coral)
-                    Spacer()
-                }
-                .padding(.vertical, 40)
-            } else if logs.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 32))
-                        .foregroundStyle(Color.drip.textTertiary)
-                    Text("No voice logs yet")
-                        .font(.dripBody(14))
-                        .foregroundStyle(Color.drip.textSecondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
-            } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(logs, id: \.id) { log in
-                        VoiceLogHistoryRow(
-                            log: log,
-                            isExpanded: expandedLogId == log.id,
-                            onTap: {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    if expandedLogId == log.id {
-                                        expandedLogId = nil
-                                    } else {
-                                        expandedLogId = log.id
-                                    }
-                                }
-                            },
-                            onRetry: { onRetry(log) }
-                        )
-                    }
-                }
-            }
-        }
+extension TrainingLog {
+    var asHistoryEntry: HistoryLogEntry {
+        HistoryLogEntry(
+            id: id,
+            createdAt: createdAt ?? Date(),
+            audioUrl: audioUrl,
+            notes: notes,
+            cleanedNotes: cleanedNotes,
+            mood: mood,
+            workoutDate: workoutDate,
+            workoutDistanceMiles: workoutDistanceMiles,
+            workoutDurationMinutes: workoutDurationMinutes,
+            coachInsight: coachInsight,
+            workoutNotes: workoutNotes,
+            workoutType: workoutType,
+            workoutPacePerMile: workoutPacePerMile
+        )
     }
 }
 
-// MARK: - Voice Log History Row
+// MARK: - ProcessingLogCard
 
-private struct VoiceLogHistoryRow: View {
+struct ProcessingLogCard: View {
     let log: TrainingLog
-    let isExpanded: Bool
-    let onTap: () -> Void
     let onRetry: () -> Void
-
-    @State private var fullTranscript: String?
-    @State private var isLoadingTranscript = false
 
     private var dateString: String {
         let date = log.workoutDate ?? log.createdAt
@@ -784,331 +788,62 @@ private struct VoiceLogHistoryRow: View {
         return "Unknown date"
     }
 
-    private var statusIcon: String {
-        if log.isCompleted { return "checkmark.circle.fill" }
-        if log.isFailed { return "exclamationmark.circle.fill" }
-        if log.isPending { return "clock.fill" }
-        return "doc.text.fill"
-    }
-
-    private var statusColor: Color {
-        if log.isCompleted { return Color.drip.energized }
-        if log.isFailed { return Color.drip.tired }
-        if log.isPending { return Color.drip.coral }
-        return Color.drip.textSecondary
-    }
-
-    private var moodEmoji: String {
-        switch log.mood {
-        case "energized": return "⚡"
-        case "positive": return "😊"
-        case "neutral": return "😐"
-        case "tired": return "😴"
-        case "struggling": return "😓"
-        case "injured": return "🤕"
-        default: return ""
-        }
-    }
-
-    private var moodLabel: String {
-        switch log.mood {
-        case "energized": return "Energized"
-        case "positive": return "Positive"
-        case "neutral": return "Neutral"
-        case "tired": return "Tired"
-        case "struggling": return "Struggling"
-        case "injured": return "Injured"
-        default: return ""
-        }
-    }
-
-    private var shareableTranscript: String? {
-        // Prefer full transcript, fall back to cleaned notes or manual notes
-        if let transcript = fullTranscript, !transcript.isEmpty {
-            return formatTranscriptForSharing(transcript)
-        } else if let cleanedNotes = log.cleanedNotes, !cleanedNotes.isEmpty {
-            return formatTranscriptForSharing(cleanedNotes)
-        } else if let notes = log.notes, !notes.isEmpty {
-            return formatTranscriptForSharing(notes)
-        }
-        return nil
-    }
-
-    private func formatTranscriptForSharing(_ text: String) -> String {
-        var result = "Running Log - \(dateString)\n"
-        if !moodLabel.isEmpty {
-            result += "Mood: \(moodLabel)\n"
-        }
-        result += "\n\(text)"
-        return result
-    }
-
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    // Status indicator
-                    Image(systemName: statusIcon)
-                        .font(.system(size: 14))
-                        .foregroundStyle(statusColor)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: log.isFailed ? "exclamationmark.circle.fill" : "clock.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(log.isFailed ? Color.drip.tired : Color.drip.coral)
 
-                    // Date
-                    Text(dateString)
-                        .font(.dripCaption(12))
-                        .foregroundStyle(Color.drip.textSecondary)
+                Text(dateString)
+                    .font(.dripCaption(12))
+                    .foregroundStyle(Color.drip.textSecondary)
 
-                    Spacer()
+                Spacer()
 
-                    // Workout type badge
-                    if let typeLabel = log.workoutTypeLabel {
-                        Text(typeLabel)
+                if log.audioUrl != nil {
+                    HStack(spacing: 4) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10, weight: .medium))
+                        Text("Voice")
                             .font(.dripCaption(10))
-                            .foregroundStyle(Color.drip.coral)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.drip.coral.opacity(0.12))
-                            .clipShape(Capsule())
                     }
-
-                    // Mood label
-                    if !moodLabel.isEmpty {
-                        Text(moodLabel)
-                            .font(.dripCaption(11))
-                            .foregroundStyle(Color.drip.textSecondary)
-                    }
-
-                    // Expand/collapse indicator
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.drip.textTertiary)
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.drip.cardBackgroundElevated)
+                    .clipShape(Capsule())
                 }
+            }
 
-                // Notes preview (or full if expanded)
-                if let notes = log.cleanedNotes ?? log.notes {
-                    Text(notes)
-                        .font(.dripBody(14))
-                        .foregroundStyle(Color.drip.textPrimary)
-                        .lineLimit(isExpanded ? nil : 2)
-                        .multilineTextAlignment(.leading)
+            if log.isPending {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .tint(Color.drip.coral)
+                    Text("Processing with AI...")
+                        .font(.dripCaption(11))
+                        .foregroundStyle(Color.drip.coral)
                 }
-
-                // Processing status
-                if log.isPending {
+            } else if log.isFailed {
+                Button(action: onRetry) {
                     HStack(spacing: 6) {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                            .tint(Color.drip.coral)
-                        Text("Processing...")
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Retry transcription")
                             .font(.dripCaption(11))
-                            .foregroundStyle(Color.drip.coral)
                     }
-                } else if log.isFailed {
-                    Button(action: onRetry) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Retry transcription")
-                                .font(.dripCaption(11))
-                        }
-                        .foregroundStyle(Color.drip.tired)
-                    }
-                }
-
-                // Workout info if linked
-                if let distance = log.workoutDistanceMiles, let duration = log.workoutDurationMinutes {
-                    HStack(spacing: 12) {
-                        Label(String(format: "%.1f mi", distance), systemImage: "location.fill")
-                        Label(formatDuration(duration), systemImage: "timer")
-                        if let pace = log.workoutPacePerMile {
-                            Label("\(pace)/mi", systemImage: "speedometer")
-                        }
-                    }
-                    .font(.dripCaption(11))
-                    .foregroundStyle(Color.drip.textTertiary)
-                }
-
-                // Expanded content - Full Transcript
-                if isExpanded {
-                    Divider()
-                        .background(Color.drip.divider)
-                        .padding(.vertical, 4)
-
-                    // Mood display
-                    if !moodLabel.isEmpty {
-                        HStack(spacing: 6) {
-                            Text("Mood:")
-                                .font(.dripCaption(12))
-                                .foregroundStyle(Color.drip.textSecondary)
-                            Text(moodLabel)
-                                .font(.dripLabel(13))
-                                .foregroundStyle(Color.drip.textPrimary)
-                        }
-                        .padding(.bottom, 4)
-                    }
-
-                    // Coach Insight Section
-                    if let insight = log.coachInsight, !insight.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "brain.head.profile")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.drip.energized)
-                                Text("COACH INSIGHT")
-                                    .font(.dripCaption(10))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .tracking(1)
-                            }
-                            Text(insight)
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textPrimary.opacity(0.9))
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.drip.energized.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .padding(.bottom, 4)
-                    }
-
-                    // Workout Details Section
-                    if let workoutNotes = log.workoutNotes, !workoutNotes.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "figure.run")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Color.drip.coral)
-                                Text("WORKOUT DETAILS")
-                                    .font(.dripCaption(10))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .tracking(1)
-                            }
-                            Text(workoutNotes)
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textPrimary.opacity(0.85))
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.drip.background.opacity(0.5))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .padding(.bottom, 4)
-                    }
-
-                    // Full Transcript Section
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "doc.text")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.drip.coral)
-                            Text("FULL TRANSCRIPT")
-                                .font(.dripCaption(10))
-                                .foregroundStyle(Color.drip.textSecondary)
-                                .tracking(1)
-
-                            if isLoadingTranscript {
-                                ProgressView()
-                                    .scaleEffect(0.5)
-                                    .tint(Color.drip.coral)
-                            }
-
-                            Spacer()
-
-                            // Share/Export button
-                            if let transcript = shareableTranscript {
-                                ShareLink(item: transcript) {
-                                    Image(systemName: "square.and.arrow.up")
-                                        .font(.system(size: 14, weight: .medium))
-                                        .foregroundStyle(Color.drip.coral)
-                                }
-                            }
-                        }
-
-                        if let transcript = fullTranscript {
-                            // Full raw transcript loaded from storage
-                            Text(transcript)
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textPrimary.opacity(0.85))
-                                .textSelection(.enabled)
-                        } else if log.transcriptUrl != nil && isLoadingTranscript {
-                            Text("Loading transcript...")
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textTertiary)
-                                .italic()
-                        } else if let cleanedNotes = log.cleanedNotes, log.transcriptUrl == nil {
-                            // Fallback to cleaned notes for older entries without raw transcript
-                            Text(cleanedNotes)
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textPrimary.opacity(0.85))
-                                .textSelection(.enabled)
-                        } else if let notes = log.notes {
-                            // Manual text notes
-                            Text(notes)
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textPrimary.opacity(0.85))
-                                .textSelection(.enabled)
-                        } else if log.isPending {
-                            Text("Transcript will appear here once processing completes...")
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textTertiary)
-                                .italic()
-                        } else if log.isFailed {
-                            Text("Transcription failed. Tap 'Retry' to try again.")
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.tired.opacity(0.8))
-                                .italic()
-                        } else {
-                            Text("No transcript available")
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textTertiary)
-                                .italic()
-                        }
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.drip.background.opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-            }
-            .padding(14)
-            .background(Color.drip.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(isExpanded ? Color.drip.coral.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .onChange(of: isExpanded) { _, expanded in
-            if expanded && fullTranscript == nil && log.transcriptUrl != nil {
-                Task {
-                    await loadTranscript()
+                    .foregroundStyle(Color.drip.tired)
                 }
             }
         }
-    }
-
-    private func formatDuration(_ minutes: Double) -> String {
-        let mins = Int(minutes)
-        let secs = Int((minutes - Double(mins)) * 60)
-        return String(format: "%d:%02d", mins, secs)
-    }
-
-    private func loadTranscript() async {
-        guard let urlString = log.transcriptUrl,
-              let url = URL(string: urlString) else { return }
-
-        await MainActor.run { isLoadingTranscript = true }
-
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let text = String(data: data, encoding: .utf8) {
-                await MainActor.run {
-                    fullTranscript = text
-                    isLoadingTranscript = false
-                }
-            }
-        } catch {
-            Log.app.error("Failed to load transcript: \(error)")
-            await MainActor.run { isLoadingTranscript = false }
-        }
+        .padding(14)
+        .background(Color.drip.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.drip.divider, lineWidth: 1)
+        )
     }
 }
 

@@ -91,12 +91,13 @@ struct ExtractedTime: Codable, Equatable {
     }
 
     var description: String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
+        let totalSecs = Int(seconds.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         if mins > 0 {
             return "\(mins):\(String(format: "%02d", secs))"
         }
-        return "\(Int(seconds))s"
+        return "\(totalSecs)s"
     }
 }
 
@@ -105,8 +106,9 @@ struct ExtractedPace: Codable, Equatable {
     let secondsPerMile: Double
 
     var description: String {
-        let mins = Int(secondsPerMile) / 60
-        let secs = Int(secondsPerMile) % 60
+        let totalSecs = Int(secondsPerMile.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
     }
 }

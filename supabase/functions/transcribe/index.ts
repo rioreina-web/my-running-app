@@ -14,8 +14,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
+import { validateFileSize, validateMimeType, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -191,9 +195,25 @@ Deno.serve(async (req: Request) => {
   const startTime = Date.now();
 
   try {
+    // Verify authenticated user from JWT
+    const userId = await getAuthenticatedUser(req);
+    if (!userId) {
+      return unauthorizedResponse(corsHeaders);
+    }
+
+    // Rate limiting
+    if (isRateLimitEnabled()) {
+      const rateLimit = await checkFeatureRateLimit(userId, "transcribe");
+      if (!rateLimit.allowed) {
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded", remaining: 0, resetAt: rateLimit.resetAt.toISOString() }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const formData = await req.formData();
     const audioFile = formData.get("audio") as File;
-    const userId = formData.get("userId") as string | null;
 
     if (!audioFile) {
       return new Response(
@@ -201,6 +221,13 @@ Deno.serve(async (req: Request) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Input validation
+    const sizeErr = validateFileSize(audioFile.size, 25);
+    if (sizeErr) return validationErrorResponse(sizeErr, corsHeaders);
+
+    const mimeErr = validateMimeType(audioFile.type || "audio/unknown", ["audio/"]);
+    if (mimeErr) return validationErrorResponse(mimeErr, corsHeaders);
 
     console.log(`Transcribing audio: ${audioFile.name}, size: ${audioFile.size} bytes, type: ${audioFile.type}`);
 
@@ -261,13 +288,6 @@ Deno.serve(async (req: Request) => {
 
   } catch (error) {
     console.error("Transcription endpoint error:", error);
-
-    return new Response(
-      JSON.stringify({
-        error: "Transcription failed. Please try again.",
-        details: error.message,
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return internalErrorResponse(corsHeaders);
   }
 });

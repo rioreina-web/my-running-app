@@ -26,6 +26,9 @@ enum Log {
     /// Logger for database operations
     static let database = Logger(subsystem: Bundle.main.bundleIdentifier ?? "PostRunDrip", category: "Database")
 
+    /// Logger for biomechanics analysis
+    static let biomechanics = Logger(subsystem: Bundle.main.bundleIdentifier ?? "PostRunDrip", category: "Biomechanics")
+
     /// General app logger
     static let app = Logger(subsystem: Bundle.main.bundleIdentifier ?? "PostRunDrip", category: "App")
 }

@@ -24,6 +24,12 @@ struct DayDetailSheet: View {
     @State private var showExportError = false
     @State private var exportErrorMessage: String?
 
+    // Edit mode state
+    @State private var isEditing = false
+    @State private var editableSteps: [EditableWorkoutStep] = []
+    @State private var isSavingEdits = false
+    @State private var showPaceSettings = false
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -44,50 +50,159 @@ struct DayDetailSheet: View {
                             .padding(.horizontal, 20)
                         } else if let workout = scheduledWorkout.workout {
                             // Workout details - reuse existing components
-                            WorkoutDetailHeader(
-                                workout: workout,
-                                racePaceSeconds: racePaceSeconds
-                            )
-                            .padding(.horizontal, 20)
+                            if !isEditing {
+                                WorkoutDetailHeader(
+                                    workout: workout,
+                                    racePaceSeconds: racePaceSeconds
+                                )
+                                .padding(.horizontal, 20)
+
+                                // Pace settings row
+                                HStack {
+                                    Spacer()
+                                    Button {
+                                        showPaceSettings.toggle()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "gearshape")
+                                                .font(.system(size: 12))
+                                            Text("Pace Labels")
+                                                .font(.dripCaption(11))
+                                        }
+                                        .foregroundStyle(Color.drip.textTertiary)
+                                    }
+                                    .popover(isPresented: $showPaceSettings, arrowEdge: .top) {
+                                        VStack(alignment: .leading, spacing: 12) {
+                                            Text("PACE LABELS")
+                                                .font(.dripCaption(10))
+                                                .foregroundStyle(Color.drip.textSecondary)
+                                                .tracking(1.0)
+
+                                            Toggle(isOn: Binding(
+                                                get: { !viewModel.disabledPaces.contains(.tenK) },
+                                                set: { enabled in
+                                                    var paces = viewModel.disabledPaces
+                                                    if enabled { paces.remove(.tenK) } else { paces.insert(.tenK) }
+                                                    viewModel.disabledPaces = paces
+                                                }
+                                            )) {
+                                                HStack(spacing: 6) {
+                                                    Circle()
+                                                        .fill(NamedPace.tenK.color)
+                                                        .frame(width: 8, height: 8)
+                                                    Text("10K Pace")
+                                                        .font(.dripBody(14))
+                                                        .foregroundStyle(Color.drip.textPrimary)
+                                                }
+                                            }
+                                            .tint(NamedPace.tenK.color)
+
+                                            Toggle(isOn: Binding(
+                                                get: { !viewModel.disabledPaces.contains(.fiveK) },
+                                                set: { enabled in
+                                                    var paces = viewModel.disabledPaces
+                                                    if enabled { paces.remove(.fiveK) } else { paces.insert(.fiveK) }
+                                                    viewModel.disabledPaces = paces
+                                                }
+                                            )) {
+                                                HStack(spacing: 6) {
+                                                    Circle()
+                                                        .fill(NamedPace.fiveK.color)
+                                                        .frame(width: 8, height: 8)
+                                                    Text("5K Pace")
+                                                        .font(.dripBody(14))
+                                                        .foregroundStyle(Color.drip.textPrimary)
+                                                }
+                                            }
+                                            .tint(NamedPace.fiveK.color)
+                                        }
+                                        .padding(16)
+                                        .frame(width: 200)
+                                        .presentationCompactAdaptation(.popover)
+                                    }
+                                }
+                                .padding(.horizontal, 20)
+                            }
 
                             // Workout Steps
                             VStack(alignment: .leading, spacing: 16) {
-                                Text("WORKOUT STEPS")
+                                Text(isEditing ? "EDIT STEPS" : "WORKOUT STEPS")
                                     .font(.dripCaption(11))
                                     .foregroundStyle(Color.drip.textSecondary)
                                     .tracking(1.2)
                                     .padding(.horizontal, 20)
 
-                                VStack(spacing: 0) {
-                                    ForEach(Array(workout.steps.enumerated()), id: \.element.id) { index, step in
-                                        WorkoutStepRow(
-                                            step: step,
-                                            stepNumber: index + 1,
-                                            totalSteps: workout.steps.count,
-                                            racePaceSeconds: racePaceSeconds
-                                        )
+                                if isEditing {
+                                    // Editable steps
+                                    VStack(spacing: 12) {
+                                        ForEach($editableSteps) { $step in
+                                            EditableWorkoutStepRow(
+                                                step: $step,
+                                                equivalentPaces: viewModel.equivalentPaces ?? defaultEquivalentPaces,
+                                                racePaceSeconds: racePaceSeconds,
+                                                onDelete: {
+                                                    withAnimation {
+                                                        editableSteps.removeAll { $0.id == step.id }
+                                                        reorderSteps()
+                                                    }
+                                                }
+                                            )
+                                        }
+
+                                        // Add step button
+                                        Button {
+                                            addNewStep()
+                                        } label: {
+                                            HStack(spacing: 8) {
+                                                Image(systemName: "plus.circle.fill")
+                                                    .font(.system(size: 16))
+                                                Text("Add Step")
+                                                    .font(.dripLabel(14))
+                                            }
+                                            .foregroundStyle(Color.drip.coral)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 14)
+                                            .background(Color.drip.coral.opacity(0.1))
+                                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                                        }
                                     }
+                                    .padding(.horizontal, 20)
+                                } else {
+                                    // Read-only steps
+                                    VStack(spacing: 0) {
+                                        ForEach(Array(workout.steps.enumerated()), id: \.element.id) { index, step in
+                                            WorkoutStepRow(
+                                                step: step,
+                                                stepNumber: index + 1,
+                                                totalSteps: workout.steps.count,
+                                                racePaceSeconds: racePaceSeconds,
+                                                equivalentPaces: viewModel.equivalentPaces
+                                            )
+                                        }
+                                    }
+                                    .background(Color.drip.cardBackground)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .padding(.horizontal, 20)
                                 }
-                                .background(Color.drip.cardBackground)
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .padding(.horizontal, 20)
                             }
 
-                            // Phase Info
-                            PhaseInfoCard(phase: workout.trainingPhase)
-                                .padding(.horizontal, 20)
+                            if !isEditing {
+                                // Phase Info
+                                PhaseInfoCard(phase: workout.trainingPhase)
+                                    .padding(.horizontal, 20)
 
-                            // Action Buttons
-                            WorkoutActionButtons(
-                                workout: scheduledWorkout,
-                                isExporting: isExporting,
-                                onMarkComplete: { markComplete() },
-                                onMarkSkipped: { markSkipped() },
-                                onSwap: { showSwapPicker = true },
-                                onDelete: { showDeleteConfirmation = true },
-                                onExport: { exportWorkout() }
-                            )
-                            .padding(.horizontal, 20)
+                                // Action Buttons
+                                WorkoutActionButtons(
+                                    workout: scheduledWorkout,
+                                    isExporting: isExporting,
+                                    onMarkComplete: { markComplete() },
+                                    onMarkSkipped: { markSkipped() },
+                                    onSwap: { showSwapPicker = true },
+                                    onDelete: { showDeleteConfirmation = true },
+                                    onExport: { exportWorkout() }
+                                )
+                                .padding(.horizontal, 20)
+                            }
                         }
 
                         Spacer()
@@ -99,12 +214,43 @@ struct DayDetailSheet: View {
             .navigationTitle(scheduledWorkout.formattedFullDate)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
+                ToolbarItem(placement: .topBarLeading) {
+                    if !scheduledWorkout.isRestDay && scheduledWorkout.workout != nil {
+                        Button(isEditing ? "Cancel" : "Edit") {
+                            if isEditing {
+                                withAnimation(.spring(response: 0.3)) {
+                                    isEditing = false
+                                }
+                            } else {
+                                enterEditMode()
+                            }
+                        }
+                        .font(.dripBody(15))
+                        .foregroundStyle(isEditing ? Color.drip.textSecondary : Color.drip.coral)
                     }
-                    .font(.dripBody(15))
-                    .foregroundStyle(Color.drip.coral)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if isEditing {
+                        Button {
+                            Task { await saveEdits() }
+                        } label: {
+                            if isSavingEdits {
+                                ProgressView()
+                                    .tint(Color.drip.coral)
+                            } else {
+                                Text("Save")
+                                    .font(.dripLabel(15))
+                                    .foregroundStyle(Color.drip.coral)
+                            }
+                        }
+                        .disabled(isSavingEdits)
+                    } else {
+                        Button("Done") {
+                            dismiss()
+                        }
+                        .font(.dripBody(15))
+                        .foregroundStyle(Color.drip.coral)
+                    }
                 }
             }
             .toolbarBackground(Color.drip.background, for: .navigationBar)
@@ -192,6 +338,93 @@ struct DayDetailSheet: View {
                     showExportError = true
                 }
             }
+        }
+    }
+
+    // MARK: - Edit Mode
+
+    private var defaultEquivalentPaces: EquivalentPaces {
+        EquivalentPaces(raceDistance: .marathon, goalTimeSeconds: 14400)
+    }
+
+    private func enterEditMode() {
+        guard let workout = scheduledWorkout.workout else { return }
+        editableSteps = workout.steps.map { step in
+            EditableWorkoutStep(
+                from: step,
+                equivalentPaces: viewModel.equivalentPaces,
+                racePaceSeconds: racePaceSeconds
+            )
+        }
+        withAnimation(.spring(response: 0.3)) {
+            isEditing = true
+        }
+    }
+
+    private func addNewStep() {
+        let newStep = EditableWorkoutStep(order: editableSteps.count)
+        withAnimation {
+            editableSteps.append(newStep)
+        }
+    }
+
+    private func reorderSteps() {
+        for i in editableSteps.indices {
+            editableSteps[i].order = i
+        }
+    }
+
+    private func saveEdits() async {
+        guard let workout = scheduledWorkout.workout else { return }
+        let equiv = viewModel.equivalentPaces ?? defaultEquivalentPaces
+
+        isSavingEdits = true
+
+        let updatedSteps = editableSteps.enumerated().map { index, editable in
+            var step = editable
+            step.order = index
+            return step.toCanovaStep(
+                racePaceSeconds: racePaceSeconds,
+                equivalentPaces: equiv
+            )
+        }
+
+        // Calculate total distance from steps
+        let totalMiles = updatedSteps.reduce(0.0) { total, step in
+            switch step.durationType {
+            case .distanceMiles:
+                return total + step.durationValue
+            case .distanceKm:
+                return total + step.durationValue / 1.60934
+            case .distanceMeters:
+                return total + step.durationValue / 1609.34
+            default:
+                return total
+            }
+        }
+
+        let updatedWorkout = CanovaWorkout(
+            id: workout.id,
+            name: workout.name,
+            category: workout.category,
+            trainingPhase: workout.trainingPhase,
+            description: workout.description,
+            steps: updatedSteps,
+            totalDistanceMiles: totalMiles > 0 ? totalMiles : workout.totalDistanceMiles,
+            estimatedDurationMinutes: workout.estimatedDurationMinutes,
+            signatureType: workout.signatureType,
+            createdAt: workout.createdAt
+        )
+
+        var updatedScheduled = scheduledWorkout
+        updatedScheduled.workout = updatedWorkout
+        updatedScheduled.status = .modified
+
+        await viewModel.updateWorkout(updatedScheduled)
+
+        isSavingEdits = false
+        withAnimation(.spring(response: 0.3)) {
+            isEditing = false
         }
     }
 }
@@ -735,6 +968,250 @@ struct AddWorkoutTypeCard: View {
                     lineWidth: isSelected ? 2 : 1
                 )
         )
+    }
+}
+
+// MARK: - Editable Workout Step Row
+
+struct EditableWorkoutStepRow: View {
+    @Binding var step: EditableWorkoutStep
+    let equivalentPaces: EquivalentPaces
+    let racePaceSeconds: Double
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Row 1: Step type + Delete
+            HStack {
+                Menu {
+                    ForEach(CanovaWorkoutStep.StepType.allCases, id: \.self) { type in
+                        Button {
+                            step.stepType = type
+                        } label: {
+                            HStack {
+                                Text(type.displayName)
+                                if step.stepType == type {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(step.stepType.color)
+                            .frame(width: 8, height: 8)
+                        Text(step.stepType.displayName)
+                            .font(.dripLabel(13))
+                            .foregroundStyle(step.stepType.color)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(step.stepType.color.opacity(0.15))
+                    .clipShape(Capsule())
+                }
+
+                Spacer()
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.drip.injured)
+                        .padding(8)
+                }
+            }
+
+            // Row 2: Duration
+            HStack(spacing: 10) {
+                TextField("0", value: $step.durationValue, format: .number)
+                    .font(.dripStat(16))
+                    .foregroundStyle(Color.drip.textPrimary)
+                    .keyboardType(.decimalPad)
+                    .frame(width: 70)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.drip.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Menu {
+                    ForEach(CanovaWorkoutStep.DurationType.allCases, id: \.self) { type in
+                        Button {
+                            step.durationType = type
+                        } label: {
+                            HStack {
+                                Text(type.displayLabel)
+                                if step.durationType == type {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(step.durationType.displayLabel)
+                            .font(.dripBody(13))
+                            .foregroundStyle(Color.drip.textPrimary)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.drip.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
+                Spacer()
+            }
+
+            // Row 3: Pace picker
+            PaceSelectionPicker(
+                selection: $step.paceSelection,
+                equivalentPaces: equivalentPaces,
+                racePaceSeconds: racePaceSeconds
+            )
+
+            // Row 4: Notes
+            TextField("Notes (optional)", text: $step.notes)
+                .font(.dripBody(13))
+                .foregroundStyle(Color.drip.textPrimary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.drip.background)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(14)
+        .background(Color.drip.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.drip.coral.opacity(0.3), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Pace Selection Picker
+
+struct PaceSelectionPicker: View {
+    @Binding var selection: EditableWorkoutStep.PaceSelection
+    let equivalentPaces: EquivalentPaces
+    let racePaceSeconds: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("TARGET PACE")
+                .font(.dripCaption(10))
+                .foregroundStyle(Color.drip.textTertiary)
+                .tracking(1.0)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    // None option
+                    PaceChip(
+                        label: "None",
+                        pace: nil,
+                        isSelected: selection == .none,
+                        color: Color.drip.textTertiary
+                    ) {
+                        selection = .none
+                    }
+
+                    // Named paces (filtered by disabled paces)
+                    ForEach(NamedPace.allCases.filter { !equivalentPaces.disabledPaces.contains($0) }, id: \.self) { named in
+                        let paceSeconds = equivalentPaces.paceSeconds(for: named)
+                        PaceChip(
+                            label: named.shortName,
+                            pace: paceSeconds,
+                            isSelected: {
+                                if case .namedPace(let n) = selection { return n == named }
+                                return false
+                            }(),
+                            color: named.color
+                        ) {
+                            selection = .namedPace(named)
+                        }
+                    }
+
+                    // Custom option
+                    PaceChip(
+                        label: "Custom",
+                        pace: nil,
+                        isSelected: {
+                            if case .custom = selection { return true }
+                            return false
+                        }(),
+                        color: Color.drip.coral
+                    ) {
+                        selection = .custom(100)
+                    }
+                }
+            }
+
+            // Custom percentage input
+            if case .custom(let pct) = selection {
+                HStack(spacing: 8) {
+                    TextField("100", value: Binding(
+                        get: { pct },
+                        set: { selection = .custom($0) }
+                    ), format: .number)
+                    .font(.dripStat(14))
+                    .foregroundStyle(Color.drip.textPrimary)
+                    .keyboardType(.decimalPad)
+                    .frame(width: 55)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(Color.drip.background)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    Text("% of race pace")
+                        .font(.dripCaption(11))
+                        .foregroundStyle(Color.drip.textSecondary)
+
+                    Spacer()
+
+                    let computedPace = racePaceSeconds / (pct / 100.0)
+                    Text(EquivalentPaces.formatPace(computedPace))
+                        .font(.dripLabel(13))
+                        .foregroundStyle(Color.drip.coral)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Pace Chip
+
+struct PaceChip: View {
+    let label: String
+    let pace: Double?
+    let isSelected: Bool
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(label)
+                    .font(.dripLabel(11))
+                    .foregroundStyle(isSelected ? .white : color)
+
+                if let pace {
+                    let totalSecs = Int(pace.rounded())
+                    let mins = totalSecs / 60
+                    let secs = totalSecs % 60
+                    Text("\(mins):\(String(format: "%02d", secs))")
+                        .font(.dripCaption(9))
+                        .foregroundStyle(isSelected ? .white.opacity(0.8) : Color.drip.textTertiary)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(isSelected ? color : color.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
     }
 }
 

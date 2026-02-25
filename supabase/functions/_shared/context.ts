@@ -52,9 +52,9 @@ export function compressTrainingContext(logs: TrainingLog[]): string {
   // Calculate average pace
   let avgPace = "N/A";
   if (totalMinutes > 0 && totalMiles > 0) {
-    const paceMinPerMile = totalMinutes / totalMiles;
-    const paceMin = Math.floor(paceMinPerMile);
-    const paceSec = Math.round((paceMinPerMile - paceMin) * 60);
+    const totalSecs = Math.round((totalMinutes / totalMiles) * 60);
+    const paceMin = Math.floor(totalSecs / 60);
+    const paceSec = totalSecs % 60;
     avgPace = `${paceMin}:${paceSec.toString().padStart(2, "0")}`;
   }
 
@@ -247,9 +247,9 @@ export function buildThisWeekContext(logs: TrainingLog[] | ExtendedTrainingLog[]
 
   let avgPace = "N/A";
   if (totalMinutes > 0 && totalMiles > 0) {
-    const paceMin = totalMinutes / totalMiles;
-    const mins = Math.floor(paceMin);
-    const secs = Math.round((paceMin - mins) * 60);
+    const totalSecs = Math.round((totalMinutes / totalMiles) * 60);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
     avgPace = `${mins}:${secs.toString().padStart(2, "0")}/mi`;
   }
 
@@ -376,9 +376,9 @@ export function buildTrainingPeriodDocument(
 
     let avgPace = "N/A";
     if (totalMinutes > 0 && totalMiles > 0) {
-      const paceMin = totalMinutes / totalMiles;
-      const mins = Math.floor(paceMin);
-      const secs = Math.round((paceMin - mins) * 60);
+      const totalSecs = Math.round((totalMinutes / totalMiles) * 60);
+      const mins = Math.floor(totalSecs / 60);
+      const secs = totalSecs % 60;
       avgPace = `${mins}:${secs.toString().padStart(2, "0")}/mi`;
     }
 
@@ -419,9 +419,9 @@ export function buildTrainingPeriodDocument(
   // ====== HELPER: Format pace ======
   const formatPace = (minutes: number, miles: number): string => {
     if (minutes <= 0 || miles <= 0) return "N/A";
-    const paceMin = minutes / miles;
-    const mins = Math.floor(paceMin);
-    const secs = Math.round((paceMin - mins) * 60);
+    const totalSecs = Math.round((minutes / miles) * 60);
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}/mi`;
   };
 

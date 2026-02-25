@@ -10,15 +10,17 @@ import SwiftUI
 
 // MARK: - Training Phase
 
-/// Three-phase marathon periodization: Base (20%), Specific (70%), Taper (10%)
+/// Four-phase periodization: Base (10%), Support (40%), Specific (40%), Taper (10%)
 enum CanovaTrainingPhase: String, Codable, CaseIterable {
     case base = "base"
+    case support = "support"
     case specific = "specific"
     case taper = "taper"
 
     var displayName: String {
         switch self {
         case .base: return "Base Phase"
+        case .support: return "Support Phase"
         case .specific: return "Specific Phase"
         case .taper: return "Taper Phase"
         }
@@ -28,8 +30,10 @@ enum CanovaTrainingPhase: String, Codable, CaseIterable {
         switch self {
         case .base:
             return "Building aerobic foundation with easy volume and progression runs"
+        case .support:
+            return "Race-supportive work at 90% and 110% of race pace, building the ladder of support"
         case .specific:
-            return "Race-specific workouts including tempo, intervals, and long runs with MP work"
+            return "Race-specific workouts at 95-105% of race pace including tempo, intervals, and MP long runs"
         case .taper:
             return "Reducing volume while maintaining intensity for race readiness"
         }
@@ -38,6 +42,7 @@ enum CanovaTrainingPhase: String, Codable, CaseIterable {
     var icon: String {
         switch self {
         case .base: return "figure.run"
+        case .support: return "arrow.up.right"
         case .specific: return "chart.line.uptrend.xyaxis"
         case .taper: return "target"
         }
@@ -46,21 +51,25 @@ enum CanovaTrainingPhase: String, Codable, CaseIterable {
     var color: Color {
         switch self {
         case .base: return Color.drip.positive
+        case .support: return Color.drip.tired
         case .specific: return Color.drip.coral
         case .taper: return Color.drip.energized
         }
     }
 
     /// Determine phase based on week number and total weeks
-    /// Distribution: Base 20%, Specific 70%, Taper 10%
+    /// Distribution: Base 10%, Support 40%, Specific 40%, Taper 10%
     static func fromWeeksOut(_ weeksOut: Int, totalWeeks: Int) -> CanovaTrainingPhase {
         let taperWeeks = max(1, Int(Double(totalWeeks) * 0.10))
-        let baseWeeks = max(2, Int(Double(totalWeeks) * 0.20))
+        let baseWeeks = max(1, Int(Double(totalWeeks) * 0.10))
+        let supportWeeks = max(2, Int(Double(totalWeeks) * 0.40))
 
         if weeksOut < taperWeeks {
             return .taper
         } else if weeksOut >= totalWeeks - baseWeeks {
             return .base
+        } else if weeksOut >= totalWeeks - baseWeeks - supportWeeks {
+            return .support
         } else {
             return .specific
         }
@@ -171,9 +180,161 @@ struct PaceIntensity: Codable, Equatable {
 
     /// Format pace string given race pace
     func formattedPace(forRacePace racePaceSeconds: Double) -> String {
-        let pace = paceSeconds(forRacePace: racePaceSeconds)
-        let mins = Int(pace) / 60
-        let secs = Int(pace) % 60
+        let totalSecs = Int(paceSeconds(forRacePace: racePaceSeconds).rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
+        return "\(mins):\(String(format: "%02d", secs))/mi"
+    }
+
+
+    /// Get a display label using named pace references when available
+    func displayLabel(
+        forRacePace racePaceSeconds: Double,
+        equivalentPaces: EquivalentPaces?
+    ) -> String {
+        let actualPace = paceSeconds(forRacePace: racePaceSeconds)
+
+        if let equiv = equivalentPaces,
+           let namedPace = equiv.closestNamedPace(forPaceSeconds: actualPace) {
+            return namedPace.shortName
+        }
+
+        return "\(displayPercentage) MP"
+    }
+}
+
+// MARK: - Named Pace Reference
+
+/// Named reference paces derived from a goal race performance
+enum NamedPace: String, CaseIterable {
+    case easy
+    case longRun
+    case mp
+    case hm
+    case tenK
+    case fiveK
+
+    var displayName: String {
+        switch self {
+        case .easy: return "Easy"
+        case .longRun: return "Long Run"
+        case .mp: return "Marathon Pace"
+        case .hm: return "Half Marathon Pace"
+        case .tenK: return "10K Pace"
+        case .fiveK: return "5K Pace"
+        }
+    }
+
+    var shortName: String {
+        switch self {
+        case .easy: return "Easy"
+        case .longRun: return "Long Run"
+        case .mp: return "MP"
+        case .hm: return "HM"
+        case .tenK: return "10K"
+        case .fiveK: return "5K"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .easy: return Color.drip.positive
+        case .longRun: return Color.drip.energized
+        case .mp: return Color.drip.coral
+        case .hm: return Color.drip.coralLight
+        case .tenK: return Color.drip.tired
+        case .fiveK: return Color.drip.struggling
+        }
+    }
+}
+
+// MARK: - Equivalent Paces
+
+/// Pre-computed equivalent pace values (in seconds per mile) for a given goal
+struct EquivalentPaces {
+    let goalRaceDistance: RaceDistance
+    let goalTimeSeconds: Int
+
+    /// All paces in seconds per mile
+    let mpPace: Double
+    let hmPace: Double
+    let tenKPace: Double
+    let fiveKPace: Double
+    let easyPace: Double
+    let longRunPace: Double
+
+    /// Named paces that are hidden from display and selection
+    var disabledPaces: Set<NamedPace>
+
+    init(raceDistance: RaceDistance, goalTimeSeconds: Int, disabledPaces: Set<NamedPace> = []) {
+        self.goalRaceDistance = raceDistance
+        self.goalTimeSeconds = goalTimeSeconds
+        self.disabledPaces = disabledPaces
+
+        let goalRacePace = raceDistance.racePaceSecondsPerMile(goalTimeSeconds: goalTimeSeconds)
+
+        // Compute equivalent race times using Riegel, then derive paces
+        let marathonTime = RaceDistance.marathon.equivalentTime(from: raceDistance, time: goalTimeSeconds)
+        self.mpPace = Double(marathonTime) / RaceDistance.marathon.distanceInMiles
+
+        let hmTime = RaceDistance.halfMarathon.equivalentTime(from: raceDistance, time: goalTimeSeconds)
+        self.hmPace = Double(hmTime) / RaceDistance.halfMarathon.distanceInMiles
+
+        let tenKTime = RaceDistance.tenK.equivalentTime(from: raceDistance, time: goalTimeSeconds)
+        self.tenKPace = Double(tenKTime) / RaceDistance.tenK.distanceInMiles
+
+        let fiveKTime = RaceDistance.fiveK.equivalentTime(from: raceDistance, time: goalTimeSeconds)
+        self.fiveKPace = Double(fiveKTime) / RaceDistance.fiveK.distanceInMiles
+
+        // Easy and long run derived from goal race pace + distance-specific intensity
+        self.easyPace = goalRacePace / (raceDistance.easyPaceIntensity / 100.0)
+        self.longRunPace = goalRacePace / (raceDistance.longRunPaceIntensity / 100.0)
+    }
+
+    /// All named paces ordered from slowest to fastest (excluding disabled paces)
+    var allPaces: [(NamedPace, Double)] {
+        let all: [(NamedPace, Double)] = [
+            (.easy, easyPace),
+            (.longRun, longRunPace),
+            (.mp, mpPace),
+            (.hm, hmPace),
+            (.tenK, tenKPace),
+            (.fiveK, fiveKPace),
+        ]
+        return all.filter { !disabledPaces.contains($0.0) }
+    }
+
+    /// Find the closest named pace for a given actual pace (sec/mi)
+    func closestNamedPace(forPaceSeconds paceSeconds: Double, tolerance: Double = 10.0) -> NamedPace? {
+        var closest: (NamedPace, Double)?
+        for (name, refPace) in allPaces {
+            let diff = abs(paceSeconds - refPace)
+            if diff <= tolerance {
+                if closest == nil || diff < closest!.1 {
+                    closest = (name, diff)
+                }
+            }
+        }
+        return closest?.0
+    }
+
+    /// Get pace seconds for a named pace
+    func paceSeconds(for namedPace: NamedPace) -> Double {
+        switch namedPace {
+        case .easy: return easyPace
+        case .longRun: return longRunPace
+        case .mp: return mpPace
+        case .hm: return hmPace
+        case .tenK: return tenKPace
+        case .fiveK: return fiveKPace
+        }
+    }
+
+    /// Format a pace in seconds as a min:sec/mi string
+    static func formatPace(_ seconds: Double) -> String {
+        let totalSecs = Int(seconds.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
     }
 }
@@ -190,7 +351,7 @@ struct CanovaWorkoutStep: Identifiable, Codable, Equatable {
     let notes: String?
     let order: Int
 
-    enum StepType: String, Codable {
+    enum StepType: String, Codable, CaseIterable {
         case warmup = "warmup"
         case active = "active"
         case rest = "rest"
@@ -218,7 +379,7 @@ struct CanovaWorkoutStep: Identifiable, Codable, Equatable {
         }
     }
 
-    enum DurationType: String, Codable {
+    enum DurationType: String, Codable, CaseIterable {
         case distanceKm = "distance_km"
         case distanceMiles = "distance_miles"
         case distanceMeters = "distance_meters"
@@ -232,6 +393,16 @@ struct CanovaWorkoutStep: Identifiable, Codable, Equatable {
             case .distanceMeters: return "m"
             case .timeSeconds: return ""
             case .open: return ""
+            }
+        }
+
+        var displayLabel: String {
+            switch self {
+            case .distanceKm: return "km"
+            case .distanceMiles: return "miles"
+            case .distanceMeters: return "meters"
+            case .timeSeconds: return "seconds"
+            case .open: return "open"
             }
         }
     }
@@ -265,6 +436,104 @@ struct CanovaWorkoutStep: Identifiable, Codable, Equatable {
             desc += " (\(intensity.displayPercentage))"
         }
         return desc
+    }
+
+    /// Full description with named pace labels when available
+    func fullDescription(racePaceSeconds: Double, equivalentPaces: EquivalentPaces?) -> String {
+        var desc = formattedDuration
+        if let intensity = targetPaceIntensity {
+            desc += " @ \(intensity.formattedPace(forRacePace: racePaceSeconds))"
+            let label = intensity.displayLabel(forRacePace: racePaceSeconds, equivalentPaces: equivalentPaces)
+            desc += " (\(label))"
+        }
+        return desc
+    }
+}
+
+// MARK: - Editable Workout Step
+
+/// Mutable version of CanovaWorkoutStep for editing
+struct EditableWorkoutStep: Identifiable {
+    let id: UUID
+    var stepType: CanovaWorkoutStep.StepType
+    var durationType: CanovaWorkoutStep.DurationType
+    var durationValue: Double
+    var paceSelection: PaceSelection
+    var notes: String
+    var order: Int
+
+    /// How the pace target is specified
+    enum PaceSelection: Equatable {
+        case namedPace(NamedPace)
+        case custom(Double)
+        case none
+
+        /// Convert to PaceIntensity given equivalent paces and race pace
+        func toPaceIntensity(
+            racePaceSeconds: Double,
+            equivalentPaces: EquivalentPaces
+        ) -> PaceIntensity? {
+            switch self {
+            case .namedPace(let named):
+                let targetPaceSeconds = equivalentPaces.paceSeconds(for: named)
+                let percentage = racePaceSeconds / targetPaceSeconds * 100.0
+                return PaceIntensity(percentage: percentage)
+            case .custom(let pct):
+                return PaceIntensity(percentage: pct)
+            case .none:
+                return nil
+            }
+        }
+    }
+
+    /// Initialize from an existing CanovaWorkoutStep
+    init(from step: CanovaWorkoutStep, equivalentPaces: EquivalentPaces?, racePaceSeconds: Double) {
+        self.id = step.id
+        self.stepType = step.stepType
+        self.durationType = step.durationType
+        self.durationValue = step.durationValue
+        self.order = step.order
+        self.notes = step.notes ?? ""
+
+        if let intensity = step.targetPaceIntensity, let equiv = equivalentPaces {
+            let actualPace = intensity.paceSeconds(forRacePace: racePaceSeconds)
+            if let named = equiv.closestNamedPace(forPaceSeconds: actualPace) {
+                self.paceSelection = .namedPace(named)
+            } else {
+                self.paceSelection = .custom(intensity.percentage)
+            }
+        } else if let intensity = step.targetPaceIntensity {
+            self.paceSelection = .custom(intensity.percentage)
+        } else {
+            self.paceSelection = .none
+        }
+    }
+
+    /// Initialize a new empty step
+    init(order: Int) {
+        self.id = UUID()
+        self.stepType = .active
+        self.durationType = .distanceMiles
+        self.durationValue = 1.0
+        self.paceSelection = .namedPace(.mp)
+        self.notes = ""
+        self.order = order
+    }
+
+    /// Convert back to CanovaWorkoutStep
+    func toCanovaStep(racePaceSeconds: Double, equivalentPaces: EquivalentPaces) -> CanovaWorkoutStep {
+        CanovaWorkoutStep(
+            id: id,
+            stepType: stepType,
+            durationType: durationType,
+            durationValue: durationValue,
+            targetPaceIntensity: paceSelection.toPaceIntensity(
+                racePaceSeconds: racePaceSeconds,
+                equivalentPaces: equivalentPaces
+            ),
+            notes: notes.isEmpty ? nil : notes,
+            order: order
+        )
     }
 }
 

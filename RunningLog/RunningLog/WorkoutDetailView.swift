@@ -14,6 +14,7 @@ struct WorkoutDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let workout: CanovaWorkout
     let racePaceSeconds: Double
+    var equivalentPaces: EquivalentPaces?
 
     @State private var isExporting = false
     @State private var showExportSheet = false
@@ -49,7 +50,8 @@ struct WorkoutDetailView: View {
                                         step: step,
                                         stepNumber: index + 1,
                                         totalSteps: workout.steps.count,
-                                        racePaceSeconds: racePaceSeconds
+                                        racePaceSeconds: racePaceSeconds,
+                                        equivalentPaces: equivalentPaces
                                     )
                                 }
                             }
@@ -241,6 +243,7 @@ struct WorkoutStepRow: View {
     let stepNumber: Int
     let totalSteps: Int
     let racePaceSeconds: Double
+    var equivalentPaces: EquivalentPaces?
 
     var isLast: Bool {
         stepNumber == totalSteps
@@ -293,9 +296,22 @@ struct WorkoutStepRow: View {
                             .font(.dripLabel(13))
                             .foregroundStyle(Color.drip.energized)
 
-                        Text("(\(intensity.displayPercentage) MP)")
-                            .font(.dripCaption(11))
-                            .foregroundStyle(Color.drip.textSecondary)
+                        if let equiv = equivalentPaces,
+                           let namedPace = equiv.closestNamedPace(
+                               forPaceSeconds: intensity.paceSeconds(forRacePace: racePaceSeconds)
+                           ) {
+                            Text(namedPace.shortName)
+                                .font(.dripCaption(11))
+                                .foregroundStyle(namedPace.color)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(namedPace.color.opacity(0.15))
+                                .clipShape(Capsule())
+                        } else {
+                            Text("(\(intensity.displayPercentage) MP)")
+                                .font(.dripCaption(11))
+                                .foregroundStyle(Color.drip.textSecondary)
+                        }
                     }
                 }
 

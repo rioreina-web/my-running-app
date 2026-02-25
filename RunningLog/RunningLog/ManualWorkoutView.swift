@@ -94,9 +94,9 @@ struct ManualWorkoutView: View {
 
                             // Calculated pace
                             if let distance = distanceValue, distance > 0, durationMinutes > 0 {
-                                let pace = durationMinutes / distance
-                                let paceMin = Int(pace)
-                                let paceSec = Int((pace - Double(paceMin)) * 60)
+                                let totalSecs = Int(((durationMinutes / distance) * 60).rounded())
+                                let paceMin = totalSecs / 60
+                                let paceSec = totalSecs % 60
 
                                 HStack(spacing: 6) {
                                     Image(systemName: "speedometer")

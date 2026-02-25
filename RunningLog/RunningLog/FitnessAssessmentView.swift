@@ -242,6 +242,7 @@ struct RunningHistoryStep: View {
                     if viewModel.recentInjury {
                         TextField("Describe injury (optional)", text: $viewModel.injuryDetails)
                             .font(.dripBody(14))
+                            .foregroundStyle(Color.drip.textPrimary)
                             .padding(12)
                             .background(Color.drip.cardBackground)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -854,6 +855,7 @@ struct TimeField: View {
         TextField("", value: $value, format: .number)
             .keyboardType(.numberPad)
             .multilineTextAlignment(.center)
+            .foregroundStyle(Color.drip.textPrimary)
             .frame(width: 36)
             .onChange(of: value) { _, newValue in
                 value = min(max(newValue, range.lowerBound), range.upperBound)

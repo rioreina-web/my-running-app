@@ -229,8 +229,9 @@ struct WeeklyStatsHeader: View {
 
     private func formatPace(_ pace: Double) -> String {
         guard pace > 0 else { return "--:--" }
-        let minutes = Int(pace)
-        let seconds = Int((pace - Double(minutes)) * 60)
+        let totalSeconds = Int((pace * 60).rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
 }
@@ -1040,8 +1041,9 @@ struct HeartRateGraphCard: View {
     }
 
     private func formatTime(_ seconds: Double) -> String {
-        let mins = Int(seconds) / 60
-        let secs = Int(seconds) % 60
+        let totalSecs = Int(seconds.rounded())
+        let mins = totalSecs / 60
+        let secs = totalSecs % 60
         return String(format: "%d:%02d", mins, secs)
     }
 }

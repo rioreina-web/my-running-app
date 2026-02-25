@@ -1,5 +1,6 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
+import { detectInjury, upsertInjury } from "../_shared/injuries.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -384,6 +385,39 @@ Response:
       throw new Error(`Failed to update training log: ${updateError.message}`);
     }
 
+    // Create injury record if injury detected in voice memo
+    try {
+      const { data: logData } = await supabase
+        .from("training_logs")
+        .select("user_id")
+        .eq("id", record.id)
+        .single();
+
+      // Use user_id from log, fall back to "dev-user" when auth is disabled
+      const injuryUserId = logData?.user_id || "dev-user";
+      const textToScan = `${analysis.cleaned_notes || ""} ${analysis.transcription || ""}`;
+      const detected = detectInjury(textToScan);
+
+      if (detected || analysis.mood === "injured") {
+        const injury = detected || {
+          bodyArea: "unspecified",
+          side: "unknown",
+          isResolved: false,
+          severity: 5,
+        };
+
+        await upsertInjury(supabase, injuryUserId, {
+          ...injury,
+          source: "voice_memo",
+          sourceReferenceId: record.id,
+          description: analysis.cleaned_notes?.slice(0, 200),
+        });
+      }
+    } catch (injuryError) {
+      console.error("Error creating injury record:", injuryError);
+      // Don't fail the request if injury tracking fails
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -409,7 +443,7 @@ Response:
     }
 
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: "Processing failed. Please try again." }),
       {
         status: 500,
         headers: { "Content-Type": "application/json" },

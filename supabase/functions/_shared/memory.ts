@@ -7,6 +7,7 @@
  */
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { detectInjury, upsertInjury } from "./injuries.ts";
 
 export interface UserMemory {
   id?: string;
@@ -260,6 +261,23 @@ export async function storeMemories(
         expires_at: memory.expires_at,
       });
       console.log(`Stored memory: ${memory.category} - ${memory.content}`);
+
+      // Also create/update injury record in the injuries table
+      if (memory.category === MEMORY_CATEGORIES.INJURY && memory.extracted_from) {
+        try {
+          const detected = detectInjury(memory.extracted_from);
+          if (detected) {
+            await upsertInjury(supabase, userId, {
+              ...detected,
+              source: "coaching_chat",
+              sourceReferenceId: conversationId,
+              description: memory.content,
+            });
+          }
+        } catch (injuryError) {
+          console.error("Error creating injury record from memory:", injuryError);
+        }
+      }
     }
   }
 }
@@ -382,6 +400,7 @@ export async function resolveInjury(
   userId: string,
   injuryKeyword: string
 ): Promise<void> {
+  // Resolve in user_memories
   const { data: injuries } = await supabase
     .from("user_memories")
     .select("id, content")
@@ -399,5 +418,20 @@ export async function resolveInjury(
         })
         .eq("id", injury.id);
     }
+  }
+
+  // Also resolve in injuries table
+  try {
+    await supabase
+      .from("injuries")
+      .update({
+        status: "resolved",
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("user_id", userId)
+      .ilike("body_area", `%${injuryKeyword}%`)
+      .in("status", ["active", "monitoring"]);
+  } catch (error) {
+    console.error("Error resolving injury in injuries table:", error);
   }
 }

@@ -8,8 +8,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.26.0";
 
+import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
+import { validateArrayLength, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -46,8 +50,9 @@ interface PredictionRequest {
 
 function formatPace(secondsPerMile: number): string {
   if (secondsPerMile <= 0 || secondsPerMile > 1200) return "--:--";
-  const mins = Math.floor(secondsPerMile / 60);
-  const secs = Math.round(secondsPerMile % 60);
+  const totalSecs = Math.round(secondsPerMile);
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}/mi`;
 }
 
@@ -91,8 +96,8 @@ ${workoutSummary || "No workouts"}
 VOICE TRAINING LOGS:
 ${voiceLogSummary || "No voice logs"}
 
-PREDICTION RULES (VDOT-based):
-- Use Jack Daniels VDOT methodology for equivalent race performances
+PREDICTION RULES:
+- Use equivalent race performance methodology based on aerobic capacity
 - Base predictions on HARD EFFORTS (tempo, threshold, intervals), not easy runs
 - Easy runs are 60-90 sec/mi slower than race pace - don't use them directly
 - Threshold/tempo pace ≈ 10K race pace + 10-20 seconds (about 3% slower)
@@ -108,7 +113,7 @@ Respond ONLY with this JSON (no other text):
     {"distance": "HALF", "time": "H:MM:SS", "pace": "M:SS/mi"},
     {"distance": "MARATHON", "time": "H:MM:SS", "pace": "M:SS/mi"}
   ],
-  "summary": "Include estimated VDOT and brief fitness assessment",
+  "summary": "Brief fitness assessment based on training data",
   "hardEffortCount": ${hardEfforts.length},
   "confidence": "High|Medium|Low"
 }`;
@@ -122,8 +127,25 @@ Deno.serve(async (req: Request) => {
   const startTime = Date.now();
 
   try {
+    // Verify authenticated user from JWT
+    const userId = await getAuthenticatedUser(req);
+    if (!userId) {
+      return unauthorizedResponse(corsHeaders);
+    }
+
+    // Rate limiting
+    if (isRateLimitEnabled()) {
+      const rateLimit = await checkFeatureRateLimit(userId, "predictor");
+      if (!rateLimit.allowed) {
+        return new Response(
+          JSON.stringify({ error: "Rate limit exceeded", remaining: 0, resetAt: rateLimit.resetAt.toISOString() }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const request = (await req.json()) as PredictionRequest;
-    const { workouts, voiceLogs, userId } = request;
+    const { workouts, voiceLogs } = request;
 
     if (!workouts || workouts.length === 0) {
       return new Response(
@@ -133,6 +155,19 @@ Deno.serve(async (req: Request) => {
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Input validation
+    const arrErr = validateArrayLength(workouts, "workouts", 50);
+    if (arrErr) return validationErrorResponse(arrErr, corsHeaders);
+
+    for (const w of workouts) {
+      if (w.distanceMiles < 0 || w.distanceMiles > 200) {
+        return validationErrorResponse("Workout distance must be between 0 and 200 miles", corsHeaders);
+      }
+      if (w.durationMinutes < 0 || w.durationMinutes > 1440) {
+        return validationErrorResponse("Workout duration must be between 0 and 1440 minutes", corsHeaders);
+      }
     }
 
     // Get Claude API key
@@ -205,13 +240,6 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error) {
     console.error("Prediction error:", error);
-
-    return new Response(
-      JSON.stringify({
-        error: "Failed to generate predictions",
-        details: error.message,
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return internalErrorResponse(corsHeaders);
   }
 });

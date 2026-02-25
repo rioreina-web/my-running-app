@@ -491,7 +491,10 @@ function formatTime(totalSeconds: number): string {
 /**
  * Build profile context for the AI prompt
  */
-export function buildProfileContext(profile: UserProfile): string {
+export function buildProfileContext(
+  profile: UserProfile,
+  activeInjuries?: Array<{ body_area: string; side: string; severity: number; status: string }>
+): string {
   const parts: string[] = [];
 
   if (profile.current_weekly_mileage) {
@@ -518,7 +521,17 @@ export function buildProfileContext(profile: UserProfile): string {
   if (profile.easy_pace_per_mile) {
     parts.push(`Easy pace: ${profile.easy_pace_per_mile}/mi`);
   }
-  if (profile.current_injuries && profile.current_injuries.length > 0) {
+  if (profile.tempo_pace_per_mile) {
+    parts.push(`Tempo pace: ${profile.tempo_pace_per_mile}/mi`);
+  }
+
+  // Prefer structured injuries from injuries table, fall back to JSONB
+  if (activeInjuries && activeInjuries.length > 0) {
+    const injuries = activeInjuries
+      .map((i) => `${i.side !== "unknown" ? i.side + " " : ""}${i.body_area} (severity: ${i.severity}/10, ${i.status})`)
+      .join(", ");
+    parts.push(`Active injuries: ${injuries}`);
+  } else if (profile.current_injuries && profile.current_injuries.length > 0) {
     const injuries = profile.current_injuries
       .map((i: any) => `${i.side} ${i.area} (${i.status})`)
       .join(", ");

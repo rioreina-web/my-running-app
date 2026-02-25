@@ -10,6 +10,7 @@
 		B3AF91512F258BD00065C876 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = B3AF91502F2589D80065C876 /* Supabase */; };
 		B3AF915E2F2590ED0065C876 /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = B3AF915D2F2590ED0065C876 /* PostgREST */; };
 		B3AF91602F2590F40065C876 /* Storage in Frameworks */ = {isa = PBXBuildFile; productRef = B3AF915F2F2590F40065C876 /* Storage */; };
+		B3AF91722F25A1020065C876 /* SwiftTasksVision in Frameworks */ = {isa = PBXBuildFile; productRef = B3AF91712F25A1010065C876 /* SwiftTasksVision */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 				B3AF91602F2590F40065C876 /* Storage in Frameworks */,
 				B3AF915E2F2590ED0065C876 /* PostgREST in Frameworks */,
 				B3AF91512F258BD00065C876 /* Supabase in Frameworks */,
+				B3AF91722F25A1020065C876 /* SwiftTasksVision in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,6 +87,7 @@
 				B3AF91502F2589D80065C876 /* Supabase */,
 				B3AF915D2F2590ED0065C876 /* PostgREST */,
 				B3AF915F2F2590F40065C876 /* Storage */,
+				B3AF91712F25A1010065C876 /* SwiftTasksVision */,
 			);
 			productName = RunningLog;
 			productReference = B3AF91372F2589D70065C876 /* RunningLog.app */;
@@ -116,6 +119,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B3AF914F2F2589D80065C876 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				B3AF91702F25A1000065C876 /* XCRemoteSwiftPackageReference "SwiftTasksVision" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B3AF91382F2589D70065C876 /* Products */;
@@ -379,6 +383,14 @@
 				minimumVersion = 2.0.0;
 			};
 		};
+		B3AF91702F25A1000065C876 /* XCRemoteSwiftPackageReference "SwiftTasksVision" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/paescebu/SwiftTasksVision";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.10.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -396,6 +408,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B3AF914F2F2589D80065C876 /* XCRemoteSwiftPackageReference "supabase-swift" */;
 			productName = Storage;
+		};
+		B3AF91712F25A1010065C876 /* SwiftTasksVision */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B3AF91702F25A1000065C876 /* XCRemoteSwiftPackageReference "SwiftTasksVision" */;
+			productName = SwiftTasksVision;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

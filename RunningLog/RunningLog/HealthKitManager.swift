@@ -500,8 +500,9 @@ struct MileSplit: Identifiable {
     var partialDistance: Double = 1.0 // fraction of a mile (1.0 = full mile)
 
     var formattedPace: String {
-        let minutes = Int(paceMinutes)
-        let seconds = Int((paceMinutes - Double(minutes)) * 60)
+        let totalSeconds = Int((paceMinutes * 60).rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
 
@@ -542,9 +543,10 @@ struct RunningWorkout: Identifiable, Codable {
     }
 
     var formattedDuration: String {
-        let hours = Int(durationMinutes) / 60
-        let minutes = Int(durationMinutes) % 60
-        let seconds = Int((durationMinutes - Double(Int(durationMinutes))) * 60)
+        let totalSeconds = Int((durationMinutes * 60).rounded())
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
 
         if hours > 0 {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
@@ -554,8 +556,9 @@ struct RunningWorkout: Identifiable, Codable {
     }
 
     var formattedPace: String {
-        let minutes = Int(pacePerMile)
-        let seconds = Int((pacePerMile - Double(minutes)) * 60)
+        let totalSeconds = Int((pacePerMile * 60).rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
         return String(format: "%d:%02d /mi", minutes, seconds)
     }
 

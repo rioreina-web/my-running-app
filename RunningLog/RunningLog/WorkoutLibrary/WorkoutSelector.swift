@@ -326,6 +326,8 @@ final class WorkoutSelector {
         // Bonus for phase-appropriate intensity
         if phase == .specific && template.category == .specific {
             score *= 1.3
+        } else if phase == .support && template.category == .special {
+            score *= 1.25
         } else if phase == .base && template.category == .fundamental {
             score *= 1.2
         } else if phase == .taper && template.progressionType == .static_ {

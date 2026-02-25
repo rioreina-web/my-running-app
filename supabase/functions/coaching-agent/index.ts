@@ -17,6 +17,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
+import { validateLength, validateUUID, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 
 // Import shared modules
 import { getCachedResponse, cacheResponse, isCacheEnabled } from "../_shared/cache.ts";
@@ -58,9 +59,12 @@ import {
   getMemories,
   buildMemoryContext,
 } from "../_shared/memory.ts";
+import { getActiveInjuries, buildInjuryContext } from "../_shared/injuries.ts";
+
+import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -94,12 +98,15 @@ TONE:
 - Be encouraging and positive, but also honest when needed
 - Keep responses focused and helpful (2-3 paragraphs max)
 
-PACE QUESTIONS:
-- Never show math, formulas, or calculations
-- Give direct answers: "Your easy pace should be around 8:00/mi" or "For tempo runs, aim for 7:15-7:25/mi"
-- Keep pace answers brief - just tell them what they need to know
-
-KM/MI: 3:00/km=4:50/mi, 3:30/km=5:38/mi, 4:00/km=6:26/mi
+PACE & TRAINING DATA:
+- All pace values, splits, and race predictions are PRE-COMPUTED and provided in the context below — quote them EXACTLY as given
+- NEVER calculate, estimate, or invent any pace value — the math is already done for you
+- If asked about race pace or race times, quote from "Predicted race times"
+- If asked about training/workout paces, quote from "Training pace zones"
+- If asked about splits, quote from "Pre-computed splits"
+- If asked about goal progress, quote from "Goal vs current fitness"
+- Both /mi and /km values are provided — default to /mi unless the runner asks for /km
+- Workout type mapping: Easy/Recovery→Easy zone, Long Run→Moderate zone, Steady→Steady zone, Marathon Pace→MP, Tempo/Threshold→HMP (NOT 10K), Intervals 800m+→10K pace, Short reps→5K pace
 
 COACHING APPROACH:
 - If they're tired or stressed, encourage rest - it's part of training
@@ -118,12 +125,15 @@ TONE:
 - Be encouraging and supportive throughout
 - Give clear, actionable advice they can actually follow
 
-PACE QUESTIONS:
-- Never show math, formulas, or calculations in your response
-- Give direct pace recommendations: "Your marathon pace should be around 7:45/mi"
-- Keep pace guidance clear and simple
-
-KM/MI: 3:00/km=4:50/mi, 3:30/km=5:38/mi, 4:00/km=6:26/mi
+PACE & TRAINING DATA:
+- All pace values, splits, and race predictions are PRE-COMPUTED and provided in the context below — quote them EXACTLY as given
+- NEVER calculate, estimate, or invent any pace value — the math is already done for you
+- If asked about race pace or race times, quote from "Predicted race times"
+- If asked about training/workout paces, quote from "Training pace zones"
+- If asked about splits, quote from "Pre-computed splits"
+- If asked about goal progress, quote from "Goal vs current fitness"
+- Both /mi and /km values are provided — default to /mi unless the runner asks for /km
+- Workout type mapping: Easy/Recovery→Easy zone, Long Run→Moderate zone, Steady→Steady zone, Marathon Pace→MP, Tempo/Threshold→HMP (NOT 10K), Intervals 800m+→10K pace, Short reps→5K pace
 
 COACHING APPROACH:
 - Remember what they've shared (PRs, goals, injuries) and use it naturally
@@ -218,13 +228,28 @@ Deno.serve(async (req: Request) => {
   const startTime = Date.now();
 
   try {
-    const { message, conversationId, userId } = await req.json();
+    // Verify authenticated user from JWT
+    const userId = await getAuthenticatedUser(req);
+    if (!userId) {
+      return unauthorizedResponse(corsHeaders);
+    }
+
+    const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions } = await req.json();
 
     if (!message) {
       return new Response(
         JSON.stringify({ error: "Message is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Input validation
+    const msgLengthErr = validateLength(message, "message", 2000);
+    if (msgLengthErr) return validationErrorResponse(msgLengthErr, corsHeaders);
+
+    if (conversationId) {
+      const convIdErr = validateUUID(conversationId, "conversationId");
+      if (convIdErr) return validationErrorResponse(convIdErr, corsHeaders);
     }
 
     // Initialize Supabase client
@@ -270,10 +295,23 @@ Deno.serve(async (req: Request) => {
 
     if (geminiKey) {
       try {
-        const genAI = new GoogleGenerativeAI(geminiKey);
-        const embeddingModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
-        const embeddingResult = await embeddingModel.embedContent(message);
-        queryEmbedding = embeddingResult.embedding.values;
+        const embResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${geminiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              content: { parts: [{ text: message }] },
+              outputDimensionality: 768,
+            }),
+          }
+        );
+        if (embResponse.ok) {
+          const embData = await embResponse.json();
+          queryEmbedding = embData.embedding.values;
+        } else {
+          console.error("Embedding API error:", await embResponse.text());
+        }
       } catch (embError) {
         console.error("Embedding generation failed:", embError);
       }
@@ -344,18 +382,28 @@ Deno.serve(async (req: Request) => {
     const existingMessages = conversationResult.data?.messages || [];
 
     // ========================================================================
-    // LAYER 4.25: Retrieve persistent memories from previous sessions
+    // LAYER 4.25: Retrieve persistent memories and active injuries
     // ========================================================================
     let memoriesContext = "";
+    let injuryContext = "";
+    let activeInjuries: Awaited<ReturnType<typeof getActiveInjuries>> = [];
     if (userId) {
       try {
-        const userMemories = await getMemories(supabase, userId);
+        const [userMemories, userInjuries] = await Promise.all([
+          getMemories(supabase, userId),
+          getActiveInjuries(supabase, userId),
+        ]);
         memoriesContext = buildMemoryContext(userMemories);
+        activeInjuries = userInjuries;
+        injuryContext = buildInjuryContext(userInjuries);
         if (memoriesContext) {
           console.log(`Retrieved ${userMemories.length} memories for user context`);
         }
+        if (injuryContext) {
+          console.log(`Retrieved ${userInjuries.length} active injuries for context`);
+        }
       } catch (memError) {
-        console.error("Error fetching memories:", memError);
+        console.error("Error fetching memories/injuries:", memError);
       }
     }
 
@@ -442,8 +490,8 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      // Build profile context for the AI prompt
-      profileContext = buildProfileContext(userProfile);
+      // Build profile context for the AI prompt (with structured injury data)
+      profileContext = buildProfileContext(userProfile, activeInjuries);
     }
 
     // ========================================================================
@@ -521,7 +569,9 @@ Deno.serve(async (req: Request) => {
         : "";
 
       // Coach insight: thoughtful feedback on a single workout
-      fullPrompt = `You are Coach, giving thoughtful feedback on a workout. Your coaching is influenced by Renato Canova's philosophies.
+      fullPrompt = `You are Coach, giving thoughtful feedback on a workout.
+
+IMPORTANT: Never mention specific coaching methodologies, frameworks, or coach names (e.g., Canova, VDOT, Jack Daniels) in your response. Just apply the principles naturally.
 
 Philosophy to apply:
 - Encourage running relaxed and within yourself, even on hard efforts
@@ -543,10 +593,13 @@ Question: ${message}
 
 Answer:`;
     } else {
-      // Moderate/Complex: include full context + profile + memories
+      // Moderate/Complex: include full context + profile + memories + injuries
+      const hkContext = workoutSummary ? `\n\nRecent HealthKit workouts (from Apple Watch / GPS watch):\n${workoutSummary}` : "";
+      const planContext = trainingPlanContext ? `\n\nActive Training Plan:\n${trainingPlanContext}` : "";
+      const predContext = fitnessPredictions ? `\n\nFitness Predictions:\n${fitnessPredictions}` : "";
       fullPrompt = `${systemPrompt}
 
-${trainingContext}${goalsContext}${memoriesContext}${profileContext}${conversationContext}${docsContext}
+${trainingContext}${planContext}${predContext}${goalsContext}${memoriesContext}${injuryContext}${profileContext}${hkContext}${conversationContext}${docsContext}
 
 Runner's question: ${message}
 
@@ -667,13 +720,6 @@ Coach:`;
     );
   } catch (error) {
     console.error("Coaching agent error:", error);
-
-    return new Response(
-      JSON.stringify({
-        error: "Something went wrong. Please try again.",
-        details: error.message,
-      }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return internalErrorResponse(corsHeaders);
   }
 });
