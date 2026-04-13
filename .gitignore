@@ -3,6 +3,10 @@ supabase/functions/.env.local
 .env
 .env.local
 .env*.local
+ml-service/.env
+
+# iOS secrets (populated from Secrets.xcconfig at build time)
+RunningLog/Secrets.xcconfig
 
 # macOS
 .DS_Store

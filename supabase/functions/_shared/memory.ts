@@ -30,6 +30,8 @@ export const MEMORY_CATEGORIES = {
   TRAINING: "training",  // Training history/patterns
   RACE: "race",          // Race history
   PERSONAL: "personal",  // Personal info (name, etc.)
+  AGREEMENT: "agreement", // Coaching agreements ("let's focus on...", "we agreed to...")
+  CONTEXT: "context",     // Life context affecting training (stress, travel, sleep)
 };
 
 /**
@@ -220,6 +222,52 @@ export function extractMemories(
     });
   }
 
+  // Extract coaching agreements (from both user and assistant messages)
+  const agreementPatterns = [
+    /(?:let'?s|we should|i want to|i'?d like to)\s+(focus on|work on|build|prioritize|target|stick with|commit to)\s+(.{5,80})/i,
+    /(?:we agreed|let'?s agree|the plan is|going forward)\s+(?:to\s+)?(.{5,80})/i,
+    /(?:can we|could you|please)\s+(?:keep|make sure|remind me to)\s+(.{5,80})/i,
+  ];
+
+  for (const pattern of agreementPatterns) {
+    const match = message.match(pattern);
+    if (match) {
+      const agreement = match[2] ? `${match[1]} ${match[2]}` : match[1];
+      memories.push({
+        category: MEMORY_CATEGORIES.AGREEMENT,
+        content: `Coaching agreement: ${agreement.trim()}`,
+        importance: 8,
+        extracted_from: message.slice(0, 200),
+      });
+      break;
+    }
+  }
+
+  // Extract life context that affects training
+  const contextPatterns = [
+    { regex: /(?:really|super|very|so)\s+(stressed|exhausted|tired|busy|overwhelmed)/i, template: (m: RegExpMatchArray) => `Currently ${m[1]}` },
+    { regex: /(?:not|haven'?t been|barely)\s+sleep(?:ing|t)\s*(?:well|enough|much)?/i, template: () => "Poor sleep quality" },
+    { regex: /(?:traveling|on the road|on vacation|on a trip)\s*(?:for\s+.{3,30})?/i, template: (m: RegExpMatchArray) => `Traveling: ${m[0].trim()}` },
+    { regex: /(?:new job|started a new|work has been|work is)\s+(.{3,40})/i, template: (m: RegExpMatchArray) => `Work: ${m[0].trim()}` },
+    { regex: /(?:pregnant|expecting|having a baby|new baby|newborn)/i, template: (m: RegExpMatchArray) => `Life event: ${m[0].trim()}` },
+    { regex: /(?:coming back from|returning from|just had)\s+(?:surgery|illness|covid|flu|cold)/i, template: (m: RegExpMatchArray) => `Recovery: ${m[0].trim()}` },
+    { regex: /(?:heat|humidity|altitude|cold weather|winter|summer)\s+(?:is|has been|making)/i, template: (m: RegExpMatchArray) => `Environment: ${m[0].trim().slice(0, 50)}` },
+  ];
+
+  for (const { regex, template } of contextPatterns) {
+    const match = message.match(regex);
+    if (match) {
+      memories.push({
+        category: MEMORY_CATEGORIES.CONTEXT,
+        content: template(match),
+        importance: 7,
+        expires_at: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days
+        extracted_from: message.slice(0, 200),
+      });
+      break;
+    }
+  }
+
   return memories;
 }
 
@@ -349,6 +397,12 @@ export function buildMemoryContext(memories: UserMemory[]): string {
   }
   if (grouped[MEMORY_CATEGORIES.PREFERENCE]) {
     sections.push(`Preferences: ${grouped[MEMORY_CATEGORIES.PREFERENCE].join(", ")}`);
+  }
+  if (grouped[MEMORY_CATEGORIES.AGREEMENT]) {
+    sections.push(`Coaching agreements: ${grouped[MEMORY_CATEGORIES.AGREEMENT].join("; ")}`);
+  }
+  if (grouped[MEMORY_CATEGORIES.CONTEXT]) {
+    sections.push(`Current life context: ${grouped[MEMORY_CATEGORIES.CONTEXT].join("; ")}`);
   }
 
   if (sections.length === 0) return "";

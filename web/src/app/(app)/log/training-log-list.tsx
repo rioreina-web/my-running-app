@@ -8,7 +8,7 @@ import {
   MOOD_CONFIG,
   WORKOUT_TYPE_CONFIG,
 } from "@/lib/utils";
-import type { TrainingLog } from "./page";
+import type { TrainingLog } from "@/lib/types";
 
 const WORKOUT_TYPES = [
   "easy",

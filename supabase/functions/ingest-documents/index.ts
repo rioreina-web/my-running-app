@@ -1,10 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateLength, validateEnum, internalErrorResponse } from "../_shared/validation.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+
+/** Verify the request carries the service role key (admin-only endpoint) */
+function verifyServiceRole(req: Request): boolean {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return false;
+  const token = authHeader.replace("Bearer ", "");
+  return token === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+}
 
 interface DocumentInput {
   title: string;
@@ -43,6 +48,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // Admin-only: require service role key
+    if (!verifyServiceRole(req)) {
+      return new Response(
+        JSON.stringify({ error: "Admin access required" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const body = await req.json();
 
     // Initialize clients

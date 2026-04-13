@@ -2,6 +2,11 @@
  * Rate Limiting Module
  * Uses Upstash Redis for fast, distributed rate limiting
  * Free tier: 5 questions/day, Pro: 25 questions/day
+ *
+ * Circuit breaker: after 3 consecutive Redis failures, temporarily allows
+ * requests for 60 seconds before re-testing Redis. This prevents a Redis
+ * outage from locking out all users while still failing closed under normal
+ * transient errors.
  */
 
 import { Redis } from "https://esm.sh/@upstash/redis@1.28.0";
@@ -13,6 +18,12 @@ const TIER_LIMITS: Record<string, number> = {
 };
 
 let redis: Redis | null = null;
+
+// Circuit breaker state
+let consecutiveFailures = 0;
+let circuitOpenUntil = 0;
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+const CIRCUIT_BREAKER_RESET_MS = 60_000; // 60 seconds
 
 function getRedis(): Redis | null {
   if (redis) return redis;
@@ -27,6 +38,33 @@ function getRedis(): Redis | null {
 
   redis = new Redis({ url, token });
   return redis;
+}
+
+/**
+ * Check if the circuit breaker is open (Redis recently failed repeatedly).
+ * When open, we allow requests through (degraded mode) rather than blocking everyone.
+ */
+function isCircuitOpen(): boolean {
+  if (consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+    if (Date.now() < circuitOpenUntil) {
+      return true;
+    }
+    // Reset — allow next request to test Redis
+    consecutiveFailures = 0;
+  }
+  return false;
+}
+
+function recordRedisSuccess(): void {
+  consecutiveFailures = 0;
+}
+
+function recordRedisFailure(): void {
+  consecutiveFailures++;
+  if (consecutiveFailures >= CIRCUIT_BREAKER_THRESHOLD) {
+    circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_RESET_MS;
+    console.warn(`Circuit breaker OPEN — allowing requests for ${CIRCUIT_BREAKER_RESET_MS / 1000}s while Redis recovers`);
+  }
 }
 
 export interface RateLimitResult {
@@ -52,15 +90,22 @@ export async function checkRateLimit(
   const resetAt = new Date();
   resetAt.setUTCHours(24, 0, 0, 0);
 
-  // If Redis not configured, allow all requests (for development)
+  // If Redis not configured, deny requests in production to prevent abuse
   if (!client) {
+    console.warn("Rate limit: Redis unavailable — denying request (fail-closed)");
     return {
-      allowed: true,
-      remaining: limit,
+      allowed: false,
+      remaining: 0,
       resetAt,
-      current: 0,
+      current: limit,
       limit,
     };
+  }
+
+  // Circuit breaker open — allow through in degraded mode
+  if (isCircuitOpen()) {
+    console.warn("Rate limit: circuit breaker open — allowing request (degraded mode)");
+    return { allowed: true, remaining: 1, resetAt, current: 0, limit };
   }
 
   try {
@@ -75,6 +120,8 @@ export async function checkRateLimit(
       const secondsUntilMidnight = Math.floor((resetAt.getTime() - Date.now()) / 1000);
       await client.expire(key, secondsUntilMidnight);
     }
+
+    recordRedisSuccess();
 
     const remaining = Math.max(0, limit - current);
     const allowed = current <= limit;
@@ -92,12 +139,13 @@ export async function checkRateLimit(
     };
   } catch (error) {
     console.error("Rate limit check failed:", error);
-    // On error, allow the request but log it
+    recordRedisFailure();
+    // Fail closed on transient error — deny this request
     return {
-      allowed: true,
-      remaining: limit,
+      allowed: false,
+      remaining: 0,
       resetAt,
-      current: 0,
+      current: limit,
       limit,
     };
   }
@@ -163,7 +211,14 @@ export async function checkFeatureRateLimit(
 
   const client = getRedis();
   if (!client) {
-    return { allowed: true, remaining: limit, resetAt, current: 0, limit };
+    console.warn(`Rate limit: Redis unavailable for ${feature} — denying request (fail-closed)`);
+    return { allowed: false, remaining: 0, resetAt, current: limit, limit };
+  }
+
+  // Circuit breaker open — allow through in degraded mode
+  if (isCircuitOpen()) {
+    console.warn(`Rate limit: circuit breaker open for ${feature} — allowing request (degraded mode)`);
+    return { allowed: true, remaining: 1, resetAt, current: 0, limit };
   }
 
   try {
@@ -178,6 +233,8 @@ export async function checkFeatureRateLimit(
       await client.expire(key, secondsUntilMidnight);
     }
 
+    recordRedisSuccess();
+
     const remaining = Math.max(0, limit - current);
     const allowed = current <= limit;
 
@@ -190,6 +247,7 @@ export async function checkFeatureRateLimit(
     return { allowed, remaining, resetAt, current, limit };
   } catch (error) {
     console.error(`Rate limit check failed for ${feature}:`, error);
-    return { allowed: true, remaining: limit, resetAt, current: 0, limit };
+    recordRedisFailure();
+    return { allowed: false, remaining: 0, resetAt, current: limit, limit };
   }
 }

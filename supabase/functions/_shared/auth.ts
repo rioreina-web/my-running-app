@@ -28,9 +28,7 @@ export async function getAuthenticatedUser(
   } = await supabaseClient.auth.getUser(token);
 
   if (error || !user) {
-    // Allow unauthenticated access in development (anon key)
-    // TODO: Remove this fallback when Sign In with Apple is configured
-    return "dev-user";
+    return null;
   }
 
   return user.id;

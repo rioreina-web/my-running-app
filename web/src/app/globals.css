@@ -1,31 +1,37 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* Backgrounds */
-  --color-bg-base: #0A0A0B;
-  --color-bg-card: #111111;
-  --color-bg-elevated: #1A1A1A;
+  /* Backgrounds - Warm paper tones */
+  --color-bg-base: #F5F3F0;
+  --color-bg-card: #FFFFFF;
+  --color-bg-elevated: #FAFAF8;
+  --color-bg-calendar: #E8E4DF;
 
-  /* Coral accent */
-  --color-coral: #FF4D00;
-  --color-coral-light: #FF6B33;
-  --color-coral-dark: #CC3D00;
+  /* Accent - Burnt orange editorial */
+  --color-coral: #D4592A;
+  --color-coral-light: #E8764A;
+  --color-coral-dark: #B84420;
 
-  /* Mood colors */
-  --color-mood-energized: #4AFF6B;
-  --color-mood-positive: #6BFFA3;
-  --color-mood-neutral: #888888;
-  --color-mood-tired: #FFB74A;
-  --color-mood-struggling: #FF6B4A;
-  --color-mood-injured: #FF4A6B;
+  /* Mood colors - Muted editorial tones */
+  --color-mood-energized: #2D8A4E;
+  --color-mood-positive: #4A9E6B;
+  --color-mood-neutral: #9B9590;
+  --color-mood-tired: #C4873A;
+  --color-mood-struggling: #C45A3A;
+  --color-mood-injured: #B83A4A;
+  --color-mood-speed: #6B4A8A;
 
-  /* Text */
-  --color-text-primary: #FAFAFA;
-  --color-text-secondary: #888888;
-  --color-text-tertiary: #555555;
+  /* Text - Rich editorial contrast */
+  --color-text-primary: #1A1815;
+  --color-text-secondary: #6B6560;
+  --color-text-tertiary: #9B9590;
+
+  /* Utility */
+  --color-divider: #E8E4E0;
+  --color-success: #2D8A4E;
 
   /* Fonts */
-  --font-display: var(--font-bebas-neue), "Impact", sans-serif;
+  --font-display: var(--font-playfair-display), "Georgia", serif;
   --font-mono: var(--font-jetbrains-mono), "Courier New", monospace;
   --font-body: var(--font-dm-sans), "Helvetica Neue", sans-serif;
 }
@@ -44,7 +50,7 @@ body {
   background: var(--color-bg-base);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-bg-elevated);
+  background: var(--color-divider);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {

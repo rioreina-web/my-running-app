@@ -14,10 +14,7 @@ import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.
 import { validateUUID, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 import { compressTrainingContext, estimateTokens } from "../_shared/context.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 interface AnalysisRequest {
   analysisId: string;
@@ -93,28 +90,20 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Fetch the biomechanics analysis record
-    // When userId is "dev-user" (auth fallback), find by ID only since the
-    // stored user_id won't match the fallback value.
-    let analysisQuery = supabase
+    // Fetch the biomechanics analysis record — always enforce user_id ownership
+    const { data: analysis, error: analysisError } = await supabase
       .from("biomechanics_analyses")
       .select("*")
-      .eq("id", analysisId);
-
-    if (userId !== "dev-user") {
-      analysisQuery = analysisQuery.eq("user_id", userId);
-    }
-
-    const { data: analysis, error: analysisError } = await analysisQuery.single();
+      .eq("id", analysisId)
+      .eq("user_id", userId)
+      .single();
 
     if (analysisError || !analysis) {
       console.error("Analysis lookup failed:", analysisError?.message, "userId:", userId, "analysisId:", analysisId);
       return validationErrorResponse("Analysis not found", corsHeaders);
     }
 
-    // Use the actual user_id from the analysis record for context queries
-    // (handles "dev-user" auth fallback correctly)
-    const actualUserId = analysis.user_id || userId;
+    const actualUserId = userId;
 
     // Fetch context in parallel
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -207,6 +196,8 @@ Deno.serve(async (req: Request) => {
     const trainingContext = compressTrainingContext(logsResult.data || []);
 
     const prompt = `You are a sports biomechanics analyst providing educational analysis of running form based on smartphone-based 3D pose estimation.
+
+PACE DIRECTION: In running, LOWER pace number = FASTER. 5:00/mi is fast, 9:00/mi is slow. "Too fast" means a LOWER number than prescribed. "Too slow" means a HIGHER number. Running slower than easy pace on recovery days is good.
 
 IMPORTANT DISCLAIMERS:
 - This analysis is for educational purposes only, NOT a clinical assessment

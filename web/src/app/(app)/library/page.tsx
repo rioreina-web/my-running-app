@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/ui/section-header";
 
 interface ContentItem {
   id: string;
@@ -55,9 +57,9 @@ export default async function ContentLibraryPage({
   });
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-3xl tracking-wider text-text-primary">
-        CONTENT LIBRARY
+    <div className="mx-auto max-w-5xl space-y-8">
+      <h1 className="font-display text-3xl text-text-primary">
+        Content Library
       </h1>
 
       {/* Category filter */}
@@ -65,7 +67,9 @@ export default async function ContentLibraryPage({
         {CATEGORIES.map((cat) => (
           <a
             key={cat.key}
-            href={cat.key === "all" ? "/library" : `/library?category=${cat.key}`}
+            href={
+              cat.key === "all" ? "/library" : `/library?category=${cat.key}`
+            }
             className={`whitespace-nowrap rounded-full px-4 py-1.5 font-mono text-xs transition-colors ${
               activeCategory === cat.key
                 ? "bg-coral text-white"
@@ -78,44 +82,44 @@ export default async function ContentLibraryPage({
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-xl border border-bg-elevated bg-bg-card p-12 text-center text-sm text-text-tertiary">
-          No content available in this category yet.
-        </div>
+        <Card>
+          <p className="py-8 text-center text-sm italic text-text-tertiary">
+            No content available in this category yet.
+          </p>
+        </Card>
       ) : (
         <div className="space-y-8">
           {/* Featured */}
           {featured && (
             <div>
-              <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-                FEATURED
-              </h2>
-              <FeaturedCard item={featured} />
+              <SectionHeader title="Featured" />
+              <div className="mt-4">
+                <FeaturedCard item={featured} />
+              </div>
             </div>
           )}
 
           {/* Content grid */}
-          {activeCategory === "all" ? (
-            // Group view
-            Object.entries(grouped).map(([cat, catItems]) => (
-              <div key={cat}>
-                <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-                  {cat.toUpperCase()} ({catItems.length})
-                </h2>
+          {activeCategory === "all"
+            ? Object.entries(grouped).map(([cat, catItems]) => (
+                <div key={cat}>
+                  <SectionHeader
+                    title={`${cat} (${catItems.length})`}
+                  />
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {catItems.map((item) => (
+                      <VideoCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                </div>
+              ))
+            : rest.length > 0 && (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {catItems.map((item) => (
+                  {rest.map((item) => (
                     <VideoCard key={item.id} item={item} />
                   ))}
                 </div>
-              </div>
-            ))
-          ) : (
-            // Flat list for single category
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {rest.map((item) => (
-                <VideoCard key={item.id} item={item} />
-              ))}
-            </div>
-          )}
+              )}
         </div>
       )}
     </div>
@@ -124,8 +128,8 @@ export default async function ContentLibraryPage({
 
 function FeaturedCard({ item }: { item: ContentItem }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-coral/30 bg-bg-card">
-      <div className="relative aspect-video bg-bg-elevated">
+    <Card padding="sm" accent className="overflow-hidden">
+      <div className="relative aspect-video bg-bg-elevated rounded-lg overflow-hidden">
         {item.thumbnail_url ? (
           <img
             src={item.thumbnail_url}
@@ -146,22 +150,24 @@ function FeaturedCard({ item }: { item: ContentItem }) {
           FEATURED
         </span>
       </div>
-      <div className="p-4">
-        <h3 className="font-medium text-text-primary">{item.title}</h3>
+      <div className="p-3">
+        <h3 className="font-display text-lg text-text-primary">
+          {item.title}
+        </h3>
         {item.description && (
           <p className="mt-1 text-sm text-text-secondary line-clamp-2">
             {item.description}
           </p>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
 function VideoCard({ item }: { item: ContentItem }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-bg-elevated bg-bg-card transition-colors hover:border-coral/30">
-      <div className="relative aspect-video bg-bg-elevated">
+    <Card padding="sm" className="overflow-hidden">
+      <div className="relative aspect-video bg-bg-elevated rounded-lg overflow-hidden">
         {item.thumbnail_url ? (
           <img
             src={item.thumbnail_url}
@@ -179,7 +185,7 @@ function VideoCard({ item }: { item: ContentItem }) {
           </span>
         )}
       </div>
-      <div className="p-3">
+      <div className="p-2">
         <h3 className="text-sm font-medium text-text-primary">{item.title}</h3>
         {item.description && (
           <p className="mt-1 text-xs text-text-secondary line-clamp-2">
@@ -187,7 +193,7 @@ function VideoCard({ item }: { item: ContentItem }) {
           </p>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 

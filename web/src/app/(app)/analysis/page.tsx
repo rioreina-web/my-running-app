@@ -1,33 +1,63 @@
-import { createClient } from "@/lib/supabase/server";
-import { MOOD_CONFIG, WORKOUT_TYPE_CONFIG } from "@/lib/utils";
+import { createClient, getUserId } from "@/lib/supabase/server";
+import { WORKOUT_TYPE_CONFIG } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/ui/section-header";
+import { EditorialDivider } from "@/components/ui/editorial-divider";
+import {
+  NarrativeStat,
+  StatValue,
+  StatLabel,
+  StatAccent,
+} from "@/components/ui/narrative-stat";
+import dynamic from "next/dynamic";
+import type { TrainingLog } from "@/lib/types";
+import { WeeklyReportSection } from "./weekly-report-section";
 
-interface TrainingLog {
-  workout_date: string | null;
-  created_at: string;
-  workout_distance_miles: number | null;
-  workout_duration_minutes: number | null;
-  workout_type: string | null;
-  mood: string | null;
-}
+const MileageChart = dynamic(() =>
+  import("@/components/charts/mileage-chart").then((m) => m.MileageChart)
+);
+const PaceTrendChart = dynamic(() =>
+  import("@/components/charts/pace-trend-chart").then((m) => m.PaceTrendChart)
+);
+const WorkoutTypeDonut = dynamic(() =>
+  import("@/components/charts/workout-type-donut").then((m) => m.WorkoutTypeDonut)
+);
+const MoodHeatmap = dynamic(() =>
+  import("@/components/charts/mood-heatmap").then((m) => m.MoodHeatmap)
+);
+const MoodDistributionChart = dynamic(() =>
+  import("@/components/charts/mood-distribution-chart").then((m) => m.MoodDistributionChart)
+);
+const TrainingLoadGauge = dynamic(() =>
+  import("@/components/charts/training-load-gauge").then((m) => m.TrainingLoadGauge)
+);
+const RunFrequencyChart = dynamic(() =>
+  import("@/components/charts/run-frequency-chart").then((m) => m.RunFrequencyChart)
+);
 
 export default async function AnalysisPage() {
   const supabase = await createClient();
 
-  const thirtyDaysAgo = new Date(
-    Date.now() - 30 * 24 * 60 * 60 * 1000
+  const ninetyDaysAgo = new Date(
+    Date.now() - 90 * 24 * 60 * 60 * 1000
   ).toISOString();
 
+  const userId = await getUserId();
   const { data } = await supabase
     .from("training_logs")
     .select(
       "workout_date, created_at, workout_distance_miles, workout_duration_minutes, workout_type, mood"
     )
-    .gte("created_at", thirtyDaysAgo)
+    .eq("user_id", userId || "")
+    .gte("created_at", ninetyDaysAgo)
     .order("created_at", { ascending: true });
 
-  const logs: TrainingLog[] = data || [];
+  const logs = (data || []) as Pick<
+    TrainingLog,
+    "workout_date" | "created_at" | "workout_distance_miles" | "workout_duration_minutes" | "workout_type" | "mood"
+  >[];
 
-  // Stats
+  // Totals
   const totalMiles = logs.reduce(
     (sum, l) => sum + (l.workout_distance_miles || 0),
     0
@@ -39,6 +69,7 @@ export default async function AnalysisPage() {
     (sum, l) => sum + (l.workout_duration_minutes || 0),
     0
   );
+  const avgDist = totalRuns > 0 ? totalMiles / totalRuns : 0;
 
   // Avg pace
   const paceLogs = logs.filter(
@@ -58,171 +89,226 @@ export default async function AnalysisPage() {
         .padStart(2, "0")}`
     : "--";
 
-  // Workout type breakdown
+  // Weekly mileage (12 weeks) → MileageChart
+  const weeklyMileage: { label: string; miles: number }[] = [];
+  for (let i = 11; i >= 0; i--) {
+    const wStart = new Date(Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+    const wEnd = new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000);
+    const wLogs = logs.filter((l) => {
+      const d = new Date(l.workout_date || l.created_at);
+      return d >= wStart && d < wEnd;
+    });
+    weeklyMileage.push({
+      label: wStart.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      miles: wLogs.reduce(
+        (sum, l) => sum + (l.workout_distance_miles || 0),
+        0
+      ),
+    });
+  }
+
+  // Pace trend → PaceTrendChart
+  const paceData = paceLogs.map((l) => {
+    const d = new Date(l.workout_date || l.created_at);
+    return {
+      label: d.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      pace: l.workout_duration_minutes! / l.workout_distance_miles!,
+    };
+  });
+
+  // Workout type breakdown → WorkoutTypeDonut
   const typeCounts: Record<string, number> = {};
   logs.forEach((l) => {
     const t = l.workout_type || "other";
     typeCounts[t] = (typeCounts[t] || 0) + 1;
   });
+  const workoutTypeData = Object.entries(typeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([type, count]) => ({
+      type,
+      count,
+      label: (WORKOUT_TYPE_CONFIG[type] || WORKOUT_TYPE_CONFIG.other).label,
+    }));
 
-  // Mood breakdown
-  const moodCounts: Record<string, number> = {};
+  // Run frequency by day of week → RunFrequencyChart
+  const dayOfWeekCounts = [0, 0, 0, 0, 0, 0, 0];
   logs.forEach((l) => {
-    if (l.mood) moodCounts[l.mood] = (moodCounts[l.mood] || 0) + 1;
-  });
-
-  // Weekly mileage (last 4 weeks)
-  const weeklyMileage: { label: string; miles: number }[] = [];
-  for (let i = 3; i >= 0; i--) {
-    const weekStart = new Date(
-      Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000
-    );
-    const weekEnd = new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000);
-    const weekLogs = logs.filter((l) => {
+    if (l.workout_distance_miles && l.workout_distance_miles > 0) {
       const d = new Date(l.workout_date || l.created_at);
-      return d >= weekStart && d < weekEnd;
+      dayOfWeekCounts[d.getDay()]++;
+    }
+  });
+  const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const runFrequencyData = DAY_LABELS.map((label, i) => ({
+    label,
+    runs: dayOfWeekCounts[i],
+  }));
+
+  // Mood heatmap → MoodHeatmap
+  const moodData = logs.map((l) => ({
+    date: l.workout_date || l.created_at.split("T")[0],
+    mood: l.mood,
+  }));
+
+  // Mood distribution by week → MoodDistributionChart
+  const moodWeeklyData: {
+    label: string;
+    energized: number;
+    positive: number;
+    neutral: number;
+    tired: number;
+    struggling: number;
+    injured: number;
+  }[] = [];
+  for (let i = 11; i >= 0; i--) {
+    const wStart = new Date(Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+    const wEnd = new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000);
+    const wLogs = logs.filter((l) => {
+      const d = new Date(l.workout_date || l.created_at);
+      return d >= wStart && d < wEnd;
     });
-    const miles = weekLogs.reduce(
-      (sum, l) => sum + (l.workout_distance_miles || 0),
-      0
-    );
-    weeklyMileage.push({
-      label: weekStart.toLocaleDateString("en-US", {
+    const week = {
+      label: wStart.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
       }),
-      miles,
+      energized: 0,
+      positive: 0,
+      neutral: 0,
+      tired: 0,
+      struggling: 0,
+      injured: 0,
+    };
+    wLogs.forEach((l) => {
+      if (l.mood && l.mood in week) {
+        (week as unknown as Record<string, number>)[l.mood]++;
+      }
     });
+    moodWeeklyData.push(week);
   }
 
-  const maxWeekMiles = Math.max(...weeklyMileage.map((w) => w.miles), 1);
+  // ACWR → TrainingLoadGauge
+  const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const acuteMiles = logs
+    .filter((l) => new Date(l.workout_date || l.created_at) >= weekAgoDate)
+    .reduce((sum, l) => sum + (l.workout_distance_miles || 0), 0);
+  const chronicWeeks = [0, 1, 2, 3].map((i) => {
+    const wStart = new Date(Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+    const wEnd = new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000);
+    return logs
+      .filter((l) => {
+        const d = new Date(l.workout_date || l.created_at);
+        return d >= wStart && d < wEnd;
+      })
+      .reduce((sum, l) => sum + (l.workout_distance_miles || 0), 0);
+  });
+  const chronicAvg = chronicWeeks.reduce((a, b) => a + b, 0) / 4;
+  const acwr = chronicAvg > 0 ? acuteMiles / chronicAvg : 1;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-3xl tracking-wider text-text-primary">
-        ANALYSIS
-      </h1>
-
-      <p className="font-mono text-xs text-text-tertiary">Last 30 days</p>
-
-      {/* Summary stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard value={totalMiles.toFixed(1)} label="total miles" />
-        <StatCard value={totalRuns.toString()} label="runs" />
-        <StatCard value={avgPaceFormatted} label="avg pace" />
-        <StatCard
-          value={totalMinutes > 0 ? `${Math.round(totalMinutes / 60)}h` : "--"}
-          label="total time"
-        />
+    <div className="mx-auto max-w-5xl space-y-8">
+      <div>
+        <h1 className="font-display text-3xl text-text-primary">
+          Training Analysis
+        </h1>
+        <p className="mt-1 font-body text-sm text-text-tertiary">
+          Last 90 days
+        </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Weekly mileage bar chart */}
-        <div className="rounded-xl border border-bg-elevated bg-bg-card p-4">
-          <h2 className="mb-4 font-mono text-xs tracking-widest text-text-tertiary">
-            WEEKLY MILEAGE
-          </h2>
-          <div className="flex items-end gap-3 h-32">
-            {weeklyMileage.map((week, i) => (
-              <div key={i} className="flex flex-1 flex-col items-center gap-1">
-                <span className="font-mono text-[10px] text-text-secondary">
-                  {week.miles > 0 ? week.miles.toFixed(1) : ""}
-                </span>
-                <div
-                  className="w-full rounded-t bg-coral"
-                  style={{
-                    height: `${Math.max(
-                      (week.miles / maxWeekMiles) * 100,
-                      2
-                    )}%`,
-                  }}
-                />
-                <span className="font-mono text-[10px] text-text-tertiary">
-                  {week.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {/* AI Weekly Coaching Report */}
+      <WeeklyReportSection />
 
-        {/* Workout type breakdown */}
-        <div className="rounded-xl border border-bg-elevated bg-bg-card p-4">
-          <h2 className="mb-4 font-mono text-xs tracking-widest text-text-tertiary">
-            WORKOUT TYPES
-          </h2>
-          <div className="space-y-2">
-            {Object.entries(typeCounts)
-              .sort((a, b) => b[1] - a[1])
-              .map(([type, count]) => {
-                const config =
-                  WORKOUT_TYPE_CONFIG[type] || WORKOUT_TYPE_CONFIG.other;
-                return (
-                  <div key={type} className="flex items-center gap-3">
-                    <span
-                      className={`w-16 rounded-md px-2 py-0.5 text-center text-xs font-medium ${config.colorClass}`}
-                    >
-                      {config.label}
-                    </span>
-                    <div className="flex-1">
-                      <div
-                        className="h-2 rounded-full bg-coral/60"
-                        style={{
-                          width: `${
-                            (count / Math.max(...Object.values(typeCounts))) *
-                            100
-                          }%`,
-                        }}
-                      />
-                    </div>
-                    <span className="w-6 text-right font-mono text-xs text-text-secondary">
-                      {count}
-                    </span>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
+      <EditorialDivider />
 
-        {/* Mood breakdown */}
-        <div className="rounded-xl border border-bg-elevated bg-bg-card p-4 md:col-span-2">
-          <h2 className="mb-4 font-mono text-xs tracking-widest text-text-tertiary">
-            MOOD DISTRIBUTION
-          </h2>
-          <div className="flex flex-wrap gap-4">
-            {Object.entries(moodCounts)
-              .sort((a, b) => b[1] - a[1])
-              .map(([mood, count]) => {
-                const config = MOOD_CONFIG[mood];
-                if (!config) return null;
-                return (
-                  <div
-                    key={mood}
-                    className="flex items-center gap-2 rounded-lg bg-bg-elevated px-3 py-2"
-                  >
-                    <span className={config.colorClass}>{config.emoji}</span>
-                    <span className="text-sm text-text-secondary">
-                      {config.label}
-                    </span>
-                    <span className="font-mono text-xs text-text-tertiary">
-                      {count}
-                    </span>
-                  </div>
-                );
-              })}
-          </div>
+      {/* Narrative lede */}
+      {totalRuns > 0 && (
+        <NarrativeStat>
+          <StatValue>{totalMiles.toFixed(1)}</StatValue>{" "}
+          <StatLabel>miles across </StatLabel>
+          <StatAccent size="sm">{totalRuns}</StatAccent>{" "}
+          <StatLabel>
+            run{totalRuns !== 1 ? "s" : ""} — averaging{" "}
+          </StatLabel>
+          <StatAccent size="sm">{avgDist.toFixed(1)}</StatAccent>{" "}
+          <StatLabel>mi at </StatLabel>
+          <StatAccent size="sm">{avgPaceFormatted}</StatAccent>
+          <StatLabel>/mi.</StatLabel>
+        </NarrativeStat>
+      )}
+
+      <EditorialDivider />
+
+      {/* Mileage Chart */}
+      <div>
+        <SectionHeader title="Weekly Mileage" />
+        <Card className="mt-4">
+          <MileageChart data={weeklyMileage} height={200} />
+        </Card>
+      </div>
+
+      <EditorialDivider />
+
+      {/* Pace + Run Frequency */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div>
+          <SectionHeader title="Pace Trend" />
+          <Card className="mt-4">
+            <PaceTrendChart data={paceData} height={200} />
+          </Card>
+        </div>
+        <div>
+          <SectionHeader title="Run Frequency" />
+          <Card className="mt-4">
+            <RunFrequencyChart data={runFrequencyData} height={200} />
+          </Card>
         </div>
       </div>
-    </div>
-  );
-}
 
-function StatCard({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="rounded-xl border border-bg-elevated bg-bg-card p-4 text-center">
-      <div className="font-mono text-2xl font-bold text-text-primary">
-        {value}
+      <EditorialDivider />
+
+      {/* Workout Types + Training Load */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <div>
+          <SectionHeader title="Workout Types" />
+          <Card className="mt-4">
+            <WorkoutTypeDonut data={workoutTypeData} height={200} />
+          </Card>
+        </div>
+        <div>
+          <SectionHeader title="Training Load" />
+          <Card className="mt-4 flex items-center justify-center">
+            <TrainingLoadGauge acwr={acwr} />
+          </Card>
+        </div>
       </div>
-      <div className="mt-1 text-xs text-text-tertiary">{label}</div>
+
+      <EditorialDivider />
+
+      {/* Mood */}
+      <div>
+        <SectionHeader title="Mood" />
+        <div className="mt-4 grid gap-6 md:grid-cols-2">
+          <Card>
+            <h3 className="mb-3 font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
+              Heatmap
+            </h3>
+            <MoodHeatmap data={moodData} weeks={12} />
+          </Card>
+          <Card>
+            <h3 className="mb-3 font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
+              Distribution
+            </h3>
+            <MoodDistributionChart data={moodWeeklyData} height={180} />
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

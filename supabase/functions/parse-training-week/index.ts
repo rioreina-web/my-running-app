@@ -3,10 +3,7 @@ import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
 import { validateLength, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 interface ParseRequest {
   text: string;
@@ -20,6 +17,8 @@ interface ImportedStep {
   durationType: string;
   durationValue: number;
   pacePercentage: number | null;
+  paceSecondsPerKm: number | null;
+  paceSecondsPerKmHigh: number | null;
   notes: string | null;
 }
 
@@ -72,7 +71,20 @@ ${raceContext}
 IMPORTANT RULES:
 - All days Monday through Sunday (dayOfWeek 1-7) MUST be included in the output
 - Days not mentioned in the text should be inferred as "rest" days
-- All distances should be in miles
+- Keep distances in their ORIGINAL units. Use "distance_km" for kilometers, "distance_miles" for miles, "distance_meters" for meters
+- For rest days, set workoutType to "rest", name to "Rest Day", steps to empty array
+
+DOUBLES (TWO RUNS IN ONE DAY):
+- When a day has two separate sessions (e.g., "AM: 1hr easy / PM: tempo"), create TWO entries for that dayOfWeek with different "session" numbers:
+  * First run: "session": 1
+  * Second run: "session": 2
+- The dayOfWeek is the SAME for both entries — only session differs
+- Each session gets its own steps, totalDistanceMiles, and estimatedDurationMinutes
+- Look for patterns like: "2x1hr", "AM/PM", slashes separating runs, "+" joining different sessions
+- If a day has multiple lines of workouts, each line is a separate session
+- For single-session days, set "session": 1
+
+PACE DATA:
 - pacePercentage is relative to goal race pace (100% = race pace). Common values:
   - 65-70% = recovery/easy
   - 70-75% = easy/aerobic
@@ -81,7 +93,13 @@ IMPORTANT RULES:
   - 95-100% = race pace
   - 100-105% = VO2max/5K pace
   - 105-115% = speed/sprint
-- For rest days, set workoutType to "rest", name to "Rest Day", steps to empty array
+- ALSO provide actual pace values when the training plan specifies them:
+  * paceSecondsPerKm: pace in total seconds per km (fast/low end). e.g., 3:06/km = 186
+  * paceSecondsPerKmHigh: pace in seconds per km (slow/high end for ranges). null if no range.
+  * For named paces without specific values (e.g., "easy", "tempo"), set paceSecondsPerKm to null
+  * For specific pace values (e.g., "3:06-3:10/km", "at 5:30 pace"), ALWAYS set paceSecondsPerKm
+- For pace ranges like "3:06-3:10/km": paceSecondsPerKm=186, paceSecondsPerKmHigh=190
+- "X'YY" or "X'YY pace" nearly always means per-km pace unless explicitly stated as per-mile
 
 OUTPUT FORMAT - respond ONLY with this JSON structure, no other text:
 {
@@ -89,6 +107,7 @@ OUTPUT FORMAT - respond ONLY with this JSON structure, no other text:
     {
       "dayOfWeek": 1,
       "dayName": "Monday",
+      "session": 1,
       "workoutType": "easy|tempo|intervals|long_run|recovery|rest|strides|progression",
       "name": "Human-readable workout name",
       "description": "Brief description of the workout",
@@ -97,9 +116,11 @@ OUTPUT FORMAT - respond ONLY with this JSON structure, no other text:
       "steps": [
         {
           "stepType": "warmup|active|rest|recovery|cooldown",
-          "durationType": "distance_miles|distance_meters|time_seconds",
+          "durationType": "distance_km|distance_miles|distance_meters|time_seconds",
           "durationValue": 2.0,
           "pacePercentage": 70,
+          "paceSecondsPerKm": null,
+          "paceSecondsPerKmHigh": null,
           "notes": "Easy warm-up"
         }
       ]
@@ -187,18 +208,40 @@ Deno.serve(async (req: Request) => {
     const geminiKey = Deno.env.get("GEMINI_API_KEY")!;
     const genAI = new GoogleGenerativeAI(geminiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       generationConfig: {
-        maxOutputTokens: 4096,
+        maxOutputTokens: 16384,
         temperature: 0.3,
+        responseMimeType: "application/json",
+        thinkingConfig: { thinkingBudget: 0 },
       },
     });
 
     const prompt = buildPrompt(body.text, body.goalTimeSeconds, body.raceDistance, body.currentPhase);
-    const result = await model.generateContent(prompt);
+
+    let result;
+    try {
+      result = await model.generateContent(prompt);
+    } catch (genError: any) {
+      console.error("Gemini API error:", genError?.message || genError);
+      return new Response(
+        JSON.stringify({ error: "AI service error. Please try again." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const responseText = result.response.text();
 
-    const parsed = parseJsonResponse(responseText) as { days: ImportedDay[] };
+    let parsed: any;
+    try {
+      parsed = parseJsonResponse(responseText);
+    } catch {
+      console.error("JSON parse failed. First 300 chars:", responseText.substring(0, 300));
+      return new Response(
+        JSON.stringify({ error: "Could not parse AI response. Please try again." }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!parsed.days || !Array.isArray(parsed.days)) {
       return new Response(
@@ -208,9 +251,10 @@ Deno.serve(async (req: Request) => {
     }
 
     // Validate and normalize
-    const days = parsed.days.map((day) => ({
+    const days = parsed.days.map((day: any) => ({
       dayOfWeek: day.dayOfWeek,
       dayName: day.dayName || ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][day.dayOfWeek - 1],
+      session: day.session ?? 1,
       workoutType: day.workoutType || "rest",
       name: day.name || "Rest Day",
       description: day.description || "",
@@ -221,18 +265,21 @@ Deno.serve(async (req: Request) => {
         durationType: step.durationType || "distance_miles",
         durationValue: step.durationValue || 0,
         pacePercentage: step.pacePercentage ?? null,
+        paceSecondsPerKm: step.paceSecondsPerKm ?? null,
+        paceSecondsPerKmHigh: step.paceSecondsPerKmHigh ?? null,
         notes: step.notes ?? null,
         order: idx,
       })),
     }));
 
-    // Ensure all 7 days present
+    // Ensure all 7 days present (only add rest if NO entry exists for that day)
     for (let d = 1; d <= 7; d++) {
-      if (!days.find((day) => day.dayOfWeek === d)) {
+      if (!days.find((day: any) => day.dayOfWeek === d)) {
         const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
         days.push({
           dayOfWeek: d,
           dayName: dayNames[d - 1],
+          session: 1,
           workoutType: "rest",
           name: "Rest Day",
           description: "Recovery day",
@@ -243,7 +290,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    days.sort((a, b) => a.dayOfWeek - b.dayOfWeek);
+    days.sort((a: any, b: any) => a.dayOfWeek - b.dayOfWeek || (a.session || 1) - (b.session || 1));
 
     return new Response(
       JSON.stringify({ days }),

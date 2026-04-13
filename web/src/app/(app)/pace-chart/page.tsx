@@ -1,4 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/ui/section-header";
+import { EditorialDivider } from "@/components/ui/editorial-divider";
 
 interface UserProfile {
   easy_pace_min: number | null;
@@ -30,29 +33,25 @@ export default async function PaceChartPage() {
     .single();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-3xl tracking-wider text-text-primary">
-        PACE CHART
-      </h1>
+    <div className="mx-auto max-w-3xl space-y-8">
+      <h1 className="font-display text-3xl text-text-primary">Pace Chart</h1>
 
       {/* Training zones */}
       <div>
-        <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-          TRAINING ZONES
-        </h2>
-        <div className="rounded-xl border border-bg-elevated bg-bg-card">
+        <SectionHeader title="Training Zones" />
+        <Card className="mt-4" padding="sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-bg-elevated">
-                <th className="px-4 py-3 text-left font-mono text-xs text-text-tertiary">
+              <tr className="border-b border-divider">
+                <th className="px-4 py-3 text-left font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
                   Zone
                 </th>
-                <th className="px-4 py-3 text-right font-mono text-xs text-text-tertiary">
+                <th className="px-4 py-3 text-right font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
                   Pace /mi
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-bg-elevated">
+            <tbody className="divide-y divide-divider">
               <PaceRow
                 zone="Easy"
                 pace={
@@ -84,30 +83,30 @@ export default async function PaceChartPage() {
               />
             </tbody>
           </table>
-        </div>
+        </Card>
       </div>
+
+      <EditorialDivider />
 
       {/* Race equivalents */}
       <div>
-        <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-          RACE PACE EQUIVALENTS
-        </h2>
-        <div className="rounded-xl border border-bg-elevated bg-bg-card">
+        <SectionHeader title="Race Pace Equivalents" />
+        <Card className="mt-4" padding="sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-bg-elevated">
-                <th className="px-4 py-3 text-left font-mono text-xs text-text-tertiary">
+              <tr className="border-b border-divider">
+                <th className="px-4 py-3 text-left font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
                   Distance
                 </th>
-                <th className="px-4 py-3 text-right font-mono text-xs text-text-tertiary">
+                <th className="px-4 py-3 text-right font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
                   Pace /mi
                 </th>
-                <th className="px-4 py-3 text-right font-mono text-xs text-text-tertiary">
+                <th className="px-4 py-3 text-right font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
                   Est. Time
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-bg-elevated">
+            <tbody className="divide-y divide-divider">
               {RACE_DISTANCES.map((race) => {
                 const paceKey = `race_${race.label
                   .toLowerCase()
@@ -133,14 +132,17 @@ export default async function PaceChartPage() {
               })}
             </tbody>
           </table>
-        </div>
+        </Card>
       </div>
 
-      {/* Pace calculator */}
-      <div className="rounded-xl border border-bg-elevated bg-bg-card p-4 text-center text-sm text-text-tertiary">
-        Pace data is pulled from your user profile. Update paces in the iOS app
-        or Settings.
-      </div>
+      <EditorialDivider />
+
+      <Card>
+        <p className="text-center text-sm italic text-text-tertiary">
+          Pace data is pulled from your user profile. Update paces in the iOS
+          app or Settings.
+        </p>
+      </Card>
     </div>
   );
 }

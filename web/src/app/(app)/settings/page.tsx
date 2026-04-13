@@ -1,4 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/ui/section-header";
+import { EditorialDivider } from "@/components/ui/editorial-divider";
 
 interface UserProfile {
   display_name: string | null;
@@ -17,17 +20,13 @@ export default async function SettingsPage() {
     .single();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-3xl tracking-wider text-text-primary">
-        SETTINGS
-      </h1>
+    <div className="mx-auto max-w-3xl space-y-8">
+      <h1 className="font-display text-3xl text-text-primary">Settings</h1>
 
       {/* Profile */}
       <div>
-        <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-          PROFILE
-        </h2>
-        <div className="rounded-xl border border-bg-elevated bg-bg-card p-4 space-y-3">
+        <SectionHeader title="Profile" />
+        <Card className="mt-4 space-y-0">
           <SettingRow
             label="Name"
             value={profile?.display_name || "Not set"}
@@ -44,33 +43,50 @@ export default async function SettingsPage() {
                 month: "long",
                 year: "numeric",
               })}
+              last
             />
           )}
-        </div>
+        </Card>
       </div>
+
+      <EditorialDivider />
 
       {/* App info */}
       <div>
-        <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-          APP INFO
-        </h2>
-        <div className="rounded-xl border border-bg-elevated bg-bg-card p-4 space-y-3">
+        <SectionHeader title="App Info" />
+        <Card className="mt-4 space-y-0">
           <SettingRow label="Version" value="Web 1.0.0" />
-          <SettingRow label="Platform" value="Next.js + Supabase" />
-        </div>
+          <SettingRow label="Platform" value="Next.js + Supabase" last />
+        </Card>
       </div>
 
-      <div className="rounded-xl border border-bg-elevated bg-bg-card p-4 text-center text-xs text-text-tertiary">
-        Profile editing is managed through the iOS app. Changes sync
-        automatically.
-      </div>
+      <EditorialDivider />
+
+      <Card>
+        <p className="text-center text-sm italic text-text-tertiary">
+          Profile editing is managed through the iOS app. Changes sync
+          automatically.
+        </p>
+      </Card>
     </div>
   );
 }
 
-function SettingRow({ label, value }: { label: string; value: string }) {
+function SettingRow({
+  label,
+  value,
+  last = false,
+}: {
+  label: string;
+  value: string;
+  last?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between border-b border-bg-elevated pb-3 last:border-0 last:pb-0">
+    <div
+      className={`flex items-center justify-between py-3 px-1 ${
+        last ? "" : "border-b border-divider"
+      }`}
+    >
       <span className="text-sm text-text-secondary">{label}</span>
       <span className="font-mono text-sm text-text-primary">{value}</span>
     </div>

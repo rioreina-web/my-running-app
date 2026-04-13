@@ -310,10 +310,26 @@ export interface ExtendedTrainingLog {
   workout_date?: string;
   workout_distance_miles?: number;
   workout_duration_minutes?: number;
+  workout_type?: string;
+  workout_pace_per_mile?: string;
+  pace_segments?: Array<{ effort: string; distance_miles: number; pace_per_mile: string; duration_seconds: number; avg_heart_rate?: number }>;
   mood?: string;
   cleaned_notes?: string;
   notes?: string;
   coach_insight?: string;
+  workout_notes?: string;
+  extracted_data?: {
+    rpe?: number;
+    weather?: string;
+    terrain?: string;
+    running_partners?: string[];
+    shoe?: string;
+    sleep_quality?: string;
+    fueling?: string;
+    effort_level?: string;
+    injured_area?: string;
+    [key: string]: unknown;
+  };
 }
 
 /**
@@ -442,19 +458,58 @@ export function buildTrainingPeriodDocument(
       return `${weekLabel}: ${data.runs} runs, ${data.miles.toFixed(1)} mi, avg pace ${avgPaceWeek}, moods: ${moodSummary}${noteSummary}`;
     });
 
-  // Get all recent notes with full detail
+  // Get all recent runs with full detail — workout type, pace segments, notes
   const recentNotes = sortedRecent
     .map((log) => {
       const logDate = new Date(log.workout_date || log.created_at);
+      const dayName = logDate.toLocaleDateString("en-US", { weekday: "short" });
+      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const distance = log.workout_distance_miles ? `${log.workout_distance_miles.toFixed(1)}mi` : "";
+      const type = log.workout_type ? log.workout_type.replace(/_/g, " ").toUpperCase() : "";
+      const pace = (log.workout_distance_miles && log.workout_duration_minutes)
+        ? formatPace(log.workout_duration_minutes, log.workout_distance_miles)
+        : "";
+      const mood = log.mood ? ` [${log.mood}]` : "";
+
+      let line = `${dayName} ${dateStr}: ${type} ${distance} @ ${pace}${mood}`;
+
+      // Add pace segment detail for workouts that have it
+      if (log.pace_segments && log.pace_segments.length > 1) {
+        const segs = log.pace_segments
+          .map(s => `${s.effort}: ${s.distance_miles.toFixed(1)}mi @ ${s.pace_per_mile}/mi${s.avg_heart_rate ? ` ${s.avg_heart_rate}bpm` : ""}`)
+          .join(", ");
+        line += ` | Segments: ${segs}`;
+      }
+
+      // Voice memo context (what the runner said + what the AI extracted)
       const note = log.cleaned_notes || log.notes;
       if (note && note.trim()) {
-        const dayName = logDate.toLocaleDateString("en-US", { weekday: "short" });
-        const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        const distance = log.workout_distance_miles ? `${log.workout_distance_miles.toFixed(1)} mi` : "";
-        const mood = log.mood ? ` [${log.mood}]` : "";
-        return `${dayName} ${dateStr}: ${distance}${mood} - ${note.trim()}`;
+        line += `\n  Voice: "${note.trim().slice(0, 150)}"`;
       }
-      return null;
+
+      // Coach insight from the voice memo
+      if (log.coach_insight && log.coach_insight.trim()) {
+        line += `\n  Coach noted: ${log.coach_insight.trim().slice(0, 120)}`;
+      }
+
+      // Extracted context (RPE, weather, terrain, partners, sleep, fueling)
+      if (log.extracted_data) {
+        const ctx: string[] = [];
+        if (log.extracted_data.rpe) ctx.push(`RPE: ${log.extracted_data.rpe}/10`);
+        if (log.extracted_data.weather) ctx.push(`Weather: ${log.extracted_data.weather}`);
+        if (log.extracted_data.terrain) ctx.push(`Terrain: ${log.extracted_data.terrain}`);
+        if (log.extracted_data.running_partners?.length) ctx.push(`With: ${log.extracted_data.running_partners.join(", ")}`);
+        if (log.extracted_data.sleep_quality) ctx.push(`Sleep: ${log.extracted_data.sleep_quality}`);
+        if (log.extracted_data.fueling) ctx.push(`Fueling: ${log.extracted_data.fueling}`);
+        if (log.extracted_data.effort_level) ctx.push(`Effort: ${log.extracted_data.effort_level}`);
+        if (log.extracted_data.shoe) ctx.push(`Shoes: ${log.extracted_data.shoe}`);
+        if (log.extracted_data.injured_area) ctx.push(`Injury: ${log.extracted_data.injured_area}`);
+        if (ctx.length > 0) {
+          line += `\n  Context: ${ctx.join(" | ")}`;
+        }
+      }
+
+      return (distance || note) ? line : null;
     })
     .filter(Boolean);
 

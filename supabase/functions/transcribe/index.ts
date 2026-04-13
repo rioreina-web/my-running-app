@@ -19,9 +19,24 @@ import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.
 import { validateFileSize, validateMimeType, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const PROVIDER_TIMEOUT_MS = 30_000; // 30 seconds per provider
+
+/** Run a promise with a timeout — rejects if not resolved within `ms`. */
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: number | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 interface TranscriptionResult {
   text: string;
@@ -232,21 +247,34 @@ Deno.serve(async (req: Request) => {
     console.log(`Transcribing audio: ${audioFile.name}, size: ${audioFile.size} bytes, type: ${audioFile.type}`);
 
     // Try transcription providers in order of cost (cheapest first)
+    // Each provider has a 30s timeout to prevent hanging the entire chain
     let result: TranscriptionResult | null = null;
 
     // 1. Try Groq Whisper (cheapest)
-    result = await transcribeWithGroq(audioFile);
+    try {
+      result = await withTimeout(transcribeWithGroq(audioFile), PROVIDER_TIMEOUT_MS, "Groq");
+    } catch (e) {
+      console.warn(`Groq timed out or failed: ${e}`);
+    }
 
     // 2. Fallback to OpenAI Whisper
     if (!result) {
       console.log("Falling back to OpenAI Whisper");
-      result = await transcribeWithOpenAI(audioFile);
+      try {
+        result = await withTimeout(transcribeWithOpenAI(audioFile), PROVIDER_TIMEOUT_MS, "OpenAI");
+      } catch (e) {
+        console.warn(`OpenAI timed out or failed: ${e}`);
+      }
     }
 
     // 3. Last resort: Gemini
     if (!result) {
       console.log("Falling back to Gemini");
-      result = await transcribeWithGemini(audioFile);
+      try {
+        result = await withTimeout(transcribeWithGemini(audioFile), PROVIDER_TIMEOUT_MS, "Gemini");
+      } catch (e) {
+        console.warn(`Gemini timed out or failed: ${e}`);
+      }
     }
 
     if (!result) {

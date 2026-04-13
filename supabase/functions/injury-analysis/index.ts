@@ -17,10 +17,7 @@ import { compressTrainingContext, compressGoalsContext, estimateTokens } from ".
 import { getMemories, buildMemoryContext } from "../_shared/memory.ts";
 import { buildInjuryContext } from "../_shared/injuries.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 interface AnalysisRequest {
   injuryId: string;
@@ -95,11 +92,12 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Phase 1: Fetch injury record (need user_id for subsequent queries)
+    // Phase 1: Fetch injury record — scoped to authenticated user to prevent IDOR
     const { data: injury, error: injuryError } = await supabase
       .from("injuries")
       .select("*")
       .eq("id", injuryId)
+      .eq("user_id", userId)
       .single();
 
     if (injuryError || !injury) {
@@ -205,7 +203,7 @@ Provide a comprehensive analysis in this exact JSON format:
 {
   "likely_causes": ["cause1", "cause2", "cause3"],
   "risk_level": "low" | "moderate" | "high",
-  "recovery_timeline_days": { "optimistic": number, "typical": number, "conservative": number },
+  "recovery_timeline_days": { "optimistic": number, "typical": number, "conservative": number },  // SEE RECOVERY TIMELINE RULES BELOW
   "recommended_actions": [
     { "action": "string", "priority": "immediate" | "short_term" | "ongoing", "detail": "string" }
   ],
@@ -219,6 +217,12 @@ Provide a comprehensive analysis in this exact JSON format:
   "summary": "2-3 sentence overview of the injury assessment",
   "disclaimer": "This is educational information only, not a medical diagnosis. Please consult a healthcare professional for proper evaluation and treatment."
 }
+
+RECOVERY TIMELINE RULES:
+- All timelines are rough estimates only and vary significantly by individual.
+- For bone injuries (stress fractures, stress reactions): ALWAYS use conservative end. Minimum 6 weeks for stress reactions, 8-12 weeks for stress fractures. Never give optimistic timelines shorter than 4 weeks for bone injuries.
+- Always state that timelines require professional evaluation and may be longer than estimated.
+- Do not give specific return-to-run dates. Give ranges and emphasize gradual return protocols.
 
 Respond ONLY with the JSON object, no markdown code blocks, no extra text.`;
 
@@ -260,14 +264,15 @@ Respond ONLY with the JSON object, no markdown code blocks, no extra text.`;
       }
     }
 
-    // Store analysis result on the injury record
+    // Store analysis result on the injury record (scoped to user)
     await supabase
       .from("injuries")
       .update({
         ai_analysis: analysis,
         ai_analysis_at: new Date().toISOString(),
       })
-      .eq("id", injuryId);
+      .eq("id", injuryId)
+      .eq("user_id", userId);
 
     // Log usage
     await supabase.from("usage_tracking").insert({

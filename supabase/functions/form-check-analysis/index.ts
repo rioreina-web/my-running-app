@@ -15,7 +15,7 @@ import { validateUUID, validationErrorResponse, internalErrorResponse } from "..
 import { compressTrainingContext, estimateTokens } from "../_shared/context.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -62,6 +62,23 @@ function formatPoseData(data: any): string {
     } else {
       lines.push(`- Knee range of motion: symmetric between left and right`);
     }
+  }
+
+  // Ankle ROM asymmetry
+  if (data.ankle_rom_left != null && data.ankle_rom_right != null) {
+    const diff = Math.abs(data.ankle_rom_left - data.ankle_rom_right);
+    const side = data.ankle_rom_left > data.ankle_rom_right ? "left" : "right";
+    if (diff > 8) {
+      lines.push(`- Ankle range of motion: significant asymmetry (${side} side notably larger — may indicate restricted dorsiflexion on the other side)`);
+    } else if (diff > 5) {
+      lines.push(`- Ankle range of motion: moderate asymmetry (${side} side somewhat larger)`);
+    } else if (diff > 2) {
+      lines.push(`- Ankle range of motion: mild asymmetry (${side} side slightly larger)`);
+    } else {
+      lines.push(`- Ankle range of motion: symmetric between left and right`);
+    }
+  } else if (data.ankle_rom_left != null || data.ankle_rom_right != null) {
+    lines.push(`- Ankle range of motion: only one side measured`);
   }
 
   // Shoulder rotation
@@ -178,17 +195,17 @@ function formatPoseData(data: any): string {
     }
   }
 
-  // Arm swing symmetry
+  // Arm swing symmetry (elbow flexion angle ROM, frontal/posterior views only)
+  // Measured from elbow angle oscillation range — more stable than wrist tracking.
+  // Only computed when both arms are fully visible (not from side views).
   if (data.arm_swing_symmetry != null) {
     const sym = data.arm_swing_symmetry;
-    if (sym > 0.85) {
-      lines.push(`- Arm swing: symmetric`);
-    } else if (sym > 0.7) {
-      lines.push(`- Arm swing: slightly asymmetric`);
-    } else if (sym > 0.5) {
-      lines.push(`- Arm swing: moderately asymmetric`);
+    if (sym > 0.75) {
+      lines.push(`- Arm swing: symmetric (measured from elbow flexion, both arms visible)`);
+    } else if (sym > 0.55) {
+      lines.push(`- Arm swing: mild asymmetry in elbow drive (one arm has less range of motion than the other)`);
     } else {
-      lines.push(`- Arm swing: significantly asymmetric (one arm swinging much more than the other)`);
+      lines.push(`- Arm swing: notable asymmetry in elbow drive (significant difference in arm swing range — may indicate shoulder restriction, habit, or compensation)`);
     }
   }
 
@@ -218,7 +235,100 @@ function formatPoseData(data: any): string {
     }
   }
 
+  // Cadence
+  if (data.cadence != null) {
+    const spm = data.cadence;
+    if (spm < 160) {
+      lines.push(`- Cadence: ~${Math.round(spm)} steps/min (low — increasing cadence by 5-10% can reduce overstriding and impact forces)`);
+    } else if (spm < 170) {
+      lines.push(`- Cadence: ~${Math.round(spm)} steps/min (moderate — within normal recreational range)`);
+    } else if (spm <= 185) {
+      lines.push(`- Cadence: ~${Math.round(spm)} steps/min (good — efficient range for most runners)`);
+    } else {
+      lines.push(`- Cadence: ~${Math.round(spm)} steps/min (high — typical for faster paces or shorter runners)`);
+    }
+  }
+
+  // Fatigue indicators (early vs late form comparison)
+  if (data.trunk_lean_early != null && data.trunk_lean_late != null) {
+    const diff = data.trunk_lean_late - data.trunk_lean_early;
+    if (diff > 3) {
+      lines.push(`- Fatigue signal: trunk lean increased notably from start to end of clip (posture breaking down)`);
+    } else if (diff > 1.5) {
+      lines.push(`- Fatigue signal: slight increase in trunk lean from start to end (mild form degradation)`);
+    } else if (diff < -1.5) {
+      lines.push(`- Form consistency: trunk lean actually decreased over the clip (warming up or adjusting)`);
+    } else {
+      lines.push(`- Form consistency: trunk posture stayed consistent throughout the clip`);
+    }
+  }
+  if (data.cadence_early != null && data.cadence_late != null) {
+    const diff = data.cadence_late - data.cadence_early;
+    if (diff < -8) {
+      lines.push(`- Fatigue signal: cadence dropped notably from start to end (~${Math.round(data.cadence_early)} → ~${Math.round(data.cadence_late)} spm)`);
+    } else if (diff < -4) {
+      lines.push(`- Fatigue signal: slight cadence drop from start to end`);
+    }
+    // Don't report increases — that's usually just warming up
+  }
+
   return lines.length > 0 ? lines.join("\n") : "Limited pose data available.";
+}
+
+/**
+ * Build a list of which metric areas were actually measured (non-null).
+ * Used to constrain the AI to only discuss areas with data.
+ */
+function measuredAreas(data: any): string[] {
+  if (!data) return [];
+  const areas: string[] = [];
+  if (data.hip_rom_left != null || data.hip_rom_right != null) areas.push("Hip Stability");
+  if (data.knee_rom_left != null || data.knee_rom_right != null) areas.push("Knee Tracking");
+  if (data.ankle_rom_left != null || data.ankle_rom_right != null) areas.push("Ankle Mobility");
+  if (data.foot_strike_pattern != null) areas.push("Foot Strike");
+  if (data.avg_trunk_lean != null || data.head_forward_offset != null) areas.push("Posture");
+  if (data.arm_swing_symmetry != null) areas.push("Arm Swing");
+  if (data.shank_at_contact_left != null || data.shank_at_contact_right != null) areas.push("Overstriding");
+  if (data.gct_left != null || data.gct_right != null || data.gct_balance != null) areas.push("Ground Contact");
+  if (data.cadence != null) areas.push("Cadence");
+  if (data.trunk_lean_early != null && data.trunk_lean_late != null) areas.push("Fatigue");
+  return areas;
+}
+
+/**
+ * Validate that pose data contains enough meaningful running metrics.
+ * Returns { valid: true } or { valid: false, reason: string }.
+ */
+function validatePoseData(data: any): { valid: boolean; reason?: string } {
+  if (!data || typeof data !== "object") {
+    return { valid: false, reason: "No pose data was extracted from the video." };
+  }
+
+  // Count how many meaningful running metrics are present (non-null)
+  const runningFields = [
+    data.hip_rom_left, data.hip_rom_right,
+    data.knee_rom_left, data.knee_rom_right,
+    data.ankle_rom_left, data.ankle_rom_right,
+    data.shoulder_rotation_rom,
+    data.foot_strike_pattern,
+    data.gct_left, data.gct_right, data.gct_balance,
+    data.avg_trunk_lean,
+    data.shank_at_contact_left, data.shank_at_contact_right,
+    data.arm_swing_symmetry,
+    data.head_forward_offset,
+  ];
+
+  const presentCount = runningFields.filter((v) => v != null).length;
+
+  // Need at least 3 meaningful metrics to be a plausible running analysis
+  if (presentCount < 3) {
+    return {
+      valid: false,
+      reason: `Only ${presentCount} running metrics detected. This doesn't appear to be a running video — please record yourself running with your full body visible.`,
+    };
+  }
+
+  return { valid: true };
 }
 
 Deno.serve(async (req: Request) => {
@@ -252,17 +362,13 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Fetch the form check record
-    let checkQuery = supabase
+    // Fetch the form check record — always enforce user_id ownership
+    const { data: formCheck, error: checkError } = await supabase
       .from("form_checks")
       .select("*")
-      .eq("id", formCheckId);
-
-    if (userId !== "dev-user") {
-      checkQuery = checkQuery.eq("user_id", userId);
-    }
-
-    const { data: formCheck, error: checkError } = await checkQuery.single();
+      .eq("id", formCheckId)
+      .eq("user_id", userId)
+      .single();
 
     if (checkError || !formCheck) {
       console.error("Form check lookup failed:", checkError?.message, "userId:", userId, "formCheckId:", formCheckId);
@@ -271,6 +377,37 @@ Deno.serve(async (req: Request) => {
 
     const actualUserId = formCheck.user_id || userId;
     const poseData = formCheck.pose_data_summary;
+
+    // Validate pose data represents actual running
+    const validation = validatePoseData(poseData);
+    if (!validation.valid) {
+      // Mark the form check as failed
+      await supabase
+        .from("form_checks")
+        .update({
+          status: "failed",
+          ai_analysis: {
+            overall_assessment: validation.reason,
+            not_running: true,
+            disclaimer: "This form check uses smartphone-based pose estimation for qualitative assessment only.",
+          },
+          ai_analysis_at: new Date().toISOString(),
+        })
+        .eq("id", formCheckId);
+
+      return new Response(
+        JSON.stringify({
+          analysis: {
+            overall_assessment: validation.reason,
+            not_running: true,
+            disclaimer: "This form check uses smartphone-based pose estimation for qualitative assessment only.",
+          },
+          formCheckId,
+          processingTime: Date.now() - startTime,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Fetch context in parallel
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -335,12 +472,28 @@ Deno.serve(async (req: Request) => {
 
     const prompt = `You are a running form coach providing qualitative feedback based on smartphone pose estimation data. Your goal is to help runners understand their form patterns in plain language.
 
+CRITICAL — VALIDITY CHECK:
+Before analyzing, assess whether the pose data below actually represents human running gait. If the observations are inconsistent with bipedal running (e.g., missing most key metrics, nonsensical patterns, data that looks like an animal or non-running activity), respond ONLY with this JSON:
+{"overall_assessment": "This doesn't appear to be a running video. Please record yourself running with your full body visible in the frame.", "not_running": true, "disclaimer": "This form check uses smartphone-based pose estimation for qualitative assessment only."}
+
 IMPORTANT:
 - This is a QUALITATIVE assessment — do NOT cite specific degree measurements or numbers
 - Describe observations in plain language ("noticeable hip drop", "slight forward lean", "symmetric stride")
 - Focus on patterns, not precision — smartphone pose estimation has limited accuracy
 - Be encouraging where form looks good, constructive where improvement is needed
 - This is for educational purposes only, NOT a clinical assessment
+- ONLY create findings for areas listed in MEASURED AREAS below. Do NOT speculate about areas where no data was collected.
+- Ground contact time is estimated from ankle position (no force plate), so treat it as approximate — note this if you discuss GCT.
+
+PRIORITY AREAS (discuss these first and in most detail):
+1. Landing mechanics / overstriding (shank angle) — the #1 injury risk factor
+2. Foot strike pattern — how the foot contacts the ground
+3. Asymmetries — any L/R differences in hip, knee, ankle, or shoulder indicate compensation or weakness
+4. Posture — trunk lean and head position affect efficiency and injury risk
+Other areas (cadence, arm swing, ground contact) are secondary.
+
+MEASURED AREAS (only discuss these):
+${measuredAreas(poseData).join(", ") || "None"}
 
 POSE OBSERVATIONS:
 ${formatPoseData(poseData)}
@@ -363,7 +516,7 @@ Analyze the running form and provide your assessment in this exact JSON format:
   "overall_assessment": "<2-3 sentence narrative summary of what you see in the runner's form — be specific and conversational>",
   "findings": [
     {
-      "area": "<one of: Posture, Arm Swing, Foot Strike, Hip Stability, Knee Tracking, Overstriding, Ground Contact>",
+      "area": "<one of: Overstriding, Foot Strike, Hip Stability, Knee Tracking, Ankle Mobility, Posture, Arm Swing, Ground Contact, Cadence>",
       "observation": "<what you observe, in plain language>",
       "severity": "good" | "watch" | "concern",
       "detail": "<why this matters for running efficiency or injury risk>"
@@ -388,8 +541,7 @@ Analyze the running form and provide your assessment in this exact JSON format:
   "disclaimer": "This form check uses smartphone-based pose estimation for qualitative assessment only. It is not a clinical gait analysis. Consult a qualified professional for medical or biomechanical concerns."
 }
 
-Include 3-6 findings covering the main areas. Include 0-3 compensation patterns (only if the data suggests linked issues). Include 2-4 drill recommendations.
-If data for an area is missing, skip that finding rather than speculating.
+Include findings ONLY for the measured areas listed above — do not fabricate findings for unmeasured areas. Include 0-3 compensation patterns (only if measured data suggests linked issues). Include 2-4 drill recommendations relevant to the observed issues.
 Respond ONLY with the JSON object, no markdown code blocks, no extra text.`;
 
     const geminiKey = Deno.env.get("GEMINI_API_KEY")!;
@@ -426,10 +578,14 @@ Respond ONLY with the JSON object, no markdown code blocks, no extra text.`;
       }
     }
 
+    // If AI flagged this as not a running video, mark as failed
+    const status = aiAnalysis.not_running ? "failed" : "completed";
+
     // Store analysis result
     await supabase
       .from("form_checks")
       .update({
+        status,
         ai_analysis: aiAnalysis,
         ai_analysis_at: new Date().toISOString(),
       })

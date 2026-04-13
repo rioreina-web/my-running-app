@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Serif Font Packs — Running App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300&family=Crimson+Pro:ital,wght@0,400;0,600;0,700;0,800;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #111110;
+    --surface: #1a1a18;
+    --surface-raised: #222220;
+    --border: #2a2a28;
+    --text-primary: #e8e4dc;
+    --text-secondary: #9a9590;
+    --text-tertiary: #5a5550;
+    --accent-warm: #c4956a;
+    --accent-coral: #d4735e;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ── Page Header ── */
+  .page-header {
+    padding: 80px 40px 60px;
+    max-width: 1100px;
+    margin: 0 auto;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .page-header .label {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent-warm);
+    margin-bottom: 24px;
+  }
+
+  .page-header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 900;
+    color: var(--text-primary);
+    line-height: 1.1;
+    margin-bottom: 16px;
+  }
+
+  .page-header p {
+    font-family: 'Lora', serif;
+    font-size: 17px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    max-width: 540px;
+  }
+
+  /* ── Pack Sections ── */
+  .packs-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 40px 120px;
+  }
+
+  .pack-section {
+    padding: 72px 0;
+    border-bottom: 1px solid var(--border);
+    opacity: 0;
+    transform: translateY(30px);
+    animation: fadeUp 0.6s ease forwards;
+  }
+
+  .pack-section:nth-child(1) { animation-delay: 0.1s; }
+  .pack-section:nth-child(2) { animation-delay: 0.2s; }
+  .pack-section:nth-child(3) { animation-delay: 0.3s; }
+  .pack-section:nth-child(4) { animation-delay: 0.4s; }
+  .pack-section:nth-child(5) { animation-delay: 0.5s; }
+
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Pack Header ── */
+  .pack-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .pack-number {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+  }
+
+  .pack-fonts {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.5px;
+    background: var(--surface);
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  /* ── Sample Card ── */
+  .sample-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 0.3s ease;
+  }
+
+  .sample-card:hover {
+    border-color: #3a3a38;
+  }
+
+  .card-inner {
+    padding: 44px 48px;
+  }
+
+  /* ── Typography Samples ── */
+  .sample-packname {
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+  }
+
+  .sample-subtitle {
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent-warm);
+    margin-bottom: 36px;
+  }
+
+  .workout-block {
+    background: var(--surface-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px 32px;
+    margin-bottom: 28px;
+  }
+
+  .workout-day {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent-coral);
+    margin-bottom: 8px;
+  }
+
+  .workout-title {
+    font-size: clamp(20px, 3vw, 26px);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 14px;
+    line-height: 1.25;
+  }
+
+  .workout-body {
+    font-size: 15.5px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+  }
+
+  .workout-body em {
+    color: var(--text-primary);
+    font-style: italic;
+  }
+
+  .stat-line {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+
+  .stat-item {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.3px;
+  }
+
+  .stat-item .val {
+    color: var(--text-secondary);
+    font-weight: 600;
+  }
+
+  .stat-divider {
+    color: var(--border);
+    user-select: none;
+  }
+
+  /* ── Font-specific families ── */
+
+  /* Pack 1: The Record */
+  .pack-record .sample-packname { font-family: 'Playfair Display', serif; font-weight: 900; }
+  .pack-record .sample-subtitle { font-family: 'Lora', serif; font-weight: 500; }
+  .pack-record .workout-day { font-family: 'Lora', serif; }
+  .pack-record .workout-title { font-family: 'Playfair Display', serif; font-weight: 700; }
+  .pack-record .workout-body { font-family: 'Lora', serif; }
+  .pack-record .stat-item { font-family: 'Lora', serif; }
+
+  /* Pack 2: The Broadsheet */
+  .pack-broadsheet .sample-packname { font-family: 'Libre Baskerville', serif; font-weight: 700; }
+  .pack-broadsheet .sample-subtitle { font-family: 'Source Serif 4', serif; font-weight: 400; }
+  .pack-broadsheet .workout-day { font-family: 'Source Serif 4', serif; font-weight: 600; }
+  .pack-broadsheet .workout-title { font-family: 'Libre Baskerville', serif; font-weight: 700; }
+  .pack-broadsheet .workout-body { font-family: 'Source Serif 4', serif; }
+  .pack-broadsheet .stat-item { font-family: 'Source Serif 4', serif; }
+
+  /* Pack 3: The Dispatch */
+  .pack-dispatch .sample-packname { font-family: 'Merriweather', serif; font-weight: 900; }
+  .pack-dispatch .sample-subtitle { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; font-weight: 400; }
+  .pack-dispatch .workout-day { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; }
+  .pack-dispatch .workout-title { font-family: 'Merriweather', serif; font-weight: 700; }
+  .pack-dispatch .workout-body { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; }
+  .pack-dispatch .stat-item { font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif; }
+
+  /* Pack 4: The Press */
+  .pack-press .sample-packname { font-family: 'Crimson Pro', serif; font-weight: 800; }
+  .pack-press .sample-subtitle { font-family: 'PT Serif', serif; font-weight: 400; }
+  .pack-press .workout-day { font-family: 'PT Serif', serif; font-weight: 700; }
+  .pack-press .workout-title { font-family: 'Crimson Pro', serif; font-weight: 700; }
+  .pack-press .workout-body { font-family: 'PT Serif', serif; }
+  .pack-press .stat-item { font-family: 'PT Serif', serif; }
+
+  /* Pack 5: Apple Native */
+  .pack-native .sample-packname { font-family: Georgia, 'Times New Roman', serif; font-weight: 700; }
+  .pack-native .sample-subtitle { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-weight: 500; }
+  .pack-native .workout-day { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-weight: 600; }
+  .pack-native .workout-title { font-family: Georgia, 'Times New Roman', serif; font-weight: 700; }
+  .pack-native .workout-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+  .pack-native .stat-item { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .page-header { padding: 48px 24px 40px; }
+    .packs-container { padding: 0 24px 80px; }
+    .card-inner { padding: 28px 24px; }
+    .workout-block { padding: 20px 22px; }
+    .pack-header { flex-direction: column; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <div class="label">Typography System</div>
+  <h1>Serif Font Packs</h1>
+  <p>Five journalistic type pairings for the running app — each showing the same workout content for direct comparison.</p>
+</header>
+
+<main class="packs-container">
+
+  <!-- Pack 1: The Record -->
+  <section class="pack-section pack-record">
+    <div class="pack-header">
+      <div>
+        <div class="pack-number">01 / 05</div>
+      </div>
+      <div class="pack-fonts">Playfair Display + Lora</div>
+    </div>
+    <div class="sample-card">
+      <div class="card-inner">
+        <h2 class="sample-packname">The Record</h2>
+        <p class="sample-subtitle">Week 12 — Specific Phase</p>
+        <div class="workout-block">
+          <div class="workout-day">Tuesday</div>
+          <h3 class="workout-title">8x1000m @ 3:15</h3>
+          <p class="workout-body">Build through the first 4 reps conservatively. The last 4 should feel like <em>controlled effort</em> at 107% of marathon pace. Float 400m between reps.</p>
+        </div>
+        <div class="stat-line">
+          <span class="stat-item"><span class="val">62 mi</span> volume</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">8</span> sessions</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">Peak week</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pack 2: The Broadsheet -->
+  <section class="pack-section pack-broadsheet">
+    <div class="pack-header">
+      <div>
+        <div class="pack-number">02 / 05</div>
+      </div>
+      <div class="pack-fonts">Libre Baskerville + Source Serif Pro</div>
+    </div>
+    <div class="sample-card">
+      <div class="card-inner">
+        <h2 class="sample-packname">The Broadsheet</h2>
+        <p class="sample-subtitle">Week 12 — Specific Phase</p>
+        <div class="workout-block">
+          <div class="workout-day">Tuesday</div>
+          <h3 class="workout-title">8x1000m @ 3:15</h3>
+          <p class="workout-body">Build through the first 4 reps conservatively. The last 4 should feel like <em>controlled effort</em> at 107% of marathon pace. Float 400m between reps.</p>
+        </div>
+        <div class="stat-line">
+          <span class="stat-item"><span class="val">62 mi</span> volume</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">8</span> sessions</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">Peak week</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pack 3: The Dispatch -->
+  <section class="pack-section pack-dispatch">
+    <div class="pack-header">
+      <div>
+        <div class="pack-number">03 / 05</div>
+      </div>
+      <div class="pack-fonts">Merriweather + Charter</div>
+    </div>
+    <div class="sample-card">
+      <div class="card-inner">
+        <h2 class="sample-packname">The Dispatch</h2>
+        <p class="sample-subtitle">Week 12 — Specific Phase</p>
+        <div class="workout-block">
+          <div class="workout-day">Tuesday</div>
+          <h3 class="workout-title">8x1000m @ 3:15</h3>
+          <p class="workout-body">Build through the first 4 reps conservatively. The last 4 should feel like <em>controlled effort</em> at 107% of marathon pace. Float 400m between reps.</p>
+        </div>
+        <div class="stat-line">
+          <span class="stat-item"><span class="val">62 mi</span> volume</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">8</span> sessions</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">Peak week</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pack 4: The Press -->
+  <section class="pack-section pack-press">
+    <div class="pack-header">
+      <div>
+        <div class="pack-number">04 / 05</div>
+      </div>
+      <div class="pack-fonts">Crimson Pro + PT Serif</div>
+    </div>
+    <div class="sample-card">
+      <div class="card-inner">
+        <h2 class="sample-packname">The Press</h2>
+        <p class="sample-subtitle">Week 12 — Specific Phase</p>
+        <div class="workout-block">
+          <div class="workout-day">Tuesday</div>
+          <h3 class="workout-title">8x1000m @ 3:15</h3>
+          <p class="workout-body">Build through the first 4 reps conservatively. The last 4 should feel like <em>controlled effort</em> at 107% of marathon pace. Float 400m between reps.</p>
+        </div>
+        <div class="stat-line">
+          <span class="stat-item"><span class="val">62 mi</span> volume</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">8</span> sessions</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">Peak week</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pack 5: Apple Native -->
+  <section class="pack-section pack-native">
+    <div class="pack-header">
+      <div>
+        <div class="pack-number">05 / 05</div>
+      </div>
+      <div class="pack-fonts">Georgia + System Sans-Serif</div>
+    </div>
+    <div class="sample-card">
+      <div class="card-inner">
+        <h2 class="sample-packname">Apple Native</h2>
+        <p class="sample-subtitle">Week 12 — Specific Phase</p>
+        <div class="workout-block">
+          <div class="workout-day">Tuesday</div>
+          <h3 class="workout-title">8x1000m @ 3:15</h3>
+          <p class="workout-body">Build through the first 4 reps conservatively. The last 4 should feel like <em>controlled effort</em> at 107% of marathon pace. Float 400m between reps.</p>
+        </div>
+        <div class="stat-line">
+          <span class="stat-item"><span class="val">62 mi</span> volume</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">8</span> sessions</span>
+          <span class="stat-divider">·</span>
+          <span class="stat-item"><span class="val">Peak week</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+</body>
+</html>

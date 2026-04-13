@@ -1,16 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { daysSince } from "@/lib/utils";
-
-interface Injury {
-  id: string;
-  body_area: string;
-  side: string;
-  severity: number;
-  status: string;
-  first_reported_at: string;
-  source_text: string | null;
-  ai_analysis: Record<string, unknown> | null;
-}
+import type { Injury } from "@/lib/types";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/ui/section-header";
+import { EditorialDivider } from "@/components/ui/editorial-divider";
+import { MoodBadge } from "@/components/ui/mood-badge";
+import { InjuryTimeline } from "@/components/charts/injury-timeline";
 
 export default async function InjuriesPage() {
   const supabase = await createClient();
@@ -28,23 +23,42 @@ export default async function InjuriesPage() {
   );
   const resolved = injuries.filter((i) => i.status === "resolved");
 
+  // Timeline data
+  const timelineData = injuries.map((i) => ({
+    id: i.id,
+    bodyArea: `${i.side !== "unknown" ? capitalize(i.side) + " " : ""}${capitalize(i.body_area)}`,
+    severity: i.severity,
+    startDate: i.first_reported_at,
+    status: i.status,
+  }));
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <h1 className="font-display text-3xl tracking-wider text-text-primary">
-        INJURIES
-      </h1>
+    <div className="mx-auto max-w-5xl space-y-8">
+      <h1 className="font-display text-3xl text-text-primary">Injuries</h1>
+
+      {/* Injury Timeline */}
+      {timelineData.length > 0 && (
+        <Card>
+          <h3 className="mb-3 font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
+            Timeline
+          </h3>
+          <InjuryTimeline injuries={timelineData} />
+        </Card>
+      )}
+
+      <EditorialDivider />
 
       {/* Active */}
       <div>
-        <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-          ACTIVE ({active.length})
-        </h2>
+        <SectionHeader title={`Active (${active.length})`} />
         {active.length === 0 ? (
-          <div className="rounded-xl border border-bg-elevated bg-bg-card p-8 text-center text-sm text-text-tertiary">
-            No active injuries. Keep it up!
-          </div>
+          <Card className="mt-4">
+            <p className="text-center text-sm italic text-text-tertiary">
+              No active injuries. Keep it up!
+            </p>
+          </Card>
         ) : (
-          <div className="space-y-4">
+          <div className="mt-4 space-y-4">
             {active.map((injury) => (
               <InjuryCard key={injury.id} injury={injury} />
             ))}
@@ -54,33 +68,31 @@ export default async function InjuriesPage() {
 
       {/* Resolved */}
       {resolved.length > 0 && (
-        <div>
-          <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-            RESOLVED ({resolved.length})
-          </h2>
-          <div className="space-y-2">
-            {resolved.map((injury) => (
-              <div
-                key={injury.id}
-                className="flex items-center gap-3 rounded-xl border border-bg-elevated bg-bg-card px-4 py-3 text-sm"
-              >
-                <span className="text-text-tertiary">🩹</span>
-                <span className="text-text-secondary">
-                  {injury.side !== "unknown"
-                    ? `${capitalize(injury.side)} `
-                    : ""}
-                  {capitalize(injury.body_area)}
-                </span>
-                <span className="ml-auto font-mono text-xs text-text-tertiary">
-                  {daysSince(injury.first_reported_at)} days ago
-                </span>
-                <span className="rounded-full bg-mood-positive/10 px-2 py-0.5 font-mono text-[10px] text-mood-positive">
-                  Resolved
-                </span>
-              </div>
-            ))}
+        <>
+          <EditorialDivider />
+          <div>
+            <SectionHeader title={`Resolved (${resolved.length})`} />
+            <div className="mt-4 space-y-2">
+              {resolved.map((injury) => (
+                <Card key={injury.id} padding="sm">
+                  <div className="flex items-center gap-3 text-sm">
+                    <span className="w-1 h-4 rounded-full bg-mood-positive" />
+                    <span className="text-text-secondary">
+                      {injury.side !== "unknown"
+                        ? `${capitalize(injury.side)} `
+                        : ""}
+                      {capitalize(injury.body_area)}
+                    </span>
+                    <span className="ml-auto font-mono text-xs text-text-tertiary">
+                      {daysSince(injury.first_reported_at)} days ago
+                    </span>
+                    <MoodBadge mood="positive" />
+                  </div>
+                </Card>
+              ))}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -91,12 +103,12 @@ function InjuryCard({ injury }: { injury: Injury }) {
   const analysis = injury.ai_analysis as Record<string, unknown> | null;
 
   return (
-    <div className="rounded-xl border border-mood-injured/30 bg-bg-card p-5 space-y-4">
+    <Card accent>
       {/* Header */}
       <div className="flex items-center gap-3">
-        <span className="text-lg">🩹</span>
+        <span className="w-1 h-8 rounded-full bg-mood-injured" />
         <div>
-          <div className="font-medium text-text-primary">
+          <div className="font-display text-lg text-text-primary">
             {injury.side !== "unknown"
               ? `${capitalize(injury.side)} `
               : ""}
@@ -116,7 +128,7 @@ function InjuryCard({ injury }: { injury: Injury }) {
           </div>
         </div>
         <div className="ml-auto text-right">
-          <div className="font-mono text-2xl font-bold text-text-primary">
+          <div className="font-mono text-2xl font-semibold text-text-primary">
             {injury.severity}
             <span className="text-sm text-text-tertiary">/10</span>
           </div>
@@ -128,16 +140,18 @@ function InjuryCard({ injury }: { injury: Injury }) {
 
       {/* Source text */}
       {injury.source_text && (
-        <p className="text-sm italic text-text-tertiary">
+        <p className="mt-3 text-sm italic text-text-tertiary">
           &ldquo;{injury.source_text}&rdquo;
         </p>
       )}
 
       {/* AI Analysis */}
       {analysis && Object.keys(analysis).length > 0 && (
-        <AnalysisSection analysis={analysis} />
+        <div className="mt-4">
+          <AnalysisSection analysis={analysis} />
+        </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -159,11 +173,10 @@ function AnalysisSection({
 
   return (
     <div>
-      <h3 className="mb-2 font-mono text-[10px] tracking-widest text-text-tertiary">
-        ✨ AI ANALYSIS
+      <h3 className="mb-2 font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
+        AI Analysis
       </h3>
       <div className="rounded-lg bg-bg-elevated p-4 space-y-3">
-        {/* Risk level */}
         {riskLevel && (
           <div className="flex items-center gap-2 text-sm">
             <span className="text-text-tertiary">Risk:</span>
@@ -172,8 +185,8 @@ function AnalysisSection({
                 riskLevel.toLowerCase().includes("high")
                   ? "text-mood-injured"
                   : riskLevel.toLowerCase().includes("moderate")
-                  ? "text-mood-tired"
-                  : "text-mood-positive"
+                    ? "text-mood-tired"
+                    : "text-mood-positive"
               }`}
             >
               {riskLevel.toUpperCase()}
@@ -181,14 +194,12 @@ function AnalysisSection({
           </div>
         )}
 
-        {/* Overview */}
         {overview && (
           <p className="text-sm leading-relaxed text-text-secondary">
             {overview}
           </p>
         )}
 
-        {/* Likely causes */}
         {likelyCauses && likelyCauses.length > 0 && (
           <div className="text-sm">
             <span className="text-text-tertiary">Likely causes: </span>
@@ -198,7 +209,6 @@ function AnalysisSection({
           </div>
         )}
 
-        {/* Recovery timeline */}
         {recoveryTimeline && (
           <div className="flex gap-3">
             {recoveryTimeline.best_case != null && (
@@ -228,7 +238,6 @@ function AnalysisSection({
           </div>
         )}
 
-        {/* Actions */}
         {immediateActions && immediateActions.length > 0 && (
           <div className="space-y-1">
             {immediateActions.map((action, i) => (

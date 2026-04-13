@@ -12,10 +12,7 @@ import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
 import { validateArrayLength, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 interface WorkoutData {
   date: string;

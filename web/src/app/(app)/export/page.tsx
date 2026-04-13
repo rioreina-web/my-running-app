@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/ui/section-header";
+import { EditorialDivider } from "@/components/ui/editorial-divider";
+import { DripButton } from "@/components/ui/drip-button";
 
 export default function ExportPage() {
   const [loading, setLoading] = useState(false);
@@ -40,7 +44,6 @@ export default function ExportPage() {
         return;
       }
 
-      // Build CSV
       const headers = [
         "Date",
         "Type",
@@ -66,7 +69,6 @@ export default function ExportPage() {
         "\n"
       );
 
-      // Download
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -83,22 +85,19 @@ export default function ExportPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-3xl tracking-wider text-text-primary">
-        EXPORT
-      </h1>
-
-      <p className="text-sm text-text-secondary">
-        Download your training data as CSV for analysis in Excel, Google Sheets,
-        or any other tool.
-      </p>
+    <div className="mx-auto max-w-3xl space-y-8">
+      <div>
+        <h1 className="font-display text-3xl text-text-primary">Export</h1>
+        <p className="mt-1 font-body text-sm text-text-secondary">
+          Download your training data as CSV for analysis in Excel, Google
+          Sheets, or any other tool.
+        </p>
+      </div>
 
       {/* Date range selector */}
       <div>
-        <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-          DATE RANGE
-        </h2>
-        <div className="flex gap-2">
+        <SectionHeader title="Date Range" />
+        <div className="mt-3 flex gap-2">
           {(
             [
               { key: "30", label: "30 days" },
@@ -122,20 +121,24 @@ export default function ExportPage() {
         </div>
       </div>
 
+      <EditorialDivider />
+
       {/* Export options */}
       <div>
-        <h2 className="mb-3 font-mono text-xs tracking-widest text-text-tertiary">
-          FORMAT
-        </h2>
-        <div className="space-y-3">
+        <SectionHeader title="Format" />
+        <Card className="mt-3">
           <button
             onClick={exportCSV}
             disabled={loading}
-            className="flex w-full items-center gap-4 rounded-xl border border-bg-elevated bg-bg-card p-4 transition-colors hover:border-coral/30 disabled:opacity-50"
+            className="flex w-full items-center gap-4 transition-colors disabled:opacity-50"
           >
-            <span className="text-2xl">📊</span>
+            <div className="w-10 h-10 rounded-lg bg-bg-elevated flex items-center justify-center text-lg">
+              📊
+            </div>
             <div className="text-left">
-              <div className="font-medium text-text-primary">CSV Export</div>
+              <div className="font-display text-base text-text-primary">
+                CSV Export
+              </div>
               <div className="text-xs text-text-tertiary">
                 Training logs with dates, distances, paces, moods, and notes
               </div>
@@ -144,12 +147,14 @@ export default function ExportPage() {
               {loading ? "Exporting..." : "Download →"}
             </span>
           </button>
-        </div>
+        </Card>
       </div>
 
-      <div className="rounded-xl border border-bg-elevated bg-bg-card p-4 text-center text-xs text-text-tertiary">
-        Excel and PDF exports coming soon.
-      </div>
+      <Card>
+        <p className="text-center text-xs italic text-text-tertiary">
+          Excel and PDF exports coming soon.
+        </p>
+      </Card>
     </div>
   );
 }

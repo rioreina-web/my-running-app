@@ -1,6 +1,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { detectInjury, upsertInjury } from "../_shared/injuries.ts";
+import { rebuildAthleteState } from "../_shared/athlete-state.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -162,57 +163,191 @@ Deno.serve(async (req) => {
     // Mark as processing
     await updateProcessingStatus(record.id, "processing");
 
-    // Fetch existing record to check for HealthKit-linked data
+    // Fetch existing record to check for HealthKit-linked data and pace segments
     const { data: existingRecord } = await supabase
       .from("training_logs")
-      .select("workout_distance_miles, workout_duration_minutes")
+      .select("workout_distance_miles, workout_duration_minutes, pace_segments, vital_workout_id, workout_date")
       .eq("id", record.id)
       .single();
 
-    // Extract filename from URL
+    // Extract storage path from URL (everything after the bucket name)
     const audioUrl = new URL(record.audio_url);
-    const fileName = audioUrl.pathname.split("/").pop();
+    const bucketPrefix = "/storage/v1/object/public/training-memos/";
+    const pathIndex = audioUrl.pathname.indexOf(bucketPrefix);
+    const storagePath = pathIndex !== -1
+      ? decodeURIComponent(audioUrl.pathname.slice(pathIndex + bucketPrefix.length))
+      : audioUrl.pathname.split("/").pop();
 
-    if (!fileName) {
-      throw new Error("Could not extract filename from audio URL");
+    if (!storagePath) {
+      throw new Error("Could not extract storage path from audio URL");
     }
 
     // Download audio file from storage
     const { data: audioData, error: downloadError } = await supabase.storage
       .from("training-memos")
-      .download(fileName);
+      .download(storagePath);
 
     if (downloadError) {
       throw new Error(`Failed to download audio: ${downloadError.message}`);
     }
 
-    // Convert to base64 for Gemini (chunked to avoid stack overflow)
-    const arrayBuffer = await audioData.arrayBuffer();
-    const uint8Array = new Uint8Array(arrayBuffer);
-    let binary = "";
-    const chunkSize = 8192;
-    for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      const chunk = uint8Array.subarray(i, i + chunkSize);
-      binary += String.fromCharCode(...chunk);
+    // Start fetching recent logs in parallel with transcription (don't await yet)
+    const recentLogsPromise = supabase
+      .from("training_logs")
+      .select("workout_date, cleaned_notes, mood, workout_notes, workout_distance_miles, workout_type")
+      .not("cleaned_notes", "is", null)
+      .order("workout_date", { ascending: false })
+      .limit(5);
+
+    // ── Step 1: Transcribe with Whisper (Groq → OpenAI → Gemini fallback) ──
+    const audioArrayBuffer = await audioData.arrayBuffer();
+    const mimeType = storagePath.endsWith(".m4a") ? "audio/mp4" : "audio/mpeg";
+    const fileName = storagePath.split("/").pop() || "memo.m4a";
+
+    let transcription: string | null = null;
+    let transcriptionProvider = "unknown";
+
+    // Try Groq Whisper first (cheapest, fastest)
+    const groqKey = Deno.env.get("GROQ_API_KEY");
+    if (groqKey && !transcription) {
+      try {
+        const formData = new FormData();
+        formData.append("file", new File([audioArrayBuffer], fileName, { type: mimeType }));
+        formData.append("model", "whisper-large-v3");
+        formData.append("response_format", "verbose_json");
+
+        const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${groqKey}` },
+          body: formData,
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (groqRes.ok) {
+          const result = await groqRes.json();
+          transcription = result.text;
+          transcriptionProvider = "groq-whisper";
+          console.log(`Groq Whisper transcription: ${transcription?.length} chars`);
+        } else {
+          console.error(`Groq failed: ${groqRes.status}`);
+        }
+      } catch (e) {
+        console.error("Groq Whisper error:", e);
+      }
     }
-    const base64Audio = btoa(binary);
 
-    // Get MIME type
-    const mimeType = fileName.endsWith(".m4a") ? "audio/mp4" : "audio/mpeg";
+    // Fallback: OpenAI Whisper
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    if (openaiKey && !transcription) {
+      try {
+        const formData = new FormData();
+        formData.append("file", new File([audioArrayBuffer], fileName, { type: mimeType }));
+        formData.append("model", "whisper-1");
+        formData.append("response_format", "verbose_json");
 
-    // Initialize Gemini model
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const openaiRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${openaiKey}` },
+          body: formData,
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (openaiRes.ok) {
+          const result = await openaiRes.json();
+          transcription = result.text;
+          transcriptionProvider = "openai-whisper";
+          console.log(`OpenAI Whisper transcription: ${transcription?.length} chars`);
+        }
+      } catch (e) {
+        console.error("OpenAI Whisper error:", e);
+      }
+    }
+
+    // Last resort: Gemini audio (original approach)
+    if (!transcription) {
+      const uint8Array = new Uint8Array(audioArrayBuffer);
+      let binary = "";
+      const chunkSize = 8192;
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.subarray(i, i + chunkSize);
+        binary += String.fromCharCode(...chunk);
+      }
+      const base64Audio = btoa(binary);
+
+      const geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const geminiResult = await geminiModel.generateContent([
+        { text: "Transcribe this audio recording verbatim. Return ONLY the transcription text, no formatting." },
+        { inlineData: { mimeType, data: base64Audio } },
+      ]);
+      transcription = geminiResult.response.text().trim();
+      transcriptionProvider = "gemini";
+      console.log(`Gemini transcription fallback: ${transcription?.length} chars`);
+    }
+
+    if (!transcription || transcription.length < 5) {
+      throw new Error("Transcription failed — no text extracted from audio");
+    }
+
+    console.log(`Transcription complete via ${transcriptionProvider}: "${transcription.slice(0, 100)}..."`);
+
+    // ── Step 2: Analyze transcript with Gemini ──
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    // Await the recent logs that were fetched in parallel with transcription
+    const { data: recentLogs } = await recentLogsPromise;
+
+    let recentContext = "";
+    if (recentLogs && recentLogs.length > 0) {
+      recentContext = "\n\n## Recent Training Context\nHere are the runner's last few sessions so you understand their current training state:\n";
+      for (const log of recentLogs) {
+        const date = log.workout_date ? String(log.workout_date).split("T")[0] : "?";
+        const dist = log.workout_distance_miles ? Number(log.workout_distance_miles).toFixed(1) + " mi" : "";
+        recentContext += "- " + date + ": " + dist + " " + (log.workout_type || "") + " — " + (log.cleaned_notes || "no notes") + " (mood: " + (log.mood || "?") + ")\n";
+      }
+      recentContext += "\nUse this context to give advice that connects to their training patterns. Do NOT repeat information from previous sessions — focus on TODAY's memo.\n";
+    }
+
+    // Build Garmin/watch data context for sharper coaching
+    let garminContext = "";
+    if (existingRecord?.pace_segments && Array.isArray(existingRecord.pace_segments) && existingRecord.pace_segments.length > 0) {
+      garminContext = "\n\n## GPS Watch Data (Garmin)\nThe runner's watch recorded these pace segments for this workout:\n";
+      for (const seg of existingRecord.pace_segments) {
+        const hr = seg.avg_heart_rate ? ` (${seg.avg_heart_rate} bpm)` : "";
+        garminContext += `- ${seg.effort}: ${Number(seg.distance_miles).toFixed(2)} mi @ ${seg.pace_per_mile}/mi${hr}\n`;
+      }
+      if (existingRecord.workout_distance_miles) {
+        const totalMin = existingRecord.workout_duration_minutes || 0;
+        const avgPaceSec = totalMin > 0 && existingRecord.workout_distance_miles > 0
+          ? Math.round((totalMin * 60) / existingRecord.workout_distance_miles)
+          : 0;
+        const paceM = Math.floor(avgPaceSec / 60);
+        const paceS = avgPaceSec % 60;
+        garminContext += `Total: ${Number(existingRecord.workout_distance_miles).toFixed(1)} mi in ${Math.round(totalMin)} min (${paceM}:${String(paceS).padStart(2, "0")}/mi avg)\n`;
+      }
+      garminContext += "\nUSE THIS DATA in your coach_insight. Compare what the runner SAID about their workout to what the WATCH DATA shows. Note discrepancies. Analyze effort distribution. Were easy segments actually easy? Did they fade or negative split? Be specific about paces.\n";
+    }
 
     // Structured prompt with distinct fields and few-shot examples
-    const prompt = `You are an elite running coach analyzing a runner's voice memo about their training.
+    const prompt = `You are an elite running coach reading a transcript of your athlete's voice memo about their training.
 
-Transcribe the audio accurately, then analyze it to produce 6 distinct fields.
+Your job: analyze the transcript to produce 6 distinct fields. The transcription field should contain the transcript exactly as provided.
+
+## CRITICAL RULES FOR coach_insight
+- ONLY comment on what the runner ACTUALLY SAID. Do not invent topics they didn't mention.
+- If they say they're sore from lifting/gym/strength training, acknowledge it as normal cross-training soreness. Do NOT interpret it as a running injury or form problem.
+- NEVER comment on: body weight, body composition, BMI, appearance, or foot strike patterns (unless they specifically asked).
+- You CAN encourage proper fueling and nutrition for performance (e.g., "make sure you're fueling well before your long run" or "recovery nutrition after hard sessions matters"). But NEVER suggest eating less, losing weight, or restricting calories.
+- NEVER give medical diagnoses or suggest seeing a doctor unless they describe a specific acute injury.
+- NEVER give generic filler advice like "keep it up", "listen to your body", or "stay hydrated".
+- Your advice must be SPECIFIC to what they said and ACTIONABLE for their next run. Reference exact details from the memo.
+- If the runner mentions soreness, fatigue, or tiredness, consider context: Did they mention lifting? A hard workout the day before? Poor sleep? Being sick? Address the ACTUAL cause, not a guess.
+- When you don't have enough information to give specific advice, say something observational about their training pattern rather than making something up.
 
 ## Field Definitions
 
 1. **transcription**: The complete, verbatim transcription of what the runner said.
 
-2. **cleaned_notes**: A 2-4 sentence summary of the runner's subjective training experience. Focus on how they felt, what went well or poorly, and any observations. Do NOT include specific numbers (distance, pace) here — those go in workout_notes. Do NOT include coaching advice here.
+2. **cleaned_notes**: A 2-4 sentence first-person summary of the training experience (write as if you ARE the runner — "I felt...", "Legs were...", "Started easy and..."). Focus on how they felt, what went well or poorly, and any observations. Do NOT include specific numbers (distance, pace) here — those go in workout_notes. Do NOT include coaching advice here. Never write "the runner" — this IS the runner's own summary.
 
 3. **mood**: Assess the runner's mood from their voice tone and words. Return exactly ONE of these values:
    - "energized" = excited, fired up, feeling great
@@ -220,9 +355,9 @@ Transcribe the audio accurately, then analyze it to produce 6 distinct fields.
    - "neutral" = matter-of-fact, neither good nor bad
    - "tired" = fatigued, low energy, drained
    - "struggling" = frustrated, overwhelmed, having a hard time
-   - "injured" = reporting pain, injury, or physical issue
+   - "injured" = reporting pain, injury, or physical issue (ONLY for running-related injuries, NOT soreness from lifting)
 
-4. **coach_insight**: 1-2 sentences of specific, actionable coaching advice based on what they shared. Be supportive and forward-looking. Reference specific details from their memo. Example: "Since you felt strong through the last 3 miles of your long run, consider adding a mile next week" rather than generic advice like "great job, keep it up."
+4. **coach_insight**: 1-2 sentences of specific, actionable TRAINING advice. See CRITICAL RULES above.
 
 5. **workout_notes**: A structured text summary of quantitative training details mentioned. Use this format with one item per line:
    - Distance: X miles (or km)
@@ -243,9 +378,16 @@ Transcribe the audio accurately, then analyze it to produce 6 distinct fields.
      "splits": [{"mile": 1, "time": "7:30"}, {"mile": 2, "time": "7:15"}] or null,
      "warmup": "1 mile easy" or null,
      "cooldown": "1 mile easy" or null,
+     "rpe": number 1-10 or null (rate of perceived exertion — infer from how they described the effort),
+     "weather": "hot and humid" | "cold" | "windy" | "rainy" | "perfect" | string or null,
+     "terrain": "track" | "road" | "trail" | "treadmill" | "mixed" or null,
+     "running_partners": ["name1", "name2"] or null (people they mentioned running with),
+     "shoe": string or null (if they mentioned specific shoes),
+     "sleep_quality": "good" | "poor" | "ok" or null (if they mentioned sleep),
+     "fueling": string or null (if they mentioned what they ate/drank before or during),
      "effort_level": "easy" | "moderate" | "hard" | "max" or null
    }
-   Return null if no quantitative data was mentioned.
+   Always return at least a partial object with whatever fields you can extract — RPE, weather, terrain, running partners, etc. Only return null if the runner said absolutely nothing about their training.
 
 ## Examples
 
@@ -300,19 +442,31 @@ Response:
   "extracted_data": null
 }
 
+### Example 4: Cross-training soreness (NOT a running injury)
+Audio: "Went for an easy 5 miler today. Legs were really sore from leg day yesterday at the gym. The run felt fine though, just slow."
+
+Response:
+{
+  "transcription": "Went for an easy 5 miler today. Legs were really sore from leg day yesterday at the gym. The run felt fine though, just slow.",
+  "cleaned_notes": "Easy 5-miler on sore legs from yesterday's gym session. The run itself felt fine, just slower than usual.",
+  "mood": "neutral",
+  "coach_insight": "Running easy on gym-sore legs is a solid way to flush them out. If you have a quality session planned this week, leave at least 48 hours between heavy leg day and that workout.",
+  "workout_notes": "Distance: 5 miles",
+  "extracted_data": {
+    "distance_miles": 5,
+    "workout_type": "easy",
+    "effort_level": "easy"
+  }
+}
+${recentContext}
 ## Important
 - Respond ONLY with the JSON object, no markdown code blocks, no extra text.
 - All 6 top-level fields must be present in the response.
 - workout_notes and extracted_data should be null (not empty string or empty object) when no quantitative data is mentioned.`;
 
+    // Feed the TEXT transcript + Garmin data to Gemini for analysis
     const result = await model.generateContent([
-      { text: prompt },
-      {
-        inlineData: {
-          mimeType,
-          data: base64Audio,
-        },
-      },
+      { text: prompt + garminContext + `\n\n## Audio Transcript (from ${transcriptionProvider})\n"${transcription}"` },
     ]);
 
     const responseText = result.response.text();
@@ -325,7 +479,7 @@ Response:
     // Save full transcript to storage
     let transcriptUrl: string | null = null;
     if (analysis.transcription) {
-      const transcriptFileName = fileName.replace(/\.(m4a|mp3|wav)$/, "_transcript.txt");
+      const transcriptFileName = storagePath.replace(/\.(m4a|mp3|wav)$/, "_transcript.txt");
       const transcriptContent = new TextEncoder().encode(analysis.transcription);
 
       const { error: uploadError } = await supabase.storage
@@ -412,10 +566,49 @@ Response:
           sourceReferenceId: record.id,
           description: analysis.cleaned_notes?.slice(0, 200),
         });
+
+        // ── Voice-to-Action: auto-trigger injury-early-warning ──
+        // When an injury is detected in a voice memo, immediately run the
+        // injury risk assessment so the athlete state gets updated with the
+        // new risk score and the coaching agent knows about it.
+        console.log(`[Voice-to-Action] Injury detected (${injury.bodyArea}) — triggering injury-early-warning`);
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          await fetch(`${supabaseUrl}/functions/v1/injury-early-warning`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${serviceKey}`,
+              apikey: serviceKey,
+            },
+            body: JSON.stringify({ user_id: injuryUserId }),
+            signal: AbortSignal.timeout(15000),
+          });
+          console.log(`[Voice-to-Action] Injury-early-warning completed for ${injuryUserId}`);
+        } catch (warningError) {
+          console.warn(`[Voice-to-Action] Injury-early-warning failed (non-fatal):`, warningError);
+        }
       }
     } catch (injuryError) {
       console.error("Error creating injury record:", injuryError);
       // Don't fail the request if injury tracking fails
+    }
+
+    // ── Update Athlete State (Dynamic Context Object) ──
+    // Full rebuild after a voice log because the training load metrics change.
+    const { data: stateLogRow } = await supabase
+      .from("training_logs")
+      .select("user_id")
+      .eq("id", record.id)
+      .single();
+    const stateUserId = stateLogRow?.user_id;
+    if (stateUserId) {
+      try {
+        await rebuildAthleteState(supabase, stateUserId);
+      } catch (stateError) {
+        console.error("Athlete state rebuild failed (non-fatal):", stateError);
+      }
     }
 
     return new Response(

@@ -6,14 +6,15 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
 import { validateEnum, validateRange, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
+import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "",
+  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -28,16 +29,34 @@ interface AnalysisRequest {
   userId?: string;
 }
 
+interface PaceSegmentRow {
+  effort: string;
+  distance_miles: number;
+  duration_seconds: number;
+  pace_per_mile: string;
+  avg_heart_rate: number | null;
+}
+
 interface TrainingLog {
   id: string;
   created_at: string;
   workout_date: string | null;
   workout_distance_miles: number | null;
   workout_duration_minutes: number | null;
+  workout_type: string | null;
+  workout_pace_per_mile: string | null;
+  pace_segments: PaceSegmentRow[] | null;
   mood: string | null;
   notes: string | null;
   cleaned_notes: string | null;
   coach_insight: string | null;
+  workout_notes: string | null;
+}
+
+interface ZoneVolume {
+  miles: number;
+  runs: number;
+  avgPace: string;
 }
 
 interface AggregatedStats {
@@ -50,6 +69,8 @@ interface AggregatedStats {
   shortestRun: number;
   runsByWeek: { week: number; runs: number; miles: number; isComplete: boolean }[];
   moodDistribution: Record<string, number>;
+  workoutTypeDistribution: Record<string, number>;
+  zoneVolume: Record<string, ZoneVolume>;
   daysWithRuns: number;
   restDays: number;
 }
@@ -265,6 +286,126 @@ function aggregateStats(logs: TrainingLog[], start: Date, end: Date, progress?: 
     }
   });
 
+  // Workout type distribution
+  const workoutTypeDistribution: Record<string, number> = {};
+  runsWithDistance.forEach((log) => {
+    const type = (log as TrainingLog).workout_type || "untagged";
+    workoutTypeDistribution[type] = (workoutTypeDistribution[type] || 0) + 1;
+  });
+
+  // Zone volume — group miles by training zone
+  // When pace_segments are available, use per-segment data for accurate zone breakdown
+  const zoneMap: Record<string, string> = {
+    easy: "easy", recovery: "recovery", long_run: "long_run",
+    tempo: "tempo", threshold: "threshold", steady: "threshold",
+    interval: "interval", speed: "interval", repeat: "interval", fartlek: "interval",
+    marathon_pace: "race_pace", race_pace: "race_pace", race: "race_pace", time_trial: "race_pace",
+    moderate: "tempo", progression: "tempo", run: "easy",
+  };
+  const zoneAccum: Record<string, { miles: number; runs: number; totalPaceSecs: number; paceCount: number }> = {};
+  const addToZone = (zone: string, miles: number, paceSecs: number) => {
+    if (!zoneAccum[zone]) zoneAccum[zone] = { miles: 0, runs: 0, totalPaceSecs: 0, paceCount: 0 };
+    zoneAccum[zone].miles += miles;
+    if (paceSecs > 0) {
+      zoneAccum[zone].totalPaceSecs += paceSecs;
+      zoneAccum[zone].paceCount++;
+    }
+  };
+  runsWithDistance.forEach((log) => {
+    const typedLog = log as TrainingLog;
+    const dist = log.workout_distance_miles || 0;
+    const dur = log.workout_duration_minutes || 0;
+
+    // If pace segments exist, use them for per-segment zone breakdown
+    if (typedLog.pace_segments && typedLog.pace_segments.length > 0) {
+      // Helper: parse pace string "M:SS" to seconds
+      const parsePaceSecs = (p: string) => {
+        const parts = p.split(":").map(Number);
+        return parts.length === 2 ? parts[0] * 60 + parts[1] : 0;
+      };
+
+      // Check if all segments share the same effort label (watch didn't differentiate)
+      const uniqueEfforts = new Set(typedLog.pace_segments.map(s => s.effort));
+      const allSameLabel = uniqueEfforts.size === 1;
+
+      // If all same label, classify by pace instead of label
+      if (allSameLabel && typedLog.pace_segments.length >= 3) {
+        const runnableSegs = typedLog.pace_segments.filter(s => {
+          const p = parsePaceSecs(s.pace_per_mile);
+          return s.distance_miles >= 0.05 && p > 0 && p < 900;
+        });
+        const paces = runnableSegs.map(s => parsePaceSecs(s.pace_per_mile)).sort((a, b) => a - b);
+        const medianPace = paces.length > 0 ? paces[Math.floor(paces.length / 2)] : 0;
+        const fastestPace = paces.length > 0 ? paces[0] : 0;
+        const paceSpread = medianPace > 0 ? (medianPace - fastestPace) / medianPace : 0;
+
+        if (paceSpread > 0.15) {
+          // Classify by pace: fast segments → interval, slow/standing → skip, rest → easy
+          const threshold = fastestPace + (medianPace - fastestPace) * 0.4;
+          for (const seg of typedLog.pace_segments) {
+            const p = parsePaceSecs(seg.pace_per_mile);
+            if (p <= 0 || seg.distance_miles < 0.02) continue; // skip standing/zero
+            if (p >= 900) continue; // skip segments > 15:00/mi (standing around)
+            const zone = p <= threshold ? "interval" : "easy";
+            addToZone(zone, seg.distance_miles, p);
+          }
+        } else {
+          // Low variance — all genuinely the same effort
+          for (const seg of typedLog.pace_segments) {
+            const p = parsePaceSecs(seg.pace_per_mile);
+            if (p >= 900 || seg.distance_miles < 0.02) continue; // skip standing
+            const segZone = zoneMap[seg.effort] || "easy";
+            addToZone(segZone, seg.distance_miles, p);
+          }
+        }
+      } else {
+        // Multiple effort labels — use them directly, but still skip standing
+        for (const seg of typedLog.pace_segments) {
+          const paceSecs = parsePaceSecs(seg.pace_per_mile);
+          if (paceSecs >= 900 || seg.distance_miles < 0.02) continue; // skip standing
+          const segZone = zoneMap[seg.effort] || "easy";
+          addToZone(segZone, seg.distance_miles, paceSecs);
+        }
+      }
+
+      // Count as one run in the dominant zone (by miles)
+      const validSegs = typedLog.pace_segments.filter(s => {
+        const p = parsePaceSecs(s.pace_per_mile);
+        return s.distance_miles >= 0.02 && p > 0 && p < 900;
+      });
+      if (validSegs.length > 0) {
+        const dominantSeg = validSegs.reduce((best, seg) =>
+          seg.distance_miles > best.distance_miles ? seg : best
+        );
+        const mappedDominant = zoneMap[dominantSeg.effort] || "easy";
+        if (!zoneAccum[mappedDominant]) zoneAccum[mappedDominant] = { miles: 0, runs: 0, totalPaceSecs: 0, paceCount: 0 };
+        zoneAccum[mappedDominant].runs++;
+      }
+    } else {
+      // Fallback: whole-run classification
+      const rawType = (typedLog.workout_type || "").toLowerCase().replace(/[_\s-]+/g, "_");
+      let zone = zoneMap[rawType] || "easy";
+      if (zone === "easy" && dist >= 10) zone = "long_run";
+      if (!zoneAccum[zone]) zoneAccum[zone] = { miles: 0, runs: 0, totalPaceSecs: 0, paceCount: 0 };
+      zoneAccum[zone].miles += dist;
+      zoneAccum[zone].runs++;
+      if (dur > 0 && dist > 0) {
+        zoneAccum[zone].totalPaceSecs += (dur / dist) * 60;
+        zoneAccum[zone].paceCount++;
+      }
+    }
+  });
+  const zoneVolume: Record<string, ZoneVolume> = {};
+  for (const [zone, data] of Object.entries(zoneAccum)) {
+    if (data.miles < 0.1) continue;
+    const avgPaceSecs = data.paceCount > 0 ? data.totalPaceSecs / data.paceCount : 0;
+    zoneVolume[zone] = {
+      miles: Math.round(data.miles * 10) / 10,
+      runs: data.runs,
+      avgPace: avgPaceSecs > 0 ? (() => { const m = Math.floor(avgPaceSecs / 60); const s = Math.round(avgPaceSecs % 60); return `${m}:${s.toString().padStart(2, "0")}/mi`; })() : "N/A",
+    };
+  }
+
   // Calculate days in period and rest days
   const daysInPeriod = Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
   const uniqueRunDays = new Set(
@@ -284,6 +425,8 @@ function aggregateStats(logs: TrainingLog[], start: Date, end: Date, progress?: 
     shortestRun: distances.length > 0 ? Math.min(...distances) : 0,
     runsByWeek,
     moodDistribution,
+    workoutTypeDistribution,
+    zoneVolume,
     daysWithRuns: uniqueRunDays,
     restDays: daysInPeriod - uniqueRunDays,
   };
@@ -326,13 +469,473 @@ function extractQualitativeData(logs: TrainingLog[]): QualitativeSummary {
   };
 }
 
+interface QualitySession {
+  date: string;
+  totalMiles: number;
+  workoutType: string;
+  description: string;      // human-readable: "6x800m @ 3:08-3:12 w/ 400m jog"
+  fastPace: string;         // avg pace of hard segments
+  fastMiles: number;
+  warmupCooldownMiles: number;
+  splits: string[];          // per-rep splits: ["1mi @ 6:05", "1mi @ 6:08", ...]
+  mood: string;
+  notes: string;
+  workoutNotes: string;     // structured workout notes from voice memo (e.g. "Intervals: 6x800m @ 2:50")
+  paceZoneLabel: string;    // e.g. "@ 10K pace", "between HM and marathon pace"
+}
+
+/** Equivalent pace zones derived from fitness predictions (seconds per mile) */
+interface PaceZones {
+  easy: number;       // ~75% of VDOT effort, roughly marathon pace + 90s
+  marathon: number;
+  halfMarathon: number;
+  threshold: number;  // ~LT, roughly between 10K and HM pace
+  tenK: number;
+  fiveK: number;
+}
+
+/**
+ * Compute pace zones from predicted race times.
+ * Returns seconds-per-mile for each training zone.
+ */
+function computePaceZones(snapshots: { predicted_marathon_seconds?: number; predicted_half_seconds?: number; predicted_10k_seconds?: number; predicted_5k_seconds?: number }): PaceZones | null {
+  const s = snapshots;
+  if (!s.predicted_marathon_seconds && !s.predicted_half_seconds && !s.predicted_10k_seconds && !s.predicted_5k_seconds) {
+    return null;
+  }
+
+  // Race distances in miles
+  const marathonMi = 26.2188;
+  const halfMi = 13.1094;
+  const tenKMi = 6.2137;
+  const fiveKMi = 3.1069;
+
+  const marathonPace = s.predicted_marathon_seconds ? s.predicted_marathon_seconds / marathonMi : 0;
+  const halfPace = s.predicted_half_seconds ? s.predicted_half_seconds / halfMi : 0;
+  const tenKPace = s.predicted_10k_seconds ? s.predicted_10k_seconds / tenKMi : 0;
+  const fiveKPace = s.predicted_5k_seconds ? s.predicted_5k_seconds / fiveKMi : 0;
+
+  // Fill in missing paces from available ones using rough ratios
+  const mp = marathonPace || (halfPace ? halfPace * 1.06 : (tenKPace ? tenKPace * 1.15 : fiveKPace * 1.22));
+  const hm = halfPace || (marathonPace ? marathonPace * 0.943 : (tenKPace ? tenKPace * 1.08 : fiveKPace * 1.15));
+  const tk = tenKPace || (halfPace ? halfPace * 0.925 : (fiveKPace ? fiveKPace * 1.06 : mp * 0.87));
+  const fk = fiveKPace || (tenKPace ? tenKPace * 0.943 : (halfPace ? halfPace * 0.87 : mp * 0.82));
+
+  return {
+    easy: mp + 90,           // easy pace ~90s slower than marathon
+    marathon: mp,
+    halfMarathon: hm,
+    threshold: (tk + hm) / 2, // threshold is roughly between 10K and HM pace
+    tenK: tk,
+    fiveK: fk,
+  };
+}
+
+/**
+ * Label a pace (seconds/mile) relative to the runner's known pace zones.
+ * Returns a string like "@ 10K pace", "faster than 5K pace", "between HM and marathon pace"
+ */
+function labelPaceZone(paceSecsPerMile: number, zones: PaceZones): string {
+  const tolerance = 8; // seconds tolerance for "at" vs "near"
+
+  const zoneDefs = [
+    { name: "5K pace", pace: zones.fiveK },
+    { name: "10K pace", pace: zones.tenK },
+    { name: "threshold", pace: zones.threshold },
+    { name: "HM pace", pace: zones.halfMarathon },
+    { name: "marathon pace", pace: zones.marathon },
+    { name: "easy pace", pace: zones.easy },
+  ];
+
+  // Check if it's faster than 5K pace
+  if (paceSecsPerMile < zones.fiveK - tolerance) {
+    return "faster than 5K pace";
+  }
+
+  // Check each zone for a match
+  for (const z of zoneDefs) {
+    if (Math.abs(paceSecsPerMile - z.pace) <= tolerance) {
+      return `@ ${z.name}`;
+    }
+  }
+
+  // Between zones — find the two closest
+  for (let i = 0; i < zoneDefs.length - 1; i++) {
+    const faster = zoneDefs[i];
+    const slower = zoneDefs[i + 1];
+    if (paceSecsPerMile > faster.pace && paceSecsPerMile < slower.pace) {
+      return `between ${faster.name} and ${slower.name}`;
+    }
+  }
+
+  // Slower than easy
+  if (paceSecsPerMile > zones.easy + tolerance) {
+    return "recovery pace";
+  }
+
+  return "";
+}
+
+/**
+ * Extract structured quality sessions from workouts with pace_segments.
+ * Reconstructs actual workout structure: intervals, tempo blocks, etc.
+ * When paceZones are available, labels each hard segment relative to known training paces.
+ */
+function extractQualitySessions(logs: TrainingLog[], paceZones: PaceZones | null): QualitySession[] {
+  const sessions: QualitySession[] = [];
+
+  for (const log of logs) {
+    if (!log.pace_segments || log.pace_segments.length < 2) continue;
+
+    const date = new Date(log.workout_date || log.created_at);
+    const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+
+    const hardEfforts = ["interval", "tempo", "threshold", "race_pace", "speed", "moderate"];
+    const easyEfforts = ["easy", "recovery", "warmup", "cooldown"];
+
+    // Parse pace to seconds for each segment
+    const parsePace = (p: string) => {
+      const parts = p.split(":").map(Number);
+      return parts.length === 2 ? parts[0] * 60 + parts[1] : 0;
+    };
+
+    // Filter out standing/walking segments (> 15:00/mi or tiny distance) from all processing
+    const isRunning = (s: PaceSegmentRow) => {
+      const p = parsePace(s.pace_per_mile);
+      return s.distance_miles >= 0.05 && p > 0 && p < 900;
+    };
+    const runningSegs = log.pace_segments.filter(isRunning);
+    if (runningSegs.length < 2) continue;
+
+    let hardSegs = runningSegs.filter(s => hardEfforts.includes(s.effort));
+    let easySegs = runningSegs.filter(s => !hardEfforts.includes(s.effort));
+
+    // FALLBACK: If no segments are labeled hard, detect fast reps by pace
+    // This handles watches that label everything "easy" even during intervals
+    if (hardSegs.length === 0) {
+      // Find the median pace of runnable segments (standing already filtered)
+      const paces = runningSegs.map(s => parsePace(s.pace_per_mile)).sort((a, b) => a - b);
+      const medianPace = paces[Math.floor(paces.length / 2)];
+
+      // If there's meaningful pace variance (fastest is >15% faster than median),
+      // the fast segments are likely interval reps
+      const fastestPace = paces[0];
+      const paceSpread = (medianPace - fastestPace) / medianPace;
+
+      if (paceSpread > 0.15) {
+        // Threshold: segments faster than midpoint between fastest and median are "hard"
+        const threshold = fastestPace + (medianPace - fastestPace) * 0.4;
+        hardSegs = runningSegs.filter(s => {
+          const p = parsePace(s.pace_per_mile);
+          return p > 0 && p <= threshold;
+        });
+        easySegs = runningSegs.filter(s => !hardSegs.includes(s));
+      }
+
+      if (hardSegs.length === 0) continue;
+    }
+
+    const fastMiles = hardSegs.reduce((sum, s) => sum + s.distance_miles, 0);
+    const easyMiles = easySegs.reduce((sum, s) => sum + s.distance_miles, 0);
+
+    // Calculate avg fast pace
+    const totalFastSecs = hardSegs.reduce((sum, s) => sum + s.duration_seconds, 0);
+    const avgFastPaceSecs = fastMiles > 0 ? totalFastSecs / fastMiles : 0;
+    const fastPaceMin = Math.floor(avgFastPaceSecs / 60);
+    const fastPaceSec = Math.round(avgFastPaceSecs % 60);
+    const fastPace = `${fastPaceMin}:${String(fastPaceSec).padStart(2, "0")}/mi`;
+
+    // Determine workout type from segments
+    let workoutType = "quality";
+    const dominantEffort = hardSegs.reduce((best, s) =>
+      s.distance_miles > best.distance_miles ? s : best
+    ).effort;
+
+    // Build human-readable description
+    let description = "";
+
+    // Detect if hard segments are interleaved with recovery (= repeats, not continuous)
+    // Look at the original segment order: hard-easy-hard-easy = repeats
+    const sustainedEfforts = ["tempo", "threshold", "moderate"];
+    let hasInterleavedRecovery = false;
+    if (hardSegs.length >= 2) {
+      const segOrder = runningSegs.map(s => hardSegs.includes(s) ? "H" : "E");
+      // Pattern like H-E-H or H-E-H-E-H indicates repeats with recovery
+      const pattern = segOrder.join("");
+      hasInterleavedRecovery = /H.+E.+H/.test(pattern);
+    }
+
+    // Check if segments are similar distance (repeats pattern)
+    const hardDistances = hardSegs.map(s => s.distance_miles);
+    const avgHardDist = hardDistances.reduce((a, b) => a + b, 0) / hardDistances.length;
+    const allSimilarDist = hardDistances.every(d => Math.abs(d - avgHardDist) / avgHardDist < 0.15);
+
+    // It's only a true sustained effort if:
+    // 1. Hard segments are NOT interleaved with recovery jogs, OR
+    // 2. There's only 1 hard segment, OR
+    // 3. Hard segments are NOT similar distances (truly merged continuous effort)
+    const isSustainedRun = sustainedEfforts.includes(dominantEffort) &&
+      !hasInterleavedRecovery &&
+      (hardSegs.length === 1 || !allSimilarDist);
+
+    if (isSustainedRun) {
+      // Tempo/threshold/moderate: continuous hard effort
+      const tempoMiles = hardSegs.reduce((sum, s) => sum + s.distance_miles, 0);
+      const tempoSecs = hardSegs.reduce((sum, s) => sum + s.duration_seconds, 0);
+      const tempoPaceS = tempoMiles > 0 ? tempoSecs / tempoMiles : 0;
+      const tpm = Math.floor(tempoPaceS / 60);
+      const tps = Math.round(tempoPaceS % 60);
+      const effortLabel = dominantEffort === "moderate" ? "steady" : dominantEffort;
+      description = `${tempoMiles.toFixed(1)}mi ${effortLabel} @ ${tpm}:${String(tps).padStart(2, "0")}/mi`;
+      workoutType = dominantEffort === "moderate" ? "tempo" : dominantEffort;
+
+    } else if (hardSegs.length >= 2) {
+      // Intervals/repeats: multiple hard segments
+      const paces = hardSegs.map(s => {
+        const parts = s.pace_per_mile.split(":").map(Number);
+        return parts.length === 2 ? parts[0] * 60 + parts[1] : 0;
+      });
+
+      const fastestPace = Math.min(...paces.filter(p => p > 0));
+      const slowestPace = Math.max(...paces.filter(p => p > 0));
+      const fmtPace = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+      // Find recovery segments between hard efforts
+      const recoverSegs = easySegs.filter(s =>
+        s.distance_miles < 0.5 && s.distance_miles > 0);
+      const avgRecoveryDist = recoverSegs.length > 0
+        ? recoverSegs.reduce((sum, s) => sum + s.distance_miles, 0) / recoverSegs.length
+        : 0;
+
+      if (allSimilarDist) {
+        // Repeats: "6x1mi @ 6:05-6:12 w/ 400m recovery"
+        const distLabel = formatDistanceLabel(avgHardDist);
+        const paceRange = fastestPace === slowestPace
+          ? fmtPace(fastestPace)
+          : `${fmtPace(fastestPace)}-${fmtPace(slowestPace)}`;
+        const recoveryStr = avgRecoveryDist > 0
+          ? ` w/ ${formatDistanceLabel(avgRecoveryDist)} recovery`
+          : "";
+        description = `${hardSegs.length}x${distLabel} @ ${paceRange}${recoveryStr}`;
+      } else {
+        // Mixed intervals: "3 hard efforts (0.5-1.0mi) @ 5:45-6:10"
+        const minDist = Math.min(...hardDistances);
+        const maxDist = Math.max(...hardDistances);
+        const paceRange = `${fmtPace(fastestPace)}-${fmtPace(slowestPace)}`;
+        description = `${hardSegs.length} hard efforts (${minDist.toFixed(1)}-${maxDist.toFixed(1)}mi) @ ${paceRange}`;
+      }
+      workoutType = "interval";
+
+    } else {
+      // Single hard segment
+      const seg = hardSegs[0];
+      description = `${seg.distance_miles.toFixed(1)}mi ${seg.effort} @ ${seg.pace_per_mile}`;
+      workoutType = seg.effort;
+    }
+
+    // Build per-rep splits for hard segments, with pace zone labels when available
+    const splits = hardSegs.map(s => {
+      const distLabel = formatDistanceLabel(s.distance_miles);
+      const zoneLabel = paceZones ? ` (${labelPaceZone(parsePace(s.pace_per_mile), paceZones)})` : "";
+      return `${distLabel} @ ${s.pace_per_mile}${zoneLabel}`;
+    });
+
+    // Label the overall hard effort pace zone
+    let paceZoneLabel = "";
+    if (paceZones && avgFastPaceSecs > 0) {
+      paceZoneLabel = labelPaceZone(avgFastPaceSecs, paceZones);
+    }
+
+    // Add warmup/cooldown context
+    const warmupSeg = runningSegs.find((s, i) => s.effort === "warmup" || (easySegs.includes(s) && i === 0));
+    const cooldownSeg = runningSegs.find((s, i) => s.effort === "cooldown" || (easySegs.includes(s) && i === runningSegs.length - 1));
+    const wcParts: string[] = [];
+    if (warmupSeg && warmupSeg.distance_miles > 0.3) wcParts.push(`${warmupSeg.distance_miles.toFixed(1)}mi warmup`);
+    if (cooldownSeg && cooldownSeg !== warmupSeg && cooldownSeg.distance_miles > 0.3) wcParts.push(`${cooldownSeg.distance_miles.toFixed(1)}mi cooldown`);
+    if (wcParts.length > 0) description += ` (${wcParts.join(", ")})`;
+
+    // Use workout_notes from voice memo as the primary structured description when available
+    const workoutNotesStr = log.workout_notes || "";
+
+    sessions.push({
+      date: dateStr,
+      totalMiles: log.workout_distance_miles || 0,
+      workoutType,
+      description,
+      fastPace,
+      fastMiles: Math.round(fastMiles * 100) / 100,
+      warmupCooldownMiles: Math.round(easyMiles * 100) / 100,
+      splits,
+      mood: log.mood || "",
+      notes: (log.cleaned_notes || log.notes || "").slice(0, 100),
+      workoutNotes: workoutNotesStr,
+      paceZoneLabel,
+    });
+  }
+
+  // Sort by date
+  return sessions;
+}
+
+/**
+ * Analyze training load patterns: volume jumps, intensity shifts, back-to-back hard days.
+ * Returns a human-readable summary for the AI prompt.
+ * Note: volume increases are NORMAL in training — only flag genuinely risky spikes (>30%),
+ * not progressive overload.
+ */
+function analyzeLoadPatterns(logs: TrainingLog[]): string {
+  const findings: string[] = [];
+  const hardEfforts = ["interval", "tempo", "threshold", "race_pace", "speed"];
+
+  // Group runs by week with intensity data
+  const weeklyLoad: Record<number, { miles: number; hardMinutes: number; runs: number; hardDays: number; moods: string[] }> = {};
+  const runDates: { date: Date; isHard: boolean; miles: number }[] = [];
+
+  for (const log of logs) {
+    if (!log.workout_distance_miles || log.workout_distance_miles <= 0) continue;
+    const date = new Date(log.workout_date || log.created_at);
+    const week = getWeekNumber(date);
+    if (!weeklyLoad[week]) weeklyLoad[week] = { miles: 0, hardMinutes: 0, runs: 0, hardDays: 0, moods: [] };
+    weeklyLoad[week].miles += log.workout_distance_miles;
+    weeklyLoad[week].runs++;
+    if (log.mood) weeklyLoad[week].moods.push(log.mood);
+
+    // Calculate hard minutes from pace_segments
+    let isHard = false;
+    if (log.pace_segments && log.pace_segments.length > 0) {
+      for (const seg of log.pace_segments) {
+        if (hardEfforts.includes(seg.effort)) {
+          weeklyLoad[week].hardMinutes += seg.duration_seconds / 60;
+          isHard = true;
+        }
+      }
+    } else if (log.workout_type && ["interval", "tempo", "race"].includes(log.workout_type)) {
+      // Fallback: whole workout classified as hard
+      weeklyLoad[week].hardMinutes += (log.workout_duration_minutes || 0);
+      isHard = true;
+    }
+    if (isHard) weeklyLoad[week].hardDays++;
+    runDates.push({ date, isHard, miles: log.workout_distance_miles });
+  }
+
+  const weeks = Object.entries(weeklyLoad)
+    .map(([w, d]) => ({ week: parseInt(w), ...d }))
+    .sort((a, b) => a.week - b.week);
+
+  // 1. Volume jumps — only flag truly big spikes (>30% week-over-week), not progressive buildup
+  for (let i = 1; i < weeks.length; i++) {
+    const prev = weeks[i - 1];
+    const curr = weeks[i];
+    if (prev.miles > 5) { // only if prev week had meaningful mileage
+      const pctChange = ((curr.miles - prev.miles) / prev.miles) * 100;
+      if (pctChange > 30) {
+        findings.push(`VOLUME SPIKE: Week ${curr.week} jumped ${Math.round(pctChange)}% (${prev.miles.toFixed(0)}→${curr.miles.toFixed(0)} miles). Progressive build is fine, but >30% in one week is aggressive.`);
+      }
+      // Also flag big drops that might indicate injury/burnout
+      if (pctChange < -40 && prev.miles > 15) {
+        findings.push(`VOLUME DROP: Week ${curr.week} dropped ${Math.round(Math.abs(pctChange))}% (${prev.miles.toFixed(0)}→${curr.miles.toFixed(0)} miles). Planned recovery or forced rest?`);
+      }
+    }
+  }
+
+  // 2. Intensity jumps — hard minutes surging week over week
+  for (let i = 1; i < weeks.length; i++) {
+    const prev = weeks[i - 1];
+    const curr = weeks[i];
+    if (prev.hardMinutes > 10 && curr.hardMinutes > prev.hardMinutes * 1.5) {
+      findings.push(`INTENSITY SPIKE: Hard minutes jumped from ${Math.round(prev.hardMinutes)} to ${Math.round(curr.hardMinutes)} in week ${curr.week}. Volume may be similar but intensity is significantly higher.`);
+    }
+    // Same volume, much more intensity
+    if (Math.abs(curr.miles - prev.miles) / (prev.miles || 1) < 0.15 && curr.hardMinutes > prev.hardMinutes * 1.8 && curr.hardMinutes > 20) {
+      findings.push(`HIDDEN INTENSITY INCREASE: Week ${curr.week} had similar volume (${curr.miles.toFixed(0)}mi) but hard minutes nearly doubled (${Math.round(prev.hardMinutes)}→${Math.round(curr.hardMinutes)}). The body feels intensity even when mileage looks flat.`);
+    }
+  }
+
+  // 3. Back-to-back hard days
+  runDates.sort((a, b) => a.date.getTime() - b.date.getTime());
+  let consecutiveHardDays = 0;
+  for (let i = 1; i < runDates.length; i++) {
+    if (!runDates[i].isHard) { consecutiveHardDays = 0; continue; }
+    const gap = (runDates[i].date.getTime() - runDates[i - 1].date.getTime()) / (24 * 60 * 60 * 1000);
+    if (gap <= 1.5 && runDates[i - 1].isHard) {
+      consecutiveHardDays++;
+      if (consecutiveHardDays >= 2) {
+        const dateStr = `${runDates[i].date.getMonth() + 1}/${runDates[i].date.getDate()}`;
+        findings.push(`BACK-TO-BACK HARD: ${consecutiveHardDays + 1} consecutive days with hard efforts around ${dateStr}. Recovery between hard sessions matters.`);
+        consecutiveHardDays = 0; // don't double-report
+      }
+    } else {
+      consecutiveHardDays = runDates[i].isHard ? 1 : 0;
+    }
+  }
+
+  // 4. Mood + load correlation
+  for (const w of weeks) {
+    const tiredCount = w.moods.filter(m => m === "tired" || m === "struggling").length;
+    if (tiredCount >= 2 && w.miles > 0) {
+      // Check if this was also a high volume/intensity week
+      const avgMiles = weeks.reduce((s, wk) => s + wk.miles, 0) / weeks.length;
+      if (w.miles > avgMiles * 1.1 || w.hardMinutes > 30) {
+        findings.push(`FATIGUE SIGNAL: Week ${w.week} had ${tiredCount} tired/struggling moods alongside ${w.miles.toFixed(0)} miles and ${Math.round(w.hardMinutes)} hard minutes. The body may be asking for recovery.`);
+      }
+    }
+  }
+
+  // 5. Week-by-week summary table for the AI
+  const weekSummary = weeks.map(w => {
+    const hardPct = w.miles > 0 && w.hardMinutes > 0 ? Math.round((w.hardMinutes / (w.runs * 30)) * 100) : 0; // rough estimate
+    return `  Wk${w.week}: ${w.miles.toFixed(0)}mi, ${w.runs} runs, ${Math.round(w.hardMinutes)}min hard, ${w.hardDays} hard days`;
+  }).join("\n");
+
+  let section = `\nLOAD ANALYSIS (volume + intensity per week — from ALL data sources: GPS, watch, voice):\n${weekSummary}\n`;
+  if (findings.length > 0) {
+    section += `\nLoad flags:\n${findings.map(f => `  ⚡ ${f}`).join("\n")}\n`;
+    section += `NOTE: Volume increases are normal in training. Only mention load flags if the pattern is genuinely concerning (spike without recovery, intensity creeping up unnoticed, mood declining alongside high load). Progressive overload is good — sudden jumps without adaptation time are the risk.\n`;
+  }
+  return section;
+}
+
+/** Convert decimal miles to a readable label: 0.5 → "800m", 0.25 → "400m", 1.0 → "1mi" */
+function formatDistanceLabel(miles: number): string {
+  if (Math.abs(miles - 0.25) < 0.03) return "400m";
+  if (Math.abs(miles - 0.31) < 0.03) return "500m";
+  if (Math.abs(miles - 0.37) < 0.03) return "600m";
+  if (Math.abs(miles - 0.43) < 0.03) return "700m";
+  if (Math.abs(miles - 0.50) < 0.04) return "800m";
+  if (Math.abs(miles - 0.62) < 0.04) return "1K";
+  if (Math.abs(miles - 0.75) < 0.04) return "1200m";
+  if (Math.abs(miles - 1.0) < 0.06) return "1mi";
+  if (Math.abs(miles - 1.24) < 0.06) return "2K";
+  if (miles < 0.5) return `${Math.round(miles * 1609)}m`;
+  return `${miles.toFixed(1)}mi`;
+}
+
+interface RunnerContext {
+  planName?: string;
+  raceDistance?: string;
+  goalTime?: string;
+  currentWeek?: number;
+  totalWeeks?: number;
+  predictedMarathon?: string;
+  predicted5k?: string;
+  predicted10k?: string;
+  predictedHalf?: string;
+  runDetails: string[];
+  qualitySessions?: QualitySession[];
+}
+
 function buildAnalysisPrompt(
   periodLabel: string,
   stats: AggregatedStats,
   qualitative: QualitativeSummary,
   progress: PeriodProgress,
   projections: ProjectedStats,
-  previousPeriodStats?: AggregatedStats
+  previousPeriodStats?: AggregatedStats,
+  runnerContext?: RunnerContext,
+  athleteProfileContext?: string,
+  monthlyTrend?: { label: string; miles: number; runs: number; avgPace: string; qualitySessions: number }[],
+  paceZones?: PaceZones | null,
+  loadAnalysis?: string
 ): string {
   const weeklyBreakdown = stats.runsByWeek
     .map((w) => {
@@ -345,16 +948,33 @@ function buildAnalysisPrompt(
     .map(([mood, count]) => `${mood}: ${count}`)
     .join(", ");
 
-  const notesExcerpt = qualitative.allNotes.slice(0, 10).join("\n---\n");
+  const notesExcerpt = qualitative.allNotes.slice(0, 25).join("\n---\n");
 
-  const comparisonSection = previousPeriodStats
-    ? `
-Previous Period Comparison:
-- Previous total miles: ${previousPeriodStats.totalMiles}
-- Previous total runs: ${previousPeriodStats.totalRuns}
-- Mile change: ${stats.totalMiles > previousPeriodStats.totalMiles ? "+" : ""}${Math.round((stats.totalMiles - previousPeriodStats.totalMiles) * 10) / 10}
-- Volume trend: ${stats.totalMiles > previousPeriodStats.totalMiles * 1.1 ? "increasing" : stats.totalMiles < previousPeriodStats.totalMiles * 0.9 ? "decreasing" : "stable"}`
-    : "";
+  // Build fitness trend section
+  let comparisonSection = "";
+  if (monthlyTrend && monthlyTrend.length > 0) {
+    const trendLines = monthlyTrend.map(m =>
+      `  ${m.label}: ${m.miles}mi, ${m.runs} runs, avg ${m.avgPace}, ${m.qualitySessions} quality sessions`
+    );
+    // Add current period
+    const currentLabel = periodLabel;
+    const currentQuality = runnerContext?.qualitySessions?.length || 0;
+    trendLines.push(`  ${currentLabel} (current): ${stats.totalMiles}mi, ${stats.totalRuns} runs, avg ${stats.averagePace}, ${currentQuality} quality sessions${!progress.isComplete ? " (in progress)" : ""}`);
+
+    comparisonSection = `
+FITNESS TREND (last ${monthlyTrend.length + 1} months):
+${trendLines.join("\n")}`;
+
+    if (previousPeriodStats) {
+      const milesDiff = Math.round((stats.totalMiles - previousPeriodStats.totalMiles) * 10) / 10;
+      comparisonSection += `\nVs last month: ${milesDiff > 0 ? "+" : ""}${milesDiff} miles (${Math.round((milesDiff / previousPeriodStats.totalMiles) * 100)}%)`;
+    }
+  } else if (previousPeriodStats) {
+    const milesDiff = Math.round((stats.totalMiles - previousPeriodStats.totalMiles) * 10) / 10;
+    comparisonSection = `
+Previous Month: ${previousPeriodStats.totalMiles}mi, ${previousPeriodStats.totalRuns} runs
+Change: ${milesDiff > 0 ? "+" : ""}${milesDiff} miles`;
+  }
 
   // Build progress/projection section for incomplete periods
   const isIncomplete = !progress.isComplete;
@@ -383,38 +1003,143 @@ MANDATORY FOR INCOMPLETE PERIODS:
 `
     : "";
 
-  return `You are Coach, analyzing a runner's training for ${periodLabel}.
+  // Runner context section
+  let runnerSection = "";
+  if (runnerContext) {
+    const parts: string[] = [];
+    if (runnerContext.planName) parts.push(`Training Plan: ${runnerContext.planName}`);
+    if (runnerContext.raceDistance && runnerContext.goalTime) {
+      parts.push(`Goal: ${runnerContext.raceDistance} in ${runnerContext.goalTime}`);
+    } else if (runnerContext.raceDistance) {
+      parts.push(`Training for: ${runnerContext.raceDistance}`);
+    }
+    if (runnerContext.currentWeek && runnerContext.totalWeeks) {
+      parts.push(`Plan progress: Week ${runnerContext.currentWeek} of ${runnerContext.totalWeeks}`);
+    }
+    if (runnerContext.predictedMarathon || runnerContext.predicted5k) {
+      const preds: string[] = [];
+      if (runnerContext.predicted5k) preds.push(`5K: ${runnerContext.predicted5k}`);
+      if (runnerContext.predicted10k) preds.push(`10K: ${runnerContext.predicted10k}`);
+      if (runnerContext.predictedHalf) preds.push(`Half: ${runnerContext.predictedHalf}`);
+      if (runnerContext.predictedMarathon) preds.push(`Marathon: ${runnerContext.predictedMarathon}`);
+      parts.push(`Current fitness predictions: ${preds.join(", ")}`);
+    }
+    if (parts.length > 0) {
+      runnerSection = `\nRUNNER CONTEXT:\n${parts.join("\n")}\n`;
+    }
+  }
 
-IMPORTANT: Never mention specific coaching methodologies, frameworks, or coach names (e.g., Canova, VDOT, Jack Daniels) in your response. Just apply the principles naturally.
-${periodStatusNote}
+  // Training pace reference — so AI can discuss workouts in terms of race-equivalent paces
+  let paceReferenceSection = "";
+  if (paceZones) {
+    const fmtPace = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/mi`;
+    paceReferenceSection = `\nTRAINING PACE REFERENCE (this runner's current fitness-based paces):
+  Easy: ${fmtPace(paceZones.easy)}
+  Marathon pace: ${fmtPace(paceZones.marathon)}
+  Half-marathon pace: ${fmtPace(paceZones.halfMarathon)}
+  Threshold/LT: ${fmtPace(paceZones.threshold)}
+  10K pace: ${fmtPace(paceZones.tenK)}
+  5K pace: ${fmtPace(paceZones.fiveK)}
+IMPORTANT: When discussing workouts, ALWAYS reference these pace zones (e.g. "mile repeats at 10K pace" or "tempo at half-marathon effort") rather than just stating raw paces. The runner thinks in terms of race-effort paces, not arbitrary numbers. Each quality session below includes a pace zone label — use it.\n`;
+  }
 
-Coaching Philosophy to Apply:
-- Value rest days and recovery - they are productive, not weakness
-- Support mobility and active recovery for keeping the body moving well
-- If fatigue patterns appear, acknowledge them positively and recommend backing off
-- For any injury mentions in notes, flag them seriously - catching issues early prevents bigger problems
-- Encourage running relaxed and within yourself, even on hard efforts
-- Be understanding and positive - reaffirm the athlete is working hard and progressing toward their goals
+  // Quality sessions — structured workouts with parsed fast segments
+  let qualitySessionsSection = "";
+  if (runnerContext?.qualitySessions?.length) {
+    const sessionLines = runnerContext.qualitySessions.map(s => {
+      const moodStr = s.mood ? ` [${s.mood}]` : "";
+      const noteStr = s.notes ? ` — ${s.notes}` : "";
+      const zoneStr = s.paceZoneLabel ? ` → ${s.paceZoneLabel}` : "";
+      const splitsStr = s.splits.length > 1
+        ? `\n    Splits: ${s.splits.join(", ")}`
+        : "";
+      // Include voice memo workout notes when available (structured description from runner)
+      const voiceNotesStr = s.workoutNotes
+        ? `\n    Runner's workout notes: ${s.workoutNotes}`
+        : "";
+      return `  ${s.date}: ${s.description}${zoneStr}${moodStr}${noteStr}${splitsStr}${voiceNotesStr}`;
+    });
 
-QUANTITATIVE DATA:
-- Total runs: ${stats.totalRuns}
-- Total miles: ${stats.totalMiles}
-- Total time: ${Math.floor(stats.totalMinutes / 60)}h ${stats.totalMinutes % 60}m
-- Average pace: ${stats.averagePace}
-- Average run distance: ${stats.averageDistance} miles
-- Longest run: ${stats.longestRun} miles
-- Days with runs: ${stats.daysWithRuns}
-- Rest days: ${stats.restDays}
+    // Pace progression for interval/tempo sessions
+    const tempoSessions = runnerContext.qualitySessions.filter(s => s.workoutType === "tempo" || s.workoutType === "threshold");
+    const intervalSessions = runnerContext.qualitySessions.filter(s => s.workoutType === "interval");
+
+    let progressionNote = "";
+    if (tempoSessions.length >= 2) {
+      progressionNote += `\n  Tempo pace progression: ${tempoSessions.map(s => `${s.date}: ${s.fastPace}`).join(" → ")}`;
+    }
+    if (intervalSessions.length >= 2) {
+      progressionNote += `\n  Interval pace progression: ${intervalSessions.map(s => `${s.date}: ${s.fastPace}`).join(" → ")}`;
+    }
+
+    qualitySessionsSection = `\nQUALITY SESSIONS (parsed from pace segments — these are the actual workouts):\n${sessionLines.join("\n")}${progressionNote}\n`;
+  }
+
+  // Per-run details
+  const runDetailsSection = runnerContext?.runDetails?.length
+    ? `\nINDIVIDUAL RUN LOG (★ = quality session detailed above):\n${runnerContext.runDetails.join("\n")}\n`
+    : "";
+
+  return `You're writing a training analysis for a runner's ${periodLabel} data. Write like a sharp, opinionated running friend who also happens to coach — someone who texts you after looking at your Strava and says "dude, those mile repeats are getting spicy." Not a corporate wellness report.
+
+VOICE RULES:
+- Write like you're talking to a friend, not presenting findings. Use contractions. Be casual but smart.
+- Lead with the most interesting thing in the data, not a summary. What jumps out? Start there.
+- Specific > general. "Your 4th repeat was 12 seconds faster than your 1st — that's called closing hard and it's a great sign" beats "your interval pacing was solid."
+- Make connections the runner wouldn't see themselves. "You ran your fastest tempo the day after a rest day — your legs clearly needed that."
+- If you notice something surprising or unusual, call it out with genuine curiosity, not clinical observation.
+- When something is going well, get excited about it. When something needs attention, be direct but kind.
+- NEVER use these words/phrases: "impressive", "journey", "fantastic", "incredible", "absolutely", "I'd love to", "Let's dive in", "Here's what I see", "It's worth noting", "solid", "overall", "in summary", "consistency is key", "average pace"
+- No markdown. No bullet points. No numbered lists inside sections. Write in flowing paragraphs.
+- Never name coaching methodologies or famous coaches.
+- Each section should feel like its own mini-story, not a data dump.
+- NEVER discuss "average pace" for the month/week. Average pace across mixed workout types is meaningless noise. Instead, discuss paces within specific workout types: easy pace, tempo pace, interval pace. The QUALITY SESSIONS and ZONE VOLUME data give you the real numbers — use those.
+- When splits data is provided for a workout, you MUST reference specific split times, not summarize them. "Your 800s went 3:08, 3:05, 3:02 — that's a textbook negative split" is good. "Your intervals were well-paced" is bad.
+
+HERE'S WHAT GREAT ANALYSIS SOUNDS LIKE (match this energy and specificity):
+
+"You put down 142 miles in February — that's 18 more than January, and the way you built into it was smart. Weeks 1 and 2 were 32 and 34, then you pushed to 38 in week 3 before pulling back to 34. That's textbook. Your body got the stimulus without getting hammered.
+
+The 6x1mi session on the 14th was the standout. You opened at 6:12 and closed at 5:58 — negative splitting mile repeats is hard to do and it tells me your aerobic engine is humming. Compare that to the similar workout on Jan 22nd where you ran 6:18-6:22 and faded to 6:31 on the last one. Night and day.
+
+One thing that caught my eye — 86% of your miles were easy pace, which is actually a touch high. Your tempo volume dropped from 12 miles last month to 7. The speed is clearly there based on those intervals, but you might be leaving some race-specific fitness on the table. A 5-mile tempo at 6:30 would be a good litmus test right now."
+
+${runnerSection}${athleteProfileContext || ""}${periodStatusNote}
+
+DATA:
+Runs: ${stats.totalRuns} | Miles: ${stats.totalMiles} | Time: ${Math.floor(stats.totalMinutes / 60)}h ${stats.totalMinutes % 60}m
+Avg pace: ${stats.averagePace} | Avg distance: ${stats.averageDistance}mi | Longest: ${stats.longestRun}mi
+Days running: ${stats.daysWithRuns} | Rest days: ${stats.restDays}
+Workout types: ${Object.entries(stats.workoutTypeDistribution).map(([type, count]) => `${type.replace(/_/g, " ")}: ${count}`).join(", ") || "none tagged"}
+
+Zone Volume (from pace segments — actual running, excludes standing/rest time):
+${(() => {
+    const zoneMilesTotal = Object.values(stats.zoneVolume).reduce((sum, d) => sum + d.miles, 0);
+    const denom = zoneMilesTotal > 0 ? zoneMilesTotal : stats.totalMiles;
+    return Object.entries(stats.zoneVolume).map(([zone, data]) => {
+      const pct = denom > 0 ? Math.round((data.miles / denom) * 100) : 0;
+      return `  ${zone.replace(/_/g, " ")}: ${data.miles}mi (${pct}%, ${data.runs} runs, avg ${data.avgPace})`;
+    }).join("\n") || "  No zone data";
+  })()}
+${(() => {
+    const zoneMilesTotal = Object.values(stats.zoneVolume).reduce((sum, d) => sum + d.miles, 0);
+    const denom = zoneMilesTotal > 0 ? zoneMilesTotal : stats.totalMiles;
+    const easyZones = ["easy", "recovery", "long_run"];
+    const easyMiles = Object.entries(stats.zoneVolume).filter(([z]) => easyZones.includes(z)).reduce((sum, [, d]) => sum + d.miles, 0);
+    const easyPct = denom > 0 ? Math.round((easyMiles / denom) * 100) : 0;
+    return `Easy/hard split: ${easyPct}% easy / ${100 - easyPct}% quality (target: ~80/20)`;
+  })()}
 
 Weekly Breakdown:
 ${weeklyBreakdown}
 
-Mood Distribution: ${moodBreakdown || "No mood data recorded"}
-Overall mood trend: ${qualitative.moodTrend}
+Mood: ${moodBreakdown || "No mood data"} | Trend: ${qualitative.moodTrend}
 ${comparisonSection}
 
-QUALITATIVE DATA (Runner's Notes):
-${notesExcerpt || "No notes recorded this period"}
+${loadAnalysis || ""}
+${paceReferenceSection}${qualitySessionsSection}${runDetailsSection}
+Runner's Notes:
+${notesExcerpt || "None"}
 
 Notable Workouts:
 ${qualitative.notableWorkouts.join("\n") || "None identified"}
@@ -422,40 +1147,36 @@ ${qualitative.notableWorkouts.join("\n") || "None identified"}
 ---
 ${incompleteInstructions}
 
-Provide a training analysis with these sections (use plain text, no markdown headers or bold):
+Write these sections. Label each one but write in flowing prose, not lists:
 
-1. PERIOD OVERVIEW (2-3 sentences summarizing the training block)
-${isIncomplete ? `   - REQUIRED: Start with "With ${progress.remainingDays} days remaining in this period..." or similar acknowledgment that this is in-progress` : ""}
+THE BIG PICTURE
+Start with the most interesting takeaway from the month, not a volume summary. How is fitness trending? If multi-month data exists, tell the story of the arc — are they building, plateauing, bouncing back? What's different about this month vs. the last few? 3-5 sentences.
+${isIncomplete ? `This period has ${progress.remainingDays} days left. Frame as "so far" and project where it's heading.` : ""}
 
-2. VOLUME & CONSISTENCY ANALYSIS
-- Comment on weekly mileage patterns
-- Note any concerning gaps or inconsistencies
-- Assess the balance of training days vs rest
-${isIncomplete ? `   - REQUIRED: State "${stats.totalMiles} miles logged so far, on pace for approximately ${projections.projectedMiles} miles"` : ""}
+WEEKLY VOLUME
+Walk through the weeks but make it interesting. Don't just list numbers — find the rhythm. Was there a big week followed by a smart pullback? A light week that broke the momentum? Connect volume patterns to how they felt (mood data) or what workouts happened that week.
+${isIncomplete ? `${stats.totalMiles} miles so far, tracking toward ~${projections.projectedMiles}.` : ""}
 
-3. WORKOUT QUALITY (based on notes and notable workouts)
-- Identify what types of training were emphasized
-- Note any patterns in workout descriptions
+TRAINING PACE VOLUME
+Use the ZONE VOLUME data — it breaks miles down by effort type with actual average paces per zone. Talk about specific paces: "your easy runs averaged 8:45/mi" or "tempo miles came in at 6:50/mi." Is the easy pace actually easy relative to their hard efforts (should be 60-90sec slower than tempo)? Are they grinding their easy days too fast? Has tempo or interval volume shifted from previous months? Interpret the 80/20 split — what does their actual easy/hard ratio tell you about where they are in training? Never just restate the zone percentages; tell the runner what the numbers mean for their fitness.
 
-4. RECOVERY & WELL-BEING
-- Analyze mood patterns and what they suggest
-- If fatigue patterns appear, acknowledge them with understanding and support taking time to recover
-- Flag any injury mentions from the notes - emphasize catching issues early
-- Comment on rest day balance and mobility/recovery practices
+WORKOUTS
+This is the most important section. You have QUALITY SESSIONS data with actual per-rep splits — USE THEM. For every quality session:
+1. Name the workout by structure ("6x800m" or "3mi tempo"), never by total distance
+2. Quote the actual split times from the data — every single rep if there are 6 or fewer
+3. Analyze the splits: did they negative split (got faster)? Positive split (faded)? Were reps consistent or erratic? What's the spread between fastest and slowest?
+4. If there are multiple sessions of the same type, compare them directly — is interval pace trending faster or slower? Is tempo pace dropping?
+5. Connect to effort/mood if available — "you ran your fastest 800 the day you logged feeling tired, which usually means good fitness"
+If you don't have quality session data, say so honestly — don't fill the section with generic pace observations. Better to say "no structured workouts this period" than to fake insight.
 
-5. KEY INSIGHTS
-- 2-3 specific observations unique to this runner's data
-- Connect dots between quantitative and qualitative data
-- Acknowledge the hard work they've put in${isIncomplete ? " so far" : " this period"}
+LOAD & INTENSITY
+Look at the LOAD ANALYSIS data — it shows weekly volume AND hard minutes side by side from ALL data sources (GPS watch + voice memos). If there are load flags, address them — but don't be alarmist. Volume increases are EXPECTED in training; progressive overload is how you get faster. Only call out patterns that are genuinely risky: sudden spikes without buildup, intensity jumps disguised by flat mileage, back-to-back hard sessions with declining mood. If the load is building smartly, say so — "you added 5 miles and kept the hard work steady, that's how you absorb load." If there are no flags, keep this section to 2-3 sentences about the load rhythm.
 
-6. RECOMMENDATIONS FOR ${isIncomplete ? "THE REST OF THIS PERIOD" : "NEXT PERIOD"}
-- Specific, actionable suggestions based on the data
-- Include mobility and active recovery recommendations
-- If showing fatigue, fully support backing off with positive reinforcement
-- Encourage running relaxed and within yourself, even on hard efforts
-- Reaffirm their progress toward their goals
+RECOVERY & HOW YOU'RE FEELING
+Read between the lines of the mood data, notes, and load patterns. Don't list moods by date — find the pattern. Were they feeling strong after lighter weeks? Dragging after high volume? Any red flags like persistent tiredness or mention of niggles? Connect mood to what was happening in training that week. Keep it brief but perceptive.
 
-Write conversationally with understanding and positivity. Reference specific numbers and patterns from the data. Be supportive while providing honest, helpful analysis.`;
+LOOKING AHEAD
+2-3 specific, actionable ideas grounded in their ACTUAL paces from this period. Calculate target paces from their real data — if their 800m reps were 3:05-3:10, suggest the next session at 3:02-3:05. If their tempo was 6:50/mi, suggest extending the tempo distance at the same pace or dropping pace by 5-10sec. If they have a race goal, connect suggestions to it with specific splits. Reference their longest run distance and suggest the next step up. NEVER suggest extended rest periods or taking days off — this runner is training, give them things to DO. The "remaining days" number is a calendar note, not a rest prescription.`;
 }
 
 // ============================================================================
@@ -470,8 +1191,21 @@ Deno.serve(async (req: Request) => {
   const startTime = Date.now();
 
   try {
-    // Verify authenticated user from JWT
-    const userId = await getAuthenticatedUser(req);
+    // Parse request body first (stream can only be read once)
+    const request = (await req.json()) as AnalysisRequest;
+    const { periodType, year, month } = request;
+
+    // Verify authenticated user from JWT, fall back to userId from request body
+    let userId = await getAuthenticatedUser(req);
+    if (!userId && request.userId) {
+      // Fallback: accept userId from request body (for expired sessions)
+      // Validate the userId is a valid UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(request.userId)) {
+        userId = request.userId;
+        console.log("Using fallback userId from request body:", userId);
+      }
+    }
     if (!userId) {
       return unauthorizedResponse(corsHeaders);
     }
@@ -486,9 +1220,6 @@ Deno.serve(async (req: Request) => {
         );
       }
     }
-
-    const request = (await req.json()) as AnalysisRequest;
-    const { periodType, year, month } = request;
 
     if (!periodType || !year) {
       return new Response(
@@ -536,6 +1267,7 @@ Deno.serve(async (req: Request) => {
     const { data: logs, error: logsError } = await supabase
       .from("training_logs")
       .select("*")
+      .eq("user_id", userId)
       .gte("created_at", queryStart.toISOString())
       .lte("created_at", queryEnd.toISOString())
       .order("created_at", { ascending: true });
@@ -588,46 +1320,182 @@ Deno.serve(async (req: Request) => {
     // Aggregate stats
     const stats = aggregateStats(filteredLogs, start, end, progress);
     const qualitative = extractQualitativeData(filteredLogs);
+    // Quality sessions will be extracted after pace zones are computed (below)
 
     // Calculate projections for incomplete periods
     const projections = calculateProjections(stats, progress);
 
-    // Fetch previous period for comparison (optional)
+    // Fetch previous 3 months for trend comparison
     let previousPeriodStats: AggregatedStats | undefined;
+    const monthlyTrend: { label: string; miles: number; runs: number; avgPace: string; qualitySessions: number }[] = [];
     if (periodType === "month" && month) {
-      const prevMonth = month === 1 ? 12 : month - 1;
-      const prevYear = month === 1 ? year - 1 : year;
-      const prevStart = new Date(prevYear, prevMonth - 1, 1);
-      const prevEnd = new Date(prevYear, prevMonth, 0, 23, 59, 59);
+      // Query the last 3 months in one go (90 days before period start)
+      const trendStart = new Date(year, month - 4, 1); // 3 months before
+      const trendEnd = new Date(start.getTime() - 1); // day before current period
 
-      const prevQueryStart = new Date(prevStart.getTime() - bufferDays * 24 * 60 * 60 * 1000);
-      const prevQueryEnd = new Date(prevEnd.getTime() + bufferDays * 24 * 60 * 60 * 1000);
-
-      const { data: prevLogs } = await supabase
+      const { data: trendLogs } = await supabase
         .from("training_logs")
         .select("*")
-        .gte("created_at", prevQueryStart.toISOString())
-        .lte("created_at", prevQueryEnd.toISOString());
+        .eq("user_id", userId)
+        .gte("created_at", trendStart.toISOString())
+        .lte("created_at", trendEnd.toISOString());
 
-      const prevFiltered = (prevLogs || []).filter((log: TrainingLog) => {
-        const logDate = new Date(log.workout_date || log.created_at);
-        return logDate >= prevStart && logDate <= prevEnd;
-      });
-
-      if (prevFiltered.length > 0) {
-        previousPeriodStats = aggregateStats(prevFiltered, prevStart, prevEnd);
+      if (trendLogs && trendLogs.length > 0) {
+        // Group into months
+        for (let i = 1; i <= 3; i++) {
+          const m = month - i <= 0 ? month - i + 12 : month - i;
+          const y = month - i <= 0 ? year - 1 : year;
+          const mStart = new Date(y, m - 1, 1);
+          const mEnd = new Date(y, m, 0, 23, 59, 59);
+          const mLogs = trendLogs.filter((log: TrainingLog) => {
+            const d = new Date(log.workout_date || log.created_at);
+            return d >= mStart && d <= mEnd;
+          });
+          if (mLogs.length > 0) {
+            const mStats = aggregateStats(mLogs, mStart, mEnd);
+            const mQuality = extractQualitySessions(mLogs, null);
+            const monthName = mStart.toLocaleString("default", { month: "short" });
+            monthlyTrend.push({
+              label: `${monthName} ${y}`,
+              miles: mStats.totalMiles,
+              runs: mStats.totalRuns,
+              avgPace: mStats.averagePace,
+              qualitySessions: mQuality.length,
+            });
+            // Most recent previous month
+            if (i === 1) previousPeriodStats = mStats;
+          }
+        }
+        monthlyTrend.reverse(); // chronological order
       }
     }
 
+    // Fetch cached athlete profile
+    const { data: cachedAthleteProfile } = await supabase
+      .from("athlete_profiles")
+      .select("profile_data")
+      .eq("user_id", userId)
+      .single();
+
+    let athleteProfileCtx = "";
+    if (cachedAthleteProfile?.profile_data) {
+      try {
+        athleteProfileCtx = buildAthleteProfileContext(cachedAthleteProfile.profile_data as AthleteProfile);
+      } catch (e) {
+        console.error("Error building athlete profile context:", e);
+      }
+    }
+
+    // Fetch runner context: training plan + fitness snapshot
+    const runnerContext: RunnerContext = { runDetails: [] };
+
+    // Active training plan
+    const { data: plans } = await supabase
+      .from("training_plans")
+      .select("name, target_race_distance, target_time_seconds, start_date, end_date, status")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .limit(1);
+
+    if (plans && plans.length > 0) {
+      const plan = plans[0];
+      runnerContext.planName = plan.name;
+      runnerContext.raceDistance = plan.target_race_distance;
+      if (plan.target_time_seconds) {
+        const h = Math.floor(plan.target_time_seconds / 3600);
+        const m = Math.floor((plan.target_time_seconds % 3600) / 60);
+        const s = plan.target_time_seconds % 60;
+        runnerContext.goalTime = `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+      }
+      if (plan.start_date) {
+        const planStart = new Date(plan.start_date);
+        const now = new Date();
+        const weeksElapsed = Math.floor((now.getTime() - planStart.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+        const planEnd = plan.end_date ? new Date(plan.end_date) : now;
+        const totalWeeks = Math.ceil((planEnd.getTime() - planStart.getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1;
+        runnerContext.currentWeek = Math.max(1, Math.min(weeksElapsed, totalWeeks));
+        runnerContext.totalWeeks = totalWeeks;
+      }
+    }
+
+    // Latest fitness snapshot
+    const { data: snapshots } = await supabase
+      .from("fitness_snapshots")
+      .select("predicted_marathon_seconds, predicted_half_seconds, predicted_10k_seconds, predicted_5k_seconds")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    let paceZones: PaceZones | null = null;
+
+    if (snapshots && snapshots.length > 0) {
+      const snap = snapshots[0];
+      const fmtTime = (secs: number) => {
+        const h = Math.floor(secs / 3600);
+        const m = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+      };
+      if (snap.predicted_marathon_seconds) runnerContext.predictedMarathon = fmtTime(snap.predicted_marathon_seconds);
+      if (snap.predicted_half_seconds) runnerContext.predictedHalf = fmtTime(snap.predicted_half_seconds);
+      if (snap.predicted_10k_seconds) runnerContext.predicted10k = fmtTime(snap.predicted_10k_seconds);
+      if (snap.predicted_5k_seconds) runnerContext.predicted5k = fmtTime(snap.predicted_5k_seconds);
+
+      // Compute training pace zones for labeling workouts
+      paceZones = computePaceZones(snap);
+    }
+
+    // Extract quality sessions now that pace zones are available
+    const qualitySessions = extractQualitySessions(filteredLogs, paceZones);
+
+    // Build per-run detail lines
+    const runsWithData = filteredLogs.filter((log: TrainingLog) => log.workout_distance_miles && log.workout_distance_miles > 0);
+    runnerContext.runDetails = runsWithData.slice(0, 40).map((log: TrainingLog) => {
+      const date = new Date(log.workout_date || log.created_at);
+      const dateStr = `${date.getMonth() + 1}/${date.getDate()}`;
+      const dist = log.workout_distance_miles?.toFixed(1) || "?";
+      const dur = log.workout_duration_minutes || 0;
+      let pace = "";
+      if (dur > 0 && log.workout_distance_miles && log.workout_distance_miles > 0) {
+        const paceMin = dur / log.workout_distance_miles;
+        const pm = Math.floor(paceMin);
+        const ps = Math.round((paceMin - pm) * 60);
+        pace = ` @ ${pm}:${String(ps).padStart(2, "0")}/mi`;
+      }
+      const type = log.workout_type ? ` (${log.workout_type.replace(/_/g, " ")})` : "";
+      const mood = log.mood ? ` [${log.mood}]` : "";
+      // Prefer workout_notes (structured: "Intervals: 4x800m @ 2:50") over cleaned_notes (feelings)
+      const note = (log.workout_notes || log.cleaned_notes || log.notes || "").slice(0, 120);
+      const noteStr = note ? ` — ${note}` : "";
+
+      // Mark runs that have quality session detail (parsed separately)
+      // For quality runs, skip the overall pace — it's misleading (includes warmup/cooldown)
+      const hasQuality = log.pace_segments && log.pace_segments.length > 1 &&
+        log.pace_segments.some((s: PaceSegmentRow) =>
+          ["interval", "tempo", "threshold", "race_pace", "speed"].includes(s.effort)
+        );
+      const qualityTag = hasQuality ? " ★" : "";
+      const displayPace = hasQuality ? "" : pace;
+
+      return `${dateStr}: ${dist}mi in ${dur}min${displayPace}${type}${mood}${qualityTag}${noteStr}`;
+    });
+
+    // Attach quality sessions to runner context
+    runnerContext.qualitySessions = qualitySessions;
+
     // Generate AI analysis
-    const prompt = buildAnalysisPrompt(label, stats, qualitative, progress, projections, previousPeriodStats);
+    // Analyze load patterns from ALL data sources (GPS, watch, voice)
+    const loadAnalysis = analyzeLoadPatterns(filteredLogs);
+
+    const prompt = buildAnalysisPrompt(label, stats, qualitative, progress, projections, previousPeriodStats, runnerContext, athleteProfileCtx, monthlyTrend, paceZones, loadAnalysis);
 
     const genAI = new GoogleGenerativeAI(geminiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-pro",
       generationConfig: {
-        maxOutputTokens: 1500,
-        temperature: 0.7,
+        maxOutputTokens: 8000,
+        temperature: 0.85,
+        thinkingConfig: { thinkingBudget: 4096 },
       },
     });
 
@@ -639,7 +1507,7 @@ Deno.serve(async (req: Request) => {
       await supabase.from("usage_tracking").insert({
         user_id: userId,
         feature: "training_analysis",
-        model_used: "gemini-2.0-flash",
+        model_used: "gemini-2.5-pro",
         input_tokens: Math.round(prompt.length / 4),
         output_tokens: Math.round(analysis.length / 4),
         cached: false,
@@ -697,6 +1565,10 @@ Deno.serve(async (req: Request) => {
     );
   } catch (error) {
     console.error("Training analysis error:", error);
-    return internalErrorResponse(corsHeaders);
+    const message = error instanceof Error ? error.message : String(error);
+    return new Response(
+      JSON.stringify({ error: `Analysis failed: ${message}` }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });

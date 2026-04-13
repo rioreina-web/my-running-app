@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, JetBrains_Mono, DM_Sans } from "next/font/google";
+import { Playfair_Display, JetBrains_Mono, DM_Sans } from "next/font/google";
 import "./globals.css";
 
-const bebasNeue = Bebas_Neue({
-  weight: "400",
+const playfairDisplay = Playfair_Display({
   subsets: ["latin"],
-  variable: "--font-bebas-neue",
+  variable: "--font-playfair-display",
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -30,9 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body
-        className={`${bebasNeue.variable} ${jetbrainsMono.variable} ${dmSans.variable} antialiased`}
+        className={`${playfairDisplay.variable} ${jetbrainsMono.variable} ${dmSans.variable} antialiased`}
       >
         {children}
       </body>
