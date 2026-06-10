@@ -46,7 +46,9 @@ const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   { fn: "parse-training-plan",    feature: "parse" },
   { fn: "parse-training-week",    feature: "parse" },
   { fn: "parse-workout-structure", feature: "parse" },
-  { fn: "transcribe",             feature: "transcribe" },
+  // transcribe — DELETED 2026-06-10. Zero callers (iOS voice flow goes
+  // through process-training-memo, which transcribes internally). Was
+  // never deployed to prod. Same rationale as the C.1 cuts.
   { fn: "generate-training-plan", feature: "plan_builder" },
   { fn: "reschedule-plan",        feature: "reschedule" },
   { fn: "weekly-coaching-report", feature: "weekly_review" },

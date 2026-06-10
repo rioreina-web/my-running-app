@@ -30,14 +30,18 @@ Source of truth: `FEATURE_LIMITS` in `supabase/functions/_shared/rateLimit.ts`.
 | `coaching` | 5 | 25 | 100 | `coaching-agent` |
 | `predictor` | 10 | 25 | 100 | `fitness-predictor` |
 | `analysis` | 10 | 25 | 100 | `training-analysis` |
-| `transcribe` | 20 | 50 | 200 | `transcribe` |
 | `parse` | 10 | 25 | 100 | `parse-training-plan`, `parse-training-week`, `parse-workout-structure` |
-| `injury_analysis` | 5 | 25 | 100 | `injury-analysis` |
+| `injury_analysis` | 5 | 25 | 100 | `injury-analysis`, `injury-early-warning` |
 | `plan_builder` | 3 | 10 | 50 | `generate-training-plan` |
-| `race` | 10 | 25 | 100 | (reserved for `race-intel` + `race-readiness` after auth audit) |
+| `race` | 10 | 25 | 100 | `race-intel`, `race-readiness` |
 | `weekly_review` | 5 | 25 | 100 | `weekly-coaching-report`, `weekly-plan-review` |
-| `post_run` | 20 | 50 | 200 | (reserved for `post-run-analysis` after auth audit) |
-| `voice_memo` | 20 | 50 | 200 | (reserved for `process-training-memo` after auth audit) |
+| `post_run` | 20 | 50 | 200 | `post-run-analysis` |
+| `voice_memo` | 20 | 50 | 200 | `process-training-memo` |
+| `daily_read` | 5 | 25 | 100 | `coaching-daily-read` (manual taps; cron bypasses via service role) |
+
+> `transcribe` bucket + function removed 2026-06-10 — zero callers
+> (`process-training-memo` owns transcription). W2.3-follow-up auth
+> audit landed, so the "(reserved …)" markers above are now active.
 | `reschedule` | 10 | 25 | 100 | `reschedule-plan` |
 | `workout_insight` | 20 | 50 | 200 | `generate-workout-insight` (non-service-role path) |
 | `check_in` | 10 | 25 | 100 | (reserved for `process-check-in` after auth audit) |

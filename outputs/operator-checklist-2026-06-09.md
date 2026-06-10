@@ -74,6 +74,14 @@ Prod is running April/May builds. Redeploying ships, all at once:
   rule in evaluate-coachable-moment; its `journey_comparison` action_type
   migration is already applied to prod)
 - the canonical pace-zone bands (web/server parity fix)
+- W3.3 voice outbox: deploy `drain-voice-processing-jobs`, then apply
+  migration `20260610100000_voice_processing_outbox.sql` (this order —
+  the trigger keeps old behavior until the migration lands). Also fixes
+  the latent voice-pipeline auth break (old trigger payload lacked
+  `user_id`, which the hardened process-training-memo requires).
+- C.6 output-token caps (moderate 1000 / complex 2000) + truncation
+  logging; `transcribe` deleted from the repo (never deployed — nothing
+  to evict)
 
 Then verify a CORS preflight from an unknown origin is rejected
 (curl block in TASKS.md § W1.2) and confirm Upstash env vars are set

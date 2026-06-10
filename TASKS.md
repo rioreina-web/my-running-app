@@ -255,15 +255,20 @@ Without the pooler, the Next.js `api/` routes hit the 60-direct-connection ceili
 
 ### W3.3 — Voice auto-process pipeline → outbox pattern  *(3d)*
 
-The coach-insight outbox in `20260508140000_coach_insight_outbox.sql` is the right answer for trigger-fired LLM dispatch. Apply the same pattern to the voice auto-process pipeline — the highest-stakes remaining fire-and-forget path.
+**IMPLEMENTED in repo — 2026-06-10.** Migration
+`20260610100000_voice_processing_outbox.sql` + edge function
+`drain-voice-processing-jobs`.
 
-- [ ] Create `voice_processing_jobs` table mirroring `coach_insight_jobs` (status, attempts, max_attempts, last_error, available_at)
-- [ ] Trigger on `training_logs` INSERT writes a row when `audio_url IS NOT NULL`
-- [ ] New edge function `drain-voice-processing-jobs` mirrors `drain-coach-insight-jobs`
-- [ ] `pg_cron` schedule every minute, batch 20
-- [ ] Add `voice_processing_status` column on `training_logs` (matches `coach_insight_status` convention)
-- [ ] Migrate existing `process-training-memo` trigger to enqueue instead of fire-and-forget
-- [ ] Keep `cleanup_stuck_processing` cron as belt-and-suspenders
+- [x] `voice_processing_jobs` table (RLS service-role-only, drain/failed partial indexes, UNIQUE training_log_id idempotency, `kind` column routing memo vs check_in)
+- [x] `trigger_voice_log_processing()` rewritten to enqueue instead of direct pg_net fire (same trigger name, function-body swap)
+- [x] `drain-voice-processing-jobs` mirrors the coachable-moment drainer; batch 10 / parallelism 3 (voice jobs run 10-60s, sized to finish inside the worker budget)
+- [x] `claim_voice_processing_jobs` RPC with stale-`in_progress` recovery built in (no separate sweep cron)
+- [x] pg_cron every minute
+- [x] `cleanup_stuck_processing` kept as belt-and-suspenders
+- [x] **Deviation:** no `voice_processing_status` column — `training_logs.processing_status` (20260212100000) already serves that role; a second column would drift. Failed jobs also stamp `processing_status='failed'` so iOS shows its retry affordance.
+- [x] **Bonus fix:** the old trigger payload omitted `user_id`, which the hardened `process-training-memo` auth gate requires — voice processing would have 400'd on the next deploy. The outbox payload carries it.
+
+**Deploy order (operator):** deploy `drain-voice-processing-jobs` (with the rest of the blanket deploy) → apply `20260610100000` migration. Trigger keeps the old fire-and-forget behavior until the migration lands, so ordering is safe.
 
 **Source:** risk F4 in `outputs/security-and-scale-1000-users.md`.
 
@@ -345,6 +350,12 @@ CLAUDE.md listed `form-check-analysis`, `biomechanics-analysis`, `custom-plan-bu
 
 **Why this matters:** dead code wired to billable APIs is the only kind of dead code that costs money on its own. Removes attack surface — these handlers were still accepting input and (in the two LLM-using ones) calling models.
 
+**Addendum 2026-06-10:** `transcribe` (317 LOC) deleted under the same
+rationale — zero callers anywhere (iOS voice flow goes through
+`process-training-memo`, which transcribes internally), and it was never
+deployed to prod, so no eviction needed. Rate-limit bucket + contract
+test pin + docs row removed with it.
+
 **Source:** lever C.1 in `outputs/ai-cost-optimization-plan.md`.
 
 ### C.2 — Aggressively compress `coaching-agent` context  *(2d, $50–70/mo)*
@@ -419,12 +430,21 @@ JSON mode is in 8 functions today. Missing from `injury-analysis`, `injury-early
 
 ### C.6 — Cap output tokens at quality-not-cost  *(0.3d, $5–10/mo)*
 
-`_shared/router.ts` sets `moderate` at 2,000 output tokens and `complex` at 3,000. Most coach responses are 300–600 tokens. The cap is defensive against truncation, but a regression that emits 3,000 tokens of slop costs as much as 5 well-formed responses.
+**DONE — 2026-06-10**, with adjusted values: Gemini 2.5 Flash spends
+thinking tokens inside the same `maxOutputTokens` budget (capped at 512
+via `thinkingConfig`, but still in-budget), so 800 risked mid-sentence
+truncation — the exact incident that drove the original bump to 2,000.
 
-- [ ] Drop `moderate` output cap to 800 tokens
-- [ ] Drop `complex` output cap to 1,500 tokens
-- [ ] Log when responses hit the cap; raise only if eval scores measurably suffer
-- [ ] Add a `prompt_response_truncated` counter to Sentry
+- [x] `moderate` cap 2,000 → **1,000** (not 800 — thinking-token headroom)
+- [x] `complex` cap 3,000 → **2,000** (not 1,500 — same reason)
+- [x] `noteTruncationIfCapped()` helper in `_shared/router.ts`; wired into both coaching-agent call paths (Groq `finish_reason`, Gemini `finishReason`)
+- [x] Sentry counter → **deviation:** edge functions don't have Sentry; the helper logs a grep-able `[prompt_response_truncated]` marker to function logs instead. Raise a cap only if these appear AND eval scores suffer.
+
+Fixed while in the file (would have failed CI's `deno check` on first
+real run): `thinkingConfig` SDK type lag, two Upstash cache type casts,
+a `setTimeout` typing clash — and one REAL bug: `isCoachInsightRequest`
+was read ~270 lines before its declaration (temporal dead zone), a
+guaranteed 500 for any athlete with negative-feedback rows. Hoisted.
 
 **Why this matters:** bounds the worst case. A prompt-injection or model regression can't burn 5× cost in a single call.
 

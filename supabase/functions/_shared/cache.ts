@@ -49,7 +49,8 @@ export async function getCachedResponse(
 
     // Only return if similarity > 0.92 (very similar queries)
     if (results[0]?.score && results[0].score > 0.92) {
-      const metadata = results[0].metadata as CachedResponse;
+      // Upstash types metadata as Dict | undefined; route through unknown.
+      const metadata = results[0].metadata as unknown as CachedResponse;
 
       // Check if cache is less than 24 hours old
       const cacheAge = Date.now() - metadata.timestamp;
@@ -91,7 +92,9 @@ export async function cacheResponse(
         response,
         model,
         timestamp: Date.now(),
-      } as CachedResponse,
+        // Upstash's upsert wants its own Dict shape; CachedResponse is a
+        // plain JSON record, so the conversion is safe.
+      } as unknown as Record<string, unknown>,
     });
     console.log("Response cached successfully");
   } catch (error) {

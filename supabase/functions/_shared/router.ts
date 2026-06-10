@@ -40,9 +40,13 @@ const MODEL_CONFIG: Record<QueryComplexity, RouterConfig> = {
     provider: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     apiKeyEnv: "GEMINI_API_KEY",
-    // 2.5 Flash consumes thinking tokens before writing output — bump budget
-    // so full coaching responses aren't truncated mid-sentence.
-    maxTokens: 2000,
+    // C.6 (2026-06-10): cap lowered 2000 → 1000. Most coach responses run
+    // 300-600 output tokens; the cap is the worst-case cost bound, not a
+    // target. NOT the 800 from TASKS.md: 2.5 Flash spends thinking tokens
+    // inside this same budget (see the truncation incident that drove the
+    // original bump), so 800 risked mid-sentence cuts. Callers should log
+    // via noteTruncationIfCapped() and we raise only if eval scores suffer.
+    maxTokens: 1000,
     costPer1kTokens: 0.0006, // $0.60/1M tokens
   },
 
@@ -53,10 +57,30 @@ const MODEL_CONFIG: Record<QueryComplexity, RouterConfig> = {
     provider: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     apiKeyEnv: "GEMINI_API_KEY",
-    maxTokens: 3000,
+    // C.6 (2026-06-10): 3000 → 2000 (thinking-token headroom; see above).
+    maxTokens: 2000,
     costPer1kTokens: 0.0006,
   },
 };
+
+/**
+ * C.6 — call this with the provider's finish reason after a completion.
+ * Logs a grep-able marker when a response hit the output-token cap, so
+ * cap-induced truncation is visible in function logs before anyone
+ * raises a limit. (Sentry isn't wired in edge functions; the marker
+ * string is the counter. Search logs for "prompt_response_truncated".)
+ */
+export function noteTruncationIfCapped(
+  finishReason: string | null | undefined,
+  context: { fn: string; complexity?: string },
+): void {
+  const r = (finishReason ?? "").toUpperCase();
+  if (r === "MAX_TOKENS" || r === "LENGTH") {
+    console.error(
+      `[prompt_response_truncated] fn=${context.fn} complexity=${context.complexity ?? "?"} finish=${r}`,
+    );
+  }
+}
 
 // ============================================================================
 // QUERY CLASSIFICATION PATTERNS

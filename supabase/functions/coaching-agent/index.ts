@@ -27,6 +27,7 @@ import {
   getBestAvailableModel,
   getModelConfig,
   getModelIdentifier,
+  noteTruncationIfCapped,
   type RouterConfig,
   type QueryComplexity,
 } from "../_shared/router.ts";
@@ -396,7 +397,9 @@ function parsePaceToSeconds(pace: string): number {
  * doesn't resolve within `ms` milliseconds.
  */
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: number | undefined;
+  // ReturnType<typeof setTimeout> — the Gemini SDK pulls @types/node into
+  // the graph, which retypes global setTimeout to return Timeout, not number.
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
   });
@@ -444,6 +447,10 @@ async function callGroq(
   }
 
   const data = await response.json();
+  noteTruncationIfCapped(data.choices?.[0]?.finish_reason, {
+    fn: "coaching-agent",
+    complexity: `${config.model}:${config.maxTokens}tok`,
+  });
   return data.choices[0].message.content;
 }
 
@@ -465,8 +472,10 @@ async function callGemini(
       temperature: 0.7,
       // Cap thinking tokens — 2.5 Flash's internal reasoning can eat the whole
       // output budget and truncate the actual coaching response mid-sentence.
+      // The SDK's GenerationConfig type lags the API; the field is real.
       thinkingConfig: { thinkingBudget: 512 },
-    },
+      // deno-lint-ignore no-explicit-any
+    } as any,
   });
 
   const result = await withTimeout(
@@ -474,6 +483,10 @@ async function callGemini(
     MODEL_TIMEOUT_MS,
     "Gemini"
   );
+  noteTruncationIfCapped(result.response.candidates?.[0]?.finishReason, {
+    fn: "coaching-agent",
+    complexity: `${config.model}:${config.maxTokens}tok`,
+  });
   return result.response.text();
 }
 
@@ -963,6 +976,12 @@ Deno.serve(async (req: Request) => {
     // ========================================================================
     // LAYER 4.27: Feedback learning + pending adjustments context
     // ========================================================================
+    // Hoisted from LAYER 6 (2026-06-10): this flag was declared ~270 lines
+    // below its first use here — a temporal-dead-zone ReferenceError (500)
+    // for any athlete with negative-feedback rows. Same expression, one
+    // declaration, used by both layers.
+    const isCoachInsightRequest = !proactive && message.includes("[COACH INSIGHT REQUEST");
+
     let feedbackContext = "";
     const negativeFeedback = negativeFeedbackResult.data || [];
     if (negativeFeedback.length > 0 && !isCoachInsightRequest) {
@@ -1237,7 +1256,7 @@ Deno.serve(async (req: Request) => {
     // ========================================================================
     const isTrainingQuery = proactive ? true : isTrainingRelatedQuery(message);
     const isThisWeek = proactive ? false : isThisWeekQuery(message);
-    const isCoachInsightRequest = !proactive && message.includes("[COACH INSIGHT REQUEST");
+    // isCoachInsightRequest is declared in LAYER 4.27 (hoisted — see note there).
 
     // For coach insight requests, skip extra context - workout details are in the message
     // For simple queries, use compressed context. For moderate/complex, use full training document

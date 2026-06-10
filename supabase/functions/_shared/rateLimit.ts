@@ -205,7 +205,8 @@ const FEATURE_LIMITS: Record<string, Record<string, number>> = {
   coaching:        { free:  5, pro: 25, unlimited: 100 },
   predictor:       { free: 10, pro: 25, unlimited: 100 },
   analysis:        { free: 10, pro: 25, unlimited: 100 },
-  transcribe:      { free: 20, pro: 50, unlimited: 200 },
+  // transcribe bucket removed 2026-06-10 — the transcribe function was
+  // deleted (zero callers; process-training-memo owns transcription).
   parse:           { free: 10, pro: 25, unlimited: 100 },
   injury_analysis: { free:  5, pro: 25, unlimited: 100 },
   plan_builder:    { free:  3, pro: 10, unlimited:  50 },
