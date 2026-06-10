@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fitness Prediction · May 21, 2026</title>
+<style>
+:root {
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-tired:#C4873A; --mood-struggling:#C45A3A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-body);background:var(--paper);color:var(--ink);line-height:1.5;padding:32px 16px;font-size:15px}
+.container{max-width:900px;margin:0 auto}
+
+.masthead{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:32px}
+.masthead .eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink-2);margin-bottom:8px}
+.masthead h1{font-family:var(--font-display);font-weight:300;font-size:40px;line-height:1.05;letter-spacing:-0.02em}
+.masthead .meta{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);margin-top:10px;letter-spacing:0.8px}
+
+.section{margin-top:48px}
+.section h2{font-family:var(--font-display);font-weight:300;font-size:28px;letter-spacing:-0.01em;margin-bottom:6px}
+.section .h-eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:1.3px;text-transform:uppercase;color:var(--coral);margin-bottom:6px;font-weight:700}
+.section .h-rule{border-bottom:1px solid var(--rule);margin:14px 0 22px}
+
+.card{background:var(--paper-elevated);border:1px solid var(--rule);border-radius:8px;padding:24px;margin-bottom:16px}
+
+.pred-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
+.prediction-card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:20px}
+.prediction-card .label{font-family:var(--font-mono);font-size:10px;letter-spacing:1.4px;text-transform:uppercase;color:var(--ink-2);margin-bottom:8px}
+.prediction-card .time{font-family:var(--font-display);font-weight:300;font-size:36px;line-height:1;letter-spacing:-0.02em;margin-bottom:6px}
+.prediction-card .pace{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);margin-bottom:10px}
+.prediction-card .confidence{display:inline-block;font-family:var(--font-mono);font-size:9px;letter-spacing:1.4px;text-transform:uppercase;padding:3px 8px;border-radius:3px;font-weight:700}
+.confidence.high{background:var(--mood-energized);color:#fff}
+.confidence.medium{background:var(--mood-tired);color:#fff}
+.prediction-card .basis{font-size:12px;color:var(--ink-2);margin-top:10px;line-height:1.5}
+.prediction-card.goal{border:1px solid var(--coral);background:var(--coral-wash)}
+.prediction-card.goal .time{color:var(--coral)}
+
+.zone-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:8px;overflow:hidden}
+.zone-cell{background:var(--paper-elevated);padding:14px 16px}
+.zone-cell .name{font-family:var(--font-mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+.zone-cell .pace{font-family:var(--font-display);font-size:22px;font-weight:400;letter-spacing:-0.01em}
+.zone-cell .desc{font-size:11px;color:var(--ink-3);margin-top:2px;font-style:italic}
+.zone-cell.race{background:#FFFFFF}
+.zone-cell.race .pace{color:var(--coral)}
+
+.race-row{display:flex;justify-content:space-between;align-items:baseline;padding:12px 0;border-bottom:1px solid var(--rule);flex-wrap:wrap;gap:8px}
+.race-row:last-child{border-bottom:none}
+.race-row .race-name{font-family:var(--font-mono);font-size:11px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-2)}
+.race-row .race-time{font-family:var(--font-display);font-size:22px;font-weight:300}
+.race-row .race-pace{font-family:var(--font-mono);font-size:12px;color:var(--ink-3);margin-left:12px}
+
+.chart{margin:22px 0;background:var(--paper-elevated);border:1px solid var(--rule);border-radius:8px;padding:20px}
+
+.moment{border:1px solid var(--rule);border-radius:8px;padding:18px 20px;margin-bottom:12px;background:var(--card)}
+.moment.high{border-left:3px solid var(--mood-struggling)}
+.moment.medium{border-left:3px solid var(--mood-tired)}
+.moment.low{border-left:3px solid var(--ink-3)}
+.moment .m-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink-2);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.moment .priority{padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700}
+.priority.high{background:var(--mood-struggling);color:#fff}
+.priority.medium{background:var(--mood-tired);color:#fff}
+.priority.low{background:var(--ink-3);color:#fff}
+.moment h3{font-family:var(--font-display);font-weight:400;font-size:19px;letter-spacing:-0.005em;margin-bottom:8px}
+.moment .body{font-size:14px;color:var(--ink);line-height:1.6}
+.moment .quote{font-family:var(--font-body);font-style:italic;color:var(--ink-2);margin:8px 0;padding-left:12px;border-left:2px solid var(--rule)}
+
+table.weeks{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+table.weeks th{text-align:left;font-family:var(--font-mono);font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ink-2);font-weight:400;padding:8px 10px;border-bottom:1px solid var(--rule)}
+table.weeks td{padding:8px 10px;border-bottom:1px solid var(--rule);font-variant-numeric:tabular-nums}
+
+.footer{margin-top:64px;padding-top:24px;border-top:1px solid var(--rule);font-family:var(--font-mono);font-size:10px;letter-spacing:0.8px;color:var(--ink-3);text-align:center}
+
+svg{display:block;width:100%;height:auto}
+</style>
+</head>
+<body>
+<div class="container">
+
+<header class="masthead">
+  <div class="eyebrow">Fitness Prediction · Rio · May 21, 2026</div>
+  <h1>The block, in numbers.</h1>
+  <div class="meta">Source: live Supabase data · Phase: base · Goal: half marathon · Active injuries: 2 · ACWR: 1.5</div>
+</header>
+
+<section class="section">
+  <div class="h-eyebrow">§ 01 · Fitness Predictions</div>
+  <h2>Race-equivalent times across distances.</h2>
+  <div class="h-rule"></div>
+  <p style="margin-bottom:20px;color:var(--ink-2);font-size:14px;line-height:1.6">
+    All values are pulled from <code style="font-family:var(--font-mono);font-size:12px">athlete_pace_profiles</code>, generated by the app's prediction engine today (2026-05-21).
+    The system reports HIGH confidence on every distance based on 61 workouts in the rolling fitness snapshot.
+    Only one race is currently in the dataset for ground-truth verification — see §02.
+  </p>
+
+  <div class="pred-grid">
+    <div class="prediction-card">
+      <div class="label">Mile</div>
+      <div class="time">4:30</div>
+      <div class="pace">4:30/mi</div>
+      <span class="confidence high">High (system)</span>
+      <div class="basis">No mile raced. Mile-equivalent from the Feb 7 10K (31:24) is 4:23 via the ratio table — current prediction is 7s slower than that data point implied.</div>
+    </div>
+    <div class="prediction-card">
+      <div class="label">5K</div>
+      <div class="time">15:31</div>
+      <div class="pace">5:00/mi</div>
+      <span class="confidence high">High (system)</span>
+      <div class="basis">Ground truth: first-5K split from the Feb 7 10K was 15:32. Current prediction matches that split within 1 second. No standalone 5K raced this block.</div>
+    </div>
+    <div class="prediction-card">
+      <div class="label">10K</div>
+      <div class="time">32:16</div>
+      <div class="pace">5:12/mi</div>
+      <span class="confidence high">High (system)</span>
+      <div class="basis">Two 10Ks in the data. Feb 7: 31:24 (52s faster than predicted). Cap10K Apr 12: 33:03 (47s slower, athlete-noted hot/humid/hilly). The current 32:16 sits between the two.</div>
+    </div>
+    <div class="prediction-card goal">
+      <div class="label">Half Marathon · goal race</div>
+      <div class="time">1:11:08</div>
+      <div class="pace">5:26/mi</div>
+      <span class="confidence high">High (system)</span>
+      <div class="basis">Current goal time is 1:07:00 (5:06/mi). Predicted finish is 4:08 off the goal at present fitness — gap to close in the build to come.</div>
+    </div>
+    <div class="prediction-card">
+      <div class="label">Marathon</div>
+      <div class="time">2:28:55</div>
+      <div class="pace">5:41/mi</div>
+      <span class="confidence high">High (system)</span>
+      <div class="basis">Upcoming: San Antonio Marathon (Nov 15, 2026), Houston Marathon (Jan 17, 2027). Neither raced yet.</div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 02 · Race Performances</div>
+  <h2>What was raced this block.</h2>
+  <div class="h-rule"></div>
+  <p style="margin-bottom:18px;color:var(--ink-2);font-size:14px">Two races in the dataset. The first was not auto-classified as a race in the database — found via voice-log content search.</p>
+
+  <div class="card">
+    <div class="race-row" style="background:var(--coral-wash);margin:0 -20px 0 -20px;padding:14px 20px;border-radius:6px">
+      <div>
+        <div class="race-name" style="color:var(--coral);font-weight:700">Feb 7 · 10K race</div>
+      </div>
+      <div><span class="race-time" style="color:var(--coral)">31:24</span> <span class="race-pace">5:03/mi avg · first 5K 15:32 · last miles 5:08–5:10</span></div>
+    </div>
+    <div style="padding:16px 0 18px 0;color:var(--ink-2);font-size:13px;font-style:italic;line-height:1.6">
+      Athlete log (verbatim): "10k race: 31:24. First 5k: 15:32 (too fast). Last couple miles: 5:08-5:10 pace. Felt like they slowed down on the back end. Overall: Solid race."
+    </div>
+
+    <div class="race-row" style="background:var(--coral-wash);margin:0 -20px;padding:14px 20px;border-radius:6px">
+      <div>
+        <div class="race-name" style="color:var(--coral);font-weight:700">Apr 12 · Cap 10K · Austin, TX</div>
+      </div>
+      <div><span class="race-time" style="color:var(--coral)">33:03</span> <span class="race-pace">5:19/mi avg · splits 5:12 → 5:20s → 5:10</span></div>
+    </div>
+    <div style="padding:16px 0 4px 0;color:var(--ink-2);font-size:13px;font-style:italic;line-height:1.6">
+      Athlete log (verbatim): "It was a tough race with hot, humid weather and a very hilly course. My pace varied, starting around 5:12, hitting some 5:20s, and finishing strong at 5:10 pace. While I hit 33:03 for the race, I'm not happy with my performance and had hoped for better."
+    </div>
+  </div>
+
+  <div class="card" style="padding:14px 18px;color:var(--ink-2);font-size:13px;line-height:1.7">
+    The two 10Ks bracket the current 10K prediction of 32:16. Feb 7 was 52s faster than that prediction. Cap10K (Apr 12) was 47s slower under athlete-noted hot/humid/hilly conditions. The first-5K split from Feb 7 (15:32) matches the current 5K prediction of 15:31 within one second.
+  </div>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 03 · Pace Zones</div>
+  <h2>Training paces, anchored to MP 5:41.</h2>
+  <div class="h-rule"></div>
+  <p style="margin-bottom:18px;color:var(--ink-2);font-size:14px">
+    Race zones from the race-equivalence ratio table (single targets).
+    Training zones (Easy / Moderate / Steady) as ranges, expressed as a percentage of MP speed.
+  </p>
+
+  <div class="zone-grid">
+    <div class="zone-cell"><div class="name">Easy</div><div class="pace">7:06–8:07</div><div class="desc">70–80% MP · conversational</div></div>
+    <div class="zone-cell"><div class="name">Moderate</div><div class="pace">6:19–7:06</div><div class="desc">80–90% MP · steady but working</div></div>
+    <div class="zone-cell"><div class="name">Steady</div><div class="pace">5:41–6:19</div><div class="desc">90–100% MP · comfortably hard</div></div>
+    <div class="zone-cell race"><div class="name">MP</div><div class="pace">5:41</div><div class="desc">marathon pace anchor</div></div>
+    <div class="zone-cell race"><div class="name">HM</div><div class="pace">5:26</div><div class="desc">half marathon pace</div></div>
+    <div class="zone-cell race"><div class="name">Threshold (LT)</div><div class="pace">5:23</div><div class="desc">~1-hour race effort</div></div>
+    <div class="zone-cell race"><div class="name">10K</div><div class="pace">5:12</div><div class="desc">VO2-adjacent</div></div>
+    <div class="zone-cell race"><div class="name">5K</div><div class="pace">5:00</div><div class="desc">VO2 max work</div></div>
+    <div class="zone-cell race"><div class="name">3K</div><div class="pace">4:48</div><div class="desc">above VO2</div></div>
+    <div class="zone-cell race"><div class="name">Mile</div><div class="pace">4:30</div><div class="desc">neuromuscular</div></div>
+  </div>
+  <p style="margin-top:14px;color:var(--ink-3);font-size:12px;font-style:italic">
+    The pace profile in the database stores Easy as a single value of 7:11/mi — at the fast edge of the 7:06–8:07 band.
+  </p>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 04 · Upcoming Races</div>
+  <h2>What's on the calendar.</h2>
+  <div class="h-rule"></div>
+  <div class="card">
+    <div class="race-row">
+      <div><div class="race-name">Nov 15, 2026 · San Antonio Marathon</div></div>
+      <div><span class="race-pace">~178 days out · confidence: medium</span></div>
+    </div>
+    <div class="race-row">
+      <div><div class="race-name">Jan 17, 2027 · Houston Marathon</div></div>
+      <div><span class="race-pace">~241 days out · confidence: low</span></div>
+    </div>
+  </div>
+  <p style="margin-top:10px;color:var(--ink-3);font-size:12px;font-style:italic">
+    Active stated goal in <code style="font-family:var(--font-mono);font-size:11px">athlete_state</code> is a half marathon at 1:07:00. No HM race is currently scheduled in <code style="font-family:var(--font-mono);font-size:11px">race_intel</code>.
+  </p>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 05 · Fitness Curve</div>
+  <h2>Weekly volume (Strava-source).</h2>
+  <div class="h-rule"></div>
+
+  <div class="chart">
+    <svg viewBox="0 0 720 240" xmlns="http://www.w3.org/2000/svg">
+      <line x1="40" y1="200" x2="700" y2="200" stroke="#1A1815" stroke-width="1"/>
+      <line x1="40" y1="20" x2="40" y2="200" stroke="#1A1815" stroke-width="1"/>
+      <text x="35" y="204" text-anchor="end" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">0</text>
+      <text x="35" y="160" text-anchor="end" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">20</text>
+      <text x="35" y="120" text-anchor="end" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">40</text>
+      <text x="35" y="80"  text-anchor="end" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">60</text>
+      <text x="35" y="40"  text-anchor="end" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">80 mi</text>
+      <line x1="40" y1="160" x2="700" y2="160" stroke="#E8E4E0" stroke-width="0.5"/>
+      <line x1="40" y1="120" x2="700" y2="120" stroke="#E8E4E0" stroke-width="0.5"/>
+      <line x1="40" y1="80"  x2="700" y2="80"  stroke="#E8E4E0" stroke-width="0.5"/>
+      <line x1="40" y1="40"  x2="700" y2="40"  stroke="#E8E4E0" stroke-width="0.5"/>
+
+      <!-- Bars: 8 weeks (W14 Mar 30 → W21 May 18) · 70px each spacing -->
+      <!-- y = 200 - (miles/80)*160 -->
+      <!-- W14: 36.2  → 200 - 72.4 = 127.6 -->
+      <rect x="60"  y="128" width="55" height="72" fill="#1A1815" opacity="0.85"/>
+      <text x="87" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">Mar 30</text>
+      <text x="87" y="120" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#1A1815">36.2</text>
+
+      <!-- W15: 55.3 → 200 - 110.6 = 89.4 -->
+      <rect x="135" y="89"  width="55" height="111" fill="#1A1815" opacity="0.85"/>
+      <text x="162" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">Apr 6</text>
+      <text x="162" y="82" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#1A1815">55.3</text>
+
+      <!-- W16: 48.5 → 200 - 97 = 103 -->
+      <rect x="210" y="103" width="55" height="97" fill="#1A1815" opacity="0.85"/>
+      <text x="237" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">Apr 13</text>
+      <text x="237" y="96" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#1A1815">48.5</text>
+
+      <!-- W17: 34.4 → 200 - 68.8 = 131.2 -->
+      <rect x="285" y="131" width="55" height="69" fill="#1A1815" opacity="0.85"/>
+      <text x="312" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">Apr 20</text>
+      <text x="312" y="124" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#1A1815">34.4</text>
+
+      <!-- W18: 21.5 → 200 - 43 = 157 -->
+      <rect x="360" y="157" width="55" height="43" fill="#C4873A"/>
+      <text x="387" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">Apr 27</text>
+      <text x="387" y="150" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#C4873A">21.5</text>
+
+      <!-- W19: 51.4 → 200 - 102.8 = 97.2 -->
+      <rect x="435" y="97"  width="55" height="103" fill="#1A1815" opacity="0.85"/>
+      <text x="462" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">May 4</text>
+      <text x="462" y="90" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#1A1815">51.4</text>
+
+      <!-- W20: 72.2 → 200 - 144.4 = 55.6 -->
+      <rect x="510" y="56"  width="55" height="144" fill="#D4592A"/>
+      <text x="537" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">May 11</text>
+      <text x="537" y="49" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#D4592A">72.2</text>
+
+      <!-- W21 partial: 31.0 → 200 - 62 = 138 (4 days only) -->
+      <rect x="585" y="138" width="55" height="62" fill="#D4592A" opacity="0.5"/>
+      <text x="612" y="218" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">May 18 ·</text>
+      <text x="612" y="228" text-anchor="middle" font-family="ui-monospace,monospace" font-size="9" fill="#6B6560">partial</text>
+      <text x="612" y="131" text-anchor="middle" font-family="ui-monospace,monospace" font-size="10" fill="#D4592A">31.0</text>
+
+      <!-- Race marker Apr 12 -->
+      <circle cx="225" cy="28" r="3" fill="#D4592A"/>
+      <text x="225" y="20" text-anchor="middle" font-family="ui-monospace,monospace" font-size="8" fill="#D4592A" font-weight="700">Cap10K</text>
+    </svg>
+  </div>
+
+  <p style="margin-top:10px;color:var(--ink-2);font-size:13px;font-style:italic">
+    Amber bar: post-race / cutback week. Coral bars: current 7-day rolling load is at the spike threshold.
+  </p>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 06 · Workload · ACWR</div>
+  <h2>Current state from the app.</h2>
+  <div class="h-rule"></div>
+
+  <div class="card" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px;padding:24px">
+    <div>
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink-2);margin-bottom:6px">Rolling 7-day</div>
+      <div style="font-family:var(--font-display);font-size:30px;font-weight:300">67.6 <span style="font-size:14px;color:var(--ink-3)">mi</span></div>
+    </div>
+    <div>
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink-2);margin-bottom:6px">Rolling 28-day</div>
+      <div style="font-family:var(--font-display);font-size:30px;font-weight:300">180.5 <span style="font-size:14px;color:var(--ink-3)">mi</span></div>
+    </div>
+    <div>
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink-2);margin-bottom:6px">Weekly avg</div>
+      <div style="font-family:var(--font-display);font-size:30px;font-weight:300">45.1 <span style="font-size:14px;color:var(--ink-3)">mi</span></div>
+    </div>
+    <div>
+      <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:1.3px;text-transform:uppercase;color:var(--mood-struggling);margin-bottom:6px">ACWR</div>
+      <div style="font-family:var(--font-display);font-size:30px;font-weight:300;color:var(--mood-struggling)">1.5</div>
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--mood-struggling);margin-top:2px">SPIKE THRESHOLD</div>
+    </div>
+  </div>
+  <p style="margin-top:14px;color:var(--ink-2);font-size:13px">
+    Per <code style="font-family:var(--font-mono);font-size:12px">weeklyAnalytics.ts</code>, ACWR &gt; 1.5 is the "recommend pulling back" threshold.
+    Current rolling 7d (67.6) is 50% above the 4-week chronic load (180.5/4 = 45.1).
+  </p>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 07 · Coachable Moments</div>
+  <h2>Signal worth a conversation.</h2>
+  <div class="h-rule"></div>
+  <p style="margin-bottom:18px;color:var(--ink-2);font-size:14px">
+    Items the rules engine would surface for the coach. Reported for awareness; the coach decides what action, if any, to take.
+  </p>
+
+  <div class="moment high">
+    <div class="m-eyebrow"><span>Rule: loadSpikePlusInjury</span><span class="priority high">High</span></div>
+    <h3>ACWR at the spike threshold with two active injuries.</h3>
+    <div class="body">
+      Current ACWR is 1.5 (the "recommend pulling back" threshold). Two active injuries logged in the system:
+      Achilles (left, severity 3, active since April 20) and knee (severity 3, active since May 8).
+      The Achilles has voice-log precursors before the active flag —
+      <div class="quote">"Achilles tightness (left), felt tired" — Feb 2</div>
+      <div class="quote">"Easy run completed, but the left Achilles felt very stiff." — Feb 18</div>
+      The knee was first mentioned in a voice log a day before being flagged:
+      <div class="quote">"My knee felt a little sore during the run, but I was still able to pick up the pace towards the end." — May 7</div>
+    </div>
+  </div>
+
+  <div class="moment medium">
+    <div class="m-eyebrow"><span>Mood pattern · last 14 days</span><span class="priority medium">Medium</span></div>
+    <h3>Tired/struggling labels on 4 of the 7 recent voice logs.</h3>
+    <div class="body">
+      Recent voice-log moods (May 5 → May 21): struggling, tired, neutral, neutral, tired, positive, tired, tired.
+      Athlete-stated reasons across the logs include humid conditions, heavy legs, and post-workout fatigue.
+      <div class="quote">"My legs were absolutely crushed during this recovery run." — May 21 (today)</div>
+      <div class="quote">"I completed my first longer run in a while today. My legs felt heavy, and I experienced some stomach discomfort." — May 9</div>
+    </div>
+  </div>
+
+  <div class="moment low">
+    <div class="m-eyebrow"><span>Race result · Cap10K</span><span class="priority low">Low</span></div>
+    <h3>Apr 12 race ran 47s slower than predicted on noted course conditions.</h3>
+    <div class="body">
+      10K predicted at the time of the race: 32:16. Actual: 33:03 (5:19/mi). Athlete-noted conditions: hot, humid, very hilly. The model has retained the 32:16 prediction rather than recalibrating downward — surfaced so the coach can decide whether to weight this race into the next fitness assessment.
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 08 · Data Quality Findings</div>
+  <h2>Things the report found that aren't fitness, but matter.</h2>
+  <div class="h-rule"></div>
+  <div class="card">
+    <p style="margin-bottom:14px;font-weight:700">Data hygiene flags surfaced during the pull</p>
+    <table class="weeks">
+      <tr><th>Finding</th><th>Detail</th></tr>
+      <tr><td><strong>Multi-source duplication</strong></td><td>Same workouts appear in <code style="font-family:var(--font-mono);font-size:12px">training_logs</code> from 3 sources (strava=70, voice_log=57, auto_sync=37). Raw weekly counts inflate to 100+ mi/wk. <code style="font-family:var(--font-mono);font-size:12px">athlete_state</code> dedups correctly; <code style="font-family:var(--font-mono);font-size:12px">workout_features</code> does not. This chart uses Strava-only.</td></tr>
+      <tr><td><strong>Race classification gap</strong></td><td>The Feb 7 10K (31:24) — the strongest race performance in the dataset — has <code style="font-family:var(--font-mono);font-size:12px">workout_type = NULL</code>. Only the Apr 12 Cap10K is tagged as <code style="font-family:var(--font-mono);font-size:12px">'race'</code>. 92 of 171 training_logs have NULL workout_type overall. The race had to be found via voice-log content search (regex on "10k race"). Same data, different surface — but predictions and rules that filter on <code style="font-family:var(--font-mono);font-size:12px">workout_type='race'</code> will miss it.</td></tr>
+      <tr><td><strong>RLS disabled on debug_coach_log</strong></td><td>Surfaced by the Supabase MCP advisor. Per CLAUDE.md Hard Rule #1, every table ships with RLS. Remediation requires a policy in the same change — enabling RLS without one would lock writes.</td></tr>
+      <tr><td><strong>NULL user_id on all user_goals rows</strong></td><td>All 5 rows have <code style="font-family:var(--font-mono);font-size:12px">user_id IS NULL</code>. Goals weren't attributable to a user via direct query; the current goal had to be inferred from <code style="font-family:var(--font-mono);font-size:12px">athlete_state.goal_race</code>.</td></tr>
+      <tr><td><strong>Duplicate race_intel rows</strong></td><td>San Antonio Marathon appears 4 times with varying confidence. Same race_date, same location.</td></tr>
+      <tr><td><strong>Stale last_check_in_at</strong></td><td><code style="font-family:var(--font-mono);font-size:12px">athlete_state.last_check_in_at</code> = Apr 10, but <code style="font-family:var(--font-mono);font-size:12px">training_logs</code> with source=voice_log run through today. The field doesn't reflect actual voice-log activity.</td></tr>
+      <tr><td><strong>Coachable moments table empty</strong></td><td>0 rows in <code style="font-family:var(--font-mono);font-size:12px">coachable_moments</code>. Per CLAUDE.md known issues, the trigger to fire <code style="font-family:var(--font-mono);font-size:12px">evaluate-coachable-moment</code> on training_log insert isn't wired up. The loadSpikePlusInjury rule above would fire if it were.</td></tr>
+    </table>
+  </div>
+</section>
+
+<section class="section">
+  <div class="h-eyebrow">§ 09 · Verification</div>
+  <h2>Where this report's numbers came from.</h2>
+  <div class="h-rule"></div>
+  <div class="card" style="font-size:13px;color:var(--ink-2);line-height:1.7">
+    <strong style="color:var(--ink)">Predictions:</strong> <code style="font-family:var(--font-mono);font-size:12px">athlete_pace_profiles</code> (single row, generated 2026-05-21). Confidence labels are from the field <code style="font-family:var(--font-mono);font-size:12px">*_pace_confidence</code>.<br>
+    <strong style="color:var(--ink)">Race zones:</strong> Computed via the canonical race-equivalence ratio table from <code style="font-family:var(--font-mono);font-size:12px">workout-helpers.ts</code>, anchored to MP = 340.8s/mi.<br>
+    <strong style="color:var(--ink)">Training zones:</strong> Derived as a percentage of MP speed: Easy 70–80%, Moderate 80–90%, Steady 90–100%. Ranges, not midpoints.<br>
+    <strong style="color:var(--ink)">Workload (ACWR, rolling miles):</strong> <code style="font-family:var(--font-mono);font-size:12px">athlete_state</code> (last updated today). ACWR formula matches <code style="font-family:var(--font-mono);font-size:12px">weeklyAnalytics.ts:calculateACWR</code>.<br>
+    <strong style="color:var(--ink)">Weekly chart:</strong> <code style="font-family:var(--font-mono);font-size:12px">training_logs WHERE source='strava'</code> (selected as the cleanest single source given the multi-source duplication).<br>
+    <strong style="color:var(--ink)">Race performances:</strong> <code style="font-family:var(--font-mono);font-size:12px">training_logs WHERE workout_type='race'</code> (1 row, Apr 12 Cap10K).<br>
+    <strong style="color:var(--ink)">Active injuries:</strong> <code style="font-family:var(--font-mono);font-size:12px">injuries WHERE status='active'</code> (2 rows).<br>
+    <strong style="color:var(--ink)">Voice signal:</strong> <code style="font-family:var(--font-mono);font-size:12px">training_logs WHERE source='voice_log'</code> (cleaned_notes field). Quotes verbatim per the Niggles surfacing rule.<br>
+    <strong style="color:var(--ink)">Upcoming races:</strong> <code style="font-family:var(--font-mono);font-size:12px">race_intel</code> (deduped).<br>
+  </div>
+</section>
+
+<div class="footer">
+  Pulled from Supabase project aqdijapxmjqaetursrde · 2026-05-21 · derivePaceTableFromGoal + calculateACWR
+</div>
+
+</div>
+</body>
+</html>

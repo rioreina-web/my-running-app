@@ -19,3 +19,6 @@ DerivedData/
 
 # Supabase
 supabase/.temp/
+
+# Claude Code local overrides
+.claude/settings.local.json
