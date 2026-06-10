@@ -56,6 +56,15 @@ enum PaceChartDistance: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Format hint shown under the goal-time field. Long distances must use H:MM or H:MM:SS
+    /// so "10:00" can't be silently parsed as 10 minutes for a marathon.
+    var timeFormatHint: String {
+        switch self {
+        case .marathon, .half, .tenMile: "H:MM or H:MM:SS"
+        default: "MM:SS"
+        }
+    }
+
     /// Detect distance from goal title
     static func fromGoalTitle(_ title: String) -> PaceChartDistance? {
         let lower = title.lowercased()
@@ -98,8 +107,22 @@ class PaceChartViewModel {
     var isLoading = false
     var validationError: String? // Shows warning if time seems unrealistic
 
+    /// Race paces — Riegel-derived from the goal time. Goal-driven what-if
+    /// math (input: hypothetical race target; output: equivalent paces at
+    /// every distance). Independent of the athlete's real fitness.
     var racePaces: [String: Double] = [:]
+
+    /// Training paces dict — keys match calculateTrainingPaces' legacy shape
+    /// ("Easy Slow"/"Easy Fast"/...), but values now come from the engine
+    /// (your *real* zones), not from the goal time. Refreshed when
+    /// `engineZones` updates.
     var trainingPaces: [String: Double] = [:]
+
+    /// Pace zones from the engine — your actual zones based on observed
+    /// runs / profile / race-derived predictions. Loaded via
+    /// PaceZonesService.shared on view appear. Drives the Training Paces
+    /// section. Distinct from `racePaces`, which is goal-driven Riegel.
+    var engineZones: PaceZonesEngine?
 
     // LT (1-hour) pace
     var ltPace: Double?
@@ -290,6 +313,14 @@ class PaceChartViewModel {
     // MARK: - Persistence
 
     private func saveGoalToDefaults() {
+        // TODO(update-pace-profile-goal): this UserDefaults write is a local-only
+        // cache. The server-side source of truth should be
+        // athlete_pace_profiles.{goal_race_distance, goal_time_seconds},
+        // set via a new `update-pace-profile-goal` edge function. For now we
+        // persist locally so the chart opens to the last-used goal, and the
+        // build-pace-profile flow already reads goal context from the active
+        // training plan. When the edge function lands, call it here and let
+        // AthletePaceProfileService.shared.refresh() pick up the new profile.
         UserDefaults.standard.set(selectedDistance.rawValue, forKey: Self.distanceKey)
         UserDefaults.standard.set(goalTimeString, forKey: Self.timeStringKey)
         UserDefaults.standard.set(goalTimeSeconds, forKey: Self.timeSecondsKey)
@@ -340,26 +371,95 @@ class PaceChartViewModel {
     }
 
     func calculatePaces() {
+        // Race paces stay goal-driven — Riegel equivalents from the user's
+        // hypothetical target. This is the chart's what-if calculator.
         racePaces = PaceCalculator.calculateEquivalentPaces(
             fromDistance: selectedDistance.rawValue,
             totalSeconds: goalTimeSeconds
         )
 
-        // Get MP pace for training pace calculations
-        if let mpPace = racePaces["marathon"] {
-            trainingPaces = PaceCalculator.calculateTrainingPaces(mpPaceSeconds: mpPace)
-        }
+        // Training paces come from the engine (real zones), not the goal.
+        // If the engine hasn't loaded yet, the dict is empty and the strip
+        // shows "—" until refresh completes.
+        rebuildTrainingPacesFromEngine()
 
-        // Calculate LT (1-hour) pace
+        // 1-hour pace remains goal-driven for now (legacy LT row).
         ltPace = PaceCalculator.calculateOneHourPace(
             fromDistance: selectedDistance.rawValue,
             totalSeconds: goalTimeSeconds
         )
 
-        // Recalculate weather adjustments if enabled
         if weatherEnabled {
             calculateWeatherAdjustments()
         }
+    }
+
+    /// Pull the latest engine zones from PaceZonesService and rebuild the
+    /// training-paces dict in the legacy "Easy Slow / Easy Fast / …" shape.
+    /// Called from `.task` on view appear and after refresh.
+    @MainActor
+    func loadEngineZones() async {
+        if PaceZonesService.shared.zones == nil {
+            try? await PaceZonesService.shared.refresh()
+        }
+        engineZones = PaceZonesService.shared.zones
+        rebuildTrainingPacesFromEngine()
+        if weatherEnabled {
+            calculateWeatherAdjustments()
+        }
+    }
+
+    /// Tracks which source produced the current `trainingPaces` dict.
+    /// Drives the chart's source label — engine vs goal-fallback.
+    enum TrainingPaceSource: Equatable {
+        case engine        // PaceZonesService — your real zones
+        case goalFallback  // Riegel-MP × NamedPace multipliers (no engine data yet)
+        case empty         // no goal entered, no engine data
+    }
+
+    private(set) var trainingPaceSource: TrainingPaceSource = .empty
+
+    private func rebuildTrainingPacesFromEngine() {
+        var paces: [String: Double] = [:]
+
+        if let z = engineZones, let e = z.easy, let m = z.moderate, let s = z.steady {
+            // Real engine zones available — prefer over goal-fallback.
+            paces["Easy Slow"]     = e.paceSlow
+            paces["Easy Fast"]     = e.paceFast
+            paces["Moderate Slow"] = m.paceSlow
+            paces["Moderate Fast"] = m.paceFast
+            paces["Steady Slow"]   = s.paceSlow
+            paces["Steady Fast"]   = s.paceFast
+            trainingPaces = paces
+            trainingPaceSource = .engine
+            return
+        }
+
+        // Engine has no MP anchor (no profile / snapshot / active plan).
+        // Fall back to deriving zones from the chart's goal MP using
+        // NamedPace.mpPaceMultipliers — the SAME numbers the engine would
+        // use, pinned by cross-language-pace-contract.test.ts. This keeps
+        // the chart useful as a calculator before any data flows in.
+        if let mp = racePaces["marathon"] {
+            if let easyMult = NamedPace.easy.mpPaceMultipliers {
+                paces["Easy Fast"] = mp * easyMult.fast
+                paces["Easy Slow"] = mp * easyMult.slow
+            }
+            if let modMult = NamedPace.moderate.mpPaceMultipliers {
+                paces["Moderate Fast"] = mp * modMult.fast
+                paces["Moderate Slow"] = mp * modMult.slow
+            }
+            if let stdMult = NamedPace.steady.mpPaceMultipliers {
+                paces["Steady Fast"] = mp * stdMult.fast
+                paces["Steady Slow"] = mp * stdMult.slow
+            }
+            trainingPaces = paces
+            trainingPaceSource = paces.isEmpty ? .empty : .goalFallback
+            return
+        }
+
+        trainingPaces = [:]
+        trainingPaceSource = .empty
     }
 
     // MARK: - Weather Functions

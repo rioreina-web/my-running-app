@@ -20,8 +20,6 @@ struct FullBackup: Codable {
     let userGoals: [UserGoal]
     let injuries: [Injury]
     let fitnessSnapshots: [FitnessSnapshot]
-    let biomechanicsAnalyses: [BiomechanicsAnalysis]
-    let formChecks: [FormCheck]
 }
 
 // MARK: - BackupService
@@ -33,7 +31,7 @@ final class BackupService {
     var progress: String = ""
     var tablesCompleted: Int = 0
 
-    static let totalTables = 8
+    static let totalTables = 6
 
     @MainActor
     func exportAllData() async throws -> URL {
@@ -111,14 +109,6 @@ final class BackupService {
         let snapshots: [FitnessSnapshot] = try await fetchPaginated(table: "fitness_snapshots")
         tablesCompleted = 6
 
-        progress = "Fetching biomechanics analyses..."
-        let biomechanics: [BiomechanicsAnalysis] = try await fetchPaginated(table: "biomechanics_analyses")
-        tablesCompleted = 7
-
-        progress = "Fetching form checks..."
-        let formChecks: [FormCheck] = try await fetchPaginated(table: "form_checks")
-        tablesCompleted = 8
-
         progress = "Building backup..."
 
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -131,9 +121,7 @@ final class BackupService {
             scheduledWorkouts: workouts,
             userGoals: goals,
             injuries: injuries,
-            fitnessSnapshots: snapshots,
-            biomechanicsAnalyses: biomechanics,
-            formChecks: formChecks
+            fitnessSnapshots: snapshots
         )
     }
 

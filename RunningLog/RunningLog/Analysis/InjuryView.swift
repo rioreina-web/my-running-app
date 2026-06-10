@@ -12,55 +12,85 @@ struct InjuryListView: View {
             Color.drip.background.ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 20) {
-                    // Medical disclaimer
-                    MedicalDisclaimerBanner(text: MedicalDisclaimer.short, isCompact: true)
+                VStack(alignment: .leading, spacing: 24) {
+                    PlateStrip(surface: "INJURY  ·  LIVING LOG", fig: "FIG. 28")
                         .padding(.horizontal, 20)
-                        .padding(.top, 8)
+                        .padding(.top, 16)
 
-                    // Active injuries
+                    // Plate 28 — editorial header replaces the medical-banner
+                    // banner. Disclaimer is folded into the header as a quiet
+                    // italic-serif line; legal cover preserved, urgency dropped.
+                    InjuryHeader28(activeCount: injuryService.activeInjuries.count)
+                        .padding(.horizontal, 20)
+
+                    // Active injuries — editorial entries separated by rules
                     if !injuryService.activeInjuries.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            SectionHeader("Active (\(injuryService.activeInjuries.count))")
-                                .padding(.horizontal, 20)
-
-                            LazyVStack(spacing: 10) {
-                                ForEach(injuryService.activeInjuries) { injury in
-                                    InjuryCard(injury: injury)
-                                        .onTapGesture { selectedInjury = injury }
-                                }
-                            }
+                        EditorialRule()
                             .padding(.horizontal, 20)
+
+                        ForEach(Array(injuryService.activeInjuries.enumerated()), id: \.element.id) { idx, injury in
+                            InjuryEntry28(
+                                injury: injury,
+                                // mentionsCount / avgVolume / avgLoad / trend /
+                                // mentionDotIndices / lastQuote: deferred until
+                                // the injury_mentions backend table lands. For
+                                // now the row falls back to dashes (cells stay,
+                                // dots/quote sections hide). lastQuote uses the
+                                // existing description field as a stand-in so
+                                // the quote block doesn't go silent on day one.
+                                lastQuote: injury.description,
+                                onViewDetail: { selectedInjury = injury },
+                                onUpdate:     { selectedInjury = injury },
+                                onMarkResolved: {
+                                    Task {
+                                        _ = await injuryService.updateInjury(
+                                            id: injury.id,
+                                            status: .resolved
+                                        )
+                                    }
+                                }
+                            )
+                            .padding(.horizontal, 20)
+
+                            if idx < injuryService.activeInjuries.count - 1 {
+                                EditorialRule()
+                                    .padding(.horizontal, 20)
+                            }
                         }
                     }
 
-                    // Resolved injuries
+                    // Resolved injuries — keep existing collapsed-section
+                    // pattern for now. Editorial restyle is a follow-up; the
+                    // pressing redesign was the active list.
                     if !injuryService.resolvedInjuries.isEmpty {
+                        EditorialRule()
+                            .padding(.horizontal, 20)
                         ResolvedInjuriesSection(
                             injuries: injuryService.resolvedInjuries,
                             onSelect: { selectedInjury = $0 }
                         )
                     }
 
-                    // Empty state
+                    // Empty state — quieter, editorial. No big icon.
                     if injuryService.injuries.isEmpty && !injuryService.isLoading {
-                        VStack(spacing: 16) {
-                            Image(systemName: "checkmark.shield.fill")
-                                .font(.system(size: 48))
-                                .foregroundStyle(Color.drip.positive.opacity(0.5))
-
-                            Text("No injuries tracked")
-                                .font(.dripBody(16))
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("No aches tracked.")
+                                .font(.dripDisplay(20))
+                                .foregroundStyle(Color.drip.textPrimary)
+                            Text("Aches mentioned in voice memos will land here automatically. You can also add one with the + button.")
+                                .font(.system(size: 13, design: .serif).italic())
                                 .foregroundStyle(Color.drip.textSecondary)
-
-                            Text("Injuries detected in voice memos or coaching will appear here automatically. You can also add them manually.")
-                                .font(.dripBody(13))
-                                .foregroundStyle(Color.drip.textTertiary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
+                                .lineSpacing(2)
                         }
-                        .padding(.top, 60)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 40)
                     }
+
+                    EditorialRule()
+                        .padding(.horizontal, 20)
+
+                    PlateFooter("Mention dots, verbatim quotes, no diagnoses. The classifier surfaces — it does not interpret.")
+                        .padding(.horizontal, 20)
 
                     Spacer().frame(height: 80)
                 }

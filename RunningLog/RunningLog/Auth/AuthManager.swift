@@ -32,9 +32,39 @@ final class AuthManager {
     }
 
     private var authStateTask: Task<Void, Never>?
+    private var pendingRefreshTask: Task<Void, Never>?
+    private var splashTimeoutTask: Task<Void, Never>?
 
     private init() {
         startAuthStateListener()
+        startSplashTimeout()
+    }
+
+    /// Safety net: if the auth state listener hasn't flipped isLoading within
+    /// 8 seconds (e.g. Supabase SDK hangs on a bad connection), force the
+    /// splash away so the app is never permanently stuck.
+    private func startSplashTimeout() {
+        splashTimeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard let self, self.isLoading else { return }
+            print("[Auth] Splash timeout reached — showing sign-in screen.")
+            self.isAuthenticated = false
+            self.isLoading = false
+        }
+    }
+
+    /// Run a task with a timeout; throws if it doesn't finish in time.
+    private func withTimeout<T: Sendable>(seconds: Double, _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw AuthTimeoutError()
+            }
+            guard let first = try await group.next() else { throw AuthTimeoutError() }
+            group.cancelAll()
+            return first
+        }
     }
 
     // MARK: - Auth State Listener
@@ -46,20 +76,18 @@ final class AuthManager {
                 switch event {
                 case .initialSession:
                     if let session = session {
-                        // We have a stored session — try to refresh it to get
-                        // a valid access token. If refresh fails, sign out so
-                        // the user gets a fresh Sign In with Apple flow.
+                        // We have a stored session — try to refresh it with a
+                        // bounded timeout so we can't hang forever on bad networks.
                         do {
-                            let refreshed = try await supabase.auth.refreshSession()
+                            let refreshed = try await self.withTimeout(seconds: 5) {
+                                try await supabase.auth.refreshSession()
+                            }
                             self.isAuthenticated = true
                             self.currentUserId = refreshed.user.id.uuidString.lowercased()
                             self.userEmail = refreshed.user.email
                         } catch {
-                            print("[Auth] Session refresh failed: \(error.localizedDescription). Signing out for fresh auth.")
-                            try? await supabase.auth.signOut()
-                            self.isAuthenticated = false
-                            self.currentUserId = nil
-                            self.userEmail = nil
+                            print("[Auth] Session refresh failed: \(error.localizedDescription)")
+                            self.handleRefreshFailure(existingSession: session)
                         }
                     } else {
                         self.isAuthenticated = false
@@ -67,16 +95,19 @@ final class AuthManager {
                         self.userEmail = nil
                     }
                     self.isLoading = false
+                    self.splashTimeoutTask?.cancel()
                 case .signedIn:
                     self.isAuthenticated = true
                     self.currentUserId = session?.user.id.uuidString.lowercased()
                     self.userEmail = session?.user.email
                     self.isLoading = false
+                    self.splashTimeoutTask?.cancel()
                 case .signedOut:
                     self.isAuthenticated = false
                     self.currentUserId = nil
                     self.userEmail = nil
                     self.isLoading = false
+                    self.splashTimeoutTask?.cancel()
                 case .tokenRefreshed:
                     break
                 default:
@@ -86,16 +117,91 @@ final class AuthManager {
         }
     }
 
+    // MARK: - Refresh Failure Handling
+
+    @MainActor
+    private func handleRefreshFailure(existingSession: Session?) {
+        if !NetworkMonitor.shared.isConnected {
+            // Offline: keep existing session and queue refresh for reconnect
+            print("[Auth] Offline — keeping existing session, will retry on reconnect.")
+            if let session = existingSession {
+                self.isAuthenticated = true
+                self.currentUserId = session.user.id.uuidString.lowercased()
+                self.userEmail = session.user.email
+            }
+            queueRefreshOnReconnect()
+            return
+        }
+
+        // Online: retry once after 2 seconds
+        print("[Auth] Retrying session refresh in 2 seconds…")
+        pendingRefreshTask?.cancel()
+        pendingRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+
+            do {
+                let refreshed = try await supabase.auth.refreshSession()
+                self.isAuthenticated = true
+                self.currentUserId = refreshed.user.id.uuidString.lowercased()
+                self.userEmail = refreshed.user.email
+                print("[Auth] Retry refresh succeeded.")
+            } catch {
+                print("[Auth] Retry refresh failed: \(error.localizedDescription). Signing out.")
+                try? await supabase.auth.signOut()
+                self.isAuthenticated = false
+                self.currentUserId = nil
+                self.userEmail = nil
+            }
+        }
+    }
+
+    /// Observes network connectivity and retries session refresh once online.
+    private func queueRefreshOnReconnect() {
+        pendingRefreshTask?.cancel()
+        pendingRefreshTask = Task { @MainActor [weak self] in
+            // Poll until connected (withObservationTracking fires once per change)
+            while !NetworkMonitor.shared.isConnected {
+                try? await Task.sleep(for: .seconds(2))
+                if Task.isCancelled { return }
+            }
+            guard let self, !Task.isCancelled else { return }
+            print("[Auth] Connectivity restored — retrying session refresh.")
+            do {
+                let refreshed = try await supabase.auth.refreshSession()
+                self.isAuthenticated = true
+                self.currentUserId = refreshed.user.id.uuidString.lowercased()
+                self.userEmail = refreshed.user.email
+            } catch {
+                print("[Auth] Post-reconnect refresh failed: \(error.localizedDescription). Signing out.")
+                try? await supabase.auth.signOut()
+                self.isAuthenticated = false
+                self.currentUserId = nil
+                self.userEmail = nil
+            }
+        }
+    }
+
     // MARK: - Sign In with Apple
 
     func signInWithApple(idToken: String, nonce: String) async throws {
-        try await supabase.auth.signInWithIdToken(
-            credentials: .init(
-                provider: .apple,
-                idToken: idToken,
-                nonce: nonce
-            )
-        )
+        print("[Auth] signInWithApple: starting Supabase signInWithIdToken…")
+        do {
+            let response = try await withTimeout(seconds: 15) {
+                try await supabase.auth.signInWithIdToken(
+                    credentials: .init(
+                        provider: .apple,
+                        idToken: idToken,
+                        nonce: nonce
+                    )
+                )
+            }
+            print("[Auth] signInWithApple: success, user=\(response.user.id.uuidString)")
+        } catch {
+            print("[Auth] signInWithApple FAILED: \(error)")
+            print("[Auth] localized: \(error.localizedDescription)")
+            throw error
+        }
     }
 
     // MARK: - Sign Out
@@ -137,3 +243,9 @@ final class AuthManager {
 // MARK: - AuthProvider Conformance
 
 extension AuthManager: AuthProvider {}
+
+// MARK: - Errors
+
+private struct AuthTimeoutError: Error {
+    var localizedDescription: String { "Auth refresh timed out" }
+}

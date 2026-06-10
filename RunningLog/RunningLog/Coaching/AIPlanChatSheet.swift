@@ -631,6 +631,33 @@ private struct PlanStatItem: View {
     }
 }
 
+private struct TimePickerColumn: View {
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Picker(label, selection: $value) {
+                ForEach(Array(range), id: \.self) { n in
+                    Text(String(format: "%02d", n))
+                        .font(.dripStat(28))
+                        .foregroundStyle(Color.drip.textPrimary)
+                        .tag(n)
+                }
+            }
+            .pickerStyle(.wheel)
+            .frame(width: 80, height: 120)
+            .clipped()
+
+            Text(label)
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .tracking(1.0)
+        }
+    }
+}
+
 // MARK: - Preview
 
 #Preview {

@@ -94,6 +94,7 @@ final class CoachChatViewModel {
         messages = []
         conversationId = nil
         inputText = ""
+        isLoading = false
     }
 
     // MARK: - Rate Limit
@@ -189,13 +190,21 @@ final class CoachChatViewModel {
                     if let convId = coachResponse.conversationId {
                         conversationId = convId
                     }
-                    if let responseText = coachResponse.response {
+                    // Failsafe: if the typed decoder produced an empty shape (all
+                    // nil), don't drop the response — fall back to the raw body.
+                    // Prevents the "coach says nothing" case when server shape
+                    // drifts or a field changes unexpectedly.
+                    let text = coachResponse.response
+                        ?? (coachResponse.error ?? (rawBody.isEmpty ? nil : rawBody))
+                    if let text, !text.isEmpty {
                         let assistantMessage = ChatMessage(
                             role: .assistant,
-                            content: responseText,
+                            content: text,
                             sources: coachResponse.sources
                         )
                         messages.append(assistantMessage)
+                    } else {
+                        appendErrorMessage("Coach returned an empty response. Please try again.")
                     }
                     isLoading = false
                 }

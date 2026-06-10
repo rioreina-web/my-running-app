@@ -33,4 +33,10 @@ enum Log {
 
     /// General app logger
     static let app = Logger(subsystem: subsystem, category: "App")
+
+    /// Logger for the AthletePaceProfile service / edge function.
+    static let paceProfile = Logger(subsystem: subsystem, category: "paceProfile")
+
+    /// Logger for the daily Coach Read service / edge function.
+    static let coachRead = Logger(subsystem: subsystem, category: "coachRead")
 }

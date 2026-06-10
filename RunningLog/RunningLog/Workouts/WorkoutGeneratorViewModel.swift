@@ -35,8 +35,7 @@ final class WorkoutGeneratorViewModel {
     /// Race pace in seconds per mile (for display calculations)
     var racePaceSecondsPerMile: Double? {
         guard let goalTime = marathonGoalTime else { return nil }
-        // Marathon = 26.2188 miles
-        return Double(goalTime) / 26.2188
+        return Double(goalTime) / RaceDistanceConstants.marathonMiles
     }
 
     /// Formatted race pace string
@@ -46,6 +45,21 @@ final class WorkoutGeneratorViewModel {
         let mins = totalSecs / 60
         let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
+    }
+
+    /// Shorthand for resolving a legacy stub percentage into a concrete
+    /// PaceIntensity against the caller's AthletePaceProfile. Used by the
+    /// hardcoded workout generators below so they produce real paces instead
+    /// of falling back to "115% MP" style strings.
+    ///
+    /// Mapping is defined in `PaceIntensity.referenceName(forPercentage:)`:
+    ///   <85% → easy, 85-92% → marathon, 92-97% → half,
+    ///   97-102% → 10K, 102-105% → 5K, 105%+ → mile.
+    private func pct(_ percentage: Double) -> PaceIntensity {
+        PaceIntensity.fromLegacyPercentage(
+            percentage,
+            profile: AthletePaceProfileService.shared.profile
+        )
     }
 
     /// Formatted goal time string
@@ -253,123 +267,146 @@ final class WorkoutGeneratorViewModel {
         }
     }
 
-    private func createLocalWorkout(type: SignatureType, goalTime: Int) -> PlannedWorkout {
+    func createLocalWorkout(type: SignatureType, goalTime: Int) -> PlannedWorkout {
+        // Derive the athlete's own pace table from their marathon goal so
+        // duration scales with their fitness instead of a hardcoded integer.
+        let paces = EquivalentPaces(raceDistance: .marathon, goalTimeSeconds: goalTime)
+
+        func finalize(_ workout: PlannedWorkout) -> PlannedWorkout {
+            var w = workout
+            w.estimatedDurationMinutes = w.computedDurationMinutes(paces: paces)
+            return w
+        }
+
         switch type {
         case .progressiveTempo:
+            // TODO(adaptive-plan-1.10): REWRITE every PaceIntensity(percentage:) stub below
+            //   to resolve against AthletePaceProfileService.shared.profile.
+            //   Mapping from old % to race-distance reference:
+            //     65-70% -> easy     (profile.easy.secondsPerMile)
+            //     85-90% -> marathon (profile.marathon.secondsPerMile)
+            //     92-95% -> half     (profile.half.secondsPerMile)
+            //     97-100% -> 10K     (profile.tenK.secondsPerMile)
+            //     102-105% -> 5K     (profile.fiveK.secondsPerMile)
+            //     105%+ -> mile      (profile.mile.secondsPerMile)
+            //   Use a new helper PaceIntensity.forReference(_:in:) that takes a reference
+            //   string ("easy","marathon","half","10K","5K","mile") and the profile.
+            //   This applies to every stub in this file (lines ~276-305 + any below).
+            //   See: adaptive-plan-loop-prompts.md § Prompt 1.10
             // 2mi warmup + 4mi + 4mi + 2mi cooldown = 12mi
-            return PlannedWorkout(
+            return finalize(PlannedWorkout(
                 id: UUID(),
                 name: "Progressive Tempo",
                 category: .special,
                 trainingPhase: currentPhase,
                 description: "Build aerobic capacity with progressive intensity through fractions",
                 steps: [
-                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 70), notes: "Easy warm-up", order: 0),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: PaceIntensity(percentage: 87), notes: "First fraction - comfortable aerobic", order: 1),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: PaceIntensity(percentage: 95), notes: "Second fraction - moderate push", order: 2),
-                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 65), notes: "Easy cool-down", order: 3),
+                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(70), notes: "Easy warm-up", order: 0),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: pct(87), notes: "First fraction - comfortable aerobic", order: 1),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: pct(95), notes: "Second fraction - moderate push", order: 2),
+                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(65), notes: "Easy cool-down", order: 3),
                 ],
                 totalDistanceMiles: 12.0,
-                estimatedDurationMinutes: 90,
+                estimatedDurationMinutes: nil,
                 signatureType: .progressiveTempo,
                 createdAt: Date()
-            )
+            ))
 
         case .descendingLadder:
-            // 2mi warmup + (4+3+2.5+2+1.5+1)mi + 2mi cooldown = 18mi
-            return PlannedWorkout(
+            // 2mi warmup + (4+3+2.5+2+1.5+1)mi + 5x0.5mi recovery + 2mi cooldown = 20.5mi
+            return finalize(PlannedWorkout(
                 id: UUID(),
                 name: "Descending Ladder",
                 category: .special,
                 trainingPhase: currentPhase,
                 description: "4+3+2.5+2+1.5+1 miles with 0.5mi float recovery between each",
                 steps: [
-                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 70), notes: "Easy warm-up", order: 0),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: PaceIntensity(percentage: 92), notes: "4mi @ 92%", order: 1),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 2),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 3.0, targetPaceIntensity: PaceIntensity(percentage: 95), notes: "3mi @ 95%", order: 3),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 4),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 2.5, targetPaceIntensity: PaceIntensity(percentage: 98), notes: "2.5mi @ 98%", order: 5),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 6),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 100), notes: "2mi @ race pace", order: 7),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 8),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.5, targetPaceIntensity: PaceIntensity(percentage: 102), notes: "1.5mi @ 102%", order: 9),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 10),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: PaceIntensity(percentage: 105), notes: "1mi fast finish", order: 11),
-                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 65), notes: "Easy cool-down", order: 12),
+                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(70), notes: "Easy warm-up", order: 0),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: pct(92), notes: "4mi @ 92%", order: 1),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 2),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 3.0, targetPaceIntensity: pct(95), notes: "3mi @ 95%", order: 3),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 4),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 2.5, targetPaceIntensity: pct(98), notes: "2.5mi @ 98%", order: 5),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 6),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(100), notes: "2mi @ race pace", order: 7),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 8),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.5, targetPaceIntensity: pct(102), notes: "1.5mi @ 102%", order: 9),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 10),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: pct(105), notes: "1mi fast finish", order: 11),
+                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(65), notes: "Easy cool-down", order: 12),
                 ],
                 totalDistanceMiles: 20.5,
-                estimatedDurationMinutes: 120,
+                estimatedDurationMinutes: nil,
                 signatureType: .descendingLadder,
                 createdAt: Date()
-            )
+            ))
 
         case .racePaceRepeats:
-            // 2mi warmup + 6x1mi @ MP w/0.5mi recovery + 2mi cooldown = 13mi
-            return PlannedWorkout(
+            // 2mi wu + (6x1mi + 5x0.5mi recovery) + 2mi cd = 12.5mi
+            return finalize(PlannedWorkout(
                 id: UUID(),
                 name: "Race-Pace Repeats",
                 category: .specific,
                 trainingPhase: currentPhase,
-                description: "6x1mi @ MP with 0.5mi float recovery",
+                description: "6x1mi @ MP with 0.5mi float recovery between reps",
                 steps: [
-                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 70), notes: "Easy warm-up", order: 0),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: PaceIntensity(percentage: 100), notes: "Rep 1 @ MP", order: 1),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 2),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: PaceIntensity(percentage: 100), notes: "Rep 2 @ MP", order: 3),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 4),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: PaceIntensity(percentage: 100), notes: "Rep 3 @ MP", order: 5),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 6),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: PaceIntensity(percentage: 100), notes: "Rep 4 @ MP", order: 7),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 8),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: PaceIntensity(percentage: 100), notes: "Rep 5 @ MP", order: 9),
-                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Float recovery", order: 10),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: PaceIntensity(percentage: 102), notes: "Rep 6 - strong finish!", order: 11),
-                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 65), notes: "Easy cool-down", order: 12),
+                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(70), notes: "Easy warm-up", order: 0),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: pct(100), notes: "Rep 1 @ MP", order: 1),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 2),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: pct(100), notes: "Rep 2 @ MP", order: 3),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 4),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: pct(100), notes: "Rep 3 @ MP", order: 5),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 6),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: pct(100), notes: "Rep 4 @ MP", order: 7),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 8),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: pct(100), notes: "Rep 5 @ MP", order: 9),
+                    PlannedWorkoutStep(id: UUID(), stepType: .recovery, durationType: .distanceMiles, durationValue: 0.5, targetPaceIntensity: pct(75), notes: "Float recovery", order: 10),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 1.0, targetPaceIntensity: pct(102), notes: "Rep 6 - strong finish!", order: 11),
+                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(65), notes: "Easy cool-down", order: 12),
                 ],
                 totalDistanceMiles: 12.5,
-                estimatedDurationMinutes: 90,
+                estimatedDurationMinutes: nil,
                 signatureType: .racePaceRepeats,
                 createdAt: Date()
-            )
+            ))
 
         case .specialBlock:
             // AM: 2mi warmup + 6mi tempo + 2mi cooldown = 10mi
-            return PlannedWorkout(
+            return finalize(PlannedWorkout(
                 id: UUID(),
                 name: "Special Block (AM Session)",
                 category: .special,
                 trainingPhase: currentPhase,
                 description: "Morning tempo session - part of AM/PM double day",
                 steps: [
-                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 70), notes: "Easy warm-up", order: 0),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 6.0, targetPaceIntensity: PaceIntensity(percentage: 88), notes: "Steady tempo @ 88%", order: 1),
-                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 65), notes: "Easy cool-down", order: 2),
+                    PlannedWorkoutStep(id: UUID(), stepType: .warmup, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(70), notes: "Easy warm-up", order: 0),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 6.0, targetPaceIntensity: pct(88), notes: "Steady tempo @ 88%", order: 1),
+                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(65), notes: "Easy cool-down", order: 2),
                 ],
                 totalDistanceMiles: 10.0,
-                estimatedDurationMinutes: 70,
+                estimatedDurationMinutes: nil,
                 signatureType: .specialBlock,
                 createdAt: Date()
-            )
+            ))
 
         case .longRunWithTempo:
             // 14mi easy + 4mi tempo + 2mi cooldown = 20mi
-            return PlannedWorkout(
+            return finalize(PlannedWorkout(
                 id: UUID(),
                 name: "Long Run with Tempo Finish",
                 category: .fundamental,
                 trainingPhase: currentPhase,
                 description: "Endurance builder with progressive tempo in final miles",
                 steps: [
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 14.0, targetPaceIntensity: PaceIntensity(percentage: 75), notes: "Easy long run pace", order: 0),
-                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: PaceIntensity(percentage: 88), notes: "Tempo finish @ 88%", order: 1),
-                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: PaceIntensity(percentage: 65), notes: "Easy cool-down", order: 2),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 14.0, targetPaceIntensity: pct(75), notes: "Easy long run pace", order: 0),
+                    PlannedWorkoutStep(id: UUID(), stepType: .active, durationType: .distanceMiles, durationValue: 4.0, targetPaceIntensity: pct(88), notes: "Tempo finish @ 88%", order: 1),
+                    PlannedWorkoutStep(id: UUID(), stepType: .cooldown, durationType: .distanceMiles, durationValue: 2.0, targetPaceIntensity: pct(65), notes: "Easy cool-down", order: 2),
                 ],
                 totalDistanceMiles: 20.0,
-                estimatedDurationMinutes: 150,
+                estimatedDurationMinutes: nil,
                 signatureType: .longRunWithTempo,
                 createdAt: Date()
-            )
+            ))
         }
     }
 

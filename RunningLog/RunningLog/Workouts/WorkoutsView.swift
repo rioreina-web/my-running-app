@@ -151,49 +151,27 @@ struct WeeklyStatsHeader: View {
         return totalDist > 0 ? totalTime / totalDist : 0
     }
 
+    // Negative Splits redesign: drop the peachy gradient card; replace
+    // with a hairline-divided three-stat strip (display serif numerals,
+    // mono caps labels). Same data, less chrome.
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("THIS WEEK")
-                .font(.dripCaption(11))
-                .foregroundStyle(Color.drip.textSecondary)
-                .tracking(1.5)
-
-            HStack(spacing: 12) {
-                WeeklyStatCard(
-                    value: String(format: "%.1f", totalMiles),
-                    unit: "mi",
-                    label: "Distance",
-                    icon: "figure.run"
-                )
-
-                WeeklyStatCard(
-                    value: "\(totalRuns)",
-                    unit: "",
-                    label: "Runs",
-                    icon: "flame.fill"
-                )
-
-                WeeklyStatCard(
-                    value: formatPace(avgPace),
-                    unit: "/mi",
-                    label: "Avg Pace",
-                    icon: "speedometer"
-                )
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            NSEyebrow("THIS WEEK")
+            NSHairline()
+            NSStatStrip(items: [
+                .init(label: "DISTANCE",
+                      value: String(format: "%.1f", totalMiles),
+                      unit: "MILES"),
+                .init(label: "RUNS",
+                      value: "\(totalRuns)",
+                      unit: totalRuns == 1 ? "RUN" : "RUNS"),
+                .init(label: "AVG PACE",
+                      value: avgPace > 0 ? formatPace(avgPace) : "—",
+                      unit: avgPace > 0 ? "/ MI" : "TBD"),
+            ])
+            NSHairline()
         }
-        .padding(20)
-        .background(
-            LinearGradient(
-                colors: [Color.drip.coral.opacity(0.15), Color.drip.cardBackground],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(Color.drip.coral.opacity(0.3), lineWidth: 1)
-        )
+        .padding(.vertical, 8)
     }
 
     private func formatPace(_ pace: Double) -> String {
@@ -885,19 +863,20 @@ struct TrainingEffortChart: View {
         return derivePacesFromWorkouts(workouts)
     }
 
-    /// Load pace zones from the user's saved Pace Chart goal (stored in UserDefaults).
+    /// Load pace zones from the athlete's pace profile — the single source of
+    /// truth for goal race distance + target time (superseded the old
+    /// paceChart_* UserDefaults keys in adaptive-plan-1.9).
     private func loadPaceChartGoal() -> EquivalentPaces? {
-        let distRaw = UserDefaults.standard.string(forKey: "paceChart_selectedDistance") ?? ""
-        let seconds = UserDefaults.standard.integer(forKey: "paceChart_goalTimeSeconds")
-        guard seconds > 0 else { return nil }
+        guard let profile = AthletePaceProfileService.shared.profile,
+              let distRaw = profile.goalRaceDistance,
+              let seconds = profile.goalTimeSeconds,
+              seconds > 0 else { return nil }
 
         let distMap: [String: RaceDistance] = [
             "marathon": .marathon, "half": .halfMarathon,
             "10K": .tenK, "5K": .fiveK, "mile": .mile1500,
         ]
         guard let distance = distMap[distRaw] else { return nil }
-
-        print("[EffortChart] Using Pace Chart goal: \(distRaw) = \(seconds)s")
         return EquivalentPaces(raceDistance: distance, goalTimeSeconds: seconds)
     }
 

@@ -96,7 +96,7 @@ final class VoiceLogViewModel {
                         let status = result?.first?.processing_status ?? "pending"
                         if status == "completed" || status == "failed" {
                             await MainActor.run {
-                                Task { await self?.loadHistory() }
+                                _ = Task { await self?.loadHistory() }
                             }
                             // Compute workout features after successful processing
                             if status == "completed" {
@@ -110,7 +110,7 @@ final class VoiceLogViewModel {
                     }
                     // Timed out — refresh anyway
                     await MainActor.run {
-                        Task { await self?.loadHistory() }
+                        _ = Task { await self?.loadHistory() }
                     }
                 }
             }
@@ -196,13 +196,13 @@ final class VoiceLogViewModel {
                     let status = result?.first?.processing_status ?? "pending"
                     if status == "completed" || status == "failed" {
                         await MainActor.run {
-                            Task { await self?.loadHistory() }
+                            _ = Task { await self?.loadHistory() }
                         }
                         return
                     }
                 }
                 await MainActor.run {
-                    Task { await self?.loadHistory() }
+                    _ = Task { await self?.loadHistory() }
                 }
             }
         } catch {
@@ -282,11 +282,13 @@ final class VoiceLogViewModel {
 
         do {
             let userId = AuthManager.shared.userId
+            // Voice Log view = only voice memos + manual entries. Auto-synced workouts
+            // (strava, vital, healthkit) live elsewhere and show up as linkable workouts.
             let logs: [TrainingLog] = try await supabase
                 .from("training_logs")
                 .select()
                 .eq("user_id", value: userId)
-                .or("audio_url.not.is.null,notes.not.is.null,cleaned_notes.not.is.null")
+                .or("audio_url.not.is.null,source.eq.voice_log,source.eq.manual,source.eq.check_in")
                 .order("workout_date", ascending: false, nullsFirst: false)
                 .limit(50)
                 .execute()
@@ -375,6 +377,7 @@ final class VoiceLogViewModel {
                             }
                         }
 
+                        await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
                         return true
                     }
 

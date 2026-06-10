@@ -136,28 +136,128 @@ struct WorkoutChatSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    // MARK: - Apply Button
+    // MARK: - Diff View + Apply Button
 
     private var applyButton: some View {
-        Button { applyChanges() } label: {
-            HStack(spacing: 8) {
-                if isApplying {
-                    ProgressView()
-                        .tint(.white)
-                } else {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
+        VStack(spacing: 12) {
+            // Show diff: original → proposed
+            if let planData = pendingPlanData,
+               let original = scheduledWorkout.workout {
+                let aiWorkout = findMatchedWorkout(in: planData)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("PROPOSED CHANGES")
+                        .font(.dripCaption(10))
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .tracking(0.8)
+
+                    // Name change
+                    if let aw = aiWorkout, aw.name != original.name {
+                        DiffRow(label: "Name", from: original.name, to: aw.name)
+                    }
+
+                    // Step count change
+                    if let aw = aiWorkout, aw.steps.count != original.steps.count {
+                        DiffRow(
+                            label: "Steps",
+                            from: "\(original.steps.count) steps",
+                            to: "\(aw.steps.count) steps"
+                        )
+                    }
+
+                    // Distance change
+                    if let aw = aiWorkout,
+                       let newDist = aw.totalDistanceMiles,
+                       let oldDist = original.totalDistanceMiles,
+                       abs(newDist - oldDist) >= 0.3 {
+                        DiffRow(
+                            label: "Distance",
+                            from: String(format: "%.1f mi", oldDist),
+                            to: String(format: "%.1f mi", newDist)
+                        )
+                    }
+
+                    // Show key step changes
+                    if let aw = aiWorkout {
+                        let activeOriginal = original.steps.filter { $0.stepType == .active }
+                        let activeNew = aw.steps.filter { $0.stepType == "active" }
+                        let maxSteps = min(3, max(activeOriginal.count, activeNew.count))
+
+                        ForEach(0..<maxSteps, id: \.self) { i in
+                            if i < activeOriginal.count && i < activeNew.count {
+                                let orig = activeOriginal[i]
+                                let new_ = activeNew[i]
+                                let origDesc = "\(orig.formattedDuration) \(orig.notes ?? "")"
+                                let newDesc = "\(new_.durationValue) \(new_.notes ?? new_.stepType)"
+                                if origDesc != newDesc {
+                                    DiffRow(label: "Step \(i + 1)", from: origDesc, to: newDesc)
+                                }
+                            }
+                        }
+                    }
                 }
-                Text("Apply Changes")
-                    .font(.dripLabel(15))
+                .padding(14)
+                .background(Color.drip.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.drip.coral)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            // Apply/Reject buttons
+            HStack(spacing: 12) {
+                Button {
+                    pendingPlanData = nil
+                    messages.append(WorkoutChatMessage(
+                        role: "assistant",
+                        text: "No problem — what would you like instead?"
+                    ))
+                } label: {
+                    Text("Reject")
+                        .font(.dripLabel(14))
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.drip.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.drip.divider, lineWidth: 1)
+                        )
+                }
+
+                Button { applyChanges() } label: {
+                    HStack(spacing: 8) {
+                        if isApplying {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 16))
+                        }
+                        Text("Apply")
+                            .font(.dripLabel(14))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.drip.coral)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .disabled(isApplying)
+            }
         }
-        .disabled(isApplying)
+    }
+
+    private func findMatchedWorkout(in planData: AIPlanData) -> AIPlanWorkout? {
+        let targetDay = scheduledWorkout.dayOfWeek
+        let fillerTypes = ["easy", "rest", "strides"]
+        let isQualityOriginal = !fillerTypes.contains(scheduledWorkout.workoutType.rawValue.lowercased())
+
+        if isQualityOriginal {
+            return planData.workouts.first(where: { $0.dayOfWeek == targetDay && !fillerTypes.contains($0.workoutType.lowercased()) })
+                ?? planData.workouts.first(where: { !fillerTypes.contains($0.workoutType.lowercased()) })
+        } else {
+            return planData.workouts.first(where: { $0.dayOfWeek == targetDay })
+                ?? planData.workouts.first(where: { !fillerTypes.contains($0.workoutType.lowercased()) })
+                ?? planData.workouts.first
+        }
     }
 
     // MARK: - Send Message
@@ -272,13 +372,28 @@ struct WorkoutChatSheet: View {
 
         isApplying = true
 
-        // Convert to ImportedDayWorkout so we can use the existing toPlannedWorkout pipeline
-        let importedSteps = aiWorkout.steps.map { step in
-            ImportedDayWorkout.ImportedStep(
+        // Convert to ImportedDayWorkout so we can use the existing
+        // toPlannedWorkout pipeline. Critical: pass through `repeats` and
+        // `recovery` — without these, an AI-generated "2 × 3mi w/ 0.5mi
+        // float" gets collapsed into a single 5mi block (the description
+        // says one thing, the steps say another).
+        let importedSteps = aiWorkout.steps.map { step -> ImportedDayWorkout.ImportedStep in
+            let recovery: ImportedDayWorkout.ImportedStepRecovery? = step.recovery.map { r in
+                ImportedDayWorkout.ImportedStepRecovery(
+                    durationType: r.durationType,
+                    durationValue: r.durationValue,
+                    paceSecondsPerKm: nil,
+                    pacePercentage: r.pacePercentage
+                )
+            }
+            return ImportedDayWorkout.ImportedStep(
                 stepType: step.stepType,
                 durationType: step.durationType,
                 durationValue: step.durationValue,
                 pacePercentage: step.pacePercentage,
+                paceReference: step.paceZone,
+                repeats: step.repeats,
+                recovery: recovery,
                 notes: step.notes,
                 order: step.order
             )
@@ -334,6 +449,38 @@ struct WorkoutChatMessage: Identifiable {
     let id = UUID()
     let role: String
     let text: String
+}
+
+// MARK: - Diff Row
+
+struct DiffRow: View {
+    let label: String
+    let from: String
+    let to: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.dripCaption(10))
+                .foregroundStyle(Color.drip.textTertiary)
+                .tracking(0.6)
+
+            HStack(spacing: 8) {
+                Text(from)
+                    .font(.dripBody(12))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .strikethrough(true, color: Color.drip.textTertiary)
+
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.drip.coral)
+
+                Text(to)
+                    .font(.dripLabel(12))
+                    .foregroundStyle(Color.drip.coral)
+            }
+        }
+    }
 }
 
 // MARK: - Chat Bubble

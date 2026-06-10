@@ -379,6 +379,45 @@ struct TrainingPreferencesStep: View {
                     }
                 }
 
+                // Quality workout days
+                QuestionSection(title: "PREFERRED QUALITY WORKOUT DAYS") {
+                    let eligible: [DayOfWeek] = [.monday, .tuesday, .wednesday, .thursday, .friday]
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Day 1 (speed / tempo)")
+                            .font(.dripCaption(12))
+                            .foregroundStyle(Color.drip.textTertiary)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(eligible, id: \.self) { day in
+                                SelectableChip(
+                                    title: day.displayName,
+                                    isSelected: viewModel.preferredWorkout1Day == day
+                                ) {
+                                    viewModel.preferredWorkout1Day = day
+                                    if viewModel.preferredWorkout2Day == day {
+                                        viewModel.preferredWorkout2Day = eligible.first { $0 != day } ?? .thursday
+                                    }
+                                }
+                            }
+                        }
+
+                        Text("Day 2 (medium long / second workout)")
+                            .font(.dripCaption(12))
+                            .foregroundStyle(Color.drip.textTertiary)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(eligible, id: \.self) { day in
+                                SelectableChip(
+                                    title: day.displayName,
+                                    isSelected: viewModel.preferredWorkout2Day == day
+                                ) {
+                                    if day != viewModel.preferredWorkout1Day {
+                                        viewModel.preferredWorkout2Day = day
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Can run doubles
                 QuestionSection(title: "CAN YOU RUN TWICE A DAY?") {
                     HStack(spacing: 12) {

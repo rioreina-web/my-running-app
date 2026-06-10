@@ -33,42 +33,51 @@ struct WorkoutTemplateEditorView: View {
     @State private var estimatedDurationMinutes: String = ""
 
     @State private var isSaving = false
-    @State private var showRepeatSheet = false
     @State private var showDiscardAlert = false
 
-    // Preview paces — read from pace chart's stored goal (same keys as PaceChartViewModel)
-    @AppStorage("paceChart_selectedDistance") private var paceChartDistanceRaw: String = "marathon"
-    @AppStorage("paceChart_goalTimeSeconds") private var paceChartGoalSeconds: Int = 14400
+    // TODO(adaptive-plan-1.9): REPLACE both @AppStorage reads with AthletePaceProfileService.
+    // Preview paces read from the AthletePaceProfile (single source of truth).
+    // `paceProfile` is non-@State because AthletePaceProfileService is
+    // @Observable — the view re-renders when `profile` changes.
+    private var paceProfile: AthletePaceProfile? {
+        AthletePaceProfileService.shared.profile
+    }
 
-    private var previewRaceDistance: RaceDistance {
-        switch paceChartDistanceRaw {
+    private var previewRaceDistance: RaceDistance? {
+        switch paceProfile?.goalRaceDistance {
         case "marathon": return .marathon
-        case "half": return .halfMarathon
-        case "10K", "10mi": return .tenK
-        case "5K", "3K": return .fiveK
-        case "mile", "1500m": return .mile1500
-        default: return .marathon
+        case "half":     return .halfMarathon
+        case "10K":      return .tenK
+        case "5K":       return .fiveK
+        case "mile":     return .mile1500
+        default:         return nil
         }
     }
 
-    private var previewPaces: EquivalentPaces {
-        EquivalentPaces(raceDistance: previewRaceDistance, goalTimeSeconds: max(paceChartGoalSeconds, 60))
+    private var previewPaces: EquivalentPaces? {
+        guard let distance = previewRaceDistance,
+              let seconds = paceProfile?.goalTimeSeconds,
+              seconds > 0 else { return nil }
+        return EquivalentPaces(raceDistance: distance, goalTimeSeconds: seconds)
     }
 
     private var previewGoalLabel: String {
-        let dist: String
-        switch paceChartDistanceRaw {
-        case "marathon": dist = "Marathon"
-        case "half": dist = "Half Marathon"
-        case "10K": dist = "10K"
-        case "10mi": dist = "10 Mile"
-        case "5K": dist = "5K"
-        case "3K": dist = "3K"
-        case "mile": dist = "Mile"
-        case "1500m": dist = "1500m"
-        default: dist = "Marathon"
+        guard let profile = paceProfile,
+              let distRaw = profile.goalRaceDistance,
+              let seconds = profile.goalTimeSeconds,
+              seconds > 0 else {
+            return "Set your goal to preview paces"
         }
-        return "\(dist) · \(PaceCalculator.formatSeconds(paceChartGoalSeconds))"
+        let dist: String
+        switch distRaw {
+        case "marathon": dist = "Marathon"
+        case "half":     dist = "Half Marathon"
+        case "10K":      dist = "10K"
+        case "5K":       dist = "5K"
+        case "mile":     dist = "Mile"
+        default:         dist = distRaw
+        }
+        return "\(dist) · \(PaceCalculator.formatSeconds(seconds))"
     }
 
     private var isEditing: Bool { existingTemplate != nil }
@@ -146,12 +155,6 @@ struct WorkoutTemplateEditorView: View {
         }
         .onAppear { prefill() }
         .interactiveDismissDisabled(hasUnsavedWork)
-        .sheet(isPresented: $showRepeatSheet) {
-            RepeatBlockSheet(steps: steps) { expanded in
-                steps = expanded
-                for i in steps.indices { steps[i].order = i }
-            }
-        }
     }
 
     // MARK: - Meta Section
@@ -216,23 +219,30 @@ struct WorkoutTemplateEditorView: View {
                     .foregroundStyle(Color.drip.textSecondary)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(previewPaces.allPaces, id: \.0) { (named, pace) in
-                        VStack(spacing: 2) {
-                            Text(named.shortName)
-                                .font(.dripCaption(9))
-                                .foregroundStyle(named.color)
-                            Text(EquivalentPaces.formatPace(pace))
-                                .font(.dripStat(11))
-                                .foregroundStyle(Color.drip.textPrimary)
+            if let previewPaces {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(previewPaces.allPaces, id: \.0) { (named, pace) in
+                            VStack(spacing: 2) {
+                                Text(named.shortName)
+                                    .font(.dripCaption(9))
+                                    .foregroundStyle(named.color)
+                                Text(EquivalentPaces.formatPace(pace))
+                                    .font(.dripStat(11))
+                                    .foregroundStyle(Color.drip.textPrimary)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 5)
+                            .background(named.color.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(named.color.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                 }
+            } else {
+                Text("Set a goal race + time in your pace chart to see paces here.")
+                    .font(.dripCaption(12))
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .padding(.vertical, 6)
             }
         }
     }
@@ -246,19 +256,12 @@ struct WorkoutTemplateEditorView: View {
                     .font(.dripCaption(11))
                     .foregroundStyle(Color.drip.textTertiary)
                 Spacer()
-                if steps.count >= 2 {
-                    Button {
-                        showRepeatSheet = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "repeat")
-                                .font(.system(size: 12))
-                            Text("Repeat Block")
-                                .font(.dripCaption(12))
-                        }
-                        .foregroundStyle(Color.drip.textSecondary)
-                    }
-                }
+                // The old "Repeat Block" sheet was retired May 2026 —
+                // every active step now has an inline "Make this an
+                // interval set" affordance + reps stepper, which writes
+                // to `step.repeats` directly instead of flattening into
+                // N rows. Keeping both paths would have produced two
+                // shapes of persisted data for the same intent.
                 Button {
                     let newStep = EditableWorkoutStep(order: steps.count)
                     steps.append(newStep)
@@ -272,7 +275,7 @@ struct WorkoutTemplateEditorView: View {
                     .foregroundStyle(Color.drip.coral)
                 }
             }
-            Text("Paces preview based on 4:00 marathon. Each athlete sees their own goal paces.")
+            Text("Pace previews come from your profile goal. Each athlete sees their own goal paces.")
                 .font(.dripCaption(11))
                 .foregroundStyle(Color.drip.textTertiary)
                 .italic()
@@ -304,7 +307,7 @@ struct WorkoutTemplateEditorView: View {
                             step: $steps[idx],
                             stepIndex: idx,
                             totalSteps: steps.count,
-                            previewPaces: previewPaces,
+                            previewPaces: previewPaces ?? TemplateStepRow.defaultPaces,
                             onDelete: { steps.remove(at: idx) },
                             onMoveUp: idx > 0 ? { steps.swapAt(idx, idx - 1) } : nil,
                             onMoveDown: idx < steps.count - 1 ? { steps.swapAt(idx, idx + 1) } : nil
@@ -469,9 +472,16 @@ struct WorkoutTemplateEditorView: View {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
-        // Build a PlannedWorkout from steps using the user's actual goal pace
-        let saveEquivPaces = previewPaces
-        let saveRacePace = Double(paceChartGoalSeconds) / previewRaceDistance.distanceInMiles
+        // Build a PlannedWorkout from steps using the athlete's profile goal
+        // when available; otherwise fall back to the generic preview paces so
+        // coach-authored templates still save with reasonable defaults.
+        let saveEquivPaces = previewPaces ?? TemplateStepRow.defaultPaces
+        let saveRacePace: Double = {
+            if let seconds = paceProfile?.goalTimeSeconds, let distance = previewRaceDistance, seconds > 0 {
+                return Double(seconds) / distance.distanceInMiles
+            }
+            return Double(14400) / RaceDistance.marathon.distanceInMiles
+        }()
         let plannedSteps = steps.enumerated().map { idx, editStep in
             editStep.toWorkoutStep(racePaceSeconds: saveRacePace, equivalentPaces: saveEquivPaces)
         }
@@ -542,8 +552,13 @@ struct WorkoutTemplateEditorView: View {
         estimatedDistanceMiles = t.estimatedDistanceMiles.map { String(format: "%.1f", $0) } ?? ""
         estimatedDurationMinutes = t.estimatedDurationMinutes.map { String($0) } ?? ""
 
-        let loadEquivPaces = previewPaces
-        let loadRacePace = Double(paceChartGoalSeconds) / previewRaceDistance.distanceInMiles
+        let loadEquivPaces = previewPaces ?? TemplateStepRow.defaultPaces
+        let loadRacePace: Double = {
+            if let seconds = paceProfile?.goalTimeSeconds, let distance = previewRaceDistance, seconds > 0 {
+                return Double(seconds) / distance.distanceInMiles
+            }
+            return Double(14400) / RaceDistance.marathon.distanceInMiles
+        }()
         steps = t.workoutData.steps.map {
             EditableWorkoutStep(from: $0, equivalentPaces: loadEquivPaces, racePaceSeconds: loadRacePace)
         }
@@ -653,6 +668,18 @@ struct TemplateStepRow: View {
                         equivalentPaces: previewPaces,
                         racePaceSeconds: previewPaces.mpPace
                     )
+
+                    // Interval reps + recovery. Shared with DayDetailSheet's
+                    // EditableWorkoutStepRow via the IntervalRepsSection view
+                    // — both editor surfaces stay in lockstep through one
+                    // implementation instead of drifting copies.
+                    if step.stepType == .active {
+                        IntervalRepsSection(
+                            step: $step,
+                            equivalentPaces: previewPaces,
+                            racePaceSeconds: previewPaces.mpPace
+                        )
+                    }
                 }
                 .padding(.trailing, 4)
             }
@@ -663,9 +690,19 @@ struct TemplateStepRow: View {
     }
 }
 
-// MARK: - RepeatBlockSheet
+// MARK: - RepeatBlockSheet (retired May 2026)
+//
+// The RepeatBlockSheet was an iOS-only "select N steps, multiply by K"
+// affordance that flattened intervals into K explicit copies. It pre-dated
+// the `repeats: Int?` + `recovery` fields on PlannedWorkoutStep / the
+// editable step. Retired because it produced a divergent on-disk shape
+// from the web editor and from the LLM importer — the same workout could
+// persist either as one step with `repeats: 7` or as 7 flat Active rows
+// depending on which surface authored it. The IntervalRepsSection view
+// on every active step is the single source of truth now.
 
-struct RepeatBlockSheet: View {
+#if false
+struct _ZombieRepeatBlockSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let steps: [EditableWorkoutStep]
@@ -849,14 +886,19 @@ struct RepeatBlockSheet: View {
     }
 }
 
-// MARK: - Time Interval Field (MM:SS)
-
+// formatMMSS — only ever called by the now-retired RepeatBlockSheet.
+// Kept inside the `#if false` block so removing the sheet doesn't leave
+// an unused-warning dangling. Deleted in the next cleanup cycle once
+// we're confident no caller resurrects the sheet.
 private func formatMMSS(_ totalSeconds: Double) -> String {
     let secs = Int(totalSeconds)
     let m = secs / 60
     let s = secs % 60
     return String(format: "%d:%02d", m, s)
 }
+#endif
+
+// MARK: - Time Interval Field (MM:SS)
 
 struct TimeIntervalField: View {
     @Binding var totalSeconds: Double

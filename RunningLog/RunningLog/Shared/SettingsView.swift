@@ -23,6 +23,8 @@ struct SettingsView: View {
     @State private var showAthleteProfile = false
     @State private var syncService = WorkoutSyncService()
     @State private var backfillResultMessage: String?
+    @State private var isStravaSyncing = false
+    @State private var stravaSyncResultMessage: String?
 
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -266,9 +268,94 @@ struct SettingsView: View {
                 }
                 .disabled(syncService.isBackfilling)
                 .buttonStyle(.plain)
+
+                #if DEBUG
+                Divider()
+                    .background(Color.drip.divider)
+
+                Button {
+                    Task { await runStravaSync() }
+                } label: {
+                    HStack {
+                        Image(systemName: "figure.run.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.drip.coral)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sync from Strava")
+                                .font(.dripBody(14))
+                                .foregroundStyle(Color.drip.textPrimary)
+                            Text(stravaSyncSubtitle)
+                                .font(.dripCaption(12))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                        Spacer()
+                        if isStravaSyncing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                }
+                .disabled(isStravaSyncing)
+                .buttonStyle(.plain)
+                #endif
             }
             .background(Color.drip.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    private var stravaSyncSubtitle: String {
+        if isStravaSyncing { return "Pulling latest runs…" }
+        if let msg = stravaSyncResultMessage { return msg }
+        return "Pull recent runs into training_logs (dev)"
+    }
+
+    private func runStravaSync() async {
+        isStravaSyncing = true
+        stravaSyncResultMessage = nil
+        defer { isStravaSyncing = false }
+
+        struct SyncBody: Encodable { let limit: Int }
+        struct SyncResponse: Decodable {
+            let ok: Bool?
+            let totalActivities: Int?
+            let imported: Int?
+            let skipped: Int?
+            let runs: Int?
+            let filteredOut: Int?
+            let error: String?
+        }
+
+        do {
+            let response: SyncResponse = try await supabase.functions.invoke(
+                "strava-test-pull",
+                options: FunctionInvokeOptions(body: SyncBody(limit: 30))
+            )
+            if let err = response.error {
+                stravaSyncResultMessage = "Error: \(err)"
+                return
+            }
+            let imported = response.imported ?? 0
+            let skipped = response.skipped ?? 0
+            let total = response.totalActivities ?? 0
+            let runs = response.runs ?? 0
+            let filteredOut = response.filteredOut ?? 0
+            if imported > 0 {
+                stravaSyncResultMessage = "Imported \(imported), \(skipped) already synced"
+            } else if runs == 0 {
+                stravaSyncResultMessage = "No runs in last \(total) activities (\(filteredOut) non-runs filtered)"
+            } else {
+                stravaSyncResultMessage = "No new runs — \(runs) returned, \(skipped) already synced"
+            }
+        } catch {
+            Log.app.error("Strava sync failed: \(error.localizedDescription)")
+            stravaSyncResultMessage = "Failed: \(error.localizedDescription)"
         }
     }
 

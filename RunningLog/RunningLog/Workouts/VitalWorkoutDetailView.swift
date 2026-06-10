@@ -25,7 +25,22 @@ struct VitalWorkoutDetailView: View {
     @State private var isLoading = true
     @State private var streamFailed = false
     @State private var vitalSummary: VitalWorkoutSummary?
+    /// For non-Vital sources (Strava etc.). Populated from
+    /// training_logs.external_streams meta block.
+    @State private var externalMeta: StreamMeta?
     @State private var showMileSplits = true
+
+    /// Average HR for secondary stats — Vital first, external fallback.
+    private var displayAvgHr: Int? {
+        vitalSummary?.averageHr ?? externalMeta?.averageHr
+    }
+
+    /// Elevation gain in feet — Vital first, external fallback. Both stores
+    /// meters; convert at the boundary.
+    private var displayElevationFeet: Int? {
+        let metersOpt = vitalSummary?.totalElevationGain ?? externalMeta?.totalElevationGain
+        return metersOpt.map { Int($0 * 3.28084) }
+    }
 
     var body: some View {
         ZStack {
@@ -42,44 +57,100 @@ struct VitalWorkoutDetailView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 20) {
-                        // Header
-                        workoutHeader
+                        PlateStrip(surface: "WORKOUT DETAIL  ·  SHARPENED", fig: "FIG. 23")
                             .padding(.horizontal, 20)
-                            .padding(.top, 20)
+                            .padding(.top, 16)
 
-                        // Main Stats
-                        mainStatsGrid
+                        // Header — Plate 23 editorial replacement.
+                        // Old: centered weekday + date + source-badge stack
+                        // New: left-aligned editorial set with mono eyebrow,
+                        // Crimson Pro display date, italic-serif tagline.
+                        WD23Header(workout: workout)
                             .padding(.horizontal, 20)
 
-                        // Pace Chart
+                        // Main Stats — Plate 23: two-slot stat strip
+                        // (DISTANCE · DURATION) replaces the 2×2 StatCard
+                        // grid. Pace, calories, elevation, HR fold into the
+                        // secondary stats row below.
+                        WD23TwoStatStrip(workout: workout, avgHr: displayAvgHr, elevationFeet: displayElevationFeet)
+                            .padding(.horizontal, 20)
+
+                        // Secondary row now carries only the stats the
+                        // top strip can't fit: ELEV + CALORIES. Pace and
+                        // HR moved up to the editorial 4-stat strip.
+                        WD23SecondaryStats(
+                            workout: workout,
+                            elevationFeet: displayElevationFeet
+                        )
+                        .padding(.horizontal, 20)
+
+                        EditorialRule()
+                            .padding(.horizontal, 20)
+
+                        // Pace Chart — existing component, now sitting on
+                        // the bone background instead of inside a card.
                         if let s = stream, let vel = s.velocitySmooth, let dist = s.distance,
                            vel.count == dist.count, vel.count >= 10 {
-                            PaceChartCard(
-                                velocities: vel,
-                                distances: dist,
-                                times: s.time ?? [],
-                                heartrates: s.heartrate,
-                                altitudes: s.altitude,
-                                cadences: s.cadence
-                            )
+                            VStack(alignment: .leading, spacing: 8) {
+                                WD23SectionEyebrow(label: "PACE × HR  ·  OVER DISTANCE")
+                                PaceChartCard(
+                                    velocities: vel,
+                                    distances: dist,
+                                    times: s.time ?? [],
+                                    heartrates: s.heartrate,
+                                    altitudes: s.altitude,
+                                    cadences: s.cadence
+                                )
+                            }
                             .padding(.horizontal, 20)
-                        }
 
-                        // GPS Map
-                        if !route.isEmpty {
-                            RouteMapCard(route: route)
+                            EditorialRule()
                                 .padding(.horizontal, 20)
                         }
 
                         // Heart Rate (show summary stats even without stream)
                         if !heartRateSamples.isEmpty || vitalSummary?.averageHr != nil {
-                            heartRateSection
+                            VStack(alignment: .leading, spacing: 8) {
+                                WD23SectionEyebrow(
+                                    label: "HEART RATE",
+                                    trailing: heartRateSummaryString()
+                                )
+                                heartRateSection
+                            }
+                            .padding(.horizontal, 20)
+
+                            EditorialRule()
                                 .padding(.horizontal, 20)
                         }
 
-                        // Splits (Pace segments + Mile splits)
+                        // Splits (Pace segments + Mile splits) — existing
+                        // splits section still handles its own internal
+                        // toggle. Editorial eyebrow above keeps the visual
+                        // language consistent.
                         if !paceSplits.isEmpty || !splits.isEmpty {
-                            splitsSection
+                            VStack(alignment: .leading, spacing: 8) {
+                                WD23SectionEyebrow(label: "SPLITS")
+                                splitsSection
+                            }
+                            .padding(.horizontal, 20)
+
+                            EditorialRule()
+                                .padding(.horizontal, 20)
+                        }
+
+                        // GPS Map — moved to AFTER splits so the editorial
+                        // narrative arc reads: header → strip → pace × HR
+                        // → HR detail → splits → map → context. Existing
+                        // RouteMapCard kept intact (real MapKit map, not a
+                        // mockup illustration).
+                        if !route.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                WD23SectionEyebrow(label: "ROUTE")
+                                RouteMapCard(route: route)
+                            }
+                            .padding(.horizontal, 20)
+
+                            EditorialRule()
                                 .padding(.horizontal, 20)
                         }
 
@@ -127,12 +198,33 @@ struct VitalWorkoutDetailView: View {
                             .padding(.horizontal, 20)
                         }
 
+                        EditorialRule()
+                            .padding(.horizontal, 20)
+
+                        PlateFooter("Pace, narrated. The story this run tells about your fitness.")
+                            .padding(.horizontal, 20)
+
                         Spacer().frame(height: 40)
                     }
                 }
             }
         }
         .task(id: vitalWorkoutId) { await loadData() }
+    }
+
+    // MARK: - Plate 23 helpers
+
+    /// Compact summary string for the HR section eyebrow's trailing
+    /// position. e.g. "AVG 143  ·  MAX 162". Returns nil when no HR
+    /// summary is available.
+    private func heartRateSummaryString() -> String? {
+        guard let summary = vitalSummary,
+              let avg = summary.averageHr else { return nil }
+        var parts = ["AVG \(avg)"]
+        if let mx = summary.maxHr {
+            parts.append("MAX \(mx)")
+        }
+        return parts.joined(separator: "  ·  ")
     }
 
     // MARK: - Header
@@ -352,13 +444,23 @@ struct VitalWorkoutDetailView: View {
     // MARK: - Data Loading
 
     private func loadData() async {
+        // Strava-pulled workouts have their stream stored as JSONB on
+        // training_logs.external_streams (written by the strava-test-pull
+        // edge function). Vital's API doesn't know about those workout IDs,
+        // so for any non-Vital source we go straight to ExternalStreamAdapter.
+        if isExternalSource {
+            await loadFromExternalStreams()
+            return
+        }
+
         // Fetch summary and stream in parallel — don't let one block the other
+        let cachedSummary = vitalManager.getSummary(for: vitalWorkoutId)
         async let summaryTask: VitalWorkoutSummary? = {
-            if let cached = vitalManager.getSummary(for: vitalWorkoutId) {
+            if let cached = cachedSummary {
                 return cached
             }
             _ = await vitalManager.fetchRunningWorkouts(for: workout.startDate)
-            return vitalManager.getSummary(for: vitalWorkoutId)
+            return await vitalManager.getSummary(for: vitalWorkoutId)
         }()
         async let streamTask = vitalManager.fetchWorkoutStream(workoutId: vitalWorkoutId)
 
@@ -390,6 +492,50 @@ struct VitalWorkoutDetailView: View {
                 streamFailed = true
                 isLoading = false
             }
+        }
+    }
+
+    /// True when the workout came from a non-Vital pipeline (Strava import,
+    /// HealthKit + external_streams, etc.). The stream lives in
+    /// training_logs.external_streams, not on the Vital API.
+    private var isExternalSource: Bool {
+        if vitalWorkoutId.hasPrefix("strava_") { return true }
+        let s = workout.sourceApp.lowercased()
+        return s.contains("strava")
+    }
+
+    /// Load stream + route + meta from training_logs.external_streams (the
+    /// path used for Strava-pulled workouts). Mirrors the Vital path's
+    /// state mutations so the rest of the view doesn't care about source.
+    private func loadFromExternalStreams() async {
+        let bundle = await ExternalStreamAdapter.load(forTrainingLogId: workout.id)
+
+        guard !Task.isCancelled else { return }
+
+        guard let bundle else {
+            await MainActor.run {
+                streamFailed = true
+                isLoading = false
+            }
+            return
+        }
+
+        let fetchedStream = bundle.stream
+        let fetchedRoute = bundle.route
+
+        let calculatedSplits = fetchedStream.map { vitalManager.calculateSplits(from: $0) } ?? []
+        let calculatedPaceSplits = fetchedStream.map { vitalManager.calculatePaceSplits(from: $0) } ?? []
+        let hrSamples = fetchedStream.map { extractHRSamples(from: $0) } ?? []
+
+        await MainActor.run {
+            stream = fetchedStream
+            splits = calculatedSplits
+            paceSplits = calculatedPaceSplits
+            route = fetchedRoute
+            heartRateSamples = hrSamples
+            externalMeta = bundle.meta
+            streamFailed = fetchedStream == nil && fetchedRoute.isEmpty
+            isLoading = false
         }
     }
 

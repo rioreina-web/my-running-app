@@ -315,6 +315,123 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// Assembles an `ExternalStreamsPayload` for a HealthKit workout from its
+    /// heart-rate samples and GPS route, in the same shape the workout-detail
+    /// charts read (`ExternalStreamAdapter`). WorkoutSyncService calls this so
+    /// newly-synced runs persist their telemetry. Returns nil when neither HR
+    /// nor route data exists (e.g. a manually-entered HealthKit workout).
+    func buildExternalStreams(for workout: HKWorkout, calories: Double) async -> ExternalStreamsPayload? {
+        async let hrTask = fetchHeartRateSamples(for: workout)
+        async let routeTask = fetchWorkoutRoute(for: workout)
+        let hrSamples = await hrTask
+        let route = await routeTask
+
+        let start = workout.startDate
+        let deviceName = workout.sourceRevision.source.name
+
+        // HR meta from the raw samples, independent of which spine we use.
+        let hrValues = hrSamples.map(\.bpm)
+        let avgHr = hrValues.isEmpty ? nil : Int((hrValues.reduce(0, +) / Double(hrValues.count)).rounded())
+        let maxHr = hrValues.max().map { Int($0.rounded()) }
+
+        // Preferred spine: the GPS route (≈1 Hz), which gives time, lat/lng,
+        // altitude and cumulative distance; HR is aligned onto it by timestamp.
+        if !route.isEmpty {
+            var time: [Int] = []
+            var lat: [Double] = []
+            var lng: [Double] = []
+            var altitude: [Double] = []
+            var distance: [Double] = []
+            var velocity: [Double] = []
+            var elevationGain = 0.0
+            var cumulativeDistance = 0.0
+            var previous: CLLocation?
+
+            for loc in route {
+                let elapsed = max(0, loc.timestamp.timeIntervalSince(start))
+                if let prev = previous {
+                    let step = loc.distance(from: prev)
+                    cumulativeDistance += step
+                    let dt = loc.timestamp.timeIntervalSince(prev.timestamp)
+                    velocity.append(dt > 0 ? step / dt : 0)
+                    let climb = loc.altitude - prev.altitude
+                    if climb > 0 { elevationGain += climb }
+                } else {
+                    velocity.append(0)
+                }
+                time.append(Int(elapsed.rounded()))
+                lat.append(loc.coordinate.latitude)
+                lng.append(loc.coordinate.longitude)
+                altitude.append(loc.altitude)
+                distance.append(cumulativeDistance)
+                previous = loc
+            }
+
+            let alignedHr = Self.alignHeartRate(toTimes: time, samples: hrSamples)
+            let streams = ExternalStreamsPayload.Streams(
+                time: time,
+                heartrate: alignedHr.isEmpty ? nil : alignedHr,
+                altitude: altitude,
+                distance: distance,
+                velocitySmooth: velocity,
+                cadence: nil,
+                latlng: zip(lat, lng).map { [$0, $1] }
+            )
+            let meta = ExternalStreamsPayload.Meta(
+                averageHeartrate: avgHr,
+                maxHeartrate: maxHr,
+                totalElevationGain: elevationGain,
+                calories: calories,
+                deviceName: deviceName
+            )
+            let payload = ExternalStreamsPayload(streams: streams, meta: meta)
+            return payload.hasUsableData ? payload : nil
+        }
+
+        // No route (treadmill / indoor): an HR-only spine still powers the
+        // heart-rate chart and the time-in-zone histogram.
+        if !hrSamples.isEmpty {
+            let streams = ExternalStreamsPayload.Streams(
+                time: hrSamples.map { Int($0.timestamp.rounded()) },
+                heartrate: hrSamples.map { Int($0.bpm.rounded()) },
+                altitude: nil,
+                distance: nil,
+                velocitySmooth: nil,
+                cadence: nil,
+                latlng: nil
+            )
+            let meta = ExternalStreamsPayload.Meta(
+                averageHeartrate: avgHr,
+                maxHeartrate: maxHr,
+                totalElevationGain: nil,
+                calories: calories,
+                deviceName: deviceName
+            )
+            return ExternalStreamsPayload(streams: streams, meta: meta)
+        }
+
+        return nil
+    }
+
+    /// Nearest-timestamp alignment of HR samples onto a target time spine.
+    /// Both inputs are ascending (route is time-sorted; HR samples are
+    /// fetched sorted ascending), so a single forward walk is O(n + m).
+    private static func alignHeartRate(toTimes times: [Int], samples: [HeartRateSample]) -> [Int] {
+        guard !samples.isEmpty else { return [] }
+        var result: [Int] = []
+        result.reserveCapacity(times.count)
+        var j = 0
+        for t in times {
+            let target = Double(t)
+            while j + 1 < samples.count,
+                  abs(samples[j + 1].timestamp - target) <= abs(samples[j].timestamp - target) {
+                j += 1
+            }
+            result.append(Int(samples[j].bpm.rounded()))
+        }
+        return result
+    }
+
     func fetchWorkoutWithUUID(_ uuid: UUID) async -> HKWorkout? {
         let workoutType = HKObjectType.workoutType()
         let predicate = HKQuery.predicateForObject(with: uuid)
@@ -606,6 +723,8 @@ struct MileSplit: Identifiable {
     let elapsedTime: TimeInterval // seconds from workout start
     var isPartial: Bool = false
     var partialDistance: Double = 1.0 // fraction of a mile (1.0 = full mile)
+    var avgHeartRate: Int? = nil
+    var avgCadence: Int? = nil
 
     var formattedPace: String {
         let totalSeconds = Int((paceMinutes * 60).rounded())

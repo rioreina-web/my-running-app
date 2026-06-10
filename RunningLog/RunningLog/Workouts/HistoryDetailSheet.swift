@@ -15,25 +15,29 @@ struct HistoryDetailSheet: View {
     let entry: TrainingLog
     let onUpdate: () -> Void
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var healthKitManager = HealthKitManager()
-    @State private var vm: HistoryDetailViewModel
-    @State private var isLoadingInsight = false
-    @State private var showDeleteConfirmation = false
-    @State private var showWorkoutPicker = false
-    @State private var selectedWorkout: RunningWorkout?
-    @State private var workoutNotesText: String = ""
-    @State private var isEditingWorkoutNotes = false
+    @StateObject var healthKitManager = HealthKitManager()
+    // `vm` and the @State vars below are intentionally `internal` (no
+    // `private`) so the `editorialBody` extension in
+    // `HistoryDetailSheet+Editorial.swift` can read them. Swift's
+    // `private` is file-scoped and would hide them from the extension.
+    @State var vm: HistoryDetailViewModel
+    @State var isLoadingInsight = false
+    @State var showDeleteConfirmation = false
+    @State var showWorkoutPicker = false
+    @State var selectedWorkout: RunningWorkout?
+    @State var workoutNotesText: String = ""
+    @State var isEditingWorkoutNotes = false
 
     // Edit mode state
-    @State private var isEditing = false
-    @State private var editMood: String = ""
-    @State private var editWorkoutType: String = ""
-    @State private var editDistanceText: String = ""
-    @State private var editDurationText: String = ""
-    @State private var editNotesText: String = ""
+    @State var isEditing = false
+    @State var editMood: String = ""
+    @State var editWorkoutType: String = ""
+    @State var editDistanceText: String = ""
+    @State var editDurationText: String = ""
+    @State var editNotesText: String = ""
 
     // Vital workout detail
-    @State private var showVitalDetail = false
+    @State var showVitalDetail = false
 
     init(entry: TrainingLog, onUpdate: @escaping () -> Void) {
         self.entry = entry
@@ -47,328 +51,8 @@ struct HistoryDetailSheet: View {
         ZStack {
             Color.drip.background.ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header - use workout date when available, otherwise created date
-                    VStack(spacing: 8) {
-                        Text(vm.currentEntry.displayDate.dayOfWeekString)
-                            .font(.dripDisplay(28))
-                            .foregroundStyle(Color.drip.textPrimary)
+            editorialBody
 
-                        Text(vm.currentEntry.displayDate.fullDateString)
-                            .font(.dripBody(14))
-                            .foregroundStyle(Color.drip.textSecondary)
-
-                        if isEditing {
-                            // Editable mood picker
-                            EditableMoodPicker(selectedMood: $editMood)
-                                .padding(.top, 4)
-                        } else if let mood = vm.currentEntry.mood, !mood.isEmpty {
-                            MoodBadge(mood: mood)
-                                .padding(.top, 4)
-                        }
-                    }
-                    .padding(.top, 20)
-
-                    // AI Summary
-                    if let cleaned = vm.currentEntry.cleanedNotes, !cleaned.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.drip.coral)
-                                Text("AI SUMMARY")
-                                    .font(.dripCaption(11))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .tracking(1.2)
-                            }
-
-                            FormattedSummaryText(text: cleaned)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .background(Color.drip.cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.drip.coral.opacity(0.3), lineWidth: 1)
-                        )
-                        .padding(.horizontal, 20)
-                    }
-
-                    // Coach Insight Section (hidden in edit mode)
-                    if !isEditing {
-                    CoachInsightSection(
-                        entry: vm.currentEntry,
-                        coachInsight: Binding(get: { vm.coachInsight }, set: { vm.coachInsight = $0 }),
-                        isLoading: $isLoadingInsight,
-                        onSave: { insight in
-                            vm.saveCoachInsight(insight)
-                        }
-                    )
-                    .padding(.horizontal, 20)
-                    }
-
-                    // Workout Type (edit mode) or badge display
-                    if isEditing {
-                        EditableWorkoutTypeSection(selectedType: $editWorkoutType)
-                            .padding(.horizontal, 20)
-                    }
-
-                    // Original notes
-                    if isEditing {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "text.alignleft")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                Text("NOTES")
-                                    .font(.dripCaption(11))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .tracking(1.2)
-                            }
-
-                            TextEditor(text: $editNotesText)
-                                .font(.dripBody(15))
-                                .foregroundStyle(Color.drip.textPrimary)
-                                .scrollContentBackground(.hidden)
-                                .frame(minHeight: 100)
-                                .padding(12)
-                                .background(Color.drip.cardBackgroundElevated)
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .background(Color.drip.cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.drip.divider, lineWidth: 1)
-                        )
-                        .padding(.horizontal, 20)
-                    } else if let notes = vm.currentEntry.notes, !notes.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "text.alignleft")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                Text("ORIGINAL NOTES")
-                                    .font(.dripCaption(11))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .tracking(1.2)
-                            }
-
-                            Text(notes)
-                                .font(.dripBody(15))
-                                .foregroundStyle(Color.drip.textSecondary)
-                                .lineSpacing(4)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .background(Color.drip.cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.drip.divider, lineWidth: 1)
-                        )
-                        .padding(.horizontal, 20)
-                    }
-
-                    // Linked workout section OR link workout button
-                    if isEditing {
-                        // Editable workout stats
-                        EditableWorkoutStatsSection(
-                            distanceText: $editDistanceText,
-                            durationText: $editDurationText
-                        )
-                        .padding(.horizontal, 20)
-                    } else if vm.currentEntry.hasLinkedWorkout {
-                        Button {
-                            if vm.matchedVitalWorkout != nil {
-                                showVitalDetail = true
-                            }
-                        } label: {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "figure.run.circle.fill")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(Color.drip.energized)
-                                Text("LINKED WORKOUT")
-                                    .font(.dripCaption(11))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .tracking(1.2)
-
-                                Spacer()
-
-                                if vm.matchedVitalWorkout != nil {
-                                    HStack(spacing: 4) {
-                                        Text("View Details")
-                                            .font(.dripCaption(11))
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 10, weight: .semibold))
-                                    }
-                                    .foregroundStyle(Color.drip.coral)
-                                }
-                            }
-
-                            HStack(spacing: 0) {
-                                if let distance = vm.currentEntry.formattedWorkoutDistance {
-                                    WorkoutStatItem(value: distance, label: "Distance")
-                                }
-                                if let duration = vm.currentEntry.formattedWorkoutDuration {
-                                    WorkoutStatItem(value: duration, label: "Duration")
-                                }
-                                if let pace = vm.currentEntry.formattedWorkoutPace {
-                                    WorkoutStatItem(value: pace, label: "Pace")
-                                }
-                            }
-
-                            // Show when the log was recorded if different from workout date
-                            if vm.currentEntry.workoutDate != nil {
-                                Text("Logged \(vm.currentEntry.createdAt.shortDateString)")
-                                    .font(.dripCaption(12))
-                                    .foregroundStyle(Color.drip.textTertiary)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .background(Color.drip.energized.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.drip.energized.opacity(0.3), lineWidth: 1)
-                        )
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 20)
-                    } else if !isEditing {
-                        // Link workout button
-                        Button {
-                            showWorkoutPicker = true
-                        } label: {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.drip.energized.opacity(0.15))
-                                        .frame(width: 44, height: 44)
-
-                                    Image(systemName: "link.badge.plus")
-                                        .font(.system(size: 18, weight: .medium))
-                                        .foregroundStyle(Color.drip.energized)
-                                }
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Link a Workout")
-                                        .font(.dripLabel(14))
-                                        .foregroundStyle(Color.drip.textPrimary)
-                                    Text("Connect this log to a run from HealthKit")
-                                        .font(.dripCaption(12))
-                                        .foregroundStyle(Color.drip.textSecondary)
-                                }
-
-                                Spacer()
-
-                                if vm.isLinkingWorkout {
-                                    ProgressView()
-                                        .tint(Color.drip.energized)
-                                } else {
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(Color.drip.textTertiary)
-                                }
-                            }
-                            .padding(16)
-                            .background(Color.drip.cardBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.drip.divider, lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(vm.isLinkingWorkout)
-                        .padding(.horizontal, 20)
-                    }
-
-                    if !isEditing {
-                    // Workout Notes section
-                    WorkoutNotesSection(
-                        workoutNotes: $workoutNotesText,
-                        isEditing: $isEditingWorkoutNotes,
-                        isSaving: Binding(get: { vm.isSavingWorkoutNotes }, set: { vm.isSavingWorkoutNotes = $0 }),
-                        onSave: {
-                            Task {
-                                let saved = await vm.saveWorkoutNotes(workoutNotesText)
-                                if saved { isEditingWorkoutNotes = false }
-                            }
-                        }
-                    )
-                    .padding(.horizontal, 20)
-
-                    // Voice memo indicator
-                    if vm.currentEntry.audioUrl != nil {
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.drip.coral.opacity(0.15))
-                                    .frame(width: 44, height: 44)
-
-                                Image(systemName: "waveform")
-                                    .font(.system(size: 18, weight: .medium))
-                                    .foregroundStyle(Color.drip.coral)
-                            }
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Voice Memo")
-                                    .font(.dripLabel(14))
-                                    .foregroundStyle(Color.drip.textPrimary)
-                                Text("Recorded audio transcribed by AI")
-                                    .font(.dripCaption(12))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                            }
-
-                            Spacer()
-                        }
-                        .padding(16)
-                        .background(Color.drip.cardBackground)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(Color.drip.divider, lineWidth: 1)
-                        )
-                        .padding(.horizontal, 20)
-                    }
-
-                    // Delete button
-                    Button {
-                        showDeleteConfirmation = true
-                    } label: {
-                        HStack(spacing: 8) {
-                            if vm.isDeleting {
-                                ProgressView()
-                                    .tint(Color.drip.injured)
-                            } else {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                            Text("Delete Log")
-                                .font(.dripLabel(14))
-                        }
-                        .foregroundStyle(Color.drip.injured)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.drip.injured.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
-                    .disabled(vm.isDeleting)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    } // end !isEditing
-
-                    Spacer()
-                        .frame(height: 40)
-                }
-            }
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -388,12 +72,8 @@ struct HistoryDetailSheet: View {
                 }
             }
 
-            ToolbarItem(placement: .principal) {
-                Text(isEditing ? "EDIT LOG" : "LOG DETAILS")
-                    .font(.dripCaption(12))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .tracking(2)
-            }
+            // Principal "LOG DETAILS" centerpiece removed — the
+            // editorial plate strip now carries the title.
 
             ToolbarItem(placement: .topBarTrailing) {
                 if isEditing {
@@ -466,11 +146,29 @@ struct HistoryDetailSheet: View {
             )
         }
         .sheet(isPresented: $showVitalDetail) {
-            if let vitalWorkout = vm.matchedVitalWorkout,
-               let vitalId = vitalWorkout.vitalWorkoutId {
-                VitalWorkoutDetailView(workout: vitalWorkout, vitalWorkoutId: vitalId)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
+            if let matched = vm.matchedVitalWorkout {
+                // Use the new source-agnostic detail view for Strava + HealthKit.
+                // Falls back to legacy Vital view only when there's an actual Vital ID.
+                let isLegacyVital = matched.vitalWorkoutId != nil
+                    && matched.sourceApp != "Strava"
+                    && !(matched.vitalWorkoutId?.hasPrefix("strava_") ?? false)
+                if isLegacyVital, let vitalId = matched.vitalWorkoutId {
+                    VitalWorkoutDetailView(workout: matched, vitalWorkoutId: vitalId)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                } else {
+                    // Editorial 12-chart kit per handoff 3 · Direction B.
+                    // The peer view `WorkoutAnalysisView(workout:)` stays
+                    // available if we need a fallback while WorkoutAnalystView's
+                    // `loadStream()` is still wired up.
+                    //
+                    // Pass `vm.currentEntry.id` so path 1 (Strava ingestion via
+                    // ExternalStreamAdapter) hits the right `training_logs` row.
+                    // `matched.id` is the HKWorkout UUID, not the row id.
+                    WorkoutAnalystView(workout: matched, trainingLogId: vm.currentEntry.id)
+                        .presentationDetents([.large])
+                        .presentationDragIndicator(.visible)
+                }
             }
         }
         .task {

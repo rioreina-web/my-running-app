@@ -4,9 +4,29 @@
 //
 //  AI-powered race time predictions based on training data.
 //
+//  Editorial port — Post Run Drip rebrand. The chunky `.toolbar` nav,
+//  `DripBackground`, and card-in-card chrome are gone. Plate strip header,
+//  hairline-row tables, eyebrows for section labels, italic prose for
+//  network errors and definitions. One coral per visual cluster — race
+//  names + the marquee pace, never the whole row.
+//
+//  Service + models stay untouched.
+//
 
 import Supabase
 import SwiftUI
+
+// MARK: - File-private date helper
+//
+// Plate strip wants "TRENDS · 05.2026" — mono uppercase.
+
+private extension Date {
+    var editorialMonthYearString: String {
+        let f = DateFormatter()
+        f.dateFormat = "MM.yyyy"
+        return f.string(from: self)
+    }
+}
 
 // MARK: - FitnessPredictorView
 
@@ -18,33 +38,88 @@ struct FitnessPredictorView: View {
 
     var body: some View {
         ZStack {
-            DripBackground()
+            Color.drip.background.ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 0) {
+
+                    // ── Plate strip ──────────────────────────────────────
+                    DripPlateStrip(
+                        leadingTop: "FITNESS PREDICTOR",
+                        leadingBottom: "FORWARD READ",
+                        trailingTop: "FIG. 29",
+                        trailingBottom: "TRENDS · " + Date().editorialMonthYearString
+                    )
+
+                    // ── Refresh affordance ───────────────────────────────
+                    HStack {
+                        Spacer()
+                        Button(action: predict) {
+                            HStack(spacing: 4) {
+                                Text(predictor.isAnalyzing ? "REFRESHING" : "REFRESH")
+                                    .font(.dripCaption(10))
+                                    .tracking(1.4)
+                                Image(systemName: predictor.isAnalyzing
+                                      ? "arrow.triangle.2.circlepath"
+                                      : "arrow.clockwise")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundStyle(Color.drip.coral)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(predictor.isAnalyzing)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 10)
+
+                    // ── Top hairline ─────────────────────────────────────
+                    DripHairline().padding(.horizontal, 24).padding(.top, 14)
+
+                    // ── Network error (quiet, italic, between hairlines) ─
                     if let error = predictor.errorMessage {
-                        PredictionErrorBanner(message: error)
-                            .padding(.horizontal, 20)
+                        offlineNotice(error)
                     }
 
                     if let predictions = predictor.predictions {
-                        // Race predictions (with anchor inlined)
-                        RacePredictionsCard(
-                            predictions: predictions,
-                            anchor: predictions.raceAnchor
-                        )
-                        .padding(.horizontal, 20)
+                        // ── Dateline ─────────────────────────────────────
+                        dateline
 
-                        // Training card (paces + stimulus combined)
+                        // ── Anchor ───────────────────────────────────────
+                        if let anchor = predictions.raceAnchor {
+                            anchorStrip(anchor)
+                                .padding(.horizontal, 24)
+                                .padding(.top, 22)
+                        }
+
+                        editorialRule()
+
+                        // ── 5 predicted times ────────────────────────────
+                        racePredictions(predictions.races)
+
+                        // Range/definition footnote
+                        Text("Range is where the time lives ~80% of the time, off today's fitness. Marathon and half round to the minute — seconds at that distance are math, not signal.")
+                            .font(.dripBody(11).italic())
+                            .foregroundStyle(Color.drip.textTertiary)
+                            .lineSpacing(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 10)
+
+                        editorialRule()
+
+                        // ── Training paces / stimulus tabs ───────────────
                         if predictions.trainingPaces != nil || predictions.trainingStimulus != nil {
-                            TrainingCard(
+                            TrainingSection(
                                 paces: predictions.trainingPaces,
                                 stimulus: predictions.trainingStimulus
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 22)
+
+                            editorialRule()
                         }
 
-                        // Training volume by zone
+                        // ── Training volume by zone (keeps its canvas) ──
                         TrainingEffortChart(
                             workouts: vitalManager.recentWorkouts,
                             equivalentPaces: EquivalentPaces(
@@ -52,65 +127,44 @@ struct FitnessPredictorView: View {
                                 goalTimeSeconds: Int(predictions.estimated10kPaceSeconds * 6.21371)
                             )
                         )
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 22)
 
-                        // Fitness trend (only with 2+ snapshots)
+                        // ── Fitness trend (keep canvas, drop card) ──────
                         if predictor.snapshotHistory.count >= 2 {
-                            FitnessTrendCard(
+                            editorialRule()
+                            FitnessTrendSection(
                                 snapshots: predictor.snapshotHistory,
                                 changeFromPrevious: predictor.tenKChangeFromPrevious,
                                 previousDate: predictor.previousSnapshotDate
                             )
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 22)
                         }
 
-                        // Fitness summary
+                        // ── Fitness summary (italic, between hairlines) ─
                         if let summary = predictions.fitnessSummary {
-                            FitnessSummaryCard(summary: summary)
-                                .padding(.horizontal, 20)
+                            editorialRule()
+                            fitnessSummary(summary)
                         }
 
-                        // Compact data sources footer
-                        DataSourcesRow(sources: predictions.dataSources)
-                            .padding(.horizontal, 20)
+                        // ── Data sources (mono row, no chips) ───────────
+                        editorialRule()
+                        dataSourcesRow(predictions.dataSources)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 18)
 
                     } else if predictor.isAnalyzing {
-                        AnalyzingState()
-                            .padding(.horizontal, 20)
+                        analyzingState
                     } else {
-                        EmptyPredictionState(onPredict: predict)
-                            .padding(.horizontal, 20)
+                        emptyState
                     }
 
-                    Spacer()
-                        .frame(height: 100)
+                    Spacer().frame(height: 64)
                 }
-                .padding(.top, 8)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("FITNESS PREDICTOR")
-                    .font(.dripCaption(12))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .tracking(2)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: predict) {
-                    if predictor.isAnalyzing {
-                        ProgressView()
-                            .tint(Color.drip.coral)
-                            .scaleEffect(0.7)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(Color.drip.coral)
-                    }
-                }
-                .disabled(predictor.isAnalyzing)
-            }
-        }
         .toolbarBackground(Color.drip.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .task {
@@ -121,207 +175,413 @@ struct FitnessPredictorView: View {
     }
 
     private func predict() {
-        Task {
-            await loadPredictions()
-        }
+        Task { await loadPredictions() }
     }
 
     private func loadPredictions() async {
         _ = await healthKitManager.requestAuthorization()
-        await predictor.predictFitness(
-            plan: trainingViewModel.activePlan
-        )
+        await predictor.predictFitness(plan: trainingViewModel.activePlan)
     }
-}
 
-// MARK: - Analyzing State
+    // MARK: Section builders
 
-private struct AnalyzingState: View {
-    var body: some View {
-        VStack(spacing: 16) {
+    private var dateline: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                DripEyebrow(text: "TODAY · " + Date().editorialTodayString, coral: true)
+                Spacer()
+                DripEyebrow(text: "READING ⟶ TRENDS")
+            }
+            Text("Predicted times.")
+                .font(.dripDisplay(32))
+                .foregroundStyle(Color.drip.textPrimary)
+                .padding(.top, 2)
+            Text("Off today's fitness — what the next five distances look like, give or take a few seconds.")
+                .font(.dripBody(14).italic())
+                .foregroundStyle(Color.drip.textSecondary)
+                .lineSpacing(2)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
+    }
+
+    private func anchorStrip(_ a: RaceAnchorInfo) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                DripEyebrow(text: "ANCHORED ON")
+                Spacer()
+                Text("\(a.weeksAgo)W AGO")
+                    .font(.dripCaption(9))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(a.raceType.uppercased())
+                    .font(.dripCaption(10))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.drip.coral)
+                Text(a.time)
+                    .font(.dripCaption(26))
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.drip.textPrimary)
+            }
+            .padding(.top, 4)
+            Text(a.date + " — your most recent timed effort. The forward read is rooted here.")
+                .font(.dripBody(13).italic())
+                .foregroundStyle(Color.drip.textSecondary)
+                .lineSpacing(2)
+                .padding(.top, 2)
+        }
+    }
+
+    private func racePredictions(_ races: [RacePredictionItem]) -> some View {
+        VStack(spacing: 0) {
+            DripHairline()
+            ForEach(Array(races.enumerated()), id: \.element.id) { idx, race in
+                raceRow(race, isLast: idx == races.count - 1)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 18)
+    }
+
+    private func raceRow(_ race: RacePredictionItem, isLast: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(race.distance.uppercased())
+                        .font(.dripCaption(10))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.coral)
+                    Text(RacePredictionFormatting.headline(for: race))
+                        .font(.dripCaption(isMarathonOrHalf(race) ? 30 : 28))
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.drip.textPrimary)
+                }
+                Spacer()
+                if let range = RacePredictionFormatting.range(for: race) {
+                    Text(range)
+                        .font(.dripCaption(11))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+            }
+            // Single per-mile pace (model only carries one). Marquee coral.
+            HStack {
+                Spacer()
+                Text(race.pace)
+                    .font(.dripCaption(13))
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.drip.coral)
+            }
+            .padding(.top, 2)
+        }
+        .padding(.vertical, 14)
+        .overlay(alignment: .bottom) {
+            if !isLast { DripHairline() }
+        }
+    }
+
+    private func isMarathonOrHalf(_ r: RacePredictionItem) -> Bool {
+        let d = r.distance.uppercased()
+        return d == "MARATHON" || d == "HALF"
+    }
+
+    private func offlineNotice(_ message: String) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 14) {
+                DripEyebrow(text: "NETWORK · OFFLINE", coral: true)
+                Text(message)
+                    .font(.dripBody(13).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .lineSpacing(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 24)
+            .overlay(alignment: .top) {
+                DripHairline().padding(.horizontal, 24)
+            }
+            .overlay(alignment: .bottom) {
+                DripHairline().padding(.horizontal, 24)
+            }
+        }
+        .padding(.top, 10)
+    }
+
+    private func fitnessSummary(_ summary: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            DripEyebrow(text: "AI ANALYSIS")
+            Text(summary)
+                .font(.dripBody(14).italic())
+                .foregroundStyle(Color.drip.textPrimary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
+    }
+
+    private func dataSourcesRow(_ s: DataSources) -> some View {
+        HStack(spacing: 0) {
+            dataSourceCell("\(s.workoutCount)", "WORKOUTS")
+            dataSourceCell("\(s.voiceLogCount)", "VOICE LOGS")
+            dataSourceCell("\(s.hardEffortCount)", "HARD EFFORTS")
+            dataSourceCell(s.confidence.uppercased(), "CONFIDENCE")
+        }
+        .overlay(alignment: .top) { DripHairline() }
+        .overlay(alignment: .bottom) { DripHairline() }
+    }
+
+    private func dataSourceCell(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.dripCaption(13))
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .foregroundStyle(Color.drip.textPrimary)
+            Text(label)
+                .font(.dripCaption(9))
+                .tracking(1.2)
+                .foregroundStyle(Color.drip.textTertiary)
+        }
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var analyzingState: some View {
+        VStack(spacing: 14) {
             ProgressView()
                 .tint(Color.drip.coral)
-                .scaleEffect(1.2)
-            Text("Analyzing your training...")
-                .font(.dripBody(14))
+            Text("Analyzing your training…")
+                .font(.dripBody(14).italic())
                 .foregroundStyle(Color.drip.textSecondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
     }
-}
 
-// MARK: - Race Predictions Card (with anchor)
-
-private struct RacePredictionsCard: View {
-    let predictions: FitnessPrediction
-    let anchor: RaceAnchorInfo?
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Anchor strip at top (if present)
-            if let anchor = anchor {
-                HStack(spacing: 8) {
-                    Image(systemName: "flag.checkered")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.drip.coral)
-
-                    Text("\(anchor.raceType)")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.drip.textPrimary)
-
-                    Text(anchor.time)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.drip.textPrimary)
-
-                    Text("·  \(anchor.date)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.drip.textTertiary)
-
-                    Spacer()
-
-                    Text("\(anchor.weeksAgo)w ago")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.drip.coral)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.drip.coral.opacity(0.1))
-                        .clipShape(Capsule())
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color.drip.background.opacity(0.5))
-            }
-
-            // Race tiles
-            VStack(spacing: 12) {
-                // Top row: Mile, 5K, 10K
-                HStack(spacing: 10) {
-                    ForEach(predictions.races.prefix(3)) { race in
-                        RacePredictionTile(race: race, isCompact: true)
-                    }
-                }
-
-                // Bottom row: Half, Marathon
-                HStack(spacing: 10) {
-                    ForEach(predictions.races.dropFirst(3)) { race in
-                        RacePredictionTile(race: race, isCompact: false)
-                    }
-                }
-            }
-            .padding(16)
-        }
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-private struct RacePredictionTile: View {
-    let race: RacePredictionItem
-    var isCompact: Bool = false
-
-    var body: some View {
-        VStack(spacing: isCompact ? 3 : 5) {
-            Text(race.distance)
-                .font(.dripCaption(isCompact ? 9 : 10))
-                .foregroundStyle(Color.drip.textTertiary)
-                .tracking(1)
-
-            Text(race.time)
-                .font(.system(size: isCompact ? 17 : 20, weight: .semibold, design: .monospaced))
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            DripEyebrow(text: "FORWARD READ · NOT YET RUN", coral: true)
+            Text("No prediction yet.")
+                .font(.dripDisplay(28))
                 .foregroundStyle(Color.drip.textPrimary)
-
-            Text(race.pace)
-                .font(.system(size: isCompact ? 10 : 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.drip.coral)
+            Text("Log a few runs and a voice note — the model needs something to work with before it'll project forward.")
+                .font(.dripBody(14).italic())
+                .foregroundStyle(Color.drip.textSecondary)
+                .lineSpacing(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Spacer()
+                DripTextLink(title: "Run the read →", action: predict)
+            }
+            .padding(.top, 4)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, isCompact ? 10 : 14)
-        .background(Color.drip.background.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.top, 32)
     }
 }
 
-// MARK: - Combined Training Card (Paces + Stimulus)
+// MARK: - Editorial rule helper
 
-private struct TrainingCard: View {
+private func editorialRule() -> some View {
+    DripHairline()
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+}
+
+// MARK: - Date helper for dateline
+
+private extension Date {
+    var editorialTodayString: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f.string(from: self).uppercased()
+    }
+}
+
+// MARK: - Race prediction formatting
+//
+// CLAUDE.md hard rule #7: predictions ship with range + confidence, never a
+// single point. For marathon and half we round to whole minutes (seconds are
+// math artifact, not signal). For shorter distances we keep MM:SS — at 5K /
+// 10K / mile, seconds carry real fitness information.
+
+enum RacePredictionFormatting {
+    static func headline(for race: RacePredictionItem) -> String {
+        let d = race.distance.uppercased()
+        if d == "MARATHON" || d == "HALF" {
+            return roundedToMinutes(race.pointSeconds)
+        }
+        return race.time
+    }
+
+    static func range(for race: RacePredictionItem) -> String? {
+        guard race.rangeSeconds > 0, race.pointSeconds > 0 else { return nil }
+        let low = max(0, race.pointSeconds - race.rangeSeconds)
+        let high = race.pointSeconds + race.rangeSeconds
+        let d = race.distance.uppercased()
+        if d == "MARATHON" || d == "HALF" {
+            return "\(roundedToMinutes(low)) – \(roundedToMinutes(high))"
+        }
+        return "\(formatMMSS(low)) – \(formatMMSS(high))"
+    }
+
+    private static func roundedToMinutes(_ seconds: Int) -> String {
+        let totalMinutes = Int(((Double(seconds) + 30) / 60.0).rounded(.down))
+        let h = totalMinutes / 60
+        let m = totalMinutes % 60
+        if h > 0 {
+            return "\(h):\(String(format: "%02d", m))"
+        }
+        return "\(m)"
+    }
+
+    private static func formatMMSS(_ seconds: Int) -> String {
+        let h = seconds / 3600
+        let rem = seconds % 3600
+        let m = rem / 60
+        let s = rem % 60
+        if h > 0 {
+            return "\(h):\(String(format: "%02d", m)):\(String(format: "%02d", s))"
+        }
+        return "\(m):\(String(format: "%02d", s))"
+    }
+}
+
+// MARK: - Training section (paces / stimulus tabs, no card shell)
+
+private struct TrainingSection: View {
     let paces: TrainingPacesSummary?
     let stimulus: TrainingStimulusInfo?
 
     @State private var tab: TrainingTab = .paces
 
     enum TrainingTab: String, CaseIterable {
-        case paces = "Paces"
-        case stimulus = "Stimulus"
+        case paces = "PACES"
+        case stimulus = "STIMULUS"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Header with tab toggle
-            HStack(spacing: 0) {
-                Image(systemName: tab == .paces ? "speedometer" : "flame.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.drip.coral)
-                    .frame(width: 20)
-                    .padding(.trailing, 8)
-
+        VStack(alignment: .leading, spacing: 10) {
+            // Eyebrow row: tab toggle + status pill
+            HStack(spacing: 14) {
                 ForEach(TrainingTab.allCases, id: \.rawValue) { t in
-                    let available = t == .paces ? paces != nil : stimulus != nil
+                    let available = (t == .paces && paces != nil) || (t == .stimulus && stimulus != nil)
                     if available {
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) { tab = t }
                         } label: {
-                            Text(t.rawValue.uppercased())
+                            Text(t.rawValue)
                                 .font(.dripCaption(10))
-                                .tracking(1.2)
+                                .tracking(1.4)
                                 .foregroundStyle(tab == t ? Color.drip.textPrimary : Color.drip.textTertiary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(tab == t ? Color.drip.divider.opacity(0.5) : Color.clear)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-
                 Spacer()
-
-                // Status pill (from stimulus)
                 if let stimulus = stimulus {
-                    let statusLabel = trainingStatus(stimulus)
-                    let statusColor = trainingStatusColor(statusLabel)
-                    Text(statusLabel)
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(statusColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(statusColor.opacity(0.12))
-                        .clipShape(Capsule())
+                    Text(trainingStatus(stimulus).uppercased())
+                        .font(.dripCaption(10))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.coral)
                 }
             }
 
-            // Content
             switch tab {
             case .paces:
-                if let paces = paces {
-                    PacesContent(paces: paces)
-                }
+                if let paces = paces { pacesContent(paces) }
             case .stimulus:
-                if let stimulus = stimulus {
-                    StimulusContent(stimulus: stimulus)
+                if let stimulus = stimulus { stimulusContent(stimulus) }
+            }
+        }
+        .onAppear {
+            if paces != nil { tab = .paces }
+            else if stimulus != nil { tab = .stimulus }
+        }
+    }
+
+    private func pacesContent(_ paces: TrainingPacesSummary) -> some View {
+        VStack(spacing: 0) {
+            DripHairline()
+            paceRow("Easy",      paces.easyPace,      Color.drip.energized)
+            DripHairline()
+            paceRow("Long Run",  paces.longRunPace,   Color.drip.positive)
+            DripHairline()
+            paceRow("Marathon",  paces.marathonPace,  Color.drip.coral.opacity(0.7))
+            DripHairline()
+            paceRow("Threshold", paces.thresholdPace, Color.drip.coral)
+            DripHairline()
+            paceRow("Interval",  paces.intervalPace,  Color.drip.tired)
+            DripHairline()
+        }
+        .padding(.top, 4)
+    }
+
+    private func paceRow(_ label: String, _ pace: String, _ marker: Color) -> some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(marker)
+                .frame(width: 3, height: 18)
+            Text(label)
+                .font(.dripBody(14))
+                .foregroundStyle(Color.drip.textPrimary)
+            Spacer()
+            Text(pace)
+                .font(.dripCaption(12))
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .foregroundStyle(Color.drip.textPrimary)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func stimulusContent(_ s: TrainingStimulusInfo) -> some View {
+        HStack(spacing: 0) {
+            stimulusCell(String(format: "%.0f", s.weeklyMiles),       unit: "mi",  label: "PER WEEK",  trend: s.volumeTrend)
+            stimulusCell(String(format: "%.0f", s.runsPerWeek),       unit: "ct",  label: "RUNS / WK", trend: nil)
+            stimulusCell(String(format: "%.0f", s.stimulusMinutes),   unit: "min", label: "HARD MIN",  trend: s.stimulusTrend)
+            stimulusCell("\(s.structuredSessions)",                   unit: "ct",  label: "QUALITY",   trend: nil)
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .top) { DripHairline() }
+        .overlay(alignment: .bottom) { DripHairline() }
+    }
+
+    private func stimulusCell(_ value: String, unit: String, label: String, trend: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value)
+                    .font(.dripCaption(22))
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+                    .foregroundStyle(Color.drip.textPrimary)
+                Text(unit)
+                    .font(.dripCaption(10))
+                    .foregroundStyle(Color.drip.textSecondary)
+                if let trend = trend, trend != 0 {
+                    Text(trendArrow(trend))
+                        .font(.dripCaption(10))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(trendColor(trend))
                 }
             }
+            Text(label)
+                .font(.dripCaption(9))
+                .tracking(1.2)
+                .foregroundStyle(Color.drip.textTertiary)
         }
-        .padding(16)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onAppear {
-            // Default to whichever tab has data
-            if paces != nil {
-                tab = .paces
-            } else if stimulus != nil {
-                tab = .stimulus
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func trainingStatus(_ s: TrainingStimulusInfo) -> String {
@@ -331,280 +591,36 @@ private struct TrainingCard: View {
         return "Detraining"
     }
 
-    private func trainingStatusColor(_ label: String) -> Color {
-        switch label {
-        case "Building": return Color.drip.positive
-        case "Maintaining": return Color.drip.coral
-        case "Light": return Color.drip.tired.opacity(0.7)
-        default: return Color.drip.tired
-        }
-    }
-}
-
-// MARK: - Paces Content
-
-private struct PacesContent: View {
-    let paces: TrainingPacesSummary
-
-    var body: some View {
-        VStack(spacing: 6) {
-            paceRow("Easy", paces.easyPace, Color.drip.positive)
-            paceRow("Long Run", paces.longRunPace, Color.drip.positive.opacity(0.7))
-            paceRow("Marathon", paces.marathonPace, Color.drip.coral.opacity(0.7))
-            paceRow("Threshold", paces.thresholdPace, Color.drip.coral)
-            paceRow("Interval", paces.intervalPace, Color.drip.tired)
-        }
+    private func trendArrow(_ t: Double) -> String {
+        if t > 1.15 { return "↑" }
+        if t < 0.85 { return "↓" }
+        return "→"
     }
 
-    private func paceRow(_ label: String, _ pace: String, _ color: Color) -> some View {
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(color)
-                .frame(width: 3, height: 16)
-
-            Text(label)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.drip.textSecondary)
-
-            Spacer()
-
-            Text(pace)
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.drip.textPrimary)
-        }
-    }
-}
-
-// MARK: - Stimulus Content
-
-private struct StimulusContent: View {
-    let stimulus: TrainingStimulusInfo
-
-    private func trendIcon(_ trend: Double) -> String {
-        if trend > 1.15 { return "arrow.up.right" }
-        if trend < 0.85 { return "arrow.down.right" }
-        return "arrow.right"
-    }
-
-    private func trendColor(_ trend: Double) -> Color {
-        if trend > 1.15 { return Color.drip.positive }
-        if trend < 0.85 { return Color.drip.tired }
+    private func trendColor(_ t: Double) -> Color {
+        if t > 1.15 { return Color.drip.energized }
+        if t < 0.85 { return Color.drip.coral }
         return Color.drip.textTertiary
     }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            stimulusStat(
-                String(format: "%.0f", stimulus.weeklyMiles),
-                "mi/week",
-                trend: stimulus.volumeTrend
-            )
-            stimulusStat(
-                String(format: "%.0f", stimulus.runsPerWeek),
-                "runs/week",
-                trend: nil
-            )
-            stimulusStat(
-                String(format: "%.0f", stimulus.stimulusMinutes),
-                "hard min",
-                trend: stimulus.stimulusTrend
-            )
-            stimulusStat(
-                "\(stimulus.structuredSessions)",
-                "quality",
-                trend: nil
-            )
-        }
-    }
-
-    private func stimulusStat(_ value: String, _ label: String, trend: Double?) -> some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 2) {
-                Text(value)
-                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(Color.drip.textPrimary)
-                if let trend = trend, trend != 0 {
-                    Image(systemName: trendIcon(trend))
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(trendColor(trend))
-                }
-            }
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Color.drip.textTertiary)
-        }
-        .frame(maxWidth: .infinity)
-    }
 }
 
-// MARK: - Fitness Summary Card
+// MARK: - Fitness trend (keep sparkline canvas, drop card)
 
-private struct FitnessSummaryCard: View {
-    let summary: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.drip.coral)
-
-                Text("AI ANALYSIS")
-                    .font(.dripCaption(10))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .tracking(1.2)
-            }
-
-            Text(summary)
-                .font(.dripBody(14))
-                .foregroundStyle(Color.drip.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-// MARK: - Compact Data Sources Row
-
-private struct DataSourcesRow: View {
-    let sources: DataSources
-
-    var body: some View {
-        HStack(spacing: 0) {
-            dataItem("figure.run", "\(sources.workoutCount)", "workouts")
-            dataItem("mic.fill", "\(sources.voiceLogCount)", "voice logs")
-            dataItem("flame.fill", "\(sources.hardEffortCount)", "hard efforts")
-            dataItem("chart.bar.fill", sources.confidence, "confidence")
-        }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func dataItem(_ icon: String, _ value: String, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 9))
-                .foregroundStyle(Color.drip.coral)
-            Text(value)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color.drip.textPrimary)
-            Text(label)
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Color.drip.textTertiary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - Empty State
-
-private struct EmptyPredictionState: View {
-    let onPredict: () -> Void
-
-    var body: some View {
-        VStack(spacing: 20) {
-            ZStack {
-                Circle()
-                    .fill(Color.drip.coral.opacity(0.12))
-                    .frame(width: 64, height: 64)
-
-                Image(systemName: "trophy.fill")
-                    .font(.system(size: 26))
-                    .foregroundStyle(Color.drip.coral)
-            }
-
-            VStack(spacing: 6) {
-                Text("Predict Your Race Times")
-                    .font(.dripLabel(16))
-                    .foregroundStyle(Color.drip.textPrimary)
-
-                Text("Analyzes your workouts, voice logs, and GPS data.")
-                    .font(.dripBody(13))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button(action: onPredict) {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 14))
-                    Text("Get Predictions")
-                        .font(.dripLabel(15))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(Color.drip.coral)
-                .clipShape(Capsule())
-            }
-        }
-        .padding(24)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-}
-
-// MARK: - Prediction Error Banner
-
-private struct PredictionErrorBanner: View {
-    let message: String
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color.drip.tired)
-
-            Text(message)
-                .font(.dripBody(13))
-                .foregroundStyle(Color.drip.textPrimary)
-
-            Spacer()
-        }
-        .padding(14)
-        .background(Color.drip.tired.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.drip.tired.opacity(0.3), lineWidth: 1)
-        )
-    }
-}
-
-// MARK: - Fitness Trend Card
-
-private struct FitnessTrendCard: View {
+private struct FitnessTrendSection: View {
     let snapshots: [FitnessSnapshot]
     let changeFromPrevious: Int?
     let previousDate: Date?
     @State private var showAllDistances = false
 
-    private var chronological: [FitnessSnapshot] {
-        snapshots.reversed()
-    }
+    private var chronological: [FitnessSnapshot] { snapshots.reversed() }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "chart.xyaxis.line")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.drip.coral)
-
-                    Text("FITNESS TREND")
-                        .font(.dripCaption(10))
-                        .foregroundStyle(Color.drip.textSecondary)
-                        .tracking(1.2)
-                }
-
+                DripEyebrow(text: "FITNESS TREND")
                 Spacer()
-
                 if let change = changeFromPrevious, let date = previousDate {
-                    ChangeIndicator(changeSeconds: change, comparedTo: date)
+                    InlineChangeReadout(changeSeconds: change, comparedTo: date)
                 }
             }
 
@@ -616,41 +632,35 @@ private struct FitnessTrendCard: View {
             )
 
             Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    showAllDistances.toggle()
-                }
+                withAnimation(.easeInOut(duration: 0.25)) { showAllDistances.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    Text(showAllDistances ? "Hide distances" : "All distances")
-                        .font(.dripCaption(11))
-                        .foregroundStyle(Color.drip.textTertiary)
-
+                    Text(showAllDistances ? "HIDE DISTANCES" : "ALL DISTANCES")
+                        .font(.dripCaption(10))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.coral)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.drip.textTertiary)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.drip.coral)
                         .rotationEffect(.degrees(showAllDistances ? 180 : 0))
                 }
             }
+            .buttonStyle(.plain)
 
             if showAllDistances {
                 VStack(spacing: 10) {
-                    TrendSparkline(snapshots: chronological, keyPath: \.predictedMileSeconds, label: "MILE", height: 44)
-                    TrendSparkline(snapshots: chronological, keyPath: \.predicted5kSeconds, label: "5K", height: 44)
-                    TrendSparkline(snapshots: chronological, keyPath: \.predictedHalfSeconds, label: "HALF", height: 44)
+                    TrendSparkline(snapshots: chronological, keyPath: \.predictedMileSeconds,     label: "MILE",     height: 44)
+                    TrendSparkline(snapshots: chronological, keyPath: \.predicted5kSeconds,       label: "5K",       height: 44)
+                    TrendSparkline(snapshots: chronological, keyPath: \.predictedHalfSeconds,     label: "HALF",     height: 44)
                     TrendSparkline(snapshots: chronological, keyPath: \.predictedMarathonSeconds, label: "MARATHON", height: 44)
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(16)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
-// MARK: - Change Indicator
-
-private struct ChangeIndicator: View {
+private struct InlineChangeReadout: View {
     let changeSeconds: Int
     let comparedTo: Date
 
@@ -660,39 +670,33 @@ private struct ChangeIndicator: View {
     private var changeText: String {
         let mins = absChange / 60
         let secs = absChange % 60
-        if mins > 0 {
-            return "\(isImproving ? "\u{2193}" : "\u{2191}") \(mins)m \(secs)s"
-        }
-        return "\(isImproving ? "\u{2193}" : "\u{2191}") \(secs)s"
+        let arrow = isImproving ? "↓" : "↑"
+        if mins > 0 { return "\(arrow) \(mins)m \(secs)s" }
+        return "\(arrow) \(secs)s"
     }
 
     private var relativeDate: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: comparedTo, relativeTo: Date())
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: comparedTo, relativeTo: Date()).uppercased()
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             Text(changeText)
                 .font(.dripCaption(11))
                 .fontWeight(.semibold)
-
-            Text("from \(relativeDate)")
+                .monospacedDigit()
+            Text("FROM " + relativeDate)
                 .font(.dripCaption(9))
-                .foregroundStyle(isImproving ? Color.drip.success.opacity(0.7) : Color.drip.tired.opacity(0.7))
+                .tracking(1.2)
+                .foregroundStyle(Color.drip.textTertiary)
         }
-        .foregroundStyle(isImproving ? Color.drip.success : Color.drip.tired)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-            (isImproving ? Color.drip.success : Color.drip.tired).opacity(0.12)
-        )
-        .clipShape(Capsule())
+        .foregroundStyle(isImproving ? Color.drip.energized : Color.drip.coral)
     }
 }
 
-// MARK: - Trend Sparkline
+// MARK: - Sparkline (canvas kept; spec said "keep canvas, drop card shell")
 
 private struct TrendSparkline: View {
     let snapshots: [FitnessSnapshot]
@@ -700,19 +704,15 @@ private struct TrendSparkline: View {
     let label: String
     var height: CGFloat = 80
 
-    private var latestValue: Int {
-        snapshots.last.map { $0[keyPath: keyPath] } ?? 0
-    }
+    private var latestValue: Int { snapshots.last.map { $0[keyPath: keyPath] } ?? 0 }
 
     private var formattedTime: String {
-        let totalSecs = latestValue
-        let hours = totalSecs / 3600
-        let mins = (totalSecs % 3600) / 60
-        let secs = totalSecs % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, mins, secs)
-        }
-        return String(format: "%d:%02d", mins, secs)
+        let total = latestValue
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%d:%02d", m, s)
     }
 
     var body: some View {
@@ -720,11 +720,12 @@ private struct TrendSparkline: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                     .font(.dripCaption(10))
+                    .tracking(1.4)
                     .foregroundStyle(Color.drip.textTertiary)
-                    .tracking(1)
-
                 Text(formattedTime)
-                    .font(.system(size: height > 60 ? 16 : 13, weight: .semibold, design: .monospaced))
+                    .font(.dripCaption(height > 60 ? 16 : 13))
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
                     .foregroundStyle(Color.drip.textPrimary)
             }
             .frame(width: 70, alignment: .leading)
@@ -739,7 +740,6 @@ private struct TrendSparkline: View {
                     Path { path in
                         guard values.count >= 2 else { return }
                         let stepX = geo.size.width / CGFloat(values.count - 1)
-
                         path.move(to: CGPoint(x: 0, y: geo.size.height))
                         for (i, val) in values.enumerated() {
                             let y = (val - minVal) / range * Double(geo.size.height)
@@ -750,7 +750,7 @@ private struct TrendSparkline: View {
                     }
                     .fill(
                         LinearGradient(
-                            colors: [Color.drip.coral.opacity(0.25), Color.drip.coral.opacity(0.02)],
+                            colors: [Color.drip.coral.opacity(0.22), Color.drip.coral.opacity(0.02)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -759,24 +759,20 @@ private struct TrendSparkline: View {
                     Path { path in
                         guard values.count >= 2 else { return }
                         let stepX = geo.size.width / CGFloat(values.count - 1)
-
                         for (i, val) in values.enumerated() {
                             let y = (val - minVal) / range * Double(geo.size.height)
-                            if i == 0 {
-                                path.move(to: CGPoint(x: 0, y: y))
-                            } else {
-                                path.addLine(to: CGPoint(x: CGFloat(i) * stepX, y: y))
-                            }
+                            if i == 0 { path.move(to: CGPoint(x: 0, y: y)) }
+                            else { path.addLine(to: CGPoint(x: CGFloat(i) * stepX, y: y)) }
                         }
                     }
-                    .stroke(Color.drip.coral, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(Color.drip.coral, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
 
-                    if let lastVal = values.last {
+                    if let last = values.last {
                         let x = geo.size.width
-                        let y = (lastVal - minVal) / range * Double(geo.size.height)
+                        let y = (last - minVal) / range * Double(geo.size.height)
                         Circle()
                             .fill(Color.drip.coral)
-                            .frame(width: 6, height: 6)
+                            .frame(width: 5, height: 5)
                             .position(x: x, y: y)
                     }
                 }

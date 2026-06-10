@@ -44,6 +44,7 @@ struct TrainingLog: Codable, Identifiable {
     let source: String?
     let vitalWorkoutId: String?
     let paceSegments: [PaceSegment]?
+    let parsedStructure: ParsedStructure?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -66,6 +67,7 @@ struct TrainingLog: Codable, Identifiable {
         case source
         case vitalWorkoutId = "vital_workout_id"
         case paceSegments = "pace_segments"
+        case parsedStructure = "parsed_structure"
     }
 
     // MARK: - Source
@@ -158,6 +160,7 @@ struct TrainingLogInsert: Codable {
     var source: String?
     var vitalWorkoutId: String?
     var paceSegments: [PaceSegment]?
+    var externalStreams: ExternalStreamsPayload?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -172,5 +175,6 @@ struct TrainingLogInsert: Codable {
         case source
         case vitalWorkoutId = "vital_workout_id"
         case paceSegments = "pace_segments"
+        case externalStreams = "external_streams"
     }
 }

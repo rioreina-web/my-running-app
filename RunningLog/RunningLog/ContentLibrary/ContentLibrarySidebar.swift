@@ -2,35 +2,49 @@
 //  ContentLibrarySidebar.swift
 //  RunningLog
 //
-//  App navigation sidebar — provides quick access to all major features.
+//  App navigation sidebar — the editorial "numbered index" menu from the
+//  Post Run Drip kit (design-system/ui_kits/ios_app/SettingsSheets.jsx ·
+//  AppSidebar). Wordmark masthead, plate row, identity (real email),
+//  grouped 01–07 destination index, footer with sign-out + build string.
+//
+//  Only the menu presentation changed in the 2026-05-29 rebrand pass.
+//  Bindings, AppDestination routing, and the other structs in this file
+//  (CategoryRow, DownloadsRow, ContentLibraryHubView) are unchanged.
 //
 
 import SwiftUI
 
-// MARK: - Menu Item
+// MARK: - Menu model (editorial numbered index)
 
-private struct MenuItem {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let color: Color
+private struct MenuEntry: Identifiable {
+    let id = UUID()
+    let number: String
+    let label: String
+    let hint: String
+    let destination: AppDestination
 }
 
-private let featureItems: [MenuItem] = [
-    MenuItem(title: "Goals", subtitle: "Race & training targets", icon: "target", color: Color.drip.coral),
-    MenuItem(title: "Training Analysis", subtitle: "Review your training trends", icon: "chart.bar.xaxis", color: Color.drip.coral),
-    MenuItem(title: "Injuries", subtitle: "Track & analyze injuries", icon: "bandage.fill", color: Color.drip.coral),
-    MenuItem(title: "Fitness Predictor", subtitle: "AI race time predictions", icon: "trophy.fill", color: Color.drip.coral),
-    MenuItem(title: "Pace Chart", subtitle: "View training paces", icon: "speedometer", color: Color.drip.coral),
-    MenuItem(title: "Form Check", subtitle: "Quick qualitative form review", icon: "figure.run.circle", color: Color.drip.coral),
-]
+private struct MenuGroup: Identifiable {
+    let id = UUID()
+    let head: String
+    let entries: [MenuEntry]
+}
 
-private let contentLibraryItem = MenuItem(
-    title: "Content Library",
-    subtitle: "Training videos & resources",
-    icon: "books.vertical.fill",
-    color: Color.drip.coral
-)
+private let menuGroups: [MenuGroup] = [
+    MenuGroup(head: "Targets", entries: [
+        MenuEntry(number: "01", label: "Goals", hint: "Race & training targets.", destination: .goals),
+        MenuEntry(number: "02", label: "Pace Chart", hint: "Your training paces, by zone.", destination: .paceChart),
+        MenuEntry(number: "03", label: "Fitness Predictor", hint: "AI race-time predictions.", destination: .fitnessPredictor),
+    ]),
+    MenuGroup(head: "Review", entries: [
+        MenuEntry(number: "04", label: "Training Analysis", hint: "Trends across your block.", destination: .analysis),
+        MenuEntry(number: "05", label: "Injuries", hint: "Track, analyze, recover.", destination: .injuries),
+    ]),
+    MenuGroup(head: "Library & Account", entries: [
+        MenuEntry(number: "06", label: "Content Library", hint: "Films, drills & reading.", destination: .contentLibrary),
+        MenuEntry(number: "07", label: "Settings", hint: "Account, data & app preferences.", destination: .settings),
+    ]),
+]
 
 // MARK: - ContentLibrarySidebar
 
@@ -39,160 +53,156 @@ struct ContentLibrarySidebar: View {
     @Binding var activeDestination: AppDestination?
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            // Dimmed background
-            Color.black.opacity(isPresented ? 0.5 : 0)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.3)) {
-                        isPresented = false
-                    }
-                }
+        GeometryReader { geo in
+            let panelWidth = min(geo.size.width * 0.85, 360)
 
-            // Sidebar panel
-            HStack(spacing: 0) {
+            ZStack(alignment: .leading) {
+                // Scrim — design spec rgba(26,24,21,0.46)
+                Color(hex: "1A1815")
+                    .opacity(isPresented ? 0.46 : 0)
+                    .ignoresSafeArea()
+                    .onTapGesture { close() }
+                    .allowsHitTesting(isPresented)
+
+                // Panel
                 VStack(alignment: .leading, spacing: 0) {
-                    // Header
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image("Logo")
-                                .renderingMode(.original)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(height: 28)
-
-                            Spacer()
-
-                            Button {
-                                withAnimation(.spring(response: 0.3)) {
-                                    isPresented = false
-                                }
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .frame(width: 32, height: 32)
-                                    .background(Color.drip.cardBackgroundElevated)
-                                    .clipShape(Circle())
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 60)
-                    .padding(.bottom, 24)
-
-                    // Menu items
-                    ScrollView {
-                        VStack(spacing: 4) {
-                            // Features section
-                            Text("FEATURES")
-                                .font(.dripCaption(10))
-                                .foregroundStyle(Color.drip.textSecondary)
-                                .tracking(1.5)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 4)
-
-                            ForEach(Array(featureItems.enumerated()), id: \.offset) { index, item in
-                                MenuItemRow(item: item) {
-                                    navigateTo(index: index)
-                                }
-                            }
-
-                            Divider()
-                                .background(Color.drip.divider)
-                                .padding(.vertical, 12)
-                                .padding(.horizontal, 8)
-
-                            // Resources section
-                            Text("RESOURCES")
-                                .font(.dripCaption(10))
-                                .foregroundStyle(Color.drip.textSecondary)
-                                .tracking(1.5)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 4)
-
-                            MenuItemRow(item: contentLibraryItem) {
-                                dismissAndPresent(.contentLibrary)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                    }
-
-                    Spacer()
+                    masthead
+                    ScrollView { indexList }
+                    footer
                 }
-                .frame(width: 280)
+                .frame(width: panelWidth, alignment: .leading)
+                .frame(maxHeight: .infinity, alignment: .top)
                 .background(Color.drip.background)
-                .offset(x: isPresented ? 0 : -280)
+                .shadow(color: .black.opacity(0.22), radius: 14, x: 2, y: 0)
+                .offset(x: isPresented ? 0 : -(panelWidth + 24))
+                .ignoresSafeArea(edges: .bottom)
+            }
+            .animation(.spring(response: 0.34, dampingFraction: 0.92), value: isPresented)
+        }
+    }
 
+    // MARK: Masthead
+
+    private var masthead: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Menu.")
+                    .font(.dripDisplay(30))
+                    .foregroundStyle(Color.drip.textPrimary)
                 Spacer()
+                closeButton
+            }
+
+            if let email = AuthManager.shared.userEmail, !email.isEmpty {
+                Text(email)
+                    .font(.dripStat(11))
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .padding(.top, 14)
             }
         }
+        .padding(.horizontal, 24)
+        .padding(.top, 64)
+        .padding(.bottom, 22)
     }
 
-    private static let destinations: [AppDestination] = [
-        .goals, .analysis, .injuries, .fitnessPredictor, .paceChart, .formCheck,
-    ]
-
-    private func navigateTo(index: Int) {
-        guard index < Self.destinations.count else { return }
-        dismissAndPresent(Self.destinations[index])
-    }
-
-    private func dismissAndPresent(_ destination: AppDestination) {
-        withAnimation(.spring(response: 0.3)) {
-            isPresented = false
+    private var closeButton: some View {
+        Button { close() } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.drip.textSecondary)
+                .frame(width: 34, height: 34)
+                .overlay(Circle().stroke(Color.drip.divider, lineWidth: 1))
         }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Index
+
+    private var indexList: some View {
+        let entries = menuGroups.flatMap { $0.entries }
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(entries.enumerated()), id: \.element.id) { idx, entry in
+                Button { select(entry.destination) } label: {
+                    HStack {
+                        Text(entry.label)
+                            .font(.dripDisplay(21))
+                            .foregroundStyle(Color.drip.textPrimary)
+                        Spacer(minLength: 8)
+                        Text("↗")
+                            .font(.dripStat(12))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .padding(.vertical, 16)
+                    .contentShape(Rectangle())
+                    .overlay(alignment: .bottom) {
+                        if idx < entries.count - 1 {
+                            Rectangle().fill(Color.drip.divider).frame(height: 1)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Button { signOut() } label: {
+                Text("Sign out")
+                    .font(.dripLabel(14))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(Color.drip.divider).frame(height: 1).offset(y: 2)
+                    }
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Text(buildString)
+                .font(.dripEyebrow(9))
+                .tracking(0.9)  // 0.10em at 9pt
+                .foregroundStyle(Color.drip.textTertiary)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.drip.divider).frame(height: 1)
+        }
+    }
+
+    private var buildString: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        return "POST RUN DRIP · v\(version) · BUILD \(build)"
+    }
+
+    // MARK: Actions
+
+    private func close() {
+        isPresented = false
+    }
+
+    private func select(_ destination: AppDestination) {
+        isPresented = false
         Task {
-            try? await Task.sleep(for: .seconds(0.3))
+            try? await Task.sleep(for: .seconds(0.34))
             activeDestination = destination
         }
     }
-}
 
-// MARK: - MenuItemRow
-
-private struct MenuItemRow: View {
-    let item: MenuItem
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(item.color.opacity(0.15))
-                        .frame(width: 40, height: 40)
-
-                    Image(systemName: item.icon)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(item.color)
-                }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(.dripLabel(15))
-                        .foregroundStyle(Color.drip.textPrimary)
-
-                    Text(item.subtitle)
-                        .font(.dripCaption(11))
-                        .foregroundStyle(Color.drip.textTertiary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.drip.textTertiary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
-            .background(Color.drip.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+    private func signOut() {
+        isPresented = false
+        Task { @MainActor in
+            try? await AuthManager.shared.signOut()
         }
-        .buttonStyle(.plain)
     }
 }
 

@@ -443,17 +443,10 @@ struct EditableMoodPicker: View {
         }
     }
 
-    private func moodIcon(_ mood: String) -> String {
-        switch mood {
-        case "energized": return "bolt.fill"
-        case "positive": return "face.smiling.fill"
-        case "neutral": return "minus.circle.fill"
-        case "tired": return "moon.fill"
-        case "struggling": return "exclamationmark.triangle.fill"
-        case "injured": return "bandage.fill"
-        default: return "circle.fill"
-        }
-    }
+    // Mood pills follow the design-system spec: tracked uppercase label
+    // with a color dot, no SF Symbol icons. The `moodIcon` helper that
+    // used to live here was a direct violation of the "no emoji, no
+    // faces" rule — deleted.
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -462,15 +455,16 @@ struct EditableMoodPicker: View {
                     Button {
                         selectedMood = selectedMood == mood ? "" : mood
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: moodIcon(mood))
-                                .font(.system(size: 10, weight: .bold))
-                            Text(mood.capitalized)
-                                .font(.dripCaption(11))
-                                .fontWeight(.semibold)
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(selectedMood == mood ? .white : moodColor(mood))
+                                .frame(width: 5, height: 5)
+                            Text(mood.uppercased())
+                                .font(.dripEyebrow(11))
+                                .tracking(1.1)  // 0.10em caption tracking at 11pt
                         }
                         .foregroundStyle(selectedMood == mood ? .white : moodColor(mood))
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 6)
                         .background(selectedMood == mood ? moodColor(mood) : moodColor(mood).opacity(0.15))
                         .clipShape(Capsule())

@@ -71,8 +71,6 @@ final class RestoreService {
             ("Restoring goals...", "user_goals", { try await self.upsertBatch("user_goals", items: backup.userGoals) }),
             ("Restoring injuries...", "injuries", { try await self.upsertBatch("injuries", items: backup.injuries) }),
             ("Restoring fitness snapshots...", "fitness_snapshots", { try await self.upsertBatch("fitness_snapshots", items: backup.fitnessSnapshots) }),
-            ("Restoring biomechanics analyses...", "biomechanics_analyses", { try await self.upsertBatch("biomechanics_analyses", items: backup.biomechanicsAnalyses) }),
-            ("Restoring form checks...", "form_checks", { try await self.upsertBatch("form_checks", items: backup.formChecks) }),
         ]
 
         for (index, (label, tableName, restore)) in tables.enumerated() {
@@ -86,8 +84,6 @@ final class RestoreService {
                 case 3: summary.userGoals = count
                 case 4: summary.injuries = count
                 case 5: summary.fitnessSnapshots = count
-                case 6: summary.biomechanicsAnalyses = count
-                case 7: summary.formChecks = count
                 default: break
                 }
             } catch {
@@ -134,12 +130,10 @@ struct RestoreSummary {
     var userGoals: Int = 0
     var injuries: Int = 0
     var fitnessSnapshots: Int = 0
-    var biomechanicsAnalyses: Int = 0
-    var formChecks: Int = 0
 
     var totalRecords: Int {
         trainingLogs + trainingPlans + scheduledWorkouts + userGoals +
-        injuries + fitnessSnapshots + biomechanicsAnalyses + formChecks
+        injuries + fitnessSnapshots
     }
 
     var breakdown: [(label: String, count: Int)] {
@@ -150,8 +144,6 @@ struct RestoreSummary {
             ("Goals", userGoals),
             ("Injuries", injuries),
             ("Fitness snapshots", fitnessSnapshots),
-            ("Biomechanics analyses", biomechanicsAnalyses),
-            ("Form checks", formChecks),
         ].filter { $0.count > 0 }
     }
 }

@@ -399,22 +399,36 @@ final class CoachViewModel {
 
     /// Subscribe an athlete to a plan template by calling the subscribe-to-plan edge function.
     /// This generates real `training_plans` + `scheduled_workouts` rows for the athlete.
+    ///
+    /// `preferences` extends the request body with athlete onboarding choices
+    /// (rest days, quality days, volume ramp, shape prefs). The edge function
+    /// silently ignores the field until AO-2 lands; callers who don't have
+    /// preferences yet can pass nil.
+    /// `targetRaceDistance` overrides the template's default — used when the
+    /// athlete picks their own goal distance (goalUseCoach == false).
     @MainActor
     func subscribeAthleteToTemplate(
         athleteUserId: String,
         planTemplate: PlanTemplate,
         startDate: Date,
-        goalTimeSeconds: Int? = nil
+        goalTimeSeconds: Int? = nil,
+        targetRaceDistance: String? = nil,
+        preferences: SubscriptionPreferences? = nil
     ) async {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "planTemplateId": planTemplate.id.uuidString,
             "athleteUserId": athleteUserId,
             "startDate": formatter.string(from: startDate),
             "goalTimeSeconds": goalTimeSeconds as Any,
-            "targetRaceDistance": planTemplate.targetDistance
+            "targetRaceDistance": targetRaceDistance ?? planTemplate.targetDistance
         ]
+        if let prefs = preferences,
+           let prefsData = try? JSONEncoder().encode(prefs),
+           let prefsJSON = try? JSONSerialization.jsonObject(with: prefsData) as? [String: Any] {
+            body["subscription_preferences"] = prefsJSON
+        }
         do {
             let data = try await callEdgeFunction(name: "subscribe-to-plan", body: body)
             let response = try JSONDecoder().decode(SubscribeToPlanResponse.self, from: data)
@@ -429,12 +443,13 @@ final class CoachViewModel {
 
     // MARK: - Athlete-side: Join by Code
 
-    /// Athlete subscribes to a plan via a 6-char join code.
+    /// Look up a published plan template by its 6-char join code.
+    /// Returns nil if the code doesn't match. Used by JoinCoachPlanSheet to
+    /// load template defaults before showing the onboarding form.
     @MainActor
-    func joinPlanByCode(_ code: String, startDate: Date, goalTimeSeconds: Int? = nil) async -> Bool {
+    func lookupPlanByCode(_ code: String) async -> PlanTemplate? {
         let normalized = code.uppercased().trimmingCharacters(in: .whitespaces)
         do {
-            // Look up the plan template by join code
             let plans: [PlanTemplate] = try await supabase
                 .from("plan_templates")
                 .select()
@@ -443,21 +458,135 @@ final class CoachViewModel {
                 .limit(1)
                 .execute()
                 .value
-            guard let plan = plans.first else {
-                self.error = "Plan not found. Check the join code and try again."
-                return false
-            }
-            let userId = currentUserId
-            await subscribeAthleteToTemplate(
-                athleteUserId: userId,
-                planTemplate: plan,
-                startDate: startDate,
-                goalTimeSeconds: goalTimeSeconds
-            )
-            return self.error == nil
+            return plans.first
         } catch {
-            self.error = "Invalid join code: \(error.localizedDescription)"
-            ErrorReporter.shared.report(error, context: "join plan by code")
+            self.error = "Failed to look up plan: \(error.localizedDescription)"
+            ErrorReporter.shared.report(error, context: "lookup plan by code")
+            return nil
+        }
+    }
+
+    /// Athlete subscribes to a plan via a 6-char join code.
+    /// `preferences` is optional — when supplied, the athlete's onboarding
+    /// choices are layered on the coach's defaults at materialization time.
+    @MainActor
+    func joinPlanByCode(
+        _ code: String,
+        startDate: Date,
+        goalTimeSeconds: Int? = nil,
+        targetRaceDistance: String? = nil,
+        preferences: SubscriptionPreferences? = nil
+    ) async -> Bool {
+        guard let plan = await lookupPlanByCode(code) else {
+            if self.error == nil {
+                self.error = "Plan not found. Check the join code and try again."
+            }
+            return false
+        }
+        let userId = currentUserId
+        await subscribeAthleteToTemplate(
+            athleteUserId: userId,
+            planTemplate: plan,
+            startDate: startDate,
+            goalTimeSeconds: goalTimeSeconds,
+            targetRaceDistance: targetRaceDistance,
+            preferences: preferences
+        )
+        return self.error == nil
+    }
+
+    /// Subscribe to an already-loaded plan template (skips the join-code
+    /// lookup). Used after the onboarding sheet has fetched the template
+    /// to render previews; no need to re-fetch on submit.
+    @MainActor
+    func joinLoadedPlan(
+        _ plan: PlanTemplate,
+        startDate: Date,
+        goalTimeSeconds: Int? = nil,
+        targetRaceDistance: String? = nil,
+        preferences: SubscriptionPreferences? = nil
+    ) async -> Bool {
+        let userId = currentUserId
+        await subscribeAthleteToTemplate(
+            athleteUserId: userId,
+            planTemplate: plan,
+            startDate: startDate,
+            goalTimeSeconds: goalTimeSeconds,
+            targetRaceDistance: targetRaceDistance,
+            preferences: preferences
+        )
+        return self.error == nil
+    }
+
+    /// Fetch a single plan template by ID. Used by the Edit Preferences
+    /// flow to seed JoinCoachPlanSheet with the template the athlete is
+    /// already subscribed to (no join code lookup needed).
+    @MainActor
+    func loadPlanTemplate(id: UUID) async -> PlanTemplate? {
+        do {
+            let rows: [PlanTemplate] = try await supabase
+                .from("plan_templates")
+                .select()
+                .eq("id", value: id.uuidString)
+                .limit(1)
+                .execute()
+                .value
+            return rows.first
+        } catch {
+            ErrorReporter.shared.report(error, context: "load plan template by id")
+            return nil
+        }
+    }
+
+    /// Load the active subscription for a specific training plan, if any.
+    /// Used by the "Edit preferences" flow on the Plan tab to pre-fill the
+    /// JoinCoachPlanSheet with the athlete's existing choices.
+    @MainActor
+    func loadActiveSubscription(forTrainingPlanId planId: UUID) async -> AthletePlanSubscription? {
+        do {
+            let rows: [AthletePlanSubscription] = try await supabase
+                .from("athlete_plan_subscriptions")
+                .select()
+                .eq("athlete_user_id", value: currentUserId)
+                .eq("training_plan_id", value: planId.uuidString)
+                .eq("status", value: "active")
+                .limit(1)
+                .execute()
+                .value
+            return rows.first
+        } catch {
+            ErrorReporter.shared.report(error, context: "load active subscription for plan")
+            return nil
+        }
+    }
+
+    /// Rebuild the current calendar week + future scheduled_workouts using
+    /// the supplied preferences. Calls subscribe-to-plan with mode:
+    /// "rematerialize". Past + completed/skipped rows are preserved
+    /// server-side. See AO-5 in athlete-onboarding-prompts.md.
+    @MainActor
+    func rematerializePlan(
+        planTemplateId: UUID,
+        preferences: SubscriptionPreferences
+    ) async -> Bool {
+        let userId = currentUserId
+        guard let prefsData = try? JSONEncoder().encode(preferences),
+              let prefsJSON = try? JSONSerialization.jsonObject(with: prefsData) as? [String: Any] else {
+            self.error = "Couldn't encode preferences"
+            return false
+        }
+        let body: [String: Any] = [
+            "mode": "rematerialize",
+            "planTemplateId": planTemplateId.uuidString,
+            "athleteUserId": userId,
+            "subscription_preferences": prefsJSON,
+        ]
+        do {
+            _ = try await callEdgeFunction(name: "subscribe-to-plan", body: body)
+            return true
+        } catch {
+            self.error = "Failed to update preferences: \(error.localizedDescription)"
+            ErrorReporter.shared.report(error, context: "rematerialize plan")
             return false
         }
     }

@@ -6,6 +6,11 @@
 //  Sub-tabs: Workout Library · Training Plans · Athletes
 //
 
+// NOTE(adaptive-plan-3.5): "Plan updates" is surfaced here as a sub-tab.
+// This page is coach-facing, but since this is also where "my plan" is
+// viewed in coach mode, the athlete's adaptive feed belongs here too.
+// A follow-up may also surface PlanAdjustmentsView on the athlete's
+// TrainingPlanView for athletes who aren't using coach mode.
 import SwiftUI
 
 // MARK: - CoachTabView
@@ -19,12 +24,14 @@ struct CoachTabView: View {
         case workouts = "Library"
         case plans = "Plans"
         case athletes = "Athletes"
+        case updates = "Updates"
 
         var icon: String {
             switch self {
             case .workouts: return "dumbbell.fill"
             case .plans: return "calendar.badge.checkmark"
             case .athletes: return "person.2.fill"
+            case .updates: return "bell.badge.fill"
             }
         }
     }
@@ -89,6 +96,8 @@ struct CoachTabView: View {
                     case .athletes:
                         AthleteRosterView()
                             .environment(viewModel)
+                    case .updates:
+                        PlanAdjustmentsView()
                     }
                 }
             }

@@ -21,6 +21,11 @@ struct DripColors {
     let coral = Color(hex: "D4592A")             // Burnt orange (primary accent)
     let coralLight = Color(hex: "E8764A")        // Lighter variant
     let electric = Color(hex: "B84420")          // Darker hover state
+    /// `--coral-wash` from `design-system/colors_and_type.css`:
+    /// `rgba(212, 89, 42, 0.12)`. Capsule fill / tint behind the active
+    /// segmented chip, the "Maintaining" pill, etc. Per the design system
+    /// README, this is *"the only transparency in the system."*
+    let coralWash = Color(red: 212/255, green: 89/255, blue: 42/255, opacity: 0.12)
 
     // Mood colors - Muted editorial tones
     let energized = Color(hex: "2D8A4E")         // Deep green
@@ -39,6 +44,10 @@ struct DripColors {
     // Utility
     let divider = Color(hex: "E8E4E0")           // Warm rule line
     let success = Color(hex: "2D8A4E")           // Same as energized
+    /// `--paper-deep` from `design-system/colors_and_type.css` (#E8E4DF).
+    /// Calendar / inset wells, histogram tracks behind a fill bar.
+    /// Slightly darker than `background`.
+    let paperDeep = Color(hex: "E8E4DF")
 
     /// Simplified mood → border color: green (positive), amber (neutral/tired), red (struggling)
     func moodBorderColor(for mood: String?) -> Color? {
@@ -103,7 +112,21 @@ extension Font {
         .custom("CrimsonPro-Regular", size: size).weight(.semibold)
     }
 
-    /// Meta/Captions - PT Serif for small text with tracking
+    /// Eyebrows - SF Mono medium for the editorial uppercase labels
+    /// (TUESDAY, FROM YOUR COACH, ZONE SHIFTS). Apply `.tracking()` at
+    /// the callsite per spec:
+    ///   • caption    +0.10em (TIRED / EASY pills)        — size × 0.10
+    ///   • label      +0.12em (SECTION HEADERS)           — size × 0.12
+    ///   • plate meta +0.14em (top plate strip)           — size × 0.14
+    /// The CSS source of truth is `Post Run Drip Design System/colors_and_type.css`.
+    static func dripEyebrow(_ size: CGFloat) -> Font {
+        .system(size: size, weight: .medium, design: .monospaced)
+    }
+
+    /// Meta/Captions - PT Serif for small sentence-case body
+    /// (error messages, inline hints). Despite the name, this is NOT the
+    /// canonical caption per the design system spec — see `dripEyebrow`
+    /// above for uppercase labels. Rename pending.
     static func dripCaption(_ size: CGFloat) -> Font {
         .custom("PTSerif-Regular", size: size)
     }
@@ -150,9 +173,9 @@ struct StatCard: View {
                 .foregroundStyle(Color.drip.textPrimary)
 
             Text(label.uppercased())
-                .font(.dripCaption(10))
+                .font(.dripEyebrow(10))
                 .foregroundStyle(Color.drip.textSecondary)
-                .tracking(1.2)
+                .tracking(1.0)  // 0.10em caption tracking at 10pt
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -164,6 +187,11 @@ struct StatCard: View {
 
 // MARK: - MoodBadge
 
+/// Tracked-uppercase capsule with a small color dot. Per the design
+/// system spec: *"Mood is communicated through tracked uppercase pills
+/// + dot color, not faces. No emoji."* The SF Symbol icons that used to
+/// live here (`face.smiling.fill`, `bandage.fill`, etc.) were a direct
+/// violation — replaced with a 5px filled dot in the mood color.
 struct MoodBadge: View {
     let mood: String
 
@@ -179,28 +207,17 @@ struct MoodBadge: View {
         }
     }
 
-    var moodIcon: String {
-        switch mood.lowercased() {
-        case "energized": "bolt.fill"
-        case "positive": "face.smiling.fill"
-        case "neutral": "minus.circle.fill"
-        case "tired": "moon.fill"
-        case "struggling": "exclamationmark.triangle.fill"
-        case "injured": "bandage.fill"
-        default: "circle.fill"
-        }
-    }
-
     var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: moodIcon)
-                .font(.system(size: 9, weight: .bold))
-            Text(mood.capitalized)
-                .font(.dripCaption(10))
-                .fontWeight(.semibold)
+        HStack(spacing: 6) {
+            Circle()
+                .fill(moodColor)
+                .frame(width: 5, height: 5)
+            Text(mood.uppercased())
+                .font(.dripEyebrow(10))
+                .tracking(1.0)  // 0.10em caption tracking at 10pt
         }
         .foregroundStyle(moodColor)
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(moodColor.opacity(0.12))
         .fixedSize()
@@ -361,9 +378,9 @@ struct SectionHeader: View {
         VStack(spacing: 8) {
             HStack {
                 Text(title.uppercased())
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
-                    .tracking(1.5)
+                    .tracking(1.3)  // 0.12em label tracking at 11pt
 
                 Spacer()
 
@@ -382,5 +399,130 @@ struct SectionHeader: View {
                 .frame(height: 1)
         }
         .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - Editorial primitives (the plate chrome)
+//
+// These four — PlateStrip, PlateFooter, CoachQuote, Hairline — plus the
+// EditorialRule below are the gestures that make a screen feel like a
+// printed plate instead of an app view. They live here so every editorial
+// surface (Today, Training, Workout Detail, Injuries) can compose them
+// without inventing its own.
+//
+// Source: `Post Run Drip Design System/README.md` and `colors_and_type.css`.
+
+/// Top-of-plate strip: surface label left, fig number right. Mono, tracked
+/// `+0.14em`, on the paper background. Per README: *"the single most
+/// identifiable visual gesture"* of the design system.
+///
+/// Usage: `PlateStrip(surface: "LOG · v1 DIARY + CHARTS", fig: "FIG. 18")`
+struct PlateStrip: View {
+    let surface: String
+    let fig: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(surface)
+                .font(.dripEyebrow(10))
+                .tracking(1.4)  // 0.14em meta tracking at 10pt
+                .foregroundStyle(Color.drip.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 16)
+            Text(fig)
+                .font(.dripEyebrow(10))
+                .tracking(1.4)
+                .foregroundStyle(Color.drip.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Bottom-of-plate footer: an optional italic-serif caption above the
+/// canonical signature line. The README quotes a sample footer:
+/// *"Diary spine on top, cockpit's bottom half on the bottom. Strain/TSB
+/// tiles dropped — data not honest yet."* — that's the register.
+///
+/// Pass `nil` (or use the no-arg init) to render only the signature line.
+struct PlateFooter: View {
+    let caption: String?
+
+    init(_ caption: String? = nil) {
+        self.caption = caption
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let caption {
+                Text(caption)
+                    .font(.system(size: 12, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .lineSpacing(2)
+            }
+            Text("— restraint as foundation, intensity as accent")
+                .font(.system(size: 11, design: .serif).italic())
+                .foregroundStyle(Color.drip.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The canonical "from your coach" treatment: italic-serif body with a
+/// 2px coral-at-50%-opacity left bar inset by 12px. Per README:
+/// *"This is the one place a coloured left-border appears in the system.
+/// Do not generalize."*
+///
+/// Pass `text` raw — the primitive wraps it in curly quotes itself.
+struct CoachQuote: View {
+    let text: String
+
+    var body: some View {
+        Text("\u{201C}\(text)\u{201D}")
+            .font(.system(size: 15, design: .serif).italic())
+            .foregroundStyle(Color.drip.textPrimary)
+            .lineSpacing(4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 12)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.drip.coral.opacity(0.5))
+                    .frame(width: 2)
+            }
+    }
+}
+
+/// A plain 1px rule — distinct from `EditorialRule`. The JSX uses both:
+/// `<Hairline>` for tight separators inside a section (e.g., between
+/// stat rows), `<EditorialRule>` (line · dot · line) for section breaks.
+struct Hairline: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.drip.divider)
+            .frame(height: 1)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+/// The canonical section break: `line · dot · line`. The README calls
+/// this *"a typesetting mark, not a divider in the usual product-design
+/// sense."* Use between editorial sections, not inside cards.
+///
+/// Replaces the four private duplicates that used to live in
+/// `TodayHomeView`, `TrainingTabView`, `WorkoutDetailPlate23`
+/// (`WD23EditorialRule`), and `InjuryPlate28` (`InjuryRule28`).
+struct EditorialRule: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(Color.drip.divider)
+                .frame(height: 1)
+            Circle()
+                .fill(Color.drip.divider)
+                .frame(width: 3, height: 3)
+            Rectangle()
+                .fill(Color.drip.divider)
+                .frame(height: 1)
+        }
     }
 }

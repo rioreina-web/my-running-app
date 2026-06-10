@@ -17,9 +17,21 @@ struct PlanHeaderBanner: View {
             // Plan name and status
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(plan.name)
-                        .font(.dripLabel(18))
-                        .foregroundStyle(Color.drip.textPrimary)
+                    HStack(spacing: 6) {
+                        Text(plan.name)
+                            .font(.dripLabel(18))
+                            .foregroundStyle(Color.drip.textPrimary)
+
+                        if plan.isCoachPlan {
+                            Text(plan.isAdaptive ? "COACH · ADAPTIVE" : "COACH")
+                                .font(.dripCaption(9))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.drip.coral)
+                                .clipShape(Capsule())
+                        }
+                    }
 
                     Text("Week \(plan.currentWeek) of \(plan.totalWeeks)")
                         .font(.dripCaption(13))
@@ -182,32 +194,12 @@ struct WeekNavigationHeader: View {
                 .disabled(weekNumber >= totalWeeks)
             }
 
-            // Phase badge — tappable to change phase
-            Menu {
-                ForEach(TrainingPhase.allCases, id: \.self) { p in
-                    Button {
-                        onPhaseChange?(p)
-                    } label: {
-                        Label(p.displayName, systemImage: p.icon)
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: phase.icon)
-                        .font(.system(size: 12))
-
-                    Text(phase.displayName)
-                        .font(.dripCaption(11))
-
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8))
-                }
-                .foregroundStyle(phase.color)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(phase.color.opacity(0.15))
-                .clipShape(Capsule())
-            }
+            // Phase badge removed — periodization phase is implementation
+            // detail and added clutter to the week header. The plan's
+            // structure already encodes the phase via the workouts
+            // themselves; surfacing the label added no actionable info for
+            // the athlete. `phase` and `onPhaseChange` remain on the struct
+            // to avoid a breaking ripple at call sites.
         }
         .padding(16)
         .background(Color.drip.calendarBackground)

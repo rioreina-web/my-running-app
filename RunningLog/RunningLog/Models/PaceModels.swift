@@ -67,9 +67,6 @@ struct PaceIntensity: Codable, Equatable {
         self.paceSecondsPerKmHigh = paceSecondsPerKmHigh
     }
 
-    var displayPercentage: String {
-        String(format: "%.0f%%", percentage)
-    }
 
     /// Calculate actual pace in seconds per mile given race pace
     func paceSeconds(forRacePace racePaceSeconds: Double) -> Double {
@@ -111,11 +108,13 @@ struct PaceIntensity: Codable, Equatable {
         return "in \(Self.formatTime(timeFast))"
     }
 
-    /// Get a display label using named pace references when available
+    /// Get a display label using named pace references when available.
+    /// Falls back to the formatted pace string — never a percentage.
     func displayLabel(
         forRacePace racePaceSeconds: Double,
         equivalentPaces: EquivalentPaces?
     ) -> String {
+        guard racePaceSeconds > 0 else { return "—" }
         let actualPace = paceSeconds(forRacePace: racePaceSeconds)
 
         if let equiv = equivalentPaces,
@@ -123,15 +122,63 @@ struct PaceIntensity: Codable, Equatable {
             return namedPace.shortName
         }
 
-        return "\(displayPercentage) MP"
+        return formattedPace(forRacePace: racePaceSeconds)
     }
 
-    /// Format seconds as M:SS
+    /// Format seconds as M:SS, or H:MM:SS when total duration >= 1 hour.
+    /// Used for both per-unit pace (always sub-hour for running) and
+    /// per-workout total time (can exceed an hour for long runs).
     static func formatTime(_ seconds: Double) -> String {
         let totalSecs = Int(seconds.rounded())
+        if totalSecs >= 3600 {
+            let h = totalSecs / 3600
+            let m = (totalSecs % 3600) / 60
+            let s = totalSecs % 60
+            return "\(h):\(String(format: "%02d", m)):\(String(format: "%02d", s))"
+        }
         let mins = totalSecs / 60
         let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))"
+    }
+
+    /// Build a PaceIntensity from a named race-distance reference ("easy",
+    /// "marathon", "half", "10K", "5K", "mile") and an AthletePaceProfile.
+    /// Returns nil when the profile doesn't have that pace.
+    ///
+    /// Resulting PaceIntensity carries `paceSecondsPerKm` so displayers can
+    /// render a real m:ss/km string. `percentage` is left at 0 because the
+    /// pace is distance-referenced, not percentage-referenced.
+    static func forReference(_ reference: String, in profile: AthletePaceProfile?) -> PaceIntensity? {
+        guard let seconds = profile?.pace(for: reference)?.secondsPerMile, seconds > 0 else { return nil }
+        return PaceIntensity(
+            percentage: 0,
+            paceSecondsPerKm: seconds / 1.609344
+        )
+    }
+
+    /// Map a legacy 0-115% target to the closest named race-distance reference.
+    /// Mapping per adaptive-plan-loop-prompts.md § 1.10.
+    static func referenceName(forPercentage pct: Double) -> String {
+        switch pct {
+        case ..<85:     return "easy"
+        case 85..<92:   return "marathon"
+        case 92..<97:   return "half"
+        case 97..<102:  return "10K"
+        case 102..<105: return "5K"
+        default:        return "mile"
+        }
+    }
+
+    /// Convenience for migrating legacy stub workouts: given a percentage
+    /// and the caller's profile, return a concrete PaceIntensity. Falls
+    /// back to a percentage-only PaceIntensity when profile is unavailable —
+    /// the UI layer renders "—" in that case.
+    static func fromLegacyPercentage(_ percentage: Double, profile: AthletePaceProfile?) -> PaceIntensity {
+        let ref = referenceName(forPercentage: percentage)
+        if let resolved = forReference(ref, in: profile) {
+            return resolved
+        }
+        return PaceIntensity(percentage: percentage)
     }
 }
 
@@ -202,6 +249,126 @@ enum NamedPace: String, CaseIterable, Codable {
         case .mile: return Color.drip.speed
         }
     }
+
+    // MARK: - Pace Range Tolerance & MP-Derived Ranges
+    //
+    // Two models for rendering a pace *range* instead of a single number:
+    //
+    // 1. Fast and mid zones — tolerance around the prescribed pace:
+    //       Mile / 1500 / 3K / 5K / 10K  → ±1%
+    //       HM / MP / Threshold (LT)     → ±2%
+    //
+    // 2. Slower aerobic zones — derived from marathon pace as a range of
+    //    percentages of MP *speed* (NOT of MP seconds). Easy / Moderate /
+    //    Steady / LongRun bands match the engine's TRAINING_PACE_MULTIPLIERS
+    //    in `_shared/pace-engine.ts` (contiguous, no gaps):
+    //       Steady    → 100–90% of MP speed (engine: 1.00–1.10 multiplier)
+    //       Moderate  → 90–80% of MP speed  (engine: 1.10–1.20)
+    //       Easy      → 80–70% of MP speed  (engine: 1.20–1.30)
+    //       Long Run  → 80–70% of MP speed  (= Easy by convention)
+    //       Recovery  → 75–65% of MP speed  (slower than easy floor —
+    //                                         not modeled in the engine)
+    //
+    // Pinned to the engine by cross-language-pace-contract.test.ts.
+    //
+    // Rationale: at fast paces a tight tolerance matters (missing 5K pace by
+    // 10s is a huge effort difference). At slow paces, a prescribed single
+    // number is fiction — the zone is a range by definition. The MP-derived
+    // approach respects that physiology.
+
+    /// Quality zones (Mile through MP) render as a single target pace, not a
+    /// range — coach prescription style. Slow aerobic zones still use
+    /// `mpSpeedRange` because they're physiologically a range, not a number.
+    /// Always nil now; kept on the type so call sites compile.
+    var tolerancePercent: Double? { nil }
+
+    /// For slower aerobic zones, the range as **pace multipliers on MP**.
+    /// `fast` is the fast end (closer to MP, smaller multiplier); `slow` is
+    /// the slow end. Example: steady = (fast: 1.00, slow: 1.10) renders as
+    /// MP to MP × 1.10.
+    ///
+    /// Easy / Moderate / Steady / LongRun bands are IDENTICAL to the engine's
+    /// `TRAINING_PACE_MULTIPLIERS` (contiguous: steady.slow == moderate.fast,
+    /// moderate.slow == easy.fast). Pinned by cross-language contract test.
+    /// Exact multipliers — reciprocals of the speed fraction, contiguous bands.
+    /// Mirrors the canonical engine in `supabase/functions/_shared/pace-engine.ts`.
+    /// Returns nil for fast/mid zones (they're exact paces, not ranges).
+    ///
+    /// `longRun` and `threshold` are retained for backwards compatibility with
+    /// existing callers (display surfaces use the canonical 10-zone spectrum:
+    /// recovery, easy, moderate, steady, MP, HMP, 10K, 5K, 3K, mile).
+    var mpPaceMultipliers: (fast: Double, slow: Double)? {
+        switch self {
+        case .steady:    return (fast: 1.0,    slow: 1.1111) // 90-100% MP speed
+        case .moderate:  return (fast: 1.1111, slow: 1.25)   // 80-90% MP speed
+        case .easy:      return (fast: 1.25,   slow: 1.4286) // 70-80% MP speed
+        case .longRun:   return (fast: 1.25,   slow: 1.4286) // = easy (legacy alias)
+        case .recovery:  return (fast: 1.4286, slow: 1.6667) // 60-70% MP speed
+        default:         return nil
+        }
+    }
+
+    /// Runner-to-runner effort description, shown beneath the pace range to
+    /// translate coach shorthand ("HM") into feel ("1-hour race effort").
+    /// Strings are deliberately short and brand-voice-aligned — no bro-speak,
+    /// no methodology name-dropping. See `brand-voice.md` for the full voice.
+    var effortDescription: String {
+        switch self {
+        case .recovery: return "shake-out pace, nothing more"
+        case .easy: return "conversational pace"
+        case .longRun: return "relaxed, sustained"
+        case .moderate: return "comfortable, aerobic"
+        case .steady: return "steady effort, just below MP"
+        case .mp: return "goal marathon race pace"
+        case .hm: return "1-hour race effort"
+        case .threshold: return "1-hour race effort"
+        case .tenK: return "goal 10K race pace"
+        case .fiveK: return "goal 5K race pace"
+        case .threeK: return "hard sustained"
+        case .mile: return "all-out sustained"
+        }
+    }
+
+    /// Unified range computation. Picks the right model for this zone:
+    ///   - Fast/mid zones → tolerance-based range around `base` (prescribed pace)
+    ///   - Slow zones    → MP-derived range, IGNORING `base` (the prescribed
+    ///                     single number is fiction at easy/long-run paces;
+    ///                     the zone range is the physiological truth)
+    ///
+    /// Returns (low, high) in seconds/mile where `low < high` (low is faster
+    /// pace = fewer seconds). Returns nil when we can't compute — e.g., slow
+    /// zone with no marathonPace available, or fast zone with no base.
+    ///
+    /// - Parameters:
+    ///   - base: prescribed pace for this step, in seconds per mile
+    ///   - marathonPace: the athlete's marathon pace in seconds per mile
+    func displayPaceRange(base: Double?, marathonPace: Double?) -> (low: Double, high: Double)? {
+        // Slow aerobic zones — MP × pace multiplier (engine-aligned).
+        if let m = mpPaceMultipliers {
+            guard let mp = marathonPace, mp > 0 else { return nil }
+            let fastEnd = mp * m.fast  // closer to MP (smaller multiplier, fewer seconds)
+            let slowEnd = mp * m.slow  // further from MP (larger multiplier, more seconds)
+            return (low: fastEnd, high: slowEnd)
+        }
+        // Fast/mid zones — tolerance around prescribed base
+        if let tol = tolerancePercent, let b = base {
+            let delta = b * tol
+            return (low: b - delta, high: b + delta)
+        }
+        return nil
+    }
+}
+
+/// Format a pace range (in seconds/mile) as "M:SS–M:SS/mi". Uses an en-dash.
+/// If low and high are within 1 second, collapses to a single pace to avoid
+/// nonsense ranges like "6:20–6:20/mi".
+func formatPaceRange(low: Double, high: Double) -> String {
+    let lowFmt = PaceCalculator.formatPace(low)
+    let highFmt = PaceCalculator.formatPace(high)
+    if lowFmt == highFmt {
+        return "\(lowFmt)/mi"
+    }
+    return "\(lowFmt)–\(highFmt)/mi"
 }
 
 // MARK: - Equivalent Paces
@@ -255,32 +422,31 @@ struct EquivalentPaces {
             return Double(seconds) / miles
         }
 
-        self.mpPace = paceOverrides[.mp] ?? pace(for: "marathon")
-        self.hmPace = paceOverrides[.hm] ?? pace(for: "half")
-        self.tenKPace = paceOverrides[.tenK] ?? pace(for: "10K")
+        let mp = paceOverrides[.mp] ?? pace(for: "marathon")
+        let hm = paceOverrides[.hm] ?? pace(for: "half")
+        let tenK = paceOverrides[.tenK] ?? pace(for: "10K")
+        self.mpPace = mp
+        self.hmPace = hm
+        self.tenKPace = tenK
         self.fiveKPace = paceOverrides[.fiveK] ?? pace(for: "5K")
         self.threeKPace = paceOverrides[.threeK] ?? pace(for: "3K")
         self.milePace = paceOverrides[.mile] ?? pace(for: "mile")
 
-        // Training zones — use pace chart system (all based off MP, matching PaceChartView)
-        let mp = self.mpPace
-        self.easyPace = paceOverrides[.easy] ?? mp / 0.75
-        self.longRunPace = paceOverrides[.longRun] ?? mp / 0.78
-        self.moderatePace = paceOverrides[.moderate] ?? mp / 0.80
-        self.steadyPace = paceOverrides[.steady] ?? mp / 0.90
-        self.recoveryPace = paceOverrides[.recovery] ?? mp / 0.70
-
-        // LT/Threshold: 1-hour pace (pace chart "LT" — interpolated between 10K and half)
-        self.thresholdPace = paceOverrides[.threshold] ?? PaceCalculator.calculateOneHourPace(
+        let thresholdHint = PaceCalculator.calculateOneHourPace(
             fromDistance: fromKey, totalSeconds: goalTimeSeconds
-        ) ?? (mp / 0.92)
+        )
+        let zones = Self.derivedZones(mp: mp, hm: hm, tenK: tenK, thresholdHint: thresholdHint)
+        self.recoveryPace = paceOverrides[.recovery] ?? zones.recovery
+        self.easyPace = paceOverrides[.easy] ?? zones.easy
+        self.longRunPace = paceOverrides[.longRun] ?? zones.longRun
+        self.moderatePace = paceOverrides[.moderate] ?? zones.moderate
+        self.steadyPace = paceOverrides[.steady] ?? zones.steady
+        self.thresholdPace = paceOverrides[.threshold] ?? zones.threshold
     }
 
-    /// Create from raw pace values (sec/mi) — used when deriving zones from runner's own data
+    /// Create from raw race-anchor paces (sec/mi) — zones are derived identically
+    /// to the race-goal initializer so both paths produce the same zone table.
     init(
-        easyPace: Double,
-        moderatePace: Double,
-        steadyPace: Double,
         mpPace: Double,
         hmPace: Double,
         tenKPace: Double,
@@ -289,21 +455,89 @@ struct EquivalentPaces {
         milePace: Double
     ) {
         self.goalRaceDistance = .marathon
-        self.goalTimeSeconds = Int(mpPace * 26.2)
-        self.recoveryPace = easyPace * 1.08
-        self.easyPace = easyPace
-        self.longRunPace = (easyPace + moderatePace) / 2
-        self.moderatePace = moderatePace
-        self.steadyPace = steadyPace
+        self.goalTimeSeconds = Int(mpPace * RaceDistanceConstants.marathonMiles)
         self.mpPace = mpPace
         self.hmPace = hmPace
-        self.thresholdPace = (hmPace + tenKPace) / 2
         self.tenKPace = tenKPace
         self.fiveKPace = fiveKPace
         self.threeKPace = threeKPace
         self.milePace = milePace
         self.disabledPaces = []
         self.paceOverrides = [:]
+
+        let zones = Self.derivedZones(mp: mpPace, hm: hmPace, tenK: tenKPace, thresholdHint: nil)
+        self.recoveryPace = zones.recovery
+        self.easyPace = zones.easy
+        self.longRunPace = zones.longRun
+        self.moderatePace = zones.moderate
+        self.steadyPace = zones.steady
+        self.thresholdPace = zones.threshold
+    }
+
+    // MARK: - Zone Derivation
+
+    struct ZoneTable: Equatable {
+        let recovery: Double
+        let easy: Double
+        let longRun: Double
+        let moderate: Double
+        let steady: Double
+        let threshold: Double
+    }
+
+    // Training-pace coefficients on MP using the canonical "% of MP" framework.
+    // Convention: X% of MP = MP × (2 - X/100). E.g. MP 3:00/km × 1.10 = 3:18/km
+    // at 90% MP. A coefficient > 1.0 means slower than MP.
+    //
+    // Canonical 10-zone spectrum, exact reciprocal multipliers (must match
+    // _shared/pace-engine.ts TRAINING_PACE_MULTIPLIERS):
+    //   Recovery: 60-70% MP (slow=1.6667 / fast=1.4286)  — midpoint: 1.5476 (65%)
+    //   Easy:     70-80% MP (slow=1.4286 / fast=1.25)    — midpoint: 1.3393 (75%)
+    //   Moderate: 80-90% MP (slow=1.25 / fast=1.1111)    — midpoint: 1.1806 (85%)
+    //   Steady:   90-100% MP (slow=1.1111 / fast=1.0)    — midpoint: 1.0556 (95%)
+    //
+    // The single-number ratios below are midpoint anchors used by surfaces
+    // that can't yet render a range. They will be retired once those surfaces
+    // migrate to the engine's range output.
+    static let recoveryMPRatio: Double = 1.5476 // 65% MP speed — midpoint of recovery band
+    static let easyMPRatio: Double = 1.3393     // 75% MP speed — midpoint of easy band
+    static let longRunMPRatio: Double = 1.3393  // = easy (legacy alias)
+    static let moderateMPRatio: Double = 1.1806 // 85% MP speed — midpoint of moderate band
+    static let steadyMPRatio: Double = 1.0556   // 95% MP speed — midpoint of steady band
+
+    /// Derive training-zone paces from race-pace anchors. Used by both initializers
+    /// so the zone table is identical when inputs are equivalent.
+    static func derivedZones(
+        mp: Double,
+        hm: Double,
+        tenK: Double,
+        thresholdHint: Double?
+    ) -> ZoneTable {
+        let threshold = thresholdHint ?? oneHourPace(tenKPace: tenK, hmPace: hm)
+        return ZoneTable(
+            recovery: mp * recoveryMPRatio,
+            easy: mp * easyMPRatio,
+            longRun: mp * longRunMPRatio,
+            moderate: mp * moderateMPRatio,
+            steady: mp * steadyMPRatio,
+            threshold: threshold
+        )
+    }
+
+    /// Interpolate 1-hour (LT) pace from raw 10K and half-marathon paces.
+    /// Mirrors `PaceCalculator.calculateOneHourPace` but works from paces
+    /// rather than a race-time anchor — so init #2 produces the same threshold.
+    static func oneHourPace(tenKPace: Double, hmPace: Double) -> Double {
+        let distance10K = RaceDistanceConstants.tenKMiles
+        let distanceHalf = RaceDistanceConstants.halfMarathonMiles
+        let time10K = tenKPace * distance10K
+        let timeHalf = hmPace * distanceHalf
+        let target = 3600.0
+        if time10K >= target { return tenKPace }
+        if timeHalf <= target { return hmPace }
+        let fraction = (target - time10K) / (timeHalf - time10K)
+        let distanceInOneHour = distance10K + fraction * (distanceHalf - distance10K)
+        return target / distanceInOneHour
     }
 
     /// All named paces ordered from slowest to fastest (excluding disabled paces)

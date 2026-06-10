@@ -37,10 +37,34 @@ final class WorkoutSyncService {
             for workout in workouts {
                 guard workout.distanceMiles > 0 else { continue }
 
+                // Dedup against existing training_logs. Two-tier match:
+                //
+                //   Tight (auto-sync ↔ auto-sync):
+                //     ±5 min on workout_date AND ±0.2 mi on distance.
+                //     Catches re-syncs of the same Vital/HealthKit workout.
+                //
+                //   Loose (auto-sync ↔ any other source):
+                //     same calendar day AND ±0.5 mi.
+                //     Voice logs are timestamped at recording time (often
+                //     post-run); Strava rows are imported from Strava with
+                //     local-time timestamps that drift hours from the Vital
+                //     UTC stamp. The tight window misses both, producing
+                //     duplicate rows that sum in the daily intensity grid
+                //     and the pace-volume analyzer. The loose window
+                //     preserves real doubles (two separate runs in one day
+                //     are typically not within 0.5 mi of each other; if
+                //     they are, the existing row already captures the
+                //     workout).
+                let cal = Calendar.current
                 let alreadyLogged = existingLogs.contains { log in
                     guard let logDate = log.workoutDate else { return false }
-                    return abs(logDate.timeIntervalSince(workout.startDate)) < 300
-                        && abs((log.workoutDistanceMiles ?? 0) - workout.distanceMiles) < 0.2
+                    let dist = log.workoutDistanceMiles ?? 0
+                    let tight = abs(logDate.timeIntervalSince(workout.startDate)) < 300
+                        && abs(dist - workout.distanceMiles) < 0.2
+                    let crossSource = (log.source == "voice_log" || log.source == "strava")
+                        && cal.isDate(logDate, inSameDayAs: workout.startDate)
+                        && abs(dist - workout.distanceMiles) < 0.5
+                    return tight || crossSource
                 }
 
                 if !alreadyLogged {
@@ -53,13 +77,16 @@ final class WorkoutSyncService {
                     // Fetch Vital stream and compute pace segments
                     var segments: [PaceSegment]?
                     var workoutType: String
+                    var vitalStream: VitalWorkoutStream?
                     if let streamId = workout.vitalWorkoutId {
-                        let stream = await VitalManager.shared.fetchWorkoutStream(workoutId: streamId)
-                        if let stream {
+                        vitalStream = await VitalManager.shared.fetchWorkoutStream(workoutId: streamId)
+                        if let stream = vitalStream {
                             let paceSplits = VitalManager.shared.calculatePaceSplits(from: stream)
                             if !paceSplits.isEmpty {
                                 segments = classifyPaceSplits(paceSplits, overallPace: paceMinutes)
-                                workoutType = deriveWorkoutType(from: segments!, distance: workout.distanceMiles)
+                            }
+                            if let segments, !segments.isEmpty {
+                                workoutType = deriveWorkoutType(from: segments, distance: workout.distanceMiles)
                             } else {
                                 workoutType = classifyWorkout(distance: workout.distanceMiles, pace: paceMinutes * 60)
                             }
@@ -68,6 +95,22 @@ final class WorkoutSyncService {
                         }
                     } else {
                         workoutType = classifyWorkout(distance: workout.distanceMiles, pace: paceMinutes * 60)
+                    }
+
+                    // Persist sensor streams so the workout-detail charts have
+                    // data to render. Prefer the Vital stream we just fetched;
+                    // otherwise read the HealthKit workout directly (HR samples
+                    // + GPS route). Stays nil for runs with no telemetry.
+                    var externalStreams: ExternalStreamsPayload?
+                    if let stream = vitalStream {
+                        externalStreams = ExternalStreamsPayload.from(vitalStream: stream, calories: workout.calories)
+                    }
+                    if externalStreams == nil,
+                       let hkWorkout = await HealthKitManager.shared.fetchWorkoutWithUUID(workout.id) {
+                        externalStreams = await HealthKitManager.shared.buildExternalStreams(
+                            for: hkWorkout,
+                            calories: workout.calories
+                        )
                     }
 
                     var insert = TrainingLogInsert()
@@ -81,6 +124,7 @@ final class WorkoutSyncService {
                     insert.source = "auto_sync"
                     insert.vitalWorkoutId = vitalId
                     insert.paceSegments = segments
+                    insert.externalStreams = externalStreams
 
                     inserts.append(insert)
                 }
@@ -100,6 +144,8 @@ final class WorkoutSyncService {
 
                 lastSyncCount = inserts.count
                 Log.coach.info("Auto-synced \(inserts.count) workouts to training_logs")
+
+                await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
 
                 // Trigger workout feature computation + post-run analysis for synced workouts
                 let syncedIds = inserted.map { $0.id.uuidString }

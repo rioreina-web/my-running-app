@@ -10,6 +10,35 @@
 import Foundation
 import SwiftUI
 
+private let postgresTimestampFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX"
+    return f
+}()
+
+private let iso8601NoFraction: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.timeZone = TimeZone(secondsFromGMT: 0)
+    f.dateFormat = "yyyy-MM-dd'T'HH:mm:ssXXXXX"
+    return f
+}()
+
+private let dateOnlyFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    // Parse YYYY-MM-DD as LOCAL midnight, not UTC. Using UTC would shift every
+    // workout one day earlier in any negative-offset timezone (so a workout
+    // dated 2026-04-27 lands on Sun Apr 26 in PDT). Bare date columns from
+    // Postgres are calendar-day values with no timezone meaning — local
+    // midnight is the right interpretation everywhere they're displayed.
+    f.timeZone = TimeZone.current
+    f.dateFormat = "yyyy-MM-dd"
+    return f
+}()
+
 // MARK: - Training Plan
 
 /// A complete training plan spanning multiple months
@@ -28,6 +57,13 @@ struct TrainingPlan: Identifiable, Codable {
     /// Set when this plan was generated from a coach's plan template
     var coachId: UUID?
     var planTemplateId: UUID?
+    /// "self" (default, athlete-generated) or "coach" (from a coach template)
+    var sourceType: String?
+    /// "fixed" | "adaptive" (only meaningful when sourceType == "coach")
+    var planType: String?
+
+    var isCoachPlan: Bool { sourceType == "coach" || coachId != nil || planTemplateId != nil }
+    var isAdaptive: Bool { planType == "adaptive" }
 
     /// Parsed race distance enum (defaults to marathon for legacy data)
     var raceDistance: RaceDistance {
@@ -62,6 +98,81 @@ struct TrainingPlan: Identifiable, Codable {
         case updatedAt = "updated_at"
         case coachId = "coach_id"
         case planTemplateId = "plan_template_id"
+        case sourceType = "source_type"
+        case planType = "plan_type"
+    }
+
+    // Explicit memberwise init (the implicit one is removed when we add init(from:) below)
+    init(
+        id: UUID,
+        userId: String,
+        goalId: UUID? = nil,
+        name: String,
+        startDate: Date,
+        endDate: Date,
+        targetRaceDistance: String,
+        targetTimeSeconds: Int,
+        status: PlanStatus,
+        createdAt: Date,
+        updatedAt: Date,
+        coachId: UUID? = nil,
+        planTemplateId: UUID? = nil,
+        sourceType: String? = nil,
+        planType: String? = nil
+    ) {
+        self.id = id
+        self.userId = userId
+        self.goalId = goalId
+        self.name = name
+        self.startDate = startDate
+        self.endDate = endDate
+        self.targetRaceDistance = targetRaceDistance
+        self.targetTimeSeconds = targetTimeSeconds
+        self.status = status
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.coachId = coachId
+        self.planTemplateId = planTemplateId
+        self.sourceType = sourceType
+        self.planType = planType
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.userId = try c.decode(String.self, forKey: .userId)
+        self.goalId = try? c.decode(UUID.self, forKey: .goalId)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.startDate = try TrainingPlan.decodeFlexibleDate(c, key: .startDate)
+        self.endDate = try TrainingPlan.decodeFlexibleDate(c, key: .endDate)
+        self.targetRaceDistance = try c.decode(String.self, forKey: .targetRaceDistance)
+        self.targetTimeSeconds = try c.decode(Int.self, forKey: .targetTimeSeconds)
+        self.status = try c.decode(PlanStatus.self, forKey: .status)
+        self.createdAt = try TrainingPlan.decodeFlexibleDate(c, key: .createdAt)
+        self.updatedAt = try TrainingPlan.decodeFlexibleDate(c, key: .updatedAt)
+        self.coachId = try? c.decode(UUID.self, forKey: .coachId)
+        self.planTemplateId = try? c.decode(UUID.self, forKey: .planTemplateId)
+        self.sourceType = try? c.decode(String.self, forKey: .sourceType)
+        self.planType = try? c.decode(String.self, forKey: .planType)
+    }
+
+    /// Handles Postgres timestamps with microsecond precision, plain `yyyy-MM-dd`
+    /// date-only values, and ISO8601 w/o fractions. Falls back to epoch 0 on parse
+    /// failure so a bad date doesn't blow up the whole plan load.
+    private static func decodeFlexibleDate(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) throws -> Date {
+        let s = try c.decode(String.self, forKey: key)
+        if let d = postgresTimestampFormatter.date(from: s) { return d }
+        if let d = iso8601NoFraction.date(from: s) { return d }
+        if let d = dateOnlyFormatter.date(from: s) { return d }
+        // Truncate sub-second to millis and retry ISO8601.
+        let millisString = s.replacingOccurrences(of: #"\.(\d{3})\d+"#, with: ".$1", options: .regularExpression)
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: millisString) { return d }
+        let iso2 = ISO8601DateFormatter()
+        iso2.formatOptions = [.withInternetDateTime]
+        if let d = iso2.date(from: millisString) { return d }
+        throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "Unparseable date: \(s)")
     }
 
     /// Total weeks in the plan
@@ -132,6 +243,8 @@ struct TrainingPlanInsert: Codable {
     var targetRaceDistance: String = "marathon"
     var targetTimeSeconds: Int
     var status: String = "active"
+    var sourceType: String = "self"
+    var planType: String = "fixed"
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -143,6 +256,8 @@ struct TrainingPlanInsert: Codable {
         case targetRaceDistance = "target_race_distance"
         case targetTimeSeconds = "target_time_seconds"
         case status
+        case sourceType = "source_type"
+        case planType = "plan_type"
     }
 }
 
@@ -165,6 +280,25 @@ struct ScheduledWorkout: Identifiable, Codable {
     var notes: String?
     var createdAt: Date
     var updatedAt: Date
+    /// Two-lane model: who placed this workout on this date
+    var source: String?
+    /// Two-lane model: can the athlete drag this to another day?
+    var isMovable: Bool?
+    /// Two-lane model: links back to quality session pool template
+    var poolTemplateId: UUID?
+    /// Open-Meteo forecast for the planned workout day, populated by
+    /// fetch-workout-weather. Nil when no forecast has been fetched
+    /// (e.g., the daily cron hasn't run since the workout was scheduled).
+    var weatherForecast: WorkoutForecast?
+    /// Per-workout scheduled local hour (0-23). When set, the heat
+    /// forecast is pulled for THIS hour rather than the athlete's
+    /// profile-level preferred_run_time. Stored as a plain integer
+    /// (not a timestamptz) so we can match Open-Meteo's local-time
+    /// hourly array without needing the athlete's timezone. Nullable —
+    /// most workouts inherit the profile preference until the athlete
+    /// taps the time pill on the workout detail and picks something
+    /// custom.
+    var scheduledHour: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -182,10 +316,104 @@ struct ScheduledWorkout: Identifiable, Codable {
         case notes
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case source
+        case isMovable = "is_movable"
+        case poolTemplateId = "pool_template_id"
+        case weatherForecast = "weather_forecast"
+        case scheduledHour = "scheduled_hour"
+    }
+
+    init(
+        id: UUID, planId: UUID, date: Date, dayOfWeek: Int, weekNumber: Int, session: Int,
+        workout: PlannedWorkout?, workoutType: ScheduledWorkoutType, status: WorkoutStatus,
+        completedWorkoutId: UUID? = nil, notes: String? = nil,
+        createdAt: Date, updatedAt: Date
+    ) {
+        self.id = id
+        self.planId = planId
+        self.date = date
+        self.dayOfWeek = dayOfWeek
+        self.weekNumber = weekNumber
+        self.session = session
+        self.workout = workout
+        self.workoutType = workoutType
+        self.status = status
+        self.completedWorkoutId = completedWorkoutId
+        self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(UUID.self, forKey: .id)
+        self.planId = try c.decode(UUID.self, forKey: .planId)
+        self.date = try ScheduledWorkout.decodeFlexibleDate(c, key: .date)
+        self.dayOfWeek = try c.decode(Int.self, forKey: .dayOfWeek)
+        self.weekNumber = try c.decode(Int.self, forKey: .weekNumber)
+        self.session = (try? c.decode(Int.self, forKey: .session)) ?? 1
+        self.workout = try? c.decode(PlannedWorkout.self, forKey: .workout)
+        self.workoutType = try c.decode(ScheduledWorkoutType.self, forKey: .workoutType)
+        self.status = try c.decode(WorkoutStatus.self, forKey: .status)
+        self.completedWorkoutId = try? c.decode(UUID.self, forKey: .completedWorkoutId)
+        self.workoutCode = try? c.decode(String.self, forKey: .workoutCode)
+        self.isAutoSelected = try? c.decode(Bool.self, forKey: .isAutoSelected)
+        self.notes = try? c.decode(String.self, forKey: .notes)
+        self.createdAt = (try? ScheduledWorkout.decodeFlexibleDate(c, key: .createdAt)) ?? Date()
+        self.updatedAt = (try? ScheduledWorkout.decodeFlexibleDate(c, key: .updatedAt)) ?? Date()
+        self.source = try? c.decode(String.self, forKey: .source)
+        self.isMovable = try? c.decode(Bool.self, forKey: .isMovable)
+        self.poolTemplateId = try? c.decode(UUID.self, forKey: .poolTemplateId)
+        self.weatherForecast = try? c.decode(WorkoutForecast.self, forKey: .weatherForecast)
+        // smallint 0-23 from the DB; nil = inherit profile preference.
+        self.scheduledHour = try? c.decode(Int.self, forKey: .scheduledHour)
+    }
+
+    /// Handles yyyy-MM-dd date-only strings (for `date` field) AND full
+    /// Postgres timestamps (for `created_at`/`updated_at`).
+    private static func decodeFlexibleDate(_ c: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) throws -> Date {
+        let s = try c.decode(String.self, forKey: key)
+        let dateOnly = DateFormatter()
+        dateOnly.locale = Locale(identifier: "en_US_POSIX")
+        // Local midnight, not UTC — see comment on dateOnlyFormatter above.
+        dateOnly.timeZone = TimeZone.current
+        dateOnly.dateFormat = "yyyy-MM-dd"
+        if let d = dateOnly.date(from: s) { return d }
+
+        let pgTs = DateFormatter()
+        pgTs.locale = Locale(identifier: "en_US_POSIX")
+        pgTs.timeZone = TimeZone(secondsFromGMT: 0)
+        pgTs.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXXXX"
+        if let d = pgTs.date(from: s) { return d }
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: s) { return d }
+
+        let iso2 = ISO8601DateFormatter()
+        iso2.formatOptions = [.withInternetDateTime]
+        if let d = iso2.date(from: s) { return d }
+
+        // Postgres micro-second precision — truncate to millis and retry
+        let millisString = s.replacingOccurrences(of: #"\.(\d{3})\d+"#, with: ".$1", options: .regularExpression)
+        if let d = iso.date(from: millisString) { return d }
+        if let d = iso2.date(from: millisString) { return d }
+
+        throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "Unparseable date: \(s)")
     }
 
     var isRestDay: Bool {
         workoutType == .rest
+    }
+
+    /// Whether this is a quality session (coach-prescribed hard workout)
+    var isQualitySession: Bool {
+        source == "coach_locked" || source == "athlete_drag"
+    }
+
+    /// Whether the athlete can drag this workout to another day
+    var canMove: Bool {
+        isMovable ?? false
     }
 
     var isToday: Bool {
@@ -363,6 +591,8 @@ struct ScheduledWorkoutInsert: Codable {
     var workoutType: ScheduledWorkoutType
     var status: String = "scheduled"
     var notes: String?
+    var source: String = "legacy"
+    var isMovable: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case planId = "plan_id"
@@ -374,6 +604,45 @@ struct ScheduledWorkoutInsert: Codable {
         case workoutType = "workout_type"
         case status
         case notes
+        case source
+        case isMovable = "is_movable"
+    }
+}
+
+// MARK: - Quality Session Template
+
+/// A quality session in the weekly pool — not tied to a specific date until the athlete places it.
+struct QualitySessionTemplate: Identifiable, Codable {
+    let id: UUID
+    var planId: UUID
+    var weekNumber: Int
+    var purpose: String
+    var workoutType: ScheduledWorkoutType
+    var workoutData: PlannedWorkout?
+    var targetPacePercentage: Double?
+    var targetDistanceMiles: Double?
+    var targetDurationMinutes: Double?
+    var priorityRank: Int
+    var suggestedDayOfWeek: Int?
+    var isPlaced: Bool
+    var createdAt: Date
+    var updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case planId = "plan_id"
+        case weekNumber = "week_number"
+        case purpose
+        case workoutType = "workout_type"
+        case workoutData = "workout_data"
+        case targetPacePercentage = "target_pace_percentage"
+        case targetDistanceMiles = "target_distance_miles"
+        case targetDurationMinutes = "target_duration_minutes"
+        case priorityRank = "priority_rank"
+        case suggestedDayOfWeek = "suggested_day_of_week"
+        case isPlaced = "is_placed"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 }
 

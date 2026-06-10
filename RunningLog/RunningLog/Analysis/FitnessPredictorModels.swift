@@ -49,8 +49,39 @@ struct RaceAnchorInfo {
 struct RacePredictionItem: Identifiable {
     let id = UUID()
     let distance: String   // "5K", "10K", "HALF", "MARATHON"
-    let time: String       // "19:45", "1:32:10"
+    let time: String       // "19:45", "1:32:10" — unrounded raw point estimate
     let pace: String       // "6:22/mi"
+    /// Half-window in seconds around the point estimate. Renderer shows
+    /// `point ± rangeSeconds` rounded to whole minutes per CLAUDE.md hard rule #7.
+    let pointSeconds: Int
+    let rangeSeconds: Int
+}
+
+// MARK: - ConfidenceTier
+
+/// Deterministic prediction confidence per CLAUDE.md hard rule #7. Lower-case
+/// canonical — `DataSources.confidence` retains the legacy mixed-case string.
+enum ConfidenceTier: String {
+    case high, medium, low
+
+    var displayLabel: String {
+        switch self {
+        case .high:   return "HIGH CONFIDENCE"
+        case .medium: return "MEDIUM CONFIDENCE"
+        case .low:    return "LOW CONFIDENCE"
+        }
+    }
+
+    /// Half-window as a fraction of the point estimate. Calibrated so the
+    /// high→medium gap on a 3:11 marathon is ~6 minutes (matches the tune-up
+    /// race example in outputs/marathon-prediction-honesty.md).
+    var rangeFraction: Double {
+        switch self {
+        case .high:   return 0.015
+        case .medium: return 0.030
+        case .low:    return 0.050
+        }
+    }
 }
 
 // MARK: - DataSources
@@ -59,7 +90,8 @@ struct DataSources {
     let workoutCount: Int
     let voiceLogCount: Int
     let hardEffortCount: Int
-    let confidence: String  // "High", "Medium", "Low"
+    let confidence: String        // legacy mixed-case
+    let confidenceTier: ConfidenceTier
 }
 
 // MARK: - FitnessSnapshot
@@ -149,4 +181,51 @@ struct VoiceLogData {
     let extractedWorkout: ExtractedWorkoutData?
     // Pace segments from GPS stream analysis (stored in training_logs)
     let paceSegments: [PaceSegment]?
+    // Observer-layer AI parse: type, pattern, equivalent race pace, etc.
+    // When present, this is the highest-quality signal — used as fitness anchor.
+    let parsedStructure: ParsedStructure?
+}
+
+// MARK: - ParsedStructure
+
+/// Output of parse-workout-structure edge function. Matches the JSON schema
+/// that function emits (see supabase/functions/parse-workout-structure/index.ts).
+struct ParsedStructure: Codable {
+    let type: String
+    let pattern: String?
+    let confidence: Double
+    let workSummary: WorkSummary?
+    let equivalentRacePace: EquivalentRacePace?
+
+    enum CodingKeys: String, CodingKey {
+        case type, pattern, confidence
+        case workSummary = "work_summary"
+        case equivalentRacePace = "equivalent_race_pace"
+    }
+
+    struct WorkSummary: Codable {
+        let totalDistanceMi: Double?
+        let totalDurationS: Double?
+        let avgWorkPacePerMile: String?
+        let peakSustainedPacePerMile: String?
+
+        enum CodingKeys: String, CodingKey {
+            case totalDistanceMi = "total_distance_mi"
+            case totalDurationS = "total_duration_s"
+            case avgWorkPacePerMile = "avg_work_pace_per_mile"
+            case peakSustainedPacePerMile = "peak_sustained_pace_per_mile"
+        }
+    }
+
+    struct EquivalentRacePace: Codable {
+        let distanceKey: String          // "mile" | "fiveK" | "tenK" | "halfMarathon" | "marathon"
+        let pacePerMile: String          // "M:SS"
+        let reasoning: String?
+
+        enum CodingKeys: String, CodingKey {
+            case distanceKey = "distance_key"
+            case pacePerMile = "pace_per_mile"
+            case reasoning
+        }
+    }
 }

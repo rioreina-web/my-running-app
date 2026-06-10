@@ -106,7 +106,7 @@ final class AIInsightsService {
                 .eq("id", value: insight.id.uuidString)
                 .execute()
 
-            if let idx = insights.firstIndex(where: { $0.id == insight.id }) {
+            if insights.contains(where: { $0.id == insight.id }) {
                 // Can't mutate the struct directly, refetch
                 await fetchRecent()
             }
@@ -172,19 +172,19 @@ final class AIInsightsService {
         }
     }
 
+    /// Writes to plan_adjustments — surface via PlanAdjustmentsView, not the AI insights feed.
     @MainActor
     func triggerAdaptiveWorkout() async -> Bool {
         do {
             let userId = AuthManager.shared.userId
             _ = try await callEdgeFunction(
-                name: "adaptive-workout",
-                body: ["user_id": userId]
+                name: "adapt-plan",
+                body: ["user_id": userId, "trigger": "manual"]
             )
-            await fetchRecent()
             return true
         } catch {
-            Log.coach.error("Adaptive workout failed: \(error)")
-            errorMessage = "Could not generate workout suggestion."
+            Log.coach.error("adapt-plan invoke failed: \(error)")
+            errorMessage = "Could not run plan review."
             return false
         }
     }

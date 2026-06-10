@@ -48,8 +48,37 @@ struct AIPlanStep: Codable {
     let durationType: String
     let durationValue: Double
     let pacePercentage: Double?
+    // Named zone preferred over raw percentage. The model emits one of:
+    //   easy, longRun, moderate, steady, mp, hm, threshold, tenK, fiveK,
+    //   threeK, mile, recovery
+    // Falls back to pacePercentage only when the model cannot map the
+    // requested effort to a zone (rare).
+    let paceZone: String?
+    // Off-baseline adjustment authored by the coach or LLM (e.g. "+3% for
+    // heat", "-10s/mi"). Layers on top of paceZone.
+    let paceAdjustment: AIPlanPaceAdjustment?
+    // Interval set count. When >1, this step is rendered as "N × {duration}"
+    // with the recovery nested underneath. The schema MUST be used to
+    // express interval workouts; flat repetition lists or freeform
+    // descriptions are not acceptable substitutes.
+    let repeats: Int?
+    // Between-rep recovery for interval sets. Only meaningful when
+    // repeats > 1. Same fields as a step but no nested repeats/recovery.
+    let recovery: AIPlanStepRecovery?
     let notes: String?
     let order: Int?
+}
+
+struct AIPlanPaceAdjustment: Codable {
+    let type: String   // "percent" | "seconds_per_mile" | "seconds_per_km"
+    let value: Double
+}
+
+struct AIPlanStepRecovery: Codable {
+    let durationType: String
+    let durationValue: Double
+    let paceZone: String?
+    let pacePercentage: Double?
 }
 
 // MARK: - AITrainingPlanService
@@ -128,12 +157,23 @@ final class AITrainingPlanService {
             let weekWorkouts = grouped[weekNum] ?? []
 
             let days: [ImportedDayWorkout] = weekWorkouts.map { w in
-                let steps: [ImportedDayWorkout.ImportedStep] = w.steps.map { s in
-                    ImportedDayWorkout.ImportedStep(
+                let steps: [ImportedDayWorkout.ImportedStep] = w.steps.map { s -> ImportedDayWorkout.ImportedStep in
+                    let recovery: ImportedDayWorkout.ImportedStepRecovery? = s.recovery.map { r in
+                        ImportedDayWorkout.ImportedStepRecovery(
+                            durationType: r.durationType,
+                            durationValue: r.durationValue,
+                            paceSecondsPerKm: nil,
+                            pacePercentage: r.pacePercentage
+                        )
+                    }
+                    return ImportedDayWorkout.ImportedStep(
                         stepType: s.stepType,
                         durationType: s.durationType,
                         durationValue: s.durationValue,
                         pacePercentage: s.pacePercentage,
+                        paceReference: s.paceZone,
+                        repeats: s.repeats,
+                        recovery: recovery,
                         notes: s.notes,
                         order: s.order
                     )

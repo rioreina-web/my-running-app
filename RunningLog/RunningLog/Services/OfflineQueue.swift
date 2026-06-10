@@ -70,7 +70,12 @@ final class OfflineQueueManager {
 
         let upload = PendingUpload(type: "voiceLog", payload: payloadData, localFilePath: audioURL.path)
         context.insert(upload)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            Log.app.error("SwiftData save failed (enqueue voice log): \(error)")
+            ErrorReporter.shared.report(error, context: "OfflineQueue: failed to persist voice log to queue")
+        }
         refreshCountSync(context: context)
         logger.info("Queued voice log upload: \(upload.id)")
     }
@@ -85,7 +90,12 @@ final class OfflineQueueManager {
 
         let upload = PendingUpload(type: "manualWorkout", payload: payloadData)
         context.insert(upload)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            Log.app.error("SwiftData save failed (enqueue manual workout): \(error)")
+            ErrorReporter.shared.report(error, context: "OfflineQueue: failed to persist manual workout to queue")
+        }
         refreshCountSync(context: context)
         logger.info("Queued manual workout upload")
     }
@@ -98,7 +108,12 @@ final class OfflineQueueManager {
 
         let upload = PendingUpload(type: "trainingLog", payload: payload)
         context.insert(upload)
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            Log.app.error("SwiftData save failed (enqueue training log): \(error)")
+            ErrorReporter.shared.report(error, context: "OfflineQueue: failed to persist training log to queue")
+        }
         refreshCountSync(context: context)
     }
 
@@ -135,7 +150,7 @@ final class OfflineQueueManager {
             guard !Task.isCancelled else { break }
 
             upload.status = "uploading"
-            try? context.save()
+            do { try context.save() } catch { Log.app.error("SwiftData save failed (mark uploading): \(error)") }
 
             let success = await processUpload(upload)
 
@@ -145,7 +160,7 @@ final class OfflineQueueManager {
                     try? FileManager.default.removeItem(atPath: filePath)
                 }
                 context.delete(upload)
-                try? context.save()
+                do { try context.save() } catch { Log.app.error("SwiftData save failed (delete after upload): \(error)") }
                 logger.info("Upload succeeded: \(upload.id) (\(upload.type))")
             } else {
                 upload.retryCount += 1
@@ -160,7 +175,7 @@ final class OfflineQueueManager {
                     upload.status = "pending"
                     logger.warning("Upload failed (attempt \(upload.retryCount)): \(upload.id)")
                 }
-                try? context.save()
+                do { try context.save() } catch { Log.app.error("SwiftData save failed (update retry status): \(error)") }
             }
 
             refreshCountSync(context: context)
@@ -213,6 +228,7 @@ final class OfflineQueueManager {
             ]
 
             _ = try await callEdgeFunction(name: "process-training-memo", body: logData)
+            await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
             return true
         } catch {
             upload.lastError = error.localizedDescription
@@ -226,6 +242,7 @@ final class OfflineQueueManager {
         do {
             let body = try JSONSerialization.jsonObject(with: upload.payload) as? [String: Any] ?? [:]
             _ = try await callEdgeFunction(name: "log-manual-workout", body: body)
+            await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
             return true
         } catch {
             upload.lastError = error.localizedDescription
@@ -238,6 +255,7 @@ final class OfflineQueueManager {
         do {
             let body = try JSONSerialization.jsonObject(with: upload.payload) as? [String: Any] ?? [:]
             _ = try await callEdgeFunction(name: "log-training", body: body)
+            await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
             return true
         } catch {
             upload.lastError = error.localizedDescription

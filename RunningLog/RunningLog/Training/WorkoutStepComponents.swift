@@ -124,7 +124,21 @@ struct EditableWorkoutStepRow: View {
                 racePaceSeconds: racePaceSeconds
             )
 
-            // Row 4: Notes
+            // Row 4: Interval reps + recovery (active steps only).
+            // Shared with WorkoutTemplateEditorView's TemplateStepRow so
+            // both surfaces stay in sync with the data model. Before this
+            // section existed, opening a "7 × mile" workout in DayDetailSheet
+            // displayed it as a single 1-mile step — same regression class
+            // as the template editor's, in a different file.
+            if step.stepType == .active {
+                IntervalRepsSection(
+                    step: $step,
+                    equivalentPaces: equivalentPaces,
+                    racePaceSeconds: racePaceSeconds
+                )
+            }
+
+            // Row 5: Notes
             TextField("Notes (optional)", text: $step.notes)
                 .font(.dripBody(13))
                 .foregroundStyle(Color.drip.textPrimary)
@@ -140,6 +154,146 @@ struct EditableWorkoutStepRow: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.drip.coral.opacity(0.3), lineWidth: 1)
         )
+    }
+}
+
+// MARK: - Interval Reps + Recovery (shared)
+
+/// Reps stepper + lazily-materialized recovery sub-row, scoped to one
+/// active step. Used by both WorkoutTemplateEditorView's TemplateStepRow
+/// and DayDetailSheet's EditableWorkoutStepRow so the two editor surfaces
+/// render interval structure identically. Owns the "Make this an interval
+/// set" entry affordance, the rep counter, the Remove control, and the
+/// recovery editor.
+///
+/// The step's `repeats` field is the source of truth. When `repeats > 1`
+/// the recovery sub-row appears; when `repeats == nil` only the "Make this
+/// an interval set" link is shown.
+struct IntervalRepsSection: View {
+    @Binding var step: EditableWorkoutStep
+    let equivalentPaces: EquivalentPaces
+    let racePaceSeconds: Double
+
+    var body: some View {
+        if let reps = step.repeats, reps > 1 {
+            VStack(alignment: .leading, spacing: 8) {
+                // Reps counter + remove
+                HStack(spacing: 12) {
+                    Text("Reps")
+                        .font(.dripCaption(11))
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .tracking(1.0)
+                    Stepper("", value: Binding(
+                        get: { step.repeats ?? 2 },
+                        set: { step.repeats = max(2, $0) }
+                    ), in: 2...30)
+                    .labelsHidden()
+                    Text("× \(reps)")
+                        .font(.dripStat(15))
+                        .foregroundStyle(Color.drip.coral)
+                        .frame(minWidth: 36, alignment: .leading)
+                    Spacer()
+                    Button {
+                        step.repeats = nil
+                        step.recovery = nil
+                    } label: {
+                        Text("Remove")
+                            .font(.dripCaption(11))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                }
+
+                // Recovery sub-row. Lazy-initialized to (90s @ recovery)
+                // when reps go above 1 so the coach never sees an empty
+                // recovery slot.
+                recoveryEditor
+            }
+            .padding(.top, 4)
+            .padding(.leading, 8)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.drip.coral.opacity(0.25))
+                    .frame(width: 2)
+            }
+        } else {
+            Button {
+                step.repeats = 4
+                step.recovery = EditableWorkoutStep.EditableRecovery(
+                    durationType: .timeSeconds,
+                    durationValue: 90,
+                    paceSelection: .namedPace(.recovery)
+                )
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "repeat")
+                        .font(.system(size: 11))
+                    Text("Make this an interval set")
+                        .font(.dripCaption(12))
+                }
+                .foregroundStyle(Color.drip.textSecondary)
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    @ViewBuilder
+    private var recoveryEditor: some View {
+        if step.recovery != nil {
+            let recoveryBinding = Binding<EditableWorkoutStep.EditableRecovery>(
+                get: { step.recovery ?? EditableWorkoutStep.EditableRecovery(
+                    durationType: .timeSeconds,
+                    durationValue: 90,
+                    paceSelection: .namedPace(.recovery)
+                ) },
+                set: { step.recovery = $0 }
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("RECOVERY")
+                    .font(.dripCaption(10))
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .tracking(1.0)
+
+                HStack(spacing: 8) {
+                    if recoveryBinding.wrappedValue.durationType == .timeSeconds {
+                        TimeIntervalField(totalSeconds: Binding(
+                            get: { recoveryBinding.wrappedValue.durationValue },
+                            set: { recoveryBinding.wrappedValue.durationValue = $0 }
+                        ))
+                    } else {
+                        TextField("Value", value: Binding(
+                            get: { recoveryBinding.wrappedValue.durationValue },
+                            set: { recoveryBinding.wrappedValue.durationValue = $0 }
+                        ), format: .number)
+                            .font(.dripStat(13))
+                            .keyboardType(.decimalPad)
+                            .frame(width: 50)
+                    }
+
+                    Picker("", selection: Binding(
+                        get: { recoveryBinding.wrappedValue.durationType },
+                        set: { recoveryBinding.wrappedValue.durationType = $0 }
+                    )) {
+                        ForEach(PlannedWorkoutStep.DurationType.allCases, id: \.self) { dt in
+                            Text(dt.displayLabel).tag(dt)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(Color.drip.textSecondary)
+                    .font(.dripCaption(12))
+                }
+
+                PaceSelectionPicker(
+                    selection: Binding(
+                        get: { recoveryBinding.wrappedValue.paceSelection },
+                        set: { recoveryBinding.wrappedValue.paceSelection = $0 }
+                    ),
+                    equivalentPaces: equivalentPaces,
+                    racePaceSeconds: racePaceSeconds
+                )
+            }
+            .padding(.leading, 6)
+        }
     }
 }
 

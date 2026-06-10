@@ -181,7 +181,11 @@ struct DayStructureEntry: Codable {
 }
 
 struct PhaseConfigData: Codable {
-    var phases: [PhaseEntry]
+    // Phases can be missing — the web plan builder now stores the pace anchor
+    // in this same JSONB without necessarily writing phases. Keeping phases
+    // required caused `join_code` lookup to fail with "data couldn't be read
+    // because it is missing" whenever a template was saved from the web.
+    var phases: [PhaseEntry]?
 
     struct PhaseEntry: Codable {
         var name: String     // "base" | "build" | "specific" | "taper"
@@ -236,12 +240,21 @@ struct PlanTemplateWeek: Codable, Identifiable {
     var theme: String
     var notes: String
     var workouts: [PlanTemplateWorkout]
+    /// Coach's prescribed weekly volume range (the "RANGE 60 - 70 mpw"
+    /// inputs in the web plan-builder). Saved per-week so each week's
+    /// mileage target can step up over the plan. The subscribe-to-plan
+    /// edge function reads these directly; the iOS sheet uses them to
+    /// show "Coach prescribes X–Y mi/week" on the join flow.
+    var targetMilesMin: Double?
+    var targetMilesMax: Double?
 
     enum CodingKeys: String, CodingKey {
         case weekNumber = "weekNumber"
         case theme
         case notes
         case workouts
+        case targetMilesMin = "targetMilesMin"
+        case targetMilesMax = "targetMilesMax"
     }
 
     /// Total planned distance across all workouts in the week (uses step data when explicit distance not set)
@@ -307,6 +320,18 @@ struct PlanTemplateWorkout: Codable, Identifiable {
     var isRest: Bool {
         workoutType == .rest || workoutType == nil
     }
+
+    // Custom decoder: web plan-builder omits `id` from workout entries in the
+    // `weeks` JSONB. Generate one when missing so decoding doesn't fail.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = (try? c.decode(UUID.self, forKey: .id)) ?? UUID()
+        self.dayOfWeek = try c.decode(Int.self, forKey: .dayOfWeek)
+        self.workoutTemplateId = try? c.decode(UUID.self, forKey: .workoutTemplateId)
+        self.workoutType = try? c.decode(ScheduledWorkoutType.self, forKey: .workoutType)
+        self.workoutData = try? c.decode(PlannedWorkout.self, forKey: .workoutData)
+        self.notes = (try? c.decode(String.self, forKey: .notes)) ?? ""
+    }
 }
 
 // MARK: - Coach-Athlete Relationship
@@ -365,6 +390,15 @@ struct AthletePlanSubscription: Identifiable, Codable {
     var startDate: Date
     var status: SubscriptionStatus
     var createdAt: Date
+    // AO-2 columns. Optional on decode so older rows (or partial selects)
+    // don't break loading. The edit-preferences flow re-uses these to
+    // seed the JoinCoachPlanSheet in edit mode (AO-5).
+    var restDows: [Int]?
+    var preferredQualityDows: [Int]?
+    var longRunDow: Int?
+    var volumeRamp: VolumeRamp?
+    var shapePrefs: ShapePrefs?
+    var currentWeeklyMileage: Double?
 
     enum SubscriptionStatus: String, Codable {
         case active
@@ -390,6 +424,12 @@ struct AthletePlanSubscription: Identifiable, Codable {
         case startDate = "start_date"
         case status
         case createdAt = "created_at"
+        case restDows = "rest_dows"
+        case preferredQualityDows = "preferred_quality_dows"
+        case longRunDow = "long_run_dow"
+        case volumeRamp = "volume_ramp"
+        case shapePrefs = "shape_prefs"
+        case currentWeeklyMileage = "current_weekly_mileage"
     }
 }
 
@@ -458,4 +498,54 @@ struct SubscribeToPlanResponse: Codable {
     var trainingPlanId: UUID?
     var subscriptionId: UUID?
     var error: String?
+}
+
+// MARK: - Subscription Preferences (athlete onboarding §AO-1)
+//
+// Athlete-side overrides layered on top of the coach's plan template at
+// subscribe time. The shape mirrors the new columns on
+// `athlete_plan_subscriptions` (migration 20260425200000) and the JSON body
+// the iOS sheet posts to `subscribe-to-plan`. Coding keys are snake_case to
+// match the edge function's expected payload.
+
+struct VolumeRamp: Codable, Equatable {
+    var startMileage: Double
+    var rampToCoachTarget: Bool
+    var rampWeeks: Int
+
+    enum CodingKeys: String, CodingKey {
+        case startMileage = "start_mileage"
+        case rampToCoachTarget = "ramp_to_coach_target"
+        case rampWeeks = "ramp_weeks"
+    }
+}
+
+struct ShapePrefs: Codable, Equatable {
+    var stridesPreQuality: Bool
+    var recoveryAfterLong: Bool
+    var doublesOnEasyDays: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case stridesPreQuality = "strides_pre_quality"
+        case recoveryAfterLong = "recovery_after_long"
+        case doublesOnEasyDays = "doubles_on_easy_days"
+    }
+}
+
+struct SubscriptionPreferences: Codable, Equatable {
+    var restDows: [Int]
+    var preferredQualityDows: [Int]
+    var longRunDow: Int?
+    var volumeRamp: VolumeRamp?
+    var shapePrefs: ShapePrefs?
+    var currentWeeklyMileage: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case restDows = "rest_dows"
+        case preferredQualityDows = "preferred_quality_dows"
+        case longRunDow = "long_run_dow"
+        case volumeRamp = "volume_ramp"
+        case shapePrefs = "shape_prefs"
+        case currentWeeklyMileage = "current_weekly_mileage"
+    }
 }

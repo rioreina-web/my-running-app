@@ -5,6 +5,7 @@
 //  Data service for training plan CRUD and fetching.
 //
 
+import CoreLocation
 import Foundation
 import os
 import Supabase
@@ -34,6 +35,10 @@ final class TrainingPlanService {
     var isSaving = false
     var errorMessage: String?
     var showError = false
+    /// Last error from `refreshForecastForWorkout`. The HeatCalculatorCard
+    /// reads this to render specific failure states ("Location needed",
+    /// "Forecast service unavailable") rather than a vague placeholder.
+    var lastForecastFetchError: String?
 
     /// Set to true to use local-only mode (no Supabase)
     static var useLocalMode = false
@@ -106,6 +111,23 @@ final class TrainingPlanService {
             return
         }
 
+        let debugUid = AuthManager.shared.userId
+        Log.coach.info("loadActivePlan: auth uid=\(debugUid)")
+
+        // 1. Raw fetch (debug): how many rows does RLS expose for this user?
+        do {
+            struct Row: Codable { let id: UUID; let user_id: String; let status: String; let name: String }
+            let rows: [Row] = try await supabase
+                .from("training_plans")
+                .select("id,user_id,status,name")
+                .execute()
+                .value
+            Log.coach.info("loadActivePlan: RLS sees \(rows.count) rows; active=\(rows.filter{$0.status=="active"}.count); user_ids=\(rows.map{$0.user_id}.joined(separator: ","))")
+        } catch {
+            Log.coach.info("loadActivePlan: debug fetch failed: \(error.localizedDescription)")
+            errorMessage = "Debug fetch failed: \(error.localizedDescription)"
+        }
+
         do {
             let plans: [TrainingPlan] = try await supabase
                 .from("training_plans")
@@ -116,6 +138,8 @@ final class TrainingPlanService {
                 .execute()
                 .value
 
+            Log.coach.info("loadActivePlan: decoded \(plans.count) plans")
+
             if let plan = plans.first {
                 activePlan = plan
                 paceConfig.configure(for: plan)
@@ -123,15 +147,15 @@ final class TrainingPlanService {
                 await loadMoodData(startDate: plan.startDate, endDate: plan.endDate)
                 initializeUI()
             } else {
-                // No active plan — load fitness snapshot as fallback for pace zones
+                errorMessage = "No active training_plans row for uid \(debugUid)"
                 await loadFitnessSnapshotFallback()
                 isLoadingPlan = false
             }
 
             isLoadingPlan = false
         } catch {
-            Log.coach.info("Could not load plan from Supabase (may not be configured): \(error.localizedDescription)")
-            // Still try fitness snapshot so pace zones aren't empty
+            Log.coach.error("loadActivePlan: decode/query failed: \(error)")
+            errorMessage = "Plan load failed: \(error.localizedDescription)"
             await loadFitnessSnapshotFallback()
             isLoadingPlan = false
         }
@@ -208,7 +232,9 @@ final class TrainingPlanService {
                 .value
 
             allScheduledWorkouts = workouts
+            print("[ScheduledWorkouts] Loaded \(workouts.count) workouts for plan \(planId.uuidString.prefix(8))")
         } catch {
+            print("[ScheduledWorkouts] ERROR: \(error)")
             Log.coach.error("Failed to load workouts: \(error)")
             ErrorReporter.shared.report(error, context: "load scheduled workouts")
         }
@@ -222,13 +248,13 @@ final class TrainingPlanService {
         let bufferStart = calendar.date(byAdding: .day, value: -7, to: startDate) ?? startDate
         let bufferEnd = calendar.date(byAdding: .day, value: 7, to: endDate) ?? endDate
 
+        let logUserId = AuthManager.shared.userId
         async let logsFetch: [TrainingLog] = {
             let iso = ISO8601DateFormatter()
-            let userId = AuthManager.shared.userId
             return (try? await supabase
                 .from("training_logs")
                 .select()
-                .eq("user_id", value: userId)
+                .eq("user_id", value: logUserId)
                 .not("workout_date", operator: .is, value: "null")
                 .gte("workout_date", value: iso.string(from: bufferStart))
                 .lte("workout_date", value: iso.string(from: bufferEnd))
@@ -375,6 +401,146 @@ final class TrainingPlanService {
             isSaving = false
             errorMessage = "Failed to save changes"
             showError = true
+        }
+    }
+
+    /// Update a single workout's `scheduled_hour` (0-23) and re-fetch
+    /// its weather forecast for the new hour. Two writes:
+    ///   1. UPDATE scheduled_workouts SET scheduled_hour = ?
+    ///   2. POST fetch-workout-weather { kind: "refresh_one", workout_id }
+    /// On success, the local `allScheduledWorkouts` cache gets the new
+    /// scheduled_hour AND the refreshed weather_forecast.
+    @MainActor
+    func updateScheduledTime(workoutId: UUID, scheduledHour: Int?) async {
+        do {
+            // Custom encoder — Optional<Int> with the default Encodable
+            // conformance OMITS the key when nil, which produces an empty
+            // PATCH body and silently no-ops the clear path. Encoding
+            // explicitly lets us write SQL NULL when clearing.
+            struct TimeUpdate: Encodable {
+                let scheduledHour: Int?
+                enum CodingKeys: String, CodingKey { case scheduledHour = "scheduled_hour" }
+                func encode(to encoder: Encoder) throws {
+                    var c = encoder.container(keyedBy: CodingKeys.self)
+                    if let h = scheduledHour {
+                        try c.encode(h, forKey: .scheduledHour)
+                    } else {
+                        try c.encodeNil(forKey: .scheduledHour)
+                    }
+                }
+            }
+            let payload = TimeUpdate(scheduledHour: scheduledHour)
+
+            // `.select()` flips the request from `Prefer: return=minimal`
+            // to `return=representation`, so the UPDATE returns the row(s)
+            // it actually touched. RLS denials produce a zero-row response
+            // (not an HTTP error), so we surface that case ourselves.
+            let updated: [ScheduledWorkout] = try await supabase
+                .from("scheduled_workouts")
+                .update(payload)
+                .eq("id", value: workoutId.uuidString)
+                .select()
+                .execute()
+                .value
+
+            guard !updated.isEmpty else {
+                Log.coach.error("updateScheduledTime: 0 rows affected — RLS or wrong workout id")
+                errorMessage = "Couldn't save the run time"
+                showError = true
+                return
+            }
+            Log.coach.info("scheduled_hour set to \(scheduledHour ?? -1) on \(workoutId)")
+
+            // Step 2: refresh the weather forecast for the new hour.
+            // Pulled out into a separate helper so the calculator card can
+            // also call it directly (manual "Refresh forecast" button +
+            // auto-retry when the card appears with no forecast).
+            await refreshForecastForWorkout(workoutId: workoutId)
+
+            // Update local cache so the UI reflects scheduled_hour even
+            // if the weather fetch failed. (The forecast field is updated
+            // inside refreshForecastForWorkout.)
+            if let index = allScheduledWorkouts.firstIndex(where: { $0.id == workoutId }) {
+                allScheduledWorkouts[index].scheduledHour = scheduledHour
+            }
+        } catch {
+            Log.coach.error("Failed to update scheduled_hour: \(error)")
+            ErrorReporter.shared.report(error, context: "update scheduled time")
+            errorMessage = "Couldn't save the run time"
+            showError = true
+        }
+    }
+
+    /// Re-fetch the weather forecast for one workout by calling
+    /// fetch-workout-weather { kind: "refresh_one" }. Updates the local
+    /// `allScheduledWorkouts` cache in place. Surfaces specific failure
+    /// modes via `lastForecastFetchError` so the calculator card can show
+    /// "Location needed" instead of silently failing.
+    @MainActor
+    func refreshForecastForWorkout(workoutId: UUID) async {
+        lastForecastFetchError = nil
+        let coord = await LocationProvider.shared.currentCoordinate()
+
+        // Short-circuit when CoreLocation didn't return a fix: either the
+        // athlete hasn't granted permission yet (first tap kicks off the
+        // prompt asynchronously), or it's denied/restricted at the system
+        // level. Either way, calling the edge fn without lat/lon would
+        // return a 400 that supabase-swift surfaces as a confusing
+        // "couldn't reach forecast service" — say what's actually wrong.
+        guard let coord else {
+            let status = LocationProvider.shared.authorizationStatus()
+            switch status {
+            case .denied, .restricted:
+                lastForecastFetchError = "Location access is off. Enable it in Settings → Privacy → Location."
+            case .notDetermined:
+                lastForecastFetchError = "Tap Allow on the location prompt, then try again."
+            default:
+                lastForecastFetchError = "Couldn't get your location yet — try again in a moment."
+            }
+            Log.coach.error("Weather refresh skipped: no location fix (status=\(status.rawValue))")
+            return
+        }
+
+        struct RefreshArgs: Encodable {
+            let workout_id: String
+            let kind: String
+            let lat: Double?
+            let lon: Double?
+        }
+        struct RefreshResponse: Decodable {
+            let weather: WorkoutForecast?
+            let error: String?
+        }
+
+        do {
+            let response: RefreshResponse = try await supabase.functions.invoke(
+                "fetch-workout-weather",
+                options: FunctionInvokeOptions(
+                    body: RefreshArgs(
+                        workout_id: workoutId.uuidString,
+                        kind: "refresh_one",
+                        lat: coord.latitude,
+                        lon: coord.longitude
+                    )
+                )
+            )
+
+            if let serverError = response.error {
+                lastForecastFetchError = serverError
+                Log.coach.error("Weather refresh server error: \(serverError)")
+                return
+            }
+
+            if let fresh = response.weather,
+               let index = allScheduledWorkouts.firstIndex(where: { $0.id == workoutId }) {
+                allScheduledWorkouts[index].weatherForecast = fresh
+                Log.coach.info("Forecast refreshed for \(workoutId): \(Int(fresh.temperatureF))°F")
+            } else {
+                lastForecastFetchError = "Forecast not available for this date."
+            }
+        } catch {
+            lastForecastFetchError = "Couldn't reach forecast service: \(error.localizedDescription)"
+            Log.coach.error("Weather refresh failed: \(error)")
         }
     }
 

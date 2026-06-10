@@ -1,22 +1,37 @@
 import Foundation
 import SwiftUI
 
+// MARK: - RaceDistanceConstants
+
+/// Single source of truth for race distances and mile/km conversion factors.
+/// Values derived from the international mile (1609.344 m exactly) and the
+/// IAAF-standard 42.195 km marathon so Swift and the web app (see
+/// /web/src/lib/race-constants.ts) cannot drift apart.
+enum RaceDistanceConstants {
+    static let marathonMiles: Double = 26.21875        // 42.195 km / 1.609344
+    static let halfMarathonMiles: Double = 13.109375   // marathonMiles / 2
+    static let tenKMiles: Double = 6.2137119           // 10 km / 1.609344
+    static let fiveKMiles: Double = 3.1068560          // 5 km  / 1.609344
+    static let meterPerMile: Double = 1609.344         // exact definition
+    static let kmPerMile: Double = 1.609344            // exact definition
+}
+
 // MARK: - PaceCalculator
 
 enum PaceCalculator {
     /// Race distances in miles
     static let distances: [String: Double] = [
-        "400m": 0.24855,
-        "800m": 0.49710,
-        "1K": 0.62137,
-        "1500m": 0.932,
+        "400m": 0.4 / RaceDistanceConstants.kmPerMile,
+        "800m": 0.8 / RaceDistanceConstants.kmPerMile,
+        "1K": 1.0 / RaceDistanceConstants.kmPerMile,
+        "1500m": 1.5 / RaceDistanceConstants.kmPerMile,
         "mile": 1.0,
-        "3K": 1.864,
-        "5K": 3.107,
-        "10K": 6.214,
+        "3K": 3.0 / RaceDistanceConstants.kmPerMile,
+        "5K": RaceDistanceConstants.fiveKMiles,
+        "10K": RaceDistanceConstants.tenKMiles,
         "10mi": 10.0,
-        "half": 13.109,
-        "marathon": 26.219
+        "half": RaceDistanceConstants.halfMarathonMiles,
+        "marathon": RaceDistanceConstants.marathonMiles,
     ]
 
     // MARK: - Performance Ratios (fitness-index-based)
@@ -82,17 +97,6 @@ enum PaceCalculator {
         return Int(predictedSeconds)
     }
 
-    /// Calculate training paces from MP
-    static func calculateTrainingPaces(mpPaceSeconds: Double) -> [String: Double] {
-        [
-            "Easy": mpPaceSeconds / 0.75, // 75% of MP effort = slower pace
-            "Moderate Low": mpPaceSeconds / 0.75, // 75% effort
-            "Moderate High": mpPaceSeconds / 0.85, // 85% effort
-            "Steady Low": mpPaceSeconds / 0.85, // 85% effort
-            "Steady High": mpPaceSeconds / 0.95 // 95% effort
-        ]
-    }
-
     /// Calculate 1-hour pace (LT/Threshold pace)
     /// Finds the pace at which you could race for exactly 1 hour (3600 seconds)
     /// by interpolating between 10K and Half Marathon performance
@@ -116,8 +120,8 @@ enum PaceCalculator {
 
         // Find what distance can be covered in exactly 3600 seconds
         // by interpolating between 10K and Half Marathon
-        let distance10K = 6.214
-        let distanceHalf = 13.109
+        let distance10K = RaceDistanceConstants.tenKMiles
+        let distanceHalf = RaceDistanceConstants.halfMarathonMiles
 
         // Edge cases
         if time10K >= targetTime {
@@ -204,37 +208,21 @@ enum PaceCalculator {
         }
     }
 
-    /// Parse time string to seconds
-    /// Uses smart detection based on the first number:
-    /// - If first part > 9 (like 45:00, 30:56), it's MM:SS format
-    /// - If first part <= 9 (like 3:30, 1:40) and it's a long distance, it's H:MM format
+    /// Parse a race-time string into seconds. 2-part interpretation depends on distance:
+    /// long distances (10mi / half / marathon) treat "H:MM"; others treat "MM:SS".
+    /// 3-part input is always H:MM:SS. Callers that enter long-distance times must
+    /// supply H:MM or H:MM:SS explicitly — no heuristic fallback.
     static func parseTime(_ timeString: String, forDistance distance: String? = nil) -> Int? {
         let parts = timeString.split(separator: ":").compactMap { Int($0) }
+        let longDistances: Set<String> = ["10mi", "half", "marathon"]
+        let isLong = distance.map { longDistances.contains($0) } ?? false
 
         switch parts.count {
-        case 2:
-            // Smart detection: if first part > 9, it's almost certainly minutes (MM:SS)
-            // E.g., "45:00" = 45 min, "30:56" = 30:56
-            // If first part <= 9, check if it's a long distance that expects H:MM
-            // E.g., "3:30" for marathon = 3 hours 30 min
-            let longDistances = ["10mi", "half", "marathon"]
-            let isLongDistance = distance.map { longDistances.contains($0) } ?? false
-
-            if parts[0] > 9 {
-                // First part is large (10+), so this must be MM:SS
-                // Examples: 45:00 = 45 min, 30:56 = 30:56, 75:00 = 75 min
-                return parts[0] * 60 + parts[1]
-            } else if isLongDistance {
-                // First part is small (1-9) and it's a long distance, so H:MM
-                // Examples: 3:30 marathon = 3h30m, 1:40 half = 1h40m
-                return parts[0] * 3600 + parts[1] * 60
-            } else {
-                // First part is small (1-9) and short distance, so MM:SS
-                // Examples: 5:30 mile = 5:30, 4:19 mile = 4:19
-                return parts[0] * 60 + parts[1]
-            }
-        case 3: // H:MM:SS
+        case 3:
             return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        case 2:
+            if isLong { return parts[0] * 3600 + parts[1] * 60 }
+            return parts[0] * 60 + parts[1]
         default:
             return nil
         }

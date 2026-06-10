@@ -360,7 +360,15 @@ final class VitalManager {
 
     // MARK: - Network
 
-    private func vitalRequest(url urlString: String, timeout: TimeInterval = 30) async -> Data? {
+    // NOTE: Vital integration stubbed out — trial ended 2026-04-14.
+    // All network calls short-circuit to nil so upstream callers get empty results
+    // without triggering 401s. HealthKit is the wearable source for V1.
+    // Replacement (Terra) planned for V1.1 — restore this function to re-enable.
+    private func vitalRequest(url _: String, timeout _: TimeInterval = 30) async -> Data? {
+        return nil
+    }
+
+    private func vitalRequest_DISABLED(url urlString: String, timeout: TimeInterval = 30) async -> Data? {
         guard let url = URL(string: urlString) else {
             Log.health.error("Vital: invalid URL: \(urlString)")
             return nil
@@ -525,6 +533,8 @@ struct VitalWorkoutStream: Decodable {
     let distance: [Double]?
     let velocitySmooth: [Double]?
     let cadence: [Double]?
+    /// Ambient temperature in °C (Strava `temp` stream). No HealthKit equivalent.
+    let temp: [Double]?
     /// Raw power may contain nulls from Garmin
     private let rawPower: [Double?]?
 
@@ -537,7 +547,36 @@ struct VitalWorkoutStream: Decodable {
         case time, heartrate, lat, lng, altitude, distance
         case velocitySmooth = "velocity_smooth"
         case cadence
+        case temp
         case rawPower = "power"
+    }
+
+    /// Memberwise init so non-Vital sources (Strava via ExternalStreamAdapter, etc.)
+    /// can construct this struct directly instead of going through JSON decode.
+    /// `temp` defaults to nil so existing callers that predate temperature
+    /// support keep compiling.
+    init(
+        time: [Int]?,
+        heartrate: [Int]?,
+        lat: [Double]?,
+        lng: [Double]?,
+        altitude: [Double]?,
+        distance: [Double]?,
+        velocitySmooth: [Double]?,
+        cadence: [Double]?,
+        temp: [Double]? = nil,
+        rawPower: [Double?]?
+    ) {
+        self.time = time
+        self.heartrate = heartrate
+        self.lat = lat
+        self.lng = lng
+        self.altitude = altitude
+        self.distance = distance
+        self.velocitySmooth = velocitySmooth
+        self.cadence = cadence
+        self.temp = temp
+        self.rawPower = rawPower
     }
 }
 

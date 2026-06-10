@@ -44,7 +44,11 @@ struct PaceChartView: View {
         .navigationTitle("Pace Chart")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            await viewModel.loadFromGoal()
+            // Load engine zones (real training paces) and goal context
+            // (hypothetical race paces) in parallel.
+            async let zones: () = viewModel.loadEngineZones()
+            async let goal: () = viewModel.loadFromGoal()
+            _ = await (zones, goal)
         }
         .sheet(isPresented: $showSplitsSheet) {
             if let pace = selectedSplitsPace {
@@ -125,7 +129,7 @@ struct PaceChartView: View {
                         .foregroundStyle(Color.drip.textSecondary)
 
                     HStack {
-                        TextField("1:40:00", text: $viewModel.goalTimeString)
+                        TextField(viewModel.selectedDistance.exampleTime, text: $viewModel.goalTimeString)
                             .font(.dripStat(32))
                             .foregroundStyle(Color.drip.textPrimary)
                             .keyboardType(.numbersAndPunctuation)
@@ -148,6 +152,10 @@ struct PaceChartView: View {
                     .padding(16)
                     .background(Color.drip.cardBackgroundElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    Text(viewModel.selectedDistance.timeFormatHint)
+                        .font(.dripCaption(11))
+                        .foregroundStyle(Color.drip.textSecondary)
 
                     // Validation error/warning
                     if let error = viewModel.validationError {
@@ -627,7 +635,7 @@ struct PaceChartView: View {
                     .tracking(1.2)
                 Spacer()
 
-                Text("Based on MP")
+                Text(trainingPacesSourceLabel)
                     .font(.dripCaption(10))
                     .foregroundStyle(Color.drip.textTertiary)
             }
@@ -636,28 +644,39 @@ struct PaceChartView: View {
                 // Easy (not clickable)
                 trainingPaceRow(
                     name: "Easy",
-                    description: "75% effort or less",
-                    paceRange: formatPaceRangeWithUnit(low: viewModel.trainingPaces["Easy"], high: nil) ?? "--",
-                    adjustedPaceRange: formatPaceRangeWithUnit(low: viewModel.adjustedTrainingPaces["Easy"], high: nil),
+                    description: "70-80% MP",
+                    paceRange: formatPaceRangeWithUnit(
+                        low: viewModel.trainingPaces["Easy Fast"],
+                        high: viewModel.trainingPaces["Easy Slow"]
+                    ) ?? "--",
+                    adjustedPaceRange: formatPaceRangeWithUnit(
+                        low: viewModel.adjustedTrainingPaces["Easy Fast"],
+                        high: viewModel.adjustedTrainingPaces["Easy Slow"]
+                    ),
                     color: Color.drip.positive,
                     icon: "leaf.fill",
                     isClickable: false,
                     pace: nil
                 )
 
+                // Observed easy diagnostic — only when ≥8 easy runs in last 90 days.
+                if let obs = viewModel.engineZones?.observedEasy {
+                    observedEasyDiagnosticRow(observed: obs)
+                }
+
                 Divider().background(Color.drip.divider)
 
                 // Moderate (not clickable)
                 trainingPaceRow(
                     name: "Moderate",
-                    description: "75-85% effort",
+                    description: "80-90% MP",
                     paceRange: formatPaceRangeWithUnit(
-                        low: viewModel.trainingPaces["Moderate Low"],
-                        high: viewModel.trainingPaces["Moderate High"]
+                        low: viewModel.trainingPaces["Moderate Fast"],
+                        high: viewModel.trainingPaces["Moderate Slow"]
                     ) ?? "--",
                     adjustedPaceRange: formatPaceRangeWithUnit(
-                        low: viewModel.adjustedTrainingPaces["Moderate Low"],
-                        high: viewModel.adjustedTrainingPaces["Moderate High"]
+                        low: viewModel.adjustedTrainingPaces["Moderate Fast"],
+                        high: viewModel.adjustedTrainingPaces["Moderate Slow"]
                     ),
                     color: Color.drip.energized,
                     icon: "figure.walk",
@@ -670,14 +689,14 @@ struct PaceChartView: View {
                 // Steady (not clickable)
                 trainingPaceRow(
                     name: "Steady",
-                    description: "85-95% effort",
+                    description: "90-100% MP",
                     paceRange: formatPaceRangeWithUnit(
-                        low: viewModel.trainingPaces["Steady Low"],
-                        high: viewModel.trainingPaces["Steady High"]
+                        low: viewModel.trainingPaces["Steady Fast"],
+                        high: viewModel.trainingPaces["Steady Slow"]
                     ) ?? "--",
                     adjustedPaceRange: formatPaceRangeWithUnit(
-                        low: viewModel.adjustedTrainingPaces["Steady Low"],
-                        high: viewModel.adjustedTrainingPaces["Steady High"]
+                        low: viewModel.adjustedTrainingPaces["Steady Fast"],
+                        high: viewModel.adjustedTrainingPaces["Steady Slow"]
                     ),
                     color: Color.drip.coralLight,
                     icon: "flame",
@@ -687,39 +706,34 @@ struct PaceChartView: View {
 
                 Divider().background(Color.drip.divider)
 
-                // MP - Marathon Pace (clickable)
-                if let mpPace = viewModel.racePaces["marathon"] {
-                    let adjustedMp = viewModel.adjustedRacePaces["marathon"]
-                    let displayPace = viewModel.weatherEnabled ? (adjustedMp ?? mpPace) : mpPace
+                // MP — engine race anchor (your real marathon pace) or
+                // goal-Riegel fallback when the engine has nothing yet.
+                if let mpPace = viewModel.engineZones?.marathon?.pace ?? viewModel.racePaces["marathon"] {
                     trainingPaceRow(
                         name: "MP",
                         description: "Marathon Pace",
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(mpPace) : PaceCalculator.formatPace(mpPace),
-                        adjustedPaceRange: adjustedMp
-                            .map { viewModel.useKilometers ? PaceCalculator.formatPaceKm($0) : PaceCalculator.formatPace($0) },
+                        adjustedPaceRange: nil,
                         color: Color.drip.coral,
                         icon: "bolt.fill",
                         isClickable: true,
-                        pace: displayPace
+                        pace: mpPace
                     )
                 }
 
                 Divider().background(Color.drip.divider)
 
-                // HMP - Half Marathon Pace (clickable)
-                if let hmpPace = viewModel.racePaces["half"] {
-                    let adjustedHmp = viewModel.adjustedRacePaces["half"]
-                    let displayPace = viewModel.weatherEnabled ? (adjustedHmp ?? hmpPace) : hmpPace
+                // HMP — engine race anchor or goal-Riegel fallback.
+                if let hmpPace = viewModel.engineZones?.halfMarathon?.pace ?? viewModel.racePaces["half"] {
                     trainingPaceRow(
                         name: "HMP",
                         description: "Half Marathon Pace",
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(hmpPace) : PaceCalculator.formatPace(hmpPace),
-                        adjustedPaceRange: adjustedHmp
-                            .map { viewModel.useKilometers ? PaceCalculator.formatPaceKm($0) : PaceCalculator.formatPace($0) },
+                        adjustedPaceRange: nil,
                         color: Color.drip.tired,
                         icon: "bolt.horizontal.fill",
                         isClickable: true,
-                        pace: displayPace
+                        pace: hmpPace
                     )
                 }
 
@@ -727,6 +741,86 @@ struct PaceChartView: View {
             .background(Color.drip.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+    }
+
+    /// Header label that explains where the training paces are coming from.
+    /// Engine = user's real fitness; goal-fallback = chart's goal-MP what-if.
+    private var trainingPacesSourceLabel: String {
+        switch viewModel.trainingPaceSource {
+        case .engine:
+            switch viewModel.engineZones?.primarySource {
+            case "profile":      return "From your pace profile"
+            case "race_derived": return "From your fitness predictions"
+            case "goal_only":    return "From your training plan"
+            default:             return "From your data"
+            }
+        case .goalFallback:
+            return "From your goal (no run data yet)"
+        case .empty:
+            return "—"
+        }
+    }
+
+    /// Diagnostic row beneath Easy showing where the athlete's actual easy
+    /// runs land (p25–p75). Annotates "running too fast" / "too slow" when
+    /// observed bounds escape the doctrine band.
+    private func observedEasyDiagnosticRow(observed: ObservedEasySnapshot) -> some View {
+        let easyDoctrineFast = viewModel.trainingPaces["Easy Fast"]
+        let easyDoctrineSlow = viewModel.trainingPaces["Easy Slow"]
+
+        let runningTooFast = easyDoctrineFast.map { observed.paceFast < $0 } ?? false
+        let runningTooSlow = easyDoctrineSlow.map { observed.paceSlow > $0 } ?? false
+
+        let label: String
+        let color: Color
+        if runningTooFast {
+            let secsTooFast = Int((easyDoctrineFast ?? 0) - observed.paceFast)
+            label = "averaging \(secsTooFast)s/mi too fast"
+            color = Color.drip.coral
+        } else if runningTooSlow {
+            label = "running easy on the slow side"
+            color = Color.drip.textTertiary
+        } else {
+            label = "in the band"
+            color = Color.drip.positive
+        }
+
+        return HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Observed easy")
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textSecondary)
+                Text("\(observed.sessionCount) runs, last \(observed.lookbackDays) days")
+                    .font(.dripCaption(10))
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(observedEasyRangeFormatted(observed))
+                    .font(.dripCaption(12))
+                    .foregroundStyle(Color.drip.textPrimary)
+                Text(label)
+                    .font(.dripCaption(10))
+                    .foregroundStyle(color)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.drip.cardBackgroundElevated.opacity(0.4))
+    }
+
+    private func observedEasyRangeFormatted(_ obs: ObservedEasySnapshot) -> String {
+        let unit = viewModel.useKilometers ? "/km" : "/mi"
+        let fast = viewModel.useKilometers ? PaceCalculator.formatPaceKm(obs.paceFast) : PaceCalculator.formatPace(obs.paceFast)
+        let slow = viewModel.useKilometers ? PaceCalculator.formatPaceKm(obs.paceSlow) : PaceCalculator.formatPace(obs.paceSlow)
+        return "\(fast) – \(slow) \(unit)"
     }
 
     @ViewBuilder

@@ -15,6 +15,9 @@ struct RunningLogApp: App {
 
     init() {
         SentryService.start()
+        #if DEBUG
+        SentryService.capture("Sentry test event from iOS launch", level: "error")
+        #endif
         UserDefaults.standard.register(defaults: [
             "coachCheckInsEnabled": true,
             "smartInsightsEnabled": true,
@@ -35,16 +38,10 @@ struct RunningLogApp: App {
     }
 
     private func configureAppearance() {
-        // Tab Bar - Warm paper background, burnt orange accent
-        let tabBarAppearance = UITabBarAppearance()
-        tabBarAppearance.configureWithOpaqueBackground()
-        tabBarAppearance.backgroundColor = UIColor(Color(hex: "F5F3F0"))
-        tabBarAppearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color(hex: "D4592A"))
-        tabBarAppearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: "D4592A"))]
-        tabBarAppearance.stackedLayoutAppearance.normal.iconColor = UIColor(Color(hex: "9B9590"))
-        tabBarAppearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: "9B9590"))]
-        UITabBar.appearance().standardAppearance = tabBarAppearance
-        UITabBar.appearance().scrollEdgeAppearance = tabBarAppearance
+        // Tab bar appearance lives on the custom `DripTabBar` view now
+        // (App/DripTabBar.swift). There's no UIKit `UITabBar` in the
+        // hierarchy anymore, so the old `UITabBarAppearance` block was
+        // dead code and has been removed.
 
         // Navigation Bar - Clean editorial
         let navBarAppearance = UINavigationBarAppearance()
@@ -63,6 +60,7 @@ struct RunningLogApp: App {
 struct MainTabView: View {
     @AppStorage("isCoachMode") private var isCoachMode = false
     @Environment(NetworkMonitor.self) private var networkMonitor
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab = 0
     @State private var checkInManager = CoachCheckInManager()
     @State private var athleteProfileService = AthleteProfileService()
@@ -74,7 +72,29 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
+            // Custom bar (DripTabBar) replaces the system TabView. The
+            // editorial spec calls for `dot + uppercase mono label`, no
+            // icons — see design-system/ui_kits/ios_app/Primitives.jsx::TabBar
+            // and Post Run Drip Design System/ui_kits/ios_app/tokens.css.
+            //
+            // Routing: all 5 tab views render simultaneously in a ZStack
+            // and we toggle `.opacity` + `.allowsHitTesting` based on
+            // `selectedTab`. This matches the system TabView's behaviour
+            // (each tab's `@State` and scroll position survive a swap)
+            // and prevents the in-flight URLSession requests of the
+            // outgoing tab from being cancelled mid-fetch on every swap —
+            // which previously surfaced as spurious "Network error"
+            // banners because `URLError(.cancelled)` got wrapped as
+            // `.network`. (The reporter now suppresses cancellations
+            // independently; this just stops the cancellations from
+            // happening in the first place.)
+            //
+            // Cost: 5 view trees alive at once instead of 1. Acceptable
+            // for the user-visible win and avoids the refetch storm
+            // (loadActivePlan / fitness-prediction / scheduled-workouts
+            // each previously refired on every tab re-entry).
+            ZStack {
+                // Tab 0 — Log (front door)
                 NavigationStack {
                     VoiceLogView()
                         .toolbar {
@@ -89,27 +109,25 @@ struct MainTabView: View {
                             }
                         }
                 }
-                .tag(0)
-                .tabItem {
-                    Label("Log", systemImage: "mic.fill")
-                }
+                .opacity(selectedTab == 0 ? 1 : 0)
+                .allowsHitTesting(selectedTab == 0)
 
-                NavigationStack {
-                    TrainingDashboardView()
-                }
-                .tag(1)
-                .tabItem {
-                    Label("Training", systemImage: "chart.bar.fill")
-                }
+                // Tab 1 — Train
+                NavigationStack { TrainingTabView() }
+                    .opacity(selectedTab == 1 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 1)
 
-                NavigationStack {
-                    CoachView()
-                }
-                .tag(2)
-                .tabItem {
-                    Label("Coach", systemImage: "message.fill")
-                }
+                // Tab 2 — Trends
+                NavigationStack { TrendsTabView() }
+                    .opacity(selectedTab == 2 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 2)
 
+                // Tab 3 — Coach
+                NavigationStack { CoachReadView() }
+                    .opacity(selectedTab == 3 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 3)
+
+                // Tab 4 — Plan (or Coach in coach mode)
                 NavigationStack {
                     if isCoachMode {
                         CoachTabView()
@@ -117,16 +135,12 @@ struct MainTabView: View {
                         TrainingPlanView()
                     }
                 }
-                .tag(3)
-                .tabItem {
-                    if isCoachMode {
-                        Label("Coach", systemImage: "person.badge.shield.checkmark.fill")
-                    } else {
-                        Label("Plan", systemImage: "calendar")
-                    }
-                }
+                .opacity(selectedTab == 4 ? 1 : 0)
+                .allowsHitTesting(selectedTab == 4)
             }
-            .tint(Color.drip.coral)
+            .safeAreaInset(edge: .bottom) {
+                DripTabBar(selected: $selectedTab)
+            }
 
             .environment(checkInManager)
             .environment(athleteProfileService)
@@ -134,12 +148,27 @@ struct MainTabView: View {
             .environment(\.showSidebar, $showSidebar)
             .task {
                 await athleteProfileService.fetchProfile()
+                try? await AthletePaceProfileService.shared.refresh()
+                try? await PaceZonesService.shared.refresh()
+                try? await DailyReadService.shared.refresh()
 
-                // Auto-sync Vital (Garmin) workouts to training_logs on launch
-                let vitalWorkouts = await VitalManager.shared.fetchRecentRunningWorkouts(limit: 30)
-                if !vitalWorkouts.isEmpty {
+                // Auto-sync HealthKit workouts to training_logs on launch.
+                // Vital replaced by HealthKit for V1 — Terra integration planned for V1.1.
+                _ = await HealthKitManager.shared.requestAuthorization()
+                let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
+                if !hkWorkouts.isEmpty {
                     let syncService = WorkoutSyncService()
-                    await syncService.syncUnloggedWorkouts(workouts: vitalWorkouts)
+                    await syncService.syncUnloggedWorkouts(workouts: hkWorkouts)
+                }
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                // Re-fire the daily Coach Read fetch every time the
+                // app comes back to the foreground. Cheap when a
+                // completed row already exists (one SELECT, two IN
+                // queries); generates a fresh Read on first foreground
+                // of a new day.
+                if newPhase == .active {
+                    Task { try? await DailyReadService.shared.refresh() }
                 }
             }
 
@@ -203,7 +232,7 @@ enum AppDestination: Identifiable {
     case fitnessPredictor
     case paceChart
     case contentLibrary
-    case formCheck
+    case settings
 
     var id: Self { self }
 
@@ -216,7 +245,7 @@ enum AppDestination: Identifiable {
         case .fitnessPredictor: FitnessPredictorView(trainingViewModel: TrainingPlanViewModel())
         case .paceChart: PaceChartView()
         case .contentLibrary: ContentLibraryHubView()
-        case .formCheck: FormCheckListView()
+        case .settings: SettingsView()
         }
     }
 }

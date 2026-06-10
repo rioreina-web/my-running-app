@@ -381,8 +381,8 @@ struct WorkoutTemplatePreviewSheet: View {
 
                                             Spacer()
 
-                                            if step.targetPaceIntensity != nil {
-                                                Text(step.targetPaceIntensity!.displayPercentage + " MP")
+                                            if let intensity = step.targetPaceIntensity {
+                                                Text(templatePaceLabel(intensity: intensity))
                                                     .font(.dripStat(13))
                                                     .foregroundStyle(Color.drip.textSecondary)
                                             }
@@ -444,6 +444,16 @@ struct WorkoutTemplatePreviewSheet: View {
             WorkoutTemplateEditorView(existingTemplate: template)
                 .environment(viewModel)
         }
+    }
+
+    /// Format a step's intensity using the athlete's pace profile as the
+    /// reference race pace. Falls back to an em-dash if the profile isn't
+    /// loaded yet — never shows a percentage.
+    private func templatePaceLabel(intensity: PaceIntensity) -> String {
+        let racePace = AthletePaceProfileService.shared
+            .paceSeconds(for: "marathon")
+        guard let racePace, racePace > 0 else { return "—" }
+        return intensity.formattedPace(forRacePace: racePace)
     }
 }
 

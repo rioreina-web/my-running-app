@@ -60,6 +60,8 @@ struct FitnessQuestionnaire: Codable {
 
     // Training preferences
     let preferredLongRunDay: DayOfWeek
+    let preferredWorkout1Day: DayOfWeek
+    let preferredWorkout2Day: DayOfWeek
     let canRunDoubles: Bool
     let hasAccessToTrack: Bool
     let preferredWorkoutTypes: [PreferredWorkoutType]
@@ -379,6 +381,8 @@ extension FitnessAssessment {
         dict["recentInjury"] = q.recentInjury
         if let details = q.injuryDetails { dict["injuryDetails"] = details }
         dict["preferredLongRunDay"] = q.preferredLongRunDay.rawValue
+        dict["preferredWorkout1Day"] = q.preferredWorkout1Day.rawValue
+        dict["preferredWorkout2Day"] = q.preferredWorkout2Day.rawValue
         dict["canRunDoubles"] = q.canRunDoubles
         dict["hasAccessToTrack"] = q.hasAccessToTrack
         dict["preferredWorkoutTypes"] = q.preferredWorkoutTypes.map(\.rawValue)
@@ -451,6 +455,8 @@ extension FitnessQuestionnaire {
             recent5kTime: 1380, // 23:00
             recent10kTime: 2880, // 48:00
             preferredLongRunDay: .sunday,
+            preferredWorkout1Day: .tuesday,
+            preferredWorkout2Day: .thursday,
             canRunDoubles: false,
             hasAccessToTrack: true,
             preferredWorkoutTypes: [.tempo, .longRun, .progressiveRun],

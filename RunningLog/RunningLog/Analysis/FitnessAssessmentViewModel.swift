@@ -63,6 +63,8 @@ class FitnessAssessmentViewModel {
     // MARK: - Step 3: Training Preferences
 
     var preferredLongRunDay: DayOfWeek = .sunday
+    var preferredWorkout1Day: DayOfWeek = .tuesday
+    var preferredWorkout2Day: DayOfWeek = .thursday
     var canRunDoubles: Bool = false
     var hasAccessToTrack: Bool = true
     var preferredWorkoutTypes: [PreferredWorkoutType] = []
@@ -119,6 +121,8 @@ class FitnessAssessmentViewModel {
             recent5kTime: recent5kTotalSeconds,
             recent10kTime: recent10kTotalSeconds,
             preferredLongRunDay: preferredLongRunDay,
+            preferredWorkout1Day: preferredWorkout1Day,
+            preferredWorkout2Day: preferredWorkout2Day,
             canRunDoubles: canRunDoubles,
             hasAccessToTrack: hasAccessToTrack,
             preferredWorkoutTypes: preferredWorkoutTypes,
