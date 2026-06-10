@@ -1,0 +1,20 @@
+{
+  "id": "002-brand-new-athlete-empty-data",
+  "prompt_name": "coaching-agent-simple.v1",
+  "description": "Subject 9 — Empty-data register. Athlete just signed up, has 0–1 runs logged. They ask a question that would normally require historical context. The AI MUST NOT fabricate trend claims ('trending up vs last week'), MUST NOT reference data that doesn't exist ('your usual pace'), and SHOULD respond in plain register without editorial flourishes. A coach with no data on someone says less, listens more.",
+  "vars": {},
+  "input": "__FILL_IN_ATHLETE_MESSAGE__\n\nCoach guidance for writing this input: a chat message from a brand-new athlete (account just created, no run history) asking something normally context-dependent — like 'what should my easy pace be?' or 'how am I doing this week?' or 'am I on track?'. The wedge: the AI shouldn't fake familiarity. Example shape: 'Hey just signed up — am I on track for my first marathon?'",
+  "rubric": {
+    "forbidden_patterns": [
+      "(?i)\\b(trending|trend) (up|down|higher|lower)\\b",
+      "(?i)\\bvs\\.?\\s+(last|previous)\\s+(week|month|run|workout)\\b",
+      "(?i)\\byour\\s+(usual|typical|normal|average)\\s+(pace|mileage|run)\\b",
+      "(?i)\\b(based on|looking at)\\s+your\\s+(history|past|data|trend)\\b",
+      "(?i)\\bcompared to\\s+(your )?(last|previous)\\b"
+    ],
+    "required_patterns": []
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "groq-llama-3.1-8b-instant"
+}

@@ -18,11 +18,7 @@ import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
 import { validateFileSize, validateMimeType, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
 const PROVIDER_TIMEOUT_MS = 30_000; // 30 seconds per provider
 
 /** Run a promise with a timeout — rejects if not resolved within `ms`. */

@@ -1,10 +1,6 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -36,23 +32,44 @@ interface TrainingLog {
   source: string | null;
 }
 
-// Zone weights for intensity scoring (higher = harder)
+// Zone weights for intensity scoring (higher = harder).
+//
+// Sorted slow → fast. Used by load = intensity_score × duration / 60,
+// which feeds intensity-weighted ACWR. Calibrated against typical
+// advanced single-session anchors — 10×400m mile, 6×1K @ 5K, 10×1K @
+// 10K, 5–7mi HM, 8–13mi MP — to land hard sessions in roughly the same
+// load band.
+//
+// `threshold` and `tempo` deliberately omitted — the labels are too
+// fuzzy in practice. A "tempo run" can mean anywhere from MP-feel to
+// LT-feel depending on plan. Aliased to `hmp` (3.0) by `effortWeight()`
+// below for backward-compat with historical pace_segments; new
+// classification should pick a specific pace zone (mile/3K/5K/10K/hmp/
+// mp/steady/moderate/easy/recovery).
 const ZONE_WEIGHTS: Record<string, number> = {
-  easy: 1.0,
-  recovery: 0.8,
-  moderate: 1.5,
-  steady: 2.0,
-  threshold: 3.0,
-  tempo: 3.0,
-  interval: 4.0,
-  race_pace: 4.5,
-  mile: 5.0,
-  mp: 2.5,
-  hmp: 3.0,
-  "5k": 4.0,
-  "10k": 3.5,
-  "3k": 4.5,
+  recovery: 0.7,    // true active recovery — barely add fatigue
+  easy: 1.0,        // reference
+  moderate: 1.4,
+  steady: 2.1,
+  mp: 3.0,          // sustained race-pace work is real load, not "moderate-plus"
+  hmp: 3.5,         // sustained sub-threshold — undersold at 3.0
+  "10k": 4.0,
+  "5k": 6.0,
+  interval: 6.0,    // generic "intervals" — typical 5K-pace work
+  "3k": 8.0,
+  race_pace: 6.0,   // ambiguous label — defaults to 5K-pace; specific
+                     // race pace (mile/5k/10k/hm/mp) should be used instead
+  mile: 10.0,       // VO2max+ repeats. 1 min at 4:30/mi ≈ 10 min easy.
 };
+
+// Backward-compat alias: legacy `threshold` / `tempo` segments map to
+// `hmp` (3.0) so historical workouts don't silently re-weight to easy.
+// New ingestion paths should classify to a specific pace zone.
+function effortWeight(effort: string): number {
+  const e = effort.toLowerCase();
+  if (e === "threshold" || e === "tempo") return ZONE_WEIGHTS.hmp;
+  return ZONE_WEIGHTS[e] ?? 1.0;
+}
 
 // Classify as "hard" effort (threshold or above)
 function isHardEffort(effort: string): boolean {
@@ -112,7 +129,7 @@ function computeFeatures(log: TrainingLog, prevWorkout: TrainingLog | null, prev
     const dur = seg.duration_seconds || 0;
     const pace = paceToSeconds(seg.pace_per_mile);
     const effort = (seg.effort || "easy").toLowerCase();
-    const weight = ZONE_WEIGHTS[effort] || 1.0;
+    const weight = effortWeight(effort);
 
     totalSegmentSeconds += dur;
     intensityWeightedSum += dur * weight;

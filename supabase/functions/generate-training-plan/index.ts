@@ -9,12 +9,7 @@ import {
 } from "../_shared/validation.ts";
 import { generatePlanSkeleton } from "./deterministic-builder.ts";
 import type { SkeletonRunnerProfile, WeeklySkeleton, AIWorkoutSelection, AIFinalOutput } from "./deterministic-builder.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 // ── Workout Library (source of truth — TrainingPRD) ─────────────
 
@@ -209,6 +204,8 @@ interface RunnerProfile {
   preferredWorkoutTypes: string[];
   excludedWorkoutCodes: string[];
   preferredLongRunDay: number;
+  workout1Day: number;
+  workout2Day: number;
   restDayCount: number;
   hasInjury: boolean;
   injuryDetails: string | null;
@@ -399,6 +396,8 @@ function buildRunnerProfile(
     preferredWorkoutTypes: (assessment.preferredWorkoutTypes as string[]) || [],
     excludedWorkoutCodes: excluded,
     preferredLongRunDay: dayMap[(assessment.preferredLongRunDay as string)?.toLowerCase() || "sunday"] || 7,
+    workout1Day: dayMap[(assessment.preferredWorkout1Day as string)?.toLowerCase() || "tuesday"] || 2,
+    workout2Day: dayMap[(assessment.preferredWorkout2Day as string)?.toLowerCase() || "thursday"] || 4,
     restDayCount: Math.max(0, 7 - runsPerWeek),
     hasInjury,
     injuryDetails: (assessment.injuryDetails as string) || null,
@@ -1058,19 +1057,18 @@ function mergeAISelections(skeleton: WeeklySkeleton[], selections: AIWorkoutSele
     const sel = selMap.get(week.weekNumber);
     if (!sel) continue;
 
-    for (const day of week.days) {
-      // Skip non-quality days and pre-filled days (e.g., RACE)
-      if (!day.isQualityDay || day.ai_workout_code !== null) continue;
+    // Identify the long run as the quality day with the largest assignedMileage;
+    // the other quality days are the two workout slots, taken in day-of-week order.
+    const qualityDays = week.days.filter(d => d.isQualityDay && d.ai_workout_code === null);
+    if (qualityDays.length === 0) continue;
+    const longRun = qualityDays.reduce((a, b) => b.assignedMileage > a.assignedMileage ? b : a);
+    const workoutSlots = qualityDays
+      .filter(d => d !== longRun)
+      .sort((a, b) => a.dayOfWeek - b.dayOfWeek);
 
-      if (day.dayOfWeek === 2 && sel.tuesday_code) {
-        day.ai_workout_code = sel.tuesday_code;
-      } else if (day.dayOfWeek === 4 && sel.thursday_code) {
-        day.ai_workout_code = sel.thursday_code;
-      } else if (day.dayOfWeek !== 2 && day.dayOfWeek !== 4 && sel.saturday_code) {
-        // Long run day (could be Sat or Sun)
-        day.ai_workout_code = sel.saturday_code;
-      }
-    }
+    if (workoutSlots[0] && sel.tuesday_code) workoutSlots[0].ai_workout_code = sel.tuesday_code;
+    if (workoutSlots[1] && sel.thursday_code) workoutSlots[1].ai_workout_code = sel.thursday_code;
+    if (longRun && sel.saturday_code) longRun.ai_workout_code = sel.saturday_code;
   }
 }
 
@@ -1280,7 +1278,16 @@ function buildSteps(code: string, def: WorkoutDef, totalMiles: number, goalTimeS
     const cooldown = 2.0;
     const intervals = parseIntervals(def.description);
 
-    if (intervals && goalTimeSec && raceDistMi) {
+    // CRITICAL: structured steps must be emitted whenever the description
+    // is a recognizable interval pattern. Earlier this path required BOTH
+    // `goalTimeSec` AND `raceDistMi` to be present — when either was
+    // missing (which happens on the WorkoutChatSheet/Replace path) the
+    // entire workout collapsed into a single Active step with the
+    // description in notes. The athlete saw "Active 5.0 mi" for a "2x3mi"
+    // workout. Now: emit structure when parseIntervals succeeds, with
+    // pace-formatted notes only when the goal context is available.
+    if (intervals) {
+      const havePaceContext = !!(goalTimeSec && raceDistMi);
       const steps: Step[] = [];
       steps.push({ stepType: "warmup", durationType: "distance_miles", durationValue: warmup, pacePercentage: 65, notes: "Warmup jog" });
 
@@ -1292,13 +1299,17 @@ function buildSteps(code: string, def: WorkoutDef, totalMiles: number, goalTimeS
       if (intervals.isTimeBased) {
         repDurationType = "time_seconds";
         repDurationValue = intervals.repDurationSeconds;
-        paceStr = pacePerMileStr(def.pacePercentage, goalTimeSec, raceDistMi);
+        paceStr = havePaceContext
+          ? pacePerMileStr(def.pacePercentage, goalTimeSec!, raceDistMi!)
+          : `${def.pacePercentage}%`;
       } else {
         repDurationType = (intervals.repUnit === "m") ? "distance_meters" :
           (intervals.repUnit === "k" || intervals.repUnit === "km") ? "distance_km" : "distance_miles";
         repDurationValue = (intervals.repUnit === "m") ? Math.round(intervals.repRawValue) :
           Math.round(intervals.repRawValue * 100) / 100;
-        paceStr = repPaceString(def.pacePercentage, goalTimeSec, raceDistMi, intervals.repDistanceMiles);
+        paceStr = havePaceContext
+          ? repPaceString(def.pacePercentage, goalTimeSec!, raceDistMi!, intervals.repDistanceMiles)
+          : `${def.pacePercentage}% MP`;
       }
 
       // Recovery step builders
@@ -1363,7 +1374,10 @@ function buildSteps(code: string, def: WorkoutDef, totalMiles: number, goalTimeS
       return steps;
     }
 
-    // Fallback: single block for complex workouts or missing goal time
+    // Fallback: single block. Only reached when parseIntervals returns null
+    // (truly unrecognizable description, e.g. ladder workouts that we
+    // explicitly skip). Even here, embed the description as notes so the
+    // athlete sees what's expected even if the structure is opaque.
     const main = Math.max(totalMiles - warmup - cooldown, 1);
     let mainNotes = def.description;
     if (goalTimeSec && raceDistMi) {
@@ -1793,6 +1807,16 @@ Deno.serve(async (req: Request) => {
         }
       }
 
+      let workout1Day = profile?.workout1Day || 2;
+      let workout2Day = profile?.workout2Day || 4;
+      for (const [name, num] of Object.entries(dayMap)) {
+        if (lowerMsg.includes(`preferred workout day 1: ${name}`)) workout1Day = num;
+        if (lowerMsg.includes(`preferred workout day 2: ${name}`)) workout2Day = num;
+      }
+      // Guard: quality slots must be distinct from each other and from long run day
+      if (workout1Day === preferredLongRunDay || workout1Day === workout2Day) workout1Day = 2;
+      if (workout2Day === preferredLongRunDay || workout2Day === workout1Day) workout2Day = workout1Day === 4 ? 3 : 4;
+
       // Build skeleton profile from runner profile
       const skeletonProfile: SkeletonRunnerProfile = {
         fitnessLevel: (profile?.fitnessLevel || (currentMileage < 15 ? "beginner" : currentMileage < 25 ? "novice" : currentMileage < 45 ? "intermediate" : currentMileage < 65 ? "advanced" : "elite")) as SkeletonRunnerProfile["fitnessLevel"],
@@ -1803,6 +1827,8 @@ Deno.serve(async (req: Request) => {
         trackAccess: profile?.hasAccessToTrack ?? true,
         maxSessionMinutes: profile?.maxSessionMinutes || 75,
         preferredLongRunDay,
+        workout1Day,
+        workout2Day,
         runsPerWeek: profile?.runsPerWeek || 6,
         maxMileageJumpPercent: profile?.maxMileageJumpPercent || 10,
         maxWeeklyMileage: null,

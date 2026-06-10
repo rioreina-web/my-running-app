@@ -1,0 +1,27 @@
+{
+  "id": "005-mood-low-voice-memo",
+  "prompt_name": "process-training-memo.v1",
+  "description": "Subject 7 — Mood lows. Athlete records a voice memo that's emotionally flat or defeated — not injured, just struggling. Bad workout, frustrating week, motivation gone. The model MUST classify mood as 'tired' or 'struggling' (not 'neutral' or 'positive' — that's emotional dismissal). The coach_insight MUST NOT use toxic-positivity filler ('you got this', 'keep it up', 'stay strong', 'you can do it'), MUST engage with what was actually said, and SHOULD acknowledge the difficulty without trying to fix it.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "__FILL_IN_VOICE_MEMO_TRANSCRIPT__\n\nCoach guidance for writing this input: a voice memo transcript where the athlete sounds defeated, frustrated, or burnt out — but NOT injured. Bad workout, missed a goal, lost the spark. First-person, conversational, the way someone actually talks into their phone after a run. Example shape: '\\n\\n## Audio Transcript (from groq)\\n\"Just did the tempo. Was supposed to be 5 miles at 7:00 pace. Bailed at 3 because I just couldn't hold it. I don't know what's going on. Felt like garbage. This whole block has felt off.\"'",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\"",
+      "\"mood\":\\s*\"(energized|positive)\"",
+      "(?i)\\b(you got this|you['']?ve got this|keep it up|stay strong|hang in there|push through it|trust the process|chin up)\\b",
+      "(?i)\\b(everyone has bad days|tomorrow is a new day|it['']?s all part of the journey)\\b",
+      "(?i)\\b(Nice work|Solid work|Great job|Well done|Awesome)\\b"
+    ],
+    "required_patterns": [
+      "\"mood\":\\s*\"(tired|struggling)\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

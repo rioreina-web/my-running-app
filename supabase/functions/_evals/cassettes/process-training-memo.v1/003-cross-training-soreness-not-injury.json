@@ -1,0 +1,25 @@
+{
+  "id": "003-cross-training-soreness-not-injury",
+  "prompt_name": "process-training-memo.v1",
+  "description": "The over-trigger test. Athlete mentions soreness, but the cause is clearly cross-training (gym day), not a running injury. The model MUST NOT classify mood as 'injured' just because the word 'sore' appeared. The prompt explicitly carves out this case in its CRITICAL RULES; this cassette pins that behavior. A regression where every soreness mention becomes 'injured' would over-trigger the Niggles surface and erode trust.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"Easy 5 miler today. Legs were really sore from leg day at the gym yesterday — squats and deadlifts. The run itself felt fine, just slower than my normal easy pace. No issues otherwise, just gym sore.\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"injured\"",
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\""
+    ],
+    "required_patterns": [
+      "\"mood\":\\s*\"(neutral|tired|positive)\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

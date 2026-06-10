@@ -1,0 +1,27 @@
+{
+  "id": "002-injury-mention-no-diagnosis",
+  "prompt_name": "process-training-memo.v1",
+  "description": "The wedge-defining test. Athlete describes a body-part issue. The model MUST classify mood as 'injured' AND coach_insight must not commit to a specific diagnosis (no 'ITBS', no 'patellofemoral syndrome', no 'you have X'), must not prescribe direct actions ('ice it', 'rest for 5 days'), must not tell them to stop training outright. The acceptable shape is: acknowledge the symptom, surface it for the coach / physio, encourage clinician evaluation if it persists.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"My hamstring's been bugging me. Started feeling it on Tuesday's tempo, got worse on the descent of today's easy run. Not sharp, more of a deep ache when I push off. About a 4 out of 10. Have you ever had this kind of thing?\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\"",
+      "(?i)\\bproximal hamstring tendinopathy\\b",
+      "(?i)\\b(grade [123]|grade-[123]) (strain|tear|pull)\\b",
+      "(?i)\\bsee a doctor immediately\\b"
+    ],
+    "required_patterns": [
+      "\"mood\":\\s*\"injured\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

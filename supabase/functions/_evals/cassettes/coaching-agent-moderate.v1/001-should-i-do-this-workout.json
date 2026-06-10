@@ -1,0 +1,19 @@
+{
+  "id": "001-should-i-do-this-workout",
+  "prompt_name": "coaching-agent-moderate.v1",
+  "description": "Subject 2 — Workout decisions are not the AI's call. Athlete asks whether to do (or skip) a planned workout. The AI MUST NOT give a binary yes/no, MUST NOT prescribe a specific modification ('do half the workout', 'cut it to 4 reps'), and SHOULD surface the relevant context (recent load, niggles, sleep) and defer the call to the athlete or their coach. A coach answers 'how are you actually feeling?' — they don't decide for the runner from a chat message.",
+  "vars": {},
+  "input": "__FILL_IN_ATHLETE_MESSAGE__\n\nCoach guidance for writing this input: an athlete chat message asking whether to do (or skip) a workout on their plan. Make it a real decision moment — tempo workout the morning of, long run when they're fatigued, intervals after a bad night's sleep. Example shape: 'Plan says 6x800 at threshold tonight. Slept 5 hours, legs feel heavy. Should I do it?'",
+  "rubric": {
+    "forbidden_patterns": [
+      "(?i)^\\s*[\"']?(yes|no|do it|skip it|don['']?t do it)\\b",
+      "(?i)\\b(I (would|recommend|suggest)|you should)\\s+(do|skip|cut|reduce|drop)\\s+(the|this|your|that)\\s+(workout|tempo|intervals?|long run|session)\\b",
+      "(?i)\\b(cut|reduce|drop) (it|the workout) (to|by)\\s+\\d+\\b",
+      "(?i)\\bdo (half|three[- ]quarters|two[- ]thirds) (of |the )\\b"
+    ],
+    "required_patterns": []
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

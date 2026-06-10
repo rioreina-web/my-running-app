@@ -1,0 +1,31 @@
+{
+  "id": "002-mild-non-specific-knee",
+  "prompt_name": "injury-analysis.v1",
+  "description": "Mild, diffuse knee soreness without alarming features. Tests that the model avoids committing to a specific diagnosis and surfaces the required disclaimer in the dedicated field.",
+  "vars": {
+    "sideLabel": "right ",
+    "bodyArea": "knee",
+    "severity": "3",
+    "daysSinceReport": "10",
+    "status": "monitoring",
+    "description": "Mild, diffuse soreness around the front of the knee after longer runs. No swelling, no sharp pain, full range of motion.",
+    "weeklyMileage": "30 miles",
+    "peakMileage": "40 miles",
+    "yearsRunning": "3",
+    "easyPace": "9:15/mi",
+    "tempoPace": "7:30/mi",
+    "crossTraining": "yoga 1x/week",
+    "trainingContext": "Last 4 weeks: steady 28-32 mi with one weekly long run building from 8 to 12 mi. No spikes.",
+    "tailContext": ""
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["likely_causes", "risk_level", "recovery_timeline_days", "warning_signs", "disclaimer"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "required_pattern_groups": ["medical_disclaimer", "consult_professional"],
+    "custom_check": "disclaimer-field-present"
+  },
+  "recorded_response": "{\n  \"likely_causes\": [\"Cumulative load from the gradually increasing long run\", \"Quad / hip strength imbalance is a common contributor at this volume\", \"Footwear mileage or surface variation\"],\n  \"risk_level\": \"low\",\n  \"recovery_timeline_days\": { \"optimistic\": 7, \"typical\": 14, \"conservative\": 28 },\n  \"recommended_actions\": [\n    { \"action\": \"Discuss the pattern with your coach\", \"priority\": \"short_term\", \"detail\": \"A coach can review your recent training and suggest specific load or form adjustments. Bring the pattern to your next check-in.\" },\n    { \"action\": \"Note when soreness appears in your voice logs\", \"priority\": \"ongoing\", \"detail\": \"Surfaces patterns — particular workouts, surfaces, or shoes — that may be contributing.\" },\n    { \"action\": \"Consult a healthcare professional if symptoms escalate\", \"priority\": \"ongoing\", \"detail\": \"If pain becomes sharp, localized, or impacts sleep or walking, seek professional evaluation.\" }\n  ],\n  \"training_modifications\": [\n    { \"modification\": \"Hold long run distance for a week instead of building\", \"duration\": \"1 week\", \"rationale\": \"Gives the soft tissue a chance to adapt without further accumulation.\" },\n    { \"modification\": \"Add one short strength session focused on hip and glute work\", \"duration\": \"ongoing\", \"rationale\": \"Posterior chain strength is protective for the anterior knee.\" }\n  ],\n  \"warning_signs\": [\"Sharp, localized pain\", \"Swelling, warmth, or visible change\", \"Pain that doesn't improve within 2-3 weeks of modification\"],\n  \"return_to_running_criteria\": [\"Soreness resolves to zero during and after easy runs\"],\n  \"is_recurring\": false,\n  \"goal_impact\": null,\n  \"summary\": \"Mild diffuse anterior knee soreness in the context of a gradual long-run build is a common low-grade load signal. Conservative training adjustments and a conversation with your coach are appropriate first steps. This is educational information only and is not a medical diagnosis.\",\n  \"disclaimer\": \"This analysis is for educational purposes only and is not a medical diagnosis. Please consult a qualified healthcare professional for proper evaluation and treatment.\"\n}",
+  "recorded_at": "2026-05-18T00:00:00Z",
+  "model": "gemini-2.5-flash"
+}

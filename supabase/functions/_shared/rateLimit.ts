@@ -184,15 +184,39 @@ export function getTierLimit(tier: string): number {
 }
 
 /**
- * Per-feature rate limits (daily)
+ * Per-feature daily rate limits, keyed on (feature, tier).
+ *
+ * Pinning principles:
+ *   - User-typed paste flows (parse) cap low — wrong paste should not burn
+ *     budget for the day.
+ *   - Conversational chat (coaching) is the highest-cost surface, so the
+ *     free tier is intentionally tight; pro unlocks meaningful use.
+ *   - Reads / cheap LLM passes (predictor, race, post_run, reschedule)
+ *     are more generous because users hit them passively while browsing.
+ *   - Heavy multi-section analyses (analysis, weekly_review, plan_builder)
+ *     sit in the middle.
+ *   - Service-role calls bypass these limits — see `enforceFeatureRateLimit`
+ *     below.
+ *
+ * If you add a new feature, also pin it in the contract test:
+ * supabase/functions/_shared/rateLimit.contract.test.ts.
  */
 const FEATURE_LIMITS: Record<string, Record<string, number>> = {
-  coaching: { free: 5, pro: 25, unlimited: 100 },
-  predictor: { free: 10, pro: 25, unlimited: 100 },
-  analysis: { free: 10, pro: 25, unlimited: 100 },
-  transcribe: { free: 20, pro: 50, unlimited: 200 },
-  parse: { free: 10, pro: 25, unlimited: 100 },
-  form_check_analysis: { free: 10, pro: 25, unlimited: 100 },
+  coaching:        { free:  5, pro: 25, unlimited: 100 },
+  predictor:       { free: 10, pro: 25, unlimited: 100 },
+  analysis:        { free: 10, pro: 25, unlimited: 100 },
+  transcribe:      { free: 20, pro: 50, unlimited: 200 },
+  parse:           { free: 10, pro: 25, unlimited: 100 },
+  injury_analysis: { free:  5, pro: 25, unlimited: 100 },
+  plan_builder:    { free:  3, pro: 10, unlimited:  50 },
+  race:            { free: 10, pro: 25, unlimited: 100 },
+  weekly_review:   { free:  5, pro: 25, unlimited: 100 },
+  post_run:        { free: 20, pro: 50, unlimited: 200 },
+  voice_memo:      { free: 20, pro: 50, unlimited: 200 },
+  reschedule:      { free: 10, pro: 25, unlimited: 100 },
+  workout_insight: { free: 20, pro: 50, unlimited: 200 },
+  check_in:        { free: 10, pro: 25, unlimited: 100 },
+  daily_read:      { free:  5, pro: 25, unlimited: 100 },
 };
 
 /**
@@ -250,4 +274,72 @@ export async function checkFeatureRateLimit(
     recordRedisFailure();
     return { allowed: false, remaining: 0, resetAt, current: limit, limit };
   }
+}
+
+/**
+ * Canonical one-call rate-limit gate for edge functions. Returns either
+ * a `Response` (429) that the caller should `return` immediately, or `null`
+ * meaning "allowed, keep going."
+ *
+ * Three short-circuits:
+ *   1. `isServiceRole === true` — service-role callers (cron, triggers,
+ *      other edge functions) bypass user-keyed limits. Auth check is the
+ *      gate for those callers, not this.
+ *   2. `isRateLimitEnabled() === false` — Redis env not configured (dev /
+ *      local serve). Permissive fallback rather than fail-closed; the
+ *      production Redis is the gate.
+ *   3. `rl.allowed === true` — normal accept path.
+ *
+ * Usage in an edge function:
+ *
+ *   const rlBlocked = await enforceFeatureRateLimit(userId, "coaching", corsHeaders);
+ *   if (rlBlocked) return rlBlocked;
+ *
+ * Or when the function also accepts service-role:
+ *
+ *   const rlBlocked = await enforceFeatureRateLimit(
+ *     userId, "workout_insight", corsHeaders, { isServiceRole }
+ *   );
+ *   if (rlBlocked) return rlBlocked;
+ *
+ * Why a helper instead of inlining: the 8 LLM functions that pre-dated
+ * W2.3 each repeated a ~10-line block. Consolidating eliminates drift
+ * (e.g. one site forgetting the Retry-After header) and makes the
+ * contract test in rateLimit.contract.test.ts a one-liner search per
+ * function.
+ */
+export async function enforceFeatureRateLimit(
+  userId: string,
+  feature: string,
+  corsHeaders: Record<string, string>,
+  opts: { isServiceRole?: boolean; tier?: string } = {},
+): Promise<Response | null> {
+  if (opts.isServiceRole) return null;
+  if (!isRateLimitEnabled()) return null;
+
+  const rl = await checkFeatureRateLimit(userId, feature, opts.tier ?? "free");
+  if (rl.allowed) return null;
+
+  const retryAfterSeconds = Math.max(
+    1,
+    Math.ceil((rl.resetAt.getTime() - Date.now()) / 1000),
+  );
+
+  return new Response(
+    JSON.stringify({
+      error: "Rate limit exceeded",
+      feature,
+      remaining: rl.remaining,
+      resetAt: rl.resetAt.toISOString(),
+      limit: rl.limit,
+    }),
+    {
+      status: 429,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfterSeconds),
+      },
+    },
+  );
 }

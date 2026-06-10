@@ -12,12 +12,10 @@ import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
 import { validateEnum, validateRange, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
+import { legacyZonesFromSnapshot, rangesFromSnapshot, type PaceZoneRanges } from "../_shared/pace-engine.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("ALLOWED_ORIGIN") || "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
 type PeriodType = "month" | "year" | "custom";
 
 interface AnalysisRequest {
@@ -495,40 +493,12 @@ interface PaceZones {
 }
 
 /**
- * Compute pace zones from predicted race times.
- * Returns seconds-per-mile for each training zone.
+ * Pace zones come from the central PaceEngine. See _shared/pace-engine.ts.
+ * Local function kept as a thin shim so existing call sites (and the local
+ * PaceZones interface) don't need to change in this migration.
  */
 function computePaceZones(snapshots: { predicted_marathon_seconds?: number; predicted_half_seconds?: number; predicted_10k_seconds?: number; predicted_5k_seconds?: number }): PaceZones | null {
-  const s = snapshots;
-  if (!s.predicted_marathon_seconds && !s.predicted_half_seconds && !s.predicted_10k_seconds && !s.predicted_5k_seconds) {
-    return null;
-  }
-
-  // Race distances in miles
-  const marathonMi = 26.2188;
-  const halfMi = 13.1094;
-  const tenKMi = 6.2137;
-  const fiveKMi = 3.1069;
-
-  const marathonPace = s.predicted_marathon_seconds ? s.predicted_marathon_seconds / marathonMi : 0;
-  const halfPace = s.predicted_half_seconds ? s.predicted_half_seconds / halfMi : 0;
-  const tenKPace = s.predicted_10k_seconds ? s.predicted_10k_seconds / tenKMi : 0;
-  const fiveKPace = s.predicted_5k_seconds ? s.predicted_5k_seconds / fiveKMi : 0;
-
-  // Fill in missing paces from available ones using rough ratios
-  const mp = marathonPace || (halfPace ? halfPace * 1.06 : (tenKPace ? tenKPace * 1.15 : fiveKPace * 1.22));
-  const hm = halfPace || (marathonPace ? marathonPace * 0.943 : (tenKPace ? tenKPace * 1.08 : fiveKPace * 1.15));
-  const tk = tenKPace || (halfPace ? halfPace * 0.925 : (fiveKPace ? fiveKPace * 1.06 : mp * 0.87));
-  const fk = fiveKPace || (tenKPace ? tenKPace * 0.943 : (halfPace ? halfPace * 0.87 : mp * 0.82));
-
-  return {
-    easy: mp + 90,           // easy pace ~90s slower than marathon
-    marathon: mp,
-    halfMarathon: hm,
-    threshold: (tk + hm) / 2, // threshold is roughly between 10K and HM pace
-    tenK: tk,
-    fiveK: fk,
-  };
+  return legacyZonesFromSnapshot(snapshots);
 }
 
 /**
@@ -538,10 +508,11 @@ function computePaceZones(snapshots: { predicted_marathon_seconds?: number; pred
 function labelPaceZone(paceSecsPerMile: number, zones: PaceZones): string {
   const tolerance = 8; // seconds tolerance for "at" vs "near"
 
+  // Threshold dropped from the canonical chart — HMP covers that effort
+  // band per the unified pace spectrum.
   const zoneDefs = [
     { name: "5K pace", pace: zones.fiveK },
     { name: "10K pace", pace: zones.tenK },
-    { name: "threshold", pace: zones.threshold },
     { name: "HM pace", pace: zones.halfMarathon },
     { name: "marathon pace", pace: zones.marathon },
     { name: "easy pace", pace: zones.easy },
@@ -935,7 +906,8 @@ function buildAnalysisPrompt(
   athleteProfileContext?: string,
   monthlyTrend?: { label: string; miles: number; runs: number; avgPace: string; qualitySessions: number }[],
   paceZones?: PaceZones | null,
-  loadAnalysis?: string
+  loadAnalysis?: string,
+  paceRanges?: PaceZoneRanges
 ): string {
   const weeklyBreakdown = stats.runsByWeek
     .map((w) => {
@@ -1029,15 +1001,21 @@ MANDATORY FOR INCOMPLETE PERIODS:
     }
   }
 
-  // Training pace reference — so AI can discuss workouts in terms of race-equivalent paces
+  // Training pace reference — effort zones as RANGES (engine band output),
+  // race anchors as single targets. Coach-honest framing — no midpoints.
   let paceReferenceSection = "";
   if (paceZones) {
     const fmtPace = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/mi`;
+    const r = paceRanges ?? {};
+    const effortLines: string[] = [];
+    if (r.easy)      effortLines.push(`  Easy: ${fmtPace(r.easy.paceFast)}–${fmtPace(r.easy.paceSlow)} (${r.easy.effortPercent})`);
+    if (r.moderate)  effortLines.push(`  Moderate: ${fmtPace(r.moderate.paceFast)}–${fmtPace(r.moderate.paceSlow)} (${r.moderate.effortPercent})`);
+    if (r.steady)    effortLines.push(`  Steady: ${fmtPace(r.steady.paceFast)}–${fmtPace(r.steady.paceSlow)} (${r.steady.effortPercent})`);
+    if (r.hmp) effortLines.push(`  HMP: ${fmtPace(r.hmp.paceFast)}–${fmtPace(r.hmp.paceSlow)}`);
     paceReferenceSection = `\nTRAINING PACE REFERENCE (this runner's current fitness-based paces):
-  Easy: ${fmtPace(paceZones.easy)}
+${effortLines.join("\n")}
   Marathon pace: ${fmtPace(paceZones.marathon)}
   Half-marathon pace: ${fmtPace(paceZones.halfMarathon)}
-  Threshold/LT: ${fmtPace(paceZones.threshold)}
   10K pace: ${fmtPace(paceZones.tenK)}
   5K pace: ${fmtPace(paceZones.fiveK)}
 IMPORTANT: When discussing workouts, ALWAYS reference these pace zones (e.g. "mile repeats at 10K pace" or "tempo at half-marathon effort") rather than just stating raw paces. The runner thinks in terms of race-effort paces, not arbitrary numbers. Each quality session below includes a pace zone label — use it.\n`;
@@ -1080,103 +1058,57 @@ IMPORTANT: When discussing workouts, ALWAYS reference these pace zones (e.g. "mi
     ? `\nINDIVIDUAL RUN LOG (★ = quality session detailed above):\n${runnerContext.runDetails.join("\n")}\n`
     : "";
 
-  return `You're writing a training analysis for a runner's ${periodLabel} data. Write like a sharp, opinionated running friend who also happens to coach — someone who texts you after looking at your Strava and says "dude, those mile repeats are getting spicy." Not a corporate wellness report.
-
-VOICE RULES:
-- Write like you're talking to a friend, not presenting findings. Use contractions. Be casual but smart.
-- Lead with the most interesting thing in the data, not a summary. What jumps out? Start there.
-- Specific > general. "Your 4th repeat was 12 seconds faster than your 1st — that's called closing hard and it's a great sign" beats "your interval pacing was solid."
-- Make connections the runner wouldn't see themselves. "You ran your fastest tempo the day after a rest day — your legs clearly needed that."
-- If you notice something surprising or unusual, call it out with genuine curiosity, not clinical observation.
-- When something is going well, get excited about it. When something needs attention, be direct but kind.
-- NEVER use these words/phrases: "impressive", "journey", "fantastic", "incredible", "absolutely", "I'd love to", "Let's dive in", "Here's what I see", "It's worth noting", "solid", "overall", "in summary", "consistency is key", "average pace"
-- No markdown. No bullet points. No numbered lists inside sections. Write in flowing paragraphs.
-- Never name coaching methodologies or famous coaches.
-- Each section should feel like its own mini-story, not a data dump.
-- NEVER discuss "average pace" for the month/week. Average pace across mixed workout types is meaningless noise. Instead, discuss paces within specific workout types: easy pace, tempo pace, interval pace. The QUALITY SESSIONS and ZONE VOLUME data give you the real numbers — use those.
-- When splits data is provided for a workout, you MUST reference specific split times, not summarize them. "Your 800s went 3:08, 3:05, 3:02 — that's a textbook negative split" is good. "Your intervals were well-paced" is bad.
-
-HERE'S WHAT GREAT ANALYSIS SOUNDS LIKE (match this energy and specificity):
-
-"You put down 142 miles in February — that's 18 more than January, and the way you built into it was smart. Weeks 1 and 2 were 32 and 34, then you pushed to 38 in week 3 before pulling back to 34. That's textbook. Your body got the stimulus without getting hammered.
-
-The 6x1mi session on the 14th was the standout. You opened at 6:12 and closed at 5:58 — negative splitting mile repeats is hard to do and it tells me your aerobic engine is humming. Compare that to the similar workout on Jan 22nd where you ran 6:18-6:22 and faded to 6:31 on the last one. Night and day.
-
-One thing that caught my eye — 86% of your miles were easy pace, which is actually a touch high. Your tempo volume dropped from 12 miles last month to 7. The speed is clearly there based on those intervals, but you might be leaving some race-specific fitness on the table. A 5-mile tempo at 6:30 would be a good litmus test right now."
-
-${runnerSection}${athleteProfileContext || ""}${periodStatusNote}
-
-DATA:
-Runs: ${stats.totalRuns} | Miles: ${stats.totalMiles} | Time: ${Math.floor(stats.totalMinutes / 60)}h ${stats.totalMinutes % 60}m
-Avg pace: ${stats.averagePace} | Avg distance: ${stats.averageDistance}mi | Longest: ${stats.longestRun}mi
-Days running: ${stats.daysWithRuns} | Rest days: ${stats.restDays}
-Workout types: ${Object.entries(stats.workoutTypeDistribution).map(([type, count]) => `${type.replace(/_/g, " ")}: ${count}`).join(", ") || "none tagged"}
-
-Zone Volume (from pace segments — actual running, excludes standing/rest time):
-${(() => {
+  // Pre-compute substitution strings for the template.
+  const zoneVolumeBlock = (() => {
     const zoneMilesTotal = Object.values(stats.zoneVolume).reduce((sum, d) => sum + d.miles, 0);
     const denom = zoneMilesTotal > 0 ? zoneMilesTotal : stats.totalMiles;
     return Object.entries(stats.zoneVolume).map(([zone, data]) => {
       const pct = denom > 0 ? Math.round((data.miles / denom) * 100) : 0;
       return `  ${zone.replace(/_/g, " ")}: ${data.miles}mi (${pct}%, ${data.runs} runs, avg ${data.avgPace})`;
     }).join("\n") || "  No zone data";
-  })()}
-${(() => {
+  })();
+  const easyHardSplit = (() => {
     const zoneMilesTotal = Object.values(stats.zoneVolume).reduce((sum, d) => sum + d.miles, 0);
     const denom = zoneMilesTotal > 0 ? zoneMilesTotal : stats.totalMiles;
     const easyZones = ["easy", "recovery", "long_run"];
     const easyMiles = Object.entries(stats.zoneVolume).filter(([z]) => easyZones.includes(z)).reduce((sum, [, d]) => sum + d.miles, 0);
     const easyPct = denom > 0 ? Math.round((easyMiles / denom) * 100) : 0;
     return `Easy/hard split: ${easyPct}% easy / ${100 - easyPct}% quality (target: ~80/20)`;
-  })()}
+  })();
+  const workoutTypesLine = Object.entries(stats.workoutTypeDistribution)
+    .map(([type, count]) => `${type.replace(/_/g, " ")}: ${count}`)
+    .join(", ") || "none tagged";
 
-Weekly Breakdown:
-${weeklyBreakdown}
-
-Mood: ${moodBreakdown || "No mood data"} | Trend: ${qualitative.moodTrend}
-${comparisonSection}
-
-${loadAnalysis || ""}
-${paceReferenceSection}${qualitySessionsSection}${runDetailsSection}
-Runner's Notes:
-${notesExcerpt || "None"}
-
-Notable Workouts:
-${qualitative.notableWorkouts.join("\n") || "None identified"}
-
----
-${incompleteInstructions}
-
-Write these sections. Label each one but write in flowing prose, not lists:
-
-THE BIG PICTURE
-Start with the most interesting takeaway from the month, not a volume summary. How is fitness trending? If multi-month data exists, tell the story of the arc — are they building, plateauing, bouncing back? What's different about this month vs. the last few? 3-5 sentences.
-${isIncomplete ? `This period has ${progress.remainingDays} days left. Frame as "so far" and project where it's heading.` : ""}
-
-WEEKLY VOLUME
-Walk through the weeks but make it interesting. Don't just list numbers — find the rhythm. Was there a big week followed by a smart pullback? A light week that broke the momentum? Connect volume patterns to how they felt (mood data) or what workouts happened that week.
-${isIncomplete ? `${stats.totalMiles} miles so far, tracking toward ~${projections.projectedMiles}.` : ""}
-
-TRAINING PACE VOLUME
-Use the ZONE VOLUME data — it breaks miles down by effort type with actual average paces per zone. Talk about specific paces: "your easy runs averaged 8:45/mi" or "tempo miles came in at 6:50/mi." Is the easy pace actually easy relative to their hard efforts (should be 60-90sec slower than tempo)? Are they grinding their easy days too fast? Has tempo or interval volume shifted from previous months? Interpret the 80/20 split — what does their actual easy/hard ratio tell you about where they are in training? Never just restate the zone percentages; tell the runner what the numbers mean for their fitness.
-
-WORKOUTS
-This is the most important section. You have QUALITY SESSIONS data with actual per-rep splits — USE THEM. For every quality session:
-1. Name the workout by structure ("6x800m" or "3mi tempo"), never by total distance
-2. Quote the actual split times from the data — every single rep if there are 6 or fewer
-3. Analyze the splits: did they negative split (got faster)? Positive split (faded)? Were reps consistent or erratic? What's the spread between fastest and slowest?
-4. If there are multiple sessions of the same type, compare them directly — is interval pace trending faster or slower? Is tempo pace dropping?
-5. Connect to effort/mood if available — "you ran your fastest 800 the day you logged feeling tired, which usually means good fitness"
-If you don't have quality session data, say so honestly — don't fill the section with generic pace observations. Better to say "no structured workouts this period" than to fake insight.
-
-LOAD & INTENSITY
-Look at the LOAD ANALYSIS data — it shows weekly volume AND hard minutes side by side from ALL data sources (GPS watch + voice memos). If there are load flags, address them — but don't be alarmist. Volume increases are EXPECTED in training; progressive overload is how you get faster. Only call out patterns that are genuinely risky: sudden spikes without buildup, intensity jumps disguised by flat mileage, back-to-back hard sessions with declining mood. If the load is building smartly, say so — "you added 5 miles and kept the hard work steady, that's how you absorb load." If there are no flags, keep this section to 2-3 sentences about the load rhythm.
-
-RECOVERY & HOW YOU'RE FEELING
-Read between the lines of the mood data, notes, and load patterns. Don't list moods by date — find the pattern. Were they feeling strong after lighter weeks? Dragging after high volume? Any red flags like persistent tiredness or mention of niggles? Connect mood to what was happening in training that week. Keep it brief but perceptive.
-
-LOOKING AHEAD
-2-3 specific, actionable ideas grounded in their ACTUAL paces from this period. Calculate target paces from their real data — if their 800m reps were 3:05-3:10, suggest the next session at 3:02-3:05. If their tempo was 6:50/mi, suggest extending the tempo distance at the same pace or dropping pace by 5-10sec. If they have a race goal, connect suggestions to it with specific splits. Reference their longest run distance and suggest the next step up. NEVER suggest extended rest periods or taking days off — this runner is training, give them things to DO. The "remaining days" number is a calendar note, not a rest prescription.`;
+  return loadPrompt("training-analysis.v1", {
+    periodLabel,
+    runnerSection,
+    athleteProfileContext: athleteProfileContext || "",
+    periodStatusNote,
+    totalRuns: stats.totalRuns,
+    totalMiles: stats.totalMiles,
+    totalTimeStr: `${Math.floor(stats.totalMinutes / 60)}h ${stats.totalMinutes % 60}m`,
+    averagePace: stats.averagePace,
+    averageDistance: stats.averageDistance,
+    longestRun: stats.longestRun,
+    daysWithRuns: stats.daysWithRuns,
+    restDays: stats.restDays,
+    workoutTypesLine,
+    zoneVolumeBlock,
+    easyHardSplit,
+    weeklyBreakdown,
+    moodBreakdown: moodBreakdown || "No mood data",
+    moodTrend: qualitative.moodTrend,
+    comparisonSection,
+    loadAnalysis: loadAnalysis || "",
+    paceReferenceSection,
+    qualitySessionsSection,
+    runDetailsSection,
+    notesExcerpt: notesExcerpt || "None",
+    notableWorkouts: qualitative.notableWorkouts.join("\n") || "None identified",
+    incompleteInstructions,
+    bigPictureNote: isIncomplete ? `This period has ${progress.remainingDays} days left. Frame as "so far" and project where it's heading.` : "",
+    weeklyVolumeNote: isIncomplete ? `${stats.totalMiles} miles so far, tracking toward ~${projections.projectedMiles}.` : "",
+  });
 }
 
 // ============================================================================
@@ -1427,6 +1359,7 @@ Deno.serve(async (req: Request) => {
       .limit(1);
 
     let paceZones: PaceZones | null = null;
+    let paceRanges: PaceZoneRanges | undefined;
 
     if (snapshots && snapshots.length > 0) {
       const snap = snapshots[0];
@@ -1443,6 +1376,8 @@ Deno.serve(async (req: Request) => {
 
       // Compute training pace zones for labeling workouts
       paceZones = computePaceZones(snap);
+      // Range form for the prompt (effort zones rendered as bands).
+      paceRanges = rangesFromSnapshot(snap);
     }
 
     // Extract quality sessions now that pace zones are available
@@ -1487,27 +1422,49 @@ Deno.serve(async (req: Request) => {
     // Analyze load patterns from ALL data sources (GPS, watch, voice)
     const loadAnalysis = analyzeLoadPatterns(filteredLogs);
 
-    const prompt = buildAnalysisPrompt(label, stats, qualitative, progress, projections, previousPeriodStats, runnerContext, athleteProfileCtx, monthlyTrend, paceZones, loadAnalysis);
+    const prompt = buildAnalysisPrompt(label, stats, qualitative, progress, projections, previousPeriodStats, runnerContext, athleteProfileCtx, monthlyTrend, paceZones, loadAnalysis, paceRanges);
 
     const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-pro",
-      generationConfig: {
-        maxOutputTokens: 8000,
-        temperature: 0.85,
-        thinkingConfig: { thinkingBudget: 4096 },
-      },
-    });
+    const modelChain = [
+      { name: "gemini-2.5-flash", config: { maxOutputTokens: 4000, temperature: 0.85 } },
+      { name: "gemini-2.5-pro", config: { maxOutputTokens: 4000, temperature: 0.85, thinkingConfig: { thinkingBudget: 1024 } } },
+    ];
 
-    const result = await model.generateContent(prompt);
-    const analysis = result.response.text();
+    const isRetryable = (err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      return /\b(429|500|502|503|504)\b|Service Unavailable|overloaded|rate/i.test(msg);
+    };
+
+    let analysis = "";
+    let modelUsed = "";
+    let lastErr: unknown = null;
+    outer: for (const m of modelChain) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const model = genAI.getGenerativeModel({ model: m.name, generationConfig: m.config });
+          const result = await model.generateContent(prompt);
+          analysis = result.response.text();
+          modelUsed = m.name;
+          break outer;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`[training-analysis] ${m.name} attempt ${attempt + 1} failed:`, err instanceof Error ? err.message : err);
+          if (!isRetryable(err)) break; // non-retryable: move to next model
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
+    }
+
+    if (!analysis) {
+      throw lastErr instanceof Error ? lastErr : new Error("All analysis models failed");
+    }
 
     // Log usage
     if (userId) {
       await supabase.from("usage_tracking").insert({
         user_id: userId,
         feature: "training_analysis",
-        model_used: "gemini-2.5-pro",
+        model_used: modelUsed,
         input_tokens: Math.round(prompt.length / 4),
         output_tokens: Math.round(analysis.length / 4),
         cached: false,

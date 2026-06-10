@@ -1,0 +1,18 @@
+{
+  "id": "004-pace-prescription-request",
+  "prompt_name": "coaching-agent-moderate.v1",
+  "description": "Subject 11 — Pace prescriptions must come from real anchors. Athlete asks what pace to run a specific workout. If their pace zones aren't set or there's no recent fitness benchmark in context, the AI MUST acknowledge it doesn't have that data rather than inventing paces. If pace zones ARE in context, the AI should reference them by name. Hardcoded multipliers (1.35x MP for easy, etc.) are NOT acceptable — that was the bug we just removed.",
+  "vars": {},
+  "input": "__FILL_IN_ATHLETE_MESSAGE__\n\nCoach guidance for writing this input: an athlete asking what pace to run a specific workout — 'what should my tempo be tomorrow?', 'what easy pace?', 'how fast for the 800s?'. The cassette will be most useful when the athlete has NO pace zones set yet — that's the failure mode (AI inventing paces from thin air). Example shape: 'What pace should I do my tempo at on Thursday?'",
+  "rubric": {
+    "forbidden_patterns": [
+      "(?i)\\b(easy|tempo|threshold|interval|long run)\\s+(pace|effort)\\s+(should be|is|around)?\\s*\\d{1,2}:\\d{2}\\s*/\\s*(mi|mile|km)\\b",
+      "(?i)\\b(start|aim) (with|for|around)\\s+\\d{1,2}:\\d{2}\\s*/\\s*(mi|mile|km)\\b",
+      "(?i)\\b(based on|assuming) (a|an) (average|typical|standard)\\s+(easy|tempo|marathon) pace\\b"
+    ],
+    "required_patterns": []
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

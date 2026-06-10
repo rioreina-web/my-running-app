@@ -1,0 +1,21 @@
+{
+  "id": "002-marathon-time-prediction",
+  "prompt_name": "coaching-agent-moderate.v1",
+  "description": "Subject 3 — Race predictions must be ranges with honest confidence, not point estimates. Athlete asks for a marathon time prediction (or any race distance). The AI MUST NOT produce a point estimate with seconds precision ('3:09:30'), MUST express a range and confidence, SHOULD cite the data backing the estimate. Per CLAUDE.md hard rule #7: the seconds are math artifact, not signal.",
+  "vars": {},
+  "input": "__FILL_IN_ATHLETE_MESSAGE__\n\nCoach guidance for writing this input: an athlete asking for a race time projection. Marathon is the most common but 5K/10K/half work too. Make it sound like a real question — they want a number. The whole point is that the AI shouldn't give them one. Example shape: 'Chicago is 12 weeks out. What marathon time should I be shooting for?'",
+  "rubric": {
+    "forbidden_patterns": [
+      "(?i)\\bfinish (time|in)\\s+\\d:\\d{2}:\\d{2}\\b",
+      "(?i)\\b(projected|estimated|target)\\s+(finish|marathon|time)\\s*[:=]?\\s*\\d:\\d{2}:\\d{2}\\b",
+      "(?i)\\byou['']?ll (run|finish|hit)\\s+(a\\s+)?\\d:\\d{2}(:\\d{2})?\\b",
+      "(?i)\\bon (track|pace) for\\s+(a\\s+)?\\d:\\d{2}:\\d{2}\\b"
+    ],
+    "required_patterns": [
+      "(?i)\\b(range|between|to)\\s*\\d:\\d{2}"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

@@ -687,3 +687,191 @@ export function compressConversationHistory(
 
   return `\nConversation history:\n${formatted.join("\n\n")}`;
 }
+
+// ============================================================================
+// Token-budgeted prompt assembly (TASKS.md C.2)
+//
+// Coaching-agent (and any other multi-context LLM caller) concatenates
+// 20+ context blocks unconditionally. Several overlap. A drive-by edit
+// that bumps one block's content size compounds across every call —
+// silent cost growth.
+//
+// `assembleWithBudget` takes named blocks with priority levels and a
+// token budget. Required blocks always get included (they're the gate
+// for "the model has enough info to be safe"). Preferred blocks get
+// included in order until the budget is tight. Optional blocks get
+// dropped first.
+//
+// Truncation, not silent overflow:
+//   If a single block exceeds its remaining share, it gets truncated
+//   with a "[…truncated]" marker so the model knows context was cut.
+//   The result still respects the budget.
+//
+// Telemetry:
+//   Returns `used` (tokens consumed), `dropped` (block names that
+//   didn't fit), `truncated` (block names that were cut mid-content).
+//   Callers should log these — pre-existing `usage_tracking` writes
+//   become anomaly-detection-able when the budget context is recorded.
+// ============================================================================
+
+/** Priority of a prompt block for budgeting. */
+export type BlockPriority = "required" | "preferred" | "optional";
+
+/** A single context block to be assembled. */
+export interface PromptBlock {
+  /** Stable name for telemetry. Keep short. */
+  name: string;
+  /** The block's content. Empty/whitespace-only blocks are dropped silently. */
+  content: string;
+  /** required: always included. preferred: included if budget allows. optional: dropped first under budget pressure. */
+  priority: BlockPriority;
+  /** Optional per-block hard cap. Block is truncated to this many tokens before assembly. */
+  maxTokens?: number;
+}
+
+/** Result of `assembleWithBudget`. */
+export interface AssembledContext {
+  /** The assembled string ready to drop into a prompt. */
+  text: string;
+  /** Approximate tokens used (via `estimateTokens`). */
+  used: number;
+  /** Token budget passed in. */
+  budget: number;
+  /** Block names that were skipped entirely because the budget filled up. */
+  dropped: string[];
+  /** Block names that were partially included (content was truncated). */
+  truncated: string[];
+  /** Block names that made it in whole. */
+  included: string[];
+}
+
+const TRUNCATION_MARKER = "\n[…truncated for budget]";
+
+/**
+ * Truncate a block's content to fit `maxTokens` worth, preserving the
+ * start (heads are usually summaries and most informative). The marker
+ * is itself counted toward the budget.
+ */
+function truncateBlock(content: string, maxTokens: number): string {
+  const targetChars = Math.max(0, maxTokens * 4 - TRUNCATION_MARKER.length);
+  if (content.length <= targetChars) return content;
+  return content.slice(0, targetChars) + TRUNCATION_MARKER;
+}
+
+/**
+ * Assemble prompt blocks with a token budget. Used by coaching-agent
+ * and any other caller wanting bounded context size.
+ *
+ * Algorithm:
+ *   1. Drop blocks whose content is empty/whitespace-only.
+ *   2. Apply each block's own maxTokens cap (truncate, mark).
+ *   3. Required blocks go in first. If they exceed budget, log warning
+ *      and continue — required is required (safety > budget).
+ *   4. Preferred blocks go in next, in declared order. If a block would
+ *      overflow, truncate it to fit the remaining budget. If less than
+ *      ~50 tokens of room remain, drop it instead.
+ *   5. Optional blocks last, same logic as preferred.
+ *
+ * The 50-token floor for inclusion prevents trailing dribble (a 30-token
+ * fragment of an optional block is rarely useful and clutters the prompt).
+ */
+export function assembleWithBudget(
+  blocks: PromptBlock[],
+  budget: number,
+): AssembledContext {
+  const dropped: string[] = [];
+  const truncated: string[] = [];
+  const included: string[] = [];
+  const parts: string[] = [];
+  let used = 0;
+
+  // Step 1+2: pre-filter and pre-cap.
+  const prepped = blocks
+    .filter((b) => b.content && b.content.trim().length > 0)
+    .map((b) => {
+      const maxTokens = b.maxTokens ?? Infinity;
+      const currentTokens = estimateTokens(b.content);
+      if (currentTokens > maxTokens) {
+        truncated.push(b.name);
+        return { ...b, content: truncateBlock(b.content, maxTokens) };
+      }
+      return b;
+    });
+
+  const byPriority = {
+    required:  prepped.filter((b) => b.priority === "required"),
+    preferred: prepped.filter((b) => b.priority === "preferred"),
+    optional:  prepped.filter((b) => b.priority === "optional"),
+  };
+
+  const MIN_INCLUDE_TOKENS = 50;
+
+  // Step 3: required blocks always in.
+  for (const block of byPriority.required) {
+    parts.push(block.content);
+    used += estimateTokens(block.content);
+    included.push(block.name);
+  }
+
+  if (used > budget) {
+    console.warn(
+      `[assembleWithBudget] required blocks exceed budget (${used} > ${budget}). ` +
+        `Required blocks: ${byPriority.required.map((b) => b.name).join(", ")}. ` +
+        `Increase the budget for this complexity tier or move blocks to "preferred".`,
+    );
+  }
+
+  // Step 4+5: preferred then optional, with truncation under pressure.
+  for (const tier of [byPriority.preferred, byPriority.optional] as const) {
+    for (const block of tier) {
+      const blockTokens = estimateTokens(block.content);
+      const remaining = budget - used;
+
+      if (remaining < MIN_INCLUDE_TOKENS) {
+        dropped.push(block.name);
+        continue;
+      }
+
+      if (blockTokens <= remaining) {
+        parts.push(block.content);
+        used += blockTokens;
+        included.push(block.name);
+      } else {
+        // Truncate to fit.
+        const truncatedContent = truncateBlock(block.content, remaining);
+        parts.push(truncatedContent);
+        used += estimateTokens(truncatedContent);
+        included.push(block.name);
+        truncated.push(block.name);
+      }
+    }
+  }
+
+  return {
+    text: parts.join(""),
+    used,
+    budget,
+    dropped,
+    truncated,
+    included,
+  };
+}
+
+/**
+ * Default per-complexity budgets for `assembleWithBudget`. Numbers picked
+ * to match the `coaching-agent` complexity tiers — simple/moderate/complex.
+ * Adjust by passing your own budget directly to assembleWithBudget.
+ *
+ * Rationale:
+ *   simple   — quick FAQ-style; doesn't need history, mostly answers from
+ *              athleteContext + memories + docs. 1k = ~4kB of text.
+ *   moderate — most coaching chat; needs training context + plan + memories.
+ *              4k = ~16kB; comfortable headroom for the DCO + 4-week detail.
+ *   complex  — multi-step reasoning across history. 8k = ~32kB; cap before
+ *              prompt-caching savings (C.3) bring effective cost down further.
+ */
+export const COMPLEXITY_CONTEXT_BUDGETS: Record<string, number> = {
+  simple:   1000,
+  moderate: 4000,
+  complex:  8000,
+};

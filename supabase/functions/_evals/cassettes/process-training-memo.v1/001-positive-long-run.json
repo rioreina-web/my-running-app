@@ -1,0 +1,26 @@
+{
+  "id": "001-positive-long-run",
+  "prompt_name": "process-training-memo.v1",
+  "description": "Happy-path baseline. Athlete had a great long run with no injuries. Confirms the harness works end-to-end on the most common voice memo shape — and that coach_insight is specific to what was actually said (not generic 'keep it up' filler).",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"Just got back from my long run. Did 12 miles, took about an hour 45. Started easy around 8:30 pace, brought it down to 7:45 for the last three. Legs felt really smooth the whole way, fueled with a gel at 6 and 9, plenty of water. Solid day.\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight", "workout_notes", "extracted_data"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\"",
+      "(?i)\\bkeep it up\\b",
+      "\"coach_insight\":\\s*\"(?:Nice work|Solid work|Great job|Well done|Awesome)[^\"]*\""
+    ],
+    "required_patterns": [
+      "\"mood\":\\s*\"positive\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

@@ -14,18 +14,16 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { updateAthleteState } from "../_shared/athlete-state.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
+import { corsHeaders } from "../_shared/cors.ts";
+import { requireServiceRole } from "../_shared/auth.ts";
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genAI = new GoogleGenerativeAI(geminiApiKey);
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
 
 const hardTypes = new Set(["tempo", "intervals", "long_run", "race", "progression"]);
 
@@ -35,6 +33,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const authBlocked = requireServiceRole(req, corsHeaders);
+    if (authBlocked) return authBlocked;
+
     const { record } = await req.json();
     if (!record?.id || !record?.audio_url) {
       return errorResponse("record.id and record.audio_url required", 400);
@@ -55,6 +56,9 @@ Deno.serve(async (req: Request) => {
         .single(),
     ]);
     const userId = userRes.data?.user_id;
+    if (!userId) {
+      return errorResponse(`training_log ${record.id} has no user_id`, 404);
+    }
 
     // ── Step 2: Fetch context + download audio in parallel ────────────
     const audioUrl = new URL(record.audio_url);
@@ -175,40 +179,12 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    const prompt = `You are an experienced running coach. Your athlete just recorded a voice check-in about how they're feeling. Listen to the audio, transcribe what they said, assess their readiness, and give specific coaching advice.
-
-VOICE RULES:
-- Talk like a real coach. Short sentences. Be direct.
-- BANNED: "impressive", "journey", "fantastic", "great job", "solid", "Listen to your body"
-- If they're tired, tell them what to do about it. Don't just say "rest is important."
-- If they have something hard coming up, help them decide: push through, modify, or skip.
-- If you recommend modifying today's workout, be SPECIFIC: what workout type to change to, what pace, what distance.
-- Reference their recent training data below.
-
-SAFETY (non-negotiable):
-- If the athlete reports sharp/acute pain, sudden swelling, inability to bear weight, chest pain, or dizziness: set recommendation_type to "medical" and recommend they see a healthcare provider immediately. Do not suggest running through these symptoms.
-- For bone-related pain (shin, foot, hip): err on the side of caution. Recommend rest and medical evaluation.
-- If soreness_areas includes anything with "sharp" or "acute" in the transcript, set readiness_score to 1-2 maximum.
-
-PACE DIRECTION:
-- LOWER pace number = FASTER. 5:00/mi is fast, 9:00/mi is slow.
-- Running slower than easy pace on recovery days is fine.
-${recentContext}${upcomingContext}${todayContext}${injuryContext}
-
-Respond with JSON:
-{
-  "transcription": "exact verbatim transcription of the audio",
-  "cleaned_notes": "2-3 sentence first-person summary of how they feel (write as the runner: 'I feel...', 'My legs...')",
-  "mood": "energized|positive|neutral|tired|struggling|injured",
-  "readiness_score": <1-10 integer> (10 = fully recovered and ready to crush it, 1 = should not run),
-  "recommendation": "2-4 sentences of specific coaching advice",
-  "recommendation_type": "proceed|modify|rest|medical",
-  "plan_action": null or { "action": "swap_to_easy|swap_to_recovery|skip|reduce_distance|proceed", "reason": "1 sentence why", "suggested_type": "easy|recovery|rest" },
-  "sleep_quality": "good|ok|poor" or null,
-  "stress_level": "low|moderate|high" or null,
-  "soreness_areas": ["quads", "calves"] or null,
-  "energy_level": "high|moderate|low" or null
-}`;
+    const prompt = loadPrompt("process-check-in.v1", {
+      recentContext,
+      upcomingContext,
+      todayContext,
+      injuryContext,
+    });
 
     const result = await model.generateContent([
       { text: prompt },

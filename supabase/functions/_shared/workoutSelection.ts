@@ -165,33 +165,16 @@ export interface PaceZones {
   fiveK: number;
 }
 
+// Pace zones come from the central PaceEngine. See _shared/pace-engine.ts.
+// Local function kept as a thin shim so existing call sites (and the local
+// PaceZones interface) don't need to change in this migration.
+import { legacyZonesFromSnapshot } from "./pace-engine.ts";
+
 export function computePaceZones(snapshot: {
   predicted_marathon_seconds?: number;
   predicted_half_seconds?: number;
   predicted_10k_seconds?: number;
   predicted_5k_seconds?: number;
 }): PaceZones | null {
-  const mDist = 26.2188, hDist = 13.1094, tDist = 6.2137, fDist = 3.1069;
-  const mp = snapshot.predicted_marathon_seconds ? snapshot.predicted_marathon_seconds / mDist : 0;
-  const hm = snapshot.predicted_half_seconds ? snapshot.predicted_half_seconds / hDist : 0;
-  const tk = snapshot.predicted_10k_seconds ? snapshot.predicted_10k_seconds / tDist : 0;
-  const fk = snapshot.predicted_5k_seconds ? snapshot.predicted_5k_seconds / fDist : 0;
-
-  if (!mp && !hm && !tk && !fk) return null;
-
-  const marathon = mp || (hm ? hm * 1.06 : (tk ? tk * 1.15 : fk * 1.22));
-  const half = hm || (mp ? mp * 0.943 : (tk ? tk * 1.08 : fk * 1.15));
-  const tenK = tk || (hm ? hm * 0.925 : (fk ? fk * 1.06 : marathon * 0.87));
-  const fiveK = fk || (tk ? tk * 0.943 : (hm ? hm * 0.87 : marathon * 0.82));
-
-  return {
-    easy: marathon + 90,
-    moderate: marathon + 30,
-    steady: marathon,
-    marathon,
-    halfMarathon: half,
-    threshold: (tenK + half) / 2,
-    tenK,
-    fiveK,
-  };
+  return legacyZonesFromSnapshot(snapshot);
 }

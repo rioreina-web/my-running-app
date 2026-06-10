@@ -11,6 +11,107 @@ export interface WeeklyLoad {
   miles: number;
   minutes: number;
   runCount: number;
+  /**
+   * Intensity-weighted load in "weighted minutes". This is the input to
+   * ACWR — a tempo minute counts ~2× an easy minute, so a 50-mile week
+   * with two threshold sessions has a higher weightedLoad than a 50-mile
+   * week of all easy running.
+   *
+   * Computed in two ways depending on what's available per workout:
+   *   1. PREFERRED: zone seconds from `workout_features` (easy/moderate/
+   *      threshold/hard), each multiplied by its WEIGHTS factor. Most
+   *      accurate — reflects what actually happened in the run.
+   *   2. FALLBACK: workout_type × duration_minutes when features haven't
+   *      been computed yet (compute-workout-features async hasn't run,
+   *      or the workout has no HealthKit splits).
+   *
+   * Units: weighted minutes (i.e. an easy-only week's weightedLoad ≈
+   * its `minutes` value; a tempo-heavy week's weightedLoad > `minutes`).
+   */
+  weightedLoad: number;
+}
+
+export interface WorkoutFeaturesRow {
+  training_log_id: string;
+  /**
+   * Time-weighted average of per-segment ZONE_WEIGHTS computed by
+   * compute-workout-features (e.g. easy=1.0, mp=2.5, threshold=3.0,
+   * 10k=3.5, 5k=4.0, mile=5.0). This is effectively the workout's IF
+   * (intensity factor) on a discrete scale — it captures the pace
+   * gradient WITHIN a workout, which the 4-zone summary throws away.
+   */
+  intensity_score: number | null;
+  /** Total elapsed seconds for the run. */
+  total_duration_seconds: number | null;
+}
+
+/**
+ * Fallback weights when workout_features hasn't been computed for a log.
+ * Multiplied by `workout_duration_minutes`. Calibrated against typical
+ * advanced single-session loads:
+ *   10×400m mile pace ≈ 6×1K 5K pace ≈ 10×1K 10K pace ≈ 6mi HM ≈ 10mi MP
+ * The numbers below are deliberately lower than the per-segment weights
+ * in compute-workout-features — fallback assumes a "typical" workout of
+ * the given type, including warm-up/cool-down. Real features always tell
+ * a more accurate story.
+ */
+const TYPE_FALLBACK_WEIGHTS: Record<string, number> = {
+  easy: 1.0,
+  recovery: 0.7,    // matches per-segment recovery weight
+  long_run: 1.1,    // mostly aerobic
+  long: 1.1,
+  strides: 1.5,
+  progression: 1.6,
+  // "tempo" / "threshold" labels are fuzzy — see compute-workout-features.
+  // We weight them at the HMP level (3.5) since most plans use them to
+  // mean sustained sub-threshold work. The full session, including WU/CD,
+  // averages lower in practice (most logs are ~30% hard, 70% easy), so
+  // the per-workout fallback factor is ~half the per-minute weight.
+  tempo: 1.8,
+  threshold: 1.8,
+  // "intervals" assumes 5K–10K pace; mile_repeats handles mile-pace work.
+  intervals: 2.5,
+  mile_repeats: 3.0,
+  // MP simulation runs (e.g. 8–13mi at marathon pace) should land near
+  // a 5K-interval session in load — bump fallback to reflect that.
+  mp_run: 2.7,
+  race: 2.8,
+  rest: 0.0,
+  cross_training: 0.7,
+  strength: 0.5,
+};
+
+/**
+ * Compute weighted load (in weighted minutes) for a single training log.
+ *
+ * Preferred path — uses `intensity_score × duration` from workout_features.
+ * `intensity_score` is the time-weighted average of per-segment pace
+ * weights (mile=5.0, 5k=4.0, 10k=3.5, threshold=3.0, mp=2.5, easy=1.0)
+ * computed by compute-workout-features. This captures the within-workout
+ * pace gradient — a 10×400m at mile pace gets ~5× the load per minute
+ * of an easy run.
+ *
+ * Fallback path — workout_type × duration when features haven't been
+ * computed yet (async hasn't run, or no HealthKit splits).
+ *
+ * Returns: weighted minutes. An all-easy 60-minute run ≈ 60. A 60-minute
+ * tempo run ≈ 60 × 3.0 = 180. A 10-mile MP session for a 5:20 marathoner
+ * (~53 min hard at 2.5 + 20 min easy at 1.0) ≈ 152.
+ */
+export function computeWeightedLoadForLog(
+  log: TrainingLogRow,
+  features: WorkoutFeaturesRow | undefined,
+): number {
+  // Preferred path — per-segment intensity from workout_features.
+  if (features?.intensity_score && features?.total_duration_seconds) {
+    return (features.intensity_score * features.total_duration_seconds) / 60;
+  }
+  // Fallback — workout_type × duration_minutes.
+  const dur = log.workout_duration_minutes ?? 0;
+  if (dur <= 0) return 0;
+  const type = (log.workout_type ?? "easy").toLowerCase();
+  const factor = TYPE_FALLBACK_WEIGHTS[type] ?? 1.0;
+  return dur * factor;
 }
 
 export interface ScheduledWorkoutRow {
@@ -112,11 +213,28 @@ export interface InjuryRiskResult {
 
 // ─── ACWR ────────────────────────────────────────────────────────────────────
 
+/**
+ * ACWR (Acute:Chronic Workload Ratio) — intensity-weighted version.
+ *
+ * Acute = this week's `weightedLoad` (sum of zone-weighted minutes).
+ * Chronic = exponentially-weighted average of the prior 4 weeks'
+ * `weightedLoad` (recent-heavy: 4·3·2·1).
+ *
+ * Same ratio math as the original miles-only ACWR, but the input is
+ * volume × intensity instead of bare miles. Two 50-mile weeks now
+ * produce different ACWRs if one had more threshold work than the other.
+ *
+ * Interpretation bands (research-derived, treat as guidance not gospel):
+ *   < 0.6  → detraining / volume drop
+ *   0.8–1.3 → "sweet spot"
+ *   > 1.3  → overreach / elevated injury risk
+ *   > 1.5  → spike — recommend pulling back
+ */
 export function calculateACWR(
   currentWeek: WeeklyLoad,
   previousWeeks: WeeklyLoad[]
 ): { acwr: number; chronicLoad: number; acuteLoad: number } {
-  const acuteLoad = currentWeek.miles;
+  const acuteLoad = currentWeek.weightedLoad;
 
   if (previousWeeks.length === 0) {
     return { acwr: 1.0, chronicLoad: acuteLoad, acuteLoad };
@@ -126,8 +244,10 @@ export function calculateACWR(
   const weights = [4, 3, 2, 1].slice(0, previousWeeks.length);
   const totalWeight = weights.reduce((s, w) => s + w, 0);
   const chronicLoad =
-    previousWeeks.reduce((sum, week, i) => sum + week.miles * weights[i], 0) /
-    totalWeight;
+    previousWeeks.reduce(
+      (sum, week, i) => sum + week.weightedLoad * weights[i],
+      0,
+    ) / totalWeight;
 
   const acwr = chronicLoad > 0 ? acuteLoad / chronicLoad : 1.0;
 
@@ -466,20 +586,42 @@ export function generateAlerts(
 
 // ─── Aggregation ─────────────────────────────────────────────────────────────
 
-export function aggregateWeeklyLoad(logs: TrainingLogRow[]): WeeklyLoad {
+/**
+ * Sum a week of training logs into a WeeklyLoad. The optional
+ * `featuresByLogId` map is used to compute intensity-weighted load
+ * (preferred); when no entry is present for a log, the function falls
+ * back to workout_type × duration_minutes.
+ *
+ * For backward compatibility, callers that don't have features yet can
+ * pass `undefined` — the resulting `weightedLoad` will use only the
+ * fallback path and still be a usable single number.
+ */
+export function aggregateWeeklyLoad(
+  logs: TrainingLogRow[],
+  featuresByLogId?: Map<string, WorkoutFeaturesRow>,
+): WeeklyLoad {
   let miles = 0;
   let minutes = 0;
   let runCount = 0;
+  let weightedLoad = 0;
 
   for (const log of logs) {
-    if (log.workout_distance_miles && log.workout_distance_miles > 0) {
-      miles += log.workout_distance_miles;
-      minutes += log.workout_duration_minutes || 0;
+    const distance = log.workout_distance_miles ?? 0;
+    if (distance > 0) {
+      miles += distance;
+      minutes += log.workout_duration_minutes ?? 0;
       runCount++;
     }
+    // weightedLoad accrues even for non-distance entries (strength,
+    // cross-train) since they contribute load even if they don't add
+    // mileage. The fallback weights take care of those.
+    weightedLoad += computeWeightedLoadForLog(
+      log,
+      featuresByLogId?.get(log.id),
+    );
   }
 
-  return { miles, minutes, runCount };
+  return { miles, minutes, runCount, weightedLoad };
 }
 
 export function computeAllMetrics(
@@ -488,10 +630,19 @@ export function computeAllMetrics(
   scheduledThisWeek: ScheduledWorkoutRow[],
   activeInjuries: InjuryRow[],
   formChecks: FormCheckRow[],
-  racePaceSecondsPerMile: number | null
+  racePaceSecondsPerMile: number | null,
+  /**
+   * Optional map keyed by training_log.id → workout_features row. When
+   * supplied, ACWR and weeklyLoad become intensity-weighted (preferred).
+   * When omitted, the function still returns a sensible answer using
+   * the workout_type × duration fallback in computeWeightedLoadForLog.
+   */
+  featuresByLogId?: Map<string, WorkoutFeaturesRow>,
 ): ComputedMetrics {
-  const thisWeekLoad = aggregateWeeklyLoad(thisWeekLogs);
-  const prevLoads = previousWeeksLogs.map(aggregateWeeklyLoad);
+  const thisWeekLoad = aggregateWeeklyLoad(thisWeekLogs, featuresByLogId);
+  const prevLoads = previousWeeksLogs.map((logs) =>
+    aggregateWeeklyLoad(logs, featuresByLogId),
+  );
 
   // ACWR
   const { acwr, chronicLoad, acuteLoad } = calculateACWR(thisWeekLoad, prevLoads);

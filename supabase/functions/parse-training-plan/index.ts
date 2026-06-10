@@ -1,3 +1,11 @@
+// TODO(adaptive-plan-1.6): REWORK the LLM prompt + pace rules in this file.
+//   The "PACE RULES" block (~lines 106-120) hard-codes percentage mappings
+//   ("easy = 70%", "threshold = 88%") — these are the source of wrong paces.
+//   New instruction: output target_pace_seconds_per_mile directly using the athlete's
+//   current fitness profile. If profile unknown, output pace_reference only ('easy',
+//   'marathon', 'half', '10K', '5K', 'mile') and let the backend resolve.
+//   Remove all % examples from the prompt. Never write pacePercentage to new rows.
+//   See: adaptive-plan-loop-prompts.md § Prompt 1.6
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";

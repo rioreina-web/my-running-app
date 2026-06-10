@@ -8,12 +8,11 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
+import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -36,14 +35,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { user_id, weeks = 4 } = await req.json();
+    const { user_id: bodyUserId, weeks = 4 } = await req.json();
 
-    if (!user_id) {
-      return new Response(
-        JSON.stringify({ error: "user_id is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const { userId: user_id, isServiceRole } = auth;
+
+    const rlBlocked = await enforceFeatureRateLimit(user_id, "analysis", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
 
     const blockDays = weeks * 7;
     const blockStart = new Date(Date.now() - blockDays * 24 * 60 * 60 * 1000).toISOString();
@@ -191,47 +190,41 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── AI prompt ──
-    const prompt = `You're a running coach reviewing a ${weeks}-week training block. Be specific, honest, and constructive. Reference actual numbers from the data.
-
-PACE DIRECTION: In running, LOWER pace number = FASTER. 5:00/mi is fast, 9:00/mi is slow. "Too fast" means a LOWER number than prescribed. "Too slow" means a HIGHER number. Running slower than easy pace on recovery days is good.
-
-THIS BLOCK (${weeks} weeks):
-Total: ${blockStats.totalMiles} miles, ${blockStats.totalRuns} runs
-Avg weekly: ${blockStats.avgWeekly} miles (peak: ${blockStats.peakWeek})
-Weekly breakdown: ${blockStats.weeklyMiles.join(" → ")}
-Quality sessions: ${blockStats.qualitySessions} (${blockStats.hardMinutes} hard minutes total)
-Easy pace: ${blockStats.avgEasyPace} | Hard pace: ${blockStats.avgHardPace}
-Longest run: ${blockStats.longestRun.toFixed(1)} miles
-Mood: ${blockStats.positiveMoodPct}% positive
-${injuries.length > 0 ? `Injuries: ${injuries.map((i: Record<string, unknown>) => `${i.body_area} (severity ${i.severity})`).join(", ")}` : "Clean block — no injuries"}
-${fitnessDelta ? `Fitness changes: ${fitnessDelta}` : ""}
-${plan ? `Training plan: ${plan.name}, targeting ${plan.target_race_distance}${plan.target_time_seconds ? ` in ${fmtTime(plan.target_time_seconds)}` : ""}` : "No active training plan"}
-${athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : ""}
-
-${prevStats ? `PREVIOUS BLOCK (for comparison):
+    const injuriesLine = injuries.length > 0
+      ? `Injuries: ${injuries.map((i: Record<string, unknown>) => `${i.body_area} (severity ${i.severity})`).join(", ")}`
+      : "Clean block — no injuries";
+    const fitnessDeltaLine = fitnessDelta ? `Fitness changes: ${fitnessDelta}` : "";
+    const planLine = plan
+      ? `Training plan: ${plan.name}, targeting ${plan.target_race_distance}${plan.target_time_seconds ? ` in ${fmtTime(plan.target_time_seconds)}` : ""}`
+      : "No active training plan";
+    const athleteContextBlock = athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : "";
+    const prevBlockBlock = prevStats
+      ? `PREVIOUS BLOCK (for comparison):
 Total: ${prevStats.totalMiles} miles, ${prevStats.totalRuns} runs (avg ${prevStats.avgWeekly}/week)
 Quality: ${prevStats.qualitySessions} sessions, ${prevStats.hardMinutes} hard minutes
 Easy: ${prevStats.avgEasyPace} | Hard: ${prevStats.avgHardPace}
-Mood: ${prevStats.positiveMoodPct}% positive` : "No previous block data"}
+Mood: ${prevStats.positiveMoodPct}% positive`
+      : "No previous block data";
 
-Respond with JSON (no markdown):
-{
-  "block_grade": "<A+ through F>",
-  "one_line_summary": "<1 sentence summary of the block>",
-  "volume_assessment": "<2-3 sentences on volume progression>",
-  "intensity_assessment": "<2-3 sentences on quality work>",
-  "recovery_assessment": "<1-2 sentences on recovery/mood patterns>",
-  "key_achievements": ["<specific achievement from data>", ...],
-  "areas_to_improve": ["<specific, actionable improvement>", ...],
-  "fitness_delta_summary": "<1 sentence on fitness trajectory>",
-  "next_block_recommendations": [
-    "<specific recommendation with numbers, e.g. 'Push peak week to 42 miles'>",
-    "<another recommendation>",
-    "<another>"
-  ],
-  "volume_target_next_block": "<e.g. '35-40 miles/week with one 42-mile peak'>",
-  "key_workout_to_add": "<specific workout suggestion with paces from their data>"
-}`;
+    const prompt = loadPrompt("block-review.v1", {
+      weeks,
+      totalMiles: blockStats.totalMiles,
+      totalRuns: blockStats.totalRuns,
+      avgWeekly: blockStats.avgWeekly,
+      peakWeek: blockStats.peakWeek,
+      weeklyMiles: blockStats.weeklyMiles.join(" → "),
+      qualitySessions: blockStats.qualitySessions,
+      hardMinutes: blockStats.hardMinutes,
+      avgEasyPace: blockStats.avgEasyPace,
+      avgHardPace: blockStats.avgHardPace,
+      longestRun: blockStats.longestRun.toFixed(1),
+      positiveMoodPct: blockStats.positiveMoodPct,
+      injuriesLine,
+      fitnessDeltaLine,
+      planLine,
+      athleteContextBlock,
+      prevBlockBlock,
+    });
 
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
     if (!geminiKey) {

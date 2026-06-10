@@ -20,11 +20,7 @@ import {
   type AthleteProfile,
 } from "../_shared/athleteProfile.ts";
 import { rebuildAthleteState } from "../_shared/athlete-state.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req: Request) => {
   // CORS preflight

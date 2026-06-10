@@ -2,12 +2,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
 import { validateLength } from "../_shared/validation.ts";
 import { getAthleteState } from "../_shared/athlete-state.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
+import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -75,41 +74,7 @@ async function researchRace(
   const dateHint = raceDate ? ` scheduled for ${raceDate}` : "";
   const locationHint = location ? ` in ${location}` : "";
 
-  const prompt = `Research the race "${raceName}"${dateHint}${locationHint}. I need detailed course and logistics data for race preparation.
-
-Find the following information. Search the race's official website, running forums, past participant reviews, and course guides.
-
-IMPORTANT RULES:
-- Only include information you are confident about from actual sources.
-- For EACH piece of data, mentally note where you found it.
-- If you cannot find specific data (like exact elevation or aid stations), set that field to null — do NOT estimate or guess.
-- If the race has changed its course recently, note that.
-- If you're unsure about ANY detail, add a note in verification_notes explaining what's uncertain and suggest specific websites or resources the runner should check to verify (e.g., "Check the official course map at [race website] for the latest route" or "Elevation data varies by source — verify on the race's Strava segment").
-
-Return ONLY a JSON object with this exact structure (no markdown, no code fences):
-
-{
-  "course": {
-    "elevation_gain_ft": <number or null>,
-    "elevation_loss_ft": <number or null>,
-    "net_elevation_ft": <number or null — negative means net downhill>,
-    "key_hills": [{"mile": <number>, "description": "<what happens>", "elevation_change_ft": <number>}],
-    "surface": "<road/trail/mixed>",
-    "aid_station_count": <number or null>,
-    "aid_station_details": "<brief description of aid station spacing/offerings or null>",
-    "course_description": "<2-3 paragraph description of the course — what to expect mile by mile, the vibe, tricky sections, where to push, where to hold back>",
-    "course_map_url": "<official course map URL or null>",
-    "start_time": "<typical start time or null>",
-    "start_location": "<where the start line is>",
-    "notable_features": ["<any notable course features — loops, bridges, spectator hotspots, etc.>"],
-    "out_and_backs": <number of out-and-back sections or null>,
-    "qualifying_race": <true if it's a Boston/other qualifier>,
-    "field_size": "<approximate field size or null>"
-  },
-  "confidence": "<high if you found the official race website and recent course data, medium if you found some data but not everything, low if mostly uncertain>",
-  "sources": ["<list of websites/sources you found information from>"],
-  "verification_notes": "<what you're unsure about, what might have changed, and WHERE the runner should go to verify — be specific about URLs or resources>"
-}`;
+  const prompt = loadPrompt("race-intel.v1", { raceName, dateHint, locationHint });
 
   const result = await model.generateContent(prompt);
   const raw = result.response.text();
@@ -300,7 +265,14 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body: RaceIntelRequest = await req.json();
-    const { race_name, race_date, location, user_id, goal_id, force_refresh } = body;
+    const { race_name, race_date, location, user_id: bodyUserId, goal_id, force_refresh } = body;
+
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const { userId: user_id, isServiceRole } = auth;
+
+    const rlBlocked = await enforceFeatureRateLimit(user_id, "race", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
 
     if (!race_name) {
       return new Response(
@@ -322,15 +294,19 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Check for cached result (within 30 days) unless force refresh
+    // Check for cached result (within 30 days) unless force refresh.
+    // Cache is scoped per-user, plus a shared "system" pool for rows written
+    // without a caller user_id. Never read another user's cached row.
     if (!force_refresh) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+      const cacheOwners = user_id ? [user_id, "system"] : ["system"];
       const { data: cached } = await supabase
         .from("race_intel")
         .select("*")
         .ilike("race_name", `%${race_name}%`)
+        .in("user_id", cacheOwners)
         .gte("fetched_at", thirtyDaysAgo.toISOString())
         .order("fetched_at", { ascending: false })
         .limit(1)

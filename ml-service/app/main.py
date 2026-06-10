@@ -14,7 +14,10 @@ if SENTRY_DSN:
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
 
 from app.auth import JWTAuthMiddleware
 from app.config import ALLOWED_ORIGINS
@@ -22,11 +25,30 @@ from app.db import fetch_workout_features, fetch_race_results, fetch_fitness_sna
 from app.predictor import predictor
 from app.injury_risk import compute_injury_risk
 
+
+def _rate_limit_key(request: Request) -> str:
+    """Use the authenticated user's JWT sub claim as the rate-limit key."""
+    return getattr(request.state, "user_id", request.client.host if request.client else "anon")
+
+
+limiter = Limiter(key_func=_rate_limit_key)
+
 app = FastAPI(
     title="Running ML Service",
     description="ML-powered fitness predictions and injury risk scoring",
     version="0.1.0",
 )
+
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Rate limit exceeded: {exc.detail}. Please wait and try again."},
+    )
+
 
 # Auth middleware must be added before CORS so preflight OPTIONS bypass auth
 app.add_middleware(JWTAuthMiddleware)
@@ -66,6 +88,7 @@ def health():
 
 
 @app.post("/predict-fitness")
+@limiter.limit("10/minute")
 def predict_fitness(req: PredictRequest, request: Request):
     _enforce_ownership(request, req.user_id)
     features = fetch_workout_features(req.user_id, days=req.days)
@@ -75,6 +98,7 @@ def predict_fitness(req: PredictRequest, request: Request):
 
 
 @app.post("/injury-risk")
+@limiter.limit("10/minute")
 def injury_risk(req: InjuryRiskRequest, request: Request):
     _enforce_ownership(request, req.user_id)
     features = fetch_workout_features(req.user_id, days=req.days)
@@ -83,6 +107,7 @@ def injury_risk(req: InjuryRiskRequest, request: Request):
 
 
 @app.post("/training-summary")
+@limiter.limit("30/minute")
 def training_summary(req: PredictRequest, request: Request):
     """Quick training load summary without predictions."""
     _enforce_ownership(request, req.user_id)

@@ -12,6 +12,8 @@ export interface DeterministicPlanInputs {
   currentWeeklyMileage: number;
   maxWeeklyMileage: number | null;
   preferredLongRunDay: number;
+  workout1Day: number; // 1=Mon..7=Sun — speed/tempo slot
+  workout2Day: number; // 1=Mon..7=Sun — medium long / second quality slot
   runsPerWeek: number;
   canRunDoubles: boolean;
   planName: string;
@@ -238,6 +240,8 @@ export function buildDeterministicPlan(inputs: DeterministicPlanInputs): PlanOut
 
   const maxMileage = inputs.maxWeeklyMileage || computeMaxMileage(inputs.currentWeeklyMileage, inputs.raceDistance);
   const longRunDay = inputs.preferredLongRunDay;
+  const workout1Day = inputs.workout1Day || 2;
+  const workout2Day = inputs.workout2Day || 4;
 
   // Count weeks per phase
   const phaseProgress: Record<PRDPhase, number> = { 0: 0, 1: 0, 2: 0, 3: 0 };
@@ -361,7 +365,7 @@ export function buildDeterministicPlan(inputs: DeterministicPlanInputs): PlanOut
     }
 
     prevTueCode = tueCode;
-    workouts.push({ dayOfWeek: 2, workoutCode: tueCode, totalDistanceMiles: tueMiles });
+    workouts.push({ dayOfWeek: workout1Day, workoutCode: tueCode, totalDistanceMiles: tueMiles });
 
     // ─── THURSDAY (Medium Long Run) ────────────────────────────
     // Rotate through codes at target distance — not the same one every week
@@ -383,7 +387,7 @@ export function buildDeterministicPlan(inputs: DeterministicPlanInputs): PlanOut
     }
     const thuMiles = WORKOUT_DISTANCES[thuCode] || thuTargetMiles;
 
-    workouts.push({ dayOfWeek: 4, workoutCode: thuCode, totalDistanceMiles: thuMiles });
+    workouts.push({ dayOfWeek: workout2Day, workoutCode: thuCode, totalDistanceMiles: thuMiles });
 
     // ─── SATURDAY (Workout 2 / Long Run) ───────────────────────
     // Alternate between long run types — no two same type in a row
@@ -590,6 +594,8 @@ export interface SkeletonRunnerProfile {
   trackAccess: boolean;
   maxSessionMinutes: number;
   preferredLongRunDay: number; // 1=Mon ... 7=Sun
+  workout1Day: number; // 1=Mon..7=Sun — speed/tempo slot
+  workout2Day: number; // 1=Mon..7=Sun — medium long slot
   runsPerWeek: number;
   maxMileageJumpPercent: number;
   maxWeeklyMileage: number | null;
@@ -640,6 +646,8 @@ export function generatePlanSkeleton(
   const maxMileage = profile.maxWeeklyMileage ||
     computeMaxMileage(profile.currentWeeklyMileage, profile.goalDistance);
   const longRunDay = profile.preferredLongRunDay;
+  const workout1Day = profile.workout1Day || 2;
+  const workout2Day = profile.workout2Day || 4;
 
   const skeleton: WeeklySkeleton[] = [];
   let prevMileage = profile.currentWeeklyMileage;
@@ -665,7 +673,7 @@ export function generatePlanSkeleton(
     const tueMi = Math.round(target * 0.17);
     const thuMi = Math.round(target * 0.17);
 
-    const qualitySet = new Set([2, 4, longRunDay]);
+    const qualitySet = new Set([workout1Day, workout2Day, longRunDay]);
     const easyBudget = Math.max(0, target - (longMi + tueMi + thuMi));
 
     // Day roles relative to long run
@@ -718,12 +726,12 @@ export function generatePlanSkeleton(
       for (let d = 1; d <= 7; d++) {
         if (d === raceDow) {
           days.push({ dayOfWeek: d, isQualityDay: true, isDouble: false, assignedMileage: raceMiles, easyPaceCode: null, ai_workout_code: "RACE" });
-        } else if (d === 2) {
-          // Tuesday: AI picks a sharpener
+        } else if (d === workout1Day) {
+          // Sharpener slot: AI picks a short workout
           days.push({ dayOfWeek: d, isQualityDay: true, isDouble: false, assignedMileage: 8, easyPaceCode: null, ai_workout_code: null });
         } else if (d === dayBeforeRace && !qualitySet.has(d)) {
           days.push({ dayOfWeek: d, isQualityDay: false, isDouble: false, assignedMileage: 3, easyPaceCode: 'STRIDES', ai_workout_code: null });
-        } else if (d === 4) {
+        } else if (d === workout2Day) {
           days.push({ dayOfWeek: d, isQualityDay: false, isDouble: false, assignedMileage: 4, easyPaceCode: 'EASY', ai_workout_code: null });
         } else {
           days.push({ dayOfWeek: d, isQualityDay: false, isDouble: false, assignedMileage: 0, easyPaceCode: 'REST', ai_workout_code: null });
@@ -733,9 +741,9 @@ export function generatePlanSkeleton(
       // Normal week
       let normalIdx = 0;
       for (let d = 1; d <= 7; d++) {
-        if (d === 2) {
+        if (d === workout1Day) {
           days.push({ dayOfWeek: d, isQualityDay: true, isDouble: false, assignedMileage: tueMi, easyPaceCode: null, ai_workout_code: null });
-        } else if (d === 4) {
+        } else if (d === workout2Day) {
           days.push({ dayOfWeek: d, isQualityDay: true, isDouble: false, assignedMileage: thuMi, easyPaceCode: null, ai_workout_code: null });
         } else if (d === longRunDay) {
           days.push({ dayOfWeek: d, isQualityDay: true, isDouble: false, assignedMileage: longMi, easyPaceCode: null, ai_workout_code: null });
@@ -795,6 +803,8 @@ export function parseDeterministicInputs(
   const peakMatch = message.match(/(?:Peak|Max) weekly mileage:\s*(\d+)/i);
   const runsMatch = message.match(/Runs per week:\s*(\d+)/i);
   const longRunDayMatch = message.match(/[Pp]referred long run day:\s*(\w+)/);
+  const workout1Match = message.match(/[Pp]referred workout day 1:\s*(\w+)/);
+  const workout2Match = message.match(/[Pp]referred workout day 2:\s*(\w+)/);
   const doublesMatch = message.match(/Can run doubles:\s*yes/i);
   const nameMatch = message.match(/Plan name:\s*(.+)/im);
 
@@ -803,6 +813,13 @@ export function parseDeterministicInputs(
     friday: 5, saturday: 6, sunday: 7,
   };
 
+  const longRunDay = longRunDayMatch ? (dayMap[longRunDayMatch[1].toLowerCase()] || 6) : 6;
+  let workout1Day = workout1Match ? (dayMap[workout1Match[1].toLowerCase()] || 2) : 2;
+  let workout2Day = workout2Match ? (dayMap[workout2Match[1].toLowerCase()] || 4) : 4;
+  // Guard: quality days must be distinct from each other and from long run
+  if (workout1Day === longRunDay || workout1Day === workout2Day) workout1Day = 2;
+  if (workout2Day === longRunDay || workout2Day === workout1Day) workout2Day = workout1Day === 4 ? 3 : 4;
+
   return {
     startDate: body.startDate as string,
     raceDate: body.raceDate as string,
@@ -810,7 +827,9 @@ export function parseDeterministicInputs(
     goalTimeSeconds: (body.goalTimeSeconds as number) || null,
     currentWeeklyMileage: body.currentWeeklyMileage as number,
     maxWeeklyMileage: peakMatch ? parseInt(peakMatch[1]) : null,
-    preferredLongRunDay: longRunDayMatch ? (dayMap[longRunDayMatch[1].toLowerCase()] || 6) : 6,
+    preferredLongRunDay: longRunDay,
+    workout1Day,
+    workout2Day,
     runsPerWeek: runsMatch ? parseInt(runsMatch[1]) : 6,
     canRunDoubles: !!doublesMatch,
     planName: nameMatch ? nameMatch[1].trim() : `${raceDistance.replace("_", " ")} Training Plan`,

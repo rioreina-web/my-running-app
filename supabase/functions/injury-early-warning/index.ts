@@ -11,12 +11,11 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
+import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -323,14 +322,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { user_id } = await req.json();
+    const { user_id: bodyUserId } = await req.json();
 
-    if (!user_id) {
-      return new Response(
-        JSON.stringify({ error: "user_id is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const { userId: user_id, isServiceRole } = auth;
+
+    const rlBlocked = await enforceFeatureRateLimit(user_id, "injury_analysis", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
 
     console.log(`Injury early warning check for user ${user_id}`);
 
@@ -431,24 +430,12 @@ Week 4: ${weekMiles[3].toFixed(1)} miles`;
       }
     }
 
-    const prompt = `You're a runner's training partner who also happens to know exercise science. You've noticed some concerning patterns in their recent training data and want to give them a heads-up — not as a doctor, but as someone who cares about their long-term health.
-
-RISK SIGNALS DETECTED (score: ${riskScore}/10):
-${signalSummary}
-
-${contextBlock}
-${athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : ""}
-
-Write a brief injury warning (3-4 sentences) that:
-1. Acknowledges that hard training is part of the process — don't be alarmist
-2. Points out the SPECIFIC pattern(s) that concern you most
-3. Gives 2-3 concrete, actionable suggestions (not generic "rest more" — be specific based on the signals)
-4. If pain mentions were detected alongside high load, be more direct about backing off
-
-- For severity >= 5 combined with high training load: recommend medical evaluation.
-- For bone-related injuries at ANY severity: recommend medical evaluation. Stress fractures start as mild pain.
-
-Tone: concerned training partner, not medical professional. Casual but informed. No headers, no bullet points. No disclaimers about seeing a doctor unless there are actual pain mentions with severity >= 5 combined with high load, or severity >= 6 standalone.`;
+    const prompt = loadPrompt("injury-early-warning.v1", {
+      riskScore,
+      signalSummary,
+      contextBlock,
+      athleteContextBlock: athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : "",
+    });
 
     // ── AI call ──
     const geminiKey = Deno.env.get("GEMINI_API_KEY");

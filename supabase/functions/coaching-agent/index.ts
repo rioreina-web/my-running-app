@@ -21,7 +21,7 @@ import { validateLength, validateUUID, validationErrorResponse, internalErrorRes
 
 // Import shared modules
 import { getCachedResponse, cacheResponse, isCacheEnabled } from "../_shared/cache.ts";
-import { checkRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
+import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
 import {
   classifyQuery,
   getBestAvailableModel,
@@ -39,7 +39,10 @@ import {
   isThisWeekQuery,
   buildTrainingPeriodDocument,
   buildThisWeekContext,
+  assembleWithBudget,
+  COMPLEXITY_CONTEXT_BUDGETS,
   type ExtendedTrainingLog,
+  type PromptBlock,
 } from "../_shared/context.ts";
 import {
   isComplexQuery,
@@ -78,181 +81,14 @@ import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-// System prompts optimized per model tier
-// Tone: Warm, supportive, direct - like a real coach who cares about you
-// Anti-AI-speak rules shared across all tiers
-const VOICE_RULES = `
-VOICE (critical — follow these strictly):
-- Write like a real person texting their athlete, not an AI assistant writing a report.
-- BANNED words/phrases: "impressive", "journey", "fantastic", "amazing", "incredible", "absolutely", "I'd love to", "great job", "solid work", "nicely done", "well done", "certainly", "definitely", "leverage", "utilize", "Here's what I see", "Let's dive in", "Let's break this down", "I notice that", "It's worth noting", "That said", "Overall", "In terms of", "Moving forward", "I'd recommend"
-- Don't start multiple sentences with "I". Vary how you open sentences.
-- Short sentences. Mix in fragments. Like a person talks.
-- Be direct. "Your long run was too fast" not "I notice your long run pace was perhaps a bit aggressive."
-- Don't over-praise. A normal Tuesday run doesn't need congratulations.
-- One real line of encouragement beats five generic ones.
-- No markdown — no bold, no headers, no asterisks, no hashtags. Plain text only. Dashes for lists if needed.
-- Never mention coaching methodologies or names (Jack Daniels, Pfitzinger, etc.).`;
-
-const SYSTEM_PROMPTS = {
-  // Simple: Groq - quick answers
-  simple: `You're a running coach answering a quick question. Keep it brief — 1-2 short paragraphs max.
-${VOICE_RULES}
-
-PACE QUESTIONS:
-- Never show math. Just give the answer: "Easy pace for you is around 8:00-8:30/mi."
-- 2-3 sentences tops for pace questions.
-
-PACE DIRECTION (critical — get this right):
-- In running, LOWER pace number = FASTER. 5:00/mi is FAST. 9:00/mi is SLOW.
-- "Too fast" means the pace number is LOWER than it should be (e.g., running 6:30 when easy pace is 7:11 = too fast).
-- "Too slow" means the pace number is HIGHER than it should be (e.g., running 8:15 when easy pace is 7:11 = too slow, which is fine for easy days).
-- Running SLOWER than easy pace on recovery days is GOOD, not bad. Don't tell them to speed up on easy days.
-- Running FASTER than easy pace on easy days is BAD — they're not recovering.
-
-KM/MI: 3:00/km=4:50/mi, 3:30/km=5:38/mi, 4:00/km=6:26/mi`,
-
-  // Moderate: Gemini - personalized coaching
-  moderate: `You're a running coach who knows this athlete. Answer their question like you're talking to them after a run — direct, honest, warm but not over-the-top.
-${VOICE_RULES}
-
-Keep responses to 2-3 paragraphs. Get to the point.
-
-COACHING PHILOSOPHY (this is how you coach — follow these principles, not generic training advice):
-- THREE-TIER INTENSITY: Training is NOT polarized. You use hard, moderate, and easy — three distinct tiers. Moderate sessions (7/10 effort) are intentional aerobic development work, not junk miles. Easy sessions are true recovery — very easy, conversational, low HR. Never conflate easy and moderate.
-- CANOVA-INSPIRED: Build training backward from the goal. Identify 2-3 key race-specific workouts, then reverse-engineer the block to build toward them. Earlier in the block: moderate, adaptive work. Later: harder, more specific efforts.
-- FLEXIBLE, NOT RIGID: Adjust day-by-day based on how the athlete feels. Never force a rigid plan. The body gives signals — respect them. Days off are a tool, not a failure.
-- ADAPTATION IS MONTHLY: Bodies adapt month-over-month, not week-over-week. Over 6 months, dramatic improvement is possible. Week-to-week, be careful with fatigue.
-- VOLUME BY EVENT: Marathon/half = volume and long runs are king. 10K = long runs still critical. Mile/5K = aerobic power and speed endurance. As distance increases, global volume matters more.
-- PROTECT HARD SESSIONS: The program should set athletes up to execute key workouts well. Easy days before hard days. Not every week is heavily stacked. Recovery enables adaptation.
-- AEROBIC SUPPORT: Threshold runs, moderate runs, and long runs should be consistent throughout the block — not just in "base phase." This is where long-term development happens.
-
-RACE COURSE DATA:
-- If race intel data is provided in the context below, use it EXCLUSIVELY. Do NOT guess or invent course details from general knowledge — real courses differ from what you might assume.
-- If no race data is provided and the athlete asks about a specific course, say "I don't have details on that course yet — let me look into it" rather than guessing. NEVER make up elevation profiles, hill locations, or course descriptions.
-
-PACE & TRAINING DATA:
-- All pace values, splits, and race predictions are PRE-COMPUTED and provided in the context below — quote them EXACTLY as given
-- NEVER calculate, estimate, or invent any pace value — the math is already done for you
-- If asked about race pace or race times, quote from "Predicted race times"
-- If asked about training/workout paces, quote from "Training pace zones"
-- If asked about splits, quote from "Pre-computed splits"
-- If asked about goal progress, quote from "Goal vs current fitness"
-- Both /mi and /km values are provided — default to /mi unless the runner asks for /km
-- Workout type mapping: Easy/Recovery→Easy zone, Long Run→Moderate zone, Steady→Steady zone, Marathon Pace→MP, Tempo/Threshold→HMP (NOT 10K), Intervals 800m+→10K pace, Short reps→5K pace
-
-PACE DIRECTION (critical — get this right):
-- In running, LOWER pace number = FASTER. 5:00/mi is FAST. 9:00/mi is SLOW.
-- "Too fast" means the pace number is LOWER than it should be (e.g., running 6:30 when easy pace is 7:11 = too fast).
-- "Too slow" means the pace number is HIGHER than it should be (e.g., running 8:15 when easy pace is 7:11 = too slow, which is fine for easy days).
-- Running SLOWER than easy pace on recovery days is GOOD, not bad. Don't tell them to speed up on easy days.
-- Running FASTER than easy pace on easy days is BAD — they're not recovering.
-
-SAFETY (non-negotiable):
-- Sharp pain, sudden swelling, inability to bear weight, chest pain, dizziness → recommend medical evaluation immediately. Do not suggest running through these.
-- For injuries severity 4+, do NOT just "trust them" if they say it's fine. Ask specific follow-up questions about the nature of the pain.
-- Stress fractures, bone injuries → 6-8 weeks minimum rest from impact. Never suggest "just reduce volume for a week or two."
-- When in doubt, err on the side of rest. A missed week of training is nothing compared to a 3-month injury.
-
-DATA-DRIVEN COACHING:
-- You have real-time analytics below (ACWR, compliance, mood trends, injury risk, fitness trajectory). USE these to inform your response — don't just answer the question, connect it to what the data shows.
-- If coaching signals are present, weave ONE relevant question into your response naturally. Don't list multiple questions. Ask the most important one.
-- Don't lecture about the data. One specific observation beats a data dump.
-- Only bring up concerns if they're directly relevant to what the athlete is asking about. Don't nag about the same issue repeatedly — if the athlete has addressed something (injury, fatigue, etc.), trust them and move on.
-
-DEVELOPMENT TRACKING:
-- Check the DEVELOPMENT STATUS in the athlete profile — developing, maintaining, or detraining.
-- If DEVELOPING: reinforce what's working. Point out specific pace improvements. Encourage patience — development isn't linear.
-- If MAINTAINING: that's fine for recovery blocks or life stress. But if they have a goal race, nudge toward progression.
-- If DETRAINING: address it once, directly but without alarm. Ask what's changed. Don't keep bringing it up.
-- Reference specific workout-type pace changes when relevant.
-- Long run quality matters: steady pacing shows discipline. Inconsistent long run paces suggest fueling, pacing, or fatigue issues.
-- Never frame development as pressure. The goal is long-term growth.
-
-COACHING:
-- Tired or stressed? Tell them to rest. Mean it.
-- Pain or injury? Take it seriously the FIRST time. For mild soreness (severity 1-3) and they say it's fine, trust them. For moderate+ issues (severity 4+), gently persist — ask specific follow-up questions about the nature of the pain even if they downplay it. Runners minimize injuries.
-- Reference things they've told you before. Show you're paying attention.`,
-
-  // Complex: Gemini - deep coaching
-  complex: `You're an experienced running coach giving detailed advice. You know your stuff and you don't pad your answers with filler. Talk to the athlete straight.
-${VOICE_RULES}
-
-COACHING PHILOSOPHY (this is how you coach — these principles override generic training advice):
-- THREE-TIER INTENSITY: Hard, moderate (7/10 effort), and easy. Not polarized. Moderate sessions are aerobic development — threshold work, aerobic support runs, moderate long runs. Easy is true recovery. These are different things.
-- CANOVA-INSPIRED REVERSE ENGINEERING: Start from the goal race. Identify 2-3 key race-specific workouts. Build the block backward to prepare the athlete to execute those sessions. Early block = adaptation without overload. Late block = specificity and intensity.
-- FLEXIBLE PROGRAMMING: Adjust day-by-day based on feel. Not rigid. Bodies give signals — fatigue, trending injury, poor sleep. Respect them. Days off are a coaching tool.
-- MONTHLY ADAPTATION: The body adapts month-over-month, not week-over-week. Over 6 months the transformation can be dramatic. Week-to-week, manage fatigue carefully.
-- VOLUME IS EVENT-SPECIFIC: Marathon/half = volume and long runs dominate. 60-70 mpw beats 40 mpw for a marathon, period. Mile/5K = aerobic power and speed endurance. As distance increases, global volume matters more.
-- PROTECT KEY SESSIONS: Set the athlete up to nail their hard workouts. Easy before hard. Not every week is stacked. If the athlete can't execute key workouts because they're fatigued, the program failed, not the athlete.
-- AEROBIC SUPPORT IS CONTINUOUS: Threshold, moderate runs, long runs — these run throughout the block, not just base phase. This is where long-term development lives.
-- TRAINING WITHIN YOURSELF: Long-term development over short-term proving. Keep the body protected. Controlled execution, not desperate efforts.
-
-PACE & TRAINING DATA:
-- All pace values, splits, and race predictions are PRE-COMPUTED and provided in the context below — quote them EXACTLY as given
-- NEVER calculate, estimate, or invent any pace value — the math is already done for you
-- If asked about race pace or race times, quote from "Predicted race times"
-- If asked about training/workout paces, quote from "Training pace zones"
-- If asked about splits, quote from "Pre-computed splits"
-- If asked about goal progress, quote from "Goal vs current fitness"
-- Both /mi and /km values are provided — default to /mi unless the runner asks for /km
-- Workout type mapping: Easy/Recovery→Easy zone, Long Run→Moderate zone, Steady→Steady zone, Marathon Pace→MP, Tempo/Threshold→HMP (NOT 10K), Intervals 800m+→10K pace, Short reps→5K pace
-
-PACE DIRECTION (critical — get this right):
-- In running, LOWER pace number = FASTER. 5:00/mi is FAST. 9:00/mi is SLOW.
-- "Too fast" means the pace number is LOWER than it should be (e.g., running 6:30 when easy pace is 7:11 = too fast).
-- "Too slow" means the pace number is HIGHER than it should be (e.g., running 8:15 when easy pace is 7:11 = too slow, which is fine for easy days).
-- Running SLOWER than easy pace on recovery days is GOOD, not bad.
-- Running FASTER than easy pace on easy days is BAD — they're not recovering.
-
-SAFETY (non-negotiable):
-- Sharp pain, sudden swelling, inability to bear weight, chest pain, dizziness → recommend medical evaluation immediately. Do not suggest running through these.
-- For injuries severity 4+, do NOT just "trust them" if they say it's fine. Ask about the nature of the pain.
-- Stress fractures, bone injuries → 6-8 weeks minimum rest from impact. Never suggest reducing volume for a couple weeks.
-- When in doubt, err on the side of rest.
-
-DATA-DRIVEN COACHING:
-- You have real-time analytics below (ACWR, compliance, mood trends, injury risk, fitness trajectory, form analysis). USE these numbers to back up your advice.
-- If coaching signals are present, weave the most relevant question into your response. Ask ONE thing — the most important one based on the data.
-- Connect the dots: if ACWR is high AND mood is declining, that tells a story. Share the insight, not just the numbers.
-- Only raise concerns if directly relevant. Don't nag about issues the athlete has already addressed.
-
-DEVELOPMENT TRACKING:
-- Check the DEVELOPMENT STATUS — developing, maintaining, or detraining.
-- For DEVELOPING athletes: celebrate specific improvements. Help them understand WHY they're improving so they can keep doing it.
-- For MAINTAINING athletes: look at what's stalling. Volume plateau? Missing long runs? Not enough moderate work? Give one concrete suggestion.
-- For DETRAINING athletes: be direct once. Don't guilt-trip. Don't keep bringing it up.
-- Workout pace development shows which efforts are getting faster or slower — use these specific numbers.
-- Long run steadiness is a fitness marker. Erratic paces = fueling, pacing, or fatigue issues.
-- Training response quality: poor bounce-back from hard sessions = under-recovering. The fix is more recovery, not more training.
-- Frame everything around sustainable long-term development.
-
-COACHING:
-- Reference their history, PRs, goals — show you know them
-- If they're run down, tell them to back off. Rest is training.
-- Pain or injury? Be direct the first time. For mild soreness (severity 1-3) and they say it's fine, trust them. For severity 4+, gently persist with follow-up questions. Runners minimize injuries.
-- For training plans, be specific. "Run 6 easy on Tuesday" not "consider an easy effort mid-week."
-- Use dashes for lists, numbers for steps. Keep it clean and scannable.`,
-
-  // Proactive: Coach reaches out after a concerning voice memo
-  proactive: `You're a running coach reaching out to your athlete after they just logged a voice memo. They didn't ask you anything — you're checking in because something concerned you.
-${VOICE_RULES}
-
-RULES:
-- This is YOUR first message to them. You're initiating.
-- Reference what they said in their memo. Be specific — don't be generic.
-- Ask ONE focused question to understand what they need. Not a list of questions.
-- Keep it to 2-3 sentences max.
-- If they're injured: take it seriously, ask about the specific body part or issue they mentioned.
-- If they're struggling: acknowledge it without dismissing. Ask what's making it hard.
-- If they're tired: suggest rest might be the right call, but ask what's going on.
-- Don't offer solutions yet. Listen first. You'll coach them in the follow-up.`,
-};
-
+// System prompts live in `_shared/prompts/coaching-agent-{simple,moderate,
+// complex,proactive}.v1.ts`. Migrated from inline `SYSTEM_PROMPTS` /
+// `VOICE_RULES` / `ANALYSIS_FRAMEWORK` on 2026-05-18 (W2.1 Day 2) — the
+// migration is the prerequisite for cassette-based eval coverage of the
+// coaching-agent surface. Load via `loadPrompt(name, {})`.
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -349,6 +185,209 @@ function inferTrainingPhase(plan: { start_date: string; end_date: string; target
 }
 
 // ============================================================================
+// PLAN AWARENESS — "what was planned, what happened, what's next"
+// ============================================================================
+
+/**
+ * Build a prompt context block that gives the coach situational awareness of
+ * the training plan: this week's scheduled workouts, recent plan-vs-actual
+ * deltas (pace, distance, RPE), and what's coming up next.
+ */
+function buildPlanAwarenessContext(
+  plan: { id: string; name: string; start_date: string; end_date: string; target_race_distance?: string; target_time_seconds?: number; status: string },
+  thisWeekScheduled: any[],
+  last7DaysScheduled: any[],
+  trainingLogs: any[]
+): string {
+  if (!plan) return "";
+
+  const parts: string[] = [];
+  const today = new Date().toISOString().split("T")[0];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  // ── Section 1: This week's plan ──
+  const nonRestThisWeek = thisWeekScheduled.filter((w: any) => w.workout_type !== "rest");
+  if (nonRestThisWeek.length > 0) {
+    parts.push("THIS WEEK'S PLAN:");
+    for (const w of thisWeekScheduled) {
+      const d = new Date(w.date + "T12:00:00Z");
+      const dayName = dayNames[d.getUTCDay()];
+      const isPast = w.date < today;
+      const isToday = w.date === today;
+
+      let line = `- ${dayName} ${w.date.slice(5)}`;
+      if (w.workout_type === "rest") {
+        line += ": Rest";
+      } else {
+        const wd = w.workout_data as Record<string, any> | null;
+        const name = wd?.name || w.workout_type.replace(/_/g, " ");
+        line += `: ${name}`;
+        if (wd?.total_distance_km) {
+          line += ` (${(wd.total_distance_km / 1.60934).toFixed(1)}mi)`;
+        } else if (wd?.total_distance_mi) {
+          line += ` (${wd.total_distance_mi}mi)`;
+        }
+        if (wd?.target_pace) line += ` @ ${wd.target_pace}`;
+
+        // Weather forecast for future/today workouts
+        const wf = w.weather_forecast as Record<string, any> | null;
+        if (wf && !isPast) {
+          const heat = wf.heat_category as string;
+          line += ` [${Math.round(wf.temp_f)}°F dp${Math.round(wf.dew_point_f)}°F`;
+          if (heat && heat !== "ideal") line += ` ${heat.toUpperCase()}`;
+          if (wf.adjustment_pct && wf.adjustment_pct > 0) {
+            const adjSec = wd?.target_pace ? Math.round(parsePaceToSeconds(wd.target_pace) * wf.adjustment_pct) : 0;
+            if (adjSec > 0) line += ` +${adjSec}s/mi adj`;
+          }
+          line += "]";
+        }
+      }
+
+      // Status indicator
+      if (w.status === "completed") line += " ✓";
+      else if (w.status === "skipped") line += " [skipped]";
+      else if (isToday) line += " ← TODAY";
+      else if (isPast && w.status === "scheduled") line += " [missed]";
+
+      parts.push(line);
+    }
+  }
+
+  // ── Section 2: Last 7 days — plan vs actual ──
+  const completedScheduled = last7DaysScheduled.filter(
+    (w: any) => w.status === "completed" && w.workout_type !== "rest"
+  );
+
+  if (completedScheduled.length > 0 && trainingLogs.length > 0) {
+    const deltas: string[] = [];
+
+    for (const scheduled of completedScheduled) {
+      const wd = scheduled.workout_data as Record<string, any> | null;
+      if (!wd) continue;
+
+      // Find matching training log by date
+      const matchingLog = trainingLogs.find(
+        (log: any) => log.workout_date && log.workout_date.startsWith(scheduled.date)
+      );
+      if (!matchingLog) continue;
+
+      const workoutName = wd.name || scheduled.workout_type.replace(/_/g, " ");
+      const d = new Date(scheduled.date + "T12:00:00Z");
+      const dayName = dayNames[d.getUTCDay()];
+      let deltaLine = `- ${dayName}: ${workoutName}`;
+
+      const deltaDetails: string[] = [];
+
+      // Distance delta
+      const plannedMi = wd.total_distance_km
+        ? wd.total_distance_km / 1.60934
+        : wd.total_distance_mi || 0;
+      const actualMi = matchingLog.workout_distance_miles || 0;
+      if (plannedMi > 0 && actualMi > 0) {
+        const distDelta = actualMi - plannedMi;
+        if (Math.abs(distDelta) >= 0.3) {
+          const sign = distDelta > 0 ? "+" : "";
+          deltaDetails.push(`dist ${sign}${distDelta.toFixed(1)}mi`);
+        }
+      }
+
+      // Pace delta — compare actual pace to target
+      const targetPaceStr = wd.target_pace as string | undefined;
+      const actualPaceStr = matchingLog.workout_pace_per_mile as string | undefined;
+      if (targetPaceStr && actualPaceStr) {
+        const targetSec = parsePaceToSeconds(targetPaceStr);
+        const actualSec = parsePaceToSeconds(actualPaceStr);
+        if (targetSec > 0 && actualSec > 0) {
+          const paceDelta = actualSec - targetSec;
+          if (Math.abs(paceDelta) >= 5) {
+            // In running: negative delta = faster than planned
+            const fasterSlower = paceDelta < 0 ? "faster" : "slower";
+            const absDelta = Math.abs(paceDelta);
+            const formatted = absDelta >= 60
+              ? `${Math.floor(absDelta / 60)}:${String(absDelta % 60).padStart(2, "0")}`
+              : `${absDelta}s`;
+            deltaDetails.push(`${formatted} ${fasterSlower} than target`);
+          }
+        }
+      }
+
+      // Weather-adjusted pace (the real story — did they hit the effort-equivalent target?)
+      const weatherAdj = matchingLog.weather_adjusted_pace_delta_seconds_per_mile as number | null;
+      if (weatherAdj && weatherAdj > 2 && targetPaceStr && actualPaceStr) {
+        const targetSec2 = parsePaceToSeconds(targetPaceStr);
+        const actualSec2 = parsePaceToSeconds(actualPaceStr);
+        if (targetSec2 > 0 && actualSec2 > 0) {
+          const adjustedTarget = targetSec2 + weatherAdj;
+          const adjDelta = actualSec2 - adjustedTarget;
+          if (Math.abs(adjDelta) < 5) {
+            deltaDetails.push(`(heat-adjusted: ON TARGET)`);
+          } else {
+            const adjDir = adjDelta < 0 ? "faster" : "slower";
+            const adjAbs = Math.abs(Math.round(adjDelta));
+            deltaDetails.push(`(heat-adjusted: ${adjAbs}s ${adjDir})`);
+          }
+        }
+      }
+
+      // Weather conditions if available
+      const wa = matchingLog.weather_actual as Record<string, any> | null;
+      if (wa?.heat_category && wa.heat_category !== "ideal") {
+        deltaDetails.push(`${Math.round(wa.temp_f)}°F ${wa.heat_category}`);
+      }
+
+      // RPE / mood
+      if (matchingLog.mood) {
+        deltaDetails.push(`felt: ${matchingLog.mood}`);
+      }
+
+      if (deltaDetails.length > 0) {
+        deltaLine += ` → ${deltaDetails.join(", ")}`;
+        deltas.push(deltaLine);
+      }
+    }
+
+    if (deltas.length > 0) {
+      parts.push("");
+      parts.push("PLAN VS ACTUAL (last 7 days):");
+      parts.push(...deltas);
+    }
+  }
+
+  // ── Section 3: What's next (upcoming non-rest workouts) ──
+  const upcoming = thisWeekScheduled.filter(
+    (w: any) => w.date >= today && w.status === "scheduled" && w.workout_type !== "rest"
+  );
+  if (upcoming.length > 0) {
+    parts.push("");
+    parts.push("UPCOMING:");
+    for (const w of upcoming.slice(0, 3)) {
+      const d = new Date(w.date + "T12:00:00Z");
+      const dayName = dayNames[d.getUTCDay()];
+      const wd = w.workout_data as Record<string, any> | null;
+      const name = wd?.name || w.workout_type.replace(/_/g, " ");
+      let line = `- ${dayName}: ${name}`;
+      if (wd?.description) line += ` — ${(wd.description as string).slice(0, 100)}`;
+      parts.push(line);
+    }
+  }
+
+  if (parts.length === 0) return "";
+  return "\n\nTraining Plan Awareness (" + plan.name + "):\n" + parts.join("\n");
+}
+
+/**
+ * Parse a pace string like "7:30" or "7:30/mi" into total seconds.
+ */
+function parsePaceToSeconds(pace: string): number {
+  const cleaned = pace.replace(/\/mi|\/km/g, "").trim();
+  const parts = cleaned.split(":").map(Number);
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return parts[0] * 60 + parts[1];
+  }
+  return 0;
+}
+
+// ============================================================================
 // MODEL CALL HANDLERS
 // ============================================================================
 
@@ -424,6 +463,9 @@ async function callGemini(
     generationConfig: {
       maxOutputTokens: config.maxTokens,
       temperature: 0.7,
+      // Cap thinking tokens — 2.5 Flash's internal reasoning can eat the whole
+      // output budget and truncate the actual coaching response mid-sentence.
+      thinkingConfig: { thinkingBudget: 512 },
     },
   });
 
@@ -445,22 +487,43 @@ Deno.serve(async (req: Request) => {
   }
 
   const startTime = Date.now();
+  // DEBUG: log every entry so we can see if Supabase gateway is blocking requests
+  try {
+    const supa = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    const hasAuth = !!req.headers.get("Authorization");
+    const authPrefix = (req.headers.get("Authorization") || "").slice(0, 30);
+    await supa.from("debug_coach_log").insert({
+      user_id: "entry-point",
+      request_body: { hasAuth, authPrefix, method: req.method, url: req.url },
+      response_body: null,
+      response_status: 0,
+      ms: 0,
+    });
+  } catch (_) {}
 
   try {
     // Clone request so we can read body after auth check
     const body = await req.json();
     const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId } = body;
 
-    // Verify authenticated user from JWT, fall back to userId from payload
+    // Verify authenticated user from JWT.
+    // verify_jwt = true in config.toml ensures only valid Supabase JWTs
+    // (user, anon, or service_role) reach this function. If the JWT contains
+    // a user claim, use it. Otherwise fall back to payloadUserId from the body
+    // (used by iOS app which sends anon key + userId in body).
     let userId = await getAuthenticatedUser(req);
+
     if (!userId && payloadUserId) {
-      // Accept UUID or "dev-user" (when auth gate is disabled during development)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(payloadUserId) || payloadUserId === "dev-user") {
+      if (uuidRegex.test(payloadUserId)) {
         userId = payloadUserId;
         console.log(`Using userId from payload: ${payloadUserId}`);
       }
     }
+
     if (!userId) {
       return unauthorizedResponse(corsHeaders);
     }
@@ -501,7 +564,10 @@ Deno.serve(async (req: Request) => {
         .single();
 
       userTier = tierData?.tier || "free";
-      rateLimit = await checkRateLimit(userId, userTier);
+      // W2.3: feature-scoped so coaching limits are pinned independently of
+      // predictor/transcribe/etc. Previously used the global checkRateLimit
+      // which shared one bucket across all features.
+      rateLimit = await checkFeatureRateLimit(userId, "coaching", userTier);
 
       if (!rateLimit.allowed) {
         return new Response(
@@ -654,7 +720,8 @@ Deno.serve(async (req: Request) => {
     const settled = await Promise.allSettled([
       supabase
         .from("training_logs")
-        .select("id, created_at, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, pace_segments, mood, cleaned_notes, notes, coach_insight, workout_notes, extracted_data")
+        .select("id, created_at, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, pace_segments, mood, cleaned_notes, notes, coach_insight, workout_notes, extracted_data, weather_actual, weather_adjusted_pace_delta_seconds_per_mile")
+        .eq("user_id", userId)
         .or(`workout_date.gte.${threeMonthsAgo.toISOString()},and(workout_date.is.null,created_at.gte.${threeMonthsAgo.toISOString()})`)
         .order("workout_date", { ascending: false, nullsFirst: false })
         .limit(150), // ~3 months of daily training
@@ -662,6 +729,8 @@ Deno.serve(async (req: Request) => {
         .from("user_goals")
         .select("goal_title, target_date")
         .eq("status", "active")
+        .eq("user_id", userId)
+        .not("user_id", "is", null)
         .order("target_date", { ascending: true }),
       conversationId
         ? supabase.from("conversation_messages").select("role, content").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(50)
@@ -682,16 +751,9 @@ Deno.serve(async (req: Request) => {
             .order("week_start", { ascending: false })
             .limit(1)
         : Promise.resolve({ data: [] }),
-      // Scheduled workouts this week (for compliance + analytics)
-      userId
-        ? supabase
-            .from("scheduled_workouts")
-            .select("id, date, workout_type, status, workout_data, completed_workout_id, week_number, notes")
-            .eq("user_id", userId)
-            .gte("date", weekMondayStr)
-            .lte("date", new Date(weekMonday.getTime() + 6 * 86400000).toISOString().split("T")[0])
-            .order("date")
-        : Promise.resolve({ data: [] }),
+      // Scheduled workouts — placeholder; real fetch uses plan_id after batch
+      // (scheduled_workouts has no user_id column — must join through training_plans)
+      Promise.resolve({ data: [] }),
       // Recent form checks (past 2 weeks)
       userId
         ? supabase
@@ -784,6 +846,58 @@ Deno.serve(async (req: Request) => {
         console.warn(`Context query ${i} failed: ${r.reason?.message || r.reason}`);
       }
     });
+
+    // ========================================================================
+    // LAYER 4.1: Fetch scheduled workouts using active plan ID
+    // scheduled_workouts has no user_id — must go through training_plans.
+    // We now know the plan ID from the batch, so fetch the real data.
+    // ========================================================================
+    const activePlanId = activePlanResult.data?.id as string | undefined;
+    let planAwarenessContext = "";
+
+    if (activePlanId) {
+      const weekSundayStr = new Date(weekMonday.getTime() + 6 * 86400000).toISOString().split("T")[0];
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+
+      // Fetch this week's scheduled + last 7 days (for plan-vs-actual comparison)
+      // Use the earlier of sevenDaysAgo and weekMonday as the start bound
+      const fetchStart = sevenDaysAgoStr < weekMondayStr ? sevenDaysAgoStr : weekMondayStr;
+      try {
+        const { data: scheduledRows } = await supabase
+          .from("scheduled_workouts")
+          .select("id, date, workout_type, status, workout_data, completed_workout_id, week_number, notes, weather_forecast")
+          .eq("plan_id", activePlanId)
+          .gte("date", fetchStart)
+          .lte("date", weekSundayStr)
+          .order("date");
+
+        const allScheduled = scheduledRows || [];
+
+        // Split: this week (for analytics + "what's planned") vs last 7 days (for plan-vs-actual)
+        const thisWeekScheduled = allScheduled.filter((w: any) => w.date >= weekMondayStr);
+        const last7DaysScheduled = allScheduled.filter((w: any) => w.date >= sevenDaysAgoStr);
+
+        // Update scheduledResult so analytics module gets real data
+        scheduledResult.data = thisWeekScheduled;
+
+        // Build plan awareness context
+        const plan = activePlanResult.data;
+        const allLogs = logsResult.data || [];
+        planAwarenessContext = buildPlanAwarenessContext(
+          plan,
+          thisWeekScheduled,
+          last7DaysScheduled,
+          allLogs
+        );
+        if (planAwarenessContext) {
+          console.log(`Plan awareness context built (~${planAwarenessContext.length} chars)`);
+        }
+      } catch (schedErr) {
+        console.warn("Failed to fetch scheduled workouts:", schedErr);
+      }
+    }
 
     const hasTrainingData = (logsResult.data?.length || 0) > 0;
     const hasGoals = (goalsResult.data?.length || 0) > 0;
@@ -1180,11 +1294,11 @@ Deno.serve(async (req: Request) => {
       const { mood, cleanedNotes, coachInsight } = checkInContext;
       const hkContext = workoutSummary ? `\n\nRecent workouts:\n${workoutSummary}` : "";
       const planContext = trainingPlanContext ? `\n\nTraining Plan:\n${trainingPlanContext}` : "";
-      fullPrompt = `${SYSTEM_PROMPTS.proactive}${runnerLevelContext}
+      fullPrompt = `${loadPrompt("coaching-agent-proactive.v1")}${runnerLevelContext}
 
 ${athleteContext}
 
-${trainingContext}${athleteProfileContext}${analyticsContext}${periodizationContext}${memoriesContext}${injuryContext}${raceIntelContext}${aiInsightsContext}${profileContext}${planContext}${hkContext}
+${trainingContext}${athleteProfileContext}${analyticsContext}${periodizationContext}${planAwarenessContext}${memoriesContext}${injuryContext}${raceIntelContext}${aiInsightsContext}${profileContext}${planContext}${hkContext}
 
 Athlete's voice memo summary: ${cleanedNotes || "No details available"}
 Detected mood: ${mood}
@@ -1210,30 +1324,96 @@ Never mention coaching frameworks or names (Daniels, etc.).${goalsHint}
 ${message}
 
 Coach:`;
-    } else if (complexity === "simple") {
-      // Simple queries: include athlete profile + docs so answers are personalized and grounded
-      const systemPrompt = SYSTEM_PROMPTS[complexity as keyof typeof SYSTEM_PROMPTS];
-      const simpleContext = [athleteContext, runnerLevelContext, athleteProfileContext, memoriesContext, injuryContext, docsContext].filter(Boolean).join("");
-      fullPrompt = `${systemPrompt}
-${simpleContext ? `\n${simpleContext}\n` : ""}
+    } else {
+      // Simple / Moderate / Complex — all three tiers now go through the
+      // token-budgeted assembler from _shared/context.ts (TASKS.md C.2).
+      //
+      // Why budget here at all: the previous moderate/complex assembly
+      // unconditionally concatenated 22 context blocks, several of which
+      // overlap (athleteContext + athleteProfileContext + analyticsContext
+      // + periodizationContext + weeklyReportContext + aiInsightsContext
+      // all cover related ground). A drive-by edit that adds another
+      // block, or bumps `.limit(150)` somewhere, silently multiplied
+      // input tokens with no review-time signal. The budget caps that.
+      //
+      // Priority rules:
+      //   required  — model can't be safe / coherent without it
+      //                (athlete state DCO, memories, injuries, system prompt)
+      //   preferred — high-signal personalization (training history, plan,
+      //                conversation, grounded docs)
+      //   optional  — nice-to-have analytics that already overlap with
+      //                required blocks (weeklyReport, aiInsights, analytics,
+      //                planAwareness, profile, hk, pendingAdj, feedback,
+      //                predictions, goals — these are the first to drop
+      //                under budget pressure)
+      const systemPrompt = loadPrompt(`coaching-agent-${complexity}.v1`);
+
+      const hkContext = workoutSummary
+        ? `\n\nRecent HealthKit workouts (from Apple Watch / GPS watch):\n${workoutSummary}`
+        : "";
+      const planContext = trainingPlanContext
+        ? `\n\nActive Training Plan:\n${trainingPlanContext}`
+        : "";
+      const predContext = fitnessPredictions
+        ? `\n\nFitness Predictions:\n${fitnessPredictions}`
+        : "";
+
+      const blocks: PromptBlock[] = [
+        // Required: identity + safety guardrails.
+        { name: "runnerLevel",    content: runnerLevelContext,    priority: "required" },
+        { name: "athlete",        content: athleteContext,        priority: "required" },
+        { name: "memories",       content: memoriesContext,       priority: "required" },
+        { name: "injury",         content: injuryContext,         priority: "required" },
+
+        // Preferred: high-signal personalization.
+        { name: "training",       content: trainingContext,       priority: "preferred" },
+        { name: "athleteProfile", content: athleteProfileContext, priority: "preferred" },
+        { name: "plan",           content: planContext,           priority: "preferred" },
+        { name: "conversation",   content: conversationContext,   priority: "preferred" },
+        { name: "docs",           content: docsContext,           priority: "preferred" },
+        { name: "raceIntel",      content: raceIntelContext,      priority: "preferred" },
+
+        // Optional: overlap with required/preferred or rarely-cited.
+        // These drop first under budget pressure.
+        { name: "periodization",  content: periodizationContext,  priority: "optional" },
+        { name: "analytics",      content: analyticsContext,      priority: "optional" },
+        { name: "planAwareness",  content: planAwarenessContext,  priority: "optional" },
+        { name: "weeklyReport",   content: weeklyReportContext,   priority: "optional" },
+        { name: "aiInsights",     content: aiInsightsContext,     priority: "optional" },
+        { name: "profile",        content: profileContext,        priority: "optional" },
+        { name: "hk",             content: hkContext,             priority: "optional" },
+        { name: "predictions",    content: predContext,           priority: "optional" },
+        { name: "goals",          content: goalsContext,          priority: "optional" },
+        { name: "pendingAdj",     content: pendingAdjustmentsContext, priority: "optional" },
+        { name: "feedback",       content: feedbackContext,       priority: "optional" },
+      ];
+
+      const ctxBudget = COMPLEXITY_CONTEXT_BUDGETS[complexity] ?? COMPLEXITY_CONTEXT_BUDGETS.moderate;
+      const assembled = assembleWithBudget(blocks, ctxBudget);
+
+      console.log(
+        `[ctx] complexity=${complexity} budget=${assembled.budget} used=${assembled.used} ` +
+        `included=${assembled.included.length} dropped=[${assembled.dropped.join(",")}] ` +
+        `truncated=[${assembled.truncated.join(",")}]`,
+      );
+
+      if (complexity === "simple") {
+        // Simple — leaner framing, prompt mostly faqs.
+        fullPrompt = `${systemPrompt}
+${assembled.text ? `\n${assembled.text}\n` : ""}
 Question: ${message}
 
 Answer:`;
-    } else {
-      // Moderate/Complex: include full context + profile + memories + injuries
-      const systemPrompt = SYSTEM_PROMPTS[complexity as keyof typeof SYSTEM_PROMPTS];
-      const hkContext = workoutSummary ? `\n\nRecent HealthKit workouts (from Apple Watch / GPS watch):\n${workoutSummary}` : "";
-      const planContext = trainingPlanContext ? `\n\nActive Training Plan:\n${trainingPlanContext}` : "";
-      const predContext = fitnessPredictions ? `\n\nFitness Predictions:\n${fitnessPredictions}` : "";
-      fullPrompt = `${systemPrompt}${runnerLevelContext}
+      } else {
+        // Moderate / Complex — coaching framing.
+        fullPrompt = `${systemPrompt}
 
-${athleteContext}
-
-${trainingContext}${athleteProfileContext}${analyticsContext}${periodizationContext}${planContext}${predContext}${goalsContext}${memoriesContext}${injuryContext}${raceIntelContext}${aiInsightsContext}${weeklyReportContext}${profileContext}${hkContext}${conversationContext}${docsContext}${feedbackContext}${pendingAdjustmentsContext}
+${assembled.text}
 
 Runner's question: ${message}
 
 Coach:`;
+      }
     }
 
     // Token budget enforcement — truncate prompt if it exceeds model limits
@@ -1254,11 +1434,22 @@ Coach:`;
     }
     console.log(`Prompt built: ~${inputTokens} tokens for ${complexity} query`);
 
+    // Hallucination diagnostic — dump the exact prompt so we can verify whether
+    // numeric claims in the response (volumes, distances, dates) actually
+    // appeared in the context, or were invented by the model.
+    // Toggle off by unsetting COACHING_AGENT_DUMP_PROMPT.
+    if (Deno.env.get("COACHING_AGENT_DUMP_PROMPT") === "1") {
+      console.log(`[PROMPT_DUMP user=${userId} complexity=${complexity}]\n${fullPrompt}\n[/PROMPT_DUMP]`);
+    }
+
     // ========================================================================
     // LAYER 7: Call the appropriate model (with fallback)
     // ========================================================================
     let coachResponse: string;
-    let actualProvider = config.provider;
+    // Widen from the router's `"groq" | "gemini"` union to include the
+    // post-retry fallback state — used by the cache-poisoning guard at
+    // line ~1514 to avoid caching error responses as if they were real.
+    let actualProvider: "groq" | "gemini" | "fallback" = config.provider;
 
     // Retry wrapper: tries a model call, waits 2s, retries once before giving up
     async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
@@ -1272,9 +1463,27 @@ Coach:`;
     }
 
     try {
-      if (config.provider === "groq") {
-        console.log("Calling Groq Llama for simple query...");
-        coachResponse = await withRetry(() => callGroq(fullPrompt, config), "Groq");
+      // TEMPORARY: Gemini free-tier quota is exhausted. Route everything through
+      // Groq until billing is set up on Gemini API.
+      // Original routing preserved below for restoration.
+      const FORCE_GROQ = false;
+
+      if (FORCE_GROQ || config.provider === "groq") {
+        // Groq rejects prompts over ~32K chars (413). Truncate keeping the most
+        // recent/most relevant context — the USER MESSAGE and the tail of the
+        // assembled prompt (where recent workouts + state live). Drops older
+        // history first.
+        const MAX_PROMPT_CHARS = 28000;
+        const truncatedPrompt = fullPrompt.length > MAX_PROMPT_CHARS
+          ? "...(earlier context truncated)...\n\n" + fullPrompt.slice(-MAX_PROMPT_CHARS)
+          : fullPrompt;
+        const useLargeGroq = FORCE_GROQ && complexity !== "simple";
+        const groqCfg = useLargeGroq
+          ? { ...getModelConfig("simple"), model: "llama-3.3-70b-versatile", maxTokens: 800 }
+          : (config.provider === "groq" ? config : getModelConfig("simple"));
+        console.log(`Calling Groq ${groqCfg.model} (forced=${FORCE_GROQ}, prompt=${truncatedPrompt.length} chars)...`);
+        actualProvider = "groq";
+        coachResponse = await withRetry(() => callGroq(truncatedPrompt, groqCfg), "Groq");
       } else {
         // Try Gemini first, fall back to Groq on rate limit or timeout
         try {
@@ -1290,7 +1499,8 @@ Coach:`;
       }
     } catch (modelError: any) {
       // Both models failed after retries — return a graceful degradation response
-      console.error("All model providers failed after retries:", modelError?.message || String(modelError));
+      const errMsg = modelError?.message || String(modelError);
+      console.error("All model providers failed after retries:", errMsg);
       actualProvider = "fallback";
       coachResponse = "I'm having trouble connecting to my AI backend right now. " +
         "This is temporary — please try again in a minute. " +
@@ -1301,8 +1511,12 @@ Coach:`;
 
     // ========================================================================
     // LAYER 8: Cache the response for future queries (skip for proactive)
+    // Never cache fallback/error responses — they poison the cache and make
+    // every similar future query return "AI backend unavailable" forever.
     // ========================================================================
-    if (!proactive && queryEmbedding && isCacheEnabled()) {
+    const isFallback = actualProvider === "fallback"
+      || coachResponse.startsWith("I'm having trouble connecting to my AI backend");
+    if (!proactive && !isFallback && queryEmbedding && isCacheEnabled()) {
       await cacheResponse(queryEmbedding, message, coachResponse, complexity);
     }
 
@@ -1386,26 +1600,52 @@ Coach:`;
       `Response generated in ${processingTime}ms using ${config.provider}/${config.model} (${complexity})`
     );
 
-    return new Response(
-      JSON.stringify({
-        response: coachResponse,
-        conversationId: finalConversationId,
-        messageId: assistantMessageId,
-        model: complexity,
-        provider: config.provider,
-        cached: false,
-        remaining: proactive ? rateLimit.remaining : rateLimit.remaining - 1,
-        proactive: proactive || false,
-        feedbackEnabled: !isCoachInsightRequest,
-        processingTime,
-      }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const successBody = {
+      response: coachResponse,
+      conversationId: finalConversationId,
+      messageId: assistantMessageId,
+      model: complexity,
+      provider: config.provider,
+      cached: false,
+      remaining: proactive ? rateLimit.remaining : rateLimit.remaining - 1,
+      proactive: proactive || false,
+      feedbackEnabled: !isCoachInsightRequest,
+      processingTime,
+    };
+
+    // DEBUG: log the exact response body for client-side diagnosis
+    try {
+      await supabase.from("debug_coach_log").insert({
+        user_id: userId,
+        request_body: { message, hasConvId: !!conversationId, smartInsights, proactive: !!proactive },
+        response_body: successBody,
+        response_status: 200,
+        ms: Date.now() - startTime,
+      });
+    } catch (_) { /* don't block on logging */ }
+
+    return new Response(JSON.stringify(successBody), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (error: any) {
     console.error("Coaching agent error:", error);
-    return new Response(
-      JSON.stringify({ error: `Internal error: ${error?.message || String(error)}` }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const errBody = { error: `Internal error: ${error?.message || String(error)}` };
+    try {
+      const supa = (globalThis as any).__supa as any;
+      if (supa) {
+        await supa.from("debug_coach_log").insert({
+          user_id: null,
+          request_body: null,
+          response_body: errBody,
+          response_status: 500,
+          error: errBody.error,
+          ms: Date.now() - startTime,
+        });
+      }
+    } catch (_) { /* ignore */ }
+    return new Response(JSON.stringify(errBody), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

@@ -149,11 +149,16 @@ enabled = true
 # in emails. Override per-environment via SITE_URL env var.
 site_url = "env(SITE_URL)"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# Includes localhost for dev; prod URL is added via env var when deployed.
+# Includes localhost for dev; prod URLs are provided via env vars when deployed.
+# NOTE: For the hosted Supabase project, these are managed in the dashboard
+# (Auth → URL Configuration). This list applies primarily to local dev.
+# See supabase/README.md for the prod promotion checklist.
 additional_redirect_urls = [
   "http://127.0.0.1:3000",
   "http://localhost:3000",
-  "env(ADDITIONAL_REDIRECT_URL)",
+  "env(WEB_PROD_URL)",          # e.g. https://heatcheckmile.com
+  "env(WEB_PROD_WWW_URL)",      # e.g. https://www.heatcheckmile.com (if used)
+  "env(IOS_SCHEME_URL)",        # e.g. running-log://auth-callback
 ]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
@@ -387,3 +392,104 @@ s3_region = "env(S3_REGION)"
 s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
+
+# ── Admin / utility functions ──
+# admin-sql, debug-counts, debug-rebuild-state, debug-gemini removed 2026-04-16
+# (security hardening — no arbitrary SQL or debug endpoints in production).
+
+# ── User-facing functions ──
+# verify_jwt = false because the iOS app sends the anon key (not a user JWT)
+# as the Authorization bearer. Each function validates the user internally
+# via getAuthenticatedUser() from _shared/auth.ts, which extracts the user
+# from the JWT if one is present. This pattern allows both anon-key calls
+# (from mobile) and authenticated calls (from web) to reach the function.
+
+[functions.coaching-agent]
+# Supabase gateway requires valid JWT (anon key counts).
+# Function validates user internally via getAuthenticatedUser().
+# When called with anon/service key (no user claim), falls back to
+# payloadUserId — validated as UUID format + rate-limited per user.
+verify_jwt = true
+
+[functions.coaching-daily-read]
+# Generates the morning Coach Read. Called by (a) the hourly pg_cron
+# dispatcher at the athlete's local 6 AM, (b) the training_logs trigger
+# after a quality session, (c) iOS pull-to-refresh on the Coach tab.
+# verify_jwt = false so service-role callers (cron + trigger) are
+# accepted; the function validates internally via
+# requireAuthOrServiceRole(), which accepts BOTH service-role bearer +
+# body user_id AND user-JWT + matching body user_id.
+verify_jwt = false
+
+[functions.build-pace-profile]
+# Upserts athlete_pace_profiles from the latest fitness_snapshots row.
+# verify_jwt = true so only authenticated callers (user JWT or anon/service
+# key + validated body.user_id) can trigger a profile rebuild.
+verify_jwt = true
+
+[functions.reconcile-log]
+# Closes the loop on training_logs inserts. Called by the Postgres trigger
+# with Authorization: Bearer <RECONCILE_SHARED_SECRET> (same string stored
+# in Vault). verify_jwt = false because the sb_secret_* API-key format is
+# rejected by the gateway's JWT validator; we do our own secret match below.
+verify_jwt = false
+
+[functions.adapt-plan]
+# Runs adaptation rules and writes plan_adjustments. Called by
+# reconcile-log, the Sunday cron, and on-demand from iOS.
+verify_jwt = false
+
+[functions.revert-plan-adjustment]
+# Reverses an auto-applied or accepted plan adjustment using the
+# before-state stored on the action_payload.
+verify_jwt = true
+
+[functions.update-plan-goal]
+# Athlete-initiated goal edit (race distance, time, date). Validates user
+# owns the plan via JWT subject; writes new goal to training_plans;
+# invalidates athlete_state cache. AI never calls this directly — see
+# feedback memory `feedback_ai_advises_never_acts.md`.
+verify_jwt = true
+
+[functions.recompute-plan-paces]
+# Athlete-confirmed pace recompute after a goal change. Walks future
+# scheduled_workouts and re-resolves each step's target_pace using the
+# current athlete_pace_profile. AI never invokes this — only the iOS
+# soft-ask sheet RecomputePacesSheet calls it after explicit accept.
+verify_jwt = true
+
+[functions.subscribe-to-plan]
+verify_jwt = false
+
+[functions.assess-fitness]
+verify_jwt = false
+
+[functions.build-athlete-profile]
+verify_jwt = false
+
+[functions.generate-training-plan]
+verify_jwt = false
+
+[functions.log-manual-workout]
+verify_jwt = false
+
+[functions.log-training]
+verify_jwt = false
+
+[functions.parse-training-plan]
+verify_jwt = false
+
+[functions.parse-training-week]
+verify_jwt = false
+
+[functions.parse-workout-structure]
+verify_jwt = false
+
+[functions.process-training-memo]
+verify_jwt = false
+
+[functions.reschedule-plan]
+verify_jwt = false
+
+[functions.weekly-coaching-report]
+verify_jwt = false

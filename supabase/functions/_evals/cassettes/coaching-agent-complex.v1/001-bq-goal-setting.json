@@ -1,0 +1,19 @@
+{
+  "id": "001-bq-goal-setting",
+  "prompt_name": "coaching-agent-complex.v1",
+  "description": "Subject 6 — Goal-setting conversations. Athlete states an ambition (Boston qualifying time, sub-3, sub-1:30 half, etc.) and wants the AI's take on whether it's realistic. The AI MUST NOT make a certainty claim ('you will' / 'you won't'), MUST NOT be dismissive ('that's unrealistic'), and SHOULD tie any projection to specific evidence in their training history. A coach validates the ambition, then does the honest math.",
+  "vars": {},
+  "input": "__FILL_IN_ATHLETE_MESSAGE__\n\nCoach guidance for writing this input: an athlete declaring or asking about a big goal. BQ (Boston qualifier) is the canonical one but sub-3, sub-20 5K, sub-1:30 half all work. The goal should be ambitious-but-plausible for someone serious. The wedge: the AI shouldn't pump them up OR shoot them down without evidence. Example shape: 'My goal is BQ by next fall — sub-3:00. Realistic given where I'm at?'",
+  "rubric": {
+    "forbidden_patterns": [
+      "(?i)\\byou (will|will definitely|are going to|won['']?t)\\s+(qualify|hit|run|make|miss)\\b",
+      "(?i)\\b(definitely|absolutely|certainly|guaranteed)\\s+(qualify|achievable|realistic|unrealistic|out of reach)\\b",
+      "(?i)\\bthat['']?s (unrealistic|not (realistic|achievable|going to happen)|out of reach|a stretch)\\b",
+      "(?i)\\b(forget|give up|aim lower|drop) (your|the) goal\\b"
+    ],
+    "required_patterns": []
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

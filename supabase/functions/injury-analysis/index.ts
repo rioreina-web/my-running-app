@@ -16,6 +16,7 @@ import { validateUUID, validationErrorResponse, internalErrorResponse } from "..
 import { compressTrainingContext, compressGoalsContext, estimateTokens } from "../_shared/context.ts";
 import { getMemories, buildMemoryContext } from "../_shared/memory.ts";
 import { buildInjuryContext } from "../_shared/injuries.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -142,6 +143,8 @@ Deno.serve(async (req: Request) => {
           .from("user_goals")
           .select("goal_title, target_date")
           .eq("status", "active")
+          .eq("user_id", injury.user_id)
+          .not("user_id", "is", null)
           .order("target_date", { ascending: true })
           .limit(5),
 
@@ -174,57 +177,26 @@ Deno.serve(async (req: Request) => {
 
     const sideLabel = injury.side !== "unknown" ? `${injury.side} ` : "";
 
-    const prompt = `You are a sports medicine consultant providing educational analysis of a running injury.
+    const goalsBlock = goalsContext ? `\nUPCOMING GOALS:\n${goalsContext}` : "";
+    const memoriesBlock = memoriesContext ? `\n${memoriesContext}` : "";
+    const tailContext = `${injuryHistoryContext}${otherInjuriesContext}${goalsBlock}${memoriesBlock}`;
 
-IMPORTANT MEDICAL DISCLAIMER: This analysis is for educational purposes only. It is NOT a medical diagnosis. The runner should consult a qualified healthcare professional for proper diagnosis and treatment.
-
-IMPORTANT: Never mention specific coaching methodologies, frameworks, or coach names in your response.
-
-If the runner has a history of this same injury, emphasize the recurring pattern and what that implies for recovery approach.
-
-INJURY DETAILS:
-- Body area: ${sideLabel}${injury.body_area}
-- Self-reported severity: ${injury.severity}/10
-- First reported: ${daysSinceReport} days ago
-- Current status: ${injury.status}
-- Description: ${injury.description || "No description provided"}
-
-RUNNER PROFILE:
-- Weekly mileage: ${profile?.current_weekly_mileage || "unknown"} (peak: ${profile?.peak_weekly_mileage || "unknown"})
-- Years running: ${profile?.years_running || "unknown"}
-- Easy pace: ${profile?.easy_pace_per_mile || "unknown"}, Tempo: ${profile?.tempo_pace_per_mile || "unknown"}
-- Cross-training: ${profile?.cross_training?.join(", ") || "none listed"}
-
-RECENT TRAINING (last 90 days):
-${trainingContext || "No recent training data"}
-${injuryHistoryContext}${otherInjuriesContext}${goalsContext ? `\nUPCOMING GOALS:\n${goalsContext}` : ""}${memoriesContext ? `\n${memoriesContext}` : ""}
-
-Provide a comprehensive analysis in this exact JSON format:
-{
-  "likely_causes": ["cause1", "cause2", "cause3"],
-  "risk_level": "low" | "moderate" | "high",
-  "recovery_timeline_days": { "optimistic": number, "typical": number, "conservative": number },  // SEE RECOVERY TIMELINE RULES BELOW
-  "recommended_actions": [
-    { "action": "string", "priority": "immediate" | "short_term" | "ongoing", "detail": "string" }
-  ],
-  "training_modifications": [
-    { "modification": "string", "duration": "string", "rationale": "string" }
-  ],
-  "warning_signs": ["sign that means seek medical attention immediately"],
-  "return_to_running_criteria": ["criterion1", "criterion2"],
-  "is_recurring": true | false,
-  "goal_impact": "brief note on how this affects their goals, if any" | null,
-  "summary": "2-3 sentence overview of the injury assessment",
-  "disclaimer": "This is educational information only, not a medical diagnosis. Please consult a healthcare professional for proper evaluation and treatment."
-}
-
-RECOVERY TIMELINE RULES:
-- All timelines are rough estimates only and vary significantly by individual.
-- For bone injuries (stress fractures, stress reactions): ALWAYS use conservative end. Minimum 6 weeks for stress reactions, 8-12 weeks for stress fractures. Never give optimistic timelines shorter than 4 weeks for bone injuries.
-- Always state that timelines require professional evaluation and may be longer than estimated.
-- Do not give specific return-to-run dates. Give ranges and emphasize gradual return protocols.
-
-Respond ONLY with the JSON object, no markdown code blocks, no extra text.`;
+    const prompt = loadPrompt("injury-analysis.v1", {
+      sideLabel,
+      bodyArea: injury.body_area,
+      severity: injury.severity,
+      daysSinceReport,
+      status: injury.status,
+      description: injury.description || "No description provided",
+      weeklyMileage: profile?.current_weekly_mileage || "unknown",
+      peakMileage: profile?.peak_weekly_mileage || "unknown",
+      yearsRunning: profile?.years_running || "unknown",
+      easyPace: profile?.easy_pace_per_mile || "unknown",
+      tempoPace: profile?.tempo_pace_per_mile || "unknown",
+      crossTraining: profile?.cross_training?.join(", ") || "none listed",
+      trainingContext: trainingContext || "No recent training data",
+      tailContext,
+    });
 
     const geminiKey = Deno.env.get("GEMINI_API_KEY")!;
     const genAI = new GoogleGenerativeAI(geminiKey);

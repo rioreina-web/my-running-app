@@ -15,7 +15,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole, requireServiceRole } from "../_shared/auth.ts";
+import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { getActiveInjuries, buildInjuryContext } from "../_shared/injuries.ts";
 import { internalErrorResponse } from "../_shared/validation.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
@@ -32,15 +33,12 @@ import {
   type FormCheckRow,
   type ComputedMetrics,
   type Alert,
+  type WorkoutFeaturesRow,
 } from "../_shared/weeklyAnalytics.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
 // ─── Main Handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -54,25 +52,26 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const isBatch = body.batch === true;
 
-    // Auth: batch mode uses service role, single user uses JWT
+    // Auth: batch mode is service-role only (cron); single-user mode accepts
+    // a user JWT or a service-role caller that names the subject user.
     let userId: string | null = null;
     if (isBatch) {
-      // Called from pg_cron with service role key — no user auth needed
-      const authHeader = req.headers.get("Authorization") || "";
-      if (
-        !authHeader.includes(
-          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.slice(0, 20) || "___"
-        )
-      ) {
-        return new Response(
-          JSON.stringify({ error: "Batch mode requires service role key" }),
-          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      // Cron / pg_net only. Constant-time service-role key check.
+      const svc = requireServiceRole(req, corsHeaders);
+      if (svc) return svc;
     } else {
-      userId = body.userId || (await getAuthenticatedUser(req));
-      if (!userId) {
-        return unauthorizedResponse(corsHeaders);
+      // requireAuthOrServiceRole 403s if body.userId is present but doesn't
+      // match the JWT user — closes the IDOR where any anon-key holder could
+      // pull another athlete's report by passing their userId in the body.
+      const auth = await requireAuthOrServiceRole(req, body.userId, corsHeaders);
+      if ("response" in auth) return auth.response;
+      userId = auth.userId;
+
+      // Rate-limit only genuine user-facing calls; service-role (cron) is
+      // gated by its own schedule.
+      if (!auth.isServiceRole) {
+        const rlBlocked = await enforceFeatureRateLimit(userId, "weekly_review", corsHeaders);
+        if (rlBlocked) return rlBlocked;
       }
     }
 
@@ -211,6 +210,7 @@ async function generateReportForUser(
     fitnessSnapshotsResult,
     formChecksResult,
     athleteProfileResult,
+    workoutFeaturesResult,
   ] = await Promise.all([
     // Scheduled workouts this week
     supabase
@@ -301,6 +301,19 @@ async function generateReportForUser(
       .select("profile_data")
       .eq("user_id", userId)
       .single(),
+
+    // Workout features for this week + last 4 weeks — keyed off training_log_id,
+    // used to compute intensity-weighted ACWR. We pull intensity_score (the
+    // time-weighted avg of per-segment pace weights — 5.0 for mile pace,
+    // 4.0 for 5K, 3.0 for threshold, 1.0 for easy) and total_duration_seconds
+    // because load = intensity_score × duration_minutes.
+    // Falls back to workout_type × duration when a feature row is missing.
+    supabase
+      .from("workout_features")
+      .select("training_log_id, intensity_score, total_duration_seconds")
+      .eq("user_id", userId)
+      .gte("workout_date", fourWeeksAgo.toISOString())
+      .lte("workout_date", weekEnd + "T23:59:59"),
   ]);
 
   // ── Extract Data ─────────────────────────────────────────────────────────
@@ -314,6 +327,14 @@ async function generateReportForUser(
   const profile = profileResult.data;
   const fitnessSnapshots = fitnessSnapshotsResult.data || [];
   const formChecks = (formChecksResult.data || []) as FormCheckRow[];
+
+  // Build features map keyed by training_log_id for the intensity-weighted
+  // ACWR computation. Logs without a feature row fall back to
+  // workout_type × duration (see computeWeightedLoadForLog).
+  const featuresByLogId = new Map<string, WorkoutFeaturesRow>();
+  for (const f of (workoutFeaturesResult.data || []) as WorkoutFeaturesRow[]) {
+    if (f.training_log_id) featuresByLogId.set(f.training_log_id, f);
+  }
 
   // Split historical logs into weekly buckets (most recent first)
   const previousWeeksLogs = splitIntoWeeks(historicalLogs, weekStart);
@@ -334,7 +355,8 @@ async function generateReportForUser(
     thisWeekScheduled,
     activeInjuries,
     formChecks,
-    racePaceSecondsPerMile
+    racePaceSecondsPerMile,
+    featuresByLogId,
   );
 
   // ── Generate Alerts ──────────────────────────────────────────────────────
@@ -753,85 +775,43 @@ function buildCoachingPrompt(
           .join("\n")
       : "No alerts triggered.";
 
-  return `You are an experienced running coach writing a weekly training review. This is YOUR athlete — you know their history, their goals, their patterns. Write like you're sitting across from them at a coffee shop, not generating a report.
+  const acwrLabel = metrics.acwr > 1.3 ? "HIGH RISK"
+    : metrics.acwr > 1.2 ? "elevated"
+    : metrics.acwr < 0.8 ? "low — undertrained"
+    : "healthy";
+  const moodSuffix = Object.keys(metrics.moodDistribution).length > 0
+    ? ` (${Object.entries(metrics.moodDistribution).map(([k, v]) => `${k}:${v}`).join(", ")})`
+    : "";
 
-PACE DIRECTION: In running, LOWER pace number = FASTER. 5:00/mi is fast, 9:00/mi is slow. "Too fast" means a LOWER number than prescribed. "Too slow" means a HIGHER number. Running slower than easy pace on recovery days is good.
-
-WRITING RULES:
-- BANNED: "impressive", "journey", "fantastic", "amazing", "solid work", "great job", "nicely done", "Let's dive in", "I notice", "Overall", "Keep it up", "You've got this", "Moving forward"
-- Short sentences. Fragments are fine. Like a person talks.
-- Reference SPECIFIC days, paces, and workouts. "Your Tuesday 10x800 at 2:48" not "your interval session."
-- No markdown. Plain text only.
-- If something is wrong, say it directly. Don't hedge.
-- One sharp observation > five generic compliments.
-
-ATHLETE:
-${profileSummary}
-${goalSummary}${injuryCtx}${ctx.athleteProfileContext}
-${ctx.athleteStateContext ? `\nATHLETE STATE (big-picture snapshot):\n${ctx.athleteStateContext}\n` : ""}
-THIS WEEK (${ctx.weekStart} to ${ctx.weekEnd}):
-Runs: ${metrics.runCount} | Miles: ${metrics.totalMiles} | Time: ${formatDuration(metrics.totalMinutes)}
-Compliance: ${Math.round(metrics.complianceScore * 100)}%
-Avg pace: ${formatPace(metrics.avgPaceSeconds)}${metrics.easyPaceAvg ? ` | Easy: ${formatPace(metrics.easyPaceAvg)}` : ""}${metrics.workoutPaceAvg ? ` | Quality: ${formatPace(metrics.workoutPaceAvg)}` : ""}
-Long run: ${metrics.longRunMiles ? `${metrics.longRunMiles}mi @ ${metrics.longRunPace ? formatPace(metrics.longRunPace) : "N/A"}` : "none"}
-ACWR: ${metrics.acwr} (${metrics.acwr > 1.3 ? "HIGH RISK" : metrics.acwr > 1.2 ? "elevated" : metrics.acwr < 0.8 ? "low — undertrained" : "healthy"}) | 4wk avg: ${metrics.chronicLoad}mi
-Volume change: ${metrics.volumeChangePct > 0 ? "+" : ""}${metrics.volumeChangePct}% vs last week
-Mood: ${metrics.moodTrend}${Object.keys(metrics.moodDistribution).length > 0 ? ` (${Object.entries(metrics.moodDistribution).map(([k, v]) => `${k}:${v}`).join(", ")})` : ""}
-
-SCHEDULED vs COMPLETED:
-${planComparison || "No plan active."}
-
-WORKOUT LOG (with pace segments from GPS watch):
-${workoutLog || "No workouts logged."}
-
-EFFORT DISTRIBUTION:
-${buildZoneSummary(ctx.thisWeekLogs)}
-
-MISSED:
-${missedText}
-
-NEXT WEEK:
-${nextWeekPreview || "Nothing scheduled."}
-
-ALERTS:
-${alertsText}
-
-FITNESS:
-${fitnessTrajectory}
-
----
-
-ANALYSIS FRAMEWORK — address ALL of these in your narrative:
-
-1. KEY WORKOUT EXECUTION: How did the most important workout(s) go? Did they hit target paces? Did they fade, negative split, or hold steady? Reference specific pace segments.
-
-2. EASY DAY DISCIPLINE: Were recovery/easy runs ACTUALLY easy? Compare easy day paces to quality day paces. If the gap is too small (<1:00/mi), call it out — they're not recovering.
-
-3. VOLUME & LOAD: Is the ACWR concerning? Was the volume jump appropriate? Are they building too fast or stagnating?
-
-4. PATTERN RECOGNITION: What trends do you see across the past few weeks in the data? Cardiac drift? Fatigue accumulation? Mood decline? Improving interval paces?
-
-5. NEXT WEEK SETUP: Based on what you see, what should they prioritize? Be specific — not "run easy" but "keep Wednesday under 8:00/mi pace and cut the long run to 12 instead of 15."
-
-Respond with ONLY a JSON object:
-
-{
-  "narrative": "4-6 paragraphs addressing the framework above. Be specific with paces, days, and data. No filler.",
-
-  "adjustments": [
-    {
-      "target_workout_type": "long_run|easy|tempo|intervals|recovery|rest",
-      "target_date": "YYYY-MM-DD or null",
-      "action": "reduce_distance|increase_distance|reduce_intensity|increase_intensity|swap_to_easy|add_recovery|skip|maintain",
-      "original_value": "current plan",
-      "recommended_value": "recommended change",
-      "rationale": "why — 1-2 sentences",
-      "priority": "high|medium|low"
-    }
-  ],
-
-  "focus_areas": ["1-3 words each", "max 3 items"]
-}`;
+  return loadPrompt("weekly-coaching-report.v1", {
+    profileSummary,
+    goalSummary,
+    injuryCtx,
+    athleteProfileContext: ctx.athleteProfileContext,
+    athleteStateBlock: ctx.athleteStateContext
+      ? `\nATHLETE STATE (big-picture snapshot):\n${ctx.athleteStateContext}\n`
+      : "",
+    weekStart: ctx.weekStart,
+    weekEnd: ctx.weekEnd,
+    runCount: metrics.runCount,
+    totalMiles: metrics.totalMiles,
+    totalDurationStr: formatDuration(metrics.totalMinutes),
+    compliancePercent: Math.round(metrics.complianceScore * 100),
+    paceLine: `Avg pace: ${formatPace(metrics.avgPaceSeconds)}${metrics.easyPaceAvg ? ` | Easy: ${formatPace(metrics.easyPaceAvg)}` : ""}${metrics.workoutPaceAvg ? ` | Quality: ${formatPace(metrics.workoutPaceAvg)}` : ""}`,
+    longRunLine: metrics.longRunMiles
+      ? `${metrics.longRunMiles}mi @ ${metrics.longRunPace ? formatPace(metrics.longRunPace) : "N/A"}`
+      : "none",
+    acwrLine: `ACWR: ${metrics.acwr} (${acwrLabel}) | 4wk avg: ${metrics.chronicLoad}mi`,
+    volumeChangeLine: `${metrics.volumeChangePct > 0 ? "+" : ""}${metrics.volumeChangePct}% vs last week`,
+    moodLine: `${metrics.moodTrend}${moodSuffix}`,
+    planComparison: planComparison || "No plan active.",
+    workoutLog: workoutLog || "No workouts logged.",
+    zoneSummary: buildZoneSummary(ctx.thisWeekLogs),
+    missedText,
+    nextWeekPreview: nextWeekPreview || "Nothing scheduled.",
+    alertsText,
+    fitnessTrajectory,
+  });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -36,22 +36,24 @@ const MODEL_CONFIG: Record<QueryComplexity, RouterConfig> = {
   // Moderate: Gemini Flash - balanced quality/cost
   // Best for: personalized advice, recommendations, coaching
   moderate: {
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     provider: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     apiKeyEnv: "GEMINI_API_KEY",
-    maxTokens: 600,
+    // 2.5 Flash consumes thinking tokens before writing output — bump budget
+    // so full coaching responses aren't truncated mid-sentence.
+    maxTokens: 2000,
     costPer1kTokens: 0.0006, // $0.60/1M tokens
   },
 
   // Complex: Gemini Flash with extended context
   // Best for: training plans, analysis, multi-step reasoning
   complex: {
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-flash",
     provider: "gemini",
     baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     apiKeyEnv: "GEMINI_API_KEY",
-    maxTokens: 1200,
+    maxTokens: 3000,
     costPer1kTokens: 0.0006,
   },
 };

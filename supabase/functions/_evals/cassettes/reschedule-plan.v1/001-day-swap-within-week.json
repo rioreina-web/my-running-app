@@ -1,0 +1,20 @@
+{
+  "id": "001-day-swap-within-week",
+  "prompt_name": "reschedule-plan.v1",
+  "description": "Subject 10 — Plan rescheduling within the constrained workout library. Athlete needs to move a workout because of a schedule conflict (travel, work, life event). The AI MUST select replacement workouts from the WORKOUT_CODES_BY_DAY library (no inventing custom workouts), MUST NOT move race day, MUST preserve hard/easy alternation, and SHOULD prioritize keeping quality sessions over easy runs. The output must be valid JSON containing only the workouts that changed.",
+  "vars": {
+    "workoutCodesByDay": "__FILL_IN_OR_LEAVE_FOR_LIVE_RECORD__"
+  },
+  "input": "__FILL_IN_RESCHEDULE_REQUEST__\n\nCoach guidance for writing this input: a JSON-shaped reschedule request matching what the production reschedule-plan function sends. Includes: current_schedule (workouts with codes/dates/statuses), reason (schedule_conflict | injury | fatigue | life_event), scope (single_day | this_week | remaining_plan), recent_training (what they actually completed). The simplest valuable case: a runner needs to swap Tuesday tempo with Saturday long run because of a wedding on Saturday. Note: for live-record to work, the workoutCodesByDay var above needs to be filled with the actual library — easier to populate from the production source than write by hand. Talk to me when you want to record this one and I'll wire it up.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "forbidden_patterns": [
+      "(?i)\"date\":\\s*\"[^\"]*\",\\s*\"workout_code\":\\s*\"RACE\"",
+      "(?i)\\b(custom workout|new workout I designed|let me create)\\b"
+    ],
+    "required_patterns": []
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

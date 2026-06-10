@@ -470,7 +470,8 @@ export async function resolveInjury(
           content: injury.content.replace("Current issue:", "Resolved:"),
           expires_at: new Date().toISOString(), // Expire immediately
         })
-        .eq("id", injury.id);
+        .eq("id", injury.id)
+        .eq("user_id", userId); // defense-in-depth: never mutate another user's memory
     }
   }
 

@@ -8,12 +8,11 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
+import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -51,14 +50,14 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { user_id, race_distance, race_date } = await req.json();
+    const { user_id: bodyUserId, race_distance, race_date } = await req.json();
 
-    if (!user_id) {
-      return new Response(
-        JSON.stringify({ error: "user_id is required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const { userId: user_id, isServiceRole } = auth;
+
+    const rlBlocked = await enforceFeatureRateLimit(user_id, "race", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
 
     console.log(`Race readiness check for user ${user_id}`);
 
@@ -213,60 +212,43 @@ Deno.serve(async (req: Request) => {
     const daysToRace = targetDate ? Math.round((new Date(targetDate).getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;
 
     // ── AI prompt ──
-    const prompt = `You're a running coach doing a race readiness assessment. Be honest, specific, and grounded in the data. Use actual paces from this runner's data — never generic numbers.
+    const targetTimeLine = targetTime ? `Goal time: ${targetTime}` : "No specific time goal set";
+    const daysToRaceLine = daysToRace !== null ? `Days to race: ${daysToRace}` : "Race date not set";
+    const snapshotHistoryLine = snapshotHistory.length >= 2
+      ? `Snapshots over time: ${snapshotHistory.map((s: Record<string, unknown>) => {
+          const d = new Date(s.created_at as string);
+          return `${d.getMonth() + 1}/${d.getDate()}: HM ${s.predicted_half_seconds ? fmtTime(s.predicted_half_seconds as number) : "?"}`;
+        }).join(" → ")}`
+      : "";
+    const taperLine = isTapering ? `Tapering: volume reduced ${taperReduction}% from peak` : "Not tapering";
+    const longRunDetailsLine = longRuns.length > 0
+      ? `Long run details: ${longRuns.map(r => `${new Date(r.date).getMonth() + 1}/${new Date(r.date).getDate()}: ${r.miles.toFixed(1)}mi ${r.pace > 0 ? `@ ${fmtPace(r.pace)}` : ""}`).join(", ")}`
+      : "";
+    const moodTrendLine = `${moodTrend} (${positiveMoods} positive, ${negativeMoods} negative out of ${moods.length})`;
+    const injuriesLine = injuries.length > 0
+      ? `Active injuries: ${injuries.map((i: Record<string, unknown>) => `${i.body_area} (${i.side || "bilateral"}, severity ${i.severity}/10, ${i.status})`).join(", ")}`
+      : "No active injuries";
 
-PACE DIRECTION: In running, LOWER pace number = FASTER. 5:00/mi is fast, 9:00/mi is slow. "Too fast" means a LOWER number than prescribed. "Too slow" means a HIGHER number. Running slower than easy pace on recovery days is good.
-
-RACE TARGET:
-Distance: ${targetRace}
-${targetTime ? `Goal time: ${targetTime}` : "No specific time goal set"}
-${daysToRace !== null ? `Days to race: ${daysToRace}` : "Race date not set"}
-
-CURRENT FITNESS:
-${paceZoneStr}
-Fitness trajectory: ${fitnessTrajectory}
-${snapshotHistory.length >= 2 ? `Snapshots over time: ${snapshotHistory.map((s: Record<string, unknown>) => {
-  const d = new Date(s.created_at as string);
-  return `${d.getMonth() + 1}/${d.getDate()}: HM ${s.predicted_half_seconds ? fmtTime(s.predicted_half_seconds as number) : "?"}`;
-}).join(" → ")}` : ""}
-
-8-WEEK TRAINING SUMMARY:
-Total: ${totalMiles.toFixed(0)} miles across ${totalRuns} runs
-Weekly mileage (oldest→newest): ${weeklyMiles.join(", ")}
-Peak week: ${peakWeekMiles} miles
-${isTapering ? `Tapering: volume reduced ${taperReduction}% from peak` : "Not tapering"}
-Quality sessions: ${qualitySessions.length} in 8 weeks
-Long runs: ${longRuns.length} (longest: ${longestRun.toFixed(1)} miles)
-${longRuns.length > 0 ? `Long run details: ${longRuns.map(r => `${new Date(r.date).getMonth() + 1}/${new Date(r.date).getDate()}: ${r.miles.toFixed(1)}mi ${r.pace > 0 ? `@ ${fmtPace(r.pace)}` : ""}`).join(", ")}` : ""}
-Mood trend: ${moodTrend} (${positiveMoods} positive, ${negativeMoods} negative out of ${moods.length})
-${injuries.length > 0 ? `Active injuries: ${injuries.map((i: Record<string, unknown>) => `${i.body_area} (${i.side || "bilateral"}, severity ${i.severity}/10, ${i.status})`).join(", ")}` : "No active injuries"}
-${athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : ""}
-
-Respond with a JSON object (no markdown, just raw JSON):
-{
-  "readiness_score": <0-100>,
-  "readiness_label": "<Not Ready | Getting There | Race Ready | Peak Fitness>",
-  "confidence": "<Low | Medium | Medium-High | High>",
-  "fitness_assessment": "<2-3 sentences on current fitness level>",
-  "strengths": ["<specific strength from data>", ...],
-  "concerns": ["<specific concern from data>", ...],
-  "taper_assessment": "<1-2 sentences on taper quality, or note if not tapering yet>",
-  "race_day_plan": {
-    "target_time": "<predicted finish time based on current fitness>",
-    "strategy": "<1 sentence race strategy>",
-    "splits": [
-      {"segment": "<e.g. miles 1-3>", "pace": "<M:SS/mi>", "note": "<brief tactical note>"}
-    ],
-    "fueling": "<fueling strategy>",
-    "warmup": "<pre-race warmup suggestion>"
-  },
-  "what_if": [
-    {"scenario": "<condition>", "adjustment": "<what to change>"}
-  ],
-  "one_thing_to_remember": "<the single most important thing for race day>"
-}
-
-Ground everything in THIS runner's actual data. Pace plan must use their real fitness numbers. Be direct about concerns — better to know now than on race day.`;
+    const prompt = loadPrompt("race-readiness.v1", {
+      targetRace,
+      targetTimeLine,
+      daysToRaceLine,
+      paceZoneStr,
+      fitnessTrajectory,
+      snapshotHistoryLine,
+      totalMiles: totalMiles.toFixed(0),
+      totalRuns,
+      weeklyMiles: weeklyMiles.join(", "),
+      peakWeekMiles,
+      taperLine,
+      qualitySessionsCount: qualitySessions.length,
+      longRunsCount: longRuns.length,
+      longestRun: longestRun.toFixed(1),
+      longRunDetailsLine,
+      moodTrendLine,
+      injuriesLine,
+      athleteContextBlock: athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : "",
+    });
 
     // ── AI call ──
     const geminiKey = Deno.env.get("GEMINI_API_KEY");

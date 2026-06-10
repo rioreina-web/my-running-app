@@ -8,12 +8,12 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import { legacyZonesFromSnapshot } from "../_shared/pace-engine.ts";
+import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
+import { corsHeaders } from "../_shared/cors.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
+import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -51,37 +51,20 @@ interface TrainingLog {
 // Pace zone utilities
 // ============================================================================
 
+// Pace zones come from the central PaceEngine. See _shared/pace-engine.ts.
+// Local function kept as a thin shim so existing call sites don't need to
+// change; eventually these will read engine output directly.
 function computePaceZones(snap: Record<string, number>): Record<string, number> | null {
-  const marathonMi = 26.2188, halfMi = 13.1094, tenKMi = 6.2137, fiveKMi = 3.1069;
-
-  const mp = snap.predicted_marathon_seconds ? snap.predicted_marathon_seconds / marathonMi : 0;
-  const hm = snap.predicted_half_seconds ? snap.predicted_half_seconds / halfMi : 0;
-  const tk = snap.predicted_10k_seconds ? snap.predicted_10k_seconds / tenKMi : 0;
-  const fk = snap.predicted_5k_seconds ? snap.predicted_5k_seconds / fiveKMi : 0;
-
-  if (!mp && !hm && !tk && !fk) return null;
-
-  const marathon = mp || (hm ? hm * 1.06 : (tk ? tk * 1.15 : fk * 1.22));
-  const half = hm || (mp ? mp * 0.943 : (tk ? tk * 1.08 : fk * 1.15));
-  const tenK = tk || (hm ? hm * 0.925 : (fk ? fk * 1.06 : marathon * 0.87));
-  const fiveK = fk || (tk ? tk * 0.943 : (hm ? hm * 0.87 : marathon * 0.82));
-
-  return {
-    easy: marathon + 90,
-    marathon,
-    halfMarathon: half,
-    threshold: (tenK + half) / 2,
-    tenK,
-    fiveK,
-  };
+  return legacyZonesFromSnapshot(snap);
 }
 
 function labelPaceZone(paceSecsPerMile: number, zones: Record<string, number>): string {
   const tolerance = 8;
+  // Threshold dropped from the canonical chart — HMP covers that effort
+  // band per the unified pace spectrum.
   const zoneDefs = [
     { name: "5K pace", pace: zones.fiveK },
     { name: "10K pace", pace: zones.tenK },
-    { name: "threshold", pace: zones.threshold },
     { name: "HM pace", pace: zones.halfMarathon },
     { name: "marathon pace", pace: zones.marathon },
     { name: "easy pace", pace: zones.easy },
@@ -118,14 +101,21 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { training_log_id, user_id } = await req.json();
+    const { training_log_id, user_id: bodyUserId } = await req.json();
 
-    if (!training_log_id || !user_id) {
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const { userId: user_id, isServiceRole } = auth;
+
+    if (!training_log_id) {
       return new Response(
-        JSON.stringify({ error: "training_log_id and user_id are required" }),
+        JSON.stringify({ error: "training_log_id is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const rlBlocked = await enforceFeatureRateLimit(user_id, "post_run", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
 
     console.log(`Post-run analysis for log ${training_log_id}, user ${user_id}`);
 
@@ -254,9 +244,21 @@ Deno.serve(async (req: Request) => {
     const dateStr = new Date(log.workout_date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
     const isHard = hardSegments.length > 0;
 
+    // Effort zones rendered as RANGES (engine band output via athleteState).
+    // Race anchors stay single. Coach-honest framing — no midpoints.
     let paceRef = "";
     if (paceZones) {
-      paceRef = `\nRunner's pace zones: Easy ${fmtPace(paceZones.easy)}, Marathon ${fmtPace(paceZones.marathon)}, HM ${fmtPace(paceZones.halfMarathon)}, Threshold ${fmtPace(paceZones.threshold)}, 10K ${fmtPace(paceZones.tenK)}, 5K ${fmtPace(paceZones.fiveK)}`;
+      const r = athleteState?.pace_zone_ranges ?? {};
+      const parts: string[] = [];
+      if (r.easy) parts.push(`Easy ${fmtPace(r.easy.paceFast)}–${fmtPace(r.easy.paceSlow)} (${r.easy.effortPercent})`);
+      if (r.moderate) parts.push(`Moderate ${fmtPace(r.moderate.paceFast)}–${fmtPace(r.moderate.paceSlow)} (${r.moderate.effortPercent})`);
+      if (r.steady) parts.push(`Steady ${fmtPace(r.steady.paceFast)}–${fmtPace(r.steady.paceSlow)} (${r.steady.effortPercent})`);
+      if (r.hmp) parts.push(`HMP ${fmtPace(r.hmp.paceFast)}–${fmtPace(r.hmp.paceSlow)}`);
+      parts.push(`Marathon ${fmtPace(paceZones.marathon)}`);
+      parts.push(`HM ${fmtPace(paceZones.halfMarathon)}`);
+      parts.push(`10K ${fmtPace(paceZones.tenK)}`);
+      parts.push(`5K ${fmtPace(paceZones.fiveK)}`);
+      paceRef = `\nRunner's pace zones: ${parts.join(", ")}`;
     }
 
     let injuryNote = "";
@@ -264,37 +266,32 @@ Deno.serve(async (req: Request) => {
       injuryNote = `\nActive injuries: ${injuries.map(i => `${i.body_area} (${i.side || "bilateral"}, severity ${i.severity}/10)`).join(", ")}`;
     }
 
-    const prompt = `You're a running coach giving instant feedback after a workout. Be specific, casual, and brief — 3-5 sentences max. Reference actual paces and splits, not generalities. When pace zones are available, describe efforts in those terms (e.g. "right at 10K pace" or "a touch faster than threshold").
+    const recentRunsLine = recentLogs.length > 0
+      ? `Recent runs: ${recentLogs.slice(0, 5).map(l => {
+          const d = new Date(l.workout_date);
+          return `${d.getMonth() + 1}/${d.getDate()}: ${(l.workout_distance_miles || 0).toFixed(1)}mi ${l.workout_type || ""} ${l.mood ? `[${l.mood}]` : ""}`;
+        }).join(", ")}`
+      : "";
 
-PACE DIRECTION: In running, LOWER pace number = FASTER. 5:00/mi is fast, 9:00/mi is slow. "Too fast" means a LOWER number than prescribed. "Too slow" means a HIGHER number. Running slower than easy pace on recovery days is good.
-
-TODAY'S RUN (${dateStr}):
-Distance: ${distance.toFixed(1)} miles
-Duration: ${duration > 0 ? `${duration} min` : "unknown"}
-Overall pace: ${overallPace > 0 ? fmtPace(overallPace) : "unknown"}
-Type: ${log.workout_type || "untagged"}
-Mood: ${log.mood || "not recorded"}
-${workoutStructure ? `\n${workoutStructure}` : ""}
-${log.workout_notes ? `Workout notes: ${log.workout_notes}` : ""}
-${log.cleaned_notes ? `Runner's notes: ${log.cleaned_notes}` : ""}
-${paceRef}${injuryNote}
-${athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : ""}
-
-CONTEXT:
-This week so far: ${thisWeekTotal.toFixed(1)} miles (2-week avg: ${weeklyAvg.toFixed(1)}/week)
-Hard sessions in last 14 days: ${recentHardDays}
-${daysSinceLastHard !== null ? `Days since last hard session: ${daysSinceLastHard}` : ""}
-${recentLogs.length > 0 ? `Recent runs: ${recentLogs.slice(0, 5).map(l => {
-  const d = new Date(l.workout_date);
-  return `${d.getMonth() + 1}/${d.getDate()}: ${(l.workout_distance_miles || 0).toFixed(1)}mi ${l.workout_type || ""} ${l.mood ? `[${l.mood}]` : ""}`;
-}).join(", ")}` : ""}
-
-Write a brief, insightful analysis. Include:
-1. What stands out about this specific run (pacing, effort, structure)
-2. How it fits into the recent training context (load, recovery, progression)
-3. One forward-looking note (what this means for the next session)
-
-Keep it to 3-5 sentences. No headers, no bullet points. Write like a text from a coach who just looked at your watch data.`;
+    const prompt = loadPrompt("post-run-analysis.v1", {
+      dateStr,
+      distance: distance.toFixed(1),
+      duration: duration > 0 ? `${duration} min` : "unknown",
+      overallPace: overallPace > 0 ? fmtPace(overallPace) : "unknown",
+      workoutType: log.workout_type || "untagged",
+      mood: log.mood || "not recorded",
+      workoutStructureBlock: workoutStructure ? `\n${workoutStructure}` : "",
+      workoutNotesLine: log.workout_notes ? `Workout notes: ${log.workout_notes}` : "",
+      runnerNotesLine: log.cleaned_notes ? `Runner's notes: ${log.cleaned_notes}` : "",
+      paceRef,
+      injuryNote,
+      athleteContextBlock: athleteContext ? `\nATHLETE STATE:\n${athleteContext}` : "",
+      thisWeekTotal: thisWeekTotal.toFixed(1),
+      weeklyAvg: weeklyAvg.toFixed(1),
+      recentHardDays,
+      daysSinceLastHardLine: daysSinceLastHard !== null ? `Days since last hard session: ${daysSinceLastHard}` : "",
+      recentRunsLine,
+    });
 
     // ── AI call ──
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
