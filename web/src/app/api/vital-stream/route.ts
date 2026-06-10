@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { fetchVitalStream } from "@/lib/vital";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { z } from "zod";
+
+const querySchema = z.object({
+  id: z.string().min(1, "Workout ID is required"),
+});
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -11,15 +16,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const rl = checkRateLimit(`${user.id}:vital-stream`, 30, 60_000);
-  if (!rl.allowed) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-  }
+  const rateLimited = await enforceRateLimit(`${user.id}:vital-stream`, 60, 60_000);
+  if (rateLimited) return rateLimited;
 
-  const workoutId = request.nextUrl.searchParams.get("id");
-  if (!workoutId) {
-    return NextResponse.json({ error: "Missing workout id" }, { status: 400 });
+  const parsed = querySchema.safeParse({ id: request.nextUrl.searchParams.get("id") });
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
+  const workoutId = parsed.data.id;
 
   const data = await fetchVitalStream(workoutId);
   if (!data) {

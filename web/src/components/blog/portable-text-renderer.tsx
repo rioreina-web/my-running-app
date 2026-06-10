@@ -51,20 +51,23 @@ const components: PortableTextComponents = {
         {children}
       </code>
     ),
-    link: ({ children, value }) => (
-      <a
-        href={value?.href}
-        className="text-coral hover:underline"
-        target={value?.href?.startsWith("http") ? "_blank" : undefined}
-        rel={
-          value?.href?.startsWith("http")
-            ? "noopener noreferrer"
-            : undefined
-        }
-      >
-        {children}
-      </a>
-    ),
+    link: ({ children, value }) => {
+      const href = value?.href || "";
+      const isAllowed = /^https?:\/\//i.test(href) || href.startsWith("/") || href.startsWith("#");
+      if (!isAllowed) return <span>{children}</span>;
+
+      const isExternal = href.startsWith("http");
+      return (
+        <a
+          href={href}
+          className="text-coral hover:underline"
+          target={isExternal ? "_blank" : undefined}
+          rel={isExternal ? "noopener noreferrer" : undefined}
+        >
+          {children}
+        </a>
+      );
+    },
   },
   types: {
     image: ({ value }) => {

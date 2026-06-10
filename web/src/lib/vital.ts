@@ -453,16 +453,37 @@ function generateInsights(
 // ─── Helpers ─────────────────────────────────────────────────
 
 async function vitalFetch(url: string): Promise<Response | null> {
-  try {
-    const res = await fetch(url, {
-      headers: { "x-vital-api-key": VITAL_API_KEY },
-      next: { revalidate: 300 },
-    });
-    if (!res.ok) return null;
-    return res;
-  } catch {
-    return null;
+  const maxRetries = 3;
+  const backoffMs = [1000, 2000, 4000];
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { "x-vital-api-key": VITAL_API_KEY },
+        next: { revalidate: 300 },
+      });
+
+      if (res.ok) return res;
+
+      // 4xx — don't retry, caller's problem
+      if (res.status >= 400 && res.status < 500) return null;
+
+      // 5xx — retry after backoff
+      if (attempt < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, backoffMs[attempt]));
+        continue;
+      }
+      return null;
+    } catch {
+      // Network failure — retry after backoff
+      if (attempt < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, backoffMs[attempt]));
+        continue;
+      }
+      return null;
+    }
   }
+  return null;
 }
 
 function formatPace(minutes: number): string {

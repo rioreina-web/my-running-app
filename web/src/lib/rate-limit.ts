@@ -1,24 +1,43 @@
 /**
- * Simple in-memory sliding-window rate limiter for API routes.
+ * Redis-backed sliding-window rate limiter using Upstash.
  *
- * Not shared across instances — suitable for single-process deployments.
- * For multi-instance deployments, swap to Redis/Upstash.
+ * Shared across all Vercel instances — works correctly under autoscale.
+ * Falls back to a permissive no-op if UPSTASH_REDIS_REST_URL is not set
+ * (local dev without Redis).
+ *
+ * Keeps the same `checkRateLimit(key, limit, windowMs)` signature so
+ * call sites don't need to change.
  */
 
-interface RateLimitEntry {
-  timestamps: number[];
+import { NextResponse } from "next/server";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
+// Cache of Ratelimit instances keyed by "limit:windowMs"
+const limiters = new Map<string, Ratelimit>();
+
+const redisConfigured =
+  !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN;
+
+function getLimiter(limit: number, windowMs: number): Ratelimit | null {
+  if (!redisConfigured) return null;
+
+  const cacheKey = `${limit}:${windowMs}`;
+  let rl = limiters.get(cacheKey);
+  if (rl) return rl;
+
+  const windowSec = Math.max(1, Math.round(windowMs / 1000));
+
+  rl = new Ratelimit({
+    redis: Redis.fromEnv(),
+    limiter: Ratelimit.slidingWindow(limit, `${windowSec} s`),
+    analytics: true,
+    prefix: "ratelimit",
+  });
+
+  limiters.set(cacheKey, rl);
+  return rl;
 }
-
-const store = new Map<string, RateLimitEntry>();
-
-// Clean up stale entries every 5 minutes
-setInterval(() => {
-  const cutoff = Date.now() - 120_000;
-  for (const [key, entry] of store) {
-    entry.timestamps = entry.timestamps.filter((t) => t > cutoff);
-    if (entry.timestamps.length === 0) store.delete(key);
-  }
-}, 300_000);
 
 /**
  * Check if a request is within the rate limit.
@@ -28,28 +47,56 @@ setInterval(() => {
  * @param windowMs - Window size in milliseconds
  * @returns `{ allowed: true }` or `{ allowed: false, retryAfterMs }`
  */
-export function checkRateLimit(
+export async function checkRateLimit(
   key: string,
   limit: number,
   windowMs: number,
-): { allowed: true } | { allowed: false; retryAfterMs: number } {
-  const now = Date.now();
-  const cutoff = now - windowMs;
+): Promise<{ allowed: true } | { allowed: false; retryAfterMs: number }> {
+  const rl = getLimiter(limit, windowMs);
 
-  let entry = store.get(key);
-  if (!entry) {
-    entry = { timestamps: [] };
-    store.set(key, entry);
+  if (!rl) {
+    // No Redis configured (local dev) — allow everything
+    return { allowed: true };
   }
 
-  // Drop timestamps outside the window
-  entry.timestamps = entry.timestamps.filter((t) => t > cutoff);
+  const result = await rl.limit(key);
 
-  if (entry.timestamps.length >= limit) {
-    const oldestInWindow = entry.timestamps[0];
-    return { allowed: false, retryAfterMs: oldestInWindow + windowMs - now };
+  if (result.success) {
+    return { allowed: true };
   }
 
-  entry.timestamps.push(now);
-  return { allowed: true };
+  return {
+    allowed: false,
+    retryAfterMs: Math.max(0, result.reset - Date.now()),
+  };
+}
+
+/**
+ * One-line rate-limit guard for route handlers. Returns `null` if the
+ * request is allowed, or a 429 `NextResponse` to return immediately.
+ *
+ * The 429 carries:
+ *   - `Retry-After` header (seconds, per RFC 9110)
+ *   - JSON body `{ error: 'rate_limited', retry_after_seconds: N }`
+ *
+ * Usage:
+ *   const blocked = await enforceRateLimit(`${user.id}:coach`, 20, 60_000);
+ *   if (blocked) return blocked;
+ */
+export async function enforceRateLimit(
+  key: string,
+  limit: number,
+  windowMs: number,
+): Promise<NextResponse | null> {
+  const rl = await checkRateLimit(key, limit, windowMs);
+  if (rl.allowed) return null;
+
+  const retryAfterSeconds = Math.max(1, Math.ceil(rl.retryAfterMs / 1000));
+  return NextResponse.json(
+    { error: "rate_limited", retry_after_seconds: retryAfterSeconds },
+    {
+      status: 429,
+      headers: { "Retry-After": String(retryAfterSeconds) },
+    },
+  );
 }

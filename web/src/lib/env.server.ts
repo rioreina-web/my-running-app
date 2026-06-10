@@ -1,9 +1,16 @@
+import "server-only";
+
 /**
- * Environment variable validation.
+ * Server-only environment access + validation.
  *
- * Imported by middleware.ts so it runs once at startup.
- * Throws on missing required vars, fails fast instead of failing silently
- * later when a request hits a route that needs them.
+ * Renamed from `env.ts` per TASKS.md W1.3 — the `.server.ts` suffix and the
+ * `server-only` import together ensure this module cannot be imported into a
+ * "use client" component (Next.js build fails at the import edge).
+ *
+ * The service-role key is exported from here so every server-side reader
+ * pulls from a single audited surface. The ESLint `no-restricted-imports`
+ * rule in eslint.config.mjs bans direct `process.env.SUPABASE_SERVICE_ROLE_KEY`
+ * reads to keep that surface honest.
  */
 
 const REQUIRED = {
@@ -13,7 +20,6 @@ const REQUIRED = {
 
 const OPTIONAL = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-  ML_SERVICE_URL: process.env.ML_SERVICE_URL,
   VITAL_API_KEY: process.env.VITAL_API_KEY,
 } as const;
 
@@ -28,7 +34,6 @@ export function validateEnv(): void {
 
   if (missing.length > 0) {
     const msg = `Missing required environment variables: ${missing.join(", ")}`;
-    // In production, fail fast. In dev, console.error so the dev server keeps running.
     if (process.env.NODE_ENV === "production") {
       throw new Error(msg);
     } else {
@@ -36,7 +41,6 @@ export function validateEnv(): void {
     }
   }
 
-  // Warn on optional vars that are missing (helpful for catching deploy mistakes)
   const optionalMissing = Object.entries(OPTIONAL)
     .filter(([, v]) => !v)
     .map(([k]) => k);
@@ -48,5 +52,20 @@ export function validateEnv(): void {
   validated = true;
 }
 
-// Run on import
+/**
+ * The Supabase service-role key. Bypasses RLS — server-side use only.
+ * Throws at access time if unset rather than allowing a silent empty string
+ * to be used as a credential.
+ */
+export const SUPABASE_SERVICE_ROLE_KEY: string = (() => {
+  const v = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!v) {
+    throw new Error(
+      "[env.server] SUPABASE_SERVICE_ROLE_KEY is not set. Required for server routes that bypass RLS."
+    );
+  }
+  return v;
+})();
+
+// Run validation on import
 validateEnv();

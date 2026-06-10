@@ -20,7 +20,7 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: "Post Run Drip",
   description:
-    "AI-powered running companion — training logs, coaching, and analysis",
+    "A running log for runners with a goal time and a base.",
 };
 
 export default function RootLayout({

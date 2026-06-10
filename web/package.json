@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npm run test:contract && npm run test:smoke",
+    "test:contract": "node --test 'tests/**/*.test.mjs'",
+    "test:smoke": "node --experimental-strip-types --no-warnings --import ./tests/smoke-register.mjs --test 'tests/smoke/**/*.smoke.test.ts'"
   },
   "dependencies": {
     "@portabletext/react": "6.0.3",
@@ -16,13 +19,18 @@
     "@sentry/nextjs": "10.48.0",
     "@supabase/ssr": "0.8.0",
     "@supabase/supabase-js": "2.97.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
+    "isomorphic-dompurify": "^3.9.0",
     "lucide-react": "0.577.0",
     "next": "16.1.6",
     "next-sanity": "12.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "recharts": "3.8.0",
-    "sanity": "5.13.0"
+    "sanity": "5.13.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.2.0",

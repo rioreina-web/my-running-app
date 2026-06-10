@@ -1,12 +1,12 @@
 import Link from "next/link";
 import {
-  formatStepDuration,
-  paceLabelWithAdjustment,
-  totalWorkoutMiles,
+  estimatedWorkoutMiles,
   totalWorkoutDurationMinutes,
+  workoutHasTimeBasedSegment,
   type WorkoutStep,
   type PaceZone,
 } from "./workout-helpers";
+import { WorkoutStructure } from "./workout-structure";
 
 interface WorkoutTemplate {
   id: string;
@@ -27,10 +27,12 @@ interface WorkoutTemplate {
 
 // Default pace zone per workout type — used to synthesize a single fallback
 // step for old workouts saved without a steps[] array, so cards never look blank.
+// `long_run` workouts default to `easy` (the LR pace zone was retired May 2026;
+// see workout-helpers.ts PACE_ZONES comment).
 const TYPE_DEFAULT_ZONE: Record<string, PaceZone> = {
   easy:        "easy",
   recovery:    "recovery",
-  long_run:    "longRun",
+  long_run:    "easy",
   tempo:       "threshold",
   intervals:   "fiveK",
   progression: "moderate",
@@ -60,27 +62,6 @@ const TYPE_LABEL: Record<string, string> = {
   strides:     "Strides",
   race:        "Race",
 };
-
-function describeStep(step: WorkoutStep): { label: string; pace: string } {
-  const dur = formatStepDuration(step.durationType, step.durationValue);
-  const reps = (step.repeats ?? 1) > 1 ? `${step.repeats} × ` : "";
-
-  let label: string;
-  if (step.stepType === "warmup") {
-    label = `Warmup — ${dur}`;
-  } else if (step.stepType === "cooldown") {
-    label = `Cooldown — ${dur}`;
-  } else if (reps) {
-    label = `${reps}${dur}`;
-  } else {
-    label = `${dur}`;
-  }
-
-  return {
-    label,
-    pace: paceLabelWithAdjustment(step.paceZone, step.paceAdjustment),
-  };
-}
 
 function formatNumber(n: number): string {
   if (Number.isInteger(n)) return n.toString();
@@ -133,8 +114,11 @@ export function WorkoutTemplateCard({
   // Prefer the stored stats (set on save), but fall back to computing them
   // from steps[] at render time. This handles workouts saved before the form
   // started writing estimated_duration_minutes, so old cards aren't blank.
-  const computedMiles = totalWorkoutMiles(steps);
+  // `estimatedWorkoutMiles` (vs the older `totalWorkoutMiles`) folds time-
+  // based segments into the mile count so fartleks don't show "—".
+  const computedMiles = estimatedWorkoutMiles(steps);
   const computedMinutes = totalWorkoutDurationMinutes(steps);
+  const hasTimeBased = workoutHasTimeBasedSegment(steps);
 
   const distance =
     template.estimated_distance_miles && template.estimated_distance_miles > 0
@@ -150,108 +134,107 @@ export function WorkoutTemplateCard({
       ? Math.round(computedMinutes)
       : null;
 
+  // Soft tinted pill background derived from the workout-type color.
+  // The card itself stays white; color only shows as a chip + on the
+  // structure stripes inside, so the page reads as a calm grid of
+  // workouts rather than a wall of color blocks (the previous design's
+  // biggest readability problem).
+  const typeLabel = TYPE_LABEL[template.workout_type] ?? template.workout_type;
+
   return (
     <Link
       href={`/coach-portal/workouts/${template.id}/edit`}
-      className="block bg-white border border-[var(--color-divider)] rounded-md overflow-hidden hover:border-[var(--color-text-tertiary)] transition-colors"
+      className="block bg-white border border-[var(--color-divider)] rounded-xl overflow-hidden hover:border-[var(--color-text-tertiary)] transition-colors"
     >
-      {/* Colored header strip */}
-      <div
-        className="px-5 py-3 text-white flex items-baseline justify-between gap-3"
-        style={{ backgroundColor: color }}
-      >
-        <h3 className="text-sm font-semibold leading-tight truncate">
+      {/* Header — pill + ref code, then the name. Replaces the previous
+          colored-bleed header that drowned out everything else. */}
+      <div className="px-4 pt-4 pb-2.5">
+        <div className="flex items-center gap-2 mb-1.5">
+          <span
+            className="text-[11px] font-medium px-2 py-0.5 rounded-full"
+            style={{
+              backgroundColor: `${color}1A`, // 10% alpha
+              color,
+            }}
+          >
+            {typeLabel}
+          </span>
+          <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
+            {refNum}
+          </span>
+        </div>
+        <h3 className="text-[15px] font-semibold leading-tight text-[var(--color-text-primary)]">
           {template.name}
         </h3>
-        <span className="font-mono text-[10px] opacity-70 tracking-wider flex-shrink-0">
-          {refNum}
-        </span>
-      </div>
-
-      {/* Stat grid */}
-      <div className="grid grid-cols-2 border-b border-[var(--color-divider)]">
-        <div className="px-3 py-3 text-center border-r border-[var(--color-divider)]">
-          <div className="font-mono text-base font-semibold text-[var(--color-text-primary)] leading-none">
-            {distance != null ? formatNumber(distance) : "—"}
-            {distance != null && (
-              <span className="text-[9px] text-[var(--color-text-tertiary)] font-normal ml-0.5">mi</span>
-            )}
-          </div>
-          <div className="text-[8px] uppercase tracking-wider text-[var(--color-text-tertiary)] mt-1.5">
-            Distance
-          </div>
-        </div>
-        <div className="px-3 py-3 text-center">
-          <div className="font-mono text-base font-semibold text-[var(--color-text-primary)] leading-none">
-            {duration != null ? formatDuration(duration) : "—"}
-            {duration != null && (
-              <span className="text-[9px] text-[var(--color-text-tertiary)] font-normal ml-0.5">
+        {/* Inline stat row — distance and duration as one mono line
+            instead of a 2-cell grid. ~ prefix when miles include
+            time-based estimates. */}
+        <div
+          className="mt-2.5 flex items-center gap-2.5 font-mono text-[13px]"
+          title={hasTimeBased ? "Includes estimated distance for time-based segments" : undefined}
+        >
+          {distance != null && (
+            <>
+              <span className="font-semibold text-[var(--color-text-primary)]">
+                {hasTimeBased ? "~" : ""}
+                {formatNumber(distance)}
+              </span>
+              <span className="text-[11px] text-[var(--color-text-tertiary)] -ml-1">mi</span>
+            </>
+          )}
+          {distance != null && duration != null && (
+            <span className="text-[var(--color-border-secondary)]">·</span>
+          )}
+          {duration != null && (
+            <>
+              <span className="font-semibold text-[var(--color-text-primary)]">
+                {formatDuration(duration)}
+              </span>
+              <span className="text-[11px] text-[var(--color-text-tertiary)] -ml-1">
                 {durationUnit(duration)}
               </span>
-            )}
-          </div>
-          <div className="text-[8px] uppercase tracking-wider text-[var(--color-text-tertiary)] mt-1.5">
-            Duration
-          </div>
+            </>
+          )}
+          {distance == null && duration == null && (
+            <span className="text-[11px] text-[var(--color-text-tertiary)] italic">
+              No stats yet
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Structure ledger */}
+      {/* Structure — grouped sections (warmup / main blocks / cooldown)
+          via the shared WorkoutStructure component. Replaces the flat
+          numbered ledger that turned a 6-rep workout into 14 rows. */}
       {steps.length > 0 ? (
-        <div className="px-5 py-3.5">
-          <div className="text-[8px] uppercase tracking-wider text-[var(--color-text-tertiary)] font-semibold mb-2">
-            Structure
-          </div>
-          <div className="space-y-1">
-            {steps.map((step, idx) => {
-              const { label, pace } = describeStep(step);
-              return (
-                <div
-                  key={step.id ?? idx}
-                  className="grid grid-cols-[18px_1fr_auto] items-baseline gap-2.5 font-mono text-[11px]"
-                >
-                  <span className="text-[9px] text-[var(--color-text-tertiary)] text-right">
-                    {String(idx + 1).padStart(2, "0")}
-                  </span>
-                  <span className="text-[var(--color-text-primary)] truncate">
-                    {label}
-                  </span>
-                  <span
-                    className="text-[10px] font-semibold flex-shrink-0"
-                    style={{ color }}
-                  >
-                    {pace}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+        <div className="px-4 py-2.5 border-t border-[var(--color-divider)]">
+          <WorkoutStructure steps={steps} variant="compact" />
         </div>
       ) : template.description ? (
-        <div className="px-5 py-3.5 text-[11px] text-[var(--color-text-secondary)] italic">
+        <div className="px-4 py-3 border-t border-[var(--color-divider)] text-[12px] text-[var(--color-text-secondary)] italic">
           {template.description}
         </div>
       ) : null}
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-5 py-2.5 border-t border-dashed border-[var(--color-divider)] bg-[var(--color-bg-elevated)]">
+      <div className="flex items-center justify-between px-4 py-2 border-t border-[var(--color-divider)] bg-[var(--color-bg-elevated)]">
         <div className="flex gap-1.5 flex-wrap">
           {(template.tags ?? []).slice(0, 4).map((tag) => (
             <span
               key={tag}
-              className="font-mono text-[8px] text-[var(--color-text-tertiary)] px-1.5 py-0.5 bg-white border border-[var(--color-divider)] rounded-full tracking-wider"
+              className="font-mono text-[10px] text-[var(--color-text-tertiary)] px-1.5 py-0.5 bg-white border border-[var(--color-divider)] rounded-full"
             >
               {tag}
             </span>
           ))}
           {(!template.tags || template.tags.length === 0) && (
-            <span className="text-[9px] text-[var(--color-text-tertiary)] italic">
-              {TYPE_LABEL[template.workout_type] ?? template.workout_type}
+            <span className="text-[10px] text-[var(--color-text-tertiary)] italic">
+              {typeLabel.toLowerCase()}
             </span>
           )}
         </div>
         {template.use_count > 0 && (
-          <span className="font-mono text-[9px] text-[var(--color-text-tertiary)] tracking-wider">
+          <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
             used {template.use_count}×
           </span>
         )}

@@ -28,7 +28,10 @@
 
   /* Utility */
   --color-divider: #E8E4E0;
+  --color-divider-soft: #EFECE8;
   --color-success: #2D8A4E;
+  --color-danger: #B83A4A;
+  --color-warning: #C4873A;
 
   /* Fonts */
   --font-display: var(--font-playfair-display), "Georgia", serif;
@@ -55,4 +58,30 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary);
+}
+
+/* Editorial display rules — Playfair leans visually heavier than DM Sans
+   at the same size, so headlines get a -0.01em tracking nudge and a tuned
+   line-height so they sit alongside body copy without dominating. */
+.font-display {
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+
+/* Tabular numerals everywhere mono is used — pace tables, miles, durations.
+   Prevents the "8" from being narrower than the "1" and shifting columns. */
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Coach voice helper — used for the editorial pull-quotes / coach notes
+   that appear at depth 2+ (see CLAUDE.md data_depth). Soft serif, with a
+   left rule that grounds it visually as quoted material, not chrome. */
+.coach-note {
+  font-family: var(--font-display);
+  font-style: italic;
+  letter-spacing: -0.005em;
+  color: var(--color-text-secondary);
+  border-left: 2px solid var(--color-divider);
+  padding-left: 0.875rem;
 }

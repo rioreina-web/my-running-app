@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { checkRateLimit } from "@/lib/rate-limit";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { SUPABASE_SERVICE_ROLE_KEY } from "@/lib/env.server";
+import { z } from "zod";
+
+const assignPlanSchema = z.object({
+  planTemplateId: z.string().uuid("Invalid plan template ID"),
+  athleteUserId: z.string().uuid("Invalid athlete user ID"),
+  startDate: z.string().min(1, "Start date is required"),
+  raceDate: z.string().nullable().optional(),
+});
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -12,24 +20,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const rl = checkRateLimit(`${user.id}:assign-plan`, 10, 60_000);
-  if (!rl.allowed) {
-    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
-  }
+  const rateLimited = await enforceRateLimit(`${user.id}:assign-plan`, 10, 60_000);
+  if (rateLimited) return rateLimited;
 
-  const { planTemplateId, athleteUserId, startDate, raceDate } = await request.json();
-
-  if (!planTemplateId || !athleteUserId || !startDate) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+  const parsed = assignPlanSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
+  const { planTemplateId, athleteUserId, startDate, raceDate } = parsed.data;
 
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/subscribe-to-plan`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
       },
       body: JSON.stringify({
         planTemplateId,

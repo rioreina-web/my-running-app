@@ -3,6 +3,12 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  async redirects() {
+    return [
+      { source: "/coach", destination: "/coach-portal", permanent: true },
+      { source: "/coach/:path*", destination: "/coach-portal/:path*", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {
@@ -28,18 +34,8 @@ const nextConfig: NextConfig = {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' blob: data: https:",
-              "font-src 'self' data:",
-              `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL || ""} https://*.supabase.co`,
-              "frame-ancestors 'none'",
-            ].join("; "),
-          },
+          // CSP is set dynamically in middleware.ts with per-request nonces.
+          // Do NOT set a static CSP header here — it would conflict.
         ],
       },
     ];
