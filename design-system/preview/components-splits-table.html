@@ -1,0 +1,211 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Splits</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+
+  /* Editorial header */
+  .head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .head .left { display: flex; flex-direction: column; gap: 2px; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.14em; color: var(--coral);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .h2 {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 22px; letter-spacing: -0.01em;
+    color: var(--ink); margin: 0; line-height: 1.1;
+  }
+  .head .right {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.10em; color: var(--ink-2);
+    text-transform: uppercase; text-align: right;
+    line-height: 1.5;
+  }
+  .head .right b { color: var(--ink); font-weight: 600; }
+
+  /* Pace ribbon — the editorial visualization */
+  .ribbon-wrap {
+    margin: 18px 0 6px 0;
+  }
+  .ribbon {
+    display: flex;
+    gap: 2px;
+    height: 32px;
+  }
+  .ribbon .seg {
+    background: var(--paper-deep);
+    border-radius: 2px;
+    position: relative;
+    display: flex; align-items: flex-end; justify-content: center;
+    overflow: hidden;
+  }
+  .ribbon .seg .fill {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: var(--ink-2);
+    transition: height 200ms;
+  }
+  .ribbon .seg.fast .fill { background: var(--coral); }
+  .ribbon-axis {
+    display: flex; gap: 2px; margin-top: 6px;
+  }
+  .ribbon-axis .lbl {
+    flex: 1;
+    text-align: center;
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.10em; color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .ribbon-axis .lbl.fast { color: var(--coral); font-weight: 600; }
+
+  /* Pull-quote callout */
+  .callout {
+    margin: 18px 0;
+    padding: 12px 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 18px;
+    align-items: center;
+  }
+  .callout .mile-tag {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--coral);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .callout .big {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 32px;
+    color: var(--coral);
+    line-height: 1;
+  }
+  .callout .quote {
+    font-family: var(--font-body); font-style: italic;
+    font-size: 13px; color: var(--ink);
+    line-height: 1.5; margin: 0;
+  }
+  .callout .meta {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.10em; color: var(--ink-2);
+    text-transform: uppercase; text-align: right;
+    line-height: 1.4;
+  }
+  .callout .meta b { color: var(--ink); font-weight: 600; }
+
+  /* Detail table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    margin-top: 4px;
+  }
+  th {
+    text-align: left;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    padding: 6px 4px;
+  }
+  th.r { text-align: right; }
+  td {
+    padding: 9px 4px;
+    border-top: 1px solid var(--rule);
+    font-size: 12px;
+    color: var(--ink);
+    font-weight: 600;
+  }
+  td:first-child { color: var(--ink-3); font-weight: 500; width: 24px; }
+  td.r { text-align: right; }
+  td.dim { color: var(--ink-2); font-weight: 400; }
+  tr.fast td { color: var(--coral); }
+  tr.fast td:first-child { color: var(--coral); font-weight: 600; }
+  /* tiny inline HR bar */
+  td .hr-cell { display: inline-flex; align-items: center; gap: 8px; }
+  td .hr-bar {
+    display: inline-block;
+    height: 4px;
+    background: var(--ink-3);
+    opacity: 0.35;
+    border-radius: 999px;
+    vertical-align: middle;
+  }
+  tr.fast td .hr-bar { background: var(--coral); opacity: 1; }
+</style></head>
+<body><div class="card">
+  <div class="head">
+    <div class="left">
+      <span class="eyebrow">SPLITS · PER MILE</span>
+      <h2 class="h2">Mile 5 took it.</h2>
+    </div>
+    <div class="right">
+      <div>FASTEST <b>6:34</b></div>
+      <div>SLOWEST <b>7:36</b></div>
+      <div>RANGE <b>1:02</b></div>
+    </div>
+  </div>
+
+  <!-- Pace ribbon -->
+  <div class="ribbon-wrap">
+    <div class="ribbon">
+      <!-- height = relative pace effort; fastest gets coral.  pace 6:34 fastest = tallest bar -->
+      <div class="seg"><span class="fill" style="height:52%"></span></div>
+      <div class="seg"><span class="fill" style="height:74%"></span></div>
+      <div class="seg"><span class="fill" style="height:62%"></span></div>
+      <div class="seg"><span class="fill" style="height:72%"></span></div>
+      <div class="seg fast"><span class="fill" style="height:100%"></span></div>
+      <div class="seg"><span class="fill" style="height:78%"></span></div>
+    </div>
+    <div class="ribbon-axis">
+      <span class="lbl">MI 1</span>
+      <span class="lbl">MI 2</span>
+      <span class="lbl">MI 3</span>
+      <span class="lbl">MI 4</span>
+      <span class="lbl fast">MI 5</span>
+      <span class="lbl">MI 6</span>
+    </div>
+  </div>
+
+  <!-- Callout: the standout mile -->
+  <div class="callout">
+    <div>
+      <div class="mile-tag">MILE 5 ↗</div>
+      <div class="big">6:34</div>
+    </div>
+    <p class="quote">"Fastest of the run, HR 157 — Z3. Negative split −0:30 from mile one."</p>
+    <div class="meta">
+      <div>HR <b>157</b></div>
+      <div>LOAD <b>27</b></div>
+    </div>
+  </div>
+
+  <!-- Detail table -->
+  <table>
+    <thead>
+      <tr>
+        <th>MI</th><th>PACE</th><th>GAP</th><th class="r">HR</th><th class="r">LOAD</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>1</td><td>7:36</td><td class="dim">7:34</td><td class="r">133</td><td class="r"><span class="hr-cell"><span class="hr-bar" style="width:36px"></span>21</span></td></tr>
+      <tr><td>2</td><td>7:10</td><td class="dim">7:08</td><td class="r">142</td><td class="r"><span class="hr-cell"><span class="hr-bar" style="width:42px"></span>22</span></td></tr>
+      <tr><td>3</td><td>7:25</td><td class="dim">7:24</td><td class="r">143</td><td class="r"><span class="hr-cell"><span class="hr-bar" style="width:40px"></span>21</span></td></tr>
+      <tr><td>4</td><td>7:11</td><td class="dim">7:09</td><td class="r">148</td><td class="r"><span class="hr-cell"><span class="hr-bar" style="width:44px"></span>23</span></td></tr>
+      <tr class="fast"><td>5</td><td>6:34</td><td class="dim">6:32</td><td class="r">157</td><td class="r"><span class="hr-cell"><span class="hr-bar" style="width:54px"></span>27</span></td></tr>
+      <tr><td>6</td><td>7:04</td><td class="dim">7:01</td><td class="r">155</td><td class="r"><span class="hr-cell"><span class="hr-bar" style="width:28px"></span>13</span></td></tr>
+    </tbody>
+  </table>
+</div></body></html>

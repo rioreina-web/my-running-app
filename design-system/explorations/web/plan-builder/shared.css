@@ -1,0 +1,193 @@
+/* Plan Builder · shared styles
+   Inherits the design system tokens. */
+@import url("../../../colors_and_type.css");
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Reusable primitives ===== */
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+.eyebrow--coral { color: var(--coral); }
+
+.h-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  line-height: 1;
+  margin: 0;
+}
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.dek {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.rule { display: flex; align-items: center; gap: 8px; }
+.rule::before, .rule::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.rule .d { width: 3px; height: 3px; border-radius: 999px; background: var(--rule); }
+.hairline { height: 1px; background: var(--rule); width: 100%; }
+
+/* Buttons */
+.btn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 150ms ease;
+}
+.btn--primary { background: var(--coral); color: #fff; }
+.btn--primary:hover { background: var(--coral-deep); }
+.btn--ghost { background: transparent; color: var(--ink); }
+.btn--ghost:hover { color: var(--coral); }
+.btn--link {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--coral);
+  border-bottom: 1.5px solid var(--coral);
+  padding-bottom: 1px;
+  background: transparent;
+  border-top: 0; border-left: 0; border-right: 0;
+  cursor: pointer;
+}
+
+/* Plate strip — editorial top header */
+.plate-strip {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  line-height: 1.5;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+.plate-strip .stack { display: flex; flex-direction: column; gap: 2px; }
+.plate-strip .stack span:first-child { color: var(--ink); }
+
+/* Sidebar */
+.app-shell {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  min-height: 100%;
+}
+.sidebar {
+  background: var(--paper);
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  gap: 4px;
+}
+.sidebar .logo {
+  width: 40px;
+  margin-bottom: 24px;
+}
+.sidebar .logo img {
+  width: 100%;
+  display: block;
+}
+.sidebar .nav-section {
+  display: flex; flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+}
+.sidebar .nav-section .sec-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  padding: 6px 10px 8px 10px;
+}
+.sidebar a.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--ink-2);
+  text-decoration: none;
+  cursor: pointer;
+}
+.sidebar a.nav-item:hover {
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.sidebar a.nav-item.is-active {
+  color: var(--coral);
+  font-weight: 600;
+}
+.sidebar a.nav-item.is-active::before {
+  content: "·";
+  color: var(--coral);
+  margin-right: 4px;
+  font-size: 16px;
+  margin-left: -8px;
+}
+.sidebar .nav-item .ico {
+  width: 14px; height: 14px;
+  color: currentColor;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+.sidebar .nav-spacer { flex: 1; }
+
+/* Pill toggle (used for Fixed/Adaptive, distance, etc.) */
+.pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.pill.is-active {
+  background: var(--coral);
+  color: #fff;
+  border-color: var(--coral);
+}
+.pill.is-active-adaptive {
+  background: var(--mood-energized);
+  color: #fff;
+  border-color: var(--mood-energized);
+}
+
+/* Workout colors (from the codebase) */
+.wcolor-easy { color: #4A9E6B; }
+.wcolor-tempo { color: #E8764A; }
+.wcolor-intervals { color: var(--coral); }
+.wcolor-long { color: var(--mood-energized); }
+.wcolor-recovery { color: #4A9E6B; }
+.wcolor-rest { color: var(--ink-3); }

@@ -1,0 +1,40 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Iconography</title>
+<link rel="stylesheet" href="_card.css">
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+.tag { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-bottom: 18px; }
+.grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 18px 12px; }
+.glyph { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.glyph svg { width: 22px; height: 22px; color: var(--ink-2); stroke-width: 1.5; }
+.glyph .nm { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; color: var(--ink-2); text-transform: uppercase; }
+.glyph.coral svg { color: var(--coral); }
+.note { font-family: var(--font-body); font-size: 12px; color: var(--ink-2); font-style: italic; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.uni { display: flex; gap: 28px; align-items: baseline; margin-top: 16px; }
+.uni .u { font-family: var(--font-body); font-size: 22px; color: var(--ink); }
+.uni .ulbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-left: 8px; }
+</style></head>
+<body><div class="card">
+  <div class="tag">Icons · Lucide stroke (substitute for SF Symbols) · 22 / 1.5px</div>
+  <div class="grid">
+    <div class="glyph"><i data-lucide="footprints"></i><span class="nm">Run</span></div>
+    <div class="glyph"><i data-lucide="calendar-days"></i><span class="nm">Plan</span></div>
+    <div class="glyph"><i data-lucide="trending-up"></i><span class="nm">Trends</span></div>
+    <div class="glyph"><i data-lucide="message-square"></i><span class="nm">Coach</span></div>
+    <div class="glyph coral"><i data-lucide="mic"></i><span class="nm">Record</span></div>
+    <div class="glyph"><i data-lucide="heart-pulse"></i><span class="nm">HR</span></div>
+    <div class="glyph"><i data-lucide="bandage"></i><span class="nm">Injury</span></div>
+    <div class="glyph"><i data-lucide="map"></i><span class="nm">Route</span></div>
+    <div class="glyph"><i data-lucide="bolt"></i><span class="nm">Energized</span></div>
+    <div class="glyph"><i data-lucide="moon"></i><span class="nm">Tired</span></div>
+    <div class="glyph"><i data-lucide="cloud-sun"></i><span class="nm">Weather</span></div>
+    <div class="glyph"><i data-lucide="upload"></i><span class="nm">Export</span></div>
+    <div class="glyph"><i data-lucide="settings"></i><span class="nm">Settings</span></div>
+    <div class="glyph"><i data-lucide="bell"></i><span class="nm">Alerts</span></div>
+    <div class="glyph"><i data-lucide="user"></i><span class="nm">Profile</span></div>
+    <div class="glyph"><i data-lucide="chevron-right"></i><span class="nm">More</span></div>
+  </div>
+  <div class="uni"><span class="u">·</span><span class="ulbl">Middle dot · separator</span><span class="u">↗</span><span class="ulbl">Action arrow · on links</span></div>
+  <p class="note">No emoji. No filled glyphs except the active-tab dot. One coral icon per cluster.</p>
+  <script>lucide.createIcons();</script>
+</div></body></html>

@@ -1,0 +1,47 @@
+/* Shared card-shell styles for design-system preview specimens */
+@import url("../colors_and_type.css");
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.card {
+  width: 700px;
+  padding: 28px 32px;
+  box-sizing: border-box;
+  background: var(--paper);
+}
+
+/* swatch grid shared */
+.swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+.swatch__chip {
+  height: 64px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.04);
+}
+.swatch__name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.swatch__hex {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.row { display: flex; gap: 16px; }
+.col { display: flex; flex-direction: column; gap: 12px; }

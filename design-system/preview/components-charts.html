@@ -1,0 +1,137 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Zones + race</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+
+  /* HR Zones section */
+  .head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .head .left { display: flex; flex-direction: column; gap: 2px; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.14em; color: var(--coral);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .head h2 {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 18px; letter-spacing: -0.01em;
+    color: var(--ink); margin: 0; line-height: 1.1;
+  }
+  .head .right {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.10em; color: var(--ink-2);
+    text-transform: uppercase; text-align: right;
+  }
+  .head .right b { color: var(--ink); font-weight: 600; }
+
+  /* Zone bar — sage → coral → rose progression (no black) */
+  .zones {
+    display: flex; height: 16px; border-radius: 3px;
+    overflow: hidden; margin: 14px 0 8px 0;
+  }
+  .z {
+    display: flex; align-items: center; justify-content: center;
+  }
+  .z-1 { background: #C0BFB9; }
+  .z-2 { background: #4A9E6B; }   /* sage */
+  .z-3 { background: #D4592A; }   /* coral */
+  .z-4 { background: #B83A4A; }   /* deep rose — intense, not morbid */
+
+  .z-lbls {
+    display: flex;
+    margin-bottom: 4px;
+  }
+  .z-lbl {
+    display: flex; flex-direction: column; gap: 1px;
+    font-family: var(--font-mono);
+    font-size: 9px; letter-spacing: 0.10em;
+    color: var(--ink-2); text-transform: uppercase;
+  }
+  .z-lbl .name { font-weight: 600; }
+  .z-lbl .t { color: var(--ink); font-weight: 600; font-size: 11px; font-variant-numeric: tabular-nums; letter-spacing: 0; margin-top: 1px; }
+
+  /* state colors per zone label */
+  .z-lbl.z1 .name { color: var(--ink-3); }
+  .z-lbl.z2 .name { color: #2D8A4E; }
+  .z-lbl.z3 .name { color: var(--coral); }
+  .z-lbl.z4 .name { color: #B83A4A; }
+
+  /* Race prediction strip */
+  .race-section {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+  }
+  .race-strip {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    margin-top: 12px;
+  }
+  .rcell {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 0 8px;
+    border-right: 1px solid var(--rule);
+  }
+  .rcell:last-child { border-right: 0; }
+  .rlbl {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.10em; color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .rval {
+    font-family: var(--font-mono); font-weight: 600;
+    font-size: 22px; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .rdel {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--mood-energized);
+    font-variant-numeric: tabular-nums;
+  }
+</style></head>
+<body><div class="card">
+
+  <div class="head">
+    <div class="left">
+      <span class="eyebrow">HR ZONES · TIME IN ZONE</span>
+      <h2>Threshold day.</h2>
+    </div>
+    <div class="right">AVG <b>143</b> · MAX <b>162</b></div>
+  </div>
+
+  <div class="zones">
+    <div class="z z-1" style="width:6%"></div>
+    <div class="z z-2" style="width:42%"></div>
+    <div class="z z-3" style="width:44%"></div>
+    <div class="z z-4" style="width:8%"></div>
+  </div>
+
+  <div class="z-lbls">
+    <div class="z-lbl z1" style="width:6%"><span class="name">Z1</span><span class="t">2m</span></div>
+    <div class="z-lbl z2" style="width:42%"><span class="name">Z2 · EASY</span><span class="t">14m</span></div>
+    <div class="z-lbl z3" style="width:44%"><span class="name">Z3 · THRESHOLD</span><span class="t">16m</span></div>
+    <div class="z-lbl z4" style="width:8%"><span class="name">Z4</span><span class="t">3m</span></div>
+  </div>
+
+  <div class="race-section">
+    <div class="head">
+      <div class="left">
+        <span class="eyebrow">RACE PREDICTIONS</span>
+        <h2>Today's predicted times.</h2>
+      </div>
+      <div class="right">MEDIUM <b>CONFIDENCE</b></div>
+    </div>
+
+    <div class="race-strip">
+      <div class="rcell"><span class="rlbl">MILE</span><span class="rval">5:42</span><span class="rdel">−4s</span></div>
+      <div class="rcell"><span class="rlbl">5K</span><span class="rval">18:52</span><span class="rdel">−14s</span></div>
+      <div class="rcell"><span class="rlbl">10K</span><span class="rval">39:11</span><span class="rdel">−24s</span></div>
+      <div class="rcell"><span class="rlbl">HALF</span><span class="rval">1:27</span><span class="rdel">−47s</span></div>
+      <div class="rcell"><span class="rlbl">FULL</span><span class="rval">3:15</span><span class="rdel">−1:24</span></div>
+    </div>
+  </div>
+</div></body></html>

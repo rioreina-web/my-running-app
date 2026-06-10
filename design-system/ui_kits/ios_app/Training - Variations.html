@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Post Run Drip · Training — Variations</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="tokens.css">
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #f0eee9; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="Primitives.jsx"></script>
+  <script type="text/babel" src="TrainingScreen.jsx"></script>
+  <script type="text/babel" src="TrainA.jsx"></script>
+  <script type="text/babel" src="TrainB.jsx"></script>
+  <script type="text/babel" src="TrainC.jsx"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+
+  <script type="text/babel">
+    // Tiny wrapper that mounts a Train-screen variant inside the iOS frame
+    // with the same paddings + tab bar as App.jsx. Train tab pinned active.
+    const TrainFrame = ({ children }) => (
+      <IOSDevice width={390} height={844}>
+        <div style={{
+          paddingTop: 62, paddingBottom: 34, height: "100%",
+          boxSizing: "border-box", display: "flex", flexDirection: "column",
+          background: "#F5F3F0", position: "relative",
+        }}>
+          <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+            {children}
+          </div>
+          <TabBar active="train" onChange={() => {}} />
+        </div>
+      </IOSDevice>
+    );
+
+    const ART_W = 430, ART_H = 900;
+
+    const App = () => (
+      <DesignCanvas>
+        <DCSection
+          id="train-variants"
+          title="Training tab — three directions"
+          subtitle="Same content, three takes on how loud to be. Compare side by side. Drag to reorder · click label to focus.">
+          <DCArtboard id="current" label="Current · for reference" width={ART_W} height={ART_H}>
+            <div style={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", background: "#f0eee9", padding: "20px 0" }}>
+              <TrainFrame><TrainingScreen onOpenDay={()=>{}} onOpenPlan={()=>{}} onOpenWorkout={()=>{}} onOpenRace={()=>{}} /></TrainFrame>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="a" label="A · Strip back" width={ART_W} height={ART_H}>
+            <div style={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", background: "#f0eee9", padding: "20px 0" }}>
+              <TrainFrame><TrainA /></TrainFrame>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="b" label="B · Week / Block split" width={ART_W} height={ART_H}>
+            <div style={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", background: "#f0eee9", padding: "20px 0" }}>
+              <TrainFrame><TrainB /></TrainFrame>
+            </div>
+          </DCArtboard>
+          <DCArtboard id="c" label="C · Today-first hero" width={ART_W} height={ART_H}>
+            <div style={{ width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "flex-start", background: "#f0eee9", padding: "20px 0" }}>
+              <TrainFrame><TrainC /></TrainFrame>
+            </div>
+          </DCArtboard>
+
+          <DCPostIt top={20} left={40} rotate={-3} width={210}>
+            A keeps the architecture but cuts coral count, kills the range column, and removes Recent log. Easiest to ship.
+          </DCPostIt>
+          <DCPostIt top={140} right={40} rotate={2} width={210}>
+            B introduces a Week / Block tab inside Train. Today-focused on landing; analytics one tap away.
+          </DCPostIt>
+          <DCPostIt bottom={40} left="50%" rotate={-1} width={220}>
+            C is the editorial bet — Train becomes "today's session as a headline", with the rest as quiet context.
+          </DCPostIt>
+        </DCSection>
+      </DesignCanvas>
+    );
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

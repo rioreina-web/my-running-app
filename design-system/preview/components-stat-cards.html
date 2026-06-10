@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Stat cards</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+.tag { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-bottom: 18px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.tile {
+  background: var(--card); border-radius: 12px; padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; }
+.num { font-family: var(--font-mono); font-weight: 600; font-size: 32px; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1; display:flex; align-items:baseline; gap:6px; }
+.unit { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); font-weight: 600; }
+.delta-pos { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em; color: #2D8A4E; text-transform: uppercase; }
+.delta-neg { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em; color: var(--coral); text-transform: uppercase; }
+</style></head>
+<body><div class="card">
+  <div class="grid">
+    <div class="tile">
+      <div class="lbl">VOLUME · 7D</div>
+      <div class="num">47.2<span class="unit">MI</span></div>
+      <div class="delta-pos">+8% &nbsp;VS 4-WK AVG</div>
+    </div>
+    <div class="tile">
+      <div class="lbl">FITNESS</div>
+      <div class="num">3:14<span class="unit">FULL</span></div>
+      <div class="delta-pos">−47s &nbsp;VS 4 WEEKS AGO</div>
+    </div>
+    <div class="tile">
+      <div class="lbl">LOAD · ACWR</div>
+      <div class="num">1.18<span class="unit">RATIO</span></div>
+      <div class="delta-pos">PRODUCTIVE</div>
+    </div>
+    <div class="tile">
+      <div class="lbl">INJURY RISK</div>
+      <div class="num">2.4<span class="unit">/ 10</span></div>
+      <div class="delta-pos">LOW &nbsp;·&nbsp; 4W AVG 2.1</div>
+    </div>
+  </div>
+</div></body></html>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Plate strip + tab bar</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+  .tag {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.12em; color: var(--ink-2);
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+
+  /* Plate strip — top header of every editorial surface */
+  .plate-row {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: 0.14em; color: var(--ink-2);
+    text-transform: uppercase; line-height: 1.5;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .plate-row .stack { display: flex; flex-direction: column; gap: 2px; }
+  .plate-row .stack span:first-child { color: var(--ink); }
+
+  /* Section break */
+  .break { margin: 26px 0 16px 0; }
+
+  /* Tab bar */
+  .tab-shell {
+    background: var(--paper);
+    border-top: 1px solid var(--rule);
+    padding: 12px 0 14px 0;
+  }
+  .tab {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+  }
+  .tab button {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    padding: 4px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    transition: transform 150ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .tab button:hover { transform: translateY(-1px); }
+  .tab button:active { transform: scale(0.96); }
+  .tab .tdot {
+    width: 6px; height: 6px;
+    border-radius: 999px;
+    background: transparent;
+    border: 1.5px solid var(--ink-3);
+    box-sizing: border-box;
+    transition: all 200ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .tab button.is-active .tdot {
+    background: var(--coral);
+    border-color: var(--coral);
+    box-shadow: 0 0 0 4px rgba(212, 89, 42, 0.10);
+  }
+  .tab .tlbl {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .tab button.is-active .tlbl { color: var(--ink); font-weight: 600; }
+  .tab button:hover .tlbl { color: var(--ink); }
+
+  .try {
+    margin-top: 14px;
+    font-family: var(--font-body); font-style: italic;
+    font-size: 11px; color: var(--ink-3); text-align: center;
+  }
+</style></head>
+<body><div class="card">
+  <div class="tag">Plate strip — top of every editorial surface</div>
+  <div class="plate-row">
+    <div class="stack"><span>RUNNING LOG</span><span>— TRENDS · v1 ANALYTICS SURFACE</span></div>
+    <div class="stack" style="text-align:right"><span>FIG. 18</span><span>NEGATIVE SPLITS · 04.2026</span></div>
+  </div>
+
+  <div class="break"></div>
+  <div class="tag">Tab bar — try clicking</div>
+
+  <div class="tab-shell">
+    <nav class="tab" id="tabs">
+      <button data-tab="log"    type="button"><span class="tdot"></span><span class="tlbl">Log</span></button>
+      <button data-tab="train"  type="button"><span class="tdot"></span><span class="tlbl">Train</span></button>
+      <button data-tab="trends" type="button" class="is-active"><span class="tdot"></span><span class="tlbl">Trends</span></button>
+      <button data-tab="coach"  type="button"><span class="tdot"></span><span class="tlbl">Coach</span></button>
+      <button data-tab="runs"   type="button"><span class="tdot"></span><span class="tlbl">Runs</span></button>
+    </nav>
+  </div>
+
+  <p class="try">— click a tab; the coral dot follows. —</p>
+
+  <script>
+    const tabs = document.querySelectorAll('#tabs button');
+    tabs.forEach(b => b.addEventListener('click', () => {
+      tabs.forEach(x => x.classList.remove('is-active'));
+      b.classList.add('is-active');
+    }));
+  </script>
+</div></body></html>

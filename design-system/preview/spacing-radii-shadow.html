@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Radii + Shadow</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+.tag { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-bottom: 18px; }
+.grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; align-items:end; }
+.box { background: #fff; height: 80px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid rgba(0,0,0,0.02); }
+.lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-top: 8px; }
+.val { font-family: var(--font-mono); font-size: 10px; color: var(--ink); font-weight: 600; }
+.pill-demo { display:inline-flex; padding:6px 12px; background: rgba(212,89,42,0.12); color: var(--coral); border-radius:999px; font-family: var(--font-mono); font-size:10px; letter-spacing:0.10em; font-weight:600; }
+.shadow-row { margin-top: 22px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; padding-top: 18px; border-top: 1px solid var(--rule); }
+.s-box { background:#fff; height: 70px; border-radius: 12px; }
+.s-coral { background:#D4592A; height: 56px; width: 56px; border-radius: 999px; box-shadow: 0 4px 12px rgba(212,89,42,0.30); margin: 8px auto; }
+</style></head>
+<body><div class="card">
+  <div class="tag">Radii · pill · card · button · input · tight</div>
+  <div class="grid">
+    <div><div class="box" style="border-radius:999px;height:48px"></div><div class="lbl">Pill</div><div class="val">999px</div></div>
+    <div><div class="box" style="border-radius:12px"></div><div class="lbl">Card</div><div class="val">12px</div></div>
+    <div><div class="box" style="border-radius:10px"></div><div class="lbl">Button</div><div class="val">10px</div></div>
+    <div><div class="box" style="border-radius:8px"></div><div class="lbl">Input</div><div class="val">8px</div></div>
+    <div><div class="box" style="border-radius:4px"></div><div class="lbl">Tight</div><div class="val">4px</div></div>
+  </div>
+  <div class="shadow-row">
+    <div>
+      <div class="s-box" style="box-shadow: 0 2px 8px rgba(0,0,0,0.06)"></div>
+      <div class="lbl" style="margin-top:10px">Shadow · card</div>
+      <div class="val">0 2px 8px rgba(0,0,0,.06)</div>
+    </div>
+    <div>
+      <div class="s-coral"></div>
+      <div class="lbl" style="margin-top:10px;text-align:center">Shadow · coral (only on record button)</div>
+      <div class="val" style="text-align:center">0 4px 12px rgba(212,89,42,.30)</div>
+    </div>
+    <div>
+      <div class="s-box" style="box-shadow: 0 1px 2px rgba(0,0,0,0.04)"></div>
+      <div class="lbl" style="margin-top:10px">Shadow · press</div>
+      <div class="val">0 1px 2px rgba(0,0,0,.04)</div>
+    </div>
+  </div>
+</div></body></html>

@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Post Run Drip — Home (v5 · login front)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300..900;1,300..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  /* ── Tokens (from colors_and_type.css) ─────────────────────────── */
+  :root {
+    --paper:           #F5F3F0;
+    --paper-elevated:  #FAFAF8;
+    --card:            #FFFFFF;
+    --paper-deep:      #E8E4DF;
+    --rule:            #E8E4E0;
+
+    --ink:             #1A1815;
+    --ink-2:           #6B6560;
+    --ink-3:           #9B9590;
+
+    --coral:           #D4592A;
+    --coral-light:     #E8764A;
+    --coral-deep:      #B84420;
+    --coral-wash:      rgba(212, 89, 42, 0.12);
+
+    --font-display: "Crimson Pro", Georgia, "Times New Roman", serif;
+    --font-body:    "PT Serif", Georgia, "Times New Roman", serif;
+    --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+    --shadow-card:    0 2px 8px rgba(0, 0, 0, 0.06);
+    --shadow-coral:   0 4px 12px rgba(212, 89, 42, 0.30);
+  }
+
+  /* ── Reset / base ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+  button { font-family: inherit; cursor: pointer; }
+
+  /* ── Plate strip — top of every editorial surface ──────────────── */
+  .plate-strip {
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .plate-strip__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 10px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  /* ── Header ────────────────────────────────────────────────────── */
+  .header {
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .header__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .wordmark {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .header__meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+
+  /* ── Hero ──────────────────────────────────────────────────────── */
+  .hero {
+    border-bottom: 1px solid var(--rule);
+  }
+  .hero__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 88px 40px 96px;
+    display: grid;
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 80px;
+    align-items: start;
+  }
+  .hero__left { max-width: 520px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin: 0;
+  }
+  .eyebrow--coral { color: var(--coral); }
+
+  .headline {
+    font-family: var(--font-display);
+    font-size: 76px;
+    font-weight: 700;
+    line-height: 0.98;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin: 18px 0 0;
+  }
+  .headline em {
+    font-style: italic;
+    font-weight: 700;
+    color: var(--coral);
+    display: block;
+  }
+
+  .hero__sub {
+    margin: 28px 0 0;
+    max-width: 460px;
+    font-family: var(--font-body);
+    font-size: 17px;
+    line-height: 1.55;
+    color: var(--ink-2);
+  }
+
+  /* Editorial rule · line · dot · line · */
+  .rule {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 36px 0;
+  }
+  .rule::before,
+  .rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+  }
+  .rule__dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--rule);
+  }
+
+  /* ── Sign-in block ─────────────────────────────────────────────── */
+  .signin {
+    margin-top: 4px;
+  }
+  .signin__form {
+    margin-top: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .field__label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .field__input {
+    appearance: none;
+    border: 1px solid var(--rule);
+    background: var(--card);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--font-body);
+    font-size: 15px;
+    color: var(--ink);
+    outline: none;
+    transition: border-color 150ms;
+  }
+  .field__input::placeholder { color: var(--ink-3); }
+  .field__input:focus {
+    border-color: var(--coral);
+    box-shadow: 0 0 0 2px rgba(212, 89, 42, 0.12);
+  }
+
+  .btn-primary {
+    margin-top: 6px;
+    appearance: none;
+    border: 0;
+    border-radius: 10px;
+    background: var(--coral);
+    color: #fff;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.005em;
+    padding: 15px 22px;
+    box-shadow: 0 1px 0 var(--coral-deep), 0 8px 24px -10px rgba(212, 89, 42, 0.45);
+    transition: background-color 150ms, transform 150ms;
+  }
+  .btn-primary:hover { background: var(--coral-deep); }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary--block { width: 100%; }
+
+  .signin__meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 14px;
+  }
+  .link-action {
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--ink-2);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: color 150ms, border-color 150ms;
+  }
+  .link-action:hover {
+    color: var(--coral);
+    border-bottom-color: var(--coral);
+  }
+  .link-action--coral {
+    color: var(--coral);
+    border-bottom: 1px solid var(--coral);
+  }
+  .link-action--coral:hover { color: var(--coral-deep); border-bottom-color: var(--coral-deep); }
+
+  .signin__invite {
+    margin-top: 22px;
+    padding-top: 22px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--ink-2);
+    font-style: italic;
+  }
+  .signin__invite a {
+    font-style: normal;
+    color: var(--coral);
+    border-bottom: 1px solid var(--coral);
+  }
+  .signin__invite a:hover { color: var(--coral-deep); border-bottom-color: var(--coral-deep); }
+
+  /* ── Product card (right side of hero) ─────────────────────────── */
+  .product-card {
+    width: 100%;
+    max-width: 440px;
+    margin: 0 0 0 auto;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 30px 60px -30px rgba(26, 24, 21, 0.18);
+  }
+  .product-card__strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-elevated);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .product-card__body { padding: 24px 22px 22px; }
+  .product-card__title {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0;
+  }
+  .product-card__stats {
+    margin: 6px 0 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .product-card__chart-label {
+    margin: 22px 0 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .product-card__legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .product-card__footer {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+
+  /* ── Features ──────────────────────────────────────────────────── */
+  .features {
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-elevated);
+  }
+  .features__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 88px 40px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 56px;
+  }
+  .feature__num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--coral);
+  }
+  .feature__title {
+    font-family: var(--font-display);
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.05;
+    color: var(--ink);
+    margin: 14px 0 0;
+  }
+  .feature__body {
+    margin: 14px 0 0;
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--ink-2);
+  }
+
+  /* ── Beta band (restrained — hero does the work) ───────────────── */
+  .beta {
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .beta__inner {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 64px 40px;
+    text-align: center;
+  }
+  .beta__line {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 18px;
+    color: var(--ink-2);
+    line-height: 1.5;
+    margin: 0;
+  }
+  .beta__line strong {
+    font-style: normal;
+    font-weight: 400;
+    color: var(--ink);
+  }
+  .beta__caption {
+    margin: 18px 0 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ── Footer ────────────────────────────────────────────────────── */
+  .footer {
+    background: var(--paper);
+  }
+  .footer__inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 36px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .footer__brand {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .footer__meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ── Responsive ────────────────────────────────────────────────── */
+  @media (max-width: 980px) {
+    .hero__inner { grid-template-columns: 1fr; gap: 56px; padding: 56px 28px 64px; }
+    .hero__left { max-width: 100%; }
+    .headline { font-size: 56px; }
+    .product-card { margin: 0 auto; }
+    .features__inner { grid-template-columns: 1fr; gap: 40px; padding: 56px 28px; }
+    .feature__title { font-size: 30px; }
+    .plate-strip__inner, .header__inner, .footer__inner { padding-left: 28px; padding-right: 28px; }
+    .beta__inner { padding: 48px 28px; }
+  }
+  @media (max-width: 520px) {
+    .headline { font-size: 44px; }
+    .plate-strip__inner { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- ── PLATE STRIP ─────────────────────────────────────────────── -->
+  <div class="plate-strip">
+    <div class="plate-strip__inner">
+      <span>POST RUN DRIP &middot; IOS BETA</span>
+      <span>HOME &middot; V5</span>
+    </div>
+  </div>
+
+  <!-- ── HEADER ──────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header__inner">
+      <a href="#" class="wordmark">Post Run Drip</a>
+      <span class="header__meta">Austin, TX</span>
+    </div>
+  </header>
+
+  <!-- ── HERO (sign-in front) ────────────────────────────────────── -->
+  <section class="hero">
+    <div class="hero__inner">
+      <div class="hero__left">
+        <p class="eyebrow">iOS &middot; Beta</p>
+        <h1 class="headline">A running log.</h1>
+        <p class="hero__sub">
+          For runners with a goal time and a base. Voice-log a run, sync your
+          watch, follow a plan. The training reads itself back to you.
+        </p>
+
+        <div class="rule" aria-hidden="true"><span class="rule__dot"></span></div>
+
+        <div class="signin">
+          <p class="eyebrow">Sign in</p>
+          <form class="signin__form" onsubmit="event.preventDefault();">
+            <div class="field">
+              <label class="field__label" for="email">Email</label>
+              <input class="field__input" id="email" type="email" placeholder="you@example.com" autocomplete="email" />
+            </div>
+            <div class="field">
+              <label class="field__label" for="password">Password</label>
+              <input class="field__input" id="password" type="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password" />
+            </div>
+            <button class="btn-primary btn-primary--block" type="submit">Sign in &nearr;</button>
+          </form>
+          <div class="signin__meta">
+            <a class="link-action" href="#forgot">Forgot password &nearr;</a>
+            <a class="link-action" href="#magic">Email me a link instead &nearr;</a>
+          </div>
+          <p class="signin__invite">
+            New here? <a href="#invite">Request a TestFlight invite</a>. The beta
+            is small and curated &mdash; every request gets a human reply.
+          </p>
+        </div>
+      </div>
+
+      <!-- Right column · product card · sells the brand silently -->
+      <aside class="product-card" aria-label="Sample running log">
+        <div class="product-card__strip">
+          <span>Example log &middot; Tue</span>
+          <span>May 12</span>
+        </div>
+        <div class="product-card__body">
+          <h3 class="product-card__title">Progression run.</h3>
+          <p class="product-card__stats">10.0 mi &middot; 7:42 avg &middot; 1:17:24</p>
+
+          <p class="product-card__chart-label">Splits</p>
+          <svg viewBox="0 0 360 80" width="100%" height="80" aria-hidden="true">
+            <!-- ten 1-mile splits: steady early, drop in last two -->
+            <polyline
+              points="10,48 47,45 84,43 121,40 158,38 195,33 232,35 269,33"
+              fill="none" stroke="#6B8068" stroke-width="2" />
+            <polyline
+              points="269,33 306,17 343,12"
+              fill="none" stroke="#D4592A" stroke-width="2" />
+            <!-- dots -->
+            <circle cx="10"  cy="48" r="2.5" fill="#6B8068" />
+            <circle cx="47"  cy="45" r="2.5" fill="#6B8068" />
+            <circle cx="84"  cy="43" r="2.5" fill="#6B8068" />
+            <circle cx="121" cy="40" r="2.5" fill="#6B8068" />
+            <circle cx="158" cy="38" r="2.5" fill="#6B8068" />
+            <circle cx="195" cy="33" r="2.5" fill="#6B8068" />
+            <circle cx="232" cy="35" r="2.5" fill="#6B8068" />
+            <circle cx="269" cy="33" r="2.5" fill="#6B8068" />
+            <circle cx="306" cy="17" r="2.5" fill="#D4592A" />
+            <circle cx="343" cy="12" r="2.5" fill="#D4592A" />
+          </svg>
+          <div class="product-card__legend">
+            <span>Mile 1</span>
+            <span>Mile 10</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ── FEATURES ────────────────────────────────────────────────── -->
+  <section class="features" id="what">
+    <div class="features__inner">
+      <div class="feature">
+        <p class="feature__num">01</p>
+        <h3 class="feature__title">The log.</h3>
+        <p class="feature__body">
+          Talk into the app after a run. It pulls distance, pace, splits, mood
+          and fatigue from what you said. Or sync the run from your watch.
+        </p>
+      </div>
+      <div class="feature">
+        <p class="feature__num">02</p>
+        <h3 class="feature__title">The analysis.</h3>
+        <p class="feature__body">
+          12 weeks of mileage, pace, zones and training load &mdash; plotted
+          side by side, so you can see what&rsquo;s actually changing.
+        </p>
+      </div>
+      <div class="feature">
+        <p class="feature__num">03</p>
+        <h3 class="feature__title">The plan.</h3>
+        <p class="feature__body">
+          Goal race in, plan out. Workouts written the way a coach would write
+          them. The week re-tunes when you miss a day.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BETA BAND (restrained — hero already does CTA work) ─────── -->
+  <section class="beta" id="start">
+    <div class="beta__inner">
+      <p class="beta__line">
+        <strong>iOS, by TestFlight invite.</strong> Built for runners with a goal
+        race and a base &mdash; not a couch-to-5K app.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ──────────────────────────────────────────────────── -->
+  <footer class="footer">
+    <div class="footer__inner">
+      <span class="footer__brand">Post Run Drip</span>
+      <span class="footer__meta">&copy; 2026 &middot; Austin, TX</span>
+    </div>
+  </footer>
+
+</body>
+</html>

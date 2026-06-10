@@ -1,0 +1,198 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Buttons</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 26px 30px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; row-gap: 22px; }
+  .cell { display: flex; flex-direction: column; gap: 10px; }
+  .cell .lbl {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .cell .note {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 11px;
+    color: var(--ink-3);
+    line-height: 1.45;
+  }
+  .stage {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+  }
+
+  /* ---- 1. Editorial link — PRIMARY action ---- */
+  .btn-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--coral);
+    text-decoration: none;
+    border-bottom: 1.5px solid var(--coral);
+    padding-bottom: 2px;
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+  .btn-link:hover { color: var(--coral-deep); border-color: var(--coral-deep); }
+  .btn-link .arrow { font-family: var(--font-mono); font-weight: 500; font-size: 14px; }
+
+  /* ---- 2. Filled coral — high-stakes affirmative ---- */
+  .btn-filled {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 15px;
+    background: var(--coral);
+    color: #fff;
+    border: 0;
+    padding: 13px 22px;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(212, 89, 42, 0.18);
+    transition: background 150ms ease;
+  }
+  .btn-filled:hover { background: var(--coral-deep); }
+  .btn-filled .arrow { font-family: var(--font-mono); font-size: 13px; opacity: 0.9; }
+
+  /* ---- 3. Bracketed mono — secondary ---- */
+  .btn-bracket {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    color: var(--ink);
+    text-transform: uppercase;
+    background: transparent;
+    border: 0;
+    padding: 10px 0;
+    cursor: pointer;
+  }
+  .btn-bracket .bk { color: var(--ink-3); font-weight: 400; }
+  .btn-bracket:hover { color: var(--coral); }
+  .btn-bracket:hover .bk { color: var(--coral); }
+
+  /* ---- 4. Rule action — chapter-break as button ---- */
+  .btn-rule {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: transparent;
+    border: 0;
+    padding: 8px 0;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    color: var(--ink);
+    text-transform: uppercase;
+  }
+  .btn-rule::before,
+  .btn-rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
+    transition: background 150ms ease;
+  }
+  .btn-rule:hover { color: var(--coral); }
+  .btn-rule:hover::before, .btn-rule:hover::after { background: var(--coral); }
+  .btn-rule .arrow { color: var(--coral); margin-left: 2px; }
+
+  /* ---- 5. Inline mono — common throughout the app ---- */
+  .btn-inline {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--coral);
+    text-transform: uppercase;
+    background: transparent;
+    border: 0;
+    padding: 4px 0;
+    cursor: pointer;
+  }
+  .btn-inline:hover { color: var(--coral-deep); }
+
+  /* ---- 6. Destructive — quiet, hairline ---- */
+  .btn-destructive {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink-2);
+    text-decoration: none;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 2px;
+    background: transparent;
+    border-left: 0; border-right: 0; border-top: 0;
+    cursor: pointer;
+  }
+  .btn-destructive:hover {
+    color: #B83A4A;
+    border-color: #B83A4A;
+  }
+</style></head>
+<body><div class="card">
+  <div class="grid">
+
+    <div class="cell">
+      <span class="lbl">1 · Primary &nbsp;·&nbsp; editorial link</span>
+      <div class="stage"><a class="btn-link" href="#">Mark complete <span class="arrow">↗</span></a></div>
+      <span class="note">The canonical PRD primary. Verb + coral underline + arrow. Use everywhere — saving, advancing, confirming.</span>
+    </div>
+
+    <div class="cell">
+      <span class="lbl">2 · Affirmative &nbsp;·&nbsp; filled</span>
+      <div class="stage"><button class="btn-filled">Start run <span class="arrow">↗</span></button></div>
+      <span class="note">Reserve for high-stakes single actions where a tap target matters — record a run, sign in, finish onboarding.</span>
+    </div>
+
+    <div class="cell">
+      <span class="lbl">3 · Secondary &nbsp;·&nbsp; bracketed mono</span>
+      <div class="stage"><button class="btn-bracket"><span class="bk">[</span>&nbsp;Reschedule&nbsp;<span class="bk">]</span></button></div>
+      <span class="note">Quiet alternate next to a primary. Mono brackets read as printer's marks — extends the editorial register.</span>
+    </div>
+
+    <div class="cell">
+      <span class="lbl">4 · Section action &nbsp;·&nbsp; rule</span>
+      <div class="stage"><button class="btn-rule">View all runs <span class="arrow">↗</span></button></div>
+      <span class="note">Editorial rule that's tappable. Use as the bottom of a feed or as a chapter break to a longer list.</span>
+    </div>
+
+    <div class="cell">
+      <span class="lbl">5 · Inline action &nbsp;·&nbsp; mono caps</span>
+      <div class="stage">
+        <button class="btn-inline">EDIT ↗</button>
+        <span style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); margin: 0 12px;">·</span>
+        <button class="btn-inline">VIEW ALL ↗</button>
+        <span style="font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); margin: 0 12px;">·</span>
+        <button class="btn-inline">MARK READ</button>
+      </div>
+      <span class="note">Trailing actions on tile headers, dismissals, in-line links. The most common button in the app.</span>
+    </div>
+
+    <div class="cell">
+      <span class="lbl">6 · Destructive &nbsp;·&nbsp; quiet</span>
+      <div class="stage"><button class="btn-destructive">Delete run</button></div>
+      <span class="note">No red fill. Hairline underline; ink-2 by default, deep rose only on hover. Restraint, even at the edge.</span>
+    </div>
+
+  </div>
+</div></body></html>

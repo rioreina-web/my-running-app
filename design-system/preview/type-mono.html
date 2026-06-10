@@ -1,0 +1,149 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mono labels</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+  .tag {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.12em; color: var(--ink-2);
+    text-transform: uppercase; margin-bottom: 16px;
+  }
+
+  /* Each role gets its own row with breathing room */
+  .row {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 24px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .row:first-of-type { padding-top: 4px; }
+  .row:last-of-type { border-bottom: 0; padding-bottom: 4px; }
+
+  .role {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+  .role .spec {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--ink-3);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: none;
+    margin-top: 3px;
+  }
+
+  /* Plate strip — full editorial top bar */
+  .plate {
+    display: flex; justify-content: space-between; gap: 24px;
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: 0.14em; color: var(--ink-2);
+    text-transform: uppercase; line-height: 1.5;
+  }
+  .plate .l { color: var(--ink); }
+  .plate .r { text-align: right; }
+  .plate .r .top { color: var(--ink); }
+
+  /* Eyebrow */
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px;
+    font-weight: 500; letter-spacing: 0.14em;
+    color: var(--ink-2); text-transform: uppercase;
+  }
+  .eyebrow.coral { color: var(--coral); }
+
+  /* Caption */
+  .caption {
+    font-family: var(--font-mono); font-size: 10px;
+    font-weight: 500; letter-spacing: 0.10em;
+    color: var(--ink-2); text-transform: uppercase;
+  }
+
+  /* Stat numerals */
+  .stat-row {
+    display: flex; align-items: baseline; gap: 28px;
+  }
+  .stat-row .stat {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .stat-row .stat .lbl {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.10em; color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .stat-row .stat .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .stat-row .stat .num.xl { font-size: 32px; }
+  .stat-row .stat .num.l { font-size: 22px; }
+  .stat-row .stat .num.m { font-size: 16px; }
+
+  /* Inline data */
+  .inline {
+    font-family: var(--font-mono);
+    font-size: 13px; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .inline .dim { color: var(--ink-2); }
+
+  /* Show the variants stack */
+  .variants {
+    display: flex; flex-direction: column; gap: 8px;
+  }
+</style></head>
+<body><div class="card">
+  <div class="tag">Mono · every uppercase label, every numeral, monospaced + tracked</div>
+
+  <div class="row">
+    <div class="role">Plate strip<span class="spec">screen header</span></div>
+    <div class="plate">
+      <div class="l">RUNNING LOG&nbsp;&nbsp;·&nbsp;&nbsp;<span style="color:var(--ink-2)">TRENDS · v1 ANALYTICS SURFACE</span></div>
+      <div class="r"><div class="top">FIG. 18</div><div>NEGATIVE SPLITS · 04.2026</div></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="role">Eyebrow<span class="spec">section labels · 11 / +0.14em</span></div>
+    <div class="variants">
+      <span class="eyebrow coral">TUESDAY</span>
+      <span class="eyebrow">SUNDAY&nbsp;&nbsp;·&nbsp;&nbsp;APR 26</span>
+      <span class="eyebrow">FITNESS&nbsp;&nbsp;·&nbsp;&nbsp;12 WEEKS</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="role">Caption<span class="spec">deltas, units · 10 / +0.10em</span></div>
+    <div class="variants">
+      <span class="caption">VOLUME · 7D</span>
+      <span class="caption">AVG VOL · 4 WEEKS</span>
+      <span class="caption">MEDIUM CONFIDENCE</span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="role">Numerals<span class="spec">tabular-nums · semibold</span></div>
+    <div class="stat-row">
+      <div class="stat"><span class="lbl">VOLUME</span><span class="num xl">47.2</span></div>
+      <div class="stat"><span class="lbl">FULL</span><span class="num xl">3:15</span></div>
+      <div class="stat"><span class="lbl">AVG PACE</span><span class="num l">7:42</span></div>
+      <div class="stat"><span class="lbl">HR</span><span class="num m">143</span></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="role">Inline<span class="spec">in body, between separators</span></div>
+    <span class="inline">6:24–6:56&nbsp;/&nbsp;mi&nbsp;&nbsp;<span class="dim">·</span>&nbsp;&nbsp;EASY&nbsp;&nbsp;<span class="dim">·</span>&nbsp;&nbsp;8.4 mi</span>
+  </div>
+</div></body></html>

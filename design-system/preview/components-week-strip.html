@@ -1,0 +1,249 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Week · training</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+
+  .head {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .head .left { display: flex; flex-direction: column; gap: 4px; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.14em; color: var(--coral);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .title {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 22px; letter-spacing: -0.01em;
+    color: var(--ink); margin: 0; line-height: 1.1;
+  }
+  .title em {
+    font-style: italic; color: var(--ink-2); font-weight: 400;
+  }
+  .head .right {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.10em; color: var(--ink-2);
+    text-transform: uppercase; text-align: right;
+    line-height: 1.5;
+  }
+  .head .right b { color: var(--ink); font-weight: 700; font-size: 11px; }
+
+  /* WORKOUT-TYPE COLOR MAP — one dimension */
+  /* easy:    #4A9E6B  sage    */
+  /* tempo:   #E8764A  coral-light */
+  /* quality: #D4592A  coral   */
+  /* long:    #2D8A4E  deep green */
+
+  .week {
+    margin-top: 22px;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    align-items: flex-end;
+  }
+  .day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .day .name {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.12em; color: var(--ink-2);
+    text-transform: uppercase; margin-bottom: 8px;
+    position: relative;
+  }
+  .day.today .name {
+    color: var(--coral); font-weight: 700;
+  }
+  .day.today .name::after {
+    content: "TODAY";
+    position: absolute;
+    top: -16px; left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono); font-size: 8px;
+    letter-spacing: 0.16em; color: var(--coral);
+    font-weight: 700;
+  }
+
+  .day .bar-zone {
+    height: 110px;
+    width: 100%;
+    display: flex; align-items: flex-end; justify-content: center;
+    position: relative;
+  }
+  .day .bar {
+    width: 80%;
+    border-radius: 2px 2px 0 0;
+    position: relative;
+  }
+  .day .bar .miles-tag {
+    position: absolute;
+    top: -22px; left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .day .type {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.10em; color: var(--ink-2);
+    text-transform: uppercase; margin-top: 10px;
+    text-align: center;
+  }
+
+  /* TYPE = bar fill color */
+  .t-easy    .bar  { background: #4A9E6B; }
+  .t-tempo   .bar  { background: #E8764A; }
+  .t-quality .bar  { background: #D4592A; }
+  .t-long    .bar  { background: #2D8A4E; }
+
+  /* Rest = no bar, hairline only */
+  .day.rest .bar-zone::after {
+    content: "";
+    position: absolute;
+    bottom: 0; left: 28%; right: 28%;
+    height: 1px;
+    background: var(--rule);
+  }
+  .day.rest .type { color: var(--ink-3); }
+
+  /* SIMPLE LEGEND — 5 keys, one row */
+  .legend {
+    margin-top: 22px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .lkey { display: inline-flex; align-items: center; gap: 6px; }
+  .lkey .swatch {
+    width: 10px; height: 12px;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+  .lkey.easy    .swatch { background: #4A9E6B; }
+  .lkey.tempo   .swatch { background: #E8764A; }
+  .lkey.quality .swatch { background: #D4592A; }
+  .lkey.long    .swatch { background: #2D8A4E; }
+  .lkey.rest    .swatch {
+    background: transparent;
+    border-bottom: 1px solid var(--rule);
+    height: 1px; width: 14px;
+  }
+  .lkey .name {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.12em; color: var(--ink-2);
+    text-transform: uppercase; font-weight: 600;
+  }
+
+  .summary {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+  }
+  .summary .cell {
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .summary .cell .l {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.12em; color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .summary .cell .v {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    font-weight: 600; font-size: 18px; color: var(--ink); line-height: 1;
+  }
+  .summary .cell .v .unit {
+    font-size: 10px; color: var(--ink-2);
+    font-weight: 600; margin-left: 2px;
+  }
+  .summary .cell.coral .v { color: var(--coral); }
+</style></head>
+<body><div class="card">
+  <div class="head">
+    <div class="left">
+      <span class="eyebrow">WEEK 09 · MARATHON BLOCK</span>
+      <h2 class="title">Peak week, <em>then we taper.</em></h2>
+      <span style="font-family:var(--font-mono);font-size:9px;letter-spacing:0.12em;color:var(--ink-3);text-transform:uppercase;margin-top:6px">BAR HEIGHT · MILES &nbsp;·&nbsp; COLOR · TYPE OF RUN</span>
+    </div>
+    <div class="right">
+      <div>27 / 47 MI <b>RUN</b></div>
+      <div>4 OF 7 <b>DONE</b></div>
+    </div>
+  </div>
+
+  <div class="week">
+    <div class="day t-easy">
+      <span class="name">Mon</span>
+      <div class="bar-zone">
+        <div class="bar" style="height:24%"><span class="miles-tag">6</span></div>
+      </div>
+      <span class="type">Easy</span>
+    </div>
+    <div class="day t-tempo">
+      <span class="name">Tue</span>
+      <div class="bar-zone">
+        <div class="bar" style="height:32%"><span class="miles-tag">8</span></div>
+      </div>
+      <span class="type">Tempo</span>
+    </div>
+    <div class="day today t-quality">
+      <span class="name">Wed</span>
+      <div class="bar-zone">
+        <div class="bar" style="height:44%"><span class="miles-tag">11</span></div>
+      </div>
+      <span class="type">Intervals</span>
+    </div>
+    <div class="day rest">
+      <span class="name">Thu</span>
+      <div class="bar-zone"></div>
+      <span class="type">Rest</span>
+    </div>
+    <div class="day t-easy">
+      <span class="name">Fri</span>
+      <div class="bar-zone">
+        <div class="bar" style="height:24%"><span class="miles-tag">6</span></div>
+      </div>
+      <span class="type">Easy</span>
+    </div>
+    <div class="day t-long">
+      <span class="name">Sat</span>
+      <div class="bar-zone">
+        <div class="bar" style="height:84%"><span class="miles-tag">20</span></div>
+      </div>
+      <span class="type">Long</span>
+    </div>
+    <div class="day rest">
+      <span class="name">Sun</span>
+      <div class="bar-zone"></div>
+      <span class="type">Rest</span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="lkey easy"><span class="swatch"></span><span class="name">EASY</span></span>
+    <span class="lkey tempo"><span class="swatch"></span><span class="name">TEMPO</span></span>
+    <span class="lkey quality"><span class="swatch"></span><span class="name">INTERVALS</span></span>
+    <span class="lkey long"><span class="swatch"></span><span class="name">LONG</span></span>
+    <span class="lkey rest"><span class="swatch"></span><span class="name">REST</span></span>
+  </div>
+
+  <div class="summary">
+    <div class="cell"><span class="l">RUN</span><span class="v">27<span class="unit">MI</span></span></div>
+    <div class="cell"><span class="l">PLANNED</span><span class="v">47<span class="unit">MI</span></span></div>
+    <div class="cell coral"><span class="l">LONGEST</span><span class="v">20<span class="unit">MI SAT</span></span></div>
+    <div class="cell"><span class="l">QUALITY</span><span class="v">2<span class="unit">SESSIONS</span></span></div>
+  </div>
+</div></body></html>

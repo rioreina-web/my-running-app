@@ -1,0 +1,145 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Coral</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+
+  .tag {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  /* swatches */
+  .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .sw { display: flex; flex-direction: column; gap: 8px; }
+  .sw .chip { height: 88px; border-radius: 4px; }
+  .sw .name {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.10em; color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .sw .hex {
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--ink); font-weight: 600;
+  }
+
+  /* usage strip */
+  .usage {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+  }
+  .u { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+  .u .demo { display: flex; align-items: center; height: 28px; }
+  .u .cap {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.10em; color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .u-eyebrow {
+    font-family: var(--font-mono); font-size: 11px;
+    letter-spacing: 0.14em; color: var(--coral);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .u-link {
+    font-family: var(--font-display); font-weight: 600; font-size: 15px;
+    color: var(--coral); border-bottom: 1.5px solid var(--coral);
+    padding-bottom: 1px; text-decoration: none;
+  }
+  .u-dot {
+    width: 10px; height: 10px; border-radius: 999px; background: var(--coral);
+    box-shadow: 0 0 0 3px rgba(212, 89, 42, 0.12);
+  }
+  .u-fill {
+    background: var(--coral); color: #fff;
+    font-family: var(--font-display); font-weight: 600; font-size: 13px;
+    padding: 8px 12px; border-radius: 8px;
+  }
+
+  /* the rule block */
+  .rule-block {
+    margin-top: 20px; padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
+  }
+  .rule-block h4 {
+    margin: 0 0 6px 0;
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.14em; color: var(--ink-2);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .rule-block p {
+    margin: 0;
+    font-family: var(--font-body); font-style: italic;
+    font-size: 12px; line-height: 1.55; color: var(--ink);
+  }
+  .rule-block p strong { font-style: normal; font-weight: 700; color: var(--ink); }
+  .rule-block p .coral { font-style: normal; color: var(--coral); font-weight: 600; }
+  .rule-block .arrow {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--ink-3); margin-right: 4px;
+  }
+
+  /* mood mini-strip */
+  .moods {
+    display: flex; gap: 6px; margin-top: 10px;
+  }
+  .moods .m {
+    width: 18px; height: 18px; border-radius: 999px;
+  }
+</style></head>
+<body><div class="card">
+  <div class="tag">Coral · the only accent · used like punctuation</div>
+
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:#D4592A;height:120px"></div><div class="name">Coral</div><div class="hex">#D4592A</div></div>
+    <div class="sw"><div class="chip" style="background:#E8764A"></div><div class="name">Coral light · hover</div><div class="hex">#E8764A</div></div>
+    <div class="sw"><div class="chip" style="background:#B84420"></div><div class="name">Coral deep · press</div><div class="hex">#B84420</div></div>
+    <div class="sw"><div class="chip" style="background:rgba(212,89,42,0.12);border:1px solid var(--rule)"></div><div class="name">Coral wash · 12%</div><div class="hex">rgba(212,89,42,.12)</div></div>
+  </div>
+
+  <div class="usage">
+    <div class="u">
+      <div class="demo"><span class="u-eyebrow">TODAY · TUESDAY</span></div>
+      <span class="cap">Section eyebrow</span>
+    </div>
+    <div class="u">
+      <div class="demo"><a class="u-link" href="#">Mark complete ↗</a></div>
+      <span class="cap">Primary action</span>
+    </div>
+    <div class="u">
+      <div class="demo"><span class="u-dot"></span></div>
+      <span class="cap">Active-state dot</span>
+    </div>
+    <div class="u">
+      <div class="demo"><span class="u-fill">Start run ↗</span></div>
+      <span class="cap">High-stakes fill</span>
+    </div>
+  </div>
+
+  <div class="rule-block">
+    <div>
+      <h4>The rule</h4>
+      <p><strong>One coral element per visual cluster, max.</strong> If two would compete, drop one to <span style="color:var(--ink-2);font-weight:600">ink-2</span>. Coral is a pointer, never a paint — never a large fill, never a background.</p>
+    </div>
+    <div>
+      <h4>"What about success / error / warning?"</h4>
+      <p><span class="arrow">→</span>State doesn't share coral's job. The system has a separate, muted <span class="coral">mood palette</span> (green · sage · amber · terracotta · rose · plum) for moods, zones, and load deltas — always at low chroma, always as a tracked pill.</p>
+      <div class="moods">
+        <span class="m" style="background:#2D8A4E" title="energized"></span>
+        <span class="m" style="background:#4A9E6B" title="positive"></span>
+        <span class="m" style="background:#C4873A" title="tired"></span>
+        <span class="m" style="background:#C45A3A" title="struggling"></span>
+        <span class="m" style="background:#B83A4A" title="injured"></span>
+        <span class="m" style="background:#6B4A8A" title="speed"></span>
+      </div>
+    </div>
+  </div>
+</div></body></html>

@@ -1,0 +1,197 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Voice</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+
+  .head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 16px;
+  }
+  .head .eyebrow {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.14em; color: var(--coral);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .head .tag {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.12em; color: var(--ink-3);
+    text-transform: uppercase;
+  }
+
+  .h {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 30px; letter-spacing: -0.01em;
+    line-height: 1.05; margin: 0 0 6px 0;
+    color: var(--ink);
+  }
+  .dek {
+    font-family: var(--font-body); font-style: italic;
+    font-size: 13px; color: var(--ink-2);
+    line-height: 1.5; margin: 0 0 22px 0;
+  }
+
+  /* Comparison pairs */
+  .pair {
+    display: grid;
+    grid-template-columns: 110px 1fr 1fr;
+    gap: 18px;
+    padding: 14px 0;
+    border-top: 1px solid var(--rule);
+    align-items: flex-start;
+  }
+  .pair:last-of-type { border-bottom: 1px solid var(--rule); }
+  .pair .ctx {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .pair .ctx .lbl {
+    font-family: var(--font-mono); font-size: 10px;
+    letter-spacing: 0.12em; color: var(--ink-2);
+    text-transform: uppercase; font-weight: 600;
+  }
+  .pair .ctx .where {
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.06em; color: var(--ink-3);
+    text-transform: none;
+    line-height: 1.4;
+  }
+
+  .voice {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    position: relative;
+  }
+  .voice .tag {
+    font-family: var(--font-mono); font-size: 8px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    font-weight: 600;
+  }
+  .voice p {
+    font-family: var(--font-body); font-size: 13px;
+    line-height: 1.5; margin: 0;
+  }
+
+  .ours {
+    background: rgba(212, 89, 42, 0.06);
+    border: 1px solid rgba(212, 89, 42, 0.18);
+  }
+  .ours .tag { color: var(--coral); }
+  .ours p { color: var(--ink); }
+  .ours p em { color: var(--ink-2); }
+
+  .theirs {
+    background: var(--paper-deep);
+    opacity: 0.85;
+  }
+  .theirs .tag { color: var(--ink-3); }
+  .theirs p {
+    color: var(--ink-3);
+    text-decoration: line-through;
+    text-decoration-color: rgba(184, 58, 74, 0.4);
+    text-decoration-thickness: 1px;
+  }
+
+  /* Rules at the bottom */
+  .rules {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .rules h4 {
+    margin: 0 0 6px 0;
+    font-family: var(--font-mono); font-size: 9px;
+    letter-spacing: 0.14em; color: var(--ink-2);
+    text-transform: uppercase; font-weight: 500;
+  }
+  .rules ul {
+    margin: 0; padding: 0; list-style: none;
+    font-family: var(--font-body); font-size: 12px;
+    line-height: 1.6; color: var(--ink);
+  }
+  .rules li::before {
+    content: "·";
+    color: var(--coral);
+    font-weight: 700;
+    margin-right: 6px;
+  }
+  .rules .dont li::before { color: #B83A4A; }
+</style></head>
+<body><div class="card">
+  <div class="head">
+    <span class="eyebrow">VOICE</span>
+    <span class="tag">how prd talks vs. how everyone else does</span>
+  </div>
+
+  <h1 class="h">Restraint as foundation, intensity as accent.</h1>
+  <p class="dek">— The same moment in the run, written the PRD way and the generic-app way. —</p>
+
+  <div class="pair">
+    <div class="ctx">
+      <span class="lbl">Coach note</span>
+      <span class="where">Tomorrow's workout · From your coach</span>
+    </div>
+    <div class="voice ours">
+      <span class="tag">PRD</span>
+      <p>Easy six tomorrow. <em>Don't let it creep into tempo — save it for Thursday.</em></p>
+    </div>
+    <div class="voice theirs">
+      <span class="tag">Generic</span>
+      <p>Today's workout: 5 mile tempo run. You've got this! 💪</p>
+    </div>
+  </div>
+
+  <div class="pair">
+    <div class="ctx">
+      <span class="lbl">Empty state</span>
+      <span class="where">No runs yet · Today screen</span>
+    </div>
+    <div class="voice ours">
+      <span class="tag">PRD</span>
+      <p>Nothing logged yet. <em>Your first run will land here.</em></p>
+    </div>
+    <div class="voice theirs">
+      <span class="tag">Generic</span>
+      <p>Welcome! Let's get you started on your fitness journey 🏃</p>
+    </div>
+  </div>
+
+  <div class="pair">
+    <div class="ctx">
+      <span class="lbl">Injury aside</span>
+      <span class="where">Top of injuries screen</span>
+    </div>
+    <div class="voice ours">
+      <span class="tag">PRD</span>
+      <p>Heads up — if it sharpens, <em>see a clinician.</em> We're not doctors.</p>
+    </div>
+    <div class="voice theirs">
+      <span class="tag">Generic</span>
+      <p>⚠️ Please consult with a healthcare professional before continuing your training program.</p>
+    </div>
+  </div>
+
+  <div class="rules">
+    <div>
+      <h4>The voice does</h4>
+      <ul>
+        <li>Sound like a coach who's met you.</li>
+        <li>Use periods. Short sentences.</li>
+        <li>Talk to <em>you</em>. Never "we."</li>
+        <li>Use italic asides — em-dashed.</li>
+        <li>Stay specific: <em style="font-style:normal;font-family:var(--font-mono);font-weight:600">5 mi</em>, not "five miles."</li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="dont-h">The voice doesn't</h4>
+      <ul class="dont">
+        <li>Use emoji. Ever.</li>
+        <li>Cheerlead. ("Great job!")</li>
+        <li>Sound like a product brochure.</li>
+        <li>Yell with exclamation points.</li>
+        <li>Capitalize headlines like titles.</li>
+      </ul>
+    </div>
+  </div>
+</div></body></html>

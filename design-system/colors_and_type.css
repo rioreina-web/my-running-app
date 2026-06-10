@@ -1,0 +1,238 @@
+/* =============================================================
+   Post Run Drip — Foundations
+   "Restraint as foundation, intensity as accent."
+   Editorial running magazine. Warm paper. Ink. One coral.
+   ============================================================= */
+
+/* ---- Fonts ------------------------------------------------- */
+@font-face {
+  font-family: "Crimson Pro";
+  src: url("fonts/CrimsonPro-Variable.ttf") format("truetype-variations");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PT Serif";
+  src: url("fonts/PTSerif-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PT Serif";
+  src: url("fonts/PTSerif-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "PT Serif";
+  src: url("fonts/PTSerif-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ---- Color · Surfaces (warm paper) ---------------------- */
+  --paper:           #F5F3F0;  /* page background — warm newsprint */
+  --paper-elevated:  #FAFAF8;  /* slightly warmer white card */
+  --card:            #FFFFFF;  /* clean white card */
+  --paper-deep:      #E8E4DF;  /* calendar / inset wells */
+  --rule:            #E8E4E0;  /* thin editorial rule */
+
+  /* ---- Color · Ink (text) -------------------------------- */
+  --ink:             #1A1815;  /* rich ink black — display & body */
+  --ink-2:           #6B6560;  /* warm gray — meta, labels */
+  --ink-3:           #9B9590;  /* light warm gray — captions, disabled */
+
+  /* ---- Color · Coral (the only accent) ------------------- */
+  --coral:           #D4592A;  /* burnt orange — primary accent */
+  --coral-light:     #E8764A;  /* lighter — hover lift on dark */
+  --coral-deep:      #B84420;  /* darker — pressed state */
+  --coral-wash:      rgba(212, 89, 42, 0.12); /* capsule fill, tint */
+
+  /* ---- Color · Moods (muted editorial) ------------------- */
+  --mood-energized:  #2D8A4E;  /* deep green */
+  --mood-positive:   #4A9E6B;  /* sage */
+  --mood-neutral:    #9B9590;  /* warm gray */
+  --mood-tired:      #C4873A;  /* amber */
+  --mood-struggling: #C45A3A;  /* terracotta */
+  --mood-injured:    #B83A4A;  /* deep rose */
+  --mood-speed:      #6B4A8A;  /* plum — fast paces */
+  --success:         #2D8A4E;  /* aliases energized */
+
+  /* ---- Type · Family ------------------------------------- */
+  --font-display: "Crimson Pro", Georgia, "Times New Roman", serif;
+  --font-body:    "PT Serif", Georgia, "Times New Roman", serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  /* ---- Type · Size scale (mobile-app native) -------------- */
+  --t-display-xl: 40px;  /* "May 5th." plate headers */
+  --t-display-l:  32px;  /* "Marathon block" */
+  --t-display-m:  24px;  /* card values, page titles */
+  --t-display-s:  20px;  /* goal lines */
+  --t-body:       15px;  /* paragraph body */
+  --t-body-sm:    13px;  /* secondary body */
+  --t-meta:       11px;  /* monospaced section labels */
+  --t-meta-sm:    10px;  /* smallest captions */
+
+  /* ---- Type · Tracking ----------------------------------- */
+  --tracking-label:  0.12em;  /* SECTION HEADERS */
+  --tracking-caption: 0.10em; /* TIRED / EASY pills */
+  --tracking-meta:   0.14em;  /* plate top strip */
+
+  /* ---- Spacing scale (8pt) ------------------------------- */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 56px;
+
+  /* ---- Radii --------------------------------------------- */
+  --r-pill:     999px;   /* capsules, mood badges */
+  --r-card:     12px;    /* stat cards, sheets */
+  --r-button:   10px;    /* DripButton */
+  --r-input:    8px;
+  --r-tight:    4px;
+
+  /* ---- Shadow (used sparingly — editorial = flat) -------- */
+  --shadow-card:    0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-coral:   0 4px 12px rgba(212, 89, 42, 0.30);
+  --shadow-press:   0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /* ---- Borders ------------------------------------------- */
+  --border-hairline: 1px solid var(--rule);
+  --border-coral:    1.5px solid var(--coral);
+
+  /* ---- Motion -------------------------------------------- */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);   /* SwiftUI easeOut feel */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast: 150ms;
+  --dur-base: 300ms;
+  --dur-slow: 1800ms;  /* pulsing record button */
+}
+
+/* =============================================================
+   Semantic type — apply these classes for editorial voice
+   ============================================================= */
+
+/* Plate header strip — top of every screen / artifact */
+.drip-plate-strip {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 500;
+  letter-spacing: var(--tracking-meta);
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+
+/* Section eyebrows — TUESDAY, FROM YOUR COACH, ZONE SHIFTS */
+.drip-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  color: var(--ink-2);
+  text-transform: uppercase;
+}
+.drip-eyebrow--coral { color: var(--coral); }
+
+/* Display — "May 5th.", "Marathon block" */
+.drip-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  line-height: 1.05;
+}
+.drip-display-xl { font-size: var(--t-display-xl); }
+.drip-display-l  { font-size: var(--t-display-l); }
+.drip-display-m  { font-size: var(--t-display-m); }
+.drip-display-s  { font-size: var(--t-display-s); }
+
+/* Stat numerals — monospaced, semibold */
+.drip-stat {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Body — PT Serif, magazine paragraphs */
+.drip-body {
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.55;
+}
+.drip-body-sm {
+  font-family: var(--font-body);
+  font-size: var(--t-body-sm);
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+/* Italic quote — voice-log entries, footer captions on plates */
+.drip-quote {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: var(--t-body);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+/* Caption — meta lines under stats, mood pills (tracked) */
+.drip-caption {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta-sm);
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: var(--tracking-caption);
+  text-transform: uppercase;
+}
+
+/* Label — buttons, links (Crimson Pro semibold) */
+.drip-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+/* Editorial rule · line · dot · line · — own block */
+.drip-rule {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.drip-rule::before, .drip-rule::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+.drip-rule::after { content: ""; }
+.drip-rule__dot {
+  width: 3px; height: 3px;
+  border-radius: 999px;
+  background: var(--rule);
+}
+
+/* =============================================================
+   Page reset for design-system previews
+   ============================================================= */
+.drip-paper {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}

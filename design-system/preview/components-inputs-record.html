@@ -1,0 +1,68 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Record button + form inputs</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+.tag { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-bottom: 14px; }
+.row { display: flex; gap: 36px; align-items: flex-start; }
+.col { display: flex; flex-direction: column; gap: 18px; flex: 1; }
+
+.rec { position: relative; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.rec .ring {
+  position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  width: 120px; height: 120px; border-radius: 999px;
+  border: 1.5px solid rgba(212,89,42,0.20);
+  animation: pulse 1.8s var(--ease-out) infinite;
+}
+@keyframes pulse { 0% { transform: translateX(-50%) scale(1); } 50% { transform: translateX(-50%) scale(1.10); } 100% { transform: translateX(-50%) scale(1); } }
+.rec .btn {
+  width: 88px; height: 88px; border-radius: 999px; background: var(--coral);
+  box-shadow: 0 4px 12px rgba(212,89,42,0.30);
+  display: flex; align-items: center; justify-content: center;
+}
+.rec .inner-stop { width: 24px; height: 24px; border-radius: 4px; background: #fff; }
+.rec .inner-rec { width: 32px; height: 32px; border-radius: 999px; background: #fff; }
+.rec .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase; }
+
+.field-lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-bottom: 6px; }
+.field {
+  background: #fff; border: 1px solid var(--rule); border-radius: 8px;
+  padding: 12px 14px; font-family: var(--font-body); font-size: 15px; color: var(--ink);
+  width: 100%; box-sizing: border-box;
+}
+.field:focus { outline: 2px solid var(--coral); outline-offset: 0; border-color: var(--coral); }
+
+.toggle { display: inline-flex; align-items: center; gap: 10px; }
+.toggle .track { width: 42px; height: 24px; border-radius: 999px; background: var(--ink-3); position: relative; transition: background .2s; }
+.toggle .knob { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #fff; border-radius: 999px; box-shadow: 0 1px 2px rgba(0,0,0,0.15); transition: left .2s; }
+.toggle.on .track { background: var(--coral); }
+.toggle.on .knob { left: 20px; }
+.toggle .name { font-family: var(--font-display); font-weight: 600; font-size: 14px; }
+</style></head>
+<body><div class="card">
+  <div class="row">
+    <div class="col" style="max-width:160px;align-items:center">
+      <div class="tag">Record button</div>
+      <div class="rec">
+        <div class="ring"></div>
+        <div class="btn"><div class="inner-rec"></div></div>
+        <div class="lbl">VOICE LOG</div>
+      </div>
+    </div>
+    <div class="col">
+      <div>
+        <div class="field-lbl">PACE / MI</div>
+        <input class="field" value="7:25 / mi"/>
+      </div>
+      <div>
+        <div class="field-lbl">NOTES</div>
+        <input class="field" placeholder="Tap to dictate, or type…"/>
+      </div>
+      <div style="display:flex;gap:24px;align-items:center;padding-top:6px">
+        <div class="toggle on"><div class="track"><div class="knob"></div></div><span class="name">Heat compensation</span></div>
+      </div>
+      <div style="display:flex;gap:24px;align-items:center">
+        <div class="toggle"><div class="track"><div class="knob"></div></div><span class="name">Sync to Strava</span></div>
+      </div>
+    </div>
+  </div>
+</div></body></html>

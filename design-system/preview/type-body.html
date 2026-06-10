@@ -1,0 +1,122 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Body & quote</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+  .grid { display: grid; grid-template-columns: 100px 1fr; gap: 22px; }
+  .row { display: contents; }
+  .row + .row .label, .row + .row .demo { padding-top: 18px; border-top: 1px solid var(--rule); }
+
+  .label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    line-height: 1.5;
+    padding-top: 4px;
+  }
+  .label .spec {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-top: 2px;
+    text-transform: none;
+  }
+
+  .body {
+    font-family: var(--font-body);
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--ink);
+    margin: 0;
+    max-width: 480px;
+  }
+  .body strong {
+    color: var(--ink);
+    font-weight: 700;
+  }
+  .body em.coral {
+    font-style: italic;
+    color: var(--coral);
+  }
+
+  /* the canonical coach blockquote treatment — left bar + italic */
+  .quote {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--ink);
+    margin: 0;
+    padding-left: 14px;
+    border-left: 2px solid rgba(212, 89, 42, 0.55);
+    max-width: 480px;
+  }
+  .quote .attr {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    color: var(--coral);
+    text-transform: uppercase;
+    font-style: normal;
+    margin-top: 10px;
+  }
+
+  .meta {
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--ink-2);
+    margin: 0;
+    max-width: 480px;
+  }
+  .meta .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .meta .delta {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--mood-energized);
+    font-weight: 600;
+  }
+</style></head>
+<body><div class="card">
+  <div class="grid">
+
+    <div class="row">
+      <div class="label">
+        Body
+        <span class="spec">PT Serif · 15 / 1.55</span>
+      </div>
+      <p class="body">The 7-mile MP block — second of three this cycle. <strong>Hold splits, don't chase them.</strong> <em class="coral">Negative is fine, positive is not.</em></p>
+    </div>
+
+    <div class="row">
+      <div class="label">
+        Quote
+        <span class="spec">PT Serif italic · 15</span>
+      </div>
+      <blockquote class="quote">
+        "Felt good through the warm-up — legs were heavy first mile but loosened up. Tempo blocks smoother than two weeks ago."
+        <span class="attr">— Sunday voice log · Apr 26</span>
+      </blockquote>
+    </div>
+
+    <div class="row">
+      <div class="label">
+        Meta
+        <span class="spec">PT Serif · 13 / 1.5</span>
+      </div>
+      <p class="meta">MP rhythm session · <span class="num">11&nbsp;mi.</span>&nbsp; Goal marathon rhythm — your MP <span class="num">5:32</span>, <span class="delta">−1%</span> today.</p>
+    </div>
+
+  </div>
+</div></body></html>

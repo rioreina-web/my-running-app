@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>PRD · Logo redesign</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../../colors_and_type.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Crimson+Pro:wght@400;700;800&display=swap">
+  <style>
+    html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); }
+    .ab-body { background: var(--paper); height: 100%; padding: 28px 24px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+    .ab-hero { display: flex; align-items: center; justify-content: center; }
+    .ab-row { display: flex; gap: 16px; align-items: center; padding-top: 6px; border-top: 1px solid var(--rule); width: 100%; justify-content: center; }
+    .ab-row svg { border-radius: 14px; }
+    .ab-icon-lbl { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.10em; color: var(--ink-3); text-transform: uppercase; }
+    .ab-note { font-family: var(--font-body); font-style: italic; font-size: 13px; color: var(--ink-2); text-align: center; line-height: 1.5; max-width: 320px; padding-top: 6px; border-top: 1px solid var(--rule); width: 100%; box-sizing: border-box; }
+    .ab-tag { position: absolute; top: 16px; left: 16px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="Marks.jsx"></script>
+
+  <script type="text/babel">
+    const Artboard = ({ Mark, note }) => (
+      <div className="ab-body">
+        <div className="ab-hero"><Mark size={260} /></div>
+        <div className="ab-row">
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <Mark size={120} />
+            <span className="ab-icon-lbl">120 px</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <Mark size={60} />
+            <span className="ab-icon-lbl">60 px</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <Mark size={28} />
+            <span className="ab-icon-lbl">28 px</span>
+          </div>
+        </div>
+        <div className="ab-note">{note}</div>
+      </div>
+    );
+
+    const App = () => (
+      <DesignCanvas title="PRD · Logo redesign" subtitle="App-icon-first · keep the drip · lowercase">
+        <DCSection id="ref" title="Reference" subtitle="The current mark, recreated">
+          <DCArtboard id="cur" label="0 · Current" width={360} height={520}>
+            <Artboard Mark={LogoA_Current} note="Today's logo. Strong wordmark but the 3-line stack means the type goes to mush at small icon sizes — by 28px the words are illegible and only the drop reads." />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="wordmark" title="Stack · refined" subtitle="Keep the form, adjust the materials">
+          <DCArtboard id="b" label="A · Coral stack" width={360} height={520}>
+            <Artboard Mark={LogoB_StackCoral} note="Same form, on coral with ink type. Wordmark loses dominance, drop becomes part of the rhythm. Same legibility problem at 28px, but warmer." />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="shorten" title="Shorten the wordmark" subtitle="Trade one word for legibility">
+          <DCArtboard id="c" label="B · drip." width={360} height={520}>
+            <Artboard Mark={LogoC_Period} note="Drop the first two words — keep 'drip' (the most distinctive word) plus the literal drop as a period. Reads at every size. Builds equity in a single word." />
+          </DCArtboard>
+          <DCArtboard id="d" label="C · prd monogram" width={360} height={520}>
+            <Artboard Mark={LogoD_Monogram} note="Lowercase 'prd' monogram, with the drop hanging from the bowl of the p — exactly where it lives today. Bulletproof at every size. Pairs naturally with the system's tracked-uppercase labels." />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="pictorial" title="Pictorial · drop-forward" subtitle="Let the drop be the brand">
+          <DCArtboard id="e" label="D · The drop" width={360} height={520}>
+            <Artboard Mark={LogoE_DropOnly} note="Just the drop, confident, on coral. Wordmark moves to context (App Store name, headers). At icon size this is the most identifiable option — but it's a bigger jump from the current equity." />
+          </DCArtboard>
+          <DCArtboard id="g" label="E · Negative-space drop" width={360} height={520}>
+            <Artboard Mark={LogoG_NegSpace} note="The drop is cut out of a coral field, revealing paper below. Same recognition as D but with more iconic 'app icon' energy — works as a sticker, a watermark, an embossed cover." />
+          </DCArtboard>
+          <DCArtboard id="i" label="F · Drop + runner" width={360} height={520}>
+            <Artboard Mark={LogoI_DropRunner} note="A drop, with a runner silhouette negative-spaced inside. The mixed metaphor — post-run sweat AND the runner herself — is on the nose, but it tells the whole story in one mark." />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="editorial" title="Pair with the editorial system">
+          <DCArtboard id="f" label="G · Serif prd." width={360} height={520}>
+            <Artboard Mark={LogoF_Serif} note="Crimson Pro 'prd' with the drop as a coral period. The wordmark stops being the loud counterpoint and instead extends the editorial voice. The whole brand reads as one document." />
+          </DCArtboard>
+          <DCArtboard id="h" label="H · Horizontal periods" width={360} height={520}>
+            <Artboard Mark={LogoH_Horizontal} note="The full wordmark in a single line, each period replaced with a tiny coral drop. Works as a header signature, not an app icon — but useful as a brand lockup beside any of the icon options above." />
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+    );
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Display type</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+
+  .tag {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+
+  /* Each row = a signature display treatment */
+  .row {
+    display: grid;
+    grid-template-columns: 88px 1fr;
+    gap: 24px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: baseline;
+  }
+  .row:first-of-type { padding-top: 4px; }
+  .row:last-of-type { border-bottom: 0; }
+
+  .role {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    line-height: 1.5;
+    padding-top: 4px;
+  }
+  .role .spec {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--ink-3);
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    text-transform: none;
+    margin-top: 3px;
+  }
+
+  /* Display base — Crimson Pro */
+  .d {
+    font-family: var(--font-display);
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    line-height: 1.0;
+    margin: 0;
+  }
+
+  /* 1 — canonical PRD heading: eyebrow + display + period */
+  .canonical .eyebrow {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--coral);
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+  .canonical h1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 44px;
+    letter-spacing: -0.015em;
+    line-height: 1;
+    margin: 0;
+  }
+  .canonical h1 .period { color: var(--ink); }
+
+  /* 1b — Stat as headline (analytics carry the same weight as prose) */
+  .stat .group {
+    display: flex;
+    align-items: flex-end;
+    gap: 18px;
+  }
+  .stat .block {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .stat .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 44px;
+    color: var(--ink);
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+  }
+  .stat .num .unit {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-2);
+    margin-left: 4px;
+    font-weight: 600;
+  }
+  .stat .delta {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    letter-spacing: 0.10em;
+    color: var(--mood-energized);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .stat .div {
+    width: 1px;
+    align-self: stretch;
+    background: var(--rule);
+    margin: 4px 0;
+  }
+
+  /* 2 — Two-tone headline (one word in coral) */
+  .twotone h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: -0.01em;
+    line-height: 1.05;
+    margin: 0;
+  }
+  .twotone h2 em { font-style: normal; color: var(--coral); }
+  .twotone .dek {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-2);
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+
+  /* 3 — Mixed weight: light → bold within one phrase */
+  .mixwt h2 {
+    font-family: var(--font-display);
+    font-size: 30px;
+    letter-spacing: -0.01em;
+    line-height: 1.05;
+    margin: 0;
+    font-weight: 300;
+    color: var(--ink-2);
+  }
+  .mixwt h2 strong {
+    font-weight: 800;
+    color: var(--ink);
+  }
+
+  /* 4 — Roman + italic mix */
+  .romitlc h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: -0.01em;
+    line-height: 1.05;
+    margin: 0;
+    color: var(--ink);
+  }
+  .romitlc h2 em {
+    font-weight: 400;
+    font-style: italic;
+    color: var(--ink-2);
+  }
+
+  /* 5 — Em-dash aside (canonical: italic ink-3 frames a roman headline) */
+  .aside {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .aside .frame {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 14px;
+    color: var(--ink-3);
+    line-height: 1.5;
+  }
+  .aside h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: -0.01em;
+    line-height: 1.05;
+    margin: 0;
+    color: var(--ink);
+  }
+
+  /* 6 — With editorial photo (B&W / warm cast, never iPhone-bright) */
+  .photo .group {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .photo .thumb {
+    width: 96px;
+    height: 96px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--paper-deep);
+  }
+  .photo .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    filter: grayscale(1) contrast(1.05) brightness(0.96) sepia(0.18);
+  }
+  .photo .e {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 4px;
+  }
+  .photo h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 22px;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    margin: 0 0 6px 0;
+    color: var(--ink);
+  }
+  .photo .dek {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 12px;
+    color: var(--ink-2);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* tiny ramp reference at bottom */
+  .ramp {
+    display: flex;
+    gap: 20px;
+    align-items: baseline;
+    padding-top: 18px;
+    margin-top: 6px;
+    border-top: 1px solid var(--rule);
+  }
+  .ramp .r-lbl {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    margin-right: 6px;
+    align-self: center;
+  }
+  .ramp .r {
+    font-family: var(--font-display);
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    line-height: 1;
+  }
+  .ramp .r .sz {
+    display: block;
+    font-family: var(--font-mono);
+    font-weight: 400;
+    font-size: 8px;
+    color: var(--ink-3);
+    letter-spacing: 0.08em;
+    margin-top: 4px;
+  }
+</style></head>
+<body><div class="card">
+  <div class="tag">Display · five signature treatments · not a font, a system</div>
+
+  <div class="row canonical">
+    <div class="role">Canonical<span class="spec">eyebrow + display + period</span></div>
+    <div>
+      <span class="eyebrow">TUESDAY</span>
+      <h1>May 5th<span class="period">.</span></h1>
+    </div>
+  </div>
+
+  <div class="row stat">
+    <div class="role">Stat<span class="spec">mono · tabular nums</span></div>
+    <div class="group">
+      <div class="block">
+        <span class="eyebrow">VOLUME · 7D</span>
+        <span class="num">47.2<span class="unit">MI</span></span>
+        <span class="delta">+8% &nbsp;VS 4-WK AVG</span>
+      </div>
+      <div class="div"></div>
+      <div class="block">
+        <span class="eyebrow">FITNESS · PREDICTED</span>
+        <span class="num">3:15<span class="unit">FULL</span></span>
+        <span class="delta">−47s &nbsp;VS 4 WEEKS AGO</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="row twotone">
+    <div class="role">Two-tone<span class="spec">one word, coral</span></div>
+    <div>
+      <h2>Hold splits, <em>don't chase them.</em></h2>
+      <div class="dek">— a quieter log for serious runners. —</div>
+    </div>
+  </div>
+
+  <div class="row mixwt">
+    <div class="role">Weight mix<span class="spec">light → bold</span></div>
+    <div>
+      <h2>11 weeks to the <strong>marathon</strong>.</h2>
+    </div>
+  </div>
+
+  <div class="row romitlc">
+    <div class="role">Roman + italic<span class="spec">cover-line energy</span></div>
+    <div>
+      <h2>Marathon block <em>— sharpened.</em></h2>
+    </div>
+  </div>
+
+  <div class="row aside">
+    <div class="role">Em-dash aside<span class="spec">italic frames roman</span></div>
+    <div>
+      <div class="frame">— eleven weeks out, sharpened. —</div>
+      <h2>The 7-mile MP block.</h2>
+    </div>
+  </div>
+
+  <div class="row photo">
+    <div class="role">With photo<span class="spec">B&amp;W · warm cast</span></div>
+    <div class="group">
+      <div class="thumb">
+        <img src="https://picsum.photos/seed/prd-trail-run/192/192" alt="" loading="lazy">
+      </div>
+      <div>
+        <span class="e">SUNDAY · APR 26 · LONG RUN</span>
+        <h2>Eighteen miles, headwind.</h2>
+        <p class="dek">— felt strong through fourteen, started to fade on the hills. Next test is Wednesday’s MP block. —</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ramp">
+    <span class="r-lbl">Ramp</span>
+    <span class="r" style="font-size:40px">40<span class="sz">XL</span></span>
+    <span class="r" style="font-size:32px">32<span class="sz">L</span></span>
+    <span class="r" style="font-size:24px">24<span class="sz">M</span></span>
+    <span class="r" style="font-size:20px">20<span class="sz">S</span></span>
+  </div>
+</div></body></html>

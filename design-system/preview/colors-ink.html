@@ -1,0 +1,269 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Ink</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px 28px; }
+  .tag {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+
+  /* Two columns: spec rail + working example */
+  .layout {
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 32px;
+  }
+
+  /* ---- spec rail ---- */
+  .rail .row {
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    gap: 14px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule);
+    align-items: center;
+  }
+  .rail .row:first-child { padding-top: 0; }
+  .rail .row:last-child { border-bottom: 0; }
+  .chip {
+    width: 36px; height: 36px;
+    border-radius: 4px;
+  }
+  .role {
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .role .name {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .role .job {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 12px;
+    color: var(--ink-2);
+    line-height: 1.4;
+  }
+  .hex {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink);
+    font-weight: 600;
+    text-align: right;
+  }
+  .hex .ratio {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--ink-3);
+    font-weight: 400;
+    margin-top: 2px;
+  }
+
+  /* ---- working example: editorial composition on paper ---- */
+  .demo {
+    background: var(--paper);
+    border-radius: 8px;
+    padding: 22px 22px 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border: 1px solid var(--rule);
+  }
+  .demo .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+  .demo h2 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 30px;
+    color: var(--ink);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .demo .dek {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 13px;
+    color: var(--ink-3);
+    line-height: 1.5;
+    margin: 2px 0 6px 0;
+  }
+  .demo p {
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink);
+    margin: 0;
+  }
+  .demo .caption {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.10em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  /* tags pointing to which ink is which */
+  .demo .ptr {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+  }
+  .demo .ptr::before {
+    content: "";
+    width: 16px;
+    height: 1px;
+    background: var(--rule);
+  }
+
+  /* ---- surface check: ink across surfaces ---- */
+  .surfaces {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+  }
+  .surfaces .s {
+    border-radius: 6px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    border: 1px solid var(--rule);
+  }
+  .surfaces .s.paper { background: var(--paper); }
+  .surfaces .s.card  { background: var(--card); }
+  .surfaces .s.deep  { background: var(--paper-deep); border-color: transparent; }
+  .surfaces .s .lbl {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .surfaces .s .stack {
+    display: flex; flex-direction: column; gap: 2px;
+    margin-top: 4px;
+  }
+  .surfaces .s .t1 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .surfaces .s .t2 {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.10em;
+    color: var(--ink-2);
+    text-transform: uppercase;
+  }
+  .surfaces .s .t3 {
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+</style></head>
+<body><div class="card">
+  <div class="tag">Ink · three text tones, no more</div>
+
+  <div class="layout">
+    <div class="rail">
+      <div class="row">
+        <span class="chip" style="background:#1A1815"></span>
+        <div class="role">
+          <span class="name">Ink · primary</span>
+          <span class="job">Headlines, body, numerals.</span>
+        </div>
+        <div class="hex">#1A1815<span class="ratio">15.4 : 1 ✓ AAA</span></div>
+      </div>
+      <div class="row">
+        <span class="chip" style="background:#6B6560"></span>
+        <div class="role">
+          <span class="name">Ink 2 · meta</span>
+          <span class="job">Eyebrows, labels, dates, splits.</span>
+        </div>
+        <div class="hex">#6B6560<span class="ratio">5.1 : 1 ✓ AA</span></div>
+      </div>
+      <div class="row">
+        <span class="chip" style="background:#9B9590"></span>
+        <div class="role">
+          <span class="name">Ink 3 · caption</span>
+          <span class="job">Deks, captions, disabled.</span>
+        </div>
+        <div class="hex">#9B9590<span class="ratio">2.9 : 1 — large only</span></div>
+      </div>
+    </div>
+
+    <div class="demo">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span class="eyebrow">TUESDAY · MAY 5</span>
+        <span class="ptr">ink 2</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:8px">
+        <h2>Marathon block.</h2>
+        <span class="ptr">ink</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span class="dek">— eleven weeks out, sharpened. —</span>
+        <span class="ptr">ink 3</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-top:4px">
+        <p>Hold splits, don't chase them.</p>
+        <span class="ptr">ink</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="surfaces">
+    <div class="s paper">
+      <span class="lbl">On paper</span>
+      <div class="stack">
+        <span class="t1">Marathon block.</span>
+        <span class="t2">TUESDAY · MAY 5</span>
+        <span class="t3">— eleven weeks out. —</span>
+      </div>
+    </div>
+    <div class="s card">
+      <span class="lbl">On white card</span>
+      <div class="stack">
+        <span class="t1">Marathon block.</span>
+        <span class="t2">TUESDAY · MAY 5</span>
+        <span class="t3">— eleven weeks out. —</span>
+      </div>
+    </div>
+    <div class="s deep">
+      <span class="lbl">On paper deep</span>
+      <div class="stack">
+        <span class="t1">Marathon block.</span>
+        <span class="t2">TUESDAY · MAY 5</span>
+        <span class="t3">— eleven weeks out. —</span>
+      </div>
+    </div>
+  </div>
+</div></body></html>

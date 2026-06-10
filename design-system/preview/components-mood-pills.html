@@ -1,0 +1,35 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Mood pills</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+.tag { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-bottom: 18px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+.pill { display: inline-flex; padding: 4px 10px; border-radius: 999px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.10em; }
+.label { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; margin-bottom: 8px; }
+.radio { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; width: 80px; }
+.radio .dot { width: 18px; height: 18px; border-radius: 999px; border: 1.5px solid var(--ink-3); box-sizing: border-box; }
+.radio.is-active .dot { border-color: var(--coral); position: relative; }
+.radio.is-active .dot::after { content:""; position:absolute; inset:3px; background: var(--coral); border-radius: 999px; }
+.radio .name { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; }
+.radio.is-active .name { color: var(--coral); }
+.radio-row { display: flex; gap: 0; justify-content: space-between; }
+</style></head>
+<body><div class="card">
+  <div class="label">Mood pill — capsule, tracked, 12% wash background</div>
+  <div class="row">
+    <span class="pill" style="color:#2D8A4E;background:rgba(45,138,78,0.12)">ENERGIZED</span>
+    <span class="pill" style="color:#4A9E6B;background:rgba(74,158,107,0.12)">POSITIVE</span>
+    <span class="pill" style="color:#6B6560;background:rgba(155,149,144,0.18)">NEUTRAL</span>
+    <span class="pill" style="color:#C4873A;background:rgba(196,135,58,0.12)">TIRED</span>
+    <span class="pill" style="color:#C45A3A;background:rgba(196,90,58,0.12)">STRUGGLING</span>
+    <span class="pill" style="color:#B83A4A;background:rgba(184,58,74,0.12)">INJURED</span>
+  </div>
+  <div class="label">Mood radio — "How are you feeling?" check-in</div>
+  <div class="radio-row">
+    <div class="radio"><div class="dot"></div><div class="name">Energized</div></div>
+    <div class="radio"><div class="dot"></div><div class="name">Positive</div></div>
+    <div class="radio"><div class="dot"></div><div class="name">Neutral</div></div>
+    <div class="radio is-active"><div class="dot"></div><div class="name">Tired</div></div>
+    <div class="radio"><div class="dot"></div><div class="name">Struggling</div></div>
+  </div>
+</div></body></html>
