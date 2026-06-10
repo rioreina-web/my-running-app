@@ -245,7 +245,8 @@ function computeEffortBlocks(stream: VitalStream): EffortBlock[] {
 
       if (endMin - startMin > 0.3) { // skip tiny blocks < 20 sec
         // Compute avg pace and HR for this block
-        let hrSum = 0, hrCount = 0, distStart = stream.distance[blockStart], distEnd = stream.distance[i];
+        let hrSum = 0, hrCount = 0;
+        const distStart = stream.distance[blockStart], distEnd = stream.distance[i];
         for (let j = blockStart; j < i; j++) {
           if (stream.heartrate?.[j]) { hrSum += stream.heartrate[j]; hrCount++; }
         }

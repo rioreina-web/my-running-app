@@ -15,7 +15,7 @@ import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.
 import { validateUUID, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 import { compressTrainingContext, compressGoalsContext, estimateTokens } from "../_shared/context.ts";
 import { getMemories, buildMemoryContext } from "../_shared/memory.ts";
-import { buildInjuryContext } from "../_shared/injuries.ts";
+import { buildInjuryContext, InjuryRecord } from "../_shared/injuries.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
@@ -173,7 +173,7 @@ Deno.serve(async (req: Request) => {
     const injuryHistoryContext = formatInjuryHistory(injuryHistoryResult.data || [], injury.body_area);
     const goalsContext = compressGoalsContext(goalsResult.data || []);
     const memoriesContext = buildMemoryContext(memoriesResult || []);
-    const otherInjuriesContext = buildInjuryContext(otherActiveResult.data || []);
+    const otherInjuriesContext = buildInjuryContext((otherActiveResult.data || []) as unknown as InjuryRecord[]);
 
     const sideLabel = injury.side !== "unknown" ? `${injury.side} ` : "";
 

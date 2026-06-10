@@ -8,7 +8,7 @@
  * Only generates AI insight when risk_score >= 3. Runners train hard —
  * that's normal. We only flag patterns that are genuinely risky.
  */
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";

@@ -1854,11 +1854,12 @@ Deno.serve(async (req: Request) => {
 
       const aiResult = await skeletonModel.generateContent(skeletonPrompt);
       const aiText = aiResult.response.text();
-      const aiOutput = parseAISelections(aiText);
+      const aiOutput: AIFinalOutput | null = parseAISelections(aiText);
 
-      if (aiOutput && aiOutput.selections.length > 0) {
+      if (aiOutput && (aiOutput as AIFinalOutput).selections.length > 0) {
+        const aiOutputResolved: AIFinalOutput = aiOutput as AIFinalOutput;
         // Merge AI code selections into skeleton
-        mergeAISelections(skeleton, aiOutput.selections);
+        mergeAISelections(skeleton, aiOutputResolved.selections);
 
         // Convert skeleton to flat workout array
         const rawWorkouts = skeletonToWorkouts(skeleton, body.startDate as string, body.raceDate as string);
@@ -1889,7 +1890,7 @@ Deno.serve(async (req: Request) => {
 
         // Save conversation for follow-ups
         const now = new Date().toISOString();
-        const coachMsg = aiOutput.coaching_strategy || `Here's your ${raceDistGuess.replace("_", " ")} training plan! Let me know if you'd like to adjust anything.`;
+        const coachMsg = aiOutputResolved.coaching_strategy || `Here's your ${raceDistGuess.replace("_", " ")} training plan! Let me know if you'd like to adjust anything.`;
         const { data: convData } = await supabase.from("conversations").insert({
           messages: [
             { role: "user", content: body.message, timestamp: now },

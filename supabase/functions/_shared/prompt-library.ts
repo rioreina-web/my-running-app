@@ -52,7 +52,6 @@ import { TEMPLATE as RACE_READINESS_V1 } from "./prompts/race-readiness.v1.ts";
 import { TEMPLATE as RESCHEDULE_PLAN_V1 } from "./prompts/reschedule-plan.v1.ts";
 import { TEMPLATE as TRAINING_ANALYSIS_V1 } from "./prompts/training-analysis.v1.ts";
 import { TEMPLATE as WEEKLY_COACHING_REPORT_V1 } from "./prompts/weekly-coaching-report.v1.ts";
-import { TEMPLATE as WEEKLY_PLAN_REVIEW_V1 } from "./prompts/weekly-plan-review.v1.ts";
 
 /**
  * Static registry of every prompt the backend can load. Adding a prompt
@@ -83,7 +82,6 @@ const REGISTRY: Record<string, string> = {
   "reschedule-plan.v1": RESCHEDULE_PLAN_V1,
   "training-analysis.v1": TRAINING_ANALYSIS_V1,
   "weekly-coaching-report.v1": WEEKLY_COACHING_REPORT_V1,
-  "weekly-plan-review.v1": WEEKLY_PLAN_REVIEW_V1,
 };
 
 /**

@@ -52,7 +52,6 @@ test("safePaceLabel returns null for undefined zone", () => {
 });
 
 test("safePaceLabel returns null for unknown zone string", () => {
-  // @ts-expect-error — deliberately passing a string the type doesn't allow
   const r = safePaceLabel("vo2max_pace_zone_that_does_not_exist", undefined, undefined);
   assert.equal(r, null);
 });
@@ -72,7 +71,6 @@ test("safePaceRangeLabel never returns a string containing NaN", () => {
     ["bogus_zone", undefined],
   ];
   for (const [zone, exact] of inputs) {
-    // @ts-expect-error — intentionally pass invalid zones
     const r = safePaceRangeLabel(zone, undefined, exact);
     if (r !== null) {
       assert.ok(!r.includes("NaN"), `safePaceRangeLabel produced NaN output: ${r}`);

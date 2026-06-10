@@ -1,4 +1,4 @@
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { detectInjury, upsertInjury } from "../_shared/injuries.ts";
 import { rebuildAthleteState } from "../_shared/athlete-state.ts";
@@ -33,6 +33,7 @@ interface TrainingLogPayload {
   schema: string;
   record: {
     id: string;
+    user_id?: string;
     audio_url?: string;
     notes?: string;
     cleaned_notes?: string;
@@ -663,7 +664,7 @@ Deno.serve(async (req) => {
 
     // Mark as failed with error message
     if (recordId) {
-      await updateProcessingStatus(recordId, "failed", error.message);
+      await updateProcessingStatus(recordId, "failed", error instanceof Error ? error.message : String(error));
     }
 
     return new Response(

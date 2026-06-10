@@ -977,7 +977,8 @@ function formatHms(sec: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-function parsePace(s: string): number | null {
+function parsePace(s: string | null): number | null {
+  if (!s) return null;
   const m = s.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
   const min = parseInt(m[1]);

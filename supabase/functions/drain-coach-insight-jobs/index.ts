@@ -37,7 +37,7 @@
  *   attempt 3 fails → retry in 120s, then marked failed (max_attempts=3)
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

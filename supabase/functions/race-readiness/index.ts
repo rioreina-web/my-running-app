@@ -5,7 +5,7 @@
  * Analyzes 6-8 weeks of training, fitness trajectory, taper quality.
  * Generates a race-day pace plan with specific splits from real data.
  */
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
@@ -301,8 +301,6 @@ Deno.serve(async (req: Request) => {
         } else {
           throw new Error("No JSON found in AI response");
         }
-        if (endIdx === -1) throw new Error("Unbalanced JSON in AI response");
-        analysis = JSON.parse(cleaned.substring(startIdx, endIdx + 1));
       }
     }
     console.log("Race readiness analysis parsed successfully");

@@ -39,6 +39,61 @@ import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+
+// ─── Local Row Types ─────────────────────────────────────────────────────────
+// The Supabase client is created without generated DB types, so query results
+// infer to `never`. These narrow interfaces describe the exact columns selected
+// in this function and are used to cast the query `.data` results. They are
+// type-only and do not change runtime behavior.
+
+// The Supabase client is created without generated DB types. The handler's
+// `createClient(url, key)` infers a "public" schema, while a bare
+// `ReturnType<typeof createClient>` defaults to a `never` schema — the two are
+// not assignable. Use the no-args return type as the function-parameter type
+// and cast at the single call site, keeping this type-only.
+type SupabaseClientLike = ReturnType<typeof createClient>;
+
+interface ExistingReportRow {
+  id: string;
+  status: string | null;
+}
+
+interface ActivePlanRow {
+  id: string;
+  name: string | null;
+  start_date: string;
+  end_date: string | null;
+  target_race_distance: string;
+  target_time_seconds: number | null;
+  status: string | null;
+  [key: string]: unknown;
+}
+
+interface UserProfileRow {
+  easy_pace_per_mile: string | null;
+  [key: string]: unknown;
+}
+
+interface AthleteProfileTableRow {
+  profile_data: unknown;
+}
+
+interface FitnessSnapshotRow {
+  predicted_marathon_seconds: number | null;
+  predicted_half_seconds: number | null;
+  predicted_10k_seconds: number | null;
+  predicted_5k_seconds: number | null;
+  confidence: string | null;
+  created_at: string;
+  [key: string]: unknown;
+}
+
+// TrainingLogRow (from _shared) doesn't include extracted_data, which this
+// function also selects. Extend it locally so the prompt builder can read it.
+type TrainingLogRowWithExtra = TrainingLogRow & {
+  extracted_data: Record<string, unknown> | null;
+};
+
 // ─── Main Handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -110,7 +165,7 @@ Deno.serve(async (req: Request) => {
             setTimeout(() => reject(new Error("Per-user timeout exceeded")), PER_USER_TIMEOUT_MS)
           );
           const result = await Promise.race([
-            generateReportForUser(supabase, uid, startTime),
+            generateReportForUser(supabase as unknown as SupabaseClientLike, uid, startTime),
             timeoutPromise,
           ]);
           return { userId: uid, status: result.status };
@@ -173,7 +228,7 @@ Deno.serve(async (req: Request) => {
 // ─── Per-User Report Generation ──────────────────────────────────────────────
 
 async function generateReportForUser(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientLike,
   userId: string,
   startTime: number
 ): Promise<{ status: string }> {
@@ -187,7 +242,8 @@ async function generateReportForUser(
     .eq("week_start", weekStart)
     .single();
 
-  if (existing?.status === "completed") {
+  const existingReport = existing as ExistingReportRow | null;
+  if (existingReport?.status === "completed") {
     console.log(`Report already exists for user ${userId} week ${weekStart}`);
     return { status: "already_exists" };
   }
@@ -320,12 +376,12 @@ async function generateReportForUser(
 
   const thisWeekScheduled = (scheduledThisWeek.data || []) as ScheduledWorkoutRow[];
   const nextWeekScheduled = (scheduledNextWeek.data || []) as ScheduledWorkoutRow[];
-  const thisWeekLogs = (logsThisWeek.data || []) as TrainingLogRow[];
+  const thisWeekLogs = (logsThisWeek.data || []) as TrainingLogRowWithExtra[];
   const historicalLogs = (logsHistorical.data || []) as TrainingLogRow[];
-  const activePlan = activePlanResult.data;
+  const activePlan = activePlanResult.data as ActivePlanRow | null;
   const activeInjuries = (injuriesResult.data || []) as InjuryRow[];
-  const profile = profileResult.data;
-  const fitnessSnapshots = fitnessSnapshotsResult.data || [];
+  const profile = profileResult.data as UserProfileRow | null;
+  const fitnessSnapshots = (fitnessSnapshotsResult.data || []) as FitnessSnapshotRow[];
   const formChecks = (formChecksResult.data || []) as FormCheckRow[];
 
   // Build features map keyed by training_log_id for the intensity-weighted
@@ -401,9 +457,10 @@ async function generateReportForUser(
 
   // Build athlete profile context from cached data
   let athleteProfileCtx = "";
-  if (athleteProfileResult.data?.profile_data) {
+  const athleteProfileRow = athleteProfileResult.data as AthleteProfileTableRow | null;
+  if (athleteProfileRow?.profile_data) {
     try {
-      athleteProfileCtx = buildAthleteProfileContext(athleteProfileResult.data.profile_data as AthleteProfile);
+      athleteProfileCtx = buildAthleteProfileContext(athleteProfileRow.profile_data as AthleteProfile);
     } catch (e) {
       console.error("Error building athlete profile context:", e);
     }
@@ -503,7 +560,8 @@ async function generateReportForUser(
 
   const { error: upsertError } = await supabase
     .from("weekly_coaching_reports")
-    .upsert(reportData, { onConflict: "user_id,week_start" });
+    // deno-lint-ignore no-explicit-any
+    .upsert(reportData as any, { onConflict: "user_id,week_start" });
 
   if (upsertError) {
     console.error("Upsert error:", upsertError);
@@ -518,7 +576,8 @@ async function generateReportForUser(
     input_tokens: usageMetadata?.promptTokenCount || 0,
     output_tokens: usageMetadata?.candidatesTokenCount || 0,
     cached: false,
-  });
+    // deno-lint-ignore no-explicit-any
+  } as any);
 
   console.log(
     `Report generated for ${userId}: ${usageMetadata?.promptTokenCount || 0}in/${usageMetadata?.candidatesTokenCount || 0}out in ${processingTime}ms`
@@ -618,7 +677,7 @@ function buildCoachingPrompt(
     profile: Record<string, unknown> | null;
     activePlan: Record<string, unknown> | null;
     activeInjuries: InjuryRow[];
-    thisWeekLogs: TrainingLogRow[];
+    thisWeekLogs: TrainingLogRowWithExtra[];
     thisWeekScheduled: ScheduledWorkoutRow[];
     nextWeekScheduled: ScheduledWorkoutRow[];
     fitnessSnapshots: Record<string, unknown>[];

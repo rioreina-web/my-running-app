@@ -5,10 +5,10 @@
  * Analyzes the run in context: pace zones, recent load, training history.
  * Stores result in ai_insights table for the iOS app to display.
  */
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
-import { legacyZonesFromSnapshot } from "../_shared/pace-engine.ts";
+import { legacyZonesFromSnapshot, type LegacyPaceZones } from "../_shared/pace-engine.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
@@ -54,11 +54,11 @@ interface TrainingLog {
 // Pace zones come from the central PaceEngine. See _shared/pace-engine.ts.
 // Local function kept as a thin shim so existing call sites don't need to
 // change; eventually these will read engine output directly.
-function computePaceZones(snap: Record<string, number>): Record<string, number> | null {
+function computePaceZones(snap: Record<string, number>): LegacyPaceZones | null {
   return legacyZonesFromSnapshot(snap);
 }
 
-function labelPaceZone(paceSecsPerMile: number, zones: Record<string, number>): string {
+function labelPaceZone(paceSecsPerMile: number, zones: LegacyPaceZones): string {
   const tolerance = 8;
   // Threshold dropped from the canonical chart — HMP covers that effort
   // band per the unified pace spectrum.

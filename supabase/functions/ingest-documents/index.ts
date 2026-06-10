@@ -89,7 +89,8 @@ Deno.serve(async (req: Request) => {
             .eq("id", doc.id);
           results.push({ title: doc.title, status: updateErr ? `error: ${updateErr.message}` : "updated" });
         } catch (e) {
-          results.push({ title: doc.title, status: `error: ${e.message}` });
+          const message = e instanceof Error ? e.message : String(e);
+          results.push({ title: doc.title, status: `error: ${message}` });
         }
       }
 
@@ -155,7 +156,8 @@ Deno.serve(async (req: Request) => {
         }
 
       } catch (docError) {
-        results.push({ title: doc.title, status: `error: ${docError.message}` });
+        const message = docError instanceof Error ? docError.message : String(docError);
+        results.push({ title: doc.title, status: `error: ${message}` });
       }
     }
 

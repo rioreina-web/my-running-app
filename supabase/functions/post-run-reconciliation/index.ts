@@ -59,6 +59,22 @@ interface ReconciliationDelta {
   summary: string;
 }
 
+interface ScheduledWorkout {
+  id: string;
+  date: string | null;
+  workout_type: string | null;
+  workout_data: Record<string, any> | null;
+  status: string | null;
+  source: string | null;
+  is_movable: boolean | null;
+  plan_id: string | null;
+  training_plans: { user_id: string } | { user_id: string }[] | null;
+  // Columns referenced but not in the select projection above;
+  // undefined at runtime unless the projection is widened.
+  weather_forecast?: Record<string, any> | null;
+  pool_template_id?: string | null;
+}
+
 // ── Main Handler ───────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -112,7 +128,7 @@ Deno.serve(async (req: Request) => {
     // Join through training_plans to get the user's active plan
     const logDate = log.workout_date.split("T")[0];
 
-    const { data: scheduled } = await supabase
+    const { data: scheduledRaw } = await supabase
       .from("scheduled_workouts")
       .select("id, date, workout_type, workout_data, status, source, is_movable, plan_id, training_plans!inner(user_id)")
       .eq("training_plans.user_id", userId)
@@ -121,6 +137,8 @@ Deno.serve(async (req: Request) => {
       .order("session")
       .limit(1)
       .maybeSingle();
+
+    const scheduled = scheduledRaw as ScheduledWorkout | null;
 
     // 2b. Fetch weather for the workout (use scheduled forecast or fetch actual)
     let weatherData: Record<string, any> | null = null;

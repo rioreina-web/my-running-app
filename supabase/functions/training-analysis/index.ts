@@ -487,7 +487,6 @@ interface PaceZones {
   easy: number;       // ~75% of VDOT effort, roughly marathon pace + 90s
   marathon: number;
   halfMarathon: number;
-  threshold: number;  // ~LT, roughly between 10K and HM pace
   tenK: number;
   fiveK: number;
 }

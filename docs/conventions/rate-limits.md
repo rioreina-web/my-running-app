@@ -34,7 +34,7 @@ Source of truth: `FEATURE_LIMITS` in `supabase/functions/_shared/rateLimit.ts`.
 | `injury_analysis` | 5 | 25 | 100 | `injury-analysis`, `injury-early-warning` |
 | `plan_builder` | 3 | 10 | 50 | `generate-training-plan` |
 | `race` | 10 | 25 | 100 | `race-intel`, `race-readiness` |
-| `weekly_review` | 5 | 25 | 100 | `weekly-coaching-report`, `weekly-plan-review` |
+| `weekly_review` | 5 | 25 | 100 | `weekly-coaching-report` (`weekly-plan-review` cut 2026-06-10) |
 | `post_run` | 20 | 50 | 200 | `post-run-analysis` |
 | `voice_memo` | 20 | 50 | 200 | `process-training-memo` |
 | `daily_read` | 5 | 25 | 100 | `coaching-daily-read` (manual taps; cron bypasses via service role) |

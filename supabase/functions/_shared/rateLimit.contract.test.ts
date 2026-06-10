@@ -52,7 +52,9 @@ const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   { fn: "generate-training-plan", feature: "plan_builder" },
   { fn: "reschedule-plan",        feature: "reschedule" },
   { fn: "weekly-coaching-report", feature: "weekly_review" },
-  { fn: "weekly-plan-review",     feature: "weekly_review" },
+  // weekly-plan-review — CUT 2026-06-10. Never deployed to prod (cron from
+  // 20260416400000 never scheduled). Untested LLM prompt making load
+  // decisions + voice mismatch with the Maya observation-first posture.
   { fn: "generate-workout-insight", feature: "workout_insight" },
   // W2.3-follow-up — auth gated via requireAuthOrServiceRole, rate-limit
   // wired in the same PR. Service-role callers bypass the user-keyed
