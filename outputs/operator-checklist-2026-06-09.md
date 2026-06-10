@@ -4,6 +4,26 @@ Steps only you can click. Ordered — the order matters for #4/#5.
 Everything below came out of the June 9 working session; what could be
 done programmatically has already been done (see "Done today" at bottom).
 
+## 0. Create a GitHub remote and push (~10 min) — NEW, do this first
+
+The repo had **no git remote** — months of work existed only on this
+machine, and the CI workflow was never even tracked. As of tonight the
+entire tree is committed locally: 7 logical commits on
+`design/editorial-v2` (cut-feature removal, backend, web, iOS, design
+system, docs, CI). A stale `.git/index.lock` from May 21 was also
+cleared (it had frozen 4 file deletions in a conflict state).
+
+Steps:
+1. Create a private GitHub repo; `git remote add origin <url>`.
+2. `git push -u origin design/editorial-v2` (and push `main` too).
+3. Decide the main-branch story: local `main` is months behind
+   `design/editorial-v2`. Branch protection (#3 below) targets `main`,
+   so either merge/fast-forward `design/editorial-v2` into `main` or
+   re-point the CI required checks at your working branch.
+
+Until this is done, CI (#3) and branch protection protect nothing, and
+a disk failure loses everything.
+
 ## 1. Google Cloud billing hard cap (~10 min) — W1.1, the actual cost cap
 
 Console → Billing → Budgets & alerts → Create budget.
@@ -58,6 +78,29 @@ Prod is running April/May builds. Redeploying ships, all at once:
 Then verify a CORS preflight from an unknown origin is rejected
 (curl block in TASKS.md § W1.2) and confirm Upstash env vars are set
 (Project Settings → Edge Functions) so rate limits aren't no-ops.
+
+**Deploy-drift audit (2026-06-09) — functions missing from prod and
+what that means:**
+
+- **`shift-day` — BROKEN FEATURE, deploy it.** The web move-day sheet
+  calls `/api/shift-day` → `functions/v1/shift-day`, which 404s in prod
+  today. The blanket deploy fixes it.
+- **`generate-workout-insight` + `drain-coach-insight-jobs` — pipeline
+  dark.** Neither is deployed, no trigger exists on `training_logs`
+  (despite `20260428110000` being in migration history), and the outbox
+  migrations (`20260508150000/160000/170000`) were never applied. Net
+  effect: HealthKit-imported runs get no `coach_insight` — iOS shows
+  nothing in that slot. Fix order: deploy both functions, then apply
+  `20260508150000` (outbox trigger) + `20260508170000` (drain cron);
+  `160000` (backfill) optional.
+- **`weekly-plan-review` — feature dark, decide if wanted.** Sunday-cron
+  producer for `coaching_adjustments` (feeds the iOS CoachReadCard
+  context). Function not deployed and the cron from `20260416400000`
+  never actually scheduled. If the feature is wanted: deploy + verify
+  the cron exists afterward. If not: candidate for the next cut list.
+- **`transcribe` — safe to skip.** No caller anywhere (voice flow goes
+  through `process-training-memo`, which transcribes internally). Dead
+  code in the repo; cutting it is a future cleanup, not a deploy item.
 
 ## 6. Smoke-test confirmed_races (Phase 2 sub-task A) (~5 min)
 
