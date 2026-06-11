@@ -1,0 +1,9 @@
+# Consciously-unapplied migrations — see
+# docs/migration-ledger-reconciliation-2026-06-11.md, Step 3.
+# Remove each line when the migration is applied or the file is deleted.
+
+20260515120000  # trigger_evaluate_coachable_moment — no-op stub, applies harmlessly on next db push
+20260520120000  # workout_type_vocabulary — apply after branch-testing the strides backfill
+20260519110000  # daily_coaching_reads_cron — BLOCKED on user_profiles
+20260519120000  # daily_coaching_reads_workout_trigger — BLOCKED on user_profiles
+20260508160000  # backfill_workout_insights_via_outbox — verify obsolete, then delete file

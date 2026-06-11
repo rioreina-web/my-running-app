@@ -1,0 +1,6 @@
+# Known exceptions for the function-inventory drift check.
+# Format: <slug> <repo-only|prod-only>
+# Remove each line when resolved.
+
+post-run-reconciliation repo-only   # dark by design — pending consolidation into process-workout-upload (docs/roadmap.md); depends on coaching_feedback table that doesn't exist in prod
+coaching-feedback prod-only         # dead in prod, pending: supabase functions delete coaching-feedback --project-ref aqdijapxmjqaetursrde
