@@ -29,7 +29,7 @@
  *   { training_log_id: string }
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
@@ -323,7 +323,7 @@ async function generateInsight(
         scheduled as CoachScheduledLite,
         {
           averagePaceSec: executedPaceSec,
-          paceSegments: log.pace_segments ?? [],
+          paceSegments: (log.pace_segments ?? []) as ExecutedSummary["paceSegments"],
         } satisfies ExecutedSummary,
         coachCtx.zones,
       )

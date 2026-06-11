@@ -40,9 +40,10 @@ const RATE_LIMIT_SRC = new URL("./rateLimit.ts", import.meta.url).pathname;
  */
 const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   { fn: "coaching-agent",         feature: "coaching" },
-  { fn: "injury-analysis",        feature: "injury_analysis" },
-  { fn: "training-analysis",      feature: "analysis" },
-  { fn: "fitness-predictor",      feature: "predictor" },
+  // injury-analysis, training-analysis, fitness-predictor — DELETED
+  // 2026-06-11 (dead functions: zero usage_tracking rows ever; the first
+  // two were the last Gemini callers among the dead set). Removed from
+  // prod and repo together; see docs/ops-delivery-roadmap-2026-06-10.md.
   { fn: "parse-training-plan",    feature: "parse" },
   { fn: "parse-training-week",    feature: "parse" },
   { fn: "parse-workout-structure", feature: "parse" },
@@ -52,7 +53,9 @@ const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   { fn: "generate-training-plan", feature: "plan_builder" },
   { fn: "reschedule-plan",        feature: "reschedule" },
   { fn: "weekly-coaching-report", feature: "weekly_review" },
-  { fn: "weekly-plan-review",     feature: "weekly_review" },
+  // weekly-plan-review — CUT 2026-06-10. Never deployed to prod (cron from
+  // 20260416400000 never scheduled). Untested LLM prompt making load
+  // decisions + voice mismatch with the Maya observation-first posture.
   { fn: "generate-workout-insight", feature: "workout_insight" },
   // W2.3-follow-up — auth gated via requireAuthOrServiceRole, rate-limit
   // wired in the same PR. Service-role callers bypass the user-keyed

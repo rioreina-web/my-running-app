@@ -1,0 +1,67 @@
+# Record eval cassettes — one-click, key stays in GitHub secrets
+#
+# Phase 2.4 of docs/ops-delivery-roadmap-2026-06-10.md. Runs
+# _evals/record.ts against the live model, then opens a PR with the
+# recorded cassettes so the diff is reviewed like any other change
+# (never auto-commits to the working branch).
+#
+# Cost: ~$0.001/call; a full re-record is < $0.05 (see record.ts header).
+#
+# Required repo secret: GEMINI_API_KEY
+
+name: Record evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Prompt to record (e.g. reschedule-plan.v1) or --all"
+        type: string
+        default: "--all"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  record:
+    name: Record cassettes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Record
+        id: record
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # record.ts exits 1 if any rubric failed but still writes cassettes;
+        # we want the PR either way so the diff can be reviewed.
+        continue-on-error: true
+        run: |
+          deno run --allow-net --allow-read --allow-write --allow-env \
+            _evals/record.ts "${{ inputs.prompt }}" | tee /tmp/record-report.txt
+
+      - name: Open PR with recorded cassettes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: evals/record-${{ github.run_id }}
+          title: "Evals: recorded cassettes (${{ inputs.prompt }})"
+          commit-message: "Evals: record cassettes (${{ inputs.prompt }})"
+          body: |
+            Automated cassette recording run.
+
+            - Prompt: `${{ inputs.prompt }}`
+            - Rubric result: ${{ steps.record.outcome == 'success' && 'ALL PASSED' || 'FAILURES — review the report' }}
+            - Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Review the recorded responses against docs/coaching/principles.md
+            before merging (CLAUDE.md hard rule #3).
+          add-paths: |
+            supabase/functions/_evals/cassettes/**

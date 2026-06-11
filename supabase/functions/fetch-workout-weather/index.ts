@@ -9,17 +9,35 @@
  * Used by:
  *   - scheduled_workouts trigger (forecast for next 7 days on plan creation)
  *   - training_logs trigger (actual conditions at workout time)
- *   - weekly-plan-review (forecast for quality sessions)
+ *   - (weekly-plan-review consumed this too — CUT 2026-06-10)
  *   - iOS drag-and-drop preview (forecast for target day)
  *
  * Also supports batch mode: {plan_id, kind: "forecast_week"} to populate
  * forecasts for all scheduled workouts in the next 7 days.
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { buildWeatherJson } from "../_shared/pace-heat-adjustment.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+
+// Untyped clients (no generated Database type) resolve their schema generic to
+// `never` under the current supabase-js typings, which makes every query row
+// `never` and breaks `ReturnType<typeof createClient>` param matching. Use a
+// loosened client alias so query results are typed by explicit row interfaces
+// at the call site instead.
+// deno-lint-ignore no-explicit-any
+type SupabaseClientLike = SupabaseClient<any, any, any>;
+
+// Row shape returned by the weather_cache read in getCached().
+interface WeatherCacheRow {
+  temperature_f: number | null;
+  dew_point_f: number | null;
+  humidity: number | null;
+  wind_speed_mph: number | null;
+  weather_code: number | null;
+  fetched_at: string;
+}
 
 // WMO weather code → condition string (matches WeatherCondition in Swift)
 function wmoToCondition(code: number): string {
@@ -101,18 +119,19 @@ function extractHourData(
 // Forecast vs actual share a slot; actuals overwrite stale forecasts after the run.
 
 async function getCached(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientLike,
   latKey: number,
   lonKey: number,
   hourKey: number,
 ): Promise<Record<string, unknown> | null> {
-  const { data } = await supabase
+  const { data: raw } = await supabase
     .from("weather_cache")
     .select("temperature_f, dew_point_f, humidity, wind_speed_mph, weather_code, fetched_at")
     .eq("lat_key", latKey)
     .eq("lon_key", lonKey)
     .eq("hour_key", hourKey)
     .maybeSingle();
+  const data = raw as WeatherCacheRow | null;
   if (!data || data.temperature_f == null || data.dew_point_f == null) return null;
   return buildWeatherJson(
     data.temperature_f,
@@ -126,7 +145,7 @@ async function getCached(
 }
 
 async function setCache(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClientLike,
   latKey: number,
   lonKey: number,
   hourKey: number,
@@ -394,7 +413,7 @@ Deno.serve(async (req: Request) => {
       const lonKey = Math.round(lon * 100);
       const hourBucket = Math.floor(ts.getTime() / 3600000);
 
-      let weather = await getCached(supabase, latKey, lonKey, hourBucket, "forecast");
+      let weather = await getCached(supabase, latKey, lonKey, hourBucket);
       if (!weather) {
         const data = await fetchFromOpenMeteo(lat, lon, w.date, "forecast");
         if (data) {
@@ -404,7 +423,7 @@ Deno.serve(async (req: Request) => {
               hourData.tempF, hourData.dewF, hourData.humidity,
               hourData.windMph, hourData.condition, new Date().toISOString()
             );
-            await setCache(supabase, latKey, lonKey, hourBucket, "forecast", weather);
+            await setCache(supabase, latKey, lonKey, hourBucket, hourData);
           }
         }
       }

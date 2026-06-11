@@ -108,13 +108,17 @@ Deno.serve(async (req: Request) => {
         trigger_type: paceProp.delta_seconds < 0
           ? "pace_over_target"
           : "pace_under_target",
+        // The shared AdaptationProposal type declares trigger_evidence as
+        // unknown[], but every producer stores a structured evidence object.
+        // Cast to satisfy the type without changing the runtime value; the
+        // _shared interface should be widened to unknown[] | Record<string, unknown>.
         trigger_evidence: {
           source: "pace_adjuster",
           zone: paceProp.zone,
           delta_seconds: paceProp.delta_seconds,
           evidence_reconciliation_ids: paceProp.evidence_reconciliation_ids,
           reasoning: paceProp.reasoning,
-        },
+        } as unknown as unknown[],
         action_type: "reprice_future_paces",
         action_payload: {
           zone: paceProp.zone,

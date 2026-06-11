@@ -1,0 +1,84 @@
+# Deploy — Supabase migrations + edge functions
+#
+# Phase 1 of docs/ops-delivery-roadmap-2026-06-10.md. Trigger is MANUAL
+# (workflow_dispatch) until the Phase-3 safety nets (post-deploy smoke,
+# tested rollback) exist. Phase 4 flips the trigger to `push: branches [main]`
+# — that one-line change is the "true CD" switch.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  — personal access token (supabase.com/dashboard/account/tokens)
+#   SUPABASE_DB_PASSWORD   — prod database password (needed by db push)
+#   SUPABASE_PROJECT_REF   — aqdijapxmjqaetursrde (secret to keep it out of logs)
+#
+# Hard rules this workflow enforces (docs/migration-ledger-reconciliation-2026-06-11.md):
+#   - db push is the ONLY path migrations reach prod
+#   - dry-run is printed before the real push so the run log shows exactly
+#     what was applied
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_migrations:
+        description: "Apply pending migrations (db push)"
+        type: boolean
+        default: true
+      deploy_functions:
+        description: "Deploy all edge functions"
+        type: boolean
+        default: true
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false # never cancel a half-finished prod deploy
+
+jobs:
+  deploy:
+    name: Deploy to prod
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Migration ledger status (pre-deploy)
+        run: supabase migration list --linked
+
+      - name: Apply migrations (dry-run first)
+        if: ${{ inputs.deploy_migrations }}
+        run: |
+          set -e
+          echo "::group::db push --dry-run"
+          supabase db push --dry-run
+          echo "::endgroup::"
+          supabase db push
+          supabase migration list --linked
+
+      - name: Deploy edge functions
+        if: ${{ inputs.deploy_functions }}
+        run: |
+          set -e
+          # Deploy every function directory in the repo. Functions deleted
+          # from the repo must be deleted from prod explicitly
+          # (supabase functions delete <name>) — deploy does not prune.
+          supabase functions deploy --project-ref "$PROJECT_REF"
+
+      - name: Post-deploy smoke tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: bash .github/scripts/post_deploy_smoke.sh
+
+      - name: Post-deploy function inventory
+        run: supabase functions list --project-ref "$PROJECT_REF"

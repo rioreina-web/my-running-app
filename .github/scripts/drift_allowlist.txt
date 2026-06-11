@@ -1,0 +1,9 @@
+# Consciously-unapplied migrations — see
+# docs/migration-ledger-reconciliation-2026-06-11.md, Step 3.
+# Remove each line when the migration is applied or the file is deleted.
+# (The two daily_coaching_reads migrations were quarantined 2026-06-11 —
+# they no longer live in supabase/migrations/, so no allowlist entry.)
+
+20260611120000  # trigger_evaluate_coachable_moment — no-op stub, applies harmlessly on next db push
+20260611130000  # workout_type_vocabulary — apply after branch-testing the strides backfill
+20260611140000  # backfill_workout_insights_via_outbox — NEEDED (133 backfill candidates in prod, outbox empty); apply then invoke backfill_workout_insights()

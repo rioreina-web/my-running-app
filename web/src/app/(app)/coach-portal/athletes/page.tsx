@@ -53,7 +53,9 @@ export default async function CoachAthletesPage() {
     .eq("status", "active")
     .order("created_at", { ascending: false });
 
-  const subscriptions = (subs ?? []) as Array<{
+  // Supabase types a to-one embed (`plan_templates!inner`) as an array, but at
+  // runtime it returns a single object. Bridge via `unknown` per TS guidance.
+  const subscriptions = (subs ?? []) as unknown as Array<{
     id: string;
     athlete_user_id: string;
     created_at: string;
@@ -81,6 +83,7 @@ export default async function CoachAthletesPage() {
   // Bulk-fetch the last 6 weeks of training_logs miles per athlete to
   // power the sparkline. Schema columns are workout_date (timestamptz)
   // and workout_distance_miles — not date / distance_miles.
+  const nowMs = new Date().getTime();
   const sixWeeksAgo = new Date();
   sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 7 * 6);
   const { data: logs } = await supabase
@@ -95,7 +98,7 @@ export default async function CoachAthletesPage() {
   for (const id of athleteIds) milesByAthleteByWeek.set(id, [0, 0, 0, 0, 0, 0]);
   for (const row of (logs ?? []) as Array<{ user_id: string; workout_date: string; workout_distance_miles: number | null }>) {
     const d = new Date(row.workout_date);
-    const weeksAgo = Math.min(5, Math.max(0, Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 7))));
+    const weeksAgo = Math.min(5, Math.max(0, Math.floor((nowMs - d.getTime()) / (1000 * 60 * 60 * 24 * 7))));
     const bucketIdx = 5 - weeksAgo; // 0 = oldest, 5 = current week
     const bucket = milesByAthleteByWeek.get(row.user_id);
     if (bucket && row.workout_distance_miles != null) bucket[bucketIdx] += row.workout_distance_miles;
@@ -195,7 +198,7 @@ export default async function CoachAthletesPage() {
     const planStart = new Date(s.created_at);
     const weeksIn = Math.max(
       1,
-      Math.min(s.plan_template.duration_weeks, Math.ceil((Date.now() - planStart.getTime()) / (1000 * 60 * 60 * 24 * 7)))
+      Math.min(s.plan_template.duration_weeks, Math.ceil((nowMs - planStart.getTime()) / (1000 * 60 * 60 * 24 * 7)))
     );
 
     const paceAdherence: RosterAthlete["paceAdherence"] =

@@ -120,7 +120,7 @@ export function PlanAssignmentModal({
           <p className="text-sm text-[var(--color-text-secondary)] mt-1">{planName}</p>
           {planType === "adaptive" && (
             <p className="text-[10px] text-[var(--color-mood-positive)] mt-1">
-              Adaptive — workouts will be personalized based on the athlete's fitness
+              Adaptive — workouts will be personalized based on the athlete&apos;s fitness
             </p>
           )}
         </div>

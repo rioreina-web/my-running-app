@@ -1,0 +1,91 @@
+# Drift detector — proves repo HEAD == prod, twice a day
+#
+# Phase 2 of docs/ops-delivery-roadmap-2026-06-10.md. Drift becomes a
+# failing scheduled run (and a repo issue) instead of something discovered
+# in an audit six weeks later.
+#
+# Checks:
+#   1. Migration ledger: every repo file has a matching prod ledger entry
+#      and vice versa (version + name).
+#   2. Function inventory: the set of edge functions in prod equals the
+#      set of function directories in the repo (no dark functions, no
+#      zombies).
+#
+# Uses the same secrets as deploy.yml. On drift, the run fails and opens
+# (or updates) an issue labeled `drift`.
+
+name: Drift detector
+
+on:
+  schedule:
+    - cron: "17 6,18 * * *" # 06:17 + 18:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  detect:
+    name: Compare repo vs prod
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Check migration ledger
+        id: migrations
+        run: |
+          set -e
+          supabase migration list --linked --output json > /tmp/remote_migrations.json || {
+            # Fallback: parse the table output if --output json unsupported
+            supabase migration list --linked > /tmp/remote_migrations.txt
+          }
+          python3 .github/scripts/check_migration_drift.py
+
+      - name: Check function inventory
+        id: functions
+        run: |
+          set -e
+          supabase functions list --project-ref "$PROJECT_REF" --output json > /tmp/remote_functions.json
+          python3 .github/scripts/check_function_drift.py
+
+      - name: Open drift issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "Drift detected: prod != repo HEAD";
+            const body = [
+              "The scheduled drift detector found prod out of sync with the repo.",
+              "",
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              "",
+              "Fix forward via the Deploy workflow, or reconcile per docs/migration-ledger-reconciliation-2026-06-11.md.",
+              "Do NOT fix via dashboard/MCP ad-hoc changes — that is how drift happens."
+            ].join("\n");
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: "open", labels: "drift"
+            });
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ["drift"]
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issues.data[0].number, body
+              });
+            }

@@ -71,13 +71,17 @@ export function MoveDaySheet({
     };
   });
 
-  // Reset selection whenever sheet re-opens
-  useEffect(() => {
+  // Reset selection whenever the sheet transitions closed → open. Done during
+  // render (not in an effect) via the "adjust state when a prop changes"
+  // pattern, avoiding the cascading-render hazard of setState-in-effect.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
     if (open) {
       setSelected(null);
       setError(null);
     }
-  }, [open]);
+  }
 
   // Close on Escape
   useEffect(() => {

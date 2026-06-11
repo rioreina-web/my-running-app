@@ -11,7 +11,7 @@
  * Returns: mood, readiness, recommendation, plan_action, cleaned_notes
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { updateAthleteState } from "../_shared/athlete-state.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
@@ -332,7 +332,7 @@ Deno.serve(async (req: Request) => {
     console.error("Check-in processing error:", error);
 
     try {
-      const { record } = await (arguments[0] as Request).clone().json();
+      const { record } = await req.clone().json();
       if (record?.id) {
         await supabase
           .from("training_logs")

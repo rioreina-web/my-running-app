@@ -17,14 +17,29 @@ export function WorkoutDetail({
   const [activeTab, setActiveTab] = useState<"splits" | "hr" | "effort">("splits");
 
   useEffect(() => {
-    if (log.vital_workout_id) {
-      setLoading(true);
-      fetch(`/api/vital-stream?id=${log.vital_workout_id}`)
-        .then((r) => r.json())
-        .then(setData)
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    }
+    const id = log.vital_workout_id;
+    if (!id) return;
+    let cancelled = false;
+    // Kick off the request, then flip loading on inside the promise chain so
+    // we never call setState synchronously in the effect body (which would
+    // trigger cascading renders). Cancellation guards against late responses
+    // resolving after the workout has changed/unmounted.
+    Promise.resolve()
+      .then(() => {
+        if (!cancelled) setLoading(true);
+        return fetch(`/api/vital-stream?id=${id}`);
+      })
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [log.vital_workout_id]);
 
   const summary = data?.summary;

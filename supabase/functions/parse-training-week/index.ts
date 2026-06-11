@@ -121,12 +121,15 @@ Deno.serve(async (req: Request) => {
     const genAI = new GoogleGenerativeAI(geminiKey);
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
+      // `thinkingConfig` is supported by the Gemini 2.5 runtime but is not yet
+      // present in @google/generative-ai@0.24.0's GenerationConfig type. Cast
+      // to keep the runtime payload unchanged while satisfying the type check.
       generationConfig: {
         maxOutputTokens: 16384,
         temperature: 0.3,
         responseMimeType: "application/json",
         thinkingConfig: { thinkingBudget: 0 },
-      },
+      } as Record<string, unknown>,
     });
 
     const prompt = buildPrompt(body.text, body.goalTimeSeconds, body.raceDistance, body.currentPhase);

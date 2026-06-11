@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { DropCap } from "@/components/ui/drop-cap";
@@ -33,12 +34,12 @@ export default async function BlogPostPage({
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-16">
-      <a
+      <Link
         href="/blog"
         className="inline-block font-body text-xs italic text-text-tertiary hover:text-coral transition-colors"
       >
         ← Back to blog
-      </a>
+      </Link>
 
       <article className="mt-8">
         <div className="font-mono text-xs text-text-tertiary">

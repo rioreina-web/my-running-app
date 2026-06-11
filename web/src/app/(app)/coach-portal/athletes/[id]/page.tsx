@@ -120,6 +120,7 @@ export default async function CoachAthleteDetailPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
+  const nowMs = new Date().getTime();
 
   const {
     data: { user },
@@ -340,7 +341,7 @@ export default async function CoachAthleteDetailPage({
 
   // 1. Injury mentions in last 14 days
   const recentInjuries = injuryMentions.filter(
-    (m) => m.date.getTime() > Date.now() - 14 * 86400000
+    (m) => m.date.getTime() > nowMs - 14 * 86400000
   );
   if (recentInjuries.length > 0) {
     const lastWord = recentInjuries[0].match.toLowerCase();

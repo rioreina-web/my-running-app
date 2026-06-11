@@ -40,7 +40,7 @@
  *      WHERE status='in_progress' AND last_attempted_at < NOW() - INTERVAL '5 min';
  */
 
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
 

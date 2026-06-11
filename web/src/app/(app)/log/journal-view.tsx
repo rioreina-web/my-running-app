@@ -189,8 +189,15 @@ function JournalEntry({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [draft, setDraft] = useState(log);
 
-  // Sync draft when log updates via realtime
-  useEffect(() => { if (!editing) setDraft(log); }, [log, editing]);
+  // Sync draft when log updates via realtime. Done during render (not in an
+  // effect) so the new value is available immediately and we avoid the
+  // cascading-render hazard of setState-in-effect. Mirrors React's
+  // "adjusting state when a prop changes" pattern.
+  const [syncedLog, setSyncedLog] = useState(log);
+  if (!editing && syncedLog !== log) {
+    setSyncedLog(log);
+    setDraft(log);
+  }
 
   const d = new Date(log.workout_date || log.created_at);
   const dayName = d.toLocaleDateString("en-US", { weekday: "long" });

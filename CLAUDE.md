@@ -143,6 +143,10 @@ Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
 8. **No em-dashes as empty-state placeholders.** Every empty cell uses
    the empty-state component (eyebrow + plain-prose nudge + optional CTA).
    See `outputs/new-user-action-plan.md` and the empty-state component spec.
+9. **Migrations reach prod only via `supabase db push` from a committed
+   SHA.** No dashboard SQL-editor or MCP `apply_migration` against prod —
+   ad-hoc applies are how the ledger diverged (17 re-stamped entries, 2
+   ghost migrations). See `docs/migration-ledger-reconciliation-2026-06-11.md`.
 
 ## Conventions
 
@@ -373,19 +377,26 @@ parity is hard (and the three-thing fix path) in
   10 stubs need athlete-side inputs; 1 needs production library
   wired. Phase 1 of Maya's roadmap closes this out. Until then,
   prompt changes need manual review against `docs/coaching/principles.md`.
+  **CI now enforces the gate (2026-06-11):** a PR that modifies a file in
+  `_shared/prompts/` fails unless `_evals/cassettes/<prompt>/` exists
+  (`.github/scripts/check_eval_coverage.py`).
 - **Edge function consolidation pending.** ~39 functions; `parse-*` ×4
   could collapse to one router-dispatched parser. New code should not
   add to overlap clusters.
-- **Real-time synthesis trigger missing.** Rules engine + evaluator exist
-  (`_shared/rules/`, `evaluate-coachable-moment`); a `training_log`
-  trigger fires `generate-workout-insight` (`20260428110000`) but **no
-  trigger fires `evaluate-coachable-moment`**. One-migration fix; mirror
-  the existing trigger. Task #23.
-- **`user_profiles` table doesn't exist in production.** Defensive
-  workarounds scattered across web, iOS, and one edge function.
-  Central cleanup is Phase 5 of Maya's roadmap. See
-  `outputs/profile-table-audit-2026-05-22.md` for the 7-phase punch
-  list.
+- **Real-time synthesis trigger: RESOLVED (verified in prod 2026-06-11).**
+  The outbox pair (`20260518100000_coachable_moment_outbox_trigger` +
+  `20260518110000_drain_coachable_moment_jobs_cron`) is applied in prod and
+  `drain-coachable-moment-jobs` is deployed. Task #23 closed.
+- **`user_profiles` table doesn't exist in production.** Root cause found
+  2026-06-11: the January migration's malformed filename
+  (`20260128_152000_user_profile.sql`) parsed as version `20260128`,
+  colliding with the applied `fix_vector_search`, so the CLI silently
+  skipped it; file now quarantined in `supabase/migrations_quarantine/`.
+  **Escalated to feature blocker** — the Daily Read cron + workout-trigger
+  migrations are quarantined behind this decision. Defensive workarounds
+  remain across web, iOS, and one edge function. See
+  `outputs/profile-table-audit-2026-05-22.md` and
+  `docs/migration-ledger-reconciliation-2026-06-11.md`.
 - **`_shared/athlete-state.ts` is 1481 LOC with P0 bugs.** Refactor
   designed at `athlete-state-refactor-design.md`. Blocked on eval
   harness coverage so we can refactor without silently changing AI
@@ -396,8 +407,11 @@ parity is hard (and the three-thing fix path) in
   `.claude/worktrees/*` — do not source from there.
 - **Stale worktrees in `.claude/`.** Read-only artifacts. Do not source
   files from them.
-- **Production blockers** (from `outputs/production-readiness-rundown.md`):
-  No CI, Supabase prod config in dev mode, public landing page
+- **Production blockers** (from `outputs/production-readiness-rundown.md`,
+  updated 2026-06-11): CI exists (`.github/workflows/ci.yml`) plus Deploy
+  workflow, drift detector, and smoke tests (`docs/ops-delivery-roadmap-2026-06-10.md`)
+  — pending GitHub secrets + branch protection. Still open: Supabase prod
+  config in dev mode, public landing page
   contradicts the wedge, legal docs TODO-laden. Engineering work,
   Phase 8.
 

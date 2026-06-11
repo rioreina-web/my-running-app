@@ -1,0 +1,6 @@
+# Known exceptions for the function-inventory drift check.
+# Format: <slug> <repo-only|prod-only>
+# Remove each line when resolved.
+
+post-run-reconciliation repo-only   # dark by design — pending consolidation into process-workout-upload (docs/roadmap.md); depends on coaching_feedback table that doesn't exist in prod
+coaching-feedback prod-only         # DO NOT DELETE — verified 2026-06-11 still called by shipped iOS app (RunningLog/Coaching/CoachView.swift:525; see CoachReadCard.swift "coaching-feedback still writes"). Source was removed from the repo, so prod has a function the repo can't reproduce (violates reproducibility). Correct fix: restore supabase/functions/coaching-feedback/ to the repo OR remove the iOS caller — NOT a delete.

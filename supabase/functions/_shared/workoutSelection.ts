@@ -160,7 +160,10 @@ export interface PaceZones {
   steady: number;
   marathon: number;
   halfMarathon: number;
-  threshold: number;
+  // NOTE: no `threshold` field. The PaceEngine's LegacyPaceZones (the only
+  // producer, via legacyZonesFromSnapshot) does not emit threshold, and no
+  // consumer reads it — LT/threshold lives in the new 10-zone taxonomy. The
+  // stale field made this shim's return type incompatible with the engine.
   tenK: number;
   fiveK: number;
 }

@@ -5,7 +5,7 @@
  * Analyzes the block: pace zone improvements, load management, mood.
  * Recommends changes for the next block.
  */
-import { createClient } from "jsr:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
@@ -100,7 +100,7 @@ Deno.serve(async (req: Request) => {
 
     const logs = logsResult.data || [];
     const prevLogs = prevLogsResult.data || [];
-    const snapshots = snapshotsResult.data || [];
+    const snapshots = (snapshotsResult.data || []) as Record<string, unknown>[];
     const injuries = injuriesResult.data || [];
     const plan = planResult.data?.[0] || null;
 

@@ -34,11 +34,12 @@ export default async function DashboardPage() {
   const supabase = await createClient();
 
   const now = new Date();
+  const nowMs = now.getTime();
   const fourWeeksAgoISO = new Date(
-    Date.now() - 28 * 24 * 60 * 60 * 1000
+    nowMs - 28 * 24 * 60 * 60 * 1000
   ).toISOString();
-  const twoWeeksAgoDate = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-  const weekAgoDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const twoWeeksAgoDate = new Date(nowMs - 14 * 24 * 60 * 60 * 1000);
+  const weekAgoDate = new Date(nowMs - 7 * 24 * 60 * 60 * 1000);
 
   const [logsResult, injuriesResult, goalsResult] = await Promise.all([
     supabase
@@ -162,8 +163,8 @@ export default async function DashboardPage() {
   // Weekly mileage for mini chart (4 weeks)
   const weeklyMileage: { label: string; miles: number }[] = [];
   for (let i = 3; i >= 0; i--) {
-    const wStart = new Date(Date.now() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
-    const wEnd = new Date(Date.now() - i * 7 * 24 * 60 * 60 * 1000);
+    const wStart = new Date(nowMs - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+    const wEnd = new Date(nowMs - i * 7 * 24 * 60 * 60 * 1000);
     const wLogs = logs.filter((l) => {
       const d = new Date(l.workout_date || l.created_at);
       return d >= wStart && d < wEnd;

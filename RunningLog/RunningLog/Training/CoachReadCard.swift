@@ -8,7 +8,7 @@
 //  the DB and never reach the athlete.
 //
 //  Data sources (all populated by backend edge functions):
-//    - coaching_adjustments: weekly-plan-review decisions
+//    - coaching_adjustments: plan adjustment decisions (weekly-plan-review CUT 2026-06-10; coaching-feedback still writes)
 //    - ai_insights (type=run_reconciliation): post-run pace deltas
 //    - scheduled_workouts.weather_forecast: heat warnings for upcoming quality days
 //

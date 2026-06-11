@@ -81,7 +81,7 @@ ALTER DATABASE postgres SET app.settings.supabase_url = 'https://aqdijapxmjqaetu
 ALTER DATABASE postgres SET app.settings.service_role_key = '<paste service-role JWT>';
 ```
 
-Without these, the adaptive triggers (reconcile-log, weekly-plan-review,
+Without these, the adaptive triggers (reconcile-log,
 post-run-reconciliation) silently no-op with `RAISE WARNING`.
 
 Migrations that depend on these settings:
