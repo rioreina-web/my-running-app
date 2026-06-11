@@ -40,9 +40,10 @@ const RATE_LIMIT_SRC = new URL("./rateLimit.ts", import.meta.url).pathname;
  */
 const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   { fn: "coaching-agent",         feature: "coaching" },
-  { fn: "injury-analysis",        feature: "injury_analysis" },
-  { fn: "training-analysis",      feature: "analysis" },
-  { fn: "fitness-predictor",      feature: "predictor" },
+  // injury-analysis, training-analysis, fitness-predictor — DELETED
+  // 2026-06-11 (dead functions: zero usage_tracking rows ever; the first
+  // two were the last Gemini callers among the dead set). Removed from
+  // prod and repo together; see docs/ops-delivery-roadmap-2026-06-10.md.
   { fn: "parse-training-plan",    feature: "parse" },
   { fn: "parse-training-week",    feature: "parse" },
   { fn: "parse-workout-structure", feature: "parse" },
