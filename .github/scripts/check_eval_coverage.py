@@ -26,8 +26,12 @@ CASSETTES_DIR = "supabase/functions/_evals/cassettes"
 
 
 def changed_files(base: str) -> list[str]:
+    # --diff-filter=d EXCLUDES deletions: a deleted prompt has no behavior
+    # left to validate, so it must not demand a cassette (otherwise cutting
+    # a prompt is impossible without recording a cassette for a file that
+    # no longer exists). Added/Copied/Modified/Renamed still count.
     out = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...HEAD"],
+        ["git", "diff", "--name-only", "--diff-filter=d", f"{base}...HEAD"],
         capture_output=True, text=True, check=True,
     ).stdout
     return [l.strip() for l in out.splitlines() if l.strip()]
