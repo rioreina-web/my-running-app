@@ -132,3 +132,14 @@ jobs:
       - name: supabase db lint (remote)
         if: ${{ env.SUPABASE_DB_URL != '' }}
         run: supabase db lint --db-url "$SUPABASE_DB_URL" --schema public --fail-on error
+
+  eval-gate:
+    name: Eval coverage gate (prompts)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need base ref for the diff
+      - name: Check prompt changes have cassette coverage
+        run: python3 .github/scripts/check_eval_coverage.py "origin/${{ github.base_ref }}"

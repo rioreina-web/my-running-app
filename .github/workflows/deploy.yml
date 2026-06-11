@@ -74,5 +74,11 @@ jobs:
           # (supabase functions delete <name>) — deploy does not prune.
           supabase functions deploy --project-ref "$PROJECT_REF"
 
+      - name: Post-deploy smoke tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: bash .github/scripts/post_deploy_smoke.sh
+
       - name: Post-deploy function inventory
         run: supabase functions list --project-ref "$PROJECT_REF"
