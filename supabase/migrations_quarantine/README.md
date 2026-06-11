@@ -16,3 +16,13 @@ Do not move it back. The January schema almost certainly no longer matches
 the app. Phase 5 of the Maya roadmap decides: rewrite as a fresh
 current-schema migration, or drop the table concept and remove the
 workarounds. See docs/migration-ledger-reconciliation-2026-06-11.md, Step 3.
+
+## 20260519110000_daily_coaching_reads_cron.sql / 20260519120000_daily_coaching_reads_workout_trigger.sql
+
+The Daily Read automation pair — confirmed unapplied in prod and BLOCKED on
+the user_profiles decision (the cron migration does
+`ALTER TABLE user_profiles ADD COLUMN timezone`; the trigger reads that
+column). Quarantined 2026-06-11 so an accidental `db push` can't apply them
+half-broken. Move back (with fresh timestamps) in the same change that
+creates user_profiles. Until then the deployed `coaching-daily-read`
+function only runs on demand.
