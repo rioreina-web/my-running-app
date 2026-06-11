@@ -37,18 +37,18 @@ Caveat: verify each renamed file's content matches what prod ran (`select statem
 
 ## Step 2 — Prod-only migrations (recovered)
 
-- `20260610230628_harden_outbox_rpcs_and_pricing_rls.sql` — **DONE 2026-06-11**: SQL recovered from the prod ledger and committed to the repo. Already applied in prod.
-- `20260128 fix_vector_search` — prod has it (2 statements), repo has no file. Recover the same way (`select statements ... where version='20260128'`) and commit as `20260128_fix_vector_search.sql` — but only AFTER Step 3's user_profile rename clears the version collision (see below).
+- `20260610230628_harden_outbox_rpcs_and_pricing_rls.sql` — **DONE 2026-06-11**: recovered from prod ledger, committed.
+- `20260128_fix_vector_search.sql` — **DONE 2026-06-11**: recovered from prod ledger, committed (the user_profile collision was cleared first — see Step 3).
 
 ## Step 3 — The 5 genuinely-unapplied repo migrations
 
 | File | Prod evidence | Disposition |
 |------|--------------|-------------|
-| `20260128_152000_user_profile.sql` | `user_profiles` table absent. **Root cause found:** the malformed filename parses as version `20260128`, which collides with prod's applied `fix_vector_search` (also `20260128`), so the CLI has silently skipped it since January. This is the origin of the known "user_profiles doesn't exist in prod" P0 and its three layers of workarounds. | Decide: the January schema (TEXT user_id, etc.) likely no longer matches the app. Either rewrite as a fresh, current-schema migration with a 2026-06 timestamp, or formally drop the table concept and remove the workarounds. Do NOT just fix the timestamp and push. |
+| `20260128_152000_user_profile.sql` | `user_profiles` table absent. **Root cause found:** the malformed filename parses as version `20260128`, which collides with prod's applied `fix_vector_search` (also `20260128`), so the CLI has silently skipped it since January. This is the origin of the known "user_profiles doesn't exist in prod" P0 and its three layers of workarounds. | **QUARANTINED 2026-06-11** → `supabase/migrations_quarantine/` (see its README). Decision still required: rewrite as fresh current-schema migration, or drop the concept. **Escalated from Phase-5 cleanup to feature blocker** — see the two daily_coaching_reads rows below. |
 | `20260520120000_workout_type_vocabulary.sql` | **Confirmed unapplied.** Prod `scheduled_workouts` CHECK is still the old 9-value list (has `strides`, missing `fartlek`/`hills`); `quality_session_templates` likewise. The app's canonical 10-type taxonomy will fail inserts for fartlek/hills in prod. | Apply (re-stamp to current timestamp, `db push`). Functional fix; test the strides backfill on a branch first. |
-| `20260519110000_daily_coaching_reads_cron.sql` | **Confirmed unapplied** — no matching `cron.job` rows. The `coaching-daily-read` edge function (deployed) never runs on schedule. | Apply (re-stamp, push). |
-| `20260519120000_daily_coaching_reads_workout_trigger.sql` | 1 matching trigger exists in prod — likely folded into prod's `20260522130944_daily_coaching_reads`. | Diff content vs prod's bundle; if covered, delete the repo file; else apply. |
-| `20260515120000_trigger_evaluate_coachable_moment.sql` | 3 coachable-moment triggers exist in prod; possibly covered by prod's outbox migrations. | Diff content vs prod triggers; fold or apply. |
+| `20260519110000_daily_coaching_reads_cron.sql` | **Confirmed unapplied** — no `enqueue_daily_reads` function, no `daily_read_dispatch_log` table, no cron job. The deployed `coaching-daily-read` function never runs on schedule. | **BLOCKED on user_profiles**: this migration does `ALTER TABLE user_profiles ADD COLUMN timezone`, and the table doesn't exist in prod. Cannot apply until the user_profiles decision lands. |
+| `20260519120000_daily_coaching_reads_workout_trigger.sql` | **Confirmed unapplied** — `daily_read_workout_dispatches` table and both `auto_enqueue_daily_read_*` triggers absent (the 1 matching trigger was just `daily_coaching_reads_updated_at_trigger`). | **BLOCKED on user_profiles** (reads `user_profiles.timezone`; soft-fails to UTC, but depends on the cron migration's column). Apply together with the cron after user_profiles lands. |
+| `20260515120000_trigger_evaluate_coachable_moment.sql` | File is a **documented no-op stub** ("SUPERSEDED — DO NOT APPLY" header, empty BEGIN/COMMIT) — the real mechanism shipped as the 20260518 outbox pair, which prod has. | Safe: `db push` will apply the no-op transaction and the ledgers align. Keep. |
 | `20260508160000_backfill_workout_insights_via_outbox.sql` | One-off backfill; outbox infra now live via other migrations. | Likely obsolete — verify then delete the repo file (it never ran in prod). |
 
 ## Step 4 — Verify
@@ -59,6 +59,13 @@ supabase db push --dry-run         # must report only the consciously chosen Ste
 ```
 
 When both are clean, Phase 1 of the ops roadmap (deploy workflow on `db push`) is unblocked.
+
+## Status after 2026-06-11 session
+
+Steps 1 and 2 are DONE (17 renames executed after content spot-checks; both prod-only migrations recovered; user_profile quarantined). Remaining before `migration list` is clean:
+
+1. Run `supabase db push --dry-run` — expected pending set: `trigger_evaluate_coachable_moment` (no-op, safe), `workout_type_vocabulary` (apply after branch test), `backfill_workout_insights_via_outbox` (verify obsolete → delete file), and the two daily_coaching_reads migrations (**do not apply — blocked on user_profiles**). To keep the blocked pair out of an accidental push, consider quarantining them alongside user_profile until that decision lands.
+2. **Escalation:** the user_profiles decision now blocks the Daily Read automation path (cron + workout-trigger re-render are both dark in prod because of it). It should be scheduled as near-term feature work, not Phase-5 cleanup.
 
 ## Hard rules going forward
 
