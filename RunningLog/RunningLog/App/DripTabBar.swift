@@ -33,15 +33,18 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The five canonical tabs. Raw values match the integer tags the
-/// existing `MainTabView` already uses for `selectedTab` — the bar binds
-/// to `Binding<Int>` so no host refactor is required.
+/// The four canonical tabs. Raw values match the integer tags the
+/// `MainTabView` uses for `selectedTab` — the bar binds to `Binding<Int>`
+/// so no host refactor is required.
+///
+/// The old `Train` + `Trends` tabs were collapsed into a single analytical
+/// `Training` tab (see `training-tab-spec.md`), so Coach/Plan shift down a
+/// slot: log 0 · training 1 · coach 2 · plan 3.
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
-    case train = 1
-    case trends = 2
-    case coach = 3
-    case plan = 4
+    case training = 1
+    case coach = 2
+    case plan = 3
 
     var id: Int { rawValue }
 
@@ -50,9 +53,8 @@ enum DripTab: Int, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .log: "Log"
-        case .train: "Train"
-        case .trends: "Trends"
-        case .coach: "Coach"
+        case .training: "Training"
+        case .coach: "The Read"
         case .plan: "Plan"
         }
     }

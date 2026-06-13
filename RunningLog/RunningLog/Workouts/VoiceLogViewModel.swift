@@ -116,9 +116,22 @@ final class VoiceLogViewModel {
             }
         } catch {
             Log.app.error("Failed to upload audio log: \(error)")
-            statusMessage = "Error: \(error.localizedDescription)"
+            // Data-loss guard: a voice memo is the core artifact of a
+            // voice-first product. On failure (offline, 5xx, RLS), DO NOT lose
+            // the recording. Hand it to the offline queue, which preserves the
+            // file on disk and retries on reconnect. The view clears
+            // recordingURL after this returns, so without enqueueing here the
+            // m4a would orphan with no retry path.
+            OfflineQueueManager.shared.enqueueVoiceLog(
+                audioURL: localURL,
+                notes: nil,
+                mood: nil,
+                workoutDate: selectedWorkout?.startDate
+            )
+            statusMessage = "Saved offline — will upload when you're back online."
             isUploading = false
-            ErrorReporter.shared.report(error, context: "upload audio log")
+            ErrorReporter.shared.report(error, context: "upload audio log (queued for retry)")
+            OfflineQueueManager.shared.drainQueue()
         }
     }
 
@@ -207,9 +220,18 @@ final class VoiceLogViewModel {
             }
         } catch {
             Log.app.error("Failed to upload check-in: \(error)")
-            statusMessage = "Error: \(error.localizedDescription)"
+            // Preserve the recording on failure (see uploadAudioAndSaveLog).
+            OfflineQueueManager.shared.enqueueVoiceLog(
+                audioURL: localURL,
+                notes: nil,
+                mood: nil,
+                workoutDate: nil,
+                source: "check_in"
+            )
+            statusMessage = "Saved offline — will upload when you're back online."
             isUploading = false
-            ErrorReporter.shared.report(error, context: "upload check-in")
+            ErrorReporter.shared.report(error, context: "upload check-in (queued for retry)")
+            OfflineQueueManager.shared.drainQueue()
         }
     }
 

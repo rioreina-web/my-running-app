@@ -56,12 +56,13 @@ final class OfflineQueueManager {
 
     /// Queue a voice log upload for later. Preserves the audio file until upload succeeds.
     @MainActor
-    func enqueueVoiceLog(audioURL: URL, notes: String?, mood: String?, workoutDate: Date?) {
+    func enqueueVoiceLog(audioURL: URL, notes: String?, mood: String?, workoutDate: Date?, source: String = "voice_log") {
         guard let container else { return }
         let context = container.mainContext
 
         var payloadDict: [String: String] = [:]
         payloadDict["audioPath"] = audioURL.path
+        payloadDict["source"] = source
         if let notes { payloadDict["notes"] = notes }
         if let mood { payloadDict["mood"] = mood }
         if let date = workoutDate { payloadDict["workoutDate"] = ISO8601DateFormatter().string(from: date) }
@@ -206,28 +207,45 @@ final class OfflineQueueManager {
             return false
         }
 
+        // Must have a real authenticated user — otherwise the storage path
+        // and RLS insert would both be wrong. Keep the item queued.
+        guard let userId = AuthManager.shared.currentUserId, !userId.isEmpty else {
+            logger.error("uploadVoiceLog: no authenticated user — keeping item queued")
+            upload.lastError = "Not signed in"
+            return false
+        }
+
         do {
             let audioData = try Data(contentsOf: audioURL)
-            let userId = AuthManager.shared.currentUserId ?? ""
-            let fileName = "\(userId)/\(Date().ISO8601Format())/\(UUID().uuidString).m4a"
+            let fileName = "\(userId)/\(UUID().uuidString).m4a"
 
+            // Step 1: upload audio to storage (upsert so a partial retry is safe).
             try await supabase.storage
                 .from("training-memos")
-                .upload(fileName, data: audioData, options: .init(contentType: "audio/m4a"))
+                .upload(fileName, data: audioData, options: .init(contentType: "audio/m4a", upsert: true))
 
             let publicURL = try supabase.storage
                 .from("training-memos")
                 .getPublicURL(path: fileName)
 
-            let logData: [String: Any] = [
-                "audio_url": publicURL.absoluteString,
-                "notes": dict["notes"] ?? "",
-                "mood": dict["mood"] ?? "neutral",
-                "user_id": userId,
-                "processing_status": "pending",
-            ]
+            // Step 2: insert the training_logs row exactly like the live path.
+            // The DB trigger (pg_net → process-training-memo) picks it up from
+            // there; we must NOT POST flat fields to the edge function (that
+            // body shape is rejected and skips the row insert entirely).
+            var insertData = TrainingLogInsert(audioUrl: publicURL.absoluteString)
+            insertData.userId = userId
+            insertData.processingStatus = "pending"
+            insertData.source = dict["source"] ?? "voice_log"
+            if let dateStr = dict["workoutDate"],
+               let date = ISO8601DateFormatter().date(from: dateStr) {
+                insertData.workoutDate = date
+            }
 
-            _ = try await callEdgeFunction(name: "process-training-memo", body: logData)
+            _ = try await supabase
+                .from("training_logs")
+                .insert(insertData)
+                .execute()
+
             await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
             return true
         } catch {

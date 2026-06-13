@@ -226,8 +226,9 @@ struct VoiceLogView: View {
     @ViewBuilder
     private var nsCoachCheckInLine: some View {
         Button {
-            // Coach moved to tab 3 when Trends was inserted at slot 2.
-            selectedTab.wrappedValue = 3
+            // Coach is tab 2 since the Train + Trends tabs were collapsed
+            // into a single Training tab (slot 1).
+            selectedTab.wrappedValue = 2
         } label: {
             HStack(spacing: 8) {
                 Text("COACH HAS A CHECK-IN WAITING")

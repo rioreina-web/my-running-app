@@ -37,7 +37,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v2.ts";
+import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v3.ts";
 import { getModelConfig } from "../_shared/router.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
@@ -207,59 +207,61 @@ Deno.serve(async (req) => {
       });
     }
 
-    const systemPrompt = loadPrompt("daily-read.v2", {});
+    const systemPrompt = loadPrompt("daily-read.v3", {});
     const fullPrompt = `${systemPrompt}\n\n${context.contextBlock}\n\nGenerate today's Read for this athlete.`;
 
-    let raw: string;
-    let modelId = modelConfig.model;
-    try {
-      const genAI = new GoogleGenerativeAI(apiKey);
+    const modelId = modelConfig.model;
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    // Generate one Read candidate. Schema-constrained when requested; the
+    // schema-less path is the fallback for models that reject `anyOf`.
+    const generateRaw = async (useSchema: boolean): Promise<string> => {
       const model = genAI.getGenerativeModel({
         model: modelConfig.model,
         generationConfig: {
-          maxOutputTokens: modelConfig.maxTokens,
+          // gemini-2.5-flash "thinking" tokens share this budget. At 2000
+          // the thinking consumed it and the JSON was truncated mid-string
+          // ("Unterminated string in JSON"). 8000 leaves room for both.
+          maxOutputTokens: 8000,
           temperature: 0.6,
           responseMimeType: "application/json",
-          // Schema is best-effort; if a particular Gemini version rejects
-          // `anyOf` we fall back to JSON-mime only — the validator does
-          // the real shape enforcement downstream.
           // deno-lint-ignore no-explicit-any
-          responseSchema: RESPONSE_SCHEMA as any,
+          ...(useSchema ? { responseSchema: RESPONSE_SCHEMA as any } : {}),
         },
       });
       const result = await model.generateContent(fullPrompt);
-      raw = result.response.text();
-    } catch (err) {
-      // Retry without the schema if the SDK/model rejects it. Failure
-      // mode is "schema-related validation error" — different vendors
-      // surface this differently, so we catch broadly and retry once.
-      console.warn("daily-read: schema-enabled call failed, retrying without schema:", err);
+      return result.response.text();
+    };
+
+    // ── 4b/5. Generate + parse with bounded retries ──────────────────
+    // The model occasionally emits an unescaped character (e.g. a stray
+    // quote in a pace) that breaks JSON.parse. A re-roll at temperature
+    // 0.6 almost always clears it, so we try up to MAX_ATTEMPTS times —
+    // schema first, then schema-less re-rolls — before giving up.
+    const MAX_ATTEMPTS = 3;
+    let parsed: DailyReadPayload | null = null;
+    let lastErr = "";
+    let lastRaw = "";
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && parsed === null; attempt++) {
       try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-          model: modelConfig.model,
-          generationConfig: {
-            maxOutputTokens: modelConfig.maxTokens,
-            temperature: 0.6,
-            responseMimeType: "application/json",
-          },
-        });
-        const result = await model.generateContent(fullPrompt);
-        raw = result.response.text();
-      } catch (retryErr) {
-        const message = retryErr instanceof Error ? retryErr.message : String(retryErr);
-        await markFailed(supabase, pending.id, `Gemini call failed: ${message}`);
-        return jsonResponse(502, { error: "Model call failed" });
+        const raw = await generateRaw(attempt === 0);
+        lastRaw = raw;
+        parsed = parseModelResponse(raw);
+      } catch (err) {
+        lastErr = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `daily-read: generate/parse attempt ${attempt + 1}/${MAX_ATTEMPTS} failed: ${lastErr}`,
+        );
       }
     }
-
-    // ── 5. Parse the response ────────────────────────────────────────
-    let parsed: DailyReadPayload;
-    try {
-      parsed = parseModelResponse(raw);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await markFailed(supabase, pending.id, `Parse failed: ${message}`);
+    if (parsed === null) {
+      // DIAGNOSTIC: capture the raw model output so we can see exactly
+      // what broke the parse. Remove once the root cause is fixed.
+      await markFailed(
+        supabase,
+        pending.id,
+        `Parse failed after ${MAX_ATTEMPTS} attempts: ${lastErr} :: RAW=${lastRaw.slice(0, 1500)}`,
+      );
       return jsonResponse(502, { error: "Model returned unparseable JSON" });
     }
 
@@ -608,21 +610,26 @@ async function buildDailyReadContext(
   }
 
   if (logs.length > 0) {
+    // Citation key ONLY — distance/date/quality are the reliable facts here.
+    // The raw workout_type and workout_pace_per_mile columns are the source
+    // of the wrong "tempo @ 7:30/mi" prose, so they are deliberately NOT
+    // rendered: the model reads pace/type/quality from the ATHLETE STATE
+    // "Recent runs" section (parsed work pace + structure). See
+    // outputs/coach-read-effectiveness-plan-2026-06-12.md.
     const lines = logs.slice(0, 30).map((l) => {
       const dist = l.workout_distance_miles ? `${Number(l.workout_distance_miles).toFixed(1)}mi` : "—";
-      const type = (l.workout_type ?? "run") as string;
-      const pace = l.workout_pace_per_mile ? ` @ ${l.workout_pace_per_mile}/mi` : "";
       const dur = l.workout_duration_minutes ? ` (${l.workout_duration_minutes}m)` : "";
-      const mood = l.mood ? ` · mood:${l.mood}` : "";
-      const quality = QUALITY_WORKOUT_TYPES.has(type.toLowerCase()) ? " ★" : "";
-      return `- [${l.id}] ${l.workout_date ?? l.created_at?.slice(0, 10)} · ${type}${quality} · ${dist}${pace}${dur}${mood}`;
+      const type = (l.workout_type ?? "run") as string;
+      const quality = QUALITY_WORKOUT_TYPES.has(type.toLowerCase()) ? " ★quality" : "";
+      const date = (l.workout_date ?? l.created_at?.slice(0, 10)) as string;
+      return `- [${l.id}] ${date} · ${dist}${dur}${quality}`;
     });
     sections.push(
-      `## Recent runs (most recent first — cite by the bracketed id)\n${lines.join("\n")}`,
+      `## Citable workouts (cite by the bracketed id ONLY — read pace, type, and quality from the ATHLETE STATE "Recent runs" section, which carries the parsed work pace and structure; the raw label/pace are unreliable)\n${lines.join("\n")}`,
     );
   } else {
     sections.push(
-      `## Recent runs\nNo logged workouts in the last ${TRAINING_LOG_LOOKBACK_DAYS} days.`,
+      `## Citable workouts\nNo logged workouts in the last ${TRAINING_LOG_LOOKBACK_DAYS} days.`,
     );
   }
 

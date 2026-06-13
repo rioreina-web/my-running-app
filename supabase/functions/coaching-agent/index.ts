@@ -78,7 +78,7 @@ import {
   type InjuryRow,
 } from "../_shared/weeklyAnalytics.ts";
 
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
@@ -522,24 +522,16 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId } = body;
 
-    // Verify authenticated user from JWT.
-    // verify_jwt = true in config.toml ensures only valid Supabase JWTs
-    // (user, anon, or service_role) reach this function. If the JWT contains
-    // a user claim, use it. Otherwise fall back to payloadUserId from the body
-    // (used by iOS app which sends anon key + userId in body).
-    let userId = await getAuthenticatedUser(req);
-
-    if (!userId && payloadUserId) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(payloadUserId)) {
-        userId = payloadUserId;
-        console.log(`Using userId from payload: ${payloadUserId}`);
-      }
-    }
-
-    if (!userId) {
-      return unauthorizedResponse(corsHeaders);
-    }
+    // Verify authenticated caller. Two legitimate caller shapes:
+    //  - End user (iOS / web): presents their own session JWT. The body
+    //    user_id, if present, must match the JWT subject.
+    //  - Service-role (cron / chained edge fn): presents the service key
+    //    and names the subject user in the body.
+    // The previous anon-key + body-userId fallback was an impersonation
+    // hole: anyone with the public anon key could act as any user. Removed.
+    const auth = await requireAuthOrServiceRole(req, payloadUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const userId = auth.userId;
 
     if (!message) {
       return new Response(

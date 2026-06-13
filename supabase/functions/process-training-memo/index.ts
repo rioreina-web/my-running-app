@@ -161,6 +161,25 @@ Deno.serve(async (req) => {
     if ("response" in auth) return auth.response;
     const { userId: authUserId, isServiceRole } = auth;
 
+    // ── Ownership guard (IDOR protection) ─────────────────────────────
+    // The auth gate above only proves the JWT matches the body user_id;
+    // it does NOT prove the training_logs row identified by record.id
+    // belongs to that user. Fetch the row once and require ownership
+    // before any read/write keyed on record.id. Returns 404 (not 403) so
+    // an attacker can't distinguish "not yours" from "doesn't exist".
+    const { data: ownerRow, error: ownerErr } = await supabase
+      .from("training_logs")
+      .select("user_id")
+      .eq("id", recordId)
+      .maybeSingle();
+    if (ownerErr || !ownerRow || ownerRow.user_id !== authUserId) {
+      return new Response(
+        JSON.stringify({ error: "Not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    // From here on, authUserId is the verified owner of record.id.
+
     const rlBlocked = await enforceFeatureRateLimit(authUserId, "voice_memo", corsHeaders, { isServiceRole });
     if (rlBlocked) return rlBlocked;
 
@@ -225,9 +244,7 @@ Deno.serve(async (req) => {
 
     // Coach context fetched in parallel with transcription — adds zone
     // anchors and (if linked) prescribed-vs-executed framing to the prompt.
-    const coachContextPromise = (record as { user_id?: string }).user_id
-      ? loadCoachContext(supabase, (record as { user_id: string }).user_id)
-      : Promise.resolve({ zones: null, goal: null });
+    const coachContextPromise = loadCoachContext(supabase, authUserId);
 
     // Scheduled-workout fetch (when linked) for prescribed-vs-executed.
     const scheduledPromise = (existingRecord as { scheduled_workout_id?: string | null })?.scheduled_workout_id
@@ -252,7 +269,7 @@ Deno.serve(async (req) => {
       ? Math.round((Number(existingDur) * 60) / Number(existingDist))
       : null;
 
-    const userIdForMatcher = (record as { user_id?: string }).user_id;
+    const userIdForMatcher = authUserId;
     const priorPromise = (existingType && existingDist && existingPaceSec && existingDate && userIdForMatcher)
       ? findSimilarPriorWorkout(
           supabase,
@@ -270,7 +287,7 @@ Deno.serve(async (req) => {
     const recentLogsPromise = supabase
       .from("training_logs")
       .select("workout_date, cleaned_notes, mood, workout_notes, workout_distance_miles, workout_type")
-      .eq("user_id", record.user_id)
+      .eq("user_id", authUserId)
       .not("cleaned_notes", "is", null)
       .order("workout_date", { ascending: false })
       .limit(5);
@@ -544,20 +561,37 @@ Deno.serve(async (req) => {
       processing_error: null,
     };
 
-    // Populate workout_type and pace from extracted_data
+    // Populate workout_type and pace from extracted_data — but VALIDATE
+    // first. The LLM can hallucinate out-of-range or malformed values, and
+    // these feed ACWR fallback weights + dedup downstream. Reject anything
+    // implausible rather than poisoning the training history.
     if (analysis.extracted_data) {
-      if (analysis.extracted_data.workout_type) {
-        updatePayload.workout_type = analysis.extracted_data.workout_type;
+      const ed = analysis.extracted_data;
+
+      // workout_type: non-empty string, capped length. (No CHECK constraint
+      // exists on the column yet, so guard here.)
+      if (typeof ed.workout_type === "string") {
+        const wt = ed.workout_type.trim();
+        if (wt.length > 0 && wt.length <= 40) {
+          updatePayload.workout_type = wt;
+        }
       }
-      if (analysis.extracted_data.pace_per_mile) {
-        updatePayload.workout_pace_per_mile = analysis.extracted_data.pace_per_mile;
+
+      // pace_per_mile: must look like M:SS or MM:SS.
+      if (typeof ed.pace_per_mile === "string" && /^\d{1,2}:[0-5]\d$/.test(ed.pace_per_mile.trim())) {
+        updatePayload.workout_pace_per_mile = ed.pace_per_mile.trim();
       }
-      // Only fill distance/duration if not already set from HealthKit
-      if (analysis.extracted_data.distance_miles && !existingRecord?.workout_distance_miles) {
-        updatePayload.workout_distance_miles = analysis.extracted_data.distance_miles;
+
+      // distance_miles: positive, sane upper bound (ultra-distance ceiling).
+      const dist = Number(ed.distance_miles);
+      if (Number.isFinite(dist) && dist > 0 && dist <= 200 && !existingRecord?.workout_distance_miles) {
+        updatePayload.workout_distance_miles = dist;
       }
-      if (analysis.extracted_data.duration_minutes && !existingRecord?.workout_duration_minutes) {
-        updatePayload.workout_duration_minutes = analysis.extracted_data.duration_minutes;
+
+      // duration_minutes: positive, under ~33h ceiling.
+      const dur = Number(ed.duration_minutes);
+      if (Number.isFinite(dur) && dur > 0 && dur <= 2000 && !existingRecord?.workout_duration_minutes) {
+        updatePayload.workout_duration_minutes = dur;
       }
     }
 
@@ -573,14 +607,8 @@ Deno.serve(async (req) => {
 
     // Create injury record if injury detected in voice memo
     try {
-      const { data: logData } = await supabase
-        .from("training_logs")
-        .select("user_id")
-        .eq("id", record.id)
-        .single();
-
-      // Use user_id from log, fall back to "dev-user" when auth is disabled
-      const injuryUserId = logData?.user_id || "dev-user";
+      // Verified owner from the ownership guard — never a "dev-user" stand-in.
+      const injuryUserId = authUserId;
       const textToScan = `${analysis.cleaned_notes || ""} ${analysis.transcription || ""}`;
       const detected = detectInjury(textToScan);
 
@@ -629,18 +657,10 @@ Deno.serve(async (req) => {
 
     // ── Update Athlete State (Dynamic Context Object) ──
     // Full rebuild after a voice log because the training load metrics change.
-    const { data: stateLogRow } = await supabase
-      .from("training_logs")
-      .select("user_id")
-      .eq("id", record.id)
-      .single();
-    const stateUserId = stateLogRow?.user_id;
-    if (stateUserId) {
-      try {
-        await rebuildAthleteState(supabase, stateUserId);
-      } catch (stateError) {
-        console.error("Athlete state rebuild failed (non-fatal):", stateError);
-      }
+    try {
+      await rebuildAthleteState(supabase, authUserId);
+    } catch (stateError) {
+      console.error("Athlete state rebuild failed (non-fatal):", stateError);
     }
 
     return new Response(

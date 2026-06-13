@@ -421,6 +421,29 @@ verify_jwt = true
 # body user_id AND user-JWT + matching body user_id.
 verify_jwt = false
 
+[functions.rebuild-athlete-state]
+# Keep-warm worker for athlete_state. verify_jwt = true so the gateway
+# validates the JWT signature; the function then confirms role=service_role
+# by decoding the claim (robust to service-key/Vault drift — unlike the
+# exact-key match that 403'd the drain crons).
+verify_jwt = true
+
+# ── Async enrichment drains (pg_cron, every minute) ──
+# verify_jwt = true so the gateway validates the JWT signature; each drain
+# then confirms role=service_role by decoding the claim (isServiceRoleJWT),
+# mirroring rebuild-athlete-state. This replaces the brittle exact-key match
+# against SUPABASE_SERVICE_ROLE_KEY that 403'd the pipeline from 2026-06-11
+# when the function-env key rotated away from the Vault copy. Robust to any
+# future key rotation.
+[functions.drain-voice-processing-jobs]
+verify_jwt = true
+
+[functions.drain-coach-insight-jobs]
+verify_jwt = true
+
+[functions.drain-coachable-moment-jobs]
+verify_jwt = true
+
 [functions.build-pace-profile]
 # Upserts athlete_pace_profiles from the latest fitness_snapshots row.
 # verify_jwt = true so only authenticated callers (user JWT or anon/service

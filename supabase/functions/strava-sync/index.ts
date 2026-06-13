@@ -213,8 +213,17 @@ async function syncUser(row: CredRow, lookbackDays: number, perUserLimit: number
     scope: row.scope ?? null,
   };
 
+  // Strava's `after` filter is on each activity's start_date (when the run
+  // happened), but the watermark advances to now() (when the sync ran). An
+  // activity uploaded later than it started — always true, and large for long
+  // runs uploaded after completion — can have a start_date that already
+  // predates last_synced_at, making it invisible to `after=last_synced_at`
+  // forever. Re-scan a safety buffer behind the watermark so late uploads are
+  // caught; dedup on vital_workout_id (checked before any detail/stream fetch)
+  // keeps the re-scan idempotent and cheap.
+  const WATERMARK_SAFETY_DAYS = 14;
   const afterMs = row.last_synced_at
-    ? new Date(row.last_synced_at).getTime()
+    ? new Date(row.last_synced_at).getTime() - WATERMARK_SAFETY_DAYS * 86400 * 1000
     : Date.now() - lookbackDays * 86400 * 1000;
   const afterEpoch = Math.floor(afterMs / 1000);
 
@@ -404,6 +413,24 @@ function constantTimeEq(a: string, b: string): boolean {
   return result === 0;
 }
 
+// True if the (gateway-verified) JWT's role claim is service_role. The Supabase
+// edge gateway validates the JWT signature against the project's keys BEFORE
+// routing here, so the decoded payload is trustworthy. This accepts ANY current
+// service-role token, making auth robust to SUPABASE_SERVICE_ROLE_KEY drifting
+// from the live project key (the drift that 403'd both manual and cron calls).
+function hasServiceRoleClaim(token: string): boolean {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return false;
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const claims = JSON.parse(atob(padded));
+    return claims?.role === "service_role";
+  } catch {
+    return false;
+  }
+}
+
 // ── Handler ─────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -420,7 +447,7 @@ Deno.serve(async (req: Request) => {
     });
   }
   const token = authHeader.slice("Bearer ".length).trim();
-  if (!constantTimeEq(token, supabaseServiceKey)) {
+  if (!constantTimeEq(token, supabaseServiceKey) && !hasServiceRoleClaim(token)) {
     return new Response(JSON.stringify({ error: "Service role required" }), {
       status: 403,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -437,11 +464,19 @@ Deno.serve(async (req: Request) => {
     const lookbackDays = Math.min(Math.max(Number(body.lookbackDays) || DEFAULT_LOOKBACK_DAYS, 1), 365);
     const perUserLimit = Math.min(Math.max(Number(body.perUserLimit) || DEFAULT_PER_USER_LIMIT, 1), 200);
 
-    const { data: credData, error: credErr } = await db
-      .from("strava_credentials")
-      .select("user_id, access_token, refresh_token, expires_at, strava_athlete_id, scope, last_synced_at");
-    if (credErr) throw new Error(`load credentials failed: ${credErr.message}`);
-    const creds = (credData ?? []) as CredRow[];
+    // Tolerate the last_synced_at column not existing yet (its migration may
+    // not be applied). With it: incremental. Without it: fall back to the
+    // lookback window (dedup keeps re-scans harmless).
+    const fullSel = "user_id, access_token, refresh_token, expires_at, strava_athlete_id, scope, last_synced_at";
+    let credRes = await db.from("strava_credentials").select(fullSel);
+    if (credRes.error && /last_synced_at/.test(credRes.error.message ?? "")) {
+      console.warn("[strava-sync] last_synced_at column absent — non-incremental fallback");
+      credRes = await db
+        .from("strava_credentials")
+        .select("user_id, access_token, refresh_token, expires_at, strava_athlete_id, scope");
+    }
+    if (credRes.error) throw new Error(`load credentials failed: ${credRes.error.message}`);
+    const creds = (credRes.data ?? []) as CredRow[];
 
     const perUser: UserSyncResult[] = [];
     let imported = 0;

@@ -77,7 +77,7 @@ struct MainTabView: View {
             // icons — see design-system/ui_kits/ios_app/Primitives.jsx::TabBar
             // and Post Run Drip Design System/ui_kits/ios_app/tokens.css.
             //
-            // Routing: all 5 tab views render simultaneously in a ZStack
+            // Routing: all 4 tab views render simultaneously in a ZStack
             // and we toggle `.opacity` + `.allowsHitTesting` based on
             // `selectedTab`. This matches the system TabView's behaviour
             // (each tab's `@State` and scroll position survive a swap)
@@ -89,7 +89,7 @@ struct MainTabView: View {
             // independently; this just stops the cancellations from
             // happening in the first place.)
             //
-            // Cost: 5 view trees alive at once instead of 1. Acceptable
+            // Cost: 4 view trees alive at once instead of 1. Acceptable
             // for the user-visible win and avoids the refetch storm
             // (loadActivePlan / fitness-prediction / scheduled-workouts
             // each previously refired on every tab re-entry).
@@ -112,22 +112,18 @@ struct MainTabView: View {
                 .opacity(selectedTab == 0 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 0)
 
-                // Tab 1 — Train
+                // Tab 1 — Training (analytical tab; replaces the old
+                // Train + Trends tabs — see training-tab-spec.md).
                 NavigationStack { TrainingTabView() }
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 2 — Trends
-                NavigationStack { TrendsTabView() }
+                // Tab 2 — Coach
+                NavigationStack { CoachReadView() }
                     .opacity(selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 2)
 
-                // Tab 3 — Coach
-                NavigationStack { CoachReadView() }
-                    .opacity(selectedTab == 3 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 3)
-
-                // Tab 4 — Plan (or Coach in coach mode)
+                // Tab 3 — Plan (or Coach in coach mode)
                 NavigationStack {
                     if isCoachMode {
                         CoachTabView()
@@ -135,8 +131,8 @@ struct MainTabView: View {
                         TrainingPlanView()
                     }
                 }
-                .opacity(selectedTab == 4 ? 1 : 0)
-                .allowsHitTesting(selectedTab == 4)
+                .opacity(selectedTab == 3 ? 1 : 0)
+                .allowsHitTesting(selectedTab == 3)
             }
             .safeAreaInset(edge: .bottom) {
                 DripTabBar(selected: $selectedTab)

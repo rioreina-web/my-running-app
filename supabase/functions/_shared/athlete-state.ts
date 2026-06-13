@@ -26,6 +26,11 @@ import {
   type TrainingLogRow as WeeklyAnalyticsLogRow,
   type WorkoutFeaturesRow,
 } from "./weeklyAnalytics.ts";
+import {
+  segmentFromLaps,
+  type LapInput,
+  type PaceZones,
+} from "./workoutSegmentation.ts";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -82,6 +87,18 @@ export interface AthleteState {
     date: string;
     severity_hint: string; // "tight" | "sore" | "pain" | "sharp"
     volume_context: string | null; // e.g. "2wk volume +40% before mention"
+  }>;
+  /**
+   * Durable niggle recurrence from the `body_mentions` table (12 months).
+   * The pattern view a coach actually cares about — "left knee, 3× over
+   * 6 weeks." Surface the pattern; never diagnose (hard rule #2).
+   */
+  niggle_recurrence: Array<{
+    body_area: string;
+    occurrences: number;
+    first_seen: string;
+    last_seen: string;
+    worst_severity: string;
   }>;
 
   // Pace Zones
@@ -187,6 +204,107 @@ export interface AthleteState {
    *   3 — 21+ distinct training days, or goal set with 1+ run
    */
   data_depth: number;
+
+  // ── v2 satellites (coach-grade) ──
+  /**
+   * Volume × intensity distribution — the prompt-facing load model.
+   * Replaces ACWR (still computed in `acwr` for one release, but not
+   * surfaced). Sourced from `workout_features` time-in-zone, mirroring
+   * `PaceVolumeSpectrumChart`. Null when no workout_features exist yet.
+   */
+  load_distribution: {
+    window_days: number;
+    /** Volume × Intensity — pace-weighted load in weighted minutes (7d / 28d). */
+    volume_x_intensity_7d: number;
+    volume_x_intensity_28d: number;
+    minutes_7d: { easy: number; moderate: number; threshold: number; hard: number };
+    minutes_28d: { easy: number; moderate: number; threshold: number; hard: number };
+    zone_pct_7d: { easy: number; moderate: number; threshold: number; hard: number };
+    effort_distribution: string | null;
+    intensity_score_latest: number | null;
+    monotony_7d: number | null;
+    strain_7d: number | null;
+    hr_pace_efficiency: number | null;
+    // WS3 — the surfaced load STORY (replaces the ACWR ratio). Trend is the
+    // recent weekly load vs an 8-week chronic baseline; the recovery read is
+    // hard-day spacing + whether the current week is a down week.
+    load_trend: "building" | "holding" | "spiking" | "backing_off" | null;
+    chronic_window_days: number;
+    load_vs_chronic_pct: number | null; // recent weekly load vs chronic norm (+/- %)
+    recovery_read: {
+      avg_days_between_hard: number | null;
+      hard_sessions_28d: number;
+      down_week: boolean; // current 7d load well below the chronic norm
+    } | null;
+  } | null;
+
+  /**
+   * Range + confidence predictions (never point estimates — hard rule #7).
+   * Each range is { low, high, point } in seconds. Sourced from the latest
+   * `fitness_snapshots` row's range_* bands.
+   */
+  fitness_prediction: {
+    confidence_tier: string | null;
+    workout_count: number | null;
+    ranges: Record<string, { low: number; high: number; point: number } | null>;
+  } | null;
+
+  /** Durable coach memory from `user_memories` (preferences, life context). */
+  memories: Array<{ category: string; content: string; importance: number }>;
+
+  /**
+   * Per-run environment from `running_workout_laps` — lets the Read
+   * contextualize pace against conditions ("7:45 but 78°F, heat-adjusted
+   * 7:28"). Most recent first, up to 10.
+   */
+  environment: Array<{
+    date: string;
+    temp_f: number | null;
+    dew_point_f: number | null;
+    heat_category: string | null;
+    heat_adjustment_pct: number | null;   // % the heat slowed pace
+    actual_pace: string | null;           // M:SS/mi, distance-weighted
+    heat_adjusted_pace: string | null;    // M:SS/mi
+    elevation_gain_ft: number | null;
+  }>;
+
+  /**
+   * Per-quality-session execution from `running_workout_laps` — did the
+   * workout land? Splits, fade, rep consistency, HR drift. Up to 4 most
+   * recent structured sessions.
+   */
+  execution: Array<{
+    date: string;
+    type: string | null;
+    rep_count: number;
+    rep_paces: string[];          // M:SS per work rep
+    fade_pct: number | null;      // last rep vs first (+ = slowed)
+    pace_cv_pct: number | null;   // coefficient of variation across reps
+    hr_drift_pct: number | null;  // last work HR vs first (+ = drifted up)
+    shape: string;                // "negative split" | "even" | "faded"
+    structure?: string | null;    // WS1: "9×1K @ 5:07 (5K)" when structured
+  }>;
+
+  /**
+   * Longitudinal patterns — the coach's edge. Rule-based observations over
+   * the joined data (niggle-vs-load, pacing tendency, heat sensitivity,
+   * easy-day discipline, mood-vs-monotony). Each is a plain-language
+   * statement plus the numbers behind it; the Read may surface one.
+   */
+  patterns: Array<{
+    kind: string;
+    statement: string;
+    evidence: string;
+    confidence: "high" | "medium" | "low";
+  }>;
+
+  /**
+   * Computed blind spots — the honest "what I can't see" list (Rec #5).
+   * Grounds the Read's `cant_see` block in real gaps instead of the model
+   * inventing one. `gap` is a 2-4 word mono eyebrow; `detail` is one
+   * plain sentence.
+   */
+  data_gaps: Array<{ gap: string; detail: string }>;
 
   // Metadata
   last_updated_at: string;
@@ -322,6 +440,9 @@ export async function rebuildAthleteState(
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString();
   const twentyEightDaysAgo = new Date(now.getTime() - 28 * 86400000).toISOString();
+  // WS3 — 12-week window for the load trend + 8-week chronic baseline (a coach
+  // reads cycles, not fortnights). The 7d/28d zone aggregates still slice 28d.
+  const eightyFourDaysAgo = new Date(now.getTime() - 84 * 86400000).toISOString();
   const today = now.toISOString().split("T")[0];
 
   // Parallel fetch everything we need
@@ -342,6 +463,7 @@ export async function rebuildAthleteState(
     paceProfileRes,
     workoutFeaturesRes,
     confirmedRacesRes,
+    memoriesRes,
   ] = await Promise.all([
     // Last 28 days of training logs for current load/state.
     supabase
@@ -357,13 +479,13 @@ export async function rebuildAthleteState(
       .select("*")
       .eq("user_id", userId)
       .maybeSingle(),
-    // Latest fitness snapshot
+    // Latest TWO fitness snapshots — [0] current, [1] prior (for fitness_trend).
     supabase
       .from("fitness_snapshots")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
-      .limit(1),
+      .limit(2),
     // Active injuries
     supabase
       .from("injuries")
@@ -371,10 +493,10 @@ export async function rebuildAthleteState(
       .eq("user_id", userId)
       .in("status", ["active", "monitoring"])
       .order("severity", { ascending: false }),
-    // Active training plan
+    // Active training plan (end_date = race date; drives the peaking guard).
     supabase
       .from("training_plans")
-      .select("id, name, target_race_distance, target_time_seconds, status")
+      .select("id, name, target_race_distance, target_time_seconds, status, end_date")
       .eq("user_id", userId)
       .eq("status", "active")
       .maybeSingle(),
@@ -442,9 +564,12 @@ export async function rebuildAthleteState(
     // workout_type × duration in computeWeightedLoadForLog().
     supabase
       .from("workout_features")
-      .select("training_log_id, intensity_score, total_duration_seconds")
+      .select("training_log_id, intensity_score, total_duration_seconds, workout_date, easy_seconds, moderate_seconds, threshold_seconds, hard_seconds, effort_distribution, monotony_7d, strain_7d, hr_pace_efficiency")
       .eq("user_id", userId)
-      .gte("workout_date", twentyEightDaysAgo),
+      // WS3: 12 weeks so the load trend has a chronic baseline. The 7d/28d
+      // aggregates below slice this set down to their own windows.
+      .gte("workout_date", eightyFourDaysAgo)
+      .order("workout_date", { ascending: false }),
     // 2-year window of user-declared races — the canonical source for
     // athlete_state.confirmed_races (the derived cache that downstream
     // surfaces read for race-anchored fitness reasoning). Window mirrors
@@ -461,6 +586,14 @@ export async function rebuildAthleteState(
       .gte("workout_date", new Date(now.getTime() - 730 * 86400000).toISOString())
       .order("workout_date", { ascending: false })
       .limit(50),
+    // Durable coach memory — preferences, life context, constraints,
+    // decisions. Highest-importance first; expiry filtered in code.
+    supabase
+      .from("user_memories")
+      .select("category, content, importance, expires_at")
+      .eq("user_id", userId)
+      .order("importance", { ascending: false })
+      .limit(12),
   ]);
 
   const logs = (recentLogsRes.data ?? []) as Array<Record<string, unknown>>;
@@ -612,6 +745,15 @@ export async function rebuildAthleteState(
 
   const mpPace = earlyMpPace;
   function isHardSession(log: Record<string, unknown>): boolean {
+    // Prefer the Observer-parsed type so this agrees with the block
+    // quality classifier (which reads parsed_structure.type). v1 read only
+    // raw workout_type here, so the two load views could disagree about the
+    // same week (e.g. an auto-synced interval session with no workout_type).
+    const parsed = log.parsed_structure as Record<string, unknown> | null;
+    const parsedType = parsed && typeof parsed === "object"
+      ? (parsed["type"] as string | undefined)
+      : undefined;
+    if (parsedType && ["interval", "tempo", "progression", "race"].includes(parsedType)) return true;
     if (alwaysHardTypes.has(log.workout_type as string)) return true;
     if (log.workout_type === "long_run") {
       const miles = (log.workout_distance_miles as number) || 0;
@@ -658,18 +800,34 @@ export async function rebuildAthleteState(
     energized: 5, positive: 4, neutral: 3, tired: 2, struggling: 1, injured: 0,
   };
   let moodTrend: string | null = null;
-  if (moodSources.length >= 3) {
+  // Need at least 4 entries so the "older" window (everything after the most
+  // recent 3) is non-empty. With exactly 3, scores.slice(3) is empty → older
+  // averages to 0 → any non-zero recent mood falsely reports "improving"
+  // (three "tired" check-ins would read as improving). Below 4, leave null.
+  if (moodSources.length >= 4) {
     const scores = moodSources.map((m) => moodScores[m.mood] ?? 3);
     const recent = scores.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
-    const older = scores.slice(3).reduce((a, b) => a + b, 0) / Math.max(scores.length - 3, 1);
+    const olderScores = scores.slice(3);
+    const older = olderScores.reduce((a, b) => a + b, 0) / olderScores.length;
     moodTrend = recent > older + 0.5 ? "improving" : recent < older - 0.5 ? "declining" : "stable";
   }
 
   // ── Fitness trajectory ──
+  // Compare the latest two fitness_snapshots on predicted 10K (lower = faster).
+  // Fixes the v1 stub that hardcoded "maintaining" — which also meant the
+  // trajectory "building" branch (gated on fitnessTrend === "improving")
+  // could never fire.
   let fitnessTrend: string | null = null;
-  // Could compare last 2 snapshots, but for now just use the latest
   if (snapshot) {
-    fitnessTrend = "maintaining"; // TODO: compare with previous snapshot
+    const prevSnapshot = (snapshotRes.data as Array<Record<string, unknown>> | null)?.[1];
+    const cur10k = Number(snapshot.predicted_10k_seconds ?? NaN);
+    const prev10k = prevSnapshot ? Number(prevSnapshot.predicted_10k_seconds ?? NaN) : NaN;
+    if (isFinite(cur10k) && isFinite(prev10k) && prev10k > 0) {
+      const deltaPct = ((prev10k - cur10k) / prev10k) * 100; // + = faster now
+      fitnessTrend = deltaPct >= 1 ? "improving" : deltaPct <= -1 ? "declining" : "maintaining";
+    } else {
+      fitnessTrend = "maintaining"; // single snapshot — no trend to read yet
+    }
   }
 
   // ── Pace zones ──
@@ -825,7 +983,8 @@ export async function rebuildAthleteState(
   const summaryParts: string[] = [];
   summaryParts.push(`${last7d.length} runs / ${Math.round(rolling7dMiles)} mi last 7d`);
   summaryParts.push(`${hardSessions7d} hard, ${easySessions7d} easy`);
-  if (acwr) summaryParts.push(`ACWR ${acwr.toFixed(2)}`);
+  // WS3: ACWR is no longer surfaced — it's an internal injury-risk input only.
+  // The load story is load_distribution.load_trend + hard/easy split + recovery.
   if (longestRun14d > 0) summaryParts.push(`longest run 14d: ${longestRun14d.toFixed(1)} mi`);
   if (checkIns[0]) summaryParts.push(`last check-in: ${checkIns[0].mood}`);
   if (injuries.length > 0) summaryParts.push(`${injuries.length} active injury(ies): ${injuries.map((i) => i.body_area).join(", ")}`);
@@ -834,6 +993,7 @@ export async function rebuildAthleteState(
   // ── Scheduled workouts (need plan_id) ──
   let todayWorkout: Record<string, unknown> | null = null;
   let upcomingWorkouts: Array<Record<string, unknown>> = [];
+  let weekCompliancePct: number | null = null;
   if (plan?.id) {
     const { data: scheduled } = await supabase
       .from("scheduled_workouts")
@@ -848,6 +1008,29 @@ export async function rebuildAthleteState(
       const todayRow = scheduled.find((w: any) => w.date === today);
       if (todayRow) todayWorkout = todayRow;
       upcomingWorkouts = scheduled.filter((w: any) => w.date !== today).slice(0, 5);
+    }
+
+    // Week compliance (was hardcoded null in v1). The status column is
+    // unreliable, so we match scheduled NON-REST days in the trailing 7d
+    // against days the athlete actually trained (by date vs training_logs).
+    const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10);
+    const { data: weekScheduled } = await supabase
+      .from("scheduled_workouts")
+      .select("date, workout_type")
+      .eq("plan_id", plan.id)
+      .gte("date", weekAgo)
+      .lte("date", today);
+    const planned = (weekScheduled ?? []).filter(
+      (w: any) => String(w.workout_type ?? "").toLowerCase() !== "rest",
+    );
+    if (planned.length > 0) {
+      const trainedDates = new Set(
+        (logs as Array<Record<string, unknown>>)
+          .map((l) => String(l.workout_date ?? "").slice(0, 10))
+          .filter(Boolean),
+      );
+      const done = planned.filter((w: any) => trainedDates.has(String(w.date).slice(0, 10))).length;
+      weekCompliancePct = Math.round((done / planned.length) * 100);
     }
   }
 
@@ -876,6 +1059,8 @@ export async function rebuildAthleteState(
   const possibleInjuries: Array<{
     body_area: string; excerpt: string; date: string; severity_hint: string; volume_context: string | null;
   }> = [];
+  // Parallel list shaped for the durable body_mentions table (Phase C).
+  const detectedMentions: Array<Record<string, unknown>> = [];
   const alreadyFlagged = new Set<string>(); // dedupe by body_area + date
 
   for (const row of notesRows) {
@@ -949,6 +1134,17 @@ export async function rebuildAthleteState(
         severity_hint: severityHint,
         volume_context: volCtx,
       });
+      detectedMentions.push({
+        user_id: userId,
+        training_log_id: (row.id as string) ?? null,
+        body_area: part,
+        verbatim_quote: `...${excerpt}...`.slice(0, 400),
+        severity_hint: severityHint,
+        mentioned_at: rowDate,
+        volume_context: volCtx,
+        source: "notes_scan",
+        updated_at: new Date().toISOString(),
+      });
     }
   }
   // Sort by severity (sharp > pain > sore > tight) then date desc
@@ -957,6 +1153,73 @@ export async function rebuildAthleteState(
     (sevOrder[b.severity_hint] ?? 0) - (sevOrder[a.severity_hint] ?? 0)
     || b.date.localeCompare(a.date)
   );
+
+  // ── v2 Phase C: persist mentions + read durable niggle recurrence ──
+  // Upsert the freshly-detected mentions so niggles stop evaporating
+  // between rebuilds. Under the service-role path (cron/trigger) this
+  // persists; under the anon path it no-ops on RLS — same as the
+  // athlete_state upsert itself. Either way we read history back below.
+  if (detectedMentions.length > 0) {
+    const { error: bmErr } = await supabase
+      .from("body_mentions")
+      .upsert(detectedMentions, { onConflict: "user_id,training_log_id,body_area" });
+    if (bmErr) console.warn("[AthleteState] body_mentions upsert failed:", bmErr.message);
+  }
+
+  // Build the 12-month recurrence view from the stored table.
+  const niggleRecurrence: AthleteState["niggle_recurrence"] = [];
+  // Deduped mention dates (date|area) — feed per-block injury_mentions counts.
+  // Union of the freshly-detected mentions (covers the anon path where the
+  // body_mentions upsert no-ops on RLS) and the stored 12-month history.
+  const niggleMentionKeys = new Set<string>();
+  const niggleMentionDates: string[] = [];
+  const addMentionDate = (rawDate: string, area: string) => {
+    const d = String(rawDate ?? "").slice(0, 10);
+    if (!d) return;
+    const key = `${d}|${area}`;
+    if (niggleMentionKeys.has(key)) return;
+    niggleMentionKeys.add(key);
+    niggleMentionDates.push(d);
+  };
+  for (const dm of detectedMentions) {
+    addMentionDate(String(dm.mentioned_at ?? ""), String(dm.body_area ?? ""));
+  }
+  {
+    const { data: bmHist } = await supabase
+      .from("body_mentions")
+      .select("body_area, severity_hint, mentioned_at")
+      .eq("user_id", userId)
+      .gte("mentioned_at", twelveMonthsAgoISO.slice(0, 10))
+      .order("mentioned_at", { ascending: false });
+    const byArea = new Map<string, { count: number; first: string; last: string; worst: string }>();
+    for (const m of (bmHist ?? []) as Array<Record<string, unknown>>) {
+      const area = String(m.body_area);
+      const at = String(m.mentioned_at).slice(0, 10);
+      const sev = String(m.severity_hint ?? "");
+      addMentionDate(at, area);
+      const cur = byArea.get(area);
+      if (!cur) {
+        byArea.set(area, { count: 1, first: at, last: at, worst: sev });
+      } else {
+        cur.count++;
+        if (at < cur.first) cur.first = at;
+        if (at > cur.last) cur.last = at;
+        if ((sevOrder[sev] ?? 0) > (sevOrder[cur.worst] ?? 0)) cur.worst = sev;
+      }
+    }
+    for (const [area, v] of byArea.entries()) {
+      niggleRecurrence.push({
+        body_area: area,
+        occurrences: v.count,
+        first_seen: v.first,
+        last_seen: v.last,
+        worst_severity: v.worst,
+      });
+    }
+    niggleRecurrence.sort((a, b) =>
+      b.occurrences - a.occurrences || b.last_seen.localeCompare(a.last_seen)
+    );
+  }
 
   // ── Training blocks (6 × 4-week rollups) ──
   // Computes block-over-block comparison signals. Each block summarizes volume,
@@ -997,7 +1260,11 @@ export async function rebuildAthleteState(
     let quality = 0;
     let easy = 0;
     let races = 0;
-    let injuryMentions = 0;
+    // Niggle mentions that fall inside this block's window (was always 0 in v1).
+    const injuryMentions = niggleMentionDates.filter((d) => {
+      const t = new Date(d).getTime();
+      return t >= blockStart.getTime() && t < blockEnd.getTime();
+    }).length;
     const easyPaces: number[] = [];
     const moodCounts: Record<string, number> = {};
 
@@ -1109,7 +1376,10 @@ export async function rebuildAthleteState(
   //   peaking: recent volume ≥ 90% of prior AND ≥2 hard sessions/wk AND plan active with race <8 weeks
   //   building: recent volume > 110% of prior AND fitness trend = improving
   //   maintaining: default
-  const priorBlockAvg = weeklyAvg28d - (rolling7dMiles / 4); // approx prior 3-week avg
+  // Prior 3-week weekly average = (28d total − last 7d) / 3 weeks. The v1
+  // version divided by 4, understating the baseline ~25% and biasing
+  // "building" to fire too easily / "declining" almost never.
+  const priorBlockAvg = (rolling28dMiles - rolling7dMiles) / 3;
   const recentVsPrior = priorBlockAvg > 0 ? rolling7dMiles / priorBlockAvg : 1;
   const recentlyResolvedInjury = injuryHistory.some((i) =>
     i.status === "resolved" && i.resolved_at &&
@@ -1124,10 +1394,20 @@ export async function rebuildAthleteState(
   } else if (rolling7dMiles < priorBlockAvg * 0.7 && !hasActiveInjury) {
     trajectoryFraming = "declining";
     trajectoryReason = `volume dropped to ${Math.round(recentVsPrior * 100)}% of recent avg, no injury reason`;
-  } else if (recentVsPrior >= 0.9 && hardSessions7d >= 2 && plan?.target_time_seconds) {
-    // TODO: also check race date within 8 weeks once plan has race_date
+  } else if (
+    recentVsPrior >= 0.9 && hardSessions7d >= 2 && plan?.target_time_seconds &&
+    // Race must be in the future AND within 8 weeks — otherwise it's a build,
+    // not a peak. (v1 fired "peaking" for any active goal, race months out.)
+    plan?.end_date &&
+    (new Date(plan.end_date as string).getTime() - now.getTime()) > 0 &&
+    (new Date(plan.end_date as string).getTime() - now.getTime()) <= 56 * 86400000
+  ) {
+    const weeksOut = Math.max(
+      1,
+      Math.round((new Date(plan.end_date as string).getTime() - now.getTime()) / (7 * 86400000)),
+    );
     trajectoryFraming = "peaking";
-    trajectoryReason = `high volume + ${hardSessions7d} hard sessions + active race plan`;
+    trajectoryReason = `high volume + ${hardSessions7d} hard sessions, race ~${weeksOut}wk out`;
   } else if (recentVsPrior > 1.1 && fitnessTrend === "improving") {
     trajectoryFraming = "building";
     trajectoryReason = `volume up ${Math.round((recentVsPrior - 1) * 100)}% vs recent avg, fitness improving`;
@@ -1189,6 +1469,421 @@ export async function rebuildAthleteState(
     hasActiveGoal: activeGoalCount > 0,
   });
 
+  // ── v2: Load distribution (volume × intensity, NOT ACWR) ──
+  // Aggregate time-in-zone from workout_features over 7d/28d, mirroring
+  // PaceVolumeSpectrumChart's data shape. Rows are ordered workout_date desc.
+  const featureRows = (workoutFeaturesRes.data ?? []) as Array<Record<string, unknown>>;
+  const sumZones = (rows: Array<Record<string, unknown>>) => {
+    const z = { easy: 0, moderate: 0, threshold: 0, hard: 0 };
+    for (const r of rows) {
+      z.easy += Number(r.easy_seconds ?? 0);
+      z.moderate += Number(r.moderate_seconds ?? 0);
+      z.threshold += Number(r.threshold_seconds ?? 0);
+      z.hard += Number(r.hard_seconds ?? 0);
+    }
+    return z;
+  };
+  // featureRows now spans 84 days (WS3) — slice explicitly per window.
+  const rows7 = featureRows.filter((r) => String(r.workout_date ?? "") >= sevenDaysAgo);
+  const rows28 = featureRows.filter((r) => String(r.workout_date ?? "") >= twentyEightDaysAgo);
+  const z7 = sumZones(rows7);
+  const z28 = sumZones(rows28);
+  const toMin = (s: number) => Math.round(s / 60);
+  const total7 = z7.easy + z7.moderate + z7.threshold + z7.hard;
+  const total28 = z28.easy + z28.moderate + z28.threshold + z28.hard;
+  const pct = (part: number, total: number) =>
+    total > 0 ? Math.round((part / total) * 1000) / 10 : 0;
+  const latestF = featureRows[0] as Record<string, unknown> | undefined;
+  const num = (v: unknown): number | null => (v == null ? null : Number(v));
+  const latestMonotony = num(latestF?.monotony_7d);
+  const latestStrain = num(latestF?.strain_7d);
+  // ── Volume × Intensity total — the single pace-weighted load number ──
+  // Σ(intensity_score × duration / 60) per workout = weighted minutes.
+  // This is what "matches paces to volume": a hard mile counts ~5× an
+  // easy mile (intensity_score is the per-segment pace-weighted average).
+  // Same math as computeWeightedLoadForLog.
+  const sumVolumeXIntensity = (rows: Array<Record<string, unknown>>) =>
+    rows.reduce((s, r) => {
+      const isc = Number(r.intensity_score ?? 0);
+      const durSec = Number(r.total_duration_seconds ?? 0);
+      return s + (isc > 0 && durSec > 0 ? (isc * durSec) / 60 : 0);
+    }, 0);
+  const vxi7 = Math.round(sumVolumeXIntensity(rows7));
+  const vxi28 = Math.round(sumVolumeXIntensity(rows28));
+
+  // ── WS3: load trend + recovery read (the ACWR replacement) ──
+  // Weekly weighted-load over 12 weeks; "recent" = last 2 weeks averaged,
+  // "chronic" = the prior 6 weeks (weeks 3–8) averaged. The trend is the
+  // recent week vs that chronic norm, in plain language.
+  const CHRONIC_WINDOW_DAYS = 56; // 8 weeks
+  const weekLoad = (weekIdx: number): number => {
+    const start = new Date(now.getTime() - (weekIdx + 1) * 7 * 86400000).toISOString();
+    const end = new Date(now.getTime() - weekIdx * 7 * 86400000).toISOString();
+    return sumVolumeXIntensity(
+      featureRows.filter((r) => {
+        const d = String(r.workout_date ?? "");
+        return d >= start && d < end;
+      }),
+    );
+  };
+  const recentWeekly = (weekLoad(0) + weekLoad(1)) / 2; // last 2 weeks
+  const chronicWeeks = [2, 3, 4, 5, 6, 7].map(weekLoad); // weeks 3–8
+  const chronicWeekly = chronicWeeks.reduce((s, w) => s + w, 0) / chronicWeeks.length;
+  const loadVsChronicPct = chronicWeekly > 0
+    ? Math.round(((recentWeekly - chronicWeekly) / chronicWeekly) * 100)
+    : null;
+  let loadTrend: "building" | "holding" | "spiking" | "backing_off" | null = null;
+  if (chronicWeekly > 0 && recentWeekly >= 0) {
+    if (loadVsChronicPct! >= 40) loadTrend = "spiking";
+    else if (loadVsChronicPct! >= 12) loadTrend = "building";
+    else if (loadVsChronicPct! <= -25) loadTrend = "backing_off";
+    else loadTrend = "holding";
+  }
+  // Recovery read: hard-day spacing over 28d + whether this is a down week.
+  const QUALITY_FLOOR_SEC = 240;
+  const hardDates = rows28
+    .filter((r) => Number(r.threshold_seconds ?? 0) + Number(r.hard_seconds ?? 0) >= QUALITY_FLOOR_SEC)
+    .map((r) => String(r.workout_date ?? "").slice(0, 10))
+    .filter(Boolean)
+    .sort();
+  let avgDaysBetweenHard: number | null = null;
+  if (hardDates.length >= 2) {
+    let gapSum = 0;
+    for (let i = 1; i < hardDates.length; i++) {
+      gapSum += (new Date(hardDates[i]).getTime() - new Date(hardDates[i - 1]).getTime()) / 86400000;
+    }
+    avgDaysBetweenHard = Math.round((gapSum / (hardDates.length - 1)) * 10) / 10;
+  }
+  const downWeek = loadVsChronicPct != null && loadVsChronicPct <= -30;
+  const recoveryRead = total28 > 0 ? {
+    avg_days_between_hard: avgDaysBetweenHard,
+    hard_sessions_28d: hardDates.length,
+    down_week: downWeek,
+  } : null;
+  const loadDistribution = total28 > 0 ? {
+    window_days: 28,
+    // The single number: volume scaled by pace intensity (weighted minutes).
+    volume_x_intensity_7d: vxi7,
+    volume_x_intensity_28d: vxi28,
+    minutes_7d: { easy: toMin(z7.easy), moderate: toMin(z7.moderate), threshold: toMin(z7.threshold), hard: toMin(z7.hard) },
+    minutes_28d: { easy: toMin(z28.easy), moderate: toMin(z28.moderate), threshold: toMin(z28.threshold), hard: toMin(z28.hard) },
+    zone_pct_7d: {
+      easy: pct(z7.easy, total7),
+      moderate: pct(z7.moderate, total7),
+      threshold: pct(z7.threshold, total7),
+      hard: pct(z7.hard, total7),
+    },
+    effort_distribution: (latestF?.effort_distribution as string) ?? null,
+    intensity_score_latest: num(latestF?.intensity_score),
+    monotony_7d: latestMonotony,
+    strain_7d: latestStrain,
+    hr_pace_efficiency: num(latestF?.hr_pace_efficiency),
+    load_trend: loadTrend,
+    chronic_window_days: CHRONIC_WINDOW_DAYS,
+    load_vs_chronic_pct: loadVsChronicPct,
+    recovery_read: recoveryRead,
+  } : null;
+
+  // ── v2: Fitness prediction as range + confidence (never a point) ──
+  // range_*_seconds is a ± half-width band around the point prediction.
+  const snap = snapshot as Record<string, unknown> | undefined;
+  const confTier = ((snap?.confidence_tier as string) ?? (snap?.confidence as string) ?? "").toLowerCase();
+  // WS4 — the snapshot's range_*_seconds bands are frequently null, which
+  // collapsed every prediction to low==high==point (a false-precision point —
+  // hard rule #7). When the stored band is missing, synthesize one as a
+  // fraction of the predicted time, scaled by confidence (more evidence →
+  // tighter band). A range is never a single time.
+  const bandFractionFor = (tier: string): number => {
+    if (tier.startsWith("high")) return 0.010;
+    if (tier.startsWith("med")) return 0.020;
+    if (tier.startsWith("low")) return 0.035;
+    return 0.025;
+  };
+  const rangeOf = (predKey: string, bandKey: string) => {
+    const pred = num(snap?.[predKey]);
+    if (pred == null || !isFinite(pred) || pred <= 0) return null;
+    let band = num(snap?.[bandKey]);
+    if (band == null || !isFinite(band) || band <= 0) {
+      band = Math.round(pred * bandFractionFor(confTier));
+    }
+    return { low: Math.round(pred - band), high: Math.round(pred + band), point: Math.round(pred) };
+  };
+  const fitnessPrediction = snap ? {
+    confidence_tier: (snap.confidence_tier as string) ?? (snap.confidence as string) ?? null,
+    workout_count: num(snap.workout_count),
+    ranges: {
+      mile: rangeOf("predicted_mile_seconds", "range_mile_seconds"),
+      "5K": rangeOf("predicted_5k_seconds", "range_5k_seconds"),
+      "10K": rangeOf("predicted_10k_seconds", "range_10k_seconds"),
+      half: rangeOf("predicted_half_seconds", "range_half_seconds"),
+      marathon: rangeOf("predicted_marathon_seconds", "range_marathon_seconds"),
+    },
+  } : null;
+
+  // ── v2: Durable coach memory ──
+  const nowMs = now.getTime();
+  const memories = ((memoriesRes.data ?? []) as Array<{
+    category: string; content: string; importance: number | null; expires_at: string | null;
+  }>)
+    .filter((m) => !m.expires_at || new Date(m.expires_at).getTime() > nowMs)
+    .map((m) => ({
+      category: m.category,
+      content: String(m.content ?? "").slice(0, 300),
+      importance: m.importance ?? 0,
+    }));
+
+  // ── v2 Phase B: execution quality + environment from laps ──
+  // laps.workout_id == training_logs.id. Fetch only for the recent set.
+  const recentIds = (logs as Array<{ id: string }>).map((l) => l.id).filter(Boolean);
+  const lapsByWorkout = new Map<string, Array<Record<string, unknown>>>();
+  if (recentIds.length > 0) {
+    const { data: lapsData } = await supabase
+      .from("running_workout_laps")
+      .select("workout_id, lap_index, distance_meters, avg_pace_sec_per_mile, heat_adjusted_pace_sec_per_mile, avg_heart_rate, is_rest, moving_time_seconds, elapsed_time_seconds, temp_f, dew_point_f, heat_category, heat_adjustment_pct, total_elevation_gain")
+      .eq("user_id", userId)
+      .in("workout_id", recentIds)
+      .order("lap_index", { ascending: true });
+    for (const lap of (lapsData ?? []) as Array<Record<string, unknown>>) {
+      const wid = String(lap.workout_id);
+      const arr = lapsByWorkout.get(wid) ?? [];
+      arr.push(lap);
+      lapsByWorkout.set(wid, arr);
+    }
+  }
+
+  const logMetaById = new Map<string, { date: string; type: string | null }>();
+  for (const l of logs as Array<Record<string, unknown>>) {
+    logMetaById.set(String(l.id), {
+      date: String(l.workout_date ?? "").slice(0, 10),
+      type: (l.workout_type as string) ?? null,
+    });
+  }
+
+  const fmtPaceSec = (sec: number): string | null => {
+    if (!isFinite(sec) || sec <= 0) return null;
+    const t = Math.round(sec);
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  };
+
+  const environment: AthleteState["environment"] = [];
+  const execution: AthleteState["execution"] = [];
+
+  // WS1: classify execution via the shared segmentation module (same module
+  // compute-workout-features uses — single source of truth for rep detection).
+  const execZones: PaceZones = {
+    mile: paceZones.mile, fiveK: paceZones.fiveK, tenK: paceZones.tenK,
+    hm: paceZones.hm, mp: paceZones.mp, steady: paceZones.steady,
+    moderate: paceZones.moderate, easy: paceZones.easy,
+  };
+
+  const workoutEntries = Array.from(lapsByWorkout.entries())
+    .map(([wid, laps]) => ({ wid, laps, meta: logMetaById.get(wid) }))
+    .filter((e) => e.meta != null)
+    .sort((a, b) => String(b.meta!.date).localeCompare(String(a.meta!.date)));
+
+  for (const { laps, meta } of workoutEntries) {
+    let distSum = 0, paceWeighted = 0, adjWeighted = 0, elevSum = 0;
+    let tempSum = 0, tempN = 0, dewSum = 0, dewN = 0, adjPctSum = 0, adjPctN = 0;
+    const catCounts: Record<string, number> = {};
+    for (const lap of laps) {
+      const dist = Number(lap.distance_meters ?? 0);
+      const pace = Number(lap.avg_pace_sec_per_mile ?? 0);
+      const adj = Number(lap.heat_adjusted_pace_sec_per_mile ?? 0);
+      if (dist > 0 && pace > 0) {
+        distSum += dist;
+        paceWeighted += pace * dist;
+        if (adj > 0) adjWeighted += adj * dist;
+      }
+      elevSum += Number(lap.total_elevation_gain ?? 0);
+      if (lap.temp_f != null) { tempSum += Number(lap.temp_f); tempN++; }
+      if (lap.dew_point_f != null) { dewSum += Number(lap.dew_point_f); dewN++; }
+      if (lap.heat_adjustment_pct != null) { adjPctSum += Number(lap.heat_adjustment_pct); adjPctN++; }
+      const cat = lap.heat_category as string | null;
+      if (cat) catCounts[cat] = (catCounts[cat] ?? 0) + 1;
+    }
+    const dominantCat = Object.entries(catCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+
+    if (environment.length < 10 && distSum > 0) {
+      environment.push({
+        date: meta!.date,
+        temp_f: tempN > 0 ? Math.round(tempSum / tempN) : null,
+        dew_point_f: dewN > 0 ? Math.round(dewSum / dewN) : null,
+        heat_category: dominantCat,
+        // laps store heat_adjustment_pct as a FRACTION (0.019 = 1.9%); ×100 to
+        // the percent the field name and the Read display imply. Without this
+        // the value rounded to 0.0 and the "hot runs" list was always empty. WS2.
+        heat_adjustment_pct: adjPctN > 0 ? Math.round((adjPctSum / adjPctN) * 1000) / 10 : null,
+        actual_pace: fmtPaceSec(paceWeighted / distSum),
+        heat_adjusted_pace: adjWeighted > 0 ? fmtPaceSec(adjWeighted / distSum) : null,
+        elevation_gain_ft: elevSum > 0 ? Math.round(elevSum * 3.28084) : null,
+      });
+    }
+
+    // Execution — classify structured sessions via the shared module. Reps,
+    // fade, CV, HR drift, shape, and the structure string all come from one
+    // place; the float-lap and pace-vs-zone handling lives in the module.
+    if (execution.length < 4) {
+      const seg = segmentFromLaps(laps as unknown as LapInput[], execZones);
+      if (seg.reps.length >= 2) {
+        execution.push({
+          date: meta!.date,
+          type: meta!.type ?? seg.workoutKind,
+          rep_count: seg.repCount,
+          rep_paces: seg.repPaces,
+          fade_pct: seg.fadePct,
+          pace_cv_pct: seg.paceCvPct,
+          hr_drift_pct: seg.hrDriftPct,
+          shape: seg.shape ?? "even",
+          structure: seg.structure,
+        });
+      }
+    }
+  }
+
+  // ── v2 Phase D: pattern layer (the coach's edge — noticing, not just
+  //    reporting). Each rule is a pure function over data already joined
+  //    above, emitting a plain-language statement + the numbers behind it.
+  //    The LLM narrates; the math stays here (Coach voice: "never explains
+  //    math"; hard rule #2). ──
+  const patterns: AthleteState["patterns"] = [];
+
+  // 1. Pacing discipline — fade tendency across quality sessions.
+  const fadeVals = execution
+    .map((e) => e.fade_pct)
+    .filter((f): f is number => f != null);
+  if (fadeVals.length >= 2) {
+    const faded = fadeVals.filter((f) => f > 1.5).length;
+    const negative = fadeVals.filter((f) => f < -1).length;
+    const avgFade = Math.round((fadeVals.reduce((s, f) => s + f, 0) / fadeVals.length) * 10) / 10;
+    if (faded >= Math.ceil(fadeVals.length * 0.6)) {
+      patterns.push({
+        kind: "pacing_fade",
+        statement: "You tend to go out too hot — most quality sessions slow through the reps.",
+        evidence: `${faded} of ${fadeVals.length} sessions faded (avg ${avgFade > 0 ? "+" : ""}${avgFade}%)`,
+        confidence: fadeVals.length >= 3 ? "medium" : "low",
+      });
+    } else if (negative >= Math.ceil(fadeVals.length * 0.6)) {
+      patterns.push({
+        kind: "pacing_control",
+        statement: "Strong pacing control — you've been negative-splitting your quality work.",
+        evidence: `${negative} of ${fadeVals.length} sessions got faster through the reps`,
+        confidence: fadeVals.length >= 3 ? "medium" : "low",
+      });
+    }
+  }
+
+  // 2. Niggle ↔ volume spike — body mentions that followed a volume jump.
+  const spikeMentions = possibleInjuries.filter(
+    (p) => p.volume_context && /\+\d+%/.test(p.volume_context)
+  );
+  if (spikeMentions.length >= 1) {
+    const areas = [...new Set(spikeMentions.map((p) => p.body_area))];
+    patterns.push({
+      kind: "niggle_load",
+      statement: `${areas.join(" and ")} ${areas.length > 1 ? "tend" : "tends"} to flag right after volume jumps.`,
+      evidence: spikeMentions.slice(0, 2).map((p) => `${p.body_area} ${p.date} (${p.volume_context})`).join("; "),
+      confidence: spikeMentions.length >= 2 ? "medium" : "low",
+    });
+  }
+
+  // 3. Personal heat sensitivity — how much hot days actually cost this athlete.
+  const hotAdj = environment
+    .map((e) => e.heat_adjustment_pct)
+    .filter((x): x is number => x != null && x >= 3);
+  if (hotAdj.length >= 2) {
+    const avgAdj = Math.round((hotAdj.reduce((s, x) => s + x, 0) / hotAdj.length) * 10) / 10;
+    patterns.push({
+      kind: "heat_sensitivity",
+      statement: "Heat costs you real pace — on warm days your effort reads slower than your fitness.",
+      evidence: `${hotAdj.length} hot runs averaged ${avgAdj}% heat slowdown`,
+      confidence: "medium",
+    });
+  }
+
+  // 4. Easy-day discipline — is the easy volume actually easy?
+  if (loadDistribution) {
+    const easyPct = loadDistribution.zone_pct_7d.easy;
+    const totalMin = loadDistribution.minutes_7d.easy + loadDistribution.minutes_7d.moderate +
+      loadDistribution.minutes_7d.threshold + loadDistribution.minutes_7d.hard;
+    if (easyPct < 65 && totalMin > 90) {
+      patterns.push({
+        kind: "easy_discipline",
+        statement: "Your easy days are creeping fast — not enough of the week is truly easy.",
+        evidence: `only ${easyPct}% of the last 7d was easy-zone time`,
+        confidence: "low",
+      });
+    }
+  }
+
+  // 5. Easy-pace creep — block-over-block easy pace at (proxy) stable effort.
+  if (recentBlocks.length >= 2) {
+    const cur = recentBlocks[0].avg_easy_pace_sec;
+    const prev = recentBlocks[1].avg_easy_pace_sec;
+    if (cur != null && prev != null && prev > 0) {
+      const deltaSec = Math.round(prev - cur); // + = faster now
+      if (Math.abs(deltaSec) >= 8) {
+        patterns.push({
+          kind: "easy_pace_trend",
+          statement: deltaSec > 0
+            ? "Your easy runs are getting faster block-over-block — aerobic base is taking."
+            : "Your easy pace has drifted slower this block — worth watching against how you feel.",
+          evidence: `easy pace ${deltaSec > 0 ? "−" : "+"}${Math.abs(deltaSec)}s/mi vs last block`,
+          confidence: "low",
+        });
+      }
+    }
+  }
+
+  // 6. Down-week response — execution quality the block after a volume drop.
+  if (recentBlocks.length >= 2) {
+    const curVol = recentBlocks[0].weekly_avg_miles;
+    const prevVol = recentBlocks[1].weekly_avg_miles;
+    if (prevVol > 0 && curVol / prevVol <= 0.8 && fadeVals.length >= 1) {
+      const cleanReps = fadeVals.filter((f) => f <= 1.5).length;
+      if (cleanReps >= Math.ceil(fadeVals.length * 0.6)) {
+        patterns.push({
+          kind: "down_week_response",
+          statement: "You absorb down weeks well — quality held up after the volume came off.",
+          evidence: `volume −${Math.round((1 - curVol / prevVol) * 100)}% vs last block, ${cleanReps}/${fadeVals.length} sessions held pace`,
+          confidence: "low",
+        });
+      }
+    }
+  }
+
+  // ── Rec #5: computed blind spots — grounds the Read's cant_see block ──
+  const dataGaps: AthleteState["data_gaps"] = [];
+
+  // No recent mood signal (no mood on recent runs AND no recent check-in).
+  const hasRecentMood = recentWorkouts.some((w) => w.mood) ||
+    (lastCheckIn?.created_at != null &&
+      new Date(lastCheckIn.created_at as string).getTime() > now.getTime() - 10 * 86400000);
+  if (!hasRecentMood && last7d.length > 0) {
+    dataGaps.push({ gap: "NO RECENT MOOD", detail: "Haven't heard how you're feeling in over a week." });
+  }
+
+  // No lap data on recent runs → no execution / heat read possible.
+  if (recentWorkouts.length > 0 && execution.length === 0 && environment.length === 0) {
+    dataGaps.push({
+      gap: "NO SPLIT DATA",
+      detail: "No lap data on recent runs — can't read splits, HR drift, or heat impact.",
+    });
+  }
+
+  // Thin or absent fitness estimate.
+  if (!fitnessPrediction || String(fitnessPrediction.confidence_tier ?? "").toLowerCase() === "low") {
+    dataGaps.push({ gap: "THIN FITNESS ESTIMATE", detail: "The fitness prediction is on light evidence." });
+  }
+
+  // A niggle on a single data point — not a pattern yet.
+  const onePointNiggle = niggleRecurrence.find((n) => n.occurrences === 1);
+  if (onePointNiggle && possibleInjuries.length > 0) {
+    dataGaps.push({
+      gap: "ONE DATA POINT",
+      detail: `${onePointNiggle.body_area} has come up once — not enough to call a pattern.`,
+    });
+  }
+
   // ── Build the state ──
   const state: AthleteState = {
     user_id: userId,
@@ -1198,9 +1893,11 @@ export async function rebuildAthleteState(
     goal_race: plan ? `${plan.target_race_distance} plan` : null,
     goal_time_seconds: plan?.target_time_seconds ?? null,
 
+    // ACWR retained for one release but no longer surfaced to the Read —
+    // load is now read from load_distribution (volume × intensity).
     acwr: acwr ? Math.round(acwr * 100) / 100 : null,
-    monotony_7d: null, // TODO: compute from workout_features
-    strain_7d: null,
+    monotony_7d: latestMonotony,
+    strain_7d: latestStrain,
     rolling_7d_miles: Math.round(rolling7dMiles * 10) / 10,
     rolling_28d_miles: Math.round(rolling28dMiles * 10) / 10,
     weekly_avg_miles: Math.round(weeklyAvg28d * 10) / 10,
@@ -1227,6 +1924,7 @@ export async function rebuildAthleteState(
     injury_risk_score: null, // set by injury-early-warning
     injury_risk_signals: [],
     possible_injuries: possibleInjuries,
+    niggle_recurrence: niggleRecurrence,
 
     pace_zones: paceZones,
     pace_zone_ranges: paceZoneRanges,
@@ -1236,7 +1934,7 @@ export async function rebuildAthleteState(
 
     today_workout: todayWorkout,
     upcoming_workouts: upcomingWorkouts,
-    week_compliance_pct: null, // TODO: compute
+    week_compliance_pct: weekCompliancePct,
 
     // ── Biographical fields ──
     fitness_vs_6mo_ago_seconds: fitnessVs6moSec,
@@ -1352,6 +2050,15 @@ export async function rebuildAthleteState(
 
     data_depth: dataDepth,
 
+    // ── v2 satellites ──
+    load_distribution: loadDistribution,
+    fitness_prediction: fitnessPrediction,
+    memories: memories,
+    environment: environment,
+    execution: execution,
+    patterns: patterns,
+    data_gaps: dataGaps,
+
     last_updated_at: new Date().toISOString(),
     last_updated_by: "rebuild",
     version: 1,
@@ -1412,19 +2119,75 @@ export function stateToPromptContext(state: AthleteState): string {
     }
   }
 
-  // Load
+  // Load — volume × intensity distribution (NOT ACWR). Same shape the
+  // athlete sees in PaceVolumeSpectrumChart.
   lines.push(`\nTraining Load (7d): ${state.rolling_7d_miles ?? 0} mi, ${state.runs_last_7d} runs (${state.hard_sessions_7d} hard, ${state.easy_sessions_7d} easy)`);
   lines.push(`28d avg: ${state.weekly_avg_miles ?? 0} mpw`);
-  if (state.acwr) lines.push(`ACWR: ${state.acwr} ${state.acwr > 1.3 ? "⚠ HIGH" : state.acwr < 0.8 ? "⚠ LOW" : "✓ OK"}`);
+  const ld = state.load_distribution;
+  if (ld) {
+    const p = ld.zone_pct_7d;
+    // WS3 — lead with the plain-language load STORY (the ACWR-ratio replacement):
+    // trend vs the 8-week norm, then the hard/easy split, then the recovery read.
+    if (ld.load_trend) {
+      const trendWord = ld.load_trend === "backing_off" ? "backing off" : ld.load_trend;
+      const vs = ld.load_vs_chronic_pct != null
+        ? ` (${ld.load_vs_chronic_pct >= 0 ? "+" : ""}${ld.load_vs_chronic_pct}% vs the prior 8-week norm)`
+        : "";
+      lines.push(`Load trend: ${trendWord}${vs} — intensity-weighted, last 2 weeks vs the 8-week baseline.`);
+    }
+    // The single pace-weighted load number — volume scaled by intensity.
+    lines.push(`Volume × Intensity load (7d): ${ld.volume_x_intensity_7d} weighted-min · 28d: ${ld.volume_x_intensity_28d} (a hard mile ≈ 5× an easy mile)`);
+    lines.push(
+      `Hard/easy split (7d): easy ${p.easy}% · moderate ${p.moderate}% · threshold ${p.threshold}% · hard ${p.hard}%` +
+      (ld.effort_distribution ? ` (${ld.effort_distribution})` : "") +
+      ` — ~80% easy is the guide.`
+    );
+    if (ld.recovery_read) {
+      const rr = ld.recovery_read;
+      const spacing = rr.avg_days_between_hard != null
+        ? `hard days ~${rr.avg_days_between_hard}d apart`
+        : `${rr.hard_sessions_28d} hard session${rr.hard_sessions_28d === 1 ? "" : "s"} in 28d`;
+      lines.push(`Recovery: ${spacing}${rr.down_week ? " · this is a down week (load well below norm)" : ""}.`);
+    }
+    if (ld.monotony_7d != null) {
+      lines.push(`Monotony (7d): ${ld.monotony_7d.toFixed(2)}${ld.strain_7d != null ? ` · strain ${Math.round(ld.strain_7d)}` : ""}`);
+    }
+  }
   if (state.longest_run_14d) lines.push(`Longest run (14d): ${state.longest_run_14d} mi`);
 
-  // Fitness + Predicted Race Times
-  if (state.predicted_marathon_seconds) {
-    lines.push(`\nPredicted race times:`);
-    if (state.predicted_5k_seconds) lines.push(`  5K: ${formatTime(state.predicted_5k_seconds)}`);
-    if (state.predicted_10k_seconds) lines.push(`  10K: ${formatTime(state.predicted_10k_seconds)}`);
-    if (state.predicted_half_seconds) lines.push(`  Half Marathon: ${formatTime(state.predicted_half_seconds)}`);
-    lines.push(`  Marathon: ${formatTime(state.predicted_marathon_seconds)}`);
+  // Fitness + Predicted Race Times — ranges + confidence, never a single
+  // time (hard rule #7).
+  const fp = state.fitness_prediction;
+  if (fp && fp.ranges) {
+    lines.push(`\nPredicted race times (quote the RANGE, never a single time):`);
+    const emit = (label: string, key: string) => {
+      const r = fp.ranges[key];
+      if (r) lines.push(`  ${label}: ${formatTime(r.low)}–${formatTime(r.high)}`);
+    };
+    emit("5K", "5K");
+    emit("10K", "10K");
+    emit("Half Marathon", "half");
+    emit("Marathon", "marathon");
+    if (fp.confidence_tier) {
+      // Cite the evidence behind the confidence: workout count + a recent race
+      // anchor if one exists (race anchors beat goal time — hard rule #7 / WS4).
+      const recentRace = (state.confirmed_races ?? [])
+        .filter((r) => r.date && (Date.now() - new Date(r.date).getTime()) <= 180 * 86400000)
+        .sort((a, b) => b.date.localeCompare(a.date))[0];
+      const evidence = [
+        fp.workout_count ? `${fp.workout_count} workouts` : null,
+        recentRace ? `recent ${recentRace.distance}` : null,
+      ].filter(Boolean).join(" + ");
+      lines.push(`  Confidence: ${fp.confidence_tier}${evidence ? ` (${evidence})` : ""}`);
+    }
+    if (state.fitness_trend) lines.push(`Fitness trend: ${state.fitness_trend}`);
+  } else if (state.predicted_marathon_seconds) {
+    // Fallback only when no range bands exist yet.
+    lines.push(`\nPredicted race times (approximate — no confidence band yet):`);
+    if (state.predicted_5k_seconds) lines.push(`  5K: ~${formatTime(state.predicted_5k_seconds)}`);
+    if (state.predicted_10k_seconds) lines.push(`  10K: ~${formatTime(state.predicted_10k_seconds)}`);
+    if (state.predicted_half_seconds) lines.push(`  Half Marathon: ~${formatTime(state.predicted_half_seconds)}`);
+    lines.push(`  Marathon: ~${formatTime(state.predicted_marathon_seconds)}`);
     if (state.fitness_trend) lines.push(`Fitness trend: ${state.fitness_trend}`);
   }
 
@@ -1459,6 +2222,46 @@ export function stateToPromptContext(state: AthleteState): string {
     if (state.mood_trend) lines.push(`Mood trend: ${state.mood_trend}`);
   }
 
+  // What I remember about this athlete — durable memory (preferences, life
+  // context, constraints, prior decisions). Use to sound like you know them.
+  if (state.memories && state.memories.length > 0) {
+    lines.push(`\nWhat I remember about you:`);
+    for (const m of state.memories.slice(0, 8)) {
+      lines.push(`  • ${m.content}`);
+    }
+  }
+
+  // Execution — did recent quality sessions land? Splits, fade, HR drift.
+  if (state.execution && state.execution.length > 0) {
+    lines.push(`\nRecent quality sessions (did they land?):`);
+    for (const e of state.execution.slice(0, 4)) {
+      const reps = e.rep_paces.length > 0 ? ` [${e.rep_paces.join(", ")}]` : "";
+      const fade = e.fade_pct != null ? ` · fade ${e.fade_pct > 0 ? "+" : ""}${e.fade_pct}%` : "";
+      const drift = e.hr_drift_pct != null ? ` · HR drift ${e.hr_drift_pct > 0 ? "+" : ""}${e.hr_drift_pct}%` : "";
+      lines.push(`  ${e.date} ${e.type ?? "workout"} — ${e.rep_count} reps${reps} · ${e.shape}${fade}${drift}`);
+    }
+  }
+
+  // Conditions — so a slow pace in heat isn't read as lost fitness. Only
+  // surface runs the heat actually affected (≥1.5% adjustment — env value is
+  // now a percent; a 67°F/67°dew run is ~1.9%, an 85°F/71°dew run ~4.3%).
+  if (state.environment && state.environment.length > 0) {
+    const hot = state.environment.filter(
+      (e) => e.heat_adjustment_pct != null && e.heat_adjustment_pct >= 1.5
+    );
+    if (hot.length > 0) {
+      lines.push(`\nConditions (don't read heat as lost fitness):`);
+      for (const e of hot.slice(0, 4)) {
+        const t = e.temp_f != null ? `${e.temp_f}°F` : "";
+        const dp = e.dew_point_f != null ? `, dew ${e.dew_point_f}°F` : "";
+        const adj = e.actual_pace && e.heat_adjusted_pace
+          ? ` — ran ${e.actual_pace}/mi, heat-adjusted ${e.heat_adjusted_pace}/mi (${e.heat_adjustment_pct}% slower from heat)`
+          : "";
+        lines.push(`  ${e.date}: ${t}${dp}${adj}`);
+      }
+    }
+  }
+
   // Injuries (current + history + newly detected mentions in notes)
   if (state.active_injuries.length > 0) {
     lines.push(`\n⚠ Active injuries: ${state.active_injuries.map((i) => `${i.body_area} (${i.status}, severity ${i.severity})`).join(", ")}`);
@@ -1484,6 +2287,36 @@ export function stateToPromptContext(state: AthleteState): string {
       lines.push(`    "${p.excerpt}"`);
     }
     lines.push(`→ If any of these mentions are new to you, ask about them gently. If mentioned multiple times or with pain words, treat as active.`);
+  }
+
+  // Durable niggle recurrence (12mo) — the pattern, from the body_mentions
+  // store. Surface the recurrence; never name a diagnosis (hard rule #2).
+  if (state.niggle_recurrence && state.niggle_recurrence.length > 0) {
+    const recurring = state.niggle_recurrence.filter((n) => n.occurrences >= 2);
+    if (recurring.length > 0) {
+      lines.push(`\nNiggle recurrence (12mo — surface the pattern, don't diagnose):`);
+      for (const n of recurring.slice(0, 4)) {
+        lines.push(`  ${n.body_area}: ${n.occurrences}× (${n.first_seen} → ${n.last_seen}, worst: ${n.worst_severity})`);
+      }
+    }
+  }
+
+  // Patterns — pre-computed coach observations. Narrate at most one or
+  // two; the math is already done, so state them plainly (don't re-derive).
+  if (state.patterns && state.patterns.length > 0) {
+    lines.push(`\nPatterns I've noticed (pre-computed — state plainly, don't explain the math):`);
+    for (const p of state.patterns.slice(0, 4)) {
+      lines.push(`  • ${p.statement} [${p.confidence}: ${p.evidence}]`);
+    }
+  }
+
+  // What I can't see — real, computed blind spots. Ground the cant_see block
+  // in one of these (eyebrow = the gap label); never invent a blind spot.
+  if (state.data_gaps && state.data_gaps.length > 0) {
+    lines.push(`\nWhat I can't see right now (use for the cant_see block; don't invent others):`);
+    for (const g of state.data_gaps.slice(0, 4)) {
+      lines.push(`  • ${g.gap} — ${g.detail}`);
+    }
   }
 
   // Biographical framing (ego-safe tone gate)
