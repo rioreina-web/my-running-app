@@ -294,6 +294,50 @@ opens the rep view; the heat toggle reveals adjusted splits; chat answers from
 
 ---
 
+## WS7 — duplicate training_logs (data hygiene; partly shipped)
+
+**Why:** measured on the golden athlete — **48 of 160 logs (30%) are
+duplicates**, inflating 90-day volume **~28%** and the quality count (23 vs
+~12). It also surfaces the WRONG workout: May 20's lapless `voice_log` copy
+classifies `recovery` while the real 9×1K lives on the `strava` copy. Every
+volume/load/ACWR/quality number is downstream of this — fix it or the corrected
+WS1 data is still wrong in aggregate.
+
+**Finding:** there are **zero** duplicate `vital_workout_id` groups — all dupes
+are *cross-source with differing/absent keys* (`strava`+`voice_log`,
+`auto_sync`+`strava`). So a natural-key constraint alone cannot prevent them.
+
+**Shipped this session (reviewable, NOT applied — needs `db push`):**
+- `migrations/20260613220000_dedupe_cross_source_training_logs.sql` — one-time
+  heal. Merges qualitative fields (notes/mood) from dropped copies onto the
+  keeper, keeps the richest copy (most laps → segments → notes → oldest).
+  Exact-key dups removed outright; heuristic (day + ~0.5mi) dups removed only
+  when the loser has **zero laps** (no structure ever lost). Preview-validated
+  read-only against prod: keeps the lap-owner in every group.
+- `migrations/20260613230000_training_logs_vital_workout_id_unique.sql` —
+  partial unique index on `(user_id, vital_workout_id)` — future-proofs the
+  same-id re-import class (currently zero, defense-in-depth).
+- After applying: re-run `compute-workout-features` backfill + `rebuild-athlete-
+  state`; verification SQL is in the cleanup migration footer.
+
+**Durable prevention — SHIPPED as a recurring sweep (not a trigger):**
+- `migrations/20260613240000_dedupe_training_logs_recurring.sql` — a
+  `SECURITY DEFINER` function `dedupe_recent_training_logs(p_days)` + a 30-min
+  `pg_cron` job. Reuses the one-time heal's exact logic, scoped to recent days.
+  A sweep (vs. an INSERT trigger) is deliberate: rep-level **laps arrive
+  asynchronously after the log**, so insert-time you can't tell which copy is
+  the lap-owner — it depends on arrival order. The sweep runs once the state
+  has settled, so the merge is always correct. Grouping is by
+  (user, day, ~0.5mi) because cross-source copies carry different/absent keys.
+  `search_path` pinned + tables qualified (avoids the drain-RPC schema bug).
+
+**Optional further hardening (not required, not done):** an ingestion-time
+match-or-attach so a voice memo annotates an existing run rather than briefly
+creating a second row the sweep later collapses. Lower urgency now that the
+sweep guarantees convergence; it would only remove the few-minute transient
+duplicate window. Touches `process-training-memo` / `auto_sync` insert
+contracts, so it needs its own review.
+
 ## Build order summary
 
 1. **WS0** pipeline 403 (unblocks data freshness)

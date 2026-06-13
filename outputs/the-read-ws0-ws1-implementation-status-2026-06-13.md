@@ -9,6 +9,25 @@ WS5–WS6 not started.
 
 ---
 
+## ✅ VERIFIED LIVE (2026-06-13, post-deploy + backfill)
+
+- **WS0** — all 14 `coach_insight_jobs` → `completed`; pipeline alive (took 3
+  layered fixes: auth → claim-RPC search_path → missing-column select).
+- **WS1** — backfill re-scored **202** workouts, backfilled **119** types.
+  May 20 → `intervals / 9×1K @ 5:08 (5K)`. Quality count **5 → 23** (above the
+  ~11+ floor; inflated by duplicate multi-source imports — see follow-up).
+- **WS2** — environment now lists hot runs: May 20 **+1.9%** (7:45→7:36),
+  May 19 **+4.3%** (7:24→7:05). Was permanently empty.
+- **WS3** — `load_trend: holding (-17% vs 8-wk norm)`, `volume_x_intensity_7d:
+  497` (non-zero), recovery read (3 hard sessions, ~10d apart).
+- **WS4** — 10K range **32:10–32:48, HIGH (58 workouts)** — a real range, not a
+  collapsed point.
+
+**One data-hygiene follow-up surfaced:** the test athlete has duplicate
+training_logs per real session (multiple import sources), which inflates the
+quality count (23 vs ~12 real) and would double-count volume/load. Worth a
+dedup pass — separate from this spec.
+
 ## TL;DR
 
 - **WS0** — the three drain crons are ported off the brittle exact-key auth
@@ -86,6 +105,11 @@ the 14 `failed` jobs (`status='queued', attempts=0`) so they reprocess.
 The full dead-pipeline chain was three masked layers: 403 auth → claim-RPC
 `search_path` → this missing-column select. Each only surfaced once the prior
 was fixed.
+
+**RESOLVED & VERIFIED LIVE (2026-06-13):** after deploying all three fixes and
+re-queuing the stuck jobs, **all 14 `coach_insight_jobs` → `completed`**, coach
+insights written to `training_logs`, drains returning 200. The June-11 backlog
+is fully drained; the enrichment pipeline is current.
 
 (Separate observation: Postgres logs also show an unrelated `syntax error at or
 near "#"` from some other cron job — not in the drain path. Worth a look later.)
