@@ -69,6 +69,24 @@ both functions with `public.`-qualified table refs (logic otherwise identical).
 **Action: one more `supabase db push`** — no function redeploy needed; the next
 cron tick (every minute) drains the backlog.
 
+### WS0 follow-up #2 — `generate-workout-insight` selects a nonexistent column
+
+With auth + the RPC fixed, the drain finally reached `generate-workout-insight`,
+which returned `HTTP 500: {"error":"Database error"}` and failed all 14 jobs.
+Cause: its `training_logs` select listed `scheduled_workout_id`, a column that
+**doesn't exist** in this schema — PostgREST rejects the whole query. The
+function already guards `if (row.scheduled_workout_id)` for the optional
+scheduled-workout enrichment, so the fix is just to drop the column from the
+select; `row.scheduled_workout_id` becomes `undefined` and the block no-ops.
+
+**Fix:** edit in `generate-workout-insight/index.ts` (no migration).
+**Action:** `supabase functions deploy generate-workout-insight`, then re-queue
+the 14 `failed` jobs (`status='queued', attempts=0`) so they reprocess.
+
+The full dead-pipeline chain was three masked layers: 403 auth → claim-RPC
+`search_path` → this missing-column select. Each only surfaced once the prior
+was fixed.
+
 (Separate observation: Postgres logs also show an unrelated `syntax error at or
 near "#"` from some other cron job — not in the drain path. Worth a look later.)
 

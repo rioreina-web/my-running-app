@@ -152,8 +152,14 @@ Deno.serve(async (req: Request) => {
     // --- Load row ---
     const { data: row, error: loadErr } = await adminClient
       .from("training_logs")
+      // NOTE: `scheduled_workout_id` is intentionally NOT selected — that
+      // column does not exist on training_logs in this schema, and including it
+      // made PostgREST reject the entire query ("Database error" 500, which
+      // failed every coach_insight job). The scheduled-workout enrichment below
+      // is guarded on `row.scheduled_workout_id` being truthy, so it simply
+      // no-ops (undefined) until a real linkage column exists.
       .select(
-        "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, cleaned_notes, notes, coach_insight, scheduled_workout_id, pace_segments, extracted_data"
+        "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, cleaned_notes, notes, coach_insight, pace_segments, extracted_data"
       )
       .eq("id", trainingLogId)
       .maybeSingle<TrainingLogRow>();
