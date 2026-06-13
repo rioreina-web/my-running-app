@@ -118,7 +118,8 @@ struct MainTabView: View {
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 2 — Coach
+                // Tab 2 — Coach (the daily Read; unchanged). The analytical
+                // cards moved into Training Analysis per the 2026-06-13 reframe.
                 NavigationStack { CoachReadView() }
                     .opacity(selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 2)
