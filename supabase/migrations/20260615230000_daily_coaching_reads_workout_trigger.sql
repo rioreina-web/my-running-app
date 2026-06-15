@@ -9,6 +9,14 @@
 -- stays frozen — a 14mi long run logged at 11am is invisible until the
 -- next morning's cron.
 --
+-- ── 2026-06-15 repoint (ghost-table resolution) ────────────────────────
+-- This migration was quarantined because it read `user_profiles.timezone`
+-- and depended on the cron migration's user_profiles ALTER. user_profiles
+-- never shipped to prod. The single timezone lookup has been repointed to
+-- `athlete_settings.timezone` (created in 20260615210000); it still soft-
+-- falls back to UTC if the athlete has no settings row. No user_profiles
+-- dependency remains.
+--
 -- WHY DIRECT pg_net IS SAFE HERE (READ BEFORE EDITING):
 -- The codebase has elsewhere replaced direct `pg_net` triggers on
 -- `training_logs` with outbox + cron-drainer patterns (see
@@ -123,13 +131,13 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    -- Resolve athlete-local "today". Defaults to UTC if the column
-    -- (added in 20260519110000) is missing or the timezone string is
-    -- bad. Wrap in a nested block so a bad IANA string falls back
-    -- cleanly instead of failing the trigger.
+    -- Resolve athlete-local "today" from athlete_settings.timezone.
+    -- Defaults to UTC if the athlete has no settings row or the timezone
+    -- string is bad. Wrap in a nested block so a bad IANA string falls
+    -- back cleanly instead of failing the trigger.
     BEGIN
         SELECT COALESCE(timezone, 'UTC') INTO _athlete_tz
-          FROM user_profiles
+          FROM athlete_settings
          WHERE user_id = NEW.user_id
          LIMIT 1;
         _athlete_tz := COALESCE(_athlete_tz, 'UTC');
@@ -217,8 +225,8 @@ REVOKE ALL ON FUNCTION fn_enqueue_daily_read_workout_rerender() FROM PUBLIC;
 COMMENT ON FUNCTION fn_enqueue_daily_read_workout_rerender() IS
     'training_logs trigger function — fires coaching-daily-read with '
     'triggered_by=workout_trigger after a quality session, at most once '
-    'per athlete per local day. See migration header for the direct-'
-    'pg_net design rationale.';
+    'per athlete per local day (timezone from athlete_settings, default '
+    'UTC). See migration header for the direct-pg_net design rationale.';
 
 -- ----------------------------------------------------------------------------
 -- 3. Triggers

@@ -10,14 +10,22 @@
 -- daily_coaching_reads unique (user_id, read_date) constraint, so any
 -- double-fires from DST transitions or manual triggers collapse cleanly.
 --
--- Three pieces:
---   1. ALTER TABLE user_profiles ADD COLUMN timezone (additive — the
---      column doesn't exist yet; the cron filter and the edge function
---      both need it).
---   2. daily_read_dispatch_log — append-only log of every cron tick:
+-- ── 2026-06-15 repoint (ghost-table resolution) ────────────────────────
+-- The original version of this migration (quarantined) did
+-- `ALTER TABLE user_profiles ADD COLUMN timezone` and scanned
+-- `user_profiles` for candidates. user_profiles never shipped to prod, so
+-- the migration was BLOCKED. It has been repointed onto the canonical
+-- surfaces:
+--   * candidate athletes  → `athlete_state` (one row per athlete; the DCO)
+--   * per-athlete timezone → `athlete_settings.timezone` (LEFT JOIN,
+--                            default 'UTC'), created in 20260615210000.
+-- No user_profiles dependency remains.
+--
+-- Two pieces (the user_profiles ALTER is gone):
+--   1. daily_read_dispatch_log — append-only log of every cron tick:
 --      when it fired, how many candidates matched, how many we actually
 --      dispatched. Service-role only.
---   3. enqueue_daily_reads() — SECURITY DEFINER function that does the
+--   2. enqueue_daily_reads() — SECURITY DEFINER function that does the
 --      candidate scan + per-user net.http_post + log insert. Cron calls
 --      this once per hour.
 --
@@ -41,23 +49,7 @@ END;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 1. Add `timezone` to user_profiles
---
--- IANA timezone name (e.g. "America/Los_Angeles"). Default 'UTC' so
--- existing rows fire at 06:00 UTC until the iOS client backfills the
--- real timezone from the device. The edge function's date-resolution
--- helper (resolveAthleteLocalDate) also defaults to UTC, so the column
--- and the helper agree.
--- ----------------------------------------------------------------------------
-ALTER TABLE user_profiles
-    ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'UTC';
-
-COMMENT ON COLUMN user_profiles.timezone IS
-    'IANA timezone name (e.g. "America/Los_Angeles"). Used by the daily '
-    'Coach Read cron to fire at the athlete''s local 6 AM. Default ''UTC''.';
-
--- ----------------------------------------------------------------------------
--- 2. Dispatch log
+-- 1. Dispatch log
 --
 -- Append-only audit of every hourly cron tick. Lets us spot-check
 -- "did the cron run at 06:00 PT yesterday?" without grepping cron logs,
@@ -89,7 +81,7 @@ CREATE POLICY "rls_daily_read_dispatch_log_service_role"
     WITH CHECK (auth.role() = 'service_role');
 
 -- ----------------------------------------------------------------------------
--- 3. enqueue_daily_reads()
+-- 2. enqueue_daily_reads()
 --
 -- SECURITY DEFINER so the cron context (which runs as the cron user)
 -- can read vault.decrypted_secrets without being granted blanket vault
@@ -127,13 +119,16 @@ BEGIN
         RETURN;
     END IF;
 
-    -- One row per athlete whose local hour right now is 6.
-    -- COALESCE protects against NULL timezone (the column has a NOT NULL
-    -- default so this is belt-and-braces).
+    -- One row per athlete whose local hour right now is 6. Athletes come
+    -- from athlete_state (the canonical per-athlete surface); timezone is
+    -- LEFT JOINed from athlete_settings and defaults to UTC for athletes
+    -- who haven't set one yet.
     FOR _candidate IN
-        SELECT user_id, COALESCE(timezone, 'UTC') AS tz
-          FROM user_profiles
-         WHERE user_id IS NOT NULL
+        SELECT st.user_id AS user_id,
+               COALESCE(s.timezone, 'UTC') AS tz
+          FROM athlete_state st
+          LEFT JOIN athlete_settings s ON s.user_id = st.user_id
+         WHERE st.user_id IS NOT NULL
     LOOP
         BEGIN
             -- Per-user timezone evaluation in its own block so a bad
@@ -172,14 +167,14 @@ REVOKE ALL ON FUNCTION enqueue_daily_reads() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION enqueue_daily_reads() TO service_role;
 
 COMMENT ON FUNCTION enqueue_daily_reads() IS
-    'Hourly cron entry point for daily Coach Reads. Selects user_profiles '
-    'rows whose local hour is 6, fires net.http_post to coaching-daily-read '
-    'for each, and writes a row to daily_read_dispatch_log. Idempotency: '
-    'the edge function short-circuits if a completed read already exists '
-    'for (user_id, today).';
+    'Hourly cron entry point for daily Coach Reads. Selects athlete_state '
+    'rows whose local hour (from athlete_settings.timezone, default UTC) is '
+    '6, fires net.http_post to coaching-daily-read for each, and writes a '
+    'row to daily_read_dispatch_log. Idempotency: the edge function '
+    'short-circuits if a completed read already exists for (user_id, today).';
 
 -- ----------------------------------------------------------------------------
--- 4. Hourly cron schedule
+-- 3. Hourly cron schedule
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE

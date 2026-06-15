@@ -516,3 +516,9 @@ verify_jwt = false
 
 [functions.weekly-coaching-report]
 verify_jwt = false
+
+[functions.trends-timeline]
+# Read-only Trends timeline (mileage/intensity/pace/mood/niggles). Dual-mode
+# auth handled in-function by requireAuthOrServiceRole, so the gateway does not
+# pre-verify — matches the weekly-coaching-report / coaching-daily-read pattern.
+verify_jwt = false

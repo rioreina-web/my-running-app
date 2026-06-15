@@ -33,16 +33,25 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The four canonical tabs. Raw values match the integer tags the
+/// The five canonical tabs. Raw values match the integer tags the
 /// `MainTabView` uses for `selectedTab` — the bar binds to `Binding<Int>`
 /// so no host refactor is required.
 ///
 /// The old `Train` + `Trends` tabs were collapsed into a single analytical
-/// `Training` tab (see `training-tab-spec.md`), so Coach/Plan shift down a
-/// slot: log 0 · training 1 · coach 2 · plan 3.
+/// `Training` tab (see `training-tab-spec.md`): log 0 · training 1 · coach
+/// 2 · plan 3.
+///
+/// Then the chart-centric **Trends** surface was reintroduced as its own
+/// tab (the unified mileage/intensity/pace/mood/niggle timeline). To keep
+/// the existing integer tags stable — `VoiceLogView` jumps to tag 2 (The
+/// Read) and `CoachReadView` to tag 1 (Training) — Trends takes a NEW
+/// non-contiguous raw value (4) while being *declared* between Training
+/// and Coach so `allCases` (declaration order) renders it in the right
+/// slot. Net display order: Log · Training · Trends · The Read · Plan.
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
     case training = 1
+    case trends = 4
     case coach = 2
     case plan = 3
 
@@ -54,6 +63,7 @@ enum DripTab: Int, CaseIterable, Identifiable {
         switch self {
         case .log: "Log"
         case .training: "Training"
+        case .trends: "Trends"
         case .coach: "The Read"
         case .plan: "Plan"
         }

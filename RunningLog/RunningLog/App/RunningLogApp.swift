@@ -70,6 +70,10 @@ struct MainTabView: View {
     // Sidebar state
     @State private var showSidebar = false
 
+    // Staged coach question (e.g. from the Trends ask bar). Consumed by
+    // The Read tab's composer. See CoachAskContext.
+    @State private var coachAsk = CoachAskContext()
+
     var body: some View {
         ZStack {
             // Custom bar (DripTabBar) replaces the system TabView. The
@@ -77,7 +81,7 @@ struct MainTabView: View {
             // icons — see design-system/ui_kits/ios_app/Primitives.jsx::TabBar
             // and Post Run Drip Design System/ui_kits/ios_app/tokens.css.
             //
-            // Routing: all 4 tab views render simultaneously in a ZStack
+            // Routing: all 5 tab views render simultaneously in a ZStack
             // and we toggle `.opacity` + `.allowsHitTesting` based on
             // `selectedTab`. This matches the system TabView's behaviour
             // (each tab's `@State` and scroll position survive a swap)
@@ -89,7 +93,7 @@ struct MainTabView: View {
             // independently; this just stops the cancellations from
             // happening in the first place.)
             //
-            // Cost: 4 view trees alive at once instead of 1. Acceptable
+            // Cost: 5 view trees alive at once instead of 1. Acceptable
             // for the user-visible win and avoids the refetch storm
             // (loadActivePlan / fitness-prediction / scheduled-workouts
             // each previously refired on every tab re-entry).
@@ -134,6 +138,15 @@ struct MainTabView: View {
                 }
                 .opacity(selectedTab == 3 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 3)
+
+                // Tab 4 — Trends (chart-centric "show me what I can't see"
+                // surface; the unified mileage/intensity/pace/mood/niggle
+                // timeline). Non-contiguous tag 4 keeps tags 0–3 stable —
+                // see DripTab. Displays in slot 3 of the bar (between
+                // Training and The Read).
+                NavigationStack { TrendsTabView() }
+                    .opacity(selectedTab == 4 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 4)
             }
             .safeAreaInset(edge: .bottom) {
                 DripTabBar(selected: $selectedTab)
@@ -143,6 +156,7 @@ struct MainTabView: View {
             .environment(athleteProfileService)
             .environment(\.selectedTab, $selectedTab)
             .environment(\.showSidebar, $showSidebar)
+            .environment(\.coachAsk, coachAsk)
             .task {
                 await athleteProfileService.fetchProfile()
                 try? await AthletePaceProfileService.shared.refresh()

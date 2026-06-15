@@ -38,7 +38,6 @@ import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v4.ts";
-import { getModelConfig } from "../_shared/router.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
 // ── Types matching the daily_coaching_reads JSON columns ─────────────
@@ -202,7 +201,21 @@ Deno.serve(async (req) => {
     const context = await buildDailyReadContext(supabase, userId);
 
     // ── 4. Call Gemini ───────────────────────────────────────────────
-    const modelConfig = getModelConfig("complex"); // creative + extended context
+    // The Read runs its OWN frontier model, deliberately decoupled from the
+    // shared cost-optimization router (_shared/router.ts). The router's job is
+    // "cheapest model that works"; The Read is the flagship synthesis surface
+    // and runs on a WEEKLY cadence, so per-call cost is small and reasoning
+    // quality matters most. Gemini 3 Pro (gemini-3.1-pro-preview) for
+    // coach-grade synthesis over the full quant + qualitative context bundle.
+    // Same GEMINI_API_KEY / generativelanguage endpoint already used here.
+    const modelConfig = {
+      model: "gemini-3.1-pro-preview",
+      provider: "gemini" as const,
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKeyEnv: "GEMINI_API_KEY",
+      maxTokens: DAILY_READ_MAX_OUTPUT_TOKENS,
+      costPer1kTokens: 0, // not used for billing here
+    };
     const apiKey = Deno.env.get(modelConfig.apiKeyEnv);
     if (!apiKey) {
       await markFailed(supabase, pending.id, `${modelConfig.apiKeyEnv} not configured`);
@@ -223,16 +236,12 @@ Deno.serve(async (req) => {
       const model = genAI.getGenerativeModel({
         model: modelConfig.model,
         generationConfig: {
-          // DELIBERATE OVERRIDE of router.getModelConfig("complex").maxTokens
-          // (currently 2000). gemini-2.5-flash spends "thinking" tokens out of
-          // this same budget; at 2000 the thinking consumed it and the JSON
-          // truncated mid-string ("Unterminated string in JSON") → repeated
-          // 502s. The v4 spine also produces a longer structured read. Keep
-          // this LOCAL and named so a future "tidy" that routes it back through
-          // the 2000-token complex config can't silently reintroduce the
-          // truncation. If the router's complex cap is ever raised to match,
-          // delete this override. (A/B note: gemini-2.5-pro is the candidate to
-          // evaluate for v4's nuance — test together with this budget.)
+          // Generous, NAMED output budget. Gemini-3 Pro spends "thinking"
+          // tokens out of this same budget; a tight cap consumed it and the
+          // JSON truncated mid-string ("Unterminated string in JSON") →
+          // repeated 502s. The v4 spine also produces a longer structured
+          // read. Keep this LOCAL and named so a future "tidy" can't silently
+          // reintroduce the truncation by lowering it.
           maxOutputTokens: DAILY_READ_MAX_OUTPUT_TOKENS,
           temperature: 0.6,
           responseMimeType: "application/json",
@@ -304,15 +313,16 @@ Deno.serve(async (req) => {
 
 /**
  * Resolve today's date in the athlete's local timezone. Reads
- * `user_profiles.timezone` (e.g. "America/Los_Angeles"); falls back to
- * UTC if missing.
+ * `athlete_settings.timezone` (e.g. "America/Los_Angeles"); falls back to
+ * UTC if missing. (Was `user_profiles.timezone` — repointed 2026-06-15 to
+ * the SETTINGS surface; user_profiles never shipped to prod.)
  */
 async function resolveAthleteLocalDate(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<string> {
   const { data } = await supabase
-    .from("user_profiles")
+    .from("athlete_settings")
     .select("timezone")
     .eq("user_id", userId)
     .maybeSingle();

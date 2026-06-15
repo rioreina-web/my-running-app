@@ -13,6 +13,7 @@
 import SwiftUI
 
 struct ModelOfYouView: View {
+    @Environment(\.coachAsk) private var coachAsk
     @State private var state: ModelOfYouState?
     @State private var loaded = false
 
@@ -49,6 +50,22 @@ struct ModelOfYouView: View {
             state = await ModelOfYouState.fetch()
             loaded = true
         }
+        // Composer presented when another surface (e.g. the Trends ask
+        // bar) stages a question via CoachAskContext.
+        .sheet(isPresented: askBinding) {
+            CoachAskSheet(
+                question: coachAsk.pendingQuestion ?? "",
+                focus: coachAsk.focusLabel
+            )
+        }
+    }
+
+    /// True while a coach question is staged; clearing it dismisses + resets.
+    private var askBinding: Binding<Bool> {
+        Binding(
+            get: { coachAsk.pendingQuestion != nil },
+            set: { presented in if !presented { coachAsk.clear() } }
+        )
     }
 
     // MARK: - Header

@@ -31,6 +31,11 @@ import {
   type LapInput,
   type PaceZones,
 } from "./workoutSegmentation.ts";
+import {
+  computeFitnessSignal,
+  type FitnessSignal,
+  type SessionInput as FitnessSessionInput,
+} from "./fitnessSignal.ts";
 
 // ── Types ────────────────────────────────────────────────
 
@@ -284,6 +289,18 @@ export interface AthleteState {
     shape: string;                // "negative split" | "even" | "faded"
     structure?: string | null;    // WS1: "9×1K @ 5:07 (5K)" when structured
   }>;
+
+  /**
+   * Objective fitness backbone — pace-at-HR efficiency trend over 12 weeks.
+   * Rolls per-rep pace+HR (from `running_workout_laps`) UP across sessions,
+   * bucketed by comparable effort (easy / threshold / interval): "same pace,
+   * HR direction" = the fitness verdict the Read expects, plus long-run
+   * aerobic decoupling. Direction + window + sample-based confidence — never a
+   * point estimate (hard rule #7). Computed by `_shared/fitnessSignal.ts`.
+   * Null until ≥2 comparable sessions exist in each of the recent/baseline
+   * windows.
+   */
+  fitness_signal: FitnessSignal | null;
 
   /**
    * Longitudinal patterns — the coach's edge. Rule-based observations over
@@ -1740,6 +1757,53 @@ export async function rebuildAthleteState(
     }
   }
 
+  // ── Objective fitness signal — pace-at-HR efficiency trend (WS-fitness) ──
+  // The Read's fitness verdict wants "same pace, HR direction over weeks." The
+  // 28-day `lapsByWorkout` set above is too short for a trend, so pull laps
+  // over the full 84-day scan window from the block-history logs and roll them
+  // up via the shared pure module. Best-effort: any failure leaves the signal
+  // null (the Read degrades to its other fitness inputs).
+  let fitnessSignal: FitnessSignal | null = null;
+  try {
+    const blockLogs = ((blockHistoryRes?.data ?? []) as Array<Record<string, unknown>>)
+      .filter((l) => {
+        const d = String(l.workout_date ?? "");
+        return d && d >= eightyFourDaysAgo;
+      });
+    const blockMetaById = new Map<string, string>(); // id -> YYYY-MM-DD
+    for (const l of blockLogs) {
+      blockMetaById.set(String(l.id), String(l.workout_date ?? "").slice(0, 10));
+    }
+    const blockIds = [...blockMetaById.keys()];
+    const fitnessLapsByWorkout = new Map<string, Array<Record<string, unknown>>>();
+    for (let i = 0; i < blockIds.length; i += 200) {
+      const chunk = blockIds.slice(i, i + 200);
+      if (chunk.length === 0) continue;
+      const { data: lapsData } = await supabase
+        .from("running_workout_laps")
+        .select("workout_id, lap_index, is_rest, distance_meters, avg_pace_sec_per_mile, avg_heart_rate, moving_time_seconds, elapsed_time_seconds")
+        .eq("user_id", userId)
+        .in("workout_id", chunk)
+        .order("lap_index", { ascending: true });
+      for (const lap of (lapsData ?? []) as Array<Record<string, unknown>>) {
+        const wid = String(lap.workout_id);
+        const arr = fitnessLapsByWorkout.get(wid) ?? [];
+        arr.push(lap);
+        fitnessLapsByWorkout.set(wid, arr);
+      }
+    }
+    const fitnessSessions: FitnessSessionInput[] = [];
+    for (const [wid, laps] of fitnessLapsByWorkout) {
+      const date = blockMetaById.get(wid);
+      if (date) fitnessSessions.push({ date, laps: laps as unknown as LapInput[] });
+    }
+    if (fitnessSessions.length > 0) {
+      fitnessSignal = computeFitnessSignal(fitnessSessions, execZones, now);
+    }
+  } catch (err) {
+    console.warn("[AthleteState] fitness-signal computation failed:", err);
+  }
+
   // ── v2 Phase D: pattern layer (the coach's edge — noticing, not just
   //    reporting). Each rule is a pure function over data already joined
   //    above, emitting a plain-language statement + the numbers behind it.
@@ -2056,6 +2120,7 @@ export async function rebuildAthleteState(
     memories: memories,
     environment: environment,
     execution: execution,
+    fitness_signal: fitnessSignal,
     patterns: patterns,
     data_gaps: dataGaps,
 
@@ -2189,6 +2254,40 @@ export function stateToPromptContext(state: AthleteState): string {
     if (state.predicted_half_seconds) lines.push(`  Half Marathon: ~${formatTime(state.predicted_half_seconds)}`);
     lines.push(`  Marathon: ~${formatTime(state.predicted_marathon_seconds)}`);
     if (state.fitness_trend) lines.push(`Fitness trend: ${state.fitness_trend}`);
+  }
+
+  // Fitness signal (objective) — pace-at-HR efficiency trend. The Read's
+  // FITNESS section pairs this with the predicted ranges and how training has
+  // felt. It's a DIRECTION over a real window with a confidence — narrate it,
+  // don't recompute it. "Same pace, HR trending down = fitter."
+  const fs = state.fitness_signal;
+  if (fs && (fs.efficiency.length > 0 || fs.verdict)) {
+    lines.push(`\nFitness signal (objective — same effort, HR/pace direction over ~12 weeks; narrate, don't recompute):`);
+    if (fs.verdict) lines.push(`  ${fs.verdict}`);
+    const bucketName: Record<string, string> = {
+      easy: "Easy runs",
+      threshold: "Threshold (LT)",
+      interval: "Intervals (VO2)",
+    };
+    for (const e of fs.efficiency) {
+      const weeks = Math.max(1, Math.round(e.baseline_days / 7));
+      const arrow = e.direction === "improving" ? "↑ fitter"
+        : e.direction === "declining" ? "↓ slipping" : "→ holding";
+      lines.push(
+        `  ${bucketName[e.bucket] ?? e.bucket}: ${formatPace(e.pace_baseline_sec)}/mi @ ${e.hr_baseline} → ` +
+        `${formatPace(e.pace_recent_sec)}/mi @ ${e.hr_recent} ` +
+        `(efficiency ${e.ef_delta_pct > 0 ? "+" : ""}${e.ef_delta_pct}%, ${arrow}) ` +
+        `[${e.confidence}: ${e.recent_samples} recent vs ${e.baseline_samples} prior, ~${weeks}wk]`,
+      );
+    }
+    const d = fs.decoupling;
+    if (d && d.recent_pct != null && d.direction) {
+      const arrow = d.direction === "improving" ? "↑ more durable"
+        : d.direction === "declining" ? "↓ less durable" : "→ steady";
+      const base = d.baseline_pct != null ? `${d.baseline_pct}% → ` : "";
+      lines.push(`  Long-run decoupling: ${base}${d.recent_pct}% (${arrow}) [${d.recent_samples} recent / ${d.baseline_samples} prior long runs]`);
+    }
+    lines.push(`→ This is the OBJECTIVE half of the fitness read. Pair it with how training has felt; don't read heat-inflated HR as lost fitness (see Conditions).`);
   }
 
   // Training pace zones (CRITICAL — the AI must quote these exactly, never invent paces)
