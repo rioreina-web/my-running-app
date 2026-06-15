@@ -355,8 +355,12 @@ async function generateInsight(
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
+        // 100 truncated the output: gemini-2.5-flash spends "thinking" tokens
+        // from this same budget, leaving fragments like "The workout showed".
+        // 800 leaves room for thinking + a 2–3 sentence insight. (Same lesson
+        // as the daily-read 502 truncation.)
         temperature: 0.7,
-        maxOutputTokens: 100,
+        maxOutputTokens: 800,
       },
     });
 

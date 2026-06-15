@@ -3,353 +3,189 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Coach — model of you (mock, real data)</title>
+<title>Training Analysis — mock (current real data)</title>
 <style>
   :root{
     --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
     --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
     --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
     --amber:#C4873A; --rose:#B83A4A; --green:#2D8A4E;
-    --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
-    --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+    --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
     --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
   body{margin:0;background:#d9d4cc;font-family:var(--font-body);color:var(--ink);
     -webkit-font-smoothing:antialiased;padding:28px 0 60px}
-  .wrap{max-width:1180px;margin:0 auto;display:flex;gap:36px;align-items:flex-start;
-    justify-content:center;flex-wrap:wrap;padding:0 20px}
-
-  /* phone */
+  .wrap{max-width:1180px;margin:0 auto;display:flex;gap:36px;justify-content:center;flex-wrap:wrap;padding:0 20px}
   .phone{width:390px;flex:0 0 390px;background:var(--paper);border-radius:38px;
-    box-shadow:0 24px 60px rgba(0,0,0,.28),0 2px 0 rgba(255,255,255,.4) inset;
-    border:10px solid #15130f;overflow:hidden;position:relative}
-  .notch{height:26px;background:#15130f;position:relative}
-  .notch::after{content:"";position:absolute;left:50%;top:0;transform:translateX(-50%);
-    width:128px;height:18px;background:#15130f;border-radius:0 0 14px 14px}
-  .screen{height:760px;overflow-y:auto;scroll-behavior:smooth}
+    box-shadow:0 24px 60px rgba(0,0,0,.28);border:10px solid #15130f;overflow:hidden}
+  .notch{height:26px;background:#15130f}
+  .screen{height:770px;overflow-y:auto}
   .screen::-webkit-scrollbar{width:0}
-
   .pad{padding:18px 18px 4px}
-  .eyebrow{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--ink-2)}
-  .rule{height:1px;background:var(--rule);margin:14px 18px}
-  .coral{color:var(--coral)}
-
-  /* header */
-  h1.title{font-family:var(--font-display);font-weight:600;font-size:30px;line-height:1.05;
-    margin:6px 0 2px;letter-spacing:-.01em}
+  .eyebrow{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+  h1.title{font-family:var(--font-display);font-weight:600;font-size:29px;line-height:1.06;margin:6px 0 3px;letter-spacing:-.01em}
   .sub{font-size:12.5px;color:var(--ink-2);margin:0}
-
-  /* lead read */
-  .read{margin:14px 18px 6px;background:var(--card);border-radius:12px;
-    border:1px solid var(--rule);padding:18px 18px 16px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
-  .read .kick{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--coral);margin-bottom:9px}
-  .read h2{font-family:var(--font-display);font-weight:600;font-size:23px;line-height:1.12;
-    margin:0 0 10px;letter-spacing:-.01em}
-  .read p{font-size:14.5px;line-height:1.5;margin:0 0 10px;color:#2a2724}
-  .read .ask{font-style:italic;color:var(--ink-2);font-size:14px;border-top:1px solid var(--rule);
-    padding-top:11px;margin-top:12px}
-
-  .sectionlabel{display:flex;align-items:center;gap:10px;margin:22px 18px 4px}
-  .sectionlabel .eyebrow{white-space:nowrap}
+  .read{margin:14px 18px 4px;background:var(--card);border-radius:12px;border:1px solid var(--rule);padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+  .read p{font-size:14px;line-height:1.5;margin:0 0 10px;color:#2a2724}
+  .read .ask{font-style:italic;color:var(--ink-2);font-size:13.5px;border-top:1px solid var(--rule);padding-top:10px;margin:0}
+  .sectionlabel{display:flex;align-items:center;gap:10px;margin:20px 18px 2px}
   .sectionlabel .line{flex:1;height:1px;background:var(--rule)}
-
-  /* trapdoor cards */
-  .card{margin:10px 18px;background:var(--card);border-radius:12px;border:1px solid var(--rule);
-    overflow:hidden}
-  .card .head{display:flex;align-items:flex-start;gap:12px;padding:15px 16px;cursor:pointer;
-    user-select:none}
-  .card .head:hover{background:var(--paper-elevated)}
-  .lbl{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
-    color:var(--ink-2);margin-bottom:5px}
-  .val{font-family:var(--font-display);font-weight:600;font-size:21px;line-height:1.1;letter-spacing:-.01em}
-  .val small{font-family:var(--font-body);font-weight:400;font-size:13px;color:var(--ink-2);letter-spacing:0}
-  .obs{font-size:13.5px;line-height:1.45;color:#2f2c29;margin:6px 0 0}
-  .cardbody{flex:1}
-  .chev{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);margin-top:2px;
-    transition:transform .25s}
+  .card{margin:10px 18px;background:var(--card);border-radius:12px;border:1px solid var(--rule);overflow:hidden}
+  .head{display:flex;align-items:flex-start;gap:12px;padding:14px 15px;cursor:pointer}
+  .head:hover{background:var(--paper-elevated)}
+  .lbl{font-family:var(--font-mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);margin-bottom:5px}
+  .val{font-family:var(--font-display);font-weight:600;font-size:20px;line-height:1.1}
+  .val small{font-family:var(--font-body);font-weight:400;font-size:12.5px;color:var(--ink-2)}
+  .obs{font-size:13px;line-height:1.45;color:#2f2c29;margin:6px 0 0}
+  .body{flex:1}
+  .chev{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);transition:transform .25s}
   .card.open .chev{transform:rotate(90deg)}
-  .pill{display:inline-block;font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;
-    text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--coral-wash);
-    color:var(--coral-deep);vertical-align:middle;margin-left:6px}
-  .pill.warn{background:rgba(196,135,58,.16);color:#8a5a14}
-  .pill.flag{background:rgba(184,58,74,.14);color:var(--rose)}
+  .pill{display:inline-block;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:999px;vertical-align:middle;margin-left:6px}
   .pill.good{background:rgba(45,138,78,.14);color:var(--green)}
-
-  /* drawer */
-  .drawer{max-height:0;overflow:hidden;transition:max-height .32s cubic-bezier(.2,.7,.2,1)}
-  .card.open .drawer{max-height:640px}
-  .drawerin{padding:2px 16px 16px;border-top:1px solid var(--rule)}
-  .ev{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);line-height:1.7;
-    margin:12px 0 0;white-space:pre-line}
-  .ev b{color:var(--ink);font-weight:600}
-
-  /* mini bars */
-  .bars{display:flex;align-items:flex-end;gap:5px;height:54px;margin:14px 0 4px}
-  .bars .b{flex:1;background:var(--paper-deep);border-radius:3px 3px 0 0;position:relative}
-  .bars .b.q{background:var(--coral)}
-  .bars .b span{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);
-    font-family:var(--font-mono);font-size:8px;color:var(--ink-3)}
-  .barscap{font-family:var(--font-mono);font-size:9px;color:var(--ink-3);letter-spacing:.06em;
-    margin-top:20px}
-
-  /* seeded ask */
-  .ask-seed{margin-top:14px;background:var(--paper-elevated);border:1px solid var(--rule);
-    border-radius:10px;padding:11px 12px}
-  .ask-seed .q{font-size:13px;color:var(--ink);background:var(--coral-wash);border:1px solid rgba(212,89,42,.25);
-    border-radius:14px 14px 4px 14px;padding:7px 11px;display:inline-block;font-style:italic}
-  .ask-seed .a{font-size:13px;line-height:1.5;color:#2f2c29;margin-top:9px}
-  .ask-chip{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-family:var(--font-mono);
-    font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--coral-deep);
-    border:1px solid rgba(212,89,42,.4);border-radius:999px;padding:6px 11px;cursor:pointer}
-  .ask-chip:hover{background:var(--coral-wash)}
-
-  /* ask bar (back-door secondary) */
-  .askbar{position:sticky;bottom:0;margin:18px 0 0;background:linear-gradient(180deg,rgba(245,243,240,0),var(--paper) 36%);
-    padding:16px 18px 14px}
-  .askbar .field{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--rule);
-    border-radius:999px;padding:11px 15px;box-shadow:0 2px 8px rgba(0,0,0,.06);color:var(--ink-3);font-size:13.5px}
-  .askbar .field .dot{width:7px;height:7px;border-radius:50%;background:var(--coral)}
-
-  /* tabbar */
+  .pill.build{background:var(--coral-wash);color:var(--coral-deep)}
+  .pill.warn{background:rgba(196,135,58,.16);color:#8a5a14}
+  .drawer{max-height:0;overflow:hidden;transition:max-height .3s ease}
+  .card.open .drawer{max-height:520px}
+  .drawerin{padding:0 15px 15px;border-top:1px solid var(--rule)}
+  .ev{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);line-height:1.7;margin-top:11px;white-space:pre-line}
+  .ev b{color:var(--ink)}
+  .wo{display:flex;gap:10px;margin-top:9px;font-size:12.5px}
+  .wo .dt{font-family:var(--font-mono);font-size:10px;color:var(--coral-deep);width:50px;flex:0 0 auto;padding-top:1px}
+  .wo .ws b{color:var(--ink)}
   .tabs{display:flex;border-top:1px solid var(--rule);background:var(--paper-elevated)}
-  .tabs div{flex:1;text-align:center;padding:11px 0 13px;font-family:var(--font-mono);font-size:9px;
-    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .tabs div{flex:1;text-align:center;padding:11px 0 13px;font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
   .tabs div.on{color:var(--coral)}
-  .tabs div .ic{display:block;font-size:15px;margin-bottom:3px;color:inherit}
-
-  /* annotation column */
-  .notes{flex:0 0 360px;max-width:360px;padding-top:8px}
-  .notes h3{font-family:var(--font-display);font-weight:600;font-size:24px;margin:0 0 4px;color:#23201c}
-  .notes .lede{font-size:13.5px;color:#4a463f;line-height:1.5;margin:0 0 18px}
-  .note{background:rgba(255,255,255,.7);border:1px solid #d8d2c8;border-left:3px solid var(--coral);
-    border-radius:8px;padding:12px 14px;margin-bottom:12px}
-  .note .n{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
-    color:var(--coral-deep);margin-bottom:6px}
-  .note p{margin:0;font-size:13px;line-height:1.55;color:#33302b}
-  .note p+p{margin-top:7px}
-  .note code{font-family:var(--font-mono);font-size:11.5px;background:#efeae1;padding:1px 5px;border-radius:4px;color:#4a463f}
-  .foot{font-size:11.5px;color:#7d776e;line-height:1.5;margin-top:6px}
+  .notes{flex:0 0 340px;max-width:340px;padding-top:8px}
+  .notes h3{font-family:var(--font-display);font-weight:600;font-size:22px;margin:0 0 8px;color:#23201c}
+  .note{background:rgba(255,255,255,.7);border:1px solid #d8d2c8;border-left:3px solid var(--coral);border-radius:8px;padding:11px 13px;margin-bottom:11px}
+  .note .n{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral-deep);margin-bottom:5px}
+  .note p{margin:0;font-size:12.5px;line-height:1.5;color:#33302b}
+  .foot{font-size:11px;color:#7d776e;line-height:1.5;margin-top:6px}
   @media(max-width:820px){.notes{flex-basis:100%;max-width:390px}}
 </style>
 </head>
 <body>
 <div class="wrap">
-
-  <!-- ============ PHONE ============ -->
   <div class="phone">
     <div class="notch"></div>
-    <div class="screen" id="screen">
-
+    <div class="screen">
       <div class="pad">
-        <div class="eyebrow">Coach &middot; Friday, June 13</div>
-        <h1 class="title">What I know about you</h1>
-        <p class="sub">Advanced &middot; base phase &middot; 204 runs on file, back to Dec</p>
+        <div class="eyebrow">Training Analysis &middot; Sat, Jun 13</div>
+        <h1 class="title">Building volume, fitness holding.</h1>
+        <p class="sub">Advanced &middot; base phase &middot; 54.9 mpw</p>
       </div>
 
-      <!-- LEAD READ (the analysis, generalized) -->
       <div class="read">
-        <div class="kick">Today's read</div>
-        <h2>You've quietly run a serious workout block — the engine just couldn't see it.</h2>
-        <p>Reading your splits rep-by-rep: <b>11 quality sessions in 9 weeks</b> — 1K and mile intervals down to 5:07, threshold cruises, a tempo, and a 10K race. That's a well-built block on a 50&nbsp;mpw base, and fitness is climbing to match (~32:29 10K).</p>
-        <p>The honest watch-out is recent: your last hard session was <b>May 20</b>. The three weeks since read as all easy — plus the knee's come up twice and HR drifted on the May heat. Looks like you're either deliberately freshening or quietly drifting.</p>
-        <div class="ask">Is the last three weeks a planned down-phase, or did the workouts just slip?</div>
+        <p>You're building — 54.9 mpw, your steadiest base in a while — with quality landing on a roughly 10-day rhythm. Your <b>Tuesday sessions</b> are the engine: <b>1mi×3 + 800m×2 @ 5:17</b> this Tuesday, <b>1K reps @ 4:59</b> the Tuesday before. Fitness is holding at a ~32:10&ndash;32:48 10K off a deep aerobic block.</p>
+        <p class="ask">Achilles and a knee niggle are both still flagged — worth a check-in on how they're feeling before the next hard day.</p>
       </div>
 
-      <div class="sectionlabel"><span class="eyebrow">The model</span><span class="line"></span></div>
+      <div class="sectionlabel"><span class="eyebrow">The analysis</span><span class="line"></span></div>
+
+      <!-- WORKOUTS & REPS -->
+      <div class="card open" onclick="t(this)">
+        <div class="head">
+          <div class="body">
+            <div class="lbl">Workouts &amp; reps &middot; read split-by-split</div>
+            <div class="val">Your Tuesdays, seen <span class="pill good">fixed</span></div>
+            <p class="obs">Detected from your laps — every Tuesday workout now registers as quality.</p>
+          </div>
+          <div class="chev">&#9654;</div>
+        </div>
+        <div class="drawer"><div class="drawerin">
+          <div class="wo"><span class="dt">Jun 9 ·Tue</span><span class="ws"><b>Threshold</b> — 1mi-1mi-1mi-800m-800m @ 5:17</span></div>
+          <div class="wo"><span class="dt">Jun 6 ·Sat</span><span class="ws"><b>Tempo</b> — 2×1K @ 5:49</span></div>
+          <div class="wo"><span class="dt">Jun 2 ·Tue</span><span class="ws"><b>Intervals</b> — 1K×4 + 600/800s @ 4:59 (5K)</span></div>
+          <div class="wo"><span class="dt">May 28·Thu</span><span class="ws"><b>Threshold</b> — 3×1K @ 5:49</span></div>
+          <div class="ev">Tap any session → the rep-by-rep chart (pace bars, HR, rest, heat toggle).</div>
+        </div></div>
+      </div>
+
+      <!-- LOAD & BALANCE -->
+      <div class="card open" onclick="t(this)">
+        <div class="head">
+          <div class="body">
+            <div class="lbl">Load &amp; balance &middot; volume × intensity</div>
+            <div class="val">54.9 <small>mpw</small> <span class="pill build">building</span></div>
+            <p class="obs">Easy base with quality layered in on a ~10-day cycle.</p>
+          </div>
+          <div class="chev">&#9654;</div>
+        </div>
+        <div class="drawer"><div class="drawerin">
+          <div class="ev"><b>Time in zone (7d):</b> easy 73% · moderate 23% · threshold 3% · hard 1%
+<b>Volume × intensity (28d):</b> 2,063 weighted-min — a hard mile ≈ 5× an easy mile
+<b>Recovery:</b> 3 hard sessions / 28d, ~10 days apart · no down week due</div>
+        </div></div>
+      </div>
 
       <!-- FITNESS -->
       <div class="card" onclick="t(this)">
         <div class="head">
-          <div class="cardbody">
-            <div class="lbl">Fitness &middot; race-anchored</div>
-            <div class="val">~32:29 <small>10K</small> <span class="pill good">High conf</span></div>
-            <p class="obs">Improving. 58 sessions behind it, anchored to your real 10K history.</p>
+          <div class="body">
+            <div class="lbl">Fitness · race-anchored</div>
+            <div class="val">~32:10&ndash;32:48 <small>10K</small> <span class="pill good">High conf</span></div>
+            <p class="obs">Holding — 58 sessions behind it, anchored to your real 10K history.</p>
           </div>
           <div class="chev">&#9654;</div>
         </div>
         <div class="drawer"><div class="drawerin">
-          <div class="ev"><b>Predicted ranges</b>
-5K  15:37   ·   10K  32:29
-Half  1:11:35   ·   M  2:29:55
-<b>Anchors</b>  10K 31:24 (Feb) · 10K 33:03 (Apr, hot/hilly → 30:14 adj) · PR 31:20</div>
-          <div class="ask-seed">
-            <span class="q">Am I actually fitter than in February?</span>
-            <div class="a">Your model says yes, narrowly — predicted 10K has ticked under your Feb race on a bigger aerobic base. But it's a base-built estimate, not a race. The honest test is a quality session or a tune-up.</div>
-          </div>
-          <div class="ask-chip">&#128172; Ask about fitness</div>
+          <div class="ev">Range, not a single time (58 workouts + recent 10K anchor). Trend: maintaining.</div>
         </div></div>
       </div>
 
-      <!-- WORKOUTS & REPS (new — splits-aware) -->
-      <div class="card open" onclick="t(this)">
-        <div class="head">
-          <div class="cardbody">
-            <div class="lbl">Workouts &amp; reps &middot; read split-by-split</div>
-            <div class="val">11 workouts <small>/ 9 weeks</small> <span class="pill good">now seen</span></div>
-            <p class="obs">6 interval &middot; 3 threshold &middot; 1 tempo &middot; 1 race. Detected from your laps, not the mile splits.</p>
-          </div>
-          <div class="chev">&#9654;</div>
-        </div>
-        <div class="drawer"><div class="drawerin">
-          <div class="ev"><b>May 20</b>  Intervals   <b>9&times;1K @ 5:08</b>  (5K pace, HR&rarr;170)
-<b>May 15</b>  Threshold   4&times;1K @ 5:32
-<b>May 12</b>  Intervals   6&times;500m + 2&times;600m + 1mi @ 4:46
-<b>May 5</b>   Threshold   5&times;1mi @ 5:17  (cruise)
-<b>Apr 21</b>  Intervals   4&times;1K + 4&times;600m @ 4:55
-<b>Apr 12</b>  Race        10K @ 5:15
-<b>Apr 4</b>   Threshold   6&times;1mi @ 5:22
-<b>Mar 27</b>  Intervals   4&times;300m + 800s @ 4:26  (mile pace)</div>
-          <div class="ask-seed">
-            <span class="q">How did the system miss all of these?</span>
-            <div class="a">Your watch recorded the jog recoveries as distance, so a 10&times;1K averaged out to "9mi @ 6:20" and got filed as easy. Reading the <i>laps</i> instead of the mile splits — and separating work reps from rest — the real workout shows up.</div>
-          </div>
-          <div class="ask-chip">&#128172; Ask about a session</div>
-        </div></div>
-      </div>
-
-      <!-- LOAD & BALANCE (ACWR replacement) -->
+      <!-- WATCHING -->
       <div class="card" onclick="t(this)">
         <div class="head">
-          <div class="cardbody">
-            <div class="lbl">Load &amp; balance &middot; volume &times; intensity</div>
-            <div class="val">50.8 <small>mpw</small> <span class="pill warn">quality tapering</span></div>
-            <p class="obs">Strong mixed block through May 20 — then three weeks of easy-only. Watch the gap, not the base.</p>
+          <div class="body">
+            <div class="lbl">Watching · wear &amp; tear</div>
+            <div class="val">2 areas flagged <span class="pill warn">surface, don't diagnose</span></div>
+            <p class="obs">Achilles and a knee niggle — in your words, not a diagnosis.</p>
           </div>
           <div class="chev">&#9654;</div>
         </div>
         <div class="drawer"><div class="drawerin">
-          <div class="bars">
-            <div class="b" style="height:14%"><span>Dec</span></div>
-            <div class="b q" style="height:62%"><span>Jan</span></div>
-            <div class="b q" style="height:60%"><span>Feb</span></div>
-            <div class="b q" style="height:100%"><span>Mar</span></div>
-            <div class="b q" style="height:60%"><span>Apr</span></div>
-            <div class="b q" style="height:69%"><span>May</span></div>
-            <div class="b" style="height:78%"><span>Jun</span></div>
-          </div>
-          <div class="barscap">28-day blocks &middot; <span class="coral">coral = quality present</span> &middot; June = base-only so far</div>
-          <div class="ev"><b>Now (Jun)</b> 50.8 mpw · easy-only · last workout May 20
-<b>Mar&ndash;May</b> 11 workouts: 6 interval · 3 threshold · 1 tempo · 1 race
-Easy / quality split was healthy — the issue is the recent 3-week quality gap, not the mix.</div>
-          <div class="ask-seed">
-            <span class="q">Am I losing the sharpness I built?</span>
-            <div class="a">Not yet — VO2 sharpness fades over ~2&ndash;3 weeks, and you're right at that edge. One session this week holds it; another easy week and the top end starts to dull.</div>
-          </div>
-          <div class="ask-chip">&#128172; Ask about load</div>
+          <div class="ev"><b>Achilles</b> — flagged since Apr 20, still open
+<b>Knee</b> — came up May 24 ("light tightness in my left knee")</div>
         </div></div>
       </div>
 
-      <!-- WATCHING (wear & tear) -->
+      <!-- WHAT I CAN'T SEE -->
       <div class="card" onclick="t(this)">
         <div class="head">
-          <div class="cardbody">
-            <div class="lbl">Watching &middot; wear &amp; tear</div>
-            <div class="val">3 things stacking <span class="pill flag">surface, don't diagnose</span></div>
-            <p class="obs">Knee twice, achilles since April, and HR creeping up on easy days.</p>
-          </div>
-          <div class="chev">&#9654;</div>
-        </div>
-        <div class="drawer"><div class="drawerin">
-          <div class="ev"><b>Knee</b> — mentioned 2× (May 8, May 24)
-   <i>"...noticed some light tightness in my left knee."</i>
-<b>Achilles</b> — flagged since Apr 20, still open
-<b>HR drift</b> — +16.7% on an easy run May 21 (71&deg;F, dew 70)
-<b>Pacing</b> still sharp — negative-split 3 of your last 4 harder efforts</div>
-          <div class="ask-seed">
-            <span class="q">Is the knee something to worry about?</span>
-            <div class="a">I can only tell you what you've said and when — it's come up twice in three weeks, both as "tightness," not pain. That's worth keeping an eye on, not a diagnosis. If it shows up a third time or changes in tone, flag it to someone who can look at it.</div>
-          </div>
-          <div class="ask-chip">&#128172; Ask about niggles</div>
-        </div></div>
-      </div>
-
-      <!-- BLIND SPOTS -->
-      <div class="card" onclick="t(this)">
-        <div class="head">
-          <div class="cardbody">
+          <div class="body">
             <div class="lbl">What I can't see</div>
-            <div class="val" style="font-size:18px">Three gaps, honestly</div>
-            <p class="obs">I'd rather tell you what I'm missing than pretend I know.</p>
+            <div class="val" style="font-size:17px">One gap, honestly</div>
+            <p class="obs">Rather flag what's missing than pretend.</p>
           </div>
           <div class="chev">&#9654;</div>
         </div>
         <div class="drawer"><div class="drawerin">
-          <div class="ev"><b>No recent mood</b> — last check-in was Apr 10. The "tired / 4" I'm holding is two months stale.
-<b>This week's intensity</b> — your last runs came in untyped, so I can't score how hard they were (load reads blank for 7d).
-<b>Knee = one real data point</b> — not enough to call a pattern yet.</div>
-          <div class="ask-seed">
-            <span class="q">Fix the gaps?</span>
-            <div class="a">Tell me how this week actually felt, and tag the last few runs (easy / workout). Two taps and the read gets a lot sharper.</div>
-          </div>
-          <div class="ask-chip">&#128172; Catch me up</div>
+          <div class="ev"><b>No recent mood check-in</b> — haven't heard how you're feeling lately, so the "how are you holding up" read is thin.</div>
         </div></div>
       </div>
 
-      <!-- ASK BAR (secondary, back-door) -->
-      <div class="askbar">
-        <div class="field"><span class="dot"></span> Ask your coach anything&hellip;</div>
-      </div>
-
-      <div class="tabs">
-        <div><span class="ic">&#9633;</span>Log</div>
-        <div><span class="ic">&#9636;</span>Train</div>
-        <div class="on"><span class="ic">&#9679;</span>Coach</div>
-      </div>
-
+      <div class="tabs"><div>Log</div><div class="on">Training</div><div>The Read</div><div>Plan</div></div>
     </div>
   </div>
 
-  <!-- ============ ANNOTATIONS ============ -->
   <div class="notes">
-    <h3>The model of you</h3>
-    <p class="lede">Back-door design, your real data. The surface opens to the <b>read</b> — the call first. Everything below is the coach's actual model of you; every card is a trapdoor to the evidence and a seeded question. Tap any card.</p>
-
+    <h3>Corrected &amp; current</h3>
     <div class="note">
-      <div class="n">Observation vs. judgment, kept apart</div>
-      <p>The drawers show <b>computed facts</b> (your blocks, drift, ranges). The card copy is the <b>interpretation</b>. You can trust the numbers and argue with the read — that separation is the whole trust mechanic.</p>
+      <div class="n">This is the fixed version</div>
+      <p>Rebuilt on your <b>live</b> data after today's fixes — Tuesdays detected, duplicates gone, lap data flowing. The earlier mock was stale (it showed "quality tapering" and a creepy "what I know about you" header). Both fixed.</p>
     </div>
-
     <div class="note">
-      <div class="n">The back door in action</div>
-      <p>No blank box. Each "ask" enters the chat <b>pre-seeded with that card's context</b> — "why is my load low" arrives already knowing it's about volume&times;intensity. Depth without the what-do-I-type freeze.</p>
+      <div class="n">It's a Training Analysis surface</div>
+      <p>Lives on the <b>Training</b> tab (not a standalone Coach page). The Read stays the daily read. Cards lead; each Workouts &amp; reps row taps through to the per-workout rep chart.</p>
     </div>
-
     <div class="note">
-      <div class="n">It's all one engine</div>
-      <p>Trends = movement (the block bars). Analysis = the read. Ask = the long tail. Same model underneath, three zoom levels — not three tabs.</p>
+      <div class="n">Real numbers</div>
+      <p>54.9 mpw · load building · 10K 32:10&ndash;32:48 (High) · 3 hard/28d ~10d apart · Jun 9 &amp; Jun 2 Tuesdays now quality.</p>
     </div>
-
-    <div class="note">
-      <div class="n">The fix: read laps, not mile splits</div>
-      <p>The Workouts &amp; reps card is new — and it's the engine fix. The old scorer averaged a 10&times;1K with its jog recoveries into "9mi @ 6:20" and filed it easy. Classifying each <b>work rep</b> by pace (vs your zones) and separating rest gives the real session: <code>9&times;1K @ 5:08</code>.</p>
-      <p>Across 9 weeks it surfaces <b>11 workouts the live model scored as zero</b> — and differentiates them: intervals vs threshold vs tempo vs easy.</p>
-    </div>
-
-    <div class="note">
-      <div class="n">Honesty is still a feature</div>
-      <p>The corrected read isn't all good news — it also exposes a real <b>3-week quality gap</b> since May 20. Once the model sees workouts properly, it can also tell you when they stop.</p>
-    </div>
-
-    <div class="note">
-      <div class="n">Guardrails held</div>
-      <p>Niggles quoted verbatim, never diagnosed. Fitness as a range with confidence. Paces quoted from the model, never invented. Same contract as the Read.</p>
-    </div>
-
-    <p class="foot">Real athlete: 204 runs, 1,335 mi since December. Workout types classified live from <code>running_workout_laps</code> by a prototype scorer (zones from <code>athlete_state</code>); 11 of 17 lapped sessions are quality. Tempo-vs-threshold is a deliberately fuzzy boundary — split here by the pace zone of the sustained work. Two real bugs this surfaced: the load engine ignores laps (scores reps as easy), and the fitness "range" is collapsed to a point.</p>
+    <p class="foot">Live from <code>athlete_state</code> + <code>workout_features</code>, athlete 03857bf3, Jun 13 2026.</p>
   </div>
-
 </div>
-
-<script>
-  function t(el){ el.classList.toggle('open'); }
-  // open the load card by default so the bars are visible on load
-  document.addEventListener('DOMContentLoaded',function(){
-    var cards=document.querySelectorAll('.card');
-    if(cards[1]) cards[1].classList.add('open');
-  });
-</script>
+<script>function t(el){el.classList.toggle('open');}</script>
 </body>
 </html>

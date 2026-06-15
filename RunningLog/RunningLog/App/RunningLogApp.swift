@@ -118,9 +118,9 @@ struct MainTabView: View {
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 2 — Coach (the daily Read; unchanged). The analytical
-                // cards moved into Training Analysis per the 2026-06-13 reframe.
-                NavigationStack { CoachReadView() }
+                // Tab 2 — THE READ = the cards layout (model-of-you-mock.html).
+                // The legacy paragraph CoachReadView is retained in the repo.
+                NavigationStack { ModelOfYouView() }
                     .opacity(selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 2)
 

@@ -37,7 +37,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v3.ts";
+import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v4.ts";
 import { getModelConfig } from "../_shared/router.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
@@ -88,8 +88,12 @@ interface RequestBody {
 const MAX_TRAINING_LOGS = 60;          // ~2 months of daily training
 const TRAINING_LOG_LOOKBACK_DAYS = 60;
 const MAX_COACHING_DOCS = 8;
-const MAX_VOICE_MEMOS = 6;
-const VOICE_MEMO_LOOKBACK_DAYS = 14;
+const MAX_VOICE_MEMOS = 12;
+const VOICE_MEMO_LOOKBACK_DAYS = 60;   // widened from 14: real qualitative memory (sleep, travel, work, niggles) over a training block, not just two weeks
+// Local override of router complex.maxTokens (2000). Flash thinking tokens
+// share this budget; 2000 truncated the JSON mid-string (502s). See the
+// generationConfig comment below — keep these two in sync if either changes.
+const DAILY_READ_MAX_OUTPUT_TOKENS = 8000;
 
 // Workout types that count toward the HIGH-confidence threshold (the
 // prompt itself decides confidence; this list is only used to surface
@@ -207,7 +211,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const systemPrompt = loadPrompt("daily-read.v3", {});
+    const systemPrompt = loadPrompt("daily-read.v4", {});
     const fullPrompt = `${systemPrompt}\n\n${context.contextBlock}\n\nGenerate today's Read for this athlete.`;
 
     const modelId = modelConfig.model;
@@ -219,10 +223,17 @@ Deno.serve(async (req) => {
       const model = genAI.getGenerativeModel({
         model: modelConfig.model,
         generationConfig: {
-          // gemini-2.5-flash "thinking" tokens share this budget. At 2000
-          // the thinking consumed it and the JSON was truncated mid-string
-          // ("Unterminated string in JSON"). 8000 leaves room for both.
-          maxOutputTokens: 8000,
+          // DELIBERATE OVERRIDE of router.getModelConfig("complex").maxTokens
+          // (currently 2000). gemini-2.5-flash spends "thinking" tokens out of
+          // this same budget; at 2000 the thinking consumed it and the JSON
+          // truncated mid-string ("Unterminated string in JSON") → repeated
+          // 502s. The v4 spine also produces a longer structured read. Keep
+          // this LOCAL and named so a future "tidy" that routes it back through
+          // the 2000-token complex config can't silently reintroduce the
+          // truncation. If the router's complex cap is ever raised to match,
+          // delete this override. (A/B note: gemini-2.5-pro is the candidate to
+          // evaluate for v4's nuance — test together with this budget.)
+          maxOutputTokens: DAILY_READ_MAX_OUTPUT_TOKENS,
           temperature: 0.6,
           responseMimeType: "application/json",
           // deno-lint-ignore no-explicit-any

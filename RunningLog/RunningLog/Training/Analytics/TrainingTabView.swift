@@ -68,6 +68,7 @@ struct TrainingTabView: View {
                     loadingState
                 } else {
                     header
+                    WorkoutsAndRepsSection()
                     summary
                     scopeToggle
                     volumeByIntensity

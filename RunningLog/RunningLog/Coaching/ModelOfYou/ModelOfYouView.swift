@@ -25,9 +25,9 @@ struct ModelOfYouView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 if let s = state {
-                    fitnessCard(s)
                     loadCard(s)
-                    workoutsCard(s)
+                    fitnessCard(s)
+                    WorkoutsAndRepsSection()   // tappable → per-workout rep chart
                     watchingCard(s)
                     cantSeeCard(s)
                 } else if loaded {

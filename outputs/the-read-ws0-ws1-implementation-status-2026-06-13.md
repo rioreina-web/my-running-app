@@ -271,6 +271,45 @@ becomes a fallback once the builder stores bands. Backend-only, no migration.
 
 ---
 
+## WS5 — Daily Read v3 → v4 (the redesign)
+
+**New** `_shared/prompts/daily-read.v4.ts` — same response schema (re-exported
+from v1; the visual card treatment is WS6), redesigned content per redesign
+§3.1/§3.6:
+- **Spine:** lead with LOAD & BALANCE (the new analytical heart — uses the WS3
+  `load_trend` / hard-easy split / recovery lines), then TRENDS, FITNESS
+  (range+confidence), the HUMAN READ, and ONE CALL if earned.
+- **Windows:** every claim must cite a number *and* its change over a stated
+  window ("easy pace 7:35 → 7:24 over three weeks"). Anti-hallucination extended
+  to forbid inventing a window the state can't support.
+- **Voice:** lead with an observation not a stat dump; concrete good-vs-bad
+  exemplars baked in; brevity-as-voice (3-6 sentences, earn each section).
+- Keeps all v3 safety/citation/prediction-range/niggle rules.
+
+**Changed** `coaching-daily-read/index.ts` — points at `daily-read.v4`;
+`VOICE_MEMO_LOOKBACK_DAYS` already 60; the `maxOutputTokens: 8000` magic number
+is now a named `DAILY_READ_MAX_OUTPUT_TOKENS` constant with a loud comment
+explaining the deliberate override of the router's 2000 `complex` cap (so a
+future "tidy" can't silently reintroduce the 502 truncation). v4 registered in
+`prompt-library.ts`. Model left on `gemini-2.5-flash`; pro noted as the A/B
+candidate to evaluate (not switched blind).
+
+**Evals (CI gate, hard rule #3):** `_evals/cassettes/daily-read.v4/` — 4 carried
+from v3 (enduring niggle/prediction/heat/zone rules, real recorded responses) +
+1 new signature cassette (load-led, windowed, names the 9×1K, 10K range, bans
+ACWR/seconds-precision/"monitor"). All 5 pass their rubrics locally.
+
+**Acceptance:** cassette suite green; the v4 prompt references real workouts
+("your 9×1K Tuesday at 5:08, 5K pace"), reads the load trend + gap, predicts as
+range+confidence. **Deploy:** `supabase functions deploy coaching-daily-read`.
+Today's cached read was already cleared, so a pull-to-refresh regenerates on v4.
+
+Note: schema is unchanged, so the read is still one paragraph — it will read
+very differently (load-led, windowed, specific) but the scannable *card* layout
+is WS6.
+
+---
+
 ## ⚠️ Git state — needs your hands (sandbox can't write git)
 
 The repo is mounted read/rename but **deletion is blocked** in my sandbox

@@ -185,6 +185,42 @@ Until #1 ships, the headline feature silently rots for every new run.
 - Coach tab is back to the unchanged daily Read.
 - Nothing reads as creepy; framing is analytical.
 
+## 9. Trends layer — days AND trends (equal weight)
+
+A specific workout day is the entry point; the **trend over time is the
+through-line**. A coach reads ~8–12 weeks of recent detail, 6–12 months of
+pattern, and 2–3 years of profile — not 14 days. Build the trends below; each
+one **taps through to the specific day** behind it (trend point → workout rep
+view from §4). Deterministic code computes the series; the model only narrates.
+
+Windows: recent detail **8–12 wk** · pattern detection **6–12 mo** · baselines/
+profile **2–3 yr**.
+
+| Trend | What it answers | Source (mostly already computed) | Chart |
+|---|---|---|---|
+| **Workout progression by type** | "Are my Tuesday 1K reps getting faster at the same HR?" | `workout_features` + `running_workout_laps` grouped by `workout_type` over time | rep-pace line per recurring session; overlay HR |
+| **Time-at-quality-pace / week** | "Am I actually doing enough quality?" | `workout_features.threshold_seconds + hard_seconds` weekly | weekly bars, 8–12 wk |
+| **Intensity-weighted load** (ACWR replacement) | "Building, holding, spiking, backing off?" | weekly `volume_x_intensity` vs 8-wk chronic (`load_distribution`, WS3) | line + chronic band |
+| **Hard/easy distribution drift** | "Is my polarization holding (~80% easy)?" | weekly `zone_pct` | stacked area, easy share line |
+| **Aerobic efficiency / decoupling** | "Is my easy pace at a given HR improving?" | `workout_features.hr_pace_efficiency`, easy-run HR-at-pace | line over months |
+| **Pace drift by zone** | "Is easy pace creeping (overreach tell)?" | weekly avg easy pace | line w/ band |
+| **Fitness trajectory** | "Where's my fitness vs last cycle / goal?" | `fitness_snapshots` history (29 on file) + `confirmed_races` anchors | race-anchored fitness curve, race markers — range+confidence, never a point |
+| **Niggle recurrence (12 mo)** | "Is this knee a pattern?" | `body_mentions` / `athlete_state.niggle_recurrence` | per-body-part timeline of dots |
+| **Block-over-block (28-day rollups)** | "How does this block compare to my last 6?" | `athlete_state.recent_blocks` (already computed: miles, quality count, mood, easy pace) | small-multiples / delta row |
+
+Notes:
+- Most series are cheap: `athlete_state` already holds `recent_blocks`,
+  `niggle_recurrence`, `load_distribution`, `fitness_prediction`;
+  `workout_features` carries per-workout + rolling aggregates;
+  `fitness_snapshots` holds the fitness history. The trends layer is mostly
+  **surfacing + a few weekly GROUP BYs**, not new computation.
+- **Link days ⇄ trends:** every trend point opens the underlying workout (§4),
+  and the workout view shows "vs. your last N of this type." One graph, one tap,
+  the specific session.
+- Guardrails unchanged: observation vs. judgment kept separate (trend line =
+  computed; the read on it = model), range+confidence on fitness, niggles
+  surfaced not diagnosed.
+
 ## 8. Files
 
 - Reuse: `Coaching/ModelOfYou/ModelOfYouState.swift`
