@@ -37,6 +37,7 @@ import { TEMPLATE as DAILY_READ_V1 } from "./prompts/daily-read.v1.ts";
 import { TEMPLATE as DAILY_READ_V2 } from "./prompts/daily-read.v2.ts";
 import { TEMPLATE as DAILY_READ_V3 } from "./prompts/daily-read.v3.ts";
 import { TEMPLATE as DAILY_READ_V4 } from "./prompts/daily-read.v4.ts";
+import { TEMPLATE as DAILY_READ_V5 } from "./prompts/daily-read.v5.ts";
 import { TEMPLATE as FITNESS_PREDICTOR_V1 } from "./prompts/fitness-predictor.v1.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V1 } from "./prompts/generate-workout-insight.v1.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V2 } from "./prompts/generate-workout-insight.v2.ts";
@@ -69,6 +70,7 @@ const REGISTRY: Record<string, string> = {
   "daily-read.v2": DAILY_READ_V2,
   "daily-read.v3": DAILY_READ_V3,
   "daily-read.v4": DAILY_READ_V4,
+  "daily-read.v5": DAILY_READ_V5,
   "fitness-predictor.v1": FITNESS_PREDICTOR_V1,
   "generate-workout-insight.v1": GENERATE_WORKOUT_INSIGHT_V1,
   "generate-workout-insight.v2": GENERATE_WORKOUT_INSIGHT_V2,

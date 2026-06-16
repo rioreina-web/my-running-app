@@ -37,15 +37,29 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v4.ts";
+import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v5.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
 // ── Types matching the daily_coaching_reads JSON columns ─────────────
 
+// Legacy flat-paragraph segment (v1–v4 shape). v5 no longer asks the model
+// for this; the function DERIVES it from `sections` so old consumers
+// (iOS CoachReadView/ReadProse) keep rendering. See flattenSections().
 type ParagraphSegment =
   | string
   | { workout_id: string }
   | { doc_id: string };
+
+// v5 sectioned shape. A section body is an ordered array of plain prose
+// strings and inline tap-through refs that carry their own display text.
+type WorkoutRef = { text: string; workout_id: string };
+type NiggleRef = { text: string; niggle: string };
+type SectionSegment = string | WorkoutRef | NiggleRef;
+
+interface ReadSection {
+  label: string;
+  body: SectionSegment[];
+}
 
 interface CantSee {
   eyebrow: string;
@@ -71,6 +85,12 @@ interface Confidence {
 
 interface DailyReadPayload {
   headline: string;
+  // v5 goal-backdrop scope line + sectioned narrative + single soft question.
+  eyebrow: string | null;
+  sections: ReadSection[];
+  question: string | null;
+  // Derived from `sections` for backward-compatible persistence (see
+  // flattenSections); not emitted by the v5 model.
   paragraph: ParagraphSegment[];
   cant_see: CantSee | null;
   sources: Sources;
@@ -224,7 +244,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const systemPrompt = loadPrompt("daily-read.v4", {});
+    const systemPrompt = loadPrompt("daily-read.v5", {});
     const fullPrompt = `${systemPrompt}\n\n${context.contextBlock}\n\nGenerate today's Read for this athlete.`;
 
     const modelId = modelConfig.model;
@@ -349,6 +369,9 @@ interface DailyReadRow {
   read_date: string;
   status: "pending" | "completed" | "failed";
   headline: string | null;
+  eyebrow: string | null;
+  sections: ReadSection[] | null;
+  question: string | null;
   paragraph: ParagraphSegment[];
   cant_see: CantSee | null;
   sources: Sources;
@@ -435,6 +458,12 @@ async function markCompleted(
     .update({
       status: "completed",
       headline: payload.headline,
+      // v5 sectioned fields (the narrative screen reads these).
+      eyebrow: payload.eyebrow,
+      sections: payload.sections,
+      question: payload.question,
+      // Flattened legacy paragraph, derived from sections, so pre-v5
+      // consumers (iOS CoachReadView / ReadProse) keep rendering.
       paragraph: payload.paragraph,
       cant_see: payload.cant_see,
       sources: payload.sources,
@@ -464,6 +493,12 @@ interface DailyReadContext {
   validDocIds: Set<string>;
   /** Voice memo (training_log) ids the model may legally cite in sources.memos. */
   validMemoLogIds: Set<string>;
+  /**
+   * Acceptable niggle ref strings (lowercased), built from `body_mentions`.
+   * Holds both the bare body area ("achilles") and the sided form
+   * ("right achilles") so a `{text, niggle}` ref resolves to a real timeline.
+   */
+  validNiggles: Set<string>;
 }
 
 async function buildDailyReadContext(
@@ -541,6 +576,14 @@ async function buildDailyReadContext(
       .eq("status", "active")
       .limit(1)
       .maybeSingle(),
+
+    // 7. Body mentions (niggles) — the closed-vocab body areas this athlete
+    //    has actually mentioned. Used to validate v5 {text, niggle} refs so a
+    //    tappable niggle phrase always resolves to a real recurrence timeline.
+    supabase
+      .from("body_mentions")
+      .select("body_area, side")
+      .eq("user_id", userId),
   ]);
 
   // deno-lint-ignore no-explicit-any
@@ -568,6 +611,8 @@ async function buildDailyReadContext(
   const memos = extract<any[]>(5, []);
   // deno-lint-ignore no-explicit-any
   const coachRel = extract<any>(6, null);
+  // deno-lint-ignore no-explicit-any
+  const bodyMentions = extract<any[]>(7, []);
 
   // Compute coaching mode — drives the editorial register in the v2
   // prompt. Three states:
@@ -597,6 +642,18 @@ async function buildDailyReadContext(
   const validWorkoutIds = new Set<string>(logs.map((l) => l.id as string));
   const validDocIds = new Set<string>(docs.map((d) => d.id as string));
   const validMemoLogIds = new Set<string>(memos.map((m) => m.id as string));
+
+  // Acceptable niggle ref strings: the bare body area and the sided form,
+  // both lowercased. A {text, niggle} ref that matches either resolves to a
+  // real per-body-part timeline; anything else is stripped to plain text.
+  const validNiggles = new Set<string>();
+  for (const m of bodyMentions) {
+    const area = String(m.body_area ?? "").trim().toLowerCase();
+    if (!area) continue;
+    validNiggles.add(area);
+    const side = String(m.side ?? "").trim().toLowerCase();
+    if (side) validNiggles.add(`${side} ${area}`);
+  }
 
   // ── Render the context block the model reads ────────────────────
   const sections: string[] = [];
@@ -695,7 +752,7 @@ async function buildDailyReadContext(
   }
 
   const contextBlock = sections.join("\n\n");
-  return { contextBlock, validWorkoutIds, validDocIds, validMemoLogIds };
+  return { contextBlock, validWorkoutIds, validDocIds, validMemoLogIds, validNiggles };
 }
 
 // ── Model output parsing & validation ────────────────────────────────
@@ -713,8 +770,8 @@ function parseModelResponse(raw: string): DailyReadPayload {
   if (typeof obj.headline !== "string") {
     throw new Error("Missing or invalid headline");
   }
-  if (!Array.isArray(obj.paragraph)) {
-    throw new Error("Missing or invalid paragraph array");
+  if (!Array.isArray(obj.sections)) {
+    throw new Error("Missing or invalid sections array");
   }
   if (!obj.sources || typeof obj.sources !== "object") {
     throw new Error("Missing sources object");
@@ -723,9 +780,25 @@ function parseModelResponse(raw: string): DailyReadPayload {
     throw new Error("Missing confidence object");
   }
 
+  // Keep only well-formed sections ({ label:string, body:array }). The
+  // validator strips bad segments inside the body; here we just guard shape.
+  const sections: ReadSection[] = (obj.sections as ReadSection[])
+    .filter(
+      (s) => s && typeof s === "object" &&
+        typeof s.label === "string" && Array.isArray(s.body),
+    )
+    .map((s) => ({ label: s.label, body: s.body as SectionSegment[] }));
+  if (sections.length === 0) {
+    throw new Error("sections array has no well-formed section");
+  }
+
   return {
     headline: obj.headline,
-    paragraph: obj.paragraph as ParagraphSegment[],
+    eyebrow: typeof obj.eyebrow === "string" ? obj.eyebrow : null,
+    sections,
+    question: typeof obj.question === "string" ? obj.question : null,
+    // Derived from sections during validation; the model does not emit it.
+    paragraph: [],
     cant_see: (obj.cant_see ?? null) as CantSee | null,
     sources: {
       workouts: Array.isArray(obj.sources.workouts) ? obj.sources.workouts : [],
@@ -740,51 +813,66 @@ function parseModelResponse(raw: string): DailyReadPayload {
 }
 
 /**
- * Strip any citation that doesn't point at a known id, in BOTH the
- * paragraph segments and the sources block. Returns a sanitized
- * payload and emits one console.warn per dropped citation.
+ * Sanitize a v5 payload:
+ *   - Walk every section body. A workout ref with an unknown id, or a niggle
+ *     ref whose body-part doesn't resolve in `body_mentions`, DEGRADES to its
+ *     plain display `text` (never a dead link, never a dropped phrase).
+ *   - Rebuild `sources` against known ids/memos and echo referenced workouts.
+ *   - Derive the legacy flat `paragraph` from the cleaned sections so pre-v5
+ *     consumers keep rendering.
+ * Emits one console.warn per degraded ref.
  */
 function validateCitations(
   payload: DailyReadPayload,
   ctx: DailyReadContext,
 ): DailyReadPayload {
-  const cleanedParagraph: ParagraphSegment[] = [];
-  let droppedWorkouts = 0;
-  let droppedDocs = 0;
+  let degradedWorkouts = 0;
+  let degradedNiggles = 0;
+  const referencedWorkoutIds: string[] = [];
 
-  for (const seg of payload.paragraph) {
-    if (typeof seg === "string") {
-      cleanedParagraph.push(seg);
-      continue;
-    }
-    if (seg && typeof seg === "object" && "workout_id" in seg) {
-      if (ctx.validWorkoutIds.has(seg.workout_id)) {
-        cleanedParagraph.push(seg);
-      } else {
-        droppedWorkouts++;
+  const cleanedSections: ReadSection[] = payload.sections.map((section) => {
+    const body: SectionSegment[] = [];
+    for (const seg of section.body) {
+      if (typeof seg === "string") {
+        body.push(seg);
+        continue;
       }
-      continue;
-    }
-    if (seg && typeof seg === "object" && "doc_id" in seg) {
-      if (ctx.validDocIds.has(seg.doc_id)) {
-        cleanedParagraph.push(seg);
-      } else {
-        droppedDocs++;
+      if (seg && typeof seg === "object" && "workout_id" in seg) {
+        const ref = seg as WorkoutRef;
+        if (typeof ref.text === "string" && ctx.validWorkoutIds.has(ref.workout_id)) {
+          body.push({ text: ref.text, workout_id: ref.workout_id });
+          referencedWorkoutIds.push(ref.workout_id);
+        } else {
+          if (typeof ref.text === "string" && ref.text.length > 0) body.push(ref.text);
+          degradedWorkouts++;
+        }
+        continue;
       }
-      continue;
+      if (seg && typeof seg === "object" && "niggle" in seg) {
+        const ref = seg as NiggleRef;
+        const key = String(ref.niggle ?? "").trim().toLowerCase();
+        if (typeof ref.text === "string" && key && ctx.validNiggles.has(key)) {
+          body.push({ text: ref.text, niggle: ref.niggle });
+        } else {
+          if (typeof ref.text === "string" && ref.text.length > 0) body.push(ref.text);
+          degradedNiggles++;
+        }
+        continue;
+      }
+      // Unknown segment shape — drop quietly. The prompt forbids anything
+      // other than a string, a workout ref, or a niggle ref.
     }
-    // Unknown segment shape — drop quietly. The prompt forbids anything
-    // other than the three documented variants.
-  }
+    return { label: section.label, body };
+  });
 
-  if (droppedWorkouts > 0) {
+  if (degradedWorkouts > 0) {
     console.warn(
-      `daily-read: stripped ${droppedWorkouts} invalid workout citation(s) from paragraph`,
+      `daily-read: degraded ${degradedWorkouts} invalid workout ref(s) to plain text`,
     );
   }
-  if (droppedDocs > 0) {
+  if (degradedNiggles > 0) {
     console.warn(
-      `daily-read: stripped ${droppedDocs} invalid doc citation(s) from paragraph`,
+      `daily-read: degraded ${degradedNiggles} unresolved niggle ref(s) to plain text`,
     );
   }
 
@@ -801,24 +889,48 @@ function validateCitations(
       })),
   };
 
-  // Auto-populate sources.workouts/docs from paragraph if the model
-  // didn't echo them back — common with structured-output models.
-  for (const seg of cleanedParagraph) {
-    if (typeof seg === "object" && "workout_id" in seg && !sources.workouts.includes(seg.workout_id)) {
-      sources.workouts.push(seg.workout_id);
-    }
-    if (typeof seg === "object" && "doc_id" in seg && !sources.docs.includes(seg.doc_id)) {
-      sources.docs.push(seg.doc_id);
-    }
+  // Echo every workout actually referenced in the body — structured-output
+  // models often omit the sources mirror.
+  for (const id of referencedWorkoutIds) {
+    if (!sources.workouts.includes(id)) sources.workouts.push(id);
   }
 
   return {
     headline: payload.headline.trim(),
-    paragraph: cleanedParagraph,
+    eyebrow: payload.eyebrow,
+    sections: cleanedSections,
+    question: payload.question,
+    paragraph: flattenSections(cleanedSections),
     cant_see: payload.cant_see,
     sources,
     confidence: payload.confidence,
   };
+}
+
+/**
+ * Flatten cleaned v5 sections into the legacy `paragraph` segment array
+ * (string | {workout_id} | {doc_id}) so pre-v5 readers (iOS CoachReadView /
+ * ReadProse) still render a coherent Read. A workout ref becomes its prose
+ * `text` followed by a legacy {workout_id} chip; a niggle ref becomes its
+ * prose `text` (legacy has no niggle chip). Sections are concatenated in
+ * order; a blank string between sections preserves paragraph breaks.
+ */
+function flattenSections(sections: ReadSection[]): ParagraphSegment[] {
+  const out: ParagraphSegment[] = [];
+  sections.forEach((section, i) => {
+    if (i > 0) out.push(""); // paragraph break between sections
+    for (const seg of section.body) {
+      if (typeof seg === "string") {
+        out.push(seg);
+      } else if ("workout_id" in seg) {
+        if (seg.text) out.push(seg.text);
+        out.push({ workout_id: seg.workout_id });
+      } else if ("niggle" in seg) {
+        if (seg.text) out.push(seg.text);
+      }
+    }
+  });
+  return out;
 }
 
 function dedupe<T>(arr: T[]): T[] {
