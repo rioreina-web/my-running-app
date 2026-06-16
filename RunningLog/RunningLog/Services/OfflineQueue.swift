@@ -136,8 +136,13 @@ final class OfflineQueueManager {
         defer { isDraining = false }
 
         let context = container.mainContext
+        // Exclude "failed" (retryCount maxed out) as well as in-flight items.
+        // Without this, a permanently-failed row keeps matching the fetch, gets
+        // re-processed on every drain, re-hits the retry cap, and re-fires its
+        // error banner forever. "failed" rows stay on disk (recording preserved)
+        // but are inert until something explicitly re-queues them.
         let descriptor = FetchDescriptor<PendingUpload>(
-            predicate: #Predicate { $0.status != "uploading" },
+            predicate: #Predicate { $0.status != "uploading" && $0.status != "failed" },
             sortBy: [SortDescriptor(\.createdAt)]
         )
 
@@ -166,10 +171,14 @@ final class OfflineQueueManager {
             } else {
                 upload.retryCount += 1
                 if upload.retryCount >= 5 {
+                    // Permanent failure: mark "failed" so the drain fetch (which
+                    // now excludes "failed") stops re-attempting it — ending the
+                    // retry-forever loop that re-fired this banner every drain.
+                    // The recording stays on disk; we preserve, not purge.
                     upload.status = "failed"
                     logger.error("Upload permanently failed after \(upload.retryCount) attempts: \(upload.id) (\(upload.type))")
                     ErrorReporter.shared.report(
-                        .processing("A queued \(upload.type) upload failed after multiple retries and has been discarded."),
+                        .processing("A \(upload.type) upload failed after several attempts. Your recording is saved on this device."),
                         retry: nil
                     )
                 } else {

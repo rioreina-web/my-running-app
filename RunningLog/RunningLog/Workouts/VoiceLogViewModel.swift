@@ -128,7 +128,7 @@ final class VoiceLogViewModel {
                 mood: nil,
                 workoutDate: selectedWorkout?.startDate
             )
-            statusMessage = "Saved offline — will upload when you're back online."
+            statusMessage = "Saved — will finish uploading in the background."
             isUploading = false
             ErrorReporter.shared.report(error, context: "upload audio log (queued for retry)")
             OfflineQueueManager.shared.drainQueue()
@@ -228,7 +228,7 @@ final class VoiceLogViewModel {
                 workoutDate: nil,
                 source: "check_in"
             )
-            statusMessage = "Saved offline — will upload when you're back online."
+            statusMessage = "Saved — will finish uploading in the background."
             isUploading = false
             ErrorReporter.shared.report(error, context: "upload check-in (queued for retry)")
             OfflineQueueManager.shared.drainQueue()
