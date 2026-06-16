@@ -26,19 +26,13 @@ final class VoiceLogViewModel {
 
         do {
             let audioData = try Data(contentsOf: localURL)
-            let fileName = localURL.lastPathComponent
             let userId = AuthManager.shared.userId
-            let storagePath = "\(userId)/\(fileName)"
 
-            // --- Step 1: Upload audio via Supabase SDK ---
-            try await supabase.storage
-                .from("training-memos")
-                .upload(storagePath, data: audioData, options: FileOptions(contentType: "audio/m4a", upsert: true))
-
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: storagePath)
-            let audioPublicURL = publicURL.absoluteString
+            // --- Step 1: Upload audio via the service-role edge function ---
+            // Direct storage uploads have been rejected by the storage service
+            // since 2026-06-02 (RLS "Unauthorized" on a valid JWT); the edge
+            // function writes with the service role. See its docstring.
+            let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
 
             // --- Step 2: Insert record via Supabase SDK ---
             var insertData = TrainingLogInsert(audioUrl: audioPublicURL)

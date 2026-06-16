@@ -241,41 +241,17 @@ final class OfflineQueueManager {
 
         do {
             let audioData = try Data(contentsOf: audioURL)
-            let fileName = "\(userId)/\(UUID().uuidString).m4a"
 
-            // Step 1: upload audio to storage with an EXPLICIT bearer token.
-            // The SDK storage client wasn't attaching the user JWT — reads via
-            // .from() carry it, but .storage.upload() went out unauthenticated,
-            // so storage rejected it 400/403 "new row violates row-level
-            // security policy". Send the token by hand (same approach as
-            // callEdgeFunction, which works), and surface the real storage
-            // error body if it still fails.
-            let accessToken = try await supabase.auth.session.accessToken
-            guard let uploadURL = URL(string: "\(supabaseURL)/storage/v1/object/training-memos/\(fileName)") else {
-                throw URLError(.badURL)
-            }
-            var uploadReq = URLRequest(url: uploadURL)
-            uploadReq.httpMethod = "POST"
-            uploadReq.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-            uploadReq.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
-            uploadReq.setValue("audio/m4a", forHTTPHeaderField: "Content-Type")
-            uploadReq.setValue("true", forHTTPHeaderField: "x-upsert")
-            let (upRespData, upResp) = try await URLSession.shared.upload(for: uploadReq, from: audioData)
-            if let http = upResp as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
-                let body = String(data: upRespData, encoding: .utf8) ?? ""
-                throw NSError(domain: "VoiceUpload", code: http.statusCode,
-                              userInfo: [NSLocalizedDescriptionKey: "Storage upload \(http.statusCode): \(body)"])
-            }
+            // Step 1: upload audio via the service-role edge function. Direct
+            // storage uploads (SDK or explicit-bearer) are rejected by the
+            // storage service since 2026-06-02 — RLS "Unauthorized" on a valid
+            // JWT, even though the bucket policy is PUBLIC. upload-voice-memo
+            // writes with the service role, bypassing that broken layer.
+            let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
 
-            guard let publicURL = URL(string: "\(supabaseURL)/storage/v1/object/public/training-memos/\(fileName)") else {
-                throw URLError(.badURL)
-            }
-
-            // Step 2: insert the training_logs row exactly like the live path.
-            // The DB trigger (pg_net → process-training-memo) picks it up from
-            // there; we must NOT POST flat fields to the edge function (that
-            // body shape is rejected and skips the row insert entirely).
-            var insertData = TrainingLogInsert(audioUrl: publicURL.absoluteString)
+            // Step 2: insert the training_logs row over PostgREST (which works).
+            // The DB trigger (pg_net → process-training-memo) picks it up.
+            var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
             insertData.userId = userId
             insertData.processingStatus = "pending"
             insertData.source = dict["source"] ?? "voice_log"
