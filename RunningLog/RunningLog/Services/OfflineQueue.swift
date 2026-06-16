@@ -215,18 +215,52 @@ final class OfflineQueueManager {
             return false
         }
 
+        // Hold a VALID session before writing. A missing/expired session makes
+        // the upload go out unauthenticated, which storage rejects with 403
+        // "new row violates row-level security policy" — stranding orphaned
+        // audio with no training_logs row (the bug that broke voice memos).
+        // `auth.session` auto-refreshes an expired token; if there's genuinely
+        // no session, keep the item queued and bail quietly instead of firing
+        // an anonymous upload that 403s and spams the error banner.
+        do {
+            _ = try await supabase.auth.session
+        } catch {
+            upload.lastError = "No valid session — sign in to upload"
+            logger.error("uploadVoiceLog: no valid auth session, keeping item queued: \(error.localizedDescription)")
+            return false
+        }
+
         do {
             let audioData = try Data(contentsOf: audioURL)
             let fileName = "\(userId)/\(UUID().uuidString).m4a"
 
-            // Step 1: upload audio to storage (upsert so a partial retry is safe).
-            try await supabase.storage
-                .from("training-memos")
-                .upload(fileName, data: audioData, options: .init(contentType: "audio/m4a", upsert: true))
+            // Step 1: upload audio to storage with an EXPLICIT bearer token.
+            // The SDK storage client wasn't attaching the user JWT — reads via
+            // .from() carry it, but .storage.upload() went out unauthenticated,
+            // so storage rejected it 400/403 "new row violates row-level
+            // security policy". Send the token by hand (same approach as
+            // callEdgeFunction, which works), and surface the real storage
+            // error body if it still fails.
+            let accessToken = try await supabase.auth.session.accessToken
+            guard let uploadURL = URL(string: "\(supabaseURL)/storage/v1/object/training-memos/\(fileName)") else {
+                throw URLError(.badURL)
+            }
+            var uploadReq = URLRequest(url: uploadURL)
+            uploadReq.httpMethod = "POST"
+            uploadReq.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            uploadReq.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+            uploadReq.setValue("audio/m4a", forHTTPHeaderField: "Content-Type")
+            uploadReq.setValue("true", forHTTPHeaderField: "x-upsert")
+            let (upRespData, upResp) = try await URLSession.shared.upload(for: uploadReq, from: audioData)
+            if let http = upResp as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
+                let body = String(data: upRespData, encoding: .utf8) ?? ""
+                throw NSError(domain: "VoiceUpload", code: http.statusCode,
+                              userInfo: [NSLocalizedDescriptionKey: "Storage upload \(http.statusCode): \(body)"])
+            }
 
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: fileName)
+            guard let publicURL = URL(string: "\(supabaseURL)/storage/v1/object/public/training-memos/\(fileName)") else {
+                throw URLError(.badURL)
+            }
 
             // Step 2: insert the training_logs row exactly like the live path.
             // The DB trigger (pg_net → process-training-memo) picks it up from
