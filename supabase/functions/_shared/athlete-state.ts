@@ -22,8 +22,6 @@ import {
   type TrainingLogRow as PaceEngineLogRow,
 } from "./pace-engine.ts";
 import {
-  computeWeightedLoadForLog,
-  type TrainingLogRow as WeeklyAnalyticsLogRow,
   type WorkoutFeaturesRow,
 } from "./weeklyAnalytics.ts";
 import {
@@ -36,6 +34,22 @@ import {
   type FitnessSignal,
   type SessionInput as FitnessSessionInput,
 } from "./fitnessSignal.ts";
+import { formatPace, formatTime, formatTimeDelta } from "./shared/format.ts";
+import { buildMoodTrend, type MoodLogRow } from "./builders/buildMoodTrend.ts";
+import { buildLoadMetrics } from "./builders/buildLoadMetrics.ts";
+import { buildTrajectory, derivePhase, deriveExperience } from "./builders/buildTrajectory.ts";
+import { buildLoadDistribution } from "./builders/buildLoadDistribution.ts";
+import { buildBlocks } from "./builders/buildBlocks.ts";
+
+// Re-exported for backwards compatibility — existing importers (and tests)
+// pull `formatPace` from this module.
+export { formatPace };
+
+// Schema version stamped onto every rebuilt state. Currently informational
+// only — no consumer reads it (verified 2026-06-18). Bump when a shape change
+// needs a real migration/invalidation story; until then it documents intent
+// rather than driving behavior.
+export const ATHLETE_STATE_SCHEMA_VERSION = 1;
 
 // ── Types ────────────────────────────────────────────────
 
@@ -451,8 +465,17 @@ export async function rebuildAthleteState(
     }
     // Still stale after ~3s of waiting — the in-flight build stalled.
     // Fall through and rebuild ourselves rather than return bad state.
+    //
+    // KNOWN LIMITATION (residual concurrency risk): the advisory lock is held
+    // only for the claim RPC, not the rebuild body. This fall-through can run a
+    // second full rebuild concurrently with a slow in-flight one; the final
+    // upsert is last-write-wins, so two rebuilds can interleave. It's bounded
+    // (only after a ~3s stall) and self-healing (both write a valid state), but
+    // it is NOT fully serialized. A true fix holds the lock for the whole body
+    // (refactor design R4 / §3 lock.ts) — deferred.
   }
 
+  const rebuildStartMs = Date.now();
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400000).toISOString();
@@ -613,6 +636,33 @@ export async function rebuildAthleteState(
       .limit(12),
   ]);
 
+  // Surface partial-failure: any of these reads erroring silently degrades the
+  // state (e.g. an empty training_logs read flips current_phase/trajectory with
+  // no signal). Log each failure so the degradation is visible in prod. NOTE:
+  // this is observability only — the design's "preserve previous slice on
+  // failure" (refactor §6) is still pending; a failed read currently yields an
+  // empty/zero slice, not the prior value.
+  for (const [name, res] of ([
+    ["training_logs", recentLogsRes],
+    ["athlete_profiles", profileRes],
+    ["fitness_snapshots", snapshotRes],
+    ["injuries", injuriesRes],
+    ["training_plans", planRes],
+    ["user_goals", goalsRes],
+    ["check_ins", checkInsRes],
+    ["fitness_snapshots_6mo", snapshot6moRes],
+    ["injury_history", injuryHistoryRes],
+    ["block_history", blockHistoryRes],
+    ["athlete_pace_profiles", paceProfileRes],
+    ["workout_features", workoutFeaturesRes],
+    ["confirmed_races", confirmedRacesRes],
+    ["user_memories", memoriesRes],
+  ] as Array<[string, { error: { message: string } | null }]>)) {
+    if (res?.error) {
+      console.warn(`[AthleteState] source read '${name}' failed (slice degraded): ${res.error.message}`);
+    }
+  }
+
   const logs = (recentLogsRes.data ?? []) as Array<Record<string, unknown>>;
   const profile = profileRes.data;
   const snapshot = (snapshotRes.data as Array<Record<string, unknown>> | null)?.[0];
@@ -641,193 +691,29 @@ export async function rebuildAthleteState(
     updated_at: string;
   } | null;
 
-  // ── Compute load metrics ──
-  const workoutsWithMilesRaw = logs.filter(
-    (l) => (l.workout_distance_miles as number) > 0
-  );
+  // ── Compute load metrics ── (see _shared/builders/buildLoadMetrics.ts)
+  const {
+    workoutsWithMiles,
+    last7d,
+    rolling7dMiles,
+    rolling28dMiles,
+    weeklyAvg28d,
+    acwr,
+    hardSessions7d,
+    easySessions7d,
+    longestRun14d,
+    runsLast7d,
+  } = buildLoadMetrics({
+    logs,
+    featuresByLogId,
+    snapshot,
+    sevenDaysAgo,
+    fourteenDaysAgo,
+    twentyEightDaysAgo,
+  });
 
-  // Cross-source dedup. The same workout can appear 2-3 times in training_logs:
-  // once from Strava auto-sync, once as a voice_log the user created, once as
-  // auto_sync from HealthKit. Different timestamps, same workout. Strictest
-  // match: same calendar day + distance within 0.2mi + duration within 2min.
-  // Source priority: strava > auto_sync > voice_log > manual (keep the richest).
-  function sourcePriority(src: unknown): number {
-    switch (src) {
-      case "strava": return 4;
-      case "auto_sync": return 3;
-      case "voice_log": return 2;
-      case "check_in": return 1;
-      default: return 0;
-    }
-  }
-  const workoutsWithMiles: Array<Record<string, unknown>> = [];
-  for (const row of workoutsWithMilesRaw) {
-    const day = String(row.workout_date ?? "").slice(0, 10);
-    const rDist = row.workout_distance_miles as number;
-    const rDur = (row.workout_duration_minutes as number) ?? 0;
-    // Find an existing dedup partner
-    const dupIdx = workoutsWithMiles.findIndex((existing) => {
-      const eDay = String(existing.workout_date ?? "").slice(0, 10);
-      if (eDay !== day) return false;
-      const eDist = existing.workout_distance_miles as number;
-      const eDur = (existing.workout_duration_minutes as number) ?? 0;
-      return Math.abs(eDist - rDist) <= 0.2 && Math.abs(eDur - rDur) <= 2;
-    });
-    if (dupIdx < 0) {
-      workoutsWithMiles.push(row);
-    } else {
-      // Keep whichever has higher source priority (richer data)
-      if (sourcePriority(row.source) > sourcePriority(workoutsWithMiles[dupIdx].source)) {
-        workoutsWithMiles[dupIdx] = row;
-      }
-    }
-  }
-
-  // Session-level dedup: multiple uploads that happen close together in time
-  // (warmup + workout + cooldown saved as separate entries, commonly from
-  // Strava/Garmin) collapse into ONE "session." Uses gap-based clustering:
-  // if two workouts start within 3 hours of each other AND are on the same
-  // calendar day, they're the same session. Total mileage still summed per
-  // session but session count reflects reality.
-  function groupIntoSessions(rows: Array<Record<string, unknown>>) {
-    if (rows.length === 0) return [];
-    // Sort ascending by workout_date
-    const sorted = [...rows].sort((a, b) =>
-      String(a.workout_date ?? "").localeCompare(String(b.workout_date ?? ""))
-    );
-    const sessions: Array<Array<Record<string, unknown>>> = [[sorted[0]]];
-    for (let i = 1; i < sorted.length; i++) {
-      const prev = sorted[i - 1];
-      const cur = sorted[i];
-      const prevTime = new Date(prev.workout_date as string).getTime();
-      const curTime = new Date(cur.workout_date as string).getTime();
-      const sameDay = (prev.workout_date as string)?.slice(0, 10)
-        === (cur.workout_date as string)?.slice(0, 10);
-      const gapHours = (curTime - prevTime) / 3600000;
-      // Also consider prev duration — a 2h run ending at 2pm + next run at 3pm is same session
-      const prevDurMin = (prev.workout_duration_minutes as number) ?? 0;
-      const prevEndGapHours = (curTime - prevTime) / 3600000 - (prevDurMin / 60);
-
-      if (sameDay && (gapHours <= 3 || prevEndGapHours <= 1.5)) {
-        sessions[sessions.length - 1].push(cur);
-      } else {
-        sessions.push([cur]);
-      }
-    }
-    return sessions;
-  }
-
-  const last7d = workoutsWithMiles.filter(
-    (l) => new Date(l.workout_date as string) >= new Date(sevenDaysAgo)
-  );
-  const last28d = workoutsWithMiles.filter(
-    (l) => new Date(l.workout_date as string) >= new Date(twentyEightDaysAgo)
-  );
-  const sessions7d = groupIntoSessions(last7d);
-  const sessions28d = groupIntoSessions(last28d);
-
-  const rolling7dMiles = last7d.reduce(
-    (s, l) => s + ((l.workout_distance_miles as number) || 0), 0
-  );
-  const rolling28dMiles = last28d.reduce(
-    (s, l) => s + ((l.workout_distance_miles as number) || 0), 0
-  );
-
-  const weeklyAvg28d = rolling28dMiles / 4;
-
-  // ── Intensity-weighted load (drives ACWR) ──
-  // For each training log, derive a weighted-minutes load using the
-  // shared helper. Preferred path: workout_features.intensity_score ×
-  // duration_seconds / 60. Fallback: workout_type × duration_minutes
-  // when features haven't been computed for that log yet.
-  function computeLoadForLog(l: Record<string, unknown>): number {
-    return computeWeightedLoadForLog(
-      l as unknown as WeeklyAnalyticsLogRow,
-      featuresByLogId.get(l.id as string),
-    );
-  }
-  const rolling7dLoad = last7d.reduce((s, l) => s + computeLoadForLog(l), 0);
-  const rolling28dLoad = last28d.reduce((s, l) => s + computeLoadForLog(l), 0);
-  const weeklyAvgLoad28d = rolling28dLoad / 4;
-  const acwr = weeklyAvgLoad28d > 0 ? rolling7dLoad / weeklyAvgLoad28d : null;
-
-  // Compute MP pace early — needed for hard session classification below.
-  const marathonSec = (snapshot?.predicted_marathon_seconds as number) || 0;
-  const earlyMpPace = marathonSec > 0 ? marathonSec / 26.2188 : 0;
-
-  // Tempo, intervals, race, progression are always hard.
-  // Long runs are hard only if 18+ miles OR run at 80%+ of MP (faster pace = lower number).
-  const alwaysHardTypes = new Set(["tempo", "intervals", "interval", "race", "progression"]);
-  const easyTypes = new Set(["easy", "recovery"]);
-
-  const mpPace = earlyMpPace;
-  function isHardSession(log: Record<string, unknown>): boolean {
-    // Prefer the Observer-parsed type so this agrees with the block
-    // quality classifier (which reads parsed_structure.type). v1 read only
-    // raw workout_type here, so the two load views could disagree about the
-    // same week (e.g. an auto-synced interval session with no workout_type).
-    const parsed = log.parsed_structure as Record<string, unknown> | null;
-    const parsedType = parsed && typeof parsed === "object"
-      ? (parsed["type"] as string | undefined)
-      : undefined;
-    if (parsedType && ["interval", "tempo", "progression", "race"].includes(parsedType)) return true;
-    if (alwaysHardTypes.has(log.workout_type as string)) return true;
-    if (log.workout_type === "long_run") {
-      const miles = (log.workout_distance_miles as number) || 0;
-      if (miles >= 18) return true;
-      // Check if pace is 80%+ of MP (i.e., pace <= MP / 0.80)
-      // Since lower pace = faster, "80% of MP effort" means pace is at most MP * 1.25
-      if (mpPace > 0) {
-        const duration = (log.workout_duration_minutes as number) || 0;
-        if (duration > 0 && miles > 0) {
-          const avgPaceSec = (duration * 60) / miles;
-          if (avgPaceSec <= mpPace * 1.25) return true; // faster than 80% MP effort
-        }
-      }
-    }
-    return false;
-  }
-
-  const hardSessions7d = last7d.filter(isHardSession).length;
-  const easySessions7d = last7d.filter((l) => easyTypes.has(l.workout_type as string)).length;
-
-  const last14d = workoutsWithMiles.filter(
-    (l) => new Date(l.workout_date as string) >= new Date(fourteenDaysAgo)
-  );
-  const longestRun14d = last14d.reduce(
-    (max, l) => Math.max(max, (l.workout_distance_miles as number) || 0), 0
-  );
-
-  // ── Mood trend ──
-  // Broader mood signal — include both formal check-ins AND voice-log moods.
-  // Most athletes won't do dedicated check-ins daily, but they leave mood hints
-  // in every voice memo. Use both, sorted by date desc.
-  type MoodSource = { mood: string; at: string };
-  const moodSources: MoodSource[] = [
-    ...checkIns.map((c) => ({ mood: c.mood, at: c.created_at })),
-    ...logs
-      .filter((l) => l.mood && l.workout_date)
-      .map((l) => ({ mood: l.mood as string, at: l.workout_date as string })),
-  ]
-    .filter((m) => m.mood)
-    .sort((a, b) => b.at.localeCompare(a.at))
-    .slice(0, 8);
-
-  const moodScores: Record<string, number> = {
-    energized: 5, positive: 4, neutral: 3, tired: 2, struggling: 1, injured: 0,
-  };
-  let moodTrend: string | null = null;
-  // Need at least 4 entries so the "older" window (everything after the most
-  // recent 3) is non-empty. With exactly 3, scores.slice(3) is empty → older
-  // averages to 0 → any non-zero recent mood falsely reports "improving"
-  // (three "tired" check-ins would read as improving). Below 4, leave null.
-  if (moodSources.length >= 4) {
-    const scores = moodSources.map((m) => moodScores[m.mood] ?? 3);
-    const recent = scores.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
-    const olderScores = scores.slice(3);
-    const older = olderScores.reduce((a, b) => a + b, 0) / olderScores.length;
-    moodTrend = recent > older + 0.5 ? "improving" : recent < older - 0.5 ? "declining" : "stable";
-  }
+  // ── Mood trend ── (see _shared/builders/buildMoodTrend.ts)
+  const moodTrend = buildMoodTrend(checkIns, logs as MoodLogRow[]);
 
   // ── Fitness trajectory ──
   // Compare the latest two fitness_snapshots on predicted 10K (lower = faster).
@@ -1012,7 +898,7 @@ export async function rebuildAthleteState(
   let upcomingWorkouts: Array<Record<string, unknown>> = [];
   let weekCompliancePct: number | null = null;
   if (plan?.id) {
-    const { data: scheduled } = await supabase
+    const { data: scheduled, error: scheduledErr } = await supabase
       .from("scheduled_workouts")
       .select("date, workout_type, workout_data, status")
       .eq("plan_id", plan.id)
@@ -1020,6 +906,7 @@ export async function rebuildAthleteState(
       .eq("status", "scheduled")
       .order("date", { ascending: true })
       .limit(6);
+    if (scheduledErr) console.warn(`[AthleteState] scheduled_workouts read failed: ${scheduledErr.message}`);
 
     if (scheduled?.length) {
       const todayRow = scheduled.find((w: any) => w.date === today);
@@ -1031,12 +918,13 @@ export async function rebuildAthleteState(
     // unreliable, so we match scheduled NON-REST days in the trailing 7d
     // against days the athlete actually trained (by date vs training_logs).
     const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10);
-    const { data: weekScheduled } = await supabase
+    const { data: weekScheduled, error: weekScheduledErr } = await supabase
       .from("scheduled_workouts")
       .select("date, workout_type")
       .eq("plan_id", plan.id)
       .gte("date", weekAgo)
       .lte("date", today);
+    if (weekScheduledErr) console.warn(`[AthleteState] weekly scheduled_workouts read failed: ${weekScheduledErr.message}`);
     const planned = (weekScheduled ?? []).filter(
       (w: any) => String(w.workout_type ?? "").toLowerCase() !== "rest",
     );
@@ -1202,12 +1090,13 @@ export async function rebuildAthleteState(
     addMentionDate(String(dm.mentioned_at ?? ""), String(dm.body_area ?? ""));
   }
   {
-    const { data: bmHist } = await supabase
+    const { data: bmHist, error: bmHistErr } = await supabase
       .from("body_mentions")
       .select("body_area, severity_hint, mentioned_at")
       .eq("user_id", userId)
       .gte("mentioned_at", twelveMonthsAgoISO.slice(0, 10))
       .order("mentioned_at", { ascending: false });
+    if (bmHistErr) console.warn(`[AthleteState] body_mentions history read failed (niggle recurrence degraded): ${bmHistErr.message}`);
     const byArea = new Map<string, { count: number; first: string; last: string; worst: string }>();
     for (const m of (bmHist ?? []) as Array<Record<string, unknown>>) {
       const area = String(m.body_area);
@@ -1239,102 +1128,12 @@ export async function rebuildAthleteState(
   }
 
   // ── Training blocks (6 × 4-week rollups) ──
-  // Computes block-over-block comparison signals. Each block summarizes volume,
-  // quality sessions, easy sessions, injury mentions, and mood trend for a
-  // 28-day window. Coach uses this for "this block vs last" framing.
-  const blockHistoryRaw = (blockHistoryRes?.data ?? []) as Array<Record<string, unknown>>;
-  // Cross-source dedup (same logic as current workouts) — blocks would otherwise double-count
-  const blockHistoryDeduped: Array<Record<string, unknown>> = [];
-  for (const row of blockHistoryRaw) {
-    const day = String(row.workout_date ?? "").slice(0, 10);
-    const rDist = row.workout_distance_miles as number;
-    const rDur = (row.workout_duration_minutes as number) ?? 0;
-    const dupIdx = blockHistoryDeduped.findIndex((e) => {
-      const eDay = String(e.workout_date ?? "").slice(0, 10);
-      if (eDay !== day) return false;
-      const eDist = e.workout_distance_miles as number;
-      const eDur = (e.workout_duration_minutes as number) ?? 0;
-      return Math.abs(eDist - rDist) <= 0.2 && Math.abs(eDur - rDur) <= 2;
-    });
-    if (dupIdx < 0) blockHistoryDeduped.push(row);
-    else if (sourcePriority(row.source) > sourcePriority(blockHistoryDeduped[dupIdx].source)) {
-      blockHistoryDeduped[dupIdx] = row;
-    }
-  }
-
-  const recentBlocks: AthleteState["recent_blocks"] = [];
-  for (let blockIdx = 0; blockIdx < 6; blockIdx++) {
-    const blockEnd = new Date(now.getTime() - blockIdx * 28 * 86400000);
-    const blockStart = new Date(blockEnd.getTime() - 28 * 86400000);
-
-    const rowsInBlock = blockHistoryDeduped.filter((r) => {
-      const t = new Date(r.workout_date as string).getTime();
-      return t >= blockStart.getTime() && t < blockEnd.getTime();
-    });
-    if (rowsInBlock.length === 0) continue;
-
-    const totalMiles = rowsInBlock.reduce((s, r) => s + ((r.workout_distance_miles as number) || 0), 0);
-    let quality = 0;
-    let easy = 0;
-    let races = 0;
-    // Niggle mentions that fall inside this block's window (was always 0 in v1).
-    const injuryMentions = niggleMentionDates.filter((d) => {
-      const t = new Date(d).getTime();
-      return t >= blockStart.getTime() && t < blockEnd.getTime();
-    }).length;
-    const easyPaces: number[] = [];
-    const moodCounts: Record<string, number> = {};
-
-    for (const r of rowsInBlock) {
-      const parsed = r.parsed_structure as Record<string, unknown> | null;
-      const parsedType = parsed && typeof parsed === "object" ? parsed["type"] as string | undefined : undefined;
-      const t = parsedType ?? "";
-      if (t === "interval" || t === "tempo" || t === "progression") quality++;
-      else if (t === "race") { quality++; races++; }
-      else if (t === "easy" || t === "recovery" || t === "long_run") easy++;
-      else easy++; // fallback unlabeled to easy
-
-      // Easy pace for easy/recovery workouts — prefer workout_pace_per_mile column,
-      // fall back to derived (duration/distance) when null (Strava imports often
-      // don't populate the column but have distance + duration).
-      if (t === "easy" || t === "recovery") {
-        let paceSec: number | null = null;
-        if (r.workout_pace_per_mile) {
-          const parts = (r.workout_pace_per_mile as string).split(":").map(Number);
-          if (parts.length === 2 && !isNaN(parts[0])) paceSec = parts[0] * 60 + parts[1];
-        }
-        if (paceSec === null) {
-          const dist = r.workout_distance_miles as number;
-          const dur = r.workout_duration_minutes as number;
-          if (dist > 0 && dur > 0) paceSec = Math.round((dur * 60) / dist);
-        }
-        if (paceSec !== null && paceSec >= 300 && paceSec <= 840) {
-          easyPaces.push(paceSec);
-        }
-      }
-      if (r.mood) {
-        const m = r.mood as string;
-        moodCounts[m] = (moodCounts[m] ?? 0) + 1;
-      }
-    }
-    const avgEasyPace = easyPaces.length > 0
-      ? Math.round(easyPaces.reduce((a, b) => a + b, 0) / easyPaces.length)
-      : null;
-    const domMood = Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-
-    recentBlocks.push({
-      block_start: blockStart.toISOString().slice(0, 10),
-      block_end: blockEnd.toISOString().slice(0, 10),
-      total_miles: Math.round(totalMiles * 10) / 10,
-      weekly_avg_miles: Math.round((totalMiles / 4) * 10) / 10,
-      quality_sessions: quality,
-      easy_sessions: easy,
-      races_entered: races,
-      avg_easy_pace_sec: avgEasyPace,
-      injury_mentions: injuryMentions,
-      mood_summary: domMood,
-    });
-  }
+  // (see _shared/builders/buildBlocks.ts)
+  const recentBlocks: AthleteState["recent_blocks"] = buildBlocks({
+    blockHistoryRows: (blockHistoryRes?.data ?? []) as Array<Record<string, unknown>>,
+    niggleMentionDates,
+    now,
+  });
 
   // ── Latest check-in data ──
   const lastCheckIn = checkIns[0];
@@ -1386,86 +1185,31 @@ export async function rebuildAthleteState(
   }
   const injuryHistorySummary = Object.values(injuryByArea).sort((a, b) => b.last_at.localeCompare(a.last_at));
 
-  // Trajectory framing — ego-safe tone gate
-  // Rules (conservative; bias toward "maintaining" when uncertain):
-  //   returning: recent volume < 50% of 4-week prior avg AND either injury resolved recently OR prior volume gap >14 days
-  //   declining: recent volume < 70% of prior AND no recent injury (unintentional drop)
-  //   peaking: recent volume ≥ 90% of prior AND ≥2 hard sessions/wk AND plan active with race <8 weeks
-  //   building: recent volume > 110% of prior AND fitness trend = improving
-  //   maintaining: default
-  // Prior 3-week weekly average = (28d total − last 7d) / 3 weeks. The v1
-  // version divided by 4, understating the baseline ~25% and biasing
-  // "building" to fire too easily / "declining" almost never.
-  const priorBlockAvg = (rolling28dMiles - rolling7dMiles) / 3;
-  const recentVsPrior = priorBlockAvg > 0 ? rolling7dMiles / priorBlockAvg : 1;
-  const recentlyResolvedInjury = injuryHistory.some((i) =>
-    i.status === "resolved" && i.resolved_at &&
-    new Date(i.resolved_at).getTime() > now.getTime() - 45 * 86400000
-  );
-  const hasActiveInjury = injuries.length > 0;
-  let trajectoryFraming = "maintaining";
-  let trajectoryReason = "volume stable near recent average";
-  if (rolling7dMiles < priorBlockAvg * 0.5 && (recentlyResolvedInjury || hasActiveInjury)) {
-    trajectoryFraming = "returning";
-    trajectoryReason = `volume at ${Math.round(rolling7dMiles)}mi is ${Math.round(recentVsPrior * 100)}% of recent avg; ${hasActiveInjury ? "active" : "recently resolved"} injury`;
-  } else if (rolling7dMiles < priorBlockAvg * 0.7 && !hasActiveInjury) {
-    trajectoryFraming = "declining";
-    trajectoryReason = `volume dropped to ${Math.round(recentVsPrior * 100)}% of recent avg, no injury reason`;
-  } else if (
-    recentVsPrior >= 0.9 && hardSessions7d >= 2 && plan?.target_time_seconds &&
-    // Race must be in the future AND within 8 weeks — otherwise it's a build,
-    // not a peak. (v1 fired "peaking" for any active goal, race months out.)
-    plan?.end_date &&
-    (new Date(plan.end_date as string).getTime() - now.getTime()) > 0 &&
-    (new Date(plan.end_date as string).getTime() - now.getTime()) <= 56 * 86400000
-  ) {
-    const weeksOut = Math.max(
-      1,
-      Math.round((new Date(plan.end_date as string).getTime() - now.getTime()) / (7 * 86400000)),
-    );
-    trajectoryFraming = "peaking";
-    trajectoryReason = `high volume + ${hardSessions7d} hard sessions, race ~${weeksOut}wk out`;
-  } else if (recentVsPrior > 1.1 && fitnessTrend === "improving") {
-    trajectoryFraming = "building";
-    trajectoryReason = `volume up ${Math.round((recentVsPrior - 1) * 100)}% vs recent avg, fitness improving`;
-  }
+  // ── Trajectory framing, phase, experience ──
+  // (see _shared/builders/buildTrajectory.ts)
+  const { framing: trajectoryFraming, reason: trajectoryReason } = buildTrajectory({
+    rolling7dMiles,
+    rolling28dMiles,
+    hardSessions7d,
+    fitnessTrend,
+    activeInjuryCount: injuries.length,
+    injuryHistory,
+    plan: plan as { target_time_seconds?: number | null; end_date?: string | null } | null,
+    now,
+  });
 
-  // ── Phase derivation from volume + quality + trajectory ──
-  // Fixes the "70mi/wk but state says off_season" bug. Real phases:
-  //   recovery: <50% of 28-day avg volume + <1 hard session/wk
-  //   base: 70-100% of avg volume, 1-2 hard sessions, no race soon
-  //   build: 100-120% of avg volume, 2-3 hard sessions
-  //   peak: >120% of avg OR ≥3 hard sessions + race <4wk
-  //   taper: volume dropping after peak, still quality, race <2wk
-  //   off_season: <30% of historical avg + no quality for 2+ weeks
-  const historicalAvg = (profile as Record<string, unknown> | null)?.lifetime_weekly_avg as number
-    ?? weeklyAvg28d;
-  let derivedPhase: string;
-  if (rolling7dMiles < historicalAvg * 0.3 && hardSessions7d === 0) {
-    derivedPhase = "off_season";
-  } else if (rolling7dMiles < historicalAvg * 0.6 && hardSessions7d <= 1) {
-    derivedPhase = "recovery";
-  } else if (hardSessions7d >= 3 && rolling7dMiles >= historicalAvg * 1.1) {
-    derivedPhase = "peak";
-  } else if (rolling7dMiles >= historicalAvg * 1.0 && hardSessions7d >= 2) {
-    derivedPhase = "build";
-  } else {
-    derivedPhase = "base";
-  }
+  const derivedPhase = derivePhase({
+    rolling7dMiles,
+    hardSessions7d,
+    weeklyAvg28d,
+    profile: (profile as Record<string, unknown> | null) ?? null,
+  });
 
-  // ── Experience level inference from profile + pace zones ──
-  // profile.experience_level is often null — infer from volume + pace when missing.
-  let derivedExperience = (profile?.experience_level as string) ?? null;
-  if (!derivedExperience) {
-    const easyPaceSec = paceZones.easy ?? 0;
-    if (weeklyAvg28d >= 50 && easyPaceSec > 0 && easyPaceSec < 480) {
-      derivedExperience = "advanced";
-    } else if (weeklyAvg28d >= 25) {
-      derivedExperience = "intermediate";
-    } else if (weeklyAvg28d > 0) {
-      derivedExperience = "beginner";
-    }
-  }
+  const derivedExperience = deriveExperience({
+    profile: (profile as { experience_level?: unknown } | null) ?? null,
+    weeklyAvg28d,
+    easyPaceSec: paceZones.easy ?? 0,
+  });
 
   // ── data_depth (UI register gate) ──
   // Count workouts + distinct training days from the deduped 28-day window.
@@ -1487,119 +1231,15 @@ export async function rebuildAthleteState(
   });
 
   // ── v2: Load distribution (volume × intensity, NOT ACWR) ──
-  // Aggregate time-in-zone from workout_features over 7d/28d, mirroring
-  // PaceVolumeSpectrumChart's data shape. Rows are ordered workout_date desc.
+  // (see _shared/builders/buildLoadDistribution.ts)
   const featureRows = (workoutFeaturesRes.data ?? []) as Array<Record<string, unknown>>;
-  const sumZones = (rows: Array<Record<string, unknown>>) => {
-    const z = { easy: 0, moderate: 0, threshold: 0, hard: 0 };
-    for (const r of rows) {
-      z.easy += Number(r.easy_seconds ?? 0);
-      z.moderate += Number(r.moderate_seconds ?? 0);
-      z.threshold += Number(r.threshold_seconds ?? 0);
-      z.hard += Number(r.hard_seconds ?? 0);
-    }
-    return z;
-  };
-  // featureRows now spans 84 days (WS3) — slice explicitly per window.
-  const rows7 = featureRows.filter((r) => String(r.workout_date ?? "") >= sevenDaysAgo);
-  const rows28 = featureRows.filter((r) => String(r.workout_date ?? "") >= twentyEightDaysAgo);
-  const z7 = sumZones(rows7);
-  const z28 = sumZones(rows28);
-  const toMin = (s: number) => Math.round(s / 60);
-  const total7 = z7.easy + z7.moderate + z7.threshold + z7.hard;
-  const total28 = z28.easy + z28.moderate + z28.threshold + z28.hard;
-  const pct = (part: number, total: number) =>
-    total > 0 ? Math.round((part / total) * 1000) / 10 : 0;
-  const latestF = featureRows[0] as Record<string, unknown> | undefined;
   const num = (v: unknown): number | null => (v == null ? null : Number(v));
-  const latestMonotony = num(latestF?.monotony_7d);
-  const latestStrain = num(latestF?.strain_7d);
-  // ── Volume × Intensity total — the single pace-weighted load number ──
-  // Σ(intensity_score × duration / 60) per workout = weighted minutes.
-  // This is what "matches paces to volume": a hard mile counts ~5× an
-  // easy mile (intensity_score is the per-segment pace-weighted average).
-  // Same math as computeWeightedLoadForLog.
-  const sumVolumeXIntensity = (rows: Array<Record<string, unknown>>) =>
-    rows.reduce((s, r) => {
-      const isc = Number(r.intensity_score ?? 0);
-      const durSec = Number(r.total_duration_seconds ?? 0);
-      return s + (isc > 0 && durSec > 0 ? (isc * durSec) / 60 : 0);
-    }, 0);
-  const vxi7 = Math.round(sumVolumeXIntensity(rows7));
-  const vxi28 = Math.round(sumVolumeXIntensity(rows28));
-
-  // ── WS3: load trend + recovery read (the ACWR replacement) ──
-  // Weekly weighted-load over 12 weeks; "recent" = last 2 weeks averaged,
-  // "chronic" = the prior 6 weeks (weeks 3–8) averaged. The trend is the
-  // recent week vs that chronic norm, in plain language.
-  const CHRONIC_WINDOW_DAYS = 56; // 8 weeks
-  const weekLoad = (weekIdx: number): number => {
-    const start = new Date(now.getTime() - (weekIdx + 1) * 7 * 86400000).toISOString();
-    const end = new Date(now.getTime() - weekIdx * 7 * 86400000).toISOString();
-    return sumVolumeXIntensity(
-      featureRows.filter((r) => {
-        const d = String(r.workout_date ?? "");
-        return d >= start && d < end;
-      }),
-    );
-  };
-  const recentWeekly = (weekLoad(0) + weekLoad(1)) / 2; // last 2 weeks
-  const chronicWeeks = [2, 3, 4, 5, 6, 7].map(weekLoad); // weeks 3–8
-  const chronicWeekly = chronicWeeks.reduce((s, w) => s + w, 0) / chronicWeeks.length;
-  const loadVsChronicPct = chronicWeekly > 0
-    ? Math.round(((recentWeekly - chronicWeekly) / chronicWeekly) * 100)
-    : null;
-  let loadTrend: "building" | "holding" | "spiking" | "backing_off" | null = null;
-  if (chronicWeekly > 0 && recentWeekly >= 0) {
-    if (loadVsChronicPct! >= 40) loadTrend = "spiking";
-    else if (loadVsChronicPct! >= 12) loadTrend = "building";
-    else if (loadVsChronicPct! <= -25) loadTrend = "backing_off";
-    else loadTrend = "holding";
-  }
-  // Recovery read: hard-day spacing over 28d + whether this is a down week.
-  const QUALITY_FLOOR_SEC = 240;
-  const hardDates = rows28
-    .filter((r) => Number(r.threshold_seconds ?? 0) + Number(r.hard_seconds ?? 0) >= QUALITY_FLOOR_SEC)
-    .map((r) => String(r.workout_date ?? "").slice(0, 10))
-    .filter(Boolean)
-    .sort();
-  let avgDaysBetweenHard: number | null = null;
-  if (hardDates.length >= 2) {
-    let gapSum = 0;
-    for (let i = 1; i < hardDates.length; i++) {
-      gapSum += (new Date(hardDates[i]).getTime() - new Date(hardDates[i - 1]).getTime()) / 86400000;
-    }
-    avgDaysBetweenHard = Math.round((gapSum / (hardDates.length - 1)) * 10) / 10;
-  }
-  const downWeek = loadVsChronicPct != null && loadVsChronicPct <= -30;
-  const recoveryRead = total28 > 0 ? {
-    avg_days_between_hard: avgDaysBetweenHard,
-    hard_sessions_28d: hardDates.length,
-    down_week: downWeek,
-  } : null;
-  const loadDistribution = total28 > 0 ? {
-    window_days: 28,
-    // The single number: volume scaled by pace intensity (weighted minutes).
-    volume_x_intensity_7d: vxi7,
-    volume_x_intensity_28d: vxi28,
-    minutes_7d: { easy: toMin(z7.easy), moderate: toMin(z7.moderate), threshold: toMin(z7.threshold), hard: toMin(z7.hard) },
-    minutes_28d: { easy: toMin(z28.easy), moderate: toMin(z28.moderate), threshold: toMin(z28.threshold), hard: toMin(z28.hard) },
-    zone_pct_7d: {
-      easy: pct(z7.easy, total7),
-      moderate: pct(z7.moderate, total7),
-      threshold: pct(z7.threshold, total7),
-      hard: pct(z7.hard, total7),
-    },
-    effort_distribution: (latestF?.effort_distribution as string) ?? null,
-    intensity_score_latest: num(latestF?.intensity_score),
-    monotony_7d: latestMonotony,
-    strain_7d: latestStrain,
-    hr_pace_efficiency: num(latestF?.hr_pace_efficiency),
-    load_trend: loadTrend,
-    chronic_window_days: CHRONIC_WINDOW_DAYS,
-    load_vs_chronic_pct: loadVsChronicPct,
-    recovery_read: recoveryRead,
-  } : null;
+  const { loadDistribution, latestMonotony, latestStrain } = buildLoadDistribution({
+    featureRows,
+    sevenDaysAgo,
+    twentyEightDaysAgo,
+    now,
+  });
 
   // ── v2: Fitness prediction as range + confidence (never a point) ──
   // range_*_seconds is a ± half-width band around the point prediction.
@@ -1649,24 +1289,60 @@ export async function rebuildAthleteState(
       importance: m.importance ?? 0,
     }));
 
-  // ── v2 Phase B: execution quality + environment from laps ──
-  // laps.workout_id == training_logs.id. Fetch only for the recent set.
+  // ── v2 Phase B + fitness: ONE laps fetch feeding BOTH consumers ──
+  // laps.workout_id == training_logs.id. Two consumers need laps:
+  //   (1) execution + environment — the 28-day recent set (`logs`)
+  //   (2) the objective fitness signal — the 84-day block-history set
+  // These windows overlap heavily, so previously this module issued a recent
+  // fetch here AND a second serial chunked fetch below — re-pulling rows the
+  // first already had. Unified into a single wide-column fetch over the UNION
+  // of ids, chunked and run in PARALLEL. A workout's laps live entirely within
+  // one chunk (chunked by id), so per-workout lap_index order is preserved.
   const recentIds = (logs as Array<{ id: string }>).map((l) => l.id).filter(Boolean);
+
+  // 84-day block logs drive the fitness signal's longitudinal window. Computed
+  // up front so its ids join the single laps fetch below.
+  const blockLogs84 = ((blockHistoryRes?.data ?? []) as Array<Record<string, unknown>>)
+    .filter((l) => {
+      const d = String(l.workout_date ?? "");
+      return d && d >= eightyFourDaysAgo;
+    });
+  const blockMetaById = new Map<string, string>(); // id -> YYYY-MM-DD
+  for (const l of blockLogs84) {
+    blockMetaById.set(String(l.id), String(l.workout_date ?? "").slice(0, 10));
+  }
+
+  // Union of ids (recent ∪ 84-day). Recent isn't strictly a subset — the recent
+  // query admits 0-distance rows the block query filters out — so union, dedup.
+  const lapsWorkoutIds = [...new Set([...recentIds, ...blockMetaById.keys()])];
+
+  const lapsFetchStart = Date.now();
   const lapsByWorkout = new Map<string, Array<Record<string, unknown>>>();
-  if (recentIds.length > 0) {
-    const { data: lapsData } = await supabase
-      .from("running_workout_laps")
-      .select("workout_id, lap_index, distance_meters, avg_pace_sec_per_mile, heat_adjusted_pace_sec_per_mile, avg_heart_rate, is_rest, moving_time_seconds, elapsed_time_seconds, temp_f, dew_point_f, heat_category, heat_adjustment_pct, total_elevation_gain")
-      .eq("user_id", userId)
-      .in("workout_id", recentIds)
-      .order("lap_index", { ascending: true });
-    for (const lap of (lapsData ?? []) as Array<Record<string, unknown>>) {
-      const wid = String(lap.workout_id);
-      const arr = lapsByWorkout.get(wid) ?? [];
-      arr.push(lap);
-      lapsByWorkout.set(wid, arr);
+  if (lapsWorkoutIds.length > 0) {
+    const LAPS_CHUNK = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < lapsWorkoutIds.length; i += LAPS_CHUNK) {
+      chunks.push(lapsWorkoutIds.slice(i, i + LAPS_CHUNK));
+    }
+    const results = await Promise.all(chunks.map((chunk) =>
+      supabase
+        .from("running_workout_laps")
+        .select("workout_id, lap_index, distance_meters, avg_pace_sec_per_mile, heat_adjusted_pace_sec_per_mile, avg_heart_rate, is_rest, moving_time_seconds, elapsed_time_seconds, temp_f, dew_point_f, heat_category, heat_adjustment_pct, total_elevation_gain")
+        .eq("user_id", userId)
+        .in("workout_id", chunk)
+        .order("lap_index", { ascending: true })
+    ));
+    for (const { data: lapsData, error: lapsErr } of results) {
+      if (lapsErr) console.warn(`[AthleteState] running_workout_laps chunk read failed (execution/environment/fitness degraded): ${lapsErr.message}`);
+      for (const lap of (lapsData ?? []) as Array<Record<string, unknown>>) {
+        const wid = String(lap.workout_id);
+        const arr = lapsByWorkout.get(wid) ?? [];
+        arr.push(lap);
+        lapsByWorkout.set(wid, arr);
+      }
     }
   }
+  const lapsFetchMs = Date.now() - lapsFetchStart;
 
   const logMetaById = new Map<string, { date: string; type: string | null }>();
   for (const l of logs as Array<Record<string, unknown>>) {
@@ -1758,42 +1434,14 @@ export async function rebuildAthleteState(
   }
 
   // ── Objective fitness signal — pace-at-HR efficiency trend (WS-fitness) ──
-  // The Read's fitness verdict wants "same pace, HR direction over weeks." The
-  // 28-day `lapsByWorkout` set above is too short for a trend, so pull laps
-  // over the full 84-day scan window from the block-history logs and roll them
-  // up via the shared pure module. Best-effort: any failure leaves the signal
-  // null (the Read degrades to its other fitness inputs).
+  // The Read's fitness verdict wants "same pace, HR direction over weeks."
+  // Reuses the SINGLE laps fetch above (the union covers the 84-day window),
+  // selecting the longitudinal set via the 84-day `blockMetaById`. Best-effort:
+  // any failure leaves the signal null (the Read degrades to its other inputs).
   let fitnessSignal: FitnessSignal | null = null;
   try {
-    const blockLogs = ((blockHistoryRes?.data ?? []) as Array<Record<string, unknown>>)
-      .filter((l) => {
-        const d = String(l.workout_date ?? "");
-        return d && d >= eightyFourDaysAgo;
-      });
-    const blockMetaById = new Map<string, string>(); // id -> YYYY-MM-DD
-    for (const l of blockLogs) {
-      blockMetaById.set(String(l.id), String(l.workout_date ?? "").slice(0, 10));
-    }
-    const blockIds = [...blockMetaById.keys()];
-    const fitnessLapsByWorkout = new Map<string, Array<Record<string, unknown>>>();
-    for (let i = 0; i < blockIds.length; i += 200) {
-      const chunk = blockIds.slice(i, i + 200);
-      if (chunk.length === 0) continue;
-      const { data: lapsData } = await supabase
-        .from("running_workout_laps")
-        .select("workout_id, lap_index, is_rest, distance_meters, avg_pace_sec_per_mile, avg_heart_rate, moving_time_seconds, elapsed_time_seconds")
-        .eq("user_id", userId)
-        .in("workout_id", chunk)
-        .order("lap_index", { ascending: true });
-      for (const lap of (lapsData ?? []) as Array<Record<string, unknown>>) {
-        const wid = String(lap.workout_id);
-        const arr = fitnessLapsByWorkout.get(wid) ?? [];
-        arr.push(lap);
-        fitnessLapsByWorkout.set(wid, arr);
-      }
-    }
     const fitnessSessions: FitnessSessionInput[] = [];
-    for (const [wid, laps] of fitnessLapsByWorkout) {
+    for (const [wid, laps] of lapsByWorkout) {
       const date = blockMetaById.get(wid);
       if (date) fitnessSessions.push({ date, laps: laps as unknown as LapInput[] });
     }
@@ -1968,7 +1616,7 @@ export async function rebuildAthleteState(
     hard_sessions_7d: hardSessions7d,
     easy_sessions_7d: easySessions7d,
     // Use session count (deduped warmup/cool-down uploads), not raw upload count
-    runs_last_7d: sessions7d.length,
+    runs_last_7d: runsLast7d,
     longest_run_14d: longestRun14d > 0 ? Math.round(longestRun14d * 10) / 10 : null,
 
     predicted_5k_seconds: (snapshot?.predicted_5k_seconds as number) ?? null,
@@ -2126,372 +1774,508 @@ export async function rebuildAthleteState(
 
     last_updated_at: new Date().toISOString(),
     last_updated_by: "rebuild",
-    version: 1,
+    version: ATHLETE_STATE_SCHEMA_VERSION,
   };
 
   // Upsert the state. Clear rebuild_started_at so the next claimer sees
   // an idle row. The column isn't part of AthleteState so we null it in a
   // follow-up update rather than widening the type.
-  await supabase
+  const { error: upsertErr } = await supabase
     .from("athlete_state")
     .upsert(state, { onConflict: "user_id" });
-  await supabase
+  if (upsertErr) {
+    // A failed persist means this rebuild's work is lost — the next caller
+    // re-runs it. Loud, because it directly causes stale/empty served state.
+    console.error(`[AthleteState] state upsert FAILED (rebuild not persisted): ${upsertErr.message}`);
+  }
+  const { error: clearErr } = await supabase
     .from("athlete_state")
     .update({ rebuild_started_at: null })
     .eq("user_id", userId);
+  if (clearErr) {
+    // Leaves rebuild_started_at stamped → the claim RPC may block the next
+    // rebuild until its staleness window elapses. Worth knowing.
+    console.warn(`[AthleteState] clearing rebuild_started_at failed: ${clearErr.message}`);
+  }
+
+  // Timing instrumentation — read these off logs to compute p50/p95 in prod.
+  // `laps_fetch` is the unified parallel laps query (Fix 2); a high share of
+  // total here flags the laps path as the cold-rebuild bottleneck.
+  const rebuildMs = Date.now() - rebuildStartMs;
+  console.log(
+    `[AthleteState] rebuild user=${userId} total=${rebuildMs}ms ` +
+    `laps_fetch=${lapsFetchMs}ms laps_workouts=${lapsByWorkout.size} ` +
+    `logs=${logs.length} block_logs_84d=${blockLogs84.length}`,
+  );
 
   return state;
 }
 
 // ── Prompt Helper ────────────────────────────────────────
 
+// Heuristic token estimate: ~4 chars/token. We prune WHOLE sections, not
+// words, so ±10% precision doesn't change which sections survive — a tokenizer
+// dependency isn't worth it in the edge runtime.
+const APPROX_CHARS_PER_TOKEN = 4;
+
+// The design's stated envelope (athlete-state-refactor-design.md §4 R11).
+// Currently a SOFT target: when the rendered prompt exceeds it we log, so we
+// can read real token distributions off prod before choosing an enforced cap.
+const PROMPT_SOFT_TARGET_TOKENS = 420;
+
+/** Heuristic token count for a string (~4 chars/token). */
+export function approxTokenCount(s: string): number {
+  return Math.ceil(s.length / APPROX_CHARS_PER_TOKEN);
+}
+
+/**
+ * A render section: a priority (LOWER number = kept first / more important) and
+ * its already-rendered lines. Sections render in declaration order (so output
+ * is stable and, under no pruning, byte-identical to the pre-budget version),
+ * but are DROPPED in descending priority-number order when over budget.
+ * Priority 1 sections are never dropped (identity, pace zones, injuries —
+ * correctness- and safety-critical).
+ */
+interface PromptSection {
+  key: string;
+  priority: number;
+  lines: string[];
+}
+
+function assemblePromptSections(
+  header: string,
+  sections: PromptSection[],
+  budget: number,
+): { text: string; tokens: number; dropped: string[] } {
+  let kept = sections.filter((s) => s.lines.length > 0);
+  const dropped: string[] = [];
+  const render = (ss: PromptSection[]) =>
+    [header, ...ss.flatMap((s) => s.lines)].join("\n");
+
+  while (approxTokenCount(render(kept)) > budget) {
+    // Drop the LAST section in the highest priority-number tier (later/least
+    // important within a tier goes first). Priority-1 sections are protected.
+    let victimIdx = -1;
+    let victimPriority = -Infinity;
+    for (let i = 0; i < kept.length; i++) {
+      if (kept[i].priority <= 1) continue;
+      if (kept[i].priority >= victimPriority) {
+        victimPriority = kept[i].priority;
+        victimIdx = i;
+      }
+    }
+    if (victimIdx === -1) break; // only priority-1 sections remain — stop
+    dropped.push(kept[victimIdx].key);
+    kept = kept.filter((_, i) => i !== victimIdx);
+  }
+
+  const text = render(kept);
+  return { text, tokens: approxTokenCount(text), dropped };
+}
+
 /**
  * Compress the athlete state into a concise context block for AI prompts.
- * Returns ~200-400 tokens of structured context that replaces the 6-8
- * independent queries each function was doing.
+ *
+ * Sections are priority-ranked and assembled under a token budget (Fix 1 of
+ * outputs/athlete-state-review-2026-06-18.md). The default budget is `Infinity`
+ * — i.e. NO pruning, so production output is byte-identical to the pre-budget
+ * version until a finite cap is chosen from measured token data. The rendered
+ * size is logged whenever it exceeds the soft target.
+ *
+ * @param opts.budget hard token cap; sections drop (lowest priority first,
+ *   never priority-1) until under it. Defaults to Infinity (log-only).
  */
-export function stateToPromptContext(state: AthleteState): string {
-  const lines: string[] = [];
+export function stateToPromptContext(
+  state: AthleteState,
+  opts: { budget?: number } = {},
+): string {
+  const sections: PromptSection[] = [];
+  // Collect a section's lines via the same `lines.push(...)` calls as before —
+  // the closure param is named `lines`, so each block's body is unchanged.
+  const section = (
+    key: string,
+    priority: number,
+    build: (lines: string[]) => void,
+  ) => {
+    const lines: string[] = [];
+    build(lines);
+    if (lines.length > 0) sections.push({ key, priority, lines });
+  };
 
-  lines.push("=== ATHLETE STATE ===");
-
-  // Identity
-  if (state.experience_level) lines.push(`Level: ${state.experience_level}`);
-  if (state.current_phase) lines.push(`Phase: ${state.current_phase}`);
+  // Identity (P1 — never drop)
+  section("identity", 1, (lines) => {
+    if (state.experience_level) lines.push(`Level: ${state.experience_level}`);
+    if (state.current_phase) lines.push(`Phase: ${state.current_phase}`);
+  });
 
   // ── GOALS (what they're training for) ──
   // Plan-based goal first, then user-declared goals with countdown.
-  if (state.goal_race) lines.push(`Plan goal: ${state.goal_race}${state.goal_time_seconds ? ` in ${formatTime(state.goal_time_seconds)}` : ""}`);
-  if (state.active_goals && state.active_goals.length > 0) {
-    lines.push("Active goals:");
-    for (const g of state.active_goals) {
-      const when = g.days_until <= 0 ? "past due"
-        : g.days_until < 14 ? `in ${g.days_until} days ⚠`
-        : g.days_until < 60 ? `in ${g.days_until} days`
-        : `in ${Math.round(g.days_until / 7)} weeks`;
-      const paceLine = g.target_pace_per_mile
-        ? ` → ${g.target_distance_key} @ ${g.target_pace_per_mile}/mi`
-        : "";
-      lines.push(`  • "${g.title}" — ${when} (${g.target_date.slice(0, 10)})${paceLine}`);
-      if (g.gap_vs_current_sec_per_mile != null) {
-        const gap = g.gap_vs_current_sec_per_mile;
-        if (Math.abs(gap) < 3) {
-          lines.push(`    ✓ on target (current predicted pace essentially matches goal)`);
-        } else {
-          lines.push(`    Current predicted pace is ${formatTimeDelta(gap)}/mi than goal`);
+  section("goals", 2, (lines) => {
+    if (state.goal_race) lines.push(`Plan goal: ${state.goal_race}${state.goal_time_seconds ? ` in ${formatTime(state.goal_time_seconds)}` : ""}`);
+    if (state.active_goals && state.active_goals.length > 0) {
+      lines.push("Active goals:");
+      for (const g of state.active_goals) {
+        const when = g.days_until <= 0 ? "past due"
+          : g.days_until < 14 ? `in ${g.days_until} days ⚠`
+          : g.days_until < 60 ? `in ${g.days_until} days`
+          : `in ${Math.round(g.days_until / 7)} weeks`;
+        const paceLine = g.target_pace_per_mile
+          ? ` → ${g.target_distance_key} @ ${g.target_pace_per_mile}/mi`
+          : "";
+        lines.push(`  • "${g.title}" — ${when} (${g.target_date.slice(0, 10)})${paceLine}`);
+        if (g.gap_vs_current_sec_per_mile != null) {
+          const gap = g.gap_vs_current_sec_per_mile;
+          if (Math.abs(gap) < 3) {
+            lines.push(`    ✓ on target (current predicted pace essentially matches goal)`);
+          } else {
+            lines.push(`    Current predicted pace is ${formatTimeDelta(gap)}/mi than goal`);
+          }
         }
       }
     }
-  }
+  });
 
   // Load — volume × intensity distribution (NOT ACWR). Same shape the
   // athlete sees in PaceVolumeSpectrumChart.
-  lines.push(`\nTraining Load (7d): ${state.rolling_7d_miles ?? 0} mi, ${state.runs_last_7d} runs (${state.hard_sessions_7d} hard, ${state.easy_sessions_7d} easy)`);
-  lines.push(`28d avg: ${state.weekly_avg_miles ?? 0} mpw`);
-  const ld = state.load_distribution;
-  if (ld) {
-    const p = ld.zone_pct_7d;
-    // WS3 — lead with the plain-language load STORY (the ACWR-ratio replacement):
-    // trend vs the 8-week norm, then the hard/easy split, then the recovery read.
-    if (ld.load_trend) {
-      const trendWord = ld.load_trend === "backing_off" ? "backing off" : ld.load_trend;
-      const vs = ld.load_vs_chronic_pct != null
-        ? ` (${ld.load_vs_chronic_pct >= 0 ? "+" : ""}${ld.load_vs_chronic_pct}% vs the prior 8-week norm)`
-        : "";
-      lines.push(`Load trend: ${trendWord}${vs} — intensity-weighted, last 2 weeks vs the 8-week baseline.`);
+  section("load", 2, (lines) => {
+    lines.push(`\nTraining Load (7d): ${state.rolling_7d_miles ?? 0} mi, ${state.runs_last_7d} runs (${state.hard_sessions_7d} hard, ${state.easy_sessions_7d} easy)`);
+    lines.push(`28d avg: ${state.weekly_avg_miles ?? 0} mpw`);
+    const ld = state.load_distribution;
+    if (ld) {
+      const p = ld.zone_pct_7d;
+      // WS3 — lead with the plain-language load STORY (the ACWR-ratio replacement):
+      // trend vs the 8-week norm, then the hard/easy split, then the recovery read.
+      if (ld.load_trend) {
+        const trendWord = ld.load_trend === "backing_off" ? "backing off" : ld.load_trend;
+        const vs = ld.load_vs_chronic_pct != null
+          ? ` (${ld.load_vs_chronic_pct >= 0 ? "+" : ""}${ld.load_vs_chronic_pct}% vs the prior 8-week norm)`
+          : "";
+        lines.push(`Load trend: ${trendWord}${vs} — intensity-weighted, last 2 weeks vs the 8-week baseline.`);
+      }
+      // The single pace-weighted load number — volume scaled by intensity.
+      lines.push(`Volume × Intensity load (7d): ${ld.volume_x_intensity_7d} weighted-min · 28d: ${ld.volume_x_intensity_28d} (a hard mile ≈ 5× an easy mile)`);
+      lines.push(
+        `Hard/easy split (7d): easy ${p.easy}% · moderate ${p.moderate}% · threshold ${p.threshold}% · hard ${p.hard}%` +
+        (ld.effort_distribution ? ` (${ld.effort_distribution})` : "") +
+        ` — ~80% easy is the guide.`
+      );
+      if (ld.recovery_read) {
+        const rr = ld.recovery_read;
+        const spacing = rr.avg_days_between_hard != null
+          ? `hard days ~${rr.avg_days_between_hard}d apart`
+          : `${rr.hard_sessions_28d} hard session${rr.hard_sessions_28d === 1 ? "" : "s"} in 28d`;
+        lines.push(`Recovery: ${spacing}${rr.down_week ? " · this is a down week (load well below norm)" : ""}.`);
+      }
+      if (ld.monotony_7d != null) {
+        lines.push(`Monotony (7d): ${ld.monotony_7d.toFixed(2)}${ld.strain_7d != null ? ` · strain ${Math.round(ld.strain_7d)}` : ""}`);
+      }
     }
-    // The single pace-weighted load number — volume scaled by intensity.
-    lines.push(`Volume × Intensity load (7d): ${ld.volume_x_intensity_7d} weighted-min · 28d: ${ld.volume_x_intensity_28d} (a hard mile ≈ 5× an easy mile)`);
-    lines.push(
-      `Hard/easy split (7d): easy ${p.easy}% · moderate ${p.moderate}% · threshold ${p.threshold}% · hard ${p.hard}%` +
-      (ld.effort_distribution ? ` (${ld.effort_distribution})` : "") +
-      ` — ~80% easy is the guide.`
-    );
-    if (ld.recovery_read) {
-      const rr = ld.recovery_read;
-      const spacing = rr.avg_days_between_hard != null
-        ? `hard days ~${rr.avg_days_between_hard}d apart`
-        : `${rr.hard_sessions_28d} hard session${rr.hard_sessions_28d === 1 ? "" : "s"} in 28d`;
-      lines.push(`Recovery: ${spacing}${rr.down_week ? " · this is a down week (load well below norm)" : ""}.`);
-    }
-    if (ld.monotony_7d != null) {
-      lines.push(`Monotony (7d): ${ld.monotony_7d.toFixed(2)}${ld.strain_7d != null ? ` · strain ${Math.round(ld.strain_7d)}` : ""}`);
-    }
-  }
-  if (state.longest_run_14d) lines.push(`Longest run (14d): ${state.longest_run_14d} mi`);
+    if (state.longest_run_14d) lines.push(`Longest run (14d): ${state.longest_run_14d} mi`);
+  });
 
   // Fitness + Predicted Race Times — ranges + confidence, never a single
   // time (hard rule #7).
-  const fp = state.fitness_prediction;
-  if (fp && fp.ranges) {
-    lines.push(`\nPredicted race times (quote the RANGE, never a single time):`);
-    const emit = (label: string, key: string) => {
-      const r = fp.ranges[key];
-      if (r) lines.push(`  ${label}: ${formatTime(r.low)}–${formatTime(r.high)}`);
-    };
-    emit("5K", "5K");
-    emit("10K", "10K");
-    emit("Half Marathon", "half");
-    emit("Marathon", "marathon");
-    if (fp.confidence_tier) {
-      // Cite the evidence behind the confidence: workout count + a recent race
-      // anchor if one exists (race anchors beat goal time — hard rule #7 / WS4).
-      const recentRace = (state.confirmed_races ?? [])
-        .filter((r) => r.date && (Date.now() - new Date(r.date).getTime()) <= 180 * 86400000)
-        .sort((a, b) => b.date.localeCompare(a.date))[0];
-      const evidence = [
-        fp.workout_count ? `${fp.workout_count} workouts` : null,
-        recentRace ? `recent ${recentRace.distance}` : null,
-      ].filter(Boolean).join(" + ");
-      lines.push(`  Confidence: ${fp.confidence_tier}${evidence ? ` (${evidence})` : ""}`);
+  section("predicted", 2, (lines) => {
+    const fp = state.fitness_prediction;
+    if (fp && fp.ranges) {
+      lines.push(`\nPredicted race times (quote the RANGE, never a single time):`);
+      const emit = (label: string, key: string) => {
+        const r = fp.ranges[key];
+        if (r) lines.push(`  ${label}: ${formatTime(r.low)}–${formatTime(r.high)}`);
+      };
+      emit("5K", "5K");
+      emit("10K", "10K");
+      emit("Half Marathon", "half");
+      emit("Marathon", "marathon");
+      if (fp.confidence_tier) {
+        // Cite the evidence behind the confidence: workout count + a recent race
+        // anchor if one exists (race anchors beat goal time — hard rule #7 / WS4).
+        const recentRace = (state.confirmed_races ?? [])
+          .filter((r) => r.date && (Date.now() - new Date(r.date).getTime()) <= 180 * 86400000)
+          .sort((a, b) => b.date.localeCompare(a.date))[0];
+        const evidence = [
+          fp.workout_count ? `${fp.workout_count} workouts` : null,
+          recentRace ? `recent ${recentRace.distance}` : null,
+        ].filter(Boolean).join(" + ");
+        lines.push(`  Confidence: ${fp.confidence_tier}${evidence ? ` (${evidence})` : ""}`);
+      }
+      if (state.fitness_trend) lines.push(`Fitness trend: ${state.fitness_trend}`);
+    } else if (state.predicted_marathon_seconds) {
+      // Fallback only when no range bands exist yet.
+      lines.push(`\nPredicted race times (approximate — no confidence band yet):`);
+      if (state.predicted_5k_seconds) lines.push(`  5K: ~${formatTime(state.predicted_5k_seconds)}`);
+      if (state.predicted_10k_seconds) lines.push(`  10K: ~${formatTime(state.predicted_10k_seconds)}`);
+      if (state.predicted_half_seconds) lines.push(`  Half Marathon: ~${formatTime(state.predicted_half_seconds)}`);
+      lines.push(`  Marathon: ~${formatTime(state.predicted_marathon_seconds)}`);
+      if (state.fitness_trend) lines.push(`Fitness trend: ${state.fitness_trend}`);
     }
-    if (state.fitness_trend) lines.push(`Fitness trend: ${state.fitness_trend}`);
-  } else if (state.predicted_marathon_seconds) {
-    // Fallback only when no range bands exist yet.
-    lines.push(`\nPredicted race times (approximate — no confidence band yet):`);
-    if (state.predicted_5k_seconds) lines.push(`  5K: ~${formatTime(state.predicted_5k_seconds)}`);
-    if (state.predicted_10k_seconds) lines.push(`  10K: ~${formatTime(state.predicted_10k_seconds)}`);
-    if (state.predicted_half_seconds) lines.push(`  Half Marathon: ~${formatTime(state.predicted_half_seconds)}`);
-    lines.push(`  Marathon: ~${formatTime(state.predicted_marathon_seconds)}`);
-    if (state.fitness_trend) lines.push(`Fitness trend: ${state.fitness_trend}`);
-  }
+  });
 
   // Fitness signal (objective) — pace-at-HR efficiency trend. The Read's
   // FITNESS section pairs this with the predicted ranges and how training has
   // felt. It's a DIRECTION over a real window with a confidence — narrate it,
   // don't recompute it. "Same pace, HR trending down = fitter."
-  const fs = state.fitness_signal;
-  if (fs && (fs.efficiency.length > 0 || fs.verdict)) {
-    lines.push(`\nFitness signal (objective — same effort, HR/pace direction over ~12 weeks; narrate, don't recompute):`);
-    if (fs.verdict) lines.push(`  ${fs.verdict}`);
-    const bucketName: Record<string, string> = {
-      easy: "Easy runs",
-      threshold: "Threshold (LT)",
-      interval: "Intervals (VO2)",
-    };
-    for (const e of fs.efficiency) {
-      const weeks = Math.max(1, Math.round(e.baseline_days / 7));
-      const arrow = e.direction === "improving" ? "↑ fitter"
-        : e.direction === "declining" ? "↓ slipping" : "→ holding";
-      lines.push(
-        `  ${bucketName[e.bucket] ?? e.bucket}: ${formatPace(e.pace_baseline_sec)}/mi @ ${e.hr_baseline} → ` +
-        `${formatPace(e.pace_recent_sec)}/mi @ ${e.hr_recent} ` +
-        `(efficiency ${e.ef_delta_pct > 0 ? "+" : ""}${e.ef_delta_pct}%, ${arrow}) ` +
-        `[${e.confidence}: ${e.recent_samples} recent vs ${e.baseline_samples} prior, ~${weeks}wk]`,
-      );
+  section("fitness_signal", 4, (lines) => {
+    const fs = state.fitness_signal;
+    if (fs && (fs.efficiency.length > 0 || fs.verdict)) {
+      lines.push(`\nFitness signal (objective — same effort, HR/pace direction over ~12 weeks; narrate, don't recompute):`);
+      if (fs.verdict) lines.push(`  ${fs.verdict}`);
+      const bucketName: Record<string, string> = {
+        easy: "Easy runs",
+        threshold: "Threshold (LT)",
+        interval: "Intervals (VO2)",
+      };
+      for (const e of fs.efficiency) {
+        const weeks = Math.max(1, Math.round(e.baseline_days / 7));
+        const arrow = e.direction === "improving" ? "↑ fitter"
+          : e.direction === "declining" ? "↓ slipping" : "→ holding";
+        lines.push(
+          `  ${bucketName[e.bucket] ?? e.bucket}: ${formatPace(e.pace_baseline_sec)}/mi @ ${e.hr_baseline} → ` +
+          `${formatPace(e.pace_recent_sec)}/mi @ ${e.hr_recent} ` +
+          `(efficiency ${e.ef_delta_pct > 0 ? "+" : ""}${e.ef_delta_pct}%, ${arrow}) ` +
+          `[${e.confidence}: ${e.recent_samples} recent vs ${e.baseline_samples} prior, ~${weeks}wk]`,
+        );
+      }
+      const d = fs.decoupling;
+      if (d && d.recent_pct != null && d.direction) {
+        const arrow = d.direction === "improving" ? "↑ more durable"
+          : d.direction === "declining" ? "↓ less durable" : "→ steady";
+        const base = d.baseline_pct != null ? `${d.baseline_pct}% → ` : "";
+        lines.push(`  Long-run decoupling: ${base}${d.recent_pct}% (${arrow}) [${d.recent_samples} recent / ${d.baseline_samples} prior long runs]`);
+      }
+      lines.push(`→ This is the OBJECTIVE half of the fitness read. Pair it with how training has felt; don't read heat-inflated HR as lost fitness (see Conditions).`);
     }
-    const d = fs.decoupling;
-    if (d && d.recent_pct != null && d.direction) {
-      const arrow = d.direction === "improving" ? "↑ more durable"
-        : d.direction === "declining" ? "↓ less durable" : "→ steady";
-      const base = d.baseline_pct != null ? `${d.baseline_pct}% → ` : "";
-      lines.push(`  Long-run decoupling: ${base}${d.recent_pct}% (${arrow}) [${d.recent_samples} recent / ${d.baseline_samples} prior long runs]`);
-    }
-    lines.push(`→ This is the OBJECTIVE half of the fitness read. Pair it with how training has felt; don't read heat-inflated HR as lost fitness (see Conditions).`);
-  }
+  });
 
   // Training pace zones (CRITICAL — the AI must quote these exactly, never invent paces)
   // Effort zones are RANGES (Easy / Moderate / Steady / HMP). Race anchors
   // are single targets (MP, 10K, 5K, Mile). Coach-honest framing — no midpoints.
-  if (state.pace_zones && Object.keys(state.pace_zones).length > 0) {
-    const z = state.pace_zones;
-    const r = state.pace_zone_ranges ?? {};
-    lines.push(`\nTraining pace zones (USE THESE — do not calculate or invent paces):`);
-    if (r.easy) {
-      lines.push(`  Easy: ${formatPace(r.easy.paceFast)}–${formatPace(r.easy.paceSlow)}/mi (${r.easy.effortPercent})`);
+  section("pace_zones", 1, (lines) => {
+    if (state.pace_zones && Object.keys(state.pace_zones).length > 0) {
+      const z = state.pace_zones;
+      const r = state.pace_zone_ranges ?? {};
+      lines.push(`\nTraining pace zones (USE THESE — do not calculate or invent paces):`);
+      if (r.easy) {
+        lines.push(`  Easy: ${formatPace(r.easy.paceFast)}–${formatPace(r.easy.paceSlow)}/mi (${r.easy.effortPercent})`);
+      }
+      if (r.moderate) {
+        lines.push(`  Moderate: ${formatPace(r.moderate.paceFast)}–${formatPace(r.moderate.paceSlow)}/mi (${r.moderate.effortPercent})`);
+      }
+      if (r.steady) {
+        lines.push(`  Steady: ${formatPace(r.steady.paceFast)}–${formatPace(r.steady.paceSlow)}/mi (${r.steady.effortPercent})`);
+      }
+      if (r.hmp) {
+        lines.push(`  HMP: ${formatPace(r.hmp.paceFast)}–${formatPace(r.hmp.paceSlow)}/mi (${r.hmp.effortPercent})`);
+      }
+      if (z.mp) lines.push(`  Marathon Pace: ${formatPace(z.mp)}/mi`);
+      if (z.tenK) lines.push(`  10K Pace: ${formatPace(z.tenK)}/mi`);
+      if (z.fiveK) lines.push(`  5K Pace / Intervals: ${formatPace(z.fiveK)}/mi`);
+      if (z.mile) lines.push(`  Mile Pace / VO2 Max: ${formatPace(z.mile)}/mi`);
     }
-    if (r.moderate) {
-      lines.push(`  Moderate: ${formatPace(r.moderate.paceFast)}–${formatPace(r.moderate.paceSlow)}/mi (${r.moderate.effortPercent})`);
-    }
-    if (r.steady) {
-      lines.push(`  Steady: ${formatPace(r.steady.paceFast)}–${formatPace(r.steady.paceSlow)}/mi (${r.steady.effortPercent})`);
-    }
-    if (r.hmp) {
-      lines.push(`  HMP: ${formatPace(r.hmp.paceFast)}–${formatPace(r.hmp.paceSlow)}/mi (${r.hmp.effortPercent})`);
-    }
-    if (z.mp) lines.push(`  Marathon Pace: ${formatPace(z.mp)}/mi`);
-    if (z.tenK) lines.push(`  10K Pace: ${formatPace(z.tenK)}/mi`);
-    if (z.fiveK) lines.push(`  5K Pace / Intervals: ${formatPace(z.fiveK)}/mi`);
-    if (z.mile) lines.push(`  Mile Pace / VO2 Max: ${formatPace(z.mile)}/mi`);
-  }
+  });
 
   // Vibe
-  if (state.last_mood) {
-    lines.push(`\nRecent vibe: ${state.last_mood}${state.last_readiness_score ? ` (readiness ${state.last_readiness_score}/10)` : ""}`);
-    if (state.mood_trend) lines.push(`Mood trend: ${state.mood_trend}`);
-  }
+  section("vibe", 3, (lines) => {
+    if (state.last_mood) {
+      lines.push(`\nRecent vibe: ${state.last_mood}${state.last_readiness_score ? ` (readiness ${state.last_readiness_score}/10)` : ""}`);
+      if (state.mood_trend) lines.push(`Mood trend: ${state.mood_trend}`);
+    }
+  });
 
   // What I remember about this athlete — durable memory (preferences, life
   // context, constraints, prior decisions). Use to sound like you know them.
-  if (state.memories && state.memories.length > 0) {
-    lines.push(`\nWhat I remember about you:`);
-    for (const m of state.memories.slice(0, 8)) {
-      lines.push(`  • ${m.content}`);
+  section("memories", 6, (lines) => {
+    if (state.memories && state.memories.length > 0) {
+      lines.push(`\nWhat I remember about you:`);
+      for (const m of state.memories.slice(0, 8)) {
+        lines.push(`  • ${m.content}`);
+      }
     }
-  }
+  });
 
   // Execution — did recent quality sessions land? Splits, fade, HR drift.
-  if (state.execution && state.execution.length > 0) {
-    lines.push(`\nRecent quality sessions (did they land?):`);
-    for (const e of state.execution.slice(0, 4)) {
-      const reps = e.rep_paces.length > 0 ? ` [${e.rep_paces.join(", ")}]` : "";
-      const fade = e.fade_pct != null ? ` · fade ${e.fade_pct > 0 ? "+" : ""}${e.fade_pct}%` : "";
-      const drift = e.hr_drift_pct != null ? ` · HR drift ${e.hr_drift_pct > 0 ? "+" : ""}${e.hr_drift_pct}%` : "";
-      lines.push(`  ${e.date} ${e.type ?? "workout"} — ${e.rep_count} reps${reps} · ${e.shape}${fade}${drift}`);
+  section("execution", 4, (lines) => {
+    if (state.execution && state.execution.length > 0) {
+      lines.push(`\nRecent quality sessions (did they land?):`);
+      for (const e of state.execution.slice(0, 4)) {
+        const reps = e.rep_paces.length > 0 ? ` [${e.rep_paces.join(", ")}]` : "";
+        const fade = e.fade_pct != null ? ` · fade ${e.fade_pct > 0 ? "+" : ""}${e.fade_pct}%` : "";
+        const drift = e.hr_drift_pct != null ? ` · HR drift ${e.hr_drift_pct > 0 ? "+" : ""}${e.hr_drift_pct}%` : "";
+        lines.push(`  ${e.date} ${e.type ?? "workout"} — ${e.rep_count} reps${reps} · ${e.shape}${fade}${drift}`);
+      }
     }
-  }
+  });
 
   // Conditions — so a slow pace in heat isn't read as lost fitness. Only
   // surface runs the heat actually affected (≥1.5% adjustment — env value is
   // now a percent; a 67°F/67°dew run is ~1.9%, an 85°F/71°dew run ~4.3%).
-  if (state.environment && state.environment.length > 0) {
-    const hot = state.environment.filter(
-      (e) => e.heat_adjustment_pct != null && e.heat_adjustment_pct >= 1.5
-    );
-    if (hot.length > 0) {
-      lines.push(`\nConditions (don't read heat as lost fitness):`);
-      for (const e of hot.slice(0, 4)) {
-        const t = e.temp_f != null ? `${e.temp_f}°F` : "";
-        const dp = e.dew_point_f != null ? `, dew ${e.dew_point_f}°F` : "";
-        const adj = e.actual_pace && e.heat_adjusted_pace
-          ? ` — ran ${e.actual_pace}/mi, heat-adjusted ${e.heat_adjusted_pace}/mi (${e.heat_adjustment_pct}% slower from heat)`
-          : "";
-        lines.push(`  ${e.date}: ${t}${dp}${adj}`);
+  section("conditions", 5, (lines) => {
+    if (state.environment && state.environment.length > 0) {
+      const hot = state.environment.filter(
+        (e) => e.heat_adjustment_pct != null && e.heat_adjustment_pct >= 1.5
+      );
+      if (hot.length > 0) {
+        lines.push(`\nConditions (don't read heat as lost fitness):`);
+        for (const e of hot.slice(0, 4)) {
+          const t = e.temp_f != null ? `${e.temp_f}°F` : "";
+          const dp = e.dew_point_f != null ? `, dew ${e.dew_point_f}°F` : "";
+          const adj = e.actual_pace && e.heat_adjusted_pace
+            ? ` — ran ${e.actual_pace}/mi, heat-adjusted ${e.heat_adjusted_pace}/mi (${e.heat_adjustment_pct}% slower from heat)`
+            : "";
+          lines.push(`  ${e.date}: ${t}${dp}${adj}`);
+        }
       }
     }
-  }
+  });
 
-  // Injuries (current + history + newly detected mentions in notes)
-  if (state.active_injuries.length > 0) {
-    lines.push(`\n⚠ Active injuries: ${state.active_injuries.map((i) => `${i.body_area} (${i.status}, severity ${i.severity})`).join(", ")}`);
-  }
-  if (state.injury_risk_score && state.injury_risk_score >= 3) {
-    lines.push(`Injury risk: ${state.injury_risk_score}/10`);
-  }
-  if (state.injury_history_summary && state.injury_history_summary.length > 0) {
-    const recurring = state.injury_history_summary.filter((h) => h.occurrences >= 2);
-    const recent = state.injury_history_summary.slice(0, 3);
-    if (recurring.length > 0) {
-      lines.push(`Recurring issues (12mo): ${recurring.map((h) => `${h.body_area} (${h.occurrences}x)`).join(", ")}`);
-    } else if (recent.length > 0 && state.active_injuries.length === 0) {
-      lines.push(`Prior injuries (12mo): ${recent.map((h) => h.body_area).join(", ")}`);
+  // Injuries (current + history + newly detected mentions in notes) — P1,
+  // safety-critical, never dropped.
+  section("injuries", 1, (lines) => {
+    if (state.active_injuries.length > 0) {
+      lines.push(`\n⚠ Active injuries: ${state.active_injuries.map((i) => `${i.body_area} (${i.status}, severity ${i.severity})`).join(", ")}`);
     }
-  }
-  // Possible injuries detected in recent notes/memos — NOT declared, just mentions
-  if (state.possible_injuries && state.possible_injuries.length > 0) {
-    lines.push(`\nBody-part mentions (recent notes — NOT declared injuries, surface carefully):`);
-    for (const p of state.possible_injuries.slice(0, 4)) {
-      const vol = p.volume_context ? ` — ${p.volume_context}` : "";
-      lines.push(`  ${p.date}: ${p.body_area} [${p.severity_hint}]${vol}`);
-      lines.push(`    "${p.excerpt}"`);
+    if (state.injury_risk_score && state.injury_risk_score >= 3) {
+      lines.push(`Injury risk: ${state.injury_risk_score}/10`);
     }
-    lines.push(`→ If any of these mentions are new to you, ask about them gently. If mentioned multiple times or with pain words, treat as active.`);
-  }
+    if (state.injury_history_summary && state.injury_history_summary.length > 0) {
+      const recurring = state.injury_history_summary.filter((h) => h.occurrences >= 2);
+      const recent = state.injury_history_summary.slice(0, 3);
+      if (recurring.length > 0) {
+        lines.push(`Recurring issues (12mo): ${recurring.map((h) => `${h.body_area} (${h.occurrences}x)`).join(", ")}`);
+      } else if (recent.length > 0 && state.active_injuries.length === 0) {
+        lines.push(`Prior injuries (12mo): ${recent.map((h) => h.body_area).join(", ")}`);
+      }
+    }
+    // Possible injuries detected in recent notes/memos — NOT declared, just mentions
+    if (state.possible_injuries && state.possible_injuries.length > 0) {
+      lines.push(`\nBody-part mentions (recent notes — NOT declared injuries, surface carefully):`);
+      for (const p of state.possible_injuries.slice(0, 4)) {
+        const vol = p.volume_context ? ` — ${p.volume_context}` : "";
+        lines.push(`  ${p.date}: ${p.body_area} [${p.severity_hint}]${vol}`);
+        lines.push(`    "${p.excerpt}"`);
+      }
+      lines.push(`→ If any of these mentions are new to you, ask about them gently. If mentioned multiple times or with pain words, treat as active.`);
+    }
+  });
 
   // Durable niggle recurrence (12mo) — the pattern, from the body_mentions
   // store. Surface the recurrence; never name a diagnosis (hard rule #2).
-  if (state.niggle_recurrence && state.niggle_recurrence.length > 0) {
-    const recurring = state.niggle_recurrence.filter((n) => n.occurrences >= 2);
-    if (recurring.length > 0) {
-      lines.push(`\nNiggle recurrence (12mo — surface the pattern, don't diagnose):`);
-      for (const n of recurring.slice(0, 4)) {
-        lines.push(`  ${n.body_area}: ${n.occurrences}× (${n.first_seen} → ${n.last_seen}, worst: ${n.worst_severity})`);
+  section("niggle_recurrence", 4, (lines) => {
+    if (state.niggle_recurrence && state.niggle_recurrence.length > 0) {
+      const recurring = state.niggle_recurrence.filter((n) => n.occurrences >= 2);
+      if (recurring.length > 0) {
+        lines.push(`\nNiggle recurrence (12mo — surface the pattern, don't diagnose):`);
+        for (const n of recurring.slice(0, 4)) {
+          lines.push(`  ${n.body_area}: ${n.occurrences}× (${n.first_seen} → ${n.last_seen}, worst: ${n.worst_severity})`);
+        }
       }
     }
-  }
+  });
 
   // Patterns — pre-computed coach observations. Narrate at most one or
   // two; the math is already done, so state them plainly (don't re-derive).
-  if (state.patterns && state.patterns.length > 0) {
-    lines.push(`\nPatterns I've noticed (pre-computed — state plainly, don't explain the math):`);
-    for (const p of state.patterns.slice(0, 4)) {
-      lines.push(`  • ${p.statement} [${p.confidence}: ${p.evidence}]`);
+  section("patterns", 5, (lines) => {
+    if (state.patterns && state.patterns.length > 0) {
+      lines.push(`\nPatterns I've noticed (pre-computed — state plainly, don't explain the math):`);
+      for (const p of state.patterns.slice(0, 4)) {
+        lines.push(`  • ${p.statement} [${p.confidence}: ${p.evidence}]`);
+      }
     }
-  }
+  });
 
   // What I can't see — real, computed blind spots. Ground the cant_see block
   // in one of these (eyebrow = the gap label); never invent a blind spot.
-  if (state.data_gaps && state.data_gaps.length > 0) {
-    lines.push(`\nWhat I can't see right now (use for the cant_see block; don't invent others):`);
-    for (const g of state.data_gaps.slice(0, 4)) {
-      lines.push(`  • ${g.gap} — ${g.detail}`);
-    }
-  }
-
-  // Biographical framing (ego-safe tone gate)
-  if (state.trajectory_framing) {
-    lines.push(`\nTrajectory: ${state.trajectory_framing} — ${state.trajectory_reason ?? ""}`);
-    // Prompt guidance to the coach based on framing
-    const framingGuidance: Record<string, string> = {
-      returning: "Frame progress relative to where they are now, NOT peak fitness. Celebrate consistency over pace. Avoid references to prior PRs unless they bring them up.",
-      declining: "Acknowledge the drop without judgment. Ask what's changed (life stress, motivation, injury niggle). Don't assume they need to ramp back immediately.",
-      peaking: "They're near race-ready. Keep tone sharp, trust the work, focus on execution and recovery. Don't introduce new stressors.",
-      building: "Growth phase. Reinforce what's working, gently raise the bar. Fitness is improving — help them see it.",
-      maintaining: "Steady state. No drama needed. Look for subtle fitness signals and help them see what's working.",
-    };
-    const guidance = framingGuidance[state.trajectory_framing];
-    if (guidance) lines.push(`Coaching tone: ${guidance}`);
-  }
-
-  // Fitness trajectory vs 6 months ago
-  if (state.fitness_vs_6mo_ago_label && state.fitness_vs_6mo_ago_seconds != null) {
-    const sec = state.fitness_vs_6mo_ago_seconds;
-    lines.push(`Fitness vs 6mo ago: ${state.fitness_vs_6mo_ago_label} (${formatTimeDelta(sec)} on 10K)`);
-  }
-
-  // Confirmed races (user-declared via training_logs.race_result)
-  if (state.confirmed_races && state.confirmed_races.length > 0) {
-    lines.push(`\nRaces (declared by athlete):`);
-    for (const r of state.confirmed_races.slice(0, 6)) {
-      const event = r.event_name ? ` — ${r.event_name}` : "";
-      const official = r.official ? "" : " (unofficial)";
-      const mins = Math.floor(r.finish_time_seconds / 60);
-      const secs = r.finish_time_seconds % 60;
-      const hrs = Math.floor(mins / 60);
-      const timeFmt = hrs > 0
-        ? `${hrs}:${String(mins % 60).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
-        : `${mins}:${String(secs).padStart(2, "0")}`;
-      lines.push(`  ${r.date.slice(0, 10)}: ${r.distance} @ ${timeFmt}${event}${official}`);
-    }
-  }
-
-  // Training blocks — block-over-block comparison (last 6 × 4 weeks)
-  if (state.recent_blocks && state.recent_blocks.length > 0) {
-    lines.push(`\nTraining blocks (most recent first, 28-day rollups):`);
-    for (const b of state.recent_blocks.slice(0, 6)) {
-      const easyPace = b.avg_easy_pace_sec
-        ? `, easy ${Math.floor(b.avg_easy_pace_sec / 60)}:${String(b.avg_easy_pace_sec % 60).padStart(2, "0")}`
-        : "";
-      const races = b.races_entered > 0 ? `, ${b.races_entered} race${b.races_entered > 1 ? "s" : ""}` : "";
-      const mood = b.mood_summary ? `, mood: ${b.mood_summary}` : "";
-      lines.push(`  ${b.block_start} → ${b.block_end}: ${b.total_miles}mi (${b.weekly_avg_miles}/wk), ${b.quality_sessions} quality + ${b.easy_sessions} easy${easyPace}${races}${mood}`);
-    }
-    // Block-over-block delta (current vs prior)
-    if (state.recent_blocks.length >= 2) {
-      const cur = state.recent_blocks[0];
-      const prior = state.recent_blocks[1];
-      const volDelta = cur.weekly_avg_miles - prior.weekly_avg_miles;
-      const qualDelta = cur.quality_sessions - prior.quality_sessions;
-      const deltaParts: string[] = [];
-      if (Math.abs(volDelta) >= 3) deltaParts.push(`volume ${volDelta > 0 ? "+" : ""}${volDelta.toFixed(1)}mi/wk`);
-      if (qualDelta !== 0) deltaParts.push(`quality ${qualDelta > 0 ? "+" : ""}${qualDelta} session${Math.abs(qualDelta) > 1 ? "s" : ""}`);
-      if (deltaParts.length > 0) {
-        lines.push(`→ Block-over-block: ${deltaParts.join(", ")}`);
+  section("data_gaps", 5, (lines) => {
+    if (state.data_gaps && state.data_gaps.length > 0) {
+      lines.push(`\nWhat I can't see right now (use for the cant_see block; don't invent others):`);
+      for (const g of state.data_gaps.slice(0, 4)) {
+        lines.push(`  • ${g.gap} — ${g.detail}`);
       }
     }
-  }
+  });
+
+  // Biographical framing (ego-safe tone gate) + fitness vs 6 months ago.
+  section("trajectory", 4, (lines) => {
+    if (state.trajectory_framing) {
+      lines.push(`\nTrajectory: ${state.trajectory_framing} — ${state.trajectory_reason ?? ""}`);
+      // Prompt guidance to the coach based on framing
+      const framingGuidance: Record<string, string> = {
+        returning: "Frame progress relative to where they are now, NOT peak fitness. Celebrate consistency over pace. Avoid references to prior PRs unless they bring them up.",
+        declining: "Acknowledge the drop without judgment. Ask what's changed (life stress, motivation, injury niggle). Don't assume they need to ramp back immediately.",
+        peaking: "They're near race-ready. Keep tone sharp, trust the work, focus on execution and recovery. Don't introduce new stressors.",
+        building: "Growth phase. Reinforce what's working, gently raise the bar. Fitness is improving — help them see it.",
+        maintaining: "Steady state. No drama needed. Look for subtle fitness signals and help them see what's working.",
+      };
+      const guidance = framingGuidance[state.trajectory_framing];
+      if (guidance) lines.push(`Coaching tone: ${guidance}`);
+    }
+
+    // Fitness trajectory vs 6 months ago
+    if (state.fitness_vs_6mo_ago_label && state.fitness_vs_6mo_ago_seconds != null) {
+      const sec = state.fitness_vs_6mo_ago_seconds;
+      lines.push(`Fitness vs 6mo ago: ${state.fitness_vs_6mo_ago_label} (${formatTimeDelta(sec)} on 10K)`);
+    }
+  });
+
+  // Confirmed races (user-declared via training_logs.race_result)
+  section("confirmed_races", 6, (lines) => {
+    if (state.confirmed_races && state.confirmed_races.length > 0) {
+      lines.push(`\nRaces (declared by athlete):`);
+      for (const r of state.confirmed_races.slice(0, 6)) {
+        const event = r.event_name ? ` — ${r.event_name}` : "";
+        const official = r.official ? "" : " (unofficial)";
+        const mins = Math.floor(r.finish_time_seconds / 60);
+        const secs = r.finish_time_seconds % 60;
+        const hrs = Math.floor(mins / 60);
+        const timeFmt = hrs > 0
+          ? `${hrs}:${String(mins % 60).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+          : `${mins}:${String(secs).padStart(2, "0")}`;
+        lines.push(`  ${r.date.slice(0, 10)}: ${r.distance} @ ${timeFmt}${event}${official}`);
+      }
+    }
+  });
+
+  // Training blocks — block-over-block comparison (last 6 × 4 weeks)
+  section("blocks", 6, (lines) => {
+    if (state.recent_blocks && state.recent_blocks.length > 0) {
+      lines.push(`\nTraining blocks (most recent first, 28-day rollups):`);
+      for (const b of state.recent_blocks.slice(0, 6)) {
+        const easyPace = b.avg_easy_pace_sec
+          ? `, easy ${Math.floor(b.avg_easy_pace_sec / 60)}:${String(b.avg_easy_pace_sec % 60).padStart(2, "0")}`
+          : "";
+        const races = b.races_entered > 0 ? `, ${b.races_entered} race${b.races_entered > 1 ? "s" : ""}` : "";
+        const mood = b.mood_summary ? `, mood: ${b.mood_summary}` : "";
+        lines.push(`  ${b.block_start} → ${b.block_end}: ${b.total_miles}mi (${b.weekly_avg_miles}/wk), ${b.quality_sessions} quality + ${b.easy_sessions} easy${easyPace}${races}${mood}`);
+      }
+      // Block-over-block delta (current vs prior)
+      if (state.recent_blocks.length >= 2) {
+        const cur = state.recent_blocks[0];
+        const prior = state.recent_blocks[1];
+        const volDelta = cur.weekly_avg_miles - prior.weekly_avg_miles;
+        const qualDelta = cur.quality_sessions - prior.quality_sessions;
+        const deltaParts: string[] = [];
+        if (Math.abs(volDelta) >= 3) deltaParts.push(`volume ${volDelta > 0 ? "+" : ""}${volDelta.toFixed(1)}mi/wk`);
+        if (qualDelta !== 0) deltaParts.push(`quality ${qualDelta > 0 ? "+" : ""}${qualDelta} session${Math.abs(qualDelta) > 1 ? "s" : ""}`);
+        if (deltaParts.length > 0) {
+          lines.push(`→ Block-over-block: ${deltaParts.join(", ")}`);
+        }
+      }
+    }
+  });
 
   // Schedule
-  if (state.today_workout) {
-    const tw = state.today_workout as Record<string, unknown>;
-    lines.push(`\nToday's workout: ${tw.workout_data ? (tw.workout_data as Record<string, string>).name : tw.workout_type}`);
-  }
-  if (state.upcoming_workouts.length > 0) {
-    lines.push("Upcoming: " + state.upcoming_workouts.slice(0, 3).map((w) => {
-      const wd = w as Record<string, unknown>;
-      return `${(wd.date as string)?.split("T")[0]}: ${wd.workout_data ? (wd.workout_data as Record<string, string>).name : wd.workout_type}`;
-    }).join(", "));
-  }
+  section("schedule", 2, (lines) => {
+    if (state.today_workout) {
+      const tw = state.today_workout as Record<string, unknown>;
+      lines.push(`\nToday's workout: ${tw.workout_data ? (tw.workout_data as Record<string, string>).name : tw.workout_type}`);
+    }
+    if (state.upcoming_workouts.length > 0) {
+      lines.push("Upcoming: " + state.upcoming_workouts.slice(0, 3).map((w) => {
+        const wd = w as Record<string, unknown>;
+        return `${(wd.date as string)?.split("T")[0]}: ${wd.workout_data ? (wd.workout_data as Record<string, string>).name : wd.workout_type}`;
+      }).join(", "));
+    }
+  });
 
   // Recent workouts — priority order for describing each run:
   //   1. User's own notes (most reliable — they know what the workout WAS)
@@ -2502,50 +2286,43 @@ export function stateToPromptContext(state: AthleteState): string {
   // IMPORTANT: avg pace is misleading for interval/tempo workouts. Always prefer
   // user notes + work pace when available. Never lead with avg pace for a workout
   // the user described as intervals or tempo.
-  if (state.recent_workouts.length > 0) {
-    lines.push("\nRecent runs (trust user notes + work pace over avg pace):");
-    for (const w of state.recent_workouts.slice(0, 9)) {
-      // Build the descriptor — prefer notes, then pattern, then work pace, then avg.
-      const parts: string[] = [];
-      if (w.structure_pattern) parts.push(w.structure_pattern);
-      if (w.work_pace && !w.structure_pattern) parts.push(`work @ ${w.work_pace}`);
-      if (!w.structure_pattern && !w.work_pace && w.pace) parts.push(`@ ${w.pace} avg`);
-      const headline = parts.length > 0 ? ` — ${parts.join(" | ")}` : "";
-      const equiv = w.equivalent_race ? ` (≈ ${w.equivalent_race})` : "";
-      const mood = w.mood ? ` [${w.mood}]` : "";
-      const notes = w.user_notes ? `\n      notes: "${w.user_notes.replace(/\n/g, " ")}"` : "";
-      lines.push(`  ${w.date}: ${w.type} ${w.miles}mi${headline}${equiv}${mood}${notes}`);
+  section("recent_workouts", 3, (lines) => {
+    if (state.recent_workouts.length > 0) {
+      lines.push("\nRecent runs (trust user notes + work pace over avg pace):");
+      for (const w of state.recent_workouts.slice(0, 9)) {
+        // Build the descriptor — prefer notes, then pattern, then work pace, then avg.
+        const parts: string[] = [];
+        if (w.structure_pattern) parts.push(w.structure_pattern);
+        if (w.work_pace && !w.structure_pattern) parts.push(`work @ ${w.work_pace}`);
+        if (!w.structure_pattern && !w.work_pace && w.pace) parts.push(`@ ${w.pace} avg`);
+        const headline = parts.length > 0 ? ` — ${parts.join(" | ")}` : "";
+        const equiv = w.equivalent_race ? ` (≈ ${w.equivalent_race})` : "";
+        const mood = w.mood ? ` [${w.mood}]` : "";
+        const notes = w.user_notes ? `\n      notes: "${w.user_notes.replace(/\n/g, " ")}"` : "";
+        lines.push(`  ${w.date}: ${w.type} ${w.miles}mi${headline}${equiv}${mood}${notes}`);
+      }
     }
+  });
+
+  const budget = opts.budget ?? Infinity;
+  const { text, tokens, dropped } = assemblePromptSections(
+    "=== ATHLETE STATE ===",
+    sections,
+    budget,
+  );
+
+  // Log when over the soft target (or when we actually pruned) so the enforced
+  // budget can be chosen from real token distributions. See Fix 1 in
+  // outputs/athlete-state-review-2026-06-18.md (open question: final cap #).
+  if (tokens > PROMPT_SOFT_TARGET_TOKENS || dropped.length > 0) {
+    console.log(
+      `[AthleteState] prompt tokens≈${tokens} (soft target ${PROMPT_SOFT_TARGET_TOKENS})` +
+      (dropped.length > 0 ? ` dropped=[${dropped.join(",")}]` : ""),
+    );
   }
 
-  return lines.join("\n");
+  return text;
 }
 
-function formatPace(secondsPerMile: number): string {
-  const mins = Math.floor(secondsPerMile / 60);
-  const secs = Math.round(secondsPerMile % 60);
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-function formatTime(seconds: number): string {
-  if (!seconds || seconds <= 0) return "?";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = seconds % 60;
-  if (h > 0) return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-/**
- * Format a time delta. Signed. Under 60s → "45s faster". Over 60s → "1:39 slower".
- * Runners read time in M:SS, not raw seconds — "99 seconds slower" is jarring.
- */
-function formatTimeDelta(seconds: number): string {
-  if (!seconds || seconds === 0) return "same";
-  const abs = Math.abs(seconds);
-  const direction = seconds > 0 ? "slower" : "faster";
-  if (abs < 60) return `${abs}s ${direction}`;
-  const m = Math.floor(abs / 60);
-  const s = abs % 60;
-  return `${m}:${s.toString().padStart(2, "0")} ${direction}`;
-}
+// formatPace / formatTime / formatTimeDelta moved to _shared/shared/format.ts
+// (imported at the top; formatPace re-exported for backwards compatibility).
