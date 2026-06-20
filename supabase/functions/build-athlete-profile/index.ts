@@ -87,8 +87,6 @@ Deno.serve(async (req: Request) => {
       logsResult,
       injuriesResult,
       snapshotsResult,
-      formChecksResult,
-      biomechanicsResult,
       goalsResult,
       plansResult,
     ] = await Promise.all([
@@ -101,10 +99,14 @@ Deno.serve(async (req: Request) => {
         .order("workout_date", { ascending: false, nullsFirst: false })
         .limit(2000), // ~5 years of daily training
 
-      // All injuries
+      // All injuries. NOTE: the table uses first_reported_at/resolved_at/
+      // description — alias them to the onset_date/resolved_date/notes keys the
+      // profile builder expects. (The old un-aliased select referenced columns
+      // that don't exist, so PostgREST errored the whole query → injuries was
+      // ALWAYS empty and profiles carried no injury history.)
       supabase
         .from("injuries")
-        .select("id, body_area, side, severity, status, onset_date, resolved_date, created_at, notes")
+        .select("id, body_area, side, severity, status, onset_date:first_reported_at, resolved_date:resolved_at, created_at, notes:description")
         .eq("user_id", userId)
         .order("created_at", { ascending: false }),
 
@@ -115,24 +117,6 @@ Deno.serve(async (req: Request) => {
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
         .limit(50),
-
-      // Form checks
-      supabase
-        .from("form_checks")
-        .select("ai_analysis, ai_findings, created_at")
-        .eq("user_id", userId)
-        .eq("status", "completed")
-        .order("created_at", { ascending: false })
-        .limit(20),
-
-      // Biomechanics analyses
-      supabase
-        .from("biomechanics_analyses")
-        .select("overall_score, ai_analysis, created_at")
-        .eq("user_id", userId)
-        .eq("status", "completed")
-        .order("created_at", { ascending: false })
-        .limit(20),
 
       // Goals (all time)
       supabase
@@ -152,8 +136,12 @@ Deno.serve(async (req: Request) => {
     const logs = logsResult.data || [];
     const injuries = injuriesResult.data || [];
     const snapshots = snapshotsResult.data || [];
-    const formChecks = formChecksResult.data || [];
-    const biomechanicsData = biomechanicsResult.data || [];
+    // form-check + biomechanics features were cut; their tables hold only legacy
+    // data and aren't built anymore. Pass empty (the old queries used dropped
+    // columns and errored to [] regardless) — this just removes the two wasted
+    // round-trips + the recurring Postgres column-does-not-exist errors.
+    const formChecks: unknown[] = [];
+    const biomechanicsData: unknown[] = [];
     const goalsData = goalsResult.data || [];
     const plansData = plansResult.data || [];
 
