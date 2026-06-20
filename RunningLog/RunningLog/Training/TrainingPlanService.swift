@@ -112,21 +112,6 @@ final class TrainingPlanService {
         }
 
         let debugUid = AuthManager.shared.userId
-        Log.coach.info("loadActivePlan: auth uid=\(debugUid)")
-
-        // 1. Raw fetch (debug): how many rows does RLS expose for this user?
-        do {
-            struct Row: Codable { let id: UUID; let user_id: String; let status: String; let name: String }
-            let rows: [Row] = try await supabase
-                .from("training_plans")
-                .select("id,user_id,status,name")
-                .execute()
-                .value
-            Log.coach.info("loadActivePlan: RLS sees \(rows.count) rows; active=\(rows.filter{$0.status=="active"}.count); user_ids=\(rows.map{$0.user_id}.joined(separator: ","))")
-        } catch {
-            Log.coach.info("loadActivePlan: debug fetch failed: \(error.localizedDescription)")
-            errorMessage = "Debug fetch failed: \(error.localizedDescription)"
-        }
 
         do {
             let plans: [TrainingPlan] = try await supabase

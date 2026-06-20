@@ -122,9 +122,12 @@ struct MainTabView: View {
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 2 — THE READ = the cards layout (model-of-you-mock.html).
-                // The legacy paragraph CoachReadView is retained in the repo.
-                NavigationStack { ModelOfYouView() }
+                // Tab 2 — THE READ = the v5 editorial narrative (coach snapshot;
+                // the-read-storytelling-mock.html). Renders sectioned reads from
+                // daily_coaching_reads, falling back to the flat paragraph for
+                // pre-v5 rows. The cards ModelOfYouView is retained in the repo
+                // as the "evidence" drill-down (link wire-up is a follow-up).
+                NavigationStack { CoachReadView() }
                     .opacity(selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 2)
 
@@ -158,19 +161,25 @@ struct MainTabView: View {
             .environment(\.showSidebar, $showSidebar)
             .environment(\.coachAsk, coachAsk)
             .task {
-                await athleteProfileService.fetchProfile()
-                try? await AthletePaceProfileService.shared.refresh()
-                try? await PaceZonesService.shared.refresh()
-                try? await DailyReadService.shared.refresh()
-
-                // Auto-sync HealthKit workouts to training_logs on launch.
-                // Vital replaced by HealthKit for V1 — Terra integration planned for V1.1.
-                _ = await HealthKitManager.shared.requestAuthorization()
-                let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
-                if !hkWorkouts.isEmpty {
-                    let syncService = WorkoutSyncService()
-                    await syncService.syncUnloggedWorkouts(workouts: hkWorkouts)
-                }
+                // These launch refreshes are INDEPENDENT — run them concurrently
+                // instead of serially. Previously each `await` blocked the next, so
+                // launch latency was the SUM of all of them (profile rebuild alone
+                // is ~1.6–2.6s); now it's ~the slowest single one. HealthKit auth +
+                // sync runs in its own branch so it never gates the UI refreshes.
+                async let profile: Void = athleteProfileService.fetchProfile()
+                async let paceProfile: Void = { try? await AthletePaceProfileService.shared.refresh() }()
+                async let paceZones: Void = { try? await PaceZonesService.shared.refresh() }()
+                async let dailyRead: Void = { try? await DailyReadService.shared.refresh() }()
+                async let healthKitSync: Void = {
+                    // Auto-sync HealthKit workouts to training_logs on launch.
+                    // Vital replaced by HealthKit for V1 — Terra integration planned for V1.1.
+                    _ = await HealthKitManager.shared.requestAuthorization()
+                    let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
+                    if !hkWorkouts.isEmpty {
+                        await WorkoutSyncService().syncUnloggedWorkouts(workouts: hkWorkouts)
+                    }
+                }()
+                _ = await (profile, paceProfile, paceZones, dailyRead, healthKitSync)
             }
             .onChange(of: scenePhase) { _, newPhase in
                 // Re-fire the daily Coach Read fetch every time the
