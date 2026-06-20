@@ -10,6 +10,44 @@ import Foundation
 import os
 import Supabase
 
+// MARK: - Launch-storm coalescing
+
+/// Snapshot of the shared active-plan load, applied to every TrainingPlanService
+/// instance that loads concurrently at launch. `@unchecked Sendable` is safe:
+/// it is only ever created and read on the MainActor.
+struct TrainingPlanSnapshot: @unchecked Sendable {
+    let activeGoal: UserGoal?
+    let marathonGoalTime: Int?
+    let weeksUntilRace: Int
+    let activePlan: TrainingPlan?
+    let allScheduledWorkouts: [ScheduledWorkout]
+    let moodByDate: [String: String]
+    let logDistanceByDate: [String: Double]
+    let fitnessSnapshotMarathonSeconds: Int?
+    let errorMessage: String?
+}
+
+/// Collapses concurrent active-plan loads into a single network fetch. The 5
+/// always-alive tabs each own a TrainingPlanService and call loadActivePlan on
+/// launch — without this they fire 3–4 duplicate ~5-query loads + the `-999`
+/// cancellation races. Concurrent callers join the in-flight load and share its
+/// snapshot; once it completes the next call starts fresh (no cache → an edit
+/// always re-fetches).
+@MainActor
+final class PlanLoadCoalescer {
+    static let shared = PlanLoadCoalescer()
+    private var inFlight: Task<TrainingPlanSnapshot?, Never>?
+
+    func load(leader: @escaping @MainActor () async -> TrainingPlanSnapshot?) async -> TrainingPlanSnapshot? {
+        if let inFlight { return await inFlight.value }
+        let task = Task { @MainActor in await leader() }
+        inFlight = task
+        let result = await task.value
+        inFlight = nil
+        return result
+    }
+}
+
 // MARK: - TrainingPlanService
 
 @Observable
@@ -104,12 +142,28 @@ final class TrainingPlanService {
         isLoadingPlan = true
         errorMessage = nil
 
+        // Coalesce the launch refetch storm: the 5 always-alive tabs each call
+        // this with their own service instance. Share ONE network load across
+        // concurrent callers; every instance then applies the same snapshot.
+        let snap = await PlanLoadCoalescer.shared.load(leader: { [weak self] in
+            await self?.performActivePlanLoad()
+            return self?.currentSnapshot()
+        })
+        if let snap { apply(snapshot: snap) }
+
+        isLoadingPlan = false
+        if activePlan != nil { initializeUI() }
+    }
+
+    /// The actual active-plan load (goal + plan + scheduled + mood, or fallback).
+    /// Mutates instance state; a snapshot of it is shared with sibling tabs via
+    /// PlanLoadCoalescer. Deliberately does NOT call the caller's `initializeUI`
+    /// — that's per-instance and runs in loadActivePlan after the snapshot applies.
+    @MainActor
+    private func performActivePlanLoad() async {
         await loadActiveGoal()
 
-        guard !Self.useLocalMode else {
-            isLoadingPlan = false
-            return
-        }
+        guard !Self.useLocalMode else { return }
 
         let debugUid = AuthManager.shared.userId
 
@@ -130,20 +184,44 @@ final class TrainingPlanService {
                 paceConfig.configure(for: plan)
                 await loadScheduledWorkouts(for: plan.id)
                 await loadMoodData(startDate: plan.startDate, endDate: plan.endDate)
-                initializeUI()
             } else {
                 errorMessage = "No active training_plans row for uid \(debugUid)"
                 await loadFitnessSnapshotFallback()
-                isLoadingPlan = false
             }
-
-            isLoadingPlan = false
         } catch {
             Log.coach.error("loadActivePlan: decode/query failed: \(error)")
             errorMessage = "Plan load failed: \(error.localizedDescription)"
             await loadFitnessSnapshotFallback()
-            isLoadingPlan = false
         }
+    }
+
+    @MainActor
+    private func currentSnapshot() -> TrainingPlanSnapshot {
+        TrainingPlanSnapshot(
+            activeGoal: activeGoal,
+            marathonGoalTime: marathonGoalTime,
+            weeksUntilRace: weeksUntilRace,
+            activePlan: activePlan,
+            allScheduledWorkouts: allScheduledWorkouts,
+            moodByDate: moodByDate,
+            logDistanceByDate: logDistanceByDate,
+            fitnessSnapshotMarathonSeconds: fitnessSnapshotMarathonSeconds,
+            errorMessage: errorMessage
+        )
+    }
+
+    @MainActor
+    private func apply(snapshot s: TrainingPlanSnapshot) {
+        activeGoal = s.activeGoal
+        marathonGoalTime = s.marathonGoalTime
+        weeksUntilRace = s.weeksUntilRace
+        activePlan = s.activePlan
+        allScheduledWorkouts = s.allScheduledWorkouts
+        moodByDate = s.moodByDate
+        logDistanceByDate = s.logDistanceByDate
+        fitnessSnapshotMarathonSeconds = s.fitnessSnapshotMarathonSeconds
+        errorMessage = s.errorMessage
+        if let plan = s.activePlan { paceConfig.configure(for: plan) }
     }
 
     /// Load the most recent fitness snapshot to provide pace zone data when no training plan exists
