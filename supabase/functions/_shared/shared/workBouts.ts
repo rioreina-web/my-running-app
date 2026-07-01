@@ -335,6 +335,148 @@ export function detectWorkBouts(
 }
 
 /**
+ * A watch lap, as it arrives in `external_streams.laps` (Strava lap shape). Only
+ * the fields the segmenter needs are typed; everything else is ignored.
+ */
+export interface LapInput {
+  distance?: number;         // meters
+  moving_time?: number;      // seconds
+  elapsed_time?: number;     // seconds
+  average_speed?: number;    // m/s
+  average_heartrate?: number;
+  start_index?: number;      // index into the per-second streams
+  end_index?: number;
+  lap_index?: number;
+}
+
+/**
+ * Segment a run into recovery-bounded work bouts FROM THE ATHLETE'S OWN WATCH
+ * LAPS, instead of re-deriving boundaries from the noisy per-second GPS trace.
+ *
+ * Same core rule as detectWorkBouts — a rep is bounded by a recovery, not a
+ * distance marker — but applied at lap granularity. When an athlete runs a
+ * structured session, their watch records each rep and each recovery as its own
+ * lap, and those boundaries are crisp: exact distance and moving-time, no
+ * acceleration/deceleration smear, no warmup-jog bleeding into the first hard
+ * effort. Consecutive same-class laps merge (three 1 km tempo laps become one
+ * 3 km bout; a rep flanked by jog laps stays one rep), so the output shape is
+ * identical to detectWorkBouts and drops straight into blocksFromBouts.
+ *
+ * This is deliberately NOT "trust the lap markers" — auto-lap-by-distance lies
+ * exactly as the module header warns. It's "trust the athlete's fast/slow
+ * ALTERNATION": the caller only prefers this over the GPS pass when it yields a
+ * real structure (>= 2 work bouts), which only happens when the laps genuinely
+ * encode reps-and-recoveries. A steady run auto-lapped every mile collapses to a
+ * single bout and the caller falls back to the GPS segmenter.
+ *
+ * `streams` is optional and used only to resolve each bout's real time window
+ * (via lap start/end indices) so downstream HR averaging lines up; without it,
+ * windows fall back to cumulative moving time.
+ */
+export function boutsFromLaps(
+  laps: LapInput[],
+  streams?: RawStreams,
+  opts: DetectOptions = {},
+): { segments: BoutOrRecovery[]; workVelMs: number } {
+  const o = { ...DEFAULTS, ...opts };
+  if (!Array.isArray(laps) || laps.length < 2) return { segments: [], workVelMs: 0 };
+
+  const norm = laps
+    .map((l) => {
+      const dist_m = Number(l.distance ?? 0);
+      const dur_s = Number(l.moving_time ?? l.elapsed_time ?? 0);
+      const declaredVel = Number(l.average_speed ?? 0);
+      const vel = declaredVel > 0 ? declaredVel : dur_s > 0 ? dist_m / dur_s : 0;
+      return { dist_m, dur_s, vel, start_index: l.start_index, end_index: l.end_index };
+    })
+    .filter((l) => l.dist_m > 0 && l.dur_s > 0 && isFinite(l.vel));
+
+  if (norm.length < 2) return { segments: [], workVelMs: 0 };
+
+  // Work-velocity baseline = median of the fast cluster. Anchor on a high
+  // percentile of lap speed so a session with MORE recovery laps than work laps
+  // can't drag the baseline down into the recovery band.
+  const moving = norm.map((l) => l.vel).filter((v) => v > o.standingVelMs);
+  if (moving.length === 0) return { segments: [], workVelMs: 0 };
+  const sortedVel = [...moving].sort((a, b) => a - b);
+  const anchor = sortedVel[Math.min(sortedVel.length - 1, Math.floor(sortedVel.length * 0.9))];
+  const fastCluster = norm.filter((l) => l.vel >= 0.7 * anchor).map((l) => l.vel);
+  const workVel = median(fastCluster.length ? fastCluster : moving);
+  if (workVel <= 0) return { segments: [], workVelMs: 0 };
+  const recoveryThreshold = o.recoveryFrac * workVel;
+
+  const cls: Segment[] = norm.map((l) => (l.vel < recoveryThreshold ? "recovery" : "work"));
+
+  // Merge consecutive same-class laps.
+  type Group = { seg: Segment; laps: typeof norm };
+  const groups: Group[] = [];
+  norm.forEach((l, i) => {
+    const last = groups[groups.length - 1];
+    if (last && last.seg === cls[i]) last.laps.push(l);
+    else groups.push({ seg: cls[i], laps: [l] });
+  });
+
+  const time = streams?.time ?? [];
+  const tAt = (idx?: number) => (idx != null && idx >= 0 && idx < time.length ? time[idx] : undefined);
+
+  const segments: BoutOrRecovery[] = [];
+  let boutIdx = 0;
+  let cumDist = 0; // cumulative meters across ALL laps (for start_m/end_m)
+  let clockS = 0;  // fallback cumulative time when stream indices are absent
+  for (const g of groups) {
+    const dist_m = g.laps.reduce((a, b) => a + b.dist_m, 0);
+    const dur_s = g.laps.reduce((a, b) => a + b.dur_s, 0);
+    const avg_vel_ms = dur_s > 0 ? dist_m / dur_s : 0;
+    const start_m = cumDist;
+    const end_m = cumDist + dist_m;
+    cumDist = end_m;
+    const start_s = tAt(g.laps[0].start_index) ?? clockS;
+    const end_s = tAt(g.laps[g.laps.length - 1].end_index) ?? start_s + dur_s;
+    clockS = end_s;
+
+    if (g.seg === "work") {
+      boutIdx += 1;
+      const secPerMile = avg_vel_ms > 0 ? 1609.34 / avg_vel_ms : 0;
+      const secPerKm = avg_vel_ms > 0 ? 1000 / avg_vel_ms : 0;
+      segments.push({
+        kind: "work",
+        index: boutIdx,
+        start_s, end_s, duration_s: dur_s,
+        start_m: Math.round(start_m), end_m: Math.round(end_m),
+        distance_m: Math.round(dist_m),
+        avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
+        avg_pace_per_mile: pace(secPerMile),
+        avg_pace_per_km: pace(secPerKm),
+      });
+    } else {
+      // A recovery before any work is a warmup, not a separator — skip it.
+      if (boutIdx === 0) continue;
+      segments.push({
+        kind: "recovery",
+        after_bout: boutIdx,
+        duration_s: dur_s,
+        distance_m: Math.round(dist_m),
+        avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
+        style: avg_vel_ms < o.standingVelMs ? "standing" : "jog",
+      });
+    }
+  }
+
+  // Trim a trailing recovery/cooldown — a rest with no rep after it isn't a
+  // separator (mirrors detectWorkBouts).
+  while (segments.length && segments[segments.length - 1].kind === "recovery") {
+    segments.pop();
+  }
+
+  return { segments, workVelMs: Math.round(workVel * 100) / 100 };
+}
+
+/** Count the work bouts in a segment list (caller's reliability gate). */
+export function workBoutCount(segments: BoutOrRecovery[]): number {
+  return segments.reduce((n, s) => (s.kind === "work" ? n + 1 : n), 0);
+}
+
+/**
  * Render detected bouts as a compact, model-readable block for the parser
  * prompt. Empty string when nothing was detected (caller substitutes "(none)").
  */

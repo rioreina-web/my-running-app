@@ -3,12 +3,15 @@ import {
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  boutsFromLaps,
   detectWorkBouts,
   formatWorkBouts,
+  type LapInput,
   nearestRepDistance,
   nearestTimeRep,
   RawStreams,
   WorkBout,
+  workBoutCount,
 } from "./workBouts.ts";
 
 /**
@@ -178,4 +181,60 @@ Deno.test("workBouts: formatWorkBouts renders bouts + indented recoveries", () =
   assert(out.includes("Bout 2:"));
   assert(out.includes("recovery:"));
   assertEquals(formatWorkBouts([]), "");
+});
+
+// ── boutsFromLaps: the athlete's own watch laps as the segmentation source ──
+
+const lapWorks = (segs: ReturnType<typeof boutsFromLaps>["segments"]) =>
+  segs.filter((s): s is WorkBout => s.kind === "work");
+
+// A real recorded session: "3k tempo + 3 × (1k, 600m)". The watch auto-lapped
+// the tempo every 1 km (3 fast laps) and recorded each rep + jog recovery as
+// its own lap. The GPS re-segmentation diluted every pace and merged warmup
+// into the tempo; the laps are crisp. This is the workout that motivated the fn.
+const REAL_SESSION: LapInput[] = [
+  { distance: 1000, moving_time: 201, average_speed: 4.98 }, // tempo km 1
+  { distance: 1000, moving_time: 211, average_speed: 4.74 }, // tempo km 2
+  { distance: 1000, moving_time: 220, average_speed: 4.55 }, // tempo km 3
+  { distance: 645, moving_time: 280, average_speed: 2.30 },  // recovery
+  { distance: 1000, moving_time: 192, average_speed: 5.21 }, // 1k
+  { distance: 206, moving_time: 83, average_speed: 2.48 },   // recovery
+  { distance: 599, moving_time: 112, average_speed: 5.35 },  // 600
+  { distance: 243, moving_time: 183, average_speed: 1.33 },  // recovery
+  { distance: 1000, moving_time: 188, average_speed: 5.32 }, // 1k
+  { distance: 208, moving_time: 113, average_speed: 1.84 },  // recovery
+  { distance: 601, moving_time: 111, average_speed: 5.41 },  // 600
+  { distance: 218, moving_time: 192, average_speed: 1.14 },  // recovery
+  { distance: 1000, moving_time: 188, average_speed: 5.32 }, // 1k
+  { distance: 210, moving_time: 104, average_speed: 2.02 },  // recovery
+  { distance: 602, moving_time: 104, average_speed: 5.79 },  // 600
+  { distance: 150, moving_time: 434, average_speed: 0.35 },  // cooldown / stop
+];
+
+Deno.test("boutsFromLaps: merges tempo laps, keeps reps, trims cooldown", () => {
+  const { segments } = boutsFromLaps(REAL_SESSION);
+  const w = lapWorks(segments);
+  assertEquals(w.length, 7, "3k tempo + 6 interval reps = 7 work bouts");
+  // Bout 1 is the whole tempo, merged from 3 laps — NOT split into 3× 1k.
+  assertEquals(w[0].distance_m, 3000);
+  assertEquals(w[0].duration_s, 632);
+  assertEquals(w[0].avg_pace_per_mile, "5:39");
+  // The reps carry their true (fast) paces, not the GPS-diluted ones.
+  assertEquals(w[6].avg_pace_per_mile, "4:38"); // last 600
+  // The trailing 150m stop is a cooldown, not a rep — trimmed.
+  assertEquals(segments[segments.length - 1].kind, "work");
+});
+
+Deno.test("boutsFromLaps: a steady run collapses to < 2 bouts (caller falls back)", () => {
+  // Five even ~1 mi laps, no recovery — a steady run auto-lapped by distance.
+  const steady: LapInput[] = Array.from({ length: 5 }, () => ({
+    distance: 1609, moving_time: 480, average_speed: 3.35,
+  }));
+  const { segments } = boutsFromLaps(steady);
+  assert(workBoutCount(segments) < 2, "no rep structure → gate fails → GPS fallback");
+});
+
+Deno.test("boutsFromLaps: too few laps → no segments", () => {
+  assertEquals(boutsFromLaps([]).segments, []);
+  assertEquals(boutsFromLaps([{ distance: 1000, moving_time: 200 }]).segments, []);
 });
