@@ -62,6 +62,7 @@ function baseState(over: Partial<AthleteState> = {}): AthleteState {
     environment: [],
     execution: [],
     fitness_signal: null,
+    life_context: null,
     patterns: [],
     data_gaps: [],
     last_updated_at: new Date().toISOString(),
@@ -134,4 +135,41 @@ Deno.test("priority-1-only floor: even an impossibly small budget keeps safety-c
   const prompt = stateToPromptContext(richState(), { budget: 1 });
   assert(prompt.includes("Training pace zones"), "pace zones must never drop");
   assert(prompt.includes("Active injuries"), "injuries must never drop");
+});
+
+// ── life_context section (audit fix #1, 2026-07-02) ──
+
+function lifeState(): AthleteState {
+  return baseState({
+    life_context: {
+      sleep: { poor_mentions_7d: 2, mentions_28d: 4, last: { date: "2026-07-01", quality: "poor", hours: 5 } },
+      fatigue: [{ date: "2026-07-01", label: "wiped" }, { date: "2026-06-29", label: "tired" }],
+      effort: [{ date: "2026-07-01", label: "hard" }, { date: "2026-06-30", label: "hard" }, { date: "2026-06-29", label: "hard" }],
+      hard_7d: 3,
+      stress: { work_high_7d: 2, life_high_7d: 0, any_high_28d: 3, last_mention: "2026-07-01" },
+      illness: { active: true, detail: "fighting a cold", date: "2026-06-30" },
+      travel: { recent: false, detail: null, date: null },
+      motivation: { low_7d: 1, last: "low" },
+      felt_vs_looked: [{ date: "2026-07-01", value: "harder than it looks" }],
+      avg_rpe_7d: 6.5,
+      summary: "sleep poor ×2 this week · work stress high ×2",
+    },
+  });
+}
+
+Deno.test("life_context renders: sleep, stress, illness verbatim, guidance line", () => {
+  const prompt = stateToPromptContext(lifeState());
+  assert(prompt.includes("Life context"), "life context header missing");
+  assert(prompt.includes("poor ×2 this week"), "sleep rollup missing");
+  assert(prompt.includes("high ×2 this week"), "stress rollup missing");
+  assert(prompt.includes('"fighting a cold"'), "illness must be verbatim");
+  assert(prompt.includes("Never prescribe rest or treatment"), "guardrail line missing");
+});
+
+Deno.test("life_context omitted when null; drops under tiny budget (priority 3 > 1)", () => {
+  const withoutLc = stateToPromptContext(baseState());
+  assert(!withoutLc.includes("Life context"), "must not render for null slice");
+  const tiny = stateToPromptContext(lifeState(), { budget: 40 });
+  assert(!tiny.includes("Life context"), "P3 section must drop under a tiny budget");
+  assert(tiny.includes("Training pace zones"), "P1 still survives");
 });

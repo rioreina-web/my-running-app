@@ -36,6 +36,7 @@ import {
 } from "./fitnessSignal.ts";
 import { formatPace, formatTime, formatTimeDelta } from "./shared/format.ts";
 import { buildMoodTrend, type MoodLogRow } from "./builders/buildMoodTrend.ts";
+import { buildLifeContext, type LifeContext, type LifeContextLogRow } from "./builders/buildLifeContext.ts";
 import { buildLoadMetrics } from "./builders/buildLoadMetrics.ts";
 import { buildTrajectory, derivePhase, deriveExperience } from "./builders/buildTrajectory.ts";
 import { buildLoadDistribution } from "./builders/buildLoadDistribution.ts";
@@ -330,6 +331,16 @@ export interface AthleteState {
   }>;
 
   /**
+   * Qualitative life signal rolled up from voice-memo `extracted_data` —
+   * sleep, work/life stress, fatigue trail, illness, travel, motivation,
+   * felt_vs_looked, avg RPE. The athlete's own labels, verbatim; surface,
+   * never diagnose (hard rule #2). Null when no memo in the 28-day window
+   * carries any life field. Built by `builders/buildLifeContext.ts`
+   * (audit fix #1, 2026-07-02).
+   */
+  life_context: LifeContext | null;
+
+  /**
    * Computed blind spots — the honest "what I can't see" list (Rec #5).
    * Grounds the Read's `cant_see` block in real gaps instead of the model
    * inventing one. `gap` is a 2-4 word mono eyebrow; `detail` is one
@@ -508,7 +519,7 @@ export async function rebuildAthleteState(
     // Last 28 days of training logs for current load/state.
     supabase
       .from("training_logs")
-      .select("id, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, mood, cleaned_notes, notes, workout_notes, source, parsed_structure, pace_segments")
+      .select("id, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, mood, cleaned_notes, notes, workout_notes, source, parsed_structure, pace_segments, extracted_data")
       .eq("user_id", userId)
       .gte("workout_date", twentyEightDaysAgo)
       .order("workout_date", { ascending: false })
@@ -714,6 +725,13 @@ export async function rebuildAthleteState(
 
   // ── Mood trend ── (see _shared/builders/buildMoodTrend.ts)
   const moodTrend = buildMoodTrend(checkIns, logs as MoodLogRow[]);
+
+  // ── Life context ── (see _shared/builders/buildLifeContext.ts)
+  // Rolls up the qualitative fields the memo pipeline extracts into
+  // extracted_data (sleep, stress, fatigue, illness, travel, motivation,
+  // felt_vs_looked, rpe). Null when no memo in the window carries any
+  // life field. Athlete's own labels, verbatim — hard rule #2.
+  const lifeContext = buildLifeContext(logs as LifeContextLogRow[], now);
 
   // ── Fitness trajectory ──
   // Compare the latest two fitness_snapshots on predicted 10K (lower = faster).
@@ -1563,6 +1581,45 @@ export async function rebuildAthleteState(
     }
   }
 
+  // 7. Life load vs mood — training colliding with life (memo extracted_data).
+  //    ≥3 life-load flags (poor sleep / high stress) in 7d alongside ≥2 tired
+  //    or struggling runs. Surfaces the collision; never prescribes rest
+  //    (hard rule #2) — the Read asks, the athlete decides.
+  if (lifeContext) {
+    const lifeLoadSignals = lifeContext.sleep.poor_mentions_7d +
+      lifeContext.stress.work_high_7d + lifeContext.stress.life_high_7d;
+    const tiredRuns = recentWorkouts.filter(
+      (w) => w.mood === "tired" || w.mood === "struggling"
+    ).length;
+    if (lifeLoadSignals >= 2 && tiredRuns >= 2) {
+      const evidenceParts: string[] = [];
+      if (lifeContext.sleep.poor_mentions_7d > 0) evidenceParts.push(`poor sleep ×${lifeContext.sleep.poor_mentions_7d}`);
+      const stressHigh = lifeContext.stress.work_high_7d + lifeContext.stress.life_high_7d;
+      if (stressHigh > 0) evidenceParts.push(`high stress ×${stressHigh}`);
+      evidenceParts.push(`${tiredRuns} tired/struggling runs`);
+      patterns.push({
+        kind: "life_load",
+        statement: "Training is colliding with life load right now — rough sleep and stress keep showing up alongside tired runs.",
+        evidence: `${evidenceParts.join(" + ")} in the last 7d`,
+        confidence: lifeLoadSignals >= 3 ? "medium" : "low",
+      });
+    }
+
+    // 8. Effort mismatch — paces costing more than they show. ≥2 of the last
+    //    4 felt_vs_looked reads are "harder than it looks" — the early
+    //    overreach tell a coach prizes. Observation only.
+    const fvl = lifeContext.felt_vs_looked;
+    const harder = fvl.filter((f) => f.value === "harder than it looks").length;
+    if (fvl.length >= 2 && harder >= 2) {
+      patterns.push({
+        kind: "effort_mismatch",
+        statement: "Paces are costing more than they show — the same numbers have felt harder lately.",
+        evidence: `"harder than it looks" on ${harder} of the last ${fvl.length} runs with an effort read`,
+        confidence: harder >= 3 ? "medium" : "low",
+      });
+    }
+  }
+
   // ── Rec #5: computed blind spots — grounds the Read's cant_see block ──
   const dataGaps: AthleteState["data_gaps"] = [];
 
@@ -1593,6 +1650,23 @@ export async function rebuildAthleteState(
     dataGaps.push({
       gap: "ONE DATA POINT",
       detail: `${onePointNiggle.body_area} has come up once — not enough to call a pattern.`,
+    });
+  }
+
+  // Training happening but no qualitative life signal in any memo this month.
+  if (last7d.length > 0 && !lifeContext) {
+    dataGaps.push({
+      gap: "NO LIFE SIGNAL",
+      detail: "No memos mentioning sleep, stress, or how the body felt in the last month — I only see the numbers.",
+    });
+  }
+
+  // No device-based recovery data exists yet (product-wide); the only sleep
+  // signal is what the athlete says. Honest about the pillar-3 blind spot.
+  if (!lifeContext || lifeContext.sleep.mentions_28d === 0) {
+    dataGaps.push({
+      gap: "NO RECOVERY DATA",
+      detail: "I can't see sleep or recovery from a device — only what you tell me in memos.",
     });
   }
 
@@ -1769,6 +1843,7 @@ export async function rebuildAthleteState(
     environment: environment,
     execution: execution,
     fitness_signal: fitnessSignal,
+    life_context: lifeContext,
     patterns: patterns,
     data_gaps: dataGaps,
 
@@ -2080,6 +2155,57 @@ export function stateToPromptContext(
       lines.push(`\nRecent vibe: ${state.last_mood}${state.last_readiness_score ? ` (readiness ${state.last_readiness_score}/10)` : ""}`);
       if (state.mood_trend) lines.push(`Mood trend: ${state.mood_trend}`);
     }
+  });
+
+  // Life context — the qualitative memo signal (sleep, stress, fatigue,
+  // illness, travel, motivation, effort-vs-pace). Feeling before data: this
+  // is the lens paces get read through. Reference the athlete's own words;
+  // never diagnose or prescribe rest (hard rule #2).
+  section("life_context", 3, (lines) => {
+    const lc = state.life_context;
+    if (!lc) return;
+    const body: string[] = [];
+    if (lc.sleep.last) {
+      const hrs = lc.sleep.last.hours != null ? `, ~${lc.sleep.last.hours}h` : "";
+      const poor = lc.sleep.poor_mentions_7d > 0 ? ` — poor ×${lc.sleep.poor_mentions_7d} this week` : "";
+      body.push(`  Sleep: last mention ${lc.sleep.last.quality} (${lc.sleep.last.date}${hrs})${poor}`);
+    }
+    const stressHigh7 = lc.stress.work_high_7d + lc.stress.life_high_7d;
+    if (stressHigh7 > 0 || lc.stress.any_high_28d >= 2) {
+      const seven = stressHigh7 > 0
+        ? `high ×${stressHigh7} this week (work ${lc.stress.work_high_7d}, life ${lc.stress.life_high_7d})`
+        : `high ×${lc.stress.any_high_28d} this month`;
+      body.push(`  Stress: ${seven}`);
+    }
+    if (lc.fatigue.length > 0) {
+      const trail = lc.fatigue.map((f) => `${f.label} (${f.date.slice(5)})`).join(", ");
+      body.push(`  Body going in: ${trail}`);
+    }
+    if (lc.effort.length > 0) {
+      const trail = lc.effort.map((e) => `${e.label} (${e.date.slice(5)})`).join(", ");
+      const grind = lc.hard_7d >= 3 ? ` — hard ×${lc.hard_7d} this week` : "";
+      body.push(`  Recent effort (their read): ${trail}${grind}`);
+    }
+    if (lc.illness.active && lc.illness.detail) {
+      body.push(`  Illness (their words): "${lc.illness.detail}" (${lc.illness.date})`);
+    }
+    if (lc.travel.recent && lc.travel.detail) {
+      body.push(`  Travel: "${lc.travel.detail}" (${lc.travel.date})`);
+    }
+    if (lc.motivation.low_7d > 0) {
+      body.push(`  Motivation: low ×${lc.motivation.low_7d} this week`);
+    }
+    if (lc.felt_vs_looked.length > 0) {
+      const fv = lc.felt_vs_looked.map((f) => `"${f.value}" (${f.date.slice(5)})`).join(", ");
+      body.push(`  Effort vs pace: ${fv}`);
+    }
+    if (lc.avg_rpe_7d != null) {
+      body.push(`  Avg RPE (7d): ${lc.avg_rpe_7d}/10`);
+    }
+    if (body.length === 0) return;
+    lines.push(`\nLife context (from their memos — feeling first; reference, don't diagnose):`);
+    lines.push(...body);
+    lines.push(`→ Read paces through this lens. Never prescribe rest or treatment; ask soft questions.`);
   });
 
   // What I remember about this athlete — durable memory (preferences, life

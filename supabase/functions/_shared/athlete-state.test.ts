@@ -537,3 +537,92 @@ Deno.test(
     assertEquals(state.strain_7d, 4200);
   },
 );
+
+// ── Life context (audit fix #1, 2026-07-02) ─────────────
+// Memo-sourced extracted_data must reach the state: the life_context slice
+// populates, and the two qualitative pattern rules (life_load,
+// effort_mismatch) fire on the joined signal. Pins the full path:
+// training_logs.extracted_data → buildLifeContext → patterns → prompt.
+
+Deno.test(
+  "life_context: memo extracted_data reaches the state and fires life_load + effort_mismatch",
+  async () => {
+    const now = Date.now();
+    const iso = (n: number) => new Date(now - n * 86400000).toISOString();
+    const db: DB = {
+      training_logs: [
+        {
+          id: "lc1", user_id: REAL_USER, workout_date: iso(1), source: "voice_log",
+          workout_type: "easy", workout_distance_miles: 5, workout_duration_minutes: 45,
+          mood: "tired",
+          extracted_data: {
+            sleep_quality: "poor", work_stress: "high",
+            felt_vs_looked: "harder than it looks", fatigue: "wiped",
+          },
+        },
+        {
+          id: "lc2", user_id: REAL_USER, workout_date: iso(3), source: "voice_log",
+          workout_type: "easy", workout_distance_miles: 6, workout_duration_minutes: 54,
+          mood: "struggling",
+          extracted_data: {
+            sleep_quality: "poor",
+            felt_vs_looked: "harder than it looks",
+          },
+        },
+        {
+          id: "lc3", user_id: REAL_USER, workout_date: iso(5), source: "voice_log",
+          workout_type: "easy", workout_distance_miles: 4, workout_duration_minutes: 36,
+          mood: "positive",
+          extracted_data: { workout_type: "easy" },
+        },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+
+    // Slice populated from memo extracted_data.
+    assert(state.life_context !== null, "life_context must populate from memos");
+    assertEquals(state.life_context!.sleep.poor_mentions_7d, 2);
+    assertEquals(state.life_context!.stress.work_high_7d, 1);
+    assertEquals(state.life_context!.felt_vs_looked.length, 2);
+    assertEquals(state.life_context!.fatigue[0].label, "wiped");
+
+    // Pattern rules fire on the joined signal (3 life-load flags + 2 tired runs).
+    const kinds = state.patterns.map((p) => p.kind);
+    assert(kinds.includes("life_load"), `life_load must fire, got: ${kinds.join(",")}`);
+    assert(kinds.includes("effort_mismatch"), `effort_mismatch must fire, got: ${kinds.join(",")}`);
+
+    // Prompt renders the section; sleep data present so NO RECOVERY DATA gap absent.
+    const prompt = stateToPromptContext(state);
+    assert(prompt.includes("Life context"), "prompt must include life context section");
+    assert(!state.data_gaps.some((g) => g.gap === "NO RECOVERY DATA"));
+    assert(!state.data_gaps.some((g) => g.gap === "NO LIFE SIGNAL"));
+  },
+);
+
+Deno.test(
+  "life_context: quant-only athlete gets null slice, no patterns, and honest gaps",
+  async () => {
+    const now = Date.now();
+    const iso = (n: number) => new Date(now - n * 86400000).toISOString();
+    const db: DB = {
+      training_logs: [
+        {
+          id: "q1", user_id: REAL_USER, workout_date: iso(1), source: "strava",
+          workout_type: "easy", workout_distance_miles: 5, workout_duration_minutes: 45,
+        },
+        {
+          id: "q2", user_id: REAL_USER, workout_date: iso(3), source: "strava",
+          workout_type: "easy", workout_distance_miles: 8, workout_duration_minutes: 70,
+        },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    assertEquals(state.life_context, null);
+    const kinds = state.patterns.map((p) => p.kind);
+    assert(!kinds.includes("life_load"));
+    assert(!kinds.includes("effort_mismatch"));
+    assert(state.data_gaps.some((g) => g.gap === "NO LIFE SIGNAL"), "must admit missing life signal");
+    assert(state.data_gaps.some((g) => g.gap === "NO RECOVERY DATA"), "must admit missing recovery data");
+    assert(!stateToPromptContext(state).includes("Life context"));
+  },
+);
