@@ -425,8 +425,14 @@ final class FitnessPredictorService {
 
         if let best = bestRaceMatch {
             // Race anchor wins unless it's well past the primary window AND a fresh
-            // training anchor exists. This treats races as durable proof of fitness.
-            let raceIsPrimary = best.weeksAgo <= racePrimaryWindowWeeks || recentTrainingAnchor == nil
+            // training anchor exists THAT IS ACTUALLY FASTER than the race. This
+            // treats races as durable proof of fitness: a modest recent tempo
+            // (e.g. a 6:59 10K-equivalent) must not override a 31:24 10K race just
+            // because the race aged past 16 weeks. When the recent anchor is
+            // slower/weaker, the race stays and is decayed forward below.
+            let raceIsPrimary = best.weeksAgo <= racePrimaryWindowWeeks
+                || recentTrainingAnchor == nil
+                || (recentTrainingAnchor?.equivalentTenKPace ?? .infinity) >= best.tenKPace
 
             if raceIsPrimary {
                 anchorPace = best.tenKPace
@@ -960,6 +966,16 @@ final class FitnessPredictorService {
     @MainActor
     private func saveSnapshot(prediction: FitnessPrediction) async {
         let userId = AuthManager.shared.userId
+
+        // Never write a snapshot with an empty user_id. AuthManager.userId
+        // returns "" when accessed before auth resolves; persisting that
+        // produces orphaned rows owned by nobody (invisible to the user and to
+        // server-side reads). Skip and let the next prediction (post-auth) write.
+        // See outputs/fitness-snapshot-writer-diagnosis-2026-07-02.md.
+        guard !userId.trimmingCharacters(in: .whitespaces).isEmpty else {
+            Log.coach.warning("saveSnapshot skipped — userId empty (not yet authenticated)")
+            return
+        }
 
         // Calculate race times from the 10K pace baseline using PaceCalculator
         let pace10k = prediction.estimated10kPaceSeconds

@@ -428,6 +428,14 @@ verify_jwt = false
 # exact-key match that 403'd the drain crons).
 verify_jwt = true
 
+[functions.compute-fitness-snapshot]
+# Server-side writer for fitness_snapshots (replaces the client-only iOS
+# writer as the freshness guarantee). Same auth posture as
+# rebuild-athlete-state: gateway validates the JWT signature, the function
+# confirms role=service_role by decoding the claim. Fanned out per active
+# athlete by the nightly cron just before the athlete-state rebuild.
+verify_jwt = true
+
 # ── Async enrichment drains (pg_cron, every minute) ──
 # verify_jwt = true so the gateway validates the JWT signature; each drain
 # then confirms role=service_role by decoding the claim (isServiceRoleJWT),
