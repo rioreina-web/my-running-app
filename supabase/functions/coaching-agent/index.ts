@@ -1617,7 +1617,10 @@ Coach:`;
       user_id: userId,
       role: msg.role,
       content: msg.content,
-      proactive: msg.proactive || false,
+      // NOTE: `conversation_messages` has no `proactive` column in prod —
+      // including it made every message-save 400 (chat history silently
+      // dropped). Removed. If proactive-tracking is wanted, add the column via
+      // migration first, then reinstate here.
     }));
 
     // Insert messages and capture the assistant message ID for feedback
