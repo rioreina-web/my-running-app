@@ -7,6 +7,8 @@
 
 import os
 import SwiftUI
+import Supabase
+import Auth
 
 // MARK: - CoachInsightSection
 
@@ -218,7 +220,12 @@ struct CoachInsightSection: View {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        // coaching-agent requires a real user JWT (the anon-key + body-userId
+        // fallback was removed as an impersonation hole). Send the session
+        // access token; fall back to anon only when signed out (will 401).
+        let bearerToken = (try? await supabase.auth.session)?.accessToken ?? supabaseAnonKey
+        request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+        request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.timeoutInterval = 30 // 30 second timeout
 
         let payload: [String: Any] = ["message": message]

@@ -52,6 +52,10 @@ Deno.test("eval: reschedule-plan.v1 cassettes pass rubric", async () => {
   await runSuite("reschedule-plan.v1");
 });
 
+Deno.test("eval: daily-read.v5 cassettes pass rubric", async () => {
+  await runSuite("daily-read.v5");
+});
+
 // ─── Harness self-tests ────────────────────────────────────────────
 //
 // A buggy rubric that always returns pass=true would silently let

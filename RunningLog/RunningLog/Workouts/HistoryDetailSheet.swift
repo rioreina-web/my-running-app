@@ -162,10 +162,22 @@ struct HistoryDetailSheet: View {
                     // available if we need a fallback while WorkoutAnalystView's
                     // `loadStream()` is still wired up.
                     //
-                    // Pass `vm.currentEntry.id` so path 1 (Strava ingestion via
-                    // ExternalStreamAdapter) hits the right `training_logs` row.
-                    // `matched.id` is the HKWorkout UUID, not the row id.
-                    WorkoutAnalystView(workout: matched, trainingLogId: vm.currentEntry.id)
+                    // Path 1 (external_streams JSONB via ExternalStreamAdapter)
+                    // needs the training_logs row that actually holds the
+                    // streams. For a Strava-imported match that's `matched.id`
+                    // — `fetchStravaRunningWorkoutsForDate` builds the
+                    // RunningWorkout with the strava row's id. The opened entry
+                    // (`currentEntry`) is often a SEPARATE voice_log/manual row
+                    // for the same run with no streams, so using its id makes
+                    // path 1 miss and the screen shows "stream data isn't
+                    // available" even though the streams exist on the strava row.
+                    // For HealthKit matches `matched.id` is the HKWorkout UUID
+                    // (not a row id), so fall back to `currentEntry.id` and let
+                    // path 3 (HK live) fill the charts.
+                    let streamLogId = matched.sourceApp == "Strava"
+                        ? matched.id
+                        : vm.currentEntry.id
+                    WorkoutAnalystView(workout: matched, trainingLogId: streamLogId)
                         .presentationDetents([.large])
                         .presentationDragIndicator(.visible)
                 }

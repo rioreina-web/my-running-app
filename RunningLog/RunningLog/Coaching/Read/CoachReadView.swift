@@ -23,15 +23,22 @@ import SwiftUI
 struct CoachReadView: View {
     @State private var service = DailyReadService.shared
 
+    /// Cross-tab navigation — lets the Volume × Intensity affordance jump
+    /// to the Training tab where the spectrum chart lives. Training is
+    /// tab index 1 (see DripTab).
+    @Environment(\.selectedTab) private var selectedTab
+
     // Sheet-routing state — chips write their id here, this view
     // reads and presents the matching detail sheet.
     @State private var selectedWorkoutId: UUID?
     @State private var selectedDocId: UUID?
 
-    // Ask-bar local state. Submit handler is a placeholder in v1 —
-    // Phase 4.2 wires it into `service.ask()` and the reply view.
+    // Ask-bar state. The athlete asks AI about their training; the
+    // reply is a CoachRead-shaped Training Insight presented in a sheet.
     @State private var askText = ""
-    @State private var showingAskComingSoon = false
+    @State private var isAsking = false
+    @State private var askReply: CoachRead?
+    @State private var askErrorText: String?
 
     var body: some View {
         ScrollView {
@@ -60,6 +67,9 @@ struct CoachReadView: View {
 
                     ConfidenceBar(confidence: read.confidence)
                         .padding(.top, 4)
+
+                    volumeIntensityLink
+                        .padding(.top, 16)
 
                     editorialRule
                         .padding(.vertical, 24)
@@ -95,10 +105,71 @@ struct CoachReadView: View {
                 DocDetailSheet(doc: doc)
             }
         }
-        .alert("Ask the coach — coming soon", isPresented: $showingAskComingSoon) {
-            Button("OK") { askText = "" }
+        .sheet(item: $askReply) { reply in
+            askReplySheet(for: reply)
+        }
+        .alert(
+            "Couldn't get an answer",
+            isPresented: Binding(
+                get: { askErrorText != nil },
+                set: { if !$0 { askErrorText = nil } }
+            )
+        ) {
+            Button("OK") {}
         } message: {
-            Text("Question replies ship in the next update.")
+            Text(askErrorText ?? "Try again in a moment.")
+        }
+    }
+
+    // MARK: - Ask action
+
+    /// Send the athlete's question to the AI and present the reply as a
+    /// Training Insight sheet. The Read on screen is never mutated.
+    private func submitAsk() {
+        let q = askText.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty, !isAsking else { return }
+        isAsking = true
+        Task {
+            do {
+                let reply = try await service.ask(q)
+                askText = ""
+                askReply = reply
+            } catch {
+                askErrorText = "Couldn't reach your training data. Try again."
+            }
+            isAsking = false
+        }
+    }
+
+    /// The AI's answer to an "ask about my training" question, rendered in
+    /// the same editorial voice as the daily Read.
+    @ViewBuilder
+    private func askReplySheet(for reply: CoachRead) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    headline(for: reply)
+                    prose(for: reply)
+                    if let cantSee = reply.cantSee {
+                        CantSeeBlock(block: cantSee)
+                            .padding(.top, 16)
+                    }
+                    ConfidenceBar(confidence: reply.confidence)
+                        .padding(.top, 12)
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .padding(.bottom, 32)
+            }
+            .background(Color.drip.background.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("TRAINING INSIGHT")
+                        .font(.dripStat(10))
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .tracking(1.0)
+                }
+            }
         }
     }
 
@@ -115,7 +186,7 @@ struct CoachReadView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("RUNNING LOG")
                     .foregroundStyle(Color.drip.textPrimary)
-                Text("— COACH · THE READ")
+                Text("— THE READ · TRAINING INSIGHT")
                     .foregroundStyle(Color.drip.textSecondary)
             }
             Spacer()
@@ -136,7 +207,13 @@ struct CoachReadView: View {
     /// mode but doesn't surface it to iOS. Future enhancement.
     private func dateline(for read: CoachRead) -> some View {
         HStack {
-            Text(Self.datelineString(for: read.readDate))
+            // Masthead day, byline time, and signature all derive from
+            // `generatedAt` (the moment the Read was posted) so the
+            // masthead reads as one coherent day. The underlying
+            // read_date/generated_at divergence (which produced the
+            // "THU · JUN 11" vs "posted Friday" mismatch) is a server
+            // date-resolution bug tracked in Phase 2 of the plan.
+            Text(Self.datelineString(for: read.generatedAt))
                 .font(.dripStat(11))
                 .foregroundStyle(Color.drip.textPrimary)
                 .tracking(1.3) // 0.12em × 11pt — section-eyebrow tracking
@@ -154,8 +231,10 @@ struct CoachReadView: View {
         .padding(.bottom, 16)
     }
 
-    /// 28pt black circle with coral border + "C" inside, then mono
-    /// coral "FROM YOUR COACH · <weekday> <time>".
+    /// 28pt black circle with coral border + coral diamond mark inside,
+    /// then mono coral "YOUR TRAINING INSIGHT · <weekday> <time>". The
+    /// "coach" framing was removed — the Read speaks as the product's own
+    /// editorial voice, not an attributed coach persona.
     private func coachByline(for read: CoachRead) -> some View {
         HStack(spacing: 10) {
             ZStack {
@@ -163,13 +242,13 @@ struct CoachReadView: View {
                     .fill(Color.drip.textPrimary)
                 Circle()
                     .stroke(Color.drip.coral, lineWidth: 1.5)
-                Text("C")
-                    .font(.dripDisplay(14))
-                    .foregroundStyle(Color.drip.background)
+                Text("◆")
+                    .font(.dripDisplay(12))
+                    .foregroundStyle(Color.drip.coral)
             }
             .frame(width: 28, height: 28)
 
-            Text("FROM YOUR COACH · \(Self.bylineTimeString(for: read.generatedAt))")
+            Text("YOUR TRAINING INSIGHT · \(Self.bylineTimeString(for: read.generatedAt))")
                 .font(.dripStat(11))
                 .foregroundStyle(Color.drip.coral)
                 .tracking(1.3) // 0.12em × 11pt — coral section eyebrow
@@ -230,6 +309,34 @@ struct CoachReadView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Volume × Intensity affordance
+
+    /// Tappable editorial row that jumps to the Training tab, where the
+    /// Volume × Intensity spectrum chart (PaceVolumeSpectrumChart) lives.
+    /// The load number itself is read on the Training side; this is the
+    /// "find the chart" entry point from the Read.
+    private var volumeIntensityLink: some View {
+        Button {
+            // Training is tab index 1 (DripTab.training).
+            selectedTab.wrappedValue = 1
+        } label: {
+            HStack(spacing: 8) {
+                Text("VOLUME × INTENSITY")
+                    .font(.dripStat(10))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .tracking(1.0)
+                Spacer()
+                Text("VIEW CHART ↗")
+                    .font(.dripStat(10))
+                    .foregroundStyle(Color.drip.coral)
+                    .tracking(1.0)
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - States
 
     private var skeleton: some View {
@@ -281,33 +388,32 @@ struct CoachReadView: View {
 
     private var askBar: some View {
         HStack(spacing: 12) {
-            TextField("Ask the coach…", text: $askText)
+            TextField("Ask AI about my training…", text: $askText)
                 .font(.dripBody(15))
                 .foregroundStyle(Color.drip.textPrimary)
                 .submitLabel(.send)
-                .onSubmit {
-                    // Phase 4.2 will replace this with the real
-                    // service.ask() → CoachReplyView push.
-                    if !askText.trimmingCharacters(in: .whitespaces).isEmpty {
-                        showingAskComingSoon = true
-                    }
-                }
+                .disabled(isAsking)
+                .onSubmit { submitAsk() }
 
-            Button {
-                if !askText.trimmingCharacters(in: .whitespaces).isEmpty {
-                    showingAskComingSoon = true
+            if isAsking {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 26, height: 26)
+            } else {
+                Button {
+                    submitAsk()
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 26))
+                        .foregroundStyle(
+                            askText.trimmingCharacters(in: .whitespaces).isEmpty
+                                ? Color.drip.textTertiary
+                                : Color.drip.coral
+                        )
                 }
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 26))
-                    .foregroundStyle(
-                        askText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? Color.drip.textTertiary
-                            : Color.drip.coral
-                    )
+                .buttonStyle(.plain)
+                .disabled(askText.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            .buttonStyle(.plain)
-            .disabled(askText.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -343,19 +449,62 @@ struct CoachReadView: View {
     @ViewBuilder
     private func workoutDetailSheet(for id: UUID) -> some View {
         if let workout = service.workoutsById[id] {
-            // Minimal v1 — full WorkoutDetailView integration can
-            // come later. For now we show the workout's basic info.
+            // Canonical presentation — title/label/meta come from the
+            // zone taxonomy, never workout_notes. Verbatim memo, splits,
+            // and mood render below. Full WorkoutDetailView (the rich
+            // pace chart) reuse is gated on the TrainingLog→RunningWorkout
+            // bridge — see the effectiveness plan, Phase 4.
+            let p = WorkoutPresentation(log: workout, zones: PaceZonesService.shared.zones)
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text(Self.workoutTitle(for: workout))
+                        Text(p.title)
                             .font(.dripDisplay(24))
                             .foregroundStyle(Color.drip.textPrimary)
-                        if let notes = workout.cleanedNotes ?? workout.notes {
+
+                        if let meta = p.metaLine {
+                            Text(meta)
+                                .font(.dripStat(12))
+                                .foregroundStyle(Color.drip.textSecondary)
+                                .tracking(0.6)
+                        }
+
+                        if let mood = workout.mood, !mood.isEmpty {
+                            Text("Felt \(mood)")
+                                .font(.dripBody(14))
+                                .foregroundStyle(Color.drip.textSecondary)
+                        }
+
+                        // Per-segment splits from the GPS stream, when present.
+                        if let segments = workout.paceSegments, !segments.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("SPLITS")
+                                    .font(.dripStat(10))
+                                    .foregroundStyle(Color.drip.textSecondary)
+                                    .tracking(1.0)
+                                ForEach(segments) { seg in
+                                    HStack {
+                                        Text(seg.effort.capitalized)
+                                            .font(.dripBody(14))
+                                            .foregroundStyle(Color.drip.textPrimary)
+                                        Spacer()
+                                        Text("\(String(format: "%.1f", seg.distanceMiles))mi · \(seg.pacePerMile)/mi")
+                                            .font(.dripStat(12))
+                                            .foregroundStyle(Color.drip.textSecondary)
+                                    }
+                                }
+                            }
+                            .padding(.top, 4)
+                        }
+
+                        // The athlete's own words — verbatim, never coerced.
+                        if let notes = workout.cleanedNotes ?? workout.notes,
+                           !notes.isEmpty {
                             Text(notes)
                                 .font(.dripBody(15))
                                 .foregroundStyle(Color.drip.textPrimary)
                                 .lineSpacing(4)
+                                .padding(.top, 4)
                         }
                     }
                     .padding(20)
@@ -372,14 +521,6 @@ struct CoachReadView: View {
                 }
             }
         }
-    }
-
-    private static func workoutTitle(for workout: TrainingLog) -> String {
-        let type = (workout.workoutType ?? "run").capitalized
-        if let mi = workout.workoutDistanceMiles {
-            return String(format: "%.1f mi %@", mi, type)
-        }
-        return type
     }
 
     // MARK: - Date helpers

@@ -1,0 +1,30 @@
+{
+  "id": "001-sectioned-shape-and-refs",
+  "prompt_name": "daily-read.v5",
+  "description": "v5 schema (2026-06-16): the Read is a labeled, ordered `sections` array (not a flat paragraph). Section labels come from the fixed set (The week / The hard days / The long run / How you felt / One thing). The long run is named through an inline WORKOUT REF that carries its own display `text` ({text, workout_id}); a niggle is a NIGGLE REF ({text, niggle}). The single soft question lives in its own `question` field, never inside a section. The goal backdrop is the `eyebrow` scope line. recorded_response is an authored target exemplar — re-record via _evals/record.ts before trusting as a baseline.",
+  "vars": {},
+  "input": "## Coaching mode\nPLAN_MODE — active plan, goal marathon.\n\n=== ATHLETE STATE ===\nLevel: advanced\nGoal: marathon 3:16 · race anchor: marathon 3:28\n\nTraining Load (7d): 52 mi, 8 runs (2 quality, 6 easy) — strong, stacking week.\n\nPredicted race times: marathon low 3:20s (range 3:18–3:24).\n\nNiggle recurrence (surface in the athlete's OWN words — never diagnose, never assess severity, never direct care):\n  Right achilles — 3 mentions over 3 weeks:\n    2026-06-09 (after LT): \"eased after a mile\"\n    2026-06-02 (easy run): \"a bit tight early, fine once going\"\n    2026-05-26 (long run): \"slight niggle on the warm-up\"\n\nRecent runs:\n  2026-06-13 Long 18.0mi @ 7:42/mi — finished strong\n  2026-06-09 LT 5×1K @ 6:55 — landed\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [c3c3c3c3-0000-0000-0000-000000000003] 2026-06-13 · 18.0mi ★quality\n\n## Recent voice memos (surface in sources.memos only)\n- [a0000001-0000-0000-0000-0000000000a1] 2026-06-09 memo\n- [a0000002-0000-0000-0000-0000000000a2] 2026-06-02 memo\n- [a0000003-0000-0000-0000-0000000000a3] 2026-05-26 memo\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["headline", "sections", "sources", "confidence"],
+    "forbidden_patterns": [
+      "(?i)\\bas an AI\\b",
+      "(?i)\\b(tendinitis|tendonitis|tendinopathy|ITBS|strain|tear|inflammation)\\b",
+      "(?i)\\b(monitor|keep an eye on|rest it|ice it|stretch it)\\b",
+      "\\b\\d:\\d\\d:\\d\\d\\b",
+      "\"paragraph\""
+    ],
+    "required_patterns": [
+      "\"sections\"",
+      "\"label\"",
+      "(?i)the long run",
+      "\"workout_id\"",
+      "\"niggle\"",
+      "\"question\"",
+      "\"eyebrow\""
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"A strong week — keep that achilles honest.\",\n  \"eyebrow\": \"Chasing 3:16 · off your 3:28\",\n  \"sections\": [\n    { \"label\": \"The week\", \"body\": [\"Fifty-two miles across eight runs, and you handled every one of them — this is about stacking good weeks now, not chasing more.\"] },\n    { \"label\": \"The hard days\", \"body\": [\"Tuesday's 5×1K landed clean at 6:55 — nothing about it says you're overcooked.\"] },\n    { \"label\": \"The long run\", \"body\": [\"The story this week is \", { \"text\": \"the long run\", \"workout_id\": \"c3c3c3c3-0000-0000-0000-000000000003\" }, \" — eighteen miles and you were still running at the end, not just hanging on. That's the marathon read.\"] },\n    { \"label\": \"How you felt\", \"body\": [\"You sounded steady, and the only thing pushing back is the \", { \"text\": \"achilles\", \"niggle\": \"right achilles\" }, \" — third week it's come up, same note each time, \\\"eased after a mile.\\\" If you raced today I'd have you in the low 3:20s, already on the right side of your 3:28.\"] }\n  ],\n  \"question\": \"How does the achilles feel first thing in the morning?\",\n  \"cant_see\": { \"eyebrow\": \"NO SLEEP DATA\", \"body\": \"I don't have sleep this week, so the fatigue read is from your sessions and notes only.\" },\n  \"confidence\": { \"level\": \"HIGH\", \"sub\": \"8 recent runs and a landed long run.\" },\n  \"sources\": { \"workouts\": [\"c3c3c3c3-0000-0000-0000-000000000003\"], \"docs\": [], \"memos\": [\"a0000001-0000-0000-0000-0000000000a1\", \"a0000002-0000-0000-0000-0000000000a2\", \"a0000003-0000-0000-0000-0000000000a3\"] }\n}\n```",
+  "recorded_at": "2026-06-16T00:00:00.000Z",
+  "model": "gemini-3.1-pro-preview"
+}

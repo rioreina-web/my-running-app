@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends — new tab prototype</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:40px 24px 80px}
+.page-head{max-width:980px;margin:0 auto 32px}
+.page-head .kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);margin-bottom:10px}
+.page-head h1{font-family:var(--font-display);font-weight:700;font-size:32px;letter-spacing:-.01em;margin-bottom:8px}
+.page-head p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:760px}
+.page-head p b{color:var(--ink)}
+.layout{display:flex;gap:40px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1100px;margin:0 auto}
+.notes{width:300px;max-width:100%}
+.notes h3{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);margin:22px 0 8px}
+.notes h3:first-child{margin-top:0}
+.notes p{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin-bottom:8px}
+.notes p b{color:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px}
+.legend span{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;color:var(--ink-2);display:flex;align-items:center;gap:5px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block}
+
+/* phone */
+.phone{width:392px;height:838px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative;flex-shrink:0}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:30px;background:#14110E;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:14px 28px 6px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen{height:calc(838px - 46px - 64px);overflow-y:auto;padding:6px 20px 28px}
+.screen::-webkit-scrollbar{width:0}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .dot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .dot{background:var(--coral)}
+.tab span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--coral)}
+
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display-l{font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1.04;letter-spacing:-.01em}
+.body{font-family:var(--font-body);font-size:15px;line-height:1.56;color:var(--ink)}
+.body-sm{font-family:var(--font-body);font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.quote{font-family:var(--font-body);font-style:italic;font-size:14px;line-height:1.5;color:var(--ink)}
+.stat{font-family:var(--font-mono);font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink)}
+.rule{display:flex;align-items:center;gap:8px;margin:20px 0}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+.pill{display:inline-block;font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.pill.coral{color:var(--coral-deep);background:var(--coral-wash)}
+
+/* segmenter */
+.seg{display:flex;background:var(--paper-deep);border-radius:10px;padding:3px;gap:2px}
+.seg button{flex:1;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:transparent;border:0;padding:7px 0;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-press)}
+
+/* chart */
+.chartwrap{position:relative;margin-top:14px;touch-action:none}
+.tracklabel{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 2px 2px}
+.readout{position:absolute;top:0;left:0;pointer-events:none;background:var(--ink);color:#fff;border-radius:8px;padding:8px 10px;font-family:var(--font-mono);font-size:10px;line-height:1.5;letter-spacing:.02em;opacity:0;transition:opacity .12s;white-space:nowrap;z-index:20;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.readout b{color:#fff;font-weight:700}
+.readout .mood{color:#F0C9A0}
+.axis{font-family:var(--font-mono);font-size:8.5px;fill:var(--ink-3);letter-spacing:.04em}
+.clbl{font-family:var(--font-mono);font-size:8px;fill:var(--ink-2)}
+
+.insight{border-left:2px solid rgba(212,89,42,.5);padding-left:13px;margin:14px 0}
+.askbar{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--rule);border-radius:999px;padding:11px 14px;box-shadow:var(--shadow-card)}
+.askbar .ph{flex:1;font-family:var(--font-body);font-size:14px;color:var(--ink-3)}
+.askbar .mic{width:30px;height:30px;border-radius:999px;background:var(--coral);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.askbar .mic svg{width:15px;height:15px;stroke:#fff;fill:none;stroke-width:2}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="kicker">Post Run Drip · new tab · Trends</div>
+  <h1>Trends — the unified training chart</h1>
+  <p>The new chart-centric tab. One shared timeline stacks <b>mileage + intensity, key-session paces, mood, and niggles</b> so the correlations Maya can't see from inside a block become obvious: where niggles cluster, when mood follows load, whether the quality work is actually landing. <b>Drag or hover across the chart</b> to scrub the readout; tap the range to change the window. The Read stays its own tab.</p>
+</div>
+
+<div class="layout">
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>11:03</span><span>5G ▰▰▰</span></div>
+  <div class="screen">
+    <div style="padding-top:6px">
+      <div class="eyebrow coral">Trends · Mon · Jun 15</div>
+      <div class="display-l" style="margin:8px 0 4px">The shape of<br>your block.</div>
+      <div class="body-sm">Advanced · base phase · everything on one timeline</div>
+    </div>
+
+    <div style="margin:16px 0 2px" class="seg" id="seg">
+      <button data-r="4">4 wk</button>
+      <button data-r="12" class="on">12 wk</button>
+      <button data-r="26">6 mo</button>
+    </div>
+
+    <!-- UNIFIED CHART -->
+    <div class="chartwrap" id="chartwrap">
+      <svg id="chart" width="100%" viewBox="0 0 352 312" style="overflow:visible"></svg>
+      <div class="readout" id="readout"></div>
+    </div>
+
+    <div class="rule"><i></i></div>
+
+    <!-- AUTO-SURFACED PATTERNS -->
+    <div class="eyebrow">What the chart shows</div>
+    <div class="insight" style="margin-top:12px">
+      <div class="body">Your right-achilles mentions all land in the three highest-mileage weeks of the block. The body is talking back to the load — surfaced from your own words, never diagnosed.</div>
+    </div>
+    <div class="insight">
+      <div class="body">Quality pace keeps dropping — 6:58 to 6:41 /mi at the same effort — even as volume climbs. The engine is growing under the fatigue.</div>
+    </div>
+    <div class="insight">
+      <div class="body">Mood dips a day after every long run, then recovers. Predictable, not a warning.</div>
+      <div class="quote" style="margin-top:8px">"Heavy and short on patience today — nothing in the legs."<span class="body-sm"> — Thu, Jun 11</span></div>
+    </div>
+
+    <div style="height:8px"></div>
+    <div class="askbar">
+      <span class="ph">Ask about a week, a pattern, a pace…</span>
+      <span class="mic"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg></span>
+    </div>
+  </div>
+  <div class="tabbar">
+    <div class="tab"><span class="dot"></span><span>Log</span></div>
+    <div class="tab"><span class="dot"></span><span>Training</span></div>
+    <div class="tab active"><span class="dot"></span><span>Trends</span></div>
+    <div class="tab"><span class="dot"></span><span>The Read</span></div>
+    <div class="tab"><span class="dot"></span><span>Plan</span></div>
+  </div>
+</div>
+
+<div class="notes">
+  <h3>The one idea</h3>
+  <p>Five data streams, <b>one shared x-axis</b>. Most apps silo these into separate cards; the value is in the vertical alignment — read straight down any week and see mileage, the quality session, how she felt, and whether her body flagged anything, all at once.</p>
+
+  <h3>The four tracks</h3>
+  <p><b>Volume + intensity</b> — bars are weekly mileage; the darker cap is quality miles, so intensity rides inside volume (no separate chart).</p>
+  <p><b>Key sessions · pace</b> — each quality session as a coral dot; higher = faster. Coral earns its place here — these are the sessions that matter.</p>
+  <p><b>Mood</b> — one dot per week, colored by the dominant feeling pulled from voice logs.</p>
+  <p><b>Niggles</b> — a marker on any week a body part was mentioned. Surface, never diagnose.</p>
+
+  <div class="legend">
+    <span><i class="sw" style="background:#DDD7CF"></i>Easy miles</span>
+    <span><i class="sw" style="background:#6B6560"></i>Quality miles</span>
+    <span><i class="sw" style="background:#D4592A;border-radius:999px"></i>Key session</span>
+    <span><i class="sw" style="background:#4A9E6B;border-radius:999px"></i>Mood</span>
+    <span><i class="sw" style="background:#B83A4A;border-radius:999px"></i>Niggle</span>
+  </div>
+
+  <h3>Interactions</h3>
+  <p><b>Scrub</b> across the chart for a per-week readout. <b>Range segmenter</b> swaps the window (4 wk / 12 wk / 6 mo). In production: tap a week to open day-detail; tap a niggle to see the verbatim quote and timeline.</p>
+
+  <h3>One open thread</h3>
+  <p>You named it <b>Trends</b> and kept it additive — but there's already a Trends tab. I built this as the evolved Trends (old fitness/volume/ACWR tiles fold up into it). If you'd rather it be a true 5th tab with a different name, say the word.</p>
+</div>
+
+</div>
+
+<script>
+// ---- data model -------------------------------------------------------
+// 26 weeks of base-phase data, ending Mon Jun 15. We slice the tail for 4/12/26.
+const MOODS = {energized:'#2D8A4E',positive:'#4A9E6B',neutral:'#9B9590',tired:'#C4873A',struggling:'#C45A3A',injured:'#B83A4A'};
+function wk(date,miles,q,pace,mood,niggles){return {date,miles,q,pace,mood,niggles};}
+// pace = sec/mi of the week's key quality session (null if none). niggles = array of {part}
+const ALL = [
+  wk('Dec 16',32,5,438,'positive',[]), wk('Dec 23',30,4,null,'neutral',[]),
+  wk('Dec 30',34,6,440,'positive',[]), wk('Jan 6',36,6,436,'energized',[]),
+  wk('Jan 13',35,7,434,'tired',[]),    wk('Jan 20',38,8,432,'positive',[]),
+  wk('Jan 27',37,7,430,'positive',[]), wk('Feb 3',40,9,431,'tired',[{part:'L hip'}]),
+  wk('Feb 10',39,8,428,'positive',[]), wk('Feb 17',42,10,427,'energized',[]),
+  wk('Feb 24',41,9,426,'neutral',[]),  wk('Mar 3',44,11,425,'tired',[]),
+  wk('Mar 10',43,10,423,'positive',[]),wk('Mar 17',46,12,422,'positive',[]),
+  // ---- last 12 weeks (the 12-wk window) ----
+  wk('Mar 24',38,8,418,'positive',[]),       // 6:58
+  wk('Mar 31',41,9,416,'positive',[]),
+  wk('Apr 7',43,10,414,'tired',[]),
+  wk('Apr 14',40,9,415,'positive',[]),
+  wk('Apr 21',46,12,410,'energized',[]),      // 6:50
+  wk('Apr 28',48,13,408,'tired',[]),
+  wk('May 5',44,10,407,'struggling',[{part:'R achilles'}]),
+  wk('May 12',50,14,405,'positive',[]),       // 6:45
+  wk('May 19',52,15,404,'energized',[{part:'R achilles'}]),
+  wk('May 26',49,13,403,'positive',[]),
+  wk('Jun 2',53,16,402,'tired',[{part:'R achilles'},{part:'L hip'}]),
+  wk('Jun 9',53,16,401,'energized',[{part:'R achilles'}]), // 6:41
+];
+
+// ---- chart rendering --------------------------------------------------
+const VB_W=352;
+const PADL=6, PADR=8;
+const svg=document.getElementById('chart');
+const readout=document.getElementById('readout');
+const wrap=document.getElementById('chartwrap');
+const NS='http://www.w3.org/2000/svg';
+let CUR=[];
+
+function el(tag,attrs){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
+
+// band geometry (in viewBox units)
+const VOL={y0:14,y1:108}, PACE={y0:130,y1:188}, MOOD={cy:210}, NIG={cy:240};
+const AXISY=258, TOPY=8, BOTY=250;
+
+function render(range){
+  CUR = ALL.slice(ALL.length-range);
+  svg.innerHTML='';
+  const n=CUR.length;
+  const innerW=VB_W-PADL-PADR;
+  const slot=innerW/n;
+  const bw=Math.min(slot*0.56, 18);
+  const maxMiles=Math.max(...CUR.map(d=>d.miles));
+  const milesH=VOL.y1-VOL.y0;
+  // pace scale (only weeks with pace)
+  const paces=CUR.filter(d=>d.pace).map(d=>d.pace);
+  const pMin=Math.min(...paces), pMax=Math.max(...paces);
+  const px=i=>PADL+slot*(i+0.5);
+  const paceY=p=>{const t=(p-pMin)/Math.max(1,(pMax-pMin));return PACE.y0+t*(PACE.y1-PACE.y0);}; // faster(low)→top
+
+  // track labels
+  function tlabel(t,y){const e=el('text',{x:PADL,y:y,class:'clbl'});e.textContent=t;svg.appendChild(e);}
+  tlabel('VOLUME · MI',VOL.y0-3);
+  tlabel('KEY SESSIONS · PACE',PACE.y0-6);
+  tlabel('MOOD',MOOD.cy-12);
+  tlabel('NIGGLES',NIG.cy-12);
+
+  // baseline for volume
+  svg.appendChild(el('line',{x1:PADL,y1:VOL.y1,x2:VB_W-PADR,y2:VOL.y1,stroke:'#E8E4E0','stroke-width':1}));
+
+  // peak label
+  const pk=el('text',{x:VB_W-PADR,y:VOL.y0+2,class:'axis','text-anchor':'end'});pk.textContent=maxMiles+' mpw';svg.appendChild(pk);
+
+  CUR.forEach((d,i)=>{
+    const cx=px(i);
+    // volume bar: easy (base) + quality (cap)
+    const totH=(d.miles/maxMiles)*milesH;
+    const qH=(d.q/maxMiles)*milesH;
+    const eH=totH-qH;
+    svg.appendChild(el('rect',{x:cx-bw/2,y:VOL.y1-eH,width:bw,height:Math.max(0,eH),fill:'#DDD7CF'}));
+    svg.appendChild(el('rect',{x:cx-bw/2,y:VOL.y1-totH,width:bw,height:Math.max(0,qH),fill:'#6B6560'}));
+  });
+
+  // pace connecting line + dots
+  const pts=CUR.map((d,i)=>d.pace?`${px(i)},${paceY(d.pace).toFixed(1)}`:null).filter(Boolean).join(' ');
+  if(pts) svg.appendChild(el('polyline',{points:pts,fill:'none',stroke:'#D4592A','stroke-width':1.2,opacity:.35}));
+  CUR.forEach((d,i)=>{ if(d.pace){ svg.appendChild(el('circle',{cx:px(i),cy:paceY(d.pace),r:3.1,fill:'#D4592A'})); }});
+  // pace endpoints labels (first & last with pace)
+  const withP=CUR.map((d,i)=>({d,i})).filter(o=>o.d.pace);
+  if(withP.length){
+    const fmt=s=>`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+    const a=withP[0], b=withP[withP.length-1];
+    const la=el('text',{x:px(a.i),y:paceY(a.d.pace)-7,class:'axis','text-anchor':'middle'});la.textContent=fmt(a.d.pace);svg.appendChild(la);
+    const lb=el('text',{x:px(b.i),y:paceY(b.d.pace)-7,class:'axis','text-anchor':'middle'});lb.textContent=fmt(b.d.pace);svg.appendChild(lb);
+  }
+
+  // mood dots
+  CUR.forEach((d,i)=>{ svg.appendChild(el('circle',{cx:px(i),cy:MOOD.cy,r:3.4,fill:MOODS[d.mood]})); });
+
+  // niggle markers
+  svg.appendChild(el('line',{x1:PADL,y1:NIG.cy,x2:VB_W-PADR,y2:NIG.cy,stroke:'#F0ECE6','stroke-width':1}));
+  CUR.forEach((d,i)=>{
+    if(d.niggles.length){
+      d.niggles.forEach((g,k)=>{
+        const ring=el('circle',{cx:px(i),cy:NIG.cy,r:3.2+0,fill:'none',stroke:'#B83A4A','stroke-width':1.6});
+        svg.appendChild(ring);
+        if(d.niggles.length>1){const c=el('text',{x:px(i)+6,y:NIG.cy+3,class:'axis'});c.textContent='×'+d.niggles.length;svg.appendChild(c);}
+      });
+    }
+  });
+
+  // x-axis: month ticks (label when month changes, plus last)
+  let lastMonth='';
+  CUR.forEach((d,i)=>{
+    const m=d.date.split(' ')[0];
+    if(m!==lastMonth){ const t=el('text',{x:px(i),y:AXISY,class:'axis','text-anchor':'middle'}); t.textContent=m.toUpperCase(); svg.appendChild(t); lastMonth=m; }
+  });
+
+  // crosshair (hidden until hover)
+  const ch=el('line',{id:'crosshair',x1:0,y1:TOPY,x2:0,y2:BOTY,stroke:'#1A1815','stroke-width':1,opacity:0});
+  svg.appendChild(ch);
+  const chTop=el('circle',{id:'chTop',cx:0,cy:TOPY,r:2.6,fill:'#D4592A',opacity:0});
+  svg.appendChild(chTop);
+
+  // store geometry for hover
+  svg._geo={n,slot,px,range};
+}
+
+// ---- hover / scrub ----------------------------------------------------
+function fmtPace(s){return s?`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')} /mi`:'—';}
+function moodLabel(m){return m.charAt(0).toUpperCase()+m.slice(1);}
+function handleMove(clientX){
+  const rect=svg.getBoundingClientRect();
+  const scale=VB_W/rect.width;
+  let vbX=(clientX-rect.left)*scale;
+  const {n,slot,px}=svg._geo;
+  let i=Math.floor((vbX-PADL)/slot);
+  i=Math.max(0,Math.min(n-1,i));
+  const d=CUR[i];
+  const cx=px(i);
+  const ch=svg.querySelector('#crosshair'), chTop=svg.querySelector('#chTop');
+  ch.setAttribute('x1',cx);ch.setAttribute('x2',cx);ch.setAttribute('opacity',.18);
+  chTop.setAttribute('cx',cx);chTop.setAttribute('opacity',1);
+  // readout
+  const nig = d.niggles.length? d.niggles.map(g=>g.part).join(', ') : 'none';
+  readout.innerHTML=`<b>Week of ${d.date}</b><br>${d.miles} mi · <b>${d.q} quality</b><br>session ${fmtPace(d.pace)}<br><span class="mood">${moodLabel(d.mood)}</span> · niggles: ${nig}`;
+  readout.style.opacity=1;
+  // position readout near crosshair (convert vb→px)
+  const leftPx=(cx/VB_W)*rect.width;
+  const rw=readout.offsetWidth;
+  let L=leftPx - rw/2;
+  L=Math.max(0,Math.min(rect.width-rw,L));
+  readout.style.left=L+'px';
+  readout.style.top='2px';
+}
+function hideHover(){readout.style.opacity=0;const ch=svg.querySelector('#crosshair'),t=svg.querySelector('#chTop');if(ch)ch.setAttribute('opacity',0);if(t)t.setAttribute('opacity',0);}
+wrap.addEventListener('mousemove',e=>handleMove(e.clientX));
+wrap.addEventListener('mouseleave',hideHover);
+wrap.addEventListener('touchstart',e=>{handleMove(e.touches[0].clientX);},{passive:true});
+wrap.addEventListener('touchmove',e=>{handleMove(e.touches[0].clientX);},{passive:true});
+wrap.addEventListener('touchend',hideHover);
+
+// ---- segmenter --------------------------------------------------------
+document.getElementById('seg').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b)return;
+  [...document.querySelectorAll('#seg button')].forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  render(parseInt(b.dataset.r,10));
+});
+
+render(12);
+</script>
+</body>
+</html>

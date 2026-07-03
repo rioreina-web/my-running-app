@@ -204,6 +204,27 @@ func callEdgeFunction(name: String, body: [String: Any]) async throws -> Data {
     throw lastError ?? URLError(.unknown)
 }
 
+/// Upload voice-memo audio via the service-role `upload-voice-memo` edge
+/// function and return its public URL.
+///
+/// Direct uploads to the `training-memos` storage bucket have been rejected by
+/// the storage service since 2026-06-02 (storage RLS returns "Unauthorized" on
+/// a valid user JWT, even though the bucket policy is PUBLIC and the same JWT
+/// clears PostgREST). The edge function writes with the service role, bypassing
+/// that broken layer. Callers still insert the `training_logs` row themselves
+/// over PostgREST (which works).
+func uploadVoiceMemoAudio(_ audioData: Data, contentType: String = "audio/m4a") async throws -> String {
+    let data = try await callEdgeFunction(
+        name: "upload-voice-memo",
+        body: [
+            "audioBase64": audioData.base64EncodedString(),
+            "contentType": contentType,
+        ]
+    )
+    struct Resp: Decodable { let audio_url: String }
+    return try JSONDecoder().decode(Resp.self, from: data).audio_url
+}
+
 private func isRetryableError(_ error: URLError) -> Bool {
     switch error.code {
     case .timedOut,

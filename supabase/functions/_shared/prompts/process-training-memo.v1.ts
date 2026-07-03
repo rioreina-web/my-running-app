@@ -84,10 +84,19 @@ Your job: analyze the transcript to produce 6 distinct fields. The transcription
      "running_partners": ["name1", "name2"] or null (people they mentioned running with),
      "shoe": string or null (if they mentioned specific shoes),
      "sleep_quality": "good" | "poor" | "ok" or null (if they mentioned sleep),
+     "sleep_hours": number or null,
      "fueling": string or null (if they mentioned what they ate/drank before or during),
-     "effort_level": "easy" | "moderate" | "hard" | "max" or null
+     "effort_level": "easy" | "moderate" | "hard" | "max" or null,
+     "felt_vs_looked": "easier than it looks" | "about right" | "harder than it looks" or null (the subjective read of effort vs pace — the single most coach-relevant field: same pace can mean opposite things),
+     "work_stress": "low" | "moderate" | "high" or null,
+     "life_stress": "low" | "moderate" | "high" or null (family, relationships, money, general life load — anything off the run),
+     "travel": string or null (work trip, flight, time-zone change, away from home),
+     "fatigue": "fresh" | "normal" | "tired" | "wiped" or null (how the body felt going in),
+     "soreness": ["left knee", "calves"] or null (body parts that felt sore/tight — the athlete's own words, never a diagnosis),
+     "illness": string or null (cold, flu, "fighting something"),
+     "motivation": "high" | "normal" | "low" or null
    }
-   Always return at least a partial object with whatever fields you can extract — RPE, weather, terrain, running partners, etc. Only return null if the runner said absolutely nothing about their training.
+   Always return at least a partial object with whatever fields you can extract. The subjective/life fields (felt_vs_looked, work_stress, life_stress, travel, fatigue, soreness, sleep, motivation) matter as much as the numbers — they are how a coach calibrates what a pace actually means. Capture them whenever the athlete mentions them, in their own framing; never invent them. Only return null if the runner said absolutely nothing.
 
 ## Examples
 

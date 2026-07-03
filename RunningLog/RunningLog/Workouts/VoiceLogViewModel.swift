@@ -26,19 +26,13 @@ final class VoiceLogViewModel {
 
         do {
             let audioData = try Data(contentsOf: localURL)
-            let fileName = localURL.lastPathComponent
             let userId = AuthManager.shared.userId
-            let storagePath = "\(userId)/\(fileName)"
 
-            // --- Step 1: Upload audio via Supabase SDK ---
-            try await supabase.storage
-                .from("training-memos")
-                .upload(storagePath, data: audioData, options: FileOptions(contentType: "audio/m4a", upsert: true))
-
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: storagePath)
-            let audioPublicURL = publicURL.absoluteString
+            // --- Step 1: Upload audio via the service-role edge function ---
+            // Direct storage uploads have been rejected by the storage service
+            // since 2026-06-02 (RLS "Unauthorized" on a valid JWT); the edge
+            // function writes with the service role. See its docstring.
+            let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
 
             // --- Step 2: Insert record via Supabase SDK ---
             var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
@@ -116,9 +110,22 @@ final class VoiceLogViewModel {
             }
         } catch {
             Log.app.error("Failed to upload audio log: \(error)")
-            statusMessage = "Error: \(error.localizedDescription)"
+            // Data-loss guard: a voice memo is the core artifact of a
+            // voice-first product. On failure (offline, 5xx, RLS), DO NOT lose
+            // the recording. Hand it to the offline queue, which preserves the
+            // file on disk and retries on reconnect. The view clears
+            // recordingURL after this returns, so without enqueueing here the
+            // m4a would orphan with no retry path.
+            OfflineQueueManager.shared.enqueueVoiceLog(
+                audioURL: localURL,
+                notes: nil,
+                mood: nil,
+                workoutDate: selectedWorkout?.startDate
+            )
+            statusMessage = "Saved — will finish uploading in the background."
             isUploading = false
-            ErrorReporter.shared.report(error, context: "upload audio log")
+            ErrorReporter.shared.report(error, context: "upload audio log (queued for retry)")
+            OfflineQueueManager.shared.drainQueue()
         }
     }
 
@@ -207,9 +214,18 @@ final class VoiceLogViewModel {
             }
         } catch {
             Log.app.error("Failed to upload check-in: \(error)")
-            statusMessage = "Error: \(error.localizedDescription)"
+            // Preserve the recording on failure (see uploadAudioAndSaveLog).
+            OfflineQueueManager.shared.enqueueVoiceLog(
+                audioURL: localURL,
+                notes: nil,
+                mood: nil,
+                workoutDate: nil,
+                source: "check_in"
+            )
+            statusMessage = "Saved — will finish uploading in the background."
             isUploading = false
-            ErrorReporter.shared.report(error, context: "upload check-in")
+            ErrorReporter.shared.report(error, context: "upload check-in (queued for retry)")
+            OfflineQueueManager.shared.drainQueue()
         }
     }
 

@@ -78,7 +78,7 @@ import {
   type InjuryRow,
 } from "../_shared/weeklyAnalytics.ts";
 
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
@@ -377,6 +377,45 @@ function buildPlanAwarenessContext(
 }
 
 /**
+ * Wrap a plain-text coaching answer in the `CoachRead` JSON shape the iOS
+ * client decodes (see RunningLog/Models/CoachRead.swift). Used for the
+ * `format: "editorial"` ask surfaces. Derives an editorial headline from
+ * the first sentence when it's short enough, and puts the rest in the
+ * paragraph. All fields the Swift model marks non-optional are populated:
+ * id, read_date, headline, paragraph, sources, confidence, generated_at.
+ */
+function toEditorialRead(text: string): Record<string, unknown> {
+  const clean = (text || "").trim();
+
+  // Split the first sentence off as a headline when it's a reasonable
+  // length; otherwise use a neutral editorial headline and keep the full
+  // text as the body.
+  let headline = "Here's what I see";
+  let body = clean;
+  const firstBreak = clean.search(/(?<=[.!?])\s/);
+  if (firstBreak > 0 && firstBreak <= 90) {
+    headline = clean.slice(0, firstBreak).replace(/[.!?]+$/, "").trim();
+    body = clean.slice(firstBreak).trim();
+  }
+  if (!body) body = clean || "I don't have enough to say yet — log a few runs and ask again.";
+
+  const now = new Date();
+  return {
+    id: crypto.randomUUID(),
+    read_date: now.toISOString().split("T")[0],
+    headline,
+    // Single plain-text segment. The Segment decoder treats a raw string
+    // as `.text`; citation chips are a future enhancement for this path.
+    paragraph: [body],
+    sources: { workouts: [], docs: [], memos: [] },
+    // Honest, non-committal confidence — this is an ad-hoc answer, not a
+    // range-backed prediction. (Predictions carry their own confidence.)
+    confidence: { level: "MEDIUM", sub: "Based on your recent training" },
+    generated_at: now.toISOString(),
+  };
+}
+
+/**
  * Parse a pace string like "7:30" or "7:30/mi" into total seconds.
  */
 function parsePaceToSeconds(pace: string): number {
@@ -520,26 +559,29 @@ Deno.serve(async (req: Request) => {
   try {
     // Clone request so we can read body after auth check
     const body = await req.json();
-    const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId } = body;
+    const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId, format } = body;
 
-    // Verify authenticated user from JWT.
-    // verify_jwt = true in config.toml ensures only valid Supabase JWTs
-    // (user, anon, or service_role) reach this function. If the JWT contains
-    // a user claim, use it. Otherwise fall back to payloadUserId from the body
-    // (used by iOS app which sends anon key + userId in body).
-    let userId = await getAuthenticatedUser(req);
+    // Editorial format: the iOS "ask about my training" surfaces (The Read
+    // ask bar + the Trends ask bar handoff) POST `format: "editorial"` and
+    // expect a `CoachRead`-shaped reply ({ read: {...} }) instead of the
+    // plain-text chat shape. We reuse the SAME model call + prompts and only
+    // reshape the already-generated answer into the Read envelope — so this
+    // is NOT an LLM prompt change and doesn't require eval-cassette coverage
+    // (hard rule #3). To guarantee the read shape is always what comes back,
+    // editorial requests bypass the semantic-cache and clarifying-question
+    // early returns below (both emit the plain `{ response }` shape).
+    const isEditorial = format === "editorial";
 
-    if (!userId && payloadUserId) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(payloadUserId)) {
-        userId = payloadUserId;
-        console.log(`Using userId from payload: ${payloadUserId}`);
-      }
-    }
-
-    if (!userId) {
-      return unauthorizedResponse(corsHeaders);
-    }
+    // Verify authenticated caller. Two legitimate caller shapes:
+    //  - End user (iOS / web): presents their own session JWT. The body
+    //    user_id, if present, must match the JWT subject.
+    //  - Service-role (cron / chained edge fn): presents the service key
+    //    and names the subject user in the body.
+    // The previous anon-key + body-userId fallback was an impersonation
+    // hole: anyone with the public anon key could act as any user. Removed.
+    const auth = await requireAuthOrServiceRole(req, payloadUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const userId = auth.userId;
 
     if (!message) {
       return new Response(
@@ -682,7 +724,7 @@ Deno.serve(async (req: Request) => {
     // ========================================================================
     // LAYER 3: Check semantic cache
     // ========================================================================
-    if (queryEmbedding && isCacheEnabled()) {
+    if (queryEmbedding && isCacheEnabled() && !isEditorial) {
       const cached = await getCachedResponse(queryEmbedding);
 
       if (cached) {
@@ -1180,7 +1222,9 @@ Deno.serve(async (req: Request) => {
           existingMessages[existingMessages.length - 1]?.role === "assistant" &&
           (message.length < 100 || /^\d|^yes|^no|^about|^around|^i |^my /i.test(message));
 
-        if (missingData.length >= threshold && !isLikelyAnswer) {
+        // Editorial asks want a direct answer, not a clarifying back-and-
+        // forth (the composer has no multi-turn UI) — skip this branch.
+        if (missingData.length >= threshold && !isLikelyAnswer && !isEditorial) {
           const questions = generateClarifyingQuestions(missingData, 3);
           const clarifyingResponse = buildClarifyingPrompt(message, questions, userProfile);
 
@@ -1573,7 +1617,10 @@ Coach:`;
       user_id: userId,
       role: msg.role,
       content: msg.content,
-      proactive: msg.proactive || false,
+      // NOTE: `conversation_messages` has no `proactive` column in prod —
+      // including it made every message-save 400 (chat history silently
+      // dropped). Removed. If proactive-tracking is wanted, add the column via
+      // migration first, then reinstate here.
     }));
 
     // Insert messages and capture the assistant message ID for feedback
@@ -1618,6 +1665,16 @@ Coach:`;
     console.log(
       `Response generated in ${processingTime}ms using ${config.provider}/${config.model} (${complexity})`
     );
+
+    // Editorial ask surfaces (iOS The Read / Trends ask bar) get the
+    // CoachRead-shaped envelope instead of the plain-text chat shape. Same
+    // generated answer, just reshaped for the editorial reply view.
+    if (isEditorial) {
+      return new Response(
+        JSON.stringify({ read: toEditorialRead(coachResponse) }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const successBody = {
       response: coachResponse,

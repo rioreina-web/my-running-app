@@ -613,7 +613,7 @@ struct WorkoutAnalystView: View {
         let elev = stream.altitude ?? []
         let computedSplits = VitalManager.shared.calculateSplits(from: stream)
 
-        await assignSamples(hr: hr, pace: pace, cad: cad, elev: elev, splits: computedSplits)
+        assignSamples(hr: hr, pace: pace, cad: cad, elev: elev, splits: computedSplits)
     }
 
     /// HealthKit fallback path — operates on the ExternalStreamsPayload
@@ -632,7 +632,7 @@ struct WorkoutAnalystView: View {
         let cad = (payload.streams.cadence ?? []).filter { $0 > 0 }
         let elev = payload.streams.altitude ?? []
 
-        await assignSamples(hr: hr, pace: pace, cad: cad, elev: elev, splits: splits)
+        assignSamples(hr: hr, pace: pace, cad: cad, elev: elev, splits: splits)
     }
 
     /// Compute a real 4-week baseline for the THIS RUN · vs 4-WEEK AVG

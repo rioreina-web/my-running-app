@@ -37,16 +37,29 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v2.ts";
-import { getModelConfig } from "../_shared/router.ts";
+import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v5.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
 // ── Types matching the daily_coaching_reads JSON columns ─────────────
 
+// Legacy flat-paragraph segment (v1–v4 shape). v5 no longer asks the model
+// for this; the function DERIVES it from `sections` so old consumers
+// (iOS CoachReadView/ReadProse) keep rendering. See flattenSections().
 type ParagraphSegment =
   | string
   | { workout_id: string }
   | { doc_id: string };
+
+// v5 sectioned shape. A section body is an ordered array of plain prose
+// strings and inline tap-through refs that carry their own display text.
+type WorkoutRef = { text: string; workout_id: string };
+type NiggleRef = { text: string; niggle: string };
+type SectionSegment = string | WorkoutRef | NiggleRef;
+
+interface ReadSection {
+  label: string;
+  body: SectionSegment[];
+}
 
 interface CantSee {
   eyebrow: string;
@@ -72,6 +85,12 @@ interface Confidence {
 
 interface DailyReadPayload {
   headline: string;
+  // v5 goal-backdrop scope line + sectioned narrative + single soft question.
+  eyebrow: string | null;
+  sections: ReadSection[];
+  question: string | null;
+  // Derived from `sections` for backward-compatible persistence (see
+  // flattenSections); not emitted by the v5 model.
   paragraph: ParagraphSegment[];
   cant_see: CantSee | null;
   sources: Sources;
@@ -88,8 +107,12 @@ interface RequestBody {
 const MAX_TRAINING_LOGS = 60;          // ~2 months of daily training
 const TRAINING_LOG_LOOKBACK_DAYS = 60;
 const MAX_COACHING_DOCS = 8;
-const MAX_VOICE_MEMOS = 6;
-const VOICE_MEMO_LOOKBACK_DAYS = 14;
+const MAX_VOICE_MEMOS = 12;
+const VOICE_MEMO_LOOKBACK_DAYS = 60;   // widened from 14: real qualitative memory (sleep, travel, work, niggles) over a training block, not just two weeks
+// Local override of router complex.maxTokens (2000). Flash thinking tokens
+// share this budget; 2000 truncated the JSON mid-string (502s). See the
+// generationConfig comment below — keep these two in sync if either changes.
+const DAILY_READ_MAX_OUTPUT_TOKENS = 8000;
 
 // Workout types that count toward the HIGH-confidence threshold (the
 // prompt itself decides confidence; this list is only used to surface
@@ -198,7 +221,21 @@ Deno.serve(async (req) => {
     const context = await buildDailyReadContext(supabase, userId);
 
     // ── 4. Call Gemini ───────────────────────────────────────────────
-    const modelConfig = getModelConfig("complex"); // creative + extended context
+    // The Read runs its OWN frontier model, deliberately decoupled from the
+    // shared cost-optimization router (_shared/router.ts). The router's job is
+    // "cheapest model that works"; The Read is the flagship synthesis surface
+    // and runs on a WEEKLY cadence, so per-call cost is small and reasoning
+    // quality matters most. Gemini 3 Pro (gemini-3.1-pro-preview) for
+    // coach-grade synthesis over the full quant + qualitative context bundle.
+    // Same GEMINI_API_KEY / generativelanguage endpoint already used here.
+    const modelConfig = {
+      model: "gemini-3.1-pro-preview",
+      provider: "gemini" as const,
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      apiKeyEnv: "GEMINI_API_KEY",
+      maxTokens: DAILY_READ_MAX_OUTPUT_TOKENS,
+      costPer1kTokens: 0, // not used for billing here
+    };
     const apiKey = Deno.env.get(modelConfig.apiKeyEnv);
     if (!apiKey) {
       await markFailed(supabase, pending.id, `${modelConfig.apiKeyEnv} not configured`);
@@ -207,59 +244,64 @@ Deno.serve(async (req) => {
       });
     }
 
-    const systemPrompt = loadPrompt("daily-read.v2", {});
+    const systemPrompt = loadPrompt("daily-read.v5", {});
     const fullPrompt = `${systemPrompt}\n\n${context.contextBlock}\n\nGenerate today's Read for this athlete.`;
 
-    let raw: string;
-    let modelId = modelConfig.model;
-    try {
-      const genAI = new GoogleGenerativeAI(apiKey);
+    const modelId = modelConfig.model;
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    // Generate one Read candidate. Schema-constrained when requested; the
+    // schema-less path is the fallback for models that reject `anyOf`.
+    const generateRaw = async (useSchema: boolean): Promise<string> => {
       const model = genAI.getGenerativeModel({
         model: modelConfig.model,
         generationConfig: {
-          maxOutputTokens: modelConfig.maxTokens,
+          // Generous, NAMED output budget. Gemini-3 Pro spends "thinking"
+          // tokens out of this same budget; a tight cap consumed it and the
+          // JSON truncated mid-string ("Unterminated string in JSON") →
+          // repeated 502s. The v4 spine also produces a longer structured
+          // read. Keep this LOCAL and named so a future "tidy" can't silently
+          // reintroduce the truncation by lowering it.
+          maxOutputTokens: DAILY_READ_MAX_OUTPUT_TOKENS,
           temperature: 0.6,
           responseMimeType: "application/json",
-          // Schema is best-effort; if a particular Gemini version rejects
-          // `anyOf` we fall back to JSON-mime only — the validator does
-          // the real shape enforcement downstream.
           // deno-lint-ignore no-explicit-any
-          responseSchema: RESPONSE_SCHEMA as any,
+          ...(useSchema ? { responseSchema: RESPONSE_SCHEMA as any } : {}),
         },
       });
       const result = await model.generateContent(fullPrompt);
-      raw = result.response.text();
-    } catch (err) {
-      // Retry without the schema if the SDK/model rejects it. Failure
-      // mode is "schema-related validation error" — different vendors
-      // surface this differently, so we catch broadly and retry once.
-      console.warn("daily-read: schema-enabled call failed, retrying without schema:", err);
+      return result.response.text();
+    };
+
+    // ── 4b/5. Generate + parse with bounded retries ──────────────────
+    // The model occasionally emits an unescaped character (e.g. a stray
+    // quote in a pace) that breaks JSON.parse. A re-roll at temperature
+    // 0.6 almost always clears it, so we try up to MAX_ATTEMPTS times —
+    // schema first, then schema-less re-rolls — before giving up.
+    const MAX_ATTEMPTS = 3;
+    let parsed: DailyReadPayload | null = null;
+    let lastErr = "";
+    let lastRaw = "";
+    for (let attempt = 0; attempt < MAX_ATTEMPTS && parsed === null; attempt++) {
       try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({
-          model: modelConfig.model,
-          generationConfig: {
-            maxOutputTokens: modelConfig.maxTokens,
-            temperature: 0.6,
-            responseMimeType: "application/json",
-          },
-        });
-        const result = await model.generateContent(fullPrompt);
-        raw = result.response.text();
-      } catch (retryErr) {
-        const message = retryErr instanceof Error ? retryErr.message : String(retryErr);
-        await markFailed(supabase, pending.id, `Gemini call failed: ${message}`);
-        return jsonResponse(502, { error: "Model call failed" });
+        const raw = await generateRaw(attempt === 0);
+        lastRaw = raw;
+        parsed = parseModelResponse(raw);
+      } catch (err) {
+        lastErr = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `daily-read: generate/parse attempt ${attempt + 1}/${MAX_ATTEMPTS} failed: ${lastErr}`,
+        );
       }
     }
-
-    // ── 5. Parse the response ────────────────────────────────────────
-    let parsed: DailyReadPayload;
-    try {
-      parsed = parseModelResponse(raw);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await markFailed(supabase, pending.id, `Parse failed: ${message}`);
+    if (parsed === null) {
+      // DIAGNOSTIC: capture the raw model output so we can see exactly
+      // what broke the parse. Remove once the root cause is fixed.
+      await markFailed(
+        supabase,
+        pending.id,
+        `Parse failed after ${MAX_ATTEMPTS} attempts: ${lastErr} :: RAW=${lastRaw.slice(0, 1500)}`,
+      );
       return jsonResponse(502, { error: "Model returned unparseable JSON" });
     }
 
@@ -291,15 +333,16 @@ Deno.serve(async (req) => {
 
 /**
  * Resolve today's date in the athlete's local timezone. Reads
- * `user_profiles.timezone` (e.g. "America/Los_Angeles"); falls back to
- * UTC if missing.
+ * `athlete_settings.timezone` (e.g. "America/Los_Angeles"); falls back to
+ * UTC if missing. (Was `user_profiles.timezone` — repointed 2026-06-15 to
+ * the SETTINGS surface; user_profiles never shipped to prod.)
  */
 async function resolveAthleteLocalDate(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<string> {
   const { data } = await supabase
-    .from("user_profiles")
+    .from("athlete_settings")
     .select("timezone")
     .eq("user_id", userId)
     .maybeSingle();
@@ -326,6 +369,9 @@ interface DailyReadRow {
   read_date: string;
   status: "pending" | "completed" | "failed";
   headline: string | null;
+  eyebrow: string | null;
+  sections: ReadSection[] | null;
+  question: string | null;
   paragraph: ParagraphSegment[];
   cant_see: CantSee | null;
   sources: Sources;
@@ -412,6 +458,12 @@ async function markCompleted(
     .update({
       status: "completed",
       headline: payload.headline,
+      // v5 sectioned fields (the narrative screen reads these).
+      eyebrow: payload.eyebrow,
+      sections: payload.sections,
+      question: payload.question,
+      // Flattened legacy paragraph, derived from sections, so pre-v5
+      // consumers (iOS CoachReadView / ReadProse) keep rendering.
       paragraph: payload.paragraph,
       cant_see: payload.cant_see,
       sources: payload.sources,
@@ -441,6 +493,12 @@ interface DailyReadContext {
   validDocIds: Set<string>;
   /** Voice memo (training_log) ids the model may legally cite in sources.memos. */
   validMemoLogIds: Set<string>;
+  /**
+   * Acceptable niggle ref strings (lowercased), built from `body_mentions`.
+   * Holds both the bare body area ("achilles") and the sided form
+   * ("right achilles") so a `{text, niggle}` ref resolves to a real timeline.
+   */
+  validNiggles: Set<string>;
 }
 
 async function buildDailyReadContext(
@@ -518,6 +576,14 @@ async function buildDailyReadContext(
       .eq("status", "active")
       .limit(1)
       .maybeSingle(),
+
+    // 7. Body mentions (niggles) — the closed-vocab body areas this athlete
+    //    has actually mentioned. Used to validate v5 {text, niggle} refs so a
+    //    tappable niggle phrase always resolves to a real recurrence timeline.
+    supabase
+      .from("body_mentions")
+      .select("body_area, side")
+      .eq("user_id", userId),
   ]);
 
   // deno-lint-ignore no-explicit-any
@@ -545,6 +611,8 @@ async function buildDailyReadContext(
   const memos = extract<any[]>(5, []);
   // deno-lint-ignore no-explicit-any
   const coachRel = extract<any>(6, null);
+  // deno-lint-ignore no-explicit-any
+  const bodyMentions = extract<any[]>(7, []);
 
   // Compute coaching mode — drives the editorial register in the v2
   // prompt. Three states:
@@ -574,6 +642,18 @@ async function buildDailyReadContext(
   const validWorkoutIds = new Set<string>(logs.map((l) => l.id as string));
   const validDocIds = new Set<string>(docs.map((d) => d.id as string));
   const validMemoLogIds = new Set<string>(memos.map((m) => m.id as string));
+
+  // Acceptable niggle ref strings: the bare body area and the sided form,
+  // both lowercased. A {text, niggle} ref that matches either resolves to a
+  // real per-body-part timeline; anything else is stripped to plain text.
+  const validNiggles = new Set<string>();
+  for (const m of bodyMentions) {
+    const area = String(m.body_area ?? "").trim().toLowerCase();
+    if (!area) continue;
+    validNiggles.add(area);
+    const side = String(m.side ?? "").trim().toLowerCase();
+    if (side) validNiggles.add(`${side} ${area}`);
+  }
 
   // ── Render the context block the model reads ────────────────────
   const sections: string[] = [];
@@ -608,21 +688,26 @@ async function buildDailyReadContext(
   }
 
   if (logs.length > 0) {
+    // Citation key ONLY — distance/date/quality are the reliable facts here.
+    // The raw workout_type and workout_pace_per_mile columns are the source
+    // of the wrong "tempo @ 7:30/mi" prose, so they are deliberately NOT
+    // rendered: the model reads pace/type/quality from the ATHLETE STATE
+    // "Recent runs" section (parsed work pace + structure). See
+    // outputs/coach-read-effectiveness-plan-2026-06-12.md.
     const lines = logs.slice(0, 30).map((l) => {
       const dist = l.workout_distance_miles ? `${Number(l.workout_distance_miles).toFixed(1)}mi` : "—";
-      const type = (l.workout_type ?? "run") as string;
-      const pace = l.workout_pace_per_mile ? ` @ ${l.workout_pace_per_mile}/mi` : "";
       const dur = l.workout_duration_minutes ? ` (${l.workout_duration_minutes}m)` : "";
-      const mood = l.mood ? ` · mood:${l.mood}` : "";
-      const quality = QUALITY_WORKOUT_TYPES.has(type.toLowerCase()) ? " ★" : "";
-      return `- [${l.id}] ${l.workout_date ?? l.created_at?.slice(0, 10)} · ${type}${quality} · ${dist}${pace}${dur}${mood}`;
+      const type = (l.workout_type ?? "run") as string;
+      const quality = QUALITY_WORKOUT_TYPES.has(type.toLowerCase()) ? " ★quality" : "";
+      const date = (l.workout_date ?? l.created_at?.slice(0, 10)) as string;
+      return `- [${l.id}] ${date} · ${dist}${dur}${quality}`;
     });
     sections.push(
-      `## Recent runs (most recent first — cite by the bracketed id)\n${lines.join("\n")}`,
+      `## Citable workouts (cite by the bracketed id ONLY — read pace, type, and quality from the ATHLETE STATE "Recent runs" section, which carries the parsed work pace and structure; the raw label/pace are unreliable)\n${lines.join("\n")}`,
     );
   } else {
     sections.push(
-      `## Recent runs\nNo logged workouts in the last ${TRAINING_LOG_LOOKBACK_DAYS} days.`,
+      `## Citable workouts\nNo logged workouts in the last ${TRAINING_LOG_LOOKBACK_DAYS} days.`,
     );
   }
 
@@ -667,7 +752,7 @@ async function buildDailyReadContext(
   }
 
   const contextBlock = sections.join("\n\n");
-  return { contextBlock, validWorkoutIds, validDocIds, validMemoLogIds };
+  return { contextBlock, validWorkoutIds, validDocIds, validMemoLogIds, validNiggles };
 }
 
 // ── Model output parsing & validation ────────────────────────────────
@@ -685,8 +770,8 @@ function parseModelResponse(raw: string): DailyReadPayload {
   if (typeof obj.headline !== "string") {
     throw new Error("Missing or invalid headline");
   }
-  if (!Array.isArray(obj.paragraph)) {
-    throw new Error("Missing or invalid paragraph array");
+  if (!Array.isArray(obj.sections)) {
+    throw new Error("Missing or invalid sections array");
   }
   if (!obj.sources || typeof obj.sources !== "object") {
     throw new Error("Missing sources object");
@@ -695,9 +780,25 @@ function parseModelResponse(raw: string): DailyReadPayload {
     throw new Error("Missing confidence object");
   }
 
+  // Keep only well-formed sections ({ label:string, body:array }). The
+  // validator strips bad segments inside the body; here we just guard shape.
+  const sections: ReadSection[] = (obj.sections as ReadSection[])
+    .filter(
+      (s) => s && typeof s === "object" &&
+        typeof s.label === "string" && Array.isArray(s.body),
+    )
+    .map((s) => ({ label: s.label, body: s.body as SectionSegment[] }));
+  if (sections.length === 0) {
+    throw new Error("sections array has no well-formed section");
+  }
+
   return {
     headline: obj.headline,
-    paragraph: obj.paragraph as ParagraphSegment[],
+    eyebrow: typeof obj.eyebrow === "string" ? obj.eyebrow : null,
+    sections,
+    question: typeof obj.question === "string" ? obj.question : null,
+    // Derived from sections during validation; the model does not emit it.
+    paragraph: [],
     cant_see: (obj.cant_see ?? null) as CantSee | null,
     sources: {
       workouts: Array.isArray(obj.sources.workouts) ? obj.sources.workouts : [],
@@ -712,51 +813,66 @@ function parseModelResponse(raw: string): DailyReadPayload {
 }
 
 /**
- * Strip any citation that doesn't point at a known id, in BOTH the
- * paragraph segments and the sources block. Returns a sanitized
- * payload and emits one console.warn per dropped citation.
+ * Sanitize a v5 payload:
+ *   - Walk every section body. A workout ref with an unknown id, or a niggle
+ *     ref whose body-part doesn't resolve in `body_mentions`, DEGRADES to its
+ *     plain display `text` (never a dead link, never a dropped phrase).
+ *   - Rebuild `sources` against known ids/memos and echo referenced workouts.
+ *   - Derive the legacy flat `paragraph` from the cleaned sections so pre-v5
+ *     consumers keep rendering.
+ * Emits one console.warn per degraded ref.
  */
 function validateCitations(
   payload: DailyReadPayload,
   ctx: DailyReadContext,
 ): DailyReadPayload {
-  const cleanedParagraph: ParagraphSegment[] = [];
-  let droppedWorkouts = 0;
-  let droppedDocs = 0;
+  let degradedWorkouts = 0;
+  let degradedNiggles = 0;
+  const referencedWorkoutIds: string[] = [];
 
-  for (const seg of payload.paragraph) {
-    if (typeof seg === "string") {
-      cleanedParagraph.push(seg);
-      continue;
-    }
-    if (seg && typeof seg === "object" && "workout_id" in seg) {
-      if (ctx.validWorkoutIds.has(seg.workout_id)) {
-        cleanedParagraph.push(seg);
-      } else {
-        droppedWorkouts++;
+  const cleanedSections: ReadSection[] = payload.sections.map((section) => {
+    const body: SectionSegment[] = [];
+    for (const seg of section.body) {
+      if (typeof seg === "string") {
+        body.push(seg);
+        continue;
       }
-      continue;
-    }
-    if (seg && typeof seg === "object" && "doc_id" in seg) {
-      if (ctx.validDocIds.has(seg.doc_id)) {
-        cleanedParagraph.push(seg);
-      } else {
-        droppedDocs++;
+      if (seg && typeof seg === "object" && "workout_id" in seg) {
+        const ref = seg as WorkoutRef;
+        if (typeof ref.text === "string" && ctx.validWorkoutIds.has(ref.workout_id)) {
+          body.push({ text: ref.text, workout_id: ref.workout_id });
+          referencedWorkoutIds.push(ref.workout_id);
+        } else {
+          if (typeof ref.text === "string" && ref.text.length > 0) body.push(ref.text);
+          degradedWorkouts++;
+        }
+        continue;
       }
-      continue;
+      if (seg && typeof seg === "object" && "niggle" in seg) {
+        const ref = seg as NiggleRef;
+        const key = String(ref.niggle ?? "").trim().toLowerCase();
+        if (typeof ref.text === "string" && key && ctx.validNiggles.has(key)) {
+          body.push({ text: ref.text, niggle: ref.niggle });
+        } else {
+          if (typeof ref.text === "string" && ref.text.length > 0) body.push(ref.text);
+          degradedNiggles++;
+        }
+        continue;
+      }
+      // Unknown segment shape — drop quietly. The prompt forbids anything
+      // other than a string, a workout ref, or a niggle ref.
     }
-    // Unknown segment shape — drop quietly. The prompt forbids anything
-    // other than the three documented variants.
-  }
+    return { label: section.label, body };
+  });
 
-  if (droppedWorkouts > 0) {
+  if (degradedWorkouts > 0) {
     console.warn(
-      `daily-read: stripped ${droppedWorkouts} invalid workout citation(s) from paragraph`,
+      `daily-read: degraded ${degradedWorkouts} invalid workout ref(s) to plain text`,
     );
   }
-  if (droppedDocs > 0) {
+  if (degradedNiggles > 0) {
     console.warn(
-      `daily-read: stripped ${droppedDocs} invalid doc citation(s) from paragraph`,
+      `daily-read: degraded ${degradedNiggles} unresolved niggle ref(s) to plain text`,
     );
   }
 
@@ -773,24 +889,48 @@ function validateCitations(
       })),
   };
 
-  // Auto-populate sources.workouts/docs from paragraph if the model
-  // didn't echo them back — common with structured-output models.
-  for (const seg of cleanedParagraph) {
-    if (typeof seg === "object" && "workout_id" in seg && !sources.workouts.includes(seg.workout_id)) {
-      sources.workouts.push(seg.workout_id);
-    }
-    if (typeof seg === "object" && "doc_id" in seg && !sources.docs.includes(seg.doc_id)) {
-      sources.docs.push(seg.doc_id);
-    }
+  // Echo every workout actually referenced in the body — structured-output
+  // models often omit the sources mirror.
+  for (const id of referencedWorkoutIds) {
+    if (!sources.workouts.includes(id)) sources.workouts.push(id);
   }
 
   return {
     headline: payload.headline.trim(),
-    paragraph: cleanedParagraph,
+    eyebrow: payload.eyebrow,
+    sections: cleanedSections,
+    question: payload.question,
+    paragraph: flattenSections(cleanedSections),
     cant_see: payload.cant_see,
     sources,
     confidence: payload.confidence,
   };
+}
+
+/**
+ * Flatten cleaned v5 sections into the legacy `paragraph` segment array
+ * (string | {workout_id} | {doc_id}) so pre-v5 readers (iOS CoachReadView /
+ * ReadProse) still render a coherent Read. A workout ref becomes its prose
+ * `text` followed by a legacy {workout_id} chip; a niggle ref becomes its
+ * prose `text` (legacy has no niggle chip). Sections are concatenated in
+ * order; a blank string between sections preserves paragraph breaks.
+ */
+function flattenSections(sections: ReadSection[]): ParagraphSegment[] {
+  const out: ParagraphSegment[] = [];
+  sections.forEach((section, i) => {
+    if (i > 0) out.push(""); // paragraph break between sections
+    for (const seg of section.body) {
+      if (typeof seg === "string") {
+        out.push(seg);
+      } else if ("workout_id" in seg) {
+        if (seg.text) out.push(seg.text);
+        out.push({ workout_id: seg.workout_id });
+      } else if ("niggle" in seg) {
+        if (seg.text) out.push(seg.text);
+      }
+    }
+  });
+  return out;
 }
 
 function dedupe<T>(arr: T[]): T[] {

@@ -70,6 +70,10 @@ struct MainTabView: View {
     // Sidebar state
     @State private var showSidebar = false
 
+    // Staged coach question (e.g. from the Trends ask bar). Consumed by
+    // The Read tab's composer. See CoachAskContext.
+    @State private var coachAsk = CoachAskContext()
+
     var body: some View {
         ZStack {
             // Custom bar (DripTabBar) replaces the system TabView. The
@@ -112,22 +116,22 @@ struct MainTabView: View {
                 .opacity(selectedTab == 0 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 0)
 
-                // Tab 1 — Train
+                // Tab 1 — Training (analytical tab; replaces the old
+                // Train + Trends tabs — see training-tab-spec.md).
                 NavigationStack { TrainingTabView() }
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 2 — Trends
-                NavigationStack { TrendsTabView() }
+                // Tab 2 — THE READ = the v5 editorial narrative (coach snapshot;
+                // the-read-storytelling-mock.html). Renders sectioned reads from
+                // daily_coaching_reads, falling back to the flat paragraph for
+                // pre-v5 rows. The cards ModelOfYouView is retained in the repo
+                // as the "evidence" drill-down (link wire-up is a follow-up).
+                NavigationStack { CoachReadView() }
                     .opacity(selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 2)
 
-                // Tab 3 — Coach
-                NavigationStack { CoachReadView() }
-                    .opacity(selectedTab == 3 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 3)
-
-                // Tab 4 — Plan (or Coach in coach mode)
+                // Tab 3 — Plan (or Coach in coach mode)
                 NavigationStack {
                     if isCoachMode {
                         CoachTabView()
@@ -135,8 +139,17 @@ struct MainTabView: View {
                         TrainingPlanView()
                     }
                 }
-                .opacity(selectedTab == 4 ? 1 : 0)
-                .allowsHitTesting(selectedTab == 4)
+                .opacity(selectedTab == 3 ? 1 : 0)
+                .allowsHitTesting(selectedTab == 3)
+
+                // Tab 4 — Trends (chart-centric "show me what I can't see"
+                // surface; the unified mileage/intensity/pace/mood/niggle
+                // timeline). Non-contiguous tag 4 keeps tags 0–3 stable —
+                // see DripTab. Displays in slot 3 of the bar (between
+                // Training and The Read).
+                NavigationStack { TrendsTabView() }
+                    .opacity(selectedTab == 4 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 4)
             }
             .safeAreaInset(edge: .bottom) {
                 DripTabBar(selected: $selectedTab)
@@ -146,20 +159,27 @@ struct MainTabView: View {
             .environment(athleteProfileService)
             .environment(\.selectedTab, $selectedTab)
             .environment(\.showSidebar, $showSidebar)
+            .environment(\.coachAsk, coachAsk)
             .task {
-                await athleteProfileService.fetchProfile()
-                try? await AthletePaceProfileService.shared.refresh()
-                try? await PaceZonesService.shared.refresh()
-                try? await DailyReadService.shared.refresh()
-
-                // Auto-sync HealthKit workouts to training_logs on launch.
-                // Vital replaced by HealthKit for V1 — Terra integration planned for V1.1.
-                _ = await HealthKitManager.shared.requestAuthorization()
-                let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
-                if !hkWorkouts.isEmpty {
-                    let syncService = WorkoutSyncService()
-                    await syncService.syncUnloggedWorkouts(workouts: hkWorkouts)
-                }
+                // These launch refreshes are INDEPENDENT — run them concurrently
+                // instead of serially. Previously each `await` blocked the next, so
+                // launch latency was the SUM of all of them (profile rebuild alone
+                // is ~1.6–2.6s); now it's ~the slowest single one. HealthKit auth +
+                // sync runs in its own branch so it never gates the UI refreshes.
+                async let profile: Void = athleteProfileService.fetchProfile()
+                async let paceProfile: Void = { try? await AthletePaceProfileService.shared.refresh() }()
+                async let paceZones: Void = { try? await PaceZonesService.shared.refresh() }()
+                async let dailyRead: Void = { try? await DailyReadService.shared.refresh() }()
+                async let healthKitSync: Void = {
+                    // Auto-sync HealthKit workouts to training_logs on launch.
+                    // Vital replaced by HealthKit for V1 — Terra integration planned for V1.1.
+                    _ = await HealthKitManager.shared.requestAuthorization()
+                    let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
+                    if !hkWorkouts.isEmpty {
+                        await WorkoutSyncService().syncUnloggedWorkouts(workouts: hkWorkouts)
+                    }
+                }()
+                _ = await (profile, paceProfile, paceZones, dailyRead, healthKitSync)
             }
             .onChange(of: scenePhase) { _, newPhase in
                 // Re-fire the daily Coach Read fetch every time the

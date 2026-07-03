@@ -166,22 +166,64 @@ final class WorkoutSyncService {
     }
 
     /// Remove auto_sync entry when a voice log is created for the same workout.
+    ///
+    /// Previously this deleted EVERY auto_sync row within ±5 minutes of the
+    /// voice log's workout time, ignored the `distance` argument entirely, and
+    /// had no user scope (relying solely on RLS). On a doubles day, or when a
+    /// watch+phone pair landed two near-simultaneous syncs, it silently
+    /// deleted the wrong workout — corrupting training history, ACWR, and
+    /// volume. Now we fetch candidates scoped to the current user, then delete
+    /// only the row that also matches on distance (±0.2 mi).
     @MainActor
     func removeAutoSyncEntry(forWorkoutDate date: Date, distance: Double) async {
+        guard let userId = AuthManager.shared.currentUserId else {
+            Log.coach.error("removeAutoSyncEntry: no authenticated user — skipping")
+            return
+        }
+
+        struct Candidate: Codable {
+            let id: UUID
+            let workoutDistanceMiles: Double?
+            enum CodingKeys: String, CodingKey {
+                case id
+                case workoutDistanceMiles = "workout_distance_miles"
+            }
+        }
+
         do {
             let windowStart = date.addingTimeInterval(-300)
             let windowEnd = date.addingTimeInterval(300)
             let fmt = ISO8601DateFormatter()
 
-            try await supabase
+            let candidates: [Candidate] = try await supabase
                 .from("training_logs")
-                .delete()
+                .select("id, workout_distance_miles")
+                .eq("user_id", value: userId)
                 .eq("source", value: "auto_sync")
                 .gte("workout_date", value: fmt.string(from: windowStart))
                 .lte("workout_date", value: fmt.string(from: windowEnd))
                 .execute()
+                .value
 
-            Log.coach.debug("Removed auto_sync entry for workout at \(date)")
+            // Match on distance so a second, genuinely different run in the
+            // same 10-minute window is never collateral damage.
+            let toDelete = candidates.filter { abs(($0.workoutDistanceMiles ?? -999) - distance) < 0.2 }
+
+            guard !toDelete.isEmpty else {
+                Log.coach.debug("removeAutoSyncEntry: no distance-matching auto_sync row for \(date)")
+                return
+            }
+
+            for row in toDelete {
+                try await supabase
+                    .from("training_logs")
+                    .delete()
+                    .eq("user_id", value: userId)
+                    .eq("id", value: row.id.uuidString)
+                    .execute()
+            }
+
+            Log.coach.debug("Removed \(toDelete.count) auto_sync entry(ies) for workout at \(date)")
         } catch {
             Log.coach.error("Failed to remove auto_sync entry: \(error.localizedDescription)")
         }
