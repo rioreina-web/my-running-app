@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Signal — Trends</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+    --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+    --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+    --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--paper);color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;padding:28px 20px 60px;}
+  .wrap{max-width:940px;margin:0 auto;}
+  .plate-strip{display:flex;justify-content:space-between;align-items:center;font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.14em;color:var(--ink-2);text-transform:uppercase;padding-bottom:10px;border-bottom:1px solid var(--rule);}
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;color:var(--ink-2);text-transform:uppercase;}
+  .eyebrow.coral{color:var(--coral);}
+  h1{font-family:var(--font-display);font-weight:700;letter-spacing:-.01em;line-height:1.02;font-size:40px;margin:16px 0 4px;}
+  .dek{font-family:var(--font-body);font-style:italic;color:var(--ink-2);font-size:15px;margin:0 0 22px;max-width:670px;line-height:1.5;}
+
+  .tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:22px;}
+  .tile{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:12px 13px;}
+  .tile .lab{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-2);}
+  .tile .val{font-family:var(--font-mono);font-weight:600;font-size:22px;color:var(--ink);margin-top:7px;font-variant-numeric:tabular-nums;line-height:1;}
+  .tile .val .u{font-size:12px;color:var(--ink-3);margin-left:3px;}
+  .tile .sub{font-family:var(--font-body);font-size:11px;color:var(--ink-2);margin-top:5px;}
+  .tile .sub.coral{color:var(--coral);}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:999px;vertical-align:baseline;margin-right:5px;}
+
+  .chart-card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:20px 20px 14px;position:relative;margin-bottom:16px;}
+  .chart-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;}
+  .section-label{font-family:var(--font-mono);font-size:15px;letter-spacing:.16em;color:var(--ink-2);text-transform:uppercase;font-weight:500;}
+  .toggles{display:flex;flex-wrap:wrap;gap:6px;}
+  .toggle{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--rule);border-radius:999px;padding:5px 10px;color:var(--ink-2);background:var(--paper-elevated);transition:all .15s ease;}
+  .toggle .sw{width:9px;height:9px;border-radius:2px;background:var(--ink-3);}
+  .toggle.off{opacity:.42;}
+  .toggle:hover{border-color:var(--ink-3);}
+  svg.chart{width:100%;display:block;}
+
+  .zonekey{display:flex;flex-wrap:wrap;gap:4px 12px;margin:10px 2px 4px;}
+  .zk{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);}
+  .zk i{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  .legend-note{font-family:var(--font-body);font-style:italic;font-size:12px;color:var(--ink-3);margin:2px 2px 8px;}
+
+  .tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .1s ease;background:var(--ink);color:#fff;border-radius:10px;padding:12px 13px;min-width:190px;max-width:250px;box-shadow:0 8px 24px rgba(0,0,0,.22);z-index:10;transform:translate(-50%,-100%);}
+  .tip .t-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#C9BDB4;}
+  .tip .t-zone{font-family:var(--font-mono);font-size:13px;letter-spacing:.04em;margin-top:3px;font-weight:600;text-transform:uppercase;}
+  .tip .t-mood{font-family:var(--font-mono);font-size:12px;letter-spacing:.04em;margin-top:3px;font-weight:600;text-transform:uppercase;}
+  .tip .t-row{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:11px;margin-top:6px;color:#EDE6DF;}
+  .tip .t-row b{color:#fff;font-weight:600;}
+  .tip .t-seg{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:10.5px;margin-top:4px;color:#EDE6DF;}
+  .tip .t-seg i{width:8px;height:8px;border-radius:2px;}
+  .tip .t-seg .m{margin-left:auto;color:#fff;font-weight:600;}
+  .tip .t-quote{font-family:var(--font-body);font-style:italic;font-size:12px;line-height:1.4;margin-top:9px;padding-top:9px;border-top:1px solid rgba(255,255,255,.18);color:#F3ECE4;}
+  .tip .t-nig{margin-top:7px;font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;color:var(--coral-light);text-transform:uppercase;}
+
+  .glossary{background:var(--paper-elevated);border:1px solid var(--rule);border-radius:12px;padding:16px 18px;margin-top:16px;}
+  .glossary p{font-family:var(--font-body);font-size:13.5px;line-height:1.6;margin:0 0 9px;color:var(--ink-2);}
+  .glossary p:last-child{margin-bottom:0;}
+  .glossary b{color:var(--ink);font-weight:700;}
+  .read{background:var(--paper-elevated);border:1px solid var(--rule);border-left:2px solid var(--coral);border-radius:8px;padding:16px 18px;margin-top:16px;}
+  .read p{font-family:var(--font-body);font-size:14px;line-height:1.6;margin:0 0 10px;color:var(--ink);}
+  .read p:last-child{margin-bottom:0;}
+  .read .q{font-style:italic;color:var(--ink-2);}
+
+  @media (max-width:640px){.tiles{grid-template-columns:repeat(2,1fr);}h1{font-size:32px;}body{padding:20px 12px 48px;}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="plate-strip"><span>THE&nbsp;SIGNAL</span><span>PACE&nbsp;·&nbsp;VOLUME&nbsp;·&nbsp;MOOD</span></div>
+
+  <h1>Where your miles live.</h1>
+  <p class="dek">The whole spectrum, from easy shuffling to flat-out. Every bar is the miles you ran at that pace — a tall pale-blue wall on the left is a healthy aerobic base; the colored tail on the right is your sharpening. Below, the same training read over time.</p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <!-- ============ CHART 1 · PACE DISTRIBUTION ============ -->
+  <div class="chart-card">
+    <div class="chart-head">
+      <div class="section-label">30&nbsp;DAYS</div>
+    </div>
+    <svg id="dist" class="chart" viewBox="0 0 920 400" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Miles run by pace over the last 30 days"></svg>
+    <div class="legend-note">Every mile you ran in the last 30 days, sorted by pace. Hover a bar for the exact pace and mileage.</div>
+    <div class="tip" id="tipD"></div>
+  </div>
+
+  <!-- ============ CHART 2 · OVER TIME (volume × pace + workload + mood) ============ -->
+  <div class="chart-card">
+    <div class="chart-head">
+      <div class="section-label">12&nbsp;WEEKS&nbsp;·&nbsp;OVER&nbsp;TIME</div>
+      <div class="toggles" id="toggles"></div>
+    </div>
+    <svg id="chart" class="chart" viewBox="0 0 920 560" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Weekly volume stacked by pace, with workload, mood and niggles"></svg>
+    <div class="zonekey" id="zonekey"></div>
+    <div class="legend-note">Each bar = a week's volume, split by pace zone. Hover for the breakdown, mood, and your voice note.</div>
+    <div class="tip" id="tipC"></div>
+  </div>
+
+  <div class="glossary">
+    <div class="eyebrow" style="margin-bottom:8px;">HOW&nbsp;TO&nbsp;READ&nbsp;IT</div>
+    <p><b>Top — 30-day pace distribution.</b> The x-axis is a continuous pace spectrum, easy on the left, fastest on the right. Each bar's height is how many miles you ran at that pace. Distance runners want a big pale-blue pile on the left (lots of easy aerobic miles) and a small, deliberate tail of faster work — the "polarized" shape. If the middle fills in, you're spending too much time in the grey zone: too hard to recover, too easy to sharpen.</p>
+    <p><b>Bottom — the same training over 12 weeks.</b> Each bar is a week's mileage, stacked by pace zone (Easy at the base up to the fast work on top), with <b>workload</b> (ACWR — 7-day load ÷ 28-day average; 1.0 is your normal, the green band is sustainable), <b>mood</b>, and <b>niggle</b> flags underneath.</p>
+  </div>
+
+  <div class="read">
+    <div class="eyebrow coral" style="margin-bottom:8px;">THE&nbsp;READ</div>
+    <p>Your distribution is well-shaped — a strong pale-blue base with clean bumps at <b>MP</b>, <b>LT</b> and <b>5K</b>, and very little grey-zone junk in between. That's the profile of someone training with intent, not just running hard for its own sake.</p>
+    <p>Over time, the story holds: week 4's volume jump and MP block pushed workload past the line and the calf spoke up, but the reset week pulled it back and the sharpening returned under control.</p>
+    <p class="q">"Rough week — work stress plus tired legs, calf naggy." → two weeks later → "Flying. Splits are dropping on their own."</p>
+  </div>
+</div>
+
+<script>
+/* ============ Zone taxonomy (10-zone pace model) ============ */
+const ZONES=[
+  {z:"Easy",color:"#93B9D6"},{z:"Moderate",color:"#74A8CC"},{z:"Steady",color:"#578FC0"},
+  {z:"MP",color:"#3F7CB5"},{z:"HMP",color:"#2F66A8"},{z:"LT",color:"#27549B"},
+  {z:"10K",color:"#20448B"},{z:"5K",color:"#1A3679"},{z:"3K",color:"#142964"},{z:"Mile",color:"#0E1D4E"}
+];
+const ZI=Object.fromEntries(ZONES.map((z,i)=>[z.z,i]));
+const paceStr=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+
+/* ============ Spectrum gradient — one blue hue, pale sky → navy ============ */
+const GRAD=[[0,[147,185,214]],[0.24,[87,143,192]],[0.40,[63,124,181]],[0.54,[47,102,168]],[0.68,[32,68,139]],[0.84,[20,41,100]],[1,[14,29,78]]];
+function gradAt(f){
+  f=Math.max(0,Math.min(1,f));
+  for(let i=1;i<GRAD.length;i++){ if(f<=GRAD[i][0]){
+    const a=GRAD[i-1],b=GRAD[i],t=(f-a[0])/(b[0]-a[0]);
+    const c=a[1].map((v,j)=>Math.round(v+(b[1][j]-v)*t)); return `rgb(${c[0]},${c[1]},${c[2]})`;
+  }}
+  return `rgb(${GRAD[GRAD.length-1][1].join(",")})`;
+}
+
+/* ============ CHART 1 · 30-day pace distribution ============ */
+/* Pace axis: slow (left) → fast (right). Buckets of ~11 s/mi. mi = miles run in that bucket. */
+const P_SLOW=525, P_FAST=330, NB=18, STEP=(P_SLOW-P_FAST)/NB;
+const BUCKET_MI=[8,44,52,40,20,9,7,12,5,13,4,6,9,3,5,3,2,2]; // easiest → fastest
+const ANCHORS=[{z:"EASY",p:510,c:"#5E93BE"},{z:"MP",p:445,c:"#2F66A8"},{z:"LT",p:420,c:"#27549B"},{z:"5K",p:392,c:"#1A3679"}];
+const AXIS=[{t:"EASY",p:520},{t:"MP",p:445},{t:"LT",p:420},{t:"MILE",p:360},{t:"FASTEST",p:335}];
+
+const dist=document.getElementById("dist"), tipD=document.getElementById("tipD");
+const NS="http://www.w3.org/2000/svg";
+function el(nm,a,t){const e=document.createElementNS(NS,nm);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;return e;}
+
+(function drawDist(){
+  const W=920,H=400,M={l:58,r:40,t:56,b:78};
+  const pw=W-M.l-M.r, ph=H-M.t-M.b;
+  const xPace=p=>M.l+((P_SLOW-p)/(P_SLOW-P_FAST))*pw;
+  const miMax=60, yMi=v=>M.t+ph-(v/miMax)*ph;
+  const bw=(pw/NB)*0.78;
+
+  // gridlines + y labels
+  [0,30,60].forEach(v=>{
+    dist.appendChild(el("line",{x1:M.l,y1:yMi(v),x2:M.l+pw,y2:yMi(v),stroke:v===0?"#E0DAD3":"#EFEBE6",'stroke-width':1}));
+    dist.appendChild(el("text",{x:M.l-10,y:yMi(v)+4,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':11,fill:"#9B9590"}, v===60?"60 MI":String(v)));
+  });
+  // faint vertical guides at MP / LT / 5K
+  [445,420,392].forEach(p=>dist.appendChild(el("line",{x1:xPace(p),y1:M.t-6,x2:xPace(p),y2:M.t+ph,stroke:"#ECE7E1",'stroke-width':1})));
+
+  // bars
+  BUCKET_MI.forEach((mi,i)=>{
+    const cP=P_SLOW-(i+0.5)*STEP;
+    const f=(P_SLOW-cP)/(P_SLOW-P_FAST);
+    const x=xPace(cP)-bw/2, y=yMi(mi);
+    const bar=el("rect",{x,y,width:bw,height:M.t+ph-y,rx:2,fill:gradAt(f),style:"cursor:pointer"});
+    const pLo=cP+STEP/2, pHi=cP-STEP/2;
+    bar.addEventListener("mousemove",e=>{
+      tipD.innerHTML=`<div class="t-eyebrow">${paceStr(pHi)}–${paceStr(pLo)} /MI</div><div class="t-row"><span>Miles here</span><b>${mi} mi</b></div><div class="t-row"><span>Share of 30d</span><b>${Math.round(mi/BUCKET_MI.reduce((a,b)=>a+b,0)*100)}%</b></div>`;
+      const cr=e.target.closest(".chart-card").getBoundingClientRect();
+      tipD.style.left=(e.clientX-cr.left)+"px"; tipD.style.top=(e.clientY-cr.top-14)+"px"; tipD.style.opacity=1;
+    });
+    bar.addEventListener("mouseleave",()=>tipD.style.opacity=0);
+    dist.appendChild(bar);
+  });
+
+  // top anchor labels (zone + pace)
+  ANCHORS.forEach(a=>{
+    const x=xPace(a.p);
+    dist.appendChild(el("text",{x,y:M.t-30,'text-anchor':"middle",'font-family':"var(--font-display)",'font-size':17,'font-weight':700,fill:a.c},a.z));
+    dist.appendChild(el("text",{x,y:M.t-13,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':12,fill:"#6B6560"},paceStr(a.p)));
+  });
+
+  // gradient legend bar
+  const defs=el("defs",{}); const lg=el("linearGradient",{id:"specGrad",x1:"0",y1:"0",x2:"1",y2:"0"});
+  GRAD.forEach(s=>lg.appendChild(el("stop",{offset:(s[0]*100)+"%",'stop-color':`rgb(${s[1].join(",")})`})));
+  defs.appendChild(lg); dist.appendChild(defs);
+  const gy=M.t+ph+18;
+  dist.appendChild(el("rect",{x:M.l,y:gy,width:pw,height:16,rx:8,fill:"url(#specGrad)"}));
+  // axis labels
+  AXIS.forEach(a=>dist.appendChild(el("text",{x:xPace(a.p),y:gy+40,'text-anchor':"middle",'font-family':"var(--font-body)",'font-size':15,fill:"#9B9590",'letter-spacing':".06em"},a.t)));
+})();
+
+/* ============ CHART 2 · Weekly plan → composition + workload + mood ============ */
+const WEEKS=[
+  {w:"May 4",acwr:0.98,mood:"energized",nig:0,part:null,quote:"Legs felt springy — good week back into it.",quality:["Steady"],targetVol:41},
+  {w:"May 11",acwr:1.02,mood:"positive",nig:0,part:null,quote:"Solid week. Sleeping well, nothing hurts.",quality:["MP"],targetVol:43},
+  {w:"May 18",acwr:1.05,mood:"positive",nig:0,part:null,quote:"Long run clicked — negative split, felt easy.",quality:["Steady"],targetVol:44},
+  {w:"May 25",acwr:1.34,mood:"tired",nig:0,part:null,quote:"Bumped the miles up. Pretty wiped by Friday.",quality:["MP"],targetVol:50},
+  {w:"Jun 1",acwr:1.31,mood:"struggling",nig:2,part:"calf",quote:"Rough week — work stress plus tired legs, calf naggy.",quality:[],targetVol:49},
+  {w:"Jun 8",acwr:0.86,mood:"neutral",nig:1,part:"calf",quote:"Took it easy on purpose. Needed the reset.",quality:["Moderate"],targetVol:38},
+  {w:"Jun 15",acwr:1.04,mood:"positive",nig:0,part:null,quote:"Coming back around — tempo felt smooth.",quality:["LT"],targetVol:46},
+  {w:"Jun 22",acwr:1.16,mood:"positive",nig:0,part:null,quote:"Best long run in a while. Confidence back.",quality:["MP","HMP"],targetVol:52},
+  {w:"Jun 29",acwr:1.18,mood:"energized",nig:0,part:null,quote:"Flying. Splits are dropping on their own.",quality:["5K","3K"],targetVol:56},
+  {w:"Jul 6",acwr:1.09,mood:"tired",nig:1,part:"foot",quote:"Track was hard — top of the foot cranky after.",quality:["10K"],targetVol:53},
+  {w:"Jul 13",acwr:0.88,mood:"positive",nig:0,part:null,quote:"Taper legs feel weird but fresh. Good weird.",quality:["HMP"],targetVol:44},
+  {w:"Jul 20",acwr:0.79,mood:"energized",nig:0,part:null,quote:"Ready. Calm. Race Saturday.",quality:["MP"],targetVol:32}
+];
+const MOOD_COLOR={energized:"#2D8A4E",positive:"#4A9E6B",neutral:"#9B9590",tired:"#C4873A",struggling:"#C45A3A",injured:"#B83A4A"};
+const r1=x=>Math.round(x*10)/10;
+const WZ=[],WTOTAL=[];
+WEEKS.forEach(wk=>{
+  const z={},add=(zone,mi)=>{if(mi>0)z[zone]=r1((z[zone]||0)+mi);};
+  let rem=wk.targetVol;
+  const longD=Math.max(10,Math.round(wk.targetVol*0.30));
+  add(wk.targetVol>=50?"Moderate":"Easy",longD); rem-=longD;
+  wk.quality.forEach(q=>{const total=(q==="MP"||q==="HMP")?8:6,shell=(q==="MP"||q==="HMP")?3:2.5;add("Easy",shell);add(q,total-shell);rem-=total;});
+  add("Easy",Math.max(0,r1(rem)));
+  WZ.push(z); WTOTAL.push(r1(Object.values(z).reduce((a,b)=>a+b,0)));
+});
+
+/* ---- KPI tiles ---- */
+const L=11,P=10, totalNig=WEEKS.reduce((a,b)=>a+b.nig,0);
+const qualMi=i=>Object.entries(WZ[i]).filter(([k])=>ZI[k]>=ZI.MP).reduce((a,[,v])=>a+v,0);
+const easyMi30=BUCKET_MI.slice(0,5).reduce((a,b)=>a+b,0), tot30=BUCKET_MI.reduce((a,b)=>a+b,0);
+const tiles=[
+  {lab:"30-DAY MILES",val:tot30,u:"mi",sub:Math.round(easyMi30/tot30*100)+"% easy"},
+  {lab:"WORKLOAD",val:WEEKS[L].acwr.toFixed(2),u:"",sub:(WEEKS[L].acwr<=1.3&&WEEKS[L].acwr>=0.8)?"in safe zone":"outside zone",coral:!(WEEKS[L].acwr<=1.3&&WEEKS[L].acwr>=0.8)},
+  {lab:"QUALITY MI",val:r1(qualMi(L)),u:"mi",sub:"at MP or faster (wk)"},
+  {lab:"MOOD",mood:WEEKS[L].mood},
+  {lab:"NIGGLES",val:totalNig,u:"12wk",sub:"calf ×3 · foot ×1",coral:totalNig>0}
+];
+document.getElementById("tiles").innerHTML=tiles.map(t=>{
+  let v=t.mood?`<div class="val" style="font-size:15px;color:${MOOD_COLOR[t.mood]}"><span class="dot" style="background:${MOOD_COLOR[t.mood]}"></span>${t.mood}</div>`:`<div class="val">${t.val}${t.u?`<span class="u">${t.u}</span>`:""}</div>`;
+  return `<div class="tile"><div class="lab">${t.lab}</div>${v}<div class="sub ${t.coral?"coral":""}">${t.sub||"&nbsp;"}</div></div>`;
+}).join("");
+
+/* ---- zone legend ---- */
+document.getElementById("zonekey").innerHTML=ZONES.map(z=>`<span class="zk"><i style="background:${z.color}"></i>${z.z}</span>`).join("");
+
+/* ---- combined chart ---- */
+const layers={bars:true,acwr:true,mood:true,nig:true};
+const LM=[{k:"bars",label:"Volume × pace",color:"#C4873A"},{k:"acwr",label:"Workload",color:"#1A1815"},{k:"mood",label:"Mood",color:"#4A9E6B"},{k:"nig",label:"Niggles",color:"#D4592A"}];
+document.getElementById("toggles").innerHTML=LM.map(l=>`<span class="toggle" data-k="${l.k}"><span class="sw" style="background:${l.color}"></span>${l.label}</span>`).join("");
+const chart=document.getElementById("chart"), tipC=document.getElementById("tipC");
+const CW=920, M2={l:56,r:50}, A={t:24,h:300},B={t:352,h:92},C={t:466,h:58};
+const plotW=CW-M2.l-M2.r, colW=plotW/12, cx=i=>M2.l+colW*i+colW/2;
+const volMax=Math.max(...WTOTAL)+4, yVol=v=>A.t+A.h-(v/volMax)*A.h;
+const aMin=0.6,aMax=1.5, yAcwr=v=>B.t+B.h-((v-aMin)/(aMax-aMin))*B.h;
+function path(pts,a){const d=pts.map((p,idx)=>(idx?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");return el("path",Object.assign({d,fill:"none"},a));}
+function drawC(){
+  chart.innerHTML="";
+  chart.appendChild(el("text",{x:M2.l-8,y:A.t-8,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':9,fill:"#9B9590",'letter-spacing':".06em"},"MILES / WK"));
+  [10,20,30,40,50].forEach(v=>{if(v<volMax){chart.appendChild(el("line",{x1:M2.l,y1:yVol(v),x2:M2.l+plotW,y2:yVol(v),stroke:"#EFEBE6",'stroke-width':1}));chart.appendChild(el("text",{x:M2.l-8,y:yVol(v)+3,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':8.5,fill:"#B7AFA8"},v));}});
+  chart.appendChild(el("line",{x1:M2.l,y1:A.t+A.h,x2:M2.l+plotW,y2:A.t+A.h,stroke:"#E0DAD3",'stroke-width':1}));
+  if(layers.bars) WEEKS.forEach((wk,i)=>{
+    const bw=colW*0.60,x=cx(i)-bw/2; let cur=0;
+    ZONES.forEach(zn=>{const mi=WZ[i][zn.z]; if(!mi)return; const yt=yVol(cur+mi),yb=yVol(cur); chart.appendChild(el("rect",{x,y:yt,width:bw,height:yb-yt,fill:zn.color,stroke:"#fff",'stroke-width':0.6})); cur+=mi;});
+    chart.appendChild(el("text",{x:cx(i),y:yVol(cur)-5,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':9,fill:"#6B6560"},Math.round(cur)));
+    const hit=el("rect",{x:M2.l+colW*i,y:A.t,width:colW,height:A.h,fill:"transparent",style:"cursor:pointer"});
+    hit.addEventListener("mousemove",e=>tipWeek(e,i)); hit.addEventListener("mouseleave",()=>tipC.style.opacity=0); chart.appendChild(hit);
+  });
+  if(layers.acwr){
+    chart.appendChild(el("text",{x:M2.l-8,y:B.t-6,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':9,fill:"#9B9590",'letter-spacing':".06em"},"WORKLOAD"));
+    chart.appendChild(el("rect",{x:M2.l,y:yAcwr(1.3),width:plotW,height:yAcwr(0.8)-yAcwr(1.3),fill:"rgba(74,158,107,0.10)"}));
+    [0.8,1.3].forEach(v=>chart.appendChild(el("line",{x1:M2.l,y1:yAcwr(v),x2:M2.l+plotW,y2:yAcwr(v),stroke:"#4A9E6B",'stroke-width':1,'stroke-dasharray':"2 4",opacity:.55})));
+    [0.8,1.0,1.3].forEach(v=>chart.appendChild(el("text",{x:M2.l+plotW+6,y:yAcwr(v)+3,'font-family':"var(--font-mono)",'font-size':8.5,fill:"#6B6560"},v.toFixed(1))));
+    chart.appendChild(path(WEEKS.map((d,i)=>[cx(i),yAcwr(d.acwr)]),{stroke:"#1A1815",'stroke-width':2.5,'stroke-linecap':"round",'stroke-linejoin':"round"}));
+    WEEKS.forEach((d,i)=>{const out=!(d.acwr>=0.8&&d.acwr<=1.3);chart.appendChild(el("circle",{cx:cx(i),cy:yAcwr(d.acwr),r:out?4.5:3,fill:out?"#D4592A":"#1A1815",stroke:"#fff",'stroke-width':1.5}));});
+  }
+  chart.appendChild(el("text",{x:M2.l-8,y:C.t+13,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':9,fill:"#9B9590",'letter-spacing':".06em"},"MOOD"));
+  WEEKS.forEach((d,i)=>{
+    const x=cx(i)-colW*0.30,w=colW*0.60;
+    if(layers.mood){const cell=el("rect",{x,y:C.t,width:w,height:18,rx:3,fill:MOOD_COLOR[d.mood],style:"cursor:pointer"});cell.addEventListener("mousemove",e=>tipWeek(e,i));cell.addEventListener("mouseleave",()=>tipC.style.opacity=0);chart.appendChild(cell);}
+    if(layers.nig&&d.nig>0){chart.appendChild(el("circle",{cx:cx(i),cy:C.t+30,r:6.5,fill:"#D4592A"}));chart.appendChild(el("text",{x:cx(i),y:C.t+33,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':9,'font-weight':700,fill:"#fff"},d.nig));}
+    chart.appendChild(el("text",{x:cx(i),y:C.t+52,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':9,fill:"#9B9590"},d.w));
+  });
+}
+function tipWeek(e,i){
+  const d=WEEKS[i],mc=MOOD_COLOR[d.mood];
+  const segs=ZONES.filter(z=>WZ[i][z.z]).map(z=>`<div class="t-seg"><i style="background:${z.color}"></i>${z.z}<span class="m">${WZ[i][z.z]} mi</span></div>`).join("");
+  tipC.innerHTML=`<div class="t-eyebrow">WEEK OF ${d.w.toUpperCase()}</div><div class="t-mood" style="color:${mc}"><span class="dot" style="background:${mc}"></span>${d.mood}</div><div class="t-row"><span>Volume</span><b>${Math.round(WTOTAL[i])} mi</b></div><div class="t-row"><span>Workload</span><b style="color:${(d.acwr>=0.8&&d.acwr<=1.3)?'#fff':'#E8764A'}">${d.acwr.toFixed(2)}</b></div>${segs}${d.nig>0?`<div class="t-nig">▲ ${d.part} · ${d.nig} mention${d.nig>1?'s':''}</div>`:""}<div class="t-quote">"${d.quote}"</div>`;
+  const cr=e.target.closest(".chart-card").getBoundingClientRect();
+  tipC.style.left=(e.clientX-cr.left)+"px"; tipC.style.top=(e.clientY-cr.top-14)+"px"; tipC.style.opacity=1;
+}
+document.getElementById("toggles").addEventListener("click",e=>{const t=e.target.closest(".toggle");if(!t)return;layers[t.dataset.k]=!layers[t.dataset.k];t.classList.toggle("off",!layers[t.dataset.k]);drawC();});
+drawC();
+</script>
+</body>
+</html>

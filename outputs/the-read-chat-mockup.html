@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Read — chat/Q&A prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300..800;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:#DED9D2; min-height:100vh;
+    font-family:var(--font-body); color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column; align-items:center;
+    padding:28px 16px 56px;
+  }
+  .intro{max-width:420px; text-align:center; margin-bottom:22px;}
+  .intro .tag{font-family:var(--font-mono); font-size:10px; letter-spacing:0.16em; text-transform:uppercase; color:var(--coral); font-weight:500;}
+  .intro h1{font-family:var(--font-display); font-weight:700; font-size:22px; margin:8px 0 6px; color:var(--ink);}
+  .intro p{font-size:13.5px; line-height:1.55; color:var(--ink-2); margin:0;}
+
+  /* ---- phone frame ---- */
+  .phone{
+    width:390px; max-width:100%; height:800px;
+    background:var(--paper); border-radius:44px;
+    border:1px solid #cbc5bc;
+    box-shadow:0 20px 50px rgba(0,0,0,0.22);
+    overflow:hidden; position:relative; display:flex; flex-direction:column;
+  }
+  .statusbar{
+    height:52px; flex:0 0 52px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 28px 0 30px; font-family:var(--font-mono); font-size:14px; font-weight:500; color:var(--ink);
+  }
+  .statusbar .dots{display:flex; gap:5px; align-items:center; color:var(--ink-2); font-size:12px;}
+
+  .scroll{flex:1; overflow-y:auto; padding:4px 24px 8px; scroll-behavior:smooth;}
+  .scroll::-webkit-scrollbar{width:0;}
+
+  .plate{font-family:var(--font-mono); font-size:11px; font-weight:500; letter-spacing:0.14em; color:var(--ink-2); text-transform:uppercase; padding:8px 0 4px; display:flex; justify-content:space-between;}
+
+  .eyebrow{font-family:var(--font-mono); font-size:11px; font-weight:500; letter-spacing:0.12em; color:var(--ink-2); text-transform:uppercase; margin:22px 0 8px;}
+  .read-p{font-family:var(--font-display); font-size:23px; line-height:1.28; color:var(--ink); font-weight:500; margin:0 0 6px; letter-spacing:-0.01em;}
+  .read-p a{color:var(--ink); text-decoration:underline; text-decoration-color:var(--coral); text-underline-offset:3px;}
+
+  .softq{border-left:3px solid var(--coral); padding:2px 0 2px 16px; margin:20px 0 6px; font-family:var(--font-body); font-style:italic; font-size:19px; line-height:1.4; color:var(--ink);}
+  .byline{font-family:var(--font-body); font-style:italic; font-size:13px; color:var(--ink-3); margin:14px 0 4px;}
+
+  /* ---- conversation ---- */
+  .divider{display:flex; align-items:center; gap:8px; margin:26px 0 18px;}
+  .divider::before,.divider::after{content:""; flex:1; height:1px; background:var(--rule);}
+  .divider span{font-family:var(--font-mono); font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-3);}
+
+  .msg{display:flex; flex-direction:column; margin-bottom:14px; animation:rise 0.32s cubic-bezier(0.2,0.7,0.2,1);}
+  .msg .stamp{font-family:var(--font-mono); font-size:9px; font-weight:500; letter-spacing:0.10em; color:var(--ink-3); text-transform:uppercase; margin-bottom:5px;}
+  .msg.you{align-items:flex-end;}
+  .bubble-you{max-width:84%; background:var(--card); border-radius:14px 14px 4px 14px; padding:11px 15px; font-size:14.5px; line-height:1.5; color:var(--ink); box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+  .msg.coach{align-items:stretch;}
+  .bubble-coach{border-left:3px solid var(--coral); padding:1px 0 1px 15px; font-family:var(--font-body); font-size:15px; line-height:1.55; color:var(--ink);}
+  .bubble-coach em{font-style:italic;}
+  .bubble-coach .cq{display:block; margin-top:10px; font-style:italic; color:var(--ink); }
+  @keyframes rise{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+
+  .typing{display:flex; gap:4px; padding:6px 0 6px 15px; border-left:3px solid var(--coral);}
+  .typing i{width:6px; height:6px; border-radius:50%; background:var(--ink-3); animation:blink 1.2s infinite;}
+  .typing i:nth-child(2){animation-delay:0.2s;} .typing i:nth-child(3){animation-delay:0.4s;}
+  @keyframes blink{0%,60%,100%{opacity:0.25;} 30%{opacity:1;}}
+
+  /* ---- chips ---- */
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin:6px 0 4px;}
+  .chip{font-family:var(--font-display); font-size:13.5px; font-weight:500; color:var(--ink); border:1px solid var(--rule); background:var(--card); border-radius:999px; padding:7px 13px; cursor:pointer; transition:all 0.15s ease; line-height:1.2;}
+  .chip:hover{border-color:var(--coral); color:var(--coral);}
+  .chip:active{transform:scale(0.97);}
+  .chips-label{font-family:var(--font-mono); font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-3); margin:16px 0 8px;}
+
+  /* ---- input bar ---- */
+  .inputbar{flex:0 0 auto; display:grid; grid-template-columns:1fr 40px; gap:10px; align-items:center; padding:12px 24px 26px; border-top:1px solid var(--rule); background:var(--paper);}
+  .inputbar input{background:var(--card); border-radius:20px; padding:11px 16px; font-family:var(--font-body); font-size:14.5px; color:var(--ink); border:1px solid transparent; outline:none; width:100%;}
+  .inputbar input:focus{border-color:var(--coral);}
+  .send{width:40px; height:40px; border-radius:50%; background:var(--coral); border:none; display:grid; place-items:center; cursor:pointer; transition:background 0.15s ease;}
+  .send:hover{background:var(--coral-deep);} .send:active{transform:scale(0.95);}
+  .send svg{width:17px; height:17px; fill:#fff;}
+
+  /* ---- bottom nav ---- */
+  .nav{flex:0 0 auto; display:flex; justify-content:space-around; padding:10px 8px 20px; border-top:1px solid var(--rule); background:var(--paper);}
+  .nav .item{display:flex; flex-direction:column; align-items:center; gap:7px; font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-3);}
+  .nav .item .dot{width:7px; height:7px; border-radius:50%; border:1.5px solid var(--ink-3);}
+  .nav .item.active{color:var(--ink); font-weight:500;}
+  .nav .item.active .dot{background:var(--coral); border-color:var(--coral);}
+</style>
+</head>
+<body>
+  <div class="intro">
+    <div class="tag">Prototype · Post Run Drip</div>
+    <h1>The Read, now a conversation</h1>
+    <p>Tap a suggested reply or type your own. Coach answers in-voice — observation, never a prescription. This is a clickable concept, not the live app.</p>
+  </div>
+
+  <div class="phone">
+    <div class="statusbar">
+      <span>8:32</span>
+      <span class="dots">&#9679;&#9679;&#9679; &#128246; &#128267;</span>
+    </div>
+
+    <div class="scroll" id="scroll">
+      <div class="plate"><span>The Read · Thursday</span><span>Fig. 14</span></div>
+
+      <div class="eyebrow">The Long Run</div>
+      <p class="read-p">Getting <a href="#">Saturday's 17.8 miles</a> done easily is a solid anchor for a lighter week.</p>
+
+      <div class="eyebrow">How You Felt</div>
+      <p class="read-p">The fatigue is real right now, which makes sense given the humidity you've been fighting. The top-end fitness is actually ticking up, and if you raced today you'd be in the 2:28 to 2:31 range — well within reach of your goal, and it's still months away.</p>
+
+      <div class="softq">Are your legs feeling heavy from the heat, or is it deeper fatigue?</div>
+      <div class="byline">— posted Thursday morning · 1 min read</div>
+
+      <div class="divider"><span>Reply to Coach</span></div>
+
+      <div id="thread"></div>
+
+      <div class="chips-label" id="chips-label">Answer the question, or ask your own</div>
+      <div class="chips" id="chips"></div>
+    </div>
+
+    <div class="inputbar">
+      <input id="input" type="text" placeholder="Write back to Coach…" autocomplete="off" />
+      <button class="send" id="send" aria-label="Send">
+        <svg viewBox="0 0 16 16"><path d="M2 8L13 2.5L9.5 8L13 13.5L2 8Z"/></svg>
+      </button>
+    </div>
+
+    <div class="nav">
+      <div class="item"><span class="dot"></span>Log</div>
+      <div class="item"><span class="dot"></span>Training</div>
+      <div class="item"><span class="dot"></span>Trends</div>
+      <div class="item active"><span class="dot"></span>The Read</div>
+      <div class="item"><span class="dot"></span>Plan</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  var thread = document.getElementById('thread');
+  var chipsEl = document.getElementById('chips');
+  var chipsLabel = document.getElementById('chips-label');
+  var scroll = document.getElementById('scroll');
+  var input = document.getElementById('input');
+  var send = document.getElementById('send');
+
+  // Starter quick-replies: answer the soft question + lenses on the Read
+  var starterChips = [
+    "It's the heat, mostly",
+    "Feels deeper than the heat",
+    "How does this compare to last cycle?",
+    "Why the 2:28–2:31 range?"
+  ];
+
+  // Canned Coach replies. Voice: feeling first, observation not prescription,
+  // carries anchors silently, ends with a soft question. No medical/rest advice.
+  // Predictions ship as range + confidence, never a single point.
+  var replies = [
+    { match:/heat|humid|weather|hot/i,
+      body:"That tracks. Heat taxes the legs without touching your actual fitness — the pace feels expensive even when the engine's fine. Your easy days this week ran about 20 seconds slower than the same efforts in April, which is almost exactly what the humidity explains.",
+      q:"Did the heavy feeling ease off once the runs cooled down, or did it linger into the next day?" },
+    { match:/deeper|deep|more than|beyond|not just|really tired|exhausted|drained|wiped|worn/i,
+      body:"Worth sitting with, then. Three weeks of climbing volume plus the heat is a lot to carry at once, and the body keeps that score. I'm noticing it here, not judging it — you're the one who can feel the difference between good-tired and too-tired.",
+      q:"If you think back over the last few days, is the tiredness lifting between runs or stacking up?" },
+    { match:/compare|last cycle|last block|before|previous|year ago|last year/i,
+      body:"Good lens. Against the same week of your last marathon build, your top-end is a touch sharper — the tempo and interval paces are landing where they did then, but on lower mileage. So you're getting more signal per mile this time.",
+      q:"Does that match how the hard sessions have felt to you lately?" },
+    { match:/2:2|2:3|range|why|estimate|predict|how do you know|228|231/i,
+      body:"It's a range on purpose. Four marathon-pace workouts and your recent long run point to roughly 2:28–2:31 if you raced today — call it high confidence. A single number like 2:29:30 would look precise, but the seconds are just math, not something real about your fitness.",
+      q:"Want me to read where that range has moved over the block, or leave it here for now?" },
+    { match:/goal|bq|boston|qualif|3:16|3:28|target|pace zone/i,
+      body:"Your goal is the direction; your race history is the reality, and right now the reality is trending toward the goal with time to spare. I'm anchoring on what you've actually run, not the aspiration — that's what keeps the read honest.",
+      q:"Is the goal still feeling like the right thing to point at, or has that shifted?" },
+    { match:/mood|feel|feeling|down|flat|good|great|fine|okay|ok\b|stress|work|sleep|slept|tired/i,
+      body:"Thanks for saying so — that's the part the numbers can't see. I'll hold it alongside the training so the read stays true to how the week actually landed for you, not just what the watch recorded.",
+      q:"Anything going on off the road — sleep, work, life — that's worth me keeping in mind?" },
+    { match:/plan|tomorrow|should i|what.*do|next|workout|session/i,
+      body:"I'll stay out of the driver's seat on that one — the call is yours, and if you're working with a coach it's theirs. What I can do is lay out what the week's data and how you've been feeling suggest, so you're choosing with the full picture in front of you.",
+      q:"Want me to pull the week's signal together so it's easy to weigh?" }
+  ];
+
+  var fallback = {
+    body:"Noted — I'm reading that alongside the week's training so nothing gets lost. My job here is to notice and reflect, then hand the call back to you.",
+    q:"What's sitting on your mind most about the training right now?"
+  };
+
+  var followups = [
+    "Tell me more",
+    "How does this compare to last cycle?",
+    "Read the week's signal",
+    "Leave it here for now"
+  ];
+
+  function stamp(who){
+    var d = new Date();
+    var hh = d.getHours(), mm = ('0'+d.getMinutes()).slice(-2);
+    var ap = hh>=12?'PM':'AM'; hh = hh%12||12;
+    return who + ' · ' + hh + ':' + mm + ' ' + ap;
+  }
+
+  function addYou(text){
+    var m = document.createElement('div');
+    m.className = 'msg you';
+    m.innerHTML = '<div class="stamp">You · '+stamp('').split('· ')[1]+'</div><div class="bubble-you"></div>';
+    m.querySelector('.bubble-you').textContent = text;
+    thread.appendChild(m);
+    scrollDown();
+  }
+
+  function addTyping(){
+    var t = document.createElement('div');
+    t.className = 'msg coach'; t.id = 'typing';
+    t.innerHTML = '<div class="stamp">Coach</div><div class="typing"><i></i><i></i><i></i></div>';
+    thread.appendChild(t); scrollDown();
+  }
+
+  function addCoach(reply){
+    var existing = document.getElementById('typing');
+    if(existing) existing.remove();
+    var m = document.createElement('div');
+    m.className = 'msg coach';
+    m.innerHTML = '<div class="stamp">Coach · '+stamp('').split('· ')[1]+'</div>'+
+      '<div class="bubble-coach">'+reply.body+'<em class="cq">'+reply.q+'</em></div>';
+    thread.appendChild(m); scrollDown();
+  }
+
+  function pick(text){
+    for(var i=0;i<replies.length;i++){ if(replies[i].match.test(text)) return replies[i]; }
+    return fallback;
+  }
+
+  function scrollDown(){ setTimeout(function(){ scroll.scrollTop = scroll.scrollHeight; }, 30); }
+
+  function respondTo(text){
+    addYou(text);
+    addTyping();
+    var reply = pick(text);
+    setTimeout(function(){
+      addCoach(reply);
+      renderChips(followups);
+      chipsLabel.textContent = 'Keep going, or ask your own';
+    }, 950);
+  }
+
+  function renderChips(list){
+    chipsEl.innerHTML = '';
+    list.forEach(function(c){
+      var el = document.createElement('button');
+      el.className = 'chip'; el.textContent = c;
+      el.onclick = function(){ respondTo(c); };
+      chipsEl.appendChild(el);
+    });
+  }
+
+  function sendInput(){
+    var t = input.value.trim();
+    if(!t) return;
+    input.value = '';
+    respondTo(t);
+  }
+
+  send.onclick = sendInput;
+  input.addEventListener('keydown', function(e){ if(e.key==='Enter') sendInput(); });
+
+  renderChips(starterChips);
+})();
+</script>
+</body>
+</html>

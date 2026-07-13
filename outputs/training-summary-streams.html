@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training summary — three streams</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --card:#FFFFFF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --sage:#A9B89A; --green:#4A9E6B;
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:radial-gradient(circle at 30% 15%, #d8d3cc, #c4bfb7);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:48px 24px 80px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  .intro{text-align:center;margin-bottom:36px;}
+  .intro .kick{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b6056;}
+  .intro h1{font-family:var(--font-display);font-weight:700;font-size:29px;color:#26221d;margin-top:8px;letter-spacing:-.01em;}
+  .intro p{font-family:var(--font-body);font-style:italic;font-size:15px;color:#564f47;max-width:580px;margin:10px auto 0;line-height:1.5;}
+
+  .grid{display:flex;flex-direction:column;gap:22px;}
+  .opt{background:var(--paper);border-radius:20px;padding:26px 24px 24px;box-shadow:0 12px 30px rgba(0,0,0,.14);}
+  .opt .tag{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:22px;}
+  .opt .tag .nm{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);font-weight:600;}
+  .opt .tag .ds{font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--ink-2);}
+
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);}
+  .eyebrow.coral{color:var(--coral);}
+  .caption{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+  .hdr{display:flex;justify-content:space-between;align-items:baseline;}
+
+  /* layout 1 — three streams as equal columns */
+  .streams{display:grid;grid-template-columns:repeat(3,1fr);margin-top:16px;}
+  .streams .cell{padding:0 14px;border-right:1px solid var(--rule);}
+  .streams .cell:first-child{padding-left:0;}
+  .streams .cell:last-child{border-right:0;}
+  .streams .v{font-family:var(--font-mono);font-weight:600;font-size:28px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+  .streams .v small{font-size:13px;color:var(--ink-2);font-weight:500;}
+  .streams .l{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-top:8px;}
+  .substrip{display:flex;gap:16px;margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);}
+  .substrip span{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);}
+  .substrip b{color:var(--ink);font-weight:700;}
+  .substrip .pos{color:var(--green);font-weight:600;}
+
+  /* layout 2 — hero volume + stream subline */
+  .hero{display:flex;align-items:flex-end;gap:12px;margin-top:10px;}
+  .hero .big{font-family:var(--font-mono);font-weight:700;font-size:48px;color:var(--ink);line-height:.9;font-variant-numeric:tabular-nums;}
+  .hero .u{font-family:var(--font-mono);font-size:12px;color:var(--ink-2);padding-bottom:6px;}
+  .hero .delta{font-family:var(--font-mono);font-size:12px;color:var(--green);padding-bottom:6px;font-weight:600;}
+  .subrow{display:flex;gap:20px;margin-top:16px;}
+  .subrow .s{display:flex;flex-direction:column;gap:3px;}
+  .subrow .s b{font-family:var(--font-mono);font-size:17px;color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums;}
+  .subrow .s span{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);}
+
+  .notes{max-width:680px;margin:40px auto 0;}
+  .notes p{font-family:var(--font-body);font-size:14.5px;line-height:1.55;color:#3f3a33;}
+  .notes b{color:#26221d;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="intro">
+    <div class="kick">Post Run Drip · Training · month summary</div>
+    <h1>Three input streams, three counts.</h1>
+    <p>The summary recaps what went in this month — runs, voice memos, and volume — as plain counts. It surfaces that you logged the qualitative side too, without a single narrated word.</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- LAYOUT 1 -->
+    <div class="opt">
+      <div class="tag"><span class="nm">1 · Three streams, equal weight</span><span class="ds">runs · memos · volume side by side</span></div>
+      <div class="hdr"><span class="eyebrow coral">MAY 31 – JUN 30</span><span class="caption">this month</span></div>
+      <div class="streams">
+        <div class="cell"><div class="v">41</div><div class="l">Runs logged</div></div>
+        <div class="cell"><div class="v">12</div><div class="l">Voice memos</div></div>
+        <div class="cell"><div class="v">245<small> mi</small></div><div class="l">Volume</div></div>
+      </div>
+      <div class="substrip">
+        <span><b>30:01</b> hrs</span>
+        <span><b>76%</b> easy</span>
+        <span><b>4</b> quality</span>
+        <span class="pos" style="margin-left:auto;">+8% vs May</span>
+      </div>
+    </div>
+
+    <!-- LAYOUT 2 -->
+    <div class="opt">
+      <div class="tag"><span class="nm">2 · Volume leads, streams beneath</span><span class="ds">headline mileage + the inputs</span></div>
+      <div class="hdr"><span class="eyebrow coral">MAY 31 – JUN 30</span><span class="caption">vs. prior month</span></div>
+      <div class="hero"><span class="big">245</span><span class="u">MILES</span><span class="delta">+8%</span></div>
+      <div class="subrow">
+        <div class="s"><b>41</b><span>Runs</span></div>
+        <div class="s"><b>12</b><span>Voice memos</span></div>
+        <div class="s"><b>30:01</b><span>Hours</span></div>
+        <div class="s"><b>76%</b><span>Easy</span></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <p><b>Why memos belong here:</b> they’re your qualitative stream — surfacing the count keeps the product’s “feel + data” promise visible without interpreting anything. A tap on the memo count could jump to those entries in Log. Both layouts fill straight from counts and a month-over-month delta — no model in the loop, nothing to sound tacky.</p>
+  </div>
+
+</div>
+</body>
+</html>

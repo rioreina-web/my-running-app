@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pace Spectrum · Workout Detail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;500;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+
+  /* ---- THE PACE SPECTRUM · Easy (pale sky) → Mile (navy) · one blue hue ---- */
+  --z-easy:#93B9D6;   /* Easy      */
+  --z-mod:#74A8CC;    /* Moderate  */
+  --z-steady:#578FC0; /* Steady    */
+  --z-mp:#3F7CB5;     /* MP        */
+  --z-hmp:#2F66A8;    /* HMP       */
+  --z-lt:#27549B;     /* LT        */
+  --z-10k:#20448B;    /* 10K       */
+  --z-5k:#1A3679;     /* 5K        */
+  --z-3k:#142964;     /* 3K        */
+  --z-mile:#0E1D4E;   /* Mile (navy) */
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DAD6D0;font-family:var(--font-body);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:40px 20px 80px}
+.wrap{max-width:1180px;margin:0 auto}
+.pagehead{text-align:center;margin-bottom:8px}
+.pagehead .eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;
+  color:var(--ink-2);text-transform:uppercase}
+.pagehead h1{font-family:var(--font-display);font-weight:600;font-size:34px;
+  letter-spacing:-.01em;margin-top:6px}
+.pagehead p{font-family:var(--font-body);font-style:italic;color:var(--ink-2);
+  max-width:620px;margin:10px auto 0;font-size:15px;line-height:1.5}
+
+/* ---- spectrum legend (page level) ---- */
+.legend{max-width:760px;margin:26px auto 40px}
+.legend .lhead{display:flex;justify-content:space-between;align-items:baseline;
+  font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-2);
+  text-transform:uppercase;margin-bottom:8px}
+.legend .bar{height:16px;border-radius:3px;display:flex;overflow:hidden;
+  box-shadow:0 1px 0 rgba(0,0,0,.04)}
+.legend .bar span{flex:1}
+.legend .ticks{display:flex;justify-content:space-between;margin-top:7px;
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-3)}
+
+.frames{display:flex;gap:34px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+.phone{width:340px;background:var(--paper);border-radius:34px;padding:14px 0 0;
+  box-shadow:0 20px 50px rgba(0,0,0,.22),0 2px 8px rgba(0,0,0,.12);
+  border:1px solid rgba(0,0,0,.06);overflow:hidden}
+.notch{width:108px;height:5px;background:var(--ink-3);opacity:.4;border-radius:3px;
+  margin:0 auto 14px}
+.topbar{text-align:center;font-family:var(--font-mono);font-size:11px;letter-spacing:.18em;
+  color:var(--ink-2);padding-bottom:14px;border-bottom:1px solid var(--rule)}
+.screen{padding:20px 20px 26px}
+.caption{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ink-3);
+  text-transform:uppercase;text-align:center;margin-top:14px}
+
+/* shared bits */
+.pill{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);
+  font-size:11px;letter-spacing:.1em;text-transform:uppercase;padding:5px 11px;border-radius:20px}
+.eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.13em;color:var(--ink-2);
+  text-transform:uppercase}
+.title{font-family:var(--font-display);font-weight:600;font-size:30px;letter-spacing:-.01em;
+  margin:12px 0 8px}
+.presc{font-family:var(--font-body);font-style:italic;color:var(--ink-3);font-size:13px;
+  line-height:1.5}
+.rule{height:1px;background:var(--rule);margin:18px 0}
+.seclabel{display:flex;justify-content:space-between;align-items:baseline}
+.seclabel .r{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-2)}
+.seclabel .r b{color:var(--ink);font-weight:700}
+
+/* rep-by-rep bars */
+.bars{display:flex;align-items:flex-end;gap:7px;height:170px;margin:20px 0 6px;
+  border-bottom:1px solid var(--rule);padding-bottom:0}
+.barcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.bar{width:100%;border-radius:3px 3px 0 0}
+.barval{font-family:var(--font-mono);font-size:11px;color:var(--ink);margin-bottom:5px;font-weight:600}
+.barzone{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;margin-top:6px}
+.barlbl{font-family:var(--font-mono);font-size:9px;color:var(--ink-3);margin-top:2px}
+
+/* stat row */
+.stats{display:flex;justify-content:space-between;border-top:1px solid var(--rule);
+  padding-top:14px;margin-top:8px}
+.stat{text-align:center;flex:1}
+.stat .k{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;color:var(--ink-3);text-transform:uppercase}
+.stat .v{font-family:var(--font-display);font-size:22px;font-weight:600;margin-top:4px}
+.stat .u{font-family:var(--font-mono);font-size:9px;color:var(--ink-3)}
+
+/* pace line graph */
+.graphwrap{margin:16px 0 4px}
+.gridlbl{font-family:var(--font-mono);font-size:9px;color:var(--ink-3)}
+
+/* splits */
+.splits{margin-top:16px}
+.splitrow{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--rule)}
+.splitrow .swatch{width:4px;align-self:stretch;border-radius:2px;min-height:38px}
+.splitrow .num{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);width:14px}
+.splitrow .dist{flex:0 0 64px}
+.splitrow .dist b{font-family:var(--font-display);font-size:17px;font-weight:600;display:block;line-height:1.1}
+.splitrow .dist span{font-family:var(--font-mono);font-size:9px;color:var(--ink-3)}
+.splitrow .barwrap{flex:1;height:22px;background:var(--paper-deep);border-radius:3px;position:relative;overflow:hidden}
+.splitrow .barwrap i{position:absolute;top:0;bottom:0;border-radius:3px}
+.splitrow .pace{text-align:right;flex:0 0 54px}
+.splitrow .pace b{font-family:var(--font-display);font-size:18px;font-weight:600;display:block;line-height:1}
+.splitrow .pace span{font-family:var(--font-mono);font-size:9px}
+.zonetag{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;font-weight:600}
+.allrow{display:flex;justify-content:space-between;align-items:baseline;padding-top:14px}
+.allrow .l{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;color:var(--ink-2)}
+.allrow .l b{color:var(--ink)}
+.allrow .v{font-family:var(--font-display);font-size:20px;font-weight:600;color:var(--coral)}
+
+.note{font-family:var(--font-body);font-style:italic;color:var(--ink-2);font-size:13px;
+  line-height:1.55;margin-top:16px;border-top:1px solid var(--rule);padding-top:14px}
+.note .lead{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;color:var(--ink-3);
+  text-transform:uppercase;font-style:normal;display:block;margin-bottom:8px}
+.footer{text-align:center;font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;
+  color:var(--ink-2);margin-top:48px;text-transform:uppercase}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="pagehead">
+    <div class="eyebrow">Post Run Drip · Pace Spectrum</div>
+    <h1>One color language for pace</h1>
+    <p>The universal blue depth ramp carried across every pace surface.
+       Slow runs read pale sky; the fast end of the session reads navy.
+       One hue, ten depths — color now <i>means pace</i> everywhere.</p>
+  </div>
+
+  <!-- PAGE-LEVEL SPECTRUM LEGEND -->
+  <div class="legend">
+    <div class="lhead"><span>The pace spectrum</span><span>slow → fast</span></div>
+    <div class="bar">
+      <span style="background:var(--z-easy)"></span>
+      <span style="background:var(--z-mod)"></span>
+      <span style="background:var(--z-steady)"></span>
+      <span style="background:var(--z-mp)"></span>
+      <span style="background:var(--z-hmp)"></span>
+      <span style="background:var(--z-lt)"></span>
+      <span style="background:var(--z-10k)"></span>
+      <span style="background:var(--z-5k)"></span>
+      <span style="background:var(--z-3k)"></span>
+      <span style="background:var(--z-mile)"></span>
+    </div>
+    <div class="ticks">
+      <span>EASY</span><span>MOD</span><span>STEADY</span><span>MP</span><span>HMP</span>
+      <span>LT</span><span>10K</span><span>5K</span><span>3K</span><span>MILE</span>
+    </div>
+  </div>
+
+  <!-- TOGGLE -->
+  <div style="text-align:center;margin:-14px auto 30px">
+    <button id="toggle" style="font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;
+      text-transform:uppercase;border:1px solid var(--coral);color:#fff;background:var(--coral);
+      padding:10px 20px;border-radius:22px;cursor:pointer">PACE COLOR · ON</button>
+    <div style="font-family:var(--font-body);font-style:italic;color:var(--ink-2);font-size:13px;margin-top:9px">
+      The same control in the app — tap to switch between the pace spectrum and a single coral.</div>
+  </div>
+
+  <div class="frames">
+
+    <!-- ============ FRAME 1 · REP BY REP ============ -->
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="topbar">WORKOUT</div>
+      <div class="screen">
+        <span class="pill" style="background:var(--coral-wash,rgba(212,89,42,.12));color:var(--coral)">INTERVALS ▾</span>
+        <div class="title">1200m·400m·200m</div>
+        <div class="presc">— 1200m @ MP + 4×400m @ 5K + 2×200m @ Mile w/ 95s rec —</div>
+
+        <div class="rule"></div>
+        <div class="seclabel"><span class="eyebrow">REP BY REP</span>
+          <span class="r"><b>7</b> REPS · BY PACE</span></div>
+
+        <div class="bars">
+          <!-- height = faster→taller; color = pace zone -->
+          <div class="barcol"><div class="barval" style="color:var(--z-mp)">5:41</div>
+            <div class="bar" style="height:46%;background:var(--z-mp)"></div>
+            <div class="barzone" style="color:var(--z-mp)">MP</div><div class="barlbl">1200</div></div>
+          <div class="barcol"><div class="barval" style="color:var(--z-5k)">4:36</div>
+            <div class="bar" style="height:78%;background:var(--z-5k)"></div>
+            <div class="barzone" style="color:var(--z-5k)">5K</div><div class="barlbl">400</div></div>
+          <div class="barcol"><div class="barval" style="color:var(--z-5k)">4:33</div>
+            <div class="bar" style="height:80%;background:var(--z-5k)"></div>
+            <div class="barzone" style="color:var(--z-5k)">5K</div><div class="barlbl">400</div></div>
+          <div class="barcol"><div class="barval" style="color:var(--z-3k)">4:28</div>
+            <div class="bar" style="height:84%;background:var(--z-3k)"></div>
+            <div class="barzone" style="color:var(--z-3k)">3K</div><div class="barlbl">400</div></div>
+          <div class="barcol"><div class="barval" style="color:var(--z-5k)">4:35</div>
+            <div class="bar" style="height:79%;background:var(--z-5k)"></div>
+            <div class="barzone" style="color:var(--z-5k)">5K</div><div class="barlbl">400</div></div>
+          <div class="barcol"><div class="barval" style="color:var(--z-mile)">4:03</div>
+            <div class="bar" style="height:98%;background:var(--z-mile)"></div>
+            <div class="barzone" style="color:var(--z-mile)">MILE</div><div class="barlbl">200</div></div>
+          <div class="barcol"><div class="barval" style="color:var(--z-mile)">4:01</div>
+            <div class="bar" style="height:100%;background:var(--z-mile)"></div>
+            <div class="barzone" style="color:var(--z-mile)">MILE</div><div class="barlbl">200</div></div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="k">Avg Work</div><div class="v" style="color:var(--z-lt)">4:34</div><div class="u">/mi</div></div>
+          <div class="stat"><div class="k">Work</div><div class="v">1.6</div><div class="u">mi</div></div>
+          <div class="stat"><div class="k">Range</div><div class="v">MP–MILE</div><div class="u">zones</div></div>
+          <div class="stat"><div class="k">Spread</div><div class="v">100</div><div class="u">s</div></div>
+        </div>
+
+        <div class="note"><span class="lead">The Read</span>
+          A clean descending ladder — MP opener, the 400s sitting in 5K/3K,
+          and both 200s dropping to mile pace. The color tells the story before
+          the numbers do.</div>
+      </div>
+      <div class="caption">REP-BY-REP · BARS COLORED BY PACE ZONE</div>
+    </div>
+
+    <!-- ============ FRAME 2 · PACE LINE ============ -->
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="topbar">WORKOUT</div>
+      <div class="screen">
+        <div class="seclabel"><span class="eyebrow">PACE · FULL SESSION</span>
+          <span class="r"><b>4:01</b> FASTEST</span></div>
+
+        <div class="graphwrap">
+          <svg viewBox="0 0 300 200" width="100%" height="210" preserveAspectRatio="none">
+            <!-- gridlines -->
+            <g stroke="#E8E4E0" stroke-width="1">
+              <line x1="0" y1="30" x2="300" y2="30" stroke-dasharray="2 4"/>
+              <line x1="0" y1="80" x2="300" y2="80" stroke-dasharray="2 4"/>
+              <line x1="0" y1="130" x2="300" y2="130" stroke-dasharray="2 4"/>
+              <line x1="0" y1="180" x2="300" y2="180"/>
+            </g>
+            <!-- recovery baseline (easy/green) between spikes -->
+            <!-- the trace: each work spike colored by its zone, recoveries green -->
+            <!-- segment helper: lower y = faster -->
+            <!-- MP opener -->
+            <polyline fill="none" stroke="var(--z-easy)" stroke-width="3" points="0,150 14,150"/>
+            <polyline fill="none" stroke="var(--z-mp)" stroke-width="3" points="14,150 20,96 40,96 46,150"/>
+            <polyline fill="none" stroke="var(--z-easy)" stroke-width="3" points="46,150 70,150"/>
+            <!-- 400 #1 5K -->
+            <polyline fill="none" stroke="var(--z-5k)" stroke-width="3" points="70,150 76,60 92,60 98,150"/>
+            <polyline fill="none" stroke="var(--z-easy)" stroke-width="3" points="98,150 116,150"/>
+            <!-- 400 #2 5K -->
+            <polyline fill="none" stroke="var(--z-5k)" stroke-width="3" points="116,150 122,58 138,58 144,150"/>
+            <polyline fill="none" stroke="var(--z-easy)" stroke-width="3" points="144,150 162,150"/>
+            <!-- 400 #3 3K -->
+            <polyline fill="none" stroke="var(--z-3k)" stroke-width="3" points="162,150 168,50 184,50 190,150"/>
+            <polyline fill="none" stroke="var(--z-easy)" stroke-width="3" points="190,150 208,150"/>
+            <!-- 400 #4 5K -->
+            <polyline fill="none" stroke="var(--z-5k)" stroke-width="3" points="208,150 214,59 228,59 234,150"/>
+            <polyline fill="none" stroke="var(--z-easy)" stroke-width="3" points="234,150 248,150"/>
+            <!-- 200 mile #1 -->
+            <polyline fill="none" stroke="var(--z-mile)" stroke-width="3" points="248,150 252,30 262,30 266,150"/>
+            <polyline fill="none" stroke="var(--z-easy)" stroke-width="3" points="266,150 272,150"/>
+            <!-- 200 mile #2 -->
+            <polyline fill="none" stroke="var(--z-mile)" stroke-width="3" points="272,150 276,28 288,28 292,150"/>
+          </svg>
+          <div style="display:flex;justify-content:space-between;margin-top:4px">
+            <span class="gridlbl">5:30</span><span class="gridlbl">7:00</span>
+            <span class="gridlbl">9:00 /mi</span>
+          </div>
+        </div>
+
+        <div class="rule"></div>
+        <p class="note" style="border:none;padding:0;margin-top:4px">
+          <span class="lead">How to read it</span>
+          The trace is colored by pace as it moves — recoveries drop into pale
+          easy blue, the 400s sit in deep 5K/3K blue, the 200 surges hit
+          mile-pace navy. You can see the session shape with the sound off.</p>
+
+        <div class="rule"></div>
+        <div class="seclabel"><span class="eyebrow">TIME IN ZONE</span></div>
+        <div style="display:flex;height:18px;border-radius:3px;overflow:hidden;margin:14px 0 6px">
+          <div style="flex:5.4;background:var(--z-easy)"></div>
+          <div style="flex:1.4;background:var(--z-mp)"></div>
+          <div style="flex:2.1;background:var(--z-5k)"></div>
+          <div style="flex:0.8;background:var(--z-3k)"></div>
+          <div style="flex:0.9;background:var(--z-mile)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9px;color:var(--ink-3)">
+          <span>EASY 54%</span><span>MP 14%</span><span>5K 21%</span><span>MILE 9%</span>
+        </div>
+      </div>
+      <div class="caption">PACE TRACE · COLORED ALONG THE SPECTRUM</div>
+    </div>
+
+    <!-- ============ FRAME 3 · SPLITS ============ -->
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="topbar">WORKOUT</div>
+      <div class="screen">
+        <div class="seclabel"><span class="eyebrow">SPLITS · VS TARGET</span>
+          <span class="r"><b>4:01</b> FASTEST</span></div>
+
+        <div class="splits">
+          <div class="splitrow">
+            <div class="swatch" style="background:var(--z-mp)"></div>
+            <div class="num">1</div>
+            <div class="dist"><b>1200m</b><span>0.75mi</span></div>
+            <div class="barwrap"><i style="left:8%;width:38%;background:var(--z-mp)"></i></div>
+            <div class="pace"><b style="color:var(--z-mp)">5:41</b><span style="color:#2D8A4E">−4s</span></div>
+          </div>
+          <div class="splitrow">
+            <div class="swatch" style="background:var(--z-5k)"></div>
+            <div class="num">2</div>
+            <div class="dist"><b>400m</b><span>0.25mi</span></div>
+            <div class="barwrap"><i style="left:8%;width:64%;background:var(--z-5k)"></i></div>
+            <div class="pace"><b style="color:var(--z-5k)">4:36</b><span style="color:var(--ink-3)">+1s</span></div>
+          </div>
+          <div class="splitrow">
+            <div class="swatch" style="background:var(--z-5k)"></div>
+            <div class="num">3</div>
+            <div class="dist"><b>400m</b><span>0.25mi</span></div>
+            <div class="barwrap"><i style="left:8%;width:66%;background:var(--z-5k)"></i></div>
+            <div class="pace"><b style="color:var(--z-5k)">4:33</b><span style="color:#2D8A4E">−2s</span></div>
+          </div>
+          <div class="splitrow">
+            <div class="swatch" style="background:var(--z-3k)"></div>
+            <div class="num">4</div>
+            <div class="dist"><b>400m</b><span>0.25mi</span></div>
+            <div class="barwrap"><i style="left:8%;width:70%;background:var(--z-3k)"></i></div>
+            <div class="pace"><b style="color:var(--z-3k)">4:28</b><span style="color:#2D8A4E">−7s</span></div>
+          </div>
+          <div class="splitrow">
+            <div class="swatch" style="background:var(--z-mile)"></div>
+            <div class="num">5</div>
+            <div class="dist"><b>200m</b><span>0.12mi</span></div>
+            <div class="barwrap"><i style="left:8%;width:86%;background:var(--z-mile)"></i></div>
+            <div class="pace"><b style="color:var(--z-mile)">4:01</b><span style="color:#2D8A4E">−9s</span></div>
+          </div>
+        </div>
+
+        <div class="allrow">
+          <span class="l"><b>ALL</b> &nbsp;1.6mi WORK · 7 REPS</span>
+          <span class="v">4:34</span>
+        </div>
+
+        <div class="rule"></div>
+        <div class="seclabel"><span class="eyebrow">ROUTE</span></div>
+        <div style="background:var(--card);border:1px solid var(--rule);border-radius:8px;
+             margin-top:14px;padding:18px;display:flex;justify-content:center">
+          <svg width="120" height="150" viewBox="0 0 120 150">
+            <ellipse cx="60" cy="75" rx="34" ry="62" fill="none" stroke="var(--ink-3)" stroke-width="7" opacity=".45"/>
+            <ellipse cx="60" cy="75" rx="34" ry="62" fill="none" stroke="var(--z-5k)" stroke-width="3"/>
+            <circle cx="60" cy="137" r="7" fill="var(--paper)" stroke="var(--ink)" stroke-width="2"/>
+          </svg>
+        </div>
+        <p class="note">
+          <span class="lead">Splits</span>
+          Each split's swatch, bar fill and pace number all carry its zone color —
+          a glance down the column reads as a clean pale-to-navy descent.</p>
+      </div>
+      <div class="caption">SPLITS · ROWS TINTED BY PACE ZONE</div>
+    </div>
+
+  </div>
+
+  <div class="footer">Mockup · pace spectrum applied to workout detail · for review</div>
+</div>
+
+<script>
+(function(){
+  var btn = document.getElementById('toggle');
+  var single = false;
+  // elements whose inline style references a pace-zone var
+  var styleNodes = [].slice.call(document.querySelectorAll('[style*="--z-"]'));
+  styleNodes.forEach(function(n){ n.dataset.orig = n.getAttribute('style'); });
+  // SVG nodes coloring via stroke/fill attributes
+  var attrNodes = [].slice.call(document.querySelectorAll('[stroke*="--z-"],[fill*="--z-"]'));
+  attrNodes.forEach(function(n){
+    if(n.getAttribute('stroke')) n.dataset.ostroke = n.getAttribute('stroke');
+    if(n.getAttribute('fill'))   n.dataset.ofill   = n.getAttribute('fill');
+  });
+  // the page-level spectrum legend + per-bar zone tags
+  var legend = document.querySelector('.legend');
+  var zoneTags = [].slice.call(document.querySelectorAll('.barzone'));
+
+  function swap(v){ return v.replace(/var\(--z-[a-z0-9]+\)/g, 'var(--coral)'); }
+
+  function apply(){
+    styleNodes.forEach(function(n){
+      n.setAttribute('style', single ? swap(n.dataset.orig) : n.dataset.orig);
+    });
+    attrNodes.forEach(function(n){
+      if(n.dataset.ostroke) n.setAttribute('stroke', single ? swap(n.dataset.ostroke) : n.dataset.ostroke);
+      if(n.dataset.ofill)   n.setAttribute('fill',   single ? swap(n.dataset.ofill)   : n.dataset.ofill);
+    });
+    legend.style.opacity = single ? '0.28' : '1';
+    zoneTags.forEach(function(t){ t.style.visibility = single ? 'hidden' : 'visible'; });
+    btn.textContent = single ? 'SINGLE COLOR · ON' : 'PACE COLOR · ON';
+    btn.style.background = single ? 'transparent' : 'var(--coral)';
+    btn.style.color = single ? 'var(--coral)' : '#fff';
+  }
+  btn.addEventListener('click', function(){ single = !single; apply(); });
+})();
+</script>
+</body>
+</html>

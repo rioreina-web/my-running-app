@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Training — Week · Month · Day · Mood · Key</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --m-energized:#2D8A4E; --m-positive:#4A9E6B; --m-neutral:#9B9590; --m-tired:#C4873A; --m-struggling:#C45A3A; --m-injured:#B83A4A;
+  --p-easy:#93B9D6; --p-steady:#6E9BC4; --p-mp:#4E7FB0; --p-lt:#2E5E97; --p-10k:#234E86; --p-5k:#173A6B; --p-mile:#0E1D4E;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#DED9D2;font-family:var(--font-body);color:var(--ink);-webkit-font-smoothing:antialiased;padding:30px 16px 50px;min-height:100vh;}
+.stage{max-width:900px;margin:0 auto;}
+.stage-head{text-align:center;margin-bottom:24px;}
+.stage-head .k{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);}
+.stage-head h1{font-family:var(--font-display);font-weight:700;font-size:28px;letter-spacing:-.01em;margin-top:6px;}
+.stage-head p{font-family:var(--font-body);font-style:italic;color:var(--ink-2);font-size:14px;margin-top:5px;}
+
+.phone{width:390px;margin:0 auto;background:var(--paper);border-radius:40px;
+  box-shadow:0 24px 60px rgba(0,0,0,.22);border:10px solid #17130f;overflow:hidden;position:relative;}
+.notch{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;}
+.notch .time{font-family:var(--font-mono);font-size:12px;font-weight:600;padding-top:6px;}
+.notch .status{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);padding-top:6px;}
+.screen{height:812px;overflow-y:auto;overflow-x:hidden;position:relative;}
+.screen::-webkit-scrollbar{width:0;}
+.pad{padding:0 22px;}
+
+.plate{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);padding:10px 22px 0;}
+.head-date{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:14px;}
+.head-title{font-family:var(--font-display);font-weight:700;font-size:38px;letter-spacing:-.015em;line-height:1;margin-top:5px;}
+.head-sub{font-family:var(--font-body);font-style:italic;color:var(--ink-2);font-size:13.5px;margin-top:7px;}
+
+.seg{display:flex;margin:20px 0 4px;border-bottom:1px solid var(--rule);}
+.seg button{flex:1;background:none;border:none;font-family:var(--font-mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);padding:10px 0 12px;cursor:pointer;position:relative;}
+.seg button.on{color:var(--ink);}
+.seg button.on::after{content:"";position:absolute;left:50%;transform:translateX(-50%);bottom:-1px;width:34px;height:2px;background:var(--coral);}
+
+.pnav{display:flex;align-items:center;justify-content:space-between;margin:18px 0 2px;}
+.pnav .arw{font-family:var(--font-mono);font-size:15px;color:var(--ink-3);cursor:pointer;width:26px;text-align:center;}
+.pnav .lab{font-family:var(--font-mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink);}
+
+.ribbon{display:flex;margin:14px 0 4px;}
+.ribbon .cell{flex:1;text-align:center;padding:2px 4px;}
+.ribbon .cell + .cell{border-left:1px solid var(--rule);}
+.ribbon .n{font-family:var(--font-mono);font-weight:600;font-size:20px;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+.ribbon .n small{font-size:11px;color:var(--ink-2);}
+.ribbon .l{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-top:5px;}
+
+.drule{display:flex;align-items:center;gap:8px;margin:18px 0 14px;}
+.drule::before,.drule::after{content:"";flex:1;height:1px;background:var(--rule);}
+.drule .dot{width:3px;height:3px;border-radius:999px;background:var(--ink-3);}
+
+/* ---------- WEEK ---------- */
+.wknote{font-family:var(--font-body);font-size:13px;font-style:italic;color:var(--ink-2);line-height:1.45;margin:4px 0 6px;}
+.wkkey{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2);margin:0 0 12px;display:flex;align-items:center;gap:7px;}
+.wkkey .sq{width:6px;height:6px;background:var(--ink);border-radius:1px;flex:none;}
+.drow{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--rule);cursor:pointer;}
+.drow:last-child{border-bottom:none;}
+.drow .dcol{width:34px;flex:none;text-align:center;}
+.drow .dcol .dw{font-family:var(--font-mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
+.drow .dcol .dn{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.1;}
+.drow.today .dcol .dn{color:var(--coral);}
+.chip{width:40px;height:40px;flex:none;border-radius:9px;display:flex;align-items:center;justify-content:center;position:relative;}
+.chip .cm{font-family:var(--font-mono);font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;}
+.chip.easy{background:var(--p-easy);color:#12325a;} .chip.steady{background:var(--p-steady);color:#fff;}
+.chip.mp{background:var(--p-mp);color:#fff;} .chip.lt{background:var(--p-lt);color:#fff;}
+.chip.k10{background:var(--p-10k);color:#fff;} .chip.k5{background:var(--p-5k);color:#fff;} .chip.mile{background:var(--p-mile);color:#fff;}
+.chip.rest{background:var(--paper-deep);color:var(--ink-3);} .chip.xt{background:transparent;border:1.5px dashed var(--ink-3);color:var(--ink-2);}
+.chip.st{background:var(--ink);color:var(--paper);}
+.chip .clab{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.03em;}
+.chip .keysq{position:absolute;top:-3px;left:-3px;width:9px;height:9px;background:var(--ink);border:1.5px solid var(--card);border-radius:2px;}
+.drow .meat{flex:1;min-width:0;}
+.drow .meat .t{font-family:var(--font-display);font-weight:600;font-size:16px;line-height:1.1;display:flex;align-items:center;flex-wrap:wrap;}
+.drow .meat .t .u{color:var(--ink-2);font-weight:400;font-size:13px;margin-left:5px;}
+.keytag{font-family:var(--font-mono);font-size:7.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;background:var(--ink);color:var(--paper);padding:2px 5px;border-radius:3px;margin-left:8px;}
+.drow .meat .s{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;color:var(--ink-2);margin-top:4px;text-transform:uppercase;}
+.drow .rgt{display:flex;align-items:center;gap:9px;flex:none;}
+.pill{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;}
+.pill.energized{background:rgba(45,138,78,.13);color:var(--m-energized);}
+.pill.positive{background:rgba(74,158,107,.13);color:var(--m-positive);}
+.pill.neutral{background:rgba(155,149,144,.16);color:var(--ink-2);}
+.pill.tired{background:rgba(196,135,58,.15);color:var(--m-tired);}
+.pill.struggling{background:rgba(196,90,58,.15);color:var(--m-struggling);}
+.pill.injured{background:rgba(184,58,74,.14);color:var(--m-injured);}
+.drow.planned{opacity:.72;} .drow.planned .chip{opacity:.6;}
+.drow.planned .meat .s .plg{color:var(--ink-3);}
+.chev{font-family:var(--font-mono);color:var(--ink-3);font-size:13px;}
+.ndot{width:6px;height:6px;border-radius:999px;background:var(--coral);flex:none;}
+
+.wbar-wrap{margin:16px 0 2px;padding-top:14px;border-top:1px solid var(--rule);}
+.wbar-h{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:9px;display:flex;justify-content:space-between;}
+.wbar{display:flex;height:14px;border-radius:4px;overflow:hidden;gap:2px;}
+
+/* ---------- MONTH ---------- */
+.mhead{display:grid;grid-template-columns:repeat(7,1fr) 30px;gap:5px;margin-bottom:7px;}
+.mhead div{font-family:var(--font-mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);text-align:center;}
+.mhead .mih{color:var(--ink-2);}
+.mrow{display:grid;grid-template-columns:repeat(7,1fr) 30px;gap:5px;margin-bottom:5px;}
+.mcell{position:relative;height:68px;border-radius:7px;background:var(--card);border:1px solid var(--rule);
+  display:flex;flex-direction:column;align-items:center;padding:5px 1px 11px;cursor:pointer;overflow:hidden;}
+.mcell .mn{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--ink-3);font-variant-numeric:tabular-nums;}
+.mcell.today{border:1.5px solid var(--coral);} .mcell.today .mn{color:var(--coral);}
+.mcell.planned{background:var(--paper-elevated);border-style:dashed;border-color:#dad4cd;}
+.mblk{margin-top:4px;width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;}
+.mblk .bm{font-family:var(--font-mono);font-weight:700;font-size:11px;font-variant-numeric:tabular-nums;}
+.mblk.easy{background:var(--p-easy);color:#12325a;} .mblk.steady{background:var(--p-steady);color:#fff;}
+.mblk.mp{background:var(--p-mp);color:#fff;} .mblk.lt{background:var(--p-lt);color:#fff;}
+.mblk.k10{background:var(--p-10k);color:#fff;} .mblk.k5{background:var(--p-5k);color:#fff;} .mblk.mile{background:var(--p-mile);color:#fff;}
+.mblk.rest{background:var(--paper-deep);color:var(--ink-3);width:22px;height:22px;margin-top:6px;}
+.mblk.xt{background:transparent;border:1.4px dashed var(--ink-3);color:var(--ink-2);}
+.mblk.st{background:var(--ink);color:var(--paper);}
+.mblk .bl{font-family:var(--font-mono);font-size:8px;font-weight:600;}
+.mcell .mz{font-family:var(--font-mono);font-size:7.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-3);margin-top:3px;}
+.mcell.planned .mblk{opacity:.6;}
+.mmood2{position:absolute;top:4px;right:4px;width:7px;height:7px;border-radius:999px;}
+.mcell .mn.ring{border-radius:999px;padding:1px 5px;}
+.mkey{position:absolute;top:4px;left:4px;width:7px;height:7px;background:var(--ink);border-radius:1px;}
+.mnig{position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:999px;background:var(--coral);}
+.mtot{height:68px;border-radius:7px;background:var(--paper-deep);display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.mtot .tv{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+.mtot .tl{font-family:var(--font-mono);font-size:7px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin-top:3px;}
+.mtot.partial .tv{color:var(--ink-2);}
+
+/* mood month summary */
+.moodmonth{margin-top:4px;padding-top:16px;border-top:1px solid var(--rule);}
+.mm-h{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:10px;display:flex;justify-content:space-between;}
+.moodbar{display:flex;height:24px;border-radius:5px;overflow:hidden;gap:2px;}
+.moodbar .mseg{display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:9px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums;min-width:14px;}
+.moodbar .mseg.lite{color:var(--ink);}
+.mm-keys{display:flex;flex-wrap:wrap;gap:7px 13px;margin-top:11px;}
+.mm-keys .k{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);}
+.mm-keys .k .sw{width:9px;height:9px;border-radius:2px;flex:none;}
+.mm-read{font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--ink-2);line-height:1.45;margin-top:12px;}
+
+/* key workouts list */
+.keylist{margin-top:4px;padding-top:16px;border-top:1px solid var(--rule);}
+.kl-h{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px;display:flex;align-items:center;gap:7px;}
+.kl-h .sq{width:6px;height:6px;background:var(--ink);border-radius:1px;}
+.keyrow{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--rule);cursor:pointer;}
+.keyrow:last-child{border-bottom:none;}
+.keyrow .kchip{width:32px;height:32px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:700;font-size:11px;color:#fff;}
+.keyrow .kd{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);width:46px;flex:none;}
+.keyrow .kt{font-family:var(--font-display);font-weight:600;font-size:15px;flex:1;line-height:1.1;}
+.keyrow .kt .ks{font-family:var(--font-mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);display:block;margin-top:2px;font-weight:400;}
+.keyrow .kp{font-family:var(--font-mono);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);text-align:right;}
+.keyrow .kp small{display:block;font-size:7.5px;font-weight:400;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-top:2px;}
+
+/* legend */
+.legend{margin:4px 0 2px;padding:16px 0 4px;border-top:1px solid var(--rule);}
+.legend .lh{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:9px;}
+.ramp{display:flex;height:10px;border-radius:3px;overflow:hidden;}
+.ramp span{flex:1;}
+.ramp-labs{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:8px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);margin-top:5px;}
+.legkeys{display:flex;flex-wrap:wrap;gap:9px 15px;margin-top:13px;}
+.legkeys .key{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2);}
+.legkeys .sw{width:12px;height:12px;border-radius:4px;flex:none;}
+.sw.rest{background:var(--paper-deep);} .sw.xt{border:1.5px dashed var(--ink-3);} .sw.st{background:var(--ink);}
+.sw.key{background:var(--ink);border-radius:2px;width:9px;height:9px;} .sw.niggle{background:var(--coral);border-radius:999px;width:8px;height:8px;}
+.sw.mood2{background:var(--m-positive);border-radius:999px;width:9px;height:9px;}
+
+/* tabs */
+.tabs{display:flex;border-top:1px solid var(--rule);background:var(--paper);}
+.tabs .t{flex:1;text-align:center;padding:9px 0 12px;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);}
+.tabs .t.on{color:var(--ink);}
+.tabs .t .d{width:5px;height:5px;border-radius:999px;background:transparent;margin:0 auto 5px;}
+.tabs .t.on .d{background:var(--coral);}
+.home-ind{height:5px;width:120px;background:var(--ink);opacity:.85;border-radius:999px;margin:2px auto 8px;}
+
+/* ---------- DAY DETAIL ---------- */
+.scrim{position:absolute;inset:0;background:rgba(26,24,21,.28);opacity:0;pointer-events:none;transition:opacity .25s;z-index:5;}
+.scrim.show{opacity:1;pointer-events:auto;}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:20px 20px 0 0;
+  transform:translateY(102%);transition:transform .3s cubic-bezier(.2,.7,.2,1);z-index:6;max-height:90%;overflow-y:auto;padding:0 22px 26px;}
+.sheet::-webkit-scrollbar{width:0;}
+.sheet.show{transform:translateY(0);}
+.grab{width:38px;height:4px;border-radius:999px;background:var(--paper-deep);margin:9px auto 4px;}
+.sheet .x{position:absolute;top:12px;right:16px;font-family:var(--font-mono);font-size:12px;color:var(--ink-3);cursor:pointer;letter-spacing:.05em;}
+.sheet .d-eye{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);margin-top:12px;display:flex;align-items:center;gap:8px;}
+.sheet .d-eye .kt2{font-size:7.5px;font-weight:700;letter-spacing:.1em;background:var(--ink);color:var(--paper);padding:2px 5px;border-radius:3px;}
+.sheet .d-title{font-family:var(--font-display);font-weight:700;font-size:32px;letter-spacing:-.01em;line-height:1.02;margin-top:5px;}
+
+/* feeling first */
+.howfelt{margin-top:18px;}
+.hf-eye{font-family:var(--font-mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:11px;}
+.pill.big{font-size:12px;padding:6px 15px;letter-spacing:.11em;}
+.moodscale{display:flex;gap:4px;align-items:flex-end;margin-top:14px;}
+.moodscale .ms{flex:1;height:13px;border-radius:4px;}
+.moodscale .ms.on{height:19px;}
+.ms-ends{display:flex;justify-content:space-between;margin-top:7px;font-family:var(--font-mono);font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);}
+
+.d-stats{display:flex;margin:20px 0 4px;padding-top:16px;border-top:1px solid var(--rule);}
+.d-stats .c{flex:1;padding:2px 2px;}
+.d-stats .c + .c{border-left:1px solid var(--rule);padding-left:12px;}
+.d-stats .v{font-family:var(--font-mono);font-weight:600;font-size:17px;font-variant-numeric:tabular-nums;}
+.d-stats .k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);margin-top:5px;}
+.d-sec{margin-top:20px;padding-top:16px;border-top:1px solid var(--rule);}
+.d-sec .h{font-family:var(--font-mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:11px;display:flex;justify-content:space-between;}
+.d-sec .h .r{color:var(--ink-3);}
+.reps{display:flex;gap:3px;height:34px;align-items:flex-end;}
+.reps .rp{flex:1;border-radius:3px;min-width:0;}
+.reps-labs{display:flex;gap:3px;margin-top:6px;}
+.reps-labs span{flex:1;text-align:center;font-family:var(--font-mono);font-size:7.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;}
+.quote{font-family:var(--font-body);font-style:italic;font-size:15px;line-height:1.5;color:var(--ink);border-left:2px solid rgba(212,89,42,.5);padding-left:13px;}
+.d-nig{background:var(--coral-wash);border-radius:10px;padding:13px 14px;}
+.d-nig .part{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--coral-deep);}
+.d-nig .said{font-family:var(--font-body);font-style:italic;font-size:14px;color:var(--ink);margin-top:6px;line-height:1.45;}
+.d-nig .foot{font-family:var(--font-body);font-style:italic;font-size:11px;color:var(--ink-2);margin-top:8px;}
+.d-empty{font-family:var(--font-body);font-style:italic;font-size:14px;color:var(--ink-2);line-height:1.5;}
+.d-note{font-family:var(--font-body);font-size:14px;color:var(--ink);line-height:1.5;}
+.d-mark{margin-top:20px;font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--coral);border-bottom:1.5px solid var(--coral);display:inline-block;padding-bottom:1px;cursor:pointer;}
+
+.caption{max-width:430px;margin:16px auto 0;font-family:var(--font-mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#8a847c;text-align:center;line-height:1.7;}
+.hint{max-width:430px;margin:8px auto 0;font-family:var(--font-body);font-style:italic;font-size:13px;color:#6f6a63;text-align:center;}
+.moodctl{display:flex;align-items:center;gap:6px;justify-content:center;margin:0 auto 16px;flex-wrap:wrap;}
+.moodctl .mc-l{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:#8a847c;margin-right:4px;}
+.moodctl button{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#6f6a63;background:#ECE8E2;border:1px solid #d9d3cc;border-radius:999px;padding:5px 11px;cursor:pointer;}
+.moodctl button.on{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="stage-head">
+    <div class="k">Post Run Drip · Redesign v2</div>
+    <h1>Mood as a layer. Key work that stands out.</h1>
+    <p>Toggle Week / Month. Tap any day to drill in.</p>
+  </div>
+
+  <div class="moodctl">
+    <span class="mc-l">Mood in grid</span>
+    <button data-ms="dot" class="on">Dot</button>
+    <button data-ms="tint">Tinted date</button>
+    <button data-ms="ring">Ring</button>
+    <button data-ms="off">Off</button>
+  </div>
+
+  <div class="phone">
+    <div class="notch"><span class="time">11:53</span><span class="status">◍ ⌃ 78</span></div>
+    <div class="screen" id="screen">
+
+      <div class="plate"><span>RUNNING LOG — TRAINING</span><span id="plateFig">FIG. 04 · JUL 10</span></div>
+
+      <div class="pad">
+        <div class="head-date" id="headDate">JUN 15 — JUL 12</div>
+        <div class="head-title">Your training.</div>
+        <div class="head-sub" id="headSub">This week, and the block behind it.</div>
+
+        <div class="seg">
+          <button data-v="week" class="on">Week</button>
+          <button data-v="month">Month</button>
+          <button data-v="block">Block</button>
+        </div>
+
+        <div class="pnav">
+          <span class="arw" id="prev">‹</span>
+          <span class="lab" id="pnavLab">Week of Jul 6</span>
+          <span class="arw" id="next">›</span>
+        </div>
+      </div>
+
+      <div class="pad" id="body"></div>
+
+      <div style="height:14px"></div>
+      <div class="tabs">
+        <div class="t"><div class="d"></div>Log</div>
+        <div class="t on"><div class="d"></div>Training</div>
+        <div class="t"><div class="d"></div>Trends</div>
+        <div class="t"><div class="d"></div>Coach</div>
+        <div class="t"><div class="d"></div>Plan</div>
+      </div>
+      <div class="home-ind"></div>
+
+      <div class="scrim" id="scrim"></div>
+      <div class="sheet" id="sheet">
+        <div class="grab"></div>
+        <span class="x" id="closeSheet">CLOSE ✕</span>
+        <div id="sheetBody"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="hint">↑ Live mock — Week/Month toggle works, mood shows across the grid, key workouts are flagged, every day drills in.</div>
+  <div class="caption">Blue depth-ramp = pace · warm dot = how it felt · ink square = key session · coral = niggle</div>
+</div>
+
+<script>
+const RAMP=['easy','steady','mp','lt','k10','k5','mile'];
+const PACECOL={easy:'#93B9D6',steady:'#6E9BC4',mp:'#4E7FB0',lt:'#2E5E97',k10:'#234E86',k5:'#173A6B',mile:'#0E1D4E'};
+const ZLABEL={easy:'Easy',steady:'Steady',mp:'MP',lt:'LT',k10:'10K',k5:'5K',mile:'Mile'};
+const MOODS=['energized','positive','neutral','tired','struggling','injured'];
+const MOODCOL={energized:'#2D8A4E',positive:'#4A9E6B',neutral:'#9B9590',tired:'#C4873A',struggling:'#C45A3A',injured:'#B83A4A'};
+const MOODLAB={energized:'Energized',positive:'Positive',neutral:'Neutral',tired:'Tired',struggling:'Struggling',injured:'Injured'};
+
+function D(o){return Object.assign({mi:0,pace:'',time:'',mood:'',niggle:null,planned:false,today:false,key:false,reps:null,quote:'',note:'',long:false},o);}
+
+const weeks=[
+ {of:'Week of Jun 15', total:41, partial:false, note:'Block opener. Friday’s 5K reps averaged 4:36 off a strength day two before.', days:[
+   D({dw:'Mon',dn:15,type:'easy',mi:5,pace:'8:24 / mi',time:'42 min',mood:'positive',quote:'Easy shakeout. Legs felt fresh after the down week.'}),
+   D({dw:'Tue',dn:16,type:'steady',mi:6,pace:'7:38 / mi',time:'46 min',mood:'positive'}),
+   D({dw:'Wed',dn:17,type:'easy',mi:5,pace:'8:19 / mi',time:'42 min',mood:'positive'}),
+   D({dw:'Thu',dn:18,type:'st',mood:'positive',note:'Strength — 45 min. Posterior chain, single-leg work.'}),
+   D({dw:'Fri',dn:19,type:'k5',mi:7,pace:'8:02 / mi',time:'56 min',mood:'energized',key:true,
+      reps:['k5','k10','k5','k5','k5','k5','k5','k5'],repPace:'4:36',repScheme:'1K · 200m · 400m × 6',
+      quote:'Legs had real snap today — the 400s felt fast without forcing.'}),
+   D({dw:'Sat',dn:20,type:'steady',mi:14,long:true,pace:'7:52 / mi',time:'1:50',mood:'positive'}),
+   D({dw:'Sun',dn:21,type:'easy',mi:4,pace:'8:31 / mi',time:'34 min',mood:'neutral'}),
+ ]},
+ {of:'Week of Jun 22', total:43, partial:false, note:'Calf niggle logged Tuesday after the 5K reps. Swapped Thursday to the bike — held the week together.', days:[
+   D({dw:'Mon',dn:22,type:'easy',mi:6,pace:'8:20 / mi',time:'50 min',mood:'neutral'}),
+   D({dw:'Tue',dn:23,type:'k5',mi:8,pace:'7:48 / mi',time:'62 min',mood:'struggling',key:true,
+      niggle:{part:'Calf',said:'“Right calf tightened up on the third rep — backed off the last two.”'},
+      reps:['k5','k5','k5','steady','k5','steady','k5','steady'],repPace:'5:54',repScheme:'1K · 600m × 6',
+      quote:'Right calf tightened on the third rep. Backed off the last two.'}),
+   D({dw:'Wed',dn:24,type:'easy',mi:5,pace:'8:36 / mi',time:'43 min',mood:'tired'}),
+   D({dw:'Thu',dn:25,type:'xt',mood:'neutral',note:'Bike — 45 min easy spin. Kept the calf quiet.'}),
+   D({dw:'Fri',dn:26,type:'easy',mi:6,pace:'8:22 / mi',time:'50 min',mood:'positive'}),
+   D({dw:'Sat',dn:27,type:'steady',mi:13,long:true,pace:'7:58 / mi',time:'1:43',mood:'positive',
+      quote:'Calf held up fine. Relieved — settled into a rhythm by mile 4.'}),
+   D({dw:'Sun',dn:28,type:'easy',mi:5,pace:'8:29 / mi',time:'42 min',mood:'positive'}),
+ ]},
+ {of:'Week of Jun 29', total:46, partial:false, note:'Peak week. MP 8 Wednesday, then 15 on tired legs Saturday and held it together.', days:[
+   D({dw:'Mon',dn:29,type:'easy',mi:6,pace:'8:18 / mi',time:'50 min',mood:'positive'}),
+   D({dw:'Tue',dn:30,type:'steady',mi:7,pace:'7:36 / mi',time:'53 min',mood:'positive'}),
+   D({dw:'Wed',dn:1,type:'mp',mi:8,pace:'7:26 / mi',time:'59 min',mood:'energized',key:true,
+      reps:['steady','mp','mp','mp','mp','mp','mp','steady'],repPace:'7:12',repScheme:'6 mi @ MP',
+      quote:'MP felt like cruising — 7:12 average, right on the number.'}),
+   D({dw:'Thu',dn:2,type:'easy',mi:5,pace:'8:30 / mi',time:'42 min',mood:'tired'}),
+   D({dw:'Fri',dn:3,type:'rest'}),
+   D({dw:'Sat',dn:4,type:'steady',mi:15,long:true,pace:'8:01 / mi',time:'2:00',mood:'tired',
+      quote:'Long and honestly tired by 12. Ground out the last three.'}),
+   D({dw:'Sun',dn:5,type:'easy',mi:5,pace:'8:40 / mi',time:'43 min',mood:'neutral'}),
+ ]},
+ {of:'Week of Jul 6', total:23, planTotal:42, partial:true, note:'Three easy days banked before the long run. Wednesday’s 10K reps hit 5:10 — sharpest of the block.', days:[
+   D({dw:'Mon',dn:6,type:'easy',mi:6,pace:'8:16 / mi',time:'50 min',mood:'positive'}),
+   D({dw:'Tue',dn:7,type:'easy',mi:5,pace:'8:24 / mi',time:'42 min',mood:'positive'}),
+   D({dw:'Wed',dn:8,type:'k10',mi:8,pace:'7:40 / mi',time:'61 min',mood:'energized',key:true,
+      reps:['k10','k10','k10','k10','k10','k10','k5','k5','lt','k10'],repPace:'5:10',repScheme:'1K × 6 · 800m × 2 · 1K',
+      quote:'Best session of the block. Reps got faster as I went — negative split the set.'}),
+   D({dw:'Thu',dn:9,type:'rest'}),
+   D({dw:'Fri',dn:10,type:'easy',mi:4,pace:'8:28 / mi',time:'34 min',today:true,mood:'positive'}),
+   D({dw:'Sat',dn:11,type:'steady',mi:14,long:true,planned:true,key:true}),
+   D({dw:'Sun',dn:12,type:'easy',mi:5,planned:true}),
+ ]},
+];
+let curWeek=3;
+
+const el=id=>document.getElementById(id);
+function chipInner(d){
+  if(d.type==='rest')return '<span class="clab">REST</span>';
+  if(d.type==='xt')return '<span class="clab">XT</span>';
+  if(d.type==='st')return '<span class="clab">ST</span>';
+  return '<span class="cm">'+d.mi+'</span>';
+}
+function typeLabel(d){
+  if(d.type==='rest')return 'Rest';
+  if(d.type==='xt')return 'Cross-train';
+  if(d.type==='st')return 'Strength';
+  if(d.long)return 'Long';
+  return ZLABEL[d.type];
+}
+function subLine(d){
+  if(d.type==='rest')return 'Nothing on the calendar';
+  if(d.type==='xt')return '45 min · bike';
+  if(d.type==='st')return '45 min · gym';
+  if(d.planned)return '<span class="plg">Planned · '+d.mi+' mi'+(d.key?' · key':'')+'</span>';
+  let s=d.mi+' mi · '+d.pace;
+  if(d.reps)return s+' · '+d.repScheme;
+  return s;
+}
+function monthOf(d){ return (d.dn>=6 && d.dn<=12 || d.dn<=5) ? 'Jul' : 'Jun'; }
+
+/* ---------- WEEK ---------- */
+function renderWeek(){
+  const w=weeks[curWeek];
+  el('pnavLab').textContent=w.of+(curWeek===3?' · this week':'');
+  let mi='<div style="display:flex;justify-content:space-between;align-items:baseline;margin:2px 0 2px">'+
+    '<span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)">Mileage</span>'+
+    '<span style="font-family:var(--font-mono);font-variant-numeric:tabular-nums"><b style="font-size:19px;color:var(--ink)">'+w.total+'</b>'+
+    (w.partial?'<span style="color:var(--ink-3)"> / '+w.planTotal+'</span>':'')+
+    '<span style="font-size:11px;color:var(--ink-2)"> mi</span></span></div>';
+  let note='<div class="wknote">'+w.note+'</div>';
+  // key-this-week line
+  let keyNames=w.days.filter(d=>d.key).map(d=>{
+    let nm=d.long?'Long '+d.mi:(ZLABEL[d.type]+' reps');
+    return nm+' ('+d.dw+')';
+  });
+  let keyLine=keyNames.length?'<div class="wkkey"><span class="sq"></span>Key this week · '+keyNames.join(' · ')+'</div>':'';
+  let rows=w.days.map((d,i)=>{
+    let cls='drow'+(d.today?' today':'')+(d.planned?' planned':'');
+    let runType=d.mi&&['easy','steady','mp','lt','k10','k5','mile'].includes(d.type);
+    return '<div class="'+cls+'" onclick="openDay('+curWeek+','+i+')">'+
+      '<div class="dcol"><div class="dw">'+d.dw+'</div><div class="dn">'+d.dn+'</div></div>'+
+      '<div class="chip '+d.type+'">'+chipInner(d)+(d.key?'<span class="keysq"></span>':'')+'</div>'+
+      '<div class="meat"><div class="t">'+typeLabel(d)+(runType?' <span class="u">'+d.mi+' mi</span>':'')+(d.key?'<span class="keytag">Key</span>':'')+'</div>'+
+      '<div class="s">'+subLine(d)+'</div></div>'+
+      '<div class="rgt">'+(d.niggle?'<span class="ndot"></span>':'')+(d.mood?'<span class="pill '+d.mood+'">'+d.mood+'</span>':'')+'<span class="chev">↗</span></div>'+
+    '</div>';
+  }).join('');
+  let easyMi=0,qualMi=0,longMi=0;
+  w.days.forEach(d=>{if(d.planned)return; if(d.type==='easy')easyMi+=d.mi; else if(d.long)longMi+=d.mi; else if(['steady','mp','lt','k10','k5','mile'].includes(d.type))qualMi+=d.mi;});
+  let bar='<div class="wbar-wrap"><div class="wbar-h"><span>By intensity</span><span>'+easyMi+' easy · '+qualMi+' quality · '+longMi+' long</span></div>'+
+    '<div class="wbar">'+
+    '<span style="flex:'+easyMi+';background:var(--p-easy)"></span>'+
+    '<span style="flex:'+qualMi+';background:var(--p-10k)"></span>'+
+    '<span style="flex:'+longMi+';background:var(--p-steady)"></span>'+
+    '</div></div>';
+  el('body').innerHTML=mi+note+keyLine+rows+bar+legend();
+  el('headSub').textContent='Seven days, most detail. Mood on the right, key work marked.';
+}
+
+/* ---------- MONTH ---------- */
+function renderMonth(){
+  el('pnavLab').textContent='Jun 15 — Jul 12';
+  let head='<div class="mhead"><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div><div>S</div><div class="mih">Mi</div></div>';
+  let rows=weeks.map((w,wi)=>{
+    let cells=w.days.map((d,i)=>{
+      let cls='mcell'+(d.today?' today':'')+(d.planned?' planned':'');
+      let inner;
+      if(d.type==='rest')inner='<div class="mblk rest"><span class="bl">R</span></div>';
+      else if(d.type==='xt')inner='<div class="mblk xt"><span class="bl">XT</span></div>';
+      else if(d.type==='st')inner='<div class="mblk st"><span class="bl">ST</span></div>';
+      else inner='<div class="mblk '+d.type+'"><span class="bm">'+d.mi+'</span></div>';
+      let zt=(d.type==='rest'||d.type==='xt'||d.type==='st')?'':(d.long?'Long':ZLABEL[d.type]);
+      let mm='',mnCls='mn',mnSt='';
+      if(d.mood){
+        if(moodStyle==='dot') mm='<span class="mmood2" style="background:'+MOODCOL[d.mood]+'"></span>';
+        else if(moodStyle==='tint'&&!d.today) mnSt=' style="color:'+MOODCOL[d.mood]+'"';
+        else if(moodStyle==='ring'){mnCls='mn ring';mnSt=' style="box-shadow:0 0 0 1.5px '+MOODCOL[d.mood]+'"';}
+      }
+      return '<div class="'+cls+'" onclick="openDay('+wi+','+i+')">'+
+        (d.key?'<span class="mkey"></span>':'')+(d.niggle?'<span class="mnig"></span>':'')+mm+
+        '<span class="'+mnCls+'"'+mnSt+'>'+d.dn+'</span>'+inner+'<span class="mz">'+zt+'</span></div>';
+    }).join('');
+    let tot='<div class="mtot'+(w.partial?' partial':'')+'"><span class="tv">'+w.total+'</span><span class="tl">mi</span></div>';
+    return '<div class="mrow">'+cells+tot+'</div>';
+  }).join('');
+  el('body').innerHTML=head+rows+moodMonth()+keyList()+legend();
+  el('headSub').textContent='The whole block. Pace on top, mood on the base rail.';
+}
+
+/* mood summary for the month */
+function moodMonth(){
+  let counts={}; MOODS.forEach(m=>counts[m]=0);
+  let logged=0;
+  weeks.forEach(w=>w.days.forEach(d=>{if(d.mood){counts[d.mood]++;logged++;}}));
+  let segs=MOODS.filter(m=>counts[m]>0).map(m=>{
+    let lite=(m==='neutral');
+    return '<div class="mseg'+(lite?' lite':'')+'" style="flex:'+counts[m]+';background:'+MOODCOL[m]+(lite?';opacity:.5':'')+'">'+counts[m]+'</div>';
+  }).join('');
+  let keys=MOODS.filter(m=>counts[m]>0).map(m=>'<div class="k"><span class="sw" style="background:'+MOODCOL[m]+'"></span>'+MOODLAB[m]+'</div>').join('');
+  let good=counts.energized+counts.positive;
+  return '<div class="moodmonth"><div class="mm-h"><span>How it felt · this month</span><span>'+logged+' check-ins</span></div>'+
+    '<div class="moodbar">'+segs+'</div>'+
+    '<div class="mm-keys">'+keys+'</div>'+
+    '<div class="mm-read">'+good+' of '+logged+' days felt good. '+counts.energized+' energized — every one a key session. The single struggle: Jun 23, the calf.</div></div>';
+}
+
+/* key workouts list for the month */
+function keyList(){
+  let items=[];
+  weeks.forEach((w,wi)=>w.days.forEach((d,i)=>{ if(d.key && !d.long) items.push({d,wi,i}); }));
+  let rows=items.map(o=>{
+    let d=o.d;
+    return '<div class="keyrow" onclick="openDay('+o.wi+','+o.i+')">'+
+      '<div class="kchip" style="background:'+PACECOL[d.type]+'">'+d.mi+'</div>'+
+      '<div class="kd">'+monthOf(d).toUpperCase()+' '+d.dn+'</div>'+
+      '<div class="kt">'+ZLABEL[d.type]+' reps<span class="ks">'+d.repScheme+'</span></div>'+
+      '<div class="kp">'+d.repPace+'<small>rep pace</small></div></div>';
+  }).join('');
+  return '<div class="keylist"><div class="kl-h"><span class="sq"></span>Key workouts · this block</div>'+rows+'</div>';
+}
+
+/* ---------- BLOCK ---------- */
+function renderBlock(){
+  el('pnavLab').textContent='Marathon block · wk 5–8';
+  let max=Math.max(...weeks.map(w=>w.partial?w.planTotal:w.total));
+  let rows=weeks.map((w,wi)=>{
+    let pct=Math.round((w.total/max)*100);
+    return '<div class="blk-row'+(wi===3?' cur':'')+'" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--rule)">'+
+      '<div style="width:74px;flex:none;font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:'+(wi===3?'var(--coral)':'var(--ink-2)')+'">'+w.of.replace('Week of ','')+'</div>'+
+      '<div style="flex:1;background:var(--paper-deep);border-radius:4px;height:20px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--p-mp);border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding-right:7px"><span style="font-family:var(--font-mono);font-size:10px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums">'+w.total+(w.partial?'/'+w.planTotal:'')+'</span></div></div></div>';
+  }).join('');
+  el('body').innerHTML=
+    '<div class="ribbon"><div class="cell"><div class="n">176</div><div class="l">Miles</div></div>'+
+    '<div class="cell"><div class="n">44<small>avg</small></div><div class="l">Mi / wk</div></div>'+
+    '<div class="cell"><div class="n">4</div><div class="l">Key</div></div>'+
+    '<div class="cell"><div class="n">73<small>%</small></div><div class="l">Easy</div></div></div>'+
+    '<div class="drule"><span class="dot"></span></div>'+
+    '<div class="wbar-h" style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px">Weekly mileage</div>'+
+    rows+keyList()+legend();
+  el('headSub').textContent='The long arc — mileage week over week.';
+}
+
+function legend(){
+  return '<div class="legend"><div class="lh">Pace · easy to fast</div>'+
+   '<div class="ramp">'+RAMP.map(k=>'<span style="background:'+PACECOL[k]+'"></span>').join('')+'</div>'+
+   '<div class="ramp-labs">'+RAMP.map(k=>'<span>'+ZLABEL[k]+'</span>').join('')+'</div>'+
+   '<div class="legkeys">'+
+   '<div class="key"><span class="sw mood2"></span>Mood dot</div>'+
+   '<div class="key"><span class="sw key"></span>Key session</div>'+
+   '<div class="key"><span class="sw niggle"></span>Niggle</div>'+
+   '<div class="key"><span class="sw rest"></span>Rest</div>'+
+   '<div class="key"><span class="sw xt"></span>Cross-train</div>'+
+   '<div class="key"><span class="sw st"></span>Strength</div>'+
+   '</div></div>';
+}
+
+/* ---------- DAY DETAIL ---------- */
+function openDay(wi,i){
+  const d=weeks[wi].days[i];
+  const mon=monthOf(d);
+  let eye='<span>'+d.dw.toUpperCase()+' · '+mon.toUpperCase()+' '+d.dn+(d.today?' · TODAY':(d.planned?' · PLANNED':''))+'</span>'+(d.key?'<span class="kt2">Key session</span>':'');
+  let title;
+  if(d.type==='rest')title='Rest.';
+  else if(d.type==='xt')title='Cross-train.';
+  else if(d.type==='st')title='Strength.';
+  else title=(d.long?'Long':ZLABEL[d.type])+' · '+d.mi+' mi.';
+  let html='<div class="d-eye">'+eye+'</div><div class="d-title">'+title+'</div>';
+
+  // mood is AMBIENT — built here, placed after the numbers (workout stays the hero)
+  let moodBlock='<div class="d-sec"><div class="h"><span>How it felt</span><span class="r">ambient</span></div>';
+  if(d.mood){
+    let scale=MOODS.map(m=>'<div class="ms'+(m===d.mood?' on':'')+'" style="background:'+MOODCOL[m]+(m===d.mood?'':';opacity:.16')+'"></div>').join('');
+    moodBlock+='<span class="pill big '+d.mood+'">'+MOODLAB[d.mood]+'</span>'+
+      '<div class="moodscale">'+scale+'</div>'+
+      '<div class="ms-ends"><span>Energized</span><span>Injured</span></div>';
+  }else if(d.planned){
+    moodBlock+='<div class="d-empty">Not run yet. No feeling logged.</div>';
+  }else{
+    moodBlock+='<div class="d-empty">No feeling logged.</div>';
+  }
+  moodBlock+='</div>';
+
+  // stats (quantitative hero — comes first)
+  if(['easy','steady','mp','lt','k10','k5','mile'].includes(d.type)){
+    if(d.planned){
+      html+='<div class="d-stats"><div class="c"><div class="v">'+d.mi+' mi</div><div class="k">Planned</div></div>'+
+        '<div class="c"><div class="v">'+(d.long?'Long':ZLABEL[d.type])+'</div><div class="k">Session</div></div>'+
+        '<div class="c"><div class="v">—</div><div class="k">Not run yet</div></div></div>';
+    }else{
+      html+='<div class="d-stats"><div class="c"><div class="v">'+d.mi+' mi</div><div class="k">Distance</div></div>'+
+        '<div class="c"><div class="v">'+d.time+'</div><div class="k">Time</div></div>'+
+        '<div class="c"><div class="v">'+d.pace.replace(' / mi','')+'</div><div class="k">Avg / mi</div></div></div>';
+    }
+  }
+
+  // mood — ambient, sits under the numbers (skip on rest days, which get their own note)
+  if(d.type!=='rest') html+=moodBlock;
+
+  // reps
+  if(d.reps){
+    let bars=d.reps.map(z=>'<div class="rp" style="height:'+(58+RAMP.indexOf(z)*6)+'%;background:'+PACECOL[z]+'"></div>').join('');
+    let labs=d.reps.map((z,n)=>'<span>'+(n+1)+'</span>').join('');
+    html+='<div class="d-sec"><div class="h"><span>Reps · pace narrated</span><span class="r">Rep pace '+d.repPace+'</span></div>'+
+      '<div class="reps">'+bars+'</div><div class="reps-labs">'+labs+'</div></div>';
+  }
+
+  // niggle
+  if(d.niggle){
+    html+='<div class="d-sec"><div class="h"><span style="color:var(--coral-deep)">Niggle</span></div>'+
+      '<div class="d-nig"><div class="part">'+d.niggle.part+'</div>'+
+      '<div class="said">'+d.niggle.said+'</div>'+
+      '<div class="foot">Surfaced from your voice log — recorded, not diagnosed.</div></div></div>';
+  }
+
+  // in your words
+  if(d.quote){
+    html+='<div class="d-sec"><div class="h"><span>In your words</span></div><div class="quote">“'+d.quote+'”</div></div>';
+  }
+
+  // rest / xt / st
+  if(d.type==='rest'){
+    html+='<div class="d-sec"><div class="d-empty">Rest day. Nothing logged — and that’s the plan. Recovery is training too.</div></div>';
+  }else if(d.type==='xt'||d.type==='st'){
+    html+='<div class="d-sec"><div class="h"><span>Session</span></div><div class="d-note">'+d.note+'</div>'+
+      '<div class="d-empty" style="margin-top:10px">Not counted in running mileage or fitness — different kind of stress.</div></div>';
+  }
+
+  if(!d.planned && d.type!=='rest'){
+    html+='<div class="d-mark" onclick="closeSheet()">View full workout ↗</div>';
+  }
+
+  el('sheetBody').innerHTML=html;
+  el('scrim').classList.add('show');
+  el('sheet').classList.add('show');
+  el('sheet').scrollTop=0;
+}
+function closeSheet(){el('scrim').classList.remove('show');el('sheet').classList.remove('show');}
+
+let view='week';
+document.querySelectorAll('.seg button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.seg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');view=b.dataset.v;
+    el('prev').style.visibility=(view==='week')?'visible':'hidden';
+    el('next').style.visibility=(view==='week')?'visible':'hidden';
+    if(view==='week')renderWeek(); else if(view==='month')renderMonth(); else renderBlock();
+  };
+});
+el('prev').onclick=()=>{if(view==='week'&&curWeek>0){curWeek--;renderWeek();}};
+el('next').onclick=()=>{if(view==='week'&&curWeek<weeks.length-1){curWeek++;renderWeek();}};
+el('scrim').onclick=closeSheet;
+el('closeSheet').onclick=closeSheet;
+
+let moodStyle='dot';
+document.querySelectorAll('.moodctl button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.moodctl button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');moodStyle=b.dataset.ms;
+    if(view==='month')renderMonth();
+  };
+});
+renderWeek();
+</script>
+</body>
+</html>
