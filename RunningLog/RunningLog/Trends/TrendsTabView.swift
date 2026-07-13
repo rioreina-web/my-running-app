@@ -28,6 +28,13 @@ struct TrendsTabView: View {
     @State private var range: TrendsRange = .twelveWeek
     @State private var scrubIndex: Int?
     @State private var service: TrendsService
+    /// D · deep-dive group (Effort · Fitness · Signal) — swaps the rows below.
+    @State private var deepGroup: DeepGroup = .fitness
+    /// Which deep-dive row is expanded in place (by title); nil = all collapsed.
+    @State private var expandedRow: String?
+    private enum DeepGroup: String, CaseIterable {
+        case effort = "Effort", fitness = "Fitness", signal = "Signal"
+    }
 
     init(service: TrendsService = .shared) {
         _service = State(initialValue: service)
@@ -57,7 +64,12 @@ struct TrendsTabView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            .padding(.bottom, 24)
+            // Clear the custom DripTabBar (~47pt bar + home-indicator
+            // gutter). Without enough bottom inset the ask bar — the last
+            // item in the scroll — sits trapped behind the tab bar and
+            // can't be tapped. Matches the bottom-clearance convention
+            // used by AnalysisView / FitnessAssessmentView.
+            .padding(.bottom, 100)
         }
         .background(Color.drip.background)
         .toolbar(.hidden, for: .navigationBar)
@@ -102,8 +114,16 @@ struct TrendsTabView: View {
 
     private var loadedContent: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // A · the 5-second view — what moved this week, one card per group.
+            Text("THIS WEEK")
+                .font(.dripEyebrow(11)).tracking(1.3)
+                .foregroundStyle(Color.drip.textSecondary)
+                .padding(.top, 14)
+            thisWeekStrip
+                .padding(.top, 8)
+
             segmenter
-                .padding(.top, 16)
+                .padding(.top, 20)
 
             readout
                 .padding(.top, 14)
@@ -137,55 +157,186 @@ struct TrendsTabView: View {
             Text("GO DEEPER")
                 .font(.dripEyebrow(11)).tracking(1.3)
                 .foregroundStyle(Color.drip.textSecondary)
+                .padding(.bottom, 10)
+
+            // Group sub-nav — one group's rows show at a time (swap, not scroll).
+            deepGroupNav
                 .padding(.bottom, 4)
 
-            drillRow("Training volume", "Load, intensity & the safe band") {
-                VolumeDetailView(
-                    weeks: service.weeks,
-                    flagged: service.flagged,
-                    trimmed: service.trimmed,
-                    onSetExcluded: { id, excluded in
-                        Task { await service.setExcluded(id, excluded: excluded) }
-                    }
-                )
-            }
-            drillRow("Key sessions", "Pace progression + rep splits") {
-                KeySessionsDetailView(weeks: service.weeks)
-            }
-            drillRow("Mood", "How the block has felt") {
-                MoodDetailView(weeks: service.weeks)
-            }
-            drillRow("Niggles", "Recurrence, in your words") {
-                NigglesDetailView(weeks: service.weeks)
+            switch deepGroup {
+            case .effort:
+                expandableRow("Training volume", "Load, intensity & the safe band") {
+                    VolumeDetailView(
+                        weeks: service.weeks,
+                        flagged: service.flagged,
+                        trimmed: service.trimmed,
+                        onSetExcluded: { id, excluded in
+                            Task { await service.setExcluded(id, excluded: excluded) }
+                        },
+                        embedded: true
+                    )
+                }
+            case .fitness:
+                expandableRow("Key sessions", "Same-effort pace + rep splits") {
+                    KeySessionsDetailView(sessions: service.keySessions, volume: service.keyVolume, embedded: true)
+                }
+            case .signal:
+                expandableRow("Mood", "How the block has felt") {
+                    MoodDetailView(weeks: service.weeks, embedded: true)
+                }
+                expandableRow("Niggles", "Recurrence, in your words") {
+                    NigglesDetailView(weeks: service.weeks, embedded: true)
+                }
             }
         }
     }
 
-    private func drillRow<Destination: View>(
+    /// Segmented Effort · Fitness · Signal switcher. Active segment reads coral
+    /// (the one coral accent in this cluster, per the three-palette rule).
+    private var deepGroupNav: some View {
+        HStack(spacing: 0) {
+            ForEach(DeepGroup.allCases, id: \.self) { g in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { deepGroup = g }
+                } label: {
+                    Text(g.rawValue.uppercased())
+                        .font(.dripEyebrow(10)).tracking(1.0)
+                        .foregroundStyle(deepGroup == g ? Color.drip.coral : Color.drip.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(deepGroup == g ? Color.drip.cardBackgroundElevated : Color.clear)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(Color.drip.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.drip.divider, lineWidth: 1))
+    }
+
+    /// A summary row that expands its chart IN PLACE (no push-navigation). The
+    /// content is the detail view rendered `embedded: true` (bare, no scroll/nav).
+    private func expandableRow<Content: View>(
         _ title: String,
         _ subtitle: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        let isOpen = expandedRow == title
+        return VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    expandedRow = isOpen ? nil : title
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title.uppercased())
+                            .font(.dripEyebrow(10)).tracking(1.0)
+                            .foregroundStyle(Color.drip.textSecondary)
+                        Text(subtitle)
+                            .font(.dripBody(14))
+                            .foregroundStyle(Color.drip.textPrimary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isOpen ? Color.drip.coral : Color.drip.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 180 : 0))
+                }
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+                .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+            }
+            .buttonStyle(.plain)
+
+            if isOpen {
+                content()
+                    .padding(.top, 10)
+                    .padding(.bottom, 14)
+            }
+        }
+    }
+
+    // MARK: this-week strip (the 5-second "what changed" answer)
+
+    /// Most recent week with real training; the strip describes it.
+    private var latestWeek: TrendsWeek? { window.last(where: { $0.miles > 0 }) ?? window.last }
+    private var priorWeek: TrendsWeek? {
+        guard let cur = latestWeek, let idx = window.firstIndex(where: { $0.id == cur.id }) else { return nil }
+        return window[..<idx].last(where: { $0.miles > 0 })
+    }
+    private var latestKeyWeek: TrendsWeek? { window.last(where: { $0.keyPaceSec != nil }) }
+    private var priorKeyWeek: TrendsWeek? {
+        guard let cur = latestKeyWeek, let idx = window.firstIndex(where: { $0.id == cur.id }) else { return nil }
+        return window[..<idx].last(where: { $0.keyPaceSec != nil })
+    }
+    private func paceStr(_ sec: Int) -> String { "\(sec / 60):\(String(format: "%02d", sec % 60))" }
+    /// Neutral delta with a direction arrow (no green/coral — three-palette rule).
+    private func deltaStr(_ d: Double, unit: String) -> String? {
+        let r = Int(d.rounded())
+        guard r != 0 else { return nil }
+        return "\(r > 0 ? "↑" : "↓") \(abs(r))\(unit)"
+    }
+    private var signalValue: String {
+        guard let cur = latestWeek else { return "—" }
+        if let n = cur.niggles.first(where: { !$0.isEmpty }) { return n.lowercased() }
+        return cur.mood.isEmpty ? "clear" : cur.mood.lowercased()
+    }
+
+    /// A · the horizontal what-changed strip: one card per deep-dive group
+    /// (Effort · Fitness · Signal), each tappable into its detail view.
+    private var thisWeekStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                if let cur = latestWeek {
+                    stripCard(eyebrow: "EFFORT",
+                              value: "\(Int(cur.miles.rounded())) mi",
+                              delta: priorWeek.flatMap { deltaStr(cur.miles - $0.miles, unit: "") }) {
+                        VolumeDetailView(
+                            weeks: service.weeks, flagged: service.flagged, trimmed: service.trimmed,
+                            onSetExcluded: { id, ex in Task { await service.setExcluded(id, excluded: ex) } }
+                        )
+                    }
+                }
+                if let kw = latestKeyWeek, let kp = kw.keyPaceSec {
+                    stripCard(eyebrow: "FITNESS",
+                              value: "\(paceStr(kp))/mi",
+                              delta: priorKeyWeek?.keyPaceSec.flatMap { deltaStr(Double(kp - $0), unit: "s") }) {
+                        KeySessionsDetailView(sessions: service.keySessions, volume: service.keyVolume)
+                    }
+                }
+                stripCard(eyebrow: "SIGNAL", value: signalValue, delta: nil) {
+                    NigglesDetailView(weeks: service.weeks)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func stripCard<Destination: View>(
+        eyebrow: String, value: String, delta: String?,
         @ViewBuilder destination: @escaping () -> Destination
     ) -> some View {
         NavigationLink {
             destination()
         } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title.uppercased())
-                        .font(.dripEyebrow(10)).tracking(1.0)
-                        .foregroundStyle(Color.drip.textSecondary)
-                    Text(subtitle)
-                        .font(.dripBody(14))
-                        .foregroundStyle(Color.drip.textPrimary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+            VStack(alignment: .leading, spacing: 6) {
+                Text(eyebrow)
+                    .font(.dripEyebrow(9)).tracking(1.0)
                     .foregroundStyle(Color.drip.textTertiary)
+                Text(value)
+                    .font(.dripDisplay(20))
+                    .foregroundStyle(Color.drip.textPrimary)
+                    .lineLimit(1)
+                Text(delta ?? " ")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Color.drip.textSecondary)
             }
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-            .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(minWidth: 118, alignment: .leading)
+            .background(Color.drip.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.drip.divider, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }

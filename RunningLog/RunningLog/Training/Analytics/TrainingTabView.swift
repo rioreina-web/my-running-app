@@ -42,6 +42,14 @@ struct TrainingTabView: View {
     // the `onChange(of: route)` below.
     @State private var route: TrainingRoute?
 
+    /// Train's three modes (beta 4-tab IA — Train is the detail surface, and
+    /// Plan folds into CALENDAR). CURRENT = today + this week · CALENDAR = grid
+    /// + plan/goal · HISTORY = workouts & reps archive + analytics.
+    @State private var mode: TrainMode = .current
+    enum TrainMode: String, CaseIterable {
+        case current = "Current", calendar = "Calendar", history = "History"
+    }
+
     enum TrainingRoute: Identifiable, Equatable {
         case editGoal
         case recompute
@@ -61,23 +69,48 @@ struct TrainingTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PlateStrip(surface: "TRAINING · ANALYSIS", fig: "FIG. 1")
-                    .padding(.bottom, 20)
+                PlateStrip(surface: "TRAINING · ANALYSIS")
+                    .padding(.bottom, 24)
 
                 if vm.isLoading && !vm.hasLoaded {
                     loadingState
+                } else if vm.loadFailed && !vm.hasLoaded {
+                    EmptyStateView(
+                        variant: .error,
+                        eyebrow: "Couldn't load",
+                        title: "Your training analytics didn't load. Check your connection and try again.",
+                        cta: .init(label: "Retry") {
+                            Task { await vm.load() }
+                        }
+                    )
+                    .padding(.vertical, 40)
                 } else {
                     header
-                    WorkoutsAndRepsSection()
-                    summary
-                    scopeToggle
-                    volumeByIntensity
-                    mileageByDay
-                    EditorialRule().padding(.vertical, 22)
-                    easyHard
-                    volumeByPace
-                    feltVsPlanned
-                    goals
+                    trainModeNav
+                        .padding(.top, 4)
+
+                    switch mode {
+                    case .current:
+                        summary
+                        feltVsPlanned
+                    case .calendar:
+                        scopeToggle
+                        // The editorial day-by-day calendar replaces the old
+                        // per-day bar charts (volumeByIntensity + mileageByDay),
+                        // which showed the same week two other ways. The
+                        // within-day intensity split survives as the section's
+                        // summary strip and in full on the day sheet.
+                        TrainingCalendarSection(vm: vm) { route = .day($0) }
+                            .padding(.top, 8)
+                        EditorialRule().padding(.vertical, 22)
+                        goals
+                    case .history:
+                        WorkoutsAndRepsSection()
+                            .padding(.top, 20)
+                        EditorialRule().padding(.vertical, 22)
+                        easyHard
+                        volumeByPace
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -139,40 +172,50 @@ struct TrainingTabView: View {
 
     // MARK: 1 · Header
 
+    // Neutral headline only — it *names* the screen, it never grades the
+    // month. Any data-derived verdict ("hard share is creeping…") is coach
+    // voice and lives on The Read, not here. Training stays factual.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(vm.scopeDateline())
                 .font(.dripEyebrow(10.5)).tracking(1.6)
                 .foregroundStyle(Color.drip.textSecondary)
             Text("Your training.")
                 .font(.dripDisplay(34))
                 .foregroundStyle(Color.drip.textPrimary)
-                .padding(.top, 2)
-            Text(vm.headlineInsight())
-                .font(.system(size: 16.5, design: .serif).italic())
-                .foregroundStyle(Color.drip.textPrimary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: 2 · Summary stats
 
+    // Three input streams as plain counts — workouts, voice memos, volume —
+    // with hours + easy% as a quiet sub-strip. No narration; the counts are
+    // the summary. Voice memos surface the qualitative stream we log.
     private var summary: some View {
         let s = vm.summary()
-        return HStack(spacing: 0) {
-            statCell(vm.formatMiles(s.miles), "Miles")
-            statDivider
-            statCell("\(s.runs)", "Runs")
-            statDivider
-            statCell(TrainingAnalyticsViewModel.formatDurationHours(s.durationMinutes), "Hours")
-            statDivider
-            statCell("\(s.easyPercent)%", "Easy")
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                statCell("\(s.runs)", "Runs")
+                statDivider
+                statCell("\(s.voiceMemos)", "Voice memos")
+                statDivider
+                statCell(vm.formatMiles(s.miles), "Miles")
+            }
+            .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
+            .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+
+            HStack(spacing: 16) {
+                Text("\(TrainingAnalyticsViewModel.formatDurationHours(s.durationMinutes)) HRS")
+                    .font(.dripEyebrow(10)).tracking(1.1)
+                    .foregroundStyle(Color.drip.textSecondary)
+                Text("\(s.easyPercent)% EASY")
+                    .font(.dripEyebrow(10)).tracking(1.1)
+                    .foregroundStyle(Color.drip.textSecondary)
+                Spacer()
+            }
+            .padding(.top, 13)
         }
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
         .padding(.top, 22)
     }
 
@@ -218,6 +261,31 @@ struct TrainingTabView: View {
         }
         .padding(.top, 26)
         .padding(.bottom, 4)
+    }
+
+    // MARK: Mode nav — Current · Calendar · History
+
+    private var trainModeNav: some View {
+        HStack(spacing: 0) {
+            ForEach(TrainMode.allCases, id: \.self) { m in
+                let on = mode == m
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { mode = m }
+                } label: {
+                    Text(m.rawValue.uppercased())
+                        .font(.dripEyebrow(11.5)).tracking(2.0)
+                        .foregroundStyle(on ? Color.drip.coral : Color.drip.textTertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .overlay(alignment: .bottom) {
+                            Rectangle()
+                                .fill(on ? Color.drip.coral : Color.drip.divider)
+                                .frame(height: 2)
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     // MARK: 4 · Volume by intensity
@@ -302,12 +370,6 @@ struct TrainingTabView: View {
                 EasyPaceTrendChart(points: pts)
                     .frame(height: 110)
                     .padding(.top, 4)
-                if let delta = vm.easyPaceDelta(), delta.hasPrefix("▼") {
-                    Text("Same effort, faster per mile than at the start of the window. That's fitness.")
-                        .font(.system(size: 15, design: .serif).italic())
-                        .foregroundStyle(Color.drip.textPrimary)
-                        .padding(.top, 12)
-                }
             }
         }
     }
@@ -428,47 +490,54 @@ struct TrainingTabView: View {
             if hasData {
                 PaceHistogram(bins: bins, markers: markers,
                               slow: vm.axisSlowSeconds, fast: vm.axisFastSeconds)
-                    .padding(.top, 34)
+                    .padding(.top, 54)   // gutter room for up to two stacked marker-label rows
                 rampStrip
-                if let insight = paceInsight(bins: bins, markers: markers) {
-                    Text(insight)
-                        .font(.system(size: 15, design: .serif).italic())
-                        .foregroundStyle(Color.drip.textPrimary)
-                        .padding(.top, 14)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             } else {
                 progressPlaceholder("Pace distribution needs logged runs with GPS pace data in this window.")
             }
         }
     }
 
-    private func paceInsight(bins: [PaceBin], markers: [PaceMarker]) -> String? {
-        guard let peak = bins.max(by: { $0.miles < $1.miles }), peak.miles > 0 else { return nil }
-        let step = (vm.axisSlowSeconds - vm.axisFastSeconds) / Double(bins.count)
-        let peakPace = vm.axisSlowSeconds - (Double(peak.index) + 0.5) * step
-        return "Your miles pile up around \(TrainingAnalyticsViewModel.formatPaceMMSS(peakPace)) — easy work carrying the volume, with the spikes sitting on your current workout paces."
-    }
-
+    /// Universal blue pace ramp with the zone labels placed *within*
+    /// the spectrum at their true (warped) axis positions — EASY on the
+    /// pale end, MP at center, LT / MILE in the deep blues, FASTEST at
+    /// the navy terminal. Positions mirror `PaceZoneScale`'s warp anchors.
     private var rampStrip: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 0) {
-                ForEach(Array(IntensityRamp.colors.enumerated()), id: \.offset) { _, c in
-                    Rectangle().fill(c).frame(maxWidth: .infinity)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Self.paceAxisGradient)
+                .frame(height: 13)
+                .frame(maxWidth: .infinity)
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .topLeading) {
+                    rampLabel("EASY")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    rampLabel("MP").position(x: w * 0.50, y: 6)
+                    rampLabel("LT").position(x: w * 0.625, y: 6)
+                    rampLabel("MILE").position(x: w * 0.75, y: 6)
+                    rampLabel("FASTEST")
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .frame(height: 13)
-            .clipShape(RoundedRectangle(cornerRadius: 2))
-            HStack {
-                rampLabel("EASY"); Spacer(); rampLabel("MP"); Spacer()
-                rampLabel("LT"); Spacer(); rampLabel("MILE")
-            }
+            .frame(height: 12)
         }
         .padding(.top, 16)
     }
     private func rampLabel(_ t: String) -> some View {
         Text(t).font(.dripEyebrow(9)).tracking(1.0).foregroundStyle(Color.drip.textTertiary)
     }
+
+    /// The histogram x-axis is linear pace (8:00 → 4:30); this samples the
+    /// shared `PaceZoneScale` along it so the legend's colours line up with the
+    /// bars and match the workout rep charts.
+    private static let paceAxisGradient: LinearGradient = {
+        let slow = 480.0, fast = 270.0
+        let stops = stride(from: 0.0, through: 1.0, by: 0.1).map { f -> Gradient.Stop in
+            Gradient.Stop(color: PaceZoneScale.color(forPaceSec: slow - f * (slow - fast)), location: f)
+        }
+        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .leading, endPoint: .trailing)
+    }()
 
     // MARK: 8 · Felt vs Planned
 
@@ -493,13 +562,6 @@ struct TrainingTabView: View {
                     }
                     .padding(.vertical, 13)
                     Hairline()
-                }
-                if let insight = vm.feltInsight() {
-                    Text(insight)
-                        .font(.system(size: 15, design: .serif).italic())
-                        .foregroundStyle(Color.drip.textPrimary)
-                        .padding(.top, 16)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -891,29 +953,39 @@ private struct PaceHistogram: View {
 
                     HStack(alignment: .bottom, spacing: 3) {
                         ForEach(bins) { bin in
+                            // Colour each bar by its pace through the shared
+                            // PaceZoneScale, so a given pace reads the same
+                            // colour here as on the workout rep charts.
+                            let step = (slow - fast) / Double(max(bins.count, 1))
+                            let centerPace = slow - (Double(bin.index) + 0.5) * step
                             RoundedRectangle(cornerRadius: 1)
-                                .fill(bin.miles > 0 ? bin.color : Color.clear)
+                                .fill(bin.miles > 0 ? PaceZoneScale.color(forPaceSec: centerPace) : Color.clear)
                                 .frame(height: max(bin.miles > 0 ? 2 : 0, CGFloat(bin.miles / axisTop) * plotH))
                                 .frame(maxWidth: .infinity)
                         }
                     }
                     .frame(height: plotH)
-                    // markers overlay bars, labels reaching up into the gutter
+                    // markers overlay bars, labels reaching up into the gutter.
+                    // Close paces (e.g. MP 5:45 / LT 5:30) would collide on a
+                    // single label row, so each label is assigned to one of two
+                    // stacked rows via greedy first-fit — the lower row tucks
+                    // just above the chart, the upper row lifts higher into the
+                    // gutter. Mirrors the anchor-row logic in
+                    // PaceVolumeSpectrumChart.
                     GeometryReader { geo in
-                        ForEach(markers) { m in
+                        let rows = markerRows(width: geo.size.width)
+                        ForEach(Array(markers.enumerated()), id: \.element.id) { idx, m in
                             let x = geo.size.width * CGFloat(m.fraction(slow: slow, fast: fast))
-                            marker(m, x: x, height: geo.size.height)
+                            marker(m, x: x, height: geo.size.height, row: rows[idx])
                         }
                     }
                 }
                 .frame(height: plotH)
                 .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
-                HStack {
-                    ForEach(["8:00","7:00","6:00","5:00","4:30"], id: \.self) { t in
-                        Text(t).font(.dripEyebrow(9)).foregroundStyle(Color.drip.textTertiary)
-                        if t != "4:30" { Spacer() }
-                    }
-                }
+                // Numeric pace axis removed — the gradient ramp strip below
+                // the chart is the single x-axis + legend (zone names align
+                // with the bar colours). On-chart MP/LT/5K markers give the
+                // absolute pace anchors.
             }
         }
     }
@@ -925,7 +997,51 @@ private struct PaceHistogram: View {
             .foregroundStyle(Color.drip.textTertiary)
     }
 
-    private func marker(_ m: PaceMarker, x: CGFloat, height: CGFloat) -> some View {
+    // Approximate rendered width of one marker label block. Two marker
+    // labels closer than this on the x axis are pushed onto different rows.
+    private let markerLabelWidth: CGFloat = 40
+    // Vertical lift per stacked row. Row 0 sits at the base offset; each
+    // higher row lifts one step further into the gutter.
+    private let markerRowStep: CGFloat = 20
+    private let markerBaseOffset: CGFloat = -30
+
+    /// Greedy first-fit row assignment for the pace markers. Walking the
+    /// markers in axis order, each label takes the lowest row whose last
+    /// placed label is at least `markerLabelWidth` away; if every row is
+    /// crowded (very tight cluster) it falls back to the row furthest from
+    /// its last placement. Two rows are enough for the realistic MP/LT/5K
+    /// case; the section reserves gutter room for both (see `.padding(.top)`
+    /// on the histogram in `volumeByPace`).
+    private func markerRows(width: CGFloat) -> [Int] {
+        var lastX: [CGFloat?] = [nil, nil]   // two stacked rows
+        var out: [Int] = []
+        out.reserveCapacity(markers.count)
+        for m in markers {
+            let x = width * CGFloat(m.fraction(slow: slow, fast: fast))
+            var assigned = -1
+            for row in 0..<lastX.count {
+                if let lx = lastX[row] {
+                    if abs(x - lx) >= markerLabelWidth { assigned = row; break }
+                } else {
+                    assigned = row; break
+                }
+            }
+            if assigned < 0 {
+                var best = 0
+                var bestDist: CGFloat = -1
+                for row in 0..<lastX.count {
+                    let d = abs(x - (lastX[row] ?? -1000))
+                    if d > bestDist { bestDist = d; best = row }
+                }
+                assigned = best
+            }
+            lastX[assigned] = x
+            out.append(assigned)
+        }
+        return out
+    }
+
+    private func marker(_ m: PaceMarker, x: CGFloat, height: CGFloat, row: Int) -> some View {
         ZStack(alignment: .top) {
             Rectangle().fill(Color.drip.divider).frame(width: 1).frame(height: height)
             VStack(spacing: 1) {
@@ -934,7 +1050,7 @@ private struct PaceHistogram: View {
                     .font(.dripEyebrow(8.5)).foregroundStyle(Color.drip.textTertiary)
             }
             .fixedSize()
-            .offset(y: -30)
+            .offset(y: markerBaseOffset - CGFloat(row) * markerRowStep)
         }
         .frame(width: 40)
         .position(x: x, y: height / 2)

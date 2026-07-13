@@ -5,9 +5,52 @@ import Storage
 import Supabase
 import SwiftUI
 
+/// Lightweight run row for the journal's per-week mileage subtotal — ALL runs
+/// (not just authored entries), so the header reflects true weekly volume.
+struct JournalMileageRow: Decodable {
+    let workoutDate: Date?
+    let createdAt: Date
+    let miles: Double?
+    let source: String?
+    enum CodingKeys: String, CodingKey {
+        case workoutDate = "workout_date"
+        case createdAt = "created_at"
+        case miles = "workout_distance_miles"
+        case source
+    }
+}
+
+/// A body-part mention linked to a training_log. Detection, not diagnosis: we
+/// carry the athlete's area + their own words, never a severity number or an
+/// interpretation. Backs the journal row's niggle chips.
+struct JournalNiggle: Decodable, Identifiable {
+    let id: UUID
+    let trainingLogId: UUID?
+    let bodyArea: String
+    let side: String?
+    let verbatimQuote: String?
+    enum CodingKeys: String, CodingKey {
+        case id
+        case trainingLogId = "training_log_id"
+        case bodyArea = "body_area"
+        case side
+        case verbatimQuote = "verbatim_quote"
+    }
+    /// "left calf" / "achilles" — the athlete's own words, chip-ready.
+    var label: String {
+        let s = (side ?? "").trimmingCharacters(in: .whitespaces)
+        return s.isEmpty ? bodyArea : "\(s) \(bodyArea)"
+    }
+}
+
 @Observable
 final class VoiceLogViewModel {
     var historyLogs: [TrainingLog] = []
+    /// Niggles keyed by training_log_id (uppercased UUID string) — chips per row.
+    var niggleByLog: [String: [JournalNiggle]] = [:]
+    /// Every run in the recent window (all sources) for the week-header mileage
+    /// totals — the journal FEED is authored-only, but the totals are complete.
+    var weeklyMileageRows: [JournalMileageRow] = []
     var isLoadingHistory = false
     var isUploading = false
     var statusMessage = ""
@@ -34,27 +77,68 @@ final class VoiceLogViewModel {
             // function writes with the service role. See its docstring.
             let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
 
-            // --- Step 2: Insert record via Supabase SDK ---
-            var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
-            insertData.userId = userId
-            insertData.processingStatus = "pending"
-            insertData.source = "voice_log"
-            if let workout = selectedWorkout {
-                insertData.workoutDate = workout.startDate
-                insertData.workoutDistanceMiles = workout.distanceMiles
-                insertData.workoutDurationMinutes = workout.durationMinutes
-
-                // Remove auto_sync duplicate
-                let syncService = WorkoutSyncService()
-                await syncService.removeAutoSyncEntry(forWorkoutDate: workout.startDate, distance: workout.distanceMiles)
+            // --- Step 2: Attach to the run's existing row, or insert a new one ---
+            // If this memo is for an already-imported run (Strava/HealthKit), the
+            // GPS streams, splits, and parsed structure already live on THAT row.
+            // Inserting a separate voice_log row creates a DUPLICATE: the journal
+            // entry shows up empty ("no workout parsed") while the real workout
+            // sits on the other row, and editing workout notes on one never
+            // reaches the other. So when the selected run has a known source id,
+            // UPDATE its row (attach the audio) instead of inserting — one row,
+            // one set of notes, shown + editable in both the Log tab and the
+            // workout detail sheet. Falls back to a fresh insert on any miss, so
+            // a memo is never lost.
+            var response: [TrainingLog] = []
+            var didAttach = false
+            if let vid = selectedWorkout?.vitalWorkoutId, !vid.isEmpty {
+                struct IdRow: Decodable { let id: UUID }
+                let existing: [IdRow]? = try? await supabase
+                    .from("training_logs")
+                    .select("id")
+                    .eq("user_id", value: userId)
+                    .eq("vital_workout_id", value: vid)
+                    .limit(1)
+                    .execute()
+                    .value
+                if let rowId = existing?.first?.id {
+                    let attachData: [String: AnyJSON] = [
+                        "audio_url": .string(audioPublicURL),
+                        "processing_status": .string("pending"),
+                    ]
+                    response = (try? await supabase
+                        .from("training_logs")
+                        .update(attachData)
+                        .eq("id", value: rowId.uuidString)
+                        .select()
+                        .execute()
+                        .value) ?? []
+                    didAttach = !response.isEmpty
+                }
             }
 
-            let response: [TrainingLog] = try await supabase
-                .from("training_logs")
-                .insert(insertData)
-                .select()
-                .execute()
-                .value
+            if response.isEmpty {
+                // No existing run row matched — insert a new voice_log row.
+                var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
+                insertData.userId = userId
+                insertData.processingStatus = "pending"
+                insertData.source = "voice_log"
+                if let workout = selectedWorkout {
+                    insertData.workoutDate = workout.startDate
+                    insertData.workoutDistanceMiles = workout.distanceMiles
+                    insertData.workoutDurationMinutes = workout.durationMinutes
+
+                    // Remove auto_sync duplicate
+                    let syncService = WorkoutSyncService()
+                    await syncService.removeAutoSyncEntry(forWorkoutDate: workout.startDate, distance: workout.distanceMiles)
+                }
+
+                response = try await supabase
+                    .from("training_logs")
+                    .insert(insertData)
+                    .select()
+                    .execute()
+                    .value
+            }
 
             try? FileManager.default.removeItem(at: localURL)
 
@@ -76,6 +160,21 @@ final class VoiceLogViewModel {
             if let insertedLog = response.first {
                 let capturedRecordId = insertedLog.id.uuidString
                 let capturedUserId = userId
+
+                // On the attach path we UPDATEd an existing run row, so the
+                // AFTER INSERT trigger that normally enqueues voice processing
+                // never fired. Kick process-training-memo explicitly; the poll
+                // below still picks up completion. (Insert path keeps relying on
+                // the server-side enqueue, unchanged.)
+                if didAttach {
+                    Task { [weak self] in
+                        _ = await self?.callProcessingFunction(
+                            record: insertedLog,
+                            checkInManager: checkInManager
+                        )
+                    }
+                }
+
                 Task { [weak self] in
                     // Poll every 3s for up to 60s
                     for _ in 0..<20 {
@@ -87,6 +186,18 @@ final class VoiceLogViewModel {
                             .eq("id", value: capturedRecordId)
                             .execute()
                             .value
+                        // Row gone: dedup merged this memo into the matching run
+                        // and deleted the standalone row. That's a normal outcome,
+                        // NOT "still pending" — stop polling immediately and
+                        // refresh so the UI shows the merged entry instead of
+                        // spinning until the 60s timeout. (An empty array means the
+                        // row is gone; nil means a transient query error → retry.)
+                        if let rows = result, rows.isEmpty {
+                            await MainActor.run {
+                                _ = Task { await self?.loadHistory() }
+                            }
+                            return
+                        }
                         let status = result?.first?.processing_status ?? "pending"
                         if status == "completed" || status == "failed" {
                             await MainActor.run {
@@ -293,6 +404,39 @@ final class VoiceLogViewModel {
     // MARK: - History
 
     @MainActor
+    /// All runs with a distance in the recent window (~27 weeks), any source —
+    /// backs the journal's per-week mileage totals. Selects only the columns
+    /// needed (never `*`, so the heavy external_streams JSONB isn't dragged).
+    private func fetchJournalMileageRows(userId: String) async throws -> [JournalMileageRow] {
+        let since = Calendar.current.date(byAdding: .day, value: -190, to: Date()) ?? Date()
+        let sinceISO = ISO8601DateFormatter().string(from: since)
+        return try await supabase
+            .from("training_logs")
+            .select("workout_date, created_at, workout_distance_miles, source")
+            .eq("user_id", value: userId)
+            .gte("workout_date", value: sinceISO)
+            .gte("workout_distance_miles", value: 0.1)
+            .limit(800)
+            .execute()
+            .value
+    }
+
+    /// Body-part mentions linked to a training_log, for the journal row chips.
+    /// Text/uuid columns only (no DATE decode — `mentioned_at` is a query filter,
+    /// not a decoded field), so it decodes cleanly via `.value`.
+    private func fetchNiggles(userId: String) async throws -> [JournalNiggle] {
+        let since = Calendar.current.date(byAdding: .day, value: -190, to: Date()) ?? Date()
+        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
+        return try await supabase
+            .from("body_mentions")
+            .select("id, training_log_id, body_area, side, verbatim_quote")
+            .eq("user_id", value: userId.lowercased())
+            .gte("mentioned_at", value: df.string(from: since))
+            .limit(500)
+            .execute()
+            .value
+    }
+
     func loadHistory() async {
         isLoadingHistory = true
 
@@ -311,6 +455,16 @@ final class VoiceLogViewModel {
                 .value
 
             historyLogs = logs.sorted { $0.displayDate > $1.displayDate }
+            // All runs (any source) for the week-header mileage totals.
+            weeklyMileageRows = (try? await fetchJournalMileageRows(userId: userId)) ?? []
+            // Niggles linked to each log, for the row chips.
+            let niggles = (try? await fetchNiggles(userId: userId)) ?? []
+            var byLog: [String: [JournalNiggle]] = [:]
+            for n in niggles {
+                guard let key = n.trainingLogId?.uuidString else { continue }
+                byLog[key, default: []].append(n)
+            }
+            niggleByLog = byLog
             isLoadingHistory = false
 
             await autoRetryStaleRecords(logs: logs)
