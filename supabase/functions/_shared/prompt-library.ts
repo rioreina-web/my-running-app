@@ -53,6 +53,7 @@ import { TEMPLATE as PROCESS_TRAINING_MEMO_V1 } from "./prompts/process-training
 import { TEMPLATE as RACE_INTEL_V1 } from "./prompts/race-intel.v1.ts";
 import { TEMPLATE as RACE_READINESS_V1 } from "./prompts/race-readiness.v1.ts";
 import { TEMPLATE as RESCHEDULE_PLAN_V1 } from "./prompts/reschedule-plan.v1.ts";
+import { TEMPLATE as RESCHEDULE_PLAN_V2 } from "./prompts/reschedule-plan.v2.ts";
 import { TEMPLATE as TRAINING_ANALYSIS_V1 } from "./prompts/training-analysis.v1.ts";
 import { TEMPLATE as WEEKLY_COACHING_REPORT_V1 } from "./prompts/weekly-coaching-report.v1.ts";
 
@@ -86,6 +87,7 @@ const REGISTRY: Record<string, string> = {
   "race-intel.v1": RACE_INTEL_V1,
   "race-readiness.v1": RACE_READINESS_V1,
   "reschedule-plan.v1": RESCHEDULE_PLAN_V1,
+  "reschedule-plan.v2": RESCHEDULE_PLAN_V2,
   "training-analysis.v1": TRAINING_ANALYSIS_V1,
   "weekly-coaching-report.v1": WEEKLY_COACHING_REPORT_V1,
 };

@@ -29,6 +29,34 @@ export interface PaceZoneOption {
   description: string;
 }
 
+// ── Pace-zone colors (web mirror of PaceSpectrum.swift) ──
+//
+// THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert. These
+// map each pace zone to a stop on the single-hue blue depth ramp, defined
+// as CSS custom properties in web/src/app/globals.css (`--color-pace-*`).
+// Source of truth for the hex values: RunningLog/Workouts/PaceSpectrum.swift.
+//
+// Two zones share a stop by design: `longRun` reads as `moderate` (its band
+// overlaps moderate) and `recovery` reads as `easy` (the palest sky — there
+// is no dedicated recovery stop, and recovery miles sit at the base of the
+// ramp alongside easy). This matches the prototype's ZONES color mapping in
+// prototypes/adaptive-plan-builder.html. Never emit a green or coral fill
+// here — those palettes are mood and alert only.
+export const PACE_ZONE_COLORS: Record<PaceZone, string> = {
+  recovery:  "var(--color-pace-easy)",
+  easy:      "var(--color-pace-easy)",
+  longRun:   "var(--color-pace-moderate)",
+  moderate:  "var(--color-pace-moderate)",
+  steady:    "var(--color-pace-steady)",
+  mp:        "var(--color-pace-mp)",
+  hm:        "var(--color-pace-hmp)",
+  threshold: "var(--color-pace-lt)",
+  tenK:      "var(--color-pace-10k)",
+  fiveK:     "var(--color-pace-5k)",
+  threeK:    "var(--color-pace-3k)",
+  mile:      "var(--color-pace-mile)",
+};
+
 // `longRun` is intentionally NOT in this list (May 2026): the LR band
 // (85–75% MP) overlaps Moderate and Easy, and coaches found it confusing
 // to prescribe. The four core aerobic zones (Steady/Moderate/Easy/Recovery)
@@ -176,6 +204,273 @@ export function estimatedWorkoutMiles(
   athletePaces?: AthletePaceTable,
 ): number {
   return steps.reduce((sum, s) => sum + estimatedStepMiles(s, athletePaces), 0);
+}
+
+// ── Zone-mile aggregation (for the pace-colored mileage ramp) ────────────
+//
+// Buckets a week's placed workout miles by pace zone, so the Plan-setup
+// ramp can render each week as a stacked bar (easy fill at the base,
+// deeper-blue quality miles stacked on top). Ported from the prototype's
+// `weekZoneMiles` / `nearestZoneKey` (prototypes/adaptive-plan-builder.html);
+// the prototype is the design reference when it disagrees with this code.
+
+/** Miles-per-zone for one or more workouts. A partial map — a zone with no
+ *  placed miles is simply absent. */
+export type ZoneMiles = Partial<Record<PaceZone, number>>;
+
+/**
+ * The pace zone whose reference (or athlete) pace is closest to a given
+ * exact seconds-per-mile pace. Used to color a step that pins an absolute
+ * pace ("5:45/mi") instead of naming a zone. Mirrors the prototype's
+ * `nearestZoneKey`.
+ */
+export function nearestZoneKey(
+  paceSecPerMile: number,
+  athletePaces?: AthletePaceTable,
+): PaceZone {
+  let best: PaceZone = "fiveK";
+  let bestDelta = Infinity;
+  for (const opt of PACE_ZONES) {
+    const zoneSec = athletePaces?.[opt.value] ?? REFERENCE_PACE_SEC_PER_MILE[opt.value];
+    const delta = Math.abs(zoneSec - paceSecPerMile);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = opt.value;
+    }
+  }
+  return best;
+}
+
+/**
+ * The pace zone a step reads as — for coloring, zone dots, and labels:
+ *   - an exact pinned pace wins (mirrors how miles are computed:
+ *     estimatedSegmentMiles prefers exactPaceSecPerMile), mapped to its
+ *     nearest zone.
+ *   - `longRun` is preserved (its own structural zone) — callers that need
+ *     a ramp color fold it into `moderate` themselves.
+ *   - a named, resolvable zone is used as-is.
+ *   - anything unresolvable falls to `easy` (the aerobic base).
+ */
+export function zoneForStep(step: WorkoutStep, athletePaces?: AthletePaceTable): PaceZone {
+  if (step.exactPaceSecPerMile && step.exactPaceSecPerMile > 0) {
+    return nearestZoneKey(step.exactPaceSecPerMile, athletePaces);
+  }
+  if (step.paceZone === "longRun") return "longRun";
+  if (hasResolvableZone(step.paceZone)) return step.paceZone;
+  return "easy";
+}
+
+/** A step's color on the single-hue blue pace ramp. `longRun` shares the
+ *  `moderate` stop (no dedicated long-run blue). Never returns green/coral. */
+export function zoneColorForStep(step: WorkoutStep, athletePaces?: AthletePaceTable): string {
+  return PACE_ZONE_COLORS[zoneForStep(step, athletePaces)];
+}
+
+/**
+ * Sum a week's placed workout miles into per-zone buckets. Each argument is
+ * one workout's steps; a step's estimated miles (distance, or pace × time
+ * for time-based segments) land wholesale in that step's zone — matching the
+ * prototype, which counts a rep set's recovery jog as part of the quality
+ * session rather than splitting it out.
+ *
+ * The caller adds the "easy fill" (a week's target mid-mileage minus the
+ * placed total) when rendering, so this returns only what's actually placed.
+ */
+export function weekZoneMiles(
+  stepGroups: WorkoutStep[][],
+  athletePaces?: AthletePaceTable,
+): ZoneMiles {
+  const out: ZoneMiles = {};
+  for (const steps of stepGroups) {
+    for (const step of steps) {
+      const miles = estimatedStepMiles(step, athletePaces);
+      if (!miles || miles <= 0) continue;
+      // Fold longRun into moderate for the ramp — it shares moderate's blue
+      // stop and moderate is a stacking zone (longRun is not in PACE_ZONES).
+      const z = zoneForStep(step, athletePaces);
+      const zone: PaceZone = z === "longRun" ? "moderate" : z;
+      out[zone] = (out[zone] ?? 0) + miles;
+    }
+  }
+  return out;
+}
+
+/** Total placed miles across a ZoneMiles map. */
+export function totalZoneMiles(zoneMiles: ZoneMiles): number {
+  return Object.values(zoneMiles).reduce((sum, mi) => sum + (mi ?? 0), 0);
+}
+
+// ── 10-zone workout labels, dots & estimated line ───────────────────────
+//
+// The library and builder describe a workout by its pace zones, not the
+// legacy workout_type ("tempo"/"intervals"). A tempo run is `LT 6 mi`; an
+// interval set is `5K 5×1km`. Ported in intent from the prototype's
+// `instZones` / `instSummary` (prototypes/workout-builder.html).
+
+// Intensity rank (higher = harder). Slow → fast, with longRun sitting just
+// above easy. Used to pick a workout's "headline" zone for its label.
+const ZONE_INTENSITY_RANK: Record<PaceZone, number> = {
+  recovery: 0,
+  easy: 1,
+  longRun: 2,
+  moderate: 3,
+  steady: 4,
+  mp: 5,
+  hm: 6,
+  threshold: 7,
+  tenK: 8,
+  fiveK: 9,
+  threeK: 10,
+  mile: 11,
+};
+
+// Aerobic base zones — not counted as "quality" for zone-dot tags.
+const BASE_ZONES = new Set<PaceZone>(["recovery", "easy", "longRun"]);
+
+/** Short display label for a zone, with the structural `longRun` → "Long".
+ *  Everything else uses the canonical short name ("MP", "LT", "5K", …). */
+export function zoneLabelShort(zone: PaceZone): string {
+  if (zone === "longRun") return "Long";
+  return paceShort(zone);
+}
+
+function trimMiles(mi: number): string {
+  return Number.isInteger(mi) ? `${mi}` : mi.toFixed(1);
+}
+
+// A step's distance as a compact bare label: "800m", "1km", "6 mi", or a
+// clock for time-based reps ("2:00").
+function stepDistLabel(seg: {
+  durationType: WorkoutStep["durationType"];
+  durationValue: number;
+}): string {
+  switch (seg.durationType) {
+    case "distance_meters":
+      return seg.durationValue % 1000 === 0
+        ? `${seg.durationValue / 1000}km`
+        : `${seg.durationValue}m`;
+    case "distance_km":
+      return `${trimMiles(seg.durationValue)}km`;
+    case "distance_miles":
+      return `${trimMiles(seg.durationValue)} mi`;
+    case "time_seconds":
+      return formatStepSeconds(seg.durationValue);
+  }
+}
+
+// A step's pace shorthand for the estimated line: an exact pinned pace shows
+// as "5:45/mi", otherwise the zone's short label.
+function stepPaceShort(step: WorkoutStep, athletePaces?: AthletePaceTable): string {
+  if (step.exactPaceSecPerMile && step.exactPaceSecPerMile > 0) {
+    return `${formatPaceSecPerMile(step.exactPaceSecPerMile)}/mi`;
+  }
+  return zoneLabelShort(zoneForStep(step, athletePaces));
+}
+
+/**
+ * Distinct quality zones present in a workout, in step order, excluding the
+ * aerobic base (recovery/easy/longRun) and non-running steps. Drives the
+ * zone-dot tags on library cards. Mirrors the prototype's `instZones`.
+ */
+export function stepZones(steps: WorkoutStep[], athletePaces?: AthletePaceTable): PaceZone[] {
+  const out: PaceZone[] = [];
+  for (const s of steps) {
+    if (s.stepType !== "active") continue;
+    const z = zoneForStep(s, athletePaces);
+    if (BASE_ZONES.has(z)) continue;
+    if (!out.includes(z)) out.push(z);
+  }
+  return out;
+}
+
+/**
+ * A workout's 10-zone label, derived from its steps:
+ *   - a rep set → "5K 5×1km", "3K 4×800m"
+ *   - a single main block → "MP 7 mi", "LT 6 mi", "Long 16 mi"
+ * The headline is the hardest active block (ties go to the rep set). Returns
+ * null when there are no steps — callers fall back to the legacy type label.
+ */
+// The "headline" block of a workout — the hardest active block, with ties
+// going to a rep set. Shared by workoutZoneLabel and headlineZone.
+function headlineBlock(
+  blocks: WorkoutStepBlock[],
+  athletePaces?: AthletePaceTable,
+): WorkoutStepBlock | null {
+  let headline: WorkoutStepBlock | null = null;
+  let headlineRank = -1;
+  for (const b of blocks) {
+    const rank = ZONE_INTENSITY_RANK[zoneForStep(b.step, athletePaces)];
+    if (rank > headlineRank || (rank === headlineRank && b.kind === "reps")) {
+      headlineRank = rank;
+      headline = b;
+    }
+  }
+  return headline;
+}
+
+/** The single zone that best characterizes a workout (its hardest block).
+ *  Used for the library card's pace pill. Null when there are no steps. */
+export function headlineZone(
+  steps: WorkoutStep[],
+  athletePaces?: AthletePaceTable,
+): PaceZone | null {
+  if (!steps || steps.length === 0) return null;
+  const { blocks } = groupStepsIntoSections(steps);
+  const headline = headlineBlock(blocks, athletePaces);
+  return headline ? zoneForStep(headline.step, athletePaces) : null;
+}
+
+export function workoutZoneLabel(
+  steps: WorkoutStep[],
+  athletePaces?: AthletePaceTable,
+): string | null {
+  if (!steps || steps.length === 0) return null;
+  const { blocks } = groupStepsIntoSections(steps);
+  if (blocks.length === 0) return null;
+
+  const headline = headlineBlock(blocks, athletePaces);
+  if (!headline) return null;
+
+  const short = stepPaceShort(headline.step, athletePaces);
+  if (headline.kind === "reps") {
+    const reps = headline.repeats ?? 2;
+    return `${short} ${reps}×${stepDistLabel(headline.step)}`;
+  }
+  const miles = estimatedStepMiles(headline.step, athletePaces);
+  return miles > 0 ? `${short} ${trimMiles(miles)} mi` : short;
+}
+
+/**
+ * The mono "estimated" one-liner for a workout — "2 wu · 6 × 800m @ 5K · 2 cd".
+ * Warmup/cooldown collapse to their mileage; each middle block reads as its
+ * reps/distance @ zone. Mirrors the prototype's `instSummary`. Returns null
+ * for an empty workout.
+ */
+export function describeWorkoutLine(
+  steps: WorkoutStep[],
+  athletePaces?: AthletePaceTable,
+): string | null {
+  if (!steps || steps.length === 0) return null;
+  const { warmup, blocks, cooldown } = groupStepsIntoSections(steps);
+  const parts: string[] = [];
+
+  const wuMiles = estimatedWorkoutMiles(warmup, athletePaces);
+  if (warmup.length > 0 && wuMiles > 0) parts.push(`${trimMiles(wuMiles)} wu`);
+
+  for (const b of blocks) {
+    const short = stepPaceShort(b.step, athletePaces);
+    if (b.kind === "reps") {
+      const reps = b.repeats ?? 2;
+      parts.push(`${reps} × ${stepDistLabel(b.step)} @ ${short}`);
+    } else {
+      parts.push(`${stepDistLabel(b.step)} @ ${short}`);
+    }
+  }
+
+  const cdMiles = estimatedWorkoutMiles(cooldown, athletePaces);
+  if (cooldown.length > 0 && cdMiles > 0) parts.push(`${trimMiles(cdMiles)} cd`);
+
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 // ── Duration helpers ─────────────────────────────────────
