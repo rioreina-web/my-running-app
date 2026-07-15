@@ -12,13 +12,17 @@
       "<<<DRAFT>>>",
       "<<<END_DRAFT>>>"
     ],
-    "forbidden_pattern_groups": ["action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_pattern_groups": [
+      "action_bans",
+      "stop_training_bans",
+      "medical_claim_bans"
+    ],
     "forbidden_patterns": [
       "(?i)\"code\"\\s*:\\s*\"(?!KEEP\\b|REST\\b|XT_45\\b|REC_3\\b|REC_4\\b|EZ_3\\b|EZ_4\\b|EZ_5\\b|EZ_6\\b|EZ_8\\b|EZ_10\\b|STR_5\\b|MOD_5\\b|MOD_6\\b|MOD_8\\b|STY_5\\b|STY_6\\b|STY_8\\b|LONG_10\\b|LONG_12\\b|LONG_14\\b|LONG_16\\b|LONG_18\\b|LONG_20\\b|LONGWO_12\\b|LONGWO_14\\b|LONGWO_16\\b|MP_5\\b|MP_6\\b|MP_7\\b|MP_8\\b|HMP_4\\b|HMP_5\\b|HMP_6\\b|LT_3\\b|LT_4\\b|LT_5\\b|LT_6\\b|TENK_5X1K\\b|TENK_6X1K\\b|FIVEK_5X1K\\b|FIVEK_6X800\\b|THREEK_4X800\\b|THREEK_8X400\\b|MILE_8X400\\b)[^\"]+\"",
       "(?is)<<<DRAFT>>>(?:(?!<<<END_DRAFT>>>).)*?\"date\"\\s*:\\s*\"2026-08-(08|15|22)\"[^}]*?\"code\"\\s*:\\s*\"(?!KEEP\\b|LONG_)[^\"]+\""
     ]
   },
-  "recorded_response": "",
-  "recorded_at": "",
+  "recorded_response": "Here is a draft proposal to adjust Sarah's training plan. The changes aim to reduce overall load and address the \"fading\" Sarah is experiencing. Whether Sarah trains through this feeling is the coach's call, with a medical professional if it persists.\n\n<<<DRAFT>>>\n{\n  \"days\": [\n    { \"date\": \"2026-08-04\", \"code\": \"EZ_5\", \"reason\": \"Softened the Tuesday quality workout to an easy run to reduce weekly intensity.\" },\n    { \"date\": \"2026-08-11\", \"code\": \"EZ_5\", \"reason\": \"Converted the Tuesday quality workout to an easy run to reduce weekly intensity.\" },\n    { \"date\": \"2026-08-18\", \"code\": \"EZ_5\", \"reason\": \"Changed the Tuesday quality workout to an easy run to reduce weekly intensity.\" }\n  ],\n  \"weekReasons\": [\n    { \"weekNumber\": 7, \"reason\": \"Reduced to one quality day (Thursday MP) while keeping the long run and staying within mileage targets.\" },\n    { \"weekNumber\": 8, \"reason\": \"Reduced to one quality day (Thursday MP) while keeping the long run and staying within mileage targets.\" },\n    { \"weekNumber\": 9, \"reason\": \"Reduced to one quality day (Thursday MP) while keeping the long run and staying within mileage targets.\" }\n  ],\n  \"summary\": \"Softened weeks 7-9 to feature one quality day each, converting the Tuesday workouts to easy runs. Long runs and weekly mileage targets are maintained.\"\n}\n<<<END_DRAFT>>>",
+  "recorded_at": "2026-07-15T22:44:22.102Z",
   "model": "gemini-2.5-flash"
 }
