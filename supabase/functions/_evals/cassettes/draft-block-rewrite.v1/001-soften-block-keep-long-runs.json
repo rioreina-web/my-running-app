@@ -1,0 +1,24 @@
+{
+  "id": "001-soften-block-keep-long-runs",
+  "prompt_name": "draft-block-rewrite.v1",
+  "description": "Phase E assisted block rewrite — the canonical happy path. Coach asks to soften weeks 7-9 to one quality day each and keep the long runs (the spec's motivating example: 'Sarah's fading on back-to-back quality'). The model MUST: (a) select replacement codes ONLY from the closed candidate library (no invented workouts — the whitelist regex below rejects any code outside DRAFT_CANDIDATE_LIBRARY in supabase/functions/draft-block-rewrite/index.ts; keep that map, formatCandidateLibrary(), and this cassette's candidateLibrary var in sync), (b) NOT change the Saturday long-run days (2026-08-08 / -15 / -22) to anything but KEEP or another LONG code, (c) keep each week inside its stated mileage range (server-side validation also hard-rejects this; the rubric can't sum mileage), (d) emit the <<<DRAFT>>> ... <<<END_DRAFT>>> JSON envelope, (e) never prescribe medical actions or tell the athlete to stop training. STUB — recorded_response is intentionally empty: recording requires GEMINI_API_KEY (GEMINI_API_KEY=... deno run --allow-net --allow-read --allow-write --allow-env _evals/record.ts draft-block-rewrite.v1). Golden family: record before the next prompt touch.",
+  "vars": {
+    "candidateLibrary": "KEEP — leave the day exactly as scheduled (unlisted days are kept anyway)\nREST — full rest day (0 mi)\nXT_45 — 45 min cross-training, 0 running miles (not counted in running-fitness math)\n\nRecovery/Easy: REC_3 (3mi) | REC_4 (4mi) | EZ_3 | EZ_4 | EZ_5 | EZ_6 | EZ_8 | EZ_10 | STR_5 (easy 5mi + 4-6×100m strides)\nModerate/Steady: MOD_5 | MOD_6 | MOD_8 | STY_5 | STY_6 | STY_8\nLong runs: LONG_10 | LONG_12 | LONG_14 | LONG_16 | LONG_18 | LONG_20 (easy-moderate long) | LONGWO_12 | LONGWO_14 | LONGWO_16 (long with embedded quality)\nMarathon pace: MP_5 (~7mi total) | MP_6 (~8) | MP_7 (~9) | MP_8 (~10)\nHalf-marathon pace: HMP_4 (~6) | HMP_5 (~7) | HMP_6 (~8)\nThreshold: LT_3 (~5) | LT_4 (~6) | LT_5 (~7) | LT_6 (~8)\n10K pace: TENK_5X1K (~6) | TENK_6X1K (~7)\n5K pace: FIVEK_5X1K (~6) | FIVEK_6X800 (~6)\n3K pace: THREEK_4X800 (~5) | THREEK_8X400 (~5)\nMile pace: MILE_8X400 (~5)",
+    "mileageTargets": "Week 7: 40–48 mi (hard range — stay inside it)\nWeek 8: 42–50 mi (hard range — stay inside it)\nWeek 9: 44–52 mi (hard range — stay inside it)"
+  },
+  "input": "BLOCK REWRITE REQUEST (from the coach)\nCoach's request: \"Sarah's fading on back-to-back quality — soften weeks 7-9 to one quality day each, keep the long runs.\"\nWeek range in scope: W7–W9\nRace day: 2026-10-11 (race week begins 2026-10-05 — do not change days on or after it)\n\nCURRENT SCHEDULED BLOCK:\n  Wk7 Mon 2026-08-03 | easy — Easy 5 mi 5mi\n  Wk7 Tue 2026-08-04 | 5k — 5K 5×1km 6mi\n  Wk7 Wed 2026-08-05 | easy — Easy 6 mi 6mi\n  Wk7 Thu 2026-08-06 | mp — MP 7 mi 9mi\n  Wk7 Fri 2026-08-07 | rest\n  Wk7 Sat 2026-08-08 | long_run — Long 14 mi 14mi\n  Wk7 Sun 2026-08-09 | recovery — Recovery 4 mi 4mi\n  Week 7 total: 44 mi (target 40–48 mi)\n  Wk8 Mon 2026-08-10 | easy — Easy 5 mi 5mi\n  Wk8 Tue 2026-08-11 | lt — LT 5 mi 7mi\n  Wk8 Wed 2026-08-12 | easy — Easy 6 mi 6mi\n  Wk8 Thu 2026-08-13 | mp — MP 7 mi 9mi\n  Wk8 Fri 2026-08-14 | rest\n  Wk8 Sat 2026-08-15 | long_run — Long 16 mi 16mi\n  Wk8 Sun 2026-08-16 | recovery — Recovery 4 mi 4mi\n  Week 8 total: 47 mi (target 42–50 mi)\n  Wk9 Mon 2026-08-17 | easy — Easy 5 mi 5mi\n  Wk9 Tue 2026-08-18 | 10k — 10K 5×1km 6mi\n  Wk9 Wed 2026-08-19 | easy — Easy 6 mi 6mi\n  Wk9 Thu 2026-08-20 | mp — MP 8 mi 10mi\n  Wk9 Fri 2026-08-21 | rest\n  Wk9 Sat 2026-08-22 | long_run — Long 16 mi 16mi\n  Wk9 Sun 2026-08-23 | recovery — Recovery 4 mi 4mi\n  Week 9 total: 47 mi (target 44–52 mi)\n\nDraft the block rewrite. Only list days that change.",
+  "rubric": {
+    "required_patterns": [
+      "<<<DRAFT>>>",
+      "<<<END_DRAFT>>>"
+    ],
+    "forbidden_pattern_groups": ["action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "(?i)\"code\"\\s*:\\s*\"(?!KEEP\\b|REST\\b|XT_45\\b|REC_3\\b|REC_4\\b|EZ_3\\b|EZ_4\\b|EZ_5\\b|EZ_6\\b|EZ_8\\b|EZ_10\\b|STR_5\\b|MOD_5\\b|MOD_6\\b|MOD_8\\b|STY_5\\b|STY_6\\b|STY_8\\b|LONG_10\\b|LONG_12\\b|LONG_14\\b|LONG_16\\b|LONG_18\\b|LONG_20\\b|LONGWO_12\\b|LONGWO_14\\b|LONGWO_16\\b|MP_5\\b|MP_6\\b|MP_7\\b|MP_8\\b|HMP_4\\b|HMP_5\\b|HMP_6\\b|LT_3\\b|LT_4\\b|LT_5\\b|LT_6\\b|TENK_5X1K\\b|TENK_6X1K\\b|FIVEK_5X1K\\b|FIVEK_6X800\\b|THREEK_4X800\\b|THREEK_8X400\\b|MILE_8X400\\b)[^\"]+\"",
+      "(?is)<<<DRAFT>>>(?:(?!<<<END_DRAFT>>>).)*?\"date\"\\s*:\\s*\"2026-08-(08|15|22)\"[^}]*?\"code\"\\s*:\\s*\"(?!KEEP\\b|LONG_)[^\"]+\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}
