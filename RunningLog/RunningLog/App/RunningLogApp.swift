@@ -244,6 +244,7 @@ struct MainTabView: View {
         .fullScreenCover(item: $activeDestination) { destination in
             NavigationStack {
                 destination.view
+                    .environment(athleteProfileService)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button {
@@ -259,6 +260,7 @@ struct MainTabView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+                .environment(athleteProfileService)
         }
     }
 }
