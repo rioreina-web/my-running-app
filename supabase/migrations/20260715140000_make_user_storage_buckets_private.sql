@@ -123,6 +123,11 @@ CREATE POLICY "Users delete own files" ON storage.objects
 -- ── 4. Canonical owner-scoped policies: plan-attachments ───────────────────
 -- No active code writes here today; these define the contract for when plan
 -- uploads return ({user_id}/... paths, owner-only access).
+-- These three already exist in prod (created by an earlier plan-attachments
+-- setup), so drop-then-recreate keeps the migration idempotent and re-runnable.
+DROP POLICY IF EXISTS "Plan files: users upload to own folder" ON storage.objects;
+DROP POLICY IF EXISTS "Plan files: users read own files" ON storage.objects;
+DROP POLICY IF EXISTS "Plan files: users delete own files" ON storage.objects;
 
 CREATE POLICY "Plan files: users upload to own folder" ON storage.objects
     FOR INSERT TO authenticated
