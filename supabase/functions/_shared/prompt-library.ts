@@ -33,27 +33,36 @@ import { TEMPLATE as COACHING_AGENT_SIMPLE_V1 } from "./prompts/coaching-agent-s
 import { TEMPLATE as COACHING_AGENT_MODERATE_V1 } from "./prompts/coaching-agent-moderate.v1.ts";
 import { TEMPLATE as COACHING_AGENT_COMPLEX_V1 } from "./prompts/coaching-agent-complex.v1.ts";
 import { TEMPLATE as COACHING_AGENT_PROACTIVE_V1 } from "./prompts/coaching-agent-proactive.v1.ts";
+import { TEMPLATE as COACH_WORKOUT_READ_V1 } from "./prompts/coach-workout-read.v1.ts";
 import { TEMPLATE as DAILY_READ_V1 } from "./prompts/daily-read.v1.ts";
 import { TEMPLATE as DAILY_READ_V2 } from "./prompts/daily-read.v2.ts";
 import { TEMPLATE as DAILY_READ_V3 } from "./prompts/daily-read.v3.ts";
 import { TEMPLATE as DAILY_READ_V4 } from "./prompts/daily-read.v4.ts";
 import { TEMPLATE as DAILY_READ_V5 } from "./prompts/daily-read.v5.ts";
+import { TEMPLATE as DRAFT_BLOCK_REWRITE_V1 } from "./prompts/draft-block-rewrite.v1.ts";
 import { TEMPLATE as FITNESS_PREDICTOR_V1 } from "./prompts/fitness-predictor.v1.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V1 } from "./prompts/generate-workout-insight.v1.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V2 } from "./prompts/generate-workout-insight.v2.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V3 } from "./prompts/generate-workout-insight.v3.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V4 } from "./prompts/generate-workout-insight.v4.ts";
+import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V5 } from "./prompts/generate-workout-insight.v5.ts";
 import { TEMPLATE as INJURY_ANALYSIS_V1 } from "./prompts/injury-analysis.v1.ts";
 import { TEMPLATE as INJURY_EARLY_WARNING_V1 } from "./prompts/injury-early-warning.v1.ts";
+import { TEMPLATE as PARSE_GOAL_V1 } from "./prompts/parse-goal.v1.ts";
+import { TEMPLATE as PARSE_MANUAL_WORKOUT_V1 } from "./prompts/parse-manual-workout.v1.ts";
 import { TEMPLATE as PARSE_TRAINING_WEEK_V1 } from "./prompts/parse-training-week.v1.ts";
 import { TEMPLATE as PARSE_WORKOUT_STRUCTURE_V1 } from "./prompts/parse-workout-structure.v1.ts";
+import { TEMPLATE as PARSE_WORKOUT_STRUCTURE_V2 } from "./prompts/parse-workout-structure.v2.ts";
 import { TEMPLATE as POST_RUN_ANALYSIS_V1 } from "./prompts/post-run-analysis.v1.ts";
 import { TEMPLATE as PROCESS_CHECK_IN_V1 } from "./prompts/process-check-in.v1.ts";
 import { TEMPLATE as PROCESS_TRAINING_MEMO_V1 } from "./prompts/process-training-memo.v1.ts";
+import { TEMPLATE as PROCESS_TRAINING_MEMO_V2 } from "./prompts/process-training-memo.v2.ts";
+import { TEMPLATE as PROCESS_TRAINING_MEMO_V3 } from "./prompts/process-training-memo.v3.ts";
 import { TEMPLATE as RACE_INTEL_V1 } from "./prompts/race-intel.v1.ts";
 import { TEMPLATE as RACE_READINESS_V1 } from "./prompts/race-readiness.v1.ts";
 import { TEMPLATE as RESCHEDULE_PLAN_V1 } from "./prompts/reschedule-plan.v1.ts";
 import { TEMPLATE as RESCHEDULE_PLAN_V2 } from "./prompts/reschedule-plan.v2.ts";
+import { TEMPLATE as SUGGEST_WORKOUT_PROGRESSION_V1 } from "./prompts/suggest-workout-progression.v1.ts";
 import { TEMPLATE as TRAINING_ANALYSIS_V1 } from "./prompts/training-analysis.v1.ts";
 import { TEMPLATE as WEEKLY_COACHING_REPORT_V1 } from "./prompts/weekly-coaching-report.v1.ts";
 
@@ -67,27 +76,36 @@ const REGISTRY: Record<string, string> = {
   "coaching-agent-moderate.v1": COACHING_AGENT_MODERATE_V1,
   "coaching-agent-complex.v1": COACHING_AGENT_COMPLEX_V1,
   "coaching-agent-proactive.v1": COACHING_AGENT_PROACTIVE_V1,
+  "coach-workout-read.v1": COACH_WORKOUT_READ_V1,
   "daily-read.v1": DAILY_READ_V1,
   "daily-read.v2": DAILY_READ_V2,
   "daily-read.v3": DAILY_READ_V3,
   "daily-read.v4": DAILY_READ_V4,
   "daily-read.v5": DAILY_READ_V5,
+  "draft-block-rewrite.v1": DRAFT_BLOCK_REWRITE_V1,
   "fitness-predictor.v1": FITNESS_PREDICTOR_V1,
   "generate-workout-insight.v1": GENERATE_WORKOUT_INSIGHT_V1,
   "generate-workout-insight.v2": GENERATE_WORKOUT_INSIGHT_V2,
   "generate-workout-insight.v3": GENERATE_WORKOUT_INSIGHT_V3,
   "generate-workout-insight.v4": GENERATE_WORKOUT_INSIGHT_V4,
+  "generate-workout-insight.v5": GENERATE_WORKOUT_INSIGHT_V5,
   "injury-analysis.v1": INJURY_ANALYSIS_V1,
   "injury-early-warning.v1": INJURY_EARLY_WARNING_V1,
+  "parse-goal.v1": PARSE_GOAL_V1,
+  "parse-manual-workout.v1": PARSE_MANUAL_WORKOUT_V1,
   "parse-training-week.v1": PARSE_TRAINING_WEEK_V1,
   "parse-workout-structure.v1": PARSE_WORKOUT_STRUCTURE_V1,
+  "parse-workout-structure.v2": PARSE_WORKOUT_STRUCTURE_V2,
   "post-run-analysis.v1": POST_RUN_ANALYSIS_V1,
   "process-check-in.v1": PROCESS_CHECK_IN_V1,
   "process-training-memo.v1": PROCESS_TRAINING_MEMO_V1,
+  "process-training-memo.v2": PROCESS_TRAINING_MEMO_V2,
+  "process-training-memo.v3": PROCESS_TRAINING_MEMO_V3,
   "race-intel.v1": RACE_INTEL_V1,
   "race-readiness.v1": RACE_READINESS_V1,
   "reschedule-plan.v1": RESCHEDULE_PLAN_V1,
   "reschedule-plan.v2": RESCHEDULE_PLAN_V2,
+  "suggest-workout-progression.v1": SUGGEST_WORKOUT_PROGRESSION_V1,
   "training-analysis.v1": TRAINING_ANALYSIS_V1,
   "weekly-coaching-report.v1": WEEKLY_COACHING_REPORT_V1,
 };

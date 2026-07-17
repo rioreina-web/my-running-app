@@ -177,6 +177,34 @@ export function isRateLimitEnabled(): boolean {
 }
 
 /**
+ * Production detection — same convention as `_shared/cors.ts` (W1.2):
+ * DENO_DEPLOYMENT_ID is set on Supabase Edge / Deno Deploy and absent on
+ * local `supabase functions serve`. Evaluated per call (not at module load)
+ * so contract tests can toggle the env var.
+ */
+function isProductionEnv(): boolean {
+  return Boolean(Deno.env.get("DENO_DEPLOYMENT_ID"));
+}
+
+/**
+ * Should the per-user quota gates run at all?
+ *
+ * H1 fix (2026-07-15): "Redis env missing" used to mean "skip rate limiting
+ * everywhere" — a production deploy without the Upstash secrets silently
+ * removed every per-user LLM ceiling (unbounded Gemini bill, review item
+ * H1/P0-2). Now the bypass applies ONLY in local dev:
+ *
+ *   - dev + no Redis        → skip (local serve stays frictionless)
+ *   - prod + no Redis       → enforce; check* functions fail CLOSED, so a
+ *                             misconfigured deploy turns into loud 429s the
+ *                             first user hits, not a silent blank check
+ *   - Redis configured      → enforce normally (anywhere)
+ */
+export function shouldEnforceRateLimits(): boolean {
+  return isRateLimitEnabled() || isProductionEnv();
+}
+
+/**
  * Get the limit for a given tier
  */
 export function getTierLimit(tier: string): number {
@@ -215,9 +243,20 @@ const FEATURE_LIMITS: Record<string, Record<string, number>> = {
   post_run:        { free: 20, pro: 50, unlimited: 200 },
   voice_memo:      { free: 20, pro: 50, unlimited: 200 },
   reschedule:      { free: 10, pro: 25, unlimited: 100 },
+  // draft-block-rewrite (Phase E assisted rewrite) is keyed on the ATHLETE,
+  // not the calling coach: one AI draft per athlete per day regardless of
+  // who asks. The edge fn deliberately does NOT pass isServiceRole so the
+  // limit applies even though the caller is the trusted Next.js route.
+  draft_rewrite:   { free:  1, pro:  1, unlimited:   5 },
   workout_insight: { free: 20, pro: 50, unlimited: 200 },
+  // Coach-portal smart-duplicate annotation (suggest-workout-progression).
+  // Coach-facing authoring affordance — generous limits, cheap calls.
+  workout_progression: { free: 20, pro: 50, unlimited: 200 },
   check_in:        { free: 10, pro: 25, unlimited: 100 },
   daily_read:      { free:  5, pro: 25, unlimited: 100 },
+  // Coach-portal WorkoutDrawer "the read" — on-demand AI observation per key
+  // session, keyed on the calling coach. Cheap, cached per log; modest caps.
+  coach_workout_read: { free: 10, pro: 25, unlimited: 100 },
 };
 
 /**
@@ -286,9 +325,10 @@ export async function checkFeatureRateLimit(
  *   1. `isServiceRole === true` — service-role callers (cron, triggers,
  *      other edge functions) bypass user-keyed limits. Auth check is the
  *      gate for those callers, not this.
- *   2. `isRateLimitEnabled() === false` — Redis env not configured (dev /
- *      local serve). Permissive fallback rather than fail-closed; the
- *      production Redis is the gate.
+ *   2. `shouldEnforceRateLimits() === false` — Redis env not configured AND
+ *      not production (local serve / dev). In production a missing Redis
+ *      config does NOT bypass: checkFeatureRateLimit fails closed and the
+ *      caller gets a 429 (H1 fix, 2026-07-15).
  *   3. `rl.allowed === true` — normal accept path.
  *
  * Usage in an edge function:
@@ -316,7 +356,9 @@ export async function enforceFeatureRateLimit(
   opts: { isServiceRole?: boolean; tier?: string } = {},
 ): Promise<Response | null> {
   if (opts.isServiceRole) return null;
-  if (!isRateLimitEnabled()) return null;
+  // Dev-only bypass. In production this falls through even when Redis is
+  // unconfigured, and checkFeatureRateLimit's missing-client branch DENIES.
+  if (!shouldEnforceRateLimits()) return null;
 
   const rl = await checkFeatureRateLimit(userId, feature, opts.tier ?? "free");
   if (rl.allowed) return null;
@@ -343,4 +385,117 @@ export async function enforceFeatureRateLimit(
       },
     },
   );
+}
+
+/**
+ * Per-feature MONTHLY ceilings (hard cost caps), keyed to match
+ * FEATURE_LIMITS. Convention: ~10× the daily free limit — generous enough
+ * that no legitimate athlete ever sees one, tight enough that a runaway
+ * client loop or scripted abuse is bounded to pennies, not a bill.
+ *
+ * Every function pinned in rateLimit.contract.test.ts must call
+ * `enforceMonthlyCap` with its feature — the contract test enforces the
+ * wiring. If you add a feature to FEATURE_LIMITS, add its cap here too.
+ */
+export const MONTHLY_LLM_CAPS: Record<string, number> = {
+  coaching:             50,
+  predictor:           100,
+  analysis:            100,
+  parse:               100,
+  injury_analysis:      50,
+  plan_builder:         30,
+  race:                100,
+  weekly_review:        50,
+  post_run:            200,
+  voice_memo:          200,
+  reschedule:          100,
+  draft_rewrite:        10,
+  workout_insight:     200,
+  workout_progression: 200,
+  check_in:            100,
+  daily_read:           50,
+  coach_workout_read:  100,
+};
+
+/** Fallback for features missing from MONTHLY_LLM_CAPS. */
+const DEFAULT_MONTHLY_LLM_CAP = 100;
+
+function monthlyCapResponse(
+  feature: string,
+  max: number,
+  retryAfterSeconds: number,
+  corsHeaders: Record<string, string>,
+): Response {
+  return new Response(
+    JSON.stringify({ error: "Monthly limit reached", feature, limit: max, period: "month" }),
+    {
+      status: 429,
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "application/json",
+        "Retry-After": String(retryAfterSeconds),
+      },
+    },
+  );
+}
+
+/**
+ * Hard MONTHLY ceiling for a feature, independent of the daily bucket. Use it
+ * to cap expensive AI work per user per calendar month (e.g. 200 voice-memo
+ * uploads). Increments only when the caller is about to do the work — call it
+ * AFTER any cached-return short-circuit so re-opening existing data doesn't
+ * burn quota.
+ *
+ * The cap comes from MONTHLY_LLM_CAPS by feature (override via `opts.max`).
+ * Service-role callers bypass. In PRODUCTION, Redis-unavailable fails closed
+ * (blocks) since this is a cost ceiling; local dev without Redis skips
+ * (H1 fix, 2026-07-15 — previously unconfigured Redis skipped everywhere).
+ */
+export async function enforceMonthlyCap(
+  userId: string,
+  feature: string,
+  corsHeaders: Record<string, string>,
+  opts: { isServiceRole?: boolean; max?: number } = {},
+): Promise<Response | null> {
+  if (opts.isServiceRole) return null;
+  // Dev-only bypass — see shouldEnforceRateLimits.
+  if (!shouldEnforceRateLimits()) return null;
+
+  const max = opts.max ?? MONTHLY_LLM_CAPS[feature] ?? DEFAULT_MONTHLY_LLM_CAP;
+
+  // Reset at the first instant of next UTC month.
+  const monthEnd = new Date();
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 1);
+  monthEnd.setUTCHours(0, 0, 0, 0);
+  const retryAfter = Math.max(1, Math.ceil((monthEnd.getTime() - Date.now()) / 1000));
+
+  const client = getRedis();
+  if (!client) {
+    console.warn(`Monthly cap: Redis unavailable for ${feature} — denying (fail-closed)`);
+    return monthlyCapResponse(feature, max, retryAfter, corsHeaders);
+  }
+  if (isCircuitOpen()) {
+    console.warn(`Monthly cap: circuit open for ${feature} — allowing (degraded)`);
+    return null;
+  }
+
+  try {
+    const month = new Date().toISOString().slice(0, 7); // YYYY-MM (UTC)
+    const key = `ratelimit:monthly:${feature}:${userId}:${month}`;
+    const current = await client.incr(key);
+    if (current === 1) {
+      // Expire a few days past month end to absorb clock skew.
+      await client.expire(key, retryAfter + 3 * 24 * 3600);
+    }
+    recordRedisSuccess();
+    if (current > max) {
+      console.log(`Monthly cap exceeded for ${feature} user ${userId}: ${current}/${max}`);
+      return monthlyCapResponse(feature, max, retryAfter, corsHeaders);
+    }
+    return null;
+  } catch (error) {
+    console.error(`Monthly cap check failed for ${feature}:`, error);
+    recordRedisFailure();
+    return monthlyCapResponse(feature, max, retryAfter, corsHeaders);
+  }
 }
