@@ -16,7 +16,25 @@
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getOrBuildAthleteState, stateToPromptContext } from "./athlete-state.ts";
+import { formatPace, getOrBuildAthleteState, stateToPromptContext } from "./athlete-state.ts";
+
+// ── formatPace rounding-boundary regression ──────────────
+// Pace values are seconds-per-mile and routinely fractional (distance ÷
+// time, percentage-derived zone bounds, averaged efficiency baselines).
+// The old impl did Math.round(sec % 60), which rounds the seconds part up
+// to 60 at the boundary, emitting impossible strings like "7:60/mi" that
+// then flow into the AI prompt. These pin M:SS correctness.
+Deno.test("formatPace: fractional input that rounds the seconds part to 60 carries to the minute", () => {
+  assertEquals(formatPace(479.6), "8:00"); // not "7:60"
+  assertEquals(formatPace(359.7), "6:00"); // not "5:60"
+  assertEquals(formatPace(299.6), "5:00"); // not "4:60"
+});
+
+Deno.test("formatPace: ordinary fractional and integer inputs round correctly", () => {
+  assertEquals(formatPace(449.5), "7:30");
+  assertEquals(formatPace(420), "7:00");
+  assertEquals(formatPace(425.2), "7:05"); // seconds < 10 stay zero-padded
+});
 
 // ── Constants ───────────────────────────────────────────
 
@@ -404,5 +422,207 @@ Deno.test(
     );
     // Race anchors stay single.
     assert(prompt.includes("Marathon Pace: 5:20/mi"), "Marathon Pace anchor missing");
+  },
+);
+
+// ── R6: rebuild orchestration — formerly-null fields ─────
+// The refactor design flagged four fields that shipped as null/"maintaining"
+// stubs (monotony_7d, strain_7d, week_compliance_pct, fitness_trend). They now
+// have real implementations on the rebuild path, but that path had zero test
+// coverage. These pin the population logic against the fake client so a future
+// regression to the stub behavior fails loudly.
+
+Deno.test(
+  "R6 fitness_trend: two snapshots, faster latest 10K → 'improving'",
+  async () => {
+    const now = Date.now();
+    const db: DB = {
+      fitness_snapshots: [
+        // Newest (created_at desc → index 0): faster (lower) predicted 10K.
+        { user_id: REAL_USER, predicted_10k_seconds: 2500, created_at: new Date(now - 2 * 86400000).toISOString() },
+        // Prior: slower. deltaPct = (2600-2500)/2600 ≈ +3.8% → improving.
+        { user_id: REAL_USER, predicted_10k_seconds: 2600, created_at: new Date(now - 30 * 86400000).toISOString() },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    assertEquals(state.fitness_trend, "improving");
+  },
+);
+
+Deno.test(
+  "R6 fitness_trend: slower latest 10K → 'declining'; single snapshot → 'maintaining'",
+  async () => {
+    const now = Date.now();
+    // Declining: newest slower than prior.
+    const declining: DB = {
+      fitness_snapshots: [
+        { user_id: REAL_USER, predicted_10k_seconds: 2600, created_at: new Date(now - 2 * 86400000).toISOString() },
+        { user_id: REAL_USER, predicted_10k_seconds: 2500, created_at: new Date(now - 30 * 86400000).toISOString() },
+      ],
+    };
+    assertEquals(
+      (await getOrBuildAthleteState(buildFakeClient(declining), REAL_USER)).fitness_trend,
+      "declining",
+    );
+
+    // Single snapshot: no prior to compare → "maintaining" (not null, not a guess).
+    const single: DB = {
+      fitness_snapshots: [
+        { user_id: REAL_USER, predicted_10k_seconds: 2550, created_at: new Date(now - 2 * 86400000).toISOString() },
+      ],
+    };
+    assertEquals(
+      (await getOrBuildAthleteState(buildFakeClient(single), REAL_USER)).fitness_trend,
+      "maintaining",
+    );
+  },
+);
+
+Deno.test(
+  "R6 week_compliance_pct: 3 of 4 planned non-rest days trained → 75",
+  async () => {
+    const now = new Date();
+    const dayAgo = (n: number) =>
+      new Date(now.getTime() - n * 86400000).toISOString().slice(0, 10);
+    const db: DB = {
+      training_plans: [
+        {
+          id: "plan-1",
+          user_id: REAL_USER,
+          name: "Marathon block",
+          target_race_distance: "marathon",
+          target_time_seconds: 11400,
+          status: "active",
+          end_date: dayAgo(-60),
+        },
+      ],
+      scheduled_workouts: [
+        // 4 planned non-rest days in the trailing week + 1 rest day (excluded).
+        { plan_id: "plan-1", date: dayAgo(1), workout_type: "easy", status: "scheduled" },
+        { plan_id: "plan-1", date: dayAgo(2), workout_type: "tempo", status: "scheduled" },
+        { plan_id: "plan-1", date: dayAgo(3), workout_type: "long", status: "scheduled" },
+        { plan_id: "plan-1", date: dayAgo(4), workout_type: "intervals", status: "scheduled" },
+        { plan_id: "plan-1", date: dayAgo(5), workout_type: "rest", status: "scheduled" },
+      ],
+      training_logs: [
+        // Trained on 3 of the 4 non-rest planned days (missed dayAgo(4)).
+        { user_id: REAL_USER, workout_date: dayAgo(1), distance_miles: 5 },
+        { user_id: REAL_USER, workout_date: dayAgo(2), distance_miles: 6 },
+        { user_id: REAL_USER, workout_date: dayAgo(3), distance_miles: 14 },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    assertEquals(state.week_compliance_pct, 75);
+  },
+);
+
+Deno.test(
+  "R6 monotony_7d / strain_7d: passed through from latest workout_features row",
+  async () => {
+    const now = Date.now();
+    const db: DB = {
+      workout_features: [
+        {
+          user_id: REAL_USER,
+          workout_date: new Date(now - 1 * 86400000).toISOString(),
+          monotony_7d: 1.85,
+          strain_7d: 4200,
+          intensity_score: 70,
+          total_duration_seconds: 3000,
+        },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    assertEquals(state.monotony_7d, 1.85);
+    assertEquals(state.strain_7d, 4200);
+  },
+);
+
+// ── Life context (audit fix #1, 2026-07-02) ─────────────
+// Memo-sourced extracted_data must reach the state: the life_context slice
+// populates, and the two qualitative pattern rules (life_load,
+// effort_mismatch) fire on the joined signal. Pins the full path:
+// training_logs.extracted_data → buildLifeContext → patterns → prompt.
+
+Deno.test(
+  "life_context: memo extracted_data reaches the state and fires life_load + effort_mismatch",
+  async () => {
+    const now = Date.now();
+    const iso = (n: number) => new Date(now - n * 86400000).toISOString();
+    const db: DB = {
+      training_logs: [
+        {
+          id: "lc1", user_id: REAL_USER, workout_date: iso(1), source: "voice_log",
+          workout_type: "easy", workout_distance_miles: 5, workout_duration_minutes: 45,
+          mood: "tired",
+          extracted_data: {
+            sleep_quality: "poor", work_stress: "high",
+            felt_vs_looked: "harder than it looks", fatigue: "wiped",
+          },
+        },
+        {
+          id: "lc2", user_id: REAL_USER, workout_date: iso(3), source: "voice_log",
+          workout_type: "easy", workout_distance_miles: 6, workout_duration_minutes: 54,
+          mood: "struggling",
+          extracted_data: {
+            sleep_quality: "poor",
+            felt_vs_looked: "harder than it looks",
+          },
+        },
+        {
+          id: "lc3", user_id: REAL_USER, workout_date: iso(5), source: "voice_log",
+          workout_type: "easy", workout_distance_miles: 4, workout_duration_minutes: 36,
+          mood: "positive",
+          extracted_data: { workout_type: "easy" },
+        },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+
+    // Slice populated from memo extracted_data.
+    assert(state.life_context !== null, "life_context must populate from memos");
+    assertEquals(state.life_context!.sleep.poor_mentions_7d, 2);
+    assertEquals(state.life_context!.stress.work_high_7d, 1);
+    assertEquals(state.life_context!.felt_vs_looked.length, 2);
+    assertEquals(state.life_context!.fatigue[0].label, "wiped");
+
+    // Pattern rules fire on the joined signal (3 life-load flags + 2 tired runs).
+    const kinds = state.patterns.map((p) => p.kind);
+    assert(kinds.includes("life_load"), `life_load must fire, got: ${kinds.join(",")}`);
+    assert(kinds.includes("effort_mismatch"), `effort_mismatch must fire, got: ${kinds.join(",")}`);
+
+    // Prompt renders the section; sleep data present so NO RECOVERY DATA gap absent.
+    const prompt = stateToPromptContext(state);
+    assert(prompt.includes("Life context"), "prompt must include life context section");
+    assert(!state.data_gaps.some((g) => g.gap === "NO RECOVERY DATA"));
+    assert(!state.data_gaps.some((g) => g.gap === "NO LIFE SIGNAL"));
+  },
+);
+
+Deno.test(
+  "life_context: quant-only athlete gets null slice, no patterns, and honest gaps",
+  async () => {
+    const now = Date.now();
+    const iso = (n: number) => new Date(now - n * 86400000).toISOString();
+    const db: DB = {
+      training_logs: [
+        {
+          id: "q1", user_id: REAL_USER, workout_date: iso(1), source: "strava",
+          workout_type: "easy", workout_distance_miles: 5, workout_duration_minutes: 45,
+        },
+        {
+          id: "q2", user_id: REAL_USER, workout_date: iso(3), source: "strava",
+          workout_type: "easy", workout_distance_miles: 8, workout_duration_minutes: 70,
+        },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    assertEquals(state.life_context, null);
+    const kinds = state.patterns.map((p) => p.kind);
+    assert(!kinds.includes("life_load"));
+    assert(!kinds.includes("effort_mismatch"));
+    assert(state.data_gaps.some((g) => g.gap === "NO LIFE SIGNAL"), "must admit missing life signal");
+    assert(state.data_gaps.some((g) => g.gap === "NO RECOVERY DATA"), "must admit missing recovery data");
+    assert(!stateToPromptContext(state).includes("Life context"));
   },
 );

@@ -1,0 +1,25 @@
+{
+  "id": "006-recurring-niggle-thread",
+  "prompt_name": "daily-read.v4",
+  "description": "New v4 (2026-06-15) behavior: a recurring niggle is read as a THREAD across weeks, not a fresh observation. The Read must surface the recurrence (e.g. 'third week the achilles has come up'), echo the athlete's own words, and may route the 'so what' ONLY to a training adjustment or 'raise with a professional'. It must NOT diagnose (tendinitis/ITBS), assess severity, direct care ('monitor', 'rest it', 'ice it', 'stretch it'), or claim a prognosis ('it's healing / getting worse'). The memos behind the thread are listed in sources.memos so the UI can link them. recorded_response is an authored target exemplar — re-record via _evals/record.ts before trusting as a baseline.",
+  "vars": {},
+  "input": "## Coaching mode\nPLAN_MODE — active plan, goal marathon.\n\n=== ATHLETE STATE ===\nLevel: advanced\nGoal: marathon 3:16 · race anchor: marathon 3:28\n\nTraining Load (7d): 52 mi, 8 runs (2 quality, 6 easy) — strong, stacking week.\n\nNiggle recurrence (surface the pattern in the athlete's OWN words — never diagnose, never assess severity, never direct care):\n  Right achilles — 3 mentions over 3 weeks:\n    2026-06-09 (after threshold): \"grumbled on the warm-up, settled after a mile\"\n    2026-06-02 (easy run): \"achilles a bit tight early, fine once I got going\"\n    2026-05-26 (long run): \"slight niggle in the right achilles on the warm-up\"\n\nRecent runs:\n  2026-06-13 Long 18.0mi @ 7:42/mi — finished strong\n  2026-06-09 LT 5×1K @ 6:55 — landed\n\nWhat I remember:\n  • The achilles has been a quiet recurring note this block.\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [c3c3c3c3-0000-0000-0000-000000000003] 2026-06-09 · 6.0mi (44m) ★quality\n\n## Citable voice memos (list ids in sources.memos if they informed the Read)\n- [a0000001-0000-0000-0000-0000000000a1] 2026-06-09 memo\n- [a0000002-0000-0000-0000-0000000000a2] 2026-06-02 memo\n- [a0000003-0000-0000-0000-0000000000a3] 2026-05-26 memo\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["headline", "paragraph", "sources", "confidence"],
+    "forbidden_patterns": [
+      "(?i)\\b(tendinitis|tendonitis|tendinopathy|ITBS|strain|tear|inflammation)\\b",
+      "(?i)\\b(monitor|keep an eye on|keep tabs on|rest it|ice it|stretch it)\\b",
+      "(?i)\\b(healing|getting worse|getting better)\\b",
+      "(?i)\\bas an AI\\b"
+    ],
+    "required_patterns": [
+      "(?i)achilles",
+      "(?i)(third week|three weeks|each time|every time|keeps? coming up|come up (again|before))",
+      "[\"“]"
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"Strong week — the achilles is a thread now.\",\n  \"paragraph\": [\n    \"Good week — 52 miles and the long run finished strong. The thing I'm carrying forward is the right achilles: it's the third week it's come up now, same note each time — \\\"grumbled on the warm-up, settled after a mile.\\\" I'm tracking the pattern, not just this week's mention. If it's still there on the warm-up next quality day \",\n    { \"workout_id\": \"c3c3c3c3-0000-0000-0000-000000000003\" },\n    \", make it an easy day instead — and if it keeps recurring, it's worth raising with a professional.\"\n  ],\n  \"confidence\": { \"level\": \"MEDIUM\", \"sub\": \"strong training data; the niggle read is from voice notes only.\" },\n  \"sources\": { \"workouts\": [\"c3c3c3c3-0000-0000-0000-000000000003\"], \"docs\": [], \"memos\": [\"a0000001-0000-0000-0000-0000000000a1\", \"a0000002-0000-0000-0000-0000000000a2\", \"a0000003-0000-0000-0000-0000000000a3\"] }\n}\n```",
+  "recorded_at": "2026-06-15T00:00:00.000Z",
+  "model": "gemini-3.1-pro-preview"
+}

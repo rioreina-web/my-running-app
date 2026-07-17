@@ -1,0 +1,1766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workout builder · Running Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* =============================================================
+   Post Run Drip — Workout Builder prototype
+   "Restraint as foundation, intensity as accent."
+   ============================================================= */
+:root {
+  --paper:           #F5F3F0;
+  --paper-elevated:  #FAFAF8;
+  --card:            #FFFFFF;
+  --paper-deep:      #E8E4DF;
+  --rule:            #E8E4E0;
+  --ink:             #1A1815;
+  --ink-2:           #6B6560;
+  --ink-3:           #9B9590;
+  --coral:           #D4592A;
+  --coral-light:     #E8764A;
+  --coral-deep:      #B84420;
+  --coral-wash:      rgba(212, 89, 42, 0.12);
+  --mood-speed:      #6B4A8A;
+  --font-display: "Crimson Pro", Georgia, "Times New Roman", serif;
+  --font-body:    "PT Serif", Georgia, "Times New Roman", serif;
+  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --t-display-xl: 40px;
+  --t-display-l:  32px;
+  --t-display-m:  24px;
+  --t-display-s:  20px;
+  --t-body:       15px;
+  --t-body-sm:    13px;
+  --t-meta:       11px;
+  --t-meta-sm:    10px;
+  --tracking-label:  0.12em;
+  --tracking-caption: 0.10em;
+  --tracking-meta:   0.14em;
+  --shadow-card:    0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-press:   0 1px 2px rgba(0, 0, 0, 0.04);
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+}
+
+.shell { max-width: 1180px; margin: 0 auto; padding: 24px 24px 80px; }
+
+/* ---- Plate strip ---------------------------------------- */
+.plate-strip {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-family: var(--font-mono); font-size: var(--t-meta); font-weight: 500;
+  letter-spacing: var(--tracking-meta); color: var(--ink-2);
+  text-transform: uppercase; padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule); margin-bottom: 32px;
+}
+
+/* ---- Type helpers ---------------------------------------- */
+.eyebrow {
+  font-family: var(--font-mono); font-size: var(--t-meta); font-weight: 500;
+  letter-spacing: var(--tracking-label); color: var(--ink-2);
+  text-transform: uppercase;
+}
+.eyebrow--coral { color: var(--coral); }
+.display { font-family: var(--font-display); font-weight: 700; color: var(--ink); letter-spacing: -0.01em; line-height: 1.05; }
+.stat { font-family: var(--font-mono); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1; }
+.body-sm { font-family: var(--font-body); font-size: var(--t-body-sm); color: var(--ink-2); line-height: 1.5; }
+.quote { font-family: var(--font-body); font-style: italic; font-size: var(--t-body); color: var(--ink); line-height: 1.5; }
+.caption {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); font-weight: 500;
+  color: var(--ink-2); letter-spacing: var(--tracking-caption); text-transform: uppercase;
+}
+
+/* ---- Editorial rule -------------------------------------- */
+.ed-rule { display: flex; align-items: center; gap: 8px; margin: 32px 0; }
+.ed-rule::before, .ed-rule::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.ed-rule span { width: 3px; height: 3px; border-radius: 999px; background: var(--ink-3); }
+
+/* ---- Page header ------------------------------------------ */
+.page-head { margin-bottom: 8px; }
+.page-head h1 { font-size: var(--t-display-xl); }
+.page-head p { font-family: var(--font-body); font-style: italic; font-size: var(--t-body); color: var(--ink-2); margin-top: 8px; }
+
+/* ---- Layout ------------------------------------------------ */
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 32px; align-items: start; margin-top: 32px; }
+@media (max-width: 940px) { .grid { grid-template-columns: 1fr; } .preview-col { position: static !important; } }
+.preview-col { position: sticky; top: 24px; }
+
+.section { margin-bottom: 8px; }
+.section > .eyebrow { display: block; margin-bottom: 12px; }
+
+/* ---- Cards ------------------------------------------------- */
+.card { background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card); padding: 16px; }
+
+/* ---- Inputs ------------------------------------------------ */
+input[type="text"], textarea, select {
+  font-family: var(--font-body); font-size: var(--t-body); color: var(--ink);
+  background: var(--paper-elevated); border: 1px solid var(--rule);
+  border-radius: 8px; padding: 9px 12px; width: 100%;
+  transition: border-color 150ms var(--ease-out);
+}
+input[type="text"]:focus, textarea:focus, select:focus { outline: 2px solid var(--coral); outline-offset: 2px; border-color: var(--coral); }
+textarea { resize: vertical; line-height: 1.5; }
+select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236B6560' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; cursor: pointer; }
+
+.name-input {
+  font-family: var(--font-display); font-weight: 700; font-size: var(--t-display-m);
+  background: transparent; border: none; border-bottom: 1px solid var(--rule);
+  border-radius: 0; padding: 4px 0 10px; letter-spacing: -0.01em;
+}
+.name-input:focus { outline: none; border-bottom-color: var(--coral); }
+
+/* mono numeric inputs */
+.num-input {
+  font-family: var(--font-mono) !important; font-variant-numeric: tabular-nums;
+  font-size: var(--t-body-sm) !important; text-align: center; padding: 7px 4px !important;
+}
+
+/* ---- Buttons ----------------------------------------------- */
+.btn {
+  font-family: var(--font-display); font-weight: 600; font-size: 15px;
+  color: var(--ink); background: var(--card); border: 1px solid var(--rule);
+  border-radius: 10px; padding: 9px 16px; cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.btn:hover { background: var(--paper-elevated); }
+.btn:active { transform: scale(0.98); }
+.btn--primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.btn--primary:hover { background: #000; }
+.btn--ghost { border: none; background: transparent; color: var(--ink-2); font-size: 13px; padding: 6px 8px; }
+.btn--ghost:hover { color: var(--ink); background: transparent; }
+
+.link-action {
+  font-family: var(--font-display); font-weight: 600; font-size: 15px;
+  color: var(--coral); background: none; border: none; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+  transition: color 150ms var(--ease-out); padding: 0;
+}
+.link-action:hover { color: var(--coral-deep); }
+
+/* ---- Natural language box ---------------------------------- */
+.nl-box textarea { font-family: var(--font-body); font-style: italic; min-height: 58px; }
+.nl-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; gap: 12px; flex-wrap: wrap; }
+.nl-hints { display: flex; gap: 6px; flex-wrap: wrap; }
+.nl-hint {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.04em;
+  color: var(--ink-2); background: var(--paper-deep); border: none; border-radius: 999px;
+  padding: 5px 10px; cursor: pointer; transition: all 150ms var(--ease-out);
+}
+.nl-hint:hover { color: var(--ink); background: var(--rule); }
+.nl-feedback { font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-2); margin-top: 8px; min-height: 18px; }
+.nl-feedback.err { color: var(--coral-deep); }
+.gem-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); flex-wrap: wrap; }
+.gem-row input { width: 230px; font-size: 12px; font-family: var(--font-mono); padding: 6px 9px; }
+.gem-status { font-family: var(--font-body); font-style: italic; font-size: 12px; color: var(--ink-3); }
+
+/* ---- Step rows --------------------------------------------- */
+.steps-list { display: flex; flex-direction: column; gap: 12px; }
+.step { background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card); padding: 14px 16px; }
+.step-top { display: flex; align-items: center; gap: 8px; }
+.step-kind { min-width: 84px; }
+.step-kind .caption { color: var(--ink-3); }
+.step-grid { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; }
+.step-x { font-family: var(--font-mono); font-size: var(--t-body-sm); color: var(--ink-3); }
+/* input[type="text"] { width:100% } outranks a bare class — prefix with the
+   element so these compact widths actually win */
+input.w-reps { width: 48px; }
+input.w-val  { width: 72px; }
+.w-unit { width: 66px; }
+.w-pacemode { width: 92px; }
+.w-zone { width: 96px; }
+input.w-abs  { width: 84px; }
+input.w-offv { width: 48px; }
+select.w-offsel { width: 116px; }
+.step-controls { display: flex; gap: 2px; margin-left: auto; }
+.icon-btn {
+  font-family: var(--font-mono); font-size: 13px; color: var(--ink-3);
+  background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 6px;
+  transition: color 150ms var(--ease-out);
+}
+.icon-btn:hover { color: var(--ink); }
+.icon-btn.del:hover { color: var(--coral-deep); }
+
+.step-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); }
+.step-sub .caption { margin-right: 4px; }
+.step-note-row { margin-top: 10px; }
+.step-note-row textarea { font-size: var(--t-body-sm); font-style: italic; min-height: 34px; padding: 7px 10px; }
+.add-note-link { font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 2px 0; }
+.add-note-link:hover { color: var(--coral); }
+
+/* scaling chips inside step */
+.tier-chips { display: flex; align-items: center; gap: 4px; }
+.tier-chip { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.tier-chip .caption { font-size: 9px; color: var(--ink-3); letter-spacing: 0.08em; }
+.tier-chip input { width: 40px; }
+
+/* toggle */
+.toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+.toggle input { display: none; }
+.toggle .track { width: 30px; height: 18px; border-radius: 999px; background: var(--paper-deep); position: relative; transition: background 150ms var(--ease-out); flex: none; }
+.toggle .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: var(--card); box-shadow: var(--shadow-press); transition: left 150ms var(--ease-out); }
+.toggle input:checked + .track { background: var(--coral); }
+.toggle input:checked + .track::after { left: 14px; }
+
+/* add-step buttons */
+.add-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+/* ---- Preview ------------------------------------------------ */
+.athlete-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.athlete-pill {
+  font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: var(--tracking-caption);
+  text-transform: uppercase; color: var(--ink-2); background: var(--card);
+  border: 1px solid var(--rule); border-radius: 999px; padding: 7px 14px; cursor: pointer;
+  transition: all 150ms var(--ease-out);
+}
+.athlete-pill:hover { color: var(--ink); }
+.athlete-pill.active { border: 1.5px solid var(--coral); color: var(--ink); }
+
+.preview-card { background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card); padding: 24px; }
+.preview-eyebrow-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.preview-title { font-size: var(--t-display-m); margin-bottom: 4px; }
+.preview-summary { font-family: var(--font-mono); font-size: var(--t-body-sm); color: var(--ink-2); font-variant-numeric: tabular-nums; margin-bottom: 18px; }
+
+.p-step { display: flex; gap: 12px; padding: 11px 0; border-top: 1px solid var(--rule); }
+.p-step:last-of-type { border-bottom: 1px solid var(--rule); }
+.p-step-marker { font-family: var(--font-mono); font-size: var(--t-meta-sm); color: var(--ink-3); min-width: 26px; padding-top: 3px; font-variant-numeric: tabular-nums; }
+.p-step-main { flex: 1; }
+.p-step-line { font-family: var(--font-mono); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+.p-step-line .zone-tag { color: var(--coral); font-weight: 600; }
+.p-step-meta { font-family: var(--font-mono); font-size: var(--t-meta-sm); color: var(--ink-2); letter-spacing: 0.03em; margin-top: 3px; font-variant-numeric: tabular-nums; }
+.p-step-note { font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-2); margin-top: 5px; line-height: 1.45; }
+
+.p-totals { display: flex; gap: 32px; margin-top: 18px; }
+.p-total .stat { font-size: 22px; }
+.p-total .caption { display: block; margin-top: 5px; }
+
+.coach-note-block { margin-top: 20px; padding-left: 12px; border-left: 2px solid rgba(212, 89, 42, 0.5); }
+.coach-note-block .eyebrow { display: block; margin-bottom: 6px; }
+
+.tier-line { font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.06em; color: var(--ink-3); text-transform: uppercase; margin-top: 18px; }
+.tier-line b { color: var(--ink-2); font-weight: 600; }
+
+/* pace table */
+.pace-table { margin-top: 20px; }
+.pace-table table { width: 100%; border-collapse: collapse; }
+.pace-table td { font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; padding: 6px 0; border-top: 1px solid var(--rule); }
+.pace-table td:first-child { color: var(--ink-2); letter-spacing: 0.08em; text-transform: uppercase; font-size: var(--t-meta-sm); }
+.pace-table td:last-child { text-align: right; color: var(--ink); }
+details.pace-details > summary { list-style: none; cursor: pointer; }
+details.pace-details > summary::-webkit-details-marker { display: none; }
+details.pace-details > summary .link-ind { font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+details.pace-details[open] > summary .link-ind, details.pace-details > summary:hover .link-ind { color: var(--coral); }
+
+/* ---- Scaling tiers section ---------------------------------- */
+.tiers-explainer { font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-2); line-height: 1.5; margin-bottom: 12px; }
+.tier-def { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--rule); }
+.tier-def:last-child { border-bottom: 1px solid var(--rule); }
+.tier-def .caption { color: var(--ink); }
+.tier-def .body-sm { font-style: italic; }
+
+/* garmin watch preview */
+.gw-table { margin-top: 12px; }
+.gw-row { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; padding: 6px 0; border-top: 1px solid var(--rule); }
+.gw-row .gw-label { color: var(--ink); }
+.gw-row .gw-label.gw-indent { padding-left: 18px; color: var(--ink-2); }
+.gw-row .gw-win { color: var(--ink-2); text-align: right; white-space: nowrap; }
+.gw-row.gw-repeat .gw-label { letter-spacing: 0.08em; }
+.gw-note { font-family: var(--font-body); font-style: italic; font-size: 11px; color: var(--ink-3); margin-top: 8px; line-height: 1.5; }
+.gw-decision { color: var(--coral-deep); }
+
+/* pace-zone editing */
+.pz-anchor { display: flex; align-items: center; gap: 6px; margin: 12px 0 8px; flex-wrap: wrap; }
+.pz-anchor select { width: auto; font-size: 12px; padding: 5px 26px 5px 9px; font-family: var(--font-mono); }
+.pz-anchor input { width: 78px; font-family: var(--font-mono); font-size: 12px; padding: 5px 8px; text-align: center; font-variant-numeric: tabular-nums; }
+.pz-anchor .caption { margin-right: 2px; }
+.pace-table input.pz-input {
+  width: 64px; text-align: right; background: transparent; border: none;
+  border-bottom: 1px dashed var(--rule); border-radius: 0; padding: 2px 0;
+  font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.pace-table input.pz-input:focus { outline: none; border-bottom: 1px solid var(--coral); }
+.pace-table input.pz-input.ov { color: var(--coral-deep); border-bottom: 1px solid var(--coral); }
+.pz-band { color: var(--ink-3); font-size: 10px; letter-spacing: 0.02em; text-align: right; padding-right: 12px; }
+.pz-clear { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 0 0 0 6px; }
+.pz-clear:hover { color: var(--coral-deep); }
+.pz-footer { display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; }
+.pz-note { font-family: var(--font-body); font-style: italic; font-size: 11px; color: var(--ink-3); }
+.pz-reset { font-family: var(--font-mono); font-size: var(--t-meta-sm); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 0; }
+.pz-reset:hover { color: var(--coral); }
+
+/* footer */
+.plate-footer { margin-top: 56px; text-align: center; font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-3); }
+
+.empty-state { font-family: var(--font-body); font-style: italic; font-size: var(--t-body-sm); color: var(--ink-2); padding: 16px 0; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <div class="plate-strip">
+    <span>Running Log — Workout Builder · Beta</span>
+    <span>Fig. W-01 · Jul 2026</span>
+  </div>
+
+  <div class="page-head">
+    <h1 class="display">Workout builder.</h1>
+    <p>Write it once — every athlete reads it in their own paces.</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- ══════════ LEFT · BUILDER ══════════ -->
+    <div class="builder-col">
+
+      <div class="section">
+        <span class="eyebrow">Workout</span>
+        <input type="text" id="workoutName" class="name-input" value="800s, 5K rhythm" placeholder="Name the workout">
+        <div class="athlete-pills" id="varPills" style="margin-top:14px"></div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow eyebrow--coral">Describe it</span>
+        <div class="card nl-box">
+          <textarea id="nlInput" placeholder="2 mi wu, 6 x 800m @ 5K w/ 400m jog, 2 mi cd">2 mi wu, 6 x 800m @ 5K w/ 400m jog, 2 mi cd</textarea>
+          <div class="nl-actions">
+            <div class="nl-hints" id="nlHints"></div>
+            <button class="link-action" id="nlParseBtn">Build steps ↗</button>
+          </div>
+          <div class="nl-feedback" id="nlFeedback"></div>
+          <div class="gem-row">
+            <span class="caption">Smart fallback</span>
+            <span class="gem-status" id="gemStatus"></span>
+            <span style="flex:1"></span>
+            <input type="password" id="gemKeyInput" placeholder="Gemini API key" style="display:none">
+            <button class="add-note-link" id="gemToggle">add key ↗</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow">Steps</span>
+        <div class="steps-list" id="stepsList"></div>
+        <div class="add-steps">
+          <button class="btn" data-add="warmup">+ Warm-up</button>
+          <button class="btn" data-add="reps">+ Reps</button>
+          <button class="btn" data-add="block">+ Steady block</button>
+          <button class="btn" data-add="rest">+ Rest</button>
+          <button class="btn" data-add="cooldown">+ Cool-down</button>
+        </div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow">From your coach</span>
+        <div class="card">
+          <textarea id="coachNote" placeholder="No note yet. Anything you write here lands on every athlete's card.">Consistent splits, not heroic ones. The first two should feel almost easy — if 800 no. 3 is your fastest, you started right.</textarea>
+        </div>
+      </div>
+
+      <div class="ed-rule"><span></span></div>
+
+      <div class="section">
+        <span class="eyebrow">Scaling tiers</span>
+        <div class="card">
+          <p class="tiers-explainer">One workout, three volumes. Rep counts flex by tier — paces never do; each athlete's paces come from their own race anchor. Tiers assign from weekly mileage; you can override any athlete.</p>
+          <div class="tier-def"><span class="caption">Building</span><span class="body-sm">under 30 mi / week</span></div>
+          <div class="tier-def"><span class="caption">Base</span><span class="body-sm">30–50 mi / week</span></div>
+          <div class="tier-def"><span class="caption">Advanced</span><span class="body-sm">50+ mi / week</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══════════ RIGHT · PREVIEW ══════════ -->
+    <div class="preview-col">
+      <div class="section">
+        <span class="eyebrow">Preview · As the athlete reads it</span>
+        <div class="athlete-pills" id="athletePills"></div>
+        <div class="preview-card" id="previewCard"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="plate-footer">— restraint as foundation, intensity as accent</div>
+</div>
+
+<script>
+/* =============================================================
+   Pace math — ported from web/src/components/coach/workout-helpers.ts
+   Keep in sync with derivePaceTableFromGoal / oneHourPaceSecPerMile.
+   ============================================================= */
+const RACE_RATIOS_TO_10K = {
+  mile: 0.139583, threeK: 0.277083, fiveK: 0.481250, tenK: 1.0,
+  half: 2.204167, marathon: 4.615625,
+};
+const RACE_DISTANCE_MI = {
+  mile: 1.0, threeK: 1.864113, fiveK: 3.106856, tenK: 6.213712,
+  half: 13.109375, marathon: 26.21875,
+};
+const TRAINING_MP_SPEED_RATIO = { steady: 0.95, moderate: 0.85, longRun: 0.80, easy: 0.75 };
+
+function equivalentRacePaceSecPerMile(fromKey, fromTimeSec, toKey) {
+  const base10K = fromTimeSec / RACE_RATIOS_TO_10K[fromKey];
+  return (base10K * RACE_RATIOS_TO_10K[toKey]) / RACE_DISTANCE_MI[toKey];
+}
+function oneHourPaceSecPerMile(tenKSecPerMile, hmSecPerMile) {
+  const d10 = RACE_DISTANCE_MI.tenK, dH = RACE_DISTANCE_MI.half, target = 3600;
+  const t10 = tenKSecPerMile * d10, tH = hmSecPerMile * dH;
+  if (t10 >= target) return tenKSecPerMile;
+  if (tH <= target) return hmSecPerMile;
+  const frac = (target - t10) / (tH - t10);
+  return target / (d10 + frac * (dH - d10));
+}
+function derivePaceTable(anchorKey, anchorTimeSec) {
+  const pace = (toKey) => equivalentRacePaceSecPerMile(anchorKey, anchorTimeSec, toKey);
+  const mp = pace('marathon'), hm = pace('half'), tenK = pace('tenK');
+  const tp = (r) => mp / r;
+  return {
+    easy: tp(TRAINING_MP_SPEED_RATIO.easy), moderate: tp(TRAINING_MP_SPEED_RATIO.moderate),
+    steady: tp(TRAINING_MP_SPEED_RATIO.steady), longRun: tp(TRAINING_MP_SPEED_RATIO.longRun),
+    mp, hm, threshold: oneHourPaceSecPerMile(tenK, hm),
+    tenK, fiveK: pace('fiveK'), threeK: pace('threeK'), mile: pace('mile'),
+  };
+}
+
+/* ---- Zones (10-zone taxonomy + Long) ------------------------ */
+const ZONES = [
+  { key: 'easy',      label: 'Easy',     kind: 'training' },
+  { key: 'moderate',  label: 'Moderate', kind: 'training' },
+  { key: 'steady',    label: 'Steady',   kind: 'training' },
+  { key: 'longRun',   label: 'Long',     kind: 'training' },
+  { key: 'mp',        label: 'MP',       kind: 'race' },
+  { key: 'hm',        label: 'HMP',      kind: 'race' },
+  { key: 'threshold', label: 'LT',       kind: 'race' },
+  { key: 'tenK',      label: '10K',      kind: 'race' },
+  { key: 'fiveK',     label: '5K',       kind: 'race' },
+  { key: 'threeK',    label: '3K',       kind: 'race' },
+  { key: 'mile',      label: 'Mile',     kind: 'race' },
+];
+const zoneByKey = Object.fromEntries(ZONES.map(z => [z.key, z]));
+
+/* ---- Formatting --------------------------------------------- */
+function fmtClock(totalSec) {
+  totalSec = Math.round(totalSec);
+  const h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60), s = totalSec % 60;
+  if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  return m + ':' + String(s).padStart(2, '0');
+}
+function fmtPace(secPerMile) { return fmtClock(secPerMile) + ' / mi'; }
+function fmtPaceRange(midSec) {
+  return fmtClock(midSec * 0.95) + '–' + fmtClock(midSec * 1.05) + ' / mi';
+}
+function distToMiles(type, value) {
+  if (type === 'mi') return value;
+  if (type === 'km') return value / 1.609344;
+  if (type === 'm')  return value / 1609.344;
+  return 0;
+}
+function fmtDist(type, value) {
+  if (type === 'time') return Math.round(value / 60) + ' min';
+  if (type === 'm') return value + 'm';
+  return value + ' ' + type;
+}
+// effective value for math when the coach gave a range — use the midpoint
+function durMid(step) {
+  return step.durationValueMax ? (step.durationValue + step.durationValueMax) / 2 : step.durationValue;
+}
+function fmtDur(type, v, vmax) {
+  if (!vmax) return fmtDist(type, v);
+  if (type === 'time') return Math.round(v / 60) + '–' + Math.round(vmax / 60) + ' min';
+  if (type === 'm') return v + '–' + vmax + 'm';
+  return v + '–' + vmax + ' ' + type;
+}
+function parseClockStr(s) {
+  s = (s || '').trim();
+  let m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return (+m[1]) * 60 + (+m[2]);
+  m = s.match(/^(\d{1,2}):(\d{2}):(\d{2})$/);
+  if (m) return (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
+  m = s.match(/^(\d+(?:\.\d+)?)$/);
+  if (m) return +m[1];
+  return null;
+}
+
+/* =============================================================
+   Natural-language parser
+   ============================================================= */
+const ZONE_WORDS = [
+  [/^(?:5k)$/i, 'fiveK'], [/^(?:10k)$/i, 'tenK'], [/^(?:3k)$/i, 'threeK'],
+  [/^(?:mile|1500m?)$/i, 'mile'], [/^(?:mp|marathon)$/i, 'mp'],
+  [/^(?:hmp|hm|half)$/i, 'hm'], [/^(?:lt|threshold|thr)$/i, 'threshold'],
+  [/^(?:easy|recovery|rec)$/i, 'easy'], [/^(?:mod|moderate)$/i, 'moderate'],
+  [/^(?:steady)$/i, 'steady'], [/^(?:long)$/i, 'longRun'],
+];
+function matchZoneWord(s) {
+  s = s.trim().replace(/\s*pace$/i, '').replace(/\s+marathon$/i, '');
+  for (const [re, key] of ZONE_WORDS) if (re.test(s)) return key;
+  return null;
+}
+/* ---- Zone offsets: MP-10 (10 s/mi faster), MP+10, MP-5% ------ */
+function parseOffStr(s) {
+  s = (s || '').trim().replace(/−|–/g, '-');
+  if (!s) return null;
+  const m = s.match(/^([+-])?\s*(\d+(?:\.\d+)?)\s*(%|s|sec|secs)?$/i);
+  if (!m) return null;
+  const sign = m[1] === '+' ? 1 : -1; // unsigned reads as faster — the common case
+  return { kind: m[3] === '%' ? 'pct' : 'sec', v: sign * parseFloat(m[2]) };
+}
+// "MP-10", "5k pace -3%", "LT + 15s" → { zone, off }
+function parseZoneWithOffset(str) {
+  let s = str.trim().replace(/−|–/g, '-');
+  let off = null;
+  const m = s.match(/([+-])\s*(\d+(?:\.\d+)?)\s*(%|s|sec|secs)?\s*$/i);
+  if (m) {
+    const sign = m[1] === '+' ? 1 : -1;
+    off = { kind: m[3] === '%' ? 'pct' : 'sec', v: sign * parseFloat(m[2]) };
+    s = s.slice(0, m.index);
+  }
+  const zone = matchZoneWord(s);
+  return zone ? { zone, off } : null;
+}
+function applyOff(baseSec, off) {
+  if (!off || !baseSec) return baseSec;
+  return off.kind === 'pct' ? baseSec * (1 + off.v / 100) : baseSec + off.v;
+}
+function fmtOffLabel(off) {
+  if (!off) return '';
+  return (off.v < 0 ? '−' : '+') + Math.abs(off.v) + (off.kind === 'pct' ? '%' : '');
+}
+function fmtOffInput(off) {
+  if (!off) return '';
+  return (off.v < 0 ? '-' : '+') + Math.abs(off.v) + (off.kind === 'pct' ? '%' : '');
+}
+// builder offset controls: number + "sec faster / % slower" select
+function offSelValue(off) {
+  if (!off) return 'sec-faster';
+  return (off.kind === 'pct' ? 'pct' : 'sec') + '-' + (off.v > 0 ? 'slower' : 'faster');
+}
+function combineOff(valStr, selStr) {
+  const n = Math.abs(parseFloat(valStr));
+  if (!n) return null;
+  return { kind: selStr.startsWith('pct') ? 'pct' : 'sec', v: (selStr.endsWith('slower') ? 1 : -1) * n };
+}
+function offControlsHTML(id, off, seg) {
+  const segAttr = seg != null ? ` data-seg="${seg}"` : '';
+  const fv = seg != null ? 'segOffVal' : 'offVal';
+  const fs = seg != null ? 'segOffSel' : 'offSel';
+  const sel = offSelValue(off);
+  const opts = [['sec-faster', 'sec faster'], ['sec-slower', 'sec slower'], ['pct-faster', '% faster'], ['pct-slower', '% slower']];
+  return `<input type="text" inputmode="decimal" class="num-input w-offv" data-id="${id}" data-field="${fv}"${segAttr} value="${off ? Math.abs(off.v) : ''}" placeholder="0" title="Tweak off the zone — leave 0 for the zone as is">
+    <select class="w-offsel" data-id="${id}" data-field="${fs}"${segAttr}>${opts.map(([v, l]) => `<option value="${v}"${v === sel ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+}
+function parseDuration(s) {
+  // ranges first: "10-12k", "30-40 min", "4-6 mi", "600-800m"
+  let m = s.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:min\b|mins\b|minutes\b|')/i);
+  if (m) return { durationType: 'time', durationValue: +m[1] * 60, durationValueMax: +m[2] * 60 };
+  m = s.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:miles|mile|mi)\b/i);
+  if (m) return { durationType: 'mi', durationValue: +m[1], durationValueMax: +m[2] };
+  m = s.match(/(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\s*(?:km|k)\b/i);
+  if (m) return { durationType: 'km', durationValue: +m[1], durationValueMax: +m[2] };
+  m = s.match(/(\d{3,4})\s*[-–]\s*(\d{3,4})\s*(?:meters|meter|m)?\b/);
+  if (m && +m[1] >= 200) return { durationType: 'm', durationValue: +m[1], durationValueMax: +m[2] };
+  // seconds: 45", 45 sec
+  m = s.match(/(\d+(?:\.\d+)?)\s*(?:"|″|sec\b|secs\b|seconds\b)/i);
+  if (m) return { durationType: 'time', durationValue: parseFloat(m[1]) };
+  // minutes: "40 min", "40'"
+  m = s.match(/(\d+(?:\.\d+)?)\s*(?:min\b|mins\b|minutes\b|'|′)/i);
+  if (m) return { durationType: 'time', durationValue: parseFloat(m[1]) * 60 };
+  // distance: order matters — miles before meters
+  m = s.match(/(\d+(?:\.\d+)?)\s*(miles|mile|mi)\b/i);
+  if (m) return { durationType: 'mi', durationValue: parseFloat(m[1]) };
+  m = s.match(/(\d+(?:\.\d+)?)\s*(km|k)\b/i);
+  if (m) return { durationType: 'km', durationValue: parseFloat(m[1]) };
+  m = s.match(/(\d+(?:\.\d+)?)\s*(meters|meter|m)\b/i);
+  if (m) return { durationType: 'm', durationValue: parseFloat(m[1]) };
+  // bare number ≥ 200 → meters (track shorthand: "8 x 400")
+  m = s.match(/(?:^|\s)(\d{3,4})(?:\s|$)/);
+  if (m && +m[1] >= 200) return { durationType: 'm', durationValue: +m[1] };
+  // bare unit word → one of it ("10-12 x k" = 10–12 × 1 km, "3 x mile")
+  if (!/\d/.test(s)) {
+    if (/\b(?:km|k)\b/i.test(s)) return { durationType: 'km', durationValue: 1 };
+    if (/\b(?:miles|mile|mi)\b/i.test(s)) return { durationType: 'mi', durationValue: 1 };
+  }
+  return null;
+}
+function parseRecovery(s) {
+  const style = /rest|walk|standing/i.test(s) ? 'rest' : 'jog';
+  // explicit seconds first: 45", 45 sec
+  let m = s.match(/(\d+(?:\.\d+)?)\s*(?:"|″|sec\b|secs\b|seconds\b)/i);
+  if (m) return { durationType: 'time', durationValue: parseFloat(m[1]), style };
+  // apostrophe in a recovery clause: 5' reads as minutes, 45' as seconds
+  // (coach shorthand is sloppy here — no one rests 45 minutes between 400s)
+  m = s.match(/(\d+(?:\.\d+)?)\s*(?:'|′)/);
+  if (m) { const v = parseFloat(m[1]); return { durationType: 'time', durationValue: v > 15 ? v : v * 60, style }; }
+  let dur = parseDuration(s);
+  if (!dur) {
+    const c = s.match(/(\d{1,2}):(\d{2})/);
+    if (c) dur = { durationType: 'time', durationValue: (+c[1]) * 60 + (+c[2]) };
+    else {
+      const secs = s.match(/(\d+)\s*(?:s|sec|secs|seconds)\b/i);
+      if (secs) dur = { durationType: 'time', durationValue: +secs[1] };
+    }
+  }
+  if (!dur) return null;
+  return { ...dur, style };
+}
+// "5' b/t sets" / "5 min between sets" → seconds of rest between sets
+const SET_REST_RE = /(\d+(?::\d{2})?(?:\.\d+)?)\s*('|′|"|″|min\b|mins\b|minutes\b|sec\b|secs\b|seconds\b)?\s*(?:b\/t|btw|between)\s*sets?/i;
+function parseSetRest(s) {
+  const m = s.match(SET_REST_RE);
+  if (!m) return null;
+  if (m[1].includes(':')) return parseClockStr(m[1]);
+  const v = parseFloat(m[1]);
+  if (m[2] && /"|″|sec/i.test(m[2])) return v;
+  return v * 60;
+}
+// A single rep inside a compound set: "600 @ 5k pace", "400 @ 3k", "1 min @ 6:00"
+function parseMiniSegment(str) {
+  let s = str.replace(/\bat\b/gi, '@').trim();
+  let zone = null, paceSec = null, zoneOff = null;
+  const at = s.indexOf('@');
+  let main = s, pp = null;
+  if (at >= 0) { main = s.slice(0, at); pp = s.slice(at + 1).trim(); }
+  if (pp) {
+    const clock = pp.match(/(\d{1,2}):(\d{2})(?:\s*\/?\s*(mi|mile|km|k))?/);
+    if (clock) {
+      paceSec = (+clock[1]) * 60 + (+clock[2]);
+      if (clock[3] && /k/i.test(clock[3])) paceSec = paceSec * 1.609344;
+    } else {
+      const zo = parseZoneWithOffset(pp);
+      if (zo) { zone = zo.zone; zoneOff = zo.off; }
+    }
+  }
+  const dur = parseDuration(main);
+  if (!dur) return null;
+  return {
+    durationType: dur.durationType, durationValue: dur.durationValue,
+    paceMode: paceSec != null ? 'pace' : 'zone',
+    zone: zone || 'fiveK', paceSec, zoneOff,
+  };
+}
+
+function parseSegment(seg) {
+  let s = seg.trim();
+  if (!s) return null;
+  s = s.replace(/\bat\b/gi, '@'); // "10' tempo at HM" reads like "@ HM"
+  let kind = null;
+  if (/\b(?:wu|warm[\s-]?up)\b/i.test(s)) kind = 'warmup';
+  if (/\b(?:cd|cool[\s-]?down)\b/i.test(s)) kind = 'cooldown';
+
+  // in-segment set rest: "... 5' b/t sets"
+  let setRestSec = null;
+  if (SET_REST_RE.test(s)) { setRestSec = parseSetRest(s); s = s.replace(SET_REST_RE, ' '); }
+
+  // sets prefix: "2 sets of 6 x 400m"
+  let sets = 1;
+  const setsMatch = s.match(/^(\d+)\s*sets?\s*(?:of\s*)?/i);
+  if (setsMatch) { sets = +setsMatch[1]; s = s.slice(setsMatch[0].length); }
+
+  // compound set: "(600 @ 5k / 400 @ 3k)" — alternating reps
+  let segments = null;
+  const parenMatch = s.match(/\(([^)]*)\)/);
+  if (parenMatch) {
+    const parts = parenMatch[1].split(/\/|&|\s\+\s/).map(t => t.trim()).filter(Boolean);
+    const parsed = parts.map(parseMiniSegment).filter(Boolean);
+    if (parsed.length) { segments = parsed; s = s.replace(parenMatch[0], ' '); }
+  }
+
+  // recovery clause: "w/ 400m jog", "w/45' rest"
+  let recovery = null;
+  const recMatch = s.match(/\b(?:w\/|with)\s*(.+)$/i);
+  if (recMatch) { recovery = parseRecovery(recMatch[1]); s = s.slice(0, recMatch.index); }
+
+  // reps — supports ranges: "4-6 x 800"
+  let reps = 1, repsMax = null;
+  const repsMatch = s.match(/^(\d+)(?:\s*[-–]\s*(\d+))?\s*[x×]\s*/i);
+  if (repsMatch) { reps = +repsMatch[1]; repsMax = repsMatch[2] ? +repsMatch[2] : null; s = s.slice(repsMatch[0].length); }
+
+  if (segments) {
+    const S = Math.max(sets, reps);
+    return {
+      id: uid(), kind: 'reps', reps: 1, sets: S, setRestSec, segments,
+      durationType: 'm', durationValue: 0, paceMode: 'zone', zone: 'fiveK',
+      paceSec: null, timeSec: null, recovery, note: '',
+      scalable: S >= 3,
+      repsByTier: { building: Math.max(1, S - 1), base: S, advanced: S + 1 },
+    };
+  }
+
+  // target time: "in 3:00", "in 78"
+  let timeSec = null;
+  const inMatch = s.match(/\bin\s+(\d{1,2}:\d{2}|\d+)\b/i);
+  if (inMatch) { timeSec = parseClockStr(inMatch[1]); s = s.replace(inMatch[0], ' '); }
+
+  // pace clause after @
+  let zone = null, paceSec = null, zoneOff = null;
+  const atIdx = s.indexOf('@');
+  let mainPart = s, pacePart = null;
+  if (atIdx >= 0) { mainPart = s.slice(0, atIdx); pacePart = s.slice(atIdx + 1).trim(); }
+  if (pacePart) {
+    const clock = pacePart.match(/(\d{1,2}):(\d{2})(?:\s*\/?\s*(mi|mile|km|k))?/);
+    if (clock) {
+      paceSec = (+clock[1]) * 60 + (+clock[2]);
+      if (clock[3] && /k/i.test(clock[3])) paceSec = paceSec * 1.609344;
+    } else {
+      const zo = parseZoneWithOffset(pacePart);
+      if (zo) { zone = zo.zone; zoneOff = zo.off; }
+    }
+  }
+
+  const dur = parseDuration(mainPart);
+  if (!dur && timeSec == null) return null;
+
+  // bare zone word without @ ("40 min easy")
+  if (!zone && paceSec == null && timeSec == null) {
+    const words = mainPart.replace(/\b(?:wu|warm[\s-]?up|cd|cool[\s-]?down)\b/gi, ' ').trim().split(/\s+/);
+    for (const w of words) { const z = matchZoneWord(w); if (z) { zone = z; break; } }
+  }
+
+  // standalone rest: "5' rest", "3 min rest" — no pace, just stand there
+  if (!kind && /\brest\b/i.test(seg) && !zone && paceSec == null && timeSec == null
+      && reps === 1 && sets === 1 && !recovery && dur && dur.durationType === 'time') {
+    kind = 'rest';
+  }
+  if (!kind) kind = (reps > 1 || sets > 1) ? 'reps' : 'block';
+  if ((kind === 'warmup' || kind === 'cooldown') && !zone && paceSec == null && timeSec == null) zone = 'easy';
+
+  const step = {
+    id: uid(), kind, reps, repsMax, sets, setRestSec,
+    durationType: dur ? dur.durationType : 'm',
+    durationValue: dur ? dur.durationValue : 400,
+    durationValueMax: dur && dur.durationValueMax ? dur.durationValueMax : null,
+    paceMode: timeSec != null ? 'time' : (paceSec != null ? 'pace' : 'zone'),
+    zone: zone || (kind === 'reps' ? 'fiveK' : 'easy'), zoneOff,
+    paceSec: paceSec || null, timeSec: timeSec || null,
+    recovery, note: '',
+    scalable: kind === 'reps' && reps >= 3 && repsMax == null,
+    repsByTier: { building: Math.max(1, reps - 1), base: reps, advanced: reps + 1 },
+  };
+  if (kind === 'rest') { step.paceMode = 'none'; step.zone = null; }
+  return step;
+}
+// split on , ; newline + "then" — but never inside ( ), and never on the
+// "+" of an offset like MP+15 (attached + is an offset, spaced + separates)
+function splitSegments(text) {
+  const out = []; let cur = ''; let depth = 0;
+  for (const ch of text) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth = Math.max(0, depth - 1);
+    const plusIsOffset = ch === '+' && cur.length && !/\s/.test(cur.slice(-1));
+    if (depth === 0 && !plusIsOffset && (ch === ',' || ch === ';' || ch === '\n' || ch === '+')) { out.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  out.push(cur);
+  return out.flatMap(p => p.split(/\bthen\b/i)).map(t => t.trim()).filter(Boolean);
+}
+function parseNL(text) {
+  // "w/ 200m jogs between reps 2mi cd" — cut the recovery clause at
+  // "between reps" so whatever follows becomes its own step
+  text = text.replace(/\b(?:between|b\/t|btw)\s+reps?\b/gi, 'b/t-reps,');
+  const segs = splitSegments(text);
+  const steps = [], unparsed = [];
+  for (const seg of segs) {
+    const st = parseSegment(seg);
+    if (st) { steps.push(st); continue; }
+    // orphan "5' b/t sets" segment → attach to the last multi-set step
+    const sr = parseSetRest(seg);
+    if (sr != null) {
+      const target = [...steps].reverse().find(x => (x.sets || 1) > 1) || steps[steps.length - 1];
+      if (target) { target.setRestSec = sr; continue; }
+    }
+    unparsed.push(seg);
+  }
+  return { steps, unparsed };
+}
+
+/* =============================================================
+   Resolution — one workout, one athlete's numbers
+   ============================================================= */
+function resolvedReps(step, tier) {
+  if (step.kind === 'reps' && step.scalable && step.repsByTier) {
+    const r = step.repsByTier[tier];
+    if (r != null && r >= 1) return r;
+  }
+  if (step.repsMax) return Math.round(((step.reps || 1) + step.repsMax) / 2);
+  return step.reps || 1;
+}
+function resolvedSets(step, tier) {
+  if (step.segments && step.scalable && step.repsByTier) {
+    const r = step.repsByTier[tier];
+    if (r != null && r >= 1) return r;
+  }
+  return step.sets || 1;
+}
+// pace per mile for one compound-set segment
+function segPaceMid(sg, paceTable) {
+  if (sg.paceMode === 'pace' && sg.paceSec) return sg.paceSec;
+  return paceTable ? applyOff(paceTable[sg.zone], sg.zoneOff) : null;
+}
+// → { midSec, isRange, label } — pace per mile for this athlete
+function resolvePace(step, paceTable) {
+  if (step.paceMode === 'none') return { midSec: null, isRange: false, label: null };
+  if (step.paceMode === 'pace' && step.paceSec) {
+    return { midSec: step.paceSec, isRange: false, label: null };
+  }
+  if (step.paceMode === 'time' && step.timeSec) {
+    const mi = distToMiles(step.durationType, durMid(step));
+    if (mi > 0) return { midSec: step.timeSec / mi, isRange: false, label: null };
+    return { midSec: null, isRange: false, label: null };
+  }
+  const z = zoneByKey[step.zone];
+  if (!z || !paceTable) return { midSec: null, isRange: false, label: null };
+  return {
+    midSec: applyOff(paceTable[z.key], step.zoneOff),
+    isRange: z.kind === 'training',
+    label: z.label + fmtOffLabel(step.zoneOff),
+  };
+}
+function repDurationSec(step, paceTable) {
+  if (step.durationType === 'time') return durMid(step);
+  const mi = distToMiles(step.durationType, durMid(step));
+  const p = resolvePace(step, paceTable);
+  return p.midSec ? mi * p.midSec : 0;
+}
+function recoveryDurationSec(rec, paceTable) {
+  if (!rec) return 0;
+  if (rec.durationType === 'time') return rec.durationValue;
+  const mi = distToMiles(rec.durationType, rec.durationValue);
+  return mi * (paceTable ? paceTable.easy * 1.05 : 600);
+}
+function workoutTotals(steps, paceTable, tier) {
+  let mi = 0, sec = 0;
+  for (const step of steps) {
+    if (step.segments && step.segments.length) {
+      const sets = resolvedSets(step, tier);
+      const n = step.segments.length;
+      let perMi = 0, perSec = 0;
+      for (const sg of step.segments) {
+        const pm = segPaceMid(sg, paceTable);
+        if (sg.durationType === 'time') { perSec += sg.durationValue; perMi += pm ? sg.durationValue / pm : 0; }
+        else { const m = distToMiles(sg.durationType, sg.durationValue); perMi += m; perSec += pm ? m * pm : 0; }
+      }
+      const recSec = recoveryDurationSec(step.recovery, paceTable);
+      const recMi = step.recovery && step.recovery.durationType !== 'time'
+        ? distToMiles(step.recovery.durationType, step.recovery.durationValue) : 0;
+      let recCount, setRestCount = 0;
+      if (step.setRestSec && sets > 1) { recCount = sets * (n - 1); setRestCount = sets - 1; }
+      else recCount = Math.max(0, sets * n - 1);
+      mi += sets * perMi + recMi * recCount;
+      sec += sets * perSec + recSec * recCount + (step.setRestSec || 0) * setRestCount;
+      continue;
+    }
+    const sets = step.sets || 1;
+    const reps = resolvedReps(step, tier);
+    const repMi = step.durationType === 'time'
+      ? (resolvePace(step, paceTable).midSec ? durMid(step) / resolvePace(step, paceTable).midSec : 0)
+      : distToMiles(step.durationType, durMid(step));
+    const recMi = step.recovery && step.recovery.durationType !== 'time'
+      ? distToMiles(step.recovery.durationType, step.recovery.durationValue) : 0;
+    const recSec = recoveryDurationSec(step.recovery, paceTable);
+    mi  += sets * (repMi * reps + recMi * Math.max(0, reps - 1));
+    sec += sets * (repDurationSec(step, paceTable) * reps + recSec * Math.max(0, reps - 1));
+    if (sets > 1 && step.setRestSec) sec += (sets - 1) * step.setRestSec;
+  }
+  return { miles: mi, seconds: sec };
+}
+
+/* =============================================================
+   Sample athletes (race-anchored, tier from weekly mileage)
+   ============================================================= */
+const ATHLETES = [
+  { id: 'maya',   name: 'Maya',   anchorKey: 'marathon', anchorSec: 12480, anchorLabel: '3:28 marathon', mpw: 40, tier: 'base' },
+  { id: 'sam',    name: 'Sam',    anchorKey: 'fiveK',    anchorSec: 1170,  anchorLabel: '19:30 5K',      mpw: 55, tier: 'advanced' },
+  { id: 'jordan', name: 'Jordan', anchorKey: 'marathon', anchorSec: 14700, anchorLabel: '4:05 marathon', mpw: 25, tier: 'building' },
+];
+ATHLETES.forEach(a => { a.paceTable = derivePaceTable(a.anchorKey, a.anchorSec); a.overrides = {}; });
+// Derived table + any manual coach/athlete overrides. Manual wins — the
+// anchor is an observation; the coach owns the decision.
+function effectiveTable(athlete) { return { ...athlete.paceTable, ...athlete.overrides }; }
+const ANCHOR_DISTS = [['marathon', 'marathon'], ['half', 'half'], ['tenK', '10K'], ['fiveK', '5K'], ['mile', 'mile']];
+const ANCHOR_LABEL = Object.fromEntries(ANCHOR_DISTS);
+// "3:28" for a marathon reads as h:mm, not m:ss — decide by distance
+function parseRaceTime(str, distKey) {
+  const sec = parseClockStr(str);
+  if (sec == null) return null;
+  const parts = String(str).trim().split(':');
+  if (parts.length === 2 && (distKey === 'marathon' || distKey === 'half') && +parts[0] <= 10) return sec * 60;
+  return sec;
+}
+function fmtRaceTime(sec) {
+  sec = Math.round(sec);
+  if (sec >= 3600 && sec % 60 === 0) return Math.floor(sec / 3600) + ':' + String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+  return fmtClock(sec);
+}
+const TIER_LABEL = { building: 'Building', base: 'Base', advanced: 'Advanced' };
+const TIER_RANGE = { building: 'under 30 mi/wk', base: '30–50 mi/wk', advanced: '50+ mi/wk' };
+
+/* =============================================================
+   State + DOM
+   ============================================================= */
+let _uid = 0;
+function uid() { return 's' + (++_uid) + '-' + Date.now().toString(36); }
+
+const state = {
+  steps: [],
+  selectedAthlete: 'maya',
+  paceOpen: false,
+  garminOpen: false,
+  variations: [],
+  activeVar: 0,
+};
+
+/* ---- Variations: A/B/C alternates of the same session -------- */
+function cloneSteps(steps) {
+  return steps.map(s => {
+    const c = JSON.parse(JSON.stringify(s));
+    c.id = uid(); delete c._noteOpen;
+    return c;
+  });
+}
+function saveActiveVar() {
+  const v = state.variations[state.activeVar];
+  if (!v) return;
+  v.name = document.getElementById('workoutName').value;
+  v.coachNote = document.getElementById('coachNote').value;
+  v.steps = state.steps;
+}
+function loadVar(i) {
+  state.activeVar = i;
+  const v = state.variations[i];
+  document.getElementById('workoutName').value = v.name;
+  document.getElementById('coachNote').value = v.coachNote;
+  state.steps = v.steps;
+  renderAll();
+}
+function newVariation() {
+  saveActiveVar();
+  const cur = state.variations[state.activeVar];
+  state.variations.push({
+    label: String.fromCharCode(65 + state.variations.length),
+    name: cur.name, coachNote: cur.coachNote, steps: cloneSteps(cur.steps),
+  });
+  loadVar(state.variations.length - 1);
+}
+function renderVarPills() {
+  const el = document.getElementById('varPills');
+  el.innerHTML = state.variations.map((v, i) =>
+    `<button class="athlete-pill${i === state.activeVar ? ' active' : ''}" data-var="${i}">Var ${v.label}${i === state.activeVar && state.variations.length > 1 ? ' <span data-delvar="' + i + '" title="delete variation">&times;</span>' : ''}</button>`
+  ).join('') + `<button class="athlete-pill" data-newvar>+ variation</button>`;
+}
+document.addEventListener('click', (e) => {
+  const del = e.target.closest('[data-delvar]');
+  if (del) {
+    state.variations.splice(+del.dataset.delvar, 1);
+    state.variations.forEach((v, i) => v.label = String.fromCharCode(65 + i));
+    loadVar(Math.max(0, state.activeVar - 1));
+    e.stopPropagation();
+    return;
+  }
+  const pill = e.target.closest('[data-var]');
+  if (pill) { saveActiveVar(); loadVar(+pill.dataset.var); return; }
+  if (e.target.closest('[data-newvar]')) newVariation();
+});
+
+function seedDefault() {
+  state.steps = [
+    { id: uid(), kind: 'warmup', reps: 1, sets: 1, setRestSec: null, durationType: 'mi', durationValue: 2, paceMode: 'zone', zone: 'easy', paceSec: null, timeSec: null, recovery: null, note: '', scalable: false, repsByTier: { building: 1, base: 1, advanced: 1 } },
+    { id: uid(), kind: 'reps', reps: 6, sets: 1, setRestSec: null, durationType: 'm', durationValue: 800, paceMode: 'zone', zone: 'fiveK', paceSec: null, timeSec: null, recovery: { durationType: 'm', durationValue: 400, style: 'jog' }, note: 'Cap it at the point where form frays — the last one should look like the first.', scalable: true, repsByTier: { building: 5, base: 6, advanced: 7 } },
+    { id: uid(), kind: 'cooldown', reps: 1, sets: 1, setRestSec: null, durationType: 'mi', durationValue: 2, paceMode: 'zone', zone: 'easy', paceSec: null, timeSec: null, recovery: null, note: '', scalable: false, repsByTier: { building: 1, base: 1, advanced: 1 } },
+  ];
+}
+
+const KIND_LABEL = { warmup: 'Warm-up', reps: 'Reps', block: 'Block', cooldown: 'Cool-down', rest: 'Rest' };
+const KIND_ORDER_MARK = { warmup: 'wu', cooldown: 'cd' };
+
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+/* ---- Builder rendering -------------------------------------- */
+function unitSelect(cls, current, id, field, seg) {
+  const opts = [['mi', 'mi'], ['km', 'km'], ['m', 'm'], ['time', 'min']];
+  const segAttr = seg != null ? ` data-seg="${seg}"` : '';
+  return `<select class="${cls}" data-id="${id}" data-field="${field}"${segAttr}>` +
+    opts.map(([v, l]) => `<option value="${v}"${v === current ? ' selected' : ''}>${l}</option>`).join('') + '</select>';
+}
+function zoneSelect(current, id, field, seg) {
+  const segAttr = seg != null ? ` data-seg="${seg}"` : '';
+  return `<select class="w-zone" data-id="${id}" data-field="${field || 'zone'}"${segAttr}>` +
+    ZONES.map(z => `<option value="${z.key}"${z.key === current ? ' selected' : ''}>${z.label}</option>`).join('') + '</select>';
+}
+function segInputsHTML(step) {
+  return step.segments.map((sg, i) => {
+    const v = sg.durationType === 'time' ? Math.round(sg.durationValue / 60) : sg.durationValue;
+    return `${i > 0 ? '<span class="step-x">/</span>' : ''}
+      <input type="text" inputmode="decimal" class="num-input w-val" data-id="${step.id}" data-seg="${i}" data-field="segValue" value="${v}">
+      ${unitSelect('w-unit', sg.durationType, step.id, 'segUnit', i)}
+      ${zoneSelect(sg.zone, step.id, 'segZone', i)}
+      ${offControlsHTML(step.id, sg.zoneOff, i)}
+      ${step.segments.length > 1 ? `<button class="icon-btn del" data-id="${step.id}" data-action="delseg" data-seg="${i}">&times;</button>` : ''}`;
+  }).join('') + `<button class="btn btn--ghost" data-id="${step.id}" data-action="addseg">+ rep</button>`;
+}
+function paceModeSelect(step) {
+  const isDist = step.durationType !== 'time';
+  const opts = [['zone', '@ zone'], ['pace', '@ pace']];
+  if (isDist) opts.push(['time', 'in time']);
+  return `<select class="w-pacemode" data-id="${step.id}" data-field="paceMode">` +
+    opts.map(([v, l]) => `<option value="${v}"${v === step.paceMode ? ' selected' : ''}>${l}</option>`).join('') + '</select>';
+}
+function paceValueInput(step) {
+  if (step.paceMode === 'zone') return zoneSelect(step.zone, step.id) + offControlsHTML(step.id, step.zoneOff, null);
+  if (step.paceMode === 'pace') {
+    const v = step.paceSec ? fmtClock(step.paceSec) : '';
+    return `<input type="text" class="num-input w-abs" data-id="${step.id}" data-field="paceSec" value="${v}" placeholder="7:30"> <span class="step-x">/ mi</span>`;
+  }
+  const v = step.timeSec ? fmtClock(step.timeSec) : '';
+  return `<input type="text" class="num-input w-abs" data-id="${step.id}" data-field="timeSec" value="${v}" placeholder="3:00"> <span class="step-x">target</span>`;
+}
+
+function stepRowHTML(step, idx, count) {
+  const isCompound = !!(step.segments && step.segments.length);
+  const one = (v) => step.durationType === 'time' ? Math.round(v / 60) : v;
+  const durVal = step.durationValueMax ? `${one(step.durationValue)}-${one(step.durationValueMax)}` : one(step.durationValue);
+  const repsVal = step.repsMax ? `${step.reps}-${step.repsMax}` : step.reps;
+  const repsInput = step.kind === 'reps' && !isCompound
+    ? `<input type="text" class="num-input w-reps" data-id="${step.id}" data-field="reps" value="${repsVal}"><span class="step-x">×</span>`
+    : '';
+  let mainInputs;
+  if (isCompound) {
+    mainInputs = `<input type="text" inputmode="numeric" class="num-input w-reps" data-id="${step.id}" data-field="sets" value="${step.sets || 1}"><span class="step-x">sets × (</span>${segInputsHTML(step)}<span class="step-x">)</span>`;
+  } else if (step.kind === 'rest') {
+    mainInputs = `<input type="text" inputmode="decimal" class="num-input w-val" data-id="${step.id}" data-field="durationValue" value="${durVal}">
+        ${unitSelect('w-unit', step.durationType, step.id, 'durationType')}
+        <span class="step-x">no pace — recover fully</span>`;
+  } else {
+    mainInputs = `${repsInput}
+        <input type="text" inputmode="decimal" class="num-input w-val" data-id="${step.id}" data-field="durationValue" value="${durVal}">
+        ${unitSelect('w-unit', step.durationType, step.id, 'durationType')}
+        ${paceModeSelect(step)}
+        ${paceValueInput(step)}`;
+  }
+  let subRow = '';
+  if (step.kind === 'reps') {
+    const rec = step.recovery;
+    const recVal = rec ? (rec.durationType === 'time' ? fmtClock(rec.durationValue) : rec.durationValue) : '';
+    const sets = step.sets || 1;
+    subRow = `<div class="step-sub">
+      ${isCompound ? '' : `<span class="caption">Sets</span>
+      <input type="text" inputmode="numeric" class="num-input w-reps" data-id="${step.id}" data-field="sets" value="${sets}">`}
+      ${sets > 1 ? `<input type="text" class="num-input w-val" data-id="${step.id}" data-field="setRest" value="${step.setRestSec ? fmtClock(step.setRestSec) : ''}" placeholder="5:00"><span class="step-x">b/t sets</span>` : ''}
+      <span class="caption" style="margin-left:6px">Recovery${isCompound ? ' b/t reps' : ''}</span>
+      <input type="text" class="num-input w-val" data-id="${step.id}" data-field="recValue" value="${recVal}" placeholder="none">
+      ${unitSelect('w-unit', rec ? rec.durationType : 'm', step.id, 'recUnit')}
+      <select class="w-unit" data-id="${step.id}" data-field="recStyle">
+        <option value="jog"${rec && rec.style === 'jog' ? ' selected' : ''}>jog</option>
+        <option value="rest"${rec && rec.style === 'rest' ? ' selected' : ''}>rest</option>
+      </select>
+      <span style="flex:1"></span>
+      <label class="toggle"><input type="checkbox" data-id="${step.id}" data-field="scalable"${step.scalable ? ' checked' : ''}><span class="track"></span><span class="caption">Scales by tier</span></label>
+      ${step.scalable ? `<div class="tier-chips">
+        <div class="tier-chip"><span class="caption">Bld</span><input type="text" inputmode="numeric" class="num-input" data-id="${step.id}" data-field="tier-building" value="${step.repsByTier.building}"></div>
+        <div class="tier-chip"><span class="caption">Base</span><input type="text" inputmode="numeric" class="num-input" data-id="${step.id}" data-field="tier-base" value="${step.repsByTier.base}"></div>
+        <div class="tier-chip"><span class="caption">Adv</span><input type="text" inputmode="numeric" class="num-input" data-id="${step.id}" data-field="tier-advanced" value="${step.repsByTier.advanced}"></div>
+      </div>` : ''}
+    </div>`;
+  }
+  const noteRow = step.note || step._noteOpen
+    ? `<div class="step-note-row"><textarea data-id="${step.id}" data-field="note" placeholder="Step note — the athlete sees this under the step.">${esc(step.note)}</textarea></div>`
+    : `<div class="step-note-row"><button class="add-note-link" data-id="${step.id}" data-action="addnote">+ step note</button></div>`;
+  return `<div class="step" data-id="${step.id}">
+    <div class="step-top">
+      <div class="step-kind"><span class="caption">${KIND_LABEL[step.kind]}</span></div>
+      <div class="step-grid">
+        ${mainInputs}
+      </div>
+      <div class="step-controls">
+        <button class="icon-btn" data-id="${step.id}" data-action="dup" title="duplicate step">&#10697;</button>
+        <button class="icon-btn" data-id="${step.id}" data-action="up" ${idx === 0 ? 'disabled' : ''}>&uarr;</button>
+        <button class="icon-btn" data-id="${step.id}" data-action="down" ${idx === count - 1 ? 'disabled' : ''}>&darr;</button>
+        <button class="icon-btn del" data-id="${step.id}" data-action="del">&times;</button>
+      </div>
+    </div>
+    ${subRow}
+    ${noteRow}
+  </div>`;
+}
+
+function renderBuilder() {
+  const list = document.getElementById('stepsList');
+  if (!state.steps.length) {
+    list.innerHTML = '<div class="empty-state">No steps yet. Describe the workout above, or add a step below — either way it lands here.</div>';
+    return;
+  }
+  list.innerHTML = state.steps.map((s, i) => stepRowHTML(s, i, state.steps.length)).join('');
+}
+
+/* ---- Preview rendering --------------------------------------- */
+function compoundInner(step, html) {
+  return step.segments.map(sg => {
+    let t = fmtDist(sg.durationType, sg.durationValue);
+    if (sg.paceMode === 'pace' && sg.paceSec) t += ' @ ' + fmtClock(sg.paceSec);
+    else {
+      const z = zoneByKey[sg.zone];
+      const lbl = z ? z.label + fmtOffLabel(sg.zoneOff) : null;
+      if (lbl) t += html ? ` @ <span class="zone-tag">${lbl}</span>` : ' @ ' + lbl;
+    }
+    return t;
+  }).join(' / ');
+}
+function stepLine(step, athlete) {
+  if (step.segments && step.segments.length) {
+    return `${resolvedSets(step, athlete.tier)} × (${compoundInner(step, true)})`;
+  }
+  const reps = resolvedReps(step, athlete.tier);
+  const p = resolvePace(step, effectiveTable(athlete));
+  const dist = fmtDur(step.durationType, step.durationValue, step.durationValueMax);
+  let line = '';
+  if (step.kind === 'rest') return dist + ' rest';
+  if (step.kind === 'reps') {
+    const sets = step.sets || 1;
+    const repsTxt = step.repsMax && !step.scalable ? `${step.reps}–${step.repsMax}` : String(reps);
+    line = (sets > 1 ? `${sets} sets · ` : '') + `${repsTxt} × ${dist}`;
+  } else {
+    line = dist;
+    if (step.kind === 'warmup') line += ' warm-up';
+    if (step.kind === 'cooldown') line += ' cool-down';
+  }
+  if (step.paceMode === 'zone' && p.label) line += ` @ <span class="zone-tag">${p.label}</span>`;
+  else if (step.paceMode === 'pace' && step.paceSec) line += ` @ ${fmtClock(step.paceSec)} / mi`;
+  else if (step.paceMode === 'time' && step.timeSec) line += ` in ${fmtClock(step.timeSec)}`;
+  return line;
+}
+function stepMeta(step, athlete) {
+  const pt = effectiveTable(athlete);
+  const parts = [];
+  if (step.kind === 'rest') parts.push('recover fully');
+  if (step.segments && step.segments.length) {
+    const bits = step.segments.map(sg => {
+      const pm = segPaceMid(sg, pt);
+      if (!pm) return null;
+      const z = zoneByKey[sg.zone];
+      return (sg.paceMode === 'zone' && z ? z.label + fmtOffLabel(sg.zoneOff) + ' ' : '') + fmtClock(pm);
+    }).filter(Boolean);
+    if (bits.length) parts.push(bits.join(' · ') + ' / mi');
+    if (step.recovery) {
+      const r = step.recovery;
+      const rv = r.durationType === 'time'
+        ? (r.durationValue < 60 ? Math.round(r.durationValue) + 's' : fmtClock(r.durationValue))
+        : fmtDist(r.durationType, r.durationValue);
+      parts.push(rv + ' ' + r.style + ' b/t reps');
+    }
+    if ((step.sets || 1) > 1 && step.setRestSec) parts.push(fmtClock(step.setRestSec) + ' b/t sets');
+    return parts.join(' · ');
+  }
+  const p = resolvePace(step, pt);
+  if (p.midSec) {
+    if (step.paceMode === 'zone') parts.push(p.isRange ? fmtPaceRange(p.midSec) : fmtPace(p.midSec));
+    else if (step.paceMode === 'time') parts.push(fmtPace(p.midSec));
+  }
+  // per-rep target time for distance reps at a resolved pace
+  if (step.kind === 'reps' && step.durationType !== 'time' && p.midSec && !p.isRange && step.paceMode !== 'time') {
+    const t = distToMiles(step.durationType, durMid(step)) * p.midSec;
+    parts.push((step.durationValueMax ? '~' : '') + fmtClock(t) + ' per rep');
+  }
+  if (step.durationType === 'time' && step.kind !== 'rest') parts.push(fmtDur('time', step.durationValue, step.durationValueMax));
+  if (step.recovery) {
+    const r = step.recovery;
+    const rv = r.durationType === 'time'
+      ? (r.durationValue < 60 ? Math.round(r.durationValue) + 's' : fmtClock(r.durationValue))
+      : fmtDist(r.durationType, r.durationValue);
+    parts.push(rv + ' ' + r.style);
+  }
+  if ((step.sets || 1) > 1 && step.setRestSec) parts.push(fmtClock(step.setRestSec) + ' b/t sets');
+  return parts.join(' · ');
+}
+function summaryLine(athlete) {
+  const main = state.steps.find(s => s.kind === 'reps') || state.steps.find(s => s.kind === 'block');
+  const parts = [];
+  const pt = effectiveTable(athlete);
+  if (main && main.segments && main.segments.length) {
+    const parts2 = [`${resolvedSets(main, athlete.tier)} × (${compoundInner(main, false)})`];
+    const totals2 = workoutTotals(state.steps, pt, athlete.tier);
+    if (totals2.miles > 0) parts2.push(totals2.miles.toFixed(1) + ' mi');
+    return parts2.join(' · ');
+  }
+  if (main) {
+    const reps = resolvedReps(main, athlete.tier);
+    const p = resolvePace(main, pt);
+    const sets = main.sets || 1;
+    const repsTxt = main.repsMax && !main.scalable ? `${main.reps}–${main.repsMax}` : String(reps);
+    let core = (main.kind === 'reps' ? (sets > 1 ? sets + ' sets · ' : '') + repsTxt + ' × ' : '') + fmtDur(main.durationType, main.durationValue, main.durationValueMax);
+    if (main.paceMode === 'zone' && p.label) core += ' @ ' + p.label;
+    else if (main.paceMode === 'pace' && main.paceSec) core += ' @ ' + fmtClock(main.paceSec);
+    else if (main.paceMode === 'time' && main.timeSec) core += ' in ' + fmtClock(main.timeSec);
+    parts.push(core);
+    if (main.recovery) parts.push(fmtDist(main.recovery.durationType === 'time' ? 'time' : main.recovery.durationType, main.recovery.durationValue) + ' ' + main.recovery.style);
+  }
+  const totals = workoutTotals(state.steps, pt, athlete.tier);
+  if (totals.miles > 0) parts.push(totals.miles.toFixed(1) + ' mi');
+  return parts.join(' · ');
+}
+
+function renderAthletePills() {
+  const el = document.getElementById('athletePills');
+  el.innerHTML = ATHLETES.map(a =>
+    `<button class="athlete-pill${a.id === state.selectedAthlete ? ' active' : ''}" data-athlete="${a.id}">${a.name} · ${TIER_LABEL[a.tier]}</button>`
+  ).join('');
+}
+
+function renderPreview() {
+  const athlete = ATHLETES.find(a => a.id === state.selectedAthlete);
+  const card = document.getElementById('previewCard');
+  const name = document.getElementById('workoutName').value.trim() || 'Untitled workout';
+  const coachNote = document.getElementById('coachNote').value.trim();
+  const eff = effectiveTable(athlete);
+  const totals = workoutTotals(state.steps, eff, athlete.tier);
+
+  let stepsHTML = '';
+  if (!state.steps.length) {
+    stepsHTML = '<div class="empty-state">No steps yet. When you add them, ' + esc(athlete.name) + '’s version lands here.</div>';
+  } else {
+    let n = 0;
+    stepsHTML = state.steps.map(step => {
+      let marker;
+      if (step.kind === 'warmup') marker = 'wu';
+      else if (step.kind === 'cooldown') marker = 'cd';
+      else { n += 1; marker = String(n).padStart(2, '0'); }
+      const note = step.note ? `<div class="p-step-note">${esc(step.note)}</div>` : '';
+      return `<div class="p-step">
+        <div class="p-step-marker">${marker}</div>
+        <div class="p-step-main">
+          <div class="p-step-line">${stepLine(step, athlete)}</div>
+          <div class="p-step-meta">${stepMeta(step, athlete)}</div>
+          ${note}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const hasScaled = state.steps.some(s => s.kind === 'reps' && s.scalable);
+  let tierLine = '';
+  if (hasScaled) {
+    const s = state.steps.find(x => x.kind === 'reps' && x.scalable);
+    tierLine = `<div class="tier-line">Scaled for <b>${TIER_LABEL[athlete.tier]}</b> · ${TIER_RANGE[athlete.tier]} — building runs ${s.repsByTier.building} · advanced runs ${s.repsByTier.advanced}</div>`;
+  }
+
+  const coachBlock = coachNote
+    ? `<div class="coach-note-block"><span class="eyebrow">From your coach</span><div class="quote">${esc(coachNote)}</div></div>`
+    : '';
+
+  const ovCount = Object.keys(athlete.overrides).length;
+  const paceRows = ZONES.map(z => {
+    const mid = eff[z.key];
+    const ov = athlete.overrides[z.key] != null;
+    const band = z.kind === 'training' ? fmtClock(mid * 0.95) + '–' + fmtClock(mid * 1.05) : '';
+    return `<tr>
+      <td>${z.label}</td>
+      <td class="pz-band">${band}</td>
+      <td><input class="pz-input${ov ? ' ov' : ''}" data-zone="${z.key}" value="${fmtClock(mid)}">${ov ? `<button class="pz-clear" data-clear-zone="${z.key}" title="back to anchor">&times;</button>` : '<span class="pz-clear" style="visibility:hidden">&times;</span>'}</td>
+    </tr>`;
+  }).join('');
+  const anchorEditor = `<div class="pz-anchor">
+    <span class="caption">Anchor</span>
+    <select data-anchor-dist>${ANCHOR_DISTS.map(([k, l]) => `<option value="${k}"${k === athlete.anchorKey ? ' selected' : ''}>${l}</option>`).join('')}</select>
+    <input type="text" data-anchor-time value="${fmtRaceTime(athlete.anchorSec)}">
+    <span class="pz-note">sets every zone at once</span>
+  </div>`;
+
+  card.innerHTML = `
+    <div class="preview-eyebrow-row">
+      <span class="eyebrow eyebrow--coral">Tuesday · Prescription${state.variations.length > 1 ? ' · Var ' + state.variations[state.activeVar].label : ''}</span>
+      <span class="caption">${esc(athlete.name)} · ${esc(athlete.anchorLabel)}</span>
+    </div>
+    <div class="display preview-title">${esc(name)}.</div>
+    <div class="preview-summary">${summaryLine(athlete)}</div>
+    ${stepsHTML}
+    <div class="p-totals">
+      <div class="p-total"><span class="stat">${totals.miles > 0 ? totals.miles.toFixed(1) : '0'}</span><span class="caption">mi total</span></div>
+      <div class="p-total"><span class="stat">~${Math.round(totals.seconds / 60)}</span><span class="caption">min est.</span></div>
+    </div>
+    ${tierLine}
+    ${coachBlock}
+    <div class="pace-table">
+      <details class="pace-details"${state.garminOpen ? ' open' : ''} data-panel="garmin">
+        <summary><span class="link-ind">On the watch · Garmin preview ↓</span></summary>
+        <div class="gw-table">
+          ${(() => { const g = garminRows(state.steps, athlete); return g.rows.map(r =>
+            `<div class="gw-row ${r.cls}"><span class="gw-label${r.indent ? ' gw-indent' : ''}">${r.label}</span><span class="gw-win">${r.winTxt}</span></div>`
+          ).join('') + (g.decision ? `<div class="gw-note gw-decision">${g.decision}</div>` : '') +
+          '<div class="gw-note">Paces resolve before export — the watch gets absolute windows, not zones. Pushed via Garmin Training API; the completed run flows back and reconciles against this prescription.</div>'; })()}
+        </div>
+      </details>
+      <details class="pace-details"${state.paceOpen ? ' open' : ''} data-panel="zones">
+        <summary><span class="link-ind">${esc(athlete.name)}’s pace zones · ${esc(athlete.anchorLabel)}${ovCount ? ' · ' + ovCount + ' set manually' : ''} ↓</span></summary>
+        ${anchorEditor}
+        <table><tbody>${paceRows}</tbody></table>
+        <div class="pz-footer">
+          <span class="pz-note">Edit any pace to set it manually — the anchor stops moving it.</span>
+          ${ovCount ? '<button class="pz-reset" data-reset-zones>Back to anchor</button>' : ''}
+        </div>
+      </details>
+    </div>`;
+  card.querySelectorAll('details.pace-details').forEach(det => {
+    det.addEventListener('toggle', () => {
+      if (det.dataset.panel === 'garmin') state.garminOpen = det.open;
+      else state.paceOpen = det.open;
+    });
+  });
+}
+
+/* ---- Garmin translation: what the watch actually receives ------ */
+// Garmin structured steps take one rep count and absolute pace windows.
+// Race-pace zones get a ±4 s/mi band; aerobic zones ship their range;
+// rep/distance ranges collapse to a number the ATHLETE confirms at sync.
+function garminRows(steps, athlete) {
+  const pt = effectiveTable(athlete);
+  const rows = [];
+  let decision = null;
+  const win = (mid, isRange) => !mid ? '' :
+    (isRange ? fmtClock(mid * 0.95) + '–' + fmtClock(mid * 1.05) : fmtClock(Math.max(0, mid - 4)) + '–' + fmtClock(mid + 4)) + ' / mi';
+  const recRow = (rec, indent) => {
+    if (!rec) return null;
+    const label = rec.style === 'rest' ? 'REST' : 'RECOVER';
+    const v = rec.durationType === 'time' ? fmtClock(rec.durationValue) : fmtDist(rec.durationType, rec.durationValue);
+    return { label: label + ' · ' + v, winTxt: rec.style === 'rest' ? 'standing' : 'easy jog', indent, cls: '' };
+  };
+  for (const step of steps) {
+    if (step.segments && step.segments.length) {
+      const sets = resolvedSets(step, athlete.tier);
+      rows.push({ label: 'REPEAT × ' + sets, winTxt: '', indent: false, cls: 'gw-repeat' });
+      step.segments.forEach(sg => {
+        const pm = segPaceMid(sg, pt);
+        const z = zoneByKey[sg.zone];
+        rows.push({ label: 'RUN · ' + fmtDist(sg.durationType, sg.durationValue), winTxt: win(pm, sg.paceMode === 'zone' && z && z.kind === 'training'), indent: true, cls: '' });
+      });
+      const r = recRow(step.recovery, true); if (r) rows.push(r);
+      if (step.setRestSec && sets > 1) rows.push({ label: 'REST · ' + fmtClock(step.setRestSec), winTxt: 'between repeats', indent: false, cls: '' });
+      continue;
+    }
+    const p = resolvePace(step, pt);
+    const reps = resolvedReps(step, athlete.tier);
+    const isRepRange = step.repsMax && !step.scalable;
+    const isDistRange = !!step.durationValueMax;
+    if (step.kind === 'rest') { rows.push({ label: 'REST · ' + fmtDist('time', step.durationValue), winTxt: 'standing', indent: false, cls: '' }); continue; }
+    const kindLabel = step.kind === 'warmup' ? 'WARM-UP' : step.kind === 'cooldown' ? 'COOL-DOWN' : 'RUN';
+    const distTxt = fmtDist(step.durationType, isDistRange ? step.durationValue : durMid(step));
+    if (step.kind === 'reps' && (reps > 1 || isRepRange)) {
+      const count = isRepRange ? step.reps : reps;
+      rows.push({ label: 'REPEAT × ' + count + (isRepRange ? ' *' : ''), winTxt: '', indent: false, cls: 'gw-repeat' });
+      if (isRepRange) decision = `* prescribed ${step.reps}–${step.repsMax} — the watch needs one number. Athlete confirms at sync; unconfirmed defaults to ${step.reps}.`;
+      rows.push({ label: 'RUN · ' + distTxt, winTxt: step.paceMode === 'time' && step.timeSec ? fmtClock(step.timeSec) + ' target' : win(p.midSec, p.isRange), indent: true, cls: '' });
+      const r = recRow(step.recovery, true); if (r) rows.push(r);
+      if (step.setRestSec && (step.sets || 1) > 1) rows.push({ label: 'REST · ' + fmtClock(step.setRestSec), winTxt: 'between repeats', indent: false, cls: '' });
+    } else {
+      let label = kindLabel + ' · ' + distTxt + (isDistRange ? ' *' : '');
+      if (isDistRange) decision = `* prescribed ${fmtDur(step.durationType, step.durationValue, step.durationValueMax)} — athlete confirms the distance at sync; unconfirmed defaults to the floor.`;
+      rows.push({ label, winTxt: win(p.midSec, p.isRange), indent: false, cls: '' });
+    }
+  }
+  return { rows, decision };
+}
+
+function renderAll() { renderBuilder(); renderVarPills(); renderAthletePills(); renderPreview(); }
+
+/* ---- Events --------------------------------------------------- */
+function findStep(id) { return state.steps.find(s => s.id === id); }
+
+document.getElementById('stepsList').addEventListener('change', (e) => {
+  const id = e.target.dataset.id, field = e.target.dataset.field;
+  if (!id || !field) return;
+  const step = findStep(id); if (!step) return;
+  const v = e.target.value;
+  if (field === 'reps') {
+    const rm = v.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+    if (rm) { step.reps = +rm[1]; step.repsMax = +rm[2]; step.scalable = false; }
+    else { step.reps = Math.max(1, parseInt(v) || 1); step.repsMax = null; }
+    if (!step.scalable) step.repsByTier = { building: step.reps, base: step.reps, advanced: step.reps };
+  }
+  else if (field === 'durationValue') {
+    const mul = step.durationType === 'time' ? 60 : 1;
+    const rm = v.match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)$/);
+    if (rm) { step.durationValue = parseFloat(rm[1]) * mul; step.durationValueMax = parseFloat(rm[2]) * mul; }
+    else { step.durationValue = (parseFloat(v) || 0) * mul; step.durationValueMax = null; }
+  }
+  else if (field === 'durationType') {
+    const old = step.durationType;
+    if (v === 'time' && old !== 'time') step.durationValue = Math.round(repDurationSec(step, ATHLETES[0].paceTable) / 60) * 60 || 600;
+    else if (v !== 'time' && old === 'time') step.durationValue = v === 'm' ? 800 : 2;
+    step.durationValueMax = null;
+    step.durationType = v;
+    if (v === 'time' && step.paceMode === 'time') step.paceMode = 'zone';
+  }
+  else if (field === 'sets') step.sets = Math.max(1, parseInt(v) || 1);
+  else if (field === 'setRest') {
+    const n = parseClockStr(v);
+    step.setRestSec = n == null ? null : (!v.includes(':') && n <= 20 ? n * 60 : n);
+  }
+  else if (field === 'paceMode') step.paceMode = v;
+  else if (field === 'zone') step.zone = v;
+  else if (field === 'offVal' || field === 'offSel') {
+    const val = document.querySelector(`input[data-id="${id}"][data-field="offVal"]`);
+    const sel = document.querySelector(`select[data-id="${id}"][data-field="offSel"]`);
+    if (val && sel) step.zoneOff = combineOff(val.value, sel.value);
+  }
+  else if (field === 'paceSec') step.paceSec = parseClockStr(v);
+  else if (field === 'timeSec') step.timeSec = parseClockStr(v);
+  else if (field === 'note') step.note = v.trim();
+  else if (field === 'scalable') { step.scalable = e.target.checked; if (step.scalable) step.repsByTier = { building: Math.max(1, step.reps - 1), base: step.reps, advanced: step.reps + 1 }; }
+  else if (field.startsWith('tier-')) { step.repsByTier[field.slice(5)] = Math.max(1, parseInt(v) || 1); }
+  else if (field === 'recValue') {
+    const t = step.recovery ? step.recovery.durationType : 'm';
+    if (!v.trim()) step.recovery = null;
+    else {
+      const val = t === 'time' ? (parseClockStr(v) || 0) : (parseFloat(v) || 0);
+      step.recovery = { durationType: t, durationValue: val, style: step.recovery ? step.recovery.style : 'jog' };
+    }
+  }
+  else if (field === 'recUnit') {
+    if (!step.recovery) step.recovery = { durationType: v, durationValue: v === 'time' ? 120 : (v === 'm' ? 400 : 0.25), style: 'jog' };
+    else {
+      if (v === 'time' && step.recovery.durationType !== 'time') step.recovery.durationValue = 120;
+      else if (v !== 'time' && step.recovery.durationType === 'time') step.recovery.durationValue = v === 'm' ? 400 : 0.25;
+      step.recovery.durationType = v;
+    }
+  }
+  else if (field === 'recStyle') { if (step.recovery) step.recovery.style = v; }
+  else if (field === 'segValue' || field === 'segUnit' || field === 'segZone' || field === 'segOffVal' || field === 'segOffSel') {
+    const sg = step.segments && step.segments[+e.target.dataset.seg];
+    if (sg) {
+      if (field === 'segValue') sg.durationValue = sg.durationType === 'time' ? (parseFloat(v) || 0) * 60 : (parseFloat(v) || 0);
+      else if (field === 'segUnit') {
+        const old = sg.durationType;
+        if (v === 'time' && old !== 'time') sg.durationValue = 180;
+        else if (v !== 'time' && old === 'time') sg.durationValue = v === 'm' ? 400 : 1;
+        sg.durationType = v;
+      }
+      else if (field === 'segZone') { sg.zone = v; sg.paceMode = 'zone'; sg.paceSec = null; }
+      else if (field === 'segOffVal' || field === 'segOffSel') {
+        const i = e.target.dataset.seg;
+        const val = document.querySelector(`input[data-id="${id}"][data-field="segOffVal"][data-seg="${i}"]`);
+        const sel = document.querySelector(`select[data-id="${id}"][data-field="segOffSel"][data-seg="${i}"]`);
+        if (val && sel) sg.zoneOff = combineOff(val.value, sel.value);
+      }
+    }
+  }
+  renderAll();
+});
+
+document.getElementById('stepsList').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = btn.dataset.id, action = btn.dataset.action;
+  const idx = state.steps.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  if (action === 'addseg') { state.steps[idx].segments.push({ durationType: 'm', durationValue: 400, paceMode: 'zone', zone: 'threeK', paceSec: null }); renderAll(); return; }
+  if (action === 'delseg') {
+    state.steps[idx].segments.splice(+btn.dataset.seg, 1);
+    if (!state.steps[idx].segments.length) state.steps[idx].segments = null;
+    renderAll(); return;
+  }
+  if (action === 'dup') { const c = cloneSteps([state.steps[idx]])[0]; state.steps.splice(idx + 1, 0, c); renderAll(); return; }
+  if (action === 'del') state.steps.splice(idx, 1);
+  else if (action === 'up' && idx > 0) [state.steps[idx - 1], state.steps[idx]] = [state.steps[idx], state.steps[idx - 1]];
+  else if (action === 'down' && idx < state.steps.length - 1) [state.steps[idx + 1], state.steps[idx]] = [state.steps[idx], state.steps[idx + 1]];
+  else if (action === 'addnote') { state.steps[idx]._noteOpen = true; renderAll(); const ta = document.querySelector(`textarea[data-id="${id}"][data-field="note"]`); if (ta) ta.focus(); return; }
+  renderAll();
+});
+
+document.querySelectorAll('[data-add]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const kind = btn.dataset.add;
+    const base = {
+      id: uid(), kind, reps: 1, sets: 1, setRestSec: null, durationType: 'mi', durationValue: 2,
+      paceMode: 'zone', zone: 'easy', paceSec: null, timeSec: null,
+      recovery: null, note: '', scalable: false,
+      repsByTier: { building: 1, base: 1, advanced: 1 },
+    };
+    if (kind === 'reps') Object.assign(base, {
+      reps: 4, durationType: 'm', durationValue: 400, zone: 'fiveK',
+      recovery: { durationType: 'm', durationValue: 400, style: 'jog' },
+      scalable: true, repsByTier: { building: 3, base: 4, advanced: 5 },
+    });
+    if (kind === 'block') Object.assign(base, { durationValue: 4, zone: 'mp' });
+    if (kind === 'rest') Object.assign(base, { durationType: 'time', durationValue: 120, paceMode: 'none', zone: null });
+    if (kind === 'warmup') state.steps.unshift(base);
+    else state.steps.push(base);
+    renderAll();
+  });
+});
+
+/* =============================================================
+   Gemini smart fallback — rules parse first; only what the rules
+   can't read goes to the model. Translation only, never invention:
+   the response is schema-validated and lands in the editable step
+   list for coach review. NOTE for production: this moves server-side
+   into a Supabase edge function (key never in the client), the
+   prompt goes through _shared/prompt-library.ts, and it ships with
+   eval cassettes in _evals/ per repo rule #3.
+   ============================================================= */
+const GEM_MODEL = 'gemini-2.5-flash';
+const GEM_PROMPT = `You convert running-workout shorthand into JSON. Output ONLY valid JSON, no markdown, matching:
+{"steps":[{
+ "kind":"warmup"|"reps"|"block"|"cooldown"|"rest",
+ "reps":int, "repsMax":int|null,          // "10-12 x" -> reps 10, repsMax 12
+ "sets":int,                               // "5 sets of" -> 5
+ "setRestSec":number|null,                 // rest BETWEEN SETS, seconds
+ "durationType":"mi"|"km"|"m"|"time",
+ "durationValue":number,                   // time in SECONDS; "x k" alone = 1 km
+ "durationValueMax":number|null,           // only when a range was written ("10-12k")
+ "paceMode":"zone"|"pace"|"time"|"none",   // none = standing rest step
+ "zone":"easy"|"moderate"|"steady"|"long"|"mp"|"hmp"|"lt"|"10k"|"5k"|"3k"|"mile"|null,
+ "zoneOffset":{"kind":"sec"|"pct","value":number}|null,  // "MP-10" -> {"kind":"sec","value":-10}; negative = faster
+ "paceSecPerMile":number|null,             // explicit pace like "@ 7:30" -> 450
+ "targetTimeSec":number|null,              // "in 78" / "in 3:00" per rep
+ "recovery":{"durationType":"mi"|"km"|"m"|"time","durationValue":number,"style":"jog"|"rest"}|null,  // between reps
+ "segments":[{"durationType":...,"durationValue":number,"zone":...,"zoneOffset":...,"paceSecPerMile":number|null}]|null,  // alternating sets like "(600 @ 5k / 400 @ 3k)"
+ "note":string|null                        // verbatim coach comments only
+}]}
+Rules:
+- Translate ONLY what is written. Never add steps, paces, distances, or advice the coach did not write.
+- If no pace is stated, zone = null.
+- "tempo" and "threshold" phrasing: at HM pace -> hmp; threshold/LT -> lt.
+- HM = half marathon pace (hmp). MP = marathon pace (mp).
+- "wu"/"warmup" -> warmup; "cd"/"cooldown" -> cooldown; a standalone "5' rest" -> kind rest, paceMode none.
+- Apostrophe = minutes ("10'" = 600s) except in a recovery clause where values over 15 read as seconds ("w/45' rest" = 45s). Double-quote = seconds.
+- Fartlek or alternating structures -> segments.
+Example: "2mi warmup + 10-12 x k @ HM pace w/60s rest + 2mi CD" ->
+{"steps":[
+ {"kind":"warmup","reps":1,"repsMax":null,"sets":1,"setRestSec":null,"durationType":"mi","durationValue":2,"durationValueMax":null,"paceMode":"zone","zone":null,"zoneOffset":null,"paceSecPerMile":null,"targetTimeSec":null,"recovery":null,"segments":null,"note":null},
+ {"kind":"reps","reps":10,"repsMax":12,"sets":1,"setRestSec":null,"durationType":"km","durationValue":1,"durationValueMax":null,"paceMode":"zone","zone":"hmp","zoneOffset":null,"paceSecPerMile":null,"targetTimeSec":null,"recovery":{"durationType":"time","durationValue":60,"style":"rest"},"segments":null,"note":null},
+ {"kind":"cooldown","reps":1,"repsMax":null,"sets":1,"setRestSec":null,"durationType":"mi","durationValue":2,"durationValueMax":null,"paceMode":"zone","zone":null,"zoneOffset":null,"paceSecPerMile":null,"targetTimeSec":null,"recovery":null,"segments":null,"note":null}]}`;
+
+const LLM_ZONE_MAP = {
+  easy: 'easy', recovery: 'easy', moderate: 'moderate', steady: 'steady',
+  long: 'longRun', longrun: 'longRun', mp: 'mp', marathon: 'mp',
+  hmp: 'hm', hm: 'hm', half: 'hm', lt: 'threshold', threshold: 'threshold',
+  '10k': 'tenK', '5k': 'fiveK', '3k': 'threeK', mile: 'mile',
+};
+function getGemKey() { try { return localStorage.getItem('prd-gemini-key') || ''; } catch (e) { return state._gemKey || ''; } }
+function setGemKey(k) { try { if (k) localStorage.setItem('prd-gemini-key', k); else localStorage.removeItem('prd-gemini-key'); } catch (e) { state._gemKey = k; } }
+
+// Strict validation — a hallucinated shape must fail loudly, not render.
+function coerceLLMSteps(data) {
+  if (!data || !Array.isArray(data.steps) || !data.steps.length) throw new Error('no steps in the response');
+  const DT = ['mi', 'km', 'm', 'time'];
+  const coerceOff = (o) => {
+    if (!o || typeof o !== 'object') return null;
+    const v = Number(o.value);
+    if (!isFinite(v) || v === 0) return null;
+    return { kind: o.kind === 'pct' ? 'pct' : 'sec', v };
+  };
+  return data.steps.map(raw => {
+    const kind = ['warmup', 'reps', 'block', 'cooldown', 'rest'].includes(raw.kind) ? raw.kind : 'block';
+    if (!DT.includes(raw.durationType) || !(Number(raw.durationValue) > 0)) throw new Error('a step came back with a bad duration');
+    const reps = Math.max(1, Math.round(Number(raw.reps) || 1));
+    const repsMax = Number(raw.repsMax) > reps ? Math.round(Number(raw.repsMax)) : null;
+    let sets = Math.max(1, Math.round(Number(raw.sets) || 1));
+    const zone = raw.zone != null ? (LLM_ZONE_MAP[String(raw.zone).toLowerCase()] || null) : null;
+    let paceMode = ['zone', 'pace', 'time', 'none'].includes(raw.paceMode) ? raw.paceMode : 'zone';
+    const paceSec = Number(raw.paceSecPerMile) > 0 ? Number(raw.paceSecPerMile) : null;
+    const timeSec = Number(raw.targetTimeSec) > 0 ? Number(raw.targetTimeSec) : null;
+    if (paceMode === 'pace' && !paceSec) paceMode = 'zone';
+    if (paceMode === 'time' && !timeSec) paceMode = 'zone';
+    if (kind === 'rest') paceMode = 'none';
+    let recovery = null;
+    if (raw.recovery && DT.includes(raw.recovery.durationType) && Number(raw.recovery.durationValue) > 0) {
+      recovery = { durationType: raw.recovery.durationType, durationValue: Number(raw.recovery.durationValue), style: raw.recovery.style === 'rest' ? 'rest' : 'jog' };
+    }
+    let segments = null;
+    if (Array.isArray(raw.segments) && raw.segments.length) {
+      segments = raw.segments.map(g => {
+        if (!DT.includes(g.durationType) || !(Number(g.durationValue) > 0)) throw new Error('a set segment came back malformed');
+        return {
+          durationType: g.durationType, durationValue: Number(g.durationValue),
+          paceMode: Number(g.paceSecPerMile) > 0 ? 'pace' : 'zone',
+          zone: (g.zone != null && LLM_ZONE_MAP[String(g.zone).toLowerCase()]) || 'fiveK',
+          paceSec: Number(g.paceSecPerMile) > 0 ? Number(g.paceSecPerMile) : null,
+          zoneOff: coerceOff(g.zoneOffset),
+        };
+      });
+      sets = Math.max(sets, reps);
+    }
+    const S = segments ? sets : reps;
+    return {
+      id: uid(), kind,
+      reps: segments ? 1 : reps, repsMax: segments ? null : repsMax,
+      sets, setRestSec: Number(raw.setRestSec) > 0 ? Number(raw.setRestSec) : null,
+      segments, durationType: raw.durationType, durationValue: Number(raw.durationValue),
+      durationValueMax: Number(raw.durationValueMax) > Number(raw.durationValue) ? Number(raw.durationValueMax) : null,
+      paceMode, zone: kind === 'rest' ? null : (zone || (kind === 'reps' ? 'fiveK' : 'easy')),
+      zoneOff: coerceOff(raw.zoneOffset), paceSec, timeSec, recovery,
+      note: typeof raw.note === 'string' && raw.note.trim() ? raw.note.trim() : '',
+      scalable: !segments && kind === 'reps' && reps >= 3 && !repsMax,
+      repsByTier: { building: Math.max(1, S - 1), base: S, advanced: S + 1 },
+    };
+  });
+}
+
+async function llmParse(text, key) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEM_MODEL}:generateContent?key=${encodeURIComponent(key)}`;
+  const res = await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: GEM_PROMPT + '\n\nWorkout text:\n' + text }] }],
+      generationConfig: { temperature: 0, responseMimeType: 'application/json' },
+    }),
+  });
+  if (!res.ok) throw new Error('Gemini said ' + res.status + (res.status === 400 || res.status === 403 ? ' — check the key' : ''));
+  const data = await res.json();
+  const txt = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!txt) throw new Error('empty response');
+  return coerceLLMSteps(JSON.parse(txt));
+}
+
+function updateGemStatus() {
+  const key = getGemKey();
+  document.getElementById('gemStatus').textContent = key
+    ? 'on · ' + GEM_MODEL + ' reads what the rules can’t'
+    : 'off — rules only. Add a Gemini key and unread lines go to the model.';
+  document.getElementById('gemToggle').textContent = key ? 'change key ↗' : 'add key ↗';
+}
+document.getElementById('gemToggle').addEventListener('click', () => {
+  const inp = document.getElementById('gemKeyInput');
+  inp.style.display = inp.style.display === 'none' ? '' : 'none';
+  if (inp.style.display !== 'none') { inp.value = getGemKey(); inp.focus(); }
+});
+document.getElementById('gemKeyInput').addEventListener('change', (e) => {
+  setGemKey(e.target.value.trim());
+  e.target.style.display = 'none';
+  updateGemStatus();
+});
+
+/* NL input */
+const NL_EXAMPLES = [
+  '2 mi wu, 6 x 800m @ 5K w/ 400m jog, 2 mi cd',
+  '4 x 5k @ MP with 3:00 rest',
+  '3 x 1 mi @ LT w/ 90 sec jog',
+  '8 x 400 in 78 w/ 400 jog',
+  '10 min @ HM + 2 sets of 6 x 400m @ 5K w/ 45" rest, 5 min b/t sets',
+  "2mi wu + 10' @ HM + 5' rest + 5 sets of (600 @ 5K / 400 @ 3K) w/ 200m jog b/t reps + 2mi cd",
+  '3 x 2 mi @ MP-10 w/ 60" jog',
+  '10-12k of threshold',
+  '4-6 x 800m @ 5K w/ 400 jog',
+];
+const hintsEl = document.getElementById('nlHints');
+hintsEl.innerHTML = NL_EXAMPLES.map(x => `<button class="nl-hint">${esc(x)}</button>`).join('');
+hintsEl.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('nl-hint')) return;
+  document.getElementById('nlInput').value = e.target.textContent;
+  document.getElementById('nlFeedback').textContent = '';
+});
+document.getElementById('nlParseBtn').addEventListener('click', async () => {
+  const text = document.getElementById('nlInput').value;
+  const fb = document.getElementById('nlFeedback');
+  fb.classList.remove('err');
+  if (!text.trim()) { fb.textContent = 'Nothing to read yet — describe the session and it lands as steps below.'; return; }
+  const { steps, unparsed } = parseNL(text);
+
+  // rules got everything → done, no model call
+  if (steps.length && !unparsed.length) {
+    state.steps = steps; saveActiveVar();
+    fb.textContent = steps.length + (steps.length === 1 ? ' step' : ' steps') + ' built.';
+    renderAll(); return;
+  }
+
+  const key = getGemKey();
+  if (!key) {
+    if (steps.length) {
+      state.steps = steps; saveActiveVar(); renderAll();
+      fb.textContent = steps.length + ' steps built. Couldn’t read: “' + unparsed.join('”, “') + '”. Add a Gemini key below and the fallback will read it.';
+    } else {
+      fb.textContent = 'Couldn’t read that with rules alone. Add a Gemini key below, or try the shape of the examples.';
+      fb.classList.add('err');
+    }
+    return;
+  }
+
+  fb.textContent = 'Rules missed some of it — asking ' + GEM_MODEL + '…';
+  try {
+    const llmSteps = await llmParse(text, key);
+    state.steps = llmSteps; saveActiveVar();
+    fb.textContent = 'Read by ' + GEM_MODEL + ' — ' + llmSteps.length + ' steps. Check them before they ship.';
+    renderAll();
+  } catch (err) {
+    if (steps.length) {
+      state.steps = steps; saveActiveVar(); renderAll();
+      fb.textContent = 'Fallback failed (' + err.message + '). Kept the ' + steps.length + ' steps the rules could read; still unread: “' + unparsed.join('”, “') + '”.';
+    } else {
+      fb.textContent = 'Fallback failed: ' + err.message;
+    }
+    fb.classList.add('err');
+  }
+});
+
+/* pace-zone editing (manual overrides + group anchor) */
+document.getElementById('previewCard').addEventListener('change', (e) => {
+  const athlete = ATHLETES.find(a => a.id === state.selectedAthlete);
+  if (e.target.dataset.zone) {
+    const sec = parseClockStr(e.target.value);
+    if (sec && sec > 120 && sec < 1500) athlete.overrides[e.target.dataset.zone] = sec;
+    else if (!e.target.value.trim()) delete athlete.overrides[e.target.dataset.zone];
+    renderPreview();
+  } else if (e.target.hasAttribute('data-anchor-time') || e.target.hasAttribute('data-anchor-dist')) {
+    const distSel = document.querySelector('[data-anchor-dist]');
+    const timeInp = document.querySelector('[data-anchor-time]');
+    const sec = parseRaceTime(timeInp.value, distSel.value);
+    if (sec && sec > 200) {
+      athlete.anchorKey = distSel.value;
+      athlete.anchorSec = sec;
+      athlete.paceTable = derivePaceTable(athlete.anchorKey, athlete.anchorSec);
+      athlete.anchorLabel = fmtRaceTime(sec) + ' ' + ANCHOR_LABEL[athlete.anchorKey];
+    }
+    renderPreview();
+  }
+});
+document.getElementById('previewCard').addEventListener('click', (e) => {
+  const athlete = ATHLETES.find(a => a.id === state.selectedAthlete);
+  if (e.target.dataset.clearZone) {
+    delete athlete.overrides[e.target.dataset.clearZone];
+    renderPreview();
+  } else if (e.target.hasAttribute('data-reset-zones')) {
+    athlete.overrides = {};
+    renderPreview();
+  }
+});
+
+/* athlete switcher */
+document.getElementById('athletePills').addEventListener('click', (e) => {
+  const pill = e.target.closest('[data-athlete]');
+  if (!pill) return;
+  state.selectedAthlete = pill.dataset.athlete;
+  renderAll();
+});
+
+/* name + coach note re-render preview only */
+document.getElementById('workoutName').addEventListener('input', renderPreview);
+document.getElementById('coachNote').addEventListener('input', renderPreview);
+
+seedDefault();
+state.variations = [{
+  label: 'A',
+  name: document.getElementById('workoutName').value,
+  coachNote: document.getElementById('coachNote').value,
+  steps: state.steps,
+}];
+updateGemStatus();
+renderAll();
+</script>
+</body>
+</html>

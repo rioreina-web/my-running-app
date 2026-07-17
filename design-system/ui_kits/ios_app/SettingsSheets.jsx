@@ -800,13 +800,16 @@ const MENU_DEST_CSS = `
 }
 `;
 
+// Pace = single-hue blue depth ramp (Easy → Mile). Source of truth:
+// RunningLog/Workouts/PaceSpectrum.swift. Recovery sits below Easy, so it
+// falls back to a warm gray rather than green (green = mood only).
 const PACE_ZONES = [
-  { c: "#4A9E6B", name: "Recovery",  sub: "shake-out, between hard days", pace: "9:10–9:50" },
-  { c: "#2D8A4E", name: "Easy",      sub: "the bread-and-butter aerobic mile", pace: "8:05–8:45" },
-  { c: "#C4873A", name: "Steady",    sub: "comfortably-hard long-run finish", pace: "7:25–7:50" },
-  { c: "#D4592A", name: "Marathon",  sub: "goal race pace", pace: "7:05–7:15", coral: true },
-  { c: "#C45A3A", name: "Threshold", sub: "tempo / lactate turnpoint", pace: "6:35–6:50" },
-  { c: "#6B4A8A", name: "Interval",  sub: "VO₂max repeats, 3–5 min", pace: "5:55–6:10" },
+  { c: "#B4ADA4", name: "Recovery",  sub: "shake-out, between hard days", pace: "9:10–9:50" },
+  { c: "#93B9D6", name: "Easy",      sub: "the bread-and-butter aerobic mile", pace: "8:05–8:45" },
+  { c: "#578FC0", name: "Steady",    sub: "comfortably-hard long-run finish", pace: "7:25–7:50" },
+  { c: "#3F7CB5", name: "Marathon",  sub: "goal race pace", pace: "7:05–7:15" },
+  { c: "#27549B", name: "Threshold", sub: "tempo / lactate turnpoint", pace: "6:35–6:50" },
+  { c: "#1A3679", name: "Interval",  sub: "VO₂max repeats, 3–5 min", pace: "5:55–6:10" },
 ];
 
 const PaceChartScreen = ({ onClose }) => (

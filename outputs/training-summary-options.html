@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training summary — options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --card:#FFFFFF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --sage:#A9B89A; --green:#4A9E6B;
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:radial-gradient(circle at 30% 15%, #d8d3cc, #c4bfb7);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:48px 24px 80px;}
+  .wrap{max-width:760px;margin:0 auto;}
+  .intro{text-align:center;margin-bottom:38px;}
+  .intro .kick{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b6056;}
+  .intro h1{font-family:var(--font-display);font-weight:700;font-size:29px;color:#26221d;margin-top:8px;letter-spacing:-.01em;}
+  .intro p{font-family:var(--font-body);font-style:italic;font-size:15px;color:#564f47;max-width:560px;margin:10px auto 0;line-height:1.5;}
+
+  .grid{display:flex;flex-direction:column;gap:22px;}
+  .opt{background:var(--paper);border-radius:20px;padding:26px 24px 24px;box-shadow:0 12px 30px rgba(0,0,0,.14);}
+  .opt .tag{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:20px;}
+  .opt .tag .nm{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);font-weight:600;}
+  .opt .tag .ds{font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--ink-2);}
+
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);}
+  .eyebrow.coral{color:var(--coral);}
+  .caption{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+  .hdr{display:flex;justify-content:space-between;align-items:baseline;}
+
+  /* A — ticker line */
+  .ticker{font-family:var(--font-mono);font-size:13px;letter-spacing:.04em;color:var(--ink);margin-top:12px;font-variant-numeric:tabular-nums;}
+  .ticker b{font-weight:700;}
+  .ticker .sep{color:var(--ink-3);margin:0 7px;}
+
+  /* B — hero number + delta */
+  .hero{display:flex;align-items:flex-end;gap:12px;margin-top:10px;}
+  .hero .big{font-family:var(--font-mono);font-weight:700;font-size:48px;color:var(--ink);line-height:.9;font-variant-numeric:tabular-nums;}
+  .hero .u{font-family:var(--font-mono);font-size:12px;color:var(--ink-2);padding-bottom:6px;}
+  .hero .delta{font-family:var(--font-mono);font-size:12px;color:var(--green);padding-bottom:6px;font-weight:600;}
+  .subrow{display:flex;gap:18px;margin-top:14px;}
+  .subrow span{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);}
+  .subrow b{color:var(--ink);font-weight:700;}
+
+  /* C — declarative recap (sentence-case, zero adjectives) */
+  .recap{font-family:var(--font-body);font-size:16px;line-height:1.5;color:var(--ink);margin-top:12px;}
+  .recap b{font-weight:700;}
+
+  /* D — stat line only */
+  .statline{display:grid;grid-template-columns:repeat(3,1fr);margin-top:12px;}
+  .statline .cell{padding:0 12px;border-right:1px solid var(--rule);}
+  .statline .cell:first-child{padding-left:0;}
+  .statline .cell:last-child{border-right:0;}
+  .statline .v{font-family:var(--font-mono);font-weight:600;font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+  .statline .l{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-top:7px;}
+
+  .notes{max-width:680px;margin:40px auto 0;}
+  .notes p{font-family:var(--font-body);font-size:14.5px;line-height:1.55;color:#3f3a33;}
+  .notes b{color:#26221d;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="intro">
+    <div class="kick">Post Run Drip · Training · summary header</div>
+    <h1>A summary that states facts, not opinions.</h1>
+    <p>Four ways to top the tab with a recap — none of them narrate. The difference between “a summary” and “a tacky AI line” is interpretive verbs; these only carry numbers and real comparisons.</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- A -->
+    <div class="opt">
+      <div class="tag"><span class="nm">A · Ticker line</span><span class="ds">one factual line, dot-separated</span></div>
+      <div class="hdr"><span class="eyebrow coral">MAY 31 – JUN 30</span></div>
+      <div class="ticker"><b>245 mi</b><span class="sep">·</span><b>41</b> runs<span class="sep">·</span><b>30:01</b><span class="sep">·</span><b>76%</b> easy</div>
+    </div>
+
+    <!-- B -->
+    <div class="opt">
+      <div class="tag"><span class="nm">B · Hero number + delta</span><span class="ds">lead stat with a real comparison</span></div>
+      <div class="hdr"><span class="eyebrow coral">MAY 31 – JUN 30</span><span class="caption">vs. prior month</span></div>
+      <div class="hero"><span class="big">245</span><span class="u">MILES</span><span class="delta">+8%</span></div>
+      <div class="subrow"><span><b>41</b> runs</span><span><b>30:01</b> hrs</span><span><b>76%</b> easy</span></div>
+    </div>
+
+    <!-- C -->
+    <div class="opt">
+      <div class="tag"><span class="nm">C · Declarative recap</span><span class="ds">plain sentence, zero adjectives</span></div>
+      <div class="hdr"><span class="eyebrow coral">MAY 31 – JUN 30</span></div>
+      <div class="recap"><b>245 miles</b> over <b>41 runs</b>. <b>76%</b> easy, <b>24%</b> hard. Up <b>8%</b> on May.</div>
+    </div>
+
+    <!-- D -->
+    <div class="opt">
+      <div class="tag"><span class="nm">D · No line, stats only</span><span class="ds">let the numbers be the summary</span></div>
+      <div class="hdr"><span class="eyebrow coral">MAY 31 – JUN 30</span><span class="caption">76% EASY · +8%</span></div>
+      <div class="statline">
+        <div class="cell"><div class="v">245</div><div class="l">Miles</div></div>
+        <div class="cell"><div class="v">41</div><div class="l">Runs</div></div>
+        <div class="cell"><div class="v">30:01</div><div class="l">Hours</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <p><b>The line that's safe:</b> facts and arithmetic only — counts, percentages, and real deltas (“+8% vs. May”). <b>The line that's tacky:</b> anything with an interpretive verb or judgment — “creeping,” “carrying the load,” “on track,” “strong month.” The moment a word implies an opinion about the data, it reads as the coach talking, and that belongs on The Read. Every option above is template-fillable from your numbers with no model in the loop.</p>
+  </div>
+
+</div>
+</body>
+</html>

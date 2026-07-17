@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Log journal — editorial variations · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF;
+    --paper-deep:#E8E4DF; --rule:#E8E4E0; --rule-2:#DAD5CF;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+    --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+    --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+    --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+    --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:#23211E;color:var(--ink);font-family:var(--fb);padding:40px 24px 64px}
+  .deck{max-width:1240px;margin:0 auto}
+  .deck>h1{font-family:var(--fd);font-weight:600;color:#F5F3F0;font-size:26px;letter-spacing:-.01em;margin:0 0 6px}
+  .deck>p.sub{font-family:var(--fm);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9B9590;margin:0 0 36px}
+  .row{display:flex;gap:36px;flex-wrap:wrap;justify-content:center}
+  .col{flex:1 1 360px;max-width:392px}
+  .col h2{font-family:var(--fd);font-weight:600;color:#F5F3F0;font-size:18px;margin:0 0 4px}
+  .col p.note{font-family:var(--fb);font-style:italic;color:#B7B2AC;font-size:13.5px;line-height:1.5;margin:0 0 18px;min-height:60px}
+
+  .phone{background:var(--paper);border-radius:34px;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45);border:1px solid #000}
+  .notch{height:28px;display:flex;align-items:center;justify-content:center}
+  .notch::after{content:"";width:92px;height:5px;border-radius:999px;background:var(--ink-3);opacity:.5}
+
+  .eyebrow{font-family:var(--fm);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+  .meta{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-3)}
+  .ind{display:inline-flex;align-items:center;gap:5px;font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.07em;color:var(--coral)}
+  .ind.txt{color:var(--ink-3)}
+
+  .plate{display:flex;justify-content:space-between;align-items:center;padding:10px 22px;border-bottom:1px solid var(--rule)}
+  .plate .l{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+  .plate .r{font-family:var(--fm);font-size:10px;letter-spacing:.16em;color:var(--ink-3)}
+
+  .mode{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--rule)}
+  .mode button{padding:13px 0 0;text-align:center;background:transparent;border:0;cursor:pointer;font-family:var(--fm);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+  .mode button.on{color:var(--coral)}
+  .railb{height:2px;background:transparent;margin-top:9px}
+  .mode button.on .railb{background:var(--coral)}
+
+  .recbar{display:flex;align-items:center;justify-content:center;gap:14px;padding:18px 24px;border-bottom:1px solid var(--rule)}
+  .recdisc{width:46px;height:46px;border-radius:999px;background:var(--coral);box-shadow:0 3px 10px rgba(212,89,42,.30);display:grid;place-items:center;flex:none}
+  .recdisc i{width:16px;height:16px;border-radius:999px;background:#fff;display:block}
+  .recbar .t1{font-family:var(--fd);font-weight:600;font-size:17px;color:var(--ink);line-height:1.1}
+  .recbar .t2{font-family:var(--fb);font-style:italic;font-size:12.5px;color:var(--ink-2);margin-top:2px}
+
+  .jhead{display:flex;justify-content:space-between;align-items:baseline;padding:16px 24px 12px}
+
+  /* ---------- V1 caption-strip ---------- */
+  .v1row{padding:20px 24px 18px;border-top:1px solid var(--rule)}
+  .v1 .dl{display:flex;align-items:baseline;gap:10px}
+  .v1 .day{font-family:var(--fd);font-weight:700;font-size:23px;letter-spacing:-.01em;color:var(--ink)}
+  .v1 .dt{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+  .v1 .qt{font-family:var(--fb);font-style:italic;font-size:16px;line-height:1.6;color:var(--ink);margin:12px 0 16px}
+  .v1 .strip{display:flex;border-top:1px solid var(--rule-2);padding-top:12px}
+  .v1 .cell{flex:1;padding-right:12px}
+  .v1 .cell+.cell{border-left:1px solid var(--rule);padding-left:12px}
+  .v1 .cl{font-family:var(--fm);font-size:9px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:3px}
+  .v1 .cv{font-family:var(--fd);font-weight:700;font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .v1 .cv.mood{font-family:var(--fm);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+
+  /* ---------- V2 ledger margin ---------- */
+  .v2row{display:grid;grid-template-columns:70px 1px 1fr;gap:16px;padding:20px 24px 18px;border-top:1px solid var(--rule)}
+  .v2 .marg{text-align:right}
+  .v2 .big{font-family:var(--fd);font-weight:700;font-size:30px;line-height:.95;color:var(--ink);font-variant-numeric:tabular-nums}
+  .v2 .unit{font-family:var(--fm);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-top:2px}
+  .v2 .sub{font-family:var(--fm);font-size:10.5px;color:var(--ink-2);margin-top:9px;line-height:1.5;font-variant-numeric:tabular-nums}
+  .v2 .divline{background:var(--rule-2)}
+  .v2 .dl{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+  .v2 .ttl{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2)}
+  .v2 .qt{font-family:var(--fb);font-style:italic;font-size:15.5px;line-height:1.6;color:var(--ink);margin:9px 0 11px}
+  .v2 .mood{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.10em;text-transform:uppercase}
+
+  /* ---------- V3 article ---------- */
+  .v3row{padding:22px 24px 20px;border-top:1px solid var(--rule)}
+  .v3 .kick{display:flex;align-items:baseline;justify-content:space-between}
+  .v3 .kick .k{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--coral)}
+  .v3 .hl{font-family:var(--fd);font-weight:700;font-size:22px;letter-spacing:-.01em;color:var(--ink);margin:9px 0 0;line-height:1.12}
+  .v3 .hl .mi{color:var(--coral)}
+  .v3 .qt{font-family:var(--fb);font-style:italic;font-size:15.5px;line-height:1.62;color:var(--ink);margin:11px 0 14px}
+  .v3 .erule{display:flex;align-items:center;gap:8px;margin-bottom:11px}
+  .v3 .erule::before,.v3 .erule::after{content:"";flex:1;height:1px;background:var(--rule)}
+  .v3 .erule .d{width:3px;height:3px;border-radius:999px;background:var(--ink-3)}
+  .v3 .fig{display:flex;gap:18px;align-items:baseline}
+  .v3 .fig span{font-family:var(--fm);font-size:11px;letter-spacing:.05em;color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .v3 .fig span b{color:var(--ink);font-weight:700}
+  .v3 .fig .mood{margin-left:auto;font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:10px}
+
+  .tabs{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule);padding:9px 0 15px;background:var(--paper-elevated)}
+  .tab{text-align:center;font-family:var(--fm);font-size:9px;font-weight:500;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-3)}
+  .tab.on{color:var(--coral)} .tab .ic{display:block;font-size:14px;margin-bottom:4px}
+
+  .legend{max-width:1240px;margin:38px auto 0;border-top:1px solid #3a3733;padding-top:22px}
+  .legend h3{font-family:var(--fd);font-weight:600;color:#F5F3F0;font-size:15px;margin:0 0 8px}
+  .legend p{font-family:var(--fb);color:#B7B2AC;font-size:13px;line-height:1.6;margin:0 0 6px}
+  .legend b{color:#E9E4DE;font-weight:700}
+</style>
+</head>
+<body>
+<div class="deck">
+  <h1>Journal feed — editorial variations</h1>
+  <p class="sub">Direction A · words lead · stats honored · built to read</p>
+
+  <div class="row">
+
+    <!-- ===== V1 — CAPTION STRIP ===== -->
+    <div class="col v1">
+      <h2>1 · Caption strip</h2>
+      <p class="note">Dateline + pull-quote, then a magazine-style caption bar: stats laid out in tidy labeled cells under a hairline. Words breathe; numbers sit in a clean row beneath.</p>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="plate"><span class="l">Log · journal</span><span class="r">Fig. 09</span></div>
+        <div class="mode"><button class="on">Log run<div class="railb"></div></button><button>Check in<div class="railb"></div></button></div>
+        <div class="recbar"><div class="recdisc"><i></i></div><div><div class="t1">Log your run.</div><div class="t2">Tap to record a voice memo.</div></div></div>
+        <div class="jhead"><span class="eyebrow">Journal</span><span class="meta">Last 6 months ↻</span></div>
+
+        <div class="v1row">
+          <div class="dl"><span class="day">Tuesday</span><span class="dt">May 5</span><span class="ind" style="margin-left:auto">▶ 2:34</span></div>
+          <div class="qt">“Hit splits within two seconds either way. Felt smooth through five, then the wind picked up on the back stretch. Calf was quiet today.”</div>
+          <div class="strip">
+            <div class="cell"><span class="cl">Type</span><span class="cv" style="font-size:14px">Tempo</span></div>
+            <div class="cell"><span class="cl">Dist</span><span class="cv">7.0<span style="font-size:10px;color:var(--ink-3)"> mi</span></span></div>
+            <div class="cell"><span class="cl">Pace</span><span class="cv">6:18</span></div>
+            <div class="cell"><span class="cl">Mood</span><span class="cv mood" style="color:var(--mood-positive)">Positive</span></div>
+          </div>
+        </div>
+
+        <div class="v1row">
+          <div class="dl"><span class="day">Sunday</span><span class="dt">May 3</span><span class="ind" style="margin-left:auto">▶ 3:18</span></div>
+          <div class="qt">“Heavy first three miles, then it loosened up — last four were the strongest of the block.”</div>
+          <div class="strip">
+            <div class="cell"><span class="cl">Type</span><span class="cv" style="font-size:14px">Long</span></div>
+            <div class="cell"><span class="cl">Dist</span><span class="cv">18.0<span style="font-size:10px;color:var(--ink-3)"> mi</span></span></div>
+            <div class="cell"><span class="cl">Pace</span><span class="cv">7:46</span></div>
+            <div class="cell"><span class="cl">Mood</span><span class="cv mood" style="color:var(--mood-tired)">Tired</span></div>
+          </div>
+        </div>
+
+        <div class="v1row">
+          <div class="dl"><span class="day">Friday</span><span class="dt">May 2</span><span class="ind txt" style="margin-left:auto">Text</span></div>
+          <div class="qt">“Easy shakeout. Knee felt a touch warm in the first mile, settled by the second.”</div>
+          <div class="strip">
+            <div class="cell"><span class="cl">Type</span><span class="cv" style="font-size:14px">Recovery</span></div>
+            <div class="cell"><span class="cl">Dist</span><span class="cv">4.0<span style="font-size:10px;color:var(--ink-3)"> mi</span></span></div>
+            <div class="cell"><span class="cl">Pace</span><span class="cv">8:30</span></div>
+            <div class="cell"><span class="cl">Mood</span><span class="cv mood" style="color:var(--mood-neutral)">Neutral</span></div>
+          </div>
+        </div>
+
+        <div class="tabs"><div class="tab on"><span class="ic">▮</span>Log</div><div class="tab"><span class="ic">◳</span>Trends</div><div class="tab"><span class="ic">▤</span>Train</div><div class="tab"><span class="ic">◈</span>Coach</div></div>
+      </div>
+    </div>
+
+    <!-- ===== V2 — LEDGER MARGIN ===== -->
+    <div class="col v2">
+      <h2>2 · Ledger margin</h2>
+      <p class="note">A numeric margin holds the stats: distance as a big serif figure, pace and time stacked beneath, divided by a hairline. The runner's words run as the column of body text beside it.</p>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="plate"><span class="l">Log · journal</span><span class="r">Fig. 09</span></div>
+        <div class="mode"><button class="on">Log run<div class="railb"></div></button><button>Check in<div class="railb"></div></button></div>
+        <div class="recbar"><div class="recdisc"><i></i></div><div><div class="t1">Log your run.</div><div class="t2">Tap to record a voice memo.</div></div></div>
+        <div class="jhead"><span class="eyebrow">Journal</span><span class="meta">Last 6 months ↻</span></div>
+
+        <div class="v2row">
+          <div class="marg"><div class="big">7.0</div><div class="unit">Miles</div><div class="sub">6:18 /mi<br>44:08</div></div>
+          <div class="divline"></div>
+          <div>
+            <div class="dl"><span class="ttl">Tue · May 5 · Tempo</span><span class="ind">▶ 2:34</span></div>
+            <div class="qt">“Hit splits within two seconds either way. Felt smooth through five, then the wind picked up. Calf was quiet today, which I noticed.”</div>
+            <div class="mood" style="color:var(--mood-positive)">Positive</div>
+          </div>
+        </div>
+
+        <div class="v2row">
+          <div class="marg"><div class="big">18.0</div><div class="unit">Miles</div><div class="sub">7:46 /mi<br>2:19:48</div></div>
+          <div class="divline"></div>
+          <div>
+            <div class="dl"><span class="ttl">Sun · May 3 · Long</span><span class="ind">▶ 3:18</span></div>
+            <div class="qt">“Heavy first three miles, then it loosened up — last four were the strongest of the block.”</div>
+            <div class="mood" style="color:var(--mood-tired)">Tired</div>
+          </div>
+        </div>
+
+        <div class="v2row">
+          <div class="marg"><div class="big">4.0</div><div class="unit">Miles</div><div class="sub">8:30 /mi<br>34:00</div></div>
+          <div class="divline"></div>
+          <div>
+            <div class="dl"><span class="ttl">Fri · May 2 · Recovery</span><span class="ind txt">Text</span></div>
+            <div class="qt">“Easy shakeout. Knee felt a touch warm in the first mile, settled by the second.”</div>
+            <div class="mood" style="color:var(--mood-neutral)">Neutral</div>
+          </div>
+        </div>
+
+        <div class="tabs"><div class="tab on"><span class="ic">▮</span>Log</div><div class="tab"><span class="ic">◳</span>Trends</div><div class="tab"><span class="ic">▤</span>Train</div><div class="tab"><span class="ic">◈</span>Coach</div></div>
+      </div>
+    </div>
+
+    <!-- ===== V3 — ARTICLE ===== -->
+    <div class="col v3">
+      <h2>3 · Article entry</h2>
+      <p class="note">Each run reads like a short magazine piece: a coral kicker dateline, a serif headline carrying type + distance, the quote as the lede, and a refined figure line under an editorial rule.</p>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="plate"><span class="l">Log · journal</span><span class="r">Fig. 09</span></div>
+        <div class="mode"><button class="on">Log run<div class="railb"></div></button><button>Check in<div class="railb"></div></button></div>
+        <div class="recbar"><div class="recdisc"><i></i></div><div><div class="t1">Log your run.</div><div class="t2">Tap to record a voice memo.</div></div></div>
+        <div class="jhead"><span class="eyebrow">Journal</span><span class="meta">Last 6 months ↻</span></div>
+
+        <div class="v3row">
+          <div class="kick"><span class="k">Tuesday · May 5</span><span class="ind">▶ 2:34</span></div>
+          <div class="hl">Tempo — <span class="mi">7.0 miles</span></div>
+          <div class="qt">“Hit splits within two seconds either way. Felt smooth through five, then the wind picked up on the back stretch. Calf was quiet today, which I noticed.”</div>
+          <div class="erule"><span class="d"></span></div>
+          <div class="fig"><span><b>6:18</b> /mi</span><span><b>44:08</b></span><span class="mood" style="color:var(--mood-positive)">Positive</span></div>
+        </div>
+
+        <div class="v3row">
+          <div class="kick"><span class="k">Sunday · May 3</span><span class="ind">▶ 3:18</span></div>
+          <div class="hl">Long run — <span class="mi">18.0 miles</span></div>
+          <div class="qt">“Heavy first three miles, then it loosened up — last four were the strongest of the block.”</div>
+          <div class="erule"><span class="d"></span></div>
+          <div class="fig"><span><b>7:46</b> /mi</span><span><b>2:19:48</b></span><span class="mood" style="color:var(--mood-tired)">Tired</span></div>
+        </div>
+
+        <div class="v3row">
+          <div class="kick"><span class="k">Friday · May 2</span><span class="ind txt">Text</span></div>
+          <div class="hl">Recovery — <span class="mi">4.0 miles</span></div>
+          <div class="qt">“Easy shakeout. Knee felt a touch warm in the first mile, settled by the second.”</div>
+          <div class="erule"><span class="d"></span></div>
+          <div class="fig"><span><b>8:30</b> /mi</span><span><b>34:00</b></span><span class="mood" style="color:var(--mood-neutral)">Neutral</span></div>
+        </div>
+
+        <div class="tabs"><div class="tab on"><span class="ic">▮</span>Log</div><div class="tab"><span class="ic">◳</span>Trends</div><div class="tab"><span class="ic">▤</span>Train</div><div class="tab"><span class="ic">◈</span>Coach</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <h3>How each honors the stats</h3>
+    <p><b>1 · Caption strip</b> — stats become a labeled caption bar (type / dist / pace / mood) under the quote. Most scannable; the numbers form a clean ledger row without competing with the words.</p>
+    <p><b>2 · Ledger margin</b> — distance is a big serif numeral in a left margin, pace + time stacked beneath. Feels like a training logbook; your eye can run the left edge for mileage.</p>
+    <p><b>3 · Article entry</b> — type + distance ride in a serif headline, the rest sit in a refined figure line under an editorial rule. Most "magazine"; reads slowest and richest.</p>
+    <p style="margin-top:10px"><b>Shared:</b> voice/text indicator top-right, mood as the single restrained color, generous serif body, and the record affordance still on the surface (Direction A).</p>
+  </div>
+</div>
+</body>
+</html>

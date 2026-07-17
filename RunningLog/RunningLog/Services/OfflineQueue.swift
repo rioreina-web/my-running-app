@@ -56,12 +56,13 @@ final class OfflineQueueManager {
 
     /// Queue a voice log upload for later. Preserves the audio file until upload succeeds.
     @MainActor
-    func enqueueVoiceLog(audioURL: URL, notes: String?, mood: String?, workoutDate: Date?) {
+    func enqueueVoiceLog(audioURL: URL, notes: String?, mood: String?, workoutDate: Date?, source: String = "voice_log") {
         guard let container else { return }
         let context = container.mainContext
 
         var payloadDict: [String: String] = [:]
         payloadDict["audioPath"] = audioURL.path
+        payloadDict["source"] = source
         if let notes { payloadDict["notes"] = notes }
         if let mood { payloadDict["mood"] = mood }
         if let date = workoutDate { payloadDict["workoutDate"] = ISO8601DateFormatter().string(from: date) }
@@ -135,8 +136,13 @@ final class OfflineQueueManager {
         defer { isDraining = false }
 
         let context = container.mainContext
+        // Exclude "failed" (retryCount maxed out) as well as in-flight items.
+        // Without this, a permanently-failed row keeps matching the fetch, gets
+        // re-processed on every drain, re-hits the retry cap, and re-fires its
+        // error banner forever. "failed" rows stay on disk (recording preserved)
+        // but are inert until something explicitly re-queues them.
         let descriptor = FetchDescriptor<PendingUpload>(
-            predicate: #Predicate { $0.status != "uploading" },
+            predicate: #Predicate { $0.status != "uploading" && $0.status != "failed" },
             sortBy: [SortDescriptor(\.createdAt)]
         )
 
@@ -165,10 +171,14 @@ final class OfflineQueueManager {
             } else {
                 upload.retryCount += 1
                 if upload.retryCount >= 5 {
+                    // Permanent failure: mark "failed" so the drain fetch (which
+                    // now excludes "failed") stops re-attempting it — ending the
+                    // retry-forever loop that re-fired this banner every drain.
+                    // The recording stays on disk; we preserve, not purge.
                     upload.status = "failed"
                     logger.error("Upload permanently failed after \(upload.retryCount) attempts: \(upload.id) (\(upload.type))")
                     ErrorReporter.shared.report(
-                        .processing("A queued \(upload.type) upload failed after multiple retries and has been discarded."),
+                        .processing("A \(upload.type) upload failed after several attempts. Your recording is saved on this device."),
                         retry: nil
                     )
                 } else {
@@ -206,28 +216,55 @@ final class OfflineQueueManager {
             return false
         }
 
+        // Must have a real authenticated user — otherwise the storage path
+        // and RLS insert would both be wrong. Keep the item queued.
+        guard let userId = AuthManager.shared.currentUserId, !userId.isEmpty else {
+            logger.error("uploadVoiceLog: no authenticated user — keeping item queued")
+            upload.lastError = "Not signed in"
+            return false
+        }
+
+        // Hold a VALID session before writing. A missing/expired session makes
+        // the upload go out unauthenticated, which storage rejects with 403
+        // "new row violates row-level security policy" — stranding orphaned
+        // audio with no training_logs row (the bug that broke voice memos).
+        // `auth.session` auto-refreshes an expired token; if there's genuinely
+        // no session, keep the item queued and bail quietly instead of firing
+        // an anonymous upload that 403s and spams the error banner.
+        do {
+            _ = try await supabase.auth.session
+        } catch {
+            upload.lastError = "No valid session — sign in to upload"
+            logger.error("uploadVoiceLog: no valid auth session, keeping item queued: \(error.localizedDescription)")
+            return false
+        }
+
         do {
             let audioData = try Data(contentsOf: audioURL)
-            let userId = AuthManager.shared.currentUserId ?? ""
-            let fileName = "\(userId)/\(Date().ISO8601Format())/\(UUID().uuidString).m4a"
 
-            try await supabase.storage
-                .from("training-memos")
-                .upload(fileName, data: audioData, options: .init(contentType: "audio/m4a"))
+            // Step 1: upload audio via the service-role edge function. Direct
+            // storage uploads (SDK or explicit-bearer) are rejected by the
+            // storage service since 2026-06-02 — RLS "Unauthorized" on a valid
+            // JWT, even though the bucket policy is PUBLIC. upload-voice-memo
+            // writes with the service role, bypassing that broken layer.
+            let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
 
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: fileName)
+            // Step 2: insert the training_logs row over PostgREST (which works).
+            // The DB trigger (pg_net → process-training-memo) picks it up.
+            var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
+            insertData.userId = userId
+            insertData.processingStatus = "pending"
+            insertData.source = dict["source"] ?? "voice_log"
+            if let dateStr = dict["workoutDate"],
+               let date = ISO8601DateFormatter().date(from: dateStr) {
+                insertData.workoutDate = date
+            }
 
-            let logData: [String: Any] = [
-                "audio_url": publicURL.absoluteString,
-                "notes": dict["notes"] ?? "",
-                "mood": dict["mood"] ?? "neutral",
-                "user_id": userId,
-                "processing_status": "pending",
-            ]
+            _ = try await supabase
+                .from("training_logs")
+                .insert(insertData)
+                .execute()
 
-            _ = try await callEdgeFunction(name: "process-training-memo", body: logData)
             await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
             return true
         } catch {

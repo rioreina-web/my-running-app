@@ -387,15 +387,25 @@ parity is hard (and the three-thing fix path) in
   The outbox pair (`20260518100000_coachable_moment_outbox_trigger` +
   `20260518110000_drain_coachable_moment_jobs_cron`) is applied in prod and
   `drain-coachable-moment-jobs` is deployed. Task #23 closed.
-- **`user_profiles` table doesn't exist in production.** Root cause found
-  2026-06-11: the January migration's malformed filename
+- **`user_profiles` ghost table: RESOLVED 2026-06-15.** Root cause (found
+  2026-06-11): the January migration's malformed filename
   (`20260128_152000_user_profile.sql`) parsed as version `20260128`,
   colliding with the applied `fix_vector_search`, so the CLI silently
-  skipped it; file now quarantined in `supabase/migrations_quarantine/`.
-  **Escalated to feature blocker** — the Daily Read cron + workout-trigger
-  migrations are quarantined behind this decision. Defensive workarounds
-  remain across web, iOS, and one edge function. See
-  `outputs/profile-table-audit-2026-05-22.md` and
+  skipped it for 5 months. **Resolution: the table was NOT recreated.** A
+  dedicated SETTINGS surface `athlete_settings` (timezone + home_lat/lon +
+  preferred_run_time) was created (`20260615210000`), and the Daily Read
+  cron + workout-trigger were repointed off `user_profiles` onto
+  `athlete_state` (candidate athletes) + `athlete_settings` (timezone),
+  re-stamped (`20260615220000` / `230000`), and un-quarantined. The
+  `coaching-daily-read` edge function timezone lookup now reads
+  `athlete_settings`. Migrations authored + validated (real PG parser +
+  read-only prod logic checks); **pending `supabase db push` by the team.**
+  **Still open (non-blocking):** repoint the remaining SETTINGS edge-readers
+  (`fetch-workout-weather`, `post-run-reconciliation`, `reconcile-log`) and
+  add an iOS/web `athlete_settings.timezone` writer — until then all
+  athletes default to UTC. See
+  `outputs/user-profiles-ghost-table-resolution-2026-06-15.md`,
+  `outputs/profile-table-audit-2026-05-22.md`, and
   `docs/migration-ledger-reconciliation-2026-06-11.md`.
 - **`_shared/athlete-state.ts` is 1481 LOC with P0 bugs.** Refactor
   designed at `athlete-state-refactor-design.md`. Blocked on eval

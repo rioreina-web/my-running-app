@@ -416,10 +416,20 @@ struct SectionHeader: View {
 /// `+0.14em`, on the paper background. Per README: *"the single most
 /// identifiable visual gesture"* of the design system.
 ///
-/// Usage: `PlateStrip(surface: "LOG · v1 DIARY + CHARTS", fig: "FIG. 18")`
+/// Usage: `PlateStrip(surface: "LOG · v1 DIARY + CHARTS", fig: TrainingDateline.string(for: goal))`
+///
+/// The trailing slot is the *training dateline* — a goal countdown when one
+/// exists (e.g. "BERLIN −86D"), else nil → the slot renders nothing. It used
+/// to be a fake figure number; pass `TrainingDateline.string(for:)`, never a
+/// hardcoded "FIG. NN".
 struct PlateStrip: View {
     let surface: String
-    let fig: String
+    let fig: String?
+
+    init(surface: String, fig: String? = nil) {
+        self.surface = surface
+        self.fig = fig
+    }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
@@ -430,10 +440,12 @@ struct PlateStrip: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 16)
-            Text(fig)
-                .font(.dripEyebrow(10))
-                .tracking(1.4)
-                .foregroundStyle(Color.drip.textSecondary)
+            if let fig {
+                Text(fig)
+                    .font(.dripEyebrow(10))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
         }
         .frame(maxWidth: .infinity)
     }

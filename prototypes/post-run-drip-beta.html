@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Post Run Drip — beta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400..800;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* =============================================================
+   Post Run Drip — beta prototype  ·  v2
+   "Restraint as foundation, intensity as accent."
+   Tokens from design-system/colors_and_type.css
+   ============================================================= */
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A; --success:#2D8A4E;
+  --pace-easy:#93B9D6; --pace-moderate:#74A8CC; --pace-steady:#578FC0; --pace-mp:#3F7CB5;
+  --pace-hmp:#2F66A8; --pace-lt:#27549B; --pace-10k:#20448B; --pace-5k:#1A3679;
+  --pace-3k:#142964; --pace-mile:#0E1D4E; --pace-easy-text:#5E93BE;
+  --fd:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --fb:"PT Serif",Georgia,"Times New Roman",serif;
+  --fm:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;height:100%;}
+body{ background:#2A2622; color:var(--ink); font-family:var(--fb); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+.phone{ position:relative; width:100%; max-width:404px; height:100vh; max-height:880px; background:var(--paper); overflow:hidden; display:flex; flex-direction:column; border-radius:34px; box-shadow:0 24px 60px rgba(0,0,0,0.45); }
+@media (max-width:440px){ .phone{ max-height:none; height:100vh; border-radius:0; } body{background:var(--paper);} }
+.statusbar{ flex:0 0 auto; height:38px; display:flex; align-items:center; justify-content:space-between; padding:0 22px; font-family:var(--fm); font-size:12px; font-weight:600; color:var(--ink); }
+.statusbar .dots{ color:var(--ink-2); font-size:11px; }
+.screen{ flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+
+/* type primitives */
+.eyebrow{ font-family:var(--fm); font-size:11px; font-weight:500; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-2); }
+.eyebrow.coral{ color:var(--coral); }
+.h-display{ font-family:var(--fd); font-weight:700; color:var(--ink); letter-spacing:-0.01em; line-height:1.05; margin:0; }
+.body{ font-family:var(--fb); font-size:15px; line-height:1.55; color:var(--ink); }
+.body-sm{ font-family:var(--fb); font-size:13px; line-height:1.5; color:var(--ink-2); }
+.quote{ font-family:var(--fb); font-style:italic; line-height:1.55; color:var(--ink); }
+.caption{ font-family:var(--fm); font-size:10px; letter-spacing:0.10em; color:var(--ink-2); text-transform:uppercase; }
+.mono{ font-family:var(--fm); font-variant-numeric:tabular-nums; }
+.e-rule{ display:flex; align-items:center; gap:8px; }
+.e-rule::before,.e-rule::after{ content:""; flex:1; height:1px; background:var(--rule); }
+.e-rule .dot{ width:3px; height:3px; border-radius:999px; background:var(--rule); }
+.hairline{ height:1px; background:var(--rule); width:100%; }
+.plate-strip{ display:flex; justify-content:space-between; align-items:flex-start; font-family:var(--fm); font-size:10px; letter-spacing:0.14em; color:var(--ink-2); text-transform:uppercase; padding:12px 22px 0 22px; }
+.plate-strip .l b{ color:var(--ink); font-weight:600; display:block; }
+.plate-strip .r{ text-align:right; cursor:pointer; }
+.plate-strip .r b{ color:var(--ink); font-weight:600; display:block; }
+.plate-strip .r:hover b{ color:var(--coral); }
+.body-scroll{ flex:1; overflow-y:auto; padding:14px 22px 28px 22px; scroll-behavior:smooth; -ms-overflow-style:none; scrollbar-width:none; }
+.body-scroll::-webkit-scrollbar{ display:none; }
+.section{ margin-top:22px; }
+.section.first{ margin-top:6px; }
+.section-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+.card{ background:var(--card); border-radius:12px; padding:16px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+.card.pad-lg{ padding:20px; }
+.btn{ font-family:var(--fd); font-weight:600; font-size:16px; padding:14px 18px; border-radius:10px; border:0; cursor:pointer; transition:background .15s, transform .15s; }
+.btn:active{ transform:scale(0.98); }
+.btn-primary{ background:var(--coral); color:#fff; width:100%; }
+.btn-primary:hover{ background:var(--coral-deep); }
+.btn-ink{ background:var(--ink); color:#fff; width:100%; display:flex; align-items:center; justify-content:center; gap:8px; font-family:-apple-system,"SF Pro Text",system-ui,sans-serif; font-weight:600; font-size:15px; }
+.link{ font-family:var(--fd); font-weight:600; font-size:14px; color:var(--coral); text-decoration:none; border-bottom:1px solid var(--coral); padding-bottom:1px; cursor:pointer; }
+.link:hover{ color:var(--coral-deep); border-color:var(--coral-deep); }
+.link-mono{ font-family:var(--fm); font-size:10px; font-weight:500; letter-spacing:0.10em; text-transform:uppercase; color:var(--ink-2); cursor:pointer; }
+.link-mono:hover{ color:var(--coral); }
+.link-mono.coral{ color:var(--coral); }
+.mood-pill{ display:inline-flex; padding:3px 8px; border-radius:999px; font-family:var(--fm); font-size:10px; font-weight:600; letter-spacing:0.10em; text-transform:uppercase; }
+
+/* tab bar — 5 tabs */
+.tab-bar{ flex:0 0 auto; background:var(--paper); border-top:1px solid var(--rule); padding:9px 0 max(11px,env(safe-area-inset-bottom)) 0; display:grid; grid-template-columns:repeat(5,1fr); }
+.tab{ display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+.tab .tdot{ width:6px; height:6px; border-radius:999px; background:transparent; border:1.5px solid var(--ink-3); box-sizing:border-box; transition:all .15s; }
+.tab.active .tdot{ background:var(--coral); border-color:var(--coral); }
+.tab .tlbl{ font-family:var(--fm); font-size:9px; letter-spacing:0.07em; color:var(--ink-2); text-transform:uppercase; }
+.tab.active .tlbl{ color:var(--ink); font-weight:600; }
+
+/* login */
+.signin{ flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:30px; padding:24px 30px; text-align:center; }
+.logo-tile{ width:132px; height:132px; background:var(--ink); border-radius:28px; display:flex; align-items:center; justify-content:center; }
+.logo-word{ font-family:-apple-system,"SF Pro Display",system-ui,"Helvetica Neue",Arial,sans-serif; font-weight:800; font-size:26px; line-height:0.98; color:#fff; text-align:left; letter-spacing:-0.01em; position:relative; }
+.logo-word .drip{ position:absolute; right:-2px; bottom:-11px; width:7px; height:11px; background:var(--coral); border-radius:0 0 999px 999px; }
+.logo-word .drip::before{ content:""; position:absolute; top:-4px; left:1px; width:5px; height:5px; background:var(--coral); border-radius:999px; }
+.signin-title{ font-family:var(--fd); font-weight:700; font-size:27px; color:var(--ink); }
+.signin-sub{ font-family:var(--fb); font-style:italic; font-size:15px; color:var(--ink-2); margin-top:-18px; }
+.signin-form{ width:100%; display:flex; flex-direction:column; gap:11px; }
+.field{ background:var(--card); border-radius:10px; padding:14px; font-family:var(--fb); font-size:15px; color:var(--ink); border:1px solid var(--rule); width:100%; }
+.field::placeholder{ color:var(--ink-3); font-style:italic; }
+.field:focus{ outline:2px solid var(--coral); outline-offset:0; border-color:transparent; }
+.signin-foot{ font-family:var(--fm); font-size:10px; letter-spacing:0.10em; text-transform:uppercase; color:var(--ink-3); }
+
+/* LOG */
+.mode-toggle{ display:grid; grid-template-columns:1fr 1fr; border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); margin:10px -22px 0 -22px; }
+.mode-btn{ padding:13px 0 0 0; text-align:center; cursor:pointer; background:transparent; border:0; font-family:var(--fm); font-size:11px; font-weight:500; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-2); }
+.mode-btn.active{ color:var(--coral); }
+.mode-rail{ height:2px; background:transparent; margin-top:10px; }
+.mode-btn.active .mode-rail{ background:var(--coral); }
+.log-hero{ text-align:center; padding:30px 6px 22px 6px; }
+.log-hero h1{ font-size:38px; }
+.log-hero p{ font-family:var(--fb); font-style:italic; font-size:15px; color:var(--ink-2); margin:13px 0 0 0; line-height:1.4; }
+.record{ position:relative; width:120px; height:120px; display:grid; place-items:center; cursor:pointer; margin:6px auto 0 auto; }
+.record .ring{ position:absolute; inset:0; border-radius:999px; border:1.5px solid rgba(212,89,42,0.20); opacity:0; }
+.record.rec .ring{ opacity:1; animation:rec-pulse 1800ms ease-in-out infinite; }
+@keyframes rec-pulse{ 0%,100%{transform:scale(1);opacity:.5;} 50%{transform:scale(1.14);opacity:.12;} }
+.record .disc{ width:88px; height:88px; border-radius:999px; background:var(--coral); box-shadow:0 4px 12px rgba(212,89,42,0.30); display:grid; place-items:center; transition:transform .25s, background .15s; }
+.record:active .disc{ transform:scale(0.98); background:var(--coral-deep); }
+.record.rec .disc{ transform:scale(1.03); }
+.record .inner{ width:32px; height:32px; border-radius:999px; background:#fff; transition:all .25s; }
+.record.rec .inner{ width:24px; height:24px; border-radius:5px; }
+.record-cap{ text-align:center; font-family:var(--fm); font-size:11px; font-weight:500; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-2); margin-top:16px; }
+.hl-block{ border-top:1px solid var(--rule); padding:14px 22px; margin:0 -22px; }
+.hl-block .row{ display:flex; justify-content:space-between; align-items:baseline; }
+.notes-area{ width:100%; margin-top:10px; min-height:70px; background:transparent; border:0; outline:none; resize:none; font-family:var(--fb); font-size:15px; line-height:1.5; color:var(--ink); padding:0; }
+.notes-area::placeholder{ color:var(--ink-3); font-style:italic; }
+.jrow{ display:grid; grid-template-columns:3px 1fr; gap:14px; padding:20px 22px; border-bottom:1px solid var(--rule); margin:0 -22px; cursor:pointer; }
+.jrow:hover{ background:rgba(0,0,0,0.012); }
+.jrail{ border-radius:2px; margin:3px 0; }
+.jhead{ display:flex; align-items:baseline; gap:12px; }
+.jday{ font-family:var(--fd); font-weight:700; font-size:20px; color:var(--ink); letter-spacing:-0.01em; flex:1; }
+.jind{ display:inline-flex; align-items:center; gap:5px; font-family:var(--fm); font-size:10px; font-weight:500; letter-spacing:0.08em; }
+.jmeta{ font-family:var(--fm); font-size:10px; font-weight:500; letter-spacing:0.08em; color:var(--ink-2); margin-top:5px; text-transform:uppercase; }
+.jbody{ font-family:var(--fb); font-style:italic; font-size:14px; line-height:1.55; color:var(--ink); margin-top:12px; }
+.jfoot{ display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap; }
+.niggle-chip{ display:inline-flex; align-items:center; gap:5px; font-family:var(--fm); font-size:10px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; color:var(--coral); border:1px solid var(--coral-wash); background:var(--coral-wash); padding:2px 8px; border-radius:999px; }
+
+/* seg control */
+.seg{ display:flex; gap:2px; padding:3px; background:var(--paper-deep); border-radius:9px; }
+.seg button{ flex:1; border:0; background:transparent; color:var(--ink-3); padding:7px 4px; border-radius:6px; cursor:pointer; font-family:var(--fm); font-size:10.5px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; }
+.seg button.on{ background:var(--card); color:var(--ink); box-shadow:0 1px 2px rgba(0,0,0,0.06); font-weight:600; }
+
+/* breadcrumb */
+.breadcrumb{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:12px; }
+.crumb{ font-family:var(--fm); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-3); cursor:pointer; }
+.crumb.here{ color:var(--coral); }
+.crumb.sep{ color:var(--ink-3); cursor:default; }
+
+/* quality/easy legend + tags */
+.qe-legend{ display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
+.qe-legend span{ display:inline-flex; align-items:center; gap:5px; font-family:var(--fm); font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-2); }
+.qe-sw{ width:9px; height:9px; border-radius:2px; }
+.qe-tag{ display:inline-flex; align-items:center; gap:5px; font-family:var(--fm); font-size:9.5px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; }
+
+/* block week rows */
+.blkrow{ display:grid; grid-template-columns:64px 1fr 44px; gap:12px; align-items:center; padding:12px 0; border-bottom:1px solid var(--rule); cursor:pointer; }
+.blkrow:last-child{ border-bottom:0; }
+.blkrow:hover{ background:rgba(0,0,0,0.012); }
+.blk-wk{ font-family:var(--fm); font-size:11px; font-weight:600; color:var(--ink); }
+.blk-wk small{ display:block; font-size:9px; color:var(--ink-3); font-weight:500; letter-spacing:0.06em; margin-top:2px; }
+.minibar{ display:flex; height:22px; border-radius:3px; overflow:hidden; background:var(--paper-deep); }
+.minibar .seg-b{ height:100%; }
+.blk-mi{ font-family:var(--fm); font-size:14px; font-weight:600; color:var(--ink); text-align:right; font-variant-numeric:tabular-nums; }
+.blk-mi small{ display:block; font-size:8.5px; color:var(--ink-3); font-weight:500; }
+.blkrow.now .blk-wk{ color:var(--coral); }
+
+/* month calendar */
+.pager{ display:flex; align-items:center; justify-content:space-between; }
+.pager button{ background:transparent; border:0; font-family:var(--fm); font-size:15px; color:var(--ink-2); cursor:pointer; padding:2px 8px; }
+.pager button:hover{ color:var(--coral); }
+.pager .mlabel{ font-family:var(--fd); font-weight:700; font-size:18px; }
+.cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-top:10px; }
+.cal .cdow{ font-family:var(--fm); font-size:9px; letter-spacing:0.04em; text-transform:uppercase; color:var(--ink-3); text-align:center; padding-bottom:4px; }
+.cal .cell{ aspect-ratio:1/1.2; border-radius:6px; background:var(--paper-elevated); padding:4px 3px 3px 3px; display:flex; flex-direction:column; align-items:center; cursor:pointer; }
+.cal .cell.empty{ background:transparent; cursor:default; }
+.cal .cell.today{ outline:1.5px solid var(--coral); }
+.cal .cell.plan{ background:transparent; border:1px dashed var(--rule); }
+.cal .cnum{ font-family:var(--fm); font-size:10px; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+.cal .cell.today .cnum{ color:var(--coral); font-weight:600; }
+.cal .cdot{ width:8px; height:8px; border-radius:2px; margin-top:auto; }
+.cal .cmi{ font-family:var(--fm); font-size:8px; color:var(--ink-2); margin-top:2px; font-variant-numeric:tabular-nums; }
+
+/* week day rows */
+.wkrow{ display:grid; grid-template-columns:52px 1fr auto; gap:10px; align-items:center; padding:12px 0; border-bottom:1px solid var(--rule); cursor:pointer; }
+.wkrow:last-child{ border-bottom:0; }
+.wkrow:hover{ background:rgba(0,0,0,0.012); }
+.wkrow.plan{ opacity:0.6; }
+.wk-dow{ font-family:var(--fm); font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-2); }
+.wk-dow small{ display:block; color:var(--ink-3); font-size:9px; margin-top:2px; }
+.wk-wo{ font-family:var(--fd); font-size:16px; font-weight:700; color:var(--ink); }
+.wk-mi{ font-family:var(--fm); font-size:13px; font-weight:600; color:var(--ink); text-align:right; font-variant-numeric:tabular-nums; }
+
+/* ratio bar */
+.ratio-num{ font-family:var(--fm); font-weight:600; font-size:30px; color:var(--ink); font-variant-numeric:tabular-nums; }
+.ratio-num small{ font-size:13px; color:var(--ink-3); }
+.ratiobar{ display:flex; height:14px; border-radius:4px; overflow:hidden; margin-top:10px; background:var(--paper-deep); }
+.ratiobar .easy{ background:var(--pace-easy); }
+.ratiobar .hard{ background:var(--pace-lt); position:relative; }
+.ratiobar .hard::after{ content:""; position:absolute; inset:0; background-image:repeating-linear-gradient(45deg,transparent 0 3px,rgba(245,243,240,0.5) 3px 4px); }
+.ratio-key{ display:flex; justify-content:space-between; margin-top:6px; }
+
+/* day detail */
+.day-hero{ display:flex; justify-content:space-between; align-items:flex-start; }
+.zone-line{ display:grid; grid-template-columns:52px 1fr 58px; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--rule); }
+.zone-line:last-child{ border-bottom:0; }
+.zone-name{ font-family:var(--fd); font-size:14px; font-weight:600; }
+.zone-track{ height:10px; border-radius:3px; background:var(--paper-deep); overflow:hidden; }
+.zone-fill{ height:100%; }
+.zone-mi{ font-family:var(--fm); font-size:12px; font-weight:600; text-align:right; font-variant-numeric:tabular-nums; color:var(--ink); }
+.link-card{ display:flex; justify-content:space-between; align-items:center; padding:13px 16px; background:var(--paper-elevated); border-radius:10px; margin-top:8px; cursor:pointer; }
+.link-card:hover{ background:#fff; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+.link-card .lc-t{ font-family:var(--fd); font-size:14px; font-weight:600; color:var(--ink); }
+.link-card .lc-s{ font-family:var(--fb); font-style:italic; font-size:12.5px; color:var(--ink-2); margin-top:2px; }
+.link-card .lc-a{ font-family:var(--fm); font-size:11px; color:var(--coral); }
+
+/* chart (Trends) */
+.tiles3{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.tile{ background:var(--paper-elevated); border-radius:10px; padding:12px 13px; }
+.tile .lab{ font-family:var(--fm); font-size:9px; letter-spacing:0.10em; text-transform:uppercase; color:var(--ink-3); }
+.tile .val{ font-family:var(--fm); font-weight:600; font-size:22px; color:var(--ink); margin-top:5px; font-variant-numeric:tabular-nums; }
+.tile .val small{ font-size:11px; color:var(--ink-3); font-weight:500; }
+.tile .sub{ font-family:var(--fm); font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--ink-2); margin-top:4px; }
+.tile .sub.pos{ color:var(--mood-energized); } .tile .sub.neg{ color:var(--coral); }
+.chartwrap{ position:relative; margin-top:6px; }
+.chart{ width:100%; height:auto; display:block; overflow:visible; }
+.readout{ position:absolute; pointer-events:none; opacity:0; transition:opacity .12s; background:var(--ink); color:#F5F3F0; border-radius:9px; padding:9px 11px; font-family:var(--fm); font-size:11px; min-width:118px; box-shadow:0 8px 24px rgba(0,0,0,0.22); z-index:3; }
+.readout b{ color:#fff; } .readout .r{ display:flex; justify-content:space-between; gap:14px; margin-top:3px; color:#C9C2BA; }
+.readout .r b{ color:#fff; font-weight:600; } .readout .tot{ border-top:1px solid rgba(255,255,255,0.18); margin-top:6px; padding-top:5px; }
+.pkey{ margin-top:16px; }
+.pkey .bar{ height:9px; border-radius:5px; background:linear-gradient(90deg,#93B9D6,#74A8CC,#578FC0,#3F7CB5,#2F66A8,#27549B,#20448B,#1A3679,#142964,#0E1D4E); }
+.pkey .anchors{ position:relative; height:32px; margin-top:3px; }
+.pkey .anchor{ position:absolute; top:0; display:flex; flex-direction:column; align-items:center; transform:translateX(-50%); }
+.pkey .anchor .tick{ width:1px; height:6px; background:var(--ink-3); opacity:.5; }
+.pkey .anchor .zn{ font-family:var(--fd); font-weight:700; font-size:11px; line-height:1.1; margin-top:3px; }
+.pkey .anchor .pc{ font-family:var(--fm); font-size:8.5px; color:var(--ink-2); margin-top:1px; font-variant-numeric:tabular-nums; }
+.read-inline{ margin-top:16px; border-top:1px solid var(--rule); padding-top:14px; }
+.read-inline .body{ font-family:var(--fb); font-size:14.5px; line-height:1.6; color:var(--ink); margin-top:7px; }
+.read-inline .body b{ color:var(--coral-deep); font-weight:700; }
+.read-inline .q{ font-family:var(--fd); font-style:italic; font-size:14.5px; color:var(--ink-2); margin-top:9px; }
+.moodarc{ display:flex; align-items:flex-end; gap:5px; height:44px; margin-top:4px; }
+.moodarc .mb{ flex:1; border-radius:2px 2px 0 0; min-height:5px; }
+.moodarc-x{ display:flex; justify-content:space-between; margin-top:6px; }
+.niggle{ padding:14px 0; border-bottom:1px solid var(--rule); }
+.niggle:last-child{ border-bottom:0; }
+.niggle-head{ display:flex; justify-content:space-between; align-items:baseline; }
+.niggle-name{ font-family:var(--fd); font-weight:700; font-size:17px; color:var(--ink); text-transform:capitalize; }
+.niggle-state{ font-family:var(--fm); font-size:10px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; }
+.niggle-quote{ font-family:var(--fb); font-style:italic; font-size:13.5px; color:var(--ink-2); line-height:1.5; margin-top:6px; }
+.niggle-time{ display:flex; gap:5px; align-items:center; margin-top:9px; }
+.niggle-time .d{ width:6px; height:6px; border-radius:999px; background:var(--ink-3); opacity:.35; }
+.niggle-time .d.on{ background:var(--coral); opacity:1; }
+.niggle-time .lab{ font-family:var(--fm); font-size:9px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-3); margin-left:auto; }
+.liability{ font-family:var(--fb); font-style:italic; font-size:12px; color:var(--ink-3); margin-top:12px; line-height:1.5; }
+.pace-row{ display:grid; grid-template-columns:14px 1fr auto; gap:11px; align-items:center; padding:9px 0; border-bottom:1px solid var(--rule); }
+.pace-row:last-child{ border-bottom:0; }
+.pace-swatch{ width:11px; height:11px; border-radius:3px; }
+.pace-label{ font-family:var(--fd); font-size:14px; font-weight:600; color:var(--ink); }
+.pace-hint{ font-family:var(--fb); font-style:italic; font-size:11.5px; color:var(--ink-3); }
+.pace-val{ font-family:var(--fm); font-size:13px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; text-align:right; }
+.pace-val small{ font-size:9px; color:var(--ink-3); font-weight:500; display:block; }
+.expander{ margin-top:8px; }
+.expander summary{ list-style:none; cursor:pointer; font-family:var(--fm); font-size:10px; letter-spacing:0.10em; text-transform:uppercase; color:var(--coral); }
+.expander summary::-webkit-details-marker{ display:none; }
+.expander summary::after{ content:" ↓"; }
+.expander[open] summary::after{ content:" ↑"; }
+
+/* READ */
+.read-headline{ font-size:34px; margin-top:8px; }
+.lenses{ display:flex; gap:7px; flex-wrap:wrap; margin-top:16px; }
+.lens{ font-family:var(--fm); font-size:10px; font-weight:500; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-2); border:1px solid var(--rule); background:var(--card); padding:6px 11px; border-radius:999px; cursor:pointer; }
+.lens.on{ color:#fff; background:var(--ink); border-color:var(--ink); }
+.read-prose{ font-family:var(--fb); font-size:16px; line-height:1.66; color:var(--ink); margin-top:18px; }
+.read-prose b{ font-weight:700; }
+.read-q{ font-family:var(--fd); font-style:italic; font-size:16px; color:var(--ink-2); line-height:1.5; margin-top:14px; padding-left:13px; border-left:2px solid rgba(212,89,42,0.5); }
+.read-sig{ font-family:var(--fm); font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-3); margin-top:24px; }
+
+/* PLAN */
+.goal-card{ display:flex; justify-content:space-between; align-items:center; }
+.goal-time{ font-family:var(--fm); font-weight:600; font-size:26px; color:var(--coral); font-variant-numeric:tabular-nums; }
+.plan-row{ display:flex; justify-content:space-between; align-items:baseline; padding:11px 0; border-bottom:1px solid var(--rule); }
+.plan-row:last-child{ border-bottom:0; }
+.plan-day{ font-family:var(--fm); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-2); }
+.plan-wo{ font-family:var(--fd); font-size:16px; font-weight:700; color:var(--ink); }
+.plan-mi{ font-family:var(--fm); font-size:13px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; }
+
+/* empty state */
+.empty{ padding:26px 4px; }
+.empty .nudge{ font-family:var(--fb); font-style:italic; font-size:15px; color:var(--ink-2); line-height:1.55; margin-top:8px; }
+
+/* menu sheet */
+.sheet-scrim{ position:absolute; inset:0; background:rgba(26,24,21,0.35); opacity:0; pointer-events:none; transition:opacity .2s; z-index:40; }
+.sheet-scrim.open{ opacity:1; pointer-events:auto; }
+.sheet{ position:absolute; left:0; right:0; bottom:0; background:var(--card); border-radius:18px 18px 0 0; padding:8px 22px 26px 22px; transform:translateY(100%); transition:transform .28s cubic-bezier(0.2,0.7,0.2,1); z-index:41; }
+.sheet.open{ transform:translateY(0); }
+.sheet-grab{ width:38px; height:4px; border-radius:999px; background:var(--rule); margin:8px auto 16px auto; }
+.sheet h3{ font-family:var(--fd); font-weight:700; font-size:20px; margin:0 0 3px 0; }
+.opt{ display:flex; justify-content:space-between; align-items:center; padding:15px 0; border-bottom:1px solid var(--rule); cursor:pointer; }
+.opt:last-of-type{ border-bottom:0; }
+.opt .ot{ font-family:var(--fd); font-size:16px; font-weight:600; color:var(--ink); }
+.opt .od{ font-family:var(--fb); font-style:italic; font-size:12.5px; color:var(--ink-2); margin-top:2px; }
+.opt .check{ width:20px; height:20px; border-radius:999px; border:1.5px solid var(--ink-3); flex:0 0 auto; }
+.opt.sel .check{ border-color:var(--coral); background:var(--coral); box-shadow:inset 0 0 0 3px #fff; }
+
+/* workout detail sheet */
+.wsub{ font-family:var(--fb); font-style:italic; font-size:13px; color:var(--ink-2); margin-top:4px; }
+.key-badge{ display:inline-flex; align-items:center; gap:4px; font-family:var(--fm); font-size:9.5px; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--coral); }
+.wstrip{ display:grid; padding:14px 0; border-bottom:1px solid var(--rule); }
+.wstrip.s4{ grid-template-columns:repeat(4,1fr); }
+.wstrip.s5{ grid-template-columns:repeat(5,1fr); }
+.wstat{ display:flex; flex-direction:column; gap:3px; padding:0 8px; border-right:1px solid var(--rule); }
+.wstrip .wstat:last-child{ border-right:0; }
+.wstrip.s5 .wstat{ align-items:center; padding:0 4px; }
+.wstat .wl{ font-family:var(--fm); font-size:8.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-2); }
+.wstat .wv{ font-family:var(--fm); font-weight:600; font-size:19px; color:var(--ink); font-variant-numeric:tabular-nums; }
+.wstrip.s5 .wstat .wv{ font-size:14px; }
+.wstat .wv small{ font-size:9px; color:var(--ink-2); margin-left:2px; }
+.wstat .ws{ font-family:var(--fm); font-size:8px; letter-spacing:0.03em; color:var(--ink-3); }
+.splits{ width:100%; border-collapse:collapse; font-family:var(--fm); font-variant-numeric:tabular-nums; margin-top:6px; }
+.splits th{ text-align:left; font-size:9px; font-weight:500; letter-spacing:0.10em; color:var(--ink-2); text-transform:uppercase; padding:6px 4px; border-bottom:1px solid var(--rule); }
+.splits td{ padding:9px 4px; border-bottom:1px solid var(--rule); font-size:12px; color:var(--ink); font-weight:600; }
+.splits tr:last-child td{ border-bottom:0; }
+.splits tr.fast td{ color:var(--coral); }
+.splits .sw{ display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:7px; vertical-align:middle; }
+.splits .lbar{ display:inline-block; height:6px; border-radius:999px; vertical-align:middle; }
+
+/* trends overlay + progression */
+.layer-chips{ display:flex; gap:6px; margin:10px 0; flex-wrap:wrap; }
+.layer-chip{ font-family:var(--fm); font-size:9.5px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink); border:1px solid var(--ink-3); background:var(--card); padding:4px 9px; border-radius:999px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+.layer-chip .lc-dot{ width:8px; height:8px; border-radius:2px; }
+.layer-chip.off{ opacity:0.4; border-color:var(--rule); color:var(--ink-3); }
+.prog-legend{ display:flex; gap:16px; margin-top:10px; }
+.prog-legend span{ font-family:var(--fm); font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-2); display:inline-flex; align-items:center; gap:6px; }
+.prog-legend i{ width:14px; height:2.5px; border-radius:2px; display:inline-block; }
+.prog-legend b{ color:var(--ink); font-weight:600; }
+
+/* key sessions list */
+.filter-chips{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+.filter-chip{ font-family:var(--fm); font-size:10px; font-weight:500; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink-2); border:1px solid var(--rule); background:var(--card); padding:6px 11px; border-radius:999px; cursor:pointer; }
+.filter-chip.on{ color:#fff; background:var(--ink); border-color:var(--ink); }
+.keyrow{ display:grid; grid-template-columns:16px 1fr auto; gap:11px; align-items:center; padding:12px 0; border-bottom:1px solid var(--rule); cursor:pointer; }
+.keyrow:last-child{ border-bottom:0; }
+.keyrow:hover{ background:rgba(0,0,0,0.012); }
+.keyrow .kstar{ color:var(--coral); font-size:12px; text-align:center; }
+.keyrow .kwo{ font-family:var(--fd); font-size:16px; font-weight:700; color:var(--ink); }
+.keyrow .kmeta{ font-family:var(--fm); font-size:9.5px; letter-spacing:0.04em; text-transform:uppercase; color:var(--ink-2); margin-top:3px; display:flex; align-items:center; gap:7px; }
+.keyrow .kpace{ font-family:var(--fm); font-size:14px; font-weight:600; color:var(--ink); text-align:right; font-variant-numeric:tabular-nums; }
+.keyrow .kpace small{ display:block; font-size:8px; color:var(--ink-3); font-weight:500; letter-spacing:0.04em; }
+.cal .cell{ position:relative; }
+.cal .kstar-cal{ position:absolute; top:2px; right:3px; color:var(--coral); font-size:7px; line-height:1; }
+.wk-star{ color:var(--coral); font-size:10px; margin-left:4px; }
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+  <div class="statusbar"><span id="clock">7:24</span><span class="dots">post&nbsp;run&nbsp;drip&nbsp;·&nbsp;beta</span></div>
+  <div class="screen" id="screen"></div>
+</div>
+<div class="sheet-scrim" id="scrim" onclick="closeMenu()"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-grab"></div>
+  <h3>Demo controls</h3>
+  <div class="body-sm" style="margin-bottom:6px;">Switch what fills the app. Nothing here ships — it's for showing the beta.</div>
+  <div id="menu-opts"></div>
+  <div style="margin-top:16px;"><button class="btn btn-ink" onclick="signOut()">Sign out</button></div>
+</div>
+
+<script>
+/* ============================================================
+   Post Run Drip — beta prototype v2 (vanilla JS, no deps)
+   ============================================================ */
+const ZONES=[["Easy","#93B9D6"],["Moderate","#74A8CC"],["Steady","#578FC0"],["MP","#3F7CB5"],["HMP","#2F66A8"],["LT","#27549B"],["10K","#20448B"],["5K","#1A3679"],["3K","#142964"],["Mile","#0E1D4E"]];
+const ZCOLOR=Object.fromEntries(ZONES);
+const EASY_Z=["Easy","Moderate","Steady"];
+const MOOD={ energized:{c:"#2D8A4E",bg:"rgba(45,138,78,0.12)"}, positive:{c:"#4A9E6B",bg:"rgba(74,158,107,0.12)"}, neutral:{c:"#6B6560",bg:"rgba(155,149,144,0.18)"}, tired:{c:"#C4873A",bg:"rgba(196,135,58,0.12)"}, struggling:{c:"#C45A3A",bg:"rgba(196,90,58,0.12)"}, injured:{c:"#B83A4A",bg:"rgba(184,58,74,0.12)"} };
+const MOOD_VAL={ struggling:1, tired:2, neutral:3, positive:4, energized:5 };
+
+const TODAY=new Date(2026,6,10); // Fri Jul 10 2026
+const WD=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const WD3=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MO3=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const DAYMS=86400000;
+function dayFromOffset(off){ const d=new Date(TODAY); d.setDate(d.getDate()-off); return d; }
+function offOf(d){ return Math.round((TODAY - d)/DAYMS); }
+function fmtMd(d){ return MO3[d.getMonth()]+" "+d.getDate(); }
+const sum=z=>Object.values(z).reduce((a,b)=>a+b,0);
+const round=n=>Math.round(n);
+
+const ATHLETE={ name:"Maya", block:"Marathon block.", weeks:12, goalLabel:"Boston qualifier", goalTime:"3:16", pb:"3:28", anchor:{name:"Half", md:"Apr 6", time:"1:37:40"}, raceName:"Marathon", raceDate:new Date(2026,8,20), fitness:{mid:"3:26", range:"3:22–3:29", conf:"Moderate"} };
+const WK_TARGET=[41,43,44,50,49,38,46,52,56,53,48,40]; // block week 1..12 (oldest..current)
+
+/* Hand-authored recent sessions (rich detail). Merged over generated history. */
+const SESSIONS=[
+  {off:0,  type:"Easy", label:"Easy 4 mi",  dist:4,  z:{Easy:4},           mood:"neutral",  kind:"text",  note:"Shakeout before the weekend. Legs a little flat, but that's a Friday. Kept it honest and easy."},
+  {off:1,  type:"MP",   label:"MP 8 mi",    dist:8,  z:{Easy:2,MP:6},      mood:"positive", kind:"voice", dur:"2:41", note:"Marathon-pace eight. Locked into 7:5x from the second mile and it held. This is the one I wanted this week."},
+  {off:2,  type:"Easy", label:"Easy 5 mi",  dist:5,  z:{Easy:5},           mood:"neutral",  kind:"text",  note:"Easy between the two quality days. Nothing to report, which is the point."},
+  {off:3,  type:"LT",   label:"LT 6 mi",    dist:6,  z:{Easy:2,LT:4},      mood:"positive", kind:"voice", dur:"3:02", note:"Hit the splits within a few seconds either way. Smooth through four, then the wind on the back half. Calf was quiet today — I noticed that.", niggle:{part:"calf",quote:"calf was quiet today"}},
+  {off:5,  type:"Long", label:"Long 16 mi", dist:16, z:{Easy:12,Steady:4}, mood:"tired",    kind:"voice", dur:"3:18", note:"Out the door at 6:30. Heavy first three, then it loosened up — the last four were the strongest. Wanted ice after and didn't."},
+  {off:7,  type:"Easy", label:"Easy 4 mi",  dist:4,  z:{Easy:4},           mood:"neutral",  kind:"text",  note:"Easy shakeout. Knee felt a touch warm the first mile, settled by the second. Kept it short.", niggle:{part:"knee",quote:"knee felt a touch warm the first mile, settled by the second"}},
+  {off:8,  type:"MP",   label:"MP 7 mi",    dist:7,  z:{Easy:2,MP:5},      mood:"positive", kind:"text",  note:"Marathon pace felt like cruising today. Good sign this deep into the block."},
+  {off:9,  type:"5K",   label:"5K 5×1km",   dist:8,  z:{Easy:3,"5K":5},    mood:"positive", kind:"voice", dur:"2:12", note:"Five by k. The third one was the keeper — the rhythm finally clicked. Recoveries a bit short; I'll fix that. Quads tired tonight.", niggle:{part:"calf",quote:"still there on the warm-up, faded once I got going"}},
+  {off:12, type:"Long", label:"Long 15 mi", dist:15, z:{Easy:12,Steady:3}, mood:"tired",    kind:"voice", dur:"2:58", note:"Fifteen, felt every one of them. Calf tightened up in the last two miles. Rolled it after.", niggle:{part:"calf",quote:"tight after the long run"}}
+];
+
+const PACES=[
+  {zone:"Easy",    hint:"Daily aerobic, conversational", pace:"9:05", range:"8:50–9:25", aerobic:true},
+  {zone:"Moderate",hint:"Upper aerobic",                 pace:"8:35", range:"8:20–8:50", aerobic:true},
+  {zone:"Steady",  hint:"Marathon-prep aerobic",         pace:"8:12", range:"8:00–8:24", aerobic:true},
+  {zone:"MP",      hint:"Marathon pace",                 pace:"7:52"},
+  {zone:"HMP",     hint:"Half-marathon pace",            pace:"7:28"},
+  {zone:"LT",      hint:"Threshold · 1-hour pace",       pace:"7:08"},
+  {zone:"10K",     hint:"10K race pace",                 pace:"6:54"},
+  {zone:"5K",      hint:"5K race pace",                  pace:"6:34"},
+  {zone:"3K",      hint:"3K race pace",                  pace:"6:16"},
+  {zone:"Mile",    hint:"Mile race pace",                pace:"5:52"}
+];
+const FITNESS=[430,428,424,421,419,415,413,412,408,406,417,414];
+const PLAN_TEMPLATE={ 0:{wo:"Long 17",mi:17}, 1:{wo:"Rest",mi:0}, 2:{wo:"LT 6",mi:6}, 3:{wo:"Easy 5",mi:5}, 4:{wo:"MP 8",mi:8}, 5:{wo:"Easy 4",mi:4}, 6:{wo:"Rest",mi:0} };
+
+/* ---- Generate the full block: day-by-day history (single source of truth) ---- */
+function roleOfType(t){ if(t==="Rest")return"rest"; if(t==="Long")return"long"; if(t==="Easy"||EASY_Z.includes(t))return"easy"; return"quality"; }
+function buildDays(){
+  const days=[];
+  const thisMon=new Date(TODAY); thisMon.setDate(TODAY.getDate()-((TODAY.getDay()+6)%7));
+  const QROT=["LT","5K","MP","HMP","LT","3K","MP","10K","LT","5K","HMP","MP"]; // Tue quality by block week 1..12
+  const base={1:0,2:6,3:5,4:8,5:4,6:0,0:16}; const baseSum=39;
+  for(let w=0; w<12; w++){
+    const monday=new Date(thisMon); monday.setDate(thisMon.getDate()-w*7);
+    const blockWeek=12-w; const target=WK_TARGET[blockWeek-1]; const scale=target/baseSum; const qType=QROT[blockWeek-1];
+    const phase = blockWeek<=4?"Base":(blockWeek<=8?"Build":(blockWeek<=11?"Peak":"Taper"));
+    for(let i=0;i<7;i++){
+      const date=new Date(monday); date.setDate(monday.getDate()+i);
+      const off=offOf(date); if(off<0) continue;
+      const dow=date.getDay(); const b=base[dow]; let role,type,dist,z={};
+      if(b===0){ role="rest"; type="Rest"; dist=0; }
+      else if(dow===0){ role="long"; type="Long"; dist=round(b*scale); const e=round(dist*0.75); z={Easy:e,Steady:dist-e}; }
+      else if(dow===2){ role="quality"; type=qType; dist=round(b*scale); const wu=(["5K","3K","10K"].includes(qType))?3:2; z={Easy:wu}; z[qType]=Math.max(2,dist-wu); }
+      else if(dow===4){ role="quality"; type="MP"; dist=round(b*scale); z={Easy:2,MP:Math.max(2,dist-2)}; }
+      else { role="easy"; type="Easy"; dist=round(b*scale); z={Easy:dist}; }
+      days.push({off,date,dow,blockWeek,phase,role,type,dist,z,label:role==="rest"?"Rest":(type+" "+dist+" mi"),now:off===0});
+    }
+  }
+  SESSIONS.forEach(s=>{ const d=days.find(x=>x.off===s.off); if(d){ d.type=s.type; d.label=s.label; d.dist=s.dist; d.z=s.z; d.role=s.rest?"rest":roleOfType(s.type); d.mood=s.mood; d.note=s.note; d.kind=s.kind; d.dur=s.dur; d.niggle=s.niggle; } });
+  days.sort((a,b)=>a.off-b.off);
+  return days;
+}
+function buildWeeks(days){
+  const map={}; days.forEach(d=>{ (map[d.blockWeek]=map[d.blockWeek]||[]).push(d); });
+  return Object.keys(map).map(Number).sort((a,b)=>a-b).map(num=>{
+    const ds=map[num]; const byZone={}; let vol=0,qualMi=0;
+    ds.forEach(d=>{ for(const z in d.z){ byZone[z]=(byZone[z]||0)+d.z[z]; vol+=d.z[z]; if(!EASY_Z.includes(z)) qualMi+=d.z[z]; } });
+    let monday=ds[0].date; ds.forEach(d=>{ if(d.dow===1) monday=d.date; });
+    return { num, days:ds, byZone, vol:round(vol), qualMi:round(qualMi), easyMi:round(vol-qualMi), phase:ds[0].phase, monday, now:ds.some(d=>d.now), target:WK_TARGET[num-1] };
+  });
+}
+function buildMonths(days){
+  const map={}; days.forEach(d=>{ const k=d.date.getFullYear()+"-"+d.date.getMonth(); if(!map[k]) map[k]={m:d.date.getMonth(),y:d.date.getFullYear(),z:{},vol:0}; for(const z in d.z){ map[k].z[z]=(map[k].z[z]||0)+d.z[z]; map[k].vol+=d.z[z]; } });
+  return Object.values(map).sort((a,b)=>(a.y-b.y)||(a.m-b.m));
+}
+const _DAYS=buildDays(), _WEEKS=buildWeeks(_DAYS), _MONTHS=buildMonths(_DAYS);
+const dayByOff=off=>_DAYS.find(d=>d.off===off);
+
+/* ---- key sessions (the workouts that matter: quality + long) ---- */
+const isKey=d=>!!d && d.dist>0 && (d.role==="quality"||d.role==="long");
+function keySessions(){ return _DAYS.filter(isKey).sort((a,b)=>a.off-b.off); } // recent first
+
+/* ---- weekly signal (mood + niggles) for the overlay ---- */
+const WEEK_SIGNAL={
+ 1:{mood:"positive",nig:0,quote:"Legs springy — good week back."},
+ 2:{mood:"positive",nig:0,quote:"Solid week. Sleeping well."},
+ 3:{mood:"positive",nig:0,quote:"Long run clicked — negative split."},
+ 4:{mood:"tired",nig:0,quote:"Bumped the miles. Wiped by Friday."},
+ 5:{mood:"struggling",nig:2,part:"calf",quote:"Rough week — tired legs, calf naggy."},
+ 6:{mood:"neutral",nig:1,part:"calf",quote:"Took it easy. Needed the reset."},
+ 7:{mood:"positive",nig:0,quote:"Coming back — tempo felt smooth."},
+ 8:{mood:"positive",nig:0,quote:"Best long run in a while."},
+ 9:{mood:"energized",nig:0,quote:"Flying. Splits dropping on their own."},
+ 10:{mood:"tired",nig:1,part:"knee",quote:"Track was hard — knee cranky after."},
+ 11:{mood:"positive",nig:1,part:"calf",quote:"Taper legs weird but fresh; calf on the warm-up."},
+ 12:{mood:"positive",nig:0,quote:"Sharp and calm. Race is coming."}
+};
+function computeACWR(){ const v=_WEEKS.map(w=>w.vol); return _WEEKS.map((w,i)=>{ const past=v.slice(Math.max(0,i-4),i); const chr=past.length?past.reduce((a,b)=>a+b,0)/past.length:v[i]; return chr?+(v[i]/chr).toFixed(2):1; }); }
+const _ACWR=computeACWR();
+function weekOverlay(){ return _WEEKS.map((w,i)=>Object.assign({num:w.num,label:fmtMd(w.monday),byZone:w.byZone,vol:w.vol,acwr:_ACWR[i],now:w.now},(WEEK_SIGNAL[w.num]||{mood:"neutral",nig:0}))); }
+
+/* ---- pace progression across the block (sec/mi, lower=faster) ---- */
+const PACE_PROG={ MP:[487,485,483,481,479,480,477,475,474,473,472,472], LT:[440,438,436,434,431,433,430,428,427,426,425,428], "5K":[410,408,406,404,401,403,400,398,396,395,394,394] };
+
+/* ---- 30-day pace distribution (miles per zone) ---- */
+function paceSpectrum(){ const z={}; _DAYS.filter(d=>d.off<30).forEach(d=>{ for(const k in d.z) z[k]=(z[k]||0)+d.z[k]; }); return ZONES.map(([zn,c])=>({zone:zn,color:c,mi:round(z[zn]||0)})); }
+
+/* ---- workout detail: stats + splits ---- */
+function paceSec(p){ const a=p.split(":").map(Number); return a[0]*60+a[1]; }
+const ZPACE=Object.fromEntries(PACES.map(p=>[p.zone,paceSec(p.pace)]));
+const IF_ZONE={Easy:0.68,Moderate:0.74,Steady:0.80,MP:0.90,HMP:0.94,LT:1.0,"10K":1.05,"5K":1.10,"3K":1.14,Mile:1.18};
+const HR_ZONE={Easy:138,Moderate:143,Steady:147,MP:154,HMP:159,LT:164,"10K":168,"5K":172,"3K":175,Mile:178};
+function fmtClock(sec){ sec=Math.round(sec); const h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60; return (h?h+":"+String(m).padStart(2,"0"):String(m))+":"+String(s).padStart(2,"0"); }
+function fmtPaceSec(sec){ const m=Math.floor(sec/60), s=Math.round(sec%60); return m+":"+String(s).padStart(2,"0"); }
+function workoutStats(d){ let pw=0,load=0,hw=0; for(const z in d.z){ pw+=ZPACE[z]*d.z[z]; load+=(IF_ZONE[z]||0.7)*d.z[z]; hw+=(HR_ZONE[z]||140)*d.z[z]; }
+  const avg=pw/d.dist; return { dist:d.dist, avg, dur:avg*d.dist, gap:avg-7, load:Math.round(load*10), hr:Math.round(hw/d.dist), cad:176+(d.role==="quality"?3:0), drift:d.role==="quality"?"+3.1%":"+1.7%" }; }
+function splitsFor(d){ const present=ZONES.map(([z])=>z).filter(z=>d.z[z]); const fast=present[present.length-1];
+  const label=z=>{ if(z==="Easy") return d.role==="quality"?"Warm-up + cool-down":(d.role==="long"?"Easy miles":"Easy"); if(z==="Steady") return d.role==="long"?"Steady close":"Steady"; return z+(d.role==="quality"?" work":""); };
+  return ZONES.filter(([z])=>d.z[z]).map(([z,c])=>({seg:label(z),dist:d.z[z],pace:ZPACE[z],zone:z,color:c,fast:z===fast&&d.role==="quality"})); }
+
+/* ---- STATE ---- */
+const curBlockWeek = _WEEKS[_WEEKS.length-1].num;
+const STATE={ screen:"login", tab:"training", dataset:"sample", recording:false, mode:"run",
+  trLevel:"week", trWeek:curBlockWeek, trDay:0, trMonth:new Date(2026,6,1), lens:"today",
+  trTab:"time", layers:{vol:true,load:true,mood:true,nig:true}, keyFilter:"all" };
+
+const $=s=>document.querySelector(s);
+const isEmpty=()=>STATE.dataset==="empty";
+function moodPill(m){ if(!m) return ""; const c=MOOD[m]||MOOD.neutral; return `<span class="mood-pill" style="color:${c.c};background:${c.bg}">${m}</span>`; }
+function sessionsWithNotes(){ return SESSIONS.filter(s=>!s.rest && s.note); }
+function roleColor(d){ if(d.role==="rest")return"var(--ink-3)"; if(d.role==="easy")return"var(--pace-easy-text)"; if(d.role==="long")return"var(--pace-steady)"; return ZCOLOR[d.type]||"var(--pace-lt)"; }
+function roleTag(d){ if(d.role==="rest")return"REST"; if(d.role==="easy")return"EASY"; if(d.role==="long")return"LONG"; return "QUALITY"; }
+
+/* ============================================================ RENDER dispatch */
+function render(){
+  const scr=$("#screen");
+  if(STATE.screen==="login"){ scr.innerHTML=renderLogin(); return; }
+  scr.innerHTML=`
+    <div class="plate-strip">
+      <div class="l"><b>RUNNING LOG</b><span>${plateLabel()}</span></div>
+      <div class="r" onclick="openMenu()"><b>${isEmpty()?"NEW RUNNER":ATHLETE.name.toUpperCase()}</b><span>${isEmpty()?"DAY ONE":"BETA · DEMO"}</span></div>
+    </div>
+    <div class="body-scroll" id="scroll">${renderTab()}</div>
+    ${renderTabBar()}`;
+  bindTab();
+}
+function plateLabel(){ return ({log:"— LOG · v1 CAPTURE", training:"— TRAINING · v2 CALENDAR", trends:"— TRENDS · v2 ANALYSIS", read:"— THE READ · v1", plan:"— PLAN · v1"})[STATE.tab]||""; }
+function renderTab(){ return ({log:renderLog, training:renderTraining, trends:renderTrends, read:renderRead, plan:renderPlan}[STATE.tab]||(()=>""))(); }
+function renderTabBar(){
+  const tabs=[["log","Log"],["training","Training"],["trends","Trends"],["read","Read"],["plan","Plan"]];
+  return `<div class="tab-bar">${tabs.map(([id,l])=>`<div class="tab ${STATE.tab===id?"active":""}" data-tab="${id}"><div class="tdot"></div><div class="tlbl">${l}</div></div>`).join("")}</div>`;
+}
+function emptyState(t,n){ return `<div class="empty"><div class="eyebrow">${t}</div><div class="nudge">${n}</div></div>`; }
+
+/* ============================================================ LOGIN */
+function renderLogin(){
+  return `<div class="signin">
+    <div class="logo-tile"><div class="logo-word">post<br>run<br>drip.<span class="drip"></span></div></div>
+    <div><div class="signin-title">post run drip</div><div class="signin-sub">A coach's read on your training.</div></div>
+    <div class="signin-form">
+      <input class="field" id="email" type="email" placeholder="you@email.com" />
+      <button class="btn btn-primary" onclick="signIn()">Continue</button>
+      <button class="btn btn-ink" onclick="signIn()"><svg width="15" height="16" viewBox="0 0 16 16" fill="#fff" aria-hidden="true"><path d="M11.2 8.5c0-1.4.9-2.1 1-2.2-.5-.8-1.4-.9-1.7-.9-.7-.1-1.4.4-1.8.4-.4 0-1-.4-1.6-.4-.8 0-1.6.5-2 1.2-.9 1.5-.2 3.8.6 5 .4.6.9 1.3 1.5 1.3.6 0 .8-.4 1.6-.4.7 0 .9.4 1.6.4.6 0 1-.6 1.4-1.2.5-.7.6-1.3.7-1.4-.1 0-1.3-.5-1.4-1.8zM10 4.4c.3-.4.6-1 .5-1.6-.5 0-1.1.3-1.5.8-.3.4-.6 1-.5 1.5.6 0 1.1-.3 1.5-.7z"/></svg>Sign in with Apple</button>
+    </div>
+    <div class="signin-foot">Beta · demo sign-in · any email works</div>
+  </div>`;
+}
+function signIn(){ STATE.screen="app"; STATE.tab="training"; render(); }
+function signOut(){ closeMenu(); STATE.screen="login"; render(); }
+function go(tab){ STATE.tab=tab; render(); const sc=$("#scroll"); if(sc) sc.scrollTop=0; }
+
+/* ============================================================ LOG */
+function renderLog(){
+  const isCheck=STATE.mode==="check";
+  const entries=isEmpty()?[]:sessionsWithNotes();
+  return `
+    <div class="mode-toggle">
+      <button class="mode-btn ${!isCheck?"active":""}" onclick="setMode('run')">Log run<div class="mode-rail"></div></button>
+      <button class="mode-btn ${isCheck?"active":""}" onclick="setMode('check')">Check in<div class="mode-rail"></div></button>
+    </div>
+    <div class="log-hero"><h1 class="h-display">${isCheck?"How are you feeling?":"Log your run."}</h1>
+      <p>${isCheck?"Tap the button to record a quick check-in.":"Tap the button to start your voice memo."}</p></div>
+    <div class="record ${STATE.recording?"rec":""}" onclick="toggleRec()"><div class="ring"></div><div class="disc"><div class="inner"></div></div></div>
+    <div class="record-cap">${STATE.recording?"Tap to stop":"Tap to record"}</div>
+    <div class="hl-block" style="margin-top:26px;">
+      <div class="row"><span class="eyebrow">Or · type notes</span><span class="link-mono">Save</span></div>
+      <textarea class="notes-area" placeholder="${isCheck?"A word on how the legs feel today…":"How did your run feel today?"}"></textarea>
+    </div>
+    <div class="hl-block" style="display:flex;justify-content:space-between;align-items:baseline;">
+      <span class="eyebrow">Journal · ${entries.length} ${entries.length===1?"entry":"entries"}</span><span class="link-mono">Last 2 weeks</span>
+    </div>
+    ${entries.length? entries.map(journalRow).join("") : emptyState("No runs logged yet.","When you record or type one, your last entry lands here first.")}
+    <div style="height:20px;"></div>`;
+}
+function journalRow(s){
+  const d=dayFromOffset(s.off); const c=s.mood?MOOD[s.mood]:{c:"var(--ink-3)"}; const isVoice=s.kind==="voice";
+  return `<div class="jrow" onclick="openDayFromLog(${s.off})">
+    <div class="jrail" style="background:${s.mood?c.c:"var(--ink-3)"}"></div>
+    <div><div class="jhead"><div class="jday">${WD[d.getDay()]}</div>
+      <span class="jind" style="color:${isVoice?"var(--coral)":"var(--ink-3)"}">${isVoice?`<svg width="9" height="9" viewBox="0 0 9 9" aria-hidden="true"><polygon points="1.5,0.8 8,4.5 1.5,8.2" fill="currentColor"/></svg>VOICE · ${s.dur}`:"TEXT ONLY"}</span></div>
+      <div class="jmeta">${fmtMd(d).toUpperCase()} &nbsp;·&nbsp; ${s.label.toUpperCase()}</div>
+      <div class="jbody">“${s.note}”</div>
+      <div class="jfoot">${s.mood?moodPill(s.mood):""}${s.niggle?`<span class="niggle-chip">niggle · ${s.niggle.part}</span>`:""}</div>
+    </div></div>`;
+}
+function openDayFromLog(off){ STATE.tab="training"; STATE.trLevel="day"; STATE.trDay=off; render(); }
+function setMode(m){ STATE.mode=m; STATE.recording=false; rerenderScroll(); }
+function toggleRec(){ STATE.recording=!STATE.recording; rerenderScroll(); }
+function rerenderScroll(){ const s=$("#scroll"); if(s){ s.innerHTML=renderTab(); afterTab(); } }
+
+/* ============================================================ TRAINING — calendar drill-down */
+function renderTraining(){
+  if(isEmpty()){
+    return `<div class="section first"><div class="eyebrow coral">Your training</div>
+      <h1 class="h-display" style="font-size:31px;margin-top:6px;">Day by day.</h1></div>
+      ${emptyState("No sessions yet.","Every run you log lands on this calendar. Drill from your block down to a single day to see exactly what you did, and how it felt.")}
+      <div style="margin-top:16px;"><span class="link" onclick="go('log')">Log your first run ↗</span></div>`;
+  }
+  const seg=`<div class="seg" id="trseg">${["block","month","week","day","key"].map(l=>`<button data-l="${l}" class="${STATE.trLevel===l?"on":""}">${l}</button>`).join("")}</div>`;
+  const legend=`<div class="qe-legend">
+    <span><span class="qe-sw" style="background:var(--pace-easy)"></span>Easy</span>
+    <span><span class="qe-sw" style="background:var(--pace-steady)"></span>Long</span>
+    <span><span class="qe-sw" style="background:var(--pace-lt)"></span>Quality</span>
+    <span><span class="qe-sw" style="background:var(--ink-3)"></span>Rest</span></div>`;
+  let body="";
+  if(STATE.trLevel==="block") body=renderBlock();
+  else if(STATE.trLevel==="month") body=renderMonth();
+  else if(STATE.trLevel==="week") body=renderWeek();
+  else if(STATE.trLevel==="key") body=renderKeySessions();
+  else body=renderDay();
+  return `<div class="section first">${seg}${renderCrumb()}</div>${legend}${body}<div style="height:14px;"></div>`;
+}
+function renderCrumb(){
+  const L=STATE.trLevel;
+  const parts=[`<span class="crumb ${L==="block"?"here":""}" onclick="trSet('block')">Block</span>`];
+  if(L==="month"){ parts.push(`<span class="crumb sep">›</span><span class="crumb here">${MO3[STATE.trMonth.getMonth()]}</span>`); }
+  if(L==="key"){ parts.push(`<span class="crumb sep">›</span><span class="crumb here">Key sessions</span>`); }
+  if(L==="week"||L==="day"){ const w=_WEEKS.find(x=>x.num===STATE.trWeek); parts.push(`<span class="crumb sep">›</span><span class="crumb ${L==="week"?"here":""}" onclick="trSet('week')">Wk ${STATE.trWeek} · ${fmtMd(w.monday)}</span>`); }
+  if(L==="day"){ const d=dayByOff(STATE.trDay)||{date:dayFromOffset(STATE.trDay)}; parts.push(`<span class="crumb sep">›</span><span class="crumb here">${WD3[d.date.getDay()]} ${d.date.getDate()}</span>`); }
+  return `<div class="breadcrumb">${parts.join("")}</div>`;
+}
+function stackBar(byZone){
+  const tot=sum(byZone)||1;
+  return ZONES.filter(([z])=>byZone[z]).map(([z,c])=>`<div class="seg-b" style="width:${byZone[z]/tot*100}%;background:${c}"></div>`).join("");
+}
+function renderBlock(){
+  const total=_WEEKS.reduce((a,w)=>a+w.vol,0);
+  const qual=_WEEKS.reduce((a,w)=>a+w.qualMi,0);
+  const ep=round((total-qual)/total*100);
+  const weeks=_WEEKS.slice().reverse();
+  return `
+    <div class="tiles3" style="margin-top:14px;">
+      <div class="tile"><div class="lab">Block volume</div><div class="val">${total}<small> mi</small></div><div class="sub">${ATHLETE.weeks} weeks</div></div>
+      <div class="tile"><div class="lab">Easy / quality</div><div class="val">${ep}/${100-ep}</div><div class="sub">${total-qual} / ${qual} mi</div></div>
+      <div class="tile"><div class="lab">Phase</div><div class="val" style="font-size:16px;padding-top:4px;">Taper</div><div class="sub">wk ${curBlockWeek} of 14</div></div>
+    </div>
+    <div class="section"><div class="section-head"><span class="eyebrow">The arc · 12 weeks</span><span class="link-mono">Tap a week ↗</span></div>
+    ${weeks.map(w=>`
+      <div class="blkrow ${w.now?"now":""}" onclick="trOpenWeek(${w.num})">
+        <div class="blk-wk">WK ${w.num}<small>${fmtMd(w.monday).toUpperCase()} · ${w.phase.toUpperCase()}</small></div>
+        <div class="minibar" title="${w.vol} mi">${stackBar(w.byZone)}</div>
+        <div class="blk-mi">${w.vol}<small>${w.qualMi}Q · ${w.easyMi}E</small></div>
+      </div>`).join("")}</div>`;
+}
+function renderMonth(){
+  const y=STATE.trMonth.getFullYear(), m=STATE.trMonth.getMonth();
+  const first=new Date(y,m,1).getDay(), dim=new Date(y,m+1,0).getDate();
+  let monthMi=0,q=0,e=0;
+  let cells=""; ["S","M","T","W","T","F","S"].forEach(d=>cells+=`<div class="cdow">${d}</div>`);
+  for(let i=0;i<first;i++) cells+=`<div class="cell empty"></div>`;
+  for(let dd=1;dd<=dim;dd++){
+    const dt=new Date(y,m,dd), off=offOf(dt), d=dayByOff(off);
+    const isToday=off===0;
+    if(d){ monthMi+=d.dist; for(const z in d.z){ if(EASY_Z.includes(z)) e+=d.z[z]; else q+=d.z[z]; }
+      const col=roleColor(d), op=d.role==="rest"?0.3:1;
+      cells+=`<div class="cell ${isToday?"today":""}" onclick="trOpenDay(${off})">${isKey(d)?`<span class="kstar-cal">★</span>`:""}<span class="cnum">${dd}</span><span class="cdot" style="background:${col};opacity:${op}"></span><span class="cmi">${d.dist?d.dist:""}</span></div>`;
+    } else {
+      const dow=dt.getDay(), p=PLAN_TEMPLATE[dow], future=off<0;
+      cells+=`<div class="cell ${future?"plan":"empty"}"><span class="cnum" style="color:var(--ink-3)">${dd}</span>${future&&p.mi?`<span class="cdot" style="background:var(--ink-3);opacity:0.28"></span><span class="cmi" style="color:var(--ink-3)">${p.mi}</span>`:""}</div>`;
+    }
+  }
+  const ep=monthMi?round(e/monthMi*100):0;
+  return `
+    <div class="section"><div class="card" style="padding:14px 16px;">
+      <div class="pager"><button onclick="trMonthShift(-1)">‹</button><span class="mlabel">${MO3[m]} ${y}</span><button onclick="trMonthShift(1)">›</button></div>
+      <div class="cal">${cells}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:12px;">
+        <span class="caption">${round(monthMi)} mi logged</span><span class="caption">${ep}/${100-ep} easy/quality</span></div>
+    </div></div>
+    <div class="body-sm" style="margin-top:8px;font-style:italic;">Tap any day to see the session, the splits by pace, and how it felt.</div>`;
+}
+function renderWeek(){
+  const w=_WEEKS.find(x=>x.num===STATE.trWeek); if(!w) return "";
+  // build 7 rows Mon..Sun (fill planned for missing future days of current week)
+  const monday=w.monday; const rows=[];
+  for(let i=0;i<7;i++){ const dt=new Date(monday); dt.setDate(monday.getDate()+i); const off=offOf(dt); const d=dayByOff(off);
+    if(d) rows.push({d,dt,off,plan:false});
+    else { const p=PLAN_TEMPLATE[dt.getDay()]; rows.push({dt,off,plan:true,p}); }
+  }
+  const ep=w.vol?round(w.easyMi/w.vol*100):0;
+  return `
+    <div class="section"><div class="card" style="padding:16px;">
+      <div class="pager"><button onclick="trWeekShift(-1)" ${STATE.trWeek<=1?"disabled style=opacity:.3":""}>‹</button>
+        <div style="text-align:center;"><div class="mlabel">Week ${w.num}</div><div class="caption">${fmtMd(w.monday)} · ${w.phase}</div></div>
+        <button onclick="trWeekShift(1)" ${STATE.trWeek>=curBlockWeek?"disabled style=opacity:.3":""}>›</button></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:14px;">
+        <span class="ratio-num">${w.vol}<small> mi</small></span><span class="caption">target ${w.target} · ${ep}/${100-ep} easy/quality</span></div>
+      <div class="ratiobar"><div class="easy" style="width:${ep}%"></div><div class="hard" style="width:${100-ep}%"></div></div>
+    </div></div>
+    <div class="section"><div class="section-head"><span class="eyebrow">The week · day by day</span><span class="link-mono">Tap a day ↗</span></div>
+    ${rows.map(r=>{
+      if(r.plan){ const col="var(--ink-3)"; return `<div class="wkrow plan"><div class="wk-dow">${WD3[r.dt.getDay()].toUpperCase()}<small>${fmtMd(r.dt)}</small></div><div><span class="wk-wo">${r.p.wo}</span> <span class="qe-tag" style="color:${col}">· PLANNED</span></div><div class="wk-mi" style="color:var(--ink-3)">${r.p.mi?r.p.mi+" mi":"rest"}</div></div>`; }
+      const d=r.d, col=roleColor(d);
+      return `<div class="wkrow" onclick="trOpenDay(${r.off})"><div class="wk-dow">${WD3[d.date.getDay()].toUpperCase()}<small>${fmtMd(d.date)}</small></div>
+        <div><span class="wk-wo">${d.role==="rest"?"Rest":d.label}</span> ${d.role!=="rest"?`<span class="qe-tag" style="color:${col}">· ${roleTag(d)}</span>`:""}${isKey(d)?`<span class="wk-star">★</span>`:""}</div>
+        <div class="wk-mi">${d.dist?d.dist+" mi":"—"}</div></div>`;
+    }).join("")}</div>`;
+}
+function renderDay(){
+  const off=STATE.trDay, d=dayByOff(off), dt=d?d.date:dayFromOffset(off);
+  if(!d || d.role==="rest"){
+    return `<div class="section"><div class="card pad-lg">
+      <div class="day-hero"><div><div class="eyebrow">${WD[dt.getDay()].toUpperCase()} · ${fmtMd(dt).toUpperCase()}</div>
+      <h1 class="h-display" style="font-size:26px;margin-top:6px;">Rest day.</h1></div></div>
+      <div class="body-sm" style="margin-top:8px;font-style:italic;">Nothing logged. Rest is training too — it's where the work from the hard days actually lands.</div>
+      </div></div>`;
+  }
+  const st=workoutStats(d), col=roleColor(d), key=isKey(d), splits=splitsFor(d), maxSeg=Math.max(...splits.map(s=>s.dist));
+  const planned=PLAN_TEMPLATE[d.dow];
+  const s4=[["Distance",d.dist,"mi",round(d.dist*22)+" ft elev"],["Duration",fmtClock(st.dur),"",fmtPaceSec(st.avg)+" avg"],["Avg pace",fmtPaceSec(st.avg),"/mi",roleTag(d).toLowerCase()],["Load",st.load,"","wk "+d.blockWeek]];
+  const s5=[["Cadence",st.cad,"spm"],["HR avg",st.hr,"bpm"],["Drift",st.drift,"Pa:Hr"],["GAP",fmtPaceSec(st.gap),"/mi"],["Elev",round(d.dist*22),"ft"]];
+  return `
+    <div class="section"><div class="card pad-lg">
+      <div class="day-hero">
+        <div><div class="eyebrow">${WD[dt.getDay()].toUpperCase()} · ${d.phase.toUpperCase()}</div>
+          <h1 class="h-display" style="font-size:30px;margin-top:6px;">${d.label}</h1>
+          <div class="wsub">${d.dist} mi · ${fmtClock(st.dur)} · ${fmtPaceSec(st.avg)}/mi</div></div>
+        <div style="text-align:right;"><span class="qe-tag" style="color:${col};font-size:11px;">${roleTag(d)}</span>${key?`<div class="key-badge" style="margin-top:6px;justify-content:flex-end;">★ Key session</div>`:""}</div>
+      </div>
+      <div class="wstrip s4">${s4.map(s=>`<div class="wstat"><span class="wl">${s[0]}</span><span class="wv">${s[1]}${s[2]?`<small>${s[2]}</small>`:""}</span><span class="ws">${s[3]}</span></div>`).join("")}</div>
+      <div class="wstrip s5">${s5.map(s=>`<div class="wstat"><span class="wl">${s[0]}</span><span class="wv">${s[1]}</span><span class="ws">${s[2]}</span></div>`).join("")}</div>
+      <div style="margin-top:14px;"><span class="eyebrow">Splits · by pace</span>
+        <table class="splits"><thead><tr><th>Segment</th><th>Dist</th><th>Pace</th><th></th></tr></thead><tbody>
+        ${splits.map(s=>`<tr class="${s.fast?"fast":""}"><td><span class="sw" style="background:${s.color}"></span>${s.seg}</td><td>${s.dist} mi</td><td>${fmtPaceSec(s.pace)}/mi</td><td><span class="lbar" style="width:${Math.max(8,s.dist/maxSeg*64)}px;background:${s.fast?"var(--coral)":s.color}"></span></td></tr>`).join("")}
+        </tbody></table></div>
+    </div></div>
+    ${d.note?`<div class="section"><div class="section-head"><span class="eyebrow">How it felt</span>${d.mood?moodPill(d.mood):""}</div>
+      <div class="card"><div class="quote" style="font-size:15px;">“${d.note}”</div>
+      ${d.niggle?`<div class="jfoot" style="margin-top:12px;"><span class="niggle-chip">niggle · ${d.niggle.part}</span></div>`:""}
+      <div class="link-card" onclick="go('log')"><div><div class="lc-t">${d.kind==="voice"?"Voice note · "+d.dur:"Journal entry"}</div><div class="lc-s">Open in Log</div></div><span class="lc-a">↗</span></div></div></div>`
+      :`<div class="section"><div class="card"><div class="body-sm" style="font-style:italic;">No note on this one — ${d.role==="quality"?"a quality day":"an easy day"} logged from your watch.</div></div></div>`}
+    <div class="section"><span class="eyebrow">Against the plan</span>
+      <div class="link-card" onclick="go('plan')"><div><div class="lc-t">Planned · ${planned.wo}</div><div class="lc-s">${d.label} actual${planned.wo.split(" ")[0]===d.type?" · on plan":""}</div></div><span class="lc-a">View in Plan ↗</span></div></div>
+    <div class="section"><div class="body-sm" style="font-style:italic;">Run of week ${d.blockWeek} · this session added to your ${d.phase.toLowerCase()}-phase load. Tap Trends to see where it sits in the block.</div></div>`;
+}
+/* training nav */
+function trSet(l){ STATE.trLevel=l; rerenderScroll(); }
+function trOpenWeek(num){ STATE.trWeek=num; STATE.trLevel="week"; rerenderScroll(); const sc=$("#scroll"); if(sc) sc.scrollTop=0; }
+function trOpenDay(off){ STATE.trDay=off; const d=dayByOff(off); if(d) STATE.trWeek=d.blockWeek; STATE.trLevel="day"; STATE.tab="training"; render(); const sc=$("#scroll"); if(sc) sc.scrollTop=0; }
+function trMonthShift(x){ const m=STATE.trMonth; STATE.trMonth=new Date(m.getFullYear(),m.getMonth()+x,1); rerenderScroll(); }
+function trWeekShift(x){ STATE.trWeek=Math.min(curBlockWeek,Math.max(1,STATE.trWeek+x)); rerenderScroll(); }
+function setKeyFilter(f){ STATE.keyFilter=f; rerenderScroll(); }
+function renderKeySessions(){
+  const shown=keySessions().filter(d=>keyMatch(d,STATE.keyFilter)).length, all=keySessions().length;
+  return `<div class="section"><div class="section-head"><span class="eyebrow">Key sessions · this block</span><span class="link-mono">${shown} of ${all}</span></div>
+    <div class="filter-chips">${[["all","All"],["long","Long"],["MP","MP"],["LT","LT"],["int","Intervals"]].map(([k,l])=>`<span class="filter-chip ${STATE.keyFilter===k?"on":""}" onclick="setKeyFilter('${k}')">${l}</span>`).join("")}</div>
+    ${keyList()}
+    <div class="body-sm" style="margin-top:14px;font-style:italic;">Your quality workouts and long runs, most recent first. Tap any one to open its detail sheet.</div>
+  </div>`;
+}
+
+/* ============================================================ TRENDS — deep analysis */
+function renderTrends(){
+  if(isEmpty()){
+    return `<div class="section first"><div class="eyebrow coral">Analysis</div>
+      <h1 class="h-display" style="font-size:31px;margin-top:6px;">Nothing to analyze yet.</h1></div>
+      ${emptyState("Trends need a couple of weeks.","Once you've logged some runs, this reads your training back to you: where the miles go by pace, easy-vs-quality balance, how mood tracks load, and what the body's been saying.")}
+      <div style="margin-top:16px;"><span class="link" onclick="go('log')">Start logging ↗</span></div>`;
+  }
+  const total=_WEEKS.reduce((a,w)=>a+w.vol,0), qual=_WEEKS.reduce((a,w)=>a+w.qualMi,0);
+  const ep=round((total-qual)/total*100);
+  const acwr=_ACWR[_ACWR.length-1], safe=acwr>=0.8&&acwr<=1.3;
+  return `
+    <div class="section first"><div class="eyebrow coral">Analysis · ${ATHLETE.weeks} weeks</div>
+      <h1 class="h-display" style="font-size:29px;">How the training is going.</h1></div>
+
+    <div class="tiles3" style="margin-top:14px;">
+      <div class="tile"><div class="lab">Block volume</div><div class="val">${total}<small> mi</small></div><div class="sub">peak 56 · wk ${curBlockWeek}</div></div>
+      <div class="tile"><div class="lab">Workload</div><div class="val">${acwr.toFixed(2)}</div><div class="sub ${safe?"pos":"neg"}">${safe?"safe zone":"outside"}</div></div>
+      <div class="tile"><div class="lab">Easy / quality</div><div class="val">${ep}/${100-ep}</div><div class="sub">${total-qual} / ${qual} mi</div></div>
+    </div>
+
+    <!-- OVERLAY: volume + load + mood + niggles on one axis -->
+    <div class="section"><div class="section-head"><span class="eyebrow">Overlay · 12 weeks</span>
+      <div class="seg" style="width:158px;flex:0 0 auto;" id="tvtab"><button data-t="time" class="on">Over&nbsp;time</button><button data-t="spectrum">Spectrum</button></div></div>
+      <div id="tv-time">
+        <div class="layer-chips" id="layerchips">
+          <span class="layer-chip" data-layer="vol"><span class="lc-dot" style="background:var(--pace-steady)"></span>Volume</span>
+          <span class="layer-chip" data-layer="load"><span class="lc-dot" style="background:var(--ink)"></span>Load</span>
+          <span class="layer-chip" data-layer="mood"><span class="lc-dot" style="background:var(--mood-positive)"></span>Mood</span>
+          <span class="layer-chip" data-layer="nig"><span class="lc-dot" style="background:var(--coral)"></span>Niggles</span>
+        </div>
+        <div class="chartwrap"><svg id="ovchart" class="chart" viewBox="0 0 360 258" preserveAspectRatio="xMidYMid meet"></svg><div class="readout" id="ovro"></div></div>
+      </div>
+      <div id="tv-spectrum" style="display:none;">
+        <div class="caption" style="margin:8px 0;">Last 30 days · every mile sorted by pace</div>
+        <div class="chartwrap"><svg id="spchart" class="chart" viewBox="0 0 360 200" preserveAspectRatio="xMidYMid meet"></svg><div class="readout" id="spro"></div></div>
+      </div>
+      <div class="read-inline"><span class="eyebrow coral">The read</span><div class="body" id="tread"></div><div class="q" id="treadq"></div></div>
+    </div>
+
+    <div class="section"><div class="e-rule"><span class="dot"></span></div></div>
+
+    <!-- PACE PROGRESSION -->
+    <div class="section"><div class="section-head"><span class="eyebrow">Pace progression · key zones</span><span class="link-mono">Faster ↑</span></div>
+      <div class="card"><div class="chartwrap"><svg id="ppchart" class="chart" viewBox="0 0 360 150" preserveAspectRatio="xMidYMid meet"></svg></div>
+        <div class="prog-legend" id="pplegend"></div>
+        <div class="body-sm" style="margin-top:12px;line-height:1.5;">Every key pace has come down over the block — your <b style="color:var(--ink);font-weight:700;">MP is 15s/mi faster</b> than week 1, threshold 12s. The paces are progressing, not just the mileage.</div>
+      </div></div>
+
+    <div class="section"><div class="e-rule"><span class="dot"></span></div></div>
+
+    <!-- niggles -->
+    <div class="section"><div class="section-head"><span class="eyebrow">Signal · niggles</span><span class="link-mono">Surfaced, not diagnosed</span></div>
+      <div class="card">${renderNiggles()}</div></div>
+
+    <!-- fitness compact -->
+    <div class="section"><div class="section-head"><span class="eyebrow">Race fitness</span><span class="link-mono">Anchored to ${ATHLETE.anchor.name} · ${ATHLETE.anchor.md}</span></div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+          <div><div class="caption">Marathon fitness</div><div style="font-family:var(--fm);font-weight:600;font-size:24px;color:var(--ink);margin-top:4px;">${ATHLETE.fitness.mid}<span style="font-size:12px;color:var(--ink-3);"> · ${ATHLETE.fitness.range}</span></div></div>
+          <div style="text-align:right;"><div class="caption">Goal</div><div class="goal-time" style="font-size:20px;margin-top:4px;">${ATHLETE.goalTime}</div></div></div>
+        ${sparkCard(FITNESS)}
+        <div class="body-sm" style="margin-top:10px;font-style:italic;">A range, not a finish time — the seconds would be false precision.</div>
+      </div></div>
+
+    <!-- paces -->
+    <div class="section"><div class="section-head"><span class="eyebrow">Paces · derived from your fitness</span></div>
+      <div class="card" style="padding:6px 16px;">${PACES.map(paceRow).join("")}</div></div>
+    <div style="height:12px;"></div>`;
+}
+const SVGNS="http://www.w3.org/2000/svg";
+function svg(n,a,t){ const e=document.createElementNS(SVGNS,n); for(const k in a) e.setAttribute(k,a[k]); if(t!=null) e.textContent=t; return e; }
+function posRO(ro,e,el){ const wrap=el.closest(".chartwrap").getBoundingClientRect(); const x=e.clientX-wrap.left, y=e.clientY-wrap.top-12; ro.style.left=Math.max(64,Math.min(x,wrap.width-64))+"px"; ro.style.top=Math.max(4,y)+"px"; ro.style.opacity=1; }
+
+/* ---- OVERLAY: volume + workload + mood + niggles on one 12-week axis ---- */
+function buildOverlay(){
+  const el=$("#ovchart"), ro=$("#ovro"); if(!el) return; el.innerHTML="";
+  const data=weekOverlay(), L=STATE.layers;
+  const ml=26,mr=20,plotW=360-ml-mr,colW=plotW/12,cx=i=>ml+colW*i+colW/2;
+  const VOL={t:16,h:110}, LOAD={t:150,h:32}, MOODY=196, NIGY=224, LBLY=248;
+  const volMax=Math.max(...data.map(d=>d.vol))+4, yVol=v=>VOL.t+VOL.h-(v/volMax)*VOL.h;
+  const aMin=0.6,aMax=1.5,yA=v=>LOAD.t+LOAD.h-((Math.min(aMax,Math.max(aMin,v))-aMin)/(aMax-aMin))*LOAD.h;
+  const defs=svg("defs",{}); const pat=svg("pattern",{id:"ovhh",width:5,height:5,patternTransform:"rotate(45)",patternUnits:"userSpaceOnUse"}); pat.appendChild(svg("line",{x1:0,y1:0,x2:0,y2:5,stroke:"#FAFAF8","stroke-width":1.1,"stroke-opacity":0.55})); defs.appendChild(pat); el.appendChild(defs);
+  if(L.vol){
+    el.appendChild(svg("text",{x:ml-4,y:VOL.t-4,"font-family":"var(--fm)","font-size":7.5,fill:"#9B9590","letter-spacing":".06em"},"MILES/WK"));
+    [20,40].forEach(v=>{ el.appendChild(svg("line",{x1:ml,y1:yVol(v),x2:ml+plotW,y2:yVol(v),stroke:"#EFEBE6","stroke-width":1})); el.appendChild(svg("text",{x:ml-4,y:yVol(v)+3,"text-anchor":"end","font-family":"var(--fm)","font-size":7,fill:"#B7AFA8"},String(v))); });
+    el.appendChild(svg("line",{x1:ml,y1:VOL.t+VOL.h,x2:ml+plotW,y2:VOL.t+VOL.h,stroke:"#E0DAD3","stroke-width":1}));
+    data.forEach((d,i)=>{ const bw=colW*0.6,x=cx(i)-bw/2; let cur=0; ZONES.forEach(([zn,c])=>{ const mi=d.byZone[zn]; if(!mi) return; const yt=yVol(cur+mi),yb=yVol(cur); el.appendChild(svg("rect",{x,y:yt,width:bw,height:Math.max(yb-yt,0.5),fill:c,stroke:"#FAFAF8","stroke-width":0.6})); if(!EASY_Z.includes(zn)) el.appendChild(svg("rect",{x,y:yt,width:bw,height:Math.max(yb-yt,0.5),fill:"url(#ovhh)","pointer-events":"none"})); cur+=mi; }); if(d.now) el.appendChild(svg("rect",{x:x-2,y:yVol(d.vol)-2,width:bw+4,height:(VOL.t+VOL.h)-yVol(d.vol)+2,fill:"none",stroke:"#D4592A","stroke-width":1.4,rx:3})); });
+  }
+  if(L.load){
+    el.appendChild(svg("text",{x:ml-4,y:LOAD.t-4,"font-family":"var(--fm)","font-size":7.5,fill:"#9B9590","letter-spacing":".06em"},"WORKLOAD"));
+    el.appendChild(svg("rect",{x:ml,y:yA(1.3),width:plotW,height:yA(0.8)-yA(1.3),fill:"rgba(107,101,96,0.10)"}));
+    [0.8,1.3].forEach(v=>{ el.appendChild(svg("line",{x1:ml,y1:yA(v),x2:ml+plotW,y2:yA(v),stroke:"#9B9590","stroke-width":1,"stroke-dasharray":"2 3",opacity:.6})); el.appendChild(svg("text",{x:ml+plotW+2,y:yA(v)+3,"font-family":"var(--fm)","font-size":6.5,fill:"#6B6560"},v.toFixed(1))); });
+    el.appendChild(svg("path",{d:"M"+data.map((d,i)=>cx(i)+" "+yA(d.acwr)).join(" L"),fill:"none",stroke:"#1A1815","stroke-width":1.7,"stroke-linecap":"round","stroke-linejoin":"round"}));
+    data.forEach((d,i)=>{ const out=!(d.acwr>=0.8&&d.acwr<=1.3); el.appendChild(svg("circle",{cx:cx(i),cy:yA(d.acwr),r:out?3:2.1,fill:out?"#D4592A":"#1A1815",stroke:"#fff","stroke-width":1})); });
+  }
+  if(L.mood){ el.appendChild(svg("text",{x:ml-4,y:MOODY-4,"font-family":"var(--fm)","font-size":7.5,fill:"#9B9590","letter-spacing":".06em"},"MOOD"));
+    data.forEach((d,i)=>{ el.appendChild(svg("rect",{x:cx(i)-colW*0.3,y:MOODY,width:colW*0.6,height:13,rx:2.5,fill:MOOD[d.mood].c})); }); }
+  if(L.nig){ el.appendChild(svg("text",{x:ml-4,y:NIGY+3,"font-family":"var(--fm)","font-size":7,fill:"#9B9590"},"NIG"));
+    data.forEach((d,i)=>{ if(d.nig>0){ el.appendChild(svg("circle",{cx:cx(i),cy:NIGY,r:5.5,fill:"#D4592A"})); el.appendChild(svg("text",{x:cx(i),y:NIGY+2.6,"text-anchor":"middle","font-family":"var(--fm)","font-size":7,"font-weight":700,fill:"#fff"},String(d.nig))); } }); }
+  [0,3,6,9,11].forEach(i=>el.appendChild(svg("text",{x:cx(i),y:LBLY,"text-anchor":"middle","font-family":"var(--fm)","font-size":7.5,fill:data[i].now?"#D4592A":"#9B9590"},data[i].label.toUpperCase())));
+  data.forEach((d,i)=>{ const hit=svg("rect",{x:ml+colW*i,y:VOL.t,width:colW,height:NIGY-VOL.t+10,fill:"transparent",style:"cursor:pointer"}); hit.addEventListener("mousemove",e=>showWeekReadout(e,d)); hit.addEventListener("mouseleave",()=>ro.style.opacity=0); hit.addEventListener("touchstart",e=>showWeekReadout(e.touches[0],d),{passive:true}); el.appendChild(hit); });
+}
+function showWeekReadout(e,d){ const ro=$("#ovro"), el=$("#ovchart"); if(!ro||!el) return; const mc=MOOD[d.mood].c;
+  const segs=ZONES.filter(([z])=>d.byZone[z]).map(([z,c])=>`<div class="r"><span style="color:${c}">${z}</span><b>${d.byZone[z]} mi</b></div>`).join("");
+  ro.innerHTML=`<b>${d.label.toUpperCase()}</b> · <span style="color:${mc};text-transform:uppercase">${d.mood}</span><div class="r"><span>volume</span><b>${d.vol} mi</b></div><div class="r"><span>load</span><b style="color:${(d.acwr>=0.8&&d.acwr<=1.3)?'#fff':'#E8764A'}">${d.acwr.toFixed(2)}</b></div>${segs}${d.nig>0?`<div style="color:#E8764A;margin-top:3px">▲ ${d.part} niggle</div>`:""}<div style="font-family:var(--fb);font-style:italic;color:#F3ECE4;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,.2);white-space:normal;max-width:180px;">"${d.quote}"</div>`;
+  posRO(ro,e,el); }
+
+/* ---- SPECTRUM: last 30 days, miles by pace ---- */
+function buildSpectrum(){
+  const el=$("#spchart"), ro=$("#spro"); if(!el) return; el.innerHTML="";
+  const data=paceSpectrum(), tot=data.reduce((a,b)=>a+b.mi,0);
+  const ml=28,mr=12,mt=14,mb=48,pw=360-ml-mr,ph=200-mt-mb;
+  const yMax=Math.max(20,Math.ceil(Math.max(...data.map(d=>d.mi),1)/20)*20), y=v=>mt+ph-(v/yMax)*ph;
+  [0,yMax/2,yMax].forEach(v=>{ el.appendChild(svg("line",{x1:ml,y1:y(v),x2:ml+pw,y2:y(v),stroke:v===0?"#E0DAD3":"#EFEBE6","stroke-width":1})); el.appendChild(svg("text",{x:ml-5,y:y(v)+3,"text-anchor":"end","font-family":"var(--fm)","font-size":8,fill:"#9B9590"},v===yMax?v+" MI":String(v))); });
+  const n=data.length, slot=pw/n, bw=slot*0.72;
+  data.forEach((d,i)=>{ const cxp=ml+slot*(i+0.5), x=cxp-bw/2, yt=y(d.mi);
+    const show=ev=>{ ro.innerHTML=`<b>${d.zone}</b><div class="r"><span>miles</span><b>${d.mi}</b></div><div class="r"><span>share</span><b>${Math.round(d.mi/tot*100)}%</b></div><div class="r"><span>pace</span><b>${PACES.find(p=>p.zone===d.zone).pace}/mi</b></div>`; posRO(ro,ev,el); };
+    const rect=svg("rect",{x,y:yt,width:bw,height:(mt+ph)-yt,rx:1.5,fill:d.color,style:"cursor:pointer"});
+    rect.addEventListener("mousemove",show); rect.addEventListener("mouseleave",()=>ro.style.opacity=0); rect.addEventListener("touchstart",e=>show(e.touches[0]),{passive:true});
+    el.appendChild(rect); });
+  const gy=mt+ph+12, grad=svg("linearGradient",{id:"spg",x1:"0",y1:"0",x2:"1",y2:"0"}); ZONES.forEach((z,i)=>grad.appendChild(svg("stop",{offset:(i/9*100)+"%","stop-color":z[1]}))); const d2=svg("defs",{}); d2.appendChild(grad); el.appendChild(d2);
+  el.appendChild(svg("rect",{x:ml,y:gy,width:pw,height:10,rx:5,fill:"url(#spg)"}));
+  [["EASY",0],["MP",3],["LT",5],["5K",7],["MILE",9]].forEach(([t,i])=>el.appendChild(svg("text",{x:ml+(i/9)*pw,y:gy+24,"text-anchor":i===0?"start":(i===9?"end":"middle"),"font-family":"var(--fm)","font-size":8,fill:"#9B9590"},t)));
+}
+
+/* ---- PACE PROGRESSION: key paces over the block (faster = up) ---- */
+function buildPaceProg(){
+  const el=$("#ppchart"); if(!el) return; el.innerHTML="";
+  const series=[["MP","#3F7CB5"],["LT","#27549B"],["5K","#1A3679"]];
+  const all=series.flatMap(s=>PACE_PROG[s[0]]), min=Math.min(...all), max=Math.max(...all);
+  const ml=32,mr=14,mt=12,mb=22,pw=360-ml-mr,ph=150-mt-mb,n=12;
+  const x=i=>ml+(i/(n-1))*pw, y=v=>mt+((v-min)/((max-min)||1))*ph;
+  [min,(min+max)/2,max].forEach(v=>{ el.appendChild(svg("line",{x1:ml,y1:y(v),x2:ml+pw,y2:y(v),stroke:"#EFEBE6","stroke-width":1})); el.appendChild(svg("text",{x:ml-5,y:y(v)+3,"text-anchor":"end","font-family":"var(--fm)","font-size":7.5,fill:"#B7AFA8"},fmtPaceSec(v))); });
+  series.forEach(([zn,hex])=>{ const arr=PACE_PROG[zn]; el.appendChild(svg("path",{d:"M"+arr.map((v,i)=>x(i)+" "+y(v)).join(" L"),fill:"none",stroke:hex,"stroke-width":2,"stroke-linecap":"round","stroke-linejoin":"round"})); el.appendChild(svg("circle",{cx:x(n-1),cy:y(arr[n-1]),r:3,fill:hex,stroke:"#fff","stroke-width":1.2})); });
+  el.appendChild(svg("text",{x:x(0),y:mt+ph+15,"text-anchor":"start","font-family":"var(--fm)","font-size":7.5,fill:"#9B9590"},"WK 1"));
+  el.appendChild(svg("text",{x:x(n-1),y:mt+ph+15,"text-anchor":"end","font-family":"var(--fm)","font-size":7.5,fill:"#D4592A"},"NOW"));
+}
+
+/* ---- KEY SESSIONS list (retrievable) ---- */
+function keyMatch(d,f){ if(f==="all") return true; if(f==="long") return d.role==="long"; if(f==="MP") return d.type==="MP"; if(f==="LT") return d.type==="LT"; if(f==="int") return ["5K","3K","10K"].includes(d.type); return true; }
+function keyList(){ const list=keySessions().filter(d=>keyMatch(d,STATE.keyFilter));
+  if(!list.length) return emptyState("No sessions match.","Try a different filter, or log a workout of this type.");
+  return list.map(d=>{ const st=workoutStats(d), mc=d.mood?MOOD[d.mood].c:"var(--ink-3)";
+    return `<div class="keyrow" onclick="trOpenDay(${d.off})"><div class="kstar">★</div>
+      <div><div class="kwo">${d.label}</div><div class="kmeta"><span>${WD3[d.date.getDay()]} ${fmtMd(d.date)}</span><span>·</span><span>${d.phase}</span>${d.mood?`<span style="width:7px;height:7px;border-radius:999px;background:${mc};display:inline-block;"></span>`:""}</div></div>
+      <div class="kpace">${fmtPaceSec(st.avg)}<small>/mi · ${d.dist} mi</small></div></div>`; }).join("");
+}
+function updateTrends(){
+  const time=STATE.trTab==="time"; const tt=$("#tv-time"), sp=$("#tv-spectrum"); if(tt) tt.style.display=time?"":"none"; if(sp) sp.style.display=time?"none":"";
+  document.querySelectorAll("#tvtab button").forEach(b=>b.classList.toggle("on",b.dataset.t===STATE.trTab));
+  buildOverlay(); buildSpectrum(); buildPaceProg();
+  const pl=$("#pplegend"); if(pl) pl.innerHTML=[["MP","#3F7CB5"],["LT","#27549B"],["5K","#1A3679"]].map(([z,c])=>{ const arr=PACE_PROG[z], delta=arr[0]-arr[arr.length-1]; return `<span><i style="background:${c}"></i>${z} <b>${fmtPaceSec(arr[arr.length-1])}</b> −${delta}s</span>`; }).join("");
+  const rd=$("#tread"), rq=$("#treadq");
+  if(rd){ if(time){ rd.innerHTML=`Twelve weeks on one axis. A deep <b>easy</b> base, load mostly in the safe band, mood tracking the long weeks. The one spike — week 4 into 5 — is where the calf followed: the volume jump, the red workload dot and the niggle marker line up. It settled once you pulled the miles back.`; rq.textContent="When the mood dipped, was it the training — or life outside it?"; }
+    else { rd.innerHTML=`Every mile of the last 30 days, sorted by pace. A tall pale base at the <b>easy</b> end with clean bumps at MP and LT, little grey-zone junk between. That's a well-shaped distribution.`; rq.textContent="Do your easy miles still feel easy, or are they creeping faster than they should?"; } }
+  document.querySelectorAll("#layerchips .layer-chip").forEach(c=>c.classList.toggle("off",!STATE.layers[c.dataset.layer]));
+}
+function aggregateNiggles(){ const map={}; SESSIONS.forEach(s=>{ if(s.niggle){ (map[s.niggle.part]=map[s.niggle.part]||[]).push({off:s.off,quote:s.niggle.quote}); } });
+  return Object.entries(map).map(([part,ms])=>{ ms.sort((a,b)=>a.off-b.off); const latest=ms[0]; const easing=ms.length>=2&&/quiet|settled|faded|gone|better/i.test(latest.quote); return {part,count:ms.length,latest,offs:ms.map(m=>m.off),state:easing?"Easing":"Watch"}; }); }
+function renderNiggles(){ const ns=aggregateNiggles(); if(!ns.length) return emptyState("No niggles logged.","When you mention a body part in a voice note, it shows up here, in your own words, tracked over time.");
+  return ns.map(nn=>{ const dots=[]; for(let off=13;off>=0;off--) dots.push(`<span class="d ${nn.offs.includes(off)?"on":""}"></span>`); const col=nn.state==="Easing"?"var(--mood-energized)":"var(--mood-tired)"; const d=dayFromOffset(nn.latest.off);
+    return `<div class="niggle"><div class="niggle-head"><span class="niggle-name">${nn.part}</span><span class="niggle-state" style="color:${col}">${nn.state}</span></div>
+      <div class="niggle-quote">“${nn.latest.quote}” <span class="caption" style="color:var(--ink-3)">· ${WD3[d.getDay()]} ${fmtMd(d)}</span></div>
+      <div class="niggle-time">${dots.join("")}<span class="lab">${nn.count} mention${nn.count>1?"s":""} · 14d</span></div></div>`; }).join("")+`<div class="liability">Not medical advice. If anything gets sharper, see a clinician.</div>`; }
+function sparkCard(data){ const w=290,h=54,min=Math.min(...data),max=Math.max(...data); const xs=data.map((_,i)=>(i/(data.length-1))*w); const ys=data.map(v=>h-((v-min)/((max-min)||1))*(h-10)-5); const path=xs.map((x,i)=>`${i===0?"M":"L"} ${x.toFixed(1)} ${ys[i].toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;margin:10px 0 2px;"><path d="${path}" fill="none" stroke="var(--ink)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${xs[xs.length-1].toFixed(1)}" cy="${ys[ys.length-1].toFixed(1)}" r="3.5" fill="var(--coral)"/></svg>
+  <div style="display:flex;justify-content:space-between;"><span class="caption" style="color:var(--ink-3)">12 WK AGO</span><span class="caption" style="color:var(--coral)">NOW · FITTER</span></div>`; }
+function paceRow(p){ return `<div class="pace-row"><span class="pace-swatch" style="background:${ZCOLOR[p.zone]}"></span><span><span class="pace-label">${p.zone}</span> <span class="pace-hint">${p.hint}</span></span><span class="pace-val">${p.pace}<small>/mi${p.range?" · "+p.range:""}</small></span></div>`; }
+
+/* ============================================================ READ */
+const READS={
+  today:{ label:"This week", headline:"The legs came back.", prose:`You logged Sunday's long run tired and still found the last four miles — that's the block doing its work, not breaking you. Since then the easy days have actually been easy, and the marathon-pace eight on Thursday locked in from the second mile. Mileage sits right in the taper now: down on purpose, freshness climbing. Nothing in the last two weeks says push.`, q:`Does the quiet in the legs read as fresh, or as flat? Only you can feel the difference.` },
+  cycle:{ label:"Since last cycle", headline:"Fitter than the last build.", prose:`Set against your winter block, the aerobic base is deeper — you're holding more easy volume at the same effort, and quality is landing at paces that were race-only three months ago. Your 10K-equivalent has dropped about <b>16 seconds a mile</b> since April. The shape of this build is stronger than the one that produced your ${ATHLETE.pb}.`, q:`If the fitness is ahead of last cycle, is ${ATHLETE.goalTime} still the right target — or a conservative one?` },
+  niggle:{ label:"The niggle", headline:"The calf went quiet.", prose:`The calf turned up three times over two weeks — <b>“tight after the long run,”</b> then <b>“still there on the warm-up,”</b> then simply <b>“quiet today.”</b> Read in order, that's a niggle settling, not building. The knee got a single mention on an easy day and hasn't come back. None of this is a diagnosis — it's your own words, tracked.`, q:`Is the calf actually quiet, or just quiet on the easy days?`, liability:true },
+  mileage:{ label:"Mileage", headline:"Right where the ramp wants it.", prose:`Twelve weeks of building took you to a <b>56-mile</b> peak before this taper. The easy-to-quality split has held near <b>80/20</b> the whole way — the ratio that keeps a build climbing without tipping into risk. This week is intentionally light; the work is already in the bank.`, q:`Taper weeks test patience more than fitness — how's the patience holding?` } };
+function renderRead(){
+  if(isEmpty()) return `<div class="section first"><span class="eyebrow coral">The read</span><h1 class="h-display read-headline">Nothing to read yet.</h1></div>
+    ${emptyState("The read needs a few runs first.","Once you've logged a week or so, this becomes a short, honest paragraph on how your training is actually going, written fresh each day.")}
+    <div style="margin-top:16px;"><span class="link" onclick="go('log')">Start logging ↗</span></div>`;
+  const r=READS[STATE.lens], d=dayFromOffset(0);
+  return `<div class="section first"><div class="eyebrow">${WD[d.getDay()].toUpperCase()} · ${fmtMd(d).toUpperCase()}</div>
+    <h1 class="h-display read-headline">${r.headline}</h1>
+    <div class="lenses">${Object.keys(READS).map(k=>`<span class="lens ${k===STATE.lens?"on":""}" onclick="setLens('${k}')">${READS[k].label}</span>`).join("")}</div>
+    <div class="read-prose">${r.prose}</div><div class="read-q">${r.q}</div>
+    ${r.liability?`<div class="liability">Not medical advice. If anything gets sharper, see a clinician.</div>`:""}
+    <div class="read-sig">— restraint as foundation, intensity as accent</div><div style="height:8px;"></div></div>`;
+}
+function setLens(k){ STATE.lens=k; rerenderScroll(); }
+
+/* ============================================================ PLAN */
+function typeColor(t){ const key=(t||"").split(" ")[0]; const map={Easy:"--pace-easy",Long:"--pace-steady",Steady:"--pace-steady",Moderate:"--pace-moderate",MP:"--pace-mp",HMP:"--pace-hmp",LT:"--pace-lt","10K":"--pace-10k","5K":"--pace-5k","3K":"--pace-3k",Mile:"--pace-mile"}; return map[key]?`var(${map[key]})`:null; }
+function planForDate(dt){ const off=offOf(dt); if(off>=0){ const d=dayByOff(off); if(!d) return null; return {wo:d.role==="rest"?"Rest":d.label,type:d.type,rest:d.role==="rest",done:true,mi:d.dist||0}; } const p=PLAN_TEMPLATE[dt.getDay()]; return {wo:p.wo,type:p.wo.split(" ")[0],rest:p.wo==="Rest",done:false,mi:p.mi}; }
+function renderPlan(){
+  if(isEmpty()) return `<div class="section first"><span class="eyebrow coral">Goal</span><h1 class="h-display" style="font-size:30px;margin-top:6px;">Set a race, and a shape appears.</h1></div>
+    ${emptyState("No goal race yet.","Add the race you're pointing at and this fills with a calendar, weekly targets, and the paces to hit them.")}
+    <div style="margin-top:16px;"><span class="link">Set a goal race ↗</span></div>`;
+  const race=ATHLETE.raceDate, daysOut=round((race-TODAY)/DAYMS);
+  const monday=new Date(TODAY); monday.setDate(TODAY.getDate()-((TODAY.getDay()+6)%7)); let week="";
+  for(let i=0;i<7;i++){ const dt=new Date(monday); dt.setDate(monday.getDate()+i); const p=planForDate(dt); const done=p&&p.done&&!p.rest;
+    week+=`<div class="plan-row"><div><div class="plan-day">${WD3[dt.getDay()].toUpperCase()} · ${fmtMd(dt)}</div><div class="plan-wo">${p?p.wo:"Rest"}</div></div>
+      <div style="text-align:right;">${p&&!p.rest?`<span class="plan-mi">${p.mi} mi</span>`:`<span class="caption">rest</span>`}<div class="caption" style="color:${done?"var(--mood-energized)":"var(--ink-3)"};margin-top:2px;">${p&&!p.rest?(done?"✓ done":"planned"):""}</div></div></div>`; }
+  return `<div class="section first"><div class="card goal-card pad-lg">
+      <div><div class="eyebrow coral">Goal · ${ATHLETE.goalLabel}</div><div class="h-display" style="font-size:22px;margin-top:6px;">${ATHLETE.raceName} · ${MO3[race.getMonth()]} ${race.getDate()}</div><div class="caption" style="margin-top:6px;">${daysOut} days out · PB ${ATHLETE.pb}</div></div>
+      <div style="text-align:right;"><div class="goal-time">${ATHLETE.goalTime}</div><div class="caption" style="text-align:right;">target</div></div></div></div>
+    <div class="section"><div class="section-head"><span class="eyebrow">This week</span><span class="link-mono" onclick="STATE.tab='training';STATE.trLevel='week';STATE.trWeek=${curBlockWeek};render();">Open in calendar ↗</span></div>
+      <div class="card" style="padding:4px 16px;">${week}</div></div>
+    <div class="section"><div class="body-sm" style="font-style:italic;">Planned sessions layer onto the Training calendar — tap any day there to compare planned vs. actual.</div></div>
+    <div style="height:12px;"></div>`;
+}
+
+/* ============================================================ tabs + menu + boot */
+function afterTab(){
+  if(STATE.tab==="trends" && !isEmpty()){
+    const tab=$("#tvtab"); if(tab&&!tab.dataset.bound){ tab.dataset.bound="1"; tab.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; STATE.trTab=b.dataset.t; updateTrends(); }); }
+    const lc=$("#layerchips"); if(lc&&!lc.dataset.bound){ lc.dataset.bound="1"; lc.addEventListener("click",e=>{ const c=e.target.closest(".layer-chip"); if(!c) return; STATE.layers[c.dataset.layer]=!STATE.layers[c.dataset.layer]; updateTrends(); }); }
+    updateTrends();
+  }
+  if(STATE.tab==="training" && !isEmpty()){ const seg=$("#trseg"); if(seg&&!seg.dataset.bound){ seg.dataset.bound="1"; seg.addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b) return; trSet(b.dataset.l); }); } }
+}
+function bindTab(){ document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{ STATE.tab=t.dataset.tab; render(); const sc=$("#scroll"); if(sc) sc.scrollTop=0; })); afterTab(); }
+function openMenu(){ renderMenu(); $("#scrim").classList.add("open"); $("#sheet").classList.add("open"); }
+function closeMenu(){ $("#scrim").classList.remove("open"); $("#sheet").classList.remove("open"); }
+function renderMenu(){ const opts=[["sample","Sample runner","Maya — 12 weeks of runs, moods, niggles, a goal race."],["empty","New runner","Day one. Clean empty states, before any data."]];
+  $("#menu-opts").innerHTML=opts.map(([id,t,d])=>`<div class="opt ${STATE.dataset===id?"sel":""}" onclick="setDataset('${id}')"><div><div class="ot">${t}</div><div class="od">${d}</div></div><div class="check"></div></div>`).join(""); }
+function setDataset(id){ STATE.dataset=id; STATE.trLevel="week"; STATE.trWeek=curBlockWeek; renderMenu(); render(); closeMenu(); }
+function tickClock(){ const el=$("#clock"); if(!el) return; const d=new Date(); el.textContent=(d.getHours()%12||12)+":"+String(d.getMinutes()).padStart(2,"0"); }
+render(); tickClock(); setInterval(tickClock,15000);
+</script>
+</body>
+</html>

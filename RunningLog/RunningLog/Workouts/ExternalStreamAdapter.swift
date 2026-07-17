@@ -37,6 +37,16 @@ struct StreamMeta {
     var description: String?
 }
 
+/// One lap/split/rep, distilled from `external_streams.laps` for the
+/// day-detail pace-bar strip. Strava records laps per auto-lap (often 1km
+/// or 1mi) or per manually-pressed rep, so this is the rep-level split
+/// structure when it exists.
+struct WorkoutLap {
+    let distanceMiles: Double
+    let paceSeconds: Double      // sec/mi
+    let avgHeartRate: Int?
+}
+
 @MainActor
 enum ExternalStreamAdapter {
     /// Load external_streams JSONB for a given training_logs row and convert to the
@@ -63,6 +73,61 @@ enum ExternalStreamAdapter {
             Log.app.error("ExternalStreamAdapter load failed: \(error)")
             return nil
         }
+    }
+
+    /// Load just the lap/split/rep list for a row, distilled to the fields
+    /// the pace-bar strip needs. Returns nil when the row has no laps.
+    ///
+    /// Selects ONLY the `laps` JSON path, not the whole `external_streams`
+    /// blob — the streams arrays (heartrate/velocity/latlng) run to several
+    /// thousand points each and would otherwise be transferred and decoded
+    /// on the main actor just to read ~20 laps.
+    static func loadLaps(forTrainingLogId id: UUID) async -> [WorkoutLap]? {
+        struct Row: Decodable {
+            let laps: SupabaseJSON?
+        }
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("laps:external_streams->laps")
+                .eq("id", value: id.uuidString)
+                .limit(1)
+                .execute()
+                .value
+            guard let laps = rows.first?.laps?.value as? [Any] else {
+                return nil
+            }
+            let out: [WorkoutLap] = laps.compactMap { item in
+                guard let lap = item as? [String: Any] else { return nil }
+                let distMeters = asDouble(lap["distance"]) ?? 0
+                // Prefer average_speed; fall back to distance / moving_time.
+                let speed = asDouble(lap["average_speed"]) ?? 0
+                let movingTime = asDouble(lap["moving_time"]) ?? 0
+                let paceSec: Double
+                if speed > 0 {
+                    paceSec = 1609.34 / speed
+                } else if distMeters > 0, movingTime > 0 {
+                    paceSec = movingTime / (distMeters / 1609.34)
+                } else {
+                    return nil
+                }
+                guard distMeters > 0, paceSec > 0 else { return nil }
+                let hr = asDouble(lap["average_heartrate"]).map { Int($0.rounded()) }
+                return WorkoutLap(distanceMiles: distMeters / 1609.34,
+                                  paceSeconds: paceSec,
+                                  avgHeartRate: hr)
+            }
+            return out.isEmpty ? nil : out
+        } catch {
+            Log.app.error("ExternalStreamAdapter loadLaps failed: \(error)")
+            return nil
+        }
+    }
+
+    private static func asDouble(_ v: Any?) -> Double? {
+        if let d = v as? Double { return d }
+        if let i = v as? Int { return Double(i) }
+        return nil
     }
 
     // MARK: - Parser

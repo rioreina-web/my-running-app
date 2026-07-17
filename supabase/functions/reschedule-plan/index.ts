@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
@@ -34,9 +35,73 @@ STRIDES: Easy Run + 4-6x100m strides (115%)
 RACE: Race Day (DO NOT MOVE)
 `;
 
-// ── System Prompt ───────────────────────────────────────────────
+// ── Coach AI guidance (Phase 2) ─────────────────────────────────
+//
+// Hard rules / guidelines / silent note the coach attached to the plan. Read
+// server-side with the service role and NEVER accepted from the client — the
+// athlete who triggers a reschedule can't read plan_templates under RLS, and
+// guidance must stay authoritative. Best-effort: any failure (or the column
+// not existing yet, pre-migration) resolves to "" so a reschedule never breaks.
 
-const SYSTEM_PROMPT = loadPrompt("reschedule-plan.v1", { workoutCodesByDay: WORKOUT_CODES_BY_DAY });
+interface CoachRule {
+  on?: boolean;
+  strength?: "hard" | "guide";
+  text?: string;
+}
+
+/** Format the stored { rules, note } envelope into the prompt block. Returns
+ *  "" when there's nothing to say (the v2 template reads fine either way). */
+function formatCoachGuidance(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const g = raw as { rules?: unknown; note?: unknown };
+  const rules: CoachRule[] = Array.isArray(g.rules) ? (g.rules as CoachRule[]) : [];
+  const active = rules.filter(
+    (r) => r && r.on !== false && typeof r.text === "string" && r.text.trim().length > 0,
+  );
+  const hard = active.filter((r) => r.strength !== "guide");
+  const guides = active.filter((r) => r.strength === "guide");
+  const note = typeof g.note === "string" ? g.note.trim() : "";
+
+  if (hard.length === 0 && guides.length === 0 && note === "") return "";
+
+  const lines: string[] = ["COACH GUIDANCE (set by this athlete's coach for this plan):"];
+  for (const r of hard) lines.push(`- MUST: ${r.text!.trim()}`);
+  for (const r of guides) lines.push(`- Prefer: ${r.text!.trim()}`);
+  if (note) lines.push(`Silent context (never quote or reference to the athlete): ${note}`);
+  return lines.join("\n") + "\n\n";
+}
+
+async function loadCoachGuidance(userId: string): Promise<string> {
+  try {
+    const url = Deno.env.get("SUPABASE_URL");
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!url || !key) return "";
+    const admin = createClient(url, key);
+
+    const { data: sub } = await admin
+      .from("athlete_plan_subscriptions")
+      .select("plan_template_id")
+      .eq("athlete_user_id", userId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const templateId = (sub as { plan_template_id?: string } | null)?.plan_template_id;
+    if (!templateId) return "";
+
+    const { data: tmpl, error } = await admin
+      .from("plan_templates")
+      .select("coach_ai_guidance")
+      .eq("id", templateId)
+      .maybeSingle();
+    if (error || !tmpl) return "";
+
+    return formatCoachGuidance((tmpl as { coach_ai_guidance?: unknown }).coach_ai_guidance);
+  } catch (_e) {
+    return "";
+  }
+}
 
 // ── Handler ─────────────────────────────────────────────────────
 
@@ -65,6 +130,14 @@ Deno.serve(async (req) => {
     // Build the user prompt with full context
     const userPrompt = buildUserPrompt(scope, reason, reasonCategory, plan, workouts, recentHistory);
 
+    // Resolve the coach's guidance for this athlete's active plan and fold it
+    // into the v2 system prompt (empty string when there's none).
+    const coachGuidance = await loadCoachGuidance(userId);
+    const systemPrompt = loadPrompt("reschedule-plan.v2", {
+      workoutCodesByDay: WORKOUT_CODES_BY_DAY,
+      coachGuidance,
+    });
+
     // Call Gemini
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
@@ -74,7 +147,7 @@ Deno.serve(async (req) => {
 
     const result = await model.generateContent({
       contents: [
-        { role: "user", parts: [{ text: SYSTEM_PROMPT }] },
+        { role: "user", parts: [{ text: systemPrompt }] },
         { role: "model", parts: [{ text: "I understand. I'm ready to reschedule training plans. Send me the athlete's current schedule and the reason for rescheduling." }] },
         { role: "user", parts: [{ text: userPrompt }] },
       ],

@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workout detail — expandable edit (Gemini-parsed)</title>
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+    --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12); --green:#2D8A4E;
+    --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#d9d4cc;font-family:var(--font-body);color:var(--ink);
+    -webkit-font-smoothing:antialiased;padding:28px 0 60px;display:flex;gap:34px;justify-content:center;flex-wrap:wrap}
+  .phone{width:390px;background:var(--paper);border-radius:38px;border:10px solid #15130f;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.28)}
+  .notch{height:26px;background:#15130f}
+  .screen{height:760px;overflow-y:auto}.screen::-webkit-scrollbar{width:0}
+  .nav{text-align:center;padding:14px 0 6px;font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+
+  .hero{padding:6px 18px 14px}
+  .hero .eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+  .hero h1{font-family:var(--font-display);font-weight:600;font-size:30px;margin:4px 0 2px}
+  .hero .meta{font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+  .stats{display:flex;gap:18px;padding:0 18px 14px}
+  .stat .k{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .stat .v{font-family:var(--font-mono);font-size:13px;color:var(--ink);margin-top:3px}
+
+  .card{margin:0 18px 12px;background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:14px 15px}
+  .card .lab{font-family:var(--font-mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--coral);margin-bottom:7px}
+  .card p{margin:0;font-size:14.5px;line-height:1.5}
+  .chartstub{height:120px;margin:0 18px 12px;border:1px dashed var(--rule);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:10px;color:var(--ink-3)}
+
+  /* the tucked-away editor */
+  .adjust{margin:4px 18px 18px}
+  .adjbtn{width:100%;display:flex;align-items:center;justify-content:space-between;background:none;border:1px dashed var(--rule);
+    border-radius:12px;padding:12px 14px;cursor:pointer;color:var(--ink-2);font-family:var(--font-body);font-size:14px}
+  .adjbtn:hover{background:var(--paper-elevated)}
+  .adjbtn .chev{font-family:var(--font-mono);font-size:11px;color:var(--ink-3);transition:transform .25s}
+  .adjust.open .chev{transform:rotate(90deg)}
+  .panel{max-height:0;overflow:hidden;transition:max-height .32s ease}
+  .adjust.open .panel{max-height:560px}
+  .panelin{padding-top:12px}
+  .panelin .sub{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-bottom:8px}
+  textarea{width:100%;min-height:96px;resize:none;font-family:var(--font-body);font-size:15px;line-height:1.55;color:var(--ink);
+    background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:12px 13px}
+  textarea::placeholder{color:var(--ink-3)} textarea:focus{outline:none;border-color:var(--coral)}
+  .parsed{margin-top:12px;background:var(--card);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+  .parsed .h{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral-deep);background:var(--coral-wash);padding:8px 13px;display:flex;align-items:center;gap:7px}
+  .parsed .h .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+  .prow{display:flex;justify-content:space-between;gap:12px;padding:9px 13px;border-top:1px solid var(--rule);font-size:13.5px}
+  .prow .k{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding-top:2px}
+  .prow .v{text-align:right} .prow .v.dim{color:var(--ink-3)}
+  .acts{display:flex;gap:10px;margin-top:12px}
+  .acts button{flex:1;border-radius:10px;padding:11px 0;font-family:var(--font-body);font-size:14px;cursor:pointer;border:1px solid var(--rule)}
+  .acts .savebtn{background:var(--coral);color:#fff;border-color:var(--coral);font-weight:700}
+  .acts .cancelbtn{background:var(--card);color:var(--ink-2)}
+
+  .col{flex:0 0 340px;max-width:340px}
+  .col h3{font-family:var(--font-display);font-weight:600;font-size:22px;margin:6px 0 10px}
+  .note{background:rgba(255,255,255,.7);border:1px solid #d8d2c8;border-left:3px solid var(--coral);border-radius:8px;padding:11px 13px;margin-bottom:11px}
+  .note .n{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral-deep);margin-bottom:5px}
+  .note p{margin:0;font-size:12.5px;line-height:1.5;color:#33302b}
+  code{font-family:var(--font-mono);font-size:11px}
+  @media(max-width:820px){.col{flex-basis:100%;max-width:390px}}
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="screen">
+      <div class="nav">Workout</div>
+
+      <div class="hero">
+        <div class="eyebrow" id="eyebrow">TEMPO</div>
+        <h1 id="struct">7×1K</h1>
+        <div class="meta" id="recline">Sun · Jun 14 · 4.3 mi</div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">Avg work</div><div class="v">6:00/mi</div></div>
+        <div class="stat"><div class="k">HR</div><div class="v">168 · 172</div></div>
+        <div class="stat"><div class="k">Spread</div><div class="v">24s</div></div>
+      </div>
+
+      <div class="card"><div class="lab">Analysis</div><p id="analysis">7×1K at 6:00/mi (tempo), held even. HR steady — in control.</p></div>
+      <div class="chartstub">REP-BY-REP CHART</div>
+
+      <!-- tucked-away editor -->
+      <div class="adjust" id="adjust">
+        <button class="adjbtn" id="adjbtn">
+          <span>✎ Correct or add detail</span>
+          <span class="chev">▶</span>
+        </button>
+        <div class="panel"><div class="panelin">
+          <div class="sub">Describe it — Gemini reads your words</div>
+          <textarea id="desc" placeholder="e.g. 7×1K at 5:54 with 90s jog. Legs flat — slept badly all week, just back from a work trip."></textarea>
+          <div class="parsed">
+            <div class="h"><span class="dot"></span> Gemini will read it as</div>
+            <div class="prow"><span class="k">Type</span><span class="v" id="pType">—</span></div>
+            <div class="prow"><span class="k">Structure</span><span class="v" id="pStruct">—</span></div>
+            <div class="prow"><span class="k">Recovery</span><span class="v" id="pRec">—</span></div>
+            <div class="prow"><span class="k">Context</span><span class="v dim" id="pCtx">—</span></div>
+          </div>
+          <div class="acts">
+            <button class="cancelbtn" id="cancelbtn">Cancel</button>
+            <button class="savebtn">Save</button>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3>Tucked away until needed</h3>
+    <div class="note"><div class="n">Collapsed by default</div><p>The detail stays clean. A quiet "<b>✎ Correct or add detail</b>" sits at the bottom — tap to expand the editor only when the parse is wrong or you want to add context.</p></div>
+    <div class="note"><div class="n">One box, Gemini parses</div><p>Type freely; the existing <code>parse-workout-structure</code> function pulls out type, structure, recovery, and life context. The "will read it as" preview confirms before you save.</p></div>
+    <div class="note"><div class="n">Edits → source of truth</div><p>On save, the structure re-segments the rep chart and the recovery + context feed the analysis and daily Read, overriding the GPS auto-parse.</p></div>
+    <p style="font-size:11px;color:#7d776e">Interactive: tap "Correct or add detail," type in the box, watch the parse + header update. Stand-in for Gemini.</p>
+  </div>
+
+<script>
+  const $=id=>document.getElementById(id);
+  $('adjbtn').addEventListener('click',()=>$('adjust').classList.toggle('open'));
+  $('cancelbtn').addEventListener('click',()=>$('adjust').classList.remove('open'));
+  function parse(t){
+    const o={type:null,struct:null,rec:null,ctx:[]};
+    let m=t.match(/(\d+)\s*[x×]\s*(\d+\s*(?:m|km|k|mi|meter|mile)s?|\bmile\b)/i);
+    if(m)o.struct=`${m[1]}×${m[2].replace(/\s+/g,'').replace('meter','m').toUpperCase().replace('MILE','mi').replace('MI','mi')}`;
+    let p=t.match(/(\d:\d{2})/); if(p&&o.struct)o.struct+=` @ ${p[1]}`;
+    let r=t.match(/(\d+)\s*(s|sec|secs|seconds|min|mins|m|meters?)\s*(jog|float|standing|stand|walk|easy|recovery)?/i);
+    if(r){let u=/^m/i.test(r[2])&&!/^min/i.test(r[2])?'m':(/min/i.test(r[2])?'min':'s');o.rec=`${r[1]}${u} ${r[3]?r[3].toLowerCase():'recovery'}`.trim();}
+    const k=t.toLowerCase();
+    o.type=/threshold/.test(k)?'Threshold':/tempo/.test(k)?'Tempo':/fartlek/.test(k)?'Fartlek':/progress/.test(k)?'Progression':/long/.test(k)?'Long run':/recovery/.test(k)?'Recovery':/race/.test(k)?'Race':(o.struct?'Intervals':null);
+    [['slept badly|bad sleep|poor sleep|no sleep|tired','poor sleep'],['work trip|travel|flight|red.?eye|jet ?lag','travel'],['work|stress|busy|crunch','work stress'],['sick|cold|flu|ill\\b','illness'],['flat|heavy legs|dead legs|sore','heavy legs']]
+      .forEach(([re,lab])=>{if(new RegExp(re).test(k))o.ctx.push(lab);});
+    return o;
+  }
+  function render(){
+    const o=parse($('desc').value);
+    $('pType').textContent=o.type||'—'; $('pStruct').textContent=o.struct||'—';
+    $('pRec').textContent=o.rec||'—'; $('pCtx').textContent=o.ctx.length?o.ctx.join(' · '):'none mentioned';
+    if(o.type){$('eyebrow').textContent=o.type.toUpperCase();}
+    if(o.struct){$('struct').textContent=o.struct.split(' @ ')[0];}
+    if(o.rec){$('recline').textContent=`Sun · Jun 14 · 4.3 mi · ${o.rec}`;}
+  }
+  $('desc').addEventListener('input',render);
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "id": "004-self-coached-no-goal-eyebrow-null",
+  "prompt_name": "daily-read.v5",
+  "description": "v5 SELF_COACHED_MODE with no plan and no goal race: describe, don't prescribe; no invented target paces or race predictions; eyebrow is null when there's no goal/race to frame against; at most one soft question. Confirms the schema gracefully carries the no-goal case. Authored target exemplar — re-record before trusting as baseline.",
+  "vars": {},
+  "input": "## Coaching mode\nSELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening; one good question per Read at most. No invented targets.\n\n=== ATHLETE STATE ===\nLevel: recreational\nGoal: none set\n\nTraining Load (7d): 22 mi, 4 runs — consistent for them.\n\nRecent runs:\n  2026-06-15 Easy 6.0mi @ 9:20/mi\n  2026-06-12 Easy 5.0mi @ 9:35/mi\n\nWhat I remember:\n  • Running has been about stress relief lately, not racing.\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [e5e5e5e5-0000-0000-0000-000000000005] 2026-06-15 · 6.0mi\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["headline", "sections", "sources", "confidence"],
+    "forbidden_patterns": [
+      "\\b\\d:\\d\\d:\\d\\d\\b",
+      "(?i)\\bas an AI\\b",
+      "(?i)(target pace|goal pace|on track for a)",
+      "\"paragraph\""
+    ],
+    "required_patterns": [
+      "\"sections\"",
+      "\"eyebrow\":\\s*null",
+      "\"confidence\""
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"Four runs, all easy — steady is the point.\",\n  \"eyebrow\": null,\n  \"sections\": [\n    { \"label\": \"The week\", \"body\": [\"Twenty-two miles across four easy runs — consistent, and that's the whole story right now.\"] },\n    { \"label\": \"How you felt\", \"body\": [\"Both runs sat in the same easy gear, the kind of week that does its work quietly when running is there for the head as much as the legs.\"] }\n  ],\n  \"question\": \"Does keeping it all easy still feel like what you want, or is there an itch to mix in something faster?\",\n  \"cant_see\": { \"eyebrow\": \"NO GOAL SET\", \"body\": \"There's no race or goal in the app, so I'm reading the running as it is, not against a target.\" },\n  \"confidence\": { \"level\": \"MEDIUM\", \"sub\": \"a short, consistent week with no goal to frame it.\" },\n  \"sources\": { \"workouts\": [\"e5e5e5e5-0000-0000-0000-000000000005\"], \"docs\": [], \"memos\": [] }\n}\n```",
+  "recorded_at": "2026-06-16T00:00:00.000Z",
+  "model": "gemini-3.1-pro-preview"
+}

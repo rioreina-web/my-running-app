@@ -26,6 +26,9 @@ import SwiftUI
 
 struct JournalLogRow: View {
     let entry: TrainingLog
+    /// Body-part mentions on this entry — the athlete's own words, shown as
+    /// quiet chips. Detection, never diagnosis.
+    var niggles: [JournalNiggle] = []
 
     private var dayOfWeekLabel: String {
         let f = DateFormatter()
@@ -39,11 +42,21 @@ struct JournalLogRow: View {
         return f.string(from: entry.displayDate).uppercased()
     }
 
+    // Pace-zone vocabulary (MP / HMP / LT / 10K / Long run …) — never the retired
+    // TEMPO / THRESHOLD legacy labels. Single source of truth: WorkoutLabel.
     private var typeLabel: String {
-        guard let raw = entry.workoutType else { return "RUN" }
-        return raw
-            .replacingOccurrences(of: "_", with: " ")
-            .uppercased()
+        WorkoutLabel.display(entry.workoutType).uppercased()
+    }
+
+    /// Key (quality) session — earns a star marker. Easy/recovery/rest/cross
+    /// are not key; the race-pace zones + long run + intervals/progression are.
+    private var isKeySession: Bool {
+        let key: Set<String> = [
+            "intervals", "interval", "tempo", "threshold", "fartlek", "progression",
+            "race", "long_run", "long", "longrun", "long_wo",
+            "mp", "hmp", "lt", "10k", "5k", "3k", "mile",
+        ]
+        return key.contains((entry.workoutType ?? "").lowercased())
     }
 
     private var distanceLabel: String? {
@@ -86,7 +99,12 @@ struct JournalLogRow: View {
     /// Audio/text indicator shown in the top-right of the entry.
     @ViewBuilder
     private var indicator: some View {
-        if entry.audioUrl != nil {
+        if entry.source == "check_in" {
+            Text("CHECK-IN")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .tracking(0.8)
+                .foregroundStyle(Color.drip.textTertiary)
+        } else if entry.audioUrl != nil {
             HStack(spacing: 5) {
                 Image(systemName: "play.fill")
                     .font(.system(size: 9, weight: .semibold))
@@ -104,6 +122,19 @@ struct JournalLogRow: View {
         }
     }
 
+    private func niggleChip(_ label: String) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(Color.drip.textTertiary).frame(width: 4, height: 4)
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .tracking(0.6)
+                .foregroundStyle(Color.drip.textSecondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             // Vertical mood-color rule — the page-edge accent
@@ -114,11 +145,16 @@ struct JournalLogRow: View {
 
             // Body content
             VStack(alignment: .leading, spacing: 0) {
-                // Headline row — day of week + audio/text indicator
-                HStack(alignment: .firstTextBaseline) {
+                // Headline row — day of week (★ marks a key session) + kind tag
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(dayOfWeekLabel)
                         .font(.dripDisplay(20))
                         .foregroundStyle(Color.drip.textPrimary)
+                    if isKeySession {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.drip.textSecondary)
+                    }
                     Spacer(minLength: 12)
                     indicator
                 }
@@ -147,6 +183,22 @@ struct JournalLogRow: View {
                         .tracking(1.0)
                         .foregroundStyle(moodColor)
                         .padding(.top, 14)
+                }
+
+                // Niggle chips — the athlete's own body-area words. No severity,
+                // no interpretation (detection, never diagnosis).
+                if !niggles.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(niggles.prefix(3)) { n in
+                            niggleChip(n.label)
+                        }
+                        if niggles.count > 3 {
+                            Text("+\(niggles.count - 3)")
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                    }
+                    .padding(.top, 12)
                 }
             }
         }

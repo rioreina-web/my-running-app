@@ -4,7 +4,7 @@ import { detectInjury, upsertInjury } from "../_shared/injuries.ts";
 import { rebuildAthleteState } from "../_shared/athlete-state.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import {
   loadCoachContext,
@@ -15,6 +15,7 @@ import {
   formatProgressionBlock,
   formatSplitsBlock,
   splitsFromPaceSegments,
+  splitsFromExtractedIntervals,
   type ScheduledLite as CoachScheduledLite,
 } from "../_shared/coach-context.ts";
 
@@ -140,6 +141,130 @@ function validateAnalysis(raw: Record<string, unknown>): AnalysisResult {
   return { transcription, cleaned_notes, mood, coach_insight, workout_notes, extracted_data };
 }
 
+// ── Voice-extracted → workout-field mapping ───────────────────────────────
+// The voice analyzer drops structured detail (reps, splits, paces, effort)
+// into the `extracted_data` JSON blob. These helpers lift that detail onto
+// the row's actual workout columns so a spoken session is DISPLAYABLE (rep
+// chart + insight splits + notes) instead of buried in JSON.
+
+/** Format seconds/mile as "M:SS". */
+function formatPaceMMSS(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Parse a "M:SS" pace/time string to seconds, or null. */
+function parsePaceMMSS(s: string | undefined): number | null {
+  if (!s) return null;
+  const m = s.trim().match(/^(\d{1,2}):([0-5]\d)$/);
+  if (!m) return null;
+  return parseInt(m[1]) * 60 + parseInt(m[2]);
+}
+
+/**
+ * Build `pace_segments` rows from the voice-extracted structured data so a
+ * spoken interval/rep session renders on the row (rep chart + the insight's
+ * splits block) instead of living only inside the `extracted_data` blob.
+ *
+ * Source priority:
+ *   1. extracted_data.intervals — "6×800m @ 2:50" style reps. Expanded by
+ *      count via the shared parser the insight already trusts; needs a
+ *      parseable distance AND time so a pace can be derived. Effort-only reps
+ *      (no time → no pace) fall through and are captured in workout_notes.
+ *   2. extracted_data.splits — mile-by-mile "{mile, time}" splits (tempo /
+ *      progression runs). Each is one mile at the stated pace.
+ *
+ * Returns rows in the Garmin/HealthKit `pace_segments` shape
+ * ({effort, distance_miles, pace_per_mile}); empty array when nothing is
+ * derivable.
+ */
+function paceSegmentsFromExtracted(
+  extracted: Record<string, unknown>,
+): Array<{ effort: string; distance_miles: number; pace_per_mile: string }> {
+  // 1. Intervals → reps.
+  const intervals = Array.isArray(extracted.intervals)
+    ? (extracted.intervals as Array<{ distance?: string; time?: string; rest?: string; count?: number }>)
+    : null;
+  const reps = splitsFromExtractedIntervals(intervals);
+  if (reps.length > 0) {
+    return reps.map((r) => ({
+      effort: r.label,
+      distance_miles: Number(r.distanceMiles.toFixed(3)),
+      pace_per_mile: formatPaceMMSS(r.paceSecPerMile),
+    }));
+  }
+
+  // 2. Mile splits → one segment per mile (split time IS the per-mile pace).
+  const splits = Array.isArray(extracted.splits)
+    ? (extracted.splits as Array<{ mile?: number; time?: string }>)
+    : null;
+  if (splits) {
+    const out: Array<{ effort: string; distance_miles: number; pace_per_mile: string }> = [];
+    for (const sp of splits) {
+      const paceSec = parsePaceMMSS(sp.time);
+      if (paceSec == null) continue;
+      out.push({
+        effort: `Mile ${sp.mile ?? out.length + 1}`,
+        distance_miles: 1,
+        pace_per_mile: formatPaceMMSS(paceSec),
+      });
+    }
+    return out;
+  }
+
+  return [];
+}
+
+/**
+ * Last-resort `workout_notes` builder. The LLM almost always returns a
+ * formatted workout_notes string, but when it doesn't (and there IS
+ * structured data), synthesize a minimal human-readable summary so the
+ * spoken session is never lost to the `extracted_data` blob alone. This is
+ * the "at minimum, capture it in notes" floor for effort-only reps that
+ * carry no pace (and so produce no pace_segments).
+ */
+function synthesizeWorkoutNotes(extracted: Record<string, unknown>): string | null {
+  const lines: string[] = [];
+
+  const intervals = Array.isArray(extracted.intervals)
+    ? (extracted.intervals as Array<{ distance?: string; time?: string; rest?: string; count?: number }>)
+    : null;
+  if (intervals && intervals.length > 0) {
+    const parts = intervals
+      .map((iv) => {
+        const dist = (iv.distance ?? "").trim();
+        if (!dist) return "";
+        const count = iv.count && iv.count > 1 ? `${iv.count}×` : "";
+        const time = iv.time ? ` @ ${iv.time}` : "";
+        const rest = iv.rest ? ` w/ ${iv.rest} rest` : "";
+        return `${count}${dist}${time}${rest}`.trim();
+      })
+      .filter((s) => s.length > 0);
+    if (parts.length > 0) lines.push(`Intervals: ${parts.join(", ")}`);
+  }
+
+  const dist = Number(extracted.distance_miles);
+  if (Number.isFinite(dist) && dist > 0) lines.push(`Distance: ${dist} miles`);
+
+  if (typeof extracted.pace_per_mile === "string" && extracted.pace_per_mile.trim()) {
+    lines.push(`Pace: ${extracted.pace_per_mile.trim()}/mi`);
+  }
+
+  const warmup = typeof extracted.warmup === "string" ? extracted.warmup.trim() : "";
+  if (warmup) lines.push(`Warmup: ${warmup}`);
+  const cooldown = typeof extracted.cooldown === "string" ? extracted.cooldown.trim() : "";
+  if (cooldown) lines.push(`Cooldown: ${cooldown}`);
+
+  const effort = typeof extracted.effort_level === "string" ? extracted.effort_level.trim() : "";
+  const rpe = Number(extracted.rpe);
+  if (effort && Number.isFinite(rpe)) lines.push(`Effort: ${effort} (RPE ${rpe})`);
+  else if (effort) lines.push(`Effort: ${effort}`);
+  else if (Number.isFinite(rpe)) lines.push(`Effort: RPE ${rpe}`);
+
+  return lines.length > 0 ? lines.join("\n") : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -161,8 +286,31 @@ Deno.serve(async (req) => {
     if ("response" in auth) return auth.response;
     const { userId: authUserId, isServiceRole } = auth;
 
+    // ── Ownership guard (IDOR protection) ─────────────────────────────
+    // The auth gate above only proves the JWT matches the body user_id;
+    // it does NOT prove the training_logs row identified by record.id
+    // belongs to that user. Fetch the row once and require ownership
+    // before any read/write keyed on record.id. Returns 404 (not 403) so
+    // an attacker can't distinguish "not yours" from "doesn't exist".
+    const { data: ownerRow, error: ownerErr } = await supabase
+      .from("training_logs")
+      .select("user_id")
+      .eq("id", recordId)
+      .maybeSingle();
+    if (ownerErr || !ownerRow || ownerRow.user_id !== authUserId) {
+      return new Response(
+        JSON.stringify({ error: "Not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    // From here on, authUserId is the verified owner of record.id.
+
     const rlBlocked = await enforceFeatureRateLimit(authUserId, "voice_memo", corsHeaders, { isServiceRole });
     if (rlBlocked) return rlBlocked;
+
+    // Hard monthly ceiling: ≤200 voice-memo uploads processed per user/month.
+    const capped = await enforceMonthlyCap(authUserId, "voice_memo", 200, corsHeaders, { isServiceRole });
+    if (capped) return capped;
 
     // Skip if already processed or no audio
     if (record.cleaned_notes || !record.audio_url) {
@@ -225,9 +373,7 @@ Deno.serve(async (req) => {
 
     // Coach context fetched in parallel with transcription — adds zone
     // anchors and (if linked) prescribed-vs-executed framing to the prompt.
-    const coachContextPromise = (record as { user_id?: string }).user_id
-      ? loadCoachContext(supabase, (record as { user_id: string }).user_id)
-      : Promise.resolve({ zones: null, goal: null });
+    const coachContextPromise = loadCoachContext(supabase, authUserId);
 
     // Scheduled-workout fetch (when linked) for prescribed-vs-executed.
     const scheduledPromise = (existingRecord as { scheduled_workout_id?: string | null })?.scheduled_workout_id
@@ -252,7 +398,7 @@ Deno.serve(async (req) => {
       ? Math.round((Number(existingDur) * 60) / Number(existingDist))
       : null;
 
-    const userIdForMatcher = (record as { user_id?: string }).user_id;
+    const userIdForMatcher = authUserId;
     const priorPromise = (existingType && existingDist && existingPaceSec && existingDate && userIdForMatcher)
       ? findSimilarPriorWorkout(
           supabase,
@@ -270,7 +416,7 @@ Deno.serve(async (req) => {
     const recentLogsPromise = supabase
       .from("training_logs")
       .select("workout_date, cleaned_notes, mood, workout_notes, workout_distance_miles, workout_type")
-      .eq("user_id", record.user_id)
+      .eq("user_id", authUserId)
       .not("cleaned_notes", "is", null)
       .order("workout_date", { ascending: false })
       .limit(5);
@@ -536,28 +682,82 @@ Deno.serve(async (req) => {
     const updatePayload: Record<string, unknown> = {
       cleaned_notes: analysis.cleaned_notes,
       mood: analysis.mood,
-      coach_insight: analysis.coach_insight,
-      workout_notes: analysis.workout_notes,
+      // A (2026-06-17 rev3): the AI Insight is NOT written or triggered here.
+      // This function owns only the Voice Summary (cleaned_notes / mood /
+      // workout_notes / pace_segments / extracted_data). The athlete-state-aware
+      // v5 insight is generated ON DEMAND when the athlete taps "Generate AI
+      // insight" (WorkoutRepChart.swift), which calls generate-workout-insight
+      // directly. We leave coach_insight null and status "pending" so the row
+      // rests in the un-generated state until that tap — no auto/synchronous
+      // generation, no empty-window race.
+      coach_insight_status: "pending",
       transcript_url: transcriptUrl,
       extracted_data: analysis.extracted_data,
       processing_status: "completed",
       processing_error: null,
     };
 
-    // Populate workout_type and pace from extracted_data
+    // workout_notes: the voice memo is the PRIMARY source — but only write it
+    // when the memo actually described the session. A null/empty value here
+    // would clobber the AI-from-laps note that compute-workout-features
+    // derives when the athlete didn't describe the workout out loud. So we
+    // leave the field untouched on a no-description memo and let the laps
+    // fallback stand. Voice description always wins when present.
+    if (typeof analysis.workout_notes === "string" && analysis.workout_notes.trim().length > 0) {
+      updatePayload.workout_notes = analysis.workout_notes;
+    } else if (analysis.extracted_data) {
+      // The LLM returned no workout_notes but DID extract structured data —
+      // synthesize a minimal summary so a spoken interval/effort session is
+      // captured on the row rather than lost to the extracted_data blob. This
+      // is the "at minimum, in notes" floor for effort-only reps (e.g. "2K and
+      // 1K at effort 7-8") that carry no pace and so produce no pace_segments.
+      const synthNotes = synthesizeWorkoutNotes(analysis.extracted_data);
+      if (synthNotes) updatePayload.workout_notes = synthNotes;
+    }
+
+    // Populate workout_type and pace from extracted_data — but VALIDATE
+    // first. The LLM can hallucinate out-of-range or malformed values, and
+    // these feed ACWR fallback weights + dedup downstream. Reject anything
+    // implausible rather than poisoning the training history.
     if (analysis.extracted_data) {
-      if (analysis.extracted_data.workout_type) {
-        updatePayload.workout_type = analysis.extracted_data.workout_type;
+      const ed = analysis.extracted_data;
+
+      // workout_type: non-empty string, capped length. (No CHECK constraint
+      // exists on the column yet, so guard here.)
+      if (typeof ed.workout_type === "string") {
+        const wt = ed.workout_type.trim();
+        if (wt.length > 0 && wt.length <= 40) {
+          updatePayload.workout_type = wt;
+        }
       }
-      if (analysis.extracted_data.pace_per_mile) {
-        updatePayload.workout_pace_per_mile = analysis.extracted_data.pace_per_mile;
+
+      // pace_per_mile: must look like M:SS or MM:SS.
+      if (typeof ed.pace_per_mile === "string" && /^\d{1,2}:[0-5]\d$/.test(ed.pace_per_mile.trim())) {
+        updatePayload.workout_pace_per_mile = ed.pace_per_mile.trim();
       }
-      // Only fill distance/duration if not already set from HealthKit
-      if (analysis.extracted_data.distance_miles && !existingRecord?.workout_distance_miles) {
-        updatePayload.workout_distance_miles = analysis.extracted_data.distance_miles;
+
+      // distance_miles: positive, sane upper bound (ultra-distance ceiling).
+      const dist = Number(ed.distance_miles);
+      if (Number.isFinite(dist) && dist > 0 && dist <= 200 && !existingRecord?.workout_distance_miles) {
+        updatePayload.workout_distance_miles = dist;
       }
-      if (analysis.extracted_data.duration_minutes && !existingRecord?.workout_duration_minutes) {
-        updatePayload.workout_duration_minutes = analysis.extracted_data.duration_minutes;
+
+      // duration_minutes: positive, under ~33h ceiling.
+      const dur = Number(ed.duration_minutes);
+      if (Number.isFinite(dur) && dur > 0 && dur <= 2000 && !existingRecord?.workout_duration_minutes) {
+        updatePayload.workout_duration_minutes = dur;
+      }
+
+      // pace_segments: surface the spoken rep/split structure as displayable
+      // segments (rep chart + the insight's splits block). NEVER clobber the
+      // richer Garmin/HealthKit segments already on the row — those carry HR
+      // and true GPS distances the voice path can't. We only fill the gap for
+      // voice-only logs that have no watch segments yet.
+      const hasWatchSegments =
+        Array.isArray(existingRecord?.pace_segments) && existingRecord.pace_segments.length > 0;
+      if (!hasWatchSegments) {
+        const segs = paceSegmentsFromExtracted(ed);
+        if (segs.length > 0) updatePayload.pace_segments = segs;
       }
     }
 
@@ -571,16 +771,21 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to update training log: ${updateError.message}`);
     }
 
+    // ── A (2026-06-17 rev3): AI Insight is ON DEMAND, not generated here. ──
+    // Earlier revs generated the v5 insight from this function (first async via
+    // a coach_insight_jobs row, then synchronously inline). We've moved it to a
+    // pure button-tap flow: the athlete reviews the parsed workout (notes /
+    // pace_segments / fields written above), then taps "Generate AI insight"
+    // (WorkoutRepChart.swift), which calls generate-workout-insight directly
+    // with the user's JWT. So this function neither calls nor enqueues the
+    // insight — coach_insight stays null and coach_insight_status "pending"
+    // until that tap. The INSERT trigger (fn_enqueue_workout_insight) already
+    // skips voice rows, so no auto-generation path remains.
+
     // Create injury record if injury detected in voice memo
     try {
-      const { data: logData } = await supabase
-        .from("training_logs")
-        .select("user_id")
-        .eq("id", record.id)
-        .single();
-
-      // Use user_id from log, fall back to "dev-user" when auth is disabled
-      const injuryUserId = logData?.user_id || "dev-user";
+      // Verified owner from the ownership guard — never a "dev-user" stand-in.
+      const injuryUserId = authUserId;
       const textToScan = `${analysis.cleaned_notes || ""} ${analysis.transcription || ""}`;
       const detected = detectInjury(textToScan);
 
@@ -629,18 +834,10 @@ Deno.serve(async (req) => {
 
     // ── Update Athlete State (Dynamic Context Object) ──
     // Full rebuild after a voice log because the training load metrics change.
-    const { data: stateLogRow } = await supabase
-      .from("training_logs")
-      .select("user_id")
-      .eq("id", record.id)
-      .single();
-    const stateUserId = stateLogRow?.user_id;
-    if (stateUserId) {
-      try {
-        await rebuildAthleteState(supabase, stateUserId);
-      } catch (stateError) {
-        console.error("Athlete state rebuild failed (non-fatal):", stateError);
-      }
+    try {
+      await rebuildAthleteState(supabase, authUserId);
+    } catch (stateError) {
+      console.error("Athlete state rebuild failed (non-fatal):", stateError);
     }
 
     return new Response(
@@ -649,7 +846,10 @@ Deno.serve(async (req) => {
         id: record.id,
         mood: analysis.mood,
         cleaned_notes: analysis.cleaned_notes,
-        coach_insight: analysis.coach_insight,
+        // A (2026-06-17 rev3): AI Insight is generated on demand via the
+        // "Generate AI insight" button (generate-workout-insight), not here —
+        // return null so callers don't persist a stale/empty read.
+        coach_insight: null,
         workout_notes: analysis.workout_notes,
         workout_type: analysis.extracted_data?.workout_type || null,
         transcript_url: transcriptUrl,

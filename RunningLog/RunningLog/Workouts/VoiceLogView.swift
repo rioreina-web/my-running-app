@@ -7,6 +7,27 @@ import SwiftUI
 
 // MARK: - VoiceLogView
 
+/// One Monday-start week of journal entries, for the grouped feed.
+private struct JournalWeek: Identifiable {
+    let id: String
+    let label: String
+    let miles: Double
+    let entries: [TrainingLog]
+}
+
+/// Journal kind filter — voice memo, typed note, or check-in.
+private enum JournalKind: String, CaseIterable {
+    case all, voice, note, checkIn
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .voice: return "Voice"
+        case .note: return "Notes"
+        case .checkIn: return "Check-ins"
+        }
+    }
+}
+
 struct VoiceLogView: View {
     @Environment(CoachCheckInManager.self) private var checkInManager
     @Environment(\.selectedTab) private var selectedTab
@@ -29,6 +50,9 @@ struct VoiceLogView: View {
 
     // Feed state
     @State private var selectedHistoryEntry: TrainingLog?
+    // Journal search + kind filter (client-side over the loaded history).
+    @State private var journalSearch = ""
+    @State private var journalKind: JournalKind = .all
 
     // Today sheet — Today doesn't have a tab anymore (voice is the front
     // door), so it lives behind this opener. Edit the IA in MainTabView
@@ -226,12 +250,13 @@ struct VoiceLogView: View {
     @ViewBuilder
     private var nsCoachCheckInLine: some View {
         Button {
-            // Coach moved to tab 3 when Trends was inserted at slot 2.
-            selectedTab.wrappedValue = 3
+            // Coach is tab 2 since the Train + Trends tabs were collapsed
+            // into a single Training tab (slot 1).
+            selectedTab.wrappedValue = 2
         } label: {
             HStack(spacing: 8) {
                 Text("COACH HAS A CHECK-IN WAITING")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .tracking(1.2)
                     .foregroundStyle(Color.drip.coral)
                 Image(systemName: "arrow.up.right")
@@ -427,7 +452,7 @@ struct VoiceLogView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("OR  ·  TYPE NOTES")
-                        .font(.dripCaption(11))
+                        .font(.dripEyebrow(11))
                         .tracking(1.2)
                         .foregroundStyle(Color.drip.textSecondary)
                     Spacer()
@@ -461,7 +486,7 @@ struct VoiceLogView: View {
     private var nsSaveNotesAction: some View {
         if manualNotes.isEmpty {
             Text("SAVE")
-                .font(.dripCaption(11))
+                .font(.dripEyebrow(11))
                 .tracking(1.2)
                 .foregroundStyle(Color.drip.textTertiary)
         } else if viewModel.isUploading {
@@ -478,7 +503,7 @@ struct VoiceLogView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("SAVE")
-                        .font(.dripCaption(11))
+                        .font(.dripEyebrow(11))
                         .tracking(1.2)
                         .foregroundStyle(Color.drip.coral)
                     Image(systemName: "arrow.up.right")
@@ -500,7 +525,7 @@ struct VoiceLogView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("JOURNAL  \(journalCountLabel)")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .tracking(1.2)
                     .foregroundStyle(Color.drip.textSecondary)
                 Spacer()
@@ -516,11 +541,92 @@ struct VoiceLogView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
 
+            // Search + kind filter — only once there's something to search.
+            if !viewModel.historyLogs.isEmpty {
+                nsJournalFilters
+            }
+
             Rectangle().fill(Color.drip.divider).frame(height: 1)
 
             nsYourLogsContent
         }
         .padding(.bottom, 40)
+    }
+
+    @ViewBuilder
+    private var nsJournalFilters: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.drip.textTertiary)
+                TextField("Search your notes", text: $journalSearch)
+                    .font(.dripBody(14))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(Color.drip.textPrimary)
+                if !journalSearch.isEmpty {
+                    Button { journalSearch = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.drip.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.drip.divider, lineWidth: 1))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(JournalKind.allCases, id: \.self) { kind in
+                        journalFilterChip(kind.label, active: journalKind == kind) {
+                            journalKind = kind
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 14)
+    }
+
+    private func journalFilterChip(_ label: String, active: Bool, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            Text(label.uppercased())
+                .font(.dripEyebrow(10))
+                .tracking(0.8)
+                .foregroundStyle(active ? Color.drip.textPrimary : Color.drip.textTertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(active ? Color.drip.cardBackgroundElevated : Color.drip.cardBackground)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(active ? Color.drip.textSecondary : Color.drip.divider, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// History filtered by the active kind + free-text search over notes.
+    private var filteredHistoryLogs: [TrainingLog] {
+        let q = journalSearch.trimmingCharacters(in: .whitespaces).lowercased()
+        return viewModel.historyLogs.filter { log in
+            let kindOK: Bool
+            switch journalKind {
+            case .all:     kindOK = true
+            case .voice:   kindOK = log.audioUrl != nil && log.source != "check_in"
+            case .note:    kindOK = log.audioUrl == nil && log.source != "check_in"
+            case .checkIn: kindOK = log.source == "check_in"
+            }
+            guard kindOK else { return false }
+            guard !q.isEmpty else { return true }
+            let hay = [log.cleanedNotes, log.notes, log.workoutNotes, log.coachInsight]
+                .compactMap { $0?.lowercased() }
+                .joined(separator: " ")
+            return hay.contains(q)
+        }
     }
 
     private var journalCountLabel: String {
@@ -545,33 +651,148 @@ struct VoiceLogView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 24)
+        } else if filteredHistoryLogs.isEmpty {
+            Text(journalSearch.isEmpty
+                 ? "No \(journalKind.label.lowercased()) entries yet."
+                 : "Nothing matches \u{201C}\(journalSearch)\u{201D}.")
+                .font(.system(size: 14, design: .serif).italic())
+                .foregroundStyle(Color.drip.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 24)
         } else {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(viewModel.historyLogs.enumerated()), id: \.element.id) { idx, log in
-                    if log.isPending || log.isFailed {
-                        ProcessingLogCard(log: log) {
-                            Task { await viewModel.retryProcessing(log: log) }
+            // Week-grouped feed with sticky headers (pinnedViews) + a per-week
+            // mileage subtotal — "THIS WEEK · 32 MI".
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                ForEach(historyWeekGroups) { week in
+                    Section {
+                        ForEach(Array(week.entries.enumerated()), id: \.element.id) { idx, log in
+                            nsJournalEntryRow(log)
+                            if idx < week.entries.count - 1 {
+                                Rectangle()
+                                    .fill(Color.drip.divider)
+                                    .frame(height: 1)
+                                    .padding(.horizontal, 24)
+                            }
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 8)
-                    } else {
-                        Button {
-                            selectedHistoryEntry = log
-                        } label: {
-                            JournalLogRow(entry: log)
-                                .padding(.horizontal, 24)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if idx < viewModel.historyLogs.count - 1 {
-                        Rectangle()
-                            .fill(Color.drip.divider)
-                            .frame(height: 1)
-                            .padding(.horizontal, 24)
+                    } header: {
+                        journalWeekHeader(week)
                     }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func nsJournalEntryRow(_ log: TrainingLog) -> some View {
+        if log.isPending || log.isFailed {
+            ProcessingLogCard(log: log) {
+                Task { await viewModel.retryProcessing(log: log) }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+        } else {
+            Button {
+                selectedHistoryEntry = log
+            } label: {
+                JournalLogRow(entry: log, niggles: viewModel.niggleByLog[log.id.uuidString] ?? [])
+                    .padding(.horizontal, 24)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Week grouping (journal feed)
+
+    /// Monday 00:00 of the week containing `d` (Monday-start, matching the
+    /// dashboard / Trends convention).
+    private func journalWeekStart(_ d: Date) -> Date {
+        let cal = Calendar.current
+        let sod = cal.startOfDay(for: d)
+        let weekday = cal.component(.weekday, from: sod)   // 1=Sun … 7=Sat
+        let daysFromMonday = (weekday + 5) % 7             // Mon=0 … Sun=6
+        return cal.date(byAdding: .day, value: -daysFromMonday, to: sod) ?? sod
+    }
+
+    /// History entries grouped into Monday-start weeks, newest first, each with a
+    /// label (This week / Last week / Week of Jun 30) + mileage subtotal.
+    private var historyWeekGroups: [JournalWeek] {
+        let totals = weeklyTotalMiles
+        let thisWeek = journalWeekStart(Date())
+        let grouped = Dictionary(grouping: filteredHistoryLogs) {
+            journalWeekStart($0.workoutDate ?? $0.createdAt)
+        }
+        return grouped.keys.sorted(by: >).map { ws in
+            let entries = grouped[ws] ?? []
+            let weeksAgo = Int((thisWeek.timeIntervalSince(ws) / (7 * 86400)).rounded())
+            let label: String
+            switch weeksAgo {
+            case 0: label = "This week"
+            case 1: label = "Last week"
+            default: label = "Week of \(ws.formatted(.dateTime.month(.abbreviated).day()))"
+            }
+            // True weekly total (ALL runs, deduped), not just the authored entries
+            // shown in the feed. Falls back to the entry sum until the fetch lands.
+            let miles = totals[weekKey(ws)]
+                ?? entries.reduce(0.0) { $0 + ($1.workoutDistanceMiles ?? 0) }
+            return JournalWeek(id: ISO8601DateFormatter().string(from: ws),
+                               label: label, miles: miles, entries: entries)
+        }
+    }
+
+    private func weekKey(_ ws: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.calendar = Calendar.current
+        f.timeZone = .current
+        return f.string(from: ws)
+    }
+
+    /// Deduped true mileage per week (all runs, any source), keyed by week-start.
+    private var weeklyTotalMiles: [String: Double] {
+        var byWeek: [String: [JournalMileageRow]] = [:]
+        for r in viewModel.weeklyMileageRows {
+            let key = weekKey(journalWeekStart(r.workoutDate ?? r.createdAt))
+            byWeek[key, default: []].append(r)
+        }
+        return byWeek.mapValues { dedupedMiles($0) }
+    }
+
+    /// Mirrors the dashboard dedup: a voice_log / check_in carrying a distance
+    /// that matches a same-day run from another source is already counted on that
+    /// run — skip it so the total isn't double-counted.
+    private func dedupedMiles(_ rows: [JournalMileageRow]) -> Double {
+        let cal = Calendar.current
+        let withDist = rows.filter { ($0.miles ?? 0) > 0 }
+        var total = 0.0
+        for r in withDist {
+            if r.source == "voice_log" || r.source == "check_in" {
+                let day = cal.startOfDay(for: r.workoutDate ?? r.createdAt)
+                let miles = r.miles ?? 0
+                let coveredByRun = withDist.contains { other in
+                    guard other.source != "voice_log", other.source != "check_in" else { return false }
+                    let oday = cal.startOfDay(for: other.workoutDate ?? other.createdAt)
+                    return oday == day && abs((other.miles ?? 0) - miles) <= 0.3
+                }
+                if coveredByRun { continue }
+            }
+            total += r.miles ?? 0
+        }
+        return total
+    }
+
+    private func journalWeekHeader(_ week: JournalWeek) -> some View {
+        HStack(spacing: 0) {
+            Text("\(week.label.uppercased())  ·  \(Int(week.miles.rounded())) MI")
+                .font(.dripEyebrow(10)).tracking(1.2)
+                .foregroundStyle(Color.drip.textSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 18)
+        .padding(.bottom, 8)
+        // Opaque so rows scroll cleanly under the pinned header.
+        .background(Color.drip.background)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -745,15 +966,7 @@ struct ProcessingLogCard: View {
                         .foregroundStyle(Color.drip.coral)
                 }
             } else if log.isFailed {
-                Button(action: onRetry) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("Retry transcription")
-                            .font(.dripCaption(11))
-                    }
-                    .foregroundStyle(Color.drip.tired)
-                }
+                failedContent
             }
         }
         .padding(14)
@@ -761,8 +974,41 @@ struct ProcessingLogCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.drip.divider, lineWidth: 1)
+                .stroke(log.isFailed ? Color.drip.tired.opacity(0.4) : Color.drip.divider, lineWidth: 1)
         )
+    }
+
+    /// Failed state: plain headline + reassuring detail + a clear
+    /// tap-to-retry control, with copy matched to the failure kind.
+    private var failedContent: some View {
+        Button(action: onRetry) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(log.failureHeadline)
+                    .font(.dripCaption(12))
+                    .foregroundStyle(Color.drip.tired)
+
+                Text(log.failureDetail)
+                    .font(.dripBody(13))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(log.retryActionLabel)
+                        .font(.dripCaption(11))
+                }
+                .foregroundStyle(Color.drip.tired)
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(log.failureHeadline). \(log.failureDetail)")
+        .accessibilityHint("Double tap to retry")
     }
 }
 
@@ -1235,7 +1481,7 @@ struct RecordingConfirmationSheet: View {
                     // Link workout option
                     VStack(alignment: .leading, spacing: 12) {
                         Text("LINK TO WORKOUT")
-                            .font(.dripCaption(11))
+                            .font(.dripEyebrow(11))
                             .foregroundStyle(Color.drip.textSecondary)
                             .tracking(1.2)
                             .padding(.horizontal, 4)

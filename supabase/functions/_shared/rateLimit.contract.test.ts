@@ -52,6 +52,12 @@ const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   // never deployed to prod. Same rationale as the C.1 cuts.
   { fn: "generate-training-plan", feature: "plan_builder" },
   { fn: "reschedule-plan",        feature: "reschedule" },
+  // draft-block-rewrite (Phase E) is service-role-only at the auth layer
+  // (trusted Next.js route authenticates the coach), but it is NOT in
+  // SERVER_ONLY_FUNCTIONS: the limit is keyed on the ATHLETE user id
+  // (once per athlete per day) and enforced unconditionally — the fn
+  // deliberately omits isServiceRole so the bypass never triggers.
+  { fn: "draft-block-rewrite",    feature: "draft_rewrite" },
   { fn: "weekly-coaching-report", feature: "weekly_review" },
   // weekly-plan-review — CUT 2026-06-10. Never deployed to prod (cron from
   // 20260416400000 never scheduled). Untested LLM prompt making load
@@ -61,16 +67,55 @@ const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   // wired in the same PR. Service-role callers bypass the user-keyed
   // limit via isServiceRole=true; user-facing callers (iOS) pay it.
   { fn: "race-intel",             feature: "race" },
+  // interpret-goal — LLM goal reader (parse-goal.v1). Shares the "race"
+  // bucket since a named-race goal fans out to race-intel. Auth via
+  // requireAuthOrServiceRole; the iOS goal-save path (user JWT) pays the
+  // limit, service-role callers bypass.
+  { fn: "interpret-goal",         feature: "race" },
   { fn: "race-readiness",         feature: "race" },
   { fn: "block-review",           feature: "analysis" },
   { fn: "post-run-analysis",      feature: "post_run" },
   { fn: "injury-early-warning",   feature: "injury_analysis" },
   { fn: "process-training-memo",  feature: "voice_memo" },
+  // 2026-06-16 — caught by this test: extract-rpe shipped client-callable
+  // (user JWT) with auth but no rate limit. Auth via requireAuthOrServiceRole;
+  // webhook/trigger callers bypass via isServiceRole, manual taps pay it.
+  { fn: "extract-rpe",            feature: "voice_memo" },
   // 2026-06-09 — caught by this test: coaching-daily-read shipped (May)
   // with auth but no rate limit. Auth via requireAuthOrServiceRole;
   // cron/trigger callers bypass via isServiceRole, manual taps pay it.
   { fn: "coaching-daily-read",    feature: "daily_read" },
+  // suggest-workout-progression — advisory annotation layer for the coach
+  // portal's smart-duplicate flow. Coach JWT via getAuthenticatedUser
+  // (proxied through /api/suggest-progression); ranks/annotates
+  // client-generated deterministic candidates only.
+  { fn: "suggest-workout-progression", feature: "workout_progression" },
+  // 2026-07-15 — caught by the coverage sweep: two Gemini callers were
+  // never pinned. ingest-manual-workout already had the "parse" gate wired
+  // (only its parse mode calls the LLM); correct-workout-structure shipped
+  // auth-gated but with no rate limit — gate added same day.
+  { fn: "ingest-manual-workout",        feature: "parse" },
+  { fn: "correct-workout-structure",    feature: "parse" },
+  // 2026-07-17 — coach WorkoutDrawer "the read" (coach-workout-read.v1).
+  // Coach JWT via getAuthenticatedUser; on-demand generation keyed on the
+  // calling coach. Cached per training_log so re-opens don't re-bill.
+  { fn: "coach-workout-read",           feature: "coach_workout_read" },
 ];
+
+/**
+ * CUT features whose function directories still exist in the repo
+ * (untracked, never committed — deleting here would be unrecoverable, so
+ * removal is the owner's call; `supabase functions delete <fn>` on the
+ * prod side too). They call Gemini, so the coverage sweep would flag them;
+ * excluded with this documented justification instead. Each has
+ * getAuthenticatedUser + checkFeatureRateLimit already. Delete the dirs →
+ * the stale-exemption test below will demand this list shrinks.
+ */
+const CUT_FUNCTIONS_PENDING_DELETION: Record<string, string> = {
+  "biomechanics-analysis": "CV running-form product — cut 2026-05 (Maya roadmap C.1).",
+  "form-check-analysis":   "CV form check — cut 2026-05 (Maya roadmap C.1).",
+  "custom-plan-builder":   "LLM plan author — cut 2026-05; replaced by template + coach plans.",
+};
 
 /**
  * LLM-calling functions that don't have per-user rate limits because they
@@ -130,6 +175,29 @@ Deno.test("rateLimit.ts: FEATURE_LIMITS contains every pinned feature", async ()
   }
 });
 
+Deno.test("rateLimit.ts: MONTHLY_LLM_CAPS contains every pinned feature", async () => {
+  // H1 follow-up (2026-07-15): every daily bucket gets a hard monthly cost
+  // ceiling. The cap value lives in MONTHLY_LLM_CAPS (single source of
+  // truth); enforceMonthlyCap falls back to a default for unknown features,
+  // but a pinned feature relying on the fallback is a wiring smell.
+  const src = await Deno.readTextFile(RATE_LIMIT_SRC);
+  const tableMatch = src.match(
+    /export const MONTHLY_LLM_CAPS[^{]*\{([\s\S]*?)\};/,
+  );
+  assert(tableMatch, "rateLimit.ts must export MONTHLY_LLM_CAPS.");
+  const table = tableMatch[1];
+
+  const pinnedFeatures = new Set(LLM_FUNCTIONS_RATE_LIMITED.map((r) => r.feature));
+  for (const feature of pinnedFeatures) {
+    const re = new RegExp(`["']?${feature}["']?\\s*:`);
+    assert(
+      re.test(table),
+      `MONTHLY_LLM_CAPS is missing pinned feature "${feature}". ` +
+        `Add a monthly ceiling (~10× the daily free limit).`,
+    );
+  }
+});
+
 Deno.test("rateLimit.ts: the deleted form_check_analysis feature is removed", async () => {
   const src = await Deno.readTextFile(RATE_LIMIT_SRC);
   assert(
@@ -165,6 +233,18 @@ for (const { fn, feature } of LLM_FUNCTIONS_RATE_LIMITED) {
         `or the older checkFeatureRateLimit(userId, "${feature}"). ` +
         `If you changed the feature bucket, update LLM_FUNCTIONS_RATE_LIMITED in this test.`,
     );
+
+    // H1 follow-up (2026-07-15): daily bucket alone doesn't bound cost —
+    // every pinned LLM function must also carry the hard monthly ceiling.
+    const monthlyRe = new RegExp(
+      `enforceMonthlyCap\\s*\\([^)]*?["']${feature}["']`,
+    );
+    assert(
+      monthlyRe.test(src),
+      `${fn} must call enforceMonthlyCap(userId, "${feature}", corsHeaders, ...) ` +
+        `after its daily gate (and after any cached-return short-circuit). ` +
+        `The cap value comes from MONTHLY_LLM_CAPS in rateLimit.ts.`,
+    );
   });
 }
 
@@ -177,11 +257,16 @@ Deno.test("no LLM-calling function is silently un-rate-limited", async () => {
 
   const offenders: string[] = [];
 
+  const cutPending = new Set(Object.keys(CUT_FUNCTIONS_PENDING_DELETION));
+
   for await (const entry of Deno.readDir(FUNCTIONS_DIR)) {
     if (!entry.isDirectory) continue;
     if (entry.name.startsWith("_")) continue;
 
-    if (pinned.has(entry.name) || audit.has(entry.name) || serverOnly.has(entry.name)) {
+    if (
+      pinned.has(entry.name) || audit.has(entry.name) ||
+      serverOnly.has(entry.name) || cutPending.has(entry.name)
+    ) {
       continue;
     }
 
@@ -221,6 +306,23 @@ Deno.test("audit-pending list has a non-empty justification for every entry", ()
   }
 });
 
+Deno.test("cut-functions list: stale entries must leave once the dir is deleted", () => {
+  const stale: string[] = [];
+  for (const fn of Object.keys(CUT_FUNCTIONS_PENDING_DELETION)) {
+    try {
+      Deno.statSync(`${FUNCTIONS_DIR}${fn}/index.ts`);
+    } catch {
+      stale.push(fn);
+    }
+  }
+  assertEquals(
+    stale,
+    [],
+    `These cut functions no longer exist — remove them from ` +
+      `CUT_FUNCTIONS_PENDING_DELETION: ${stale.join(", ")}`,
+  );
+});
+
 // ── Auth-helper wiring: W2.3-follow-up functions ───────────────────────
 //
 // The 7 functions that previously accepted a body `user_id` with no auth
@@ -237,6 +339,7 @@ Deno.test("audit-pending list has a non-empty justification for every entry", ()
 
 const AUTH_GATE_PINNED: Record<string, "requireAuthOrServiceRole" | "requireServiceRole"> = {
   "race-intel":            "requireAuthOrServiceRole",
+  "interpret-goal":        "requireAuthOrServiceRole",
   "race-readiness":        "requireAuthOrServiceRole",
   "block-review":          "requireAuthOrServiceRole",
   "post-run-analysis":     "requireAuthOrServiceRole",

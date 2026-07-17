@@ -47,21 +47,41 @@
   --ink-2:           #6B6560;  /* warm gray — meta, labels */
   --ink-3:           #9B9590;  /* light warm gray — captions, disabled */
 
-  /* ---- Color · Coral (the only accent) ------------------- */
-  --coral:           #D4592A;  /* burnt orange — primary accent */
+  /* ---- Color · Coral (the only accent / alert) ----------- */
+  /* THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert.
+     The three palettes never share hues, so a color's job is always
+     unambiguous. Green is mood-only (a "safe zone" band goes neutral
+     gray, never green); coral is alert-only (never a pace fill). */
+  --coral:           #D4592A;  /* burnt orange — primary accent / alert */
   --coral-light:     #E8764A;  /* lighter — hover lift on dark */
   --coral-deep:      #B84420;  /* darker — pressed state */
   --coral-wash:      rgba(212, 89, 42, 0.12); /* capsule fill, tint */
 
-  /* ---- Color · Moods (muted editorial) ------------------- */
+  /* ---- Color · Moods (muted editorial — mood ONLY) ------- */
   --mood-energized:  #2D8A4E;  /* deep green */
   --mood-positive:   #4A9E6B;  /* sage */
   --mood-neutral:    #9B9590;  /* warm gray */
   --mood-tired:      #C4873A;  /* amber */
   --mood-struggling: #C45A3A;  /* terracotta */
   --mood-injured:    #B83A4A;  /* deep rose */
-  --mood-speed:      #6B4A8A;  /* plum — fast paces */
   --success:         #2D8A4E;  /* aliases energized */
+
+  /* ---- Color · Pace (single-hue blue depth ramp) --------- */
+  /* Ten stops for the ten canonical zones, Easy → Mile. Pace reads as
+     intensity (depth), never a rainbow. Source of truth:
+     RunningLog/Workouts/PaceSpectrum.swift. */
+  --pace-easy:       #93B9D6;  /* pale sky */
+  --pace-moderate:   #74A8CC;
+  --pace-steady:     #578FC0;
+  --pace-mp:         #3F7CB5;
+  --pace-hmp:        #2F66A8;
+  --pace-lt:         #27549B;
+  --pace-10k:        #20448B;
+  --pace-5k:         #1A3679;
+  --pace-3k:         #142964;
+  --pace-mile:       #0E1D4E;  /* navy */
+  --pace-fast:       #0E1D4E;  /* alias — fast/Mile end (was --mood-speed) */
+  --pace-easy-text:  #5E93BE;  /* legibility-darkened Easy for small text */
 
   /* ---- Type · Family ------------------------------------- */
   --font-display: "Crimson Pro", Georgia, "Times New Roman", serif;

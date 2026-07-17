@@ -67,7 +67,12 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: "Authentication required" }, 401);
   }
   const token = authHeader.slice("Bearer ".length).trim();
-  if (!constantTimeEq(token, supabaseServiceKey)) {
+  // Confirm a service-role token by decoding the role claim. The gateway has
+  // already verified the JWT signature (verify_jwt = true in config.toml), so
+  // we only read the claim. Robust to service-key / Vault drift — unlike the
+  // exact-key match against SUPABASE_SERVICE_ROLE_KEY that 403'd these drains
+  // when the function-env key and the Vault copy diverged (2026-06-11).
+  if (!isServiceRoleJWT(token)) {
     return jsonResponse({ error: "Service role required" }, 403);
   }
 
@@ -229,13 +234,23 @@ async function callProcessor(job: ClaimedJob): Promise<CallResult> {
   }
 }
 
-function constantTimeEq(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+/** True if `token` is a non-expired service-role JWT. Signature is already
+ *  verified by the gateway (verify_jwt = true); we only read the claims.
+ *  Mirrors rebuild-athlete-state's auth so a future key rotation can never
+ *  silently 403 the drain pipeline again. */
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
   }
-  return result === 0;
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200): Response {

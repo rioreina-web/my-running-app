@@ -104,8 +104,11 @@ PRD is a **monochromatic warm-paper system with a single coral hit**. Coral is *
 
 - **Surfaces** are warm paper `#F5F3F0` with white cards `#FFFFFF` and a slightly warmer elevated white `#FAFAF8`. The `#E8E4DF` deep paper appears in calendar wells.
 - **Ink** is rich black-warm `#1A1815` (not pure `#000`), with `#6B6560` warm gray for meta and `#9B9590` for captions. Three text tones, no more.
-- **Coral** `#D4592A` is the *only* accent. It appears as: the eyebrow color for the active section, the active-day dot in the week strip, the "Mark complete" underline, the orange line in HR-zone bars, the record button, and inline links. **One coral element per visual cluster, maximum.** If two would compete, drop one to ink-2.
-- **Moods** are the only place additional hues appear, and they sit at low chroma — deep green, sage, amber, terracotta, deep rose, plum. Always rendered as a tracked uppercase pill at 12% wash, never as a full fill.
+- **Coral** `#D4592A` is the *only* accent. It appears as: the eyebrow color for the active section, the active-day dot in the week strip, the "Mark complete" underline, the record button, and inline links. **One coral element per visual cluster, maximum.** If two would compete, drop one to ink-2.
+- **Moods** sit at low chroma — deep green, sage, amber, terracotta, deep rose. Always rendered as a tracked uppercase pill at 12% wash, never as a full fill.
+- **Pace** is a single-hue **blue depth ramp**, pale sky `#93B9D6` (Easy) → navy `#0E1D4E` (Mile) — ten stops for the ten canonical zones. Pace reads as *intensity* (depth), never as a rainbow. Source of truth: `RunningLog/Workouts/PaceSpectrum.swift`.
+
+**The three-palette rule: blue = pace, warm = mood, coral = alert. The three palettes never share hues** — so on any surface a color's job is unambiguous. Green is mood-only (a "safe zone" band goes neutral gray, never green); coral is alert-only (niggles, out-of-zone workload, brand punctuation — never a pace fill).
 
 ### Typography — three families, sharply assigned
 - **Crimson Pro** (variable serif) — display headlines, button labels, section actions. Bold, tall, slightly condensed. Used for "May 5th.", "Marathon block.", "Active aches."

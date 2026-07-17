@@ -1,15 +1,31 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  segmentFromLaps,
+  segmentFromPaceSegments,
+  segmentFromOverall,
+  ZONE_WEIGHTS,
+  type LapInput,
+  type PaceSegmentInput,
+  type PaceZones,
+  type SegmentationResult,
+} from "../_shared/workoutSegmentation.ts";
+
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
 // ============================================================================
-// Workout Feature Computation
-// Analyzes raw pace_segments, HR, distance, and duration to produce
-// ML-ready features. No workout-type labels — just the numbers.
+// Workout Feature Computation (WS1 rewrite)
+//
+// Sources intensity from rep-level `running_workout_laps` and classifies every
+// bout by ACTUAL pace against the athlete's pace zones — via the shared
+// _shared/workoutSegmentation.ts module (the same one athlete-state's
+// execution block uses). The old path read per-mile `pace_segments` and a
+// stored `effort` LABEL, which averaged rep structure into easy splits and
+// scored quality work as easy. See the module header for the full story.
 // ============================================================================
 
 interface PaceSegment {
@@ -28,207 +44,108 @@ interface TrainingLog {
   workout_duration_minutes: number | null;
   workout_pace_per_mile: string | null;
   pace_segments: PaceSegment[] | null;
+  workout_type: string | null;
   mood: string | null;
   source: string | null;
 }
 
-// Zone weights for intensity scoring (higher = harder).
-//
-// Sorted slow → fast. Used by load = intensity_score × duration / 60,
-// which feeds intensity-weighted ACWR. Calibrated against typical
-// advanced single-session anchors — 10×400m mile, 6×1K @ 5K, 10×1K @
-// 10K, 5–7mi HM, 8–13mi MP — to land hard sessions in roughly the same
-// load band.
-//
-// `threshold` and `tempo` deliberately omitted — the labels are too
-// fuzzy in practice. A "tempo run" can mean anywhere from MP-feel to
-// LT-feel depending on plan. Aliased to `hmp` (3.0) by `effortWeight()`
-// below for backward-compat with historical pace_segments; new
-// classification should pick a specific pace zone (mile/3K/5K/10K/hmp/
-// mp/steady/moderate/easy/recovery).
-const ZONE_WEIGHTS: Record<string, number> = {
-  recovery: 0.7,    // true active recovery — barely add fatigue
-  easy: 1.0,        // reference
-  moderate: 1.4,
-  steady: 2.1,
-  mp: 3.0,          // sustained race-pace work is real load, not "moderate-plus"
-  hmp: 3.5,         // sustained sub-threshold — undersold at 3.0
-  "10k": 4.0,
-  "5k": 6.0,
-  interval: 6.0,    // generic "intervals" — typical 5K-pace work
-  "3k": 8.0,
-  race_pace: 6.0,   // ambiguous label — defaults to 5K-pace; specific
-                     // race pace (mile/5k/10k/hm/mp) should be used instead
-  mile: 10.0,       // VO2max+ repeats. 1 min at 4:30/mi ≈ 10 min easy.
-};
+// Threshold + hard seconds above this floor marks a session as "quality" for
+// the recovery-spacing read (avoids treating a few warmup strides as a hard day).
+const QUALITY_SECONDS_FLOOR = 240;
 
-// Backward-compat alias: legacy `threshold` / `tempo` segments map to
-// `hmp` (3.0) so historical workouts don't silently re-weight to easy.
-// New ingestion paths should classify to a specific pace zone.
-function effortWeight(effort: string): number {
-  const e = effort.toLowerCase();
-  if (e === "threshold" || e === "tempo") return ZONE_WEIGHTS.hmp;
-  return ZONE_WEIGHTS[e] ?? 1.0;
+/** Segment one workout, preferring rep-level laps, then per-mile segments,
+ *  then an undifferentiated easy block. */
+function segmentLog(
+  log: TrainingLog,
+  laps: LapInput[] | undefined,
+  zones: PaceZones,
+): SegmentationResult {
+  if (laps && laps.length > 0) return segmentFromLaps(laps, zones);
+  if (log.pace_segments && log.pace_segments.length > 0) {
+    return segmentFromPaceSegments(log.pace_segments as PaceSegmentInput[], zones);
+  }
+  const durSec = (log.workout_duration_minutes || 0) * 60;
+  return segmentFromOverall(durSec, log.workout_distance_miles || 0);
 }
 
-// Classify as "hard" effort (threshold or above)
-function isHardEffort(effort: string): boolean {
-  const hard = ["threshold", "tempo", "interval", "race_pace", "mile", "hmp", "5k", "10k", "3k"];
-  return hard.includes(effort.toLowerCase());
+/** Is this session a hard day (drives hard-day spacing / recovery context)? */
+function isQualitySession(seg: SegmentationResult): boolean {
+  return seg.thresholdSeconds + seg.hardSeconds >= QUALITY_SECONDS_FLOOR;
 }
 
-// Classify as "easy" effort
-function isEasyEffort(effort: string): boolean {
-  const easy = ["easy", "recovery"];
-  return easy.includes(effort.toLowerCase());
-}
-
-// Parse "M:SS" pace to seconds per mile
-function paceToSeconds(pace: string | null): number {
-  if (!pace) return 0;
-  const parts = pace.split(":");
-  if (parts.length !== 2) return 0;
-  return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-}
-
-// Compute features for a single workout
-function computeFeatures(log: TrainingLog, prevWorkout: TrainingLog | null, prevHardWorkout: TrainingLog | null) {
-  const segments = log.pace_segments || [];
-  const hasPaceSegments = segments.length > 0;
-
-  // --- Volume signals ---
+// Compute features for a single workout from its segmentation.
+function computeFeatures(
+  log: TrainingLog,
+  seg: SegmentationResult,
+  prevWorkout: TrainingLog | null,
+  prevHardWorkout: TrainingLog | null,
+) {
+  // --- Volume signals (from the logged totals, not the lap sum) ---
   const totalDistanceMiles = log.workout_distance_miles || 0;
   const totalDurationSeconds = (log.workout_duration_minutes || 0) * 60;
   const avgPaceSeconds = totalDistanceMiles > 0 && totalDurationSeconds > 0
     ? totalDurationSeconds / totalDistanceMiles
     : 0;
 
-  // --- Intensity distribution from segments ---
-  let easySeconds = 0;
-  let moderateSeconds = 0;
-  let thresholdSeconds = 0;
-  let hardSeconds = 0;
-  let intensityWeightedSum = 0;
-  let totalSegmentSeconds = 0;
-  let peakPaceSeconds = Infinity;
-  const segmentPaces: number[] = [];
-  let hardSegmentCount = 0;
-  let hardSegmentDurations: number[] = [];
-  let hrSum = 0;
-  let hrCount = 0;
-  let hardHrSum = 0;
-  let hardHrCount = 0;
-  let easyHrSum = 0;
-  let easyHrCount = 0;
-  let hasHrData = false;
-
-  // Track segment order for effort distribution
-  const segmentIntensities: number[] = [];
-
-  for (const seg of segments) {
-    const dur = seg.duration_seconds || 0;
-    const pace = paceToSeconds(seg.pace_per_mile);
-    const effort = (seg.effort || "easy").toLowerCase();
-    const weight = effortWeight(effort);
-
-    totalSegmentSeconds += dur;
-    intensityWeightedSum += dur * weight;
-
-    if (pace > 0) {
-      segmentPaces.push(pace);
-      if (pace < peakPaceSeconds) peakPaceSeconds = pace;
-    }
-
-    // Zone bucketing based on effort label from pace classification
-    if (isHardEffort(effort)) {
-      if (effort === "threshold" || effort === "tempo" || effort === "hmp") {
-        thresholdSeconds += dur;
-      } else {
-        hardSeconds += dur;
-      }
-      hardSegmentCount++;
-      hardSegmentDurations.push(dur);
-    } else if (effort === "moderate" || effort === "steady" || effort === "mp") {
-      moderateSeconds += dur;
-    } else {
-      easySeconds += dur;
-    }
-
-    segmentIntensities.push(weight);
-
-    // HR aggregation
-    if (seg.avg_heart_rate && seg.avg_heart_rate > 0) {
-      hasHrData = true;
-      hrSum += seg.avg_heart_rate * dur;
-      hrCount += dur;
-
-      if (isHardEffort(effort)) {
-        hardHrSum += seg.avg_heart_rate * dur;
-        hardHrCount += dur;
-      }
-      if (isEasyEffort(effort)) {
-        easyHrSum += seg.avg_heart_rate * dur;
-        easyHrCount += dur;
-      }
-    }
-  }
-
-  // If no segments but we have overall workout data, classify the whole thing
-  if (!hasPaceSegments && totalDurationSeconds > 0) {
-    // Without segments we can't break it down — treat as single effort
-    easySeconds = totalDurationSeconds;
-    totalSegmentSeconds = totalDurationSeconds;
-    intensityWeightedSum = totalDurationSeconds * 1.0;
-  }
-
-  const intensityScore = totalSegmentSeconds > 0
-    ? intensityWeightedSum / totalSegmentSeconds
-    : 0;
-
+  // --- Intensity from segmentation (pace-classified bouts) ---
+  const easySeconds = Math.round(seg.easySeconds);
+  const moderateSeconds = Math.round(seg.moderateSeconds);
+  const thresholdSeconds = Math.round(seg.thresholdSeconds);
+  const hardSeconds = Math.round(seg.hardSeconds);
+  const intensityScore = seg.intensityScore;
   const hardEffortMinutes = (thresholdSeconds + hardSeconds) / 60;
 
-  // Pace variance (stdev of segment paces)
+  // Peak pace = fastest work bout.
+  const workPaces = seg.bouts.filter((b) => b.isWork && b.paceSecPerMile > 0).map((b) => b.paceSecPerMile);
+  const peakPaceSeconds = workPaces.length > 0 ? Math.round(Math.min(...workPaces)) : null;
+
+  // Pace variance = stdev of bout paces (work + easy), like the old metric.
+  const boutPaces = seg.bouts.map((b) => b.paceSecPerMile).filter((p) => p > 0);
   let paceVariance = 0;
-  if (segmentPaces.length > 1) {
-    const mean = segmentPaces.reduce((a, b) => a + b, 0) / segmentPaces.length;
-    const sqDiffs = segmentPaces.map(p => (p - mean) ** 2);
-    paceVariance = Math.sqrt(sqDiffs.reduce((a, b) => a + b, 0) / segmentPaces.length);
+  if (boutPaces.length > 1) {
+    const mean = boutPaces.reduce((a, b) => a + b, 0) / boutPaces.length;
+    paceVariance = Math.sqrt(boutPaces.map((p) => (p - mean) ** 2).reduce((a, b) => a + b, 0) / boutPaces.length);
   }
 
-  // Effort distribution: where are hard efforts concentrated?
+  // Effort distribution: where is the hard work concentrated (front/back)?
+  const intensities = seg.bouts.map((b) => ZONE_WEIGHTS[b.zone]);
   let effortDistribution = "even";
-  if (segmentIntensities.length >= 3) {
-    const mid = Math.floor(segmentIntensities.length / 2);
-    const firstHalf = segmentIntensities.slice(0, mid);
-    const secondHalf = segmentIntensities.slice(mid);
-    const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-    const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+  if (intensities.length >= 3) {
+    const mid = Math.floor(intensities.length / 2);
+    const firstAvg = avg(intensities.slice(0, mid));
+    const secondAvg = avg(intensities.slice(mid));
     const diff = secondAvg - firstAvg;
     if (diff > 0.5) effortDistribution = "back_loaded";
     else if (diff < -0.5) effortDistribution = "front_loaded";
     else if (paceVariance > 30) effortDistribution = "mixed";
-    else effortDistribution = "even";
   }
 
-  // HR metrics
+  // --- HR aggregation from bouts ---
+  let hrSum = 0, hrCount = 0, hardHrSum = 0, hardHrCount = 0, easyHrSum = 0, easyHrCount = 0;
+  let hasHrData = false;
+  for (const b of seg.bouts) {
+    if (b.avgHr != null && b.avgHr > 0) {
+      hasHrData = true;
+      hrSum += b.avgHr * b.seconds; hrCount += b.seconds;
+      if (b.isWork) { hardHrSum += b.avgHr * b.seconds; hardHrCount += b.seconds; }
+      else { easyHrSum += b.avgHr * b.seconds; easyHrCount += b.seconds; }
+    }
+  }
   const avgHeartRate = hrCount > 0 ? Math.round(hrSum / hrCount) : null;
   const hardEffortAvgHr = hardHrCount > 0 ? Math.round(hardHrSum / hardHrCount) : null;
   const easyEffortAvgHr = easyHrCount > 0 ? Math.round(easyHrSum / easyHrCount) : null;
-  const hrPaceEfficiency = avgHeartRate && avgPaceSeconds > 0
-    ? avgHeartRate / avgPaceSeconds
-    : null;
+  const hrPaceEfficiency = avgHeartRate && avgPaceSeconds > 0 ? avgHeartRate / avgPaceSeconds : null;
 
-  // Recovery context
+  // --- Recovery context ---
   let hoursSinceLastWorkout: number | null = null;
   let hoursSinceLastHard: number | null = null;
-
   if (prevWorkout?.workout_date) {
-    const diff = new Date(log.workout_date).getTime() - new Date(prevWorkout.workout_date).getTime();
-    hoursSinceLastWorkout = diff / (1000 * 60 * 60);
+    hoursSinceLastWorkout =
+      (new Date(log.workout_date).getTime() - new Date(prevWorkout.workout_date).getTime()) / 3600000;
   }
   if (prevHardWorkout?.workout_date) {
-    const diff = new Date(log.workout_date).getTime() - new Date(prevHardWorkout.workout_date).getTime();
-    hoursSinceLastHard = diff / (1000 * 60 * 60);
+    hoursSinceLastHard =
+      (new Date(log.workout_date).getTime() - new Date(prevHardWorkout.workout_date).getTime()) / 3600000;
   }
 
   return {
@@ -242,14 +159,14 @@ function computeFeatures(log: TrainingLog, prevWorkout: TrainingLog | null, prev
     moderate_seconds: moderateSeconds,
     threshold_seconds: thresholdSeconds,
     hard_seconds: hardSeconds,
-    intensity_score: Math.round(intensityScore * 100) / 100,
+    intensity_score: intensityScore,
     hard_effort_minutes: Math.round(hardEffortMinutes * 10) / 10,
-    peak_pace_seconds: peakPaceSeconds === Infinity ? null : Math.round(peakPaceSeconds),
+    peak_pace_seconds: peakPaceSeconds,
     pace_variance: Math.round(paceVariance * 10) / 10,
-    segment_count: segments.length,
-    hard_segment_count: hardSegmentCount,
-    avg_hard_segment_duration: hardSegmentDurations.length > 0
-      ? Math.round(hardSegmentDurations.reduce((a, b) => a + b, 0) / hardSegmentDurations.length)
+    segment_count: seg.bouts.length,
+    hard_segment_count: seg.repCount,
+    avg_hard_segment_duration: seg.reps.length > 0
+      ? Math.round(avg(seg.reps.map((r) => r.seconds)))
       : null,
     effort_distribution: effortDistribution,
     avg_heart_rate: avgHeartRate,
@@ -260,9 +177,16 @@ function computeFeatures(log: TrainingLog, prevWorkout: TrainingLog | null, prev
     hours_since_last_hard: hoursSinceLastHard ? Math.round(hoursSinceLastHard * 10) / 10 : null,
     mood: log.mood,
     data_source: log.source,
-    has_pace_segments: hasPaceSegments,
+    has_pace_segments: (log.pace_segments?.length ?? 0) > 0,
     has_hr_data: hasHrData,
+    // WS1: derived classification (persisted so the Read can name the session).
+    workout_type: seg.workoutKind,
+    workout_structure: seg.structure,
   };
+}
+
+function avg(xs: number[]): number {
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
 }
 
 // Compute rolling aggregates for a workout given history
@@ -311,7 +235,9 @@ function computeRollingAggregates(
   );
   const monotony = meanDaily > 0 ? stdevDaily / meanDaily : 0;
 
-  // ACWR: 7-day avg / 28-day avg (per week)
+  // ACWR: 7-day avg / 28-day avg (per week). NOTE (WS3): ACWR is retained as an
+  // INTERNAL injury-risk input only — it is no longer surfaced to the athlete.
+  // The surfaced load story is intensity-weighted load + hard/easy balance.
   const acuteWeekly = rolling7dMiles;
   const chronicWeekly = rolling28dMiles / 4;
   const acwr = chronicWeekly > 0 ? acuteWeekly / chronicWeekly : null;
@@ -329,6 +255,57 @@ function computeRollingAggregates(
   };
 }
 
+/** Pull the athlete's pace zones from athlete_state. Returns an empty object
+ *  when missing — the classifier degrades gracefully (volume still computes;
+ *  zone classification falls back to easy). */
+async function fetchPaceZones(userId: string): Promise<PaceZones> {
+  const { data } = await supabase
+    .from("athlete_state")
+    .select("pace_zones")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const z = (data?.pace_zones ?? {}) as Record<string, unknown>;
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && v > 0 ? v : undefined;
+  return {
+    mile: num(z.mile),
+    fiveK: num(z.fiveK),
+    threeK: num(z.threeK),
+    tenK: num(z.tenK),
+    hm: num(z.hm) ?? num(z.hmp),
+    mp: num(z.mp),
+    steady: num(z.steady),
+    moderate: num(z.moderate),
+    easy: num(z.easy),
+  };
+}
+
+/** Fetch rep-level laps for a set of workout ids, grouped by workout_id. */
+async function fetchLapsByWorkout(
+  userId: string,
+  workoutIds: string[],
+): Promise<Map<string, LapInput[]>> {
+  const byId = new Map<string, LapInput[]>();
+  if (workoutIds.length === 0) return byId;
+  // Chunk to keep the IN list sane.
+  for (let i = 0; i < workoutIds.length; i += 200) {
+    const chunk = workoutIds.slice(i, i + 200);
+    const { data } = await supabase
+      .from("running_workout_laps")
+      .select("workout_id, lap_index, is_rest, distance_meters, avg_pace_sec_per_mile, moving_time_seconds, elapsed_time_seconds, avg_heart_rate")
+      .eq("user_id", userId)
+      .in("workout_id", chunk)
+      .order("lap_index", { ascending: true });
+    for (const lap of (data ?? []) as Array<Record<string, unknown>>) {
+      const wid = String(lap.workout_id);
+      const arr = byId.get(wid) ?? [];
+      arr.push(lap as LapInput);
+      byId.set(wid, arr);
+    }
+  }
+  return byId;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -344,15 +321,16 @@ Deno.serve(async (req) => {
       });
     }
 
+    const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, mood, source";
+
     // Fetch workouts to process
     let query = supabase
       .from("training_logs")
-      .select("id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, mood, source")
+      .select(cols)
       .eq("user_id", user_id)
       .order("workout_date", { ascending: true });
 
     if (training_log_id && !backfill) {
-      // Single workout mode
       query = query.eq("id", training_log_id);
     }
 
@@ -365,18 +343,17 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Filter out logs with null workout_date (can't compute features without a date)
+    // For single-workout mode we still need full history for rolling aggregates.
     let allLogs = (logs as TrainingLog[]).filter(l => l.workout_date != null);
     if (training_log_id && !backfill) {
       const { data: contextLogs } = await supabase
         .from("training_logs")
-        .select("id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, mood, source")
+        .select(cols)
         .eq("user_id", user_id)
         .order("workout_date", { ascending: true });
       if (contextLogs) allLogs = (contextLogs as TrainingLog[]).filter(l => l.workout_date != null);
     }
 
-    // Sort by date
     allLogs.sort((a, b) => new Date(a.workout_date).getTime() - new Date(b.workout_date).getTime());
 
     // Determine which logs to compute features for
@@ -384,16 +361,13 @@ Deno.serve(async (req) => {
       ? new Set([training_log_id])
       : new Set(allLogs.map(l => l.id));
 
-    // If not backfill, skip already-computed features
     if (!backfill && targetLogIds.size > 1) {
       const { data: existing } = await supabase
         .from("workout_features")
         .select("training_log_id")
         .eq("user_id", user_id);
       if (existing) {
-        for (const e of existing) {
-          targetLogIds.delete(e.training_log_id);
-        }
+        for (const e of existing) targetLogIds.delete(e.training_log_id);
       }
     }
 
@@ -404,28 +378,33 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Compute features for each target workout
+    // --- WS1: pull pace zones + laps ---
+    const zones = await fetchPaceZones(user_id);
+    const lapsByWorkout = await fetchLapsByWorkout(user_id, allLogs.map(l => l.id));
+
+    // Segment every log once (chronological), so recovery context can see the
+    // most recent prior HARD session by its real classification.
+    const segById = new Map<string, SegmentationResult>();
+    for (const log of allLogs) {
+      segById.set(log.id, segmentLog(log, lapsByWorkout.get(log.id), zones));
+    }
+
     const features: Array<Record<string, unknown>> = [];
+    const typeBackfill: Array<{ id: string; workout_type: string }> = [];
     const featuresSoFar: Array<{ workout_date: string; total_distance_miles: number | null; hard_effort_minutes: number | null }> = [];
 
     for (let i = 0; i < allLogs.length; i++) {
       const log = allLogs[i];
+      const seg = segById.get(log.id)!;
 
-      // Find previous workout and previous hard workout
       const prevWorkout = i > 0 ? allLogs[i - 1] : null;
       let prevHardWorkout: TrainingLog | null = null;
       for (let j = i - 1; j >= 0; j--) {
-        const segs = allLogs[j].pace_segments || [];
-        const hasHard = segs.some(s => isHardEffort(s.effort || "easy"));
-        if (hasHard) {
-          prevHardWorkout = allLogs[j];
-          break;
-        }
+        if (isQualitySession(segById.get(allLogs[j].id)!)) { prevHardWorkout = allLogs[j]; break; }
       }
 
-      const feat = computeFeatures(log, prevWorkout, prevHardWorkout);
+      const feat = computeFeatures(log, seg, prevWorkout, prevHardWorkout);
 
-      // Track for rolling aggregates
       featuresSoFar.push({
         workout_date: log.workout_date,
         total_distance_miles: feat.total_distance_miles,
@@ -435,40 +414,53 @@ Deno.serve(async (req) => {
       if (targetLogIds.has(log.id)) {
         const rolling = computeRollingAggregates(new Date(log.workout_date), featuresSoFar);
         features.push({ ...feat, ...rolling });
+        // Backfill the untyped training_logs (don't clobber a set type).
+        if (!log.workout_type && seg.workoutKind) {
+          typeBackfill.push({ id: log.id, workout_type: seg.workoutKind });
+        }
       }
     }
 
-    // Upsert features (on conflict update)
+    // Upsert. workout_type/workout_structure require migration
+    // 20260613200000. Deploy order is migration-first, but guard against the
+    // function landing first (this repo has been bitten by deploy ordering):
+    // on a missing-column error, retry without the two new fields.
     if (features.length > 0) {
-      const { error: upsertError } = await supabase
+      let { error: upsertError } = await supabase
         .from("workout_features")
         .upsert(features, { onConflict: "training_log_id" });
-
+      if (upsertError && /workout_type|workout_structure|column/i.test(upsertError.message)) {
+        const stripped = features.map(({ workout_type: _wt, workout_structure: _ws, ...rest }) => rest);
+        ({ error: upsertError } = await supabase
+          .from("workout_features")
+          .upsert(stripped, { onConflict: "training_log_id" }));
+      }
       if (upsertError) throw new Error(`Failed to upsert features: ${upsertError.message}`);
     }
 
-    console.log(`Computed ${features.length} workout features for user ${user_id}`);
+    // Backfill training_logs.workout_type for untyped imports.
+    let typesBackfilled = 0;
+    for (const t of typeBackfill) {
+      const { error } = await supabase
+        .from("training_logs")
+        .update({ workout_type: t.workout_type })
+        .eq("id", t.id)
+        .is("workout_type", null);
+      if (!error) typesBackfilled++;
+    }
+
+    console.log(`Computed ${features.length} workout features for user ${user_id}; backfilled ${typesBackfilled} types`);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        computed: features.length,
-        user_id,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ success: true, computed: features.length, types_backfilled: typesBackfilled, user_id }),
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Error computing workout features:", error);
     const message = error instanceof Error ? error.message : String(error);
     return new Response(
       JSON.stringify({ error: message }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });

@@ -22,3 +22,9 @@ supabase/.temp/
 
 # Claude Code local overrides
 .claude/settings.local.json
+
+# Local junk / editor + tooling artifacts
+__pycache__/
+.perf-worktree/
+.~lock.*#
+supabase/functions/_tmp_*.ts
