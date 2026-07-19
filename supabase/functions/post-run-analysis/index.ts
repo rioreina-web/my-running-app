@@ -12,8 +12,9 @@ import { legacyZonesFromSnapshot, type LegacyPaceZones } from "../_shared/pace-e
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -59,27 +60,30 @@ function computePaceZones(snap: Record<string, number>): LegacyPaceZones | null 
 }
 
 function labelPaceZone(paceSecsPerMile: number, zones: LegacyPaceZones): string {
-  const tolerance = 8;
-  // Threshold dropped from the canonical chart — HMP covers that effort
-  // band per the unified pace spectrum.
-  const zoneDefs = [
-    { name: "5K pace", pace: zones.fiveK },
-    { name: "10K pace", pace: zones.tenK },
-    { name: "HM pace", pace: zones.halfMarathon },
-    { name: "marathon pace", pace: zones.marathon },
+  // 10-zone nearest-neighbor — the same classifier web (nearestZoneKey) and
+  // iOS (SignalService.classify) use. Replaces the old ±8s / 5-zone bands with
+  // "between X and Y" hedging (§9 drift fix): the nearest anchor wins, so the
+  // label is one consistent zone rather than a different scheme per surface.
+  const anchors: Array<{ name: string; pace: number }> = [
+    { name: "recovery pace", pace: zones.recovery },
     { name: "easy pace", pace: zones.easy },
-  ];
-
-  if (paceSecsPerMile < zones.fiveK - tolerance) return "faster than 5K pace";
-  for (const z of zoneDefs) {
-    if (Math.abs(paceSecsPerMile - z.pace) <= tolerance) return z.name;
+    { name: "moderate pace", pace: zones.moderate },
+    { name: "steady pace", pace: zones.steady },
+    { name: "marathon pace", pace: zones.marathon },
+    { name: "HM pace", pace: zones.halfMarathon },
+    { name: "10K pace", pace: zones.tenK },
+    { name: "5K pace", pace: zones.fiveK },
+    { name: "3K pace", pace: zones.threeK },
+    { name: "mile pace", pace: zones.mile },
+  ].filter((a) => typeof a.pace === "number" && a.pace > 0);
+  if (anchors.length === 0) return "an unknown pace";
+  let best = anchors[0];
+  let bestDelta = Math.abs(paceSecsPerMile - best.pace);
+  for (const a of anchors) {
+    const d = Math.abs(paceSecsPerMile - a.pace);
+    if (d < bestDelta) { best = a; bestDelta = d; }
   }
-  for (let i = 0; i < zoneDefs.length - 1; i++) {
-    if (paceSecsPerMile > zoneDefs[i].pace && paceSecsPerMile < zoneDefs[i + 1].pace) {
-      return `between ${zoneDefs[i].name} and ${zoneDefs[i + 1].name}`;
-    }
-  }
-  return paceSecsPerMile > zones.easy + tolerance ? "recovery pace" : "easy pace";
+  return best.name;
 }
 
 function parsePace(p: string): number {
@@ -88,7 +92,9 @@ function parsePace(p: string): number {
 }
 
 function fmtPace(s: number): string {
-  return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/mi`;
+  // Round total first so a fractional input can't render "7:60".
+  const t = Math.round(s);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}/mi`;
 }
 
 // ============================================================================
@@ -116,6 +122,8 @@ Deno.serve(async (req: Request) => {
 
     const rlBlocked = await enforceFeatureRateLimit(user_id, "post_run", corsHeaders, { isServiceRole });
     if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(user_id, "post_run", corsHeaders, { isServiceRole });
+    if (monthlyCapped) return monthlyCapped;
 
     console.log(`Post-run analysis for log ${training_log_id}, user ${user_id}`);
 
@@ -380,6 +388,8 @@ Deno.serve(async (req: Request) => {
 
   } catch (error) {
     console.error("Post-run analysis error:", error);
+    captureException(error, { fn: "post-run-analysis" });
+    await flushSentry();
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

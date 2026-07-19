@@ -46,6 +46,7 @@ struct TodayHomeView: View {
     )
 
     @State private var loaded = false
+    @State private var loadFailed = false
 
     private let cal = Calendar.current
 
@@ -54,22 +55,34 @@ struct TodayHomeView: View {
             VStack(alignment: .leading, spacing: 24) {
                 PlateStrip(surface: "LOG  ·  v1 DIARY + CHARTS", fig: "FIG. 18")
                 header
-                if let note = coachNote {
+                if loaded && loadFailed {
+                    EmptyStateView(
+                        variant: .error,
+                        eyebrow: "Couldn't load",
+                        title: "Today didn't load. Check your connection and try again.",
+                        cta: .init(label: "Retry") {
+                            Task { await loadAll() }
+                        }
+                    )
+                    .padding(.top, 20)
+                } else {
+                    if let note = coachNote {
+                        EditorialRule()
+                        coachNoteSection(note: note)
+                    }
+                    TodayMoodPrompt()
                     EditorialRule()
-                    coachNoteSection(note: note)
+                    yesterdaySection
+                    if let workout = tomorrowWorkout {
+                        TodayTomorrowSection(workout: workout)
+                    }
+                    EditorialRule()
+                    TodayFitnessTrendChart(trend: fitnessTrend)
+                    TodayZoneShiftsRow(shifts: zoneShifts)
+                    TodayRacePredictionsStrip(predictions: racePredictions)
+                    EditorialRule()
+                    PlateFooter("Diary spine on top, cockpit's bottom half on the bottom.")
                 }
-                TodayMoodPrompt()
-                EditorialRule()
-                yesterdaySection
-                if let workout = tomorrowWorkout {
-                    TodayTomorrowSection(workout: workout)
-                }
-                EditorialRule()
-                TodayFitnessTrendChart(trend: fitnessTrend)
-                TodayZoneShiftsRow(shifts: zoneShifts)
-                TodayRacePredictionsStrip(predictions: racePredictions)
-                EditorialRule()
-                PlateFooter("Diary spine on top, cockpit's bottom half on the bottom.")
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -186,7 +199,11 @@ struct TodayHomeView: View {
     /// fetch error doesn't blank the whole screen — the failed section
     /// just renders its empty-state copy.
     private func loadAll() async {
-        async let logsTask = TodayLogRow.fetchRecent(days: 90)
+        // The logs fetch doubles as a connectivity canary. If it throws,
+        // the network is down — every other section would render empty —
+        // so we surface one Retry instead of a silently blank screen.
+        // Secondary fetches already fall back to safe defaults on error.
+        async let logsTask = TodayLogRow.fetchRecentThrowing(days: 90)
         async let goalTask = TodayGoal.fetchActive()
         async let tomorrowTask = TodayTomorrowWorkout.fetchTomorrow()
         async let trendTask = TodayFitnessTrend.fetch()
@@ -194,12 +211,25 @@ struct TodayHomeView: View {
         async let racesTask = TodayRacePredictions.fetch()
         async let noteTask = CoachMemo.fetchLatestUnread()
 
-        let (logs, fetchedGoal, tomorrow, trend, zones, races, note) = await (
-            logsTask, goalTask, tomorrowTask, trendTask, zonesTask, racesTask, noteTask
+        let logs: [TodayLogRow]
+        do {
+            logs = try await logsTask
+        } catch {
+            Log.coach.error("Today loadAll failed: \(error.localizedDescription)")
+            await MainActor.run {
+                self.loadFailed = true
+                self.loaded = true
+            }
+            return
+        }
+
+        let (fetchedGoal, tomorrow, trend, zones, races, note) = await (
+            goalTask, tomorrowTask, trendTask, zonesTask, racesTask, noteTask
         )
         let mostRecent = logs.first.map { TodayLastLog(from: $0) }
 
         await MainActor.run {
+            self.loadFailed = false
             self.lastLog = mostRecent
             self.goal = fetchedGoal
             self.tomorrowWorkout = tomorrow
@@ -413,9 +443,35 @@ struct TodayLogRow: Decodable {
     /// GPS-source row when one exists for the same day — otherwise the same
     /// physical workout gets counted twice (once as GPS, once as voice).
     let source: String?
+    /// Storage path of the recording, when this row carries one. A voice memo
+    /// about a GPS run gets its audio reattached onto the run row (see
+    /// migration `20260702150000_reattach_voice_memos_to_runs`), so `source`
+    /// stays `strava` while `audio_url` is non-nil — the only reliable "this
+    /// is a voice memo" signal for such rows. Mirrors the backend's own
+    /// qualitative/audio-bearing definition in `20260702200000`.
+    let audioUrl: String?
     /// Per-mile (or per-segment) breakdown from Strava/Vital. Powers the
     /// pace-spectrum + splits visualization in `TrainingDayExpanded`.
     let paceSegments: [PaceSegment]?
+    /// Rep-level structure (warmup / work_rep / recovery / cooldown, each with
+    /// its own distance + pace). This is the ONLY source that carries true rep
+    /// pace — `pace_segments` are per-mile splits that average reps with their
+    /// recoveries. The Volume × Pace histogram bins by these when present so a
+    /// 4:40 rep counts as 4:40, not as the 6:30 mile it lived inside.
+    let parsed: ParsedLite?
+    var structureBlocks: [StructureBlockLite]? { parsed?.blocks }
+
+    struct ParsedLite: Decodable { let blocks: [StructureBlockLite]? }
+    struct StructureBlockLite: Decodable {
+        let role: String?
+        let distanceMiles: Double?
+        let avgPace: String?   // "M:SS"
+        private enum CodingKeys: String, CodingKey {
+            case role
+            case distanceMiles = "distance_miles"
+            case avgPace = "avg_pace_per_mile"
+        }
+    }
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -429,25 +485,35 @@ struct TodayLogRow: Decodable {
         case cleanedNotes = "cleaned_notes"
         case durationMinutes = "workout_duration_minutes"
         case source
+        case audioUrl = "audio_url"
         case paceSegments = "pace_segments"
+        case parsed = "parsed_structure"
     }
 
     static func fetchRecent(days: Int) async -> [TodayLogRow] {
-        let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
         do {
-            let rows: [TodayLogRow] = try await supabase
-                .from("training_logs")
-                .select("id, workout_date, workout_distance_miles, workout_pace_per_mile, workout_type, mood, coach_insight, notes, cleaned_notes, workout_duration_minutes, source, pace_segments")
-                .gte("workout_date", value: ISO8601DateFormatter().string(from: cutoff))
-                .order("workout_date", ascending: false)
-                .limit(1500)
-                .execute()
-                .value
-            return rows
+            return try await fetchRecentThrowing(days: days)
         } catch {
             Log.coach.error("TodayLogRow fetch failed: \(error)")
             return []
         }
+    }
+
+    /// Throwing variant. Surfaces that need to tell a real fetch failure
+    /// apart from a genuinely empty result (so they can show a Retry state
+    /// instead of a misleading "no runs yet" empty state) call this and
+    /// handle the error themselves.
+    static func fetchRecentThrowing(days: Int) async throws -> [TodayLogRow] {
+        let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
+        let rows: [TodayLogRow] = try await supabase
+            .from("training_logs")
+            .select("id, workout_date, workout_distance_miles, workout_pace_per_mile, workout_type, mood, coach_insight, notes, cleaned_notes, workout_duration_minutes, source, audio_url, pace_segments, parsed_structure")
+            .gte("workout_date", value: ISO8601DateFormatter().string(from: cutoff))
+            .order("workout_date", ascending: false)
+            .limit(1500)
+            .execute()
+            .value
+        return rows
     }
 }
 
@@ -509,17 +575,7 @@ struct TodayLastLog {
     }
 
     private static func humanType(_ key: String?) -> String {
-        switch (key ?? "").lowercased() {
-        case "easy": return "Easy run"
-        case "recovery": return "Recovery"
-        case "tempo": return "Tempo"
-        case "intervals": return "Intervals"
-        case "long_run": return "Long run"
-        case "race": return "Race"
-        case "progression": return "Progression"
-        case "strides": return "Strides"
-        default: return "Run"
-        }
+        WorkoutLabel.display(key)
     }
 }
 

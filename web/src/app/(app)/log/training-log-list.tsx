@@ -121,7 +121,9 @@ function LogCard({
       {/* Header row */}
       <div className="flex items-center gap-3">
         <span className="font-mono text-sm text-text-tertiary">{dateStr}</span>
-        {isRace && <span className="text-sm">🏁</span>}
+        {isRace && (
+          <span className="font-mono text-[10px] tracking-widest uppercase text-coral">Race</span>
+        )}
 
         {editing ? (
           <select
@@ -201,7 +203,7 @@ function LogCard({
                 <option value="">Mood</option>
                 {MOODS.map((m) => (
                   <option key={m} value={m}>
-                    {MOOD_CONFIG[m]?.emoji} {MOOD_CONFIG[m]?.label}
+                    {MOOD_CONFIG[m]?.label}
                   </option>
                 ))}
               </select>
@@ -224,8 +226,15 @@ function LogCard({
                 </span>
               ) : null}
               {mood && (
-                <span className={mood.colorClass} title={mood.label}>
-                  {mood.emoji}
+                <span
+                  className={`inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] ${mood.colorClass}`}
+                  title={mood.label}
+                >
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full"
+                    style={{ backgroundColor: "currentColor" }}
+                  />
+                  {mood.label}
                 </span>
               )}
             </>
@@ -266,7 +275,7 @@ function LogCard({
       {display.coach_insight && (
         <div>
           <h3 className="mb-1.5 font-mono text-[10px] tracking-widest text-text-tertiary">
-            🧠 COACH INSIGHT
+            COACH INSIGHT
           </h3>
           <div className="rounded-lg bg-bg-elevated px-4 py-3">
             <p className="text-sm leading-relaxed text-text-secondary">
@@ -280,7 +289,7 @@ function LogCard({
       {editing ? (
         <div>
           <h3 className="mb-1.5 font-mono text-[10px] tracking-widest text-text-tertiary">
-            🏃 WORKOUT DETAILS
+            WORKOUT DETAILS
           </h3>
           <textarea
             value={draft.workout_notes ?? ""}
@@ -296,7 +305,7 @@ function LogCard({
         display.workout_notes && (
           <div>
             <h3 className="mb-1.5 font-mono text-[10px] tracking-widest text-text-tertiary">
-              🏃 WORKOUT DETAILS
+              WORKOUT DETAILS
             </h3>
             <div className="rounded-lg bg-bg-elevated px-4 py-3">
               <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-text-secondary">
@@ -318,7 +327,7 @@ function LogCard({
       {!editing && display.notes && display.notes !== display.cleaned_notes && (
         <div>
           <h3 className="mb-1.5 font-mono text-[10px] tracking-widest text-text-tertiary">
-            📄 FULL TRANSCRIPT
+            FULL TRANSCRIPT
           </h3>
           <div className="rounded-lg bg-bg-elevated px-4 py-3">
             <p className="whitespace-pre-wrap text-xs italic leading-relaxed text-text-tertiary">
@@ -396,7 +405,7 @@ function ExtractedDataSection({ data }: { data: Record<string, unknown> }) {
   return (
     <div>
       <h3 className="mb-1.5 font-mono text-[10px] tracking-widest text-text-tertiary">
-        📊 STRUCTURED DATA
+        STRUCTURED DATA
       </h3>
       <div className="rounded-lg bg-bg-elevated px-4 py-3 space-y-2">
         {effortLevel && (

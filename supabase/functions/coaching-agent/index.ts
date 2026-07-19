@@ -21,7 +21,7 @@ import { validateLength, validateUUID, validationErrorResponse, internalErrorRes
 
 // Import shared modules
 import { getCachedResponse, cacheResponse, isCacheEnabled } from "../_shared/cache.ts";
-import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
+import { checkFeatureRateLimit, enforceMonthlyCap, shouldEnforceRateLimits } from "../_shared/rateLimit.ts";
 import {
   classifyQuery,
   getBestAvailableModel,
@@ -72,6 +72,7 @@ import {
   type FitnessSnapshot,
   type FormCheckResult,
 } from "../_shared/dataAnalysis.ts";
+import type { ZoneTable } from "../_shared/quality-volume.ts";
 import {
   type TrainingLogRow,
   type ScheduledWorkoutRow,
@@ -83,6 +84,7 @@ import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athl
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 // System prompts live in `_shared/prompts/coaching-agent-{simple,moderate,
@@ -611,7 +613,10 @@ Deno.serve(async (req: Request) => {
     let rateLimit = { allowed: true, remaining: 999, resetAt: new Date(), current: 0, limit: 999 };
     let userTier = "free";
 
-    if (userId && isRateLimitEnabled() && !proactive) {
+    // H1 fix (2026-07-15): shouldEnforceRateLimits replaces isRateLimitEnabled
+    // — in production a missing Upstash env no longer bypasses the gate
+    // (checkFeatureRateLimit fails closed); local dev without Redis still skips.
+    if (userId && shouldEnforceRateLimits() && !proactive) {
       const { data: tierData } = await supabase
         .from("user_tiers")
         .select("tier")
@@ -635,6 +640,10 @@ Deno.serve(async (req: Request) => {
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      // Hard monthly cost ceiling on the highest-cost conversational surface.
+      const monthlyCapped = await enforceMonthlyCap(userId, "coaching", corsHeaders);
+      if (monthlyCapped) return monthlyCapped;
     }
 
     // ========================================================================
@@ -1117,6 +1126,16 @@ Deno.serve(async (req: Request) => {
           ? Math.ceil((new Date(plan.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
           : null;
 
+        // The athlete's own pace anchors. Quality volume is "MP and faster",
+        // and MP is personal — without this the analysis can't say what quality
+        // means for this runner, and reports 0 rather than guessing.
+        const { data: stateRow } = await supabase
+          .from("athlete_state")
+          .select("pace_zones")
+          .eq("user_id", userId)
+          .maybeSingle();
+        const paceZones = (stateRow?.pace_zones ?? null) as ZoneTable | null;
+
         const analysis = analyzeTrainingData({
           thisWeekLogs: thisWeekLogs as TrainingLogRow[],
           previousWeeksLogs,
@@ -1128,6 +1147,7 @@ Deno.serve(async (req: Request) => {
           targetTimeSeconds: plan?.target_time_seconds || null,
           targetDistance: plan?.target_race_distance || null,
           includeSignals: smartInsights !== false,
+          paceZones,
         });
 
         analyticsContext = analysis.context;
@@ -1705,6 +1725,8 @@ Coach:`;
     });
   } catch (error: any) {
     console.error("Coaching agent error:", error);
+    captureException(error, { fn: "coaching-agent" });
+    await flushSentry();
     const errBody = { error: `Internal error: ${error?.message || String(error)}` };
     try {
       const supa = (globalThis as any).__supa as any;

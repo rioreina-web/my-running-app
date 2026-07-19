@@ -1,0 +1,27 @@
+{
+  "id": "005-lateral-niggle-preserved",
+  "prompt_name": "process-training-memo.v3",
+  "description": "v2 niggle behavior must survive the v3 memory addition. A memo naming a lateral niggle: v3 still emits a structured soreness object carrying the side in the athlete's words ('left knee'), verbatim phrasing, and their severity word — AND returns memory_candidates: [] (a niggle is not a durable memory). Regression guard against v3 breaking the body_mentions classifier input.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"Solid 9 mile progression run. Felt good early, but my left knee started getting kind of tight around mile 8. Nothing sharp, just that familiar outside-of-the-knee tightness. Backed off the last mile.\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight", "extracted_data", "memory_candidates"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\"",
+      "(?i)\"location\":\\s*\"[^\"]*(itbs|iliotibial band syndrome|tendinitis|tendinopathy|fasciitis)"
+    ],
+    "required_patterns": [
+      "(?i)\"location\"\\s*:\\s*\"[^\"]*left knee",
+      "\"soreness\"\\s*:\\s*\\[",
+      "\"memory_candidates\"\\s*:\\s*\\[\\s*\\]"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

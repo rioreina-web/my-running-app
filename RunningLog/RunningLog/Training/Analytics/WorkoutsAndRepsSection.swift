@@ -2,14 +2,24 @@
 //  WorkoutsAndRepsSection.swift
 //  RunningLog
 //
-//  Training-tab section: recent quality sessions (intervals / threshold /
-//  tempo / fartlek / progression / race), each tapping through to the
-//  per-workout rep chart (WorkoutRepChart). Self-contained — own fetch and
-//  own sheet — so it drops into TrainingTabView with a single line and can't
-//  disturb the existing analysis sections.
+//  Session receipts: recent quality workouts as ledger entries. Each row
+//  carries the parsed structure as its title ("8×1K · 5.3 mi" — workout
+//  labels are pace-zone labels; Intervals/Tempo/Threshold are retired),
+//  a zone chip, the work-bout REP PACE (rest excluded, ○ when
+//  heat-adjusted), and a RepDensityStrip — width = rep distance, color =
+//  the zone-anchored PaceSpectrum ramp — so a column of rows reads as a
+//  flip-book of the block. Tapping opens the full Rep Receipt.
 //
-//  Reads training_logs directly (RLS user-scoped; workout_type is set by the
-//  WS1 classifier). The rep chart fetches that workout's laps by id.
+//  Self-contained (own fetch, own sheet) so it drops into TrainingTabView
+//  or the Key Sessions detail with a single line.
+//
+//  Data: training_logs (quality types — detection only, never displayed as
+//  labels) + workout_features.workout_structure + running_workout_laps for
+//  the visible rows. All RLS user-scoped. Degrades row by row: no structure
+//  → plain distance title; no laps → no strip, no rep pace.
+//
+//  Design: outputs/key-sessions-low-data-editorial-mockup-2026-07-02.html +
+//  outputs/pace-volume-studies-2026-07-02.html (Study D).
 //
 
 import SwiftUI
@@ -23,11 +33,20 @@ struct WorkoutsAndRepsSection: View {
         var workout_type: String?
         var workout_distance_miles: Double?
     }
+    private struct FeatureRow: Decodable {
+        let training_log_id: UUID
+        let workout_structure: String?
+    }
     private struct SheetID: Identifiable { let id: UUID }
 
+    /// Detection filter only — these tokens select which logs are quality;
+    /// they are never rendered as labels (the taxonomy dropped them).
     private static let qualityTypes = ["intervals", "interval", "threshold", "tempo", "fartlek", "progression", "race"]
+    private static let shownCount = 4
 
     @State private var items: [QualityWorkout] = []
+    @State private var structures: [UUID: String] = [:]
+    @State private var lapsById: [UUID: [WorkoutLapRow]] = [:]
     @State private var loaded = false
     @State private var sheet: SheetID?
     @State private var errorText: String?
@@ -36,8 +55,8 @@ struct WorkoutsAndRepsSection: View {
         VStack(alignment: .leading, spacing: 0) {
             sectionLabel
             if !items.isEmpty {
-                ForEach(Array(items.prefix(4))) { w in
-                    Button { sheet = SheetID(id: w.id) } label: { row(w) }
+                ForEach(Array(items.prefix(Self.shownCount))) { w in
+                    Button { sheet = SheetID(id: w.id) } label: { receipt(w) }
                         .buttonStyle(.plain)
                 }
             } else if !loaded {
@@ -45,8 +64,8 @@ struct WorkoutsAndRepsSection: View {
                     .font(.dripStat(11)).foregroundStyle(Color.drip.textTertiary)
                     .padding(.vertical, 12)
             } else {
-                Text(errorText ?? "No quality sessions detected recently.")
-                    .font(.dripBody(13)).foregroundStyle(Color.drip.textSecondary)
+                Text(errorText ?? "No quality sessions logged yet. The first interval day, MP miles, or LT session lands here.")
+                    .font(.dripBody(13).italic()).foregroundStyle(Color.drip.textSecondary)
                     .padding(.vertical, 12)
             }
         }
@@ -58,7 +77,7 @@ struct WorkoutsAndRepsSection: View {
         .sheet(item: $sheet) { s in
             NavigationStack {
                 ScrollView {
-                    WorkoutRepChart(workoutId: s.id).padding(20)
+                    WorkoutRepReceiptView(workoutId: s.id).padding(20)
                 }
                 .background(Color.drip.background.ignoresSafeArea())
                 .toolbar {
@@ -81,22 +100,49 @@ struct WorkoutsAndRepsSection: View {
         .padding(.bottom, 6)
     }
 
-    private func row(_ w: QualityWorkout) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+    // MARK: receipt row
+
+    private func receipt(_ w: QualityWorkout) -> some View {
+        let parts = structureParts(structures[w.id])
+        let pace = repPace(w.id)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
                 Text(dateLine(w.workout_date))
                     .font(.dripStat(10)).tracking(0.6)
                     .foregroundStyle(Color.drip.coral)
-                Text("\(typeLabel(w.workout_type))\(distSuffix(w.workout_distance_miles))")
+                Spacer()
+                if let zone = parts.zone {
+                    Text(zone)
+                        .font(.dripStat(9)).tracking(1.0)
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .padding(.horizontal, 9).padding(.vertical, 2)
+                        .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(title(parts.title, w))
                     .font(.dripBody(15))
                     .foregroundStyle(Color.drip.textPrimary)
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer()
+                if let pace {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(pace.label).font(.dripStat(13)).foregroundStyle(Color.drip.textPrimary)
+                        Text("REP PACE").font(.dripStat(8)).tracking(0.8)
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                } else {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
             }
-            Spacer()
-            Image(systemName: "arrow.up.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.drip.textTertiary)
+            .padding(.top, 3)
+            if let laps = lapsById[w.id] {
+                RepDensityStrip(laps: laps).padding(.top, 9)
+            }
         }
-        .padding(.vertical, 11)
+        .padding(.vertical, 12)
         .contentShape(Rectangle())
         .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
     }
@@ -115,27 +161,120 @@ struct WorkoutsAndRepsSection: View {
         } catch {
             errorText = "Couldn't load workouts: \(error.localizedDescription)"
             Log.coach.error("WorkoutsAndRepsSection load failed: \(error)")
+            loaded = true
+            return
+        }
+        let shown = Array(items.prefix(Self.shownCount))
+        // Structures + laps are enrichments — the list renders without them.
+        if !shown.isEmpty {
+            let ids = shown.map(\.id.uuidString)
+            if let feats: [FeatureRow] = try? await supabase
+                .from("workout_features")
+                .select("training_log_id,workout_structure")
+                .in("training_log_id", values: ids)
+                .execute().value {
+                structures = Dictionary(
+                    feats.compactMap { f in f.workout_structure.map { (f.training_log_id, $0) } },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            }
+            await withTaskGroup(of: (UUID, [WorkoutLapRow]).self) { group in
+                for id in shown.map(\.id) {
+                    group.addTask { (id, await WorkoutLapsService.fetchLaps(workoutId: id)) }
+                }
+                for await (id, laps) in group where !laps.isEmpty {
+                    lapsById[id] = laps
+                }
+            }
         }
         loaded = true
     }
 
-    // MARK: format
+    // MARK: derived — rep pace (mirrors the strip's work-rep definition)
 
-    private func typeLabel(_ t: String?) -> String {
-        switch (t ?? "").lowercased() {
-        case "intervals", "interval": return "Intervals"
-        case "threshold": return "Threshold"
-        case "tempo": return "Tempo"
-        case "fartlek": return "Fartlek"
-        case "progression": return "Progression"
-        case "race": return "Race"
-        default: return "Workout"
+    private struct RepPace { let label: String }
+
+    /// Distance-weighted mean work-bout pace, rest excluded; prefixed ○ and
+    /// shown heat-adjusted when the laps carry an adjustment that moves the
+    /// number ≥ 1 s/mi (the raw pace remains one tap away on the receipt).
+    private func repPace(_ id: UUID) -> RepPace? {
+        guard let raw = lapsById[id] else { return nil }
+        let work = WorkoutLapsService.mergeWorkBouts(raw).filter { lap in
+            lap.is_rest != true
+                && (lap.avg_pace_sec_per_mile ?? 0) > 0
+                && (lap.distance_meters ?? 0) >= 150
+                && (lap.moving_time_seconds ?? 0) >= 20
         }
+        let meters = work.reduce(0.0) { $0 + ($1.distance_meters ?? 0) }
+        let seconds = work.reduce(0.0) { $0 + Double($1.moving_time_seconds ?? 0) }
+        guard meters > 0, seconds > 0 else { return nil }
+        let paceSec = seconds / (meters / 1609.344)
+        // Uniform per-session adjustment ratio, read off the first raw lap
+        // that carries both numbers (workout-level weather snapshot).
+        var ratio: Double?
+        for lap in raw {
+            if let r = lap.avg_pace_sec_per_mile, r > 0,
+               let a = lap.heat_adjusted_pace_sec_per_mile, a > 0 {
+                ratio = a / r
+                break
+            }
+        }
+        if let ratio, abs(paceSec * ratio - paceSec) >= 1 {
+            return RepPace(label: "○ \(fmt(paceSec * ratio))")
+        }
+        return RepPace(label: fmt(paceSec))
     }
+
+    private func fmt(_ paceSec: Double) -> String {
+        let total = Int(paceSec.rounded())
+        return "\(total / 60):\(String(format: "%02d", total % 60))"
+    }
+
+    // MARK: format — structure → title + zone chip
+
+    /// "8×1K @ 5:14 (10K)" → (title: "8×1K", zone: "10K").
+    /// Legacy zone tokens map forward ("threshold" → LT); "tempo" is
+    /// ambiguous by decision and gets no chip. The @-pace is dropped from
+    /// the title — the right column carries the measured rep pace instead.
+    private func structureParts(_ raw: String?) -> (title: String?, zone: String?) {
+        guard var s = raw?.trimmingCharacters(in: .whitespaces), !s.isEmpty else {
+            return (nil, nil)
+        }
+        var zone: String?
+        if s.hasSuffix(")"), let open = s.lastIndex(of: "(") {
+            let token = String(s[s.index(after: open)..<s.index(before: s.endIndex)])
+                .trimmingCharacters(in: .whitespaces).lowercased()
+            zone = Self.zoneChip[token]
+            s = String(s[..<open]).trimmingCharacters(in: .whitespaces)
+        }
+        if let r = s.range(of: #"\s*@\s*\d{1,2}:\d{2}"#, options: .regularExpression) {
+            s.removeSubrange(r)
+        }
+        s = s.trimmingCharacters(in: .whitespaces)
+        return (s.isEmpty ? nil : s, zone)
+    }
+
+    private static let zoneChip: [String: String] = [
+        "mile": "MILE", "3k": "3K", "5k": "5K", "10k": "10K",
+        "hmp": "HMP", "mp": "MP", "lt": "LT", "threshold": "LT",
+    ]
+
+    private func title(_ structure: String?, _ w: QualityWorkout) -> String {
+        let dist = w.workout_distance_miles
+        if let structure {
+            return structure + distSuffix(dist)
+        }
+        if let dist, dist > 0 {
+            return String(format: "%.1f mi", dist)
+        }
+        return "Workout"
+    }
+
     private func distSuffix(_ mi: Double?) -> String {
         guard let mi, mi > 0 else { return "" }
         return String(format: " · %.1f mi", mi)
     }
+
     private func dateLine(_ iso: String?) -> String {
         guard let iso, iso.count >= 10 else { return "" }
         let day = String(iso.prefix(10))

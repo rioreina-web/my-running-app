@@ -61,6 +61,10 @@ struct DayDetailSheet: View {
     @State private var showWorkoutChat = false
     @State private var showReschedule = false
 
+    // Workout builder (structured step editor) + duplicate-to-day picker
+    @State private var showWorkoutBuilder = false
+    @State private var showDuplicatePicker = false
+
     // Workshop mode (for creating/replacing workouts)
     @State private var showWorkshop = false
     @State private var workshopTab: WorkshopTab = .build
@@ -313,12 +317,15 @@ struct DayDetailSheet: View {
                                 DD22ActionStrip(
                                     workout: scheduledWorkout,
                                     isExporting: isExporting,
+                                    isCoachIssued: isCoachIssuedWorkout,
                                     onMarkComplete: { markComplete() },
                                     onSkip: { markSkipped() },
                                     onSwap: { showSwapPicker = true },
                                     onRestructure: { showWorkshop = true },
                                     onReschedule: { showReschedule = true },
-                                    onExport: { exportWorkout() }
+                                    onExport: { exportWorkout() },
+                                    onEditWorkout: { showWorkoutBuilder = true },
+                                    onDuplicate: { showDuplicatePicker = true }
                                 )
                                 .padding(.horizontal, 20)
                             }
@@ -465,6 +472,32 @@ struct DayDetailSheet: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
             }
+            .sheet(isPresented: $showWorkoutBuilder) {
+                // Structured builder — edit (self-coached) or customize
+                // (coach-issued; the sheet shows the coach-visibility line).
+                // Saves route through edit-scheduled-workout so the change
+                // is audited either way.
+                WorkoutBuilderSheet(
+                    viewModel: viewModel,
+                    scheduledWorkout: scheduledWorkout,
+                    racePaceSeconds: racePaceSeconds,
+                    onSaved: { dismiss() }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showDuplicatePicker) {
+                DuplicateDayPickerSheet(
+                    sourceWorkout: scheduledWorkout,
+                    scheduled: viewModel.allScheduledWorkouts,
+                    onPick: { date in
+                        Task {
+                            let ok = await viewModel.duplicateWorkout(scheduledWorkout, to: date)
+                            if ok { dismiss() }
+                        }
+                    }
+                )
+            }
             .alert("Delete Workout", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {}
                 Button("Convert to Rest Day", role: .destructive) {
@@ -479,12 +512,9 @@ struct DayDetailSheet: View {
                 Text(exportErrorMessage ?? "An error occurred while exporting")
             }
             .sheet(isPresented: $showVitalDetail) {
-                if let vitalWorkout = selectedVitalWorkout,
-                   let vitalId = vitalWorkout.vitalWorkoutId
-                {
-                    VitalWorkoutDetailView(workout: vitalWorkout, vitalWorkoutId: vitalId)
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.visible)
+                if let vitalWorkout = selectedVitalWorkout {
+                    // Canonical workout detail — rep-by-rep chart, notes, splits.
+                    WorkoutRepDetailSheet(workoutId: vitalWorkout.id)
                 }
             }
             .task {
@@ -590,6 +620,14 @@ struct DayDetailSheet: View {
 
     // MARK: - Edit Mode
 
+    /// Coach-issued when the row is a coach prescription (two-lane
+    /// `coach_locked` source) or the whole plan came from a coach template.
+    /// Drives the "Customize" label + coach-visibility notice in the builder.
+    private var isCoachIssuedWorkout: Bool {
+        scheduledWorkout.source == "coach_locked"
+            || (viewModel.activePlan?.isCoachPlan ?? false)
+    }
+
     private var defaultEquivalentPaces: EquivalentPaces {
         EquivalentPaces(raceDistance: .marathon, goalTimeSeconds: 14400)
     }
@@ -667,11 +705,16 @@ struct DayDetailSheet: View {
         updatedScheduled.workout = updatedWorkout
         updatedScheduled.status = .modified
 
-        await viewModel.updateWorkout(updatedScheduled)
+        // Route through the audited edge function so the coach is flagged
+        // (yellow-tier plan_adjustment). Keep the sheet in edit mode if it
+        // fails so the athlete doesn't lose their changes.
+        let ok = await viewModel.submitWorkoutEdit(updatedScheduled)
 
         isSavingEdits = false
-        withAnimation(.spring(response: 0.3)) {
-            isEditing = false
+        if ok {
+            withAnimation(.spring(response: 0.3)) {
+                isEditing = false
+            }
         }
     }
 }

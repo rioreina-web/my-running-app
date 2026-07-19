@@ -60,24 +60,27 @@ enum VolumeChartKind: String, Identifiable {
     var isPaceAxis: Bool { self == .pace }
 }
 
-// MARK: - Intensity ramp (9 zones, starts green at easy)
+// MARK: - Intensity ramp (10 zones, pale blue → navy)
 //
-// New colour vocabulary introduced by the Training spec. Every colour
-// means a pace. Distinct from the mood/zone colours in DesignSystem —
-// this is the *one* ramp used everywhere on this tab.
+// The universal pace ramp: one blue hue, ten depths — pale (easy) → navy
+// (mile+). Every colour means a pace. Mirrors `PaceSpectrum.stops` — the
+// ten stops map to the canonical 10-zone taxonomy (Easy · Moderate ·
+// Steady · MP · HMP · LT · 10K · 5K · 3K · Mile). Anything faster than
+// mile clips to the Mile navy.
 
 enum IntensityRamp {
-    /// z1 (easy) → z9 (mile / sharp end).
+    /// z1 (Easy) → z10 (Mile). Same hexes as `PaceSpectrum.stops`.
     static let colors: [Color] = [
-        Color(hex: "A8B394"), // z1 easy
-        Color(hex: "BFAE7C"), // z2
-        Color(hex: "C49B52"), // z3 aerobic / MP-ish
-        Color(hex: "C28438"), // z4
-        Color(hex: "BE6A2E"), // z5
-        Color(hex: "C04E27"), // z6 threshold+
-        Color(hex: "A03A44"), // z7
-        Color(hex: "84395C"), // z8
-        Color(hex: "5F4A86"), // z9 mile / sharp end
+        Color(hex: "93B9D6"), // z1 Easy (pale sky)
+        Color(hex: "74A8CC"), // z2 Moderate
+        Color(hex: "578FC0"), // z3 Steady
+        Color(hex: "3F7CB5"), // z4 MP
+        Color(hex: "2F66A8"), // z5 HMP
+        Color(hex: "27549B"), // z6 LT / threshold+
+        Color(hex: "20448B"), // z7 10K
+        Color(hex: "1A3679"), // z8 5K
+        Color(hex: "142964"), // z9 3K
+        Color(hex: "0E1D4E"), // z10 Mile (navy)
     ]
 
     /// Stacked-bar simplification: easy = z1, aerobic = z3, threshold+ = z6.
@@ -85,11 +88,56 @@ enum IntensityRamp {
     static var aerobic: Color   { colors[2] }
     static var threshold: Color { colors[5] }
 
+    /// RGB stops (0–255) mirroring `colors`, for continuous interpolation.
+    private static let rgbStops: [(r: Double, g: Double, b: Double)] = [
+        (147, 185, 214), // z1 Easy (pale sky)
+        (116, 168, 204), // z2 Moderate
+        ( 87, 143, 192), // z3 Steady
+        ( 63, 124, 181), // z4 MP
+        ( 47, 102, 168), // z5 HMP
+        ( 39,  84, 155), // z6 LT / threshold+
+        ( 32,  68, 139), // z7 10K
+        ( 26,  54, 121), // z8 5K
+        ( 20,  41, 100), // z9 3K
+        ( 14,  29,  78), // z10 Mile (navy)
+    ]
+
+    /// Continuous spectrum colour at `t` in [0, 1] — 0 = slowest (pale),
+    /// 1 = fastest (navy). Linearly interpolates between adjacent
+    /// stops so the ramp reads as a smooth depth scale, not discrete bands.
+    static func color(at t: Double) -> Color {
+        let clamped = min(max(t, 0), 1)
+        let scaled = clamped * Double(rgbStops.count - 1)
+        let i = min(Int(scaled), rgbStops.count - 2)
+        let f = scaled - Double(i)
+        let a = rgbStops[i], b = rgbStops[i + 1]
+        return Color(
+            red:   (a.r + (b.r - a.r) * f) / 255.0,
+            green: (a.g + (b.g - a.g) * f) / 255.0,
+            blue:  (a.b + (b.b - a.b) * f) / 255.0
+        )
+    }
+
+    /// Smooth left-to-right gradient of the full ramp — for legend bands.
+    static var gradient: LinearGradient {
+        LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+    }
+
+    /// Colour for an absolute pace (sec/mi). `slowSec` anchors the pale
+    /// (easy) end, `fastSec` the navy (mile) end. Faster paces
+    /// (smaller seconds) move up the ramp. This is the *pace-zone* mapping:
+    /// the same pace is the same colour in every chart, independent of any
+    /// single workout's spread.
+    static func color(forPaceSec pace: Double, slowSec: Double, fastSec: Double) -> Color {
+        guard slowSec > fastSec else { return easy }
+        return color(at: (slowSec - pace) / (slowSec - fastSec))
+    }
+
     /// Ramp colour for a histogram bin, `0` slowest … `binCount-1` fastest.
+    /// Samples the continuous spectrum rather than snapping to a stop.
     static func color(forBin index: Int, binCount: Int) -> Color {
-        guard binCount > 0 else { return easy }
-        let z = Int(Double(index) / Double(binCount) * 9.0)
-        return colors[min(8, max(0, z))]
+        guard binCount > 1 else { return easy }
+        return color(at: Double(index) / Double(binCount - 1))
     }
 }
 
@@ -245,11 +293,43 @@ struct FeltVsPlanned: Identifiable {
     var matched: Bool { felt <= planned }
 }
 
+/// Aggregated weather for one completed run, built from the raw GPS lap
+/// rows (`running_workout_laps.temp_f / dew_point_f /
+/// heat_adjusted_pace_sec_per_mile`). Surfaced as a conditions readout on
+/// the CURRENT week's day rows — observation only, never advice.
+struct RunConditions {
+    var tempF: Int?
+    var dewPointF: Int?
+    /// Seconds per mile the heat cost — raw pace minus heat-adjusted
+    /// ("fair air") pace, distance-agnostic mean over work laps carrying
+    /// both. Only kept when ≥ 3 s/mi (the same threshold
+    /// `WorkoutForecast` uses) so trivial noise never renders.
+    var heatCostSecPerMile: Int?
+
+    /// "Hot run" per the dewpoint-first heuristic the heat model uses.
+    var isHot: Bool { (dewPointF ?? 0) >= 65 || (tempF ?? 0) >= 78 }
+
+    /// "74° · DP 68° · HEAT ADJ −9S" — absent components drop out.
+    var readout: String? {
+        var parts: [String] = []
+        if let t = tempF { parts.append("\(t)°") }
+        if let d = dewPointF { parts.append("DP \(d)°") }
+        if let h = heatCostSecPerMile { parts.append("HEAT ADJ −\(h)S") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
 struct SummaryStats {
     var miles: Double = 0
     var runs: Int = 0
     var durationMinutes: Double = 0
     var easyPercent: Int = 0
+    /// Count of voice-memo / qualitative entries in the window — rows that
+    /// carry a recording (`audio_url` non-nil) or were written as a
+    /// `voice_log` / `check_in` (see `isVoiceMemo`). Surfaces the qualitative
+    /// input stream alongside the quantitative one — a plain count, never
+    /// interpreted on this tab.
+    var voiceMemos: Int = 0
 }
 
 struct BlockStats {
@@ -282,13 +362,37 @@ final class TrainingAnalyticsViewModel {
 
     var isLoading = false
     var hasLoaded = false
+    /// True when the initial load failed (e.g. no connection). Lets the
+    /// view show a Retry state instead of an empty analytics screen.
+    var loadFailed = false
 
     // Raw inputs
     private var logs: [TodayLogRow] = []            // deduped, ascending by date
     private var rpeByLog: [UUID: RPERow] = [:]
+
+    // Performance caches. All `@ObservationIgnored` so writing to them from a
+    // getter during a view render never triggers observation (which would
+    // cause "modifying state during update" loops). They're derived purely
+    // from `logs` + `scope`, both observed, so correctness is preserved:
+    // `rebuildLogIndex()` bumps `cacheToken` on every reload, and the memo
+    // getters re-key on `scope`.
+    //
+    // `logsByDay` makes `logs(on:)` / `logs(inWeekStarting:)` O(1) lookups
+    // instead of full-history filters — those were called weeks×7 times per
+    // redraw from gridWeeks()/dayVolumes(), the main source of Train-tab lag.
+    @ObservationIgnored private var logsByDay: [Date: [TodayLogRow]] = [:]
+    @ObservationIgnored private var cacheToken = 0
+    @ObservationIgnored private var weekVolumesCache: (token: Int, scope: TrainingScope, value: [WeekVolume])?
+    @ObservationIgnored private var gridWeeksCache: (token: Int, scope: TrainingScope, value: [GridWeek])?
+    @ObservationIgnored private var dayVolumesCache: (token: Int, value: [DayVolume])?
+    @ObservationIgnored private var easyPaceTrendCache: (token: Int, scope: TrainingScope, value: [EasyPacePoint])?
     // Splits are fetched per session (laps query) on demand; cache so
     // re-opening the same day doesn't refetch. Cleared on reload.
     private var splitsCache: [UUID: [DaySplit]] = [:]
+    /// Weather readouts for THIS week's runs, keyed by training-log id.
+    /// Loaded in one batched `running_workout_laps` query after the main
+    /// load — an enrichment: absence just means no readout renders.
+    private(set) var conditionsByLog: [UUID: RunConditions] = [:]
     private(set) var snapshot: FitnessSnapshot?     // latest current-fitness
     private(set) var goals: GoalsSummary?
     private var planStart: Date?
@@ -313,8 +417,19 @@ final class TrainingAnalyticsViewModel {
         defer { isLoading = false }
 
         // Logs (400d covers any block) — deduped before any aggregation.
-        let fetched = await TodayLogRow.fetchRecent(days: 400)
+        // Use the throwing fetch so a real failure surfaces a Retry state
+        // rather than a misleadingly empty analytics screen.
+        let fetched: [TodayLogRow]
+        do {
+            fetched = try await TodayLogRow.fetchRecentThrowing(days: 400)
+        } catch {
+            log.error("Training analytics load failed: \(error.localizedDescription)")
+            loadFailed = true
+            return
+        }
+        loadFailed = false
         logs = fetched.dedupedByPhysicalWorkout().sorted { $0.date < $1.date }
+        rebuildLogIndex()         // refresh day index + invalidate memo caches
         splitsCache.removeAll()   // logs changed — drop stale per-session splits
 
         // Current-fitness snapshot (cheap — reads the history table).
@@ -328,7 +443,98 @@ final class TrainingAnalyticsViewModel {
         // Goals + plan block bounds.
         await loadPlanAndGoals(predictor: predictor)
 
+        // Weather on this week's runs (CURRENT-mode conditions readouts).
+        await loadCurrentWeekConditions()
+
         hasLoaded = true
+    }
+
+    /// Batched fetch of lap-level weather for this week's runs. One query,
+    /// aggregated per run: max temp, max dewpoint, mean heat cost. Degrades
+    /// to an empty map on any failure — the readout is enrichment, never
+    /// load-bearing.
+    private func loadCurrentWeekConditions() async {
+        let ids = logs(inWeekStarting: thisWeekStart).map(\.id.uuidString)
+        guard !ids.isEmpty else { conditionsByLog = [:]; return }
+        struct LapWx: Decodable {
+            let workout_id: UUID
+            let temp_f: Double?
+            let dew_point_f: Double?
+            let avg_pace_sec_per_mile: Double?
+            let heat_adjusted_pace_sec_per_mile: Double?
+            let is_rest: Bool?
+        }
+        do {
+            let rows: [LapWx] = try await supabase
+                .from("running_workout_laps")
+                .select("workout_id,temp_f,dew_point_f,avg_pace_sec_per_mile,heat_adjusted_pace_sec_per_mile,is_rest")
+                .in("workout_id", values: ids)
+                .execute().value
+            var out: [UUID: RunConditions] = [:]
+            for (id, laps) in Dictionary(grouping: rows, by: { $0.workout_id }) {
+                var c = RunConditions()
+                if let t = laps.compactMap(\.temp_f).max() { c.tempF = Int(t.rounded()) }
+                if let d = laps.compactMap(\.dew_point_f).max() { c.dewPointF = Int(d.rounded()) }
+                let costs = laps.filter { $0.is_rest != true }.compactMap { l -> Double? in
+                    guard let raw = l.avg_pace_sec_per_mile,
+                          let adj = l.heat_adjusted_pace_sec_per_mile,
+                          raw > adj else { return nil }
+                    return raw - adj
+                }
+                if !costs.isEmpty {
+                    let mean = costs.reduce(0, +) / Double(costs.count)
+                    if mean >= 3 { c.heatCostSecPerMile = Int(mean.rounded()) }
+                }
+                if c.tempF != nil || c.dewPointF != nil { out[id] = c }
+            }
+            conditionsByLog = out
+        } catch {
+            conditionsByLog = [:]
+            log.error("Week conditions load failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Conditions for a day — the day's biggest run that has a readout.
+    func conditions(on day: Date) -> RunConditions? {
+        for row in logs(on: day).sorted(by: { ($0.miles ?? 0) > ($1.miles ?? 0) }) {
+            if let c = conditionsByLog[row.id] { return c }
+        }
+        return nil
+    }
+
+    /// The day's mood label — preferring the biggest run's mood, falling
+    /// back to any logged mood that day (e.g. a rest-day check-in).
+    /// Verbatim from the closed vocabulary; rendered by `MoodBadge`.
+    func mood(on day: Date) -> String? {
+        logs(on: day)
+            .sorted { ($0.miles ?? 0) > ($1.miles ?? 0) }
+            .compactMap(\.mood)
+            .first { !$0.isEmpty }
+    }
+
+    /// Runs this week logged in hot conditions (dewpoint ≥ 65° or ≥ 78°).
+    func hotRunCount() -> Int {
+        logs(inWeekStarting: thisWeekStart)
+            .filter { conditionsByLog[$0.id]?.isHot == true }
+            .count
+    }
+
+    /// Quiet qualitative observation for the week — the athlete's own
+    /// fatigue-class mood labels, verbatim, with their weekdays. Nil when
+    /// the week carried none. Observation only; never advice (the "push or
+    /// pull" call belongs to the athlete/coach — AI advises, never acts).
+    func weekMoodObservation() -> String? {
+        let fatigueMoods: Set<String> = ["tired", "struggling", "injured"]
+        var seen = Set<String>()
+        let f = DateFormatter(); f.dateFormat = "EEEE"
+        let hits: [String] = logs(inWeekStarting: thisWeekStart).compactMap { row in
+            guard let m = row.mood?.lowercased(), fatigueMoods.contains(m) else { return nil }
+            let key = "\(m)-\(cal.startOfDay(for: row.date))"
+            guard seen.insert(key).inserted else { return nil }
+            return "\u{201C}\(m)\u{201D} \(f.string(from: row.date))"
+        }
+        guard !hits.isEmpty else { return nil }
+        return "You logged " + hits.joined(separator: " · ") + "."
     }
 
     private func loadPlanAndGoals(predictor: FitnessPredictorService) async {
@@ -356,8 +562,19 @@ final class TrainingAnalyticsViewModel {
     var marathonPaceSec: Double? {
         snapshot.map { Double($0.predictedMarathonSeconds) / 26.21875 }
     }
-    var thresholdPaceSec: Double? {   // LT ≈ current predicted half pace
-        snapshot.map { Double($0.predictedHalfSeconds) / 13.109375 }
+    var halfPaceSec: Double? {   // HMP — current predicted half pace
+        snapshot.map { Double($0.predictedHalfSeconds) / RaceDistanceConstants.halfMarathonMiles }
+    }
+    /// LT = one-hour race pace (canonical), interpolated between 10K and half
+    /// via `PaceCalculator` so it never collapses onto half pace for runners
+    /// whose half takes over an hour. See the pace-zone rules in CLAUDE.md.
+    var thresholdPaceSec: Double? {
+        guard let s = snapshot else { return nil }
+        return PaceCalculator.calculateOneHourPace(fromDistance: "5K",
+                                                    totalSeconds: Int(s.predicted5kSeconds))
+    }
+    var tenKPaceSec: Double? {
+        snapshot.map { Double($0.predicted10kSeconds) / RaceDistanceConstants.tenKMiles }
     }
     var fiveKPaceSec: Double? {
         snapshot.map { Double($0.predicted5kSeconds) / 3.106856 }
@@ -408,13 +625,34 @@ final class TrainingAnalyticsViewModel {
 
     // MARK: Per-day / per-week aggregation
 
+    /// Rebuild the day index from `logs` and invalidate the memo caches. Call
+    /// whenever `logs` changes. Keyed by start-of-day so per-day / per-week
+    /// lookups are dictionary hits rather than full-array scans.
+    private func rebuildLogIndex() {
+        var index: [Date: [TodayLogRow]] = [:]
+        for row in logs {
+            index[cal.startOfDay(for: row.date), default: []].append(row)
+        }
+        logsByDay = index
+        cacheToken &+= 1
+        weekVolumesCache = nil
+        gridWeeksCache = nil
+        dayVolumesCache = nil
+        easyPaceTrendCache = nil
+    }
+
     private func logs(on day: Date) -> [TodayLogRow] {
-        logs.filter { cal.isDate($0.date, inSameDayAs: day) }
+        logsByDay[cal.startOfDay(for: day)] ?? []
     }
 
     private func logs(inWeekStarting weekStart: Date) -> [TodayLogRow] {
-        guard let end = cal.date(byAdding: .day, value: 7, to: weekStart) else { return [] }
-        return logs.filter { $0.date >= weekStart && $0.date < end }
+        let start = cal.startOfDay(for: weekStart)
+        var out: [TodayLogRow] = []
+        for offset in 0..<7 {
+            guard let day = cal.date(byAdding: .day, value: offset, to: start) else { continue }
+            if let rows = logsByDay[cal.startOfDay(for: day)] { out.append(contentsOf: rows) }
+        }
+        return out
     }
 
     /// Split a single run's miles into easy/aerobic/threshold buckets using
@@ -503,10 +741,30 @@ final class TrainingAnalyticsViewModel {
             s.miles += r.miles ?? 0
             s.runs += 1
             s.durationMinutes += r.durationMinutes ?? 0
+            if isVoiceMemo(r) { s.voiceMemos += 1 }
             split = split + self.split(for: r)
         }
         s.easyPercent = split.total > 0 ? Int((split.easy / split.total * 100).rounded()) : 0
         return s
+    }
+
+    /// Whether a row represents a voice memo / qualitative journal entry.
+    ///
+    /// `source == "voice_log"` alone under-counts: the dedup cron (and the
+    /// one-time `20260702150000_reattach_voice_memos_to_runs` migration)
+    /// folds a voice memo about a GPS run onto the run row, deleting the
+    /// standalone `voice_log` entry and leaving `source == "strava"` with a
+    /// non-nil `audio_url`. So the recording itself — not the writer label —
+    /// is the reliable signal. Mirrors the backend's own qualitative /
+    /// audio-bearing definition (`source IN ('voice_log','check_in') OR
+    /// audio_url IS NOT NULL`) from `20260702200000_dedupe_never_touch_voice_logs`.
+    /// Note: `manual` is intentionally excluded — a typed run is not a memo.
+    private func isVoiceMemo(_ r: TodayLogRow) -> Bool {
+        if r.audioUrl != nil { return true }
+        switch r.source {
+        case "voice_log", "check_in": return true
+        default: return false
+        }
     }
 
     private func logsInLast(days: Int) -> [TodayLogRow] {
@@ -523,6 +781,13 @@ final class TrainingAnalyticsViewModel {
     // MARK: Outputs — volume by intensity
 
     func dayVolumes() -> [DayVolume] {
+        if let c = dayVolumesCache, c.token == cacheToken { return c.value }
+        let value = computeDayVolumes()
+        dayVolumesCache = (cacheToken, value)
+        return value
+    }
+
+    private func computeDayVolumes() -> [DayVolume] {
         let today = cal.startOfDay(for: Date())
         return (0..<7).compactMap { offset in
             guard let day = cal.date(byAdding: .day, value: offset, to: thisWeekStart) else { return nil }
@@ -538,12 +803,15 @@ final class TrainingAnalyticsViewModel {
     }
 
     func weekVolumes() -> [WeekVolume] {
-        scopedWeekStarts().map { ws in
+        if let c = weekVolumesCache, c.token == cacheToken, c.scope == scope { return c.value }
+        let value = scopedWeekStarts().map { ws in
             WeekVolume(weekStart: ws,
                        label: Self.monthDayLabel(ws),
                        split: split(forWeekStarting: ws),
                        inProgress: cal.isDate(ws, inSameDayAs: thisWeekStart))
         }
+        weekVolumesCache = (cacheToken, scope, value)
+        return value
     }
 
     /// 4-week rolling average of weekly miles, completed weeks only, aligned
@@ -579,6 +847,13 @@ final class TrainingAnalyticsViewModel {
     // MARK: Outputs — mileage by day grid
 
     func gridWeeks() -> [GridWeek] {
+        if let c = gridWeeksCache, c.token == cacheToken, c.scope == scope { return c.value }
+        let value = computeGridWeeks()
+        gridWeeksCache = (cacheToken, scope, value)
+        return value
+    }
+
+    private func computeGridWeeks() -> [GridWeek] {
         let today = cal.startOfDay(for: Date())
         return scopedWeekStarts().map { ws in
             let cells: [DayCell] = (0..<7).compactMap { offset in
@@ -740,12 +1015,20 @@ final class TrainingAnalyticsViewModel {
                                 subLabel: zoneGuideline(.threshold)),
             ]
         case .pace:
-            let bins = paceHistogram()
-            let step = (axisSlowSeconds - axisFastSeconds) / Double(bins.count)
-            return bins.map { b in
-                let center = axisSlowSeconds - (Double(b.index) + 0.5) * step
-                return VolumeDetailBar(label: Self.formatPaceMMSS(center), miles: b.miles,
-                                       color: b.color, key: .paceBin(b.index))
+            // Named canonical zones (not fixed pace bins). Each logged mile
+            // lands in the zone whose pace window contains it, so the rows
+            // read Easy / Moderate / Steady / MP / LT / 10K / 5K / Faster
+            // instead of arbitrary 13-second slots.
+            let bands = paceZoneBands()
+            guard !bands.isEmpty else { return [] }
+            var miles = [Double](repeating: 0, count: bands.count)
+            for row in scopedRowsForHistogram() {
+                distributeIntoBands(row, bands: bands, into: &miles)
+            }
+            return bands.enumerated().map { (i, band) in
+                VolumeDetailBar(label: band.label, miles: miles[i],
+                                color: band.color, key: .paceBin(i),
+                                subLabel: band.rangeText)
             }
         }
     }
@@ -762,12 +1045,15 @@ final class TrainingAnalyticsViewModel {
                 .filter { split(for: $0).hardestBucket == b }
                 .map(sessionDetail(from:)).sorted { $0.date > $1.date }
         case .paceBin(let i):
-            let step = (axisSlowSeconds - axisFastSeconds) / Double(Self.histogramBinCount)
+            // A run is listed under the zone of its average pace (the bar's
+            // miles use rep-level structure, but a run maps to one row here).
+            let bands = paceZoneBands()
+            guard bands.indices.contains(i) else { return [] }
+            let band = bands[i]
             return scopedRowsForHistogram()
                 .filter { row in
                     guard let p = avgPaceSeconds(for: row) else { return false }
-                    let idx = Int((axisSlowSeconds - p) / step)
-                    return min(Self.histogramBinCount - 1, max(0, idx)) == i
+                    return band.contains(p)
                 }
                 .map(sessionDetail(from:)).sorted { $0.date > $1.date }
         }
@@ -823,8 +1109,8 @@ final class TrainingAnalyticsViewModel {
 
     static let histogramBinCount = 18
     /// Axis bounds in seconds/mile: 8:00 (slow, left) → 4:30 (fast, right).
-    let axisSlowSeconds: Double = 480
-    let axisFastSeconds: Double = 270
+    let axisSlowSeconds: Double = 480   // 8:00/mi
+    let axisFastSeconds: Double = 240   // 4:00/mi — was 4:30, too slow to hold sub-5:00 rep work
 
     func paceHistogram() -> [PaceBin] {
         let n = Self.histogramBinCount
@@ -853,6 +1139,29 @@ final class TrainingAnalyticsViewModel {
             let idx = Int((axisSlowSeconds - paceSec) / step)
             miles[min(n - 1, max(0, idx))] += m
         }
+        // Prefer the athlete's REP-LEVEL structure: each rep and recovery is
+        // counted at its OWN pace, so a 4:40 interval rep lands in the fast bands
+        // instead of being averaged into the 6:30 mile it lived inside. This is
+        // the fix for "my sub-5:00 reps don't show up." `pace_segments` (per-mile
+        // splits) and the whole-run average are fallbacks for runs with no
+        // parsed structure. Any distance the structure didn't cover (a warmup or
+        // cooldown the parser skipped) is added at the run average so the total
+        // volume still balances.
+        if let blocks = row.structureBlocks, !blocks.isEmpty {
+            var covered = 0.0
+            for b in blocks {
+                guard let d = b.distanceMiles, d > 0,
+                      let ap = b.avgPace else { continue }   // standing rests carry no pace
+                let p = paceSeconds(ap)
+                guard p > 0 else { continue }
+                addMiles(d, paceSec: p)
+                covered += d
+            }
+            if let total = row.miles, total - covered > 0.15 {
+                addMiles(total - covered, paceSec: avgPaceSeconds(for: row) ?? 0)
+            }
+            return
+        }
         if let segs = row.paceSegments, !segs.isEmpty {
             for seg in segs { addMiles(seg.distanceMiles, paceSec: paceSeconds(seg.pacePerMile)) }
         } else if let m = row.miles {
@@ -862,22 +1171,133 @@ final class TrainingAnalyticsViewModel {
 
     func paceMarkers() -> [PaceMarker] {
         var out: [PaceMarker] = []
-        if let e = easyPaceSec      { out.append(PaceMarker(label: "EASY", paceSeconds: e, color: Color.drip.positive)) }
-        if let mp = marathonPaceSec { out.append(PaceMarker(label: "MP", paceSeconds: mp, color: Color.drip.textPrimary)) }
-        if let lt = thresholdPaceSec { out.append(PaceMarker(label: "LT", paceSeconds: lt, color: Color.drip.coral)) }
-        if let k = fiveKPaceSec     { out.append(PaceMarker(label: "5K", paceSeconds: k, color: Color.drip.textPrimary)) }
+        // Marker colors ride the universal blue pace ramp (PaceSpectrum)
+        // so the labels match the zone color under them in the histogram.
+        // EASY uses the legibility-darkened text variant — the true Easy
+        // stop is too pale for 11 pt text on paper.
+        if let e = easyPaceSec      { out.append(PaceMarker(label: "EASY", paceSeconds: e, color: PaceSpectrum.easyText)) }
+        if let mp = marathonPaceSec { out.append(PaceMarker(label: "MP", paceSeconds: mp, color: PaceSpectrum.mp)) }
+        if let lt = thresholdPaceSec { out.append(PaceMarker(label: "LT", paceSeconds: lt, color: PaceSpectrum.lt)) }
+        if let k = fiveKPaceSec     { out.append(PaceMarker(label: "5K", paceSeconds: k, color: PaceSpectrum.fiveK)) }
         return out
+    }
+
+    // MARK: Outputs — canonical pace-zone bands (Volume × Pace breakdown)
+
+    /// One named training zone in the Volume × Pace breakdown, ordered
+    /// slowest → fastest. `slowEdge` is the slower (greater sec/mi) bound and
+    /// `fastEdge` the faster (smaller sec/mi) bound; the slowest zone runs to
+    /// +∞ and the fastest to 0, so every logged mile falls in exactly one.
+    struct PaceZoneBand: Identifiable {
+        let id = UUID()
+        let label: String
+        let color: Color
+        let slowEdge: Double
+        let fastEdge: Double
+        let rangeText: String
+        func contains(_ paceSec: Double) -> Bool { paceSec >= fastEdge && paceSec < slowEdge }
+    }
+
+    /// The canonical named pace zones, anchored to CURRENT fitness. Zone
+    /// centres come from the fitness snapshot's race predictions (MP, LT, 10K,
+    /// 5K) plus the runner's real easy pace; Moderate/Steady interpolate
+    /// between Easy and MP using the canonical share-of-MP-speed factor.
+    /// Boundaries are midpoints between adjacent centres. Returns [] when
+    /// there's no snapshot to anchor on. Mirrors the taxonomy in CLAUDE.md;
+    /// HMP/3K/Mile fold into their neighbours to keep the distribution legible.
+    func paceZoneBands() -> [PaceZoneBand] {
+        guard let mp = marathonPaceSec, mp > 0 else { return [] }
+        let easyC     = easyPaceSec ?? mp * 1.30
+        let steadyC   = mp / 0.925                 // Steady speed = 0.925 × MP speed
+        let moderateC = (easyC + steadyC) / 2      // between Easy and Steady
+        let ltC       = thresholdPaceSec ?? mp * 0.955
+        let tenKC     = tenKPaceSec ?? (ltC + (fiveKPaceSec ?? ltC * 0.95)) / 2
+        let fiveKC    = fiveKPaceSec ?? tenKC * 0.96
+        let fasterC   = fiveKC * 0.94              // representative sub-5K rep pace
+
+        // (label, colour, centre) slowest → fastest.
+        let raw: [(String, Color, Double)] = [
+            ("EASY",     PaceSpectrum.easyText, easyC),
+            ("MODERATE", PaceSpectrum.moderate, moderateC),
+            ("STEADY",   PaceSpectrum.steady,   steadyC),
+            ("MP",       PaceSpectrum.mp,       mp),
+            ("LT",       PaceSpectrum.lt,       ltC),
+            ("10K",      PaceSpectrum.tenK,     tenKC),
+            ("5K",       PaceSpectrum.fiveK,    fiveKC),
+            ("FASTER",   PaceSpectrum.mile,     fasterC),
+        ]
+
+        // Keep only strictly-decreasing centres so the midpoints are always
+        // well-defined, even if two predictions crowd together.
+        var zones: [(String, Color, Double)] = []
+        for z in raw {
+            if let last = zones.last, z.2 >= last.2 { continue }
+            zones.append(z)
+        }
+        guard zones.count >= 2 else { return [] }
+
+        return zones.enumerated().map { (i, z) in
+            let slowEdge = i == 0 ? Double.infinity : (zones[i - 1].2 + z.2) / 2
+            let fastEdge = i == zones.count - 1 ? 0 : (z.2 + zones[i + 1].2) / 2
+            let rangeText: String
+            if i == 0 {
+                rangeText = "SLOWER THAN \(Self.formatPaceMMSS(fastEdge))"
+            } else if i == zones.count - 1 {
+                rangeText = "FASTER THAN \(Self.formatPaceMMSS(slowEdge))"
+            } else {
+                rangeText = "\(Self.formatPaceMMSS(slowEdge))–\(Self.formatPaceMMSS(fastEdge))"
+            }
+            return PaceZoneBand(label: z.0, color: z.1, slowEdge: slowEdge,
+                                fastEdge: fastEdge, rangeText: rangeText)
+        }
+    }
+
+    /// Distribute one run's miles into the zone bands, preferring rep-level
+    /// structure (so a 4:40 rep lands in FASTER, not averaged into the easy
+    /// miles around it), then per-mile segments, then the whole-run average.
+    /// Same source precedence as the continuous histogram's `distribute`.
+    private func distributeIntoBands(_ row: TodayLogRow, bands: [PaceZoneBand], into miles: inout [Double]) {
+        func add(_ m: Double, paceSec: Double) {
+            guard m > 0, paceSec > 0,
+                  let idx = bands.firstIndex(where: { $0.contains(paceSec) }) else { return }
+            miles[idx] += m
+        }
+        if let blocks = row.structureBlocks, !blocks.isEmpty {
+            var covered = 0.0
+            for b in blocks {
+                guard let d = b.distanceMiles, d > 0, let ap = b.avgPace else { continue }
+                let p = paceSeconds(ap)
+                guard p > 0 else { continue }
+                add(d, paceSec: p)
+                covered += d
+            }
+            if let total = row.miles, total - covered > 0.15 {
+                add(total - covered, paceSec: avgPaceSeconds(for: row) ?? 0)
+            }
+            return
+        }
+        if let segs = row.paceSegments, !segs.isEmpty {
+            for seg in segs { add(seg.distanceMiles, paceSec: paceSeconds(seg.pacePerMile)) }
+        } else if let m = row.miles {
+            add(m, paceSec: avgPaceSeconds(for: row) ?? 0)
+        }
     }
 
     // MARK: Outputs — easy pace trend (month scope)
 
     func easyPaceTrend() -> [EasyPacePoint] {
-        scopedWeekStarts().compactMap { ws in
-            let rows = logs(inWeekStarting: ws).filter { bucket(forPaceSeconds: avgPaceSeconds(for: $0)) == .easy }
-            let paces = rows.compactMap { avgPaceSeconds(for: $0) }
+        if let c = easyPaceTrendCache, c.token == cacheToken, c.scope == scope { return c.value }
+        let value = scopedWeekStarts().compactMap { ws -> EasyPacePoint? in
+            // One pass: compute each row's pace once, keep only easy ones.
+            let paces = logs(inWeekStarting: ws).compactMap { row -> Double? in
+                let p = avgPaceSeconds(for: row)
+                return bucket(forPaceSeconds: p) == .easy ? p : nil
+            }
             guard !paces.isEmpty else { return nil }
             return EasyPacePoint(weekStart: ws, avgPaceSeconds: paces.reduce(0, +) / Double(paces.count))
         }
+        easyPaceTrendCache = (cacheToken, scope, value)
+        return value
     }
 
     /// "▼ 19 SEC / 4 WK" delta string, or nil when there isn't enough trend.

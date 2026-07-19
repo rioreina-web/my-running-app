@@ -2,29 +2,26 @@
 //  WorkoutAnalysisLink.swift
 //  RunningLog · Training › Analytics
 //
-//  Shared plumbing for deep-linking a session into the full per-workout
-//  stream analysis (WorkoutAnalystView). Both the Volume detail sheet and
-//  the Day analysis sheet present the same view the same way; this gives
-//  them one target type and one presentation modifier instead of three
-//  near-identical private copies.
+//  Shared plumbing for deep-linking a session into the canonical per-workout
+//  detail (WorkoutRepDetailSheet → WorkoutRepChart). Both the Volume detail
+//  sheet and the Day analysis sheet present the same view the same way; this
+//  gives them one target type and one presentation modifier.
 //
 
 import SwiftUI
 
-/// A session to open in `WorkoutAnalystView`. `id` is the `training_logs`
-/// row id — also the stream-bearing row for Strava imports (path 1).
+/// A session to open in the canonical workout sheet. `id` is the
+/// `training_logs` row id — the key `running_workout_laps` is joined on.
 struct WorkoutAnalysisTarget: Identifiable {
     let id: UUID
     let workout: RunningWorkout
 }
 
 extension View {
-    /// Presents `WorkoutAnalystView` for the bound target as a large sheet.
+    /// Presents the canonical `WorkoutRepDetailSheet` for the bound target.
     func workoutAnalysisSheet(_ item: Binding<WorkoutAnalysisTarget?>) -> some View {
         sheet(item: item) { target in
-            WorkoutAnalystView(workout: target.workout, trainingLogId: target.id)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            WorkoutRepDetailSheet(workoutId: target.id)
         }
     }
 }

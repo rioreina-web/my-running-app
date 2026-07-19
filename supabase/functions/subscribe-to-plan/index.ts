@@ -25,7 +25,8 @@
  *       shape_prefs?: {
  *         strides_pre_quality: boolean,
  *         recovery_after_long: boolean,
- *         doubles_on_easy_days: boolean
+ *         doubles_on_easy_days: boolean,   -- legacy; maps to doubles.mode "adaptive"
+ *         doubles?: { mode, per_week, range_miles:{min,max}, distribution } -- Part B
  *       } | null,
  *       current_weekly_mileage?: number | null
  *     }
@@ -52,6 +53,12 @@ import {
 } from "../_shared/paces.ts";
 import { getOrBuildPaceProfile, getConfirmedRaces } from "../_shared/resolve-pace.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  parseDoublesConfig,
+  planDoubles,
+  resolveDoublesConfig,
+  type DoublesConfig,
+} from "../_shared/doubles.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -275,6 +282,9 @@ export async function handler(req: Request, deps: Deps = defaultDeps): Promise<R
       athletePaces,
       easyDayPrefs,
       subPrefs,
+      structure: buildPlanStructure(template),
+      weekTargets: buildWeekTargets(template),
+      doublesCoach: parseDoublesConfig(template.doubles_config),
     };
 
     for (const week of weeks) {
@@ -555,6 +565,9 @@ interface ShapePrefsPref {
   stridesPreQuality: boolean;
   recoveryAfterLong: boolean;
   doublesOnEasyDays: boolean;
+  /** Rich athlete doubles override (spec Part B). Dials a coach-assigned
+   *  count down, or supplies a self-coached athlete's own doubles. */
+  doubles?: Partial<DoublesConfig> | null;
 }
 
 interface SubscriptionPreferences {
@@ -606,6 +619,7 @@ function readSubscriptionPreferences(raw: unknown): SubscriptionPreferences | nu
       stridesPreQuality: sp.strides_pre_quality === true,
       recoveryAfterLong: sp.recovery_after_long === true,
       doublesOnEasyDays: sp.doubles_on_easy_days === true,
+      doubles: parseDoublesConfig(sp.doubles),
     };
   }
   if (typeof r.current_weekly_mileage === "number") {
@@ -833,6 +847,9 @@ async function handleRematerialize(
     athletePaces,
     easyDayPrefs,
     subPrefs,
+    structure: buildPlanStructure(template),
+    weekTargets: buildWeekTargets(template),
+    doublesCoach: parseDoublesConfig(template.doubles_config),
   };
 
   const allWeeks: PlanTemplateWeek[] = template.weeks ?? [];
@@ -919,6 +936,63 @@ interface MaterializeContext {
   athletePaces: Record<string, number>;
   easyDayPrefs: EasyDayPrefs;
   subPrefs: SubscriptionPreferences | null;
+  /** Coach's plan-level weekly skeleton (plan_templates.day_structure).
+   * Null when the coach didn't set one. Athlete subPrefs always win. */
+  structure: PlanStructure | null;
+  /** Plan-level per-week mileage targets (plan_templates.weekly_mileage_targets),
+   * used as fallback when weeks[i].targetMilesMin/Max are absent. */
+  weekTargets: Map<number, { min: number; max: number }>;
+  /** Coach's plan-level doubles config (plan_templates.doubles_config).
+   * Null when unset — the default no-doubles path. */
+  doublesCoach: Partial<DoublesConfig> | null;
+}
+
+/** Parsed view of plan_templates.day_structure:
+ * [{ dayOfWeek: 0..6 (Mon..Sun), role: rest|easy|speed|moderate|long_run|recovery|strides }] */
+interface PlanStructure {
+  qualityDows: number[];      // roles: speed, moderate
+  longRunDow: number | null;  // role: long_run
+  restDows: number[];         // role: rest
+}
+
+// deno-lint-ignore no-explicit-any
+function buildPlanStructure(template: any): PlanStructure | null {
+  const raw = template?.day_structure;
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const qualityDows: number[] = [];
+  const restDows: number[] = [];
+  let longRunDow: number | null = null;
+  for (const entry of raw) {
+    const dow = entry?.dayOfWeek;
+    const role = entry?.role;
+    if (typeof dow !== "number" || dow < 0 || dow > 6) continue;
+    if (role === "speed" || role === "moderate") qualityDows.push(dow);
+    else if (role === "long_run") longRunDow = dow;
+    else if (role === "rest") restDows.push(dow);
+  }
+  if (qualityDows.length === 0 && longRunDow === null && restDows.length === 0) return null;
+  return { qualityDows, longRunDow, restDows };
+}
+
+/** Parse plan_templates.weekly_mileage_targets. Accepts both the ramp-tool
+ * shape ({ weekNumber, targetMilesMin, targetMilesMax, phase? }) and the
+ * older single-number shape ({ weekNumber, targetMiles, phase? }). */
+// deno-lint-ignore no-explicit-any
+function buildWeekTargets(template: any): Map<number, { min: number; max: number }> {
+  const out = new Map<number, { min: number; max: number }>();
+  const raw = template?.weekly_mileage_targets;
+  if (!Array.isArray(raw)) return out;
+  for (const entry of raw) {
+    const wk = entry?.weekNumber;
+    if (typeof wk !== "number") continue;
+    const min = typeof entry?.targetMilesMin === "number" ? entry.targetMilesMin
+      : typeof entry?.targetMiles === "number" ? entry.targetMiles : null;
+    const max = typeof entry?.targetMilesMax === "number" ? entry.targetMilesMax
+      : typeof entry?.targetMiles === "number" ? entry.targetMiles : null;
+    if (min === null || max === null || max <= 0) continue;
+    out.set(wk, { min, max });
+  }
+  return out;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -927,9 +1001,6 @@ function buildEasyDayPrefs(template: any, subPrefs: SubscriptionPreferences | nu
   // hardcoded defaults filling any remaining gap. rest_day_of_week is opt-in
   // — null/undefined means "no forced rest" (older code defaulted to Friday
   // and surprised coaches whose plans came back with an unwanted rest).
-  if (subPrefs?.shapePrefs?.doublesOnEasyDays) {
-    console.log("subscription_preferences.shape_prefs.doubles_on_easy_days = true (not yet implemented)");
-  }
   return {
     autoStrides: subPrefs?.shapePrefs?.stridesPreQuality
       ?? template.auto_strides_on_pre_quality ?? true,
@@ -953,6 +1024,12 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
     const weekDows = (week.workouts ?? []).map((w) => w.dayOfWeek ?? 0);
     const looksOneIndexed = weekDows.some((d) => d >= 7);
     for (const dayWorkout of week.workouts ?? []) {
+      // A PM slot only exists when the coach placed a real second run; a PM
+      // "rest" is meaningless, so never materialize one.
+      if (sessionNumber(dayWorkout) === 2 &&
+          (!dayWorkout.workoutType || dayWorkout.workoutType === "rest")) {
+        continue;
+      }
       const dayOffset = weekStartOffset + (dayWorkout.dayOfWeek ?? 0);
       const workoutDate = new Date(ctx.planStart);
       workoutDate.setDate(workoutDate.getDate() + dayOffset);
@@ -968,7 +1045,10 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
         date: formatDate(workoutDate),
         day_of_week: normalizedDow,
         week_number: week.weekNumber,
-        session: 1,
+        // AM=1 / PM=2 — a doubled day carries two workout objects, so this
+        // loop already emits both rows; we just honor the session field
+        // instead of stamping every row as the morning session.
+        session: sessionNumber(dayWorkout),
         workout_type: workoutType,
         workout_data: workoutData,
         status: "scheduled",
@@ -982,16 +1062,30 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
 
   // ── Adaptive plan: place quality, pick rest, fill easy, add shape ──
   const templateWorkouts = week.workouts ?? [];
-  const targetMin = week.targetMilesMin ?? 0;
-  const targetMax = week.targetMilesMax ?? 0;
+  // Week-level range wins; plan-level weekly_mileage_targets (the ramp
+  // tool's output) fills the gap when the coach didn't set per-week values.
+  const rampTarget = ctx.weekTargets.get(week.weekNumber);
+  // Blank builder weeks carry 0/0 (not undefined), so "unset" means max<=0 —
+  // treat the week range as authoritative only when it has a real max.
+  const weekHasRange = (week.targetMilesMax ?? 0) > 0;
+  const targetMin = weekHasRange ? week.targetMilesMin ?? 0 : rampTarget?.min ?? 0;
+  const targetMax = weekHasRange ? week.targetMilesMax! : rampTarget?.max ?? 0;
   const coachTargetMileage = targetMax > 0 ? (targetMin + targetMax) / 2 : 0;
   const targetMileage = ctx.subPrefs?.volumeRamp
     ? rampedMileage(week.weekNumber, coachTargetMileage, ctx.subPrefs.volumeRamp)
     : coachTargetMileage;
 
+  // PM sessions are handled separately as doubles, after the AM pipeline
+  // builds each day — so they never collide with AM quality in the per-dow
+  // maps below (which key by day only). Split them out first.
+  const amWorkouts = templateWorkouts.filter((w) => sessionNumber(w) === 1);
+  const pmDoubles = templateWorkouts.filter(
+    (w) => sessionNumber(w) === 2 && w.workoutType && w.workoutType !== "rest",
+  );
+
   const allQuality: PlanTemplateWorkout[] = [];
   const templateExplicitRestDows = new Set<number>();
-  for (const tw of templateWorkouts) {
+  for (const tw of amWorkouts) {
     const dow = tw.dayOfWeek ?? 0;
     const type = tw.workoutType;
     if (!type || type === "rest") {
@@ -1009,11 +1103,21 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
     }
   }
 
+  // Quality placement precedence: athlete's picked days → coach's plan-level
+  // skeleton (day_structure) → wherever the coach placed the workouts in
+  // this week's grid.
+  const structureQualityDows =
+    ctx.structure && ctx.structure.qualityDows.length > 0
+      ? [
+          ...ctx.structure.qualityDows,
+          ...(ctx.structure.longRunDow != null ? [ctx.structure.longRunDow] : []),
+        ]
+      : null;
   const qualityDaysByDow = assignQualityDays(
     allQuality,
     longRunWorkout,
-    ctx.subPrefs?.preferredQualityDows ?? null,
-    ctx.subPrefs?.longRunDow ?? null,
+    ctx.subPrefs?.preferredQualityDows ?? structureQualityDows,
+    ctx.subPrefs?.longRunDow ?? ctx.structure?.longRunDow ?? null,
   );
 
   const qualityMiles = Array.from(qualityDaysByDow.values())
@@ -1023,11 +1127,19 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
   if (ctx.subPrefs?.restDows) {
     for (const dow of ctx.subPrefs.restDows) explicitRestDows.add(dow);
   } else {
+    // Coach layer: per-week explicit rest days + plan-level skeleton rest
+    // days (day_structure role=rest) + legacy single rest_day_of_week.
     for (const dow of templateExplicitRestDows) explicitRestDows.add(dow);
+    if (ctx.structure) {
+      for (const dow of ctx.structure.restDows) explicitRestDows.add(dow);
+    }
     if (explicitRestDows.size === 0 && ctx.easyDayPrefs.restDayOfWeek !== null) {
       explicitRestDows.add(ctx.easyDayPrefs.restDayOfWeek);
     }
   }
+  // A skeleton rest day never overrides a placed quality session — the
+  // placed workout wins and the rest day just doesn't materialize.
+  for (const dow of qualityDaysByDow.keys()) explicitRestDows.delete(dow);
 
   let longRunDow: number | null = null;
   let longRunMiles = 0;
@@ -1170,6 +1282,123 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
       is_movable: isQualityDay,
     });
   }
+
+  // ── Coach-placed PM doubles (session 2) ──────────────────────────────
+  // The AM pipeline above emits one row per day (session 1). Any PM session
+  // the coach placed in the builder is materialized here as a second row on
+  // its day, so a doubled day reaches the athlete as two scheduled_workouts.
+  for (const pm of pmDoubles) {
+    const dow = pm.dayOfWeek ?? 0;
+    const dayOffset = weekStartOffset + dow;
+    const workoutDate = new Date(ctx.planStart);
+    workoutDate.setDate(workoutDate.getDate() + dayOffset);
+    const type = pm.workoutType ?? "easy";
+    const isQuality = ["tempo", "intervals", "long_run", "race", "progression"].includes(type);
+    out.push({
+      plan_id: ctx.planId,
+      date: formatDate(workoutDate),
+      day_of_week: dow + 1,
+      week_number: week.weekNumber,
+      session: 2,
+      workout_type: type,
+      workout_data: personalizeWorkoutData(pm.workoutData, ctx.athletePaces),
+      status: "scheduled",
+      notes: pm.notes ?? null,
+      source: isQuality ? "coach_locked" : "easy_fill",
+      is_movable: isQuality,
+    });
+  }
+
+  // ── Auto-generated doubles (coach-assigned first; adaptive fallback) ──
+  // Replaces the previously-deferred shape_prefs.doubles_on_easy_days no-op.
+  // OFF by default: only runs when a coach set plan_templates.doubles_config,
+  // or a self-coached athlete supplied shape_prefs.doubles. Coach-authored PM
+  // runs (the pmDoubles pass above) always win — we never double a day that
+  // already has a session:2 row. See
+  // outputs/doubles-and-activity-types-spec-2026-07-16.md Part B.
+  const doublesConfig = resolveDoublesConfig(
+    ctx.doublesCoach,
+    ctx.subPrefs?.shapePrefs?.doubles ??
+      (ctx.subPrefs?.shapePrefs?.doublesOnEasyDays ? { mode: "adaptive" } : null),
+    targetMileage,
+  );
+  if (doublesConfig.mode !== "off" && doublesConfig.perWeek > 0) {
+    const milesFromData = (wd: Record<string, unknown> | null): number =>
+      wd && typeof wd.total_distance_km === "number"
+        ? Math.round(wd.total_distance_km / KM_PER_MILE)
+        : 0;
+
+    // Candidate days: single-session easy/recovery fill only, and not a day the
+    // coach already doubled.
+    const pmDows = new Set(
+      out.filter((r) => r.session === 2).map((r) => r.day_of_week - 1),
+    );
+    const candidateRows = out.filter(
+      (r) =>
+        r.session === 1 &&
+        r.source === "easy_fill" &&
+        (r.workout_type === "easy" || r.workout_type === "recovery") &&
+        !pmDows.has(r.day_of_week - 1),
+    );
+
+    const decisions = planDoubles(
+      {
+        easyDays: candidateRows.map((r) => ({
+          dow: r.day_of_week - 1,
+          amMiles: milesFromData(r.workout_data),
+          isRecovery: r.workout_type === "recovery",
+        })),
+        qualityDows: Array.from(qualityDaysByDow.keys()),
+        longRunDow,
+        restDows: Array.from(explicitRestDows),
+      },
+      doublesConfig,
+      MIN_EASY_MILES,
+    );
+
+    for (const d of decisions) {
+      const amRow = candidateRows.find((r) => r.day_of_week - 1 === d.dow);
+      if (!amRow) continue;
+
+      // split reduces the AM run (weekly volume preserved); add layers on top.
+      if (doublesConfig.distribution === "split") {
+        const newAm = Math.max(
+          MIN_EASY_MILES,
+          milesFromData(amRow.workout_data) - d.pmMiles,
+        );
+        amRow.workout_data = {
+          ...(amRow.workout_data ?? {}),
+          name: `${newAm}mi easy (AM)`,
+          total_distance_km: newAm * KM_PER_MILE,
+        };
+      }
+
+      const dayOffset = weekStartOffset + d.dow;
+      const workoutDate = new Date(ctx.planStart);
+      workoutDate.setDate(workoutDate.getDate() + dayOffset);
+
+      out.push({
+        plan_id: ctx.planId,
+        date: formatDate(workoutDate),
+        day_of_week: d.dow + 1,
+        week_number: week.weekNumber,
+        session: 2,
+        workout_type: "easy",
+        workout_data: {
+          name: `${d.pmMiles}mi easy (PM)`,
+          total_distance_km: d.pmMiles * KM_PER_MILE,
+          target_pace: ctx.athletePaces.easy ? formatPace(ctx.athletePaces.easy) : null,
+          adapted: true,
+          double: true,
+        },
+        status: "scheduled",
+        notes: "PM easy — second run of a double",
+        source: "easy_fill",
+        is_movable: false,
+      });
+    }
+  }
+
   return out;
 }
 
@@ -1219,10 +1448,19 @@ interface PlanTemplateWeek {
 
 interface PlanTemplateWorkout {
   dayOfWeek: number;
+  /** AM is the day's main session; PM is the second run of a 2×-a-day
+   *  double. Absent = "am" — backward compatible with every plan blob
+   *  authored before doubles existed. */
+  session?: "am" | "pm";
   workoutTemplateId?: string;
   workoutType?: string;
   workoutData?: Record<string, unknown> | null;
   notes?: string;
+}
+
+/** scheduled_workouts.session is an integer: 1 = AM (main), 2 = PM (double). */
+function sessionNumber(w: PlanTemplateWorkout): number {
+  return w.session === "pm" ? 2 : 1;
 }
 
 interface ScheduledWorkoutInsert {

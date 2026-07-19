@@ -24,8 +24,11 @@ struct OnboardingView: View {
 
     // Connect-data state. Strava + manual are display-only here; the
     // production wiring lives elsewhere. HealthKit reads from
-    // `healthKitManager.isAuthorized`.
+    // `healthKitManager.readState` — the honest probe. `isAuthorized` alone
+    // is a lie on denial (HealthKit reports success for "Don't Allow").
     @State private var stravaConnected = false
+    @State private var showHealthAccessHelp = false
+    @Environment(\.openURL) private var openURL
 
     // Goal setup state
     @State private var selectedDistance: String = "half_marathon"
@@ -65,6 +68,50 @@ struct OnboardingView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: currentStep)
+        .alert("Can't see Health data", isPresented: $showHealthAccessHelp) {
+            Button("Open Health app") {
+                if let url = URL(string: "x-apple-health://") { openURL(url) }
+            }
+            Button("Continue anyway", role: .cancel) {}
+        } message: {
+            Text("""
+            If you tapped Don't Allow: open the Health app → your profile → \
+            Privacy → Apps → PostRunDrip, and turn on Workouts and Steps.
+
+            If you allowed access, there may simply be no workouts recorded \
+            yet — you can continue and log runs by voice or manually.
+            """)
+        }
+    }
+
+    // MARK: - Apple Health row state (honest three-state, not a boolean)
+
+    private var healthRowActionText: String {
+        switch healthKitManager.readState {
+        case .visibleData:   return "CONNECTED ✓"
+        case .noVisibleData: return "NO DATA · FIX ↗"
+        case .unavailable:   return "UNAVAILABLE"
+        default:             return "ALLOW ↗"
+        }
+    }
+
+    private var healthRowActionColor: Color {
+        switch healthKitManager.readState {
+        case .visibleData:   return Color.drip.energized
+        case .unavailable:   return Color.drip.textTertiary
+        default:             return Color.drip.coral
+        }
+    }
+
+    private var healthRowHint: String {
+        switch healthKitManager.readState {
+        case .noVisibleData:
+            return "We can't see any Health data — tap to fix or continue without."
+        case .unavailable:
+            return "Health data isn't available on this device."
+        default:
+            return "Pulls runs, HR, and sleep automatically."
+        }
     }
 
     // MARK: - Plate strip header
@@ -144,11 +191,22 @@ struct OnboardingView: View {
 
             VStack(spacing: 0) {
                 sourceRow(label: "Apple Health",
-                          hint: "Pulls runs, HR, and sleep automatically.",
-                          actionText: healthKitManager.isAuthorized ? "CONNECTED ✓" : "ALLOW ↗",
-                          actionColor: healthKitManager.isAuthorized ? Color.drip.energized : Color.drip.coral,
+                          hint: healthRowHint,
+                          actionText: healthRowActionText,
+                          actionColor: healthRowActionColor,
                           topHairline: true, bottomHairline: false) {
-                    Task { _ = await healthKitManager.requestAuthorization() }
+                    Task {
+                        if healthKitManager.readState == .noVisibleData {
+                            // Tapping again after a probable denial → help,
+                            // not a permission sheet iOS will never re-show.
+                            showHealthAccessHelp = true
+                        } else {
+                            _ = await healthKitManager.requestAuthorization()
+                            if healthKitManager.readState == .noVisibleData {
+                                showHealthAccessHelp = true
+                            }
+                        }
+                    }
                 }
                 sourceRow(label: "Strava",
                           hint: "Optional — only if Health misses runs.",

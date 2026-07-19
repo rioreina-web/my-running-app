@@ -1,6 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { captureException, flushSentry } from "../_shared/sentry.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import {
   segmentFromLaps,
   segmentFromPaceSegments,
@@ -11,6 +13,7 @@ import {
   type PaceZones,
   type SegmentationResult,
 } from "../_shared/workoutSegmentation.ts";
+import { deriveWorkoutNotes } from "../_shared/workout-notes.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -45,6 +48,7 @@ interface TrainingLog {
   workout_pace_per_mile: string | null;
   pace_segments: PaceSegment[] | null;
   workout_type: string | null;
+  workout_notes: string | null;
   mood: string | null;
   source: string | null;
 }
@@ -189,6 +193,10 @@ function avg(xs: number[]): number {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
 }
 
+// Workout-notes fallback (deriveWorkoutNotes) lives in
+// ../_shared/workout-notes.ts so it's importable + unit-tested. The voice memo
+// is the primary source; this only fills workout_notes when it's empty.
+
 // Compute rolling aggregates for a workout given history
 function computeRollingAggregates(
   workoutDate: Date,
@@ -312,16 +320,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { user_id, training_log_id, backfill } = await req.json();
+    const { user_id: bodyUserId, training_log_id, backfill } = await req.json();
 
-    if (!user_id) {
-      return new Response(JSON.stringify({ error: "user_id required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    // H3 fix (2026-07-15): this function previously trusted body.user_id with
+    // NO auth gate — any anon-key caller could read AND overwrite another
+    // athlete's workout data (types/notes backfill). Callers: iOS
+    // (user JWT + user_id in body; the helper 403s on a mismatch) and ops
+    // scripts (service-role key + user_id; the helper 400s if it's missing).
+    // Same pattern as its sibling correct-workout-structure.
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const { userId: user_id } = auth;
 
-    const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, mood, source";
+    const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, workout_notes, mood, source";
 
     // Fetch workouts to process
     let query = supabase
@@ -391,6 +402,7 @@ Deno.serve(async (req) => {
 
     const features: Array<Record<string, unknown>> = [];
     const typeBackfill: Array<{ id: string; workout_type: string }> = [];
+    const notesBackfill: Array<{ id: string; workout_notes: string }> = [];
     const featuresSoFar: Array<{ workout_date: string; total_distance_miles: number | null; hard_effort_minutes: number | null }> = [];
 
     for (let i = 0; i < allLogs.length; i++) {
@@ -417,6 +429,13 @@ Deno.serve(async (req) => {
         // Backfill the untyped training_logs (don't clobber a set type).
         if (!log.workout_type && seg.workoutKind) {
           typeBackfill.push({ id: log.id, workout_type: seg.workoutKind });
+        }
+        // Backfill workout_notes from laps ONLY when the voice memo left it
+        // empty (no spoken workout description). Voice always wins; this is the
+        // AI-from-laps fallback so the session still knows what it was.
+        if (!log.workout_notes || log.workout_notes.trim().length === 0) {
+          const derived = deriveWorkoutNotes(seg, lapsByWorkout.get(log.id));
+          if (derived) notesBackfill.push({ id: log.id, workout_notes: derived });
         }
       }
     }
@@ -449,14 +468,29 @@ Deno.serve(async (req) => {
       if (!error) typesBackfilled++;
     }
 
-    console.log(`Computed ${features.length} workout features for user ${user_id}; backfilled ${typesBackfilled} types`);
+    // Backfill training_logs.workout_notes from laps for sessions the athlete
+    // didn't describe. The `.is("workout_notes", null)` guard makes the write
+    // a hard no-op against any row that already has a spoken description.
+    let notesBackfilled = 0;
+    for (const n of notesBackfill) {
+      const { error } = await supabase
+        .from("training_logs")
+        .update({ workout_notes: n.workout_notes })
+        .eq("id", n.id)
+        .is("workout_notes", null);
+      if (!error) notesBackfilled++;
+    }
+
+    console.log(`Computed ${features.length} workout features for user ${user_id}; backfilled ${typesBackfilled} types, ${notesBackfilled} notes`);
 
     return new Response(
-      JSON.stringify({ success: true, computed: features.length, types_backfilled: typesBackfilled, user_id }),
+      JSON.stringify({ success: true, computed: features.length, types_backfilled: typesBackfilled, notes_backfilled: notesBackfilled, user_id }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
     console.error("Error computing workout features:", error);
+    captureException(error, { fn: "compute-workout-features" });
+    await flushSentry();
     const message = error instanceof Error ? error.message : String(error);
     return new Response(
       JSON.stringify({ error: message }),

@@ -103,12 +103,12 @@ export function CoachAiGuidanceSection({
         className="w-full flex items-center justify-between px-4 py-2.5 text-left"
       >
         <div className="flex items-baseline gap-3">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
             Rules &amp; guardrails
           </span>
           <span className="text-xs text-text-secondary">{summary}</span>
         </div>
-        <span className="text-xs text-text-tertiary">{open ? "Hide" : "Edit"}</span>
+        <span className="text-xs text-text-secondary underline underline-offset-4 decoration-[var(--color-divider)]">{open ? "Hide" : "Edit"}</span>
       </button>
 
       {open && (
@@ -129,7 +129,7 @@ export function CoachAiGuidanceSection({
                     type="checkbox"
                     checked={r.on}
                     onChange={(e) => setRule(i, { on: e.target.checked })}
-                    className="accent-[var(--color-coral,#E8764A)]"
+                    className="accent-[var(--color-text-primary)]"
                   />
                 </label>
                 <select
@@ -149,7 +149,7 @@ export function CoachAiGuidanceSection({
                 />
                 <button
                   onClick={() => removeRule(i)}
-                  className="text-text-tertiary hover:text-coral transition-colors px-1"
+                  className="text-text-secondary hover:text-[var(--color-danger)] transition-colors px-1"
                   title="Remove"
                 >
                   ×
@@ -166,7 +166,7 @@ export function CoachAiGuidanceSection({
 
           {/* Silent note */}
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary mb-1.5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary mb-1.5">
               Silent note
             </p>
             <textarea
@@ -176,7 +176,7 @@ export function CoachAiGuidanceSection({
               rows={2}
               className="w-full text-xs bg-bg-elevated border border-divider rounded-md px-2.5 py-2 focus:outline-none focus:border-coral resize-y leading-relaxed"
             />
-            <p className="text-[11px] text-text-tertiary mt-1">
+            <p className="text-[11px] text-text-secondary mt-1">
               Never shown to the athlete. It shapes how the assistant reasons,
               quietly.
             </p>

@@ -367,6 +367,10 @@ export function PlanBuilderClient({
   // Optimistic pinned overrides (id → pinned). Server templates arrive as a
   // prop we can't mutate, so pin toggles overlay here and sync to the DB.
   const [pinnedOverrides, setPinnedOverrides] = useState<Record<string, boolean>>({});
+  // Optimistically-hidden template ids. Server templates arrive as an
+  // immutable prop; deleting removes the DB row and hides it here so the rail
+  // updates without a refetch. Reverted if the delete errors.
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateSaveMsg, setTemplateSaveMsg] = useState<string | null>(null);
   const [builderOpen, setBuilderOpen] = useState(false);
@@ -440,6 +444,33 @@ export function PlanBuilderClient({
       setTemplateSaveMsg("Duplicated to library");
       setTimeout(() => setTemplateSaveMsg(null), 2000);
     }
+  };
+
+  // Delete a saved workout from the library. Confirms first (destructive,
+  // no undo), hides it optimistically, then removes the row. Existing plans
+  // keep their own copy of the workout_data, so deleting the library entry
+  // never mutates a plan that already used it.
+  const deleteTemplate = async (t: WorkoutTemplate) => {
+    if (!window.confirm(`Delete "${t.name}" from your library? This can't be undone.`)) return;
+    setDeletedIds((prev) => new Set(prev).add(t.id));
+    const { error } = await supabase
+      .from("workout_templates")
+      .delete()
+      .eq("id", t.id);
+    if (error) {
+      setDeletedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(t.id);
+        return next;
+      });
+      setTemplateSaveMsg("Error deleting: " + error.message);
+      setTimeout(() => setTemplateSaveMsg(null), 3000);
+      return;
+    }
+    // Drop any local/edited copies so overlay state can't resurrect it.
+    setLocalTemplates((prev) => prev.filter((x) => x.id !== t.id));
+    setTemplateSaveMsg("Deleted from library");
+    setTimeout(() => setTemplateSaveMsg(null), 2000);
   };
 
   // Parse the coach's shorthand and append the resulting steps to the editor.
@@ -521,10 +552,12 @@ export function PlanBuilderClient({
     }
   };
 
-  const allTemplates = [...workoutTemplates, ...localTemplates].map((base) => {
-    const t = templateEdits[base.id] ?? base;
-    return pinnedOverrides[t.id] !== undefined ? { ...t, pinned: pinnedOverrides[t.id] } : t;
-  });
+  const allTemplates = [...workoutTemplates, ...localTemplates]
+    .filter((base) => !deletedIds.has(base.id))
+    .map((base) => {
+      const t = templateEdits[base.id] ?? base;
+      return pinnedOverrides[t.id] !== undefined ? { ...t, pinned: pinnedOverrides[t.id] } : t;
+    });
 
   // Toggle a template's pinned flag (sorts it to the top of the library rail).
   // Optimistic: flip the overlay immediately, persist to the DB, revert on error.
@@ -1063,7 +1096,7 @@ export function PlanBuilderClient({
                     className="w-1.5 h-1.5 rounded-full"
                     style={{ background: PACE_ZONE_COLORS[z] }}
                   />
-                  <span className="font-mono text-[9px] text-text-tertiary">
+                  <span className="font-mono text-[10px] text-text-secondary">
                     {zoneLabelShort(z)}
                   </span>
                 </span>
@@ -1079,7 +1112,7 @@ export function PlanBuilderClient({
                 e.stopPropagation();
                 openBuilderForEdit(template);
               }}
-              className="font-mono text-[9px] uppercase tracking-wider text-text-tertiary hover:text-text-secondary transition-colors"
+              className="font-mono text-[10px] uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors"
               title="Edit this saved workout"
             >
               edit
@@ -1090,7 +1123,7 @@ export function PlanBuilderClient({
                 e.stopPropagation();
                 duplicateTemplate(template);
               }}
-              className="font-mono text-[9px] uppercase tracking-wider text-text-tertiary hover:text-text-secondary transition-colors"
+              className="font-mono text-[10px] uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors"
               title="Duplicate into a new variant"
             >
               dup
@@ -1102,10 +1135,10 @@ export function PlanBuilderClient({
                 togglePin(template);
               }}
               aria-pressed={template.pinned ?? false}
-              className={`font-mono text-[9px] uppercase tracking-wider transition-colors ${
+              className={`font-mono text-[10px] uppercase tracking-wider transition-colors ${
                 template.pinned
-                  ? "text-coral"
-                  : "text-text-tertiary hover:text-text-secondary"
+                  ? "text-coral-dark"
+                  : "text-text-secondary hover:text-text-primary"
               }`}
               title={
                 template.pinned
@@ -1114,6 +1147,17 @@ export function PlanBuilderClient({
               }
             >
               {template.pinned ? "pinned" : "pin"}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteTemplate(template);
+              }}
+              className="font-mono text-[10px] uppercase tracking-wider text-text-secondary hover:text-coral-dark transition-colors"
+              title="Delete this saved workout"
+            >
+              del
             </button>
           </div>
           <span className="text-coral text-sm">+</span>
@@ -1141,13 +1185,14 @@ export function PlanBuilderClient({
           its lower rows clip with no way to reach them. */}
       <div className="flex-1 flex flex-col overflow-y-auto min-h-0">
         {/* Plan header — editorial title block.
-            Sits on warm paper (bg-base), with elevated cream as its own surface.
-            Plan name uses Crimson Pro for editorial weight; metadata
-            (distance, weeks, pace ref) reads as a quiet kicker beneath. */}
-        <div className="px-6 md:px-8 pt-7 pb-6 border-b border-divider bg-bg-elevated space-y-5">
+            Sits directly on the warm paper (bg-base) — no near-white slab;
+            the page reads as one warm field with white cards on it. Plan
+            name uses Crimson Pro for editorial weight; metadata (distance,
+            weeks, pace ref) reads as a quiet kicker beneath. */}
+        <div className="px-6 md:px-8 pt-7 pb-6 border-b border-divider bg-bg-base space-y-5">
           <div className="flex items-start gap-6">
             <div className="flex-1 min-w-0">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary mb-1.5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary mb-1.5">
                 {existingPlan?.id ? "Editing plan" : "New plan"}
               </p>
               <input
@@ -1155,7 +1200,7 @@ export function PlanBuilderClient({
                 placeholder="Name this plan"
                 value={planName}
                 onChange={(e) => setPlanName(e.target.value)}
-                className="w-full font-display text-4xl md:text-5xl font-semibold tracking-tight leading-[1.05] text-text-primary border-none outline-none bg-transparent placeholder:text-text-tertiary/70 placeholder:font-display placeholder:font-normal placeholder:italic"
+                className="w-full font-display text-4xl md:text-5xl font-semibold tracking-tight leading-[1.05] text-text-primary border-none outline-none bg-transparent placeholder:text-text-secondary placeholder:font-display placeholder:font-normal placeholder:italic"
               />
             </div>
             <div className="flex items-center gap-2 pt-5 flex-shrink-0">
@@ -1166,10 +1211,13 @@ export function PlanBuilderClient({
               >
                 Save draft
               </button>
+              {/* Publish — the header cluster's ONE coral element. Disabled
+                  is a neutral paper-deep chip (not coral at 50% opacity,
+                  which read as an illegible pale-salmon button). */}
               <button
                 onClick={() => handleSave(true)}
                 disabled={!planName.trim() || isSaving}
-                className="px-3.5 py-1.5 text-sm font-medium bg-coral text-white rounded-lg hover:bg-coral-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-3.5 py-1.5 text-sm font-semibold bg-coral text-white rounded-lg hover:bg-coral-dark transition-colors disabled:bg-bg-calendar disabled:text-text-secondary disabled:cursor-not-allowed"
               >
                 {isSaving ? "Saving…" : "Publish"}
               </button>
@@ -1184,11 +1232,13 @@ export function PlanBuilderClient({
 
           {/* Configuration row — distance, length, type. Reads left to right
               like a sentence: "{distance} · {N} weeks · {fixed|adaptive}." */}
-          <div className="flex items-center gap-x-5 gap-y-3 flex-wrap">
+          <div className="flex items-start gap-x-10 gap-y-4 flex-wrap">
             {/* Distance picker — race target reads first because it's the
-                anchor for every pace in the plan. */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+                anchor for every pace in the plan. Selected chip is ink on
+                paper text (selection = ink; coral stays reserved for the
+                header's Publish). */}
+            <div className="flex flex-col items-start gap-2.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-text-secondary">
                 Race
               </span>
               <div className="flex items-center gap-1 flex-wrap">
@@ -1203,8 +1253,8 @@ export function PlanBuilderClient({
                       onClick={() => setTargetDistance(isCustom ? "" : d)}
                       className={`px-3 py-1 text-xs rounded-full transition-colors ${
                         selected
-                          ? "bg-coral text-white"
-                          : "text-text-secondary hover:text-text-primary hover:bg-bg-base"
+                          ? "bg-text-primary text-white"
+                          : "text-text-secondary hover:text-text-primary hover:bg-bg-elevated"
                       }`}
                     >
                       {DISTANCE_LABELS[d]}
@@ -1225,31 +1275,33 @@ export function PlanBuilderClient({
 
             {/* Duration — editorial number, underline-only, with the unit
                 set after it like running prose ("16 weeks"). */}
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+            <div className="flex flex-col items-start gap-2.5">
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-text-secondary">
                 Length
               </span>
-              <input
-                type="number"
-                min={1}
-                max={24}
-                value={durationWeeks}
-                onChange={(e) => {
-                  const n = parseInt(e.target.value, 10);
-                  if (!isNaN(n) && n >= 1 && n <= 24) adjustDuration(n);
-                }}
-                className="w-12 font-display text-xl text-text-primary border-b border-divider bg-transparent focus:outline-none focus:border-coral text-center tabular-nums"
-              />
-              <span className="text-xs text-text-secondary">weeks</span>
+              <div className="flex items-baseline gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  value={durationWeeks}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (!isNaN(n) && n >= 1 && n <= 24) adjustDuration(n);
+                  }}
+                  className="w-12 font-display text-xl text-text-primary border-b border-divider bg-transparent focus:outline-none focus:border-coral text-center tabular-nums"
+                />
+                <span className="text-xs text-text-secondary">weeks</span>
+              </div>
             </div>
 
             {/* Plan type — verbs the coach reads as a setting, not a tab.
                 Quiet pill group; the active one earns the color. */}
-            <div className="flex items-center gap-2 ml-auto">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+            <div className="flex flex-col items-start gap-2.5 ml-auto">
+              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-text-secondary">
                 Mode
               </span>
-              <div className="flex gap-0 rounded-full border border-divider overflow-hidden bg-bg-base">
+              <div className="flex gap-0 rounded-full border border-divider overflow-hidden bg-bg-elevated">
                 <button
                   onClick={() => setPlanType("fixed")}
                   className={`px-3 py-1 text-xs font-medium transition-colors ${
@@ -1322,49 +1374,55 @@ export function PlanBuilderClient({
           <CoachAiGuidanceSection guidance={coachGuidance} onChange={setCoachGuidance} />
         </div>
 
-        {/* Week selector — pill row reading like tabs in a magazine TOC.
-            Active week earns coral; touched weeks earn a quiet dot. */}
-        <div className="px-6 md:px-8 py-3.5 border-b border-divider bg-bg-base overflow-x-auto">
-          <div className="flex gap-1.5 min-w-max">
-            {weeks.map((week, idx) => {
-              const hasWorkouts = week.workouts.some((w) => w.workoutType && w.workoutType !== "rest");
-              const active = selectedWeekIdx === idx;
-              return (
-                <button
-                  key={idx}
-                  onClick={() => setSelectedWeekIdx(idx)}
-                  className={`relative flex flex-col items-center justify-center w-11 h-11 rounded-lg transition-colors ${
-                    active
-                      ? "bg-coral text-white"
-                      : "text-text-secondary hover:text-text-primary hover:bg-bg-elevated"
-                  }`}
-                  aria-label={`Week ${week.weekNumber}`}
-                >
-                  <span className="font-mono text-[10px] uppercase tracking-wider opacity-70 leading-none">
-                    W
-                  </span>
-                  <span className="font-display text-base leading-tight tabular-nums">
+        {/* Week selector — one "Week" label, then numbered pills reading
+            like tabs in a magazine TOC. The label sits once at the left
+            instead of being repeated on every pill, so the row reads as
+            clean numbers rather than a wall of "W"s. Active week is ink
+            (selection = ink, like the race chips and Mode toggle); the
+            coral dot marks weeks that already have workouts — this
+            cluster's one coral, punctuation not paint. */}
+        <div className="px-6 md:px-8 py-3 border-b border-divider bg-bg-base">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary flex-shrink-0">
+              Week
+            </span>
+            <div className="flex gap-2 overflow-x-auto min-w-0 py-0.5">
+              {weeks.map((week, idx) => {
+                const hasWorkouts = week.workouts.some((w) => w.workoutType && w.workoutType !== "rest");
+                const active = selectedWeekIdx === idx;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedWeekIdx(idx)}
+                    className={`relative flex items-center justify-center w-10 h-10 rounded-lg font-display text-base tabular-nums leading-none transition-colors flex-shrink-0 ${
+                      active
+                        ? "bg-text-primary text-white"
+                        : "text-text-secondary hover:text-text-primary hover:bg-bg-elevated"
+                    }`}
+                    aria-label={`Week ${week.weekNumber}`}
+                    aria-current={active ? "true" : undefined}
+                  >
                     {week.weekNumber}
-                  </span>
-                  {hasWorkouts && (
-                    <span
-                      className={`w-1 h-1 rounded-full absolute bottom-1 ${
-                        active ? "bg-white/70" : "bg-coral"
-                      }`}
-                    />
-                  )}
-                </button>
-              );
-            })}
+                    {hasWorkouts && (
+                      <span
+                        className={`w-1 h-1 rounded-full absolute bottom-1 left-1/2 -translate-x-1/2 ${
+                          active ? "bg-white/70" : "bg-coral"
+                        }`}
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* Week meta — like a chapter header in the plan. Week theme in
             editorial display, week stats in a quiet kicker, planned vs.
             range mileage on the right. */}
-        <div className="px-6 md:px-8 py-5 bg-bg-elevated border-b border-divider flex items-center justify-between gap-6 flex-wrap">
+        <div className="px-6 md:px-8 py-5 bg-bg-base border-b border-divider flex items-center justify-between gap-6 flex-wrap">
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
               Week {selectedWeek?.weekNumber ?? ""}
             </p>
             <div className="flex items-baseline gap-3 mt-0.5">
@@ -1385,7 +1443,7 @@ export function PlanBuilderClient({
                 // Session counter: up to 7 a week (doubles included) reads
                 // neutral; past 7 earns coral — the one alert color.
                 return (
-                  <span className={`text-xs ${n > 7 ? "text-coral font-medium" : "text-text-secondary"}`}>
+                  <span className={`text-xs ${n > 7 ? "text-coral-dark font-medium" : "text-text-secondary"}`}>
                     {n} {n === 1 ? "session" : "sessions"}
                     {n > 7 ? " · over 7" : ""}
                   </span>
@@ -1399,7 +1457,7 @@ export function PlanBuilderClient({
                 runner's easy days fill it. */}
             {planType === "adaptive" && (
               <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
                   Range
                 </span>
                 <div className="flex items-baseline gap-1 font-mono text-sm text-text-primary">
@@ -1409,19 +1467,19 @@ export function PlanBuilderClient({
                     placeholder="min"
                     value={selectedWeek?.targetMilesMin || ""}
                     onChange={(e) => setWeekTargetRange("targetMilesMin", parseInt(e.target.value) || 0)}
-                    className="w-10 text-center bg-transparent border-b border-divider focus:outline-none focus:border-coral placeholder:text-text-tertiary/60 placeholder:text-[10px] placeholder:italic tabular-nums"
+                    className="w-10 text-center bg-transparent border-b border-divider focus:outline-none focus:border-coral placeholder:text-text-secondary placeholder:text-[10px] placeholder:italic tabular-nums"
                   />
-                  <span className="text-text-tertiary">to</span>
+                  <span className="text-text-secondary">to</span>
                   <input
                     type="number"
                     min={0}
                     placeholder="max"
                     value={selectedWeek?.targetMilesMax || ""}
                     onChange={(e) => setWeekTargetRange("targetMilesMax", parseInt(e.target.value) || 0)}
-                    className="w-10 text-center bg-transparent border-b border-divider focus:outline-none focus:border-coral placeholder:text-text-tertiary/60 placeholder:text-[10px] placeholder:italic tabular-nums"
+                    className="w-10 text-center bg-transparent border-b border-divider focus:outline-none focus:border-coral placeholder:text-text-secondary placeholder:text-[10px] placeholder:italic tabular-nums"
                   />
                 </div>
-                <span className="text-[10px] text-text-tertiary">mpw</span>
+                <span className="text-[10px] text-text-secondary">mpw</span>
               </div>
             )}
 
@@ -1436,16 +1494,17 @@ export function PlanBuilderClient({
                 const hasRange = max > 0;
                 // Three-palette rule: within range is neutral (confident ink,
                 // never green); over range earns coral as the one alert.
-                let color = "text-text-tertiary";
+                // coral-dark for AA at display size against warm paper.
+                let color = "text-text-secondary";
                 if (hasRange) {
-                  color = planned > max ? "text-coral" : "text-text-primary";
+                  color = planned > max ? "text-coral-dark" : "text-text-primary";
                 }
                 return (
                   <div className="text-right">
                     <span className={`font-display text-2xl tabular-nums ${color}`}>
                       {planned.toFixed(1)}
                     </span>
-                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary ml-1.5">
+                    <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary ml-1.5">
                       quality
                     </span>
                   </div>
@@ -1457,7 +1516,7 @@ export function PlanBuilderClient({
                   <span className="font-display text-2xl tabular-nums text-text-primary">
                     {planned.toFixed(1)}
                   </span>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary ml-1.5">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary ml-1.5">
                     mi
                   </span>
                 </div>
@@ -1467,7 +1526,7 @@ export function PlanBuilderClient({
             {selectedWeekIdx > 0 && (
               <button
                 onClick={copyFromPreviousWeek}
-                className="text-xs text-text-tertiary hover:text-coral transition-colors underline-offset-4 hover:underline"
+                className="text-xs text-text-secondary hover:text-coral-dark transition-colors underline-offset-4 hover:underline"
               >
                 Copy from W{selectedWeekIdx}
               </button>
@@ -1487,11 +1546,11 @@ export function PlanBuilderClient({
           {/* Projected daily volume by pace zone for the selected week. */}
           <div className="pb-3 mb-3 border-b border-divider">
             <div className="flex items-baseline justify-between mb-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
                 Daily volume · by pace
               </p>
               {planType === "adaptive" && (
-                <span className="text-[11px] italic text-text-tertiary">
+                <span className="text-[11px] italic text-text-secondary">
                   easy days projected from the weekly range
                 </span>
               )}
@@ -1581,7 +1640,7 @@ export function PlanBuilderClient({
                           the second line of a double. */}
                       <span
                         className={`font-mono text-[10px] uppercase tracking-[0.18em] w-8 pt-1 flex-shrink-0 ${
-                          isQuality ? "text-text-secondary" : "text-text-tertiary"
+                          isQuality ? "text-text-primary" : "text-text-secondary"
                         }`}
                       >
                         {session === "pm" ? "· PM" : dayName}
@@ -1600,20 +1659,20 @@ export function PlanBuilderClient({
                       <div className="flex-1 min-w-0 flex items-center">
                         {isUnset ? (
                           session === "pm" ? (
-                            <span className="text-sm italic text-text-tertiary">
+                            <span className="text-sm italic text-text-secondary">
                               PM double · pick from the library
                             </span>
                           ) : planType === "adaptive" ? (
-                            <span className="text-sm italic text-text-tertiary">
+                            <span className="text-sm italic text-text-secondary">
                               Auto · easy run, sized per athlete
                             </span>
                           ) : (
-                            <span className="text-sm text-text-tertiary group-hover:text-text-secondary transition-colors">
+                            <span className="text-sm italic text-text-secondary group-hover:text-text-primary transition-colors">
                               Add a workout
                             </span>
                           )
                         ) : isRest ? (
-                          <span className="text-sm italic text-text-tertiary">
+                          <span className="text-sm italic text-text-secondary">
                             Rest
                           </span>
                         ) : (
@@ -1633,7 +1692,7 @@ export function PlanBuilderClient({
                                 className={`font-mono tabular-nums flex-shrink-0 ${
                                   isQuality
                                     ? "text-sm text-text-secondary"
-                                    : "text-xs text-text-tertiary"
+                                    : "text-xs text-text-secondary"
                                 }`}
                               >
                                 {miles.toFixed(1)} mi
@@ -1648,7 +1707,7 @@ export function PlanBuilderClient({
                         className={`flex-shrink-0 self-center font-mono text-base transition-colors ${
                           isPickerOpen
                             ? "text-coral"
-                            : "text-text-tertiary/60 group-hover:text-text-secondary"
+                            : "text-text-tertiary group-hover:text-text-primary"
                         }`}
                         aria-hidden="true"
                       >
@@ -1663,7 +1722,7 @@ export function PlanBuilderClient({
                 {!hasPm && !pmPickerOpen && am.workoutType && am.workoutType !== "rest" && (
                   <button
                     onClick={() => setPicker({ day: dayIdx, session: "pm" })}
-                    className="ml-[52px] font-mono text-[9px] uppercase tracking-[0.14em] text-text-tertiary/60 hover:text-coral transition-colors"
+                    className="ml-[52px] font-mono text-[10px] uppercase tracking-[0.14em] text-text-secondary hover:text-coral-dark transition-colors"
                   >
                     + PM double
                   </button>
@@ -1686,7 +1745,7 @@ export function PlanBuilderClient({
         <div className="w-80 border-l border-divider bg-bg-card flex flex-col overflow-hidden max-md:hidden">
           <div className="flex-shrink-0 px-5 py-4 border-b border-divider flex items-baseline justify-between">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
                 {picker ? (hasAssignment ? "Edit" : "Assign") : "Library"}
               </p>
               <p className="font-display text-lg text-text-primary leading-tight mt-0.5">
@@ -1700,7 +1759,7 @@ export function PlanBuilderClient({
                 <button
                   type="button"
                   onClick={() => removeWorkout(picker.day, picker.session)}
-                  className="text-[10px] uppercase tracking-wider font-medium text-text-tertiary hover:text-[var(--color-danger)] transition-colors"
+                  className="font-mono text-[10px] uppercase tracking-wider font-medium text-text-secondary hover:text-[var(--color-danger)] transition-colors"
                   title="Clear this slot (reverts to unset / auto-fill)"
                 >
                   Remove
@@ -1709,7 +1768,7 @@ export function PlanBuilderClient({
                 <button
                   type="button"
                   onClick={() => setPicker(null)}
-                  className="text-[10px] uppercase tracking-wider font-medium text-text-tertiary hover:text-text-primary transition-colors"
+                  className="font-mono text-[10px] uppercase tracking-wider font-medium text-text-secondary hover:text-text-primary transition-colors"
                 >
                   Close
                 </button>
@@ -1729,14 +1788,14 @@ export function PlanBuilderClient({
           {picker && isActiveWorkout && current && (
             <div className="px-5 py-4 border-b border-divider">
               <div className="flex items-center justify-between mb-3">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
                   Steps
                 </p>
                 <button
                   type="button"
                   onClick={saveCurrentAsTemplate}
                   disabled={savingTemplate}
-                  className="px-2.5 py-1 text-[10px] font-medium rounded-full border border-coral text-coral hover:bg-coral hover:text-white transition-colors disabled:opacity-50"
+                  className="px-2.5 py-1 text-[10px] font-medium rounded-full border border-divider text-text-secondary hover:text-text-primary hover:border-text-tertiary transition-colors disabled:opacity-50"
                 >
                   {savingTemplate ? "Saving…" : "Save to library"}
                 </button>
@@ -1785,12 +1844,14 @@ export function PlanBuilderClient({
             </button>
           )}
 
-          {/* Build a new workout */}
+          {/* Build a new workout — ink, not coral: the rail's coral budget
+              stays with the small "+" punctuation on the cards, and the
+              page's one big coral stays Publish. */}
           <div className="px-5 py-4 border-b border-divider">
             <button
               type="button"
               onClick={openBuilder}
-              className="w-full px-3 py-2 text-sm font-medium bg-coral text-white rounded-lg hover:bg-coral-dark transition-colors"
+              className="w-full px-3 py-2 text-sm font-medium bg-text-primary text-white rounded-lg hover:bg-text-primary/90 transition-colors"
             >
               {picker
                 ? hasAssignment
@@ -1802,7 +1863,7 @@ export function PlanBuilderClient({
 
           {/* Template library */}
           <div className="px-5 py-4 border-b border-divider">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary mb-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary mb-2">
               {picker ? (hasAssignment ? "Replace from library" : "From library") : "From library"}
             </p>
             <input
@@ -1810,10 +1871,10 @@ export function PlanBuilderClient({
               placeholder="Search workouts"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-divider rounded-lg bg-bg-elevated focus:outline-none focus:border-coral focus:bg-bg-card transition-colors placeholder:text-text-tertiary/70"
+              className="w-full px-3 py-2 text-sm border border-divider rounded-lg bg-bg-elevated focus:outline-none focus:border-coral focus:bg-bg-card transition-colors placeholder:text-text-secondary"
             />
             {!picker && (
-              <p className="text-[11px] italic text-text-tertiary leading-relaxed mt-2">
+              <p className="text-[11px] italic text-text-secondary leading-relaxed mt-2">
                 Drag a card onto a day, or tap one to drop it into the first
                 open day of this week.
               </p>
@@ -1834,7 +1895,7 @@ export function PlanBuilderClient({
             ) : (
               librarySections.map((section) => (
                 <div key={section.key}>
-                  <p className="px-5 pt-3 pb-1 font-mono text-[9px] uppercase tracking-[0.18em] text-text-tertiary sticky top-0 bg-bg-card/95 backdrop-blur-sm z-10 border-b border-divider-soft">
+                  <p className="px-5 pt-3 pb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary sticky top-0 bg-bg-card/95 z-10 border-b border-divider-soft">
                     {section.label}
                   </p>
                   {section.items.map((template) => renderTemplateCard(template))}
@@ -1861,7 +1922,7 @@ export function PlanBuilderClient({
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
                   Workout
                 </p>
                 <h2 className="font-display text-2xl text-text-primary mt-0.5 leading-none">
@@ -1870,7 +1931,7 @@ export function PlanBuilderClient({
               </div>
               <button
                 onClick={() => setBuilderOpen(false)}
-                className="text-text-tertiary hover:text-text-primary text-2xl leading-none -mt-1"
+                className="text-text-secondary hover:text-text-primary text-2xl leading-none -mt-1"
                 aria-label="Close"
               >
                 ×
@@ -1882,9 +1943,12 @@ export function PlanBuilderClient({
               placeholder="6×800m at 5K pace"
               value={builderName}
               onChange={(e) => setBuilderName(e.target.value)}
-              className="w-full font-display text-2xl text-text-primary border-b border-divider pb-2 outline-none bg-transparent placeholder:text-text-tertiary/60 placeholder:italic focus:border-coral transition-colors"
+              className="w-full font-display text-2xl text-text-primary border-b border-divider pb-2 outline-none bg-transparent placeholder:text-text-secondary placeholder:italic focus:border-coral transition-colors"
             />
 
+            {/* Type chips — selected is a 12% wash of the zone blue with ink
+                text (the design system's pill treatment), never a full color
+                fill with white text: the pale zone blues can't carry white. */}
             <div className="flex flex-wrap gap-1.5">
               {QUICK_TYPES.map((type) => (
                 <button
@@ -1892,11 +1956,11 @@ export function PlanBuilderClient({
                   onClick={() => setBuilderType(type)}
                   className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                     builderType === type
-                      ? "text-white font-medium"
+                      ? "text-text-primary font-medium"
                       : "text-text-secondary border-divider hover:border-text-tertiary"
                   }`}
                   style={{
-                    backgroundColor: builderType === type ? WORKOUT_COLORS[type] : "transparent",
+                    backgroundColor: builderType === type ? `${WORKOUT_COLORS[type]}1F` : "transparent",
                     borderColor: builderType === type ? WORKOUT_COLORS[type] : undefined,
                   }}
                 >
@@ -1908,7 +1972,7 @@ export function PlanBuilderClient({
             {/* Describe it — natural-language shorthand → structured steps.
                 Appends to the editor below; unparsed fragments are surfaced. */}
             <div className="border border-divider rounded-xl p-4 bg-bg-elevated space-y-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
                 Describe it
               </p>
               <textarea
@@ -1923,10 +1987,10 @@ export function PlanBuilderClient({
                 }}
                 rows={2}
                 placeholder="2mi wu, 6x800 @ 5k w/ 400m jog, 2mi cd"
-                className="w-full px-3 py-2 text-sm font-mono border border-divider rounded-lg bg-bg-card focus:outline-none focus:border-coral transition-colors placeholder:text-text-tertiary/60 resize-y"
+                className="w-full px-3 py-2 text-sm font-mono border border-divider rounded-lg bg-bg-card focus:outline-none focus:border-coral transition-colors placeholder:text-text-secondary resize-y"
               />
               <div className="flex items-center justify-between gap-3">
-                <p className="text-[11px] italic text-text-tertiary leading-snug">
+                <p className="text-[11px] italic text-text-secondary leading-snug">
                   Reps, paces, zones (MP, LT, 5K), offsets (MP−10), recovery
                   (w/ 400m jog). Builds onto the steps below.
                 </p>

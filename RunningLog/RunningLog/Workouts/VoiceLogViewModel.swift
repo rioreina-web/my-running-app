@@ -52,6 +52,11 @@ final class VoiceLogViewModel {
     /// totals — the journal FEED is authored-only, but the totals are complete.
     var weeklyMileageRows: [JournalMileageRow] = []
     var isLoadingHistory = false
+    /// True when the last history load errored or auth never resolved. Lets the
+    /// view show a "couldn't load — retry" state instead of the "No entries
+    /// yet" empty state, so a transient failure never masquerades as an empty
+    /// journal (the recurring "my logs disappeared" report).
+    var loadFailed = false
     var isUploading = false
     var statusMessage = ""
     var showSuccessAnimation = false
@@ -350,8 +355,24 @@ final class VoiceLogViewModel {
         statusMessage = "Saving notes..."
 
         do {
+            // user_id is REQUIRED: the training_logs INSERT policy is
+            // WITH CHECK (user_id = auth.uid()::text), so an insert without it
+            // is rejected by RLS — which is why manual notes silently failed to
+            // save. Matches the audio path (uploadAudioAndSaveLog).
+            let userId = AuthManager.shared.userId
+            guard !userId.isEmpty else {
+                statusMessage = "Not signed in yet — try again in a moment."
+                isUploading = false
+                return false
+            }
+
             var insertData = TrainingLogInsert(notes: notes)
-            insertData.processingStatus = "not_required"
+            insertData.userId = userId
+            // "pending" enqueues the note for the same analysis pass as voice
+            // memos (mood + niggle/injury-mention extraction) via the outbox
+            // trigger. The drain worker + process-training-memo take the text
+            // branch (no audio). Was "not_required", which skipped all parsing.
+            insertData.processingStatus = "pending"
             insertData.source = "voice_log"
             if let workout = selectedWorkout {
                 insertData.workoutDate = workout.startDate
@@ -365,10 +386,14 @@ final class VoiceLogViewModel {
                 await syncService.removeAutoSyncEntry(forWorkoutDate: workout.startDate, distance: workout.distanceMiles)
             }
 
-            try await supabase
+            struct InsertedRow: Decodable { let id: UUID }
+            let inserted: InsertedRow = try await supabase
                 .from("training_logs")
                 .insert(insertData)
+                .select("id")
+                .single()
                 .execute()
+                .value
 
             statusMessage = "Notes saved!"
             isUploading = false
@@ -382,13 +407,44 @@ final class VoiceLogViewModel {
 
             await loadHistory()
 
-            // Recompute workout features so ML pipeline stays current
-            let userId = AuthManager.shared.userId
-            Task.detached {
-                try? await callEdgeFunction(
-                    name: "compute-workout-features",
-                    body: ["user_id": userId]
-                )
+            // Poll for the analysis pass (mood + niggle/injury-mention
+            // extraction) to finish so the parsed result appears in place
+            // without a manual refresh. Mirrors the audio path: every 3s for
+            // up to 60s. The note is processed by the outbox drain, so this
+            // just watches processing_status flip off "pending".
+            let capturedRecordId = inserted.id.uuidString
+            let capturedUserId = userId
+            Task { [weak self] in
+                for _ in 0..<20 {
+                    try? await Task.sleep(for: .seconds(3))
+                    struct StatusRow: Decodable { let processing_status: String }
+                    let result: [StatusRow]? = try? await supabase
+                        .from("training_logs")
+                        .select("processing_status")
+                        .eq("id", value: capturedRecordId)
+                        .execute()
+                        .value
+                    // Row gone (dedup merged it into a run and deleted the
+                    // standalone row): stop and refresh, don't spin to timeout.
+                    if let rows = result, rows.isEmpty {
+                        await MainActor.run { _ = Task { await self?.loadHistory() } }
+                        return
+                    }
+                    let status = result?.first?.processing_status ?? "pending"
+                    if status == "completed" || status == "failed" {
+                        await MainActor.run { _ = Task { await self?.loadHistory() } }
+                        // Recompute workout features so the ML pipeline stays current.
+                        if status == "completed" {
+                            _ = try? await callEdgeFunction(
+                                name: "compute-workout-features",
+                                body: ["user_id": capturedUserId]
+                            )
+                        }
+                        return
+                    }
+                }
+                // Timed out — refresh anyway.
+                await MainActor.run { _ = Task { await self?.loadHistory() } }
             }
 
             return true
@@ -440,11 +496,30 @@ final class VoiceLogViewModel {
     func loadHistory() async {
         isLoadingHistory = true
 
+        // Auth may not have resolved yet on a cold launch. Querying with an
+        // empty userId returns zero rows and would silently blank an existing
+        // journal (the recurring "my logs disappeared" report), so wait briefly
+        // for the session to resolve rather than clobbering historyLogs to [].
+        var userId = AuthManager.shared.userId
+        var authWaits = 0
+        while userId.isEmpty && authWaits < 10 {
+            try? await Task.sleep(for: .milliseconds(300))
+            userId = AuthManager.shared.userId
+            authWaits += 1
+        }
+        guard !userId.isEmpty else {
+            loadFailed = true
+            isLoadingHistory = false
+            return
+        }
+
         do {
-            let userId = AuthManager.shared.userId
             // Voice Log view = only voice memos + manual entries. Auto-synced workouts
             // (strava, vital, healthkit) live elsewhere and show up as linkable workouts.
-            let logs: [TrainingLog] = try await supabase
+            // Decoded row-by-row (Failable) on purpose: a strict [TrainingLog]
+            // decode is all-or-nothing, so one malformed row emptied the whole
+            // journal and surfaced as "could not load history".
+            let rows: [Failable<TrainingLog>] = try await supabase
                 .from("training_logs")
                 .select()
                 .eq("user_id", value: userId)
@@ -454,7 +529,13 @@ final class VoiceLogViewModel {
                 .execute()
                 .value
 
+            let logs = rows.compactMap(\.value)
+            if logs.count < rows.count {
+                Log.app.error("Skipped \(rows.count - logs.count) undecodable training_log row(s)")
+            }
+
             historyLogs = logs.sorted { $0.displayDate > $1.displayDate }
+            loadFailed = false
             // All runs (any source) for the week-header mileage totals.
             weeklyMileageRows = (try? await fetchJournalMileageRows(userId: userId)) ?? []
             // Niggles linked to each log, for the row chips.
@@ -470,6 +551,7 @@ final class VoiceLogViewModel {
             await autoRetryStaleRecords(logs: logs)
         } catch {
             Log.app.error("Failed to load history: \(error)")
+            loadFailed = true
             isLoadingHistory = false
             ErrorReporter.shared.report(error, context: "load voice log history")
         }

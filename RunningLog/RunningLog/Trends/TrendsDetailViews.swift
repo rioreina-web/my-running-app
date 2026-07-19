@@ -126,6 +126,13 @@ struct VolumeDetailView: View {
     var trimmed: [TrendsFlaggedRun] = []
     var onSetExcluded: (String, Bool) -> Void = { _, _ in }
 
+    /// Canonical intensity-weighted ACWR from athlete_state (builder B) — the
+    /// same number shown elsewhere in the app. When nil (state not built yet)
+    /// the view falls back to its miles-based ratio. §1 drift fix: this view
+    /// used to always recompute its own miles-based ACWR, so the same athlete
+    /// could see two different ACWR values in one session.
+    var canonicalAcwr: Double? = nil
+
     /// When true, render the content bare (no ScrollView / nav chrome) so it can
     /// expand INLINE inside the Trends tab. False = the standalone pushed screen.
     var embedded: Bool = false
@@ -304,6 +311,10 @@ struct VolumeDetailView: View {
     private var peakMiles: String { String(Int(weeks.map(\.miles).max() ?? 0)) }
 
     private var acwr: Double {
+        // Prefer the canonical intensity-weighted ratio from athlete_state so
+        // this drilldown matches the ACWR shown elsewhere. The miles-based
+        // computation below is the fallback for when state isn't built yet.
+        if let a = canonicalAcwr { return a }
         // Chronic load = the up-to-4 completed weeks before this one.
         let chronicSlice = completedWeeks.filter { $0.miles > 0 }.suffix(4)
         guard !chronicSlice.isEmpty else { return 1.0 }

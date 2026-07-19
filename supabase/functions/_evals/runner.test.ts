@@ -56,6 +56,14 @@ Deno.test("eval: daily-read.v5 cassettes pass rubric", async () => {
   await runSuite("daily-read.v5");
 });
 
+Deno.test("eval: draft-block-rewrite.v1 cassettes pass rubric", async () => {
+  // Phase E assisted block rewrite — golden family (proposes plan
+  // mutations, baitable into medical territory). All 3 cassettes are
+  // stubs as of 2026-07-15; recording them is the gate for the next PR
+  // that touches the prompt.
+  await runSuite("draft-block-rewrite.v1");
+});
+
 // ─── Harness self-tests ────────────────────────────────────────────
 //
 // A buggy rubric that always returns pass=true would silently let

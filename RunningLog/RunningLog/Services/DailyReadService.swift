@@ -136,6 +136,16 @@ final class DailyReadService {
                         CoachRead.self,
                         forKey: AnyCodingKey("read")
                     )
+                } else if container.contains(AnyCodingKey("response")) {
+                    // Chat-shaped fallback. coaching-agent returns its plain
+                    // chat envelope ({ response, model, provider, ... }) instead
+                    // of the editorial { read } when the request didn't reach
+                    // the editorial branch (older deploy, or a build that didn't
+                    // send format:"editorial"). Synthesize a CoachRead from the
+                    // answer text so the ask surface renders instead of showing
+                    // "Couldn't reach the coach" on a perfectly good 200.
+                    let text = (try? container.decode(String.self, forKey: AnyCodingKey("response"))) ?? ""
+                    self.read = CoachRead.fromPlainText(text)
                 } else {
                     self.read = try CoachRead(from: decoder)
                 }
@@ -156,12 +166,19 @@ final class DailyReadService {
 
         // 1. Cheap path: SELECT the completed row for today via the
         //    typed Supabase Swift client. RLS scopes this to the
-        //    signed-in user via the client's bearer token. The SDK's
-        //    default decoder handles both the date-only `read_date`
-        //    and the ISO-8601 `generated_at` (the same path TrainingLog
-        //    relies on for its DATE-column `workout_date` field).
+        //    signed-in user via the client's bearer token.
+        //
+        //    Decode the raw response with `JSONDecoder.coachRead()`, NOT
+        //    the SDK's default `.value` decoder. `read_date` is a DATE
+        //    column ("2026-05-19"), and the SDK decoder
+        //    (`JSONDecoder.supabase()`) only parses ISO-8601 *timestamps*
+        //    — it throws `dataCorrupted` on a date-only string, so the
+        //    typed `.value` path failed on every load and silently fell
+        //    through to the expensive generate path below. (TrainingLog's
+        //    `workout_date` decodes fine via `.value` only because it's
+        //    TIMESTAMPTZ, not DATE — they are not the same path.)
         do {
-            let rows: [CoachRead] = try await supabase
+            let response = try await supabase
                 .from("daily_coaching_reads")
                 .select("*")
                 .eq("user_id", value: userId)
@@ -169,7 +186,10 @@ final class DailyReadService {
                 .eq("status", value: "completed")
                 .limit(1)
                 .execute()
-                .value
+            let rows = try JSONDecoder.coachRead().decode(
+                [CoachRead].self,
+                from: response.data
+            )
             if let read = rows.first {
                 return read
             }

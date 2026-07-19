@@ -229,28 +229,32 @@ export function PlanSetupSection({
         className="w-full flex items-center justify-between px-4 py-2.5 text-left"
       >
         <div className="flex items-baseline gap-3">
-          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+          <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary">
             Plan setup
           </span>
           <span className="text-xs text-text-secondary">{summary}</span>
         </div>
-        <span className="text-xs text-text-tertiary">{open ? "Hide" : "Edit"}</span>
+        <span className="text-xs text-text-secondary underline underline-offset-4 decoration-[var(--color-divider)]">{open ? "Hide" : "Edit"}</span>
       </button>
 
       {open && (
         <div className="px-4 pb-4 space-y-5 border-t border-divider pt-4">
           {/* 1 — Weekly skeleton */}
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary mb-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary mb-2">
               Weekly skeleton
             </p>
             <div className="flex gap-1.5 flex-wrap">
               {DAYS.map((label, dow) => {
                 const role = roleFor(dow);
+                // Day roles are intensity, so they take the blue pace ramp
+                // (three-palette rule: blue = pace; the old green long-run
+                // chip was a mood color, and coral quality competed with the
+                // ramp's coral warn dots — the one alert in this cluster).
                 const styles: Record<ChipRole, string> = {
-                  unset: "border-divider text-text-tertiary hover:text-text-secondary",
-                  speed: "border-coral text-coral",
-                  long_run: "border-[var(--color-mood-positive)] text-[var(--color-mood-positive)]",
+                  unset: "border-divider text-text-secondary hover:text-text-primary",
+                  speed: "border-[var(--color-pace-5k)] text-[var(--color-pace-5k)]",
+                  long_run: "border-[var(--color-pace-lt)] text-[var(--color-pace-lt)]",
                   rest: "border-text-tertiary text-text-secondary bg-bg-elevated",
                 };
                 return (
@@ -268,7 +272,7 @@ export function PlanSetupSection({
                 );
               })}
             </div>
-            <p className="text-[11px] text-text-tertiary mt-1.5">
+            <p className="text-[11px] text-text-secondary mt-1.5">
               Quality and long-run workouts land on these days for every athlete
               unless the athlete picks their own days at signup. Unmarked days
               auto-fill with easy volume.
@@ -277,7 +281,7 @@ export function PlanSetupSection({
 
           {/* 2 — Mileage ramp */}
           <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary mb-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-secondary mb-2">
               Mileage ramp
             </p>
 
@@ -341,7 +345,7 @@ export function PlanSetupSection({
                       </div>
                       <span
                         className={`font-mono text-[9px] tracking-wider ${
-                          selected ? "text-text-primary font-semibold" : "text-text-tertiary"
+                          selected ? "text-text-primary font-semibold" : "text-text-secondary"
                         }`}
                       >
                         W{w.weekNumber}
@@ -361,7 +365,7 @@ export function PlanSetupSection({
                 onChange={(e) => setRampStart(e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
                 className="w-14 px-1 py-0.5 text-xs text-center border-b border-divider bg-transparent focus:outline-none focus:border-coral tabular-nums"
               />
-              <span className="text-xs text-text-tertiary">→</span>
+              <span className="text-xs text-text-secondary">→</span>
               <input
                 type="number"
                 min={0}
@@ -370,7 +374,7 @@ export function PlanSetupSection({
                 onChange={(e) => setRampEnd(e.target.value === "" ? "" : parseInt(e.target.value) || 0)}
                 className="w-14 px-1 py-0.5 text-xs text-center border-b border-divider bg-transparent focus:outline-none focus:border-coral tabular-nums"
               />
-              <span className="text-xs text-text-tertiary">mpw, range width</span>
+              <span className="text-xs text-text-secondary">mpw, range width</span>
               <input
                 type="number"
                 min={2}
@@ -407,31 +411,33 @@ export function PlanSetupSection({
                     key={w.weekNumber}
                     className="flex flex-col items-center gap-1 px-1.5 py-1.5 rounded-md bg-bg-elevated border border-divider"
                   >
-                    <span className="font-mono text-[9px] uppercase tracking-wider text-text-tertiary">
+                    <span className="font-mono text-[9px] uppercase tracking-wider text-text-secondary">
                       W{w.weekNumber}
                     </span>
+                    {/* Empty range cells say what they want ("min"/"max"),
+                        never a dash — hard rule #8. */}
                     <input
                       type="number"
                       min={0}
                       value={w.targetMilesMin || ""}
-                      placeholder="–"
+                      placeholder="min"
                       onChange={(e) => setWeekRange(w.weekNumber, "min", parseInt(e.target.value) || 0)}
-                      className="w-9 text-center text-xs bg-transparent border-b border-divider focus:outline-none focus:border-coral tabular-nums"
+                      className="w-9 text-center text-xs bg-transparent border-b border-divider focus:outline-none focus:border-coral tabular-nums placeholder:text-text-tertiary placeholder:italic"
                     />
                     <input
                       type="number"
                       min={0}
                       value={w.targetMilesMax || ""}
-                      placeholder="–"
+                      placeholder="max"
                       onChange={(e) => setWeekRange(w.weekNumber, "max", parseInt(e.target.value) || 0)}
-                      className="w-9 text-center text-xs bg-transparent border-b border-divider focus:outline-none focus:border-coral tabular-nums"
+                      className="w-9 text-center text-xs bg-transparent border-b border-divider focus:outline-none focus:border-coral tabular-nums placeholder:text-text-tertiary placeholder:italic"
                     />
                     <select
                       value={weekPhases[w.weekNumber] ?? ""}
                       onChange={(e) => setPhase(w.weekNumber, e.target.value as Phase | "")}
-                      className="w-full text-[9px] font-mono uppercase tracking-wider bg-transparent text-text-tertiary focus:outline-none cursor-pointer"
+                      className="w-full text-[9px] font-mono uppercase tracking-wider bg-transparent text-text-secondary focus:outline-none cursor-pointer"
                     >
-                      <option value="">—</option>
+                      <option value="">no phase</option>
                       {PHASES.map((p) => (
                         <option key={p} value={p}>
                           {p}
@@ -451,7 +457,7 @@ export function PlanSetupSection({
                 type="checkbox"
                 checked={autoStrides}
                 onChange={(e) => onAutoStridesChange(e.target.checked)}
-                className="accent-[var(--color-coral,#E8764A)]"
+                className="accent-[var(--color-text-primary)]"
               />
               Strides on the easy day before quality
             </label>
@@ -460,7 +466,7 @@ export function PlanSetupSection({
                 type="checkbox"
                 checked={recoveryAfterLong}
                 onChange={(e) => onRecoveryAfterLongChange(e.target.checked)}
-                className="accent-[var(--color-coral,#E8764A)]"
+                className="accent-[var(--color-text-primary)]"
               />
               Recovery run the day after the long run
             </label>

@@ -22,11 +22,29 @@ final class WorkoutSyncService {
         defer { isSyncing = false }
 
         do {
-            // Fetch existing training_logs for the last 90 days
+            // Fetch existing training_logs for the last 90 days.
+            //
+            // Dedup only needs date/distance/source — NOT the full row. A bare
+            // select() pulls every column, including the large `external_streams`
+            // telemetry JSONB for every run in the window, which blows past the
+            // statement timeout (500) and fails the whole sync. Select only the
+            // three columns the dedup loop reads, scoped by user_id so the
+            // (user_id, workout_date) index can serve it.
+            struct ExistingLogRow: Decodable {
+                let workoutDate: Date?
+                let workoutDistanceMiles: Double?
+                let source: String?
+                enum CodingKeys: String, CodingKey {
+                    case workoutDate = "workout_date"
+                    case workoutDistanceMiles = "workout_distance_miles"
+                    case source
+                }
+            }
             let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-            let existingLogs: [TrainingLog] = try await supabase
+            let existingLogs: [ExistingLogRow] = try await supabase
                 .from("training_logs")
-                .select()
+                .select("workout_date, workout_distance_miles, source")
+                .eq("user_id", value: userId)
                 .gte("workout_date", value: ISO8601DateFormatter().string(from: cutoff))
                 .execute()
                 .value

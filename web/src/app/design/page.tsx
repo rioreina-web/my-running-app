@@ -17,6 +17,13 @@ type PreviewEntry = {
 
 const PREVIEWS: PreviewEntry[] = [
   {
+    slug: "coach-dashboard",
+    title: "Coach athlete dashboard",
+    subtitle: "Phase 1 deep-dive — overlay, progression, load, niggles, log.",
+    source: "coach/dashboard/* · fixtures",
+    status: "ported",
+  },
+  {
     slug: "training-summary",
     title: "Training summary",
     subtitle: "This week at a glance — the dashboard, in editorial form.",

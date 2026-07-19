@@ -109,9 +109,10 @@ struct VolumeDetailSheet: View {
     // MARK: Value table
 
     private var valueTable: some View {
-        // Pace bins are mostly empty — only list bands with miles. Other
-        // kinds list every bar so a zero week/zone still reads.
-        let rows = kind.isPaceAxis ? bars.filter { $0.miles > 0 } : bars
+        // List every bar — for pace these are the canonical named zones, so a
+        // zero-mile zone (e.g. no FASTER work this week) still reads and shows
+        // the shape of the training.
+        let rows = bars
         return VStack(spacing: 0) {
             ForEach(rows) { bar in
                 VStack(spacing: 0) {
@@ -131,7 +132,7 @@ struct VolumeDetailSheet: View {
         return HStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 2).fill(bar.color).frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 3) {
-                Text(bar.label + (kind.isPaceAxis ? " /MI" : ""))
+                Text(bar.label)
                     .font(.dripEyebrow(10.5)).tracking(1.0)
                     .foregroundStyle(Color.drip.textPrimary)
                 if let sub = bar.subLabel {
@@ -220,7 +221,9 @@ private struct DetailBarChart: View {
     var body: some View {
         let maxMi = max(0.1, bars.map(\.miles).max() ?? 0.1)
         let top = TrainingAnalyticsViewModel.niceMilesTop(maxMi)
-        let labelEach = !isPaceAxis && bars.count <= 12
+        // Pace bars are now the canonical named zones (≤ 8), so label each one
+        // like the categorical charts instead of using the fixed pace ruler.
+        let labelEach = bars.count <= 12
         let spacing: CGFloat = bars.count > 12 ? 2 : 6
 
         HStack(alignment: .top, spacing: 8) {
@@ -279,27 +282,31 @@ private struct DetailBarChart: View {
 
     @ViewBuilder
     private func xAxis(labelEach: Bool, spacing: CGFloat) -> some View {
-        if isPaceAxis {
-            HStack {
-                ForEach(["8:00","7:00","6:00","5:00","4:30"], id: \.self) { t in
-                    Text(t).font(.dripEyebrow(9)).foregroundStyle(Color.drip.textTertiary)
-                    if t != "4:30" { Spacer() }
-                }
-            }
-        } else if labelEach {
+        if labelEach {
             HStack(spacing: spacing) {
                 ForEach(bars) { bar in
                     VStack(spacing: 2) {
                         Text(bar.label)
                             .font(.dripEyebrow(8.5)).tracking(0.4)
                             .foregroundStyle(Color.drip.textTertiary)
-                        if let sub = bar.subLabel {
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                        // Ranges only when there's room (≤ 4 bars, e.g. Easy/Hard);
+                        // the 8-zone pace axis keeps just the zone names.
+                        if bars.count <= 4, let sub = bar.subLabel {
                             Text(sub)
                                 .font(.dripEyebrow(7.5)).tracking(0.2)
                                 .foregroundStyle(Color.drip.textTertiary)
+                                .lineLimit(1).minimumScaleFactor(0.6)
                         }
                     }
                     .frame(maxWidth: .infinity)
+                }
+            }
+        } else if isPaceAxis {
+            HStack {
+                ForEach(["8:00","7:00","6:00","5:00","4:30"], id: \.self) { t in
+                    Text(t).font(.dripEyebrow(9)).foregroundStyle(Color.drip.textTertiary)
+                    if t != "4:30" { Spacer() }
                 }
             }
         }

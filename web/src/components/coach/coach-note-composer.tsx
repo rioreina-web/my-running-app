@@ -52,7 +52,7 @@ export function CoachNoteComposer({
 
   return (
     <section>
-      <p className="font-body text-[11px] tracking-[1.5px] uppercase text-text-tertiary">
+      <p className="font-mono text-[10px] font-medium tracking-[0.12em] uppercase text-text-secondary">
         Send a note
       </p>
       <textarea

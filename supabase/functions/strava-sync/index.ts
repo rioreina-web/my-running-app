@@ -28,11 +28,131 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { type OrphanCandidate, pickBestOrphan } from "../_shared/voiceOrphanMatch.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const STRAVA_CLIENT_ID = Deno.env.get("STRAVA_CLIENT_ID") ?? "";
 const STRAVA_CLIENT_SECRET = Deno.env.get("STRAVA_CLIENT_SECRET") ?? "";
+
+// Background-task hook (Supabase keeps the worker alive until the promise
+// settles). Falls back to a detached promise off-platform.
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
+
+// Fold a matching orphan voice_log row (a memo recorded BEFORE this run synced,
+// so it has audio + notes but no telemetry) into the run row we just wrote.
+// The run stays canonical (keeps GPS/laps/streams) and inherits the memo's
+// subjective content via the merge_voice_orphan_into_run RPC. Best-effort: any
+// failure — including the RPC not yet being deployed — is logged and swallowed
+// so reconciliation can never break the core sync.
+async function reconcileVoiceOrphan(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  runId: string,
+  runDate: string,
+  runDistanceMiles: number,
+): Promise<void> {
+  try {
+    const windowMs = 4 * 60 * 60 * 1000; // matches ORPHAN_TIME_WINDOW_MS
+    const base = new Date(runDate).getTime();
+    const lo = new Date(base - windowMs).toISOString();
+    const hi = new Date(base + windowMs).toISOString();
+    const { data, error } = await db
+      .from("training_logs")
+      .select("id, workout_date, workout_distance_miles")
+      .eq("user_id", userId)
+      .is("external_streams", null)      // no telemetry
+      .not("audio_url", "is", null)      // is a voice memo
+      .is("vital_workout_id", null)      // not already linked to a run
+      .neq("id", runId)
+      .gte("workout_date", lo)
+      .lte("workout_date", hi);
+    if (error) {
+      console.warn(`[strava-sync] orphan lookup failed for ${userId}: ${error.message}`);
+      return;
+    }
+    const orphan = pickBestOrphan(
+      { workout_date: runDate, workout_distance_miles: runDistanceMiles },
+      (data ?? []) as OrphanCandidate[],
+    );
+    if (!orphan) return;
+    // The service-role client carries no generated DB types, so rpc() can't
+    // see this function's params; cast to satisfy the checker (args pass at
+    // runtime unchanged).
+    const { error: mergeErr } = await db.rpc(
+      "merge_voice_orphan_into_run",
+      { p_orphan: orphan.id, p_run: runId } as never,
+    );
+    if (mergeErr) {
+      console.warn(`[strava-sync] voice-orphan merge failed (${orphan.id} → ${runId}): ${mergeErr.message}`);
+    } else {
+      console.log(`[strava-sync] merged voice orphan ${orphan.id} into run ${runId}`);
+    }
+  } catch (err) {
+    console.warn(`[strava-sync] reconcileVoiceOrphan threw: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Fire parse-workout-structure for a freshly-ingested run. The pg_net trigger
+ * that was supposed to do this is dead on Supabase (ALTER DATABASE SET
+ * app.settings.* is permission-denied), so structure was never parsed for any
+ * workout. We invoke the parser directly with the service role instead —
+ * fire-and-forget so the sync loop never blocks on Gemini. See Option A.
+ */
+function fireParseStructure(trainingLogId: string, userId: string): void {
+  if (!supabaseUrl || !supabaseServiceKey) return;
+  const p = fetch(`${supabaseUrl}/functions/v1/parse-workout-structure`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${supabaseServiceKey}`,
+      apikey: supabaseServiceKey,
+    },
+    body: JSON.stringify({ training_log_id: trainingLogId, user_id: userId }),
+  })
+    .then((r) => {
+      if (!r.ok) console.warn(`[strava-sync] parse-structure ${r.status} for ${trainingLogId}`);
+    })
+    .catch((e) => console.warn(`[strava-sync] parse-structure fetch failed: ${e}`));
+  try {
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+      EdgeRuntime.waitUntil(p);
+      return;
+    }
+  } catch { /* fall through */ }
+  void p;
+}
+
+/**
+ * Fire fetch-workout-weather for a freshly-ingested run so its actual
+ * conditions (temp / dew point / heat) attach to training_logs.weather_actual,
+ * located from the run's own GPS. Fire-and-forget — the sync loop never blocks
+ * on Open-Meteo, and a miss is harmless (weather_actual just stays null).
+ */
+function fireWorkoutWeather(trainingLogId: string, userId: string): void {
+  if (!supabaseUrl || !supabaseServiceKey) return;
+  const p = fetch(`${supabaseUrl}/functions/v1/fetch-workout-weather`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${supabaseServiceKey}`,
+      apikey: supabaseServiceKey,
+    },
+    body: JSON.stringify({ training_log_id: trainingLogId, user_id: userId }),
+  })
+    .then((r) => {
+      if (!r.ok) console.warn(`[strava-sync] fetch-weather ${r.status} for ${trainingLogId}`);
+    })
+    .catch((e) => console.warn(`[strava-sync] fetch-weather fetch failed: ${e}`));
+  try {
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+      EdgeRuntime.waitUntil(p);
+      return;
+    }
+  } catch { /* fall through */ }
+  void p;
+}
 
 // The default SupabaseClient generics resolve untyped queries to `never`;
 // strava ingest uses an untyped admin client (mirrors strava-test-pull).
@@ -69,8 +189,10 @@ interface StravaActivity {
   type: string;
   distance: number;
   moving_time: number;
-  start_date: string;
-  start_date_local: string;
+  start_date: string;        // true UTC instant, e.g. "2026-06-17T11:30:46Z"
+  start_date_local: string;  // local wall-time stamped with Z (Strava quirk)
+  timezone?: string;         // e.g. "(GMT-06:00) America/Chicago"
+  utc_offset?: number;       // seconds, e.g. -18000
   average_heartrate?: number;
   max_heartrate?: number;
   average_speed?: number;
@@ -90,6 +212,29 @@ interface StravaSplit {
 interface StravaDetailed extends StravaActivity {
   splits_standard?: StravaSplit[];
   splits_metric?: StravaSplit[];
+}
+
+/** Strava omits `laps` for some activities (manual entries, certain devices).
+ *  When that happens, `external_streams.laps` is null, the lap-writer trigger
+ *  has nothing to parse, and the app silently re-segments the GPS stream into
+ *  miles. Fall back to Strava's per-mile splits, mapped into the lap shape the
+ *  `running_workout_laps` trigger expects, so every run still gets distance
+ *  splits with real per-split HR. Native `laps` (which reflect the recording's
+ *  own auto-lap unit, e.g. 1 km) always win when present. */
+function lapsOrSplitFallback(
+  detail: { laps?: unknown; splits_standard?: StravaSplit[] },
+): unknown[] | null {
+  if (Array.isArray(detail.laps) && detail.laps.length > 0) return detail.laps as unknown[];
+  const splits = detail.splits_standard;
+  if (!splits || splits.length === 0) return null;
+  return splits.map((s, i) => ({
+    lap_index: s.split ?? (i + 1),
+    distance: s.distance,
+    moving_time: s.moving_time,
+    elapsed_time: s.elapsed_time,
+    average_speed: s.average_speed,
+    average_heartrate: s.average_heartrate ?? null,
+  }));
 }
 
 // ── Credential persistence + refresh (rotation-safe) ───────────────
@@ -321,9 +466,16 @@ async function syncUser(row: CredRow, lookbackDays: number, perUserLimit: number
         source: "strava",
         activity_id: a.id,
         streams,
-        laps: detail.laps ?? null,
+        laps: lapsOrSplitFallback(detail),
         meta: {
           name: a.name,
+          // Timestamps: start_date is the true UTC instant (what workout_date
+          // now stores); the local/tz fields let the UI render the run in its
+          // own zone even if the device is elsewhere.
+          start_date: a.start_date,
+          start_date_local: a.start_date_local,
+          timezone: a.timezone ?? null,
+          utc_offset: a.utc_offset ?? null,
           description: detail.description ?? null,
           device_name: detail.device_name ?? null,
           workout_type: detail.workout_type ?? null,
@@ -356,6 +508,9 @@ async function syncUser(row: CredRow, lookbackDays: number, perUserLimit: number
         const { error: updateErr } = await db
           .from("training_logs")
           .update({
+            // Also correct the timestamp to true UTC on re-sync, so rows that
+            // were imported with the old start_date_local bug get fixed.
+            workout_date: a.start_date,
             pace_segments: paceSegments,
             external_streams: externalStreams,
             processing_status: "completed",
@@ -365,25 +520,45 @@ async function syncUser(row: CredRow, lookbackDays: number, perUserLimit: number
           result.errors.push({ id: a.id, error: `update: ${updateErr.message}` });
         } else {
           result.imported++;
+          // Streams just landed — parse the workout structure from the GPS.
+          fireParseStructure(existingRow.id, userId);
+          fireWorkoutWeather(existingRow.id, userId);
+          // Fold in a voice memo that was recorded before this run had streams.
+          await reconcileVoiceOrphan(db, userId, existingRow.id, a.start_date, distanceMiles);
         }
       } else {
-        const { error: insertErr } = await db.from("training_logs").insert({
-          user_id: userId,
-          source: "strava",
-          vital_workout_id: stravaKey,
-          workout_date: a.start_date_local,
-          workout_distance_miles: distanceMiles,
-          workout_duration_minutes: durationMinutes,
-          notes: noteLines.join("\n"),
-          cleaned_notes: a.name,
-          pace_segments: paceSegments,
-          external_streams: externalStreams,
-          processing_status: "completed",
-        });
+        const { data: insertedRow, error: insertErr } = await db
+          .from("training_logs")
+          .insert({
+            user_id: userId,
+            source: "strava",
+            vital_workout_id: stravaKey,
+            // True UTC instant. The app renders it in the run's local zone
+            // (device tz, or the captured utc_offset). Storing start_date_local
+            // here was the old bug — local wall-time tagged Z got re-converted
+            // and showed the run hours off.
+            workout_date: a.start_date,
+            workout_distance_miles: distanceMiles,
+            workout_duration_minutes: durationMinutes,
+            notes: noteLines.join("\n"),
+            cleaned_notes: a.name,
+            pace_segments: paceSegments,
+            external_streams: externalStreams,
+            processing_status: "completed",
+          })
+          .select("id")
+          .single();
         if (insertErr) {
           result.errors.push({ id: a.id, error: insertErr.message });
         } else {
           result.imported++;
+          // New run with GPS streams — parse the workout structure from it.
+          if (insertedRow?.id) {
+            fireParseStructure(String(insertedRow.id), userId);
+            fireWorkoutWeather(String(insertedRow.id), userId);
+            // Fold in a voice memo recorded before this run synced (orphan).
+            await reconcileVoiceOrphan(db, userId, String(insertedRow.id), a.start_date, distanceMiles);
+          }
         }
       }
     } catch (err) {

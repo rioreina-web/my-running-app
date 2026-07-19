@@ -105,7 +105,7 @@ export default async function CoachWorkoutDetailPage({
       </Link>
 
       <header className="space-y-3">
-        <p className="font-body text-[11px] tracking-[1.5px] uppercase text-text-tertiary">
+        <p className="font-mono text-[10px] font-medium tracking-[0.12em] uppercase text-text-secondary">
           {date.toLocaleDateString("en-US", {
             weekday: "long",
             month: "long",
@@ -129,7 +129,7 @@ export default async function CoachWorkoutDetailPage({
               <span className="font-body text-sm text-text-tertiary">/mi</span>
             </span>
           )}
-          {duration != null && (
+          {duration != null && duration > 0 && (
             <span className="font-body text-sm text-text-secondary tabular-nums">
               {formatDuration(duration)}
             </span>
@@ -142,7 +142,7 @@ export default async function CoachWorkoutDetailPage({
         <>
           <EditorialDivider />
           <section>
-            <p className="font-body text-[11px] tracking-[1.5px] uppercase text-text-tertiary">
+            <p className="font-mono text-[10px] font-medium tracking-[0.12em] uppercase text-text-secondary">
               Athlete&rsquo;s notes
             </p>
             <blockquote className="mt-4 pl-4 border-l-2 border-coral/40 font-body text-[17px] leading-8 text-text-primary/90 italic">
@@ -154,7 +154,7 @@ export default async function CoachWorkoutDetailPage({
 
       <EditorialDivider />
       <section>
-        <p className="font-body text-[11px] tracking-[1.5px] uppercase text-text-tertiary">
+        <p className="font-mono text-[10px] font-medium tracking-[0.12em] uppercase text-text-secondary">
           Splits &amp; intervals
         </p>
         <p className="mt-4 font-body text-sm text-text-tertiary">
@@ -168,7 +168,9 @@ export default async function CoachWorkoutDetailPage({
 }
 
 function formatDuration(minutes: number): string {
-  if (minutes <= 0) return "—";
+  // Empty string, not an em-dash — the caller omits the stat entirely when
+  // there's nothing to show (hard rule #8).
+  if (minutes <= 0) return "";
   if (minutes < 60) {
     const m = Math.floor(minutes);
     const s = Math.round((minutes - m) * 60);

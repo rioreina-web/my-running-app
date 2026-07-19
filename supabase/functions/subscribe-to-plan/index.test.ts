@@ -334,3 +334,208 @@ Deno.test("subscription_preferences: missing field leaves materialization unchan
   assertEquals(subs[0].volume_ramp, undefined);
   assertEquals(subs[0].shape_prefs, undefined);
 });
+
+// ── Phase A (2026-07-03): plan-level skeleton + mileage ramp wiring ─────
+// See outputs/adaptive-coach-plan-builder-spec-2026-07-03.md §R1/§R3.
+
+Deno.test("day_structure: skeleton places quality when athlete has no prefs", async () => {
+  const athleteUserId = "athlete-skeleton-1";
+  // Coach's per-week grid puts quality on Wed (2) + Sun (6), but the
+  // plan-level skeleton says Tue (1) = speed, Sat (5) = long run, Mon (0) = rest.
+  const template = {
+    ...adaptiveTemplate(),
+    day_structure: [
+      { dayOfWeek: 0, role: "rest" },
+      { dayOfWeek: 1, role: "speed" },
+      { dayOfWeek: 5, role: "long_run" },
+    ],
+  };
+  const { deps, inserts } = buildDeps(template, athleteUserId);
+
+  const res = await handler(
+    buildRequest({
+      planTemplateId: "plan-template-adaptive",
+      athleteUserId,
+      startDate: "2026-05-01",
+    }),
+    deps
+  );
+  assertEquals(res.status, 200);
+
+  const week1 = (inserts["scheduled_workouts"] ?? []).filter((w) => w.week_number === 1);
+  const byDow = new Map<number, Record<string, unknown>>(
+    week1.map((w) => [w.day_of_week as number, w])
+  );
+  // day_of_week is 1-indexed on the insert: Tue=2, Sat=6, Mon=1.
+  assertEquals(byDow.get(2)?.workout_type, "tempo", "Tue should carry the speed session");
+  assertEquals(byDow.get(6)?.workout_type, "long_run", "Sat should carry the long run");
+  assertEquals(byDow.get(1)?.workout_type, "rest", "Mon should be the skeleton rest day");
+});
+
+Deno.test("day_structure: athlete prefs still beat the skeleton", async () => {
+  const athleteUserId = "athlete-skeleton-2";
+  const template = {
+    ...adaptiveTemplate(),
+    day_structure: [
+      { dayOfWeek: 1, role: "speed" },
+      { dayOfWeek: 5, role: "long_run" },
+    ],
+  };
+  const { deps, inserts } = buildDeps(template, athleteUserId);
+
+  const res = await handler(
+    buildRequest({
+      planTemplateId: "plan-template-adaptive",
+      athleteUserId,
+      startDate: "2026-05-01",
+      subscription_preferences: {
+        preferred_quality_dows: [2, 6], // Wed + Sun
+        long_run_dow: 6,
+      },
+    }),
+    deps
+  );
+  assertEquals(res.status, 200);
+
+  const week1 = (inserts["scheduled_workouts"] ?? []).filter((w) => w.week_number === 1);
+  const byDow = new Map<number, Record<string, unknown>>(
+    week1.map((w) => [w.day_of_week as number, w])
+  );
+  assertEquals(byDow.get(3)?.workout_type, "tempo", "Wed (athlete pick) should carry tempo");
+  assertEquals(byDow.get(7)?.workout_type, "long_run", "Sun (athlete pick) should carry long run");
+});
+
+Deno.test("weekly_mileage_targets: fills mileage when week range is absent", async () => {
+  const athleteUserId = "athlete-ramp-1";
+  // Strip per-week ranges; provide the plan-level ramp instead.
+  const weeksNoTargets = minimalWeeks.map((w) => ({
+    weekNumber: w.weekNumber,
+    workouts: w.workouts,
+  }));
+  const template = {
+    ...adaptiveTemplate(),
+    weeks: weeksNoTargets,
+    weekly_mileage_targets: [
+      { weekNumber: 1, targetMilesMin: 30, targetMilesMax: 34, phase: "base" },
+      { weekNumber: 2, targetMilesMin: 32, targetMilesMax: 36, phase: "base" },
+    ],
+  };
+  const { deps, inserts } = buildDeps(template, athleteUserId);
+
+  const res = await handler(
+    buildRequest({
+      planTemplateId: "plan-template-adaptive",
+      athleteUserId,
+      startDate: "2026-05-01",
+    }),
+    deps
+  );
+  assertEquals(res.status, 200);
+
+  const week1 = (inserts["scheduled_workouts"] ?? []).filter((w) => w.week_number === 1);
+  const totalMiles = week1.reduce((sum, w) => {
+    const data = w.workout_data as Record<string, unknown> | null;
+    const km = (data?.total_distance_km as number) ?? 0;
+    return sum + km / 1.60934;
+  }, 0);
+  // Target avg = 32 mi; quality contributes ~14.9, easy fill covers the
+  // rest. Without the ramp fallback the easy budget would be 0 and total
+  // would sit near 15. Assert it lands near the target.
+  assert(totalMiles > 26 && totalMiles < 38,
+    `week-1 total should track the 30–34 ramp target (got ${totalMiles.toFixed(1)})`);
+});
+
+// ── Phase 3: AM/PM doubles materialize as two scheduled_workouts ────────
+
+Deno.test("fixed plan: a doubled day materializes AM (session 1) + PM (session 2)", async () => {
+  const athleteUserId = "athlete-double-fixed";
+  const template = {
+    id: "plan-template-fixed",
+    name: "Fixed With Double",
+    plan_type: "fixed",
+    target_distance: "marathon",
+    duration_weeks: 1,
+    coach_id: null,
+    weeks: [
+      {
+        weekNumber: 1,
+        targetMilesMin: 20,
+        targetMilesMax: 24,
+        workouts: [
+          // Tue (dow 2): AM tempo + PM easy shakeout — a coach-authored double.
+          { dayOfWeek: 2, workoutType: "tempo", workoutData: { total_distance_km: 8 } },
+          { dayOfWeek: 2, session: "pm", workoutType: "easy", workoutData: { total_distance_km: 5 } },
+          { dayOfWeek: 6, workoutType: "long_run", workoutData: { total_distance_km: 16 } },
+        ],
+      },
+    ],
+  };
+  const { deps, inserts } = buildDeps(template, athleteUserId);
+
+  const res = await handler(
+    buildRequest({ planTemplateId: "plan-template-fixed", athleteUserId, startDate: "2026-05-01" }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+
+  const workouts = inserts["scheduled_workouts"] ?? [];
+  // Tue is dow 2 (0-indexed Mon-first) → day_of_week 3 on the insert.
+  const tue = workouts.filter((w) => w.day_of_week === 3);
+  assertEquals(tue.length, 2, "the doubled day should produce two rows");
+  const am = tue.find((w) => w.session === 1);
+  const pm = tue.find((w) => w.session === 2);
+  assert(am, "AM session (1) must exist");
+  assert(pm, "PM session (2) must exist");
+  assertEquals(am!.workout_type, "tempo");
+  assertEquals(pm!.workout_type, "easy");
+  // No other day is doubled.
+  const doubledDays = new Set(
+    workouts
+      .map((w) => w.day_of_week as number)
+      .filter((d, _i, arr) => arr.filter((x) => x === d).length > 1),
+  );
+  assertEquals([...doubledDays], [3], "only Tue should be doubled");
+});
+
+Deno.test("adaptive plan: a coach-placed PM run appends a session-2 double", async () => {
+  const athleteUserId = "athlete-double-adaptive";
+  const template = {
+    id: "plan-template-adaptive",
+    name: "Adaptive With Double",
+    plan_type: "adaptive",
+    target_distance: "marathon",
+    duration_weeks: 1,
+    coach_id: null,
+    weeks: [
+      {
+        weekNumber: 1,
+        targetMilesMin: 30,
+        targetMilesMax: 34,
+        workouts: [
+          { dayOfWeek: 2, workoutType: "tempo", workoutData: { total_distance_km: 10 } },
+          // PM easy double on the same quality day.
+          { dayOfWeek: 2, session: "pm", workoutType: "easy", workoutData: { total_distance_km: 5 } },
+          { dayOfWeek: 6, workoutType: "long_run", workoutData: { total_distance_km: 18 } },
+        ],
+      },
+    ],
+  };
+  const { deps, inserts } = buildDeps(template, athleteUserId);
+
+  const res = await handler(
+    buildRequest({ planTemplateId: "plan-template-adaptive", athleteUserId, startDate: "2026-05-01" }),
+    deps,
+  );
+  assertEquals(res.status, 200);
+
+  const workouts = inserts["scheduled_workouts"] ?? [];
+  // The adaptive AM pipeline emits one row per day (session 1); the PM run
+  // is appended as session 2 on its day (Tue, day_of_week 3).
+  const pm = workouts.find((w) => w.session === 2);
+  assert(pm, "a session-2 PM row should be materialized");
+  assertEquals(pm!.day_of_week, 3, "PM double lands on Tue");
+  assertEquals(pm!.workout_type, "easy");
+  // The AM pipeline still emits exactly one session-1 row per calendar day.
+  const amDays = workouts.filter((w) => w.session === 1).map((w) => w.day_of_week);
+  assertEquals(new Set(amDays).size, amDays.length, "one AM row per day");
+});

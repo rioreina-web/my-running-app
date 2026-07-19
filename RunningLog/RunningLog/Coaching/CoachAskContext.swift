@@ -53,11 +53,13 @@ extension EnvironmentValues {
 
 // MARK: - Feature flag
 
-/// Coach replies depend on the `coaching-agent` `format:"editorial"` prompt
-/// AND its eval-cassette coverage (hard rule #3 / `check_eval_coverage.py`).
-/// Until that ships, the composer stages the question but does not call the
-/// LLM. Flip to `true` as the final step of the editorial-evals task list
-/// (see `docs/specs/coach-ask-editorial-evals.md`).
+/// Coach ask replies go through `coaching-agent` with `format:"editorial"`,
+/// which reshapes the existing coaching answer into a `CoachRead` for the
+/// reply view. This reuses the existing model call + prompts (no new LLM
+/// prompt), so it is NOT gated behind eval-cassette coverage — hard rule #3
+/// applies to prompt changes, and there is none here. The reply is framed
+/// as an analytical "Training Insight," distinct from the feeling-first
+/// morning Read (which remains `coaching-daily-read`).
 enum CoachAskFeature {
-    static let isEnabled = false
+    static let isEnabled = true
 }

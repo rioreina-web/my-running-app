@@ -27,6 +27,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -106,7 +107,15 @@ Deno.serve(async (req) => {
 
   const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
   if ("response" in auth) return auth.response;
-  const { userId } = auth;
+  const { userId, isServiceRole } = auth;
+
+  // Per-user rate limit before the LLM call. Service-role callers (DB webhook,
+  // trigger, backfill) bypass via isServiceRole; the user-JWT path pays it.
+  // Shares the voice_memo bucket — RPE is read from the same voice transcript.
+  const rlBlocked = await enforceFeatureRateLimit(userId, "voice_memo", corsHeaders, { isServiceRole });
+  if (rlBlocked) return rlBlocked;
+  const monthlyCapped = await enforceMonthlyCap(userId, "voice_memo", corsHeaders, { isServiceRole });
+  if (monthlyCapped) return monthlyCapped;
 
   // Load the log (RLS bypassed by service client; scope by user_id for safety).
   const { data: log, error: loadErr } = await supabase

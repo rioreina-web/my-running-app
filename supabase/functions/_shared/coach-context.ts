@@ -669,6 +669,59 @@ export function splitsFromExtractedIntervals(
 }
 
 /**
+ * Normalize `running_workout_laps` rows into WorkoutSplit shape.
+ *
+ * This is the RICHEST split source — actual lap presses (the true rep
+ * structure: e.g. 8×1K with jog recoveries) rather than the mile-averaged
+ * `pace_segments`, which smear work + rest together into "alternating
+ * fast/easy miles" and make an interval session unreadable. Rest laps
+ * (`is_rest = true`) are dropped so the work reps read cleanly, and sub-50m
+ * GPS-noise fragments are discarded. Lap-level data doesn't distinguish
+ * warmup/cooldown, so everything kept is treated as "work".
+ */
+export function splitsFromLaps(
+  laps: Array<{
+    lap_index?: number | null;
+    distance_meters?: number | string | null;
+    moving_time_seconds?: number | null;
+    avg_pace_sec_per_mile?: number | string | null;
+    avg_heart_rate?: number | null;
+    is_rest?: boolean | null;
+  }> | null | undefined,
+): WorkoutSplit[] {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+  const work = laps
+    .filter((l) => l.is_rest !== true)
+    .sort((a, b) => (a.lap_index ?? 0) - (b.lap_index ?? 0));
+  const out: WorkoutSplit[] = [];
+  let repIdx = 0;
+  for (const l of work) {
+    const meters = typeof l.distance_meters === "number"
+      ? l.distance_meters
+      : parseFloat(String(l.distance_meters ?? "0"));
+    const distMi = Number.isFinite(meters) ? meters / 1609.34 : 0;
+    // Drop GPS-noise fragments (e.g. a 20m auto-lap) that aren't real reps.
+    if (!distMi || distMi < 0.05) continue;
+    let paceSec = typeof l.avg_pace_sec_per_mile === "number"
+      ? l.avg_pace_sec_per_mile
+      : parseFloat(String(l.avg_pace_sec_per_mile ?? ""));
+    if ((!paceSec || !Number.isFinite(paceSec)) && l.moving_time_seconds && distMi > 0) {
+      paceSec = l.moving_time_seconds / distMi;
+    }
+    if (!paceSec || !Number.isFinite(paceSec) || paceSec <= 0) continue;
+    repIdx++;
+    out.push({
+      label: `Rep ${repIdx}`,
+      distanceMiles: distMi,
+      paceSecPerMile: Math.round(paceSec),
+      avgHeartRate: typeof l.avg_heart_rate === "number" ? l.avg_heart_rate : undefined,
+      effortKind: "work",
+    });
+  }
+  return out;
+}
+
+/**
  * Format the splits block for the LLM. Returns null when there's nothing
  * useful — fewer than 2 work segments, or no segments at all.
  *

@@ -563,15 +563,7 @@ struct WorkoutTypeBadge: View {
     let type: String
 
     private var label: String {
-        switch type {
-        case "easy": return "Easy"
-        case "tempo": return "Tempo"
-        case "interval": return "Intervals"
-        case "long_run": return "Long Run"
-        case "recovery": return "Recovery"
-        case "race": return "Race"
-        default: return "Workout"
-        }
+        WorkoutLabel.display(type)
     }
 
     var body: some View {

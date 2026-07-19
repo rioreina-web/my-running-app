@@ -12,14 +12,32 @@
   --color-coral-light: #E8764A;
   --color-coral-dark: #B84420;
 
-  /* Mood colors - Muted editorial tones */
+  /* Mood colors - Muted editorial tones (mood ONLY).
+     THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert.
+     The three palettes never share hues. Green is mood-only (a "safe
+     zone" band goes neutral gray, never green); coral is alert-only. */
   --color-mood-energized: #2D8A4E;
   --color-mood-positive: #4A9E6B;
   --color-mood-neutral: #9B9590;
   --color-mood-tired: #C4873A;
   --color-mood-struggling: #C45A3A;
   --color-mood-injured: #B83A4A;
-  --color-mood-speed: #6B4A8A;
+
+  /* Pace colors - single-hue blue depth ramp, Easy -> Mile (ten canonical
+     zones). Pace reads as intensity (depth), never a rainbow. Source of
+     truth: RunningLog/Workouts/PaceSpectrum.swift. */
+  --color-pace-easy: #93B9D6;
+  --color-pace-moderate: #74A8CC;
+  --color-pace-steady: #578FC0;
+  --color-pace-mp: #3F7CB5;
+  --color-pace-hmp: #2F66A8;
+  --color-pace-lt: #27549B;
+  --color-pace-10k: #20448B;
+  --color-pace-5k: #1A3679;
+  --color-pace-3k: #142964;
+  --color-pace-mile: #0E1D4E;
+  --color-pace-fast: #0E1D4E; /* fast/Mile end (was --color-mood-speed: #6B4A8A) */
+  --color-pace-easy-text: #5E93BE; /* legibility-darkened Easy for small text */
 
   /* Text - Rich editorial contrast */
   --color-text-primary: #1A1815;
@@ -33,10 +51,15 @@
   --color-danger: #B83A4A;
   --color-warning: #C4873A;
 
-  /* Fonts */
-  --font-display: var(--font-playfair-display), "Georgia", serif;
-  --font-mono: var(--font-jetbrains-mono), "Courier New", monospace;
-  --font-body: var(--font-dm-sans), "Helvetica Neue", sans-serif;
+  /* Fonts — the iOS app's canonical families, self-hosted via next/font/local
+     in app/layout.tsx (the same TTFs as design-system/fonts). Crimson Pro
+     (display serif), PT Serif (body + italic quotes). The mono stack matches
+     design-system/colors_and_type.css exactly: system monospace for uppercase
+     labels, eyebrows, and tabular stats (SF Mono on Apple, ui-monospace
+     elsewhere). */
+  --font-display: var(--font-crimson-pro), "Georgia", serif;
+  --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", "JetBrains Mono", Menlo, "Consolas", monospace;
+  --font-body: var(--font-pt-serif), "Georgia", serif;
 }
 
 body {
@@ -60,9 +83,9 @@ body {
   background: var(--color-text-tertiary);
 }
 
-/* Editorial display rules — Playfair leans visually heavier than DM Sans
-   at the same size, so headlines get a -0.01em tracking nudge and a tuned
-   line-height so they sit alongside body copy without dominating. */
+/* Editorial display rules — Crimson Pro headlines get a -0.01em tracking
+   nudge and a tuned line-height so they sit alongside PT Serif body copy
+   without dominating. */
 .font-display {
   letter-spacing: -0.01em;
   line-height: 1.1;

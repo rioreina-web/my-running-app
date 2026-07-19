@@ -188,14 +188,19 @@ struct RacePredictionTrack: View {
         let r = service.range(.marathon)
         let raw = service.points.compactMap { $0.seconds(.marathon) }
         let clean = RaceSparkline.cleaned(raw)
-        let rangeStr = RaceTime.rangeText(r)
+        // One number, not a range (2026-07-18): the confidence-scaled band read
+        // as "too wide / inaccurate" — worse than a single honest estimate. We
+        // show the midpoint as the projection; the confidence tag carries the
+        // certainty, and the modal still shows each distance's lifetime PR for
+        // the demonstrated mark next to the modeled one.
+        let midStr = RaceTime.midpoint(r)
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("FITNESS · RACE-ANCHORED")
                     .font(.dripEyebrow(10)).tracking(1.2)
                     .foregroundStyle(Color.drip.textSecondary)
                 Spacer()
-                if let tier = service.confidenceTier, rangeStr != nil {
+                if let tier = service.confidenceTier, midStr != nil {
                     Text("\(tier.uppercased()) CONF")
                         .font(.dripEyebrow(8.5)).tracking(0.6)
                         .foregroundStyle(Color.drip.energized)
@@ -208,10 +213,10 @@ struct RacePredictionTrack: View {
                     .foregroundStyle(Color.drip.textTertiary)
             }
 
-            if let rangeStr {
+            if let midStr {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text("~\(rangeStr)")
-                        .font(.dripStat(26))
+                    Text(midStr)
+                        .font(.dripStat(30))
                         .foregroundStyle(Color.drip.textPrimary)
                     Text("marathon").font(.dripBody(13)).foregroundStyle(Color.drip.textSecondary)
                 }
@@ -245,10 +250,9 @@ struct RacePredictionTrack: View {
     }
 
     private func captionLine(_ r: ModelOfYouState.RaceRange?) -> String? {
-        var parts: [String] = []
-        if let m = RaceTime.midpoint(r) { parts.append("MIDPOINT \(m)") }
-        if let n = service.current?.workout_count { parts.append("\(n) SESSIONS") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        // Midpoint is now the headline, so it's dropped from the caption.
+        guard let n = service.current?.workout_count else { return nil }
+        return "\(n) SESSIONS"
     }
 
     private func deltaLine(_ vals: [Double]) -> String? {
@@ -366,13 +370,14 @@ struct RacePredictionDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
-    // Range + confidence headline (never a bare point).
+    // Single projected time + confidence tag (2026-07-18: ranges retired —
+    // one honest number reads better than a wide band).
     private var headline: some View {
         let r = service.range(dist)
-        let rangeStr = RaceTime.rangeText(r)
+        let midStr = RaceTime.midpoint(r)
         return HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(rangeStr.map { "~\($0)" } ?? "Not enough data yet")
-                .font(.dripDisplay(rangeStr != nil ? 30 : 18))
+            Text(midStr ?? "Not enough data yet")
+                .font(.dripDisplay(midStr != nil ? 30 : 18))
                 .foregroundStyle(Color.drip.textPrimary)
             Text(dist.label).font(.dripBody(13)).foregroundStyle(Color.drip.textSecondary)
             Spacer()
@@ -393,86 +398,247 @@ private struct RacePredictionChart: View {
     let dist: RaceDistanceSel
     let range: ModelOfYouState.RaceRange?
 
+    /// Index into `Geo.plotted` currently under the athlete's finger, or nil
+    /// when the chart isn't being scrubbed.
+    @State private var scrubIndex: Int?
+
     var body: some View {
-        Canvas { ctx, size in
-            let w = size.width, h = size.height
-
-            // valid points, keeping original index for x positioning
-            let raw = points.enumerated().compactMap { (i, p) -> (Int, Double)? in
-                if let s = p.seconds(dist), s > 0 { return (i, s) } else { return nil }
+        GeometryReader { geo in
+            let g = geometry(in: geo.size)
+            ZStack(alignment: .topLeading) {
+                Canvas { ctx, _ in draw(ctx, g, scrub: scrubIndex) }
+                if let i = scrubIndex, g.plotted.indices.contains(i) {
+                    callout(g.plotted[i], topY: g.top, width: geo.size.width)
+                }
             }
-            guard !raw.isEmpty else {
-                drawText(ctx, "Not enough snapshots yet", CGPoint(x: w / 2, y: h / 2), .center, 11, Color.drip.textTertiary)
-                return
-            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in scrubIndex = g.nearestIndex(toX: v.location.x) }
+                    .onEnded { _ in scrubIndex = nil }
+            )
+        }
+        // Clear the scrubber when the athlete switches distance so the
+        // callout doesn't read a stale point from the previous series.
+        .onChange(of: dist) { _, _ in scrubIndex = nil }
+    }
 
-            // Drop outlier snapshots (a single bad prediction otherwise crushes
-            // the scale). Keep points within ±20% of the median.
-            let sortedV = raw.map(\.1).sorted()
-            let median = sortedV[sortedV.count / 2]
-            let kept = raw.filter { $0.1 >= median * 0.80 && $0.1 <= median * 1.20 }
-            let plot = kept.count >= 2 ? kept : raw
+    // MARK: - Geometry
 
-            let padL: CGFloat = 48, padR: CGFloat = 14
-            let top: CGFloat = 14, bot = h - 22
+    /// Everything both the Canvas draw pass and the scrub gesture need,
+    /// computed once per layout from `size`.
+    ///
+    /// The final ("today") trajectory point is snapped to today's official
+    /// range midpoint. The line comes from `fitness_snapshots` while the
+    /// coral band comes from `athlete_state` — two different sources — so a
+    /// divergent last snapshot would otherwise float the endpoint outside
+    /// the band. Snapping keeps the line, endpoint dot, and band in agreement
+    /// (and honours hard rule #7: the band, a range, stays the honest signal).
+    private func geometry(in size: CGSize) -> Geo {
+        let w = size.width, h = size.height
+        let padL: CGFloat = 48, padR: CGFloat = 14
+        let top: CGFloat = 14, bot = h - 22
 
-            // y domain from kept points + today's range, padded
-            var vals = plot.map(\.1)
-            if let lo = range?.low, lo > 0 { vals.append(lo) }
-            if let hi = range?.high, hi > 0 { vals.append(hi) }
-            let dMin = vals.min()!, dMax = vals.max()!
-            let pad = max((dMax - dMin) * 0.12, 4)
-            let mn = dMin - pad, mx = dMax + pad
-            let span = max(mx - mn, 1)
-            func y(_ v: Double) -> CGFloat { top + CGFloat((v - mn) / span) * (bot - top) } // faster(low)=top
-            func yc(_ v: Double) -> CGFloat { y(min(max(v, mn), mx)) }
-            let n = max(points.count, 1)
-            func x(_ i: Int) -> CGFloat { padL + (w - padL - padR) * CGFloat(i) / CGFloat(max(n - 1, 1)) }
+        // valid points, keeping original index for x positioning
+        let raw = points.enumerated().compactMap { (i, p) -> (Int, Double)? in
+            if let s = p.seconds(dist), s > 0 { return (i, s) } else { return nil }
+        }
+        guard !raw.isEmpty else {
+            return Geo(w: w, h: h, padL: padL, padR: padR, top: top, bot: bot,
+                       plotted: [], band: nil, yTicks: [], xLabels: [], empty: true)
+        }
 
-            // ---- Y axis: fastest (top) · mid · slowest (bottom) ----
-            for v in [dMin, (dMin + dMax) / 2, dMax] {
-                let yy = y(v)
-                var g = Path(); g.move(to: CGPoint(x: padL, y: yy)); g.addLine(to: CGPoint(x: w - padR, y: yy))
-                ctx.stroke(g, with: .color(Color.drip.divider.opacity(0.55)), lineWidth: 1)
-                drawText(ctx, RaceTime.headline(v), CGPoint(x: padL - 6, y: yy), .trailing, 8.5, Color.drip.textTertiary)
-            }
+        // Drop outlier snapshots (a single bad prediction otherwise crushes
+        // the scale). Keep points within ±20% of the median.
+        let sortedV = raw.map(\.1).sorted()
+        let median = sortedV[sortedV.count / 2]
+        let kept = raw.filter { $0.1 >= median * 0.80 && $0.1 <= median * 1.20 }
+        var plot = kept.count >= 2 ? kept : raw
 
-            // ---- today's range as a horizontal reference band ----
-            if let lo = range?.low, let hi = range?.high, lo > 0, hi >= lo {
-                let yTop = y(hi)   // slower bound is lower visually? hi=slower=larger sec=lower y... wait
-                // lo (faster, smaller sec) -> higher (smaller y); hi (slower) -> lower (larger y)
-                let bandTop = y(lo), bandBot = y(hi)
-                ctx.fill(Path(CGRect(x: padL, y: bandTop, width: (w - padR) - padL, height: max(bandBot - bandTop, 2))),
-                         with: .color(Color.drip.coral.opacity(0.12)))
-                drawText(ctx, "TODAY", CGPoint(x: w - padR - 4, y: (bandTop + bandBot) / 2), .trailing, 8, Color.drip.coral)
-                _ = yTop
-            }
+        // Snap the most-recent ("today") point onto today's official midpoint,
+        // so the endpoint dot lands inside the coral band instead of wherever
+        // the last raw snapshot happened to fall.
+        let todayIndex = raw.last!.0
+        if let mid = todayMidpoint {
+            plot.removeAll { $0.0 == todayIndex }
+            plot.append((todayIndex, mid))
+            plot.sort { $0.0 < $1.0 }
+        }
 
-            // ---- midpoint line + endpoint dot ----
-            var line = Path(); var started = false
-            for (i, v) in plot {
-                let pt = CGPoint(x: x(i), y: yc(v))
-                if started { line.addLine(to: pt) } else { line.move(to: pt); started = true }
-            }
-            ctx.stroke(line, with: .color(Color.drip.textPrimary.opacity(0.6)), lineWidth: 1.6)
-            if let last = plot.last {
-                let e = CGPoint(x: x(last.0), y: yc(last.1))
-                ctx.fill(Path(ellipseIn: CGRect(x: e.x - 3.4, y: e.y - 3.4, width: 6.8, height: 6.8)), with: .color(Color.drip.coral))
-            }
+        // y domain from plotted points + today's range, padded
+        var vals = plot.map(\.1)
+        if let lo = range?.low, lo > 0 { vals.append(lo) }
+        if let hi = range?.high, hi > 0 { vals.append(hi) }
+        let dMin = vals.min()!, dMax = vals.max()!
+        let pad = max((dMax - dMin) * 0.12, 4)
+        let mn = dMin - pad, mx = dMax + pad
+        let span = max(mx - mn, 1)
+        func y(_ v: Double) -> CGFloat { top + CGFloat((v - mn) / span) * (bot - top) } // faster(low)=top
+        func yc(_ v: Double) -> CGFloat { y(min(max(v, mn), mx)) }
+        let n = max(points.count, 1)
+        func x(_ i: Int) -> CGFloat { padL + (w - padL - padR) * CGFloat(i) / CGFloat(max(n - 1, 1)) }
 
-            // ---- X axis: baseline + first / mid / last date ----
-            var base = Path(); base.move(to: CGPoint(x: padL, y: bot)); base.addLine(to: CGPoint(x: w - padR, y: bot))
-            ctx.stroke(base, with: .color(Color.drip.divider), lineWidth: 1)
-            if let f = plot.first { drawText(ctx, points[f.0].shortDate.uppercased(), CGPoint(x: x(f.0), y: h - 4), .leading, 8.5, Color.drip.textTertiary) }
-            if plot.count > 2 {
-                let mIdx = plot[plot.count / 2].0
-                drawText(ctx, points[mIdx].shortDate.uppercased(), CGPoint(x: x(mIdx), y: h - 4), .center, 8.5, Color.drip.textTertiary)
-            }
-            if let l = plot.last, plot.count > 1 { drawText(ctx, points[l.0].shortDate.uppercased(), CGPoint(x: x(l.0), y: h - 4), .trailing, 8.5, Color.drip.textTertiary) }
+        let plotted: [Geo.Plotted] = plot.map { (i, v) in
+            Geo.Plotted(
+                x: x(i), y: yc(v), seconds: v,
+                dateLabel: i == todayIndex ? "TODAY" : points[i].shortDate.uppercased(),
+                isToday: i == todayIndex
+            )
+        }
+
+        var band: Geo.Band?
+        if let lo = range?.low, let hi = range?.high, lo > 0, hi >= lo {
+            // lo (faster, smaller sec) -> higher (smaller y); hi (slower) -> lower.
+            band = Geo.Band(top: y(lo), bot: y(hi))
+        }
+
+        let yTicks: [(CGFloat, String)] = [dMin, (dMin + dMax) / 2, dMax].map { (y($0), RaceTime.headline($0)) }
+
+        var xLabels: [(CGFloat, String, UnitPoint)] = []
+        if let f = plot.first { xLabels.append((x(f.0), points[f.0].shortDate.uppercased(), .leading)) }
+        if plot.count > 2 {
+            let mIdx = plot[plot.count / 2].0
+            xLabels.append((x(mIdx), points[mIdx].shortDate.uppercased(), .center))
+        }
+        if let l = plot.last, plot.count > 1 { xLabels.append((x(l.0), points[l.0].shortDate.uppercased(), .trailing)) }
+
+        return Geo(w: w, h: h, padL: padL, padR: padR, top: top, bot: bot,
+                   plotted: plotted, band: band, yTicks: yTicks, xLabels: xLabels, empty: false)
+    }
+
+    /// Today's official midpoint (seconds) from the race-anchored range —
+    /// `point` when present, else the low/high mean, else the single bound.
+    private var todayMidpoint: Double? {
+        guard let r = range else { return nil }
+        if let p = r.point, p > 0 { return p }
+        if let lo = r.low, let hi = r.high, lo > 0, hi > 0 { return (lo + hi) / 2 }
+        if let lo = r.low, lo > 0 { return lo }
+        return nil
+    }
+
+    // MARK: - Draw
+
+    private func draw(_ ctx: GraphicsContext, _ g: Geo, scrub: Int?) {
+        guard !g.empty else {
+            drawText(ctx, "Not enough snapshots yet", CGPoint(x: g.w / 2, y: g.h / 2), .center, 11, Color.drip.textTertiary)
+            return
+        }
+
+        // ---- Y axis: fastest (top) · mid · slowest (bottom) ----
+        for (yy, label) in g.yTicks {
+            var grid = Path(); grid.move(to: CGPoint(x: g.padL, y: yy)); grid.addLine(to: CGPoint(x: g.w - g.padR, y: yy))
+            ctx.stroke(grid, with: .color(Color.drip.divider.opacity(0.55)), lineWidth: 1)
+            drawText(ctx, label, CGPoint(x: g.padL - 6, y: yy), .trailing, 8.5, Color.drip.textTertiary)
+        }
+
+        // ---- today's range as a horizontal reference band ----
+        if let band = g.band {
+            ctx.fill(
+                Path(CGRect(x: g.padL, y: band.top, width: (g.w - g.padR) - g.padL, height: max(band.bot - band.top, 2))),
+                with: .color(Color.drip.coral.opacity(0.12))
+            )
+            drawText(ctx, "TODAY", CGPoint(x: g.w - g.padR - 4, y: (band.top + band.bot) / 2), .trailing, 8, Color.drip.coral)
+        }
+
+        // ---- midpoint line + endpoint dot ----
+        var line = Path(); var started = false
+        for p in g.plotted {
+            let pt = CGPoint(x: p.x, y: p.y)
+            if started { line.addLine(to: pt) } else { line.move(to: pt); started = true }
+        }
+        ctx.stroke(line, with: .color(Color.drip.textPrimary.opacity(0.6)), lineWidth: 1.6)
+        if let e = g.plotted.last {
+            ctx.fill(Path(ellipseIn: CGRect(x: e.x - 3.4, y: e.y - 3.4, width: 6.8, height: 6.8)), with: .color(Color.drip.coral))
+        }
+
+        // ---- X axis: baseline + first / mid / last date ----
+        var base = Path(); base.move(to: CGPoint(x: g.padL, y: g.bot)); base.addLine(to: CGPoint(x: g.w - g.padR, y: g.bot))
+        ctx.stroke(base, with: .color(Color.drip.divider), lineWidth: 1)
+        for (xx, label, anchor) in g.xLabels {
+            drawText(ctx, label, CGPoint(x: xx, y: g.h - 4), anchor, 8.5, Color.drip.textTertiary)
+        }
+
+        // ---- scrubber: dashed guide + haloed point (on top) ----
+        if let si = scrub, g.plotted.indices.contains(si) {
+            let p = g.plotted[si]
+            var guide = Path(); guide.move(to: CGPoint(x: p.x, y: g.top)); guide.addLine(to: CGPoint(x: p.x, y: g.bot))
+            ctx.stroke(guide, with: .color(Color.drip.textTertiary.opacity(0.45)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 7, y: p.y - 7, width: 14, height: 14)), with: .color(Color.drip.background))
+            ctx.fill(Path(ellipseIn: CGRect(x: p.x - 4.5, y: p.y - 4.5, width: 9, height: 9)), with: .color(Color.drip.coral))
         }
     }
 
     private func drawText(_ ctx: GraphicsContext, _ s: String, _ p: CGPoint, _ anchor: UnitPoint, _ size: CGFloat, _ color: Color) {
         ctx.draw(Text(s).font(.system(size: size, weight: .medium, design: .monospaced)).foregroundColor(color), at: p, anchor: anchor)
+    }
+
+    // MARK: - Scrubber callout
+
+    /// Floating read-out pinned near the top of the chart, tracking the scrub
+    /// x. Historical points show their midpoint time; the snapped "today"
+    /// point shows the full range (never a bare point — hard rule #7).
+    @ViewBuilder
+    private func callout(_ p: Geo.Plotted, topY: CGFloat, width: CGFloat) -> some View {
+        let calloutW: CGFloat = 132
+        let clampedX = min(max(p.x, calloutW / 2 + 2), width - calloutW / 2 - 2)
+        VStack(spacing: 3) {
+            Text(p.dateLabel)
+                .font(.dripEyebrow(8.5)).tracking(0.8)
+                .foregroundStyle(p.isToday ? Color.drip.coral : Color.drip.textTertiary)
+            Text(calloutTime(p))
+                .font(.dripStat(15))
+                .foregroundStyle(Color.drip.textPrimary)
+            Text(p.isToday ? "\(dist.label) · today's range" : "\(dist.label) midpoint")
+                .font(.dripEyebrow(7.5)).tracking(0.4)
+                .foregroundStyle(Color.drip.textTertiary)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .frame(width: calloutW)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.drip.cardBackground)
+                .shadow(color: .black.opacity(0.14), radius: 6, x: 0, y: 2)
+        )
+        .position(x: clampedX, y: topY + 20)
+    }
+
+    private func calloutTime(_ p: Geo.Plotted) -> String {
+        if p.isToday, let rt = RaceTime.rangeText(range) { return "~\(rt)" }
+        return RaceTime.headline(p.seconds)
+    }
+
+    // MARK: - Geometry model
+
+    private struct Geo {
+        let w: CGFloat, h: CGFloat
+        let padL: CGFloat, padR: CGFloat
+        let top: CGFloat, bot: CGFloat
+        let plotted: [Plotted]
+        let band: Band?
+        let yTicks: [(CGFloat, String)]
+        let xLabels: [(CGFloat, String, UnitPoint)]
+        let empty: Bool
+
+        struct Plotted {
+            let x: CGFloat
+            let y: CGFloat
+            let seconds: Double
+            let dateLabel: String
+            let isToday: Bool
+        }
+
+        struct Band { let top: CGFloat; let bot: CGFloat }
+
+        /// Plotted-array index whose x is closest to a touch x.
+        func nearestIndex(toX xt: CGFloat) -> Int? {
+            guard !plotted.isEmpty else { return nil }
+            var best = 0
+            var bestD = CGFloat.greatestFiniteMagnitude
+            for (i, p) in plotted.enumerated() {
+                let d = abs(p.x - xt)
+                if d < bestD { bestD = d; best = i }
+            }
+            return best
+        }
     }
 }

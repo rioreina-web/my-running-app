@@ -19,6 +19,13 @@ enum RaceDistanceConstants {
 // MARK: - PaceCalculator
 
 enum PaceCalculator {
+    /// Dew point (°F) at or above which heat starts meaningfully taxing a run,
+    /// and the floor for showing the HEAT-ADJ toggle. This is the model's own
+    /// baseline — `calculateDewPointAdjustment` adds zero penalty below it —
+    /// so every heat surface must gate on the SAME value. Single source of
+    /// truth: reference `PaceCalculator.heatDewPointFloorF`, never a literal.
+    static let heatDewPointFloorF: Double = 55
+
     /// Race distances in miles
     static let distances: [String: Double] = [
         "400m": 0.4 / RaceDistanceConstants.kmPerMile,
@@ -366,6 +373,16 @@ struct DewPointAdjustment {
     let multiplier: Double
     let compositeScore: Double
     let adjustmentPercent: Double
+
+    /// The pace the athlete's effort is *worth* in neutral conditions — the
+    /// inverse of the prescriptive `adjustedPaceSeconds`. Running in heat costs
+    /// `adjustmentPercent`, so a pace run in the heat normalizes to a FASTER
+    /// cool-weather-equivalent. This is what the completed-workout HEAT-ADJ
+    /// toggle shows (credit for the conditions). Prescriptive surfaces
+    /// (targets to run *today*) use `adjustedPaceSeconds`, which is slower.
+    var neutralEquivalentPaceSeconds: Double {
+        originalPaceSeconds / (1 + adjustmentPercent)
+    }
 
     var adjustmentSecondsPerMile: Double {
         adjustedPaceSeconds - originalPaceSeconds

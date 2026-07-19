@@ -97,11 +97,17 @@ struct GoalsView: View {
                         .padding(.top, 8)
                     }
 
-                    // Empty State
+                    // Empty State — canonical component: eyebrow + plain-prose
+                    // nudge + text CTA. No illustration (design system rule).
                     if activeGoals.isEmpty, !isLoading {
-                        EmptyGoalsView {
-                            showAddGoal = true
-                        }
+                        EmptyStateView(
+                            variant: .setupNeeded,
+                            eyebrow: "Next race",
+                            title: "No goals yet. Add a race or target and your countdown lands here.",
+                            cta: .init(label: "Set a goal race") {
+                                showAddGoal = true
+                            }
+                        )
                         .padding(.horizontal, 20)
                         .padding(.top, 40)
                     }
@@ -127,7 +133,7 @@ struct GoalsView: View {
                             } label: {
                                 HStack {
                                     Text("COMPLETED (\(completedGoals.count))")
-                                        .font(.dripCaption(12))
+                                        .font(.dripEyebrow(12))
                                         .foregroundStyle(Color.drip.textSecondary)
                                         .tracking(1.5)
 
@@ -169,7 +175,7 @@ struct GoalsView: View {
             }
             ToolbarItem(placement: .principal) {
                 Text("GOALS")
-                    .font(.dripCaption(12))
+                    .font(.dripEyebrow(12))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(2)
             }
@@ -199,7 +205,7 @@ struct GoalsView: View {
             GoalDetailSheet(goal: goal) {
                 Task { await fetchGoals() }
             }
-            .presentationDetents([.medium])
+            .presentationDetents([.height(560), .large])
             .presentationDragIndicator(.visible)
         }
     }
@@ -237,6 +243,9 @@ struct GoalCard: View {
     let goal: UserGoal
     var isCompleted: Bool = false
 
+    // Coral is a punctuation mark: it points at urgency, it doesn't paint
+    // every card. Far-out goals sit in ink; coral appears only as the race
+    // nears, terracotta once it's overdue, green once it's done.
     var progressColor: Color {
         if isCompleted {
             return Color.drip.energized
@@ -244,13 +253,10 @@ struct GoalCard: View {
         if goal.isOverdue {
             return Color.drip.struggling
         }
-        if goal.daysRemaining <= 7 {
-            return Color.drip.tired
-        }
         if goal.daysRemaining <= 30 {
             return Color.drip.coral
         }
-        return Color.drip.energized
+        return Color.drip.textSecondary
     }
 
     var body: some View {
@@ -271,7 +277,8 @@ struct GoalCard: View {
                             .font(.dripStat(18))
                             .foregroundStyle(progressColor)
                         Text(goal.isOverdue ? "AGO" : "DAYS")
-                            .font(.dripCaption(8))
+                            .font(.dripEyebrow(8))
+                            .tracking(0.8)
                             .foregroundStyle(progressColor.opacity(0.8))
                     }
                 }
@@ -302,10 +309,9 @@ struct GoalCard: View {
         .padding(16)
         .background(Color.drip.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(isCompleted ? Color.drip.divider : progressColor.opacity(0.3), lineWidth: 1)
-        )
+        // Cards stand alone on the paper: shadow-card, no border. The old
+        // colored ring competed with the coral accent — dropped.
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 2)
     }
 }
 
@@ -330,44 +336,6 @@ struct GoalCardSkeleton: View {
             .background(Color.drip.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
-    }
-}
-
-// MARK: - EmptyGoalsView
-
-struct EmptyGoalsView: View {
-    let onAddGoal: () -> Void
-
-    var body: some View {
-        VStack(spacing: 24) {
-            ZStack {
-                Circle()
-                    .fill(Color.drip.coral.opacity(0.1))
-                    .frame(width: 100, height: 100)
-
-                Image(systemName: "target")
-                    .font(.system(size: 40, weight: .light))
-                    .foregroundStyle(Color.drip.coral)
-            }
-
-            VStack(spacing: 8) {
-                Text("Set Your First Goal")
-                    .font(.dripLabel(18))
-                    .foregroundStyle(Color.drip.textPrimary)
-
-                Text("Add a race, milestone, or training target to get personalized coaching.")
-                    .font(.dripBody(14))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 20)
-            }
-
-            DripButton("Add Goal", icon: "plus", style: .primary) {
-                onAddGoal()
-            }
-            .frame(width: 160)
-        }
-        .padding(.vertical, 40)
     }
 }
 
@@ -396,7 +364,7 @@ struct AddGoalSheet: View {
                     // Goal Title
                     VStack(alignment: .leading, spacing: 8) {
                         Text("GOAL")
-                            .font(.dripCaption(11))
+                            .font(.dripEyebrow(11))
                             .foregroundStyle(Color.drip.textSecondary)
                             .tracking(1.2)
 
@@ -415,7 +383,7 @@ struct AddGoalSheet: View {
                     // Target Date
                     VStack(alignment: .leading, spacing: 8) {
                         Text("TARGET DATE")
-                            .font(.dripCaption(11))
+                            .font(.dripEyebrow(11))
                             .foregroundStyle(Color.drip.textSecondary)
                             .tracking(1.2)
 
@@ -489,11 +457,13 @@ struct AddGoalSheet: View {
                 dismiss()
             }
 
-            // Fetch race intel in the background for race-related goals
+            // Send the goal to the AI interpreter in the background. It reads
+            // the goal (correct time, race name, running-lane scope) and, for a
+            // recognised race, triggers race intel linked to the goal.
             let title = goalTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             let date = targetDate
             Task.detached {
-                await Self.fetchRaceIntel(raceName: title, raceDate: date)
+                await Self.interpretGoal(goalText: title, raceDate: date)
             }
         } catch {
             Log.goals.error("Failed to save goal: \(error)")
@@ -505,12 +475,16 @@ struct AddGoalSheet: View {
         }
     }
 
-    /// Fetch race intel from the edge function if the goal looks like a race
-    private static func fetchRaceIntel(raceName: String, raceDate: Date) async {
-        let raceKeywords = ["marathon", "half", "5k", "10k", "15k", "relay", "ultra", "mile", "race"]
-        let lower = raceName.lowercased()
-        guard raceKeywords.contains(where: { lower.contains($0) }) else { return }
-
+    /// Send the goal to the AI interpreter (interpret-goal edge function).
+    /// It reads the goal in plain language — the correct time (e.g. "sub 2:20"
+    /// at a marathon = 8400s, not 140s), the race distance, the framing, and a
+    /// running-lane scope check — and, when it recognises a real race, triggers
+    /// race intel with the clean canonical name linked to the goal.
+    ///
+    /// No keyword gate: the model decides whether there's a race. This replaces
+    /// the old whitelist that skipped goals like "Run sub 2:20 at CIM" because
+    /// "CIM" wasn't in a hardcoded list.
+    private static func interpretGoal(goalText: String, raceDate: Date) async {
         let userId = AuthManager.shared.userId
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
@@ -518,16 +492,16 @@ struct AddGoalSheet: View {
 
         do {
             _ = try await callEdgeFunction(
-                name: "race-intel",
+                name: "interpret-goal",
                 body: [
-                    "race_name": raceName,
-                    "race_date": dateStr,
+                    "goal_text": goalText,
+                    "target_date": dateStr,
                     "user_id": userId,
                 ]
             )
-            Log.goals.info("Race intel fetched for: \(raceName)")
+            Log.goals.info("Goal interpreted: \(goalText)")
         } catch {
-            Log.goals.error("Race intel fetch failed: \(error.localizedDescription)")
+            Log.goals.error("Goal interpretation failed: \(error.localizedDescription)")
         }
     }
 }
@@ -549,14 +523,16 @@ struct GoalDetailSheet: View {
             ZStack {
                 Color.drip.background.ignoresSafeArea()
 
-                VStack(spacing: 24) {
+                VStack(spacing: 0) {
+                  ScrollView {
+                    VStack(spacing: 24) {
                     if isEditing {
                         // Edit Mode
                         VStack(spacing: 20) {
                             // Goal Title Field
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("GOAL")
-                                    .font(.dripCaption(11))
+                                    .font(.dripEyebrow(11))
                                     .foregroundStyle(Color.drip.textSecondary)
                                     .tracking(1.2)
 
@@ -575,7 +551,7 @@ struct GoalDetailSheet: View {
                             // Target Date Field
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("TARGET DATE")
-                                    .font(.dripCaption(11))
+                                    .font(.dripEyebrow(11))
                                     .foregroundStyle(Color.drip.textSecondary)
                                     .tracking(1.2)
 
@@ -607,11 +583,13 @@ struct GoalDetailSheet: View {
                             // Days countdown
                             VStack(spacing: 4) {
                                 Text("\(abs(goal.daysRemaining))")
-                                    .font(.dripStat(60))
+                                    .font(.dripStat(48))
+                                    .minimumScaleFactor(0.6)
+                                    .lineLimit(1)
                                     .foregroundStyle(goal.isOverdue ? Color.drip.struggling : Color.drip.coral)
 
                                 Text(goal.isOverdue ? "DAYS OVERDUE" : "DAYS TO GO")
-                                    .font(.dripCaption(12))
+                                    .font(.dripEyebrow(12))
                                     .foregroundStyle(Color.drip.textSecondary)
                                     .tracking(1.5)
                             }
@@ -640,10 +618,12 @@ struct GoalDetailSheet: View {
                                 .stroke(Color.drip.divider, lineWidth: 1)
                         )
                     }
+                    }
+                    .padding(20)
+                  }
 
-                    Spacer()
-
-                    // Action Buttons
+                    // Action Buttons — pinned to the bottom so they never
+                    // clip on smaller sheet detents.
                     VStack(spacing: 12) {
                         if isEditing {
                             DripButton("Save Changes", icon: "checkmark", style: .primary, isLoading: isUpdating) {
@@ -682,8 +662,12 @@ struct GoalDetailSheet: View {
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .background(Color.drip.background)
                 }
-                .padding(20)
             }
             .navigationTitle(isEditing ? "Edit Goal" : "Goal Details")
             .navigationBarTitleDisplayMode(.inline)

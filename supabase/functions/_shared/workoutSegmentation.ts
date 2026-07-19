@@ -74,6 +74,15 @@ const METERS_PER_MILE = 1609.344;
 const MIN_REP_SECONDS = 20;
 const MIN_REP_METERS = 150;
 
+// Auto-lap coalescing: watches set to auto-lap (every mile/km) fragment ONE
+// continuous effort into N same-pace laps — a 2×3mi cruise records as 6×1mi.
+// We merge a run of CONSECUTIVE work bouts (nothing non-work between them) into
+// a single rep when the run is uniform (tight pace CV) and not a deliberate
+// progression. Reps separated by a rest/easy bout are never merged, so true
+// intervals (jog recoveries are real separators) and progressions/fartleks
+// (varying pace) are untouched. See workoutSegmentation.test.ts (2×3mi case).
+const MERGE_PACE_CV = 0.03;
+
 // ── Pace zones as supplied by athlete_state.pace_zones ──
 // Keys mirror the stored shape: { mile, fiveK, tenK, hm, mp, steady, moderate,
 // easy } in sec/mile. All optional — graceful degradation when thin.
@@ -236,7 +245,7 @@ export function segmentFromLaps(laps: LapInput[], zones: PaceZones): Segmentatio
     });
   }
 
-  return finalize(bouts, "laps");
+  return finalize(bouts, "laps", anchors);
 }
 
 /**
@@ -277,7 +286,7 @@ export function segmentFromPaceSegments(
       isRep: isWork && seconds >= MIN_REP_SECONDS && distanceMeters >= MIN_REP_METERS,
     });
   }
-  return finalize(bouts, "segments");
+  return finalize(bouts, "segments", anchors);
 }
 
 /** Last-resort: one undifferentiated easy block. */
@@ -305,7 +314,11 @@ export function segmentFromOverall(
 
 // ── Core aggregation + classification ──
 
-function finalize(bouts: Bout[], source: SegmentationResult["source"]): SegmentationResult {
+function finalize(
+  bouts: Bout[],
+  source: SegmentationResult["source"],
+  anchors: ZoneAnchor[] = [],
+): SegmentationResult {
   let easySeconds = 0, moderateSeconds = 0, thresholdSeconds = 0, hardSeconds = 0;
   let weightedSum = 0, totalSeconds = 0, totalMeters = 0;
 
@@ -320,7 +333,9 @@ function finalize(bouts: Bout[], source: SegmentationResult["source"]): Segmenta
     } else easySeconds += b.seconds;
   }
 
-  const reps = bouts.filter((b) => b.isRep);
+  // Coalesce auto-lap-fragmented continuous efforts into true reps. Zone-time
+  // buckets above stay per-lap (time-in-zone is unaffected by rep grouping).
+  const reps = coalesceReps(bouts, anchors);
   const intensityScore = totalSeconds > 0 ? weightedSum / totalSeconds : 0;
 
   const repPacesNum = reps.map((r) => r.paceSecPerMile).filter((p) => p > 0);
@@ -357,6 +372,70 @@ function finalize(bouts: Bout[], source: SegmentationResult["source"]): Segmenta
     fadePct: fadePct == null ? null : round1(fadePct),
     hrDriftPct: hrDriftPct == null ? null : round1(hrDriftPct),
     shape,
+  };
+}
+
+/**
+ * Coalesce auto-lap fragmentation: merge runs of CONSECUTIVE work bouts (no
+ * non-work bout between them) into single reps. A run merges only when it's
+ * uniform (tight pace CV) and not a deliberate progression — so a 2×3mi cruise
+ * recorded as 6×1mi collapses to two reps, while a continuous progression keeps
+ * its per-lap reps (for `isMonotonicFaster` detection) and a fartlek's varied
+ * surges stay separate. Reps separated by rest/easy bouts are never touched, so
+ * true intervals are unaffected. Returns reps in order, rep-guards applied.
+ */
+export function coalesceReps(bouts: Bout[], anchors: ZoneAnchor[]): Bout[] {
+  const reps: Bout[] = [];
+  let run: Bout[] = [];
+
+  const flush = () => {
+    if (run.length === 0) return;
+    if (run.length === 1) {
+      if (run[0].isRep) reps.push(run[0]);
+    } else {
+      const paces = run.map((b) => b.paceSecPerMile).filter((p) => p > 0);
+      const uniform = (cv(paces) ?? 1) < MERGE_PACE_CV;
+      if (uniform && !isMonotonicFaster(run)) {
+        const merged = mergeRun(run, anchors);
+        if (merged.isRep) reps.push(merged);
+      } else {
+        // Progression / fartlek / varied — keep the individual reps.
+        for (const b of run) if (b.isRep) reps.push(b);
+      }
+    }
+    run = [];
+  };
+
+  for (const b of bouts) {
+    if (b.isWork) run.push(b);
+    else flush();
+  }
+  flush();
+  return reps;
+}
+
+/** Merge a run of consecutive work bouts into one rep (distance-weighted pace,
+ *  time-weighted HR, zone re-derived from the merged pace). */
+function mergeRun(run: Bout[], anchors: ZoneAnchor[]): Bout {
+  const seconds = run.reduce((s, b) => s + b.seconds, 0);
+  const distanceMeters = run.reduce((s, b) => s + b.distanceMeters, 0);
+  const paceSecPerMile = distanceMeters > 0
+    ? seconds / (distanceMeters / METERS_PER_MILE)
+    : mean(run.map((b) => b.paceSecPerMile));
+  let hrW = 0, hrSec = 0;
+  for (const b of run) {
+    if (b.avgHr != null && b.avgHr > 0) { hrW += b.avgHr * b.seconds; hrSec += b.seconds; }
+  }
+  const zone = anchors.length > 0 ? paceToZone(paceSecPerMile, anchors) : run[0].zone;
+  return {
+    zone,
+    seconds,
+    distanceMeters,
+    paceSecPerMile,
+    avgHr: hrSec > 0 ? hrW / hrSec : null,
+    isWork: true,
+    isRest: false,
+    isRep: seconds >= MIN_REP_SECONDS && distanceMeters >= MIN_REP_METERS,
   };
 }
 

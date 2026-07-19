@@ -25,6 +25,8 @@
 // ============================================================================
 
 import { equivalentRaceTimeSeconds, type RaceKey } from "./paces.ts";
+import { heatAdjustmentPct, repLengthFactor } from "./pace-heat-adjustment.ts";
+import { adjustPaceForGrade } from "./pace-grade-adjustment.ts";
 
 // ---------------------------------------------------------------------------
 // Inputs — the edge function reconstructs these from training_logs.
@@ -37,6 +39,33 @@ export interface WorkoutInput {
   durationMinutes: number;
   paceSecondsPerMile: number;
   type?: string;
+}
+
+/** Conditions on a training_logs row (weather_actual: temp_f + dew_point_f). */
+export interface WeatherInput {
+  tempF: number;
+  dewPointF: number;
+}
+
+/**
+ * One lap from `running_workout_laps` (server-only richness — the iOS
+ * predictor never sees these). Rest-aware interval analysis: work reps are
+ * heat- and grade-normalized, penalized for long recoveries, and merged into
+ * the same hard-effort pool the pace-segment signal uses.
+ */
+export interface LapInput {
+  workoutId: string;
+  date: string; // "yyyy-MM-dd"
+  lapIndex: number;
+  distanceMeters?: number | null;
+  movingTimeSeconds?: number | null;
+  avgPaceSecPerMile?: number | null;
+  isRest?: boolean | null;
+  totalElevationGain?: number | null; // meters of climb within the lap
+  tempF?: number | null;
+  dewPointF?: number | null;
+  /** Neutral-day equivalent pace, pre-computed by fetch-workout-weather. */
+  heatAdjustedPaceSecPerMile?: number | null;
 }
 
 /** One labeled GPS pace segment on a training_logs row (pace_segments). */
@@ -62,6 +91,8 @@ export interface VoiceLogInput {
   pacesMentioned?: string[];
   paceSegments?: PaceSegmentInput[] | null;
   parsedStructure?: ParsedStructureInput | null;
+  /** From training_logs.weather_actual — normalizes hard paces to neutral. */
+  weather?: WeatherInput | null;
 }
 
 /** A prior fitness_snapshots row (for the decay-gated baseline fallback). */
@@ -94,6 +125,11 @@ export interface PredictionInput {
    * (raceType, date) against detected races.
    */
   seededRaces?: DetectedRace[];
+  /**
+   * running_workout_laps rows for the last ~21 days (server-only signal).
+   * Optional — the model works identically without them.
+   */
+  laps?: LapInput[];
   now?: Date; // injectable for tests; defaults to new Date()
 }
 
@@ -121,6 +157,10 @@ export interface FitnessPredictionResult {
   rangeHalfSeconds: number;
   rangeMarathonSeconds: number;
   summary: string;
+  /** Lifetime PRs derived from ALL confirmed races (any age) — fastest finish
+   *  per distance. Display/context only; never anchors current fitness.
+   *  (2026-07-17, race-gathering.) */
+  lifetimePRs: Partial<Record<RaceType, { timeSeconds: number; date: string }>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -139,7 +179,8 @@ const RACE_TYPE_MILES: Record<RaceType, number> = {
 };
 
 // RaceType → GPS tolerance in miles (RaceType.tolerance).
-const RACE_TYPE_TOLERANCE: Record<RaceType, number> = {
+// Exported for index.ts race-candidate detection (2026-07-17).
+export const RACE_TYPE_TOLERANCE: Record<RaceType, number> = {
   mile: 0.08,
   fiveK: 0.2,
   tenK: 0.4,
@@ -149,7 +190,8 @@ const RACE_TYPE_TOLERANCE: Record<RaceType, number> = {
 
 // RaceType → the human label iOS uses (RaceType.rawValue), so the stored
 // `data_source` / summary strings match the app exactly.
-const RACE_TYPE_LABEL: Record<RaceType, string> = {
+// Exported for index.ts race-candidate detection (2026-07-17).
+export const RACE_TYPE_LABEL: Record<RaceType, string> = {
   mile: "Mile",
   fiveK: "5K",
   tenK: "10K",
@@ -158,14 +200,173 @@ const RACE_TYPE_LABEL: Record<RaceType, string> = {
 };
 
 // ConfidenceTier.rangeFraction — half-window as a fraction of the point.
+// Tightened 2026-07-15: the old 1.5/3/5% bands rendered absurdly wide at
+// marathon distance (±3% of a ~2:24 marathon ≈ ±4.3 min → a 9-min spread).
+// A race-time prediction is really a %-of-pace estimate; ~1–3% is honest.
+// Keep athlete-state.ts:bandFractionFor in sync with these.
 const RANGE_FRACTION: Record<ConfidenceTier, number> = {
-  high: 0.015,
-  medium: 0.03,
-  low: 0.05,
+  high: 0.010,
+  medium: 0.018,
+  low: 0.030,
 };
+
+// NOTE (2026-07-16): the old server-only ENDURANCE_FADE table was removed —
+// the Swift model replaced it with the marathon volume factor (+6% max below
+// 40 mi/wk, applied at prediction assembly) and distance-aware ranges. Keeping
+// both would double-penalize the marathon relative to the app.
 
 // iOS uses this exact constant for 10K miles when deriving tenKSeconds.
 const TEN_K_MILES = 6.21371;
+
+// RaceDistanceConstants — the distances the iOS predictor plugs into the
+// distance-aware range math (RunningLog/Workouts/PaceCalculator.swift:11-14).
+const RANGE_ITEM_MILES: Record<RaceType, number> = {
+  mile: 1.0,
+  fiveK: 3.1068560,
+  tenK: 6.2137119,
+  half: 13.109375,
+  marathon: 26.21875,
+};
+
+const METERS_PER_MILE = 1609.344;
+
+// ---------------------------------------------------------------------------
+// Heat normalization (Part 2A — server-only multi-signal).
+// ---------------------------------------------------------------------------
+
+/** Never credit heat for more than 12% — beyond that the table extrapolates. */
+const MAX_HEAT_NORMALIZATION = 0.12;
+
+/**
+ * Normalize an observed pace to neutral conditions:
+ *   neutralPace = observed / (1 + adjustmentPct × repLengthFactor(distance))
+ * using Emy's Calculator table (pace-heat-adjustment.ts). The result is FASTER
+ * than observed — the heat made the effort cost more, so the same effort is
+ * worth a quicker pace on a neutral day. Capped at 12% total.
+ */
+export function heatNeutralPace(
+  paceSeconds: number,
+  tempF: number,
+  dewPointF: number,
+  distanceMiles?: number | null,
+): number {
+  if (!Number.isFinite(tempF) || !Number.isFinite(dewPointF) || !(paceSeconds > 0)) return paceSeconds;
+  const pct = Math.min(heatAdjustmentPct(tempF, dewPointF) * repLengthFactor(distanceMiles), MAX_HEAT_NORMALIZATION);
+  return pct > 0 ? paceSeconds / (1 + pct) : paceSeconds;
+}
+
+// ---------------------------------------------------------------------------
+// Lap-level interval analysis (Part 2B — rest-aware, server-only).
+// ---------------------------------------------------------------------------
+
+/** A neutral-normalized, rest-penalized work rep derived from laps. */
+export interface LapEffort {
+  date: string;
+  paceSeconds: number; // neutral (heat + grade adjusted), rest penalty applied
+  distanceMiles: number;
+  /** True when the source workout had rest laps between work laps — the laps
+   *  are interval REPS (near-max, Riegel-by-distance applies). False means
+   *  continuous quality (tempo-like: sustained, LT→10K conversion). */
+  hasRestStructure: boolean;
+}
+
+/**
+ * Turn raw `running_workout_laps` into hard-effort entries for the
+ * pace-segment signal pool.
+ *
+ * Work reps: `is_rest === false` (explicit — null means unknown), distance
+ * ≥ 0.15 mi, final pace within 210–540 s/mi.
+ *
+ * Rep pace priority:
+ *   1. `heat_adjusted_pace_sec_per_mile`. VERIFIED SEMANTICS: fetch-workout-
+ *      weather's applyHeatToLaps stores adjustPace(...).neutralEquivalentPace-
+ *      Seconds = observed / (1 + pct × repLengthFactor) — the FASTER pace this
+ *      rep would have cost on a neutral day (heat correctly credited). The
+ *      20260528222217 backfill computes the same direction (pace / (1 + pct)).
+ *      Used directly.
+ *   2. Raw pace, heat-normalized via heatNeutralPace when the lap carries
+ *      temp_f + dew_point_f.
+ *   3. Raw pace.
+ *
+ * Grade: when total_elevation_gain + distance are present, the rep is
+ * grade-adjusted (Minetti GAP, pace-grade-adjustment.ts). Only gain is stored
+ * on laps, so this credits uphill reps and passes flat laps through.
+ *
+ * Rest context: per workout, ratio = rest-lap seconds between the first and
+ * last work lap ÷ work-lap seconds. Reps run with full recovery overstate
+ * continuous race fitness:
+ *   ratio ≥ 2.0 → +2.5% (cap) · ratio ≥ 1.0 → +1.5% · ratio < 0.5 → 0
+ */
+export function deriveLapEfforts(laps: LapInput[]): LapEffort[] {
+  if (laps.length === 0) return [];
+  const byWorkout = new Map<string, LapInput[]>();
+  for (const lap of laps) {
+    const arr = byWorkout.get(lap.workoutId);
+    if (arr) arr.push(lap);
+    else byWorkout.set(lap.workoutId, [lap]);
+  }
+
+  const out: LapEffort[] = [];
+  for (const group of byWorkout.values()) {
+    group.sort((a, b) => a.lapIndex - b.lapIndex);
+
+    const reps: Array<{ index: number; pace: number; distMi: number; seconds: number; date: string }> = [];
+    for (const lap of group) {
+      if (lap.isRest !== false) continue; // only explicit work laps
+      const meters = lap.distanceMeters ?? 0;
+      const distMi = meters / METERS_PER_MILE;
+      if (!(distMi >= 0.15)) continue;
+
+      let pace: number;
+      if (lap.heatAdjustedPaceSecPerMile != null && lap.heatAdjustedPaceSecPerMile > 0) {
+        pace = lap.heatAdjustedPaceSecPerMile; // already the neutral-day pace (see doc above)
+      } else {
+        const moving = lap.movingTimeSeconds ?? 0;
+        const raw = lap.avgPaceSecPerMile != null && lap.avgPaceSecPerMile > 0
+          ? lap.avgPaceSecPerMile
+          : moving > 0
+            ? moving / distMi
+            : 0;
+        if (!(raw > 0)) continue;
+        pace = lap.tempF != null && lap.dewPointF != null
+          ? heatNeutralPace(raw, lap.tempF, lap.dewPointF, distMi)
+          : raw;
+      }
+
+      const gain = lap.totalElevationGain ?? 0;
+      if (gain > 0 && meters > 0) {
+        const gradePct = (gain / meters) * 100;
+        pace = adjustPaceForGrade(pace, gradePct).adjustedPaceSeconds;
+      }
+
+      if (pace < 210 || pace > 540) continue;
+      reps.push({ index: lap.lapIndex, pace, distMi, seconds: lap.movingTimeSeconds ?? 0, date: lap.date });
+    }
+    if (reps.length === 0) continue;
+
+    const firstIdx = reps[0].index;
+    const lastIdx = reps[reps.length - 1].index;
+    let restSeconds = 0;
+    for (const lap of group) {
+      if (lap.isRest === true && lap.lapIndex > firstIdx && lap.lapIndex < lastIdx) {
+        restSeconds += lap.movingTimeSeconds ?? 0;
+      }
+    }
+    const workSeconds = reps.reduce((s, r) => s + r.seconds, 0);
+    const restRatio = workSeconds > 0 ? restSeconds / workSeconds : 0;
+    const restPenalty = restRatio >= 2.0 ? 0.025 : restRatio >= 1.0 ? 0.015 : 0;
+
+    for (const r of reps) {
+      out.push({
+        date: r.date,
+        paceSeconds: r.pace * (1 + restPenalty),
+        distanceMiles: r.distMi,
+        hasRestStructure: restSeconds > 0,
+      });
+    }
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Small helpers.
@@ -246,6 +447,79 @@ export interface DetectedRace {
   paceSecondsPerMile: number;
   date: string;
   totalTimeSeconds: number;
+  /** training_logs id of the source row (confirmed races). When present and
+   *  laps exist for it, the race pace is read as its flat-cool equivalent —
+   *  per-lap grade (Minetti) + heat (dew-point composite) adjusted. */
+  sourceWorkoutId?: string;
+}
+
+/**
+ * Flat-cool equivalent pace for a race (2026-07-17). Race performances must be
+ * read in context: 33:02 on a hilly 90°F/70°F-dew course is a different
+ * fitness statement than 33:02 flat and cool. When the race's own laps are
+ * available (matched by sourceWorkoutId — NOT by date, since warmup/cooldown
+ * sync as separate workouts), each lap is:
+ *   1. heat-normalized — prefer the stored heat_adjusted_pace (already the
+ *      neutral-day cost), else compute from lap temp/dew;
+ *   2. grade-adjusted — Minetti with damped downhill credit, from per-lap
+ *      elevation gain (uphill cost credited; net-downhill courses read slower).
+ * The distance-weighted mean is the effective pace, sanity-clamped to ±6% of
+ * the raw pace. Coverage guard: laps must sum to within 15% of the race
+ * distance, otherwise fall back to the raw pace (partial/duplicate laps).
+ */
+export function raceEffectivePace(
+  race: DetectedRace,
+  laps: LapInput[],
+): { pace: number; lapAdjusted: boolean } {
+  const raw = { pace: race.paceSecondsPerMile, lapAdjusted: false };
+  if (!race.sourceWorkoutId) return raw;
+  const group = laps.filter((l) => l.workoutId === race.sourceWorkoutId && l.isRest === false);
+  if (group.length === 0) return raw;
+
+  let dist = 0;
+  let sum = 0;
+  for (const lap of group) {
+    const meters = lap.distanceMeters ?? 0;
+    const distMi = meters / METERS_PER_MILE;
+    if (distMi <= 0.05) continue;
+
+    let pace: number;
+    if (lap.heatAdjustedPaceSecPerMile != null && lap.heatAdjustedPaceSecPerMile > 0) {
+      pace = lap.heatAdjustedPaceSecPerMile;
+    } else {
+      const moving = lap.movingTimeSeconds ?? 0;
+      const rawPace = lap.avgPaceSecPerMile != null && lap.avgPaceSecPerMile > 0
+        ? lap.avgPaceSecPerMile
+        : moving > 0
+          ? moving / distMi
+          : 0;
+      if (!(rawPace > 0)) continue;
+      pace = lap.tempF != null && lap.dewPointF != null
+        ? heatNeutralPace(rawPace, lap.tempF, lap.dewPointF, distMi)
+        : rawPace;
+    }
+
+    const gain = lap.totalElevationGain ?? 0;
+    if (gain > 0 && meters > 0) {
+      pace = adjustPaceForGrade(pace, (gain / meters) * 100).adjustedPaceSeconds;
+    }
+
+    sum += pace * distMi;
+    dist += distMi;
+  }
+  if (dist <= 0) return raw;
+
+  const expected = RACE_TYPE_MILES[race.raceType];
+  if (Math.abs(dist - expected) / expected > 0.15) return raw;
+
+  let pace = sum / dist;
+  // ±5% sanity clamp. Laps store only elevation GAIN (no loss), so gain/dist
+  // treats every lap as pure climb and overcredits rolling loops — the Cap 10K
+  // calibration (outputs/grade-adjusted-pace-plan §10.1) puts the honest hill
+  // cost of a rolling 10K at ~2.5-4.5%; heat adds a few % more. 5% keeps the
+  // combined credit inside what the calibration supports.
+  pace = Math.min(Math.max(pace, race.paceSecondsPerMile * 0.95), race.paceSecondsPerMile * 1.05);
+  return { pace, lapAdjusted: true };
 }
 
 export interface TrainingAnchor {
@@ -301,6 +575,55 @@ function distanceKeyToRaceType(key: string): RaceType | null {
   }
 }
 
+// Efforts that count as "work" (vs. recovery) for the broken-rep penalty.
+const HARD_SEGMENT_EFFORTS = new Set([
+  "interval", "tempo", "threshold", "race_pace", "fast", "speed", "repeat",
+]);
+
+/**
+ * Broken-rep penalty (2026-07-15) — a fraction in [0, 0.10] that SLOWS an
+ * interval/tempo session's "equivalent race pace" before it becomes a fitness
+ * anchor.
+ *
+ * WHY: the parser derives equivalent_race_pace from rep pace, but reps run with
+ * recovery overstate continuous race pace — the more rest between reps and the
+ * shorter each rep, the larger the gap. Without this, a set of rested 400s at
+ * 4:50 grades out as a 15:00 5K and out-ranks a real race. See the July 2026
+ * prediction-honesty thread.
+ *
+ *   penalty = 0.08·min(R, 1) + 0.05·max(0, (1 − meanRepMi))   capped at 0.10
+ *     R         = recovery seconds (between first & last rep) ÷ work seconds
+ *     meanRepMi = work miles ÷ rep count
+ *
+ * Returns 0 when there aren't enough real segments to judge, so the parser's
+ * pace is kept as-is (voice-only logs, warmup-only files, etc.).
+ */
+function recoveryPenaltyFromSegments(segments: PaceSegmentInput[] | null | undefined): number {
+  if (!segments || segments.length === 0) return 0;
+  let firstHard = -1, lastHard = -1, workSec = 0, workMiles = 0, hardCount = 0;
+  segments.forEach((s, i) => {
+    if (HARD_SEGMENT_EFFORTS.has(s.effort.toLowerCase()) && s.distanceMiles > 0.05) {
+      if (firstHard < 0) firstHard = i;
+      lastHard = i;
+      workSec += s.durationSeconds;
+      workMiles += s.distanceMiles;
+      hardCount += 1;
+    }
+  });
+  if (hardCount < 2 || workMiles < 1.0 || workSec <= 0) return 0;
+
+  let recoverySec = 0;
+  for (let i = firstHard; i <= lastHard; i++) {
+    if (!HARD_SEGMENT_EFFORTS.has(segments[i].effort.toLowerCase())) {
+      recoverySec += segments[i].durationSeconds;
+    }
+  }
+  const recoveryRatio = Math.min(recoverySec / workSec, 1.0);
+  const meanRepMiles = workMiles / hardCount;
+  const repLengthShortfall = Math.max(0, 1.0 - meanRepMiles);
+  return Math.min(0.10, 0.08 * recoveryRatio + 0.05 * repLengthShortfall);
+}
+
 // ---------------------------------------------------------------------------
 // detectTrainingAnchors — Observer parsed_structure only (segment fallback
 // deliberately disabled in the iOS source; see its comment).
@@ -313,8 +636,12 @@ export function detectTrainingAnchors(voiceLogs: VoiceLogInput[]): TrainingAncho
     const parsed = log.parsedStructure;
     if (!parsed || parsed.confidence < 0.6 || !parsed.equivalentRacePace) continue;
 
-    const paceSec = paceStringToSeconds(parsed.equivalentRacePace.pacePerMile);
+    let paceSec = paceStringToSeconds(parsed.equivalentRacePace.pacePerMile);
     if (paceSec <= 0) continue;
+
+    // Slow rep-derived paces for recovery + short rep length so a heavily
+    // rested interval set doesn't grade out as continuous race fitness.
+    paceSec = paceSec * (1 + recoveryPenaltyFromSegments(log.paceSegments));
 
     const fromType = distanceKeyToRaceType(parsed.equivalentRacePace.distanceKey);
     if (!fromType) continue;
@@ -524,7 +851,18 @@ export function detectDetraining(
     else if (d >= sixWeeksAgo && d < twoWeeksAgo) baselineMiles += w.distanceMiles;
   }
   const recentMilesPerWeek = recentMiles / 2.0;
-  const baselineMilesPerWeek = baselineMiles / 4.0;
+  // BASELINE WINDOW FIX (2026-07-16, mirrors Swift): divide baseline miles by
+  // the weeks the data actually COVERS. Workouts arrive on a ~30-day window,
+  // so the "6wk→2wk back" baseline holds at most ~16 days of data — dividing
+  // by a fixed 4.0 understated baseline mi/wk, inflated the recent:baseline
+  // ratio, and suppressed the low-volume detraining trigger.
+  const earliestWorkoutDate = workouts
+    .map((w) => parseDay(w.date))
+    .filter((d): d is Date => d !== null)
+    .reduce<Date | null>((min, d) => (min === null || d < min ? d : min), null) ?? sixWeeksAgo;
+  const baselineWindowStart = earliestWorkoutDate > sixWeeksAgo ? earliestWorkoutDate : sixWeeksAgo;
+  const baselineCoveredWeeks = Math.max((twoWeeksAgo.getTime() - baselineWindowStart.getTime()) / (7 * 86_400_000), 0.5);
+  const baselineMilesPerWeek = baselineMiles / Math.min(baselineCoveredWeeks, 4.0);
   const ratio = baselineMilesPerWeek > 0 ? recentMilesPerWeek / baselineMilesPerWeek : 1.0;
   const lowVolume = (baselineMilesPerWeek > 0 && ratio < 0.5) || recentMilesPerWeek < 15.0;
 
@@ -583,6 +921,21 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   const extendedVoiceLogs = input.extendedVoiceLogs && input.extendedVoiceLogs.length > 0 ? input.extendedVoiceLogs : voiceLogs;
   const priorSnapshots = input.priorSnapshots ?? [];
   const plan = input.plan ?? null;
+  const laps = input.laps ?? [];
+
+  // Conditions by date — normalizes race + segment paces to neutral (Part 2A).
+  const weatherByDate = new Map<string, WeatherInput>();
+  for (const log of extendedVoiceLogs) {
+    const wx = log.weather;
+    if (wx && Number.isFinite(wx.tempF) && Number.isFinite(wx.dewPointF)) {
+      weatherByDate.set(log.date, wx);
+    }
+  }
+
+  // Lap-derived, rest-aware neutral efforts (Part 2B). Dates covered by laps
+  // prefer laps over pace_segments in the hard-effort pool — laps are richer
+  // (per-rep, rest-aware, weather-stamped) and using both double-counts.
+  const lapEfforts = deriveLapEfforts(laps);
 
   const detected = detectRaces(extendedWorkouts, extendedVoiceLogs);
   // Merge confirmed_races (deduped by raceType+date), preferring the detected
@@ -613,22 +966,35 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   }
 
   // ── Baseline from prior snapshots (decay-gated) ──
+  // ANTI-RATCHET (2026-07-16, mirrors Swift): "fastest snapshot in 16 weeks"
+  // let one transient fast estimate persist for ~4 months (snapshots feed
+  // snapshots). Prefer the fastest of the last 4 weeks — recent enough to
+  // still be demonstrated — falling back to the MOST RECENT trusted snapshot
+  // in the 112-day window (not the fastest).
   let baselinePace: number | null = null;
   const sixteenWeeksAgo = new Date(now.getTime() - 112 * 86_400_000);
+  const fourWeeksAgoForSnap = new Date(now.getTime() - 28 * 86_400_000);
   const inWindowSnaps = priorSnapshots.filter((s) => {
     const d = parseDay(s.createdAt);
     return d !== null && d >= sixteenWeeksAgo && (s.confidence === "High" || s.confidence === "Medium");
   });
-  const bestSnapshot = inWindowSnaps.reduce<PriorSnapshotInput | null>(
+  const recentSnaps = inWindowSnaps.filter((s) => {
+    const d = parseDay(s.createdAt);
+    return d !== null && d >= fourWeeksAgoForSnap;
+  });
+  const chosenSnapshot = recentSnaps.reduce<PriorSnapshotInput | null>(
     (best, s) => (best === null || s.estimated10kPaceSeconds < best.estimated10kPaceSeconds ? s : best),
     null,
+  ) ?? inWindowSnaps.reduce<PriorSnapshotInput | null>(
+    (latest, s) => (latest === null || s.createdAt > latest.createdAt ? s : latest),
+    null,
   );
-  if (bestSnapshot) {
-    const snapDate = parseDay(bestSnapshot.createdAt)!;
+  if (chosenSnapshot) {
+    const snapDate = parseDay(chosenSnapshot.createdAt)!;
     const weeksAgo = daysBetween(snapDate, now) / 7.0;
     const detraining = detectDetraining(workouts, voiceLogs, now);
     const decayPerWeek = detraining ? 0.003 * detraining.severity : 0.0;
-    baselinePace = bestSnapshot.estimated10kPaceSeconds * (1.0 + weeksAgo * decayPerWeek);
+    baselinePace = chosenSnapshot.estimated10kPaceSeconds * (1.0 + weeksAgo * decayPerWeek);
   }
 
   // ── Anchor selection ──
@@ -652,13 +1018,33 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
       if (!d) return null;
       const weeks = daysBetween(d, now) / 7.0;
       if (weeks > raceTrustedWindowWeeks) return null;
-      const tenK = convertPace(race.paceSecondsPerMile, race.raceType, "tenK");
+      // FLAT-COOL EQUIVALENT (2026-07-17): when the race's own laps exist,
+      // read the performance in context — per-lap grade (Minetti) + heat
+      // (dew-point) adjusted, distance-weighted. 33:02 on a hilly humid course
+      // is a different fitness statement than 33:02 flat and cool. Without
+      // laps, fall back to log-level heat normalization only (Part 2A). The
+      // stored totalTimeSeconds (summary display) stays actual.
+      const eff = raceEffectivePace(race, laps);
+      let pace = eff.pace;
+      if (!eff.lapAdjusted) {
+        const wx = weatherByDate.get(race.date);
+        if (wx) pace = heatNeutralPace(pace, wx.tempF, wx.dewPointF, RACE_TYPE_MILES[race.raceType]);
+      }
+      const tenK = convertPace(pace, race.raceType, "tenK");
       return { race, weeksAgo: weeks, tenKPace: tenK };
     })
     .filter((x): x is { race: DetectedRace; weeksAgo: number; tenKPace: number } => x !== null);
 
+  // AGE-WEIGHTED selection (2026-07-16, mirrors Swift): pure fastest-in-36-
+  // weeks was a max-filter over 9 months of noise — one GPS-flattered old
+  // "race" permanently anchored fast. A 0.2%/week selection penalty means an
+  // older race must be genuinely faster than a recent one to win.
   const bestRaceMatch = scoredRaces.reduce<{ race: DetectedRace; weeksAgo: number; tenKPace: number } | null>(
-    (best, r) => (best === null || r.tenKPace < best.tenKPace ? r : best),
+    (best, r) =>
+      best === null ||
+        r.tenKPace * (1.0 + r.weeksAgo * 0.002) < best.tenKPace * (1.0 + best.weeksAgo * 0.002)
+        ? r
+        : best,
     null,
   );
 
@@ -679,14 +1065,28 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
       anchorWeeksAgo = bestRaceMatch.weeksAgo;
       chosenRace = bestRaceMatch.race;
     } else if (recentTrainingAnchor) {
-      anchorPace = recentTrainingAnchor.equivalentTenKPace;
-      anchorSource = `training (${recentTrainingAnchor.kind})`;
+      // DISPLACEMENT CAP (2026-07-16, mirrors Swift): a single parsed workout
+      // may refine a stale race anchor, never replace it wholesale. Blend
+      // 50/50 and cap the net result at 3% faster than the race-demonstrated
+      // pace. chosenRace stays null (the training session is the fresh signal).
+      const raceFloor = bestRaceMatch.tenKPace * 0.97;
+      anchorPace = Math.max((bestRaceMatch.tenKPace + recentTrainingAnchor.equivalentTenKPace) / 2.0, raceFloor);
+      anchorSource = `training (${recentTrainingAnchor.kind}) + race (${RACE_TYPE_LABEL[bestRaceMatch.race.raceType]})`;
       const d = parseDay(recentTrainingAnchor.date);
       if (d) anchorWeeksAgo = daysBetween(d, now) / 7.0;
     }
   } else if (recentTrainingAnchor) {
-    anchorPace = recentTrainingAnchor.equivalentTenKPace;
-    anchorSource = `training (${recentTrainingAnchor.kind})`;
+    // No usable race. EVIDENCE-FIRST (2026-07-16, mirrors Swift): a single
+    // session must not swing the estimate wholesale — when a snapshot baseline
+    // exists, blend 50/50 and floor at 3% faster than the baseline.
+    if (baselinePace !== null) {
+      const floor = baselinePace * 0.97;
+      anchorPace = Math.max((baselinePace + recentTrainingAnchor.equivalentTenKPace) / 2.0, floor);
+      anchorSource = `training (${recentTrainingAnchor.kind}) + fitness profile`;
+    } else {
+      anchorPace = recentTrainingAnchor.equivalentTenKPace;
+      anchorSource = `training (${recentTrainingAnchor.kind})`;
+    }
     const d = parseDay(recentTrainingAnchor.date);
     if (d) anchorWeeksAgo = daysBetween(d, now) / 7.0;
   } else if (plan && plan.status === "active" && plan.targetTimeSeconds > 0) {
@@ -696,8 +1096,8 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   } else if (baselinePace !== null) {
     anchorPace = baselinePace;
     anchorSource = "fitness profile";
-    if (bestSnapshot) {
-      const d = parseDay(bestSnapshot.createdAt);
+    if (chosenSnapshot) {
+      const d = parseDay(chosenSnapshot.createdAt);
       if (d) anchorWeeksAgo = daysBetween(d, now) / 7.0;
     }
   }
@@ -762,37 +1162,135 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   const stimulusMinutes = postRaceStimulusSeconds / 60.0;
   const weeklyMiles = (recentMiles + priorMiles) / Math.min(weeksSinceAnchor, 4.0);
   const runsPerWeek = (recentRuns + priorRuns) / Math.min(weeksSinceAnchor, 4.0);
-  const volumeTrend = priorMiles > 0 ? recentMiles / priorMiles : recentMiles > 0 ? 2.0 : 0.0;
-  const stimulusTrend = priorStimulusSeconds > 0 ? recentStimulusSeconds / priorStimulusSeconds : recentStimulusSeconds > 0 ? 2.0 : 0.0;
+  // EVIDENCE-FIRST TREND DEFAULTS (2026-07-16, mirrors Swift): when the prior
+  // window is empty we have NO evidence of building — default to neutral 1.0,
+  // never 2.0. The old 2.0 default trivially satisfied the build gate (>1.15)
+  // and granted improvement credit off missing data.
+  const volumeTrend = priorMiles > 0 ? recentMiles / priorMiles : recentMiles > 0 ? 1.0 : 0.0;
+  const stimulusTrend = priorStimulusSeconds > 0 ? recentStimulusSeconds / priorStimulusSeconds : recentStimulusSeconds > 0 ? 1.0 : 0.0;
   void stimulusMinutes;
   void runsPerWeek;
   void structuredSessionCount;
 
+  // ── Quality density (Part 2C — server-only) ──
+  // Hard-effort miles per week over the last 4 weeks ÷ weekly miles (the
+  // simpler variant sanctioned alongside quality-volume.ts — the MP-relative
+  // definition there needs an MP anchor the model doesn't have yet). Laps win
+  // over pace_segments on dates they cover (same dedup as the effort pool).
+  // null when there's no mileage data — density effects engage only when the
+  // data exists.
+  // RELATIVE HARDNESS GATE (2026-07-16 hotfix): laps carry no effort labels,
+  // so the absolute 210–540 s/mi window admitted EASY-run laps (a 7:20/mi
+  // easy lap passes it) — the first live run dragged the estimate 17% slow.
+  // Quality is a position in THIS athlete's range (quality-volume.ts): MP and
+  // faster. MP pace ≈ 1.094 × 10K pace (ratio table) + 2% tolerance → a lap
+  // counts as hard only when pace ≤ anchor 10K pace × 1.12. No anchor → no
+  // relative gate is possible, so lap efforts are not used.
+  const LAP_HARDNESS_FACTOR = 1.12;
+  const lapHardnessCap = anchorPace !== null ? anchorPace * LAP_HARDNESS_FACTOR : null;
+  // Laps only displace labeled pace_segments on dates where at least one lap
+  // actually QUALIFIED as hard — an easy-lap-only date keeps its segments.
+  const qualifyingLapDates = new Set(
+    lapEfforts
+      .filter((e) => lapHardnessCap !== null && e.paceSeconds <= lapHardnessCap)
+      .map((e) => e.date),
+  );
+  let hardMiles28 = 0;
+  for (const e of lapEfforts) {
+    if (lapHardnessCap === null || e.paceSeconds > lapHardnessCap) continue;
+    const d = parseDay(e.date);
+    if (d && d >= fourWeeksAgo) hardMiles28 += e.distanceMiles;
+  }
+  for (const log of extendedVoiceLogs) {
+    if (qualifyingLapDates.has(log.date)) continue;
+    const d = parseDay(log.date);
+    if (!d || d < fourWeeksAgo) continue;
+    for (const seg of log.paceSegments ?? []) {
+      if (hardEffortTypes.has(seg.effort) && seg.distanceMiles > 0.1) hardMiles28 += seg.distanceMiles;
+    }
+  }
+  const qualityDensity: number | null = weeklyMiles > 0
+    ? Math.max(0, Math.min(1, hardMiles28 / 4.0 / weeklyMiles))
+    : null;
+
   let estimated10KPace = 0;
   let dataSource = "default";
+  // Hard efforts seen in the last 14 days — populated inside the anchor
+  // block, consumed by the mile speed-evidence shading at assembly.
+  let speedEvidenceHardEfforts: Array<{ paceSeconds: number; distanceMiles: number }> = [];
 
   if (anchorPace !== null) {
     const anchor = anchorPace;
     const baseDecayPerWeek = 0.003;
-    const stimulusOffset = Math.min(weeklyStimulusMinutes / 50.0, 1.0);
+    // Under ~6% quality density, aerobic-only training maintains less race
+    // sharpness — treat weekly hard-stimulus minutes as capped at 60% of value
+    // for the maintenance factor (Part 2C).
+    const effectiveStimulusMinutes = qualityDensity !== null && qualityDensity < 0.06
+      ? weeklyStimulusMinutes * 0.6
+      : weeklyStimulusMinutes;
+    const stimulusOffset = Math.min(effectiveStimulusMinutes / 50.0, 1.0);
     const volumeCredit = Math.min(weeklyMiles / 40.0, 1.0);
-    const maintenanceFactor = stimulusOffset * 0.65 + volumeCredit * 0.35;
+    let maintenanceFactor = stimulusOffset * 0.65 + volumeCredit * 0.35;
+    // DENSITY FLOOR (2026-07-16): weeklyStimulusMinutes depends on effort
+    // LABELS, which are sparse/unreliable on older logs — an athlete with a
+    // 20-week-old race anchor and label-poor history read as "no quality since
+    // the race" and got near-max decay. Quality density is measured from PACE
+    // (label-free): let it floor the maintenance credit. Density ≥ 15% of
+    // mileage at MP-or-faster is full training by any coaching standard.
+    if (qualityDensity !== null) {
+      maintenanceFactor = Math.max(maintenanceFactor, Math.min(qualityDensity * 6.0, 0.9));
+    }
     let effectiveDecayPerWeek = baseDecayPerWeek * (1.0 - maintenanceFactor * 0.9);
 
-    if (volumeTrend > 1.15 && stimulusTrend > 1.0 && weeklyStimulusMinutes >= 30) {
+    // BUILD GATE (2026-07-16, mirrors Swift): improvement credit requires REAL
+    // prior-window data — an empty prior window is absence of evidence.
+    if (
+      volumeTrend > 1.15 && stimulusTrend > 1.0 && weeklyStimulusMinutes >= 30 &&
+      priorMiles > 0 && priorStimulusSeconds > 0
+    ) {
       const buildRate = Math.min((volumeTrend - 1.0) * 0.003, 0.002);
       effectiveDecayPerWeek -= buildRate;
     }
     if (volumeTrend < 0.5 && volumeTrend > 0) effectiveDecayPerWeek += 0.001;
     effectiveDecayPerWeek = Math.max(Math.min(effectiveDecayPerWeek, 0.004), -0.002);
 
-    estimated10KPace = anchor * (1.0 + anchorWeeksAgo * effectiveDecayPerWeek);
+    let decayFactor = 1.0 + anchorWeeksAgo * effectiveDecayPerWeek;
+    // UNPROVEN-IMPROVEMENT CAP (2026-07-16, mirrors Swift): improvement
+    // inferred from volume trends alone is capped at 0.5% TOTAL, no matter how
+    // old the anchor. Proven improvement still arrives through the measured
+    // hard-pace signal below.
+    decayFactor = Math.max(decayFactor, 0.995);
+    // CONTINUOUS-TRAINING DECAY CAP (2026-07-16): VO2 decay applies to
+    // STOPPED training. An athlete with zero detraining evidence (volume held,
+    // no layoff) does not drift 4-5% off a demonstrated race just because the
+    // race aged — stimulus LABELS are too sparse on older logs to prove
+    // otherwise. With no detraining signal, an anchor decays at most 2% total;
+    // genuine decline still arrives through the detraining triggers.
+    if (detectDetraining(workouts, voiceLogs, now) === null) {
+      decayFactor = Math.min(decayFactor, 1.02);
+    }
+    estimated10KPace = anchor * decayFactor;
 
     // ── Pace-segment validation (last 14 days of hard efforts) ──
-    const recentHardEfforts: Array<{ paceSeconds: number; distanceMiles: number }> = [];
+    //
+    // EFFORT-AWARE EQUIVALENCE (2026-07-16 hotfix #2): each effort's kind
+    // decides its 10K conversion.
+    //   • "rep"       — near-maximal reps/races → per-distance Riegel:
+    //                   10K-equiv = p · (10Kmi / d)^0.06. Right for a raced
+    //                   distance or hard reps; a 0.25 mi rep → ×1.21.
+    //   • "sustained" — controlled tempo/threshold ≈ LT effort, NOT an all-out
+    //                   race at that segment's length. Riegel-by-distance read
+    //                   a relaxed 2 mi tempo as a maximal 2-mile race and
+    //                   inferred slow 10K fitness (live run #2 dragged the
+    //                   estimate 5% slow this way). LT → 10K: ×0.975.
+    const recentHardEfforts: Array<{ paceSeconds: number; distanceMiles: number; kind: "rep" | "sustained" }> = [];
+    const SUSTAINED_EFFORTS = new Set(["tempo", "threshold"]);
     for (const log of extendedVoiceLogs) {
       const d = parseDay(log.date) ?? now;
       if (d < twoWeeksAgo) continue;
+      // Laps are richer for this date — skip the coarser segments (Part 2B),
+      // but only when the laps actually produced a qualifying hard effort.
+      if (qualifyingLapDates.has(log.date)) continue;
       const segments = log.paceSegments;
       if (!segments) continue;
       for (const seg of segments) {
@@ -800,28 +1298,87 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
         if (seg.distanceMiles <= 0.1) continue;
         const parts = seg.pacePerMile.split(":").map(Number).filter((n) => Number.isFinite(n));
         if (parts.length === 2) {
-          const paceSeconds = parts[0] * 60 + parts[1];
+          let paceSeconds = parts[0] * 60 + parts[1];
+          // Heat-normalize before use (Part 2A): the segment's neutral-day
+          // worth, rep-length scaled, capped at 12%.
+          const wx = log.weather;
+          if (wx) paceSeconds = heatNeutralPace(paceSeconds, wx.tempF, wx.dewPointF, seg.distanceMiles);
           if (paceSeconds >= 210 && paceSeconds <= 540) {
-            recentHardEfforts.push({ paceSeconds, distanceMiles: seg.distanceMiles });
+            recentHardEfforts.push({
+              paceSeconds,
+              distanceMiles: seg.distanceMiles,
+              kind: SUSTAINED_EFFORTS.has(seg.effort) ? "sustained" : "rep",
+            });
           }
         }
       }
     }
+    // Lap-derived work reps (already neutral-normalized + rest-penalized).
+    // RELATIVE HARDNESS GATE (2026-07-16 hotfix): only laps at MP-or-faster
+    // for THIS athlete qualify — see the quality-density gate above. Without
+    // this, unlabeled easy-run laps polluted the signal pool.
+    // Kind: laps from workouts WITH rest structure are reps; qualifying laps
+    // from continuous running are sustained quality.
+    for (const e of lapEfforts) {
+      if (lapHardnessCap !== null && e.paceSeconds > lapHardnessCap) continue;
+      const d = parseDay(e.date);
+      if (d && d >= twoWeeksAgo) {
+        recentHardEfforts.push({
+          paceSeconds: e.paceSeconds,
+          distanceMiles: e.distanceMiles,
+          kind: e.hasRestStructure ? "rep" : "sustained",
+        });
+      }
+    }
     for (const ip of intervalPaces) {
       if (ip.pace >= 210 && ip.pace <= 540) {
-        recentHardEfforts.push({ paceSeconds: ip.pace, distanceMiles: ip.type === "interval" ? 0.5 : 2.0 });
+        recentHardEfforts.push({
+          paceSeconds: ip.pace,
+          distanceMiles: ip.type === "interval" ? 0.5 : 2.0,
+          kind: ip.type === "interval" ? "rep" : "sustained",
+        });
       }
     }
     const totalHardMiles = recentHardEfforts.reduce((s, e) => s + e.distanceMiles, 0);
+    speedEvidenceHardEfforts = recentHardEfforts;
     let paceSegmentSignal: number | null = null;
     if (totalHardMiles >= 4.0 && recentHardEfforts.length >= 3) {
-      const weightedPaceSum = recentHardEfforts.reduce((s, e) => s + e.paceSeconds * e.distanceMiles, 0);
-      const weightedAvgPace = weightedPaceSum / totalHardMiles;
-      paceSegmentSignal = weightedAvgPace * 1.06;
+      const LT_TO_10K = 0.975;
+      // TOP-WEIGHTED SIGNAL (2026-07-16): fitness lives in the BEST sustained
+      // work, not the average of every quality mile. A session's fastest reps
+      // are the fitness statement; the slower quality laps around them are
+      // fatigue, floats, and warm-down — averaging them all understates the
+      // athlete ("look at the faster reps", not the blended mean). Use the
+      // fastest half of quality mileage (min 2 mi) by 10K-equivalent.
+      const withEquiv = recentHardEfforts.map((e) => {
+        const d = Math.max(e.distanceMiles, 0.15); // guard tiny reps
+        const tenKEquiv = e.kind === "sustained"
+          ? e.paceSeconds * LT_TO_10K
+          : e.paceSeconds * Math.pow(TEN_K_MILES / d, 0.06);
+        return { tenKEquiv, distanceMiles: e.distanceMiles };
+      }).sort((a, b) => a.tenKEquiv - b.tenKEquiv); // fastest first
+      const targetMiles = Math.max(totalHardMiles * 0.5, 2.0);
+      let usedMiles = 0;
+      let topSum = 0;
+      for (const e of withEquiv) {
+        if (usedMiles >= targetMiles) break;
+        const take = Math.min(e.distanceMiles, targetMiles - usedMiles);
+        topSum += e.tenKEquiv * take;
+        usedMiles += take;
+      }
+      paceSegmentSignal = topSum / usedMiles;
       const diff = paceSegmentSignal - estimated10KPace;
       if (Math.abs(diff) > 5) {
         const signalWeight = Math.min(0.3 + (totalHardMiles - 4.0) * 0.05, 0.5);
-        estimated10KPace = estimated10KPace * (1.0 - signalWeight) + paceSegmentSignal * signalWeight;
+        let blended = estimated10KPace * (1.0 - signalWeight) + paceSegmentSignal * signalWeight;
+        // VALIDATION BAND (2026-07-16, mirrors Swift): training paces VALIDATE
+        // a race-demonstrated anchor, they don't re-measure it. Speed-up capped
+        // at 2% (rep math is noisy; a breakthrough shows up as a race) and
+        // slow-down capped at 2% (sub-max training paces can't prove unfitness
+        // — genuine decline arrives through the decay/detraining model).
+        blended = Math.max(blended, estimated10KPace * 0.98);
+        blended = Math.min(blended, estimated10KPace * 1.02);
+        estimated10KPace = blended;
       }
     }
 
@@ -860,9 +1417,11 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   if (!(estimated10KPace > 0)) return null; // no usable signal → no fabricated row
 
   // ── Derive race times from estimated 10K pace ──
-  const tenKSeconds = Math.trunc(estimated10KPace * TEN_K_MILES);
+  // ROUND, don't truncate (2026-07-16, mirrors Swift) — Math.trunc floored
+  // every prediction fast twice.
+  const tenKSeconds = Math.round(estimated10KPace * TEN_K_MILES);
   const raceTime = (to: RaceType): number =>
-    Math.trunc(equivalentRaceTimeSeconds("tenK", tenKSeconds, RACE_TYPE_TO_KEY[to]));
+    Math.round(equivalentRaceTimeSeconds("tenK", tenKSeconds, RACE_TYPE_TO_KEY[to]));
 
   const structuredIntervalCount = intervalPaces.filter((i) => i.type === "interval").length;
   const structuredTempoCount = intervalPaces.filter((i) => i.type === "tempo" || i.type === "threshold").length;
@@ -871,9 +1430,15 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   let confidence: string;
   let summary: string;
   if (chosenRace) {
-    tier = "high";
-    confidence = "High";
-    summary = `Based on your ${RACE_TYPE_LABEL[chosenRace.raceType]} race (${formatTime(chosenRace.totalTimeSeconds)}).`;
+    // AGE-AWARE TIER (2026-07-16, mirrors Swift): a race is high-confidence
+    // proof for ~16 weeks. Past that it's still the best anchor we have, but
+    // the certainty is gone — medium tier, wider ranges.
+    tier = anchorWeeksAgo <= racePrimaryWindowWeeks ? "high" : "medium";
+    confidence = tier === "high" ? "High" : "Medium";
+    const raceTimeStr = formatTime(chosenRace.totalTimeSeconds);
+    summary = anchorWeeksAgo <= racePrimaryWindowWeeks
+      ? `Based on your ${RACE_TYPE_LABEL[chosenRace.raceType]} race (${raceTimeStr}).`
+      : `Based on your ${RACE_TYPE_LABEL[chosenRace.raceType]} race (${raceTimeStr}) — ${Math.trunc(anchorWeeksAgo)} weeks ago, so ranges are wider.`;
   } else if (anchorPace !== null) {
     tier = "medium";
     confidence = "Medium";
@@ -900,11 +1465,71 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     summary = `Based on ${workouts.length} workouts from the last 30 days. Log a hard effort or race for better accuracy.`;
   }
 
-  const frac = RANGE_FRACTION[tier];
-  const mileSeconds = raceTime("mile");
+  // ── Speed evidence & endurance shading (2026-07-16, mirrors Swift) ──
+  // 1. MILE: the VDOT-steep mile ratio assumes trained speed. Without recent
+  //    evidence of running at ≤5K-equivalent pace, shade toward Riegel-1.06
+  //    (0.14434 of the 10K time). Evidence = ≥1.5 mi of last-14-day hard
+  //    efforts at ≤ 5K-equivalent pace.
+  // 2. MARATHON: equivalence tables assume marathon-ready volume. Below
+  //    40 mi/wk scale up to +6% at zero volume.
+  const fiveKEquivalentPace = estimated10KPace * 0.966; // 5K pace ≈ 96.6% of 10K pace (ratio table)
+  const speedEvidenceMiles = speedEvidenceHardEfforts
+    .filter((e) => e.paceSeconds <= fiveKEquivalentPace)
+    .reduce((s, e) => s + e.distanceMiles, 0);
+  // RACE-HISTORY SPEED EVIDENCE (2026-07-17): a confirmed race at 5K or
+  // shorter within the last 2 years is proof of trained speed — the athlete
+  // has raced fast even if the last 14 days were all endurance work. It firms
+  // the mile toward the VDOT ratio; it never anchors current fitness.
+  const hasRaceSpeedHistory = (input.seededRaces ?? []).some((r) => {
+    if (r.raceType !== "mile" && r.raceType !== "fiveK") return false;
+    const d = parseDay(r.date);
+    return d !== null && daysBetween(d, now) / 7.0 <= 104;
+  });
+  const hasSpeedEvidence = speedEvidenceMiles >= 1.5 || hasRaceSpeedHistory;
+
+  const mileVDOT = raceTime("mile");
+  const mileRiegel = tenKSeconds * 0.14434; // Riegel-1.06: (1 / 6.21371)^1.06
+  const mileSeconds = hasSpeedEvidence ? mileVDOT : Math.round((mileVDOT + mileRiegel) / 2.0);
+
+  let marathonSecondsD: number = raceTime("marathon");
+  const marathonVolumeFactor = weeklyMiles >= 40.0 ? 1.0 : 1.0 + ((40.0 - Math.max(weeklyMiles, 0)) / 40.0) * 0.06;
+  if (chosenRace?.raceType !== "marathon") {
+    marathonSecondsD *= marathonVolumeFactor;
+  }
+  const marathonSeconds = Math.round(marathonSecondsD);
+
   const fiveKSeconds = raceTime("fiveK");
   const halfSeconds = raceTime("half");
-  const marathonSeconds = raceTime("marathon");
+
+  // ── Distance-aware ranges (2026-07-16, mirrors Swift) ──
+  // A flat ±% per tier claimed the same certainty for a mile predicted off a
+  // half marathon as for the half itself. Ranges widen with:
+  //   • distance from the anchor race (0.8% per doubling/halving),
+  //   • anchor age (up to +1%),
+  //   • missing speed evidence (mile only, +1%),
+  //   • thin volume (marathon only, +1% below 30 mi/wk),
+  //   • thin quality density (marathon only, +1% below 5% — server-only).
+  const anchorMiles: number = chosenRace ? RACE_TYPE_MILES[chosenRace.raceType] : TEN_K_MILES;
+  const ageWidening = Math.min(anchorWeeksAgo * 0.0004, 0.01);
+  const rangeFraction = (distMiles: number, extra = 0): number =>
+    Math.min(RANGE_FRACTION[tier] + Math.abs(Math.log2(distMiles / anchorMiles)) * 0.008 + ageWidening + extra, 0.07);
+
+  const mileExtra = hasSpeedEvidence ? 0 : 0.01;
+  const marathonExtra = (weeklyMiles < 30.0 ? 0.01 : 0) +
+    (qualityDensity !== null && qualityDensity < 0.05 ? 0.01 : 0);
+
+  // "· v2" marks the richer multi-signal server model for the iOS client.
+  dataSource = `${dataSource} · v2`;
+
+  // Lifetime PRs — fastest confirmed finish per distance, any age (2026-07-17).
+  // Context for the athlete + speed evidence above; never a fitness anchor.
+  const lifetimePRs: FitnessPredictionResult["lifetimePRs"] = {};
+  for (const r of input.seededRaces ?? []) {
+    const existing = lifetimePRs[r.raceType];
+    if (!existing || r.totalTimeSeconds < existing.timeSeconds) {
+      lifetimePRs[r.raceType] = { timeSeconds: r.totalTimeSeconds, date: r.date };
+    }
+  }
 
   return {
     estimated10kPaceSeconds: estimated10KPace,
@@ -917,11 +1542,12 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     confidenceTier: tier,
     dataSource,
     workoutCount: workouts.length,
-    rangeMileSeconds: Math.trunc(mileSeconds * frac),
-    range5kSeconds: Math.trunc(fiveKSeconds * frac),
-    range10kSeconds: Math.trunc(tenKSeconds * frac),
-    rangeHalfSeconds: Math.trunc(halfSeconds * frac),
-    rangeMarathonSeconds: Math.trunc(marathonSeconds * frac),
+    rangeMileSeconds: Math.round(mileSeconds * rangeFraction(RANGE_ITEM_MILES.mile, mileExtra)),
+    range5kSeconds: Math.round(fiveKSeconds * rangeFraction(RANGE_ITEM_MILES.fiveK)),
+    range10kSeconds: Math.round(tenKSeconds * rangeFraction(RANGE_ITEM_MILES.tenK)),
+    rangeHalfSeconds: Math.round(halfSeconds * rangeFraction(RANGE_ITEM_MILES.half)),
+    rangeMarathonSeconds: Math.round(marathonSeconds * rangeFraction(RANGE_ITEM_MILES.marathon, marathonExtra)),
     summary,
+    lifetimePRs,
   };
 }

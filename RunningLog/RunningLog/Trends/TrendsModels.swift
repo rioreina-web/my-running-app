@@ -71,6 +71,85 @@ struct TrendsWeek: Identifiable {
     var voiceQuote: String? = nil
 }
 
+// MARK: - Key session (Section A of the redesigned Key Sessions chart)
+
+/// One quality session on the honest pace chart. Unlike `TrendsWeek.keyPaceSec`
+/// (one whole-workout average per week), this is a single session's **work-bout
+/// pace** — rest excluded, classified to the athlete's own pace zone, with the
+/// heat-adjusted pace carried alongside the raw one (never replacing it).
+///
+/// Source: `trends-timeline` → `quality_sessions[]` (see
+/// `supabase/functions/trends-timeline/keySessions.ts`). Missing lap data means
+/// a session simply isn't here — the surface degrades, it never fakes a dot.
+struct KeySession: Identifiable {
+    let id: String          // training_log_id
+    let date: String        // "2026-06-23" (UTC day)
+    let dateLabel: String   // "Jun 23"
+    /// Zone token from the shared classifier: mile | 3k | 5k | 10k | hmp | mp.
+    /// NB: the backend classifier folds LT/threshold into `hmp`, so LT is
+    /// surfaced as HMP here — the honest label given the current zone table.
+    let zone: String
+    let workPaceSec: Int
+    let workPaceAdjSec: Int?
+    let heatCategory: String?  // ideal | warm | hot | very_hot | dangerous | nil
+    let workHrAvg: Int?
+    let structure: String?     // "5K 5×1km · 6.0 mi"
+    let distanceMi: Double?
+
+    /// The heat model applied only when conditions weren't ideal AND an
+    /// adjusted number exists. Drives the hollow-dot rendering.
+    var isHeatAdjusted: Bool {
+        guard workPaceAdjSec != nil, let c = heatCategory?.lowercased() else { return false }
+        return c != "ideal"
+    }
+
+    /// Pace the dot is plotted at: adjusted when heat mattered, else raw.
+    var effectivePaceSec: Int { isHeatAdjusted ? (workPaceAdjSec ?? workPaceSec) : workPaceSec }
+}
+
+/// Zone display + ordering for the chip row and chart. Fast → slow, matching
+/// the work zones the classifier emits.
+enum KeyZone {
+    /// Canonical fast→slow order of the work zones.
+    static let order = ["mile", "3k", "5k", "10k", "hmp", "mp"]
+
+    nonisolated static func label(_ token: String) -> String {
+        switch token.lowercased() {
+        case "mile": "Mile"
+        case "3k": "3K"
+        case "5k": "5K"
+        case "10k": "10K"
+        case "hmp": "HMP"
+        case "mp": "MP"
+        default: token.uppercased()
+        }
+    }
+
+    /// Sort index for chips; unknown zones sort last.
+    static func rank(_ token: String) -> Int {
+        order.firstIndex(of: token.lowercased()) ?? order.count
+    }
+}
+
+// MARK: - Quality volume (Section B: the work behind it)
+
+/// One week of time-at-quality-pace, keyed by work zone. Backs the Section-B
+/// stacked bars. A down week comes back with an empty `zoneSeconds` — a real
+/// zero, drawn as a gap in the bar row, never faked.
+///
+/// Source: `trends-timeline` → `quality_volume[]`
+/// (`buildQualityVolume` in `keySessions.ts`), aggregated from the same laps
+/// as Section A so the two surfaces never disagree.
+struct QualityVolumeWeek: Identifiable {
+    let id = UUID()
+    let weekStart: String       // "2026-06-08"
+    let dateLabel: String       // "Jun 8"
+    let zoneSeconds: [String: Int]  // work zone token → seconds
+
+    /// Total quality seconds this week (all work zones summed).
+    var total: Int { zoneSeconds.values.reduce(0, +) }
+}
+
 // MARK: - Pace formatting
 
 enum TrendsFormat {

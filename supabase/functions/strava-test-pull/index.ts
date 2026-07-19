@@ -58,6 +58,24 @@ interface StravaDetailed extends StravaActivity {
   splits_metric?: StravaSplit[];
 }
 
+/** When Strava omits `laps`, fall back to per-mile splits mapped into the lap
+ *  shape the running_workout_laps trigger parses (keeps strava-sync in sync). */
+function lapsOrSplitFallback(
+  detail: { laps?: unknown; splits_standard?: StravaSplit[] },
+): unknown[] | null {
+  if (Array.isArray(detail.laps) && detail.laps.length > 0) return detail.laps as unknown[];
+  const splits = detail.splits_standard;
+  if (!splits || splits.length === 0) return null;
+  return splits.map((s, i) => ({
+    lap_index: s.split ?? (i + 1),
+    distance: s.distance,
+    moving_time: s.moving_time,
+    elapsed_time: s.elapsed_time,
+    average_speed: s.average_speed,
+    average_heartrate: s.average_heartrate ?? null,
+  }));
+}
+
 // deno-lint-ignore no-explicit-any
 async function loadCredentials(supabase: any, userId: string): Promise<StravaCreds> {
   const { data } = await supabase
@@ -358,7 +376,7 @@ Deno.serve(async (req) => {
           source: "strava",
           activity_id: a.id,
           streams,
-          laps: detail.laps ?? null,
+          laps: lapsOrSplitFallback(detail),
           meta: {
             name: a.name,
             description: detail.description ?? null,

@@ -526,17 +526,21 @@ enum ScheduledWorkoutType: String, Codable, CaseIterable {
         }
     }
 
+    // Running workout types ride the universal blue depth ramp (source of
+    // truth: PaceSpectrum) — deepening blue with intensity, never green/coral
+    // (green = mood, coral = alert only). Non-running types keep their own
+    // categorical hues; rest/recovery sit below Easy → neutral gray.
     var color: Color {
         switch self {
         case .rest: return Color.drip.textTertiary
-        case .easy: return Color.drip.positive
-        case .tempo: return Color.drip.coralLight
-        case .intervals: return Color.drip.coral
-        case .longRun: return Color.drip.energized
-        case .recovery: return Color.drip.positive
-        case .race: return Color.drip.coral
-        case .progression: return Color.drip.coralLight
-        case .strides: return Color.drip.energized
+        case .recovery: return Color.drip.textTertiary
+        case .easy: return PaceSpectrum.easy
+        case .longRun: return PaceSpectrum.steady
+        case .progression: return PaceSpectrum.mp
+        case .tempo: return PaceSpectrum.lt
+        case .intervals: return PaceSpectrum.fiveK
+        case .strides: return PaceSpectrum.threeK
+        case .race: return PaceSpectrum.mile
         case .strength: return .purple
         case .crossTraining: return .cyan
         }

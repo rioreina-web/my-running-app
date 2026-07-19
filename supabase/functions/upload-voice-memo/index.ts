@@ -13,10 +13,20 @@
  *   the client. No client-side storage upload can fix it.
  *
  *   This function writes the audio with the SERVICE ROLE (which bypasses
- *   storage RLS), then returns the public URL. The CLIENT still inserts the
- *   `training_logs` row over PostgREST (which works) — so all the existing
- *   insert logic (workout linkage, dedup, trigger -> process-training-memo,
- *   status polling) is unchanged. We only swap the one broken step.
+ *   storage RLS), then returns the canonical URL for the object. The CLIENT
+ *   still inserts the `training_logs` row over PostgREST (which works) — so
+ *   all the existing insert logic (workout linkage, dedup, trigger ->
+ *   process-training-memo, status polling) is unchanged. We only swap the
+ *   one broken step.
+ *
+ * PRIVACY (2026-07-15): the `training-memos` bucket is PRIVATE
+ * (20260715120000_make_user_storage_buckets_private.sql). The returned
+ * `audio_url` is an IDENTIFIER, not a fetchable link — it carries the
+ * bucket + path in the stable "/object/public/training-memos/{path}" shape
+ * that process-training-memo / process-check-in parse the storage path from
+ * before doing a service-role .download(). Fetching it unauthenticated 400s,
+ * which is the point. If client playback is ever needed, mint a signed URL
+ * from the path instead.
  *
  * Auth: user JWT only, verified via GoTrue (the auth path that still works).
  *
@@ -26,6 +36,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
+import { withSentry } from "../_shared/sentry.ts";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -43,7 +54,9 @@ function json(obj: unknown, status: number): Response {
   });
 }
 
-Deno.serve(async (req: Request) => {
+// No top-level catch in this handler — withSentry captures escaped throws
+// (beta-audit item #16).
+Deno.serve(withSentry("upload-voice-memo", async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -86,4 +99,4 @@ Deno.serve(async (req: Request) => {
 
   const { data: pub } = admin.storage.from("training-memos").getPublicUrl(path);
   return json({ ok: true, audio_url: pub.publicUrl, path }, 200);
-});
+}));

@@ -69,7 +69,7 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 // ── Closed candidate library ─────────────────────────────────────────────
@@ -423,6 +423,8 @@ Deno.serve(async (req) => {
   // passed, so the trusted-route caller still pays the athlete's budget.
   const rlBlocked = await enforceFeatureRateLimit(athleteUserId, "draft_rewrite", corsHeaders);
   if (rlBlocked) return rlBlocked;
+  const monthlyCapped = await enforceMonthlyCap(athleteUserId, "draft_rewrite", corsHeaders);
+  if (monthlyCapped) return monthlyCapped;
 
   // ── Build prompts ──────────────────────────────────────────────────────
   const templateRaw = (sub as { plan_template?: { weekly_mileage_targets?: unknown } } | null)?.plan_template;

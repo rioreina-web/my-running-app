@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B3323FE52F8D9DAB00832A45 /* Secrets.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = B3323FE42F8D9DAB00832A45 /* Secrets.xcconfig */; };
 		B379D4252F8EEDB80098FFB4 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = B379D4242F8EEDB80098FFB4 /* Sentry */; };
 		B379D4272F8EEDB80098FFB4 /* SentrySwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = B379D4262F8EEDB80098FFB4 /* SentrySwiftUI */; };
 		B3AF91512F258BD00065C876 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = B3AF91502F2589D80065C876 /* Supabase */; };
@@ -78,6 +77,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = B3AF91422F2589D80065C876 /* Build configuration list for PBXNativeTarget "RunningLog" */;
 			buildPhases = (
+				0715A0715A0715A0715A0001 /* Guard: Secrets.xcconfig applied */,
 				B3AF91332F2589D70065C876 /* Sources */,
 				B3AF91342F2589D70065C876 /* Frameworks */,
 				B3AF91352F2589D70065C876 /* Resources */,
@@ -147,13 +147,27 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B3323FE52F8D9DAB00832A45 /* Secrets.xcconfig in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		0715A0715A0715A0715A0001 /* Guard: Secrets.xcconfig applied */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Guard: Secrets.xcconfig applied";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Fail the build EARLY if Secrets.xcconfig wasn't applied.\n# Secrets.xcconfig is gitignored — a build on a machine without it (fresh\n# clone, CI archive) compiles fine and then fatalErrors AT LAUNCH on every\n# install (Supabase.swift resolvedSupabaseURL). This phase turns that\n# runtime crash into a build error. See outputs/beta-failure-audit item 4.\ncase \"${SUPABASE_URL}\" in\n  http*) ;;\n  *)\n    echo \"error: SUPABASE_URL is empty or not a URL ('${SUPABASE_URL}'). Secrets.xcconfig is missing or not applied to configuration '${CONFIGURATION}'. Copy RunningLog/Secrets.xcconfig.example to RunningLog/Secrets.xcconfig and fill in real values.\"\n    exit 1\n    ;;\nesac\nif [ -z \"${SUPABASE_ANON_KEY}\" ] || [ \"${SUPABASE_ANON_KEY}\" = \"your-anon-key-here\" ]; then\n  echo \"error: SUPABASE_ANON_KEY is empty or still the example placeholder — the app would launch but every request would 401. Fill it in RunningLog/Secrets.xcconfig.\"\n  exit 1\nfi\n";
+		};
 		D06DBC5555B2489D82B9795D /* Upload Debug Symbols to Sentry */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;

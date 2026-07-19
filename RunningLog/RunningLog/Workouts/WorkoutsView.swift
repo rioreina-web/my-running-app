@@ -94,15 +94,8 @@ struct WorkoutsView: View {
             Task { await loadWorkouts() }
         }
         .sheet(item: $selectedWorkout) { workout in
-            if let vitalId = workout.vitalWorkoutId {
-                VitalWorkoutDetailView(workout: workout, vitalWorkoutId: vitalId)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            } else {
-                WorkoutDetailSheet(workout: workout)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
-            }
+            // Canonical workout detail — rep-by-rep chart, notes, splits.
+            WorkoutRepDetailSheet(workoutId: workout.id)
         }
         .sheet(isPresented: $showManualEntry) {
             ManualWorkoutView()
@@ -240,17 +233,20 @@ enum PaceZone: Int, CaseIterable, Comparable {
         }
     }
 
+    // Pace zones ride the universal blue depth ramp (source of truth:
+    // PaceSpectrum). One hue, ten depths — pace reads as intensity, never
+    // as green/coral (green = mood, coral = alert only).
     var color: Color {
         switch self {
-        case .easy: return Color.drip.positive
-        case .moderate: return Color.drip.positive.opacity(0.7)
-        case .steady: return Color.drip.coral.opacity(0.5)
-        case .mp: return Color.drip.coral.opacity(0.65)
-        case .hmp: return Color.drip.coral.opacity(0.8)
-        case .tenK: return Color.drip.coral
-        case .fiveK: return Color.drip.tired.opacity(0.8)
-        case .threeK: return Color.drip.tired
-        case .mile: return Color.drip.injured
+        case .easy: return PaceSpectrum.easy
+        case .moderate: return PaceSpectrum.moderate
+        case .steady: return PaceSpectrum.steady
+        case .mp: return PaceSpectrum.mp
+        case .hmp: return PaceSpectrum.hmp
+        case .tenK: return PaceSpectrum.tenK
+        case .fiveK: return PaceSpectrum.fiveK
+        case .threeK: return PaceSpectrum.threeK
+        case .mile: return PaceSpectrum.mile
         }
     }
 
@@ -308,14 +304,16 @@ enum MPZone: Int, CaseIterable {
         }
     }
 
+    // %MP effort zones ride the universal blue depth ramp (source of truth:
+    // PaceSpectrum) — deepening blue with intensity, never green/coral.
     var color: Color {
         switch self {
-        case .seventy: return Color.drip.positive.opacity(0.5)
-        case .eighty: return Color.drip.positive
-        case .ninety: return Color.drip.coral.opacity(0.6)
-        case .mp: return Color.drip.coral
-        case .fast: return Color.drip.tired
-        case .veryFast: return Color.drip.injured
+        case .seventy: return PaceSpectrum.easy
+        case .eighty: return PaceSpectrum.moderate
+        case .ninety: return PaceSpectrum.steady
+        case .mp: return PaceSpectrum.mp
+        case .fast: return PaceSpectrum.lt
+        case .veryFast: return PaceSpectrum.fiveK
         }
     }
 
@@ -345,11 +343,6 @@ enum EffortTimeRange: String, CaseIterable {
     case custom = "Custom"
 }
 
-enum ChartMode: String, CaseIterable {
-    case zones = "Zones"
-    case marathon = "% MP"
-}
-
 struct TrainingEffortChart: View {
     @Environment(VitalManager.self) private var vitalManager
     let workouts: [RunningWorkout]
@@ -359,7 +352,6 @@ struct TrainingEffortChart: View {
     @State private var mpVolumes: [MPZone: Double] = [:]
     @State private var isLoading = true
     @State private var selectedRange: EffortTimeRange = .week
-    @State private var chartMode: ChartMode = .zones
     @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
     @State private var customEnd: Date = Date()
     @State private var showDatePicker = false
@@ -387,17 +379,11 @@ struct TrainingEffortChart: View {
     }
 
     private var maxZoneMiles: Double {
-        switch chartMode {
-        case .zones: return max(zoneVolumes.values.max() ?? 1, 0.1)
-        case .marathon: return max(mpVolumes.values.max() ?? 1, 0.1)
-        }
+        max(zoneVolumes.values.max() ?? 1, 0.1)
     }
 
     private var totalMiles: Double {
-        switch chartMode {
-        case .zones: return zoneVolumes.values.reduce(0, +)
-        case .marathon: return mpVolumes.values.reduce(0, +)
-        }
+        zoneVolumes.values.reduce(0, +)
     }
 
     private var dateRangeLabel: String {
@@ -427,19 +413,9 @@ struct TrainingEffortChart: View {
             if isLoading {
                 loadingIndicator
             } else {
-                switch chartMode {
-                case .zones: zoneBarChart
-                case .marathon: mpBarChart
-                }
+                zoneBarChart
             }
         }
-        .padding(20)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.drip.divider, lineWidth: 1)
-        )
         .task { await loadEffortData() }
         .onChange(of: selectedRange) { Task { await loadEffortData() } }
         .onChange(of: customStart) { Task { await loadEffortData() } }
@@ -448,40 +424,11 @@ struct TrainingEffortChart: View {
     }
 
     private var chartHeader: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.coral)
-                Text("TRAINING VOLUME")
-                    .font(.dripCaption(11))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .tracking(1.2)
-                Spacer()
-                rangePicker
-            }
-            HStack(spacing: 0) {
-                ForEach(ChartMode.allCases, id: \.rawValue) { mode in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { chartMode = mode }
-                    } label: {
-                        chartModeLabel(mode)
-                    }
-                }
-                Spacer()
-            }
+        HStack {
+            DripEyebrow(text: "TRAINING VOLUME")
+            Spacer()
+            rangePicker
         }
-    }
-
-    private func chartModeLabel(_ mode: ChartMode) -> some View {
-        let isSelected = chartMode == mode
-        return Text(mode.rawValue)
-            .font(.system(size: 10, weight: isSelected ? .bold : .medium))
-            .foregroundStyle(isSelected ? Color.drip.textPrimary : Color.drip.textTertiary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(isSelected ? Color.drip.divider.opacity(0.5) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var rangePicker: some View {
@@ -502,25 +449,29 @@ struct TrainingEffortChart: View {
 
     private func rangeButtonLabel(_ range: EffortTimeRange) -> some View {
         let isSelected = selectedRange == range
-        return Text(range.rawValue)
-            .font(.system(size: 10, weight: isSelected ? .bold : .medium))
+        return Text(range.rawValue.uppercased())
+            .font(.dripCaption(10))
+            .tracking(1.2)
             .foregroundStyle(isSelected ? Color.drip.coral : Color.drip.textTertiary)
             .lineLimit(1)
             .fixedSize()
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(isSelected ? Color.drip.coral.opacity(0.12) : Color.clear)
+            .background(isSelected ? Color.drip.coral.opacity(0.10) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     private var dateSubtitle: some View {
         HStack {
             Text(dateRangeLabel)
-                .font(.system(size: 10, weight: .medium))
+                .font(.dripCaption(10))
+                .tracking(0.4)
                 .foregroundStyle(Color.drip.textTertiary)
             Spacer()
             Text(String(format: "%.1f mi total", totalMiles))
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.dripCaption(11))
+                .fontWeight(.semibold)
+                .monospacedDigit()
                 .foregroundStyle(Color.drip.textSecondary)
         }
     }
@@ -562,55 +513,51 @@ struct TrainingEffortChart: View {
     }
 
     @State private var expandedZone: PaceZone?
-    @State private var expandedMpZone: MPZone?
 
-    private var zoneBarChart: some View {
-        let activeZones = PaceZone.allCases.filter { (zoneVolumes[$0] ?? 0) > 0.01 }
-        return VStack(spacing: 6) {
-            ForEach(activeZones, id: \.rawValue) { zone in
-                let miles = zoneVolumes[zone] ?? 0
-                let pct = totalMiles > 0 ? miles / totalMiles * 100 : 0
-                let isExpanded = expandedZone == zone
-                zoneRow(
-                    label: zone.label,
-                    miles: miles,
-                    pct: pct,
-                    color: zone.color,
-                    isExpanded: isExpanded,
-                    paceRange: zonePaceRange(zone)
-                ) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        expandedZone = expandedZone == zone ? nil : zone
-                    }
-                }
-            }
-            if activeZones.isEmpty {
-                Text("No data for this period")
-                    .font(.dripBody(13))
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(maxWidth: .infinity, minHeight: 60)
-            }
+    /// Editorial zone names — match the paces list above (no "Mod"/"MP" shorthand).
+    private func zoneDisplayName(_ zone: PaceZone) -> String {
+        switch zone {
+        case .easy: return "Easy"
+        case .moderate: return "Moderate"
+        case .steady: return "Steady"
+        case .mp: return "Marathon"
+        case .hmp: return "HMP"
+        case .tenK: return "10K"
+        case .fiveK: return "5K"
+        case .threeK: return "3K"
+        case .mile: return "Mile"
         }
     }
 
-    private var mpBarChart: some View {
-        let activeZones = MPZone.allCases.filter { (mpVolumes[$0] ?? 0) > 0.01 }
-        let mpTotal = mpVolumes.values.reduce(0, +)
-        return VStack(spacing: 6) {
-            ForEach(activeZones, id: \.rawValue) { zone in
-                let miles = mpVolumes[zone] ?? 0
-                let pct = mpTotal > 0 ? miles / mpTotal * 100 : 0
-                zoneRow(
-                    label: zone.label,
-                    miles: miles,
-                    pct: pct,
-                    color: zone.color,
-                    isExpanded: expandedMpZone == zone,
-                    paceRange: mpZonePaceRange(zone)
-                ) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        expandedMpZone = expandedMpZone == zone ? nil : zone
+    private var zoneBarChart: some View {
+        let activeZones = PaceZone.allCases.filter { (zoneVolumes[$0] ?? 0) > 0.01 }
+        return VStack(spacing: 0) {
+            if activeZones.isEmpty {
+                EmptyStateView(
+                    variant: .dataPending,
+                    eyebrow: "NOTHING LOGGED YET",
+                    title: "Runs in this window will break down by pace zone here."
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            } else {
+                DripHairline()
+                ForEach(activeZones, id: \.rawValue) { zone in
+                    let miles = zoneVolumes[zone] ?? 0
+                    let pct = totalMiles > 0 ? miles / totalMiles * 100 : 0
+                    zoneRow(
+                        label: zoneDisplayName(zone),
+                        miles: miles,
+                        pct: pct,
+                        color: zone.color,
+                        isExpanded: expandedZone == zone,
+                        paceRange: zonePaceRange(zone)
+                    ) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            expandedZone = expandedZone == zone ? nil : zone
+                        }
                     }
+                    DripHairline()
                 }
             }
         }
@@ -621,30 +568,33 @@ struct TrainingEffortChart: View {
 
         return Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Text(label)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.dripBody(13))
                         .foregroundStyle(Color.drip.textPrimary)
-                        .frame(width: 50, alignment: .leading)
+                        .frame(width: 72, alignment: .leading)
                         .lineLimit(1)
 
                     GeometryReader { geo in
-                        RoundedRectangle(cornerRadius: 4)
+                        RoundedRectangle(cornerRadius: 2)
                             .fill(color)
-                            .frame(width: max(barFraction * geo.size.width, 4))
+                            .frame(width: max(barFraction * geo.size.width, 3))
                     }
-                    .frame(height: isExpanded ? 28 : 20)
+                    .frame(height: isExpanded ? 22 : 16)
 
-                    Text(String(format: "%.1fmi", miles))
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Text(String(format: "%.1f mi", miles))
+                        .font(.dripCaption(11))
+                        .fontWeight(.semibold)
+                        .monospacedDigit()
                         .foregroundStyle(Color.drip.textPrimary)
-                        .frame(width: 52, alignment: .trailing)
+                        .frame(width: 54, alignment: .trailing)
                         .lineLimit(1)
 
                     Text(String(format: "%.0f%%", pct))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.dripCaption(10))
+                        .monospacedDigit()
                         .foregroundStyle(Color.drip.textTertiary)
-                        .frame(width: 28, alignment: .trailing)
+                        .frame(width: 32, alignment: .trailing)
                         .lineLimit(1)
                 }
 
@@ -653,53 +603,37 @@ struct TrainingEffortChart: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            .padding(.vertical, 11)
         }
         .buttonStyle(.plain)
     }
 
     private func expandedDetail(miles: Double, pct: Double, color: Color, paceRange: String?) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
-                .background(color.opacity(0.3))
-                .padding(.vertical, 4)
-
-            // Pace range
+        VStack(alignment: .leading, spacing: 6) {
             if let range = paceRange {
-                HStack(spacing: 6) {
-                    Image(systemName: "speedometer")
-                        .font(.system(size: 10))
-                        .foregroundStyle(color)
-                    Text(range)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Color.drip.textSecondary)
-                }
-            }
-
-            // Duration estimate (rough: miles * avg pace)
-            HStack(spacing: 6) {
-                Image(systemName: "clock")
-                    .font(.system(size: 10))
-                    .foregroundStyle(color)
-                Text(String(format: "%.1f miles  ·  %.0f%% of volume", miles, pct))
-                    .font(.system(size: 12, weight: .medium))
+                Text(range)
+                    .font(.dripCaption(11))
                     .foregroundStyle(Color.drip.textSecondary)
             }
 
-            // Visual proportion bar
+            Text(String(format: "%.1f miles · %.0f%% of your running", miles, pct))
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.drip.divider.opacity(0.3))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(color.opacity(0.4))
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.drip.divider.opacity(0.35))
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color.opacity(0.5))
                         .frame(width: totalMiles > 0 ? CGFloat(pct / 100) * geo.size.width : 0)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 5)
         }
-        .padding(.leading, 58)
-        .padding(.top, 2)
-        .padding(.bottom, 6)
+        .padding(.leading, 82)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
     }
 
     private func zonePaceRange(_ zone: PaceZone) -> String? {
@@ -718,25 +652,6 @@ struct TrainingEffortChart: View {
         case .fiveK: return "\(fmt(p.threeKPace)) – \(fmt(p.fiveKPace))/mi"
         case .threeK: return "\(fmt(p.milePace)) – \(fmt(p.threeKPace))/mi"
         case .mile: return "Faster than \(fmt(p.milePace))/mi"
-        }
-    }
-
-    private func mpZonePaceRange(_ zone: MPZone) -> String? {
-        guard let p = equivalentPaces ?? resolvedPaces else { return nil }
-        let mp = p.mpPace // seconds per mile
-        let fmt = { (s: Double) -> String in
-            let m = Int(s) / 60; let sec = Int(s) % 60
-            return String(format: "%d:%02d", m, sec)
-        }
-        // %MP = mpPace / actualPace → actualPace = mpPace / %MP
-        // Higher %MP = faster pace = lower sec/mi
-        switch zone {
-        case .seventy: return "Slower than \(fmt(mp / 0.75))/mi"
-        case .eighty: return "\(fmt(mp / 0.85)) – \(fmt(mp / 0.75))/mi"
-        case .ninety: return "\(fmt(mp / 0.95)) – \(fmt(mp / 0.85))/mi"
-        case .mp: return "\(fmt(mp / 1.05)) – \(fmt(mp / 0.95))/mi  (MP \(fmt(mp)))"
-        case .fast: return "\(fmt(mp / 1.10)) – \(fmt(mp / 1.05))/mi"
-        case .veryFast: return "Faster than \(fmt(mp / 1.10))/mi"
         }
     }
 

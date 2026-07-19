@@ -28,10 +28,18 @@ struct CoachReadView: View {
     /// tab index 1 (see DripTab).
     @Environment(\.selectedTab) private var selectedTab
 
+    /// Staged coach question handed off from another surface (e.g. the
+    /// Trends ask bar pre-seeds the scrubbed week, then switches to this
+    /// tab). When set, we present the `CoachAskSheet` composer pre-filled
+    /// with the question + focus label. See CoachAskContext.
+    @Environment(\.coachAsk) private var coachAsk
+
     // Sheet-routing state — chips write their id here, this view
     // reads and presents the matching detail sheet.
     @State private var selectedWorkoutId: UUID?
     @State private var selectedDocId: UUID?
+    // v5 niggle ref tap target (body-part string → timeline sheet).
+    @State private var selectedNiggle: String?
 
     // Ask-bar state. The athlete asks AI about their training; the
     // reply is a CoachRead-shaped Training Insight presented in a sheet.
@@ -39,6 +47,9 @@ struct CoachReadView: View {
     @State private var isAsking = false
     @State private var askReply: CoachRead?
     @State private var askErrorText: String?
+
+    // Weekly-review history, opened from the "↗ HISTORY" masthead button.
+    @State private var showWeeklyHistory = false
 
     var body: some View {
         ScrollView {
@@ -48,7 +59,20 @@ struct CoachReadView: View {
                     dateline(for: read)
                     coachByline(for: read)
                     headline(for: read)
-                    prose(for: read)
+                    // v5: render the sectioned coach-snapshot when present;
+                    // otherwise the legacy flat paragraph (old rows).
+                    if read.hasSections {
+                        ReadSectionsView(
+                            eyebrow: read.eyebrow,
+                            sections: read.sections ?? [],
+                            question: read.question,
+                            selectedWorkoutId: $selectedWorkoutId,
+                            selectedNiggle: $selectedNiggle
+                        )
+                        .padding(.bottom, 16)
+                    } else {
+                        prose(for: read)
+                    }
                     signatureLine(for: read)
 
                     if let cantSee = read.cantSee {
@@ -78,9 +102,21 @@ struct CoachReadView: View {
                 } else if service.lastError != nil {
                     errorState
                 } else {
-                    // No row yet, not loading, no error — first launch
-                    // on a brand-new account before refresh has fired.
-                    skeleton
+                    // No row yet, not loading, no error — brand-new account
+                    // (or today's read was never generated). This used to
+                    // render the skeleton, which looked like a permanent
+                    // loading state with no way out (beta-audit item #14).
+                    // Real empty state per the empty-state component spec;
+                    // refresh() generates on a miss (triggered_by=manual).
+                    EmptyStateView(
+                        variant: .setupNeeded,
+                        eyebrow: "THE DAILY READ",
+                        title: "No read yet. The coach writes one from your training — log a run or a voice memo first, then generate your first read.",
+                        cta: .init(label: "GENERATE TODAY'S READ") {
+                            Task { try? await service.refresh() }
+                        }
+                    )
+                    .padding(.top, 48)
                 }
             }
             .padding(.horizontal, 24)
@@ -105,8 +141,23 @@ struct CoachReadView: View {
                 DocDetailSheet(doc: doc)
             }
         }
+        .sheet(item: niggleSheetItem) { item in
+            niggleTimelineSheet(for: item.value)
+        }
         .sheet(item: $askReply) { reply in
             askReplySheet(for: reply)
+        }
+        .sheet(isPresented: $showWeeklyHistory) {
+            WeeklyCoachingReportSheet()
+        }
+        // Composer for a question staged by another surface (Trends ask
+        // bar). Presented when `coachAsk.pendingQuestion` is non-nil;
+        // dismissing clears the staged question so it doesn't re-present.
+        .sheet(isPresented: askComposerPresented) {
+            CoachAskSheet(
+                question: coachAsk.pendingQuestion ?? "",
+                focus: coachAsk.focusLabel
+            )
         }
         .alert(
             "Couldn't get an answer",
@@ -219,7 +270,7 @@ struct CoachReadView: View {
                 .tracking(1.3) // 0.12em × 11pt — section-eyebrow tracking
             Spacer()
             Button {
-                // History view not yet wired — Phase 5+ feature.
+                showWeeklyHistory = true
             } label: {
                 Text("↗ HISTORY")
                     .font(.dripStat(11))
@@ -445,79 +496,73 @@ struct CoachReadView: View {
             set: { selectedDocId = $0?.id }
         )
     }
+    private var niggleSheetItem: Binding<StringItem?> {
+        Binding(
+            get: { selectedNiggle.map(StringItem.init) },
+            set: { selectedNiggle = $0?.value }
+        )
+    }
+
+    /// Drives the staged-question composer sheet. Reads truthy while a
+    /// question is staged (from Trends etc.); clearing it on dismiss resets
+    /// `coachAsk` so the sheet doesn't immediately re-present.
+    private var askComposerPresented: Binding<Bool> {
+        Binding(
+            get: { coachAsk.pendingQuestion != nil },
+            set: { presented in if !presented { coachAsk.clear() } }
+        )
+    }
+
+    /// Niggle timeline — v1 surfaces the body part plainly. The full
+    /// per-mention verbatim timeline (from `body_mentions`) is the next
+    /// wire-up; this proves the tap-through and keeps it surface-not-diagnose.
+    @ViewBuilder
+    private func niggleTimelineSheet(for bodyPart: String) -> some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("NIGGLE · \(bodyPart.uppercased())")
+                    .font(.dripStat(11)).tracking(1.2)
+                    .foregroundStyle(Color.drip.coral)
+                Text("Your own words, over time.")
+                    .font(.dripBody(15))
+                    .foregroundStyle(Color.drip.textSecondary)
+                Text("The full mention-by-mention timeline lands next — surfaced verbatim, never diagnosed.")
+                    .font(.dripBody(13))
+                    .foregroundStyle(Color.drip.textTertiary)
+                Spacer()
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.drip.background.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("NIGGLE")
+                        .font(.dripStat(10)).tracking(0.8)
+                        .foregroundStyle(Color.drip.textSecondary)
+                }
+            }
+        }
+    }
 
     @ViewBuilder
     private func workoutDetailSheet(for id: UUID) -> some View {
-        if let workout = service.workoutsById[id] {
-            // Canonical presentation — title/label/meta come from the
-            // zone taxonomy, never workout_notes. Verbatim memo, splits,
-            // and mood render below. Full WorkoutDetailView (the rich
-            // pace chart) reuse is gated on the TrainingLog→RunningWorkout
-            // bridge — see the effectiveness plan, Phase 4.
-            let p = WorkoutPresentation(log: workout, zones: PaceZonesService.shared.zones)
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(p.title)
-                            .font(.dripDisplay(24))
-                            .foregroundStyle(Color.drip.textPrimary)
-
-                        if let meta = p.metaLine {
-                            Text(meta)
-                                .font(.dripStat(12))
-                                .foregroundStyle(Color.drip.textSecondary)
-                                .tracking(0.6)
-                        }
-
-                        if let mood = workout.mood, !mood.isEmpty {
-                            Text("Felt \(mood)")
-                                .font(.dripBody(14))
-                                .foregroundStyle(Color.drip.textSecondary)
-                        }
-
-                        // Per-segment splits from the GPS stream, when present.
-                        if let segments = workout.paceSegments, !segments.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("SPLITS")
-                                    .font(.dripStat(10))
-                                    .foregroundStyle(Color.drip.textSecondary)
-                                    .tracking(1.0)
-                                ForEach(segments) { seg in
-                                    HStack {
-                                        Text(seg.effort.capitalized)
-                                            .font(.dripBody(14))
-                                            .foregroundStyle(Color.drip.textPrimary)
-                                        Spacer()
-                                        Text("\(String(format: "%.1f", seg.distanceMiles))mi · \(seg.pacePerMile)/mi")
-                                            .font(.dripStat(12))
-                                            .foregroundStyle(Color.drip.textSecondary)
-                                    }
-                                }
-                            }
-                            .padding(.top, 4)
-                        }
-
-                        // The athlete's own words — verbatim, never coerced.
-                        if let notes = workout.cleanedNotes ?? workout.notes,
-                           !notes.isEmpty {
-                            Text(notes)
-                                .font(.dripBody(15))
-                                .foregroundStyle(Color.drip.textPrimary)
-                                .lineSpacing(4)
-                                .padding(.top, 4)
-                        }
-                    }
+        // Route to the real workout analysis — Direction A "Rep Receipt":
+        // hero rep chart, HR/pace/cadence/elevation telemetry, ANALYSIS +
+        // SPLITS, vs-recent comparison, type override. WorkoutRepReceiptView
+        // needs only the id (same entry point WorkoutsAndRepsSection uses), so
+        // no TrainingLog→RunningWorkout bridge is required.
+        NavigationStack {
+            ScrollView {
+                WorkoutRepReceiptView(workoutId: id)
                     .padding(20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .background(Color.drip.background.ignoresSafeArea())
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text("WORKOUT")
-                            .font(.dripStat(10))
-                            .foregroundStyle(Color.drip.textSecondary)
-                            .tracking(0.8)
-                    }
+            }
+            .background(Color.drip.background.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("WORKOUT")
+                        .font(.dripStat(10))
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .tracking(0.8)
                 }
             }
         }
@@ -562,4 +607,10 @@ struct CoachReadView: View {
 /// Wrapper so we can drive `.sheet(item:)` from a `UUID?` binding.
 private struct UUIDItem: Identifiable, Hashable {
     let id: UUID
+}
+
+/// Same bridge for the niggle ref's `String?` (body-part) binding.
+private struct StringItem: Identifiable, Hashable {
+    let value: String
+    var id: String { value }
 }

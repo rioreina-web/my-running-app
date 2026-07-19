@@ -66,11 +66,13 @@ Deno.test("buckets miles into the correct week and excludes cross-training", () 
   assertEquals(prev.miles, 10);
 });
 
-Deno.test("quality classification: features intensity beats type fallback", () => {
+Deno.test("quality volume: whole-run fallback counts MP-or-faster runs only", () => {
+  // MP = 6:40. Quality is measured against the athlete's own MP anchor, NOT by
+  // classifying the whole workout via intensity_score (which used to count a
+  // rep session's recoveries and miss a long run's MP block entirely).
   const input: TimelineInput = {
     logs: [
       { id: "easy1", workout_date: "2026-06-15", workout_distance_miles: 8, workout_duration_minutes: 60, workout_type: "easy", workout_pace_per_mile: "7:30", mood: "positive" },
-      // No type signal, but features say it was hard.
       { id: "hard1", workout_date: "2026-06-17", workout_distance_miles: 6, workout_duration_minutes: 40, workout_type: "run", workout_pace_per_mile: "6:40", mood: "tired" },
     ],
     features: [
@@ -78,10 +80,91 @@ Deno.test("quality classification: features intensity beats type fallback", () =
       { training_log_id: "easy1", intensity_score: 1.0, total_duration_seconds: 3600 },
     ],
     mentions: [],
+    mpSecPerMile: 400, // 6:40
   };
   const out = buildTrendsTimeline(input, 1, REF);
-  assertEquals(out[0].quality_miles, 6); // only hard1
-  assertEquals(out[0].key_pace_sec, 400); // 6:40
+  assertEquals(out[0].quality_miles, 6); // hard1 at MP; easy1 at 7:30 is aerobic
+  assertEquals(out[0].key_pace_sec, 400);
+});
+
+Deno.test("quality volume: no MP anchor → 0, never guessed from the athlete's average", () => {
+  const input: TimelineInput = {
+    logs: [
+      { id: "hard1", workout_date: "2026-06-17", workout_distance_miles: 6, workout_duration_minutes: 40, workout_type: "run", workout_pace_per_mile: "6:40", mood: "tired" },
+    ],
+    features: [{ training_log_id: "hard1", intensity_score: 3.0, total_duration_seconds: 2400 }],
+    mentions: [],
+    // no mpSecPerMile
+  };
+  const out = buildTrendsTimeline(input, 1, REF);
+  assertEquals(out[0].quality_miles, 0);
+});
+
+Deno.test("quality volume: reps count, recoveries do not", () => {
+  // A 3-mile session: 2 × 1mi reps at 6:00, with 0.5mi jogs at 9:00 between.
+  // The old rule counted all 3 miles (whole workout classified quality).
+  const input: TimelineInput = {
+    logs: [
+      {
+        id: "reps",
+        workout_date: "2026-06-17",
+        workout_distance_miles: 3,
+        workout_duration_minutes: 21,
+        workout_type: "intervals",
+        workout_pace_per_mile: "7:00",
+        mood: "positive",
+        pace_segments: [
+          { distance_miles: 1, pace_per_mile: "6:00", duration_seconds: 360 },
+          { distance_miles: 0.5, pace_per_mile: "9:00", duration_seconds: 270 },
+          { distance_miles: 1, pace_per_mile: "6:00", duration_seconds: 360 },
+          { distance_miles: 0.5, pace_per_mile: "9:00", duration_seconds: 270 },
+        ],
+      },
+    ],
+    features: [],
+    mentions: [],
+    mpSecPerMile: 400, // 6:40
+  };
+  const out = buildTrendsTimeline(input, 1, REF);
+  assertEquals(out[0].miles, 3);
+  assertEquals(out[0].quality_miles, 2); // the two reps, not the jogs
+});
+
+Deno.test("quality volume: rep-level laps beat blurred mile splits", () => {
+  // One mile split holding a 5:10 rep + a 9:00 float averages ~7:05 — slower
+  // than MP, so mile splits score this session ZERO. The laps see the rep.
+  const input: TimelineInput = {
+    logs: [
+      {
+        id: "blurred",
+        workout_date: "2026-06-17",
+        workout_distance_miles: 2,
+        workout_duration_minutes: 14,
+        workout_type: "intervals",
+        workout_pace_per_mile: "7:00",
+        mood: "positive",
+        pace_segments: [
+          { distance_miles: 1, pace_per_mile: "7:05", duration_seconds: 425 },
+          { distance_miles: 1, pace_per_mile: "7:05", duration_seconds: 425 },
+        ],
+      },
+    ],
+    features: [],
+    mentions: [],
+    mpSecPerMile: 400,
+    lapsByWorkout: new Map([[
+      "blurred",
+      [
+        { distance_meters: 804.672, avg_pace_sec_per_mile: 310, moving_time_seconds: 155 }, // 0.5mi rep @ 5:10
+        { distance_meters: 804.672, avg_pace_sec_per_mile: 540, moving_time_seconds: 270 }, // 0.5mi float @ 9:00
+        { distance_meters: 804.672, avg_pace_sec_per_mile: 310, moving_time_seconds: 155 },
+        { distance_meters: 804.672, avg_pace_sec_per_mile: 540, moving_time_seconds: 270 },
+      ],
+    ]]),
+  };
+  const out = buildTrendsTimeline(input, 1, REF);
+  // Laps win: the two 0.5mi reps = 1.0 quality mi. Mile splits would give 0.
+  assertEquals(out[0].quality_miles, 1);
 });
 
 Deno.test("modal mood; no logs → null (never fabricated)", () => {

@@ -50,8 +50,10 @@ interface ClaimedJob {
   id: number;
   training_log_id: string;
   user_id: string;
-  kind: "memo" | "check_in";
-  audio_url: string;
+  // "note" = a typed manual note: no audio, process-training-memo takes the
+  // text branch (transcription = the row's `notes`).
+  kind: "memo" | "check_in" | "note";
+  audio_url: string | null;
   attempts: number;
   max_attempts: number;
 }

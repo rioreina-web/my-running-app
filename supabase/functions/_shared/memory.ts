@@ -307,6 +307,10 @@ export async function storeMemories(
         extracted_from: memory.extracted_from,
         importance: memory.importance || 5,
         expires_at: memory.expires_at,
+        // Provenance for the hygiene schema (migration 20260702190000). The
+        // memo-LLM path uses 'memo_llm'; this legacy regex-on-chat path is
+        // 'chat_regex'. status defaults 'active', mention_count defaults 1.
+        source: "chat_regex",
       });
       console.log(`Stored memory: ${memory.category} - ${memory.content}`);
 

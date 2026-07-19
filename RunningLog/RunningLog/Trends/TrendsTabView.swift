@@ -32,6 +32,9 @@ struct TrendsTabView: View {
     @State private var deepGroup: DeepGroup = .fitness
     /// Which deep-dive row is expanded in place (by title); nil = all collapsed.
     @State private var expandedRow: String?
+    // Canonical intensity-weighted ACWR from athlete_state — passed to the
+    // volume drilldown so it stops recomputing its own miles-based ratio (§1).
+    @State private var canonicalAcwr: Double?
     private enum DeepGroup: String, CaseIterable {
         case effort = "Effort", fitness = "Fitness", signal = "Signal"
     }
@@ -80,7 +83,10 @@ struct TrendsTabView: View {
         // no-op once loaded, so re-entry is cheap and no fetch fires for a
         // tab the user never opens.
         .task(id: selectedTab.wrappedValue) {
-            if selectedTab.wrappedValue == 4 { await service.refresh() }
+            if selectedTab.wrappedValue == 4 {
+                await service.refresh()
+                canonicalAcwr = await TrendsAthleteState.fetch()?.acwr
+            }
         }
     }
 
@@ -173,12 +179,28 @@ struct TrendsTabView: View {
                         onSetExcluded: { id, excluded in
                             Task { await service.setExcluded(id, excluded: excluded) }
                         },
+                        canonicalAcwr: canonicalAcwr,
                         embedded: true
                     )
+                }
+                // The Signal prototype's pace-spectrum surface, absorbed
+                // here in Phase A (it was its own tab). Pushed, not
+                // embedded — it owns its own scroll and range controls.
+                pushRow("Pace spectrum", "Where your miles live, zone by zone") {
+                    PaceSignalView()
                 }
             case .fitness:
                 expandableRow("Key sessions", "Same-effort pace + rep splits") {
                     KeySessionsDetailView(sessions: service.keySessions, volume: service.keyVolume, embedded: true)
+                }
+                // The sharp end — fast segments read one pace system at a time
+                // (volume vs. its own range, conditions-adjusted pace). Pushed,
+                // like the pace spectrum: it owns its own scroll + system chips.
+                pushRow("Fast segments", "By system — volume, pace, heat & grade") {
+                    FastSegmentsView(
+                        trends: service.fastSegments.systems,
+                        sessions: service.fastSegments.sessions
+                    )
                 }
             case .signal:
                 expandableRow("Mood", "How the block has felt") {
@@ -212,6 +234,38 @@ struct TrendsTabView: View {
         .background(Color.drip.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.drip.divider, lineWidth: 1))
+    }
+
+    /// A row that PUSHES a full-screen destination — same anatomy as
+    /// `expandableRow` but with a trailing chevron.right, for surfaces
+    /// that own their own scroll (e.g. the pace spectrum).
+    private func pushRow<Destination: View>(
+        _ title: String,
+        _ subtitle: String,
+        @ViewBuilder destination: @escaping () -> Destination
+    ) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title.uppercased())
+                        .font(.dripEyebrow(10)).tracking(1.0)
+                        .foregroundStyle(Color.drip.textSecondary)
+                    Text(subtitle)
+                        .font(.dripBody(14))
+                        .foregroundStyle(Color.drip.textPrimary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+        }
+        .buttonStyle(.plain)
     }
 
     /// A summary row that expands its chart IN PLACE (no push-navigation). The
@@ -277,10 +331,12 @@ struct TrendsTabView: View {
         guard r != 0 else { return nil }
         return "\(r > 0 ? "↑" : "↓") \(abs(r))\(unit)"
     }
+    /// Niggles-only now that mood carries its own strip card — no more
+    /// double-reporting the same mood in two cards.
     private var signalValue: String {
-        guard let cur = latestWeek else { return "—" }
+        guard let cur = latestWeek else { return "clear" }
         if let n = cur.niggles.first(where: { !$0.isEmpty }) { return n.lowercased() }
-        return cur.mood.isEmpty ? "clear" : cur.mood.lowercased()
+        return "clear"
     }
 
     /// A · the horizontal what-changed strip: one card per deep-dive group
@@ -294,7 +350,8 @@ struct TrendsTabView: View {
                               delta: priorWeek.flatMap { deltaStr(cur.miles - $0.miles, unit: "") }) {
                         VolumeDetailView(
                             weeks: service.weeks, flagged: service.flagged, trimmed: service.trimmed,
-                            onSetExcluded: { id, ex in Task { await service.setExcluded(id, excluded: ex) } }
+                            onSetExcluded: { id, ex in Task { await service.setExcluded(id, excluded: ex) } },
+                            canonicalAcwr: canonicalAcwr
                         )
                     }
                 }
@@ -305,6 +362,17 @@ struct TrendsTabView: View {
                         KeySessionsDetailView(sessions: service.keySessions, volume: service.keyVolume)
                     }
                 }
+                // Mood gets its own card — the qualitative stream is half
+                // the product's signal. Value renders in the mood's own
+                // warm-palette color (mood-only hues; three-palette rule).
+                if let mw = latestMoodWeek {
+                    stripCard(eyebrow: "MOOD",
+                              value: mw.mood.lowercased(),
+                              valueColor: TrendsMoodColor.color(mw.mood),
+                              delta: priorMoodLabel(before: mw)) {
+                        MoodDetailView(weeks: service.weeks)
+                    }
+                }
                 stripCard(eyebrow: "SIGNAL", value: signalValue, delta: nil) {
                     NigglesDetailView(weeks: service.weeks)
                 }
@@ -313,8 +381,22 @@ struct TrendsTabView: View {
         }
     }
 
+    /// Most recent week that carries a logged mood, and the differing mood
+    /// before it — powers the MOOD strip card. Facts only; a week with no
+    /// mood is skipped, never guessed.
+    private var latestMoodWeek: TrendsWeek? {
+        window.last(where: { !$0.mood.isEmpty })
+    }
+    private func priorMoodLabel(before cur: TrendsWeek) -> String? {
+        guard let idx = window.firstIndex(where: { $0.id == cur.id }) else { return nil }
+        guard let prior = window[..<idx].last(where: { !$0.mood.isEmpty }),
+              prior.mood.lowercased() != cur.mood.lowercased() else { return nil }
+        return "was \(prior.mood.lowercased())"
+    }
+
     private func stripCard<Destination: View>(
-        eyebrow: String, value: String, delta: String?,
+        eyebrow: String, value: String, valueColor: Color = Color.drip.textPrimary,
+        delta: String?,
         @ViewBuilder destination: @escaping () -> Destination
     ) -> some View {
         NavigationLink {
@@ -326,7 +408,7 @@ struct TrendsTabView: View {
                     .foregroundStyle(Color.drip.textTertiary)
                 Text(value)
                     .font(.dripDisplay(20))
-                    .foregroundStyle(Color.drip.textPrimary)
+                    .foregroundStyle(valueColor)
                     .lineLimit(1)
                 Text(delta ?? " ")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))

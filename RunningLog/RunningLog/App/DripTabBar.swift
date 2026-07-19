@@ -33,27 +33,27 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The five canonical tabs. Raw values match the integer tags the
-/// `MainTabView` uses for `selectedTab` — the bar binds to `Binding<Int>`
-/// so no host refactor is required.
+/// The four canonical tabs — the beta IA (Phase A of the design overhaul,
+/// see `outputs/beta-design-overhaul-plan-2026-07-13.md`):
+/// **Log · Trends · Train · Coach** — input → overview → detail → synthesis.
 ///
-/// The old `Train` + `Trends` tabs were collapsed into a single analytical
-/// `Training` tab (see `training-tab-spec.md`): log 0 · training 1 · coach
-/// 2 · plan 3.
+/// Raw values match the integer tags `MainTabView` uses for `selectedTab`
+/// (the bar binds to `Binding<Int>`, so tags stay stable across IA
+/// changes — `VoiceLogView` jumps to tag 2 (Coach) and `CoachReadView`
+/// to tag 1 (Train) and both still work). Trends keeps its historical
+/// non-contiguous tag 4 but is *declared* second so `allCases`
+/// (declaration order) renders it in the second slot.
 ///
-/// Then the chart-centric **Trends** surface was reintroduced as its own
-/// tab (the unified mileage/intensity/pace/mood/niggle timeline). To keep
-/// the existing integer tags stable — `VoiceLogView` jumps to tag 2 (The
-/// Read) and `CoachReadView` to tag 1 (Training) — Trends takes a NEW
-/// non-contiguous raw value (4) while being *declared* between Training
-/// and Coach so `allCases` (declaration order) renders it in the right
-/// slot. Net display order: Log · Training · Trends · The Read · Plan.
+/// Retired in Phase A: `training2` (6, evaluation calendar — its
+/// treatments were absorbed into Train's CALENDAR mode), `signal`
+/// (5, pace-spectrum prototype — now pushed from Trends' GO DEEPER),
+/// and `plan` (3 — Plan folded into Train's CALENDAR mode; the plan is
+/// a subset of training, not its own destination).
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
-    case training = 1
     case trends = 4
+    case training = 1
     case coach = 2
-    case plan = 3
 
     var id: Int { rawValue }
 
@@ -62,10 +62,9 @@ enum DripTab: Int, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .log: "Log"
-        case .training: "Training"
         case .trends: "Trends"
-        case .coach: "The Read"
-        case .plan: "Plan"
+        case .training: "Train"
+        case .coach: "Coach"
         }
     }
 
@@ -228,14 +227,14 @@ private struct DripTabPressStyle: ButtonStyle {
 }
 
 #Preview("Coach selected") {
-    PreviewHost(initial: 3)
+    PreviewHost(initial: 2)
 }
 
-#Preview("Coach badged, Plan disabled") {
+#Preview("Coach badged, Trends disabled") {
     PreviewHost(
         initial: 1,
         badged: [.coach],
-        disabled: [.plan]
+        disabled: [.trends]
     )
 }
 

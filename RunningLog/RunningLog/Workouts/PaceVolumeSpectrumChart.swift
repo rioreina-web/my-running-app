@@ -385,13 +385,13 @@ public extension PaceVolumeSpectrumChart {
     ) -> [PaceAnchor] {
         [
             PaceAnchor(label: "EASY", paceSeconds: easyPace,
-                       color: Color.drip.energized),
+                       color: PaceSpectrum.easy),
             PaceAnchor(label: "MP",   paceSeconds: marathonPace,
-                       color: Color.drip.textSecondary),
+                       color: PaceSpectrum.mp),
             PaceAnchor(label: "LT",   paceSeconds: thresholdPace,
-                       color: Color.drip.coral),
+                       color: PaceSpectrum.lt),
             PaceAnchor(label: "5K",   paceSeconds: fiveKPace,
-                       color: Color.drip.textPrimary),
+                       color: PaceSpectrum.fiveK),
         ]
     }
 

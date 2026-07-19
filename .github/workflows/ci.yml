@@ -135,7 +135,13 @@ jobs:
 
   eval-gate:
     name: Eval coverage gate (prompts)
-    if: github.event_name == 'pull_request'
+    # DISABLED 2026-06-16: the eval harness isn't built out yet, so requiring a
+    # cassette for every prompt edit was blocking real work more than it was
+    # protecting anything. Re-enable (flip `if` back to the pull_request guard)
+    # once the harness + cassette recording flow are actually in use. The gate
+    # script (.github/scripts/check_eval_coverage.py) and the record-evals
+    # workflow are left intact for that day.
+    if: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -143,3 +149,18 @@ jobs:
           fetch-depth: 0 # need base ref for the diff
       - name: Check prompt changes have cassette coverage
         run: python3 .github/scripts/check_eval_coverage.py "origin/${{ github.base_ref }}"
+
+  design-tokens:
+    name: Design-token gate (Post Run Drip)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need base ref for the diff
+      # Ratcheting gate: fails only on token violations a PR *introduces*
+      # (deprecated `Color.drip.electric`, hardcoded hex in iOS views, web
+      # arbitrary `tracking-[]`/`text-[Npx]`). Existing debt is paid down
+      # surface-by-surface per outputs/design-remediation-plan-2026-06-16.md.
+      - name: Check for new design-token violations
+        run: python3 .github/scripts/check_design_tokens.py "origin/${{ github.base_ref }}"

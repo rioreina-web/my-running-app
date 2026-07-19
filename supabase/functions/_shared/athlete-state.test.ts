@@ -626,3 +626,194 @@ Deno.test(
     assert(!stateToPromptContext(state).includes("Life context"));
   },
 );
+
+// ── Easy-session counting for auto-synced runs (fix 2026-07-02) ─────────
+// Strava/HealthKit rows routinely carry workout_type = null but an
+// Observer-parsed structure. The hard counter already read parsed_structure;
+// the easy counter read only workout_type — so a fully-parsed week reported
+// "3 hard, 0 easy" (falsely polarized). Mirrors the real prod week that
+// exposed the bug: 4 parsed-easy + 1 progression + 2 intervals.
+Deno.test(
+  "easy_sessions_7d counts Observer-parsed easy runs when workout_type is null",
+  async () => {
+    const now = Date.now();
+    const iso = (n: number) => new Date(now - n * 86400000).toISOString();
+    const strava = (id: string, day: number, mi: number, parsedType: string) => ({
+      id, user_id: REAL_USER, workout_date: iso(day), source: "strava",
+      workout_type: null, workout_distance_miles: mi,
+      workout_duration_minutes: mi * 8.5,
+      parsed_structure: { type: parsedType },
+    });
+    const db: DB = {
+      training_logs: [
+        strava("e1", 0, 7.0, "easy"),
+        strava("i1", 1, 4.0, "interval"),
+        strava("e2", 1, 8.1, "easy"),
+        strava("i2", 2, 7.0, "interval"),
+        strava("e3", 2, 4.0, "easy"),
+        strava("p1", 3, 7.1, "progression"),
+        strava("e4", 5, 17.8, "easy"),
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    assertEquals(state.hard_sessions_7d, 3, "intervals ×2 + progression = 3 hard");
+    assertEquals(state.easy_sessions_7d, 4, "parsed-easy runs must count as easy");
+  },
+);
+
+// ── Niggle recurrence: laterality (audit fix #2, 2026-07-02) ─────────
+//
+// The failure mode the classifier rewrite exists to kill: "left knee" and
+// "right knee" merging into one false three-count "pattern." Recurrence
+// must group by body_area + side, so two knees on the same athlete are two
+// distinct patterns.
+
+const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+
+Deno.test(
+  "niggle_recurrence groups by body_area + side (left knee ×2 + right knee ×1 → two entries)",
+  async () => {
+    const db: DB = {
+      body_mentions: [
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "tight", mentioned_at: isoDaysAgo(40) },
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "sore", mentioned_at: isoDaysAgo(12) },
+        { user_id: REAL_USER, body_area: "knee", side: "right", severity_hint: "pain", mentioned_at: isoDaysAgo(6) },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+
+    const knees = state.niggle_recurrence.filter((n) => n.body_area === "knee");
+    assertEquals(knees.length, 2, "left and right knee must be two distinct patterns, not one merged count");
+
+    const left = knees.find((n) => n.side === "left");
+    const right = knees.find((n) => n.side === "right");
+    assert(left && right, "both a left and a right knee entry must exist");
+    assertEquals(left!.occurrences, 2);
+    assertEquals(right!.occurrences, 1);
+    assertEquals(left!.worst_severity, "sore"); // sore beats tight
+    assertEquals(right!.worst_severity, "pain");
+
+    // No merged three-count entry anywhere.
+    assert(
+      !state.niggle_recurrence.some((n) => n.body_area === "knee" && n.occurrences === 3),
+      "the two knees must not collapse into a single 3× count",
+    );
+
+    // The prompt renders the side, not a bare "knee: 2×".
+    const prompt = stateToPromptContext(state);
+    assert(prompt.includes("left knee:"), `prompt should render sided niggle. Got:\n${prompt}`);
+  },
+);
+
+Deno.test(
+  "regex niggle scan skips voice-sourced rows (memo pipeline owns those)",
+  async () => {
+    // A voice_log row whose notes clearly name a niggle: the regex scan must
+    // NOT flag it — the memo classifier is the writer for voice rows.
+    const db: DB = {
+      training_logs: [
+        {
+          id: "v1",
+          user_id: REAL_USER,
+          workout_date: new Date(Date.now() - 3 * 86400000).toISOString(),
+          source: "voice_log",
+          cleaned_notes: "left knee was really sore on today's run",
+          workout_type: "easy",
+          workout_distance_miles: 5,
+        },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    assertEquals(
+      state.possible_injuries.filter((p) => p.body_area === "knee").length,
+      0,
+      "voice-sourced row must be skipped by the regex backfill scan",
+    );
+  },
+);
+
+Deno.test(
+  "regex niggle scan still runs on typed/imported rows, with side populated",
+  async () => {
+    const db: DB = {
+      training_logs: [
+        {
+          id: "s1",
+          user_id: REAL_USER,
+          workout_date: new Date(Date.now() - 3 * 86400000).toISOString(),
+          source: "strava",
+          cleaned_notes: "left knee was really sore on today's run",
+          workout_type: "easy",
+          workout_distance_miles: 5,
+        },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+    const knee = state.possible_injuries.find((p) => p.body_area === "knee");
+    assert(knee, "typed/imported row should still be scanned by the regex backfill");
+    assertEquals(knee!.severity_hint, "sore");
+    // Side flows into the durable recurrence view.
+    const rec = state.niggle_recurrence.find((n) => n.body_area === "knee");
+    assert(rec, "scanned mention should appear in niggle_recurrence");
+    assertEquals(rec!.side, "left");
+  },
+);
+
+// ── Niggle resolution: the "it's better now" watermark ───────────────
+
+Deno.test(
+  "a resolution after the last mention makes the niggle dormant (dropped from surfaced recurrence)",
+  async () => {
+    const db: DB = {
+      body_mentions: [
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "sore", mentioned_at: isoDaysAgo(40) },
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "tight", mentioned_at: isoDaysAgo(20) },
+      ],
+      niggle_resolutions: [
+        { user_id: REAL_USER, body_area: "knee", side: "left", resolved_at: isoDaysAgo(10) },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+
+    const knee = state.niggle_recurrence.find((n) => n.body_area === "knee" && n.side === "left");
+    assert(knee, "resolved knee should still exist in history");
+    assertEquals(knee!.status, "resolved");
+    assertEquals(knee!.occurrences, 0, "no active mentions after the all-clear");
+
+    // It must NOT surface in the coaching prompt's recurrence section.
+    const prompt = stateToPromptContext(state);
+    assert(!prompt.includes("left knee:"), `resolved niggle must not surface as an active pattern. Got:\n${prompt}`);
+  },
+);
+
+Deno.test(
+  "a new mention AFTER a resolution reactivates the niggle and flags it flared-again",
+  async () => {
+    const db: DB = {
+      body_mentions: [
+        // pre-resolution history
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "sore", mentioned_at: isoDaysAgo(40) },
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "tight", mentioned_at: isoDaysAgo(30) },
+        // post-resolution — these reactivate it
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "pain", mentioned_at: isoDaysAgo(5) },
+        { user_id: REAL_USER, body_area: "knee", side: "left", severity_hint: "sore", mentioned_at: isoDaysAgo(3) },
+      ],
+      niggle_resolutions: [
+        { user_id: REAL_USER, body_area: "knee", side: "left", resolved_at: isoDaysAgo(20) },
+      ],
+    };
+    const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+
+    const knee = state.niggle_recurrence.find((n) => n.body_area === "knee" && n.side === "left");
+    assert(knee, "reactivated knee should exist");
+    assertEquals(knee!.status, "active");
+    assertEquals(knee!.occurrences, 2, "only the two mentions AFTER the resolution count");
+    assertEquals(knee!.worst_severity, "pain");
+    assertEquals(knee!.resolved_at, isoDaysAgo(20), "carries the prior all-clear date as the flared-again signal");
+
+    // The prompt surfaces it AND notes it came back after the all-clear.
+    const prompt = stateToPromptContext(state);
+    assert(prompt.includes("left knee: 2×"), `reactivated niggle should surface. Got:\n${prompt}`);
+    assert(prompt.includes("flared again"), "prompt should note the niggle flared again after clearing");
+  },
+);

@@ -50,7 +50,7 @@ HARD RULES (safety guardrails — these always take precedence over the coach's 
 - Do not change long runs unless the request explicitly asks you to.
 
 OUTPUT FORMAT:
-Respond with a brief note to the coach (2-3 sentences, plain prose, no markdown), then the proposal between delimiters:
+Respond with a brief note to the coach (2-3 sentences, plain prose, no markdown), then the proposal between delimiters. NON-NEGOTIABLE: whenever the coach's request mentions pain, a niggle, soreness, or an injury, this note MUST contain one explicit deference sentence — that whether the athlete trains through it is the coach's call, with a medical professional if it persists. A draft that reduces load does NOT substitute for saying this.
 
 <<<DRAFT>>>
 {

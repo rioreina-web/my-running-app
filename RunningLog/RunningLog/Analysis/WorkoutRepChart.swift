@@ -38,10 +38,56 @@ struct RepChartZones {
     var fiveK: Double?
     var tenK: Double?
     var threshold: Double?   // HMP / LT
-    static let none = RepChartZones(fiveK: nil, tenK: nil, threshold: nil)
+    var mp: Double?          // marathon pace (sec/mi) — anchors the recovery-grey threshold
+    static let none = RepChartZones(fiveK: nil, tenK: nil, threshold: nil, mp: nil)
+}
+
+/// What the workout *was* — surfaced on every screen that renders the chart.
+/// `pattern` is the parsed-structure headline ("6×1600m @ threshold");
+/// `notes` is the athlete/coach free text carrying recoveries and paces.
+struct WorkoutPrescription {
+    var notes: String?
+    var pattern: String?
+    var hasContent: Bool {
+        (notes?.isEmpty == false) || (pattern?.isEmpty == false)
+    }
+}
+
+/// One past same-type session reduced to its average WORK-rep pace (and HR),
+/// for the Rep Receipt's "vs recent" comparison strip. Built from
+/// `parsed_structure.blocks` so it's the same quantity the receipt's
+/// "AVG WORK" stat shows — apples-to-apples.
+struct RecentSimilarWorkout: Identifiable {
+    let id = UUID()
+    var dateLabel: String   // "6/12"
+    var avgPaceSec: Double  // sec/mi, mean of non-recovery blocks
+    var avgHR: Int?
 }
 
 enum WorkoutLapsService {
+    /// The athlete's observed max heart rate — the highest per-lap max HR across
+    /// all their recorded laps. Used as the stable ceiling for HR-zone scaling so
+    /// a single sub-maximal workout doesn't compress the zones into Z5. Real data
+    /// only (no hardcoded max); nil when no lap HR exists. `gte 1` drops nulls so
+    /// the DESC order returns a genuine max, not a NULL row.
+    static func fetchObservedMaxHR(userId: String) async -> Int? {
+        struct Row: Decodable { let max_heart_rate: Int? }
+        do {
+            let rows: [Row] = try await supabase
+                .from("running_workout_laps")
+                .select("max_heart_rate")
+                .eq("user_id", value: userId.lowercased())
+                .gte("max_heart_rate", value: 1)
+                .order("max_heart_rate", ascending: false)
+                .limit(1)
+                .execute().value
+            return rows.first?.max_heart_rate
+        } catch {
+            Log.coach.error("WorkoutLapsService.fetchObservedMaxHR failed: \(error)")
+            return nil
+        }
+    }
+
     static func fetchLaps(workoutId: UUID) async -> [WorkoutLapRow] {
         do {
             return try await supabase
@@ -56,6 +102,343 @@ enum WorkoutLapsService {
         }
     }
 
+    /// Build clean rep geometry from the raw `running_workout_laps` table, which
+    /// already carries GPS-measured distance/time/pace per bout. Consecutive work
+    /// laps with no rest between them are ONE rep — e.g. a 1200m that the watch
+    /// auto-split at 1000m (a 1000m lap + a 204m lap) becomes a single 1204m rep.
+    /// Rest laps pass through between reps so the recovery/slot logic still works.
+    /// Deterministic and trustworthy, unlike the LLM `parse_structure`, which can
+    /// bleed recovery into work reps and corrupt the distances and paces.
+    static func mergeWorkBouts(_ raw: [WorkoutLapRow]) -> [WorkoutLapRow] {
+        let ordered = raw.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
+        var out: [WorkoutLapRow] = []
+        var i = 0
+        var idx = 0
+        while i < ordered.count {
+            if ordered[i].is_rest == true {
+                var rest = ordered[i]; rest.lap_index = idx
+                out.append(rest); idx += 1; i += 1
+                continue
+            }
+            var dist = 0.0, time = 0.0, hrWeighted = 0.0, hrTime = 0.0
+            var temp: Double? = nil, dew: Double? = nil
+            var j = i
+            while j < ordered.count, ordered[j].is_rest != true {
+                let w = ordered[j]
+                let d = w.distance_meters ?? 0
+                let t = Double(w.moving_time_seconds ?? 0)
+                dist += d; time += t
+                if let hr = w.avg_heart_rate { hrWeighted += Double(hr) * max(t, 1); hrTime += max(t, 1) }
+                if let tf = w.temp_f { temp = max(temp ?? tf, tf) }
+                if let df = w.dew_point_f { dew = max(dew ?? df, df) }
+                j += 1
+            }
+            let miles = dist / 1609.344
+            out.append(WorkoutLapRow(
+                lap_index: idx,
+                distance_meters: dist > 0 ? dist : nil,
+                moving_time_seconds: time > 0 ? Int(time) : nil,
+                avg_pace_sec_per_mile: miles > 0 ? time / miles : nil,
+                avg_heart_rate: hrTime > 0 ? Int((hrWeighted / hrTime).rounded()) : nil,
+                is_rest: false,
+                temp_f: temp,
+                dew_point_f: dew,
+                heat_adjusted_pace_sec_per_mile: nil
+            ))
+            idx += 1
+            i = j
+        }
+        return out
+    }
+
+    /// True when the raw watch laps are uniform distance auto-laps — a
+    /// continuous run lapped every km/mile, with at most the occasional pause.
+    /// These are the athlete's OWN recorded splits and must be shown as-is: a
+    /// steady / long run must never be merged or LLM-parsed into fake "reps".
+    ///
+    /// Distinguished from an interval session (where short work laps alternate
+    /// with a recovery after nearly every rep) by requiring the rest / pause
+    /// laps to be SPARSE relative to the work laps. A 24 km run auto-lapped
+    /// every km with two water-break pauses is continuous; 6×1k with a jog
+    /// after each rep is not.
+    static func isContinuousAutoLap(_ raw: [WorkoutLapRow]) -> Bool {
+        let ordered = raw.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
+        let work = ordered.filter {
+            $0.is_rest != true
+            && ($0.distance_meters ?? 0) >= 150
+            && ($0.moving_time_seconds ?? 0) >= 20
+        }
+        // Need enough splits to be a "run", not a short quality session.
+        guard work.count >= 5 else { return false }
+        // Pauses are rare in a continuous run; interval recoveries land after
+        // nearly every rep. Cap rests well below one-per-rep.
+        let rests = ordered.filter {
+            $0.is_rest == true || ($0.distance_meters ?? 0) < 150
+        }
+        guard rests.count <= max(2, work.count / 6) else { return false }
+        // Laps must be a uniform length near 1 km or 1 mile (a real auto-lap
+        // cadence), with ≥70% of them within 20% of that median length.
+        let dists = work.compactMap { $0.distance_meters }.sorted()
+        guard !dists.isEmpty else { return false }
+        let median = dists[dists.count / 2]
+        let nearKm = abs(median - 1000) < 120
+        let nearMi = abs(median - 1609.344) < 200
+        guard nearKm || nearMi else { return false }
+        let regular = work.filter { abs(($0.distance_meters ?? 0) - median) < median * 0.2 }
+        return Double(regular.count) >= Double(work.count) * 0.7
+    }
+
+    /// Result of reading the recovery-segmented execution from parse-workout-structure.
+    struct ParsedReps {
+        var laps: [WorkoutLapRow]   // work_rep + recovery blocks, mapped to lap rows
+        var intentPattern: String?  // "2k + 2×1k, repeated twice" — what was actually run
+        var edited: Bool = false    // athlete hand-corrected the structure → authoritative
+    }
+
+    /// Reps from `parsed_structure.blocks` — the recovery-segmented EXECUTION
+    /// (continuous efforts already merged: a 2k is ONE rep, not two 1ks). This is
+    /// the true rep structure and must win over raw `running_workout_laps`, which
+    /// lap every mile/km and re-split a continuous rep. Returns empty laps when
+    /// there's no parsed structure (caller falls back to the lap table).
+    static func fetchParsedReps(workoutId: UUID) async -> ParsedReps {
+        struct Block: Decodable {
+            var role: String?
+            var rep_num: Int?
+            var distance_miles: Double?
+            var duration_s: Double?
+            var avg_pace_per_mile: String?
+            var avg_hr: Int?
+        }
+        struct Parsed: Decodable { var intent_pattern: String?; var blocks: [Block]?; var edited_by_user: Bool? }
+        struct Row: Decodable { var parsed_structure: Parsed? }
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs").select("parsed_structure")
+                .eq("id", value: workoutId.uuidString).limit(1).execute().value
+            let parsed = rows.first?.parsed_structure
+            guard let blocks = parsed?.blocks, !blocks.isEmpty else {
+                return ParsedReps(laps: [], intentPattern: parsed?.intent_pattern, edited: parsed?.edited_by_user == true)
+            }
+            var out: [WorkoutLapRow] = []
+            for (i, b) in blocks.enumerated() {
+                let role = (b.role ?? "").lowercased()
+                let meters = (b.distance_miles ?? 0) * 1609.344
+                let paceSec: Double? = {
+                    guard let p = b.avg_pace_per_mile else { return nil }
+                    let parts = p.split(separator: ":")
+                    guard parts.count == 2, let m = Int(parts[0]), let s = Int(parts[1]) else { return nil }
+                    return Double(m * 60 + s)
+                }()
+                out.append(WorkoutLapRow(
+                    lap_index: i,
+                    distance_meters: meters > 0 ? meters : nil,
+                    moving_time_seconds: b.duration_s.map { Int($0) },
+                    avg_pace_sec_per_mile: paceSec,
+                    avg_heart_rate: b.avg_hr,
+                    is_rest: role == "recovery",
+                    temp_f: nil,
+                    dew_point_f: nil,
+                    heat_adjusted_pace_sec_per_mile: nil
+                ))
+            }
+            return ParsedReps(laps: out, intentPattern: parsed?.intent_pattern, edited: parsed?.edited_by_user == true)
+        } catch {
+            Log.coach.error("WorkoutLapsService.fetchParsedReps failed: \(error)")
+            return ParsedReps(laps: [], intentPattern: nil)
+        }
+    }
+
+    /// One-shot detail read: parsed reps, prescription (notes + pattern),
+    /// coach insight and workout type in a SINGLE `training_logs` round-trip.
+    ///
+    /// Replaces five separate single-column reads of the SAME row that the
+    /// detail/receipt screens used to fire in parallel — `parsed_structure`
+    /// (twice), `coach_insight`, `workout_notes`, `workout_type`. Same data,
+    /// one request, far less network churn on a phone. The individual fetch*
+    /// methods are kept for other callers; this just collapses the hot path.
+    struct DetailBundle {
+        var parsedReps: ParsedReps
+        var insight: String?
+        var workoutType: String?
+        var prescription: WorkoutPrescription
+        var edited: Bool = false   // athlete hand-corrected the structure
+    }
+
+    static func fetchDetailBundle(workoutId: UUID) async -> DetailBundle {
+        struct Block: Decodable {
+            var role: String?
+            var rep_num: Int?
+            var distance_miles: Double?
+            var duration_s: Double?
+            var avg_pace_per_mile: String?
+            var avg_hr: Int?
+        }
+        struct Parsed: Decodable {
+            var intent_pattern: String?
+            var pattern: String?
+            var blocks: [Block]?
+            var edited_by_user: Bool?
+        }
+        struct Row: Decodable {
+            var parsed_structure: Parsed?
+            var coach_insight: String?
+            var workout_notes: String?
+            var workout_type: String?
+        }
+        let empty = DetailBundle(
+            parsedReps: ParsedReps(laps: [], intentPattern: nil),
+            insight: nil, workoutType: nil,
+            prescription: WorkoutPrescription(notes: nil, pattern: nil)
+        )
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("parsed_structure,coach_insight,workout_notes,workout_type")
+                .eq("id", value: workoutId.uuidString).limit(1).execute().value
+            guard let row = rows.first else { return empty }
+            let parsed = row.parsed_structure
+
+            // Reps from parsed_structure.blocks — mirrors fetchParsedReps exactly.
+            var lapsOut: [WorkoutLapRow] = []
+            if let blocks = parsed?.blocks {
+                for (i, b) in blocks.enumerated() {
+                    let role = (b.role ?? "").lowercased()
+                    let meters = (b.distance_miles ?? 0) * 1609.344
+                    let paceSec: Double? = {
+                        guard let p = b.avg_pace_per_mile else { return nil }
+                        let parts = p.split(separator: ":")
+                        guard parts.count == 2, let m = Int(parts[0]), let s = Int(parts[1]) else { return nil }
+                        return Double(m * 60 + s)
+                    }()
+                    lapsOut.append(WorkoutLapRow(
+                        lap_index: i,
+                        distance_meters: meters > 0 ? meters : nil,
+                        moving_time_seconds: b.duration_s.map { Int($0) },
+                        avg_pace_sec_per_mile: paceSec,
+                        avg_heart_rate: b.avg_hr,
+                        is_rest: role == "recovery",
+                        temp_f: nil,
+                        dew_point_f: nil,
+                        heat_adjusted_pace_sec_per_mile: nil
+                    ))
+                }
+            }
+            let parsedReps = ParsedReps(laps: lapsOut, intentPattern: parsed?.intent_pattern)
+
+            // Prescription pattern: the parsed intent wins over the structure
+            // pattern (matches the old fetchPrescription + .task override).
+            let intent = parsed?.intent_pattern
+            let patternRaw = (intent?.isEmpty == false) ? intent : parsed?.pattern
+            let prescription = WorkoutPrescription(
+                notes: row.workout_notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+                pattern: patternRaw?.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+
+            return DetailBundle(
+                parsedReps: parsedReps,
+                insight: row.coach_insight,
+                workoutType: row.workout_type,
+                prescription: prescription,
+                edited: parsed?.edited_by_user == true
+            )
+        } catch {
+            Log.coach.error("WorkoutLapsService.fetchDetailBundle failed: \(error)")
+            return empty
+        }
+    }
+
+    /// The run's identity + qualitative signal, for the detail screen's Act 1
+    /// (date / source line) and Act 2 (mood + the athlete's own words).
+    /// Everything is optional: a voice-logged run has no laps but still has a
+    /// date, a mood and a quote, and the screen must still compose.
+    struct WorkoutSummary {
+        var date: Date?
+        var source: String?          // raw column: "strava" | "healthkit" | "manual" | …
+        var mood: String?            // closed vocabulary — see MoodBadge
+        var quote: String?           // the athlete's own words, verbatim
+        var distanceMi: Double?      // logged distance — the fallback when there are no laps
+        var durationMin: Double?
+        /// Run-level weather from `training_logs.weather_actual`. Fallback for
+        /// the HEAT-ADJ toggle when the per-lap rows carry no temp/dew — e.g. a
+        /// run enriched by open-meteo-backfill, which writes only the run
+        /// summary, not per-lap `running_workout_laps.temp_f/dew_point_f`.
+        var weatherTempF: Double?
+        var weatherDewF: Double?
+
+        /// Display name for the italic source line. Unknown sources render as
+        /// themselves rather than a guess.
+        var sourceLabel: String? {
+            guard let s = source?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
+            switch s.lowercased() {
+            case "strava":            return "Strava"
+            case "healthkit", "apple": return "HealthKit"
+            case "manual":            return "Manual"
+            case "voice", "voice_log": return "Voice"
+            case "garmin":            return "Garmin"
+            default:                  return s.capitalized
+            }
+        }
+    }
+
+    static func fetchSummary(workoutId: UUID) async -> WorkoutSummary {
+        // `workout_date` is decoded as a STRING, not a Date. The Supabase Swift
+        // SDK's `.value` decoder only parses ISO-8601 timestamps and throws on a
+        // bare DATE column — and a throw here would cost us the whole row (mood,
+        // quote, source), not just the date. Parse it ourselves instead.
+        struct WeatherActual: Decodable { var temp_f: Double?; var dew_point_f: Double? }
+        struct Row: Decodable {
+            var workout_date: String?
+            var source: String?
+            var mood: String?
+            var cleaned_notes: String?
+            var notes: String?
+            var workout_distance_miles: Double?
+            var workout_duration_minutes: Double?
+            var weather_actual: WeatherActual?
+        }
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("workout_date,source,mood,cleaned_notes,notes,workout_distance_miles,workout_duration_minutes,weather_actual")
+                .eq("id", value: workoutId.uuidString).limit(1).execute().value
+            guard let r = rows.first else { return WorkoutSummary() }
+            // Cleaned notes win over the raw transcript, but both are the
+            // athlete's own words — we never paraphrase them.
+            let quote = [r.cleaned_notes, r.notes]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .first { !$0.isEmpty }
+            return WorkoutSummary(
+                date: parseWorkoutDate(r.workout_date),
+                source: r.source,
+                mood: r.mood?.trimmingCharacters(in: .whitespacesAndNewlines),
+                quote: quote,
+                distanceMi: r.workout_distance_miles,
+                durationMin: r.workout_duration_minutes,
+                weatherTempF: r.weather_actual?.temp_f,
+                weatherDewF: r.weather_actual?.dew_point_f
+            )
+        } catch {
+            Log.coach.error("WorkoutLapsService.fetchSummary failed: \(error)")
+            return WorkoutSummary()
+        }
+    }
+
+    /// Tolerant date parse — the column has been both a timestamptz and a bare
+    /// DATE across migrations, so accept either rather than losing the header.
+    private static func parseWorkoutDate(_ raw: String?) -> Date? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: raw) { return d }
+        iso.formatOptions = [.withInternetDateTime]
+        if let d = iso.date(from: raw) { return d }
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(identifier: "UTC")
+        df.dateFormat = "yyyy-MM-dd"
+        return df.date(from: String(raw.prefix(10)))
+    }
+
     static func fetchInsight(workoutId: UUID) async -> String? {
         struct Row: Decodable { var coach_insight: String? }
         do {
@@ -64,6 +447,33 @@ enum WorkoutLapsService {
                 .eq("id", value: workoutId.uuidString).limit(1).execute().value
             return rows.first?.coach_insight
         } catch { return nil }
+    }
+
+    /// The prescribed-workout context the athlete cares about on every screen:
+    /// what the session was (parsed structure headline), plus the free-text
+    /// `workout_notes` that carry recoveries and target paces. Two tolerant
+    /// reads — a `parsed_structure` schema mismatch never costs us the notes.
+    static func fetchPrescription(workoutId: UUID) async -> WorkoutPrescription {
+        var notes: String?
+        var pattern: String?
+        struct NotesRow: Decodable { var workout_notes: String? }
+        struct ParsedRow: Decodable { var parsed_structure: ParsedStructure? }
+        do {
+            let rows: [NotesRow] = try await supabase
+                .from("training_logs").select("workout_notes")
+                .eq("id", value: workoutId.uuidString).limit(1).execute().value
+            notes = rows.first?.workout_notes
+        } catch { Log.coach.error("fetchPrescription notes failed: \(error)") }
+        do {
+            let rows: [ParsedRow] = try await supabase
+                .from("training_logs").select("parsed_structure")
+                .eq("id", value: workoutId.uuidString).limit(1).execute().value
+            pattern = rows.first?.parsed_structure?.pattern
+        } catch { /* parsed_structure is optional — ignore decode misses */ }
+        return WorkoutPrescription(
+            notes: notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+            pattern: pattern?.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 
     static func fetchType(workoutId: UUID) async -> String? {
@@ -96,10 +506,64 @@ enum WorkoutLapsService {
             let rows: [Row] = try await supabase
                 .from("athlete_state").select("pace_zones").limit(1).execute().value
             let z = rows.first?.pace_zones
-            return RepChartZones(fiveK: z?["fiveK"], tenK: z?["tenK"], threshold: z?["hm"])
+            return RepChartZones(fiveK: z?["fiveK"], tenK: z?["tenK"], threshold: z?["hm"], mp: z?["mp"])
         } catch {
             return .none
         }
+    }
+
+    /// Recent completed sessions of the same `workout_type`, each reduced to its
+    /// average WORK-rep pace (mean of non-recovery `parsed_structure` blocks) —
+    /// the same quantity the receipt's "AVG WORK" stat shows, so the comparison
+    /// strip is apples-to-apples. Rows with no parsed structure (no computable
+    /// work pace) are skipped. Returned oldest→newest for left-to-right plotting.
+    static func fetchRecentSimilar(type: String, excluding currentId: UUID, limit: Int = 6) async -> [RecentSimilarWorkout] {
+        struct Block: Decodable { var role: String?; var avg_pace_per_mile: String?; var avg_hr: Int? }
+        struct Parsed: Decodable { var blocks: [Block]? }
+        struct Row: Decodable { var workout_date: String?; var parsed_structure: Parsed? }
+        func paceSec(_ s: String?) -> Double? {
+            guard let s else { return nil }
+            let parts = s.split(separator: ":")
+            guard parts.count == 2, let m = Int(parts[0]), let sec = Int(parts[1]) else { return nil }
+            return Double(m * 60 + sec)
+        }
+        let skip: Set<String> = ["recovery", "warmup", "warm_up", "cooldown", "cool_down", "rest"]
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("workout_date,parsed_structure")
+                .eq("workout_type", value: type)
+                .neq("id", value: currentId.uuidString)
+                .order("workout_date", ascending: false)
+                .limit(24)
+                .execute().value
+            var out: [RecentSimilarWorkout] = []
+            for r in rows {
+                guard let blocks = r.parsed_structure?.blocks else { continue }
+                let work = blocks.filter { !skip.contains(($0.role ?? "").lowercased()) }
+                let paces = work.compactMap { paceSec($0.avg_pace_per_mile) }
+                guard !paces.isEmpty else { continue }
+                let hrs = work.compactMap { $0.avg_hr }
+                out.append(RecentSimilarWorkout(
+                    dateLabel: shortDate(r.workout_date),
+                    avgPaceSec: paces.reduce(0, +) / Double(paces.count),
+                    avgHR: hrs.isEmpty ? nil : hrs.reduce(0, +) / hrs.count
+                ))
+                if out.count >= limit { break }
+            }
+            return out.reversed()   // oldest → newest
+        } catch {
+            Log.coach.error("WorkoutLapsService.fetchRecentSimilar failed: \(error)")
+            return []
+        }
+    }
+
+    private static func shortDate(_ raw: String?) -> String {
+        guard let raw else { return "" }
+        let iso = String(raw.prefix(10))   // "2026-06-12"
+        let comps = iso.split(separator: "-")
+        if comps.count == 3, let mo = Int(comps[1]), let d = Int(comps[2]) { return "\(mo)/\(d)" }
+        return iso
     }
 }
 
@@ -129,6 +593,12 @@ struct WorkoutRepChart: View {
     @State private var insight: String?
     @State private var workoutType: String?
     @State private var showTypePicker = false
+    @State private var prescription: WorkoutPrescription?
+    @State private var parsedIntent: String?
+    @State private var insightLoading = false
+    @State private var insightError: String?
+    @State private var structureEdited = false
+    @State private var showStructureEditor = false
 
     private let metersPerMile = 1609.344
     static let typeOptions = ["intervals", "threshold", "tempo", "fartlek", "progression", "easy", "long_run", "recovery", "race"]
@@ -153,6 +623,7 @@ struct WorkoutRepChart: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
             } else {
                 headerStats
+                prescriptionCard
                 analysisCard
                 chartPanel
                 splitsCard
@@ -163,13 +634,47 @@ struct WorkoutRepChart: View {
             if let injectedLaps {
                 laps = injectedLaps; zones = injectedZones ?? .none; loaded = true; return
             }
-            guard let workoutId else { loaded = true; return }
-            async let l = WorkoutLapsService.fetchLaps(workoutId: workoutId)
-            async let z = WorkoutLapsService.fetchZones()
-            async let ins = WorkoutLapsService.fetchInsight(workoutId: workoutId)
-            async let ty = WorkoutLapsService.fetchType(workoutId: workoutId)
-            laps = await l; zones = await z; insight = await ins; workoutType = await ty; loaded = true
+            await reload()
         }
+        .sheet(isPresented: $showStructureEditor) {
+            if let workoutId {
+                EditWorkoutStructureSheet(
+                    workoutId: workoutId,
+                    initialLaps: laps,
+                    initialIntent: parsedIntent ?? prescription?.pattern,
+                    onSaved: { Task { await reload() } }
+                )
+            }
+        }
+    }
+
+    /// Load the workout's reps + zones + detail. Re-run after a structure
+    /// correction so the chart reflects the athlete's fix immediately.
+    @MainActor
+    private func reload() async {
+        guard let workoutId else { loaded = true; return }
+        // Three parallel reads, each hitting a DIFFERENT table: laps
+        // (running_workout_laps), zones (athlete_state), and one combined
+        // training_logs read that returns parsed reps + insight + type +
+        // prescription in a single round-trip — was five separate reads of
+        // the same row.
+        async let l = WorkoutLapsService.fetchLaps(workoutId: workoutId)
+        async let z = WorkoutLapsService.fetchZones()
+        async let bundle = WorkoutLapsService.fetchDetailBundle(workoutId: workoutId)
+        let lapRows = await l
+        let detail = await bundle
+        let parsed = detail.parsedReps
+        // Prefer the recovery-segmented execution (continuous 2ks merged into
+        // one rep) over raw mile/km laps, which would re-split it into 8×1k.
+        let parsedWorkCount = parsed.laps.filter { $0.is_rest != true }.count
+        laps = parsedWorkCount >= 2 ? parsed.laps : lapRows
+        parsedIntent = parsed.intentPattern
+        zones = await z
+        insight = detail.insight
+        workoutType = detail.workoutType
+        prescription = detail.prescription
+        structureEdited = detail.edited
+        loaded = true
     }
 
     // MARK: Header + stats
@@ -200,7 +705,7 @@ struct WorkoutRepChart: View {
                 }
                 Button("Cancel", role: .cancel) {}
             }
-            Text("\(reps.count)×\(repDistanceLabel())")
+            Text(repHeadline)
                 .font(.dripDisplay(24))
                 .foregroundStyle(Color.drip.textPrimary)
             HStack(spacing: 18) {
@@ -234,19 +739,98 @@ struct WorkoutRepChart: View {
         }
     }
 
+    // MARK: Prescription / notes
+
+    // What the workout was — the parsed-structure headline plus the free-text
+    // workout notes (recoveries, target paces). Hidden when neither exists so
+    // we never show an empty card. Lives inside the chart so it travels to
+    // every surface that renders WorkoutRepChart (detail sheet, Coach Read,
+    // Trends), per "workout notes should live on every screen."
+    @ViewBuilder
+    private var prescriptionCard: some View {
+        if let p = prescription, p.hasContent {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("THE WORKOUT")
+                    .font(.dripStat(10)).tracking(1.1)
+                    .foregroundStyle(Color.drip.coral)
+                if let pattern = p.pattern, !pattern.isEmpty {
+                    Text(pattern)
+                        .font(.dripBody(15))
+                        .foregroundStyle(Color.drip.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let notes = p.notes, !notes.isEmpty {
+                    Text(notes)
+                        .font(.dripBody(14)).lineSpacing(2)
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.drip.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.drip.divider, lineWidth: 1))
+        }
+    }
+
     // MARK: Chart
 
-    // AI analysis of the session — the stored coach_insight when it's
-    // substantial, else a deterministic computed read so the card is never empty.
+    /// True when a substantial AI insight is already stored.
+    private var hasAIInsight: Bool {
+        (insight?.trimmingCharacters(in: .whitespacesAndNewlines).count ?? 0) >= 40
+    }
+
+    // AI analysis of the session — generated on demand by a button so it runs
+    // AFTER the voice memo + parsed workout exist and can reason over the full
+    // picture (notes, structure, splits, HR, training context). Until the
+    // athlete taps Generate, we show a deterministic computed read as a preview.
     private var analysisCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("ANALYSIS")
-                .font(.dripStat(10)).tracking(1.1)
-                .foregroundStyle(Color.drip.coral)
-            Text(analysisText)
-                .font(.dripBody(15)).lineSpacing(3)
-                .foregroundStyle(Color.drip.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("ANALYSIS")
+                    .font(.dripStat(10)).tracking(1.1)
+                    .foregroundStyle(Color.drip.coral)
+                Spacer()
+            }
+
+            if insightLoading {
+                HStack(spacing: 8) {
+                    ProgressView().tint(Color.drip.coral)
+                    Text("Analyzing your workout…")
+                        .font(.dripBody(14)).foregroundStyle(Color.drip.textSecondary)
+                }
+            } else if hasAIInsight {
+                Text(insight!.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.dripBody(15)).lineSpacing(3)
+                    .foregroundStyle(Color.drip.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(computedRead)
+                    .font(.dripBody(14)).lineSpacing(3)
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if workoutId != nil {
+                    Button { Task { await generateInsight() } } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles").font(.system(size: 12, weight: .semibold))
+                            Text("Generate AI insight").font(.dripLabel(13))
+                        }
+                        .foregroundStyle(Color.drip.coral)
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(Color.drip.coralWash)
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
+                }
+            }
+
+            if let err = insightError {
+                Text(err)
+                    .font(.dripStat(10))
+                    .foregroundStyle(Color.drip.struggling)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -255,11 +839,32 @@ struct WorkoutRepChart: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.drip.divider, lineWidth: 1))
     }
 
-    private var analysisText: String {
-        if let s = insight?.trimmingCharacters(in: .whitespacesAndNewlines), s.count >= 40 {
-            return s
+    /// Call the on-demand insight generator. Fires once per workout — the
+    /// server returns the existing insight if one was already generated.
+    /// Rate-limited + monthly-capped server-side.
+    @MainActor
+    private func generateInsight() async {
+        guard let workoutId else { return }
+        insightLoading = true
+        insightError = nil
+        struct Req: Encodable { let training_log_id: String }
+        struct Resp: Decodable { let insight: String?; let error: String? }
+        do {
+            let resp: Resp = try await supabase.functions.invoke(
+                "generate-workout-insight",
+                options: .init(body: Req(training_log_id: workoutId.uuidString))
+            )
+            let text = resp.insight?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !text.isEmpty {
+                insight = text
+            } else {
+                insightError = resp.error ?? "Couldn't generate insight. Try again."
+            }
+        } catch {
+            insightError = "Couldn't reach the coach. Try again."
+            Log.coach.error("generateInsight failed: \(error)")
         }
-        return computedRead
+        insightLoading = false
     }
 
     private var computedRead: String {
@@ -343,9 +948,30 @@ struct WorkoutRepChart: View {
     // Chart wrapped in a panel card to match workout-detail-viz.html.
     private var chartPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("REP-BY-REP")
-                .font(.dripStat(10)).tracking(1.1)
-                .foregroundStyle(Color.drip.textSecondary)
+            HStack(spacing: 8) {
+                Text("REP-BY-REP")
+                    .font(.dripStat(10)).tracking(1.1)
+                    .foregroundStyle(Color.drip.textSecondary)
+                if structureEdited {
+                    Text("EDITED")
+                        .font(.dripStat(8)).tracking(1.0)
+                        .foregroundStyle(Color.drip.coral)
+                        .padding(.horizontal, 6).padding(.vertical, 3)
+                        .background(Color.drip.coralWash)
+                        .clipShape(Capsule())
+                }
+                Spacer()
+                if workoutId != nil {
+                    Button { showStructureEditor = true } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "slider.horizontal.3").font(.system(size: 10, weight: .semibold))
+                            Text(structureEdited ? "Edit" : "Fix reps").font(.dripLabel(12))
+                        }
+                        .foregroundStyle(Color.drip.coral)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             Text("Each bar is a rep — taller = faster. Line = HR. Dashed lines are your pace zones.")
                 .font(.dripBody(12.5))
                 .foregroundStyle(Color.drip.textSecondary)
@@ -478,9 +1104,24 @@ struct WorkoutRepChart: View {
     }
 
     private var emptyState: some View {
-        Text("No rep-level splits for this run — it reads as a steady effort.")
-            .font(.dripBody(14)).foregroundStyle(Color.drip.textSecondary)
-            .padding(.vertical, 24)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("No rep-level splits for this run — it reads as a steady effort.")
+                .font(.dripBody(14)).foregroundStyle(Color.drip.textSecondary)
+            if workoutId != nil {
+                Button { showStructureEditor = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "slider.horizontal.3").font(.system(size: 11, weight: .semibold))
+                        Text("This was a workout — fix the reps").font(.dripLabel(13))
+                    }
+                    .foregroundStyle(Color.drip.coral)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Color.drip.coralWash)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 24)
     }
 
     // MARK: Helpers
@@ -498,17 +1139,36 @@ struct WorkoutRepChart: View {
     }
     private func heatConditions() -> String? {
         guard let t = reps.compactMap({ $0.temp_f }).max(),
-              let d = reps.compactMap({ $0.dew_point_f }).max(), d >= 60 else { return nil }
+              let d = reps.compactMap({ $0.dew_point_f }).max(),
+              d >= PaceCalculator.heatDewPointFloorF else { return nil }
         return "\(Int(t))°F, \(Int(d))° dew"
     }
-    private func repDistanceLabel() -> String {
-        guard let m = reps.compactMap({ $0.distance_meters }).first else { return "rep" }
+    private func label(forMeters m: Double) -> String {
         let miles = m / metersPerMile
         if abs(miles - miles.rounded()) / max(miles, 1) < 0.08 && miles >= 1 { return "\(Int(miles.rounded()))mi" }
-        for r in [400.0, 600, 800, 1000, 1200, 1600] where abs(m - r) / r < 0.08 {
+        for r in [400.0, 600, 800, 1000, 1200, 1600, 2000, 3000] where abs(m - r) / r < 0.08 {
             return r.truncatingRemainder(dividingBy: 1000) == 0 ? "\(Int(r/1000))K" : "\(Int(r))m"
         }
         return "\(Int((m/100).rounded()*100))m"
+    }
+
+    private func repDistanceLabel() -> String {
+        guard let m = reps.compactMap({ $0.distance_meters }).first else { return "rep" }
+        return label(forMeters: m)
+    }
+
+    /// True when the reps aren't all the same distance (e.g. a 2k then 1ks).
+    private var isMixedReps: Bool {
+        Set(reps.compactMap { $0.distance_meters }.map { label(forMeters: $0) }).count > 1
+    }
+
+    /// Headline: "8×1K" when uniform; a compact "2K·1K·1K·2K·1K·1K" when the
+    /// session is mixed (so the real structure shows, not a false "6×2K").
+    private var repHeadline: String {
+        if reps.isEmpty { return "—" }
+        if !isMixedReps { return "\(reps.count)×\(repDistanceLabel())" }
+        let seq = reps.compactMap { $0.distance_meters }.map { label(forMeters: $0) }
+        return seq.count <= 8 ? seq.joined(separator: "·") : "\(reps.count) reps"
     }
     private func zoneTag(_ p: Double) -> String {
         if let v = zones.fiveK, p <= v + 6 { return "5K pace" }

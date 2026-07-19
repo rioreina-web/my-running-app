@@ -17,7 +17,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { detectWorkBouts, boutsFromLaps, workBoutCount, formatWorkBouts, type WorkBout, type BoutOrRecovery, type LapInput } from "../_shared/shared/workBouts.ts";
 import { isUserEdited } from "../_shared/structureOverride.ts";
@@ -64,6 +64,8 @@ Deno.serve(async (req) => {
 
   const rlBlocked = await enforceFeatureRateLimit(userId, "parse", corsHeaders, { isServiceRole });
   if (rlBlocked) return rlBlocked;
+  const monthlyCapped = await enforceMonthlyCap(userId, "parse", corsHeaders, { isServiceRole });
+  if (monthlyCapped) return monthlyCapped;
 
   try {
     const supabase = createClient(
@@ -101,7 +103,13 @@ Deno.serve(async (req) => {
     const streams = streamsBundle?.streams && typeof streamsBundle.streams === "object"
       ? streamsBundle.streams
       : null;
-    const workoutNotes = (row.workout_notes as string | null)?.trim() || null;
+    // Strip machine-generated boilerplate before the model sees it. strava-sync
+    // writes "Distance: / Duration: / Pace: / Splits: 1mi @ 7:23, …" into
+    // workout_notes — a RESTATEMENT of execution, already fully present in the
+    // GPS timeline. The model reads those split paces and manufactures a
+    // "[prescribed …]" from them. That text is never athlete intent, so remove
+    // it; only genuinely athlete-typed lines survive.
+    const workoutNotes = sanitizeAthleteNotes(row.workout_notes as string | null);
     const voiceTranscript = (row.cleaned_notes as string | null)?.trim()
       ?? (row.notes as string | null)?.trim()
       ?? null;
@@ -109,6 +117,18 @@ Deno.serve(async (req) => {
     const haveStreams = streams !== null;
     const haveNotes = !!workoutNotes;
     const haveTranscript = !!voiceTranscript;
+
+    // A prescription can only come from the ATHLETE'S OWN words. For auto-synced
+    // runs (strava/vital/healthkit) the `workout_notes` are machine-generated
+    // ("Distance / Duration / Pace / Splits") — restating execution, never a
+    // stated target. The model reads that text and manufactures a prescription
+    // from it (e.g. an easy progression run became
+    // "[prescribed 1mi @ 7:23, 1mi @ 7:00, …]", which are just the actual
+    // splits). So intent is athlete-authored only when there is a voice
+    // transcript, or the row itself is athlete-authored (voice_log/manual/check_in).
+    const rowSource = (row.source as string | null) ?? "";
+    const athleteAuthoredSource = ["voice_log", "manual", "check_in"].includes(rowSource);
+    const haveAthleteIntent = haveTranscript || (haveNotes && athleteAuthoredSource);
 
     if (!haveStreams && !haveNotes && !haveTranscript) {
       return json({ error: "no source data — workout has no streams, notes, or transcript" }, 422);
@@ -132,7 +152,24 @@ Deno.serve(async (req) => {
     const rawLaps = Array.isArray(streamsBundle?.laps) ? (streamsBundle.laps as LapInput[]) : [];
     const lapBouts = rawLaps.length ? boutsFromLaps(rawLaps, streams ?? undefined).segments : [];
     const gpsBouts = haveStreams ? detectWorkBouts(streams).segments : [];
-    const useLaps = workBoutCount(lapBouts) >= 2;
+    const lapWork = workBoutCount(lapBouts);
+    const gpsWork = workBoutCount(gpsBouts);
+    // The athlete's watch laps ARE the workout: assemble the structure from them
+    // whenever they yield a work bout. Consecutive same-effort laps are already
+    // merged (three 1-mile tempo laps → one 3-mile bout; a rep flanked by jog
+    // laps stays one rep), so a steady run auto-lapped by distance collapses to a
+    // single bout rather than fake reps. We do NOT re-cut the run from the raw GPS
+    // trace just because we can — that invents splits the athlete never ran.
+    //
+    // GPS segmentation is the FALLBACK, used only when:
+    //   • there are no usable laps (a manual entry, or a device that recorded
+    //     none), OR
+    //   • the laps BLURRED a structured session — a watch auto-lapping by distance
+    //     averages reps+recoveries into flat splits (collapsing to a single bout),
+    //     while the GPS pass can still recover the real reps (>= 2 bouts). Then,
+    //     and only then, GPS wins.
+    const lapsBlurStructure = lapWork <= 1 && gpsWork >= 2;
+    const useLaps = lapWork >= 1 && !lapsBlurStructure;
     const workBouts = useLaps ? lapBouts : gpsBouts;
     const geometrySource = useLaps ? "watch_laps" : gpsBouts.length ? "detectWorkBouts" : "model";
     const workBoutsBlock = formatWorkBouts(workBouts);
@@ -206,6 +243,23 @@ Deno.serve(async (req) => {
       if (parsed.work.execution_quality) parsed.work.execution_quality = null;
     }
 
+    // 4c) DETERMINISTIC PRESCRIPTION GUARD.
+    // The prompt forbids inventing a prescription, but the model still does it
+    // when auto-sync notes restate the splits. Enforce in code: with no
+    // athlete-authored intent there is NO prescription, so strip any
+    // "[prescribed …]" the model appended and drop any target pace (a target can
+    // only come from a stated prescription). See the "no AI hallucination" rule.
+    if (!haveAthleteIntent) {
+      if (typeof parsed.intent_pattern === "string") {
+        const stripped = parsed.intent_pattern.replace(/\s*\[prescribed[^\]]*\]/gi, "").trim();
+        parsed.intent_pattern = stripped.length ? stripped : null;
+      }
+      if (parsed.work && parsed.work.target_pace_per_mile != null) {
+        parsed.work.target_pace_per_mile = null;
+      }
+      parsed.prescription_stripped = true;
+    }
+
     parsed.parsed_at = new Date().toISOString();
     parsed.model = "gemini-2.5-flash";
     parsed.geometry_source = geometrySource;
@@ -273,6 +327,26 @@ function downsampleStreams(streams: Record<string, any>): Array<Record<string, n
     });
   }
   return out;
+}
+
+/**
+ * Drop auto-sync boilerplate lines from workout_notes, leaving only
+ * athlete-authored text. strava-sync emits lines like "Distance: 4.0 miles",
+ * "Duration: 29 min", "Pace: 7:02/mi", "Splits: 1.00 mi @ 7:23/mi, …", and
+ * "(planned 8 miles)". Those restate execution the GPS timeline already carries
+ * and are the source of fabricated prescriptions. Returns null when nothing
+ * athlete-authored remains.
+ */
+function sanitizeAthleteNotes(raw: string | null): string | null {
+  const text = raw?.trim();
+  if (!text) return null;
+  const MACHINE_LINE = /^\s*(distance|duration|pace|splits|elevation|avg\s*hr|calories)\s*:/i;
+  const kept = text
+    .split("\n")
+    .filter((line) => line.trim() && !MACHINE_LINE.test(line))
+    .join("\n")
+    .trim();
+  return kept.length ? kept : null;
 }
 
 function buildPrompt(input: {

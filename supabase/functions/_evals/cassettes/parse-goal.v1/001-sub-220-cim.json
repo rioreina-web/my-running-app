@@ -1,0 +1,25 @@
+{
+  "id": "001-sub-220-cim",
+  "prompt_name": "parse-goal.v1",
+  "description": "The canonical bug case. 'Run sub 2:20 at CIM' must be read as a marathon goal: recognise CIM = California International Marathon, distance marathon, and target_time_seconds = 8400 (2h20m). It must NOT read '2:20' as 140 seconds (the old regex bug), and must NOT classify a real race goal as out_of_scope. Framing 'sub 2:20' is preserved.",
+  "vars": {},
+  "input": "\n\n## The athlete's goal (their exact words)\n\"Run sub 2:20 at CIM\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["scope", "scope_reason", "performance_targets", "named_race", "constraints", "confidence"],
+    "required_patterns": [
+      "\"scope\":\\s*\"running_goal\"",
+      "(?i)california international marathon",
+      "\"race_distance\":\\s*\"marathon\"",
+      "\"target_time_seconds\":\\s*8400\\b",
+      "(?i)sub 2:20"
+    ],
+    "forbidden_patterns": [
+      "\"target_time_seconds\":\\s*140\\b",
+      "(?i)\"scope\":\\s*\"out_of_scope\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

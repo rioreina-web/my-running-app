@@ -21,6 +21,12 @@
  * follow-up (see trends-tab-data-wiring.md §5.2 / §9).
  */
 
+import {
+  qualityMilesForLog,
+  type QualityLap,
+  type QualitySegment,
+} from "../_shared/quality-volume.ts";
+
 // ─── Input types (subset of the DB rows we actually read) ──────────────
 
 export interface TimelineLog {
@@ -34,6 +40,9 @@ export interface TimelineLog {
   source?: string | null; // strava | auto_sync | voice_log | check_in | …
   // Athlete's explicit decision: null = auto (heuristic), true = trimmed, false = kept.
   stats_excluded?: boolean | null;
+  // Per-segment splits, used to count quality mile-by-mile rather than
+  // all-or-nothing on the whole workout.
+  pace_segments?: QualitySegment[] | null;
 }
 
 export interface TimelineFeature {
@@ -54,6 +63,12 @@ export interface TimelineInput {
   logs: TimelineLog[];
   features: TimelineFeature[];
   mentions: TimelineMention[];
+  /** The athlete's MP anchor (sec/mi) — the quality boundary. Null when we
+   *  have no anchor, in which case quality volume is 0 rather than guessed. */
+  mpSecPerMile?: number | null;
+  /** Rep-level laps by workout id. Preferred over `pace_segments` for quality,
+   *  which mile splits systematically undercount on interval sessions. */
+  lapsByWorkout?: Map<string, QualityLap[]>;
 }
 
 // ─── Output type (mirrors the iOS TrendsWeek decode shape) ─────────────
@@ -351,13 +366,22 @@ export function buildTrendsTimeline(
       .filter((r) => r.t >= s && r.t < e)
       .map((r) => r.m);
 
-    // Volume + intensity
+    // Volume + intensity.
+    //
+    // Quality is counted PER SEGMENT at MP-or-faster (see _shared/quality-volume.ts),
+    // not by classifying the whole workout. The old all-or-nothing rule booked a
+    // rep session's floats, rests and cooldown as quality, while a long run with
+    // an MP block scored zero because its easy miles diluted the average.
     let miles = 0;
     let qualityMiles = 0;
     for (const log of weekLogs) {
       const dist = log.workout_distance_miles ?? 0;
       miles += dist;
-      if (isQuality(log, featuresById.get(log.id))) qualityMiles += dist;
+      qualityMiles += qualityMilesForLog(
+        log,
+        input.mpSecPerMile ?? null,
+        input.lapsByWorkout?.get(log.id),
+      );
     }
 
     // Key session = highest-intensity quality log (tie → fastest pace).

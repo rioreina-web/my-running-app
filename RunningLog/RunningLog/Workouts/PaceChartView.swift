@@ -70,9 +70,9 @@ struct PaceChartView: View {
             HStack(spacing: 8) {
                 Image(systemName: "target")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.coral)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("GOAL RACE")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
@@ -231,9 +231,9 @@ struct PaceChartView: View {
 
         if let high {
             if viewModel.useKilometers {
-                return "\(PaceCalculator.formatPaceKm(high)) - \(PaceCalculator.formatPaceKm(low))"
+                return "\(PaceCalculator.formatPaceKm(high))\u{2013}\(PaceCalculator.formatPaceKm(low))"
             } else {
-                return "\(PaceCalculator.formatPace(high)) - \(PaceCalculator.formatPace(low))"
+                return "\(PaceCalculator.formatPace(high))\u{2013}\(PaceCalculator.formatPace(low))"
             }
         } else {
             if viewModel.useKilometers {
@@ -249,11 +249,11 @@ struct PaceChartView: View {
     private var weatherAdjustmentSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "thermometer.sun.fill")
+                Image(systemName: "thermometer.sun")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.coralLight)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("WEATHER ADJUSTMENT")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
@@ -397,7 +397,7 @@ struct PaceChartView: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("TEMP")
-                            .font(.dripCaption(9))
+                            .font(.dripEyebrow(9))
                             .foregroundStyle(Color.drip.textTertiary)
                         Text(weather.formattedTemperature)
                             .font(.dripStat(22))
@@ -407,7 +407,7 @@ struct PaceChartView: View {
                     if let dewPoint = weather.formattedDewPoint {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("DEW POINT")
-                                .font(.dripCaption(9))
+                                .font(.dripEyebrow(9))
                                 .foregroundStyle(Color.drip.textTertiary)
                             Text(dewPoint)
                                 .font(.dripStat(22))
@@ -529,9 +529,9 @@ struct PaceChartView: View {
             HStack(spacing: 8) {
                 Image(systemName: "speedometer")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.energized)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("RACE PACES")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
@@ -626,11 +626,11 @@ struct PaceChartView: View {
     private var trainingPacesSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "heart.fill")
+                Image(systemName: "heart")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.drip.positive)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Text("TRAINING PACES")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
@@ -654,7 +654,7 @@ struct PaceChartView: View {
                         high: viewModel.adjustedTrainingPaces["Easy Slow"]
                     ),
                     color: Color.drip.positive,
-                    icon: "leaf.fill",
+                    icon: "leaf",
                     isClickable: false,
                     pace: nil
                 )
@@ -715,7 +715,7 @@ struct PaceChartView: View {
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(mpPace) : PaceCalculator.formatPace(mpPace),
                         adjustedPaceRange: nil,
                         color: Color.drip.coral,
-                        icon: "bolt.fill",
+                        icon: "bolt",
                         isClickable: true,
                         pace: mpPace
                     )
@@ -731,7 +731,7 @@ struct PaceChartView: View {
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(hmpPace) : PaceCalculator.formatPace(hmpPace),
                         adjustedPaceRange: nil,
                         color: Color.drip.tired,
-                        icon: "bolt.horizontal.fill",
+                        icon: "bolt.horizontal",
                         isClickable: true,
                         pace: hmpPace
                     )
@@ -838,9 +838,12 @@ struct PaceChartView: View {
 
         let content = HStack {
             HStack(spacing: 10) {
+                // Icon sits at ink-2 (stroked, no color-coding). Per the
+                // design system the zone is named by its label, not painted —
+                // coral stays reserved as the single accent per cluster.
                 Image(systemName: icon)
                     .font(.system(size: 14))
-                    .foregroundStyle(color)
+                    .foregroundStyle(Color.drip.textSecondary)
                     .frame(width: 20)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -859,7 +862,7 @@ struct PaceChartView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(adjusted) \(unit)")
                         .font(.dripStat(16))
-                        .foregroundStyle(viewModel.currentAdjustment?.heatCategory.color ?? color)
+                        .foregroundStyle(viewModel.currentAdjustment?.heatCategory.color ?? Color.drip.textPrimary)
                     Text(paceRange)
                         .font(.dripCaption(10))
                         .foregroundStyle(Color.drip.textTertiary)
@@ -868,7 +871,7 @@ struct PaceChartView: View {
             } else {
                 Text("\(paceRange) \(unit)")
                     .font(.dripStat(16))
-                    .foregroundStyle(color)
+                    .foregroundStyle(Color.drip.textPrimary)
             }
 
             if isClickable {
@@ -908,11 +911,11 @@ struct PaceChartView: View {
     private var infoSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "info.circle.fill")
+                Image(systemName: "info.circle")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.drip.textTertiary)
                 Text("ABOUT THESE PACES")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
             }
@@ -988,9 +991,9 @@ struct PaceSplitsSheet: View {
                         HStack(spacing: 8) {
                             Image(systemName: "timer")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Color.drip.energized)
+                                .foregroundStyle(Color.drip.textSecondary)
                             Text("SPLITS")
-                                .font(.dripCaption(11))
+                                .font(.dripEyebrow(11))
                                 .foregroundStyle(Color.drip.textSecondary)
                                 .tracking(1.2)
                             Spacer()
@@ -1038,7 +1041,7 @@ struct PaceSplitsSheet: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 16))
-                    .foregroundStyle(Color.drip.coral)
+                    .foregroundStyle(Color.drip.textSecondary)
                     .frame(width: 24)
 
                 Text(distance)

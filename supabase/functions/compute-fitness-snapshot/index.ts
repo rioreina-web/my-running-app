@@ -27,7 +27,10 @@ import { corsHeaders } from "../_shared/cors.ts";
 import {
   generateFitnessPrediction,
   paceStringToSeconds,
+  RACE_TYPE_LABEL,
+  RACE_TYPE_TOLERANCE,
   type DetectedRace,
+  type LapInput,
   type PredictionInput,
   type RaceType,
   type VoiceLogInput,
@@ -111,7 +114,7 @@ Deno.serve(async (req: Request) => {
 async function computeAndUpsert(
   db: SupabaseClient,
   userId: string,
-): Promise<{ wrote: boolean; reason?: string; confidence?: string; estimated_10k_pace_seconds?: number }> {
+): Promise<{ wrote: boolean; reason?: string; confidence?: string; estimated_10k_pace_seconds?: number; race_candidates_tagged?: number }> {
   const now = new Date();
   const cutoff30 = new Date(now.getTime() - 30 * 86400000).toISOString().slice(0, 10);
   const cutoff180 = new Date(now.getTime() - 180 * 86400000).toISOString().slice(0, 10);
@@ -122,7 +125,7 @@ async function computeAndUpsert(
   const { data: logRows, error: logErr } = await db
     .from("training_logs")
     .select(
-      "workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, cleaned_notes, notes, workout_notes, parsed_structure, pace_segments, race_result",
+      "id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, cleaned_notes, notes, workout_notes, parsed_structure, pace_segments, race_result, weather_actual",
     )
     .eq("user_id", userId)
     .gte("workout_date", cutoff180)
@@ -133,24 +136,11 @@ async function computeAndUpsert(
   const extendedWorkouts: WorkoutInput[] = [];
   const extendedVoiceLogs: VoiceLogInput[] = [];
   const seededRaces: DetectedRace[] = [];
+  const workoutDateById = new Map<string, string>();
   for (const row of logRows ?? []) {
     const date = toDay(row.workout_date as string);
     if (!date) continue;
-
-    // Confirmed races live in training_logs (workout_type='race' + race_result),
-    // not a separate table. Seed them into the same anchor-selection logic.
-    const rr = row.race_result as { distance?: string; finish_time_seconds?: number } | null;
-    if (rr && typeof rr.finish_time_seconds === "number") {
-      const rt = distanceToRaceType(String(rr.distance ?? ""));
-      if (rt) {
-        seededRaces.push({
-          raceType: rt,
-          paceSecondsPerMile: rr.finish_time_seconds / RACE_TYPE_MILES[rt],
-          date,
-          totalTimeSeconds: rr.finish_time_seconds,
-        });
-      }
-    }
+    if (row.id) workoutDateById.set(String(row.id), date);
 
     const miles = num(row.workout_distance_miles);
     const durationMinutes = num(row.workout_duration_minutes);
@@ -175,11 +165,99 @@ async function computeAndUpsert(
       pacesMentioned: [],
       paceSegments: mapPaceSegments(row.pace_segments),
       parsedStructure: mapParsedStructure(row.parsed_structure),
+      weather: mapWeather(row.weather_actual),
     });
   }
 
   const workouts = extendedWorkouts.filter((w) => w.date >= cutoff30);
   const voiceLogs = extendedVoiceLogs.filter((v) => v.date >= cutoff30);
+
+  // Lap-level interval data (last 21 days) — the rest-aware, heat-stamped,
+  // per-rep signal the v2 model merges into its hard-effort pool.
+  const cutoff21 = new Date(now.getTime() - 21 * 86400000).toISOString();
+  const { data: lapRows } = await db
+    .from("running_workout_laps")
+    .select(
+      "workout_id, lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, is_rest, total_elevation_gain, temp_f, dew_point_f, heat_adjusted_pace_sec_per_mile, lap_start_at",
+    )
+    .eq("user_id", userId)
+    .gte("lap_start_at", cutoff21)
+    .order("lap_start_at", { ascending: true })
+    .limit(2000);
+  // Confirmed races — ALL TIME (2026-07-17). Races live in training_logs
+  // (workout_type='race' + race_result), not a separate table. Recent ones
+  // (≤36 wk) anchor current fitness; older ones are lifetime PRs: they feed
+  // speed evidence and the PR display, never the current-fitness anchor.
+  const { data: raceRows } = await db
+    .from("training_logs")
+    .select("id, workout_date, race_result")
+    .eq("user_id", userId)
+    .not("race_result", "is", null)
+    .order("workout_date", { ascending: false })
+    .limit(100);
+  for (const row of raceRows ?? []) {
+    const date = toDay(row.workout_date as string);
+    if (!date) continue;
+    if (row.id) workoutDateById.set(String(row.id), date);
+    const rr = row.race_result as { distance?: string; finish_time_seconds?: number } | null;
+    if (rr && typeof rr.finish_time_seconds === "number") {
+      const rt = distanceToRaceType(String(rr.distance ?? ""));
+      if (rt) {
+        seededRaces.push({
+          raceType: rt,
+          paceSecondsPerMile: rr.finish_time_seconds / RACE_TYPE_MILES[rt],
+          date,
+          totalTimeSeconds: rr.finish_time_seconds,
+          // Lets the model find this race's laps for grade+heat adjustment
+          // (race performances read as flat-cool equivalents, 2026-07-17).
+          sourceWorkoutId: String(row.id),
+        });
+      }
+    }
+  }
+
+  // Race-day laps (2026-07-17): confirmed races can be months older than the
+  // 21-day training window, but their laps carry the hills + weather needed to
+  // read the performance as a flat-cool equivalent. Fetch them separately.
+  const raceWorkoutIds = seededRaces
+    .map((r) => r.sourceWorkoutId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  let raceLapRows: typeof lapRows = [];
+  if (raceWorkoutIds.length > 0) {
+    const { data } = await db
+      .from("running_workout_laps")
+      .select(
+        "workout_id, lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, is_rest, total_elevation_gain, temp_f, dew_point_f, heat_adjusted_pace_sec_per_mile, lap_start_at",
+      )
+      .eq("user_id", userId)
+      .in("workout_id", raceWorkoutIds)
+      .order("lap_start_at", { ascending: true })
+      .limit(500);
+    raceLapRows = data ?? [];
+  }
+
+  const laps: LapInput[] = [];
+  const seenLapKeys = new Set<string>();
+  for (const l of [...(lapRows ?? []), ...(raceLapRows ?? [])]) {
+    const key = `${l.workout_id}#${l.lap_index}`;
+    if (seenLapKeys.has(key)) continue;
+    seenLapKeys.add(key);
+    const date = workoutDateById.get(String(l.workout_id)) ?? toDay(String(l.lap_start_at ?? ""));
+    if (!date) continue;
+    laps.push({
+      workoutId: String(l.workout_id),
+      date,
+      lapIndex: num(l.lap_index),
+      distanceMeters: numOrNull(l.distance_meters),
+      movingTimeSeconds: numOrNull(l.moving_time_seconds),
+      avgPaceSecPerMile: numOrNull(l.avg_pace_sec_per_mile),
+      isRest: typeof l.is_rest === "boolean" ? l.is_rest : null,
+      totalElevationGain: numOrNull(l.total_elevation_gain),
+      tempF: numOrNull(l.temp_f),
+      dewPointF: numOrNull(l.dew_point_f),
+      heatAdjustedPaceSecPerMile: numOrNull(l.heat_adjusted_pace_sec_per_mile),
+    });
+  }
 
   // Prior snapshots (last 16 weeks) for the decay-gated baseline fallback.
   const { data: snapRows } = await db
@@ -216,6 +294,7 @@ async function computeAndUpsert(
     priorSnapshots,
     plan,
     seededRaces,
+    laps,
     now,
   });
 
@@ -260,7 +339,102 @@ async function computeAndUpsert(
     if (error) throw new Error(`insert: ${error.message}`);
   }
 
-  return { wrote: true, confidence: prediction.confidence, estimated_10k_pace_seconds: prediction.estimated10kPaceSeconds };
+  // ── Race-candidate gathering (2026-07-17) ──
+  // Detection-not-decision: runs that LOOK like races (standard distance,
+  // ≥15% faster than the athlete's average) get tagged on their own log row
+  // (`extracted_data.race_candidate`, status "pending") for the app to ask
+  // "was this a race?". Confirm → the app writes race_result and the race
+  // joins the anchors; dismiss → status "dismissed", never asked again.
+  // Best-effort: a failure here must never block the snapshot write.
+  let candidatesTagged = 0;
+  try {
+    candidatesTagged = await tagRaceCandidates(db, userId, logRows ?? [], now);
+  } catch (e) {
+    console.error(`race-candidate tagging failed (non-fatal): ${(e as Error).message}`);
+  }
+
+  return {
+    wrote: true,
+    confidence: prediction.confidence,
+    estimated_10k_pace_seconds: prediction.estimated10kPaceSeconds,
+    race_candidates_tagged: candidatesTagged,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Race-candidate detection (2026-07-17). Mirrors the model's Phase-2 GPS race
+// detection thresholds (standard distance ± tolerance, pace ≥15% faster than
+// the athlete's average) but runs against raw rows so candidates can be tagged
+// back onto their source training_logs row.
+// ---------------------------------------------------------------------------
+
+async function tagRaceCandidates(
+  db: SupabaseClient,
+  userId: string,
+  rows: Array<Record<string, unknown>>,
+  now: Date,
+): Promise<number> {
+  // Athlete's average pace over the fetched window (all runs, any type).
+  const paces: number[] = [];
+  for (const row of rows) {
+    const miles = num(row.workout_distance_miles);
+    const durationMinutes = num(row.workout_duration_minutes);
+    if (miles > 0.5 && durationMinutes > 0) paces.push((durationMinutes * 60) / miles);
+  }
+  if (paces.length < 10) return 0; // not enough context to call anything "fast"
+  const avgPace = paces.reduce((s, p) => s + p, 0) / paces.length;
+
+  const candidates: Array<{ id: string; raceType: RaceType; finishSeconds: number }> = [];
+  for (const row of rows) {
+    if (String(row.workout_type ?? "") === "race") continue;
+    if (row.race_result != null) continue;
+    const miles = num(row.workout_distance_miles);
+    const durationMinutes = num(row.workout_duration_minutes);
+    if (!(miles > 0.5 && durationMinutes > 0) || !row.id) continue;
+    const pace = (durationMinutes * 60) / miles;
+    if (pace >= avgPace * 0.85) continue; // not a race-level effort
+
+    for (const rt of Object.keys(RACE_TYPE_MILES) as RaceType[]) {
+      if (Math.abs(miles - RACE_TYPE_MILES[rt]) <= RACE_TYPE_TOLERANCE[rt]) {
+        candidates.push({ id: String(row.id), raceType: rt, finishSeconds: Math.round(durationMinutes * 60) });
+        break;
+      }
+    }
+  }
+  if (candidates.length === 0) return 0;
+
+  // Only tag rows that have never been asked about (any prior status stands).
+  const { data: existing } = await db
+    .from("training_logs")
+    .select("id, extracted_data")
+    .in("id", candidates.map((c) => c.id));
+  const extractedById = new Map<string, Record<string, unknown>>();
+  for (const row of existing ?? []) {
+    extractedById.set(String(row.id), (row.extracted_data as Record<string, unknown>) ?? {});
+  }
+
+  let tagged = 0;
+  for (const c of candidates) {
+    const extracted = extractedById.get(c.id) ?? {};
+    if (extracted.race_candidate != null) continue;
+    const merged = {
+      ...extracted,
+      race_candidate: {
+        race_type: c.raceType,
+        race_label: RACE_TYPE_LABEL[c.raceType],
+        finish_time_seconds: c.finishSeconds,
+        detected_at: now.toISOString(),
+        status: "pending",
+      },
+    };
+    const { error } = await db
+      .from("training_logs")
+      .update({ extracted_data: merged })
+      .eq("id", c.id)
+      .eq("user_id", userId);
+    if (!error) tagged++;
+  }
+  return tagged;
 }
 
 // ---------------------------------------------------------------------------
@@ -344,6 +518,22 @@ function toDay(raw: string): string | null {
 function num(v: any): number {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+// deno-lint-ignore no-explicit-any
+function numOrNull(v: any): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** training_logs.weather_actual jsonb → model WeatherInput (or null). */
+// deno-lint-ignore no-explicit-any
+function mapWeather(raw: any): VoiceLogInput["weather"] {
+  if (!raw || typeof raw !== "object") return null;
+  const tempF = numOrNull(raw.temp_f);
+  const dewPointF = numOrNull(raw.dew_point_f);
+  return tempF !== null && dewPointF !== null ? { tempF, dewPointF } : null;
 }
 
 function json(body: unknown, status = 200): Response {

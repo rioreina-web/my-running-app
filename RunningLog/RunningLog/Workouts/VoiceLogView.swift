@@ -31,11 +31,15 @@ private enum JournalKind: String, CaseIterable {
 struct VoiceLogView: View {
     @Environment(CoachCheckInManager.self) private var checkInManager
     @Environment(\.selectedTab) private var selectedTab
-    @StateObject private var healthKitManager = HealthKitManager()
+    // Beta-audit item #8 (2026-07-16): use the SHARED manager. A fresh
+    // `HealthKitManager()` here had its own isAuthorized/readState that
+    // diverged from the instance the app actually syncs with.
+    @ObservedObject private var healthKitManager = HealthKitManager.shared
     @State private var viewModel = VoiceLogViewModel()
     @State private var isRecording = false
     @State private var audioRecorder: AVAudioRecorder?
     @State private var recordingURL: URL?
+    @State private var showMicDeniedAlert = false
     @State private var manualNotes = ""
     @State private var recordingDuration: TimeInterval = 0
     @State private var timer: Timer?
@@ -223,6 +227,16 @@ struct VoiceLogView: View {
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+        }
+        .alert("Microphone access needed", isPresented: $showMicDeniedAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("Voice memos need the microphone. Enable it in Settings → PostRunDrip → Microphone. You can also type your notes instead.")
         }
     }
 
@@ -644,6 +658,25 @@ struct VoiceLogView: View {
                 Spacer()
             }
             .padding(.vertical, 32)
+        } else if viewModel.historyLogs.isEmpty && viewModel.loadFailed {
+            // A load error — NOT genuinely empty. Never show "No entries yet"
+            // here: it reads as data loss when the rows are safe on the server.
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Couldn't load your journal. Your entries are safe — this is a connection hiccup.")
+                    .font(.system(size: 14, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+                Button {
+                    Task { await viewModel.loadHistory() }
+                } label: {
+                    Text("Tap to retry")
+                        .font(.dripLabel(13))
+                        .foregroundStyle(Color.drip.coral)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 24)
         } else if viewModel.historyLogs.isEmpty {
             Text("No entries yet — record or type to start your journal.")
                 .font(.system(size: 14, design: .serif).italic())
@@ -826,6 +859,30 @@ struct VoiceLogView: View {
     }
 
     private func startRecording() {
+        // Beta-audit item #8 (2026-07-16): recording used to start blind —
+        // no permission request, and `record()`'s return value ignored. A
+        // user who denied the mic watched the timer run, then a silent
+        // empty .m4a uploaded and transcribed to a blank journal entry.
+        switch AVAudioApplication.shared.recordPermission {
+        case .denied:
+            showMicDeniedAlert = true
+        case .undetermined:
+            Task {
+                let granted = await AVAudioApplication.requestRecordPermission()
+                await MainActor.run {
+                    if granted {
+                        beginRecording()
+                    } else {
+                        showMicDeniedAlert = true
+                    }
+                }
+            }
+        default:
+            beginRecording()
+        }
+    }
+
+    private func beginRecording() {
         let fileName = "training_memo_\(Date().timeIntervalSince1970).m4a"
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let audioURL = documentsPath.appendingPathComponent(fileName)
@@ -845,7 +902,17 @@ struct VoiceLogView: View {
             // "Failed to start recording" is honest.
             try AVAudioSession.sharedInstance().setActive(true)
             audioRecorder = try AVAudioRecorder(url: audioURL, settings: settings)
-            audioRecorder?.record()
+
+            // record() returns false when the hardware/route can't start
+            // (another app holds the mic, route change mid-setup). Treat it
+            // as a real failure — never run the timer over dead air.
+            guard audioRecorder?.record() == true else {
+                audioRecorder = nil
+                try? AVAudioSession.sharedInstance().setActive(false)
+                viewModel.statusMessage = "Error: Couldn't start recording — another app may be using the microphone."
+                return
+            }
+
             recordingURL = audioURL
             isRecording = true
             viewModel.statusMessage = ""

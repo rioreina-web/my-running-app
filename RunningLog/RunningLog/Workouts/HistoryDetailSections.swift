@@ -26,7 +26,7 @@ struct CoachInsightSection: View {
                 Image(systemName: "figure.run.circle.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.drip.coral)
-                Text("COACH INSIGHT")
+                Text("AI INSIGHT")
                     .font(.dripCaption(11))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)

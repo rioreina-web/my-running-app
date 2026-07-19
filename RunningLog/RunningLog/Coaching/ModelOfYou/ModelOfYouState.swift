@@ -54,7 +54,11 @@ struct ModelOfYouState: Decodable {
     struct RecoveryRead: Decodable {
         var down_week: Bool?
         var hard_sessions_28d: Int?
-        var avg_days_between_hard: Int?
+        // Backend emits this as an AVERAGE (e.g. 5.7), so it must decode as a
+        // Double. It was typed Int?, and a fractional value like 5.7 threw
+        // "Number 5.7 is not representable in Swift" — which failed the WHOLE
+        // ModelOfYouState decode, blanking the entire surface, not just this row.
+        var avg_days_between_hard: Double?
     }
 
     struct ZonePct: Decodable {

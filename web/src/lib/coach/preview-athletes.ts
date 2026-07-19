@@ -1,5 +1,6 @@
 import "server-only";
 import type { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { PreviewAthlete } from "@/components/coach/athlete-preview-rail";
 
 /** The RLS-scoped server client returned by `@/lib/supabase/server`. */
@@ -171,7 +172,8 @@ export async function fetchPreviewAthletes(
   // Names (auth.users.email — no user_profiles table on this DB), anchors
   // (athlete_state.confirmed_races + goal), and goal fallback
   // (athlete_pace_profiles). All coach-readable under existing RLS.
-  const [authRes, stateRes, profileRes] = await Promise.all([
+  const admin = createAdminClient();
+  const [authRes, stateRes, profileRes, settingsRes] = await Promise.all([
     supabase.schema("auth").from("users").select("id, email").in("id", athleteIds),
     supabase
       .from("athlete_state")
@@ -181,11 +183,17 @@ export async function fetchPreviewAthletes(
       .from("athlete_pace_profiles")
       .select("user_id, goal_race_distance, goal_time_seconds, manual_anchor_distance, manual_anchor_time_seconds")
       .in("user_id", athleteIds),
+    // Coach-set display names (athlete_settings is owner/service-role only).
+    admin.from("athlete_settings").select("user_id, display_name").in("user_id", athleteIds),
   ]);
 
   const emailById = new Map<string, string | null>();
   for (const row of (authRes.data ?? []) as Array<{ id: string; email: string | null }>) {
     emailById.set(row.id, row.email);
+  }
+  const nameById = new Map<string, string | null>();
+  for (const row of (settingsRes.data ?? []) as Array<{ user_id: string; display_name: string | null }>) {
+    nameById.set(row.user_id, row.display_name);
   }
   const stateById = new Map<
     string,
@@ -225,7 +233,7 @@ export async function fetchPreviewAthletes(
     const state = stateById.get(id);
     const profile = profileById.get(id);
     const email = emailById.get(id);
-    const name = email?.split("@")[0] || `Athlete ${id.slice(0, 6)}`;
+    const name = nameById.get(id)?.trim() || email?.split("@")[0] || `Athlete ${id.slice(0, 6)}`;
 
     // A manual anchor (explicit, user-set) is treated as a confirmed race so
     // it outranks the goal; otherwise fall through to real races then goal.

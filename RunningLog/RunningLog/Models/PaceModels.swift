@@ -233,20 +233,22 @@ enum NamedPace: String, CaseIterable, Codable {
         }
     }
 
+    /// Zone chip colors ride the universal blue pace ramp
+    /// (`PaceSpectrum`) so a zone is the same color on every surface.
     var color: Color {
         switch self {
         case .recovery: return Color.drip.neutral
-        case .easy: return Color.drip.positive
-        case .longRun: return Color.drip.energized
-        case .moderate: return Color.drip.energized.opacity(0.7).mix(with: Color.drip.coral, by: 0.3)
-        case .steady: return Color.drip.coralLight
-        case .mp: return Color.drip.coral
-        case .hm: return Color.drip.coralLight
-        case .threshold: return Color.drip.injured
-        case .tenK: return Color.drip.tired
-        case .fiveK: return Color.drip.struggling
-        case .threeK: return Color.drip.speed.opacity(0.85)
-        case .mile: return Color.drip.speed
+        case .easy: return PaceSpectrum.easy
+        case .longRun: return PaceSpectrum.easy
+        case .moderate: return PaceSpectrum.moderate
+        case .steady: return PaceSpectrum.steady
+        case .mp: return PaceSpectrum.mp
+        case .hm: return PaceSpectrum.hmp
+        case .threshold: return PaceSpectrum.lt
+        case .tenK: return PaceSpectrum.tenK
+        case .fiveK: return PaceSpectrum.fiveK
+        case .threeK: return PaceSpectrum.threeK
+        case .mile: return PaceSpectrum.mile
         }
     }
 
@@ -499,11 +501,15 @@ struct EquivalentPaces {
     // The single-number ratios below are midpoint anchors used by surfaces
     // that can't yet render a range. They will be retired once those surfaces
     // migrate to the engine's range output.
-    static let recoveryMPRatio: Double = 1.5476 // 65% MP speed — midpoint of recovery band
-    static let easyMPRatio: Double = 1.3393     // 75% MP speed — midpoint of easy band
-    static let longRunMPRatio: Double = 1.3393  // = easy (legacy alias)
-    static let moderateMPRatio: Double = 1.1806 // 85% MP speed — midpoint of moderate band
-    static let steadyMPRatio: Double = 1.0556   // 95% MP speed — midpoint of steady band
+    // Single-number training paces use the SPEED midpoint (MP speed ÷ ratio),
+    // the canonical convention shared with paces.ts TRAINING_MP_SPEED_RATIO and
+    // web derivePaceTableFromGoal. The old values (1.3393 etc.) were the
+    // ARITHMETIC/pace midpoint of the band edges — ~3 s/mi off, the §6 drift.
+    static let recoveryMPRatio: Double = 1.5385 // MP speed / 0.65
+    static let easyMPRatio: Double = 1.3333     // MP speed / 0.75
+    static let longRunMPRatio: Double = 1.3333  // = easy (long runs at easy pace)
+    static let moderateMPRatio: Double = 1.1765 // MP speed / 0.85
+    static let steadyMPRatio: Double = 1.0526   // MP speed / 0.95
 
     /// Derive training-zone paces from race-pace anchors. Used by both initializers
     /// so the zone table is identical when inputs are equivalent.

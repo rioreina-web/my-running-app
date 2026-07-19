@@ -19,6 +19,59 @@ struct PaceSegment: Codable, Identifiable {
         case pacePerMile = "pace_per_mile"
         case avgHeartRate = "avg_heart_rate"
     }
+
+    init(effort: String, distanceMiles: Double, durationSeconds: Double,
+         pacePerMile: String, avgHeartRate: Int?) {
+        self.effort = effort
+        self.distanceMiles = distanceMiles
+        self.durationSeconds = durationSeconds
+        self.pacePerMile = pacePerMile
+        self.avgHeartRate = avgHeartRate
+    }
+
+    /// Decodes leniently. Rep-shaped segments written by the structure parser
+    /// carry only `{effort, pace_per_mile, distance_miles}` — no duration. A
+    /// strict decode there throws, and because the journal decodes all 50 rows
+    /// as one array, a single such segment empties the entire feed. Duration is
+    /// recoverable from pace × distance, so recover it instead of failing.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        effort = (try? c.decode(String.self, forKey: .effort)) ?? "easy"
+        distanceMiles = (try? c.decode(Double.self, forKey: .distanceMiles)) ?? 0
+        pacePerMile = (try? c.decode(String.self, forKey: .pacePerMile)) ?? ""
+        avgHeartRate = try? c.decodeIfPresent(Int.self, forKey: .avgHeartRate)
+
+        if let seconds = try? c.decode(Double.self, forKey: .durationSeconds) {
+            durationSeconds = seconds
+        } else if let paceSec = PaceSegment.paceSeconds(from: pacePerMile), distanceMiles > 0 {
+            durationSeconds = paceSec * distanceMiles
+        } else {
+            durationSeconds = 0
+        }
+    }
+
+    /// "M:SS" (or "H:MM:SS") per-mile pace → seconds. nil if unparseable.
+    static func paceSeconds(from pace: String) -> Double? {
+        let parts = pace.split(separator: ":").compactMap { Double($0) }
+        guard parts.count >= 2 else { return nil }
+        return parts.count == 3
+            ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+            : parts[0] * 60 + parts[1]
+    }
+}
+
+// MARK: - Lossy row decoding
+
+/// Wraps a row so a decode failure yields `nil` instead of throwing. Decoding a
+/// list as `[TrainingLog]` is all-or-nothing: one malformed row anywhere in the
+/// page throws and the caller sees an empty feed plus an error. Decode as
+/// `[Failable<TrainingLog>]` and `compactMap` so a bad row costs one row.
+struct Failable<T: Decodable>: Decodable {
+    let value: T?
+
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
+    }
 }
 
 // MARK: - TrainingLog
@@ -90,6 +143,79 @@ struct TrainingLog: Codable, Identifiable {
         processingStatus == "completed"
     }
 
+    // MARK: - Failure Classification
+
+    /// Why a voice memo failed to process. Derived from `processingError`
+    /// text so we can show the user the right recovery copy without a
+    /// schema change. Network failures mean "we couldn't reach the
+    /// server" (recording is safe, retry when back online); transcription
+    /// failures mean the audio uploaded but the AI couldn't process it.
+    enum FailureKind {
+        case network
+        case transcription
+        case unknown
+    }
+
+    var failureKind: FailureKind {
+        guard isFailed else { return .unknown }
+        let error = (processingError ?? "").lowercased()
+
+        let networkSignals = [
+            "network", "timeout", "timed out", "connection", "offline",
+            "unreachable", "could not connect", "failed to fetch",
+            "download", "dns", "socket", "econn", "502", "503", "504",
+            "gateway"
+        ]
+        if networkSignals.contains(where: { error.contains($0) }) {
+            return .network
+        }
+
+        let transcriptionSignals = [
+            "transcri", "audio", "gemini", "parse", "json", "mood",
+            "missing", "empty", "analysis", "response", "no speech",
+            "inaudible", "format"
+        ]
+        if transcriptionSignals.contains(where: { error.contains($0) }) {
+            return .transcription
+        }
+
+        return .unknown
+    }
+
+    /// Short, human headline for the failed card. No jargon, no error codes.
+    var failureHeadline: String {
+        switch failureKind {
+        case .network:
+            return "Couldn't reach the server"
+        case .transcription:
+            return "Couldn't process this memo"
+        case .unknown:
+            return "Processing failed"
+        }
+    }
+
+    /// One reassuring line: the recording is safe, here's what to do.
+    var failureDetail: String {
+        switch failureKind {
+        case .network:
+            return "Your recording is saved. Check your connection, then tap to retry."
+        case .transcription:
+            return "The audio uploaded but we couldn't transcribe it. Tap to try again."
+        case .unknown:
+            return "Your recording is saved. Tap to retry."
+        }
+    }
+
+    /// Verb on the retry control, matched to what actually failed.
+    var retryActionLabel: String {
+        switch failureKind {
+        case .network:
+            return "Retry upload"
+        case .transcription, .unknown:
+            return "Retry transcription"
+        }
+    }
+
     // MARK: - Workout Info
 
     var hasLinkedWorkout: Bool {
@@ -135,13 +261,24 @@ struct TrainingLog: Codable, Identifiable {
         switch type {
         case "easy": return "Easy"
         case "tempo": return "Tempo"
-        case "interval": return "Intervals"
-        case "long_run": return "Long Run"
+        case "interval", "intervals": return "Intervals"
+        case "long_run", "long": return "Long Run"
+        case "progression": return "Progression"
         case "recovery": return "Recovery"
         case "race": return "Race"
+        case "cross_training": return "Cross-train"
+        case "strength": return "Strength"
         case "other": return "Workout"
         default: return nil
         }
+    }
+
+    // MARK: - Manual entry
+
+    /// True for workouts the athlete typed in by hand (vs. HealthKit/Strava/
+    /// voice). Only manual rows are editable in ManualWorkoutView.
+    var isManual: Bool {
+        source == "manual"
     }
 }
 

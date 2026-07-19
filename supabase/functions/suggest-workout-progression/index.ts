@@ -31,7 +31,7 @@
 
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -123,6 +123,8 @@ Deno.serve(async (req) => {
 
     const rlBlocked = await enforceFeatureRateLimit(userId, "workout_progression", corsHeaders);
     if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(userId, "workout_progression", corsHeaders);
+    if (monthlyCapped) return monthlyCapped;
 
     const body = await req.json().catch(() => null);
     const sourceWorkout = body?.sourceWorkout as { name?: unknown; summary?: unknown } | undefined;

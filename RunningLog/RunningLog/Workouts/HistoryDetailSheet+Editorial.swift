@@ -15,8 +15,8 @@
 //      DripEyebrow, DripStatStrip, DripTextLink)
 //    • Existing tokens: Color.drip.*, .dripCaption(n), .dripDisplay(n),
 //      .dripBody(n), .dripLabel(n)
-//    • HistoryDetailViewModel.generateCoachInsight() for the
-//      "Ask the coach →" link wiring
+//    • HistoryDetailViewModel.refreshCoachInsightWhenReady() — the AI Insight
+//      section auto-appears once `coach_insight` lands (no manual CTA)
 //
 
 import SwiftUI
@@ -81,9 +81,29 @@ extension HistoryDetailSheet {
                 .padding(.horizontal, 24)
                 .padding(.top, 26)
 
+                // ── Editable type + stats (edit mode only) ───────────────
+                // These two sections (EditableWorkoutTypeSection /
+                // EditableWorkoutStatsSection) existed but were never wired
+                // into the editorial port — only the mood picker made it in,
+                // so workout type, distance, and duration were uneditable.
+                // saveEdits() already persists all three; this binds them.
+                if isEditing {
+                    VStack(spacing: 16) {
+                        EditableWorkoutTypeSection(selectedType: $editWorkoutType)
+                        EditableWorkoutStatsSection(
+                            distanceText: $editDistanceText,
+                            durationText: $editDurationText
+                        )
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 22)
+                }
+
                 // ── Stat strip (replaces "ORIGINAL NOTES" stat list +
                 //                          LINKED WORKOUT tile) ───────────
-                if let stats = editorialStats {
+                // Read-only; hidden in edit mode where the editable stats
+                // section above takes over.
+                if !isEditing, let stats = editorialStats {
                     DripStatStrip(stats: stats)
                         .padding(.horizontal, 24)
                         .padding(.top, 22)
@@ -96,44 +116,69 @@ extension HistoryDetailSheet {
                     linkWorkoutRow
                 }
 
-                // ── AI Summary ───────────────────────────────────────────
-                if let cleaned = vm.currentEntry.cleanedNotes, !cleaned.isEmpty {
-                    editorialSection(eyebrow: "AI SUMMARY") {
+                // ── AI Summary / editable notes ──────────────────────────
+                // In edit mode the AI summary is swapped for an editable
+                // notes field bound to $editNotesText (persisted by
+                // saveEdits as cleaned_notes).
+                if isEditing {
+                    editorialSection(eyebrow: "NOTES") {
+                        TextField("How did the run feel?", text: $editNotesText, axis: .vertical)
+                            .font(.dripBody(14))
+                            .foregroundStyle(Color.drip.textPrimary)
+                            .lineLimit(3 ... 10)
+                            .padding(12)
+                            .background(Color.drip.cardBackgroundElevated)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                } else if let cleaned = vm.currentEntry.cleanedNotes, !cleaned.isEmpty {
+                    editorialSection(eyebrow: "VOICE SUMMARY") {
                         FormattedSummaryText(text: cleaned)
                     }
                 }
 
-                // ── Coach insight (text-link CTA, no pink fill) ──────────
-                if !isEditing {
-                    editorialSection(eyebrow: "COACH INSIGHT") {
-                        if let insight = vm.coachInsight, !insight.isEmpty {
-                            Text(insight)
-                                .font(.dripBody(14).italic())
-                                .foregroundStyle(Color.drip.textPrimary)
-                                .lineSpacing(3)
-                        } else if isLoadingInsight {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .tint(Color.drip.coral)
-                                    .scaleEffect(0.7)
-                                Text("Asking the coach…")
-                                    .font(.dripBody(13).italic())
-                                    .foregroundStyle(Color.drip.textSecondary)
-                            }
-                            .padding(.top, 4)
-                        } else {
-                            Text("Not yet generated.")
-                                .font(.dripBody(14).italic())
-                                .foregroundStyle(Color.drip.textSecondary)
-                            DripTextLink(title: "Ask the coach →") {
-                                Task {
-                                    isLoadingInsight = true
-                                    await vm.generateCoachInsight()
-                                    isLoadingInsight = false
-                                }
-                            }
-                            .padding(.top, 8)
-                        }
+                // ── Verbatim transcript ──────────────────────────────────
+                // The athlete's actual words (Whisper/Gemini), fetched from the
+                // stored transcript file — distinct from the cleaned VOICE
+                // SUMMARY above, which is an AI rewrite.
+                if !isEditing,
+                   let turl = vm.currentEntry.transcriptUrl, !turl.isEmpty {
+                    editorialSection(eyebrow: "TRANSCRIPT") {
+                        VoiceTranscriptText(url: turl)
+                    }
+                }
+
+                // ── Workout detail (full analytics, inline) ──────────────
+                // The linked run's rep-by-rep charts, telemetry, splits, and
+                // route rendered directly in the entry — the same content the
+                // "VIEW DETAIL ↗" link opens full-screen (kept above). Placed
+                // after the athlete's own words (voice summary + transcript) so
+                // the qualitative record reads first, quantitative after.
+                //
+                // Gated on `vm.linkedStreamLogId` (a Strava training_logs row
+                // with a real stream), NOT on hasLinkedWorkout: a stream-less
+                // voice/manual entry would otherwise embed an inline "Logged
+                // without GPS" block, which is noise inside the journal.
+                if !isEditing, vm.linkedStreamLogId != nil {
+                    editorialSection(eyebrow: "WORKOUT") {
+                        WorkoutRepReceiptView(workoutId: workoutDetailId)
+                    }
+                }
+
+                // ── AI insight (auto once processed — no manual CTA) ─────
+                // Appears on its own once the server has generated the coach
+                // insight (voice logs: process-training-memo). Until then the
+                // whole section is hidden — no "Not yet generated" placeholder,
+                // no "Ask the coach" button, so an entry with nothing to say
+                // stays pure record. `refreshCoachInsightWhenReady()` (.task)
+                // polls so it slots in live if the sheet is already open when
+                // the insight lands.
+                if !isEditing, let insight = vm.coachInsight, !insight.isEmpty {
+                    editorialSection(eyebrow: "AI INSIGHT") {
+                        Text(insight)
+                            .font(.dripBody(14).italic())
+                            .foregroundStyle(Color.drip.textPrimary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
 
@@ -145,7 +190,10 @@ extension HistoryDetailSheet {
                 // ── Footer: quiet delete + manual-log italic ─────────────
                 if !isEditing {
                     HStack {
-                        Text("— Logged " + vm.currentEntry.createdAt.shortDateString + ". —")
+                        // Show when the run happened (workout_date), not when the
+                        // row was created — re-imports make created_at "today",
+                        // which read as a wrong date for the actual run.
+                        Text("— Logged " + (vm.currentEntry.workoutDate ?? vm.currentEntry.createdAt).shortDateString + ". —")
                             .font(.dripBody(12).italic())
                             .foregroundStyle(Color.drip.textTertiary)
                         Spacer()
@@ -308,6 +356,89 @@ extension HistoryDetailSheet {
         .padding(.top, 22)
         .overlay(alignment: .top) {
             DripHairline().padding(.horizontal, 24)
+        }
+    }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Verbatim voice transcript — fetches the athlete's actual words from the
+// stored transcript .txt (public storage URL). Distinct from the cleaned
+// "VOICE SUMMARY"; this is exactly what was said. Manages its own load state.
+// ────────────────────────────────────────────────────────────────────────
+private struct VoiceTranscriptText: View {
+    let url: String
+    /// Lines shown when collapsed. The full transcript is always fetched + kept;
+    /// this only limits the DISPLAY until the athlete taps "Show full transcript".
+    private let collapsedLineLimit = 4
+    @State private var text: String?
+    @State private var failed = false
+    @State private var expanded = false
+
+    var body: some View {
+        Group {
+            if let t = text {
+                if t.isEmpty {
+                    Text("Transcript is empty.")
+                        .font(.dripBody(13).italic())
+                        .foregroundStyle(Color.drip.textSecondary)
+                } else {
+                    // Minimized by default: show a few lines, tail-truncated, with
+                    // a coral link to enlarge. `.fixedSize(vertical:)` is dropped
+                    // here on purpose — it forces full height and would defeat the
+                    // lineLimit collapse. In the sheet's ScrollView the expanded
+                    // text lays out fully anyway.
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(t)
+                            .font(.dripBody(15))
+                            .foregroundStyle(Color.drip.textPrimary)
+                            .lineSpacing(3)
+                            .lineLimit(expanded ? nil : collapsedLineLimit)
+                            .textSelection(.enabled)
+                        if isLong(t) {
+                            DripTextLink(title: expanded ? "Show less ↑" : "Show full transcript ↓") {
+                                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else if failed {
+                Text("Couldn't load the transcript.")
+                    .font(.dripBody(13).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().tint(Color.drip.coral).scaleEffect(0.7)
+                    Text("Loading transcript…")
+                        .font(.dripBody(13).italic())
+                        .foregroundStyle(Color.drip.textSecondary)
+                }
+            }
+        }
+        .task(id: url) { await load() }
+    }
+
+    /// Whether the transcript is long enough to be worth collapsing — so a short
+    /// memo that already fits within `collapsedLineLimit` lines doesn't get a
+    /// pointless toggle. Heuristic: character count (a full column line is ~55
+    /// chars) or explicit line breaks beyond the limit.
+    private func isLong(_ t: String) -> Bool {
+        t.count > collapsedLineLimit * 55 || t.filter { $0 == "\n" }.count >= collapsedLineLimit
+    }
+
+    private func load() async {
+        guard text == nil else { return }
+        guard let u = URL(string: url) else { failed = true; return }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: u)
+            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+                failed = true
+                return
+            }
+            text = (String(data: data, encoding: .utf8) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            failed = true
         }
     }
 }

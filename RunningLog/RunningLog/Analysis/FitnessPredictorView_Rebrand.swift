@@ -619,13 +619,15 @@ private struct RebrandPacesContent: View {
         }
     }
 
+    // Pace markers ride the universal blue depth ramp (PaceSpectrum) —
+    // never green/coral. Easy legibility-darkened for the small marker.
     private func markerColor(for id: PaceID) -> Color {
         switch id {
-        case .easy:      return Color.drip.energized
-        case .long:      return Color.drip.positive
-        case .marathon:  return Color.drip.coralLight
-        case .threshold: return Color.drip.coral
-        case .interval:  return Color.drip.tired
+        case .easy:      return PaceSpectrum.easyText
+        case .long:      return PaceSpectrum.steady
+        case .marathon:  return PaceSpectrum.mp
+        case .threshold: return PaceSpectrum.lt
+        case .interval:  return PaceSpectrum.fiveK
         }
     }
 

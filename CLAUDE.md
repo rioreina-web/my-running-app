@@ -119,15 +119,19 @@ Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
    medical claims.** Defers to the coach. Hard guardrails in system prompts
    enforce this. Niggles classifier vocabulary is closed (see Niggles spec
    below).
-3. **No LLM prompt change ships without running the eval harness.**
-   The harness exists at `supabase/functions/_evals/` (README, runner,
-   rubric primitives, Gemini provider, custom checks). Coverage is
-   partial as of 2026-05-28 — 4 cassettes recorded (3 injury-analysis,
-   1 process-training-memo), 10 stubs need athlete-side inputs filled,
-   1 stub (reschedule-plan) needs production library wired. Run via
-   `_evals/record.ts` with `GEMINI_API_KEY`. Until coverage is complete
-   on the prompt you're touching, supplement with manual review against
-   `docs/coaching/principles.md`.
+3. **Golden prompts don't ship without recorded eval cassettes;
+   everything else ships on manual review.** (Golden-set policy,
+   2026-07-07 — see `outputs/coach-shapeable-ai-architecture-2026-07-07.md`
+   §6.) The golden families are the athlete-facing, safety-baitable
+   surfaces: `daily-read`, `injury-analysis`, `reschedule-plan`,
+   `coaching-agent-*`. Touching one of those prompts requires at least
+   one *recorded* cassette (stubs don't count) in
+   `_evals/cassettes/<prompt>/` — CI blocks otherwise. All other prompt
+   families get a CI *warning* only; their gate is manual review against
+   `docs/coaching/principles.md`, and their cassette coverage is expected
+   to grow from real usage (promote-to-cassette,
+   `outputs/ai-feedback-loop-design-2026-07-07.md`) rather than synthetic
+   authoring. Record via `_evals/record.ts` with `GEMINI_API_KEY`.
 4. **All inserts to `coachable_moments` happen via service-role edge
    function.** No client-side INSERT policy.
 5. **Migrations are append-only.** Never edit a deployed migration; write a
@@ -135,11 +139,17 @@ Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
 6. **Use `current_coach_id()` for coach-scoped RLS** (the SECURITY DEFINER
    helper from `20260311120000_fix_coach_rls_recursion.sql`) — direct
    subqueries against `coach_profiles` cause recursion.
-7. **Predictions ship with range + confidence, never a single point.** The
-   marathon-prediction example: `3:08 – 3:14, midpoint 3:11, HIGH
-   CONFIDENCE based on 4 MP workouts and a recent half`. Never
-   `3:09:30 PROJECTED FINISH`. The seconds are math artifact, not
-   meaningful signal. See `outputs/marathon-prediction-honesty.md`.
+7. **Race-time predictions ship as a single number + confidence tier, with
+   the lifetime PR alongside** (revised 2026-07-18). We tried a range
+   (`3:08 – 3:14, midpoint 3:11, HIGH CONF`) but the confidence-scaled band
+   read as *too wide and inaccurate* — a marathon window that beat the
+   athlete's PR at the fast end and spanned 13 minutes was worse than one
+   honest estimate. So: show the midpoint as the projection, the HIGH/MEDIUM/
+   LOW tier for certainty, and the demonstrated lifetime PR next to it. Still
+   never dump seconds-precision as if meaningful, and never a bare projection
+   with no confidence tier or PR context. Round marathon/half to the minute.
+   See `outputs/marathon-prediction-honesty.md` (range rationale, now
+   superseded on presentation).
 8. **No em-dashes as empty-state placeholders.** Every empty cell uses
    the empty-state component (eyebrow + plain-prose nudge + optional CTA).
    See `outputs/new-user-action-plan.md` and the empty-state component spec.
@@ -256,6 +266,17 @@ foundation, intensity as accent."* Editorial running magazine. Warm
 paper. Black ink. One coral accent, used like punctuation. The full
 spec lives at `design-system/`.
 
+**The three-palette rule (2026-07-03): blue = pace, warm = mood, coral =
+alert; the three palettes never share hues.** Pace is a single-hue blue
+depth ramp (pale sky `#93B9D6` Easy → navy `#0E1D4E` Mile, ten stops for
+the ten canonical zones) — source of truth
+`RunningLog/Workouts/PaceSpectrum.swift`. Green is mood-only (a "safe
+zone" band goes neutral gray, never green); coral is alert-only (niggles,
+out-of-zone workload, brand punctuation — never a pace fill). The pace
+token was renamed `speed`/`--mood-speed` → `paceFast`/`--pace-fast` to
+move it out of the mood namespace. See `design-system/README.md` and
+`outputs/pace-color-todos-2026-07-03.md`.
+
 Read `design-system/README.md` first if you're touching any view code.
 It's the source of truth for voice (what we say and how), tokens
 (color/type/spacing/radii/motion), and the editorial primitives
@@ -371,15 +392,20 @@ parity is hard (and the three-thing fix path) in
   `(app)/coach`, web `(app)/coach-portal/*`) and none is canonical.
   Don't deepen any of them until dyad-persona work is reinvested in.
   See Phase 6 placeholder in Maya's roadmap.
-- **Eval harness exists; coverage is partial.** Located at
+- **Eval harness: golden-set policy (2026-07-07).** Located at
   `supabase/functions/_evals/` (runner, rubric primitives, Gemini
-  provider, custom checks). 4 cassettes recorded as of 2026-05-28;
-  10 stubs need athlete-side inputs; 1 needs production library
-  wired. Phase 1 of Maya's roadmap closes this out. Until then,
-  prompt changes need manual review against `docs/coaching/principles.md`.
-  **CI now enforces the gate (2026-06-11):** a PR that modifies a file in
-  `_shared/prompts/` fails unless `_evals/cassettes/<prompt>/` exists
-  (`.github/scripts/check_eval_coverage.py`).
+  provider, custom checks). State as of 2026-07-07: 53 cassettes across
+  14 prompt versions — 19 recorded (all of daily-read v3/v4/v5,
+  injury-analysis, 1 process-training-memo), 34 are stubs with rubrics
+  + inputs authored but `recorded_response` empty; filling each is one
+  `record.ts` run with `GEMINI_API_KEY` (~$0.05 for a full re-record).
+  **CI gate (`.github/scripts/check_eval_coverage.py`) blocks only the
+  golden families** (`daily-read`, `injury-analysis`, `reschedule-plan`,
+  `coaching-agent-*`) when touched without a recorded cassette; other
+  prompt families warn only (manual review against
+  `docs/coaching/principles.md` is their gate). Note: reschedule-plan
+  and coaching-agent-* are golden but currently stubs-only — the next
+  PR touching those prompts must record them.
 - **Edge function consolidation pending.** ~39 functions; `parse-*` ×4
   could collapse to one router-dispatched parser. New code should not
   add to overlap clusters.
@@ -407,10 +433,23 @@ parity is hard (and the three-thing fix path) in
   `outputs/user-profiles-ghost-table-resolution-2026-06-15.md`,
   `outputs/profile-table-audit-2026-05-22.md`, and
   `docs/migration-ledger-reconciliation-2026-06-11.md`.
-- **`_shared/athlete-state.ts` is 1481 LOC with P0 bugs.** Refactor
-  designed at `athlete-state-refactor-design.md`. Blocked on eval
-  harness coverage so we can refactor without silently changing AI
-  behavior. Lands in Phase 6 (memory architecture).
+- **`_shared/athlete-state.ts` is ~2555 LOC; the structural refactor is
+  still pending, but the P0 correctness bugs are fixed.** Refactor designed
+  at `athlete-state-refactor-design.md`. The doc's four P0s have shipped:
+  R3 tenant leak (HOTFIX-H.1, `.eq('user_id')` + `.not('user_id','is',null)`),
+  R4 rebuild race (HOTFIX-H.2, `claim_athlete_state_rebuild` RPC + poll —
+  note: a claim/poll mechanism, not the `pg_advisory_xact_lock` the doc
+  proposed), R6 formerly-null fields (`monotony_7d`, `strain_7d`,
+  `week_compliance_pct`, `fitness_trend` now computed), and R7 pace zones
+  (sourced from PaceEngine, hardcoded multipliers deleted). Also fixed:
+  `formatPace` rounding boundary (`"7:60/mi"` → `"8:00/mi"`). Test coverage
+  exists at `_shared/athlete-state.test.ts` (10 tests: tenant isolation,
+  pace projection, prompt ranges, fitness_trend, week_compliance, monotony/
+  strain, formatPace). The remaining P1 work (the 10-builder structural
+  split + event-driven invalidation) is what lands in Phase 6 (memory
+  architecture). Note: the line numbers in the design doc's §10 execution
+  prompts are stale — the file grew ~70% since it was written; grep for the
+  function, don't trust the offsets.
 - **Pace chart `(app)/pace-chart/page.tsx` was buggy** — used a
   seconds-offset ladder; now refactored to call `derivePaceTableFromGoal`
   via `pace-chart-client.tsx`. The buggy version persists in
@@ -429,6 +468,28 @@ parity is hard (and the three-thing fix path) in
 
 Decisions captured during the May 2026 sprint, with deep rationale in
 `outputs/`.
+
+### 2026-07-03 — Coach adaptive plan builder (reverses coach deprioritization)
+
+Rio greenlit reinvesting in coach surfaces. The canonical coach surface is
+the **web coach portal**; the legacy `(app)/coach` route stays slated for
+removal. Full spec + phasing:
+`outputs/adaptive-coach-plan-builder-spec-2026-07-03.md`.
+
+Phase A shipped 2026-07-03: plan-level day-role skeleton
+(`day_structure` now written + read), mileage ramp tool
+(`weekly_mileage_targets` now written + read), shape-flag UI, per-week
+phase tagging (`phase_config.phases`), move-day reason codes (closed
+vocabulary on `shift-day` + web reason chips), and a fix for the silent
+`plan_adjustments` CHECK failure that had been dropping every athlete
+day-move audit row since April (`trigger_type='user_action'` was never in
+the constraint). Migrations `20260703120000` + `20260703121000` authored;
+**pending `supabase db push`** per hard rule #9. `shift-day` +
+`subscribe-to-plan` edge functions need redeploy.
+
+Decided: AI-assisted block rewrites (Phase E) use the constrained-library
+approach (extend `reschedule-plan`'s pattern); athlete feedback is
+available on any run but actively prompted only after key sessions.
 
 ### 2026-05-28 — Maya, the journey reframe, and the IA shift
 
@@ -519,9 +580,11 @@ Highlights:
   moments (load spike + injury risk, schedule conflicts) stay coach-
   only or soften.
 - **Add an LLM call** → Inline prompts are being deprecated; new calls
-  should use `_shared/prompt-library.ts`. Add eval cassette coverage
-  in `_evals/cassettes/<prompt-name>/` before shipping the prompt
-  change.
+  should use `_shared/prompt-library.ts`. If the prompt is in a golden
+  family (hard rule #3), record cassettes in
+  `_evals/cassettes/<prompt-name>/` before shipping; otherwise cassettes
+  are encouraged but the gate is manual review against
+  `docs/coaching/principles.md`.
 - **Add a new table** → Follow `docs/conventions/rls-checklist.md`.
   Include RLS in the same migration.
 - **Change athlete-coach relationship logic** → Touches RLS recursion

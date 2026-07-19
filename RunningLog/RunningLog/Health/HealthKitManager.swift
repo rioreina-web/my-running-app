@@ -15,6 +15,26 @@ class HealthKitManager: ObservableObject {
     @Published var isAuthorized = false
     @Published var recentWorkouts: [RunningWorkout] = []
 
+    /// How much we can actually SEE — honestly. HealthKit hides read-denial
+    /// by design: `requestAuthorization` returns success on "Don't Allow"
+    /// too, and queries for read-denied types return EMPTY results with NO
+    /// error. So the app can never know "denied" for certain. What it CAN
+    /// know is (a) whether the permission sheet has ever been handled
+    /// (`statusForAuthorizationRequest` — reliable) and (b) whether any
+    /// probe data is visible afterwards. UI copy must stay honest to that:
+    /// "no data visible" + how to fix — never a false "CONNECTED ✓".
+    /// (Beta-audit item #7: denying Health used to show CONNECTED and an
+    /// empty app forever, with no explanation.)
+    enum HealthReadState: Equatable {
+        case unknown        // not evaluated yet this launch
+        case unavailable    // device has no Health data (e.g. iPad)
+        case notDetermined  // permission sheet never handled
+        case visibleData    // probe found data — reads definitely work
+        case noVisibleData  // sheet handled but nothing visible: denied OR truly empty
+    }
+
+    @Published var readState: HealthReadState = .unknown
+
     /// Types we want to read from HealthKit
     private var typesToRead: Set<HKObjectType> {
         var types: Set<HKObjectType> = [
@@ -30,57 +50,107 @@ class HealthKitManager: ObservableObject {
         if let energy = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             types.insert(energy)
         }
+        // Steps: the denial probe. Virtually every iPhone records steps by
+        // itself, so a runner with zero workouts still probes `visibleData`
+        // after granting — which is what lets us tell "granted but no runs
+        // yet" apart from "denied everything" in the common case.
+        if let steps = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            types.insert(steps)
+        }
         return types
     }
 
-    /// Check if we have authorization to read workouts
-    /// HealthKit doesn't expose read authorization status directly, so we try a test query
+    /// Re-evaluate what we can see. Sets `readState` (the honest probe) and
+    /// `isAuthorized` (= the permission sheet has been handled and queries
+    /// are safe to run — NOT a guarantee that data is visible).
     func checkAuthorizationStatus() async {
         guard HKHealthStore.isHealthDataAvailable() else {
-            await MainActor.run { isAuthorized = false }
+            await MainActor.run {
+                isAuthorized = false
+                readState = .unavailable
+            }
             return
         }
 
-        // Try to fetch one workout to check if we have access
-        let workoutType = HKObjectType.workoutType()
-        let predicate = HKQuery.predicateForWorkouts(with: .running)
-
-        let hasAccess = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            let query = HKSampleQuery(
-                sampleType: workoutType,
-                predicate: predicate,
-                limit: 1,
-                sortDescriptors: nil
-            ) { _, _, error in
-                // If we get samples back (even empty), we have access
-                // If we get an authorization error, we don't
-                if error != nil {
-                    continuation.resume(returning: false)
-                } else {
-                    continuation.resume(returning: true)
-                }
+        // "Never asked" vs "asked" — this API is reliable, unlike read
+        // authorization status (which HealthKit deliberately hides).
+        // NOTE: it reports .shouldRequest whenever ANY type in the set was
+        // never requested — including for EXISTING users after we add a new
+        // type (like stepCount). So probe first: if data is already visible,
+        // the user granted the core types long ago and must stay authorized;
+        // only an empty probe + .shouldRequest means a genuinely fresh user.
+        let visible = await probeAnyVisibleData()
+        if visible {
+            await MainActor.run {
+                isAuthorized = true
+                readState = .visibleData
             }
-            healthStore.execute(query)
+            return
+        }
+
+        let requestStatus = (try? await healthStore.statusForAuthorizationRequest(
+            toShare: [], read: typesToRead
+        )) ?? .unknown
+
+        if requestStatus == .shouldRequest {
+            await MainActor.run {
+                isAuthorized = false
+                readState = .notDetermined
+            }
+            return
         }
 
         await MainActor.run {
-            isAuthorized = hasAccess
+            isAuthorized = true
+            readState = .noVisibleData
+        }
+    }
+
+    /// True if ANY probe data is visible: any workout (any activity type),
+    /// otherwise any step sample in the last 30 days.
+    private func probeAnyVisibleData() async -> Bool {
+        if await sampleExists(HKObjectType.workoutType(), predicate: nil) {
+            return true
+        }
+        if let steps = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            let from = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+            let predicate = HKQuery.predicateForSamples(withStart: from, end: nil)
+            return await sampleExists(steps, predicate: predicate)
+        }
+        return false
+    }
+
+    private func sampleExists(_ type: HKSampleType, predicate: NSPredicate?) async -> Bool {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: nil
+            ) { _, samples, _ in
+                continuation.resume(returning: (samples?.isEmpty == false))
+            }
+            healthStore.execute(query)
         }
     }
 
     func requestAuthorization() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else {
             Log.health.warning("HealthKit not available on this device")
-            await MainActor.run { ErrorReporter.shared.report(.healthKit("HealthKit is not available on this device.")) }
+            await MainActor.run {
+                readState = .unavailable
+                ErrorReporter.shared.report(.healthKit("HealthKit is not available on this device."))
+            }
             return false
         }
 
         do {
             try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
-            await MainActor.run {
-                self.isAuthorized = true
-            }
-            return true
+            // A non-throwing return does NOT mean granted — HealthKit
+            // reports success on "Don't Allow" too. Probe what's actually
+            // visible instead of assuming.
+            await checkAuthorizationStatus()
+            return await MainActor.run { isAuthorized }
         } catch {
             Log.health.error("HealthKit authorization failed: \(error)")
             await MainActor.run { ErrorReporter.shared.report(.healthKit("HealthKit access was denied. Enable it in Settings > Privacy > Health.")) }
@@ -476,7 +546,7 @@ class HealthKitManager: ObservableObject {
                     if let error {
                         Log.health.error("Route location query error: \(error.localizedDescription)")
                         if done {
-                            continuation.resume(returning: locations)
+                            continuation.resume(returning: RouteSanitizer.clean(locations))
                         }
                         return
                     }
@@ -486,8 +556,9 @@ class HealthKitManager: ObservableObject {
                     }
 
                     if done {
-                        Log.health.info("Fetched \(locations.count) GPS points from workout route")
-                        continuation.resume(returning: locations)
+                        let cleaned = RouteSanitizer.clean(locations)
+                        Log.health.info("Fetched \(locations.count) GPS points from workout route (\(cleaned.count) after cleaning)")
+                        continuation.resume(returning: cleaned)
                     }
                 }
 
@@ -929,5 +1000,21 @@ extension HealthKitManager: WorkoutDataSource {
 
     func fetchRunningMilesByDate(startDate: Date, endDate: Date) async -> [String: Double] {
         await fetchRunningMilesByDate(from: startDate, to: endDate)
+    }
+}
+
+// MARK: - Display formatting (moved from WorkoutDetailSheet.swift, 2026-07-03)
+
+extension RunningWorkout {
+    var dayOfWeek: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE"
+        return formatter.string(from: startDate)
+    }
+
+    var shortDate: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
+        return formatter.string(from: startDate)
     }
 }

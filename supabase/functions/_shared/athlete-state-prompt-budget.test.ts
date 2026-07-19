@@ -59,6 +59,7 @@ function baseState(over: Partial<AthleteState> = {}): AthleteState {
     load_distribution: null,
     fitness_prediction: null,
     memories: [],
+    year_ago: null,
     environment: [],
     execution: [],
     fitness_signal: null,
@@ -76,9 +77,11 @@ function baseState(over: Partial<AthleteState> = {}): AthleteState {
 function richState(): AthleteState {
   return baseState({
     memories: [
-      { category: "life", content: "Works night shifts twice a week.", importance: 5 },
-      { category: "pref", content: "Hates treadmills; runs outside in all weather.", importance: 4 },
+      { category: "constraint", content: "Works night shifts twice a week.", their_words: null, importance: 8, memory_date: null, last_confirmed_at: "2026-06-20T00:00:00Z", mention_count: 3 },
+      { category: "preference", content: "Hates treadmills; runs outside in all weather.", their_words: null, importance: 4, memory_date: null, last_confirmed_at: "2026-06-15T00:00:00Z", mention_count: 1 },
+      { category: "episode", content: "trail 20-miler", their_words: "the day it clicked", importance: 8, memory_date: "2026-01-14", last_confirmed_at: "2026-01-14T00:00:00Z", mention_count: 1 },
     ],
+    year_ago: { weekly_avg_miles: 32, mood_summary: "neutral" },
     recent_blocks: [
       { block_start: "2026-05-01", block_end: "2026-05-29", total_miles: 160, weekly_avg_miles: 40, quality_sessions: 6, easy_sessions: 14, races_entered: 0, avg_easy_pace_sec: 460, injury_mentions: 0, mood_summary: "positive" },
       { block_start: "2026-04-03", block_end: "2026-05-01", total_miles: 150, weekly_avg_miles: 37.5, quality_sessions: 5, easy_sessions: 13, races_entered: 1, avg_easy_pace_sec: 470, injury_mentions: 1, mood_summary: "neutral" },
@@ -172,4 +175,41 @@ Deno.test("life_context omitted when null; drops under tiny budget (priority 3 >
   const tiny = stateToPromptContext(lifeState(), { budget: 40 });
   assert(!tiny.includes("Life context"), "P3 section must drop under a tiny budget");
   assert(tiny.includes("Training pace zones"), "P1 still survives");
+});
+
+// ── Long-term memory rendering (roadmap 4.1) ──
+
+Deno.test("memories: episodes render with date + verbatim words, separate from general", () => {
+  const prompt = stateToPromptContext(richState());
+  assert(prompt.includes("What I remember about you"), "general memory header missing");
+  assert(prompt.includes("Works night shifts twice a week."), "constraint memory missing");
+  assert(prompt.includes("Moments worth a callback"), "episode header missing");
+  assert(prompt.includes('their words: "the day it clicked"'), "episode verbatim missing");
+  assert(prompt.includes("2026-01-14"), "episode date missing");
+  assert(prompt.includes("reference sparingly"), "episode restraint guidance missing");
+});
+
+Deno.test("year-ago arc line renders inside the blocks section", () => {
+  const prompt = stateToPromptContext(richState());
+  assert(prompt.includes("This time last year: ~32 mpw"), "year-ago line missing");
+  assert(prompt.includes("mood mostly neutral"), "year-ago mood missing");
+});
+
+Deno.test("STILL LEARNING YOU fires for an athlete with training data but < 3 memories", () => {
+  const sparse = baseState({ memories: [{ category: "life", content: "New job started.", their_words: null, importance: 5, memory_date: null, last_confirmed_at: null, mention_count: 1 }] });
+  const prompt = stateToPromptContext(sparse);
+  assert(prompt.includes("STILL LEARNING YOU"), "data_gap nudge should fire");
+  assert(prompt.includes("New job started."), "the few memories we have still surface");
+});
+
+Deno.test("STILL LEARNING YOU does NOT fire once the athlete has ≥3 memories", () => {
+  const prompt = stateToPromptContext(richState()); // 3 memories
+  assert(!prompt.includes("STILL LEARNING YOU"), "nudge must retire at ≥3 memories");
+});
+
+Deno.test("token cost: the memory-rich state stays well under the 1,800-token ceiling", () => {
+  // Plan Step 5 done-when: measure the token cost of the heaviest rendered
+  // state; if it routinely exceeds ~1,800 tokens, enforce a finite budget.
+  const tokens = approxTokenCount(stateToPromptContext(richState()));
+  assert(tokens < 1800, `rendered state is ${tokens} tokens, exceeds the 1,800 ceiling`);
 });

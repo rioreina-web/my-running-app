@@ -1,0 +1,20 @@
+{
+  "id": "001-run-with-stats",
+  "prompt_name": "parse-manual-workout.v1",
+  "description": "Happy-path baseline. A typed run with distance, duration, surface, and a feeling. Confirms the parser extracts activity=run, the numbers, derives/accepts a pace, and classifies mood within the closed vocabulary. Treadmill must still read as a run.",
+  "vars": {},
+  "input": "\n\n## Athlete's note\n\"ran 6 miles easy this morning on the treadmill, legs felt heavy, 52 minutes\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["activity", "workout_type", "distance_miles", "duration_minutes", "pace_per_mile", "mood", "cleaned_notes", "soreness"],
+    "required_patterns": [
+      "\"activity\":\\s*\"run\""
+    ],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured|null)\")[^\"]*\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

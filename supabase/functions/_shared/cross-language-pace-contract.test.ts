@@ -10,7 +10,9 @@
  *
  * What this protects:
  *   - Editing Swift PaceModels MP ratios without keeping them aligned to the
- *     engine's bands (recovery 1.35, easy/long 1.25, moderate 1.15, steady 1.05).
+ *     canonical SPEED midpoints (§6): easy/long 1.3333, moderate 1.1765,
+ *     steady 1.0526, recovery 1.5385 — MP÷ratio, NOT the band's arithmetic
+ *     (pace) midpoint, which ran ~3 s/mi off.
  *
  * Historical note: this file used to also pin Swift
  * PaceCalculator.calculateTrainingPaces multipliers, but that function was
@@ -21,11 +23,21 @@
 import { assert, assertEquals, assertAlmostEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { TRAINING_PACE_MULTIPLIERS } from "./pace-engine.ts";
 
-// Swift constants are written as 4-decimal literals (e.g. 1.3393), so the
-// comparison against the engine's exact band midpoints needs a one-unit-in-
-// the-4th-decimal tolerance, not exact float equality. (Engine midpoints can
-// land exactly on the rounding boundary — e.g. 1.18055 → Swift 1.1806.)
+// Swift constants are written as 4-decimal literals (e.g. 1.3333), so the
+// comparison against the exact speed midpoints needs a one-unit-in-the-4th-
+// decimal tolerance, not exact float equality (e.g. 1/0.75 = 1.33333 → 1.3333).
 const SWIFT_LITERAL_TOLERANCE = 0.0001;
+
+// The canonical single-number training pace (§6): the SPEED midpoint of the
+// band, expressed as a pace ratio. Engine TRAINING_PACE_MULTIPLIERS are pace
+// ratios (1/speed); the speed midpoint pace ratio is 1 / average-of-speeds.
+// e.g. easy band [1.25, 1.4286] → speeds [0.80, 0.70] → 1/0.75 = 1.3333.
+// (The old convention took the arithmetic mean of the pace ratios — 1.3393 —
+// which is ~3 s/mi slower and was the §6 drift.)
+function speedMidpointPaceRatio(band: { fast: number; slow: number }): number {
+  const avgSpeed = (1 / band.fast + 1 / band.slow) / 2;
+  return 1 / avgSpeed;
+}
 
 // Resolve repo root from this file's directory: _shared/.. → functions/.. → supabase/.. → repo root
 import { dirname, fromFileUrl, join } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -39,30 +51,28 @@ const PACE_MODELS_PATH = join(
 
 // ── PaceModels.swift midpoint anchors ────────────────────
 
-Deno.test("contract: iOS PaceModels easyMPRatio is the midpoint of engine easy band (75% MP = 1.25)", async () => {
+Deno.test("contract: iOS PaceModels easyMPRatio is the SPEED midpoint of engine easy band (§6)", async () => {
   const swift = await Deno.readTextFile(PACE_MODELS_PATH);
   const swiftValue = parseSwiftConstant(swift, "easyMPRatio");
-  const expectedMidpoint = (TRAINING_PACE_MULTIPLIERS.easy.fast + TRAINING_PACE_MULTIPLIERS.easy.slow) / 2;
+  const expected = speedMidpointPaceRatio(TRAINING_PACE_MULTIPLIERS.easy);
   assertAlmostEquals(
     swiftValue,
-    expectedMidpoint,
+    expected,
     SWIFT_LITERAL_TOLERANCE,
-    `PaceModels easyMPRatio (${swiftValue}) must equal midpoint of engine easy band (${expectedMidpoint})`,
+    `PaceModels easyMPRatio (${swiftValue}) must equal the speed midpoint of the engine easy band (${expected.toFixed(4)})`,
   );
 });
 
-Deno.test("contract: iOS PaceModels moderateMPRatio is the midpoint of engine moderate band (85% MP = 1.15)", async () => {
+Deno.test("contract: iOS PaceModels moderateMPRatio is the SPEED midpoint of engine moderate band (§6)", async () => {
   const swift = await Deno.readTextFile(PACE_MODELS_PATH);
   const swiftValue = parseSwiftConstant(swift, "moderateMPRatio");
-  const expectedMidpoint = (TRAINING_PACE_MULTIPLIERS.moderate.fast + TRAINING_PACE_MULTIPLIERS.moderate.slow) / 2;
-  assertAlmostEquals(swiftValue, expectedMidpoint, SWIFT_LITERAL_TOLERANCE);
+  assertAlmostEquals(swiftValue, speedMidpointPaceRatio(TRAINING_PACE_MULTIPLIERS.moderate), SWIFT_LITERAL_TOLERANCE);
 });
 
-Deno.test("contract: iOS PaceModels steadyMPRatio is the midpoint of engine steady band (95% MP = 1.05)", async () => {
+Deno.test("contract: iOS PaceModels steadyMPRatio is the SPEED midpoint of engine steady band (§6)", async () => {
   const swift = await Deno.readTextFile(PACE_MODELS_PATH);
   const swiftValue = parseSwiftConstant(swift, "steadyMPRatio");
-  const expectedMidpoint = (TRAINING_PACE_MULTIPLIERS.steady.fast + TRAINING_PACE_MULTIPLIERS.steady.slow) / 2;
-  assertAlmostEquals(swiftValue, expectedMidpoint, SWIFT_LITERAL_TOLERANCE);
+  assertAlmostEquals(swiftValue, speedMidpointPaceRatio(TRAINING_PACE_MULTIPLIERS.steady), SWIFT_LITERAL_TOLERANCE);
 });
 
 Deno.test("contract: iOS PaceModels longRunMPRatio equals easy midpoint (long convention)", async () => {
@@ -217,6 +227,52 @@ Deno.test("contract: iOS NamedPace bands are contiguous (moderate.slow == easy.f
     moderate.slow,
     easy.fast,
     "moderate's slow bound must equal easy's fast bound — bands are contiguous",
+  );
+});
+
+// ── Race-equivalence ratio + raceKeyForInput parity: web ↔ server ───
+//
+// web workout-helpers.ts RACE_RATIOS_TO_10K is a DUPLICATED literal of the
+// server paces.ts table (not an import), so it can silently drift — pin it
+// (§10 note). Also pin the raceKeyForInput normalizer: web used to exact-match
+// 5 strings and silently default "5K"/"HM"/"3k" to marathon (§8).
+
+function parseWebRaceRatios(src: string): Record<string, number> {
+  const block = src.match(/RACE_RATIOS_TO_10K = \{([\s\S]*?)\} as const/);
+  assert(block, "web workout-helpers.ts must declare RACE_RATIOS_TO_10K");
+  const out: Record<string, number> = {};
+  const re = /["']?([a-zA-Z0-9]+)["']?:\s*([0-9.]+)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(block[1])) !== null) out[m[1]] = parseFloat(m[2]);
+  return out;
+}
+
+Deno.test("contract: web RACE_RATIOS_TO_10K is digit-identical to server paces.ts (§10)", async () => {
+  const { RACE_RATIOS_TO_10K: server } = await import("./paces.ts");
+  const web = parseWebRaceRatios(await Deno.readTextFile(WORKOUT_HELPERS_PATH));
+  for (const [key, val] of Object.entries(server)) {
+    assertEquals(web[key], val, `RACE_RATIOS_TO_10K.${key} differs — web ${web[key]} vs server ${val}`);
+  }
+});
+
+Deno.test("contract: server raceKeyForInput normalizes case + aliases (§8)", async () => {
+  const { raceKeyForInput } = await import("./paces.ts");
+  assertEquals(raceKeyForInput("5K"), "fiveK");
+  assertEquals(raceKeyForInput("HM"), "half");
+  assertEquals(raceKeyForInput("half-marathon"), "half");
+  assertEquals(raceKeyForInput("3k"), "threeK");
+  assertEquals(raceKeyForInput("10mi"), "tenMi");
+  assertEquals(raceKeyForInput("1500"), "1500m");
+  assertEquals(raceKeyForInput("  Marathon "), "marathon");
+});
+
+Deno.test("contract: web raceKeyForInput lowercases + trims, not exact-match (§8)", async () => {
+  const web = await Deno.readTextFile(WORKOUT_HELPERS_PATH);
+  const fn = web.match(/function raceKeyForInput\([\s\S]*?\n\}/);
+  assert(fn, "web must declare raceKeyForInput");
+  assert(
+    /toLowerCase\(\)\.trim\(\)/.test(fn[0]),
+    "web raceKeyForInput must lowercase+trim (ported from edge) — the old exact-match version silently defaulted 5K/HM/3k to marathon",
   );
 });
 

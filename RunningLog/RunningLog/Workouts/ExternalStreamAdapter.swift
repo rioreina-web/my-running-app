@@ -47,11 +47,16 @@ struct WorkoutLap {
     let avgHeartRate: Int?
 }
 
-@MainActor
+// NOTE: intentionally NOT @MainActor. This adapter pulls the full
+// `external_streams` blob (several thousand GPS/HR/pace points) and decodes +
+// parses it through SupabaseJSON — multi-MB, multi-second work. Running it on
+// the main actor froze the whole UI (a ~20s gesture-gate stall while opening a
+// workout). All callers already `await` these methods and hop to the main
+// actor themselves for state updates, so this work belongs off the main thread.
 enum ExternalStreamAdapter {
     /// Load external_streams JSONB for a given training_logs row and convert to the
     /// same shape VitalWorkoutDetailView already consumes.
-    static func load(forTrainingLogId id: UUID) async -> ExternalStreamBundle? {
+    nonisolated static func load(forTrainingLogId id: UUID) async -> ExternalStreamBundle? {
         struct Row: Decodable {
             let external_streams: SupabaseJSON?
         }
@@ -82,7 +87,7 @@ enum ExternalStreamAdapter {
     /// blob — the streams arrays (heartrate/velocity/latlng) run to several
     /// thousand points each and would otherwise be transferred and decoded
     /// on the main actor just to read ~20 laps.
-    static func loadLaps(forTrainingLogId id: UUID) async -> [WorkoutLap]? {
+    nonisolated static func loadLaps(forTrainingLogId id: UUID) async -> [WorkoutLap]? {
         struct Row: Decodable {
             let laps: SupabaseJSON?
         }
@@ -124,10 +129,34 @@ enum ExternalStreamAdapter {
         }
     }
 
-    private static func asDouble(_ v: Any?) -> Double? {
+    nonisolated private static func asDouble(_ v: Any?) -> Double? {
         if let d = v as? Double { return d }
         if let i = v as? Int { return Double(i) }
         return nil
+    }
+
+    /// Coerce a JSON array (decoded by `SupabaseJSON` into a mixed `[Any]` of
+    /// `Int`/`Double`) into `[Double]`, element by element. Returns nil only
+    /// when the value isn't an array or carries no numeric elements — never
+    /// because of Int/Double mixing.
+    nonisolated private static func doubleArray(_ v: Any?) -> [Double]? {
+        if let d = v as? [Double] { return d }
+        guard let arr = v as? [Any] else { return nil }
+        let out = arr.compactMap { asDouble($0) }
+        return out.isEmpty ? nil : out
+    }
+
+    /// Coerce a JSON array into `[Int]`, element by element (rounding any
+    /// Double members). Same rationale as `doubleArray`.
+    nonisolated private static func intArray(_ v: Any?) -> [Int]? {
+        if let i = v as? [Int] { return i }
+        guard let arr = v as? [Any] else { return nil }
+        let out: [Int] = arr.compactMap { el in
+            if let i = el as? Int { return i }
+            if let d = el as? Double { return Int(d.rounded()) }
+            return nil
+        }
+        return out.isEmpty ? nil : out
     }
 
     // MARK: - Parser
@@ -142,36 +171,51 @@ enum ExternalStreamAdapter {
     ///   laps: [...],
     ///   meta: { ... }
     /// }
-    private static func parse(_ raw: Any) -> ExternalStreamBundle? {
+    nonisolated private static func parse(_ raw: Any) -> ExternalStreamBundle? {
         guard let dict = raw as? [String: Any] else { return nil }
 
         let streamsDict = dict["streams"] as? [String: Any]
         let metaDict = dict["meta"] as? [String: Any] ?? [:]
 
         let stream = streamsDict.flatMap(buildVitalStream)
-        let route = streamsDict.flatMap(buildRoute) ?? []
+        let route = RouteSanitizer.clean(streamsDict.flatMap(buildRoute) ?? [])
         let meta = buildMeta(metaDict)
 
         return ExternalStreamBundle(stream: stream, route: route, meta: meta)
     }
 
-    private static func buildVitalStream(from streams: [String: Any]) -> VitalWorkoutStream? {
-        let time = streams["time"] as? [Int]
-        let heartrate = streams["heartrate"] as? [Int]
-        let altitude = streams["altitude"] as? [Double]
-        let distance = streams["distance"] as? [Double]
-        let velocity = streams["velocity_smooth"] as? [Double]
-        let cadence = streams["cadence"] as? [Double]
+    nonisolated private static func buildVitalStream(from streams: [String: Any]) -> VitalWorkoutStream? {
+        // IMPORTANT: `SupabaseJSON` decodes every whole-number JSON value as
+        // `Int` (it tries Int before Double). So a numeric stream like
+        // `[0, 3.2, 5.1, …]` comes back as a *mixed* `[Int, Double, …]`, and a
+        // blanket `as? [Double]` cast on a mixed array returns nil — silently
+        // dropping distance / velocity / cadence (which all contain zeros and
+        // whole numbers) while heartrate (pure Int) survived. That was the
+        // root cause of "0 SPLITS" + empty pace/cadence on Strava workouts.
+        // Coerce element-wise instead of casting the whole array.
+        let time = intArray(streams["time"])
+        let heartrate = intArray(streams["heartrate"])
+        let altitude = doubleArray(streams["altitude"])
+        let distance = doubleArray(streams["distance"])
+        let velocity = doubleArray(streams["velocity_smooth"])
+        let cadence = doubleArray(streams["cadence"])
         // Strava `temp` is integer °C; `watts` (power) may be Int or Double.
-        let temp = (streams["temp"] as? [Double]) ?? (streams["temp"] as? [Int])?.map(Double.init)
-        let power = (streams["watts"] as? [Double]) ?? (streams["watts"] as? [Int])?.map(Double.init)
+        let temp = doubleArray(streams["temp"])
+        let power = doubleArray(streams["watts"])
 
         // latlng stream is [[lat, lng], [lat, lng], ...] — split into two parallel arrays
         var lat: [Double]? = nil
         var lng: [Double]? = nil
-        if let pairs = streams["latlng"] as? [[Double]] {
-            lat = pairs.compactMap { $0.count >= 2 ? $0[0] : nil }
-            lng = pairs.compactMap { $0.count >= 2 ? $0[1] : nil }
+        if let pairs = streams["latlng"] as? [Any] {
+            let coords: [(Double, Double)] = pairs.compactMap { pair in
+                guard let p = pair as? [Any], p.count >= 2,
+                      let a = asDouble(p[0]), let b = asDouble(p[1]) else { return nil }
+                return (a, b)
+            }
+            if !coords.isEmpty {
+                lat = coords.map(\.0)
+                lng = coords.map(\.1)
+            }
         }
 
         // Nothing usable? Return nil so callers can show an empty state.
@@ -193,19 +237,20 @@ enum ExternalStreamAdapter {
         )
     }
 
-    private static func buildRoute(from streams: [String: Any]) -> [CLLocation]? {
-        guard let pairs = streams["latlng"] as? [[Double]], !pairs.isEmpty else {
+    nonisolated private static func buildRoute(from streams: [String: Any]) -> [CLLocation]? {
+        guard let rawPairs = streams["latlng"] as? [Any], !rawPairs.isEmpty else {
             return nil
         }
-        let altitudes = streams["altitude"] as? [Double]
-        let times = streams["time"] as? [Int]
+        let altitudes = doubleArray(streams["altitude"])
+        let times = intArray(streams["time"])
         let baseDate = Date()
-        return pairs.enumerated().compactMap { (idx, pair) -> CLLocation? in
-            guard pair.count >= 2 else { return nil }
+        return rawPairs.enumerated().compactMap { (idx, pair) -> CLLocation? in
+            guard let p = pair as? [Any], p.count >= 2,
+                  let lat = asDouble(p[0]), let lng = asDouble(p[1]) else { return nil }
             let alt = (altitudes != nil && idx < altitudes!.count) ? altitudes![idx] : 0
             let offset = (times != nil && idx < times!.count) ? TimeInterval(times![idx]) : TimeInterval(idx)
             return CLLocation(
-                coordinate: CLLocationCoordinate2D(latitude: pair[0], longitude: pair[1]),
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng),
                 altitude: alt,
                 horizontalAccuracy: 5,
                 verticalAccuracy: 5,
@@ -214,7 +259,7 @@ enum ExternalStreamAdapter {
         }
     }
 
-    private static func buildMeta(_ meta: [String: Any]) -> StreamMeta {
+    nonisolated private static func buildMeta(_ meta: [String: Any]) -> StreamMeta {
         func asDouble(_ v: Any?) -> Double? {
             if let d = v as? Double { return d }
             if let i = v as? Int { return Double(i) }
@@ -245,7 +290,7 @@ enum ExternalStreamAdapter {
 
 // Supabase Swift SDK represents JSONB as a `JSONValue`-ish type that decodes into
 // common Foundation types. We wrap it so we can pull out the raw dictionary.
-private struct SupabaseJSON: Decodable {
+private nonisolated struct SupabaseJSON: Decodable {
     let value: Any?
 
     init(from decoder: Decoder) throws {
@@ -253,7 +298,7 @@ private struct SupabaseJSON: Decodable {
         self.value = Self.decodeAny(from: container)
     }
 
-    private static func decodeAny(from c: SingleValueDecodingContainer) -> Any? {
+    nonisolated private static func decodeAny(from c: SingleValueDecodingContainer) -> Any? {
         if c.decodeNil() { return nil }
         if let b = try? c.decode(Bool.self) { return b }
         if let i = try? c.decode(Int.self) { return i }

@@ -1,7 +1,9 @@
 import Auth
 import os
+import PhotosUI
 import Supabase
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -10,6 +12,12 @@ struct SettingsView: View {
     @AppStorage("isCoachMode") private var isCoachMode = false
     @AppStorage("userMaxHR") private var userMaxHR: Int = 180
     @State private var maxHRText: String = ""
+    @State private var displayNameText: String = ""
+    @State private var bioText: String = ""
+    @State private var avatarPath: String?
+    @State private var avatarSignedURL: URL?
+    @State private var pickedAvatar: UIImage?
+    @State private var avatarPickerItem: PhotosPickerItem?
     @State private var showSignOutConfirmation = false
     @State private var isSigningOut = false
     @State private var signInEmail = ""
@@ -42,7 +50,11 @@ struct SettingsView: View {
                         accountSection
                         coachingSection
                         coachPlanSection
-                        coachModeSection
+                        // Coach Mode toggle removed in Phase A (2026-07-13):
+                        // the tab it swapped (Plan → CoachTabView) no longer
+                        // exists — the 4-tab IA has no Plan tab, and the web
+                        // coach portal is canonical for coach work. Shipping
+                        // an inert toggle would be worse than none.
                         trainingSection
                         dataSection
                         appSection
@@ -66,7 +78,12 @@ struct SettingsView: View {
                         .foregroundStyle(Color.drip.textSecondary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") {
+                        // Persist any profile edits before closing (fire-and-
+                        // forget upsert; the sheet can dismiss immediately).
+                        Task { await saveProfile() }
+                        dismiss()
+                    }
                         .font(.dripLabel(14))
                         .foregroundStyle(Color.drip.coral)
                 }
@@ -91,53 +108,163 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Account Section
+    // MARK: - Account / Profile Masthead
 
+    // The athlete's identity, treated like a magazine masthead rather than a
+    // form: photo (or monogram), name in the display serif, an editorial bio
+    // note with a coral rule. Edits write to the same athlete_settings row the
+    // coach portal reads.
     private var accountSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Account")
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(alignment: .top, spacing: 15) {
+                avatarView
 
-            VStack(spacing: 0) {
-                HStack {
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color.drip.coral)
-                    Text(AuthManager.shared.userEmail ?? "Apple ID User")
-                        .font(.dripBody(14))
-                        .foregroundStyle(Color.drip.textPrimary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-
-                Divider()
-                    .background(Color.drip.divider)
-
-                HStack {
-                    Image(systemName: "number")
-                        .font(.system(size: 16))
-                        .foregroundStyle(Color.drip.textSecondary)
-                    Text("User ID")
-                        .font(.dripBody(14))
-                        .foregroundStyle(Color.drip.textSecondary)
-                    Spacer()
-                    Text(String(AuthManager.shared.currentUserId?.prefix(8) ?? "---"))
-                        .font(.dripCaption(12))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("ATHLETE")
+                        .font(.dripEyebrow(9))
+                        .tracking(9 * 0.16)
                         .foregroundStyle(Color.drip.textTertiary)
+                    TextField("Add your name", text: $displayNameText)
+                        .font(.dripDisplay(27))
+                        .foregroundStyle(Color.drip.textPrimary)
+                        .submitLabel(.done)
+                        .onSubmit { Task { await saveProfile() } }
+                    Text(AuthManager.shared.userEmail ?? "Apple ID User")
+                        .font(.dripEyebrow(10.5))
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
+                Spacer(minLength: 0)
             }
-            .background(Color.drip.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+
+            // Editorial bio note with a single coral rule (the one accent).
+            HStack(alignment: .top, spacing: 11) {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.drip.coral)
+                    .frame(width: 2)
+                TextField("Your goals, context — optional", text: $bioText, axis: .vertical)
+                    .font(.dripCaption(14.5))
+                    .italic()
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .lineLimit(1...4)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                Image(systemName: "number")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.drip.textTertiary)
+                Text("User ID")
+                    .font(.dripEyebrow(9.5))
+                    .tracking(9.5 * 0.1)
+                    .foregroundStyle(Color.drip.textTertiary)
+                Spacer()
+                Text(String(AuthManager.shared.currentUserId?.prefix(8) ?? "---"))
+                    .font(.dripEyebrow(11))
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            .padding(.top, 2)
         }
+        .padding(20)
+        .background(Color.drip.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .task { await loadProfile() }
+        .onChange(of: avatarPickerItem) { _, newItem in
+            guard let newItem else { return }
+            Task { await handlePickedAvatar(newItem) }
+        }
+    }
+
+    // Avatar: locally-picked image → signed remote URL → initials monogram,
+    // with a PhotosPicker over the whole thing and a coral camera badge.
+    private var avatarView: some View {
+        PhotosPicker(selection: $avatarPickerItem, matching: .images) {
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    if let img = pickedAvatar {
+                        Image(uiImage: img).resizable().scaledToFill()
+                    } else if let url = avatarSignedURL {
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image {
+                                image.resizable().scaledToFill()
+                            } else {
+                                monogram
+                            }
+                        }
+                    } else {
+                        monogram
+                    }
+                }
+                .frame(width: 64, height: 64)
+                .clipShape(Circle())
+
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(5)
+                    .background(Color.drip.coral)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.drip.cardBackground, lineWidth: 2))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var monogram: some View {
+        ZStack {
+            Color(red: 0.055, green: 0.114, blue: 0.306) // navy — pace ramp dark end
+            Text(initials)
+                .font(.dripDisplay(22))
+                .foregroundStyle(.white)
+        }
+    }
+
+    // Initials from the name, or first letter of email, or a neutral dot.
+    private var initials: String {
+        let words = displayNameText.split(separator: " ").prefix(2)
+        let fromName = words.compactMap { $0.first }.map(String.init).joined().uppercased()
+        if !fromName.isEmpty { return fromName }
+        if let e = AuthManager.shared.userEmail?.first { return String(e).uppercased() }
+        return "•"
+    }
+
+    // MARK: - Profile actions
+
+    /// Load the athlete's saved name/bio/photo into the masthead.
+    private func loadProfile() async {
+        let profile = await AthleteSettingsService.fetchProfile()
+        displayNameText = profile.displayName
+        bioText = profile.bio
+        avatarPath = profile.avatarPath
+        if let path = profile.avatarPath, !path.isEmpty {
+            avatarSignedURL = await AthleteSettingsService.signedAvatarURL(path)
+        }
+    }
+
+    /// Show the picked photo immediately, then downscale, upload, and persist.
+    private func handlePickedAvatar(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let ui = UIImage(data: data) else { return }
+        let resized = ui.resizedForAvatar()
+        pickedAvatar = resized
+        if let jpeg = resized.jpegData(compressionQuality: 0.8) {
+            if let path = await AthleteSettingsService.uploadAvatar(jpeg) {
+                avatarPath = path
+            }
+        }
+    }
+
+    /// Persist name + bio to the athlete's account. Called on submit and on Done.
+    private func saveProfile() async {
+        await AthleteSettingsService.saveProfile(displayName: displayNameText, bio: bioText)
     }
 
     // MARK: - Coaching Section
 
     private var coachingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Coaching")
+            EditorialSectionHeader(index: "01", title: "Coaching")
 
             VStack(spacing: 0) {
                 Toggle(isOn: $coachCheckInsEnabled) {
@@ -190,7 +317,7 @@ struct SettingsView: View {
 
     private var trainingSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Training")
+            EditorialSectionHeader(index: "03", title: "Training")
 
             VStack(spacing: 0) {
                 HStack {
@@ -215,6 +342,8 @@ struct SettingsView: View {
                             .onChange(of: maxHRText) { _, new in
                                 if let val = Int(new), val > 100, val < 250 {
                                     userMaxHR = val
+                                    // Persist to the account so zones sync across devices.
+                                    Task { await AthleteSettingsService.saveMaxHR(val) }
                                 }
                             }
                         Text("bpm")
@@ -229,13 +358,18 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .onAppear { maxHRText = "\(userMaxHR)" }
+        .task {
+            // Pull the account value (set on any device) into the local cache.
+            await AthleteSettingsService.syncMaxHRFromServer()
+            maxHRText = "\(userMaxHR)"
+        }
     }
 
     // MARK: - Data Section
 
     private var dataSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Data")
+            EditorialSectionHeader(index: "04", title: "Data")
 
             VStack(spacing: 0) {
                 Button {
@@ -379,7 +513,7 @@ struct SettingsView: View {
 
     private var appSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("App")
+            EditorialSectionHeader(index: "05", title: "App")
 
             VStack(spacing: 0) {
                 Link(destination: URL(string: "https://postrundrip.com/privacy")!) {
@@ -635,7 +769,7 @@ struct SettingsView: View {
 
     private var coachPlanSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Coach Plan")
+            EditorialSectionHeader(index: "02", title: "Coach Plan")
 
             VStack(spacing: 0) {
                 Button {
@@ -713,5 +847,47 @@ struct SettingsView: View {
                 await MainActor.run { isSigningOut = false }
             }
         }
+    }
+}
+
+// MARK: - Editorial section header
+
+/// A magazine-style section header: a coral index number, the label in the
+/// mono eyebrow face, and a hairline rule running to the trailing edge. Gives
+/// the Settings screen editorial rhythm instead of stacked identical cards.
+struct EditorialSectionHeader: View {
+    let index: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(index)
+                .font(.dripEyebrow(10))
+                .tracking(10 * 0.12)
+                .foregroundStyle(Color.drip.coral.opacity(0.7))
+            Text(title.uppercased())
+                .font(.dripEyebrow(11))
+                .tracking(11 * 0.12)
+                .foregroundStyle(Color.drip.textSecondary)
+            Rectangle()
+                .fill(Color.drip.divider)
+                .frame(height: 1)
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - Avatar image helper
+
+private extension UIImage {
+    /// Downscale so the longest side is at most `max` px before upload — keeps
+    /// profile photos small (a few hundred KB) without a visible quality hit.
+    func resizedForAvatar(max: CGFloat = 512) -> UIImage {
+        let longest = Swift.max(size.width, size.height)
+        guard longest > max, longest > 0 else { return self }
+        let scale = max / longest
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in draw(in: CGRect(origin: .zero, size: newSize)) }
     }
 }

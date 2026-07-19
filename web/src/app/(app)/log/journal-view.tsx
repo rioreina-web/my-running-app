@@ -1,46 +1,125 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { TrainingLog } from "@/lib/types";
 import { formatDuration, MOOD_CONFIG, WORKOUT_TYPE_CONFIG } from "@/lib/utils";
 import { WorkoutDetail } from "./workout-detail";
 
-// ─── Group logs by month ─────────────────────────────────────
+// Rail data shapes, sourced server-side in page.tsx.
+export interface NextUp {
+  planName: string | null;
+  date: string;
+  workoutType: string | null;
+  description: string | null;
+  distanceMiles: number | null;
+}
 
-function groupByMonth(logs: TrainingLog[]) {
+export interface Niggle {
+  body_area: string;
+  side: string | null;
+  verbatim_quote: string;
+  severity_hint: string | null;
+  mentioned_at: string;
+}
+
+// Mood → hue. Warm = mood, per the three-palette rule. The journal row's left
+// rail and the mood word both carry the mood hue; unset falls back to quiet ink.
+const MOOD_HUE: Record<string, string> = {
+  energized: "var(--color-mood-energized)",
+  positive: "var(--color-mood-positive)",
+  neutral: "var(--color-mood-neutral)",
+  tired: "var(--color-mood-tired)",
+  struggling: "var(--color-mood-struggling)",
+  injured: "var(--color-mood-injured)",
+};
+
+// ─── Grouping + math ─────────────────────────────────────────
+
+function logDate(l: TrainingLog): Date {
+  return new Date(l.workout_date || l.created_at);
+}
+
+// Monday 00:00 of the week containing `d` (weeks are Monday-start, matching the
+// dashboard/Trends convention).
+function weekStartMonday(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+}
+
+function weekKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Group entries into Monday-start calendar weeks, newest first, each with a
+// sticky-header label (This week / Last week / Week of Jun 30) + entry count and
+// mileage subtotal. A check-in carries no distance, so it counts as an entry but
+// not a run and adds no miles.
+function groupByWeek(logs: TrainingLog[]) {
   const map = new Map<string, TrainingLog[]>();
-
   for (const log of logs) {
-    const d = new Date(log.workout_date || log.created_at);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const key = weekKey(weekStartMonday(logDate(log)));
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(log);
   }
-
+  const thisWeek = weekStartMonday(new Date());
   return Array.from(map.entries())
     .sort(([a], [b]) => b.localeCompare(a))
     .map(([key, entries]) => {
-      const d = new Date(entries[0].workout_date || entries[0].created_at);
-      return {
-        key,
-        month: d.toLocaleDateString("en-US", { month: "long" }),
-        year: d.getFullYear().toString(),
-        entries,
-      };
+      const ws = weekStartMonday(logDate(entries[0]));
+      const weeksAgo = Math.round((thisWeek.getTime() - ws.getTime()) / (7 * 86400000));
+      const label =
+        weeksAgo === 0
+          ? "This week"
+          : weeksAgo === 1
+            ? "Last week"
+            : `Week of ${ws.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+      const miles = entries.reduce((s, e) => s + (e.workout_distance_miles || 0), 0);
+      const runs = entries.filter((e) => e.source !== "check_in").length;
+      return { key, label, miles, runs, entries };
     });
+}
+
+function computePaceStr(miles: number, minutes: number): string {
+  if (miles <= 0) return "";
+  const totalSec = Math.round((minutes / miles) * 60);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Weekly totals for the last `weeks` calendar weeks (most recent last).
+function weeklyMileage(logs: TrainingLog[], weeks: number): number[] {
+  const now = new Date();
+  const buckets = new Array(weeks).fill(0);
+  for (const l of logs) {
+    const days = Math.floor((now.getTime() - logDate(l).getTime()) / 86400000);
+    const w = Math.floor(days / 7);
+    if (w >= 0 && w < weeks) buckets[weeks - 1 - w] += l.workout_distance_miles || 0;
+  }
+  return buckets;
 }
 
 // ─── Main Journal View ───────────────────────────────────────
 
-export function JournalView({ logs: initialLogs }: { logs: TrainingLog[] }) {
+export function JournalView({
+  logs: initialLogs,
+  nextUp = null,
+  niggles = [],
+}: {
+  logs: TrainingLog[];
+  nextUp?: NextUp | null;
+  niggles?: Niggle[];
+}) {
   const [logs, setLogs] = useState(initialLogs);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [liveIndicator, setLiveIndicator] = useState<string | null>(null);
 
-  const months = groupByMonth(logs);
+  const weeks = useMemo(() => groupByWeek(logs), [logs]);
 
-  // Realtime subscription — new inserts, updates (processing complete), deletes
+  // Realtime — inserts, updates (processing complete), deletes.
   useEffect(() => {
     const supabase = createClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -48,7 +127,6 @@ export function JournalView({ logs: initialLogs }: { logs: TrainingLog[] }) {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) return;
       const userId = user.id;
-
       channel = supabase
         .channel("training-logs-realtime")
         .on(
@@ -60,7 +138,7 @@ export function JournalView({ logs: initialLogs }: { logs: TrainingLog[] }) {
             setLogs((prev) => {
               if (prev.some((l) => l.id === newLog.id)) return prev;
               const updated = [newLog, ...prev];
-              updated.sort((a, b) => new Date(b.workout_date || b.created_at).getTime() - new Date(a.workout_date || a.created_at).getTime());
+              updated.sort((a, b) => logDate(b).getTime() - logDate(a).getTime());
               return updated;
             });
             setLiveIndicator("New entry added");
@@ -95,52 +173,67 @@ export function JournalView({ logs: initialLogs }: { logs: TrainingLog[] }) {
     };
   }, []);
 
+  const todayLabel = new Date()
+    .toLocaleDateString("en-US", { month: "2-digit", year: "numeric" })
+    .replace("/", ".");
+
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8">
-      <header className="mb-12 text-center">
-        <h1 className="font-display text-5xl tracking-tight text-text-primary">
-          Training Journal
-        </h1>
-        <div className="mt-3 flex items-center justify-center gap-3">
-          <span className="h-px w-12 bg-coral" />
-          <span className="font-mono text-[10px] tracking-[0.3em] text-text-tertiary uppercase">
-            {logs.length} entries
-          </span>
-          <span className="h-px w-12 bg-coral" />
-        </div>
+    <div className="-m-4 md:-m-6 min-h-[calc(100vh-56px)] bg-bg-base">
+      {/* Plate strip */}
+      <div className="sticky top-0 z-[5] flex items-center justify-between border-b border-divider bg-bg-base px-6 py-3.5 md:px-10">
+        <span className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-text-secondary">
+          Running log &nbsp;—&nbsp; Log · v1 journal
+        </span>
+        <span className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-text-tertiary">
+          {logs.length} entries · {todayLabel}
+        </span>
+      </div>
 
-        {/* Live sync indicator */}
-        {liveIndicator && (
-          <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-mood-energized/10 px-3 py-1">
-            <span className="h-1.5 w-1.5 rounded-full bg-mood-energized animate-pulse" />
-            <span className="font-mono text-[10px] text-mood-energized">
-              {liveIndicator}
-            </span>
-          </div>
-        )}
-      </header>
-
-      {logs.length === 0 ? (
-        <div className="py-20 text-center">
-          <p className="font-display text-xl text-text-tertiary">No entries yet</p>
-          <p className="mt-2 text-sm text-text-tertiary">
-            Record a voice memo or log a run from the app.
+      {/* Feed + rail */}
+      <div className="mx-auto flex max-w-[1060px] items-start gap-8 px-6 pb-20 pt-8 md:gap-[52px] md:px-14 md:pt-10">
+        {/* ── FEED ── */}
+        <div className="min-w-0 flex-1 md:max-w-[640px]">
+          <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-secondary">
+            Your training
           </p>
-        </div>
-      ) : (
-        <div className="space-y-16">
-          {months.map((group) => (
-            <section key={group.key}>
-              <div className="mb-8 flex items-center gap-4">
-                <span className="h-px flex-1 bg-divider" />
-                <h2 className="font-display text-lg tracking-wide text-text-tertiary">
-                  {group.month} {group.year}
-                </h2>
-                <span className="h-px flex-1 bg-divider" />
-              </div>
+          <div className="flex items-baseline justify-between gap-4">
+            <h1 className="mt-1.5 font-display text-4xl font-bold leading-none tracking-tight text-text-primary md:text-[44px]">
+              The log.
+            </h1>
+            {liveIndicator && (
+              <span className="inline-flex flex-shrink-0 items-center gap-2">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-mood-energized" />
+                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-mood-energized">
+                  {liveIndicator}
+                </span>
+              </span>
+            )}
+          </div>
 
-              <div className="space-y-0">
-                {group.entries.map((log, i) => (
+          {logs.length === 0 ? (
+            <div className="mt-10 border-t border-divider pt-10">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-tertiary">
+                Nothing logged yet
+              </p>
+              <p className="mt-2 max-w-sm font-body text-[15px] italic leading-relaxed text-text-secondary">
+                Record a voice memo or log a run from the app. When you do, your
+                latest entry lands here.
+              </p>
+            </div>
+          ) : (
+            weeks.map((group) => (
+              <section key={group.key}>
+                {/* Sticky week header with mileage subtotal (THIS WEEK · 32 mi). */}
+                <div className="sticky top-[49px] z-[4] -mx-2 mb-2 mt-8 flex items-center gap-3.5 bg-bg-base/95 px-2 py-2 backdrop-blur-sm">
+                  <span className="h-px w-4 flex-none bg-divider" />
+                  <span className="whitespace-nowrap font-mono text-[10.5px] uppercase tracking-[0.14em] text-text-secondary">
+                    {group.label} · {Math.round(group.miles)} mi
+                    {group.runs > 0 && ` · ${group.runs} ${group.runs === 1 ? "run" : "runs"}`}
+                  </span>
+                  <span className="h-px flex-1 bg-divider" />
+                </div>
+
+                {group.entries.map((log) => (
                   <JournalEntry
                     key={log.id}
                     log={log}
@@ -148,21 +241,235 @@ export function JournalView({ logs: initialLogs }: { logs: TrainingLog[] }) {
                     onToggle={() =>
                       setExpandedId(expandedId === log.id ? null : log.id)
                     }
-                    onUpdate={(updated) =>
-                      setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)))
+                    onUpdate={(u) =>
+                      setLogs((prev) => prev.map((l) => (l.id === u.id ? u : l)))
                     }
                     onDelete={(id) =>
                       setLogs((prev) => prev.filter((l) => l.id !== id))
                     }
-                    isLast={i === group.entries.length - 1}
                   />
                 ))}
-              </div>
-            </section>
+              </section>
+            ))
+          )}
+        </div>
+
+        {/* ── RAIL ── */}
+        <Rail logs={logs} nextUp={nextUp} niggles={niggles} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Rail ────────────────────────────────────────────────────
+
+function Rail({
+  logs,
+  nextUp,
+  niggles,
+}: {
+  logs: TrainingLog[];
+  nextUp: NextUp | null;
+  niggles: Niggle[];
+}) {
+  const [range, setRange] = useState<"week" | "month">("week");
+
+  const stats = useMemo(() => {
+    const now = new Date();
+    const days = range === "week" ? 7 : 30;
+    const cutoff = now.getTime() - days * 86400000;
+    const inRange = logs.filter(
+      (l) => logDate(l).getTime() >= cutoff && l.source !== "check_in"
+    );
+    const miles = inRange.reduce((s, l) => s + (l.workout_distance_miles || 0), 0);
+    const minutes = inRange.reduce(
+      (s, l) => s + (l.workout_duration_minutes || 0),
+      0
+    );
+    const avgPace = computePaceStr(miles, minutes);
+    return { miles: Math.round(miles), runs: inRange.length, avgPace };
+  }, [logs, range]);
+
+  const spark = useMemo(() => weeklyMileage(logs, 6), [logs]);
+
+  // Last 7 days of mood, oldest → newest, for the dot grid.
+  const moodDots = useMemo(() => {
+    const now = new Date();
+    const byDay = new Map<number, string>();
+    for (const l of logs) {
+      const day = Math.floor((now.getTime() - logDate(l).getTime()) / 86400000);
+      if (day >= 0 && day < 7 && l.mood && !byDay.has(day)) byDay.set(day, l.mood);
+    }
+    return Array.from({ length: 7 }, (_, i) => byDay.get(6 - i) || null);
+  }, [logs]);
+
+  const railLabel = range === "week" ? "This week" : "This month";
+  const target = range === "week" ? 40 : 160;
+
+  // Next up — weekday · type · distance, e.g. "TUE · MP · 7 MI".
+  const nextMeta = useMemo(() => {
+    if (!nextUp) return null;
+    const parts: string[] = [];
+    const d = new Date(nextUp.date + "T00:00:00");
+    parts.push(d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase());
+    const t = nextUp.workoutType;
+    if (t) parts.push((WORKOUT_TYPE_CONFIG[t]?.label || t).toUpperCase());
+    if (nextUp.distanceMiles) parts.push(`${nextUp.distanceMiles} MI`);
+    return parts.join(" · ");
+  }, [nextUp]);
+
+  // Niggles — distinct recent body areas (last 21 days) + latest as caption.
+  const niggleSummary = useMemo(() => {
+    const now = new Date().getTime();
+    const recent = niggles.filter(
+      (n) => now - new Date(n.mentioned_at + "T00:00:00").getTime() <= 21 * 86400000
+    );
+    const areas = new Set(recent.map((n) => n.body_area.toLowerCase()));
+    const latest = niggles[0] || null;
+    return { count: areas.size, latest };
+  }, [niggles]);
+
+  return (
+    <aside className="sticky top-20 hidden w-[300px] flex-none lg:block">
+      {/* Volume tile */}
+      <div className="flex items-center justify-between gap-2.5">
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-secondary">
+          {railLabel}
+        </span>
+        <div className="flex gap-0.5 rounded-lg bg-bg-calendar p-0.5">
+          {(["week", "month"] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={`rounded-md px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] transition-colors ${
+                range === r
+                  ? "bg-bg-card text-text-primary shadow-sm"
+                  : "text-text-tertiary hover:text-text-secondary"
+              }`}
+            >
+              {r}
+            </button>
           ))}
         </div>
+      </div>
+      <div className="mt-3.5 flex items-baseline gap-1.5">
+        <span className="font-mono text-[34px] font-semibold leading-none tabular-nums text-text-primary">
+          {stats.miles}
+        </span>
+        <span className="font-mono text-lg font-medium tabular-nums text-text-tertiary">
+          / {target} mi
+        </span>
+      </div>
+      <div className="mt-2.5 font-mono text-[10px] uppercase tracking-[0.1em] text-text-secondary">
+        {stats.runs} runs{stats.avgPace ? ` · ${stats.avgPace} / mi avg` : ""}
+      </div>
+      <Sparkline values={spark} />
+
+      <RailDivider />
+
+      {/* Next up */}
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-secondary">
+        Next up
+      </p>
+      {nextUp ? (
+        <>
+          <p className="mt-3 font-display text-xl font-bold text-text-primary">
+            {nextUp.planName || nextUp.description || "Next session"}
+          </p>
+          {nextMeta && (
+            <p className="mt-2 font-mono text-[10.5px] uppercase tracking-[0.1em] text-text-secondary">
+              {nextMeta}
+            </p>
+          )}
+        </>
+      ) : (
+        <p className="mt-3 font-body text-[13px] italic leading-relaxed text-text-tertiary">
+          Nothing scheduled. Link a plan to see your next session here.
+        </p>
       )}
+
+      <RailDivider />
+
+      {/* Mood, 7 days */}
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-secondary">
+        Mood · 7 days
+      </p>
+      <div className="mt-4 grid max-w-[250px] grid-cols-7 gap-2.5">
+        {moodDots.map((m, i) => (
+          <span
+            key={i}
+            className="aspect-square rounded-full"
+            style={{
+              backgroundColor: m ? MOOD_HUE[m] : "var(--color-divider)",
+            }}
+            title={m ? MOOD_CONFIG[m]?.label : "No entry"}
+          />
+        ))}
+      </div>
+      <p className="mt-4 font-body text-[13px] leading-relaxed text-text-secondary">
+        {moodDots.some((m) => m)
+          ? "Your last seven days at a glance — warmer means better."
+          : "Mood shows up here once you log how runs felt."}
+      </p>
+
+      <RailDivider />
+
+      {/* Niggles */}
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-secondary">
+          Niggles
+        </span>
+        {niggleSummary.count > 0 && (
+          <a
+            href="/injuries"
+            className="font-mono text-[11px] uppercase tracking-[0.1em] text-coral hover:text-coral-dark"
+          >
+            {niggleSummary.count} active →
+          </a>
+        )}
+      </div>
+      {niggleSummary.latest ? (
+        <p className="mt-3 font-body text-[14px] italic leading-relaxed text-text-secondary">
+          {capitalize(niggleSummary.latest.body_area)} — “{niggleSummary.latest.verbatim_quote}”
+        </p>
+      ) : (
+        <p className="mt-3 font-body text-[14px] italic leading-relaxed text-text-tertiary">
+          Nothing flagged. Body-part mentions from your voice logs surface here.
+        </p>
+      )}
+    </aside>
+  );
+}
+
+function RailDivider() {
+  return (
+    <div className="my-6 flex items-center gap-2">
+      <span className="h-px flex-1 bg-divider" />
+      <span className="h-[3px] w-[3px] rounded-full bg-divider" />
+      <span className="h-px flex-1 bg-divider" />
     </div>
+  );
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  const max = Math.max(...values, 1);
+  const w = 264;
+  const h = 40;
+  const step = values.length > 1 ? w / (values.length - 1) : w;
+  const pts = values.map((v, i) => {
+    const x = i * step;
+    const y = h - (v / max) * (h - 6) - 3;
+    return [x, y] as const;
+  });
+  const line = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+  const area = `${line} L${w} ${h} L0 ${h} Z`;
+  const last = pts[pts.length - 1];
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="44" className="mt-4 block overflow-visible">
+      <path d={area} fill="rgba(26,24,21,0.05)" />
+      <path d={line} fill="none" stroke="var(--color-text-secondary)" strokeWidth={1.6} strokeLinejoin="round" />
+      {last && <circle cx={last[0]} cy={last[1]} r={3} fill="var(--color-coral)" />}
+    </svg>
   );
 }
 
@@ -174,14 +481,12 @@ function JournalEntry({
   onToggle,
   onUpdate,
   onDelete,
-  isLast,
 }: {
   log: TrainingLog;
   isExpanded: boolean;
   onToggle: () => void;
   onUpdate: (updated: TrainingLog) => void;
   onDelete: (id: string) => void;
-  isLast: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -189,34 +494,39 @@ function JournalEntry({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [draft, setDraft] = useState(log);
 
-  // Sync draft when log updates via realtime. Done during render (not in an
-  // effect) so the new value is available immediately and we avoid the
-  // cascading-render hazard of setState-in-effect. Mirrors React's
-  // "adjusting state when a prop changes" pattern.
   const [syncedLog, setSyncedLog] = useState(log);
   if (!editing && syncedLog !== log) {
     setSyncedLog(log);
     setDraft(log);
   }
 
-  const d = new Date(log.workout_date || log.created_at);
+  const d = logDate(log);
   const dayName = d.toLocaleDateString("en-US", { weekday: "long" });
   const dayNum = d.getDate();
-  const monthShort = d.toLocaleDateString("en-US", { month: "short" });
+  const monthShort = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
   const display = editing ? draft : log;
   const type = display.workout_type || "easy";
   const typeConfig = WORKOUT_TYPE_CONFIG[type] || WORKOUT_TYPE_CONFIG.other;
   const moodKey = display.mood;
   const mood = moodKey ? MOOD_CONFIG[moodKey] : null;
+  const hue = moodKey && MOOD_HUE[moodKey] ? MOOD_HUE[moodKey] : "var(--color-text-tertiary)";
   const notes = display.cleaned_notes || display.notes;
   const isProcessing = log.processing_status === "pending" || log.processing_status === "processing";
   const isCheckIn = log.source === "check_in";
-  const ext = log.extracted_data as Record<string, unknown> | null;
-  const readinessScore = ext?.readiness_score as number | null;
-  const recommendationType = ext?.recommendation_type as string | null;
-  const sorenessAreas = ext?.soreness_areas as string[] | null;
-  const energyLevel = ext?.energy_level as string | null;
-  const sleepQuality = ext?.sleep_quality as string | null;
+  const isVoice = log.source === "voice_log";
+
+  const pace =
+    display.workout_distance_miles && display.workout_duration_minutes
+      ? computePaceStr(display.workout_distance_miles, display.workout_duration_minutes)
+      : null;
+
+  // Meta line: "JUL 6 · TEMPO · 8.1 MI · 58:13 · 7:11/MI" (mood word appended, colored).
+  const metaParts: string[] = [`${monthShort} ${dayNum}`];
+  if (isCheckIn) metaParts.push("CHECK-IN");
+  else if (display.workout_type) metaParts.push(typeConfig.label.toUpperCase());
+  if (display.workout_distance_miles) metaParts.push(`${display.workout_distance_miles.toFixed(1)} MI`);
+  if (display.workout_duration_minutes) metaParts.push(formatDuration(display.workout_duration_minutes));
+  if (pace) metaParts.push(`${pace}/MI`);
 
   async function save() {
     setSaving(true);
@@ -225,14 +535,12 @@ function JournalEntry({
       .from("training_logs")
       .update({
         cleaned_notes: draft.cleaned_notes,
-        workout_notes: draft.workout_notes,
         workout_type: draft.workout_type,
         mood: draft.mood,
         workout_distance_miles: draft.workout_distance_miles,
         workout_duration_minutes: draft.workout_duration_minutes,
       })
       .eq("id", log.id);
-
     setSaving(false);
     if (!error) {
       onUpdate(draft);
@@ -242,14 +550,8 @@ function JournalEntry({
 
   async function handleDelete() {
     const supabase = createClient();
-    const { error } = await supabase
-      .from("training_logs")
-      .delete()
-      .eq("id", log.id);
-
-    if (!error) {
-      onDelete(log.id);
-    }
+    const { error } = await supabase.from("training_logs").delete().eq("id", log.id);
+    if (!error) onDelete(log.id);
     setShowDeleteConfirm(false);
   }
 
@@ -262,179 +564,104 @@ function JournalEntry({
         body: JSON.stringify({ logId: log.id }),
       });
       const data = await res.json();
-      if (data.success) {
-        onUpdate({ ...log, processing_status: "processing" });
-      }
+      if (data.success) onUpdate({ ...log, processing_status: "processing" });
     } catch {}
     setRetrying(false);
   }
 
+  const badge = isVoice ? "VOICE" : isCheckIn ? "CHECK-IN" : "LOGGED";
+
   return (
-    <article
-      className={`group cursor-pointer ${!isLast ? "border-b border-divider" : ""}`}
-      onClick={onToggle}
-    >
-      <div className="py-6">
-        {/* Date + type header */}
-        <div className="flex items-baseline gap-3">
-          <div className="flex items-baseline gap-2">
-            <span className="font-display text-3xl leading-none text-text-primary">
-              {dayName}
-            </span>
-            <span className="font-mono text-xs text-text-tertiary">
-              {monthShort} {dayNum}
-            </span>
-          </div>
+    <article className="grid grid-cols-[3px_1fr] gap-[18px] border-b border-divider py-6">
+      {/* Mood rail */}
+      <div className="rounded-full" style={{ backgroundColor: hue }} />
 
-          <div className="ml-auto flex items-center gap-3">
-            {isCheckIn ? (
-              <span className="rounded-md px-2.5 py-1 text-[10px] font-medium tracking-wide uppercase bg-mood-positive/10 text-mood-positive">
-                Check-In
-              </span>
-            ) : editing ? (
-              <select
-                value={draft.workout_type || "easy"}
-                onChange={(e) => setDraft({ ...draft, workout_type: e.target.value })}
-                onClick={(e) => e.stopPropagation()}
-                className="rounded-md border border-divider bg-bg-elevated px-2 py-1 text-[10px] font-medium text-text-primary outline-none"
-              >
-                {["easy", "tempo", "interval", "long_run", "recovery", "race", "progression", "strides"].map((t) => (
-                  <option key={t} value={t}>{(WORKOUT_TYPE_CONFIG[t] || WORKOUT_TYPE_CONFIG.other).label}</option>
-                ))}
-              </select>
-            ) : (
-              <span className={`rounded-md px-2.5 py-1 text-[10px] font-medium tracking-wide uppercase ${typeConfig.colorClass}`}>
-                {typeConfig.label}
-              </span>
-            )}
-
-            {readinessScore != null && (
-              <span className={`rounded-md px-2 py-1 text-[10px] font-medium ${
-                readinessScore >= 7 ? "bg-mood-positive/10 text-mood-positive" :
-                readinessScore >= 4 ? "bg-mood-tired/10 text-mood-tired" :
-                "bg-mood-struggling/10 text-mood-struggling"
-              }`}>
-                {readinessScore}/10
-              </span>
-            )}
-
-            {editing ? (
-              <select
-                value={draft.mood || ""}
-                onChange={(e) => setDraft({ ...draft, mood: e.target.value || null })}
-                onClick={(e) => e.stopPropagation()}
-                className="rounded-md border border-divider bg-bg-elevated px-2 py-1 text-[10px] text-text-primary outline-none"
-              >
-                <option value="">No mood</option>
-                {["energized", "positive", "neutral", "tired", "struggling", "injured"].map((m) => (
-                  <option key={m} value={m}>{MOOD_CONFIG[m]?.label}</option>
-                ))}
-              </select>
-            ) : mood ? (
-              <span className={`rounded-md px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase ${mood.colorClass}`} style={{ backgroundColor: `color-mix(in srgb, currentColor 10%, transparent)` }}>
-                {mood.label}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Check-in context badges */}
-        {isCheckIn && !editing && (sorenessAreas?.length || energyLevel || sleepQuality) && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {energyLevel && (
-              <span className="rounded-full bg-bg-elevated px-2.5 py-1 font-mono text-[10px] text-text-secondary">
-                Energy: {energyLevel}
-              </span>
-            )}
-            {sleepQuality && (
-              <span className="rounded-full bg-bg-elevated px-2.5 py-1 font-mono text-[10px] text-text-secondary">
-                Sleep: {sleepQuality}
-              </span>
-            )}
-            {sorenessAreas?.map((area) => (
-              <span key={area} className="rounded-full bg-mood-struggling/10 px-2.5 py-1 font-mono text-[10px] text-mood-struggling">
-                {area}
-              </span>
-            ))}
-            {recommendationType && recommendationType !== "proceed" && (
-              <span className={`rounded-full px-2.5 py-1 font-mono text-[10px] font-medium ${
-                recommendationType === "rest" ? "bg-mood-struggling/10 text-mood-struggling" :
-                recommendationType === "modify" ? "bg-mood-tired/10 text-mood-tired" :
-                recommendationType === "medical" ? "bg-mood-injured/10 text-mood-injured" :
-                "bg-bg-elevated text-text-secondary"
-              }`}>
-                {recommendationType}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Stats line */}
-        <div className="mt-3 flex items-center gap-4 font-mono text-sm">
+      <div className="min-w-0">
+        {/* Header: day + badge */}
+        <div className="flex items-baseline justify-between gap-4">
           {editing ? (
-            <>
-              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={draft.workout_distance_miles ?? ""}
-                  onChange={(e) => setDraft({ ...draft, workout_distance_miles: e.target.value ? parseFloat(e.target.value) : null })}
-                  placeholder="mi"
-                  className="w-14 rounded border border-divider bg-bg-elevated px-2 py-0.5 text-right text-xs text-text-primary outline-none"
-                />
-                <span className="text-xs text-text-tertiary">mi</span>
-              </div>
-              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={draft.workout_duration_minutes ?? ""}
-                  onChange={(e) => setDraft({ ...draft, workout_duration_minutes: e.target.value ? parseFloat(e.target.value) : null })}
-                  placeholder="min"
-                  className="w-14 rounded border border-divider bg-bg-elevated px-2 py-0.5 text-right text-xs text-text-primary outline-none"
-                />
-                <span className="text-xs text-text-tertiary">min</span>
-              </div>
-            </>
+            <input
+              className="min-w-0 flex-1 font-display text-2xl text-text-primary outline-none md:text-[27px]"
+              value={dayName}
+              readOnly
+            />
           ) : (
-            <>
-              {display.workout_distance_miles && (
-                <span className="font-medium text-text-primary">
-                  {display.workout_distance_miles.toFixed(1)} mi
-                </span>
+            <h3 className="font-display text-2xl font-bold leading-none text-text-primary md:text-[27px]">
+              {dayName}
+            </h3>
+          )}
+          {!editing && (
+            <span
+              className={`inline-flex flex-shrink-0 items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.1em] ${
+                isVoice ? "text-coral" : "text-text-tertiary"
+              }`}
+            >
+              {isVoice && (
+                <svg width="8" height="8" viewBox="0 0 9 9" aria-hidden="true">
+                  <polygon points="1.5,0.8 8,4.5 1.5,8.2" fill="currentColor" />
+                </svg>
               )}
-              {display.workout_duration_minutes && (
-                <span className="text-text-secondary">
-                  {formatDuration(display.workout_duration_minutes)}
-                </span>
-              )}
-              {display.workout_distance_miles && display.workout_duration_minutes && (
-                <span className="text-text-tertiary">
-                  {computePace(display.workout_distance_miles, display.workout_duration_minutes)}/mi avg
-                </span>
-              )}
-              {display.workout_pace_per_mile && display.workout_distance_miles && display.workout_duration_minutes &&
-                display.workout_pace_per_mile !== computePace(display.workout_distance_miles, display.workout_duration_minutes) && (
-                <span className="text-coral text-xs">
-                  {display.workout_pace_per_mile}/mi effort
-                </span>
-              )}
-            </>
+              {badge}
+            </span>
           )}
         </div>
 
-        {/* Processing / failed indicator with retry */}
+        {/* Meta line */}
+        {editing ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <select
+              value={draft.workout_type || "easy"}
+              onChange={(e) => setDraft({ ...draft, workout_type: e.target.value })}
+              className="rounded-md border border-divider bg-bg-elevated px-2 py-1 text-[11px] text-text-primary outline-none"
+            >
+              {["easy", "tempo", "interval", "long_run", "recovery", "race", "progression", "strides"].map((t) => (
+                <option key={t} value={t}>{(WORKOUT_TYPE_CONFIG[t] || WORKOUT_TYPE_CONFIG.other).label}</option>
+              ))}
+            </select>
+            <input
+              type="number" step="0.1" placeholder="mi"
+              value={draft.workout_distance_miles ?? ""}
+              onChange={(e) => setDraft({ ...draft, workout_distance_miles: e.target.value ? parseFloat(e.target.value) : null })}
+              className="w-16 rounded-md border border-divider bg-bg-elevated px-2 py-1 text-right text-[11px] text-text-primary outline-none"
+            />
+            <input
+              type="number" step="0.1" placeholder="min"
+              value={draft.workout_duration_minutes ?? ""}
+              onChange={(e) => setDraft({ ...draft, workout_duration_minutes: e.target.value ? parseFloat(e.target.value) : null })}
+              className="w-16 rounded-md border border-divider bg-bg-elevated px-2 py-1 text-right text-[11px] text-text-primary outline-none"
+            />
+            <select
+              value={draft.mood || ""}
+              onChange={(e) => setDraft({ ...draft, mood: e.target.value || null })}
+              className="rounded-md border border-divider bg-bg-elevated px-2 py-1 text-[11px] text-text-primary outline-none"
+            >
+              <option value="">No mood</option>
+              {["energized", "positive", "neutral", "tired", "struggling", "injured"].map((m) => (
+                <option key={m} value={m}>{MOOD_CONFIG[m]?.label}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <p className="mt-2.5 font-mono text-[11px] uppercase tracking-[0.1em] text-text-secondary tabular-nums">
+            {metaParts.join("  ·  ")}
+            {mood && (
+              <span style={{ color: hue }}>{"  ·  "}{mood.label.toUpperCase()}</span>
+            )}
+          </p>
+        )}
+
+        {/* Processing / failed */}
         {isProcessing && (
           <div className="mt-3 flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full border-2 border-coral border-t-transparent animate-spin" />
-            <span className="font-mono text-[10px] text-text-tertiary">
-              Processing voice memo...
+            <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-coral border-t-transparent" />
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-text-tertiary">
+              Processing voice memo…
             </span>
           </div>
         )}
         {log.processing_status === "failed" && (
-          <div className="mt-3 flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            <span className="font-mono text-[10px] text-mood-injured">
+          <div className="mt-3 flex items-center gap-3">
+            <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-mood-injured">
               Processing failed
             </span>
             <button
@@ -442,75 +669,75 @@ function JournalEntry({
               disabled={retrying}
               className="rounded-md bg-coral/10 px-2.5 py-1 font-mono text-[10px] text-coral hover:bg-coral/20 disabled:opacity-50"
             >
-              {retrying ? "Retrying..." : "Retry"}
+              {retrying ? "Retrying…" : "Retry"}
             </button>
           </div>
         )}
 
-        {/* Notes — the journal body */}
+        {/* Quote */}
         {editing ? (
-          <div className="mt-4" onClick={(e) => e.stopPropagation()}>
-            <textarea
-              value={draft.cleaned_notes ?? ""}
-              onChange={(e) => setDraft({ ...draft, cleaned_notes: e.target.value || null })}
-              rows={4}
-              placeholder="Add notes..."
-              className="w-full rounded-lg border border-divider bg-bg-elevated px-3 py-2 text-sm leading-relaxed text-text-primary outline-none placeholder-text-tertiary focus:border-coral/50"
-            />
-          </div>
+          <textarea
+            value={draft.cleaned_notes ?? ""}
+            onChange={(e) => setDraft({ ...draft, cleaned_notes: e.target.value || null })}
+            rows={4}
+            placeholder="Add notes…"
+            className="mt-4 w-full rounded-lg border border-divider bg-bg-elevated px-3 py-2 text-sm leading-relaxed text-text-primary outline-none placeholder-text-tertiary focus:border-coral/50"
+          />
         ) : notes ? (
-          <p className="mt-4 text-[15px] leading-relaxed text-text-secondary">
-            {isExpanded ? notes : truncate(notes, 180)}
+          <p
+            className={`mt-[13px] font-body text-[15px] italic leading-[1.55] text-text-primary ${
+              isExpanded ? "" : "line-clamp-2"
+            }`}
+          >
+            {"“"}{notes}{"”"}
           </p>
         ) : null}
 
-        {/* Coach insight (always visible if present) */}
-        {!isExpanded && log.coach_insight && (
-          <div className="mt-3 rounded-lg border-l-2 border-coral bg-bg-elevated px-3 py-2">
-            <p className="text-xs leading-relaxed text-text-secondary line-clamp-2">
+        {/* Coach note */}
+        {log.coach_insight && !editing && (
+          <div className="mt-[15px] border-l-2 border-coral/50 pl-3.5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-secondary">
+              From your coach
+            </p>
+            <p
+              className={`mt-1.5 font-body text-[14px] leading-relaxed text-text-primary ${
+                isExpanded ? "" : "line-clamp-2"
+              }`}
+            >
               {log.coach_insight}
             </p>
           </div>
         )}
 
-        {/* Expanded: full workout detail with charts, zones, insights */}
-        {isExpanded && (
+        {/* Expanded detail */}
+        {isExpanded && !editing && (
           <div className="mt-5">
-            {/* Coach insight full */}
-            {log.coach_insight && (
-              <div className="mb-5 rounded-lg border-l-2 border-coral bg-bg-elevated px-4 py-3">
-                <h4 className="mb-1 font-mono text-[10px] tracking-[0.2em] text-text-tertiary uppercase">Coach Insight</h4>
-                <p className="text-sm leading-relaxed text-text-secondary">{log.coach_insight}</p>
-              </div>
-            )}
-
-            {/* Workout notes */}
             {log.workout_notes && (
               <div className="mb-5">
-                <h4 className="mb-2 font-mono text-[10px] tracking-[0.2em] text-text-tertiary uppercase">Workout Details</h4>
-                <div className="rounded-lg bg-bg-elevated px-4 py-3">
-                  <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-text-secondary">{log.workout_notes}</p>
+                <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
+                  Workout details
+                </p>
+                <div className="rounded-xl bg-bg-elevated px-4 py-3">
+                  <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-text-secondary">
+                    {log.workout_notes}
+                  </p>
                 </div>
               </div>
             )}
-
-            {/* Interactive Vital data */}
-            {log.vital_workout_id && (
-              <WorkoutDetail log={log} onClose={onToggle} />
-            )}
-
-            {/* Pace segments from DB (fallback if no Vital link) */}
+            {log.vital_workout_id && <WorkoutDetail log={log} onClose={onToggle} />}
             {!log.vital_workout_id && log.pace_segments && log.pace_segments.length > 1 && (
               <div>
-                <h4 className="mb-2 font-mono text-[10px] tracking-[0.2em] text-text-tertiary uppercase">Pace Segments</h4>
+                <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
+                  Pace segments
+                </p>
                 <div className="grid grid-cols-1 gap-1">
                   {log.pace_segments.map((seg, i) => (
                     <div key={i} className="flex items-center gap-3 rounded-lg bg-bg-elevated px-3 py-2">
-                      <span className={`w-2 h-2 rounded-full ${effortDot(seg.effort)}`} />
-                      <span className="font-mono text-xs text-text-secondary capitalize w-20">{seg.effort}</span>
-                      <span className="font-mono text-xs font-medium text-text-primary">{seg.distance_miles.toFixed(2)} mi</span>
-                      <span className="font-mono text-xs text-text-secondary">{seg.pace_per_mile}/mi</span>
-                      {seg.avg_heart_rate && <span className="font-mono text-xs text-mood-struggling">{seg.avg_heart_rate} bpm</span>}
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: effortColor(seg.effort) }} />
+                      <span className="w-20 font-mono text-xs capitalize text-text-secondary">{seg.effort}</span>
+                      <span className="font-mono text-xs font-medium tabular-nums text-text-primary">{seg.distance_miles.toFixed(2)} mi</span>
+                      <span className="font-mono text-xs tabular-nums text-text-secondary">{seg.pace_per_mile}/mi</span>
+                      {seg.avg_heart_rate && <span className="font-mono text-xs tabular-nums text-mood-struggling">{seg.avg_heart_rate} bpm</span>}
                     </div>
                   ))}
                 </div>
@@ -520,58 +747,48 @@ function JournalEntry({
         )}
 
         {/* Action bar */}
-        <div className="mt-3 flex items-center gap-3">
+        <div className="mt-[11px] flex items-center gap-3">
           {editing ? (
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={save}
-                disabled={saving}
-                className="rounded-lg bg-coral px-3 py-1 font-mono text-[10px] font-medium text-white hover:bg-coral-light disabled:opacity-50"
-              >
-                {saving ? "Saving..." : "Save"}
+            <div className="flex items-center gap-2">
+              <button onClick={save} disabled={saving} className="rounded-lg bg-coral px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-white hover:bg-coral-light disabled:opacity-50">
+                {saving ? "Saving…" : "Save"}
               </button>
-              <button
-                onClick={() => { setEditing(false); setDraft(log); }}
-                className="rounded-lg bg-bg-elevated px-3 py-1 font-mono text-[10px] text-text-secondary hover:text-text-primary"
-              >
+              <button onClick={() => { setEditing(false); setDraft(log); }} className="rounded-lg bg-bg-elevated px-3 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-text-secondary hover:text-text-primary">
                 Cancel
               </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                className="rounded-lg px-3 py-1 font-mono text-[10px] text-mood-injured/60 hover:text-mood-injured"
-              >
+              <button onClick={() => setShowDeleteConfirm(true)} className="rounded-lg px-3 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-mood-injured/60 hover:text-mood-injured">
                 Delete
               </button>
             </div>
-          ) : isExpanded ? (
-            <button
-              onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-              className="font-mono text-[10px] text-text-tertiary hover:text-coral transition-colors"
-            >
-              edit
-            </button>
-          ) : (notes || log.pace_segments?.length || log.vital_workout_id) ? (
-            <span className="font-mono text-[10px] text-text-tertiary group-hover:text-coral transition-colors">
-              tap to expand
-            </span>
-          ) : null}
+          ) : (
+            <>
+              {(notes || log.coach_insight || log.pace_segments?.length || log.vital_workout_id || log.workout_notes) && (
+                <button
+                  onClick={onToggle}
+                  className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary transition-colors hover:text-coral"
+                >
+                  {isExpanded ? "Collapse ↗" : "Tap to expand ↗"}
+                </button>
+              )}
+              <button
+                onClick={() => setEditing(true)}
+                className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary/70 transition-colors hover:text-coral"
+              >
+                Edit
+              </button>
+            </>
+          )}
         </div>
 
-        {/* Delete confirmation */}
+        {/* Delete confirm */}
         {showDeleteConfirm && (
-          <div className="mt-3 rounded-lg border border-mood-injured/30 bg-mood-injured/5 px-4 py-3" onClick={(e) => e.stopPropagation()}>
-            <p className="text-xs text-text-secondary">Delete this training log entry? This cannot be undone.</p>
+          <div className="mt-3 rounded-xl border border-mood-injured/30 bg-mood-injured/5 px-4 py-3">
+            <p className="text-xs text-text-secondary">Delete this entry? This cannot be undone.</p>
             <div className="mt-2 flex gap-2">
-              <button
-                onClick={handleDelete}
-                className="rounded-lg bg-mood-injured px-3 py-1 font-mono text-[10px] font-medium text-white"
-              >
+              <button onClick={handleDelete} className="rounded-lg bg-mood-injured px-3 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-white">
                 Delete
               </button>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="rounded-lg bg-bg-elevated px-3 py-1 font-mono text-[10px] text-text-secondary"
-              >
+              <button onClick={() => setShowDeleteConfirm(false)} className="rounded-lg bg-bg-elevated px-3 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-text-secondary">
                 Cancel
               </button>
             </div>
@@ -584,32 +801,25 @@ function JournalEntry({
 
 // ─── Helpers ─────────────────────────────────────────────────
 
-function truncate(text: string, max: number): string {
-  if (text.length <= max) return text;
-  return text.slice(0, max).trimEnd() + "...";
+function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
 
-function computePace(miles: number, minutes: number): string {
-  if (miles <= 0) return "";
-  const totalSec = Math.round((minutes / miles) * 60);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function effortDot(effort: string): string {
+function effortColor(effort: string): string {
   switch (effort) {
     case "easy":
     case "recovery":
-      return "bg-mood-positive";
+      return "#93B9D6";
     case "moderate":
+    case "steady":
+      return "#578FC0";
     case "tempo":
     case "threshold":
-      return "bg-mood-tired";
+      return "#27549B";
     case "interval":
     case "race_pace":
-      return "bg-coral";
+      return "#1A3679";
     default:
-      return "bg-text-tertiary";
+      return "#9B9590";
   }
 }

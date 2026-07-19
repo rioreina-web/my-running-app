@@ -30,6 +30,7 @@ struct ModelOfYouView: View {
                     fitnessCard(s)
                     WorkoutsAndRepsSection()   // tappable → per-workout rep chart
                     watchingCard(s)
+                    MemoriesCard()             // long-term memory: view + forget
                     cantSeeCard(s)
                 } else if loaded {
                     Text("No read yet — log a few runs and check back.")
@@ -156,7 +157,7 @@ struct ModelOfYouView: View {
                 evidenceNote("Monotony \(String(format: "%.2f", m))" + (ld?.strain_7d.map { " · strain \(Int($0))" } ?? ""))
             }
             if let r = ld?.recovery_read, let n = r.hard_sessions_28d {
-                let spacing = r.avg_days_between_hard.map { ", ~\($0) days apart" } ?? ""
+                let spacing = r.avg_days_between_hard.map { ", ~\(Int($0.rounded())) days apart" } ?? ""
                 let dw = (r.down_week == true) ? " · down week" : ""
                 evidenceNote("\(n) hard session\(n == 1 ? "" : "s") in 28d\(spacing)\(dw)")
             }

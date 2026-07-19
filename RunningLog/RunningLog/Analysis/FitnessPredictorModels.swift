@@ -30,8 +30,17 @@ struct TrainingStimulusInfo {
 }
 
 struct TrainingPacesSummary {
-    let easyPace: String       // "7:10 – 7:38/mi"
-    let marathonPace: String   // "5:44/mi"
+    // Canonical zones shown on the paces list (aerobic → race-pace).
+    let easyPace: String       // "7:38/mi"
+    let moderatePace: String   // "7:05/mi"
+    let steadyPace: String     // "6:30/mi"
+    let marathonPace: String   // "5:44/mi"  (MP)
+    let hmpPace: String        // "5:30/mi"  (half-marathon pace)
+    let tenKPace: String       // "5:15/mi"
+    let fiveKPace: String      // "5:02/mi"
+
+    // Legacy fields — retained so the alternate (currently unused) rebrand view
+    // and any other callers still compile. Not shown on the redesigned list.
     let thresholdPace: String  // "5:22/mi"
     let intervalPace: String   // "5:02/mi"
     let longRunPace: String    // "6:50/mi"
@@ -42,6 +51,20 @@ struct RaceAnchorInfo {
     let time: String           // "31:21"
     let date: String           // "Feb 7, 2026"
     let weeksAgo: Int
+}
+
+// MARK: - RaceCandidate
+//
+// 2026-07-17 race gathering. A race-like run the nightly server job tagged on
+// its training_logs row (`extracted_data.race_candidate`, status "pending").
+// Surfaced for the athlete to confirm or dismiss — detection, not decision.
+
+struct RaceCandidate: Identifiable {
+    let id: UUID               // training_logs id
+    let date: Date             // workout_date
+    let raceLabel: String      // "10K" — server's display label
+    let raceType: String       // server race_type key, e.g. "tenK"
+    let finishTimeSeconds: Int
 }
 
 // MARK: - RacePredictionItem
@@ -141,6 +164,15 @@ struct FitnessSnapshotInsert: Codable {
     let confidence: String
     let dataSource: String
     let workoutCount: Int
+    // 2026-07-16: iOS previously omitted these — tier arrived NULL in the DB
+    // and per-distance ranges were lost. Keep in sync with the edge function's
+    // upsert (compute-fitness-snapshot/index.ts).
+    let confidenceTier: String
+    let rangeMileSeconds: Int?
+    let range5kSeconds: Int?
+    let range10kSeconds: Int?
+    let rangeHalfSeconds: Int?
+    let rangeMarathonSeconds: Int?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -153,6 +185,12 @@ struct FitnessSnapshotInsert: Codable {
         case confidence
         case dataSource = "data_source"
         case workoutCount = "workout_count"
+        case confidenceTier = "confidence_tier"
+        case rangeMileSeconds = "range_mile_seconds"
+        case range5kSeconds = "range_5k_seconds"
+        case range10kSeconds = "range_10k_seconds"
+        case rangeHalfSeconds = "range_half_seconds"
+        case rangeMarathonSeconds = "range_marathon_seconds"
     }
 }
 
@@ -201,6 +239,22 @@ struct ParsedStructure: Codable {
         case type, pattern, confidence
         case workSummary = "work_summary"
         case equivalentRacePace = "equivalent_race_pace"
+    }
+
+    // The Observer can emit a partially-parsed structure where `confidence`
+    // (or `type`) is null — e.g. a memo it couldn't score. A single null here
+    // must not fail the decode of the entire history list, so we default
+    // rather than throw. A null confidence decodes to 0.0, which correctly
+    // fails the `>= 0.6` anchor guard downstream (we don't anchor on a parse
+    // the model wasn't confident about). `pattern`, `workSummary`, and
+    // `equivalentRacePace` are already optional and decode to nil as before.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "unknown"
+        pattern = try c.decodeIfPresent(String.self, forKey: .pattern)
+        confidence = try c.decodeIfPresent(Double.self, forKey: .confidence) ?? 0.0
+        workSummary = try c.decodeIfPresent(WorkSummary.self, forKey: .workSummary)
+        equivalentRacePace = try c.decodeIfPresent(EquivalentRacePace.self, forKey: .equivalentRacePace)
     }
 
     struct WorkSummary: Codable {

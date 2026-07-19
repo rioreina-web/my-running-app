@@ -1,3 +1,6 @@
+// THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert. The
+// three palettes never share hues. Pace = single-hue blue depth ramp,
+// Easy -> Mile (source of truth: RunningLog/Workouts/PaceSpectrum.swift).
 export const CHART_COLORS = {
   primary: "#D4592A",
   primaryLight: "#E8764A",
@@ -8,7 +11,18 @@ export const CHART_COLORS = {
   tired: "#C4873A",
   struggling: "#C45A3A",
   injured: "#B83A4A",
-  speed: "#6B4A8A",
+  // Pace ramp (was a single plum `speed` token, #6B4A8A — removed).
+  paceEasy: "#93B9D6",
+  paceModerate: "#74A8CC",
+  paceSteady: "#578FC0",
+  paceMp: "#3F7CB5",
+  paceHmp: "#2F66A8",
+  paceLt: "#27549B",
+  pace10k: "#20448B",
+  pace5k: "#1A3679",
+  pace3k: "#142964",
+  paceMile: "#0E1D4E",
+  paceFast: "#0E1D4E",
 } as const;
 
 export const CHART_AXIS = {
@@ -49,13 +63,14 @@ export const MOOD_CHART_COLORS: Record<string, string> = {
   injured: CHART_COLORS.injured,
 };
 
-/** Workout type colors for chart segments */
+/** Workout type colors for chart segments — blue pace ramp by intensity
+ *  (blue = pace, never mood-green or coral). */
 export const WORKOUT_CHART_COLORS: Record<string, string> = {
-  easy: CHART_COLORS.energized,
-  tempo: CHART_COLORS.primaryLight,
-  interval: CHART_COLORS.primary,
-  long_run: CHART_COLORS.speed,
-  recovery: CHART_COLORS.positive,
-  race: CHART_COLORS.primaryDark,
+  easy: CHART_COLORS.paceEasy,
+  recovery: CHART_COLORS.neutral,   // warm gray — below Easy
+  long_run: CHART_COLORS.paceSteady,
+  tempo: CHART_COLORS.paceLt,
+  interval: CHART_COLORS.pace5k,
+  race: CHART_COLORS.paceMile,
   other: CHART_COLORS.neutral,
 };

@@ -508,18 +508,7 @@ struct TrainingDayExpanded: View {
     }
 
     private func displayType(_ key: String?) -> String {
-        switch (key ?? "").lowercased() {
-        case "easy": return "Easy run"
-        case "recovery": return "Recovery"
-        case "tempo": return "Tempo"
-        case "threshold": return "Threshold"
-        case "intervals": return "Intervals"
-        case "long_run", "long": return "Long run"
-        case "race": return "Race"
-        case "progression": return "Progression"
-        case "strides": return "Strides"
-        default: return "Run"
-        }
+        WorkoutLabel.display(key)
     }
 
     /// Coarse load approximation when workout_features isn't available
@@ -541,6 +530,18 @@ struct TrainingDayExpanded: View {
         case "progression":     return 1.6
         case "tempo":           return 1.8
         case "threshold":       return 1.8
+        // Pace-zone taxonomy (new canonical types).
+        case "moderate":        return 1.3
+        case "steady":          return 1.5
+        case "mp":              return 1.8
+        case "hmp":             return 2.0
+        case "lt":              return 2.0
+        case "10k":             return 2.3
+        case "5k":              return 2.5
+        case "3k":              return 2.7
+        case "mile":            return 2.8
+        case "cross_train":     return 0.7
+        case "long_wo":         return 1.2
         case "intervals":       return 2.5
         case "mile_repeats":    return 3.0
         case "race":            return 2.8

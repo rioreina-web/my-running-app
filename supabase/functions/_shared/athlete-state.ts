@@ -41,6 +41,12 @@ import { buildLoadMetrics } from "./builders/buildLoadMetrics.ts";
 import { buildTrajectory, derivePhase, deriveExperience } from "./builders/buildTrajectory.ts";
 import { buildLoadDistribution } from "./builders/buildLoadDistribution.ts";
 import { buildBlocks } from "./builders/buildBlocks.ts";
+import { buildYearAgoArc, selectMemoriesForPrompt } from "./memorySelection.ts";
+import {
+  findBodyAreaMentions,
+  severityHintFromText,
+  sideFromText,
+} from "./bodyVocabulary.ts";
 
 // Re-exported for backwards compatibility — existing importers (and tests)
 // pull `formatPace` from this module.
@@ -115,10 +121,21 @@ export interface AthleteState {
    */
   niggle_recurrence: Array<{
     body_area: string;
+    /** Laterality when known ("left" | "right"); null groups as "unspecified". */
+    side: "left" | "right" | null;
+    /** Count of ACTIVE mentions (those after the latest resolution watermark). */
     occurrences: number;
     first_seen: string;
     last_seen: string;
     worst_severity: string;
+    /**
+     * "active" = has mentions since the last all-clear (or was never resolved).
+     * "resolved" = an all-clear exists with no mention since — dormant, kept
+     * for history, excluded from the surfaced pattern.
+     */
+    status: "active" | "resolved";
+    /** Latest all-clear date, or null. On an active niggle it means "flared again since". */
+    resolved_at: string | null;
   }>;
 
   // Pace Zones
@@ -269,8 +286,22 @@ export interface AthleteState {
     ranges: Record<string, { low: number; high: number; point: number } | null>;
   } | null;
 
-  /** Durable coach memory from `user_memories` (preferences, life context). */
-  memories: Array<{ category: string; content: string; importance: number }>;
+  /** Durable coach memory from `user_memories` (preferences, life context,
+   *  constraints, quotable episodes). Active rows only; quota-selected for the
+   *  prompt by memorySelection.selectMemoriesForPrompt. */
+  memories: Array<{
+    category: string;
+    content: string;
+    their_words: string | null;
+    importance: number;
+    memory_date: string | null;
+    last_confirmed_at: string | null;
+    mention_count: number;
+  }>;
+
+  /** Longitudinal arc: mpw + dominant mood ~52 weeks ago. null until the
+   *  athlete has 12 months of history. */
+  year_ago: { weekly_avg_miles: number; mood_summary: string | null } | null;
 
   /**
    * Per-run environment from `running_workout_laps` — lets the Read
@@ -591,14 +622,18 @@ export async function rebuildAthleteState(
     // race history regex scanning, AND PaceEngine's observed-easy
     // computation. workout_type added so the engine can filter easy/recovery
     // runs without depending only on parsed_structure.
+    // Widened to 365 days (was 168) for the longitudinal "this time last year"
+    // arc (memorySelection.buildYearAgoArc). buildBlocks still renders only the
+    // recent 6×4wk (it windows internally); PaceEngine's recentLogs is sliced
+    // back to 168d at its call site so its observed-easy baseline is unchanged.
     supabase
       .from("training_logs")
       .select("id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, source, parsed_structure, cleaned_notes, notes, workout_notes")
       .eq("user_id", userId)
-      .gte("workout_date", new Date(now.getTime() - 168 * 86400000).toISOString())
+      .gte("workout_date", new Date(now.getTime() - 365 * 86400000).toISOString())
       .gt("workout_distance_miles", 0)
       .order("workout_date", { ascending: false })
-      .limit(400),
+      .limit(600),
     // Athlete pace profile — the single source of truth for pace zones.
     // When present, we read reference paces directly instead of deriving them
     // from snapshot predictions × hardcoded multipliers. See
@@ -637,14 +672,17 @@ export async function rebuildAthleteState(
       .gte("workout_date", new Date(now.getTime() - 730 * 86400000).toISOString())
       .order("workout_date", { ascending: false })
       .limit(50),
-    // Durable coach memory — preferences, life context, constraints,
-    // decisions. Highest-importance first; expiry filtered in code.
+    // Durable coach memory — preferences, life context, constraints, episodes.
+    // Active only (archived rows are "forgotten"). Pull a wide candidate set;
+    // quota-based selection (memorySelection.ts) picks what reaches the prompt.
+    // Highest-importance first; expiry filtered in code.
     supabase
       .from("user_memories")
-      .select("category, content, importance, expires_at")
+      .select("category, content, their_words, importance, expires_at, memory_date, last_confirmed_at, mention_count")
       .eq("user_id", userId)
+      .eq("status", "active")
       .order("importance", { ascending: false })
-      .limit(12),
+      .limit(60),
   ]);
 
   // Surface partial-failure: any of these reads erroring silently degrades the
@@ -766,7 +804,12 @@ export async function rebuildAthleteState(
     profile: paceProfile as AthletePaceProfileRow | null,
     snapshot: (snapshot ?? null) as FitnessSnapshotRow | null,
     plan: (plan ?? null) as TrainingPlanRow | null,
-    recentLogs: ((blockHistoryRes?.data ?? []) as unknown as PaceEngineLogRow[]),
+    // Slice back to 168d: the block-history query was widened to 365d for the
+    // year-ago arc, but PaceEngine's observed-easy baseline must stay on the
+    // original 24-week window to keep pace zones byte-for-byte unchanged.
+    recentLogs: ((blockHistoryRes?.data ?? []) as unknown as PaceEngineLogRow[]).filter(
+      (r) => new Date((r as { workout_date?: string }).workout_date ?? 0).getTime() >= now.getTime() - 168 * 86400000,
+    ),
     now,
   });
 
@@ -962,21 +1005,20 @@ export async function rebuildAthleteState(
   // Bias: prefer false positives (flag + ask) over false negatives (miss and
   // push volume into a brewing injury). Coach decides how to respond based on
   // severity hint.
-  const bodyParts = [
-    "achilles", "calf", "shin", "knee", "hamstring", "quad", "glute", "hip",
-    "piriformis", "lower back", "back", "foot", "arch", "plantar", "heel",
-    "ankle", "IT band", "itband", "it band", "hip flexor",
-  ];
-  const severityWords: Array<[RegExp, string]> = [
-    [/\b(sharp|stabbing|burning|sudden)\b/i, "sharp"],
-    [/\b(pain|hurts|hurting|injured|injury|strained|pulled|tear|torn)\b/i, "pain"],
-    [/\b(sore|soreness|ache|aching|stiff|stiffness|nagging|niggle|bothering)\b/i, "sore"],
-    [/\b(tight|tightness|tweak|tweaky|cranky)\b/i, "tight"],
-  ];
+  // Body-part vocabulary + severity mapping live in the shared module
+  // (_shared/bodyVocabulary.ts) — the SAME closed vocabulary the memo
+  // classifier uses. This regex path is now BACKFILL only: typed manual
+  // notes and imported (Strava/Garmin) descriptions. Voice-sourced rows
+  // are skipped — the memo pipeline owns those (source: "memo_llm") and
+  // writes richer, verbatim, sided mentions. Skipping them here avoids
+  // double-detection semantics drifting between the two writers.
   const thirtyDaysAgoISO = new Date(now.getTime() - 30 * 86400000).toISOString();
+  const VOICE_SOURCES = new Set(["voice_log", "voice_memo", "check_in"]);
   const notesRows = logs.filter((l) => {
     const d = (l.workout_date as string) ?? "";
-    return d >= thirtyDaysAgoISO;
+    if (d < thirtyDaysAgoISO) return false;
+    const src = String((l.source as string) ?? "").toLowerCase();
+    return !VOICE_SOURCES.has(src);
   });
 
   const possibleInjuries: Array<{
@@ -994,23 +1036,15 @@ export async function rebuildAthleteState(
     ].filter(Boolean).join(" ").toLowerCase();
     if (!text) continue;
 
-    for (const part of bodyParts) {
-      const partRegex = new RegExp(`\\b${part.replace(/\s+/g, "\\s+")}\\b`, "i");
-      if (!partRegex.test(text)) continue;
-
+    for (const { body_area: part, index: partIdx, matched } of findBodyAreaMentions(text)) {
       // Require a severity word WITHIN 60 chars of the body-part mention.
       // Prevents false flags when "knee" shows up in unrelated context.
-      const partMatch = text.match(partRegex);
-      if (!partMatch) continue;
-      const partIdx = text.indexOf(partMatch[0].toLowerCase());
       const windowStart = Math.max(0, partIdx - 60);
-      const windowEnd = Math.min(text.length, partIdx + partMatch[0].length + 60);
+      const windowEnd = Math.min(text.length, partIdx + matched.length + 60);
       const nearbyText = text.slice(windowStart, windowEnd);
 
-      let severityHint: string | null = null;
-      for (const [re, label] of severityWords) {
-        if (re.test(nearbyText)) { severityHint = label; break; }
-      }
+      // Closed severity vocabulary (shared with the memo classifier).
+      const severityHint = severityHintFromText(nearbyText);
       // No severity word near body-part mention → not a flag. Benign reference
       // (e.g. "shin guards", "knee-high socks") — skip.
       if (!severityHint) continue;
@@ -1023,6 +1057,10 @@ export async function rebuildAthleteState(
       const key = `${part}__${rowDate}`;
       if (alreadyFlagged.has(key)) continue;
       alreadyFlagged.add(key);
+
+      // Laterality when the nearby text names a side (backfill path reads
+      // it from words near the mention, not a structured field).
+      const side = sideFromText(nearbyText);
 
       // Compute volume context: 2 weeks before this mention vs 2 weeks prior
       const mentionTime = new Date(row.workout_date as string).getTime();
@@ -1044,10 +1082,10 @@ export async function rebuildAthleteState(
         else if (delta <= -0.3) volCtx = `2wk volume ${Math.round(delta * 100)}% (${Math.round(priorVol)} → ${Math.round(recentVol)}mi)`;
       }
 
-      // Short excerpt around the body-part mention
-      const idx = text.indexOf(part);
-      const start = Math.max(0, idx - 40);
-      const end = Math.min(text.length, idx + part.length + 60);
+      // Short excerpt around the body-part mention (use the match position —
+      // the canonical area may differ from the matched synonym).
+      const start = Math.max(0, partIdx - 40);
+      const end = Math.min(text.length, partIdx + matched.length + 60);
       const excerpt = text.slice(start, end).replace(/\n/g, " ").trim();
 
       possibleInjuries.push({
@@ -1061,6 +1099,7 @@ export async function rebuildAthleteState(
         user_id: userId,
         training_log_id: (row.id as string) ?? null,
         body_area: part,
+        side,
         verbatim_quote: `...${excerpt}...`.slice(0, 400),
         severity_hint: severityHint,
         mentioned_at: rowDate,
@@ -1108,22 +1147,56 @@ export async function rebuildAthleteState(
     addMentionDate(String(dm.mentioned_at ?? ""), String(dm.body_area ?? ""));
   }
   {
+    const normSide = (s: unknown): "left" | "right" | null =>
+      s === "left" || s === "right" ? s : null;
+
+    // ── Resolution watermarks ──────────────────────────────────────────
+    // The athlete's "it's better now" signal. Per area+side we keep the
+    // LATEST all-clear date; only mentions AFTER it count toward the active
+    // pattern. A resolved niggle drops out of surfaced analysis; a new
+    // mention after the watermark reactivates it ("unless it comes back up").
+    const { data: resRows, error: resErr } = await supabase
+      .from("niggle_resolutions")
+      .select("body_area, side, resolved_at")
+      .eq("user_id", userId)
+      .order("resolved_at", { ascending: false });
+    if (resErr) console.warn(`[AthleteState] niggle_resolutions read failed (resolution watermarks degraded): ${resErr.message}`);
+    const latestResolved = new Map<string, string>(); // area|side → max resolved_at
+    for (const r of (resRows ?? []) as Array<Record<string, unknown>>) {
+      const key = `${String(r.body_area)}|${normSide(r.side) ?? "unspecified"}`;
+      const at = String(r.resolved_at).slice(0, 10);
+      const cur = latestResolved.get(key);
+      if (!cur || at > cur) latestResolved.set(key, at);
+    }
+
     const { data: bmHist, error: bmHistErr } = await supabase
       .from("body_mentions")
-      .select("body_area, severity_hint, mentioned_at")
+      .select("body_area, side, severity_hint, mentioned_at")
       .eq("user_id", userId)
       .gte("mentioned_at", twelveMonthsAgoISO.slice(0, 10))
       .order("mentioned_at", { ascending: false });
     if (bmHistErr) console.warn(`[AthleteState] body_mentions history read failed (niggle recurrence degraded): ${bmHistErr.message}`);
-    const byArea = new Map<string, { count: number; first: string; last: string; worst: string }>();
+    // Group by body_area + side so "left knee" and "right knee" are distinct
+    // patterns, not a single merged (and misleading) count. A null side
+    // groups on its own as "unspecified" — never folded into a sided count.
+    // Only mentions after the area+side's watermark count as ACTIVE.
+    const byArea = new Map<string, {
+      area: string; side: "left" | "right" | null; count: number; first: string; last: string; worst: string;
+    }>();
     for (const m of (bmHist ?? []) as Array<Record<string, unknown>>) {
       const area = String(m.body_area);
+      const side = normSide(m.side);
       const at = String(m.mentioned_at).slice(0, 10);
       const sev = String(m.severity_hint ?? "");
       addMentionDate(at, area);
-      const cur = byArea.get(area);
+      const key = `${area}|${side ?? "unspecified"}`;
+      // Skip mentions on/before the latest all-clear — the niggle was
+      // resolved after they were logged.
+      const watermark = latestResolved.get(key);
+      if (watermark && at <= watermark) continue;
+      const cur = byArea.get(key);
       if (!cur) {
-        byArea.set(area, { count: 1, first: at, last: at, worst: sev });
+        byArea.set(key, { area, side, count: 1, first: at, last: at, worst: sev });
       } else {
         cur.count++;
         if (at < cur.first) cur.first = at;
@@ -1131,13 +1204,41 @@ export async function rebuildAthleteState(
         if ((sevOrder[sev] ?? 0) > (sevOrder[cur.worst] ?? 0)) cur.worst = sev;
       }
     }
-    for (const [area, v] of byArea.entries()) {
+    // Active (or reactivated) niggles: at least one mention since the
+    // watermark. `resolved_at` present here means it FLARED AGAIN after an
+    // all-clear — a coach-relevant "this keeps coming back" signal.
+    const emittedKeys = new Set<string>();
+    for (const v of byArea.values()) {
+      const key = `${v.area}|${v.side ?? "unspecified"}`;
+      emittedKeys.add(key);
       niggleRecurrence.push({
-        body_area: area,
+        body_area: v.area,
+        side: v.side,
         occurrences: v.count,
         first_seen: v.first,
         last_seen: v.last,
         worst_severity: v.worst,
+        status: "active",
+        resolved_at: latestResolved.get(key) ?? null,
+      });
+    }
+    // Resolved-and-dormant: a watermark exists but no mention since. Kept in
+    // the array (occurrences 0, status "resolved") so history/UI still sees
+    // it and a future recurrence is a known repeat; the prompt skips these.
+    for (const [key, resolvedAt] of latestResolved.entries()) {
+      if (emittedKeys.has(key)) continue;
+      const sep = key.lastIndexOf("|");
+      const area = key.slice(0, sep);
+      const sideRaw = key.slice(sep + 1);
+      niggleRecurrence.push({
+        body_area: area,
+        side: sideRaw === "unspecified" ? null : (sideRaw as "left" | "right"),
+        occurrences: 0,
+        first_seen: resolvedAt,
+        last_seen: resolvedAt,
+        worst_severity: "",
+        status: "resolved",
+        resolved_at: resolvedAt,
       });
     }
     niggleRecurrence.sort((a, b) =>
@@ -1152,6 +1253,12 @@ export async function rebuildAthleteState(
     niggleMentionDates,
     now,
   });
+
+  // Longitudinal "this time last year" arc from the widened (365d) window.
+  const yearAgo = buildYearAgoArc(
+    (blockHistoryRes?.data ?? []) as Array<Record<string, unknown>>,
+    now,
+  );
 
   // ── Latest check-in data ──
   const lastCheckIn = checkIns[0];
@@ -1268,11 +1375,12 @@ export async function rebuildAthleteState(
   // hard rule #7). When the stored band is missing, synthesize one as a
   // fraction of the predicted time, scaled by confidence (more evidence →
   // tighter band). A range is never a single time.
+  // Kept in sync with fitnessPrediction.ts:RANGE_FRACTION (2026-07-15).
   const bandFractionFor = (tier: string): number => {
     if (tier.startsWith("high")) return 0.010;
-    if (tier.startsWith("med")) return 0.020;
-    if (tier.startsWith("low")) return 0.035;
-    return 0.025;
+    if (tier.startsWith("med")) return 0.018;
+    if (tier.startsWith("low")) return 0.030;
+    return 0.020;
   };
   const rangeOf = (predKey: string, bandKey: string) => {
     const pred = num(snap?.[predKey]);
@@ -1298,13 +1406,19 @@ export async function rebuildAthleteState(
   // ── v2: Durable coach memory ──
   const nowMs = now.getTime();
   const memories = ((memoriesRes.data ?? []) as Array<{
-    category: string; content: string; importance: number | null; expires_at: string | null;
+    category: string; content: string; their_words: string | null; importance: number | null;
+    expires_at: string | null; memory_date: string | null; last_confirmed_at: string | null;
+    mention_count: number | null;
   }>)
     .filter((m) => !m.expires_at || new Date(m.expires_at).getTime() > nowMs)
     .map((m) => ({
       category: m.category,
       content: String(m.content ?? "").slice(0, 300),
+      their_words: m.their_words ? String(m.their_words).slice(0, 300) : null,
       importance: m.importance ?? 0,
+      memory_date: m.memory_date ?? null,
+      last_confirmed_at: m.last_confirmed_at ?? null,
+      mention_count: m.mention_count ?? 1,
     }));
 
   // ── v2 Phase B + fitness: ONE laps fetch feeding BOTH consumers ──
@@ -1805,6 +1919,7 @@ export async function rebuildAthleteState(
         };
       }),
     recent_blocks: recentBlocks,
+    year_ago: yearAgo,
     // Confirmed races — user-declared via training_logs.race_result.
     // The query in the Promise.all above pulls the 2-year window of
     // race-tagged training_logs; here we project to the AthleteState
@@ -2211,10 +2326,32 @@ export function stateToPromptContext(
   // What I remember about this athlete — durable memory (preferences, life
   // context, constraints, prior decisions). Use to sound like you know them.
   section("memories", 6, (lines) => {
-    if (state.memories && state.memories.length > 0) {
+    const active = state.memories ?? [];
+
+    // data_gap doubles as user education: teach the athlete that memos feed
+    // memory. Fires for an athlete who has training data but < 3 memories.
+    if (active.length < 3) {
+      if ((state.weekly_avg_miles ?? 0) > 0 || (state.recent_blocks?.length ?? 0) > 0) {
+        lines.push(`\nSTILL LEARNING YOU — "I don't know much about your life outside the numbers yet — tell me in your memos."`);
+      }
+      // Still surface the few we have below.
+    }
+
+    if (active.length === 0) return;
+
+    const { general, episodes } = selectMemoriesForPrompt(active);
+    if (general.length > 0) {
       lines.push(`\nWhat I remember about you:`);
-      for (const m of state.memories.slice(0, 8)) {
+      for (const m of general) {
         lines.push(`  • ${m.content}`);
+      }
+    }
+    if (episodes.length > 0) {
+      lines.push(`\nMoments worth a callback (reference sparingly — one per Read at most; never recite the list):`);
+      for (const e of episodes) {
+        const when = e.memory_date ? `${e.memory_date} — ` : "";
+        const words = e.their_words ? `their words: "${e.their_words}" ` : "";
+        lines.push(`  • ${when}${words}(${e.content})`);
       }
     }
   });
@@ -2288,11 +2425,15 @@ export function stateToPromptContext(
   // store. Surface the recurrence; never name a diagnosis (hard rule #2).
   section("niggle_recurrence", 4, (lines) => {
     if (state.niggle_recurrence && state.niggle_recurrence.length > 0) {
-      const recurring = state.niggle_recurrence.filter((n) => n.occurrences >= 2);
+      // Only ACTIVE patterns surface — a resolved (dormant) niggle is not a
+      // current concern. `resolved_at` on an active one means it came back.
+      const recurring = state.niggle_recurrence.filter((n) => n.status !== "resolved" && n.occurrences >= 2);
       if (recurring.length > 0) {
         lines.push(`\nNiggle recurrence (12mo — surface the pattern, don't diagnose):`);
         for (const n of recurring.slice(0, 4)) {
-          lines.push(`  ${n.body_area}: ${n.occurrences}× (${n.first_seen} → ${n.last_seen}, worst: ${n.worst_severity})`);
+          const label = n.side ? `${n.side} ${n.body_area}` : n.body_area;
+          const backNote = n.resolved_at ? ` — flared again after they cleared it on ${n.resolved_at}` : "";
+          lines.push(`  ${label}: ${n.occurrences}× (${n.first_seen} → ${n.last_seen}, worst: ${n.worst_severity})${backNote}`);
         }
       }
     }
@@ -2385,6 +2526,11 @@ export function stateToPromptContext(
         if (deltaParts.length > 0) {
           lines.push(`→ Block-over-block: ${deltaParts.join(", ")}`);
         }
+      }
+      // Longitudinal arc — carried silently; a warm callback, never a rebuke.
+      if (state.year_ago) {
+        const mood = state.year_ago.mood_summary ? `, mood mostly ${state.year_ago.mood_summary}` : "";
+        lines.push(`This time last year: ~${state.year_ago.weekly_avg_miles} mpw${mood}.`);
       }
     }
   });

@@ -20,10 +20,10 @@ export function CoachPortalNav() {
           <Link
             key={tab.href}
             href={tab.href}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            className={`-mb-px border-b-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors ${
               isActive
-                ? "text-[var(--color-coral)] border-[var(--color-coral)]"
-                : "text-[var(--color-text-secondary)] border-transparent hover:text-[var(--color-text-primary)]"
+                ? "border-coral text-coral"
+                : "border-transparent text-text-secondary hover:text-text-primary"
             }`}
           >
             {tab.label}

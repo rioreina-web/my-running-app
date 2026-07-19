@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { WorkoutStepEditor } from "./workout-step-editor";
+import { ProgressionSuggestions } from "./progression-suggestions";
 import {
   estimatedWorkoutMiles,
   totalWorkoutDurationMinutes,
@@ -13,6 +14,7 @@ import {
   type WorkoutStep,
 } from "./workout-helpers";
 import { PaceReferenceEditor, resolvePaceTable, type PaceAnchor } from "./pace-reference-editor";
+import { CUSTOM_TYPE_PREFIX, slugifyWorkoutLabel } from "@/lib/utils";
 
 // Migrate the deprecated `longRun` pace zone to `easy` on load. The LR
 // band (85–75% MP) was retired May 2026 because it overlapped Moderate
@@ -50,15 +52,31 @@ function formatTotalMiles(miles: number): string {
   return miles.toFixed(1);
 }
 
+// Blue pace-depth ramp only (THE THREE-PALETTE RULE: blue = pace, warm =
+// mood, coral = alert). These mirror WORKOUT_COLORS in plan-builder-client;
+// the previous greens/coral here were a palette violation. Source of truth
+// for the hex values: RunningLog/Workouts/PaceSpectrum.swift.
+type CustomLabel = { slug: string; label: string; color: string };
+
+// On-brand swatches for custom "add your own" labels: pace-ramp blues +
+// warm gray. Coral is alert-only (three-palette rule), so it's absent.
+const CUSTOM_LABEL_SWATCHES = [
+  "#93B9D6", "#74A8CC", "#578FC0", "#3F7CB5",
+  "#2F66A8", "#27549B", "#1A3679", "#0E1D4E", "#B4ADA4",
+];
+
 const WORKOUT_TYPES = [
-  { value: "easy",        label: "Easy",        color: "#4A9E6B" },
-  { value: "tempo",       label: "Tempo",       color: "#E8764A" },
-  { value: "intervals",   label: "Intervals",   color: "#D4592A" },
-  { value: "long_run",    label: "Long Run",    color: "#2D8A4E" },
-  { value: "progression", label: "Progression", color: "#E8764A" },
-  { value: "recovery",    label: "Recovery",    color: "#4A9E6B" },
-  { value: "strides",     label: "Strides",     color: "#2D8A4E" },
-  { value: "race",        label: "Race",        color: "#D4592A" },
+  { value: "easy",        label: "Easy",             color: "#93B9D6" }, // easy
+  { value: "steady",      label: "Steady",           color: "#578FC0" }, // steady
+  { value: "tempo",       label: "Tempo",            color: "#27549B" }, // LT
+  { value: "intervals",   label: "Intervals",        color: "#1A3679" }, // 5K
+  { value: "fartlek",     label: "Fartlek",          color: "#74A8CC" }, // moderate — variable effort
+  { value: "long_run",    label: "Long Run",         color: "#578FC0" }, // steady (Long runs sit at ~steady effort)
+  { value: "long_wo",     label: "Long Run Workout", color: "#2F66A8" }, // HMP — long run w/ embedded quality
+  { value: "progression", label: "Progression",      color: "#3F7CB5" }, // MP
+  { value: "recovery",    label: "Recovery",         color: "#B4ADA4" }, // warm gray, below easy
+  { value: "strides",     label: "Strides",          color: "#142964" }, // 3K
+  { value: "race",        label: "Race",             color: "#0E1D4E" }, // navy — hardest
 ];
 
 export interface ExistingWorkout {
@@ -70,23 +88,41 @@ export interface ExistingWorkout {
   workout_data?: { steps?: WorkoutStep[] } | null;
 }
 
+// Duplicate flow: a clone of an existing template used to pre-fill a NEW
+// template (no id — nothing exists in the DB until the coach saves).
+// Built server-side by workouts/new/page.tsx from `?from=<templateId>`.
+export interface DuplicateSeed {
+  sourceTemplateId: string;
+  name: string;
+  workout_type: string;
+  description?: string | null;
+  tags?: string[] | null;
+  workout_data?: { steps?: WorkoutStep[] } | null;
+}
+
 export function WorkoutTemplateForm({
   coachId,
   existingWorkout,
+  seed,
 }: {
   coachId: string;
   existingWorkout?: ExistingWorkout | null;
+  seed?: DuplicateSeed | null;
 }) {
   const router = useRouter();
   const supabase = createClient();
 
   const isEdit = !!existingWorkout;
 
-  // Draft autosave — keyed by coach + (workout id | 'new'). Survives nav
-  // and tab close but not multi-device editing. Cleared on successful save
-  // or delete. We deliberately stash in localStorage rather than a DB
-  // drafts table to avoid a migration; revisit if cross-device matters.
-  const draftKey = `wt-draft:${coachId}:${existingWorkout?.id ?? "new"}`;
+  // Draft autosave — keyed by coach + (workout id | dup source | 'new').
+  // Duplicates get their own key so a stale plain-"new" draft can't
+  // clobber the clone (and vice versa). Survives nav and tab close but
+  // not multi-device editing. Cleared on successful save or delete. We
+  // deliberately stash in localStorage rather than a DB drafts table to
+  // avoid a migration; revisit if cross-device matters.
+  const draftKey = `wt-draft:${coachId}:${
+    existingWorkout?.id ?? (seed ? `dup:${seed.sourceTemplateId}` : "new")
+  }`;
 
   // Read once on mount. We only restore when the persisted snapshot is
   // newer than the existingWorkout we got from the server — otherwise an
@@ -111,30 +147,114 @@ export function WorkoutTemplateForm({
     }
   })();
 
-  const [name, setName] = useState(initialDraft?.name ?? existingWorkout?.name ?? "");
+  const [name, setName] = useState(
+    initialDraft?.name ?? existingWorkout?.name ?? seed?.name ?? ""
+  );
   const [workoutType, setWorkoutType] = useState(
-    initialDraft?.workoutType ?? existingWorkout?.workout_type ?? "tempo"
+    initialDraft?.workoutType ?? existingWorkout?.workout_type ?? seed?.workout_type ?? "tempo"
   );
   const [description, setDescription] = useState(
-    initialDraft?.description ?? existingWorkout?.description ?? ""
+    initialDraft?.description ?? existingWorkout?.description ?? seed?.description ?? ""
   );
   const [tagsInput, setTagsInput] = useState(
-    initialDraft?.tagsInput ?? (existingWorkout?.tags ?? []).join(", ")
+    initialDraft?.tagsInput ?? (existingWorkout?.tags ?? seed?.tags ?? []).join(", ")
   );
   const [steps, setSteps] = useState<WorkoutStep[]>(
     migrateSteps(
-      (initialDraft?.steps ?? existingWorkout?.workout_data?.steps ?? []) as WorkoutStep[],
+      (initialDraft?.steps ??
+        existingWorkout?.workout_data?.steps ??
+        seed?.workout_data?.steps ??
+        []) as WorkoutStep[],
     ),
+  );
+  // Source steps for the "Suggested progressions" strip — the clone as it
+  // was duplicated (zone-migrated, not draft-mutated), so the deterministic
+  // candidates stay stable while the coach edits below.
+  const seedSteps = useMemo(
+    () => migrateSteps((seed?.workout_data?.steps ?? []) as WorkoutStep[]),
+    // seed comes from the server and never changes for a mounted form
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
   );
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // ── Custom workout labels ("add your own") ────────────────────────────
+  // A per-coach library of labels (name + color) stored in
+  // coach_workout_labels, rendered as chips after the built-ins. The
+  // selected value saves on the workout as `custom:<slug>`. Fetch fails
+  // soft so the builder still works before the migration is deployed.
+  const [customLabels, setCustomLabels] = useState<CustomLabel[]>([]);
+  const [showAddLabel, setShowAddLabel] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState(CUSTOM_LABEL_SWATCHES[0]);
+  const [savingLabel, setSavingLabel] = useState(false);
+  const [labelError, setLabelError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("coach_workout_labels")
+        .select("slug,label,color")
+        .eq("coach_id", coachId)
+        .order("created_at", { ascending: true });
+      if (cancelled || error || !data) return;
+      setCustomLabels(data as CustomLabel[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // supabase client is recreated each render; coachId is the real dep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coachId]);
+
+  function resetAddLabel() {
+    setNewLabelName("");
+    setNewLabelColor(CUSTOM_LABEL_SWATCHES[0]);
+    setShowAddLabel(false);
+    setLabelError(null);
+  }
+
+  async function handleAddLabel() {
+    const name = newLabelName.trim();
+    const slug = slugifyWorkoutLabel(name);
+    if (!slug) {
+      setLabelError("Enter a label name.");
+      return;
+    }
+    // Already in the library — just select it, no duplicate row.
+    const existing = customLabels.find((l) => l.slug === slug);
+    if (existing) {
+      setWorkoutType(`${CUSTOM_TYPE_PREFIX}${existing.slug}`);
+      resetAddLabel();
+      return;
+    }
+    setSavingLabel(true);
+    setLabelError(null);
+    const { data, error } = await supabase
+      .from("coach_workout_labels")
+      .insert({ coach_id: coachId, slug, label: name, color: newLabelColor })
+      .select("slug,label,color")
+      .single();
+    setSavingLabel(false);
+    if (error || !data) {
+      setLabelError("Couldn't save this label — you may need the latest app update.");
+      return;
+    }
+    setCustomLabels((prev) => [...prev, data as CustomLabel]);
+    setWorkoutType(`${CUSTOM_TYPE_PREFIX}${data.slug}`);
+    resetAddLabel();
+  }
   const [showDetails, setShowDetails] = useState(
     !!(
       initialDraft?.description ||
       (initialDraft?.tagsInput?.trim().length ?? 0) > 0 ||
       existingWorkout?.description ||
-      (existingWorkout?.tags ?? []).length > 0
+      (existingWorkout?.tags ?? []).length > 0 ||
+      seed?.description ||
+      (seed?.tags ?? []).length > 0
     )
   );
   // Whether the form was populated from a persisted draft on mount. Static
@@ -402,7 +522,7 @@ export function WorkoutTemplateForm({
             <button
               onClick={handleDelete}
               disabled={isDeleting || isSaving}
-              className="px-3 py-1.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 text-xs text-coral hover:text-coral-dark hover:bg-coral/8 rounded-lg transition-colors disabled:opacity-50"
             >
               {isDeleting ? "Deleting..." : "Delete"}
             </button>
@@ -425,7 +545,7 @@ export function WorkoutTemplateForm({
       </div>
 
       {saveError && (
-        <p className="text-xs text-red-600 font-mono">
+        <p className="text-xs text-coral font-mono">
           Save failed: {saveError}
         </p>
       )}
@@ -443,6 +563,7 @@ export function WorkoutTemplateForm({
           {WORKOUT_TYPES.map((t) => (
             <button
               key={t.value}
+              type="button"
               onClick={() => setWorkoutType(t.value)}
               className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                 workoutType === t.value
@@ -459,7 +580,95 @@ export function WorkoutTemplateForm({
               {t.label}
             </button>
           ))}
+
+          {/* Coach's own saved labels — the "add your own" library. */}
+          {customLabels.map((t) => {
+            const value = `${CUSTOM_TYPE_PREFIX}${t.slug}`;
+            const selected = workoutType === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setWorkoutType(value)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  selected
+                    ? "text-white font-medium"
+                    : "text-[var(--color-text-secondary)] border-[var(--color-divider)] hover:border-[var(--color-text-tertiary)]"
+                }`}
+                style={{
+                  backgroundColor: selected ? t.color : "transparent",
+                  borderColor: selected ? t.color : undefined,
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+
+          {/* Add-your-own affordance — opens the inline composer below. */}
+          <button
+            type="button"
+            onClick={() => setShowAddLabel((s) => !s)}
+            className="px-3 py-1 text-xs rounded-full border border-dashed border-[var(--color-divider)] text-[var(--color-text-secondary)] hover:border-[var(--color-text-tertiary)] transition-colors"
+          >
+            + Add your own
+          </button>
         </div>
+
+        {showAddLabel && (
+          <div className="rounded-lg border border-[var(--color-divider)] p-3 space-y-2.5">
+            <input
+              type="text"
+              autoFocus
+              value={newLabelName}
+              onChange={(e) => setNewLabelName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleAddLabel();
+                }
+              }}
+              maxLength={40}
+              placeholder="Label name — e.g., Hill repeats"
+              className="w-full text-sm border-none outline-none bg-transparent placeholder:text-[var(--color-text-tertiary)] text-[var(--color-text-primary)]"
+            />
+            <div className="flex items-center gap-1.5">
+              {CUSTOM_LABEL_SWATCHES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Use color ${c}`}
+                  onClick={() => setNewLabelColor(c)}
+                  className={`h-5 w-5 rounded-full border-2 transition-transform ${
+                    newLabelColor === c
+                      ? "scale-110 border-[var(--color-text-primary)]"
+                      : "border-transparent"
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+            {labelError && <p className="text-xs text-coral">{labelError}</p>}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleAddLabel()}
+                disabled={savingLabel || !newLabelName.trim()}
+                className="px-3 py-1 text-xs rounded-full text-white font-medium disabled:opacity-40"
+                style={{ backgroundColor: newLabelColor }}
+              >
+                {savingLabel ? "Saving…" : "Add label"}
+              </button>
+              <button
+                type="button"
+                onClick={resetAddLabel}
+                className="px-3 py-1 text-xs rounded-full text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Preview pace anchor — coach picks a goal time so pace dropdowns,
@@ -471,6 +680,17 @@ export function WorkoutTemplateForm({
         onChange={setPreviewAnchor}
         planDistance={previewDistance}
       />
+
+      {/* Smart duplicate — suggested progressions of the source template.
+          Deterministic candidates, optional LLM notes, coach decides. Only
+          rendered in the duplicate flow (seed present with steps). */}
+      {seed && seedSteps.length > 0 && (
+        <ProgressionSuggestions
+          sourceName={seed.name}
+          sourceSteps={seedSteps}
+          onApply={(nextSteps) => setSteps(nextSteps)}
+        />
+      )}
 
       {/* Steps editor (the meat) */}
       <div className="bg-white border border-[var(--color-divider)] rounded-xl p-5">

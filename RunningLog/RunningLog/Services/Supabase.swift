@@ -237,3 +237,173 @@ private func isRetryableError(_ error: URLError) -> Bool {
         return false
     }
 }
+
+// MARK: - Athlete Settings (account-scoped preferences)
+
+/// Account-scoped athlete settings persisted in `athlete_settings` (one row per
+/// user_id), so preferences like max HR sync across devices instead of living
+/// only in this device's UserDefaults. The local `@AppStorage("userMaxHR")`
+/// cache stays the fast read path; this keeps it in sync with the account.
+enum AthleteSettingsService {
+    static let maxHRDefaultsKey = "userMaxHR"
+
+    /// Pull the account max HR into the local cache so zone scaling on THIS
+    /// device reflects what was set on any device. No-op when unset on the
+    /// server (keeps the local value). Call at launch.
+    static func syncMaxHRFromServer() async {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else { return }
+        struct Row: Decodable { let max_heart_rate: Int? }
+        do {
+            let rows: [Row] = try await supabase
+                .from("athlete_settings")
+                .select("max_heart_rate")
+                .eq("user_id", value: userId.lowercased())
+                .limit(1)
+                .execute().value
+            if let hr = rows.first?.max_heart_rate, (100...240).contains(hr) {
+                await MainActor.run { UserDefaults.standard.set(hr, forKey: maxHRDefaultsKey) }
+            }
+        } catch {
+            Log.app.error("AthleteSettingsService.syncMaxHRFromServer failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Beta-audit item #10 (2026-07-16): nothing ever wrote
+    /// `athlete_settings.timezone`, so every athlete defaulted to UTC — the
+    /// Daily Read cron fired at 06:00 UTC for everyone (10pm–2am local in
+    /// the US) and the whole roster dispatched in one simultaneous burst.
+    /// Upserts the device timezone identifier (e.g. "America/Chicago");
+    /// a per-user cache skips the write when it hasn't changed. Only the
+    /// timezone column is sent, so max_heart_rate etc. survive on conflict.
+    static func syncDeviceTimezone() async {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else { return }
+        let tz = TimeZone.current.identifier
+        let cacheKey = "athleteSettings.lastSyncedTimezone.\(userId.lowercased())"
+        guard UserDefaults.standard.string(forKey: cacheKey) != tz else { return }
+        struct Upsert: Encodable { let user_id: String; let timezone: String }
+        do {
+            try await supabase
+                .from("athlete_settings")
+                .upsert(Upsert(user_id: userId.lowercased(), timezone: tz), onConflict: "user_id")
+                .execute()
+            await MainActor.run { UserDefaults.standard.set(tz, forKey: cacheKey) }
+        } catch {
+            // Non-fatal: the table doesn't exist until the 20260615
+            // migrations are pushed. Cache stays unset, so we retry on the
+            // next launch instead of silently giving up forever.
+            Log.app.error("AthleteSettingsService.syncDeviceTimezone failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Upsert the athlete's max HR to the account. Only the max-HR column is
+    /// sent, so existing settings (e.g. timezone) are preserved on conflict.
+    static func saveMaxHR(_ bpm: Int) async {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty, (100...240).contains(bpm) else { return }
+        struct Upsert: Encodable { let user_id: String; let max_heart_rate: Int }
+        do {
+            try await supabase
+                .from("athlete_settings")
+                .upsert(Upsert(user_id: userId.lowercased(), max_heart_rate: bpm), onConflict: "user_id")
+                .execute()
+        } catch {
+            Log.app.error("AthleteSettingsService.saveMaxHR failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// The athlete's own display name + short bio, loaded into the Settings
+    /// screen so they can edit their profile. Both empty for a fresh athlete.
+    /// The same `athlete_settings` row the coach portal reads, so a name set
+    /// here shows up on the coach's roster and athlete page too.
+    static func fetchProfile() async -> (displayName: String, bio: String, avatarPath: String?) {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else { return ("", "", nil) }
+        struct Row: Decodable { let display_name: String?; let bio: String?; let avatar_path: String? }
+        do {
+            let rows: [Row] = try await supabase
+                .from("athlete_settings")
+                .select("display_name, bio, avatar_path")
+                .eq("user_id", value: userId.lowercased())
+                .limit(1)
+                .execute().value
+            let r = rows.first
+            return (r?.display_name ?? "", r?.bio ?? "", r?.avatar_path)
+        } catch {
+            Log.app.error("AthleteSettingsService.fetchProfile failed: \(error.localizedDescription)")
+            return ("", "", nil)
+        }
+    }
+
+    /// Upload a new profile photo (JPEG) to the private `avatars` bucket at
+    /// `{userId}/avatar.jpg` (upsert), persist the path on athlete_settings,
+    /// and return the stored path. The coach portal reads this path and signs
+    /// its own URL. Returns nil on failure.
+    static func uploadAvatar(_ jpeg: Data) async -> String? {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else { return nil }
+        let path = "\(userId)/avatar.jpg"
+        do {
+            try await supabase.storage
+                .from("avatars")
+                .upload(path, data: jpeg, options: FileOptions(contentType: "image/jpeg", upsert: true))
+            struct Upsert: Encodable { let user_id: String; let avatar_path: String }
+            try await supabase
+                .from("athlete_settings")
+                .upsert(Upsert(user_id: userId.lowercased(), avatar_path: path), onConflict: "user_id")
+                .execute()
+            return path
+        } catch {
+            Log.app.error("AthleteSettingsService.uploadAvatar failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// A short-lived signed URL for displaying an avatar (the bucket is
+    /// private, so `getPublicURL` won't serve it). Cache-bust with a query
+    /// item so a freshly replaced photo doesn't show the stale one.
+    static func signedAvatarURL(_ path: String) async -> URL? {
+        guard !path.isEmpty else { return nil }
+        do {
+            return try await supabase.storage
+                .from("avatars")
+                .createSignedURL(path: path, expiresIn: 3600)
+        } catch {
+            Log.app.error("AthleteSettingsService.signedAvatarURL failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Upsert the athlete's display name + short bio. Only these two profile
+    /// columns are sent, so timezone / max_heart_rate survive on conflict.
+    /// Values are trimmed and clamped to the DB CHECK limits (name ≤ 80,
+    /// bio ≤ 600). Empty text clears the field — every reader treats an empty
+    /// string as "no value" and falls back to the placeholder.
+    static func saveProfile(displayName: String, bio: String) async {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else { return }
+        struct Upsert: Encodable {
+            let user_id: String
+            let display_name: String
+            let bio: String
+        }
+        let cleanName = String(
+            displayName.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80)
+        )
+        let cleanBio = String(
+            bio.trimmingCharacters(in: .whitespacesAndNewlines).prefix(600)
+        )
+        do {
+            try await supabase
+                .from("athlete_settings")
+                .upsert(
+                    Upsert(user_id: userId.lowercased(), display_name: cleanName, bio: cleanBio),
+                    onConflict: "user_id"
+                )
+                .execute()
+        } catch {
+            Log.app.error("AthleteSettingsService.saveProfile failed: \(error.localizedDescription)")
+        }
+    }
+}

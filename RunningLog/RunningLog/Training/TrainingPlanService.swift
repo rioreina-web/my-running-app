@@ -467,6 +467,77 @@ final class TrainingPlanService {
         }
     }
 
+    /// Athlete self-edit of a workout's structure. Unlike `updateWorkout`'s
+    /// silent PostgREST write, this routes through the `edit-scheduled-workout`
+    /// edge function so the change is logged to `plan_adjustments` (yellow tier)
+    /// and surfaced to the coach. The athlete owns their plan, so a race-week
+    /// edit is auto-confirmed — the coach flag is the oversight. Returns true on
+    /// success; on failure the caller keeps the sheet in edit mode.
+    func submitWorkoutEdit(_ workout: ScheduledWorkout) async -> Bool {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            var body: [String: Any] = [
+                "scheduled_workout_id": workout.id.uuidString,
+                "status": workout.status.rawValue,
+                "confirm_race_week": true,
+            ]
+            if let planned = workout.workout {
+                let encoded = try JSONEncoder().encode(planned)
+                if let obj = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] {
+                    body["workout_data"] = obj
+                }
+            }
+            _ = try await callEdgeFunction(name: "edit-scheduled-workout", body: body)
+            if let index = allScheduledWorkouts.firstIndex(where: { $0.id == workout.id }) {
+                allScheduledWorkouts[index] = workout
+            }
+            return true
+        } catch {
+            Log.coach.error("Failed to submit workout edit: \(error)")
+            ErrorReporter.shared.report(error, context: "athlete workout edit")
+            errorMessage = "Failed to save changes"
+            showError = true
+            return false
+        }
+    }
+
+    /// Duplicate a scheduled workout onto another (future) day. Routes
+    /// through the same `edit-scheduled-workout` edge function as
+    /// `submitWorkoutEdit` — the function inserts a fresh row with
+    /// source = 'user_created' and writes a `duplicate_workout`
+    /// plan_adjustments audit row (yellow tier when the source is a coach
+    /// prescription, so the coach sees the added volume). Reloads the
+    /// scheduled-workout cache on success so the new day appears
+    /// immediately. Returns true on success.
+    func duplicateWorkout(_ workout: ScheduledWorkout, to date: Date) async -> Bool {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone.current
+            f.dateFormat = "yyyy-MM-dd"
+            let body: [String: Any] = [
+                "scheduled_workout_id": workout.id.uuidString,
+                "duplicate_to_date": f.string(from: date),
+                // The athlete owns their calendar; landing near the race is
+                // their call — the coach flag is the oversight, mirroring
+                // submitWorkoutEdit's posture.
+                "confirm_race_week": true,
+            ]
+            _ = try await callEdgeFunction(name: "edit-scheduled-workout", body: body)
+            await loadScheduledWorkouts()
+            return true
+        } catch {
+            Log.coach.error("Failed to duplicate workout: \(error)")
+            ErrorReporter.shared.report(error, context: "duplicate scheduled workout")
+            errorMessage = "Failed to duplicate workout"
+            showError = true
+            return false
+        }
+    }
+
     /// Update a single workout's `scheduled_hour` (0-23) and re-fetch
     /// its weather forecast for the new hour. Two writes:
     ///   1. UPDATE scheduled_workouts SET scheduled_hour = ?

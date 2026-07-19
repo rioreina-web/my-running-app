@@ -1,0 +1,17 @@
+diff --git a/supabase/functions/drain-voice-processing-jobs/index.ts b/supabase/functions/drain-voice-processing-jobs/index.ts
+index 9009681..8cd1e2d 100644
+--- a/supabase/functions/drain-voice-processing-jobs/index.ts
++++ b/supabase/functions/drain-voice-processing-jobs/index.ts
+@@ -50,8 +50,10 @@ interface ClaimedJob {
+   id: number;
+   training_log_id: string;
+   user_id: string;
+-  kind: "memo" | "check_in";
+-  audio_url: string;
++  // "note" = a typed manual note: no audio, process-training-memo takes the
++  // text branch (transcription = the row's `notes`).
++  kind: "memo" | "check_in" | "note";
++  audio_url: string | null;
+   attempts: number;
+   max_attempts: number;
+ }

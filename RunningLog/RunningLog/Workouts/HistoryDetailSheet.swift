@@ -21,7 +21,6 @@ struct HistoryDetailSheet: View {
     // `HistoryDetailSheet+Editorial.swift` can read them. Swift's
     // `private` is file-scoped and would hide them from the extension.
     @State var vm: HistoryDetailViewModel
-    @State var isLoadingInsight = false
     @State var showDeleteConfirmation = false
     @State var showWorkoutPicker = false
     @State var selectedWorkout: RunningWorkout?
@@ -44,6 +43,16 @@ struct HistoryDetailSheet: View {
         self.onUpdate = onUpdate
         self._vm = State(initialValue: HistoryDetailViewModel(entry: entry))
         self._workoutNotesText = State(initialValue: entry.workoutNotes ?? "")
+    }
+
+    /// The training_logs row id whose telemetry the "VIEW DETAIL" sheet and the
+    /// inline WORKOUT section should chart. For a Strava-linked entry the GPS
+    /// stream + laps live on the matched Strava row, not on this (voice/manual)
+    /// entry — so open that row. When there is no linked Strava row, fall back to
+    /// this entry's own id. Intentionally `internal` (not `private`) so the
+    /// `editorialBody` extension in HistoryDetailSheet+Editorial.swift can read it.
+    var workoutDetailId: UUID {
+        vm.linkedStreamLogId ?? entry.id
     }
 
     var body: some View {
@@ -146,45 +155,47 @@ struct HistoryDetailSheet: View {
             )
         }
         .sheet(isPresented: $showVitalDetail) {
-            if let matched = vm.matchedVitalWorkout {
-                // Use the new source-agnostic detail view for Strava + HealthKit.
-                // Falls back to legacy Vital view only when there's an actual Vital ID.
-                let isLegacyVital = matched.vitalWorkoutId != nil
-                    && matched.sourceApp != "Strava"
-                    && !(matched.vitalWorkoutId?.hasPrefix("strava_") ?? false)
-                if isLegacyVital, let vitalId = matched.vitalWorkoutId {
-                    VitalWorkoutDetailView(workout: matched, vitalWorkoutId: vitalId)
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.visible)
-                } else {
-                    // Editorial 12-chart kit per handoff 3 · Direction B.
-                    // The peer view `WorkoutAnalysisView(workout:)` stays
-                    // available if we need a fallback while WorkoutAnalystView's
-                    // `loadStream()` is still wired up.
-                    //
-                    // Path 1 (external_streams JSONB via ExternalStreamAdapter)
-                    // needs the training_logs row that actually holds the
-                    // streams. For a Strava-imported match that's `matched.id`
-                    // — `fetchStravaRunningWorkoutsForDate` builds the
-                    // RunningWorkout with the strava row's id. The opened entry
-                    // (`currentEntry`) is often a SEPARATE voice_log/manual row
-                    // for the same run with no streams, so using its id makes
-                    // path 1 miss and the screen shows "stream data isn't
-                    // available" even though the streams exist on the strava row.
-                    // For HealthKit matches `matched.id` is the HKWorkout UUID
-                    // (not a row id), so fall back to `currentEntry.id` and let
-                    // path 3 (HK live) fill the charts.
-                    let streamLogId = matched.sourceApp == "Strava"
-                        ? matched.id
-                        : vm.currentEntry.id
-                    WorkoutAnalystView(workout: matched, trainingLogId: streamLogId)
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.visible)
-                }
-            }
+            // Canonical workout detail — the rep-by-rep chart (WorkoutRepChart)
+            // reads the clean `running_workout_laps` table keyed on the
+            // training_logs row id, plus the prescribed-workout notes. This
+            // replaced the old per-source fork (legacy Vital view vs. the
+            // broken stream-parser Analyst view).
+            //
+            // A Strava import lives in its OWN training_logs row (with the GPS
+            // stream + laps), separate from this voice/manual entry. When the
+            // entry is linked to such a row, open THAT row so the detail has
+            // telemetry to chart — opening `entry.id` (this voice-log row, which
+            // has no stream) is what showed the "Logged without GPS" state on a
+            // run that was in fact recorded with GPS. HealthKit/Vital matches
+            // keep `entry.id` because their id is not a training_logs row id.
+            WorkoutRepDetailSheet(workoutId: workoutDetailId)
         }
         .task {
             await vm.matchVitalWorkout()
+            // Poll notes and the coach insight concurrently — each waits up to
+            // ~24s for its server-written value, so running them in series would
+            // stall the insight behind the notes. The AI Insight section then
+            // appears on its own the moment `coach_insight` lands.
+            async let notes: Void = fillWorkoutNotesWhenReady()
+            async let insight: Void = vm.refreshCoachInsightWhenReady()
+            _ = await (notes, insight)
+        }
+    }
+
+    /// The note is written server-side after the voice memo processes, so when
+    /// the sheet first opened `entry.workoutNotes` was often empty. Poll a few
+    /// times and fill the field once it lands — but never clobber text the user
+    /// has started typing (guarded on `workoutNotesText.isEmpty`).
+    private func fillWorkoutNotesWhenReady() async {
+        for _ in 0..<8 {
+            if !workoutNotesText.isEmpty { return }
+            if let n = await vm.latestWorkoutNotes(), !n.isEmpty {
+                await MainActor.run {
+                    if workoutNotesText.isEmpty { workoutNotesText = n }
+                }
+                return
+            }
+            try? await Task.sleep(for: .seconds(3))
         }
     }
 

@@ -92,6 +92,8 @@ struct TrainingTabView: View {
                     switch mode {
                     case .current:
                         summary
+                        todaySection
+                        currentWeekSection
                         feltVsPlanned
                     case .calendar:
                         scopeToggle
@@ -102,6 +104,10 @@ struct TrainingTabView: View {
                         // summary strip and in full on the day sheet.
                         TrainingCalendarSection(vm: vm) { route = .day($0) }
                             .padding(.top, 8)
+                        EditorialRule().padding(.vertical, 22)
+                        // Phase A: the Plan tab folded in here — the plan is
+                        // a subset of training, not its own destination.
+                        planSection
                         EditorialRule().padding(.vertical, 22)
                         goals
                     case .history:
@@ -645,6 +651,351 @@ struct TrainingTabView: View {
                 .foregroundStyle(accent ? Color.drip.coral : Color.drip.textPrimary)
         }
         .padding(.vertical, 9)
+    }
+
+    // MARK: CURRENT · Today
+
+    /// Today's session — plan-aware when the plan has something scheduled,
+    /// a factual completed row once the run lands, and an honest empty
+    /// state otherwise (hard rule #8: state the absence, say what fills it).
+    @ViewBuilder private var todaySection: some View {
+        let scheduled = planVM.allScheduledWorkouts.first {
+            Calendar.current.isDateInToday($0.date)
+        }
+        let todayRun = vm.sessions(on: Date())
+            .filter { $0.miles > 0 }
+            .max(by: { $0.miles < $1.miles })
+
+        section {
+            sectionHead("TODAY · \(Self.weekdayFull(Date()))",
+                        trailing: planVM.activePlan?.name.uppercased() ?? "")
+
+            if let run = todayRun {
+                completedRunLine(run, conditions: vm.conditions(on: Date()))
+            } else if let s = scheduled, s.workoutType != .rest {
+                plannedTodayCard(s)
+            } else if scheduled?.workoutType == .rest {
+                Text("Rest day on the plan.")
+                    .font(.system(size: 14, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textTertiary)
+            } else {
+                Text("Nothing planned, nothing logged yet. Today's run lands here when it does.")
+                    .font(.system(size: 14, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+        }
+    }
+
+    /// The planned-workout card: type chip + distance in display serif,
+    /// then the plan's own description, then the forecast when the daily
+    /// weather cron has populated one. Facts only — no verdicts.
+    private func plannedTodayCard(_ s: ScheduledWorkout) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                typeChip(for: s.workoutType)
+                if let mi = s.workout?.totalDistanceMiles, mi > 0 {
+                    Text("\(vm.formatMiles(mi)) mi")
+                        .font(.dripDisplay(22))
+                        .foregroundStyle(Color.drip.textPrimary)
+                } else {
+                    Text(s.workoutType.displayName)
+                        .font(.dripDisplay(22))
+                        .foregroundStyle(Color.drip.textPrimary)
+                }
+            }
+            if let desc = s.workout?.description, !desc.isEmpty {
+                Text(desc)
+                    .font(.system(size: 13, design: .serif))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .lineLimit(3)
+            }
+            if let wx = s.weatherForecast {
+                Text(forecastLine(wx))
+                    .font(.dripEyebrow(9.5)).tracking(1.0)
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+        }
+    }
+
+    private func forecastLine(_ wx: WorkoutForecast) -> String {
+        var parts = ["FORECAST \(Int(wx.temperatureF.rounded()))°"]
+        if let d = wx.dewPointF { parts.append("DP \(Int(d.rounded()))°") }
+        if let c = wx.condition, !c.isEmpty { parts.append(c.uppercased()) }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: CURRENT · This week
+
+    /// The week as day rows — every completed run with its conditions
+    /// readout inline, planned days ahead when a plan exists, rest days
+    /// named. Closes with the athlete's own fatigue words, verbatim.
+    private var currentWeekSection: some View {
+        let days = vm.dayVolumes()
+        let hot = vm.hotRunCount()
+        return section {
+            sectionHead("THIS WEEK",
+                        trailing: hot > 0 ? "\(hot) HOT RUN\(hot == 1 ? "" : "S")" : "")
+            VStack(spacing: 0) {
+                ForEach(days) { d in
+                    dayRow(d)
+                }
+            }
+            if let note = vm.weekMoodObservation() {
+                Text(note)
+                    .font(.system(size: 13, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .padding(.top, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder private func dayRow(_ d: DayVolume) -> some View {
+        let all = vm.sessions(on: d.date)
+        let run = all.filter { $0.miles > 0 }.max(by: { $0.miles < $1.miles })
+        let memo = all.first { $0.miles == 0 && ($0.pullQuote?.isEmpty == false) }
+        let planned = planVM.allScheduledWorkouts.first {
+            Calendar.current.isDate($0.date, inSameDayAs: d.date) && $0.workoutType != .rest
+        }
+        let isToday = Calendar.current.isDateInToday(d.date)
+
+        if let run {
+            Button { route = .day(d.date) } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 10) {
+                        dayLabel(d.label, accent: isToday)
+                        typeChip(run.typeLabel, bucket: run.bucket)
+                        Text("\(vm.formatMiles(run.miles)) mi")
+                            .font(.dripDisplay(16))
+                            .foregroundStyle(Color.drip.textPrimary)
+                        Spacer()
+                        if let pace = run.pace, !pace.isEmpty {
+                            Text(pace)
+                                .font(.dripStat(13))
+                                .foregroundStyle(Color.drip.textPrimary)
+                        }
+                    }
+                    let mood = vm.mood(on: d.date)
+                    let readout = vm.conditions(on: d.date)?.readout
+                    if mood != nil || readout != nil {
+                        HStack(spacing: 8) {
+                            if let mood { MoodBadge(mood: mood) }
+                            if let readout {
+                                Text(readout)
+                                    .font(.dripEyebrow(9)).tracking(0.8)
+                                    .foregroundStyle(Color.drip.textTertiary)
+                            }
+                        }
+                        .padding(.leading, 42)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 12)
+            Hairline()
+        } else if let memo {
+            // Voice memo with no run — the qualitative stream, verbatim.
+            HStack(alignment: .center, spacing: 10) {
+                dayLabel(d.label, accent: isToday)
+                Text("\u{201C}\(memo.pullQuote ?? "")\u{201D}")
+                    .font(.system(size: 13, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .lineLimit(2)
+                Spacer()
+                if let mood = vm.mood(on: d.date) { MoodBadge(mood: mood) }
+            }
+            .padding(.vertical, 12)
+            Hairline()
+        } else if d.isFuture, let planned {
+            // Upcoming planned day — dimmed, factual.
+            HStack(spacing: 10) {
+                dayLabel(d.label, accent: false)
+                Text(plannedShortLine(planned))
+                    .font(.dripEyebrow(10)).tracking(1.0)
+                    .foregroundStyle(Color.drip.textTertiary)
+                Spacer()
+            }
+            .padding(.vertical, 12)
+            .opacity(0.7)
+            Hairline()
+        } else if !d.isFuture {
+            HStack(spacing: 10) {
+                dayLabel(d.label, accent: isToday)
+                Text("Rest")
+                    .font(.system(size: 14, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textTertiary)
+                Spacer()
+                // A rest-day check-in still carries how they felt.
+                if let mood = vm.mood(on: d.date) { MoodBadge(mood: mood) }
+            }
+            .padding(.vertical, 12)
+            Hairline()
+        }
+        // Future day with nothing planned renders nothing — no placeholder.
+    }
+
+    private func dayLabel(_ label: String, accent: Bool) -> some View {
+        Text(label)
+            .font(.dripEyebrow(9.5)).tracking(0.8)
+            .foregroundStyle(accent ? Color.drip.coral : Color.drip.textTertiary)
+            .frame(width: 32, alignment: .leading)
+    }
+
+    private func plannedShortLine(_ s: ScheduledWorkout) -> String {
+        var line = s.workoutType.displayName.uppercased()
+        if let mi = s.workout?.totalDistanceMiles, mi > 0 {
+            line += " · \(vm.formatMiles(mi)) MI"
+        }
+        return line
+    }
+
+    // MARK: CALENDAR · plan (folded in from the old Plan tab, Phase A)
+
+    /// The plan block: this week's planned sessions when a plan is active,
+    /// with the full plan surface (and its import / join-coach actions)
+    /// one push away. No plan → empty state with a way in (hard rule #8).
+    /// `activePlan == nil` is a first-class state, not a failure mode.
+    @ViewBuilder private var planSection: some View {
+        if let plan = planVM.activePlan {
+            VStack(alignment: .leading, spacing: 0) {
+                sectionHead("THE PLAN · \(plan.name.uppercased())", trailing: "")
+                ForEach(thisWeeksPlanned) { s in
+                    HStack(spacing: 10) {
+                        dayLabel(TrainingAnalyticsViewModel.weekdayLabel(s.date),
+                                 accent: Calendar.current.isDateInToday(s.date))
+                        if s.workoutType == .rest {
+                            Text("Rest")
+                                .font(.system(size: 14, design: .serif).italic())
+                                .foregroundStyle(Color.drip.textTertiary)
+                        } else {
+                            Text(plannedShortLine(s))
+                                .font(.dripEyebrow(10)).tracking(1.0)
+                                .foregroundStyle(Color.drip.textSecondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 10)
+                    Hairline()
+                }
+                NavigationLink {
+                    TrainingPlanView()
+                } label: {
+                    Text("OPEN FULL PLAN ↗")
+                        .font(.dripEyebrow(10.5)).tracking(1.3)
+                        .foregroundStyle(Color.drip.coral)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, 14)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 4)
+        } else {
+            NavigationLink {
+                TrainingPlanView()
+            } label: {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("THE PLAN · OPTIONAL")
+                            .font(.dripEyebrow(10.5)).tracking(1.3)
+                            .foregroundStyle(Color.drip.textPrimary)
+                        Text("No plan yet. Import one, or join your coach's — planned days land on this calendar.")
+                            .font(.system(size: 14, design: .serif).italic())
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    Spacer()
+                    Text("SET UP ↗")
+                        .font(.dripEyebrow(10.5)).tracking(1.3)
+                        .foregroundStyle(Color.drip.coral)
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Planned sessions in the current calendar week, in date order.
+    private var thisWeeksPlanned: [ScheduledWorkout] {
+        let cal = Calendar.current
+        return planVM.allScheduledWorkouts
+            .filter { cal.isDate($0.date, equalTo: Date(), toGranularity: .weekOfYear) }
+            .sorted { $0.date == $1.date ? $0.session < $1.session : $0.date < $1.date }
+    }
+
+    // MARK: CURRENT · chips
+
+    /// Completed-run chip — rides the intensity bucket's ramp color.
+    /// Blue is pace-only (three-palette rule); the pale Easy stop takes
+    /// ink text for contrast, deeper stops take paper.
+    private func typeChip(_ label: String, bucket: IntensityBucket) -> some View {
+        zoneChip(label, color: bucket.color, darkText: bucket == .easy)
+    }
+
+    /// Planned-workout chip. Running types map onto the pace ramp;
+    /// non-running work (strength, cross-training) stays off the pace
+    /// palette entirely — neutral well, ink text.
+    @ViewBuilder private func typeChip(for type: ScheduledWorkoutType) -> some View {
+        switch type {
+        case .easy, .recovery, .strides, .longRun:
+            zoneChip(type.displayName.uppercased(), color: IntensityRamp.easy, darkText: true)
+        case .progression:
+            zoneChip(type.displayName.uppercased(), color: IntensityRamp.aerobic, darkText: false)
+        case .tempo:
+            zoneChip(type.displayName.uppercased(), color: IntensityRamp.threshold, darkText: false)
+        case .intervals:
+            zoneChip(type.displayName.uppercased(), color: IntensityRamp.colors[7], darkText: false)
+        case .race:
+            zoneChip(type.displayName.uppercased(), color: IntensityRamp.colors[9], darkText: false)
+        case .strength, .crossTraining, .rest:
+            zoneChip(type.displayName.uppercased(), color: Color.drip.divider, darkText: true)
+        }
+    }
+
+    private func zoneChip(_ label: String, color: Color, darkText: Bool) -> some View {
+        Text(label)
+            .font(.dripEyebrow(9)).tracking(0.8)
+            .foregroundStyle(darkText ? Color.drip.textPrimary : Color.drip.background)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 4).fill(color))
+    }
+
+    /// Completed run line used by the Today section — same anatomy as a
+    /// week day-row, minus the day label.
+    private func completedRunLine(_ run: SessionDetail, conditions: RunConditions?) -> some View {
+        Button { route = .day(Date()) } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    typeChip(run.typeLabel, bucket: run.bucket)
+                    Text("\(vm.formatMiles(run.miles)) mi")
+                        .font(.dripDisplay(22))
+                        .foregroundStyle(Color.drip.textPrimary)
+                    Spacer()
+                    if let pace = run.pace, !pace.isEmpty {
+                        Text(pace)
+                            .font(.dripStat(14))
+                            .foregroundStyle(Color.drip.textPrimary)
+                    }
+                }
+                let mood = vm.mood(on: Date())
+                if mood != nil || conditions?.readout != nil {
+                    HStack(spacing: 8) {
+                        if let mood { MoodBadge(mood: mood) }
+                        if let readout = conditions?.readout {
+                            Text(readout)
+                                .font(.dripEyebrow(9.5)).tracking(1.0)
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private static func weekdayFull(_ date: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "EEEE"
+        return f.string(from: date).uppercased()
     }
 
     // MARK: Shared chrome

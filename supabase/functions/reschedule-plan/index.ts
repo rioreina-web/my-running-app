@@ -1,10 +1,11 @@
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { captureException, flushSentry } from "../_shared/sentry.ts";
 // ── Workout Library (same source of truth as generate-training-plan) ──
 
 const WORKOUT_CODES_BY_DAY = `
@@ -116,6 +117,8 @@ Deno.serve(async (req) => {
 
     const rlBlocked = await enforceFeatureRateLimit(userId, "reschedule", corsHeaders);
     if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(userId, "reschedule", corsHeaders);
+    if (monthlyCapped) return monthlyCapped;
 
     const body = await req.json();
     const { scope, reason, reasonCategory, plan, workouts, recentHistory } = body;
@@ -185,6 +188,8 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("Reschedule error:", error);
+    captureException(error, { fn: "reschedule-plan" });
+    await flushSentry();
     return new Response(
       JSON.stringify({ error: "Failed to reschedule. Please try again.", details: String(error) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -34,8 +34,9 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.21.0";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v5.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
@@ -164,6 +165,8 @@ Deno.serve(async (req) => {
 
   const rlBlocked = await enforceFeatureRateLimit(userId, "daily_read", corsHeaders, { isServiceRole });
   if (rlBlocked) return rlBlocked;
+  const monthlyCapped = await enforceMonthlyCap(userId, "daily_read", corsHeaders, { isServiceRole });
+  if (monthlyCapped) return monthlyCapped;
 
   const triggeredBy = body.triggered_by ?? "cron";
   if (!["cron", "manual", "workout_trigger"].includes(triggeredBy)) {
@@ -323,6 +326,8 @@ Deno.serve(async (req) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("coaching-daily-read: unhandled error:", message);
+    captureException(err, { fn: "coaching-daily-read" });
+    await flushSentry();
     // Best-effort failure marker; if we don't have a pending row id we
     // just log. The next cron tick will retry.
     return jsonResponse(500, { error: "Internal error", detail: message });

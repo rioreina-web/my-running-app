@@ -53,27 +53,9 @@ enum CoachIntent {
         }
     }
 
-    /// A short label suitable for the section eyebrow. Falls back to a
-    /// title-cased version of the raw type.
+    /// A short label suitable for the section eyebrow. Delegates to the
+    /// single source of truth so every surface reads the same.
     static func displayName(for workoutType: String?) -> String {
-        guard let raw = workoutType?.lowercased() else { return "Run" }
-        switch raw {
-        case "easy":              return "Easy Run"
-        case "recovery":          return "Recovery Run"
-        case "tempo":             return "Tempo"
-        case "threshold":         return "Threshold"
-        case "intervals":         return "Intervals"
-        case "long_run", "longrun", "long": return "Long Run"
-        case "progression":       return "Progression"
-        case "strides":           return "Strides"
-        case "race":              return "Race"
-        case "rest":              return "Rest"
-        case "cross_training", "crosstraining": return "Cross-train"
-        case "strength":          return "Strength"
-        default:
-            return raw
-                .replacingOccurrences(of: "_", with: " ")
-                .capitalized
-        }
+        WorkoutLabel.display(workoutType)
     }
 }

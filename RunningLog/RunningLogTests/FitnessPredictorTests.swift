@@ -110,6 +110,36 @@ struct PaceConversionTests {
     }
 }
 
+/// Regression tests for the elite-prediction bug (2026-07-16): the Observer's
+/// `distance_key` vocabulary ("fiveK"/"tenK"/"halfMarathon") didn't match
+/// `PaceCalculator.distances`' keys ("5K"/"10K"/"half"), so the static
+/// `convert(pace:from:to:)` silently returned the pace UNCHANGED — a 5K pace
+/// was used directly as a 10K pace with no slowdown.
+@Suite("Training-anchor pace conversion (Observer distance_key vocab)")
+struct TrainingAnchorConvertTests {
+    @Test("fiveK → tenK actually slows the pace (not a no-op)")
+    func fiveKToTenKConverts() {
+        let fiveK = 360.0 // 6:00/mi
+        let tenK = FitnessPredictorService.convert(pace: fiveK, from: "fiveK", to: "tenK")
+        // Must NOT be the identity — that was the bug — and 10K is slower than 5K.
+        #expect(tenK > fiveK + 3)
+        #expect(tenK > 370 && tenK < 382)
+    }
+
+    @Test("halfMarathon → tenK speeds up (10K faster than half)")
+    func halfToTenKConverts() {
+        let half = 409.0 // 6:49/mi
+        let tenK = FitnessPredictorService.convert(pace: half, from: "halfMarathon", to: "tenK")
+        #expect(tenK < half - 3)
+    }
+
+    @Test("Unknown key is a safe no-op, not a crash")
+    func unknownKeyNoOp() {
+        let pace = 400.0
+        #expect(FitnessPredictorService.convert(pace: pace, from: "furlong", to: "tenK") == pace)
+    }
+}
+
 @Suite("Pace Extraction from Text")
 struct PaceExtractionTests {
     let predictor = FitnessPredictorService(

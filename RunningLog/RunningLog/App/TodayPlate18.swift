@@ -771,12 +771,16 @@ struct TodayZoneShiftsRow: View {
         }
     }
 
+    /// Zone labels ride the universal blue pace ramp (PaceSpectrum).
+    /// These are 9 pt text labels, so EASY/MODERATE step down to darker
+    /// stops than their fills would use — the pale ends are illegible
+    /// as small text on card white.
     private func zoneColor(_ label: String) -> Color {
         switch label {
-        case "EASY": return Color.drip.energized
-        case "MODERATE": return Color.drip.textSecondary
-        case "THRESHOLD": return Color.drip.coral
-        case "HARD": return Color.drip.textPrimary
+        case "EASY": return PaceSpectrum.easyText
+        case "MODERATE": return PaceSpectrum.mp
+        case "THRESHOLD": return PaceSpectrum.lt
+        case "HARD": return PaceSpectrum.mile
         default: return Color.drip.textTertiary
         }
     }

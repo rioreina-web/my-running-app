@@ -186,6 +186,40 @@ Deno.test("source priority: profile beats snapshot for race anchors", () => {
   assertEquals(z.marathon.pace, 320);
 });
 
+Deno.test("source priority: manual anchor overrides profile + snapshot, derives whole ladder", () => {
+  const z = computePaceZones({
+    ...emptyInput(),
+    profile: {
+      easy_pace_seconds: null,
+      marathon_pace_seconds: 320, // auto value — must be overridden by manual
+      half_pace_seconds: 305,
+      ten_k_pace_seconds: 290,
+      five_k_pace_seconds: 280,
+      mile_pace_seconds: 258,
+      updated_at: NOW.toISOString(),
+      // User-confirmed effort: a recent 10K in 38:00.
+      manual_anchor_distance: "tenK",
+      manual_anchor_time_seconds: 38 * 60,
+    },
+    snapshot: {
+      predicted_marathon_seconds: 9000,
+      predicted_half_seconds: 4500,
+      predicted_10k_seconds: null,
+      predicted_5k_seconds: null,
+      predicted_mile_seconds: null,
+      created_at: NOW.toISOString(),
+    },
+  });
+  // Every anchor comes from the manual effort, not the auto profile columns.
+  assert(z.marathon);
+  assertEquals(z.marathon.source, "manual");
+  assert(z.marathon.pace !== 320, "manual must override the 320 profile MP");
+  assert(z.fiveK && z.fiveK.source === "manual");
+  assert(z.tenK && z.tenK.source === "manual");
+  // Ladder stays coherent: 5K faster than MP.
+  assert(z.fiveK!.pace < z.marathon.pace);
+});
+
 Deno.test("source priority: profile partial → fall through to snapshot for missing anchors", () => {
   const z = computePaceZones({
     ...emptyInput(),
@@ -525,16 +559,16 @@ Deno.test("Step 6: projectToLegacyZones for 2:20 marathoner — band midpoints f
     predicted_mile_seconds: 4 * 60 + 18,
   });
   assert(legacy);
-  // Canonical band midpoints for MP=320 (midpoint of the UNROUNDED bounds,
-  // then rounded — matches iOS easyMPRatio 1.3393: 320 × 1.3393 = 428.6 → 429):
-  //   Recovery: (457.1 + 533.3) / 2 = 495 (8:15) — midpoint of 60-70% MP speed
-  //   Easy:     (400 + 457.1) / 2 = 429 (7:09) — midpoint of 70-80% MP speed
-  //   Moderate: (355.6 + 400) / 2 = 378 (6:18) — midpoint of 80-90% MP speed
-  //   Steady:   (320 + 355.6) / 2 = 338 (5:38) — midpoint of 90-100% MP speed
-  assertEquals(legacy.recovery, 495);
-  assertEquals(legacy.easy, 429);
-  assertEquals(legacy.moderate, 378);
-  assertEquals(legacy.steady, 338);
+  // Canonical SPEED midpoints for MP=320 (§6): MP ÷ TRAINING_MP_SPEED_RATIO,
+  // matching paces.ts / derivePaceTableFromGoal / iOS easyMPRatio 1.3333:
+  //   Recovery: 320 / 0.65 = 492 (8:12)
+  //   Easy:     320 / 0.75 = 427 (7:07)
+  //   Moderate: 320 / 0.85 = 376 (6:16)
+  //   Steady:   320 / 0.95 = 337 (5:37)
+  assertEquals(legacy.recovery, 492);
+  assertEquals(legacy.easy, 427);
+  assertEquals(legacy.moderate, 376);
+  assertEquals(legacy.steady, 337);
   // Race anchors flow through verbatim
   assertEquals(legacy.marathon, 320);
   assertEquals(legacy.halfMarathon, 306);

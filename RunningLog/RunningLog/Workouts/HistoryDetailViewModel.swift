@@ -12,6 +12,13 @@ final class HistoryDetailViewModel {
     var isSavingEdits = false
     var isSavingWorkoutNotes = false
     var matchedVitalWorkout: RunningWorkout?
+    /// The training_logs row id of the linked Strava import (if any). Strava runs
+    /// are stored as their own training_logs row carrying the GPS stream + laps —
+    /// separate from this (voice/manual) entry, which has none. "VIEW DETAIL" opens
+    /// this id so the rep-by-rep sheet has telemetry to chart. Derived ONLY from
+    /// Strava-sourced training_logs rows, so it's always a valid row id (unlike
+    /// `matchedVitalWorkout.id`, which for a HealthKit/Vital match is a device id).
+    var linkedStreamLogId: UUID?
 
     private let entryId: UUID
 
@@ -246,12 +253,56 @@ final class HistoryDetailViewModel {
 
             isSavingWorkoutNotes = false
             Log.database.info("Workout notes saved to database")
+
+            // The athlete just corrected the notes — re-derive the workout
+            // structure so the parsed rep chart reflects their typed truth.
+            // The parser treats typed workout_notes as the TOP source for
+            // structure/intent (above the GPS guess), so e.g. "2 sets of 2k,
+            // 2 x 1k w/ 2'/1' recovery" overrides whatever the stream inferred.
+            // Fire-and-forget; re-fetch the row when it returns so the chart
+            // updates in place.
+            let reparseId = entryId.uuidString
+            let reparseUserId = AuthManager.shared.userId
+            Task { [weak self] in
+                _ = try? await callEdgeFunction(
+                    name: "parse-workout-structure",
+                    body: ["training_log_id": reparseId, "user_id": reparseUserId]
+                )
+                let refreshed: [TrainingLog]? = try? await supabase
+                    .from("training_logs")
+                    .select()
+                    .eq("id", value: reparseId)
+                    .limit(1)
+                    .execute()
+                    .value
+                if let row = refreshed?.first {
+                    await MainActor.run { self?.currentEntry = row }
+                }
+            }
             return true
         } catch {
             Log.database.error("Failed to save workout notes: \(error)")
             ErrorReporter.shared.report(error, context: "save workout notes")
             isSavingWorkoutNotes = false
             return false
+        }
+    }
+
+    /// Latest `workout_notes` for this row, straight from the DB. The note is
+    /// often written server-side (process-training-memo / parse-workout-structure)
+    /// AFTER the detail sheet opened, so the initially-passed entry had none. The
+    /// sheet polls this to fill the field once the note lands.
+    @MainActor
+    func latestWorkoutNotes() async -> String? {
+        struct Row: Decodable { var workout_notes: String? }
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs").select("workout_notes")
+                .eq("id", value: entryId.uuidString).limit(1).execute().value
+            return rows.first?.workout_notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            Log.database.error("latestWorkoutNotes failed: \(error)")
+            return nil
         }
     }
 
@@ -268,15 +319,24 @@ final class HistoryDetailViewModel {
         async let hk = HealthKitManager.shared.fetchRunningWorkouts(for: workoutDate)
         async let strava = Self.fetchStravaRunningWorkoutsForDate(workoutDate)
 
-        let all = (await vital) + (await hk) + (await strava)
+        // Keep the Strava rows separately: they're real training_logs rows (with
+        // the stream), so they're the ones "VIEW DETAIL" should open. The merged
+        // list still drives the "LINKED · <source>" label + closest-by-distance
+        // display match, unchanged.
+        let stravaRows = await strava
+        let all = (await vital) + (await hk) + stravaRows
         guard !all.isEmpty else { return }
 
         if let entryDist = currentEntry.workoutDistanceMiles {
             matchedVitalWorkout = all.min(by: {
                 abs($0.distanceMiles - entryDist) < abs($1.distanceMiles - entryDist)
             })
+            linkedStreamLogId = stravaRows.min(by: {
+                abs($0.distanceMiles - entryDist) < abs($1.distanceMiles - entryDist)
+            })?.id
         } else {
             matchedVitalWorkout = all.first
+            linkedStreamLogId = stravaRows.first?.id
         }
     }
 
@@ -350,72 +410,77 @@ final class HistoryDetailViewModel {
         return String(format: "%d:%02d", mins, secs)
     }
 
+    // MARK: - Coach Insight (auto-appear)
+
+    /// Poll for the server-generated coach insight and slot it in once it lands,
+    /// so an entry opened mid-processing shows the insight the moment it's ready —
+    /// no manual tap. Mirrors `fillWorkoutNotesWhenReady` (the note is written by
+    /// `process-training-memo` shortly after the voice memo is processed). No-op
+    /// once an insight is already present.
+    @MainActor
+    func refreshCoachInsightWhenReady() async {
+        if let c = coachInsight, !c.isEmpty { return }
+        struct Row: Decodable { var coach_insight: String? }
+        for _ in 0..<8 {
+            do {
+                let rows: [Row] = try await supabase
+                    .from("training_logs").select("coach_insight")
+                    .eq("id", value: entryId.uuidString).limit(1).execute().value
+                if let text = rows.first?.coach_insight?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                    coachInsight = text
+                    return
+                }
+            } catch {
+                Log.database.error("refreshCoachInsightWhenReady failed: \(error)")
+            }
+            try? await Task.sleep(for: .seconds(3))
+        }
+    }
+
     // MARK: - Generate Coach Insight
     //
-    // Lifted from `CoachInsightSection.getCoachInsight` / `callCoachingAgent`
-    // so the editorial body's `DripTextLink` "Ask the coach →" can call it
-    // directly. The legacy card view keeps working — it still owns its own
-    // copy until that surface is removed.
+    // Retained as a reusable capability (e.g. a future manual "regenerate"),
+    // but no longer wired to a button: the entry-level AI Insight now appears
+    // automatically once `process-training-memo` has written `coach_insight`
+    // (see `refreshCoachInsightWhenReady`). Calls the workout-specific
+    // `generate-workout-insight` by training_log_id.
 
     @MainActor
     func generateCoachInsight() async {
-        let entry = currentEntry
-        Log.coach.debug("generateCoachInsight() called")
+        let id = currentEntry.id
+        Log.coach.debug("generateCoachInsight() → generate-workout-insight for \(id)")
 
-        // Build structured workout context.
-        var workoutDetails = ""
-        if entry.hasLinkedWorkout {
-            var parts: [String] = []
-            if let distance = entry.formattedWorkoutDistance { parts.append(distance) }
-            if let duration = entry.formattedWorkoutDuration { parts.append(duration) }
-            if let pace = entry.formattedWorkoutPace { parts.append("\(pace)/mi") }
-            workoutDetails = "Workout: " + parts.joined(separator: " | ")
+        // The workout AI Insight is the context-rich, workout-specific read
+        // produced by `generate-workout-insight` (athlete state: volume / fitness
+        // ranges / pace zones, plus this run's splits + conditions + parsed
+        // structure). It is NOT the general conversational `coaching-agent`.
+        //
+        // Previously this built a short text message (distance | duration | pace
+        // + notes + mood) and POSTed it to `coaching-agent`. With almost no
+        // quantitative context, that chat agent followed its ask-vs-answer design
+        // and kept defaulting to "I need more info — what's your weekly mileage?".
+        // Call the purpose-built function by training_log_id instead — the same
+        // path the rep-chart screen uses — so the insight reads the real workout.
+        struct Req: Encodable { let training_log_id: String }
+        struct Resp: Decodable { let insight: String?; let error: String? }
+        do {
+            let resp: Resp = try await supabase.functions.invoke(
+                "generate-workout-insight",
+                options: .init(body: Req(training_log_id: id.uuidString))
+            )
+            let text = resp.insight?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            await MainActor.run {
+                self.coachInsight = text.isEmpty
+                    ? (resp.error ?? "Couldn't generate insight. Try again.")
+                    : text
+            }
+        } catch {
+            Log.coach.error("generateCoachInsight failed: \(error)")
+            await MainActor.run {
+                self.coachInsight = "Couldn't reach the coach. Try again."
+            }
         }
-
-        var notesContext = ""
-        if let cleaned = entry.cleanedNotes, !cleaned.isEmpty {
-            notesContext = "Notes: \(cleaned)"
-        } else if let notes = entry.notes, !notes.isEmpty {
-            notesContext = "Notes: \(notes)"
-        }
-
-        var moodContext = ""
-        if let mood = entry.mood, !mood.isEmpty {
-            moodContext = "Mood: \(mood)"
-        }
-
-        let allNotes = (entry.cleanedNotes ?? "") + (entry.notes ?? "")
-        let isHarderEffort = Self.isQualityWorkout(notes: allNotes, distanceMiles: entry.workoutDistanceMiles)
-
-        let hasRecoveryConcern = allNotes.lowercased().containsAny([
-            "sore", "tight", "pain", "ache", "hurt", "tired", "fatigue", "heavy",
-        ])
-        let hasMoodData = entry.mood.map { !$0.isEmpty } ?? false
-
-        let contextParts = [workoutDetails, notesContext, moodContext].filter { !$0.isEmpty }
-        let context = contextParts.joined(separator: "\n")
-
-        var focusHints: [String] = []
-        if hasRecoveryConcern { focusHints.append("note any recovery/fatigue signals") }
-        if hasMoodData { focusHints.append("connect effort to how they felt") }
-        if isHarderEffort { focusHints.append("training stimulus and adaptation") }
-
-        let goalsInstruction = isHarderEffort
-            ? "[GOALS] Reflect on how this workout connects to their upcoming goal race. Vary phrasing naturally (e.g., 'This type of effort builds the strength you'll need for...', 'Sessions like this are what prepare you for race day...', 'This is the work that'll pay off when...')."
-            : ""
-
-        let message = """
-        [COACH INSIGHT REQUEST]
-
-        \(context.isEmpty ? "Training log from \(entry.displayDate.shortDateString)" : context)
-
-        Give thoughtful coaching feedback (4-5 sentences). Be conversational and supportive.
-        Observations to consider: \(focusHints.isEmpty ? "effort, execution, pacing" : focusHints.joined(separator: ", "))
-        \(goalsInstruction)
-        """
-
-        Log.coach.debug("Coach insight request message: \(message)")
-        await callCoachingAgent(message: message)
     }
 
     private static func isQualityWorkout(notes: String, distanceMiles: Double?) -> Bool {

@@ -12,14 +12,16 @@ import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 );
 
 function fmtPace(s: number): string {
-  return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}/mi`;
+  // Round total first so a fractional input can't render "7:60".
+  const t = Math.round(s);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}/mi`;
 }
 
 function fmtTime(secs: number): string {
@@ -43,6 +45,8 @@ Deno.serve(async (req: Request) => {
 
     const rlBlocked = await enforceFeatureRateLimit(user_id, "analysis", corsHeaders, { isServiceRole });
     if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(user_id, "analysis", corsHeaders, { isServiceRole });
+    if (monthlyCapped) return monthlyCapped;
 
     const blockDays = weeks * 7;
     const blockStart = new Date(Date.now() - blockDays * 24 * 60 * 60 * 1000).toISOString();

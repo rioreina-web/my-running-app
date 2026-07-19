@@ -20,7 +20,16 @@ struct DripColors {
     // Accents - Burnt orange editorial pop
     let coral = Color(hex: "D4592A")             // Burnt orange (primary accent)
     let coralLight = Color(hex: "E8764A")        // Lighter variant
-    let electric = Color(hex: "B84420")          // Darker hover state
+    /// `--coral-deep` from `design-system/colors_and_type.css` (#B84420).
+    /// The press / hover state of `coral` (e.g. the primary record button
+    /// darkening). Per the design system, the one coral accent only ever
+    /// deepens to this — it never shifts hue.
+    let coralDeep = Color(hex: "B84420")         // Coral press/hover state
+    /// Deprecated alias for `coralDeep`. The old name read like a Stripe
+    /// color, not the editorial press-state coral. Retained so any stray
+    /// reference keeps compiling; migrate callsites to `coralDeep`.
+    @available(*, deprecated, renamed: "coralDeep")
+    var electric: Color { coralDeep }
     /// `--coral-wash` from `design-system/colors_and_type.css`:
     /// `rgba(212, 89, 42, 0.12)`. Capsule fill / tint behind the active
     /// segmented chip, the "Maintaining" pill, etc. Per the design system
@@ -34,7 +43,12 @@ struct DripColors {
     let tired = Color(hex: "C4873A")             // Amber
     let struggling = Color(hex: "C45A3A")        // Terracotta
     let injured = Color(hex: "B83A4A")           // Deep rose
-    let speed = Color(hex: "6B4A8A")             // Plum (fast paces)
+
+    // Pace — lives outside the mood palette. Blue = pace, warm = mood,
+    // coral = alert; the three palettes never share hues. This is the
+    // navy (Mile) end of the universal blue pace ramp; the full ramp is
+    // PaceSpectrum.swift. (Renamed from `speed` 2026-07-03.)
+    let paceFast = Color(hex: "0E1D4E")          // Navy — fast paces (Mile end of the blue pace ramp)
 
     // Text - Rich editorial contrast
     let textPrimary = Color(hex: "1A1815")       // Rich ink black
@@ -520,9 +534,10 @@ struct Hairline: View {
 /// this *"a typesetting mark, not a divider in the usual product-design
 /// sense."* Use between editorial sections, not inside cards.
 ///
-/// Replaces the four private duplicates that used to live in
-/// `TodayHomeView`, `TrainingTabView`, `WorkoutDetailPlate23`
-/// (`WD23EditorialRule`), and `InjuryPlate28` (`InjuryRule28`).
+/// Replaces the private duplicates that used to live in `TodayHomeView`,
+/// `TrainingTabView`, and `InjuryPlate28` (`InjuryRule28`). The fourth,
+/// `WorkoutDetailPlate23`'s `WD23EditorialRule`, went with that file when the
+/// workout-detail fork was deleted (Phase B, 2026-07-14).
 struct EditorialRule: View {
     var body: some View {
         HStack(spacing: 8) {

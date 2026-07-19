@@ -1,9 +1,36 @@
 # athlete-state.ts — Refactor Design
 
 **Companion to:** `adaptive-plan-loop-design.md`, `training-system-design-v2.md`
-**Source module:** `supabase/functions/_shared/athlete-state.ts` (1,481 LOC)
+**Source module:** `supabase/functions/_shared/athlete-state.ts` (~2,555 LOC — grew ~70% since this doc was written; **the §10 line numbers below are stale, grep for the function names**)
 **Backing table:** `athlete_state` (migration `20260410200000_create_athlete_state.sql`)
 **Consumers:** 12 edge functions read via `getOrBuildAthleteState` → `stateToPromptContext`.
+
+---
+
+## STATUS (updated 2026-06-18)
+
+**Week 1 (P0 correctness) is shipped. The structural refactor (Week 2–4) is not.**
+
+- ✅ **R3 tenant leak** — fixed as HOTFIX-H.1: `user_goals` query scoped with
+  `.eq('user_id', userId).not('user_id','is',null)` + client-side defense.
+  Pinned by tests in `athlete-state.test.ts`.
+- ✅ **R4 rebuild race** — fixed as HOTFIX-H.2, but **not the way §4 proposed.**
+  Implemented as a `claim_athlete_state_rebuild` RPC (per-user claim + a
+  30s in-flight poll), not a `pg_advisory_xact_lock` wrapping the body.
+  Outcome is equivalent (serialized rebuilds); the mechanism differs.
+- ✅ **R6 null fields** — `monotony_7d`, `strain_7d`, `week_compliance_pct`,
+  `fitness_trend` are all computed now (no longer null/"maintaining" stubs).
+  Covered by the R6 tests in `athlete-state.test.ts`.
+- ✅ **R7 hardcoded pace multipliers** — deleted; pace zones now project from
+  the central PaceEngine. Pinned by the "Step 5" test.
+- ✅ **Bonus:** `formatPace` rounding-boundary bug fixed (`"7:60/mi"` →
+  `"8:00/mi"`) — fractional sec/mi whose seconds part rounded to 60 emitted
+  impossible time strings into the AI prompt.
+- ⏳ **R1/R2/R5 (structural split + event-driven invalidation)** and the
+  **R8–R12 P2 cleanup** remain open — that's the Phase 6 work.
+
+The "ship this week" bar in §5 has been met. Everything below is the
+maintainability refactor, not a safety gap.
 
 ---
 
@@ -145,7 +172,7 @@ Rebuild clears its slices atomically at the end (`UPDATE … SET slices = array_
 
 ## 4. Risk-by-Risk Decisions
 
-### P0 — correctness bugs (ship this week, before any refactor)
+### P0 — correctness bugs (✅ ALL SHIPPED — see STATUS banner at top)
 
 **R3. Goal filter admits `user_id IS NULL` rows.**
 Single-line fix. Add `.not('user_id', 'is', null)` to the user_goals query. Then audit every other shared query for the same pattern. This is a tenant-leak class bug; it gets fixed *today*.
@@ -215,13 +242,20 @@ If R8 is accepted (remove race regex entirely), R12 goes away. If not, it become
 
 ## 5. Migration Path
 
-### Week 1 — P0 correctness
-- [ ] Ship the goal user_id filter fix (R3). Hotfix priority.
-- [ ] Add advisory lock around rebuild (R4).
-- [ ] Implement monotony_7d, strain_7d, week_compliance_pct, fitness_trend. Or remove them from the schema + prompt.
-- [ ] Add a regression test that two parallel `getOrBuildAthleteState` calls for the same user produce one `rebuild` invocation.
+### Week 1 — P0 correctness ✅ DONE
+- [x] Ship the goal user_id filter fix (R3). Hotfix priority. — HOTFIX-H.1.
+- [x] Serialize rebuild (R4). — HOTFIX-H.2, via `claim_athlete_state_rebuild`
+      RPC + in-flight poll (not the advisory-lock wrap originally proposed).
+- [x] Implement monotony_7d, strain_7d, week_compliance_pct, fitness_trend.
+      — all computed; R6 tests in `athlete-state.test.ts`.
+- [~] Regression test that parallel `getOrBuildAthleteState` calls produce one
+      `rebuild`. The claim RPC enforces this in prod; a concurrency test under
+      the in-memory fake client is still **open** (the fake `rpc` returns null,
+      so it can't exercise the claim path). Worth adding when the harness can
+      model the claim/poll sequence.
 
-*Shippable after this week even if the refactor never happens: no more tenant leaks, no more thundering herd, no more silently-null promised fields.*
+*Shipped even though the refactor hasn't happened: no more tenant leaks, no
+more thundering herd, no more silently-null promised fields.*
 
 ### Week 2 — Structural split (the "10-file" refactor)
 - [ ] Create new folder structure per §3.

@@ -144,17 +144,18 @@ Not fixed; flagged here so they don't get lost.
 
 ### Higher priority
 
-- **`training-memos` UPDATE/DELETE policies are unscoped.** The `public`
-  role has `bucket_id = 'training-memos'` policies for both UPDATE and
-  DELETE with no owner check — anyone can overwrite or delete any user's
-  voice memo. Worse than the listing issue the advisor flagged. Needs a
-  migration that scopes both to the object owner, with verification that
-  the app's own delete path still works.
-- **Memos are fundamentally public.** Today's fix only stops enumeration.
-  The real confidentiality fix is `public = false` on the bucket +
-  switching iOS (`VoiceLogViewModel.swift`, `OfflineQueue.swift`) from
-  `getPublicURL` to `createSignedURL`, plus a plan for already-stored
-  public URLs in `training_logs.audio_url`.
+- ~~**`training-memos` UPDATE/DELETE policies are unscoped.**~~ **RESOLVED
+  2026-07-15** by `20260715120000_make_user_storage_buckets_private.sql` —
+  drops every historical policy generation by name (incl. the ghost
+  `Allow public updates`/`deletes` pair) and recreates the owner-scoped set.
+- ~~**Memos are fundamentally public.**~~ **RESOLVED 2026-07-15** — same
+  migration flips `training-memos` AND `plan-attachments` to
+  `public = false`. No iOS change was needed: verified nothing ever fetches
+  `audio_url`/`transcript_url` (no playback exists; they're presence flags),
+  and the two byte-readers (`process-training-memo`, `process-check-in`)
+  parse the path out of the stored URL and download with the service role.
+  Stored URLs stay as canonical identifiers; they're just no longer
+  fetchable. If playback is ever built, mint signed URLs from the path.
 - **3 production functions are untracked in this repo.**
   `strava-test-pull`, `adapt-plan`, `build-pace-profile` exist only in
   this working tree — not committed on `design/editorial-v2` or `main`.

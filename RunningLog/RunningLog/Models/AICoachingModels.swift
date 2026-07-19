@@ -509,15 +509,18 @@ enum TrainingStimulus: String, Codable {
         }
     }
 
+    // Training zones ride the universal blue depth ramp (source of truth:
+    // PaceSpectrum) — deepening blue with intensity, never green/coral
+    // (green = mood, coral = alert only). Recovery sits below Easy → gray.
     var color: Color {
         switch self {
-        case .aerobicBase: return Color.drip.positive
-        case .lactateThreshold: return Color.drip.energized
-        case .vo2max: return Color.drip.coral
-        case .neuromuscular: return Color.drip.coralLight
-        case .marathonSpecific: return Color.drip.coral
-        case .endurance: return Color.drip.textSecondary
-        case .recovery: return Color.drip.positive
+        case .recovery: return Color.drip.textTertiary
+        case .aerobicBase: return PaceSpectrum.easy
+        case .endurance: return PaceSpectrum.steady
+        case .marathonSpecific: return PaceSpectrum.mp
+        case .lactateThreshold: return PaceSpectrum.lt
+        case .vo2max: return PaceSpectrum.fiveK
+        case .neuromuscular: return PaceSpectrum.mile
         }
     }
 }
@@ -553,12 +556,14 @@ enum IntensityCategory: String, Codable {
         }
     }
 
+    // Effort levels ride the universal blue depth ramp (PaceSpectrum) —
+    // deepening blue with intensity, never green/coral.
     var color: Color {
         switch self {
-        case .easy: return Color.drip.positive
-        case .moderate: return Color.drip.energized
-        case .hard: return Color.drip.coralLight
-        case .veryHard: return Color.drip.coral
+        case .easy: return PaceSpectrum.easy
+        case .moderate: return PaceSpectrum.steady
+        case .hard: return PaceSpectrum.lt
+        case .veryHard: return PaceSpectrum.fiveK
         }
     }
 }

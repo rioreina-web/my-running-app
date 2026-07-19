@@ -136,6 +136,15 @@ final class OfflineQueueManager {
         defer { isDraining = false }
 
         let context = container.mainContext
+
+        // Purge unrecoverable items first: if the recording an item needs is no
+        // longer on disk (Documents container reset on reinstall, or the file
+        // was deleted), the upload can NEVER succeed. Retrying only burns the
+        // attempt budget and fires a misleading "saved on this device, we'll
+        // retry" banner. Drop these quietly — including ones already marked
+        // "failed" — so a dead memo from a past install stops nagging.
+        purgeUnrecoverable(context: context)
+
         // Exclude "failed" (retryCount maxed out) as well as in-flight items.
         // Without this, a permanently-failed row keeps matching the fetch, gets
         // re-processed on every drain, re-hits the retry cap, and re-fires its
@@ -177,8 +186,14 @@ final class OfflineQueueManager {
                     // The recording stays on disk; we preserve, not purge.
                     upload.status = "failed"
                     logger.error("Upload permanently failed after \(upload.retryCount) attempts: \(upload.id) (\(upload.type))")
+                    let noun: String
+                    switch upload.type {
+                    case "voiceLog": noun = "voice memo"
+                    case "checkIn": noun = "check-in"
+                    default: noun = "recording"
+                    }
                     ErrorReporter.shared.report(
-                        .processing("A \(upload.type) upload failed after several attempts. Your recording is saved on this device."),
+                        .processing("Your \(noun) couldn't upload after several tries. It's saved on this device and we'll retry next time you're online."),
                         retry: nil
                     )
                 } else {
@@ -189,6 +204,37 @@ final class OfflineQueueManager {
             }
 
             refreshCountSync(context: context)
+        }
+    }
+
+    /// The expected recording path for items that carry an audio file
+    /// (`voiceLog` / `checkIn`), or nil when the item needs no local file or
+    /// the payload can't be read. Used to detect items whose recording is gone.
+    private func recordingPath(for upload: PendingUpload) -> String? {
+        guard upload.type == "voiceLog" || upload.type == "checkIn" else { return nil }
+        guard let dict = try? JSONDecoder().decode([String: String].self, from: upload.payload) else { return nil }
+        return dict["audioPath"]
+    }
+
+    /// Drops queue items whose local recording no longer exists — they can
+    /// never upload, so keeping them only produces false "we'll retry" banners.
+    private func purgeUnrecoverable(context: ModelContext) {
+        guard let items = try? context.fetch(FetchDescriptor<PendingUpload>()) else { return }
+        var purged = 0
+        for item in items {
+            guard let path = recordingPath(for: item),
+                  !FileManager.default.fileExists(atPath: path) else { continue }
+            logger.error("Purging unrecoverable upload — recording no longer on device: \(item.id) (\(item.type))")
+            if let filePath = item.localFilePath {
+                try? FileManager.default.removeItem(atPath: filePath)
+            }
+            context.delete(item)
+            purged += 1
+        }
+        if purged > 0 {
+            do { try context.save() } catch { Log.app.error("SwiftData save failed (purge unrecoverable): \(error)") }
+            refreshCountSync(context: context)
+            logger.info("Purged \(purged) unrecoverable upload(s) with missing recordings")
         }
     }
 

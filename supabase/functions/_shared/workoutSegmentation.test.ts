@@ -90,3 +90,36 @@ Deno.test("threshold cruise: long mile reps at 10K pace, tight CV", () => {
   assertEquals(r.workoutKind, "threshold");
   assertEquals(r.repCount, 5);
 });
+
+// Auto-lap coalescing — April 4, 2026 threshold session. The watch auto-split
+// two continuous 3-mile efforts into six 1-mile laps + two slow breaks. The
+// parser must report 2×3mi, NOT 6×1mi.
+const APR4: LapInput[] = [
+  { lap_index: 1, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 326, avg_pace_sec_per_mile: 326, avg_heart_rate: 163 },
+  { lap_index: 2, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 323, avg_pace_sec_per_mile: 323, avg_heart_rate: 169 },
+  { lap_index: 3, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 324, avg_pace_sec_per_mile: 324, avg_heart_rate: 168 },
+  { lap_index: 4, is_rest: false, distance_meters: 762.25, moving_time_seconds: 227, avg_pace_sec_per_mile: 479, avg_heart_rate: 147 },
+  { lap_index: 5, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 320, avg_pace_sec_per_mile: 320, avg_heart_rate: 167 },
+  { lap_index: 6, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 320, avg_pace_sec_per_mile: 320, avg_heart_rate: 171 },
+  { lap_index: 7, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 316, avg_pace_sec_per_mile: 316, avg_heart_rate: 174 },
+  { lap_index: 8, is_rest: false, distance_meters: 619.68, moving_time_seconds: 190, avg_pace_sec_per_mile: 493, avg_heart_rate: 150 },
+];
+
+Deno.test("auto-lap coalescing: 6×1mi cruise reads as 2×3mi, not 6×1mi", () => {
+  const r = segmentFromLaps(APR4, ZONES);
+  assertEquals(r.repCount, 2);
+  assert(r.structure!.includes("2×3mi"), `structure was: ${r.structure}`);
+  assertEquals(r.workoutKind, "threshold");
+});
+
+Deno.test("coalescing leaves a continuous progression alone (not merged)", () => {
+  // 5 contiguous work miles, each clearly faster — no rest between. Must stay
+  // 5 reps so progression detection still fires.
+  const paces = [335, 326, 317, 308, 300];
+  const laps: LapInput[] = paces.map((p, i) => ({
+    lap_index: i, is_rest: false, distance_meters: 1609, avg_pace_sec_per_mile: p, moving_time_seconds: p,
+  }));
+  const r = segmentFromLaps(laps, ZONES);
+  assertEquals(r.repCount, 5);
+  assertEquals(r.workoutKind, "progression");
+});

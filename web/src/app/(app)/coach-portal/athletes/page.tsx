@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { SectionHeader } from "@/components/ui/section-header";
 import { Card } from "@/components/ui/card";
 import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
@@ -77,6 +78,19 @@ export default async function CoachAthletesPage() {
       .in("id", athleteIds);
     for (const row of (authRows ?? []) as Array<{ id: string; email: string | null }>) {
       profilesById.set(row.id, { name: null, email: row.email });
+    }
+
+    // Coach-set display names live on athlete_settings (owner + service-role
+    // RLS), so read them through the admin client for these already-gated
+    // athletes. A saved name takes priority over the email/id fallback below.
+    const admin = createAdminClient();
+    const { data: settingsRows } = await admin
+      .from("athlete_settings")
+      .select("user_id, display_name")
+      .in("user_id", athleteIds);
+    for (const row of (settingsRows ?? []) as Array<{ user_id: string; display_name: string | null }>) {
+      const existing = profilesById.get(row.user_id) ?? { name: null, email: null };
+      profilesById.set(row.user_id, { ...existing, name: row.display_name });
     }
   }
 

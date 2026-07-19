@@ -4,23 +4,18 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
   BookOpen,
-  MessageCircle,
   Calendar,
-  Target,
-  BarChart3,
   HeartPulse,
   TrendingUp,
   Timer,
-  PlaySquare,
-  Download,
   Settings,
   X,
   UserCheck,
 } from "lucide-react";
 import { ComponentType, useEffect } from "react";
 import { useSidebar } from "./sidebar-context";
+import { Eyebrow } from "@/components/ui/eyebrow";
 
 interface NavItem {
   href: string;
@@ -28,25 +23,24 @@ interface NavItem {
   icon: ComponentType<{ size?: number }>;
 }
 
+// Main nav mirrors the iOS 4-tab IA (Log · Trends · Train · Coach) —
+// input → overview → detail. The Coach read stays iOS-only for now, so
+// the web nav ships the first three; Plan lives inside Train.
 const NAV_ITEMS: NavItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/log", label: "Training Log", icon: BookOpen },
-  { href: "/coach", label: "Coach", icon: MessageCircle },
-  { href: "/plan", label: "Plan", icon: Calendar },
+  { href: "/log", label: "Log", icon: BookOpen },
+  { href: "/trends", label: "Trends", icon: TrendingUp },
+  { href: "/train", label: "Train", icon: Calendar },
 ];
 
+// Tools — only routes that actually exist. (Goals, Analysis, Predictor,
+// Library, and Export were dead links; restore them as their pages ship.)
 const FEATURE_ITEMS: NavItem[] = [
-  { href: "/coach-portal/plans", label: "Coach Portal", icon: UserCheck },
-  { href: "/goals", label: "Goals", icon: Target },
-  { href: "/analysis", label: "Analysis", icon: BarChart3 },
-  { href: "/injuries", label: "Injuries", icon: HeartPulse },
-  { href: "/predictor", label: "Fitness Predictor", icon: TrendingUp },
+  { href: "/injuries", label: "Niggles", icon: HeartPulse },
   { href: "/pace-chart", label: "Pace Chart", icon: Timer },
-  { href: "/library", label: "Content Library", icon: PlaySquare },
+  { href: "/coach-portal/plans", label: "Coach Portal", icon: UserCheck },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
-  { href: "/export", label: "Export", icon: Download },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -67,12 +61,15 @@ function NavLink({
     <Link
       href={href}
       onClick={onClick}
-      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+      className={`relative flex items-center gap-3 rounded-lg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.1em] transition-colors ${
         isActive
-          ? "bg-coral/10 text-coral"
+          ? "text-coral"
           : "text-text-secondary hover:bg-bg-elevated hover:text-text-primary"
       }`}
     >
+      {isActive && (
+        <span className="absolute left-0 top-1/2 h-4 w-[2px] -translate-y-1/2 rounded-full bg-coral" />
+      )}
       <Icon size={16} />
       {label}
     </Link>
@@ -105,7 +102,7 @@ export default function Sidebar() {
       >
         {/* Logo + mobile close */}
         <div className="flex h-14 items-center justify-between px-5">
-          <Link href="/dashboard">
+          <Link href="/trends">
             <Image
               src="/logo.png"
               alt="Post Run Drip"
@@ -134,7 +131,9 @@ export default function Sidebar() {
             />
           ))}
 
-          <div className="my-3 border-t border-divider" />
+          <div className="mt-5 mb-2 px-3">
+            <Eyebrow>Tools</Eyebrow>
+          </div>
 
           {FEATURE_ITEMS.map((item) => (
             <NavLink
@@ -147,7 +146,9 @@ export default function Sidebar() {
 
           <div className="flex-1" />
 
-          <div className="my-3 border-t border-divider" />
+          <div className="mt-5 mb-2 px-3">
+            <Eyebrow>Account</Eyebrow>
+          </div>
 
           {BOTTOM_ITEMS.map((item) => (
             <NavLink

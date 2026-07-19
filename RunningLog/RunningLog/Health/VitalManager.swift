@@ -524,7 +524,10 @@ struct VitalSource: Decodable {
 
 // MARK: - Workout Stream
 
-struct VitalWorkoutStream: Decodable {
+// `nonisolated`: a pure value-type stream model constructed off the main actor
+// by `ExternalStreamAdapter`. Under default main-actor isolation its hand-written
+// init would otherwise be main-actor-isolated and unreachable from that context.
+nonisolated struct VitalWorkoutStream: Decodable {
     let time: [Int]?
     let heartrate: [Int]?
     let lat: [Double]?

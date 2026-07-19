@@ -5,10 +5,25 @@
  * iOS should eventually call this via edge function to prevent drift.
  *
  * Formula:
- *   1. dpMultiplier = 1.0 + max(0, (dewPointF - 55) * 0.003495)
+ *   1. dpMultiplier  = 1.0 + max(0, (dewPointF - 55) * 0.003495)
  *   2. compositeScore = tempF + (dewPointF × dpMultiplier)
- *   3. adjustmentPct = interpolate(compositeScore, adjustmentTable)
- *   4. adjustedPace = paceSeconds × (1 + adjustmentPct)
+ *   3. adjustmentPct  = interpolate(compositeScore, adjustmentTable)
+ *   4. repFactor      = repLengthFactor(distanceMiles)
+ *   5. adjustedPace   = paceSeconds × (1 + adjustmentPct × repFactor)
+ *
+ * Validation (2026-06-23): the table is a faithful (slightly conservative)
+ * implementation of Coach Mark Hadley's "temperature + dew point" chart, which
+ * aligns with Daniels VDOT heat guidance and Runner's Connect dew-point work.
+ * Dew point (not relative humidity) is the right moisture metric for runners.
+ *
+ * REP-LENGTH SCALING (decision 2026-06-23, Rio): the table is calibrated for
+ * CONTINUOUS running of ~1.5 mi or longer. Shorter reps get less of the penalty
+ * because the body sheds heat during the recovery between them:
+ *   • ≤ 0.75 mi  → 0.5 × adjustment (half)
+ *   • 0.75–1.5mi → ramps linearly 0.5 × → 1.0 ×
+ *   • ≥ 1.5 mi   → 1.0 × adjustment (full)
+ * Apply PER BOUT: an easy run / tempo (≥1.5 mi) gets the full adjustment; 1k /
+ * 600m interval reps get the scaled-down amount. Unknown length → full.
  */
 
 // ── Adjustment Table ───────────────────────────────────────────
@@ -26,6 +41,24 @@ const ADJUSTMENT_TABLE: Array<{ score: number; pct: number }> = [
   { score: 180, pct: 0.090 },
   { score: 190, pct: 0.120 },
 ];
+
+// ── Rep-length scaling ─────────────────────────────────────────
+
+export const HEAT_FULL_MILES = 1.5;   // ≥ this → full adjustment
+export const HEAT_HALF_MILES = 0.75;  // ≤ this → half adjustment
+
+/**
+ * Fraction of the heat adjustment to apply to a bout of the given length:
+ * 0.5 for short reps, ramping to 1.0 at 1.5 mi. Continuous runs (length
+ * unknown / null) get the full 1.0.
+ */
+export function repLengthFactor(distanceMiles?: number | null): number {
+  if (distanceMiles == null || !isFinite(distanceMiles)) return 1.0;
+  if (distanceMiles >= HEAT_FULL_MILES) return 1.0;
+  if (distanceMiles <= HEAT_HALF_MILES) return 0.5;
+  const frac = (distanceMiles - HEAT_HALF_MILES) / (HEAT_FULL_MILES - HEAT_HALF_MILES);
+  return 0.5 + frac * 0.5;
+}
 
 // ── Heat Category ──────────────────────────────────────────────
 
@@ -47,6 +80,32 @@ export function heatCategoryLabel(cat: HeatCategory): string {
     case "very_hot": return "Very Hot";
     case "dangerous": return "Dangerous";
   }
+}
+
+// ── Surfacing decision (when to act vs. just mention) ──────────
+// Decision 2026-06-23 (Rio): the adjustment is "called" (applied + shown) when
+// it's genuinely warm — a dew point of 68°F+. When it's only mildly humid we
+// don't change the pace, but we may *mention* the conditions. When it's cool we
+// say nothing. Gate primarily on DEW POINT (the runner-relevant moisture
+// metric), with a composite-score backstop so a hot, dry day still surfaces.
+
+export const DEW_APPLY_F = 68;    // ≥ this dew point → apply the adjustment
+export const DEW_MENTION_F = 60;  // ≥ this dew point → mention conditions only
+
+export type HeatSurfacing = "apply" | "mention" | "none";
+
+/**
+ * Whether to apply the heat adjustment, merely mention the conditions, or stay
+ * silent. Driven by dew point (Rio's rule), with a composite-score backstop:
+ *   • apply   — dew ≥ 68°F, or it's outright hot (composite ≥ 150 / "very hot")
+ *   • mention — dew ≥ 60°F (mildly humid), or composite ≥ 130 ("hot")
+ *   • none    — cool & dry
+ */
+export function heatSurfacing(tempF: number, dewPointF: number): HeatSurfacing {
+  const score = compositeScore(tempF, dewPointF);
+  if (dewPointF >= DEW_APPLY_F || score >= 150) return "apply";
+  if (dewPointF >= DEW_MENTION_F || score >= 130) return "mention";
+  return "none";
 }
 
 // ── Interpolation ──────────────────────────────────────────────
@@ -71,24 +130,38 @@ function interpolateAdjustment(score: number): number {
 
 export interface DewPointAdjustment {
   originalPaceSeconds: number;
+  /** Prescriptive: the SLOWER pace to run *today* to hold the same effort. */
   adjustedPaceSeconds: number;
+  /**
+   * The FASTER cool-weather-equivalent — what a pace run in the heat is worth
+   * in neutral conditions (the inverse of `adjustedPaceSeconds`). This is what
+   * the completed-workout HEAT-ADJ toggle displays (credit for the conditions).
+   */
+  neutralEquivalentPaceSeconds: number;
   temperatureF: number;
   dewPointF: number;
   multiplier: number;
   compositeScore: number;
+  /** Raw table adjustment (continuous-run basis), before rep-length scaling. */
   adjustmentPercent: number;
+  /** Rep-length factor actually applied (0.5–1.0). */
+  repLengthFactor: number;
+  /** Effective adjustment after scaling = adjustmentPercent × repLengthFactor. */
+  effectiveAdjustmentPercent: number;
   adjustmentSecondsPerMile: number;
   heatCategory: HeatCategory;
 }
 
 /**
- * Calculate heat-adjusted pace based on temperature and dew point.
- * This is the verbatim port of PaceCalculator.swift:324-350.
+ * Heat-adjust a pace from temperature + dew point. Pass `distanceMiles` for a
+ * single bout/rep so the rep-length scaling applies; omit it for a continuous
+ * run (defaults to the full adjustment).
  */
 export function adjustPace(
   paceSeconds: number,
   tempF: number,
-  dewPointF: number
+  dewPointF: number,
+  distanceMiles?: number | null,
 ): DewPointAdjustment {
   // 1. Dew Point Multiplier — baseline at 55°F DP
   const dpMultiplier = 1.0 + Math.max(0, (dewPointF - 55) * 0.003495);
@@ -99,17 +172,22 @@ export function adjustPace(
   // 3. Interpolate adjustment from composite score table
   const adjustmentPct = interpolateAdjustment(compositeScore);
 
-  // 4. Adjusted Pace
-  const adjustedSeconds = paceSeconds * (1 + adjustmentPct);
+  // 4. Scale by rep length, then 5. apply to pace
+  const factor = repLengthFactor(distanceMiles);
+  const effectivePct = adjustmentPct * factor;
+  const adjustedSeconds = paceSeconds * (1 + effectivePct);
 
   return {
     originalPaceSeconds: paceSeconds,
     adjustedPaceSeconds: adjustedSeconds,
+    neutralEquivalentPaceSeconds: paceSeconds / (1 + effectivePct),
     temperatureF: tempF,
     dewPointF: dewPointF,
     multiplier: dpMultiplier,
     compositeScore,
     adjustmentPercent: adjustmentPct,
+    repLengthFactor: factor,
+    effectiveAdjustmentPercent: effectivePct,
     adjustmentSecondsPerMile: adjustedSeconds - paceSeconds,
     heatCategory: heatCategory(compositeScore),
   };
@@ -138,6 +216,12 @@ export function adjustAllPaces(
 export function compositeScore(tempF: number, dewPointF: number): number {
   const dpMultiplier = 1.0 + Math.max(0, (dewPointF - 55) * 0.003495);
   return tempF + (dewPointF * dpMultiplier);
+}
+
+/** Continuous-run adjustment fraction for a temp/dew (no rep scaling). Used by
+ *  the conditions-adjusted fitness signal. */
+export function heatAdjustmentPct(tempF: number, dewPointF: number): number {
+  return interpolateAdjustment(compositeScore(tempF, dewPointF));
 }
 
 /**
@@ -175,6 +259,8 @@ export function buildWeatherJson(
     composite_score: Math.round(score * 10) / 10,
     heat_category: heatCategory(score),
     adjustment_pct: Math.round(adjPct * 10000) / 10000,
+    // Whether the UI/coach should apply the adjustment, just mention it, or hide it.
+    surfacing: heatSurfacing(tempF, dewPointF),
     fetched_at: fetchedAt,
   };
 }

@@ -1,11 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
-import { detectInjury, upsertInjury } from "../_shared/injuries.ts";
-import { rebuildAthleteState } from "../_shared/athlete-state.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
+import { writeNiggleMentions, writeNiggleResolutions } from "../_shared/niggleWriter.ts";
+import { writeMemoryCandidates } from "../_shared/memoryWriter.ts";
 import {
   loadCoachContext,
   formatPacesBlock,
@@ -25,6 +26,40 @@ const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 const genAI = new GoogleGenerativeAI(geminiApiKey);
+
+// Background-task hook (Supabase keeps the worker alive until the promise
+// settles). Falls back to a detached promise off-platform.
+declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
+
+/**
+ * Fire parse-workout-structure for this row AFTER the response returns. The
+ * pg_net trigger that was supposed to do this is dead on Supabase (ALTER
+ * DATABASE SET app.settings.* is permission-denied), so we invoke the parser
+ * directly with the service role. Re-parsing here lets a voice-linked run fold
+ * any spoken detail in alongside the GPS streams. Fire-and-forget. See Option A.
+ */
+function fireParseStructure(trainingLogId: string, userId: string): void {
+  const p = fetch(`${supabaseUrl}/functions/v1/parse-workout-structure`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${supabaseServiceKey}`,
+      apikey: supabaseServiceKey,
+    },
+    body: JSON.stringify({ training_log_id: trainingLogId, user_id: userId }),
+  })
+    .then((r) => {
+      if (!r.ok) console.warn(`[process-training-memo] parse-structure ${r.status} for ${trainingLogId}`);
+    })
+    .catch((e) => console.warn(`[process-training-memo] parse-structure fetch failed: ${e}`));
+  try {
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+      EdgeRuntime.waitUntil(p);
+      return;
+    }
+  } catch { /* fall through */ }
+  void p;
+}
 
 const VALID_MOODS = ["energized", "positive", "neutral", "tired", "struggling", "injured"] as const;
 
@@ -50,6 +85,10 @@ interface AnalysisResult {
   coach_insight: string | null;
   workout_notes: string | null;
   extracted_data: Record<string, unknown> | null;
+  // v3: long-term memory candidates. Kept as an opaque array here — the
+  // closed-vocab validation + dedup live in _shared/memoryWriter.ts. [] when
+  // the memo holds nothing worth remembering (the common case).
+  memory_candidates: unknown[];
 }
 
 // Helper to update processing status
@@ -138,7 +177,11 @@ function validateAnalysis(raw: Record<string, unknown>): AnalysisResult {
     ? raw.extracted_data as Record<string, unknown>
     : null;
 
-  return { transcription, cleaned_notes, mood, coach_insight, workout_notes, extracted_data };
+  // v3: memory_candidates — always an array. Missing/null/non-array coerces to
+  // [] so a prompt slip never crashes the memo path (memory is best-effort).
+  const memory_candidates = Array.isArray(raw.memory_candidates) ? raw.memory_candidates : [];
+
+  return { transcription, cleaned_notes, mood, coach_insight, workout_notes, extracted_data, memory_candidates };
 }
 
 // ── Voice-extracted → workout-field mapping ───────────────────────────────
@@ -149,9 +192,9 @@ function validateAnalysis(raw: Record<string, unknown>): AnalysisResult {
 
 /** Format seconds/mile as "M:SS". */
 function formatPaceMMSS(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  // Round total first — rounding sec%60 alone renders "7:60" at 479.6s.
+  const t = Math.round(sec);
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 }
 
 /** Parse a "M:SS" pace/time string to seconds, or null. */
@@ -179,9 +222,21 @@ function parsePaceMMSS(s: string | undefined): number | null {
  * ({effort, distance_miles, pace_per_mile}); empty array when nothing is
  * derivable.
  */
+/**
+ * Shape of a `pace_segments` entry. `duration_seconds` is REQUIRED — the iOS
+ * `PaceSegment` model and the fitness/signal math both read it. Emitting a
+ * segment without it previously broke the journal decode outright.
+ */
+type PaceSegmentOut = {
+  effort: string;
+  distance_miles: number;
+  duration_seconds: number;
+  pace_per_mile: string;
+};
+
 function paceSegmentsFromExtracted(
   extracted: Record<string, unknown>,
-): Array<{ effort: string; distance_miles: number; pace_per_mile: string }> {
+): PaceSegmentOut[] {
   // 1. Intervals → reps.
   const intervals = Array.isArray(extracted.intervals)
     ? (extracted.intervals as Array<{ distance?: string; time?: string; rest?: string; count?: number }>)
@@ -191,6 +246,7 @@ function paceSegmentsFromExtracted(
     return reps.map((r) => ({
       effort: r.label,
       distance_miles: Number(r.distanceMiles.toFixed(3)),
+      duration_seconds: Number((r.paceSecPerMile * r.distanceMiles).toFixed(1)),
       pace_per_mile: formatPaceMMSS(r.paceSecPerMile),
     }));
   }
@@ -200,13 +256,14 @@ function paceSegmentsFromExtracted(
     ? (extracted.splits as Array<{ mile?: number; time?: string }>)
     : null;
   if (splits) {
-    const out: Array<{ effort: string; distance_miles: number; pace_per_mile: string }> = [];
+    const out: PaceSegmentOut[] = [];
     for (const sp of splits) {
       const paceSec = parsePaceMMSS(sp.time);
       if (paceSec == null) continue;
       out.push({
         effort: `Mile ${sp.mile ?? out.length + 1}`,
         distance_miles: 1,
+        duration_seconds: Number(paceSec.toFixed(1)),
         pace_per_mile: formatPaceMMSS(paceSec),
       });
     }
@@ -220,9 +277,18 @@ function paceSegmentsFromExtracted(
  * Last-resort `workout_notes` builder. The LLM almost always returns a
  * formatted workout_notes string, but when it doesn't (and there IS
  * structured data), synthesize a minimal human-readable summary so the
- * spoken session is never lost to the `extracted_data` blob alone. This is
- * the "at minimum, capture it in notes" floor for effort-only reps that
- * carry no pace (and so produce no pace_segments).
+ * spoken session is never lost to the `extracted_data` blob alone.
+ *
+ * IMPORTANT (2026-06-18): `workout_notes` describes the WORKOUT STRUCTURE
+ * (reps/splits/distance/pace), and it is the gate compute-workout-features
+ * uses to decide whether to derive structure FROM the Strava/Garmin laps —
+ * it only backfills the laps-derived structure when `workout_notes` is empty.
+ * So an effort-only memo ("felt like a 7/10") must NOT produce a workout_notes
+ * here: a thin "Effort: hard (RPE 7)" line would make the field non-empty and
+ * block the lap parse, leaving a linked Strava run with no parsed structure.
+ * Effort/RPE has its own home (`felt_rpe` via extract-rpe) and shows in the
+ * voice summary, so we deliberately omit it from this fallback. Only return a
+ * note when the memo actually conveyed STRUCTURE.
  */
 function synthesizeWorkoutNotes(extracted: Record<string, unknown>): string | null {
   const lines: string[] = [];
@@ -256,12 +322,9 @@ function synthesizeWorkoutNotes(extracted: Record<string, unknown>): string | nu
   const cooldown = typeof extracted.cooldown === "string" ? extracted.cooldown.trim() : "";
   if (cooldown) lines.push(`Cooldown: ${cooldown}`);
 
-  const effort = typeof extracted.effort_level === "string" ? extracted.effort_level.trim() : "";
-  const rpe = Number(extracted.rpe);
-  if (effort && Number.isFinite(rpe)) lines.push(`Effort: ${effort} (RPE ${rpe})`);
-  else if (effort) lines.push(`Effort: ${effort}`);
-  else if (Number.isFinite(rpe)) lines.push(`Effort: RPE ${rpe}`);
-
+  // Effort/RPE is intentionally NOT added here — see the docstring. If the memo
+  // carried only effort and no structure, return null so the Strava/Garmin laps
+  // become the structure source in compute-workout-features.
   return lines.length > 0 ? lines.join("\n") : null;
 }
 
@@ -271,6 +334,7 @@ Deno.serve(async (req) => {
   }
 
   let recordId: string | null = null;
+  const tStart = Date.now();
 
   try {
     const payload: TrainingLogPayload = await req.json();
@@ -294,7 +358,7 @@ Deno.serve(async (req) => {
     // an attacker can't distinguish "not yours" from "doesn't exist".
     const { data: ownerRow, error: ownerErr } = await supabase
       .from("training_logs")
-      .select("user_id")
+      .select("user_id, notes, cleaned_notes, audio_url")
       .eq("id", recordId)
       .maybeSingle();
     if (ownerErr || !ownerRow || ownerRow.user_id !== authUserId) {
@@ -309,12 +373,23 @@ Deno.serve(async (req) => {
     if (rlBlocked) return rlBlocked;
 
     // Hard monthly ceiling: ≤200 voice-memo uploads processed per user/month.
-    const capped = await enforceMonthlyCap(authUserId, "voice_memo", 200, corsHeaders, { isServiceRole });
+    const capped = await enforceMonthlyCap(authUserId, "voice_memo", corsHeaders, { isServiceRole });
     if (capped) return capped;
 
-    // Skip if already processed or no audio
-    if (record.cleaned_notes || !record.audio_url) {
-      return new Response(JSON.stringify({ message: "Skipped: already processed or no audio" }), {
+    // A row is processable when it has audio to transcribe OR typed notes to
+    // analyze directly (manual notes take the text path). Read both from the
+    // row — the outbox payload only carries id/user_id/audio_url.
+    const typedNotes = ((ownerRow.notes as string | null) ?? "").trim();
+    const audioUrlStr = (ownerRow.audio_url as string | null) ?? record.audio_url ?? null;
+    const hasAudio = !!audioUrlStr;
+    if (ownerRow.cleaned_notes) {
+      return new Response(JSON.stringify({ message: "Skipped: already processed" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (!hasAudio && !typedNotes) {
+      return new Response(JSON.stringify({ message: "Skipped: no audio or notes" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -343,32 +418,92 @@ Deno.serve(async (req) => {
     // Mark as processing
     await updateProcessingStatus(record.id, "processing");
 
-    // Fetch existing record to check for HealthKit-linked data and pace segments
-    const { data: existingRecord } = await supabase
+    // Fetch existing record to check for HealthKit-linked data and pace segments.
+    // NOTE: `scheduled_workout_id` is intentionally NOT selected — that column
+    // does not exist on training_logs in this schema, and including it made
+    // PostgREST reject the entire query (400), which nulled `existingRecord` and
+    // silently disabled the sibling-GPS merge below. The scheduled-workout
+    // enrichment is guarded on the field being truthy, so it no-ops until a real
+    // linkage column exists.
+    const { data: existingRecord, error: existingErr } = await supabase
       .from("training_logs")
-      .select("workout_distance_miles, workout_duration_minutes, pace_segments, vital_workout_id, workout_date, scheduled_workout_id, workout_type")
+      .select("workout_distance_miles, workout_duration_minutes, pace_segments, vital_workout_id, workout_date, workout_type, external_streams")
       .eq("id", record.id)
       .single();
 
-    // Extract storage path from URL (everything after the bucket name)
-    const audioUrl = new URL(record.audio_url);
-    const bucketPrefix = "/storage/v1/object/public/training-memos/";
-    const pathIndex = audioUrl.pathname.indexOf(bucketPrefix);
-    const storagePath = pathIndex !== -1
-      ? decodeURIComponent(audioUrl.pathname.slice(pathIndex + bucketPrefix.length))
-      : audioUrl.pathname.split("/").pop();
-
-    if (!storagePath) {
-      throw new Error("Could not extract storage path from audio URL");
+    if (existingErr) {
+      console.error(`[process-training-memo] failed to load existing record ${record.id}:`, existingErr.message);
     }
 
-    // Download audio file from storage
-    const { data: audioData, error: downloadError } = await supabase.storage
-      .from("training-memos")
-      .download(storagePath);
+    // ── Merge a sibling GPS row (Strava/HealthKit) into this voice row ──
+    // A voice memo recorded against an already-imported run lands as its OWN
+    // voice_log row with only distance+duration copied over — NOT the GPS
+    // streams or splits, which stay on the separate Strava row. That leaves the
+    // structure parser and the AI insight with no real workout to read. So when
+    // this row has distance but no streams, find the sibling run on the same day
+    // with a matching distance and pull its external_streams + pace_segments
+    // over, so parse-workout-structure + the insight see the actual GPS.
+    let mergedStreams: unknown = null;
+    let mergedPaceSegments: unknown = null;
+    {
+      const er = existingRecord as {
+        workout_distance_miles?: number | null;
+        workout_date?: string | null;
+        external_streams?: unknown;
+        pace_segments?: unknown;
+      } | null;
+      const erDist = er?.workout_distance_miles ?? null;
+      const erDate = er?.workout_date ?? null;
+      const erHasStreams = er?.external_streams != null;
+      if (!erHasStreams && erDist && erDate) {
+        const day = String(erDate).slice(0, 10);
+        const { data: siblings } = await supabase
+          .from("training_logs")
+          .select("id, workout_distance_miles, external_streams, pace_segments")
+          .eq("user_id", authUserId)
+          .neq("id", record.id)
+          .not("external_streams", "is", null)
+          .gte("workout_date", `${day}T00:00:00Z`)
+          .lte("workout_date", `${day}T23:59:59Z`)
+          .limit(10);
+        const match = (siblings ?? []).find((s: { workout_distance_miles?: number | null }) =>
+          typeof s.workout_distance_miles === "number" &&
+          Math.abs((s.workout_distance_miles as number) - (erDist as number)) <= 0.3
+        ) as { external_streams?: unknown; pace_segments?: unknown } | undefined;
+        if (match) {
+          mergedStreams = match.external_streams ?? null;
+          const erHasSegs = Array.isArray(er?.pace_segments) && (er!.pace_segments as unknown[]).length > 0;
+          if (!erHasSegs) mergedPaceSegments = match.pace_segments ?? null;
+          console.log(`[process-training-memo] merged GPS from sibling run into voice row ${record.id}`);
+        }
+      }
+    }
 
-    if (downloadError) {
-      throw new Error(`Failed to download audio: ${downloadError.message}`);
+    // Audio path only: resolve the storage path + download. Typed notes have
+    // no audio and take the text branch in Step 1 below.
+    let storagePath: string | undefined;
+    let audioData: Blob | null = null;
+    if (hasAudio) {
+      const audioUrl = new URL(audioUrlStr!);
+      const bucketPrefix = "/storage/v1/object/public/training-memos/";
+      const pathIndex = audioUrl.pathname.indexOf(bucketPrefix);
+      storagePath = pathIndex !== -1
+        ? decodeURIComponent(audioUrl.pathname.slice(pathIndex + bucketPrefix.length))
+        : audioUrl.pathname.split("/").pop();
+
+      if (!storagePath) {
+        throw new Error("Could not extract storage path from audio URL");
+      }
+
+      // Download audio file from storage
+      const { data: dlData, error: downloadError } = await supabase.storage
+        .from("training-memos")
+        .download(storagePath);
+
+      if (downloadError) {
+        throw new Error(`Failed to download audio: ${downloadError.message}`);
+      }
+      audioData = dlData;
     }
 
     // Coach context fetched in parallel with transcription — adds zone
@@ -376,13 +511,10 @@ Deno.serve(async (req) => {
     const coachContextPromise = loadCoachContext(supabase, authUserId);
 
     // Scheduled-workout fetch (when linked) for prescribed-vs-executed.
-    const scheduledPromise = (existingRecord as { scheduled_workout_id?: string | null })?.scheduled_workout_id
-      ? supabase
-          .from("scheduled_workouts")
-          .select("workout_type, workout_data")
-          .eq("id", (existingRecord as { scheduled_workout_id: string }).scheduled_workout_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null });
+    // Inert until a real linkage column exists: `training_logs` has no
+    // `scheduled_workout_id` in this schema, so there is nothing to join on.
+    // (Selecting it is what made PostgREST 400 the whole existing-record read.)
+    const scheduledPromise: Promise<{ data: null }> = Promise.resolve({ data: null });
 
     // Similar prior workout — gated on having workout_type + distance +
     // duration on the row at function entry (typically true when
@@ -421,13 +553,16 @@ Deno.serve(async (req) => {
       .order("workout_date", { ascending: false })
       .limit(5);
 
-    // ── Step 1: Transcribe with Whisper (Groq → OpenAI → Gemini fallback) ──
-    const audioArrayBuffer = await audioData.arrayBuffer();
-    const mimeType = storagePath.endsWith(".m4a") ? "audio/mp4" : "audio/mpeg";
-    const fileName = storagePath.split("/").pop() || "memo.m4a";
-
+    // ── Step 1: get the transcript ──
+    // Voice memos: transcribe the audio (Groq → OpenAI → Gemini fallback).
+    // Typed notes: the athlete's text IS the transcript — skip transcription.
     let transcription: string | null = null;
     let transcriptionProvider = "unknown";
+
+    if (hasAudio && audioData) {
+      const audioArrayBuffer = await audioData.arrayBuffer();
+      const mimeType = storagePath!.endsWith(".m4a") ? "audio/mp4" : "audio/mpeg";
+      const fileName = storagePath!.split("/").pop() || "memo.m4a";
 
     // Try Groq Whisper first (cheapest, fastest)
     const groqKey = Deno.env.get("GROQ_API_KEY");
@@ -506,11 +641,22 @@ Deno.serve(async (req) => {
       console.log(`Gemini transcription fallback: ${transcription?.length} chars`);
     }
 
-    if (!transcription || transcription.length < 5) {
-      throw new Error("Transcription failed — no text extracted from audio");
+      if (!transcription || transcription.length < 5) {
+        throw new Error("Transcription failed — no text extracted from audio");
+      }
+    } else {
+      // Typed note: the athlete's text is the transcript — zero transcription cost.
+      transcription = typedNotes;
+      transcriptionProvider = "typed-note";
+      if (transcription.length < 5) {
+        throw new Error("Typed note too short to analyze");
+      }
+      console.log(`[process-training-memo] typed note (${transcription.length} chars) — skipping transcription`);
     }
 
+    const tTranscribed = Date.now();
     console.log(`Transcription complete via ${transcriptionProvider}: "${transcription.slice(0, 100)}..."`);
+    console.log(`[memo-timing] transcription=${tTranscribed - tStart}ms provider=${transcriptionProvider}`);
 
     // ── Step 2: Analyze transcript with Gemini ──
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -640,7 +786,7 @@ Deno.serve(async (req) => {
     }
 
     // Structured prompt with distinct fields and few-shot examples
-    const prompt = loadPrompt("process-training-memo.v1", { coachAnchorContext, recentContext });
+    const prompt = loadPrompt("process-training-memo.v3", { coachAnchorContext, recentContext });
 
     // Feed the TEXT transcript + Garmin data to Gemini for analysis
     const result = await model.generateContent([
@@ -653,10 +799,13 @@ Deno.serve(async (req) => {
     // Parse and validate
     const rawAnalysis = parseJsonResponse(responseText);
     const analysis = validateAnalysis(rawAnalysis);
+    console.log(`[memo-timing] gemini-analysis=${Date.now() - tTranscribed}ms`);
 
-    // Save full transcript to storage
+    // Save full transcript to storage (audio path only — a typed note has no
+    // audio storage path to derive the transcript filename from, and the note
+    // text already lives on the row as `notes`/`cleaned_notes`).
     let transcriptUrl: string | null = null;
-    if (analysis.transcription) {
+    if (analysis.transcription && hasAudio && storagePath) {
       const transcriptFileName = storagePath.replace(/\.(m4a|mp3|wav)$/, "_transcript.txt");
       const transcriptContent = new TextEncoder().encode(analysis.transcription);
 
@@ -668,6 +817,11 @@ Deno.serve(async (req) => {
         });
 
       if (!uploadError) {
+        // NOTE (2026-07-15): training-memos is a PRIVATE bucket now.
+        // getPublicUrl is pure string construction — we keep it because the
+        // URL-shaped string is the canonical identifier format stored in
+        // training_logs (readers parse the storage path back out of it and
+        // download with the service role). It is not a fetchable link.
         const { data: urlData } = supabase.storage
           .from("training-memos")
           .getPublicUrl(transcriptFileName);
@@ -761,6 +915,16 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Carry the sibling run's GPS onto this voice row so the parser + insight
+    // have the real workout. Voice-extracted pace_segments (if any) win; the
+    // merged GPS only fills the gap.
+    if (mergedStreams != null) {
+      updatePayload.external_streams = mergedStreams;
+    }
+    if (mergedPaceSegments != null && updatePayload.pace_segments == null) {
+      updatePayload.pace_segments = mergedPaceSegments;
+    }
+
     // Update training_logs with all results
     const { error: updateError } = await supabase
       .from("training_logs")
@@ -770,6 +934,41 @@ Deno.serve(async (req) => {
     if (updateError) {
       throw new Error(`Failed to update training log: ${updateError.message}`);
     }
+
+    // Parse the workout structure (GPS streams + any spoken detail) now that the
+    // row is written. Direct call — the pg_net trigger is dead on Supabase.
+    fireParseStructure(record.id, authUserId);
+
+    // ── Niggle classification (audit fix #2) ──────────────────────────
+    // The memo pipeline is the PRIMARY body-mentions writer: persist the
+    // LLM's structured `soreness` entries as durable niggles (closed
+    // vocabulary + laterality + verbatim words), so patterns survive
+    // across rebuilds and carry the side. Runs under service role (RLS is
+    // not the silent no-op it is on the athlete-state rebuild path). Awaited
+    // so failures log, but writeNiggleMentions never throws.
+    const mentionDate = (existingRecord?.workout_date as string | null) ?? new Date().toISOString();
+    await writeNiggleMentions(supabase, authUserId, record.id, mentionDate, analysis.extracted_data);
+    // The all-clear signal: when the athlete says a niggle is better now,
+    // record a resolution watermark so it drops out of active analysis until
+    // (and unless) a new mention comes in after this date.
+    await writeNiggleResolutions(supabase, authUserId, record.id, mentionDate, analysis.extracted_data);
+
+    // ── Long-term memory extraction (roadmap 4.1, "it knows you") ─────────
+    // Dedup-or-reinforce the LLM's memory_candidates into user_memories:
+    // durable facts, preferences, constraints, life context, gear, and
+    // quotable episodes — the athlete's own framing only. Zero extra LLM cost
+    // (the candidates rode in the memo analysis response above). Service-role,
+    // awaited so failures log, but writeMemoryCandidates never throws. The memo
+    // text is the provenance excerpt; mentionDate dates episodes.
+    const memoExcerpt = (analysis.cleaned_notes || analysis.transcription || "").slice(0, 200);
+    await writeMemoryCandidates(
+      supabase,
+      authUserId,
+      record.id,
+      mentionDate,
+      memoExcerpt,
+      analysis.memory_candidates,
+    );
 
     // ── A (2026-06-17 rev3): AI Insight is ON DEMAND, not generated here. ──
     // Earlier revs generated the v5 insight from this function (first async via
@@ -782,63 +981,21 @@ Deno.serve(async (req) => {
     // until that tap. The INSERT trigger (fn_enqueue_workout_insight) already
     // skips voice rows, so no auto-generation path remains.
 
-    // Create injury record if injury detected in voice memo
-    try {
-      // Verified owner from the ownership guard — never a "dev-user" stand-in.
-      const injuryUserId = authUserId;
-      const textToScan = `${analysis.cleaned_notes || ""} ${analysis.transcription || ""}`;
-      const detected = detectInjury(textToScan);
-
-      if (detected || analysis.mood === "injured") {
-        const injury = detected || {
-          bodyArea: "unspecified",
-          side: "unknown",
-          isResolved: false,
-          severity: 5,
-        };
-
-        await upsertInjury(supabase, injuryUserId, {
-          ...injury,
-          source: "voice_memo",
-          sourceReferenceId: record.id,
-          description: analysis.cleaned_notes?.slice(0, 200),
-        });
-
-        // ── Voice-to-Action: auto-trigger injury-early-warning ──
-        // When an injury is detected in a voice memo, immediately run the
-        // injury risk assessment so the athlete state gets updated with the
-        // new risk score and the coaching agent knows about it.
-        console.log(`[Voice-to-Action] Injury detected (${injury.bodyArea}) — triggering injury-early-warning`);
-        try {
-          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-          const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-          await fetch(`${supabaseUrl}/functions/v1/injury-early-warning`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${serviceKey}`,
-              apikey: serviceKey,
-            },
-            body: JSON.stringify({ user_id: injuryUserId }),
-            signal: AbortSignal.timeout(15000),
-          });
-          console.log(`[Voice-to-Action] Injury-early-warning completed for ${injuryUserId}`);
-        } catch (warningError) {
-          console.warn(`[Voice-to-Action] Injury-early-warning failed (non-fatal):`, warningError);
-        }
-      }
-    } catch (injuryError) {
-      console.error("Error creating injury record:", injuryError);
-      // Don't fail the request if injury tracking fails
-    }
-
-    // ── Update Athlete State (Dynamic Context Object) ──
-    // Full rebuild after a voice log because the training load metrics change.
-    try {
-      await rebuildAthleteState(supabase, authUserId);
-    } catch (stateError) {
-      console.error("Athlete state rebuild failed (non-fatal):", stateError);
-    }
+    // ── Scope: this function summarizes + parses the workout (above) and
+    //    now also CLASSIFIES niggles (writeNiggleMentions, just above). It
+    //    does NOT run injury-early-warning or rebuild athlete state. Those
+    //    remain separate concerns:
+    //      • Athlete-state freshness: the `trg_invalidate_athlete_state` trigger
+    //        (20260420200000) fires on the row UPDATE above and invalidates the
+    //        cache, so the next coaching read rebuilds — no inline rebuild here.
+    //      • Body-part / niggle mentions: this function is the PRIMARY writer
+    //        (memo_llm source, closed vocabulary + laterality + verbatim words).
+    //        The rebuild-time regex scan remains only as backfill for TYPED
+    //        notes and imported descriptions, and skips voice rows (which this
+    //        path owns). Detection-not-diagnosis; never auto-converted to
+    //        formal injuries.
+    //    Keeping the voice path lean is what keeps it fast.
+    console.log(`[memo-timing] total=${Date.now() - tStart}ms (summarize + parse only)`);
 
     return new Response(
       JSON.stringify({
@@ -861,6 +1018,8 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error("Error processing training memo:", error);
+    captureException(error, { fn: "process-training-memo", recordId });
+    await flushSentry();
 
     // Mark as failed with error message
     if (recordId) {

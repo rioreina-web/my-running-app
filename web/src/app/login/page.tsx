@@ -33,7 +33,7 @@ export default function LoginPage() {
           password,
         });
         if (error) throw error;
-        router.push("/dashboard");
+        router.push("/trends");
         router.refresh();
       } else {
         const { error } = await supabase.auth.signUp({

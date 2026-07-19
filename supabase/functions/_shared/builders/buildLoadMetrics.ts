@@ -132,8 +132,23 @@ export function buildLoadMetrics(input: LoadMetricsInput): LoadMetrics {
     return false;
   }
 
+  // Easy counting mirrors isHardSession's source priority: prefer the
+  // Observer-parsed type, fall back to raw workout_type. Auto-synced runs
+  // (Strava/HealthKit) routinely have workout_type = null but a parsed
+  // structure — v1 read only workout_type here, so a fully-parsed easy week
+  // reported "N hard, 0 easy" and looked falsely polarized in the prompt.
+  function isEasySession(log: Record<string, unknown>): boolean {
+    if (isHardSession(log)) return false;
+    const parsed = log.parsed_structure as Record<string, unknown> | null;
+    const parsedType = parsed && typeof parsed === "object"
+      ? (parsed["type"] as string | undefined)
+      : undefined;
+    if (parsedType && easyTypes.has(parsedType)) return true;
+    return easyTypes.has(log.workout_type as string);
+  }
+
   const hardSessions7d = last7d.filter(isHardSession).length;
-  const easySessions7d = last7d.filter((l) => easyTypes.has(l.workout_type as string)).length;
+  const easySessions7d = last7d.filter(isEasySession).length;
 
   const last14d = workoutsWithMiles.filter(
     (l) => new Date(l.workout_date as string) >= new Date(fourteenDaysAgo)

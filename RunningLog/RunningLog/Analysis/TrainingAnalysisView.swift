@@ -187,18 +187,20 @@ struct TrainingAnalysisView: View {
     private enum ZoneFamily {
         case aerobic, tempo, fast
 
+        // Intensity bands ride the universal blue pace ramp — pace reads as
+        // depth, not as green/coral (green = mood, coral = alert only).
         var nameColor: Color {
             switch self {
-            case .aerobic: return Color.drip.positive
-            case .tempo:   return Color.drip.coral
-            case .fast:    return Color.drip.injured
+            case .aerobic: return PaceSpectrum.easyText   // legibility-darkened Easy
+            case .tempo:   return PaceSpectrum.lt
+            case .fast:    return PaceSpectrum.fiveK
             }
         }
         var fillColor: Color {
             switch self {
-            case .aerobic: return Color.drip.positive.opacity(0.35)
-            case .tempo:   return Color.drip.coral.opacity(0.35)
-            case .fast:    return Color.drip.injured.opacity(0.30)
+            case .aerobic: return PaceSpectrum.easy.opacity(0.35)
+            case .tempo:   return PaceSpectrum.lt.opacity(0.35)
+            case .fast:    return PaceSpectrum.fiveK.opacity(0.30)
             }
         }
     }
@@ -361,8 +363,10 @@ struct TrainingAnalysisView: View {
 
     private var acwrVerdictColor: Color {
         guard let a = athleteState?.acwr else { return Color.drip.textTertiary }
+        // Green stays mood-only — the ACWR "safe" verdict reads neutral ink,
+        // not mood-green. Out-of-range verdicts keep their warning warmth.
         if a < 0.8 { return Color.drip.tired }
-        if a <= 1.3 { return Color.drip.positive }
+        if a <= 1.3 { return Color.drip.textPrimary }
         if a <= 1.5 { return Color(red: 0.73, green: 0.46, blue: 0.09) }
         return Color.drip.injured
     }

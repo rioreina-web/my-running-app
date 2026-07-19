@@ -6,6 +6,7 @@ import { EditorialDivider } from "@/components/ui/editorial-divider";
 import { PlanTemplateRow } from "@/components/coach/plan-template-row";
 import { CoachSetupPrompt } from "@/components/coach/coach-setup-prompt";
 import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function CoachPlansPage() {
   const supabase = await createClient();
@@ -61,20 +62,13 @@ export default async function CoachPlansPage() {
 
       {/* Plan list */}
       {planList.length === 0 ? (
-        <Card className="py-16 text-center">
-          <div className="text-4xl mb-4">📅</div>
-          <h3 className="font-semibold text-[var(--color-text-primary)] mb-2">
-            No training plans yet
-          </h3>
-          <p className="text-sm text-[var(--color-text-secondary)] mb-6">
-            Create a 12–16 week plan template that athletes can subscribe to.
-          </p>
-          <Link
-            href="/coach-portal/plans/new"
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-[var(--color-coral)] text-white text-sm font-medium rounded-full hover:bg-[var(--color-coral-dark)] transition-colors"
-          >
-            Build Your First Plan
-          </Link>
+        <Card className="py-6">
+          <EmptyState
+            variant="setup-needed"
+            eyebrow="Training plans"
+            title="Create a 12–16 week plan template that athletes can subscribe to."
+            cta={{ label: "Build your first plan", href: "/coach-portal/plans/new" }}
+          />
         </Card>
       ) : (
         <div className="space-y-0 border border-[var(--color-divider)] rounded-xl overflow-hidden">

@@ -1,0 +1,79 @@
+//
+//  RouteSanitizer.swift
+//  RunningLog
+//
+//  One place to clean raw GPS before it ever reaches a map or a pace
+//  calculation. Raw workout routes — whether they arrive from HealthKit
+//  or from a synced service like Strava (training_logs.external_streams) —
+//  routinely contain three kinds of junk that make a map look broken:
+//
+//    1. "Null island" (0, 0) and other invalid coordinates, usually the
+//       first few samples before the GPS gets a fix.
+//    2. Teleports: a single sample that jumps hundreds of meters and snaps
+//       back. These draw a long spike across the map and wreck pace math.
+//    3. Duplicate / stationary points that add zero-length segments.
+//
+//  Centralizing the hygiene here means every surface that shows a route
+//  gets the same clean input, which is the bulk of "the GPS map actually
+//  works now." Pure + deterministic so it is trivially testable.
+//
+
+import CoreLocation
+import Foundation
+
+enum RouteSanitizer {
+
+    /// Return a cleaned copy of `locations`, preserving order.
+    ///
+    /// - Drops invalid / null-island coordinates.
+    /// - Drops physically impossible jumps (faster than a flat-out sprint).
+    /// - Collapses near-duplicate consecutive points.
+    nonisolated static func clean(_ locations: [CLLocation]) -> [CLLocation] {
+        guard locations.count > 1 else {
+            return locations.filter { isValidCoordinate($0.coordinate) }
+        }
+
+        var out: [CLLocation] = []
+        out.reserveCapacity(locations.count)
+
+        for loc in locations {
+            guard isValidCoordinate(loc.coordinate) else { continue }
+
+            if let last = out.last {
+                let meters = loc.distance(from: last)
+                let dt = loc.timestamp.timeIntervalSince(last.timestamp)
+
+                // Skip stationary / duplicate samples (<0.5 m apart).
+                if meters < 0.5 { continue }
+
+                // Skip teleports. With a real time delta, anything faster
+                // than 25 m/s (~90 km/h — well past human sprint speed) is
+                // a GPS glitch. With no usable time delta, treat a single
+                // jump over 300 m as a glitch.
+                if dt > 0 {
+                    if meters / dt > 25 { continue }
+                } else if meters > 300 {
+                    continue
+                }
+            }
+
+            out.append(loc)
+        }
+
+        // If filtering was overly aggressive (e.g. timestamps were all equal
+        // and everything looked like a teleport), fall back to a coordinate-
+        // validity pass so we still show *something* rather than a blank map.
+        if out.count < 2 {
+            return locations.filter { isValidCoordinate($0.coordinate) }
+        }
+        return out
+    }
+
+    /// A coordinate is usable if MapKit considers it valid and it is not
+    /// sitting on (0, 0) — the classic "no GPS fix yet" sentinel.
+    nonisolated static func isValidCoordinate(_ c: CLLocationCoordinate2D) -> Bool {
+        guard CLLocationCoordinate2DIsValid(c) else { return false }
+        let nearNullIsland = abs(c.latitude) < 0.0001 && abs(c.longitude) < 0.0001
+        return !nearNullIsland
+    }
+}

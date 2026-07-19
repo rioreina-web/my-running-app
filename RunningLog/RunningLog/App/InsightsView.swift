@@ -124,10 +124,12 @@ struct InsightsView: View {
     private var pacesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             label("PACES · 30 DAYS")
-            paceRow(zone: "Easy",      keys: ["easy"],                     color: Color.drip.positive)
-            paceRow(zone: "Long run",  keys: ["long_run"],                 color: Color.drip.positive)
-            paceRow(zone: "Tempo",     keys: ["tempo", "progression"],     color: Color.drip.coral)
-            paceRow(zone: "Threshold", keys: ["threshold", "intervals"],   color: Color.drip.injured)
+            // Pace zones ride the universal blue ramp (source of truth:
+            // PaceSpectrum). Easy legibility-darkened for the small chip.
+            paceRow(zone: "Easy",      keys: ["easy"],                     color: PaceSpectrum.easyText)
+            paceRow(zone: "Long run",  keys: ["long_run"],                 color: PaceSpectrum.steady)
+            paceRow(zone: "Tempo",     keys: ["tempo", "progression"],     color: PaceSpectrum.mp)
+            paceRow(zone: "Threshold", keys: ["threshold", "intervals"],   color: PaceSpectrum.lt)
         }
     }
 

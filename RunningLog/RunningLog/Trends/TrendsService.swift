@@ -23,6 +23,17 @@ final class TrendsService {
 
     /// Full window (up to 26 weeks), oldest → newest. The view slices this.
     private(set) var weeks: [TrendsWeek] = []
+    /// Per-quality-session work-bout paces backing Section A of the Key
+    /// Sessions chart. Date-sorted (oldest → newest). Empty when the athlete
+    /// has no rep-level laps in range — the view shows the empty state.
+    private(set) var keySessions: [KeySession] = []
+    /// Weekly time-at-quality-pace backing Section B (the work behind it),
+    /// oldest → newest, one entry per week in the window.
+    private(set) var keyVolume: [QualityVolumeWeek] = []
+    /// System-aware fast-segment trends (volume vs. each system's own range,
+    /// conditions-adjusted pace, mixed-session breakdown). Empty until a load
+    /// returns `fast_segments` — the Fast segments surface shows its empty state.
+    private(set) var fastSegments: FastSegmentsData = .empty
     /// Implausible runs the timeline set aside (watch-not-paused etc.),
     /// undecided — surfaced to Trim or Keep. Never deleted.
     private(set) var flagged: [TrendsFlaggedRun] = []
@@ -37,8 +48,14 @@ final class TrendsService {
     private init() {}
 
     /// Preview / test seam — inject a fixed window without hitting the network.
-    init(preview weeks: [TrendsWeek]) {
+    init(
+        preview weeks: [TrendsWeek],
+        keySessions: [KeySession] = [],
+        keyVolume: [QualityVolumeWeek] = []
+    ) {
         self.weeks = weeks
+        self.keySessions = keySessions
+        self.keyVolume = keyVolume
         self.loaded = true
     }
 
@@ -55,6 +72,9 @@ final class TrendsService {
             weeks = payload.weeks.map { $0.toModel() }
             flagged = (payload.flagged ?? []).map { $0.toModel() }
             trimmed = (payload.trimmed ?? []).map { $0.toModel() }
+            keySessions = (payload.qualitySessions ?? []).map { $0.toModel() }
+            keyVolume = (payload.qualityVolume ?? []).map { $0.toModel() }
+            fastSegments = payload.fastSegments?.toData() ?? .empty
             loaded = true
             lastError = nil
             Log.coach.info("Trends timeline loaded (\(self.weeks.count) weeks)")
@@ -92,6 +112,90 @@ private struct TrendsTimelinePayload: Decodable {
     let weeks: [TrendsWeekDTO]
     let flagged: [FlaggedRunDTO]?
     let trimmed: [FlaggedRunDTO]?
+    let qualitySessions: [KeySessionDTO]?
+    let qualityVolume: [QualityVolumeDTO]?
+    let fastSegments: FastSegmentsDTO?
+
+    enum CodingKeys: String, CodingKey {
+        case weeks, flagged, trimmed
+        case qualitySessions = "quality_sessions"
+        case qualityVolume = "quality_volume"
+        case fastSegments = "fast_segments"
+    }
+}
+
+/// One `quality_volume[]` entry from `trends-timeline`. `zone_seconds` is a
+/// free-form work-zone → seconds map; `date_label` derived from `week_start`.
+private struct QualityVolumeDTO: Decodable {
+    let weekStart: String
+    let dateLabel: String
+    let zoneSeconds: [String: Int]
+
+    enum CodingKeys: String, CodingKey {
+        case weekStart = "week_start"
+        case dateLabel = "date_label"
+        case zoneSeconds = "zone_seconds"
+    }
+
+    func toModel() -> QualityVolumeWeek {
+        QualityVolumeWeek(weekStart: weekStart, dateLabel: dateLabel, zoneSeconds: zoneSeconds)
+    }
+}
+
+/// One `quality_sessions[]` entry from `trends-timeline`. Snake-case keys
+/// mapped to the `KeySession` view model; `date_label` is derived here from
+/// the ISO `date` so the model carries a display string.
+private struct KeySessionDTO: Decodable {
+    let date: String
+    let logId: String
+    let zone: String
+    let workPaceSec: Int
+    let workPaceAdjSec: Int?
+    let heatCategory: String?
+    let workHrAvg: Int?
+    let structure: String?
+    let distanceMi: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case date
+        case logId = "log_id"
+        case zone
+        case workPaceSec = "work_pace_sec"
+        case workPaceAdjSec = "work_pace_adj_sec"
+        case heatCategory = "heat_category"
+        case workHrAvg = "work_hr_avg"
+        case structure
+        case distanceMi = "distance_mi"
+    }
+
+    private static let monthAbbr = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+
+    /// "2026-06-23" → "Jun 23". Falls back to the raw string if unparseable.
+    private var derivedLabel: String {
+        let parts = date.split(separator: "-")
+        guard parts.count == 3,
+              let m = Int(parts[1]), (1...12).contains(m),
+              let d = Int(parts[2]) else { return date }
+        return "\(Self.monthAbbr[m - 1]) \(d)"
+    }
+
+    func toModel() -> KeySession {
+        KeySession(
+            id: logId,
+            date: date,
+            dateLabel: derivedLabel,
+            zone: zone,
+            workPaceSec: workPaceSec,
+            workPaceAdjSec: workPaceAdjSec,
+            heatCategory: heatCategory,
+            workHrAvg: workHrAvg,
+            structure: structure,
+            distanceMi: distanceMi
+        )
+    }
 }
 
 /// A run the timeline set aside as implausible (e.g. watch left running).

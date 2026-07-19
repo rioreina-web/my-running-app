@@ -117,14 +117,16 @@ enum RaceDistance: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    /// Color for the race distance
+    /// Color for the race distance — rides the universal blue pace
+    /// ramp (`PaceSpectrum`): longer race = slower pace = paler, shorter
+    /// race = faster pace = deeper navy.
     var color: Color {
         switch self {
-        case .mile1500: return Color.purple
-        case .fiveK: return Color.drip.coral
-        case .tenK: return Color.drip.coralLight
-        case .halfMarathon: return Color.drip.energized
-        case .marathon: return Color.drip.positive
+        case .mile1500: return PaceSpectrum.mile
+        case .fiveK: return PaceSpectrum.fiveK
+        case .tenK: return PaceSpectrum.tenK
+        case .halfMarathon: return PaceSpectrum.hmp
+        case .marathon: return PaceSpectrum.mp
         }
     }
 

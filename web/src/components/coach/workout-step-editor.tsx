@@ -1,5 +1,7 @@
 "use client";
 
+import { Copy, X } from "lucide-react";
+
 // All pure types/helpers/formatters live in workout-helpers.ts so server
 // components (like the workout library card) can also import them. This file
 // only contains the React component(s) and quick-add factories.
@@ -58,7 +60,7 @@ const STEP_TYPES = [
 const DURATION_TYPES = [
   { value: "distance_miles",  label: "mi"  },
   { value: "distance_km",     label: "km"  },
-  { value: "distance_meters", label: "m"   },
+  { value: "distance_meters", label: "meters" },
   { value: "time_seconds",    label: "min" },
 ] as const;
 
@@ -564,15 +566,15 @@ export function WorkoutStepEditor({ steps, onChange, athletePaces }: WorkoutStep
                     title="Duplicate this step"
                     aria-label={`Duplicate step ${idx + 1}`}
                   >
-                    ⎘
+                    <Copy size={13} strokeWidth={2} aria-hidden />
                   </button>
                   <button
                     onClick={() => removeStep(idx)}
-                    className="text-xs text-[var(--color-text-tertiary)] hover:text-red-600 px-1.5"
+                    className="text-xs text-[var(--color-text-tertiary)] hover:text-coral px-1.5"
                     title="Remove"
                     aria-label={`Remove step ${idx + 1}`}
                   >
-                    ✕
+                    <X size={13} strokeWidth={2} aria-hidden />
                   </button>
                 </div>
               </div>
@@ -689,7 +691,7 @@ export function WorkoutStepEditor({ steps, onChange, athletePaces }: WorkoutStep
                   )}
                   <button
                     onClick={() => toggleRepeats(idx)}
-                    className="text-[10px] text-[var(--color-text-tertiary)] hover:text-red-600 ml-auto"
+                    className="text-[10px] text-[var(--color-text-tertiary)] hover:text-coral ml-auto"
                   >
                     Remove reps
                   </button>

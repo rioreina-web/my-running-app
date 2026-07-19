@@ -184,12 +184,24 @@ struct UnifiedTrainingChart: View {
         }
 
         // ---- mood dots ---- (skip weeks with no logged mood — never
-        // fabricate a feeling for an empty week)
+        // fabricate a feeling for an empty week). Dots ride a faint
+        // baseline and carry a soft same-hue halo so the qualitative lane
+        // reads at a glance instead of hiding under the volume bars —
+        // mood is half the product's signal, it shouldn't whisper.
+        var moodBase = Path()
+        moodBase.move(to: CGPoint(x: padL, y: moodY))
+        moodBase.addLine(to: CGPoint(x: w - padR, y: moodY))
+        ctx.stroke(moodBase, with: .color(Color.drip.divider.opacity(0.6)), lineWidth: 1)
         for (i, week) in weeks.enumerated() {
             guard !week.mood.isEmpty else { continue }
-            let r: CGFloat = 3.4
+            let color = TrendsMoodColor.color(week.mood)
+            // 12%-wash halo — the same treatment as the MoodBadge pill.
+            let hr: CGFloat = 8.5
+            let halo = CGRect(x: x(i, w) - hr, y: moodY - hr, width: hr * 2, height: hr * 2)
+            ctx.fill(Path(ellipseIn: halo), with: .color(color.opacity(0.16)))
+            let r: CGFloat = 4.6
             let dot = CGRect(x: x(i, w) - r, y: moodY - r, width: r * 2, height: r * 2)
-            ctx.fill(Path(ellipseIn: dot), with: .color(TrendsMoodColor.color(week.mood)))
+            ctx.fill(Path(ellipseIn: dot), with: .color(color))
         }
 
         // ---- niggle lane ----

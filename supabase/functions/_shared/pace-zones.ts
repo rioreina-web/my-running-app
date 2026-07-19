@@ -14,6 +14,16 @@
  *   'low'    — cascaded from only one sibling prediction.
  */
 
+import { equivalentRacePaceSecPerMile, RACE_DISTANCE_MI, type RaceKey } from "./paces.ts";
+
+/** Convert a pace at one race distance to the equivalent pace at another via
+ *  the canonical ratio table. 0/falsy in → 0 out (keeps the `||` cascades
+ *  short-circuiting). Mirrors pace-engine.ts `paceEquiv`. */
+function paceEquiv(fromPace: number, fromKey: RaceKey, toKey: RaceKey): number {
+  if (!fromPace) return 0;
+  return equivalentRacePaceSecPerMile(fromKey, fromPace * RACE_DISTANCE_MI[fromKey], toKey);
+}
+
 export type PaceConfidence = "high" | "medium" | "low";
 
 export interface ResolvedPace {
@@ -73,19 +83,15 @@ export function computePaceProfile(
   const milePace = snap.predicted_mile_seconds
     ? snap.predicted_mile_seconds / MILE_MI : 0;
 
-  // Cascade fallbacks — identical ratios to adaptive-workout/computePaceZones
-  // so plan generation and adaptive runtime stay in lockstep.
-  const mp = marathonPace || (halfPace ? halfPace * 1.06
-    : (tenKPace ? tenKPace * 1.15 : fiveKPace * 1.22));
-  const hm = halfPace || (marathonPace ? marathonPace * 0.943
-    : (tenKPace ? tenKPace * 1.08 : fiveKPace * 1.15));
-  const tk = tenKPace || (halfPace ? halfPace * 0.925
-    : (fiveKPace ? fiveKPace * 1.06 : mp * 0.87));
-  const fk = fiveKPace || (tenKPace ? tenKPace * 0.943
-    : (halfPace ? halfPace * 0.87 : mp * 0.82));
-  // Mile pace is ~8% faster than 5K pace at typical VDOT levels.
-  const ml = milePace || (fiveKPace ? fiveKPace * 0.92
-    : (tenKPace ? tenKPace * 0.87 : (halfPace ? halfPace * 0.82 : mp * 0.76)));
+  // Cascade fallbacks — conversions go through the canonical race-equivalence
+  // ratio table (paceEquiv), not hardcoded multipliers. The old chain
+  // (10K→MP ×1.15, 5K→MP ×1.22, …) ran ~5–7% off the ladder and fed that
+  // error into every plan generated from a snapshot without a marathon anchor.
+  const mp = marathonPace || paceEquiv(halfPace, "half", "marathon") || paceEquiv(tenKPace, "tenK", "marathon") || paceEquiv(fiveKPace, "fiveK", "marathon");
+  const hm = halfPace || paceEquiv(marathonPace, "marathon", "half") || paceEquiv(tenKPace, "tenK", "half") || paceEquiv(fiveKPace, "fiveK", "half");
+  const tk = tenKPace || paceEquiv(halfPace, "half", "tenK") || paceEquiv(fiveKPace, "fiveK", "tenK") || paceEquiv(mp, "marathon", "tenK");
+  const fk = fiveKPace || paceEquiv(tenKPace, "tenK", "fiveK") || paceEquiv(halfPace, "half", "fiveK") || paceEquiv(mp, "marathon", "fiveK");
+  const ml = milePace || paceEquiv(fiveKPace, "fiveK", "mile") || paceEquiv(tenKPace, "tenK", "mile") || paceEquiv(halfPace, "half", "mile") || paceEquiv(mp, "marathon", "mile");
   const easy = mp + 90; // +90 s/mi off marathon pace — canonical easy target
 
   const pack = (value: number, hadDirect: boolean): ResolvedPace => ({

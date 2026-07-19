@@ -4,13 +4,19 @@ interface SectionHeaderProps {
   action?: () => void;
   actionLabel?: string;
   actionHref?: string;
+  /** Mark the section as the active/live one — turns the label coral. */
+  coral?: boolean;
 }
 
-export function SectionHeader({ title, subtitle, action, actionLabel, actionHref }: SectionHeaderProps) {
+export function SectionHeader({ title, subtitle, action, actionLabel, actionHref, coral }: SectionHeaderProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-baseline justify-between px-1">
-        <span className="font-body text-[11px] font-medium tracking-[1.5px] uppercase text-text-secondary">
+        <span
+          className={`font-mono text-[11px] font-medium tracking-[0.12em] uppercase ${
+            coral ? "text-coral" : "text-text-secondary"
+          }`}
+        >
           {title}
           {subtitle ? (
             <span className="ml-2 tracking-normal normal-case text-text-secondary/70">{subtitle}</span>

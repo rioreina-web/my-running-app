@@ -1,0 +1,33 @@
+{
+  "id": "005-continuous-run-with-pauses-not-intervals",
+  "prompt_name": "parse-workout-structure.v2",
+  "description": "Regression for the fabricated-interval bug (2026-07-18). A continuous 13.49mi long run where the athlete PAUSED the watch at water breaks. The bout detector split it into 4 same-pace 'bouts' (incl. a 9-mile one) separated by standing stops. This is NOT an interval session — the notes are a plain auto-import with no workout declared, and the bouts show no hard/easy contrast. Must return a CONTINUOUS type (long_run/easy/progression), reps=null, intent_pattern=null (never the parser's own '4 work bouts…' summary), equivalent_race_pace=null. A single 9-mile 'rep' must never appear.",
+  "vars": {
+    "distanceMiles": "13.49",
+    "durationMinutes": "91.5",
+    "moodLabel": "positive",
+    "workoutNotesBlock": "\"Morning Run\\nDistance: 13.49 mi\\nDuration: 91:29\\nAvg pace: 6:47/mi\\nAvg HR: 156 bpm\"",
+    "voiceTranscriptBlock": "(none)",
+    "workBoutsBlock": "Bout 1: 2.00 km / 1.24 mi in 09:12 @ 4:35/km (7:23/mi) — by distance ≈ ragged, by time ≈ ragged\n  ↳ recovery: 0:34 standing\nBout 2: 14.48 km / 9.00 mi in 68:12 @ 4:43/km (7:36/mi) — by distance ≈ ragged, by time ≈ ragged\n  ↳ recovery: 0:26 standing\nBout 3: 3.86 km / 2.40 mi in 20:00 @ 5:11/km (8:20/mi) — by distance ≈ ragged, by time ≈ ragged\n  ↳ recovery: 0:28 standing\nBout 4: 3.22 km / 2.00 mi in 13:48 @ 4:17/km (6:54/mi) — by distance ≈ ragged, by time ≈ ragged",
+    "timelineStr": "0s d=0.0mi pace=7:10 hr=132\n600s d=1.3mi pace=7:05 hr=148\n1200s d=2.6mi pace=6:55 hr=152\n3000s d=6.5mi pace=6:50 hr=157\n4800s d=10.5mi pace=6:38 hr=161\n5400s d=13.4mi pace=6:20 hr=166"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["type", "intent_pattern", "blocks", "work", "equivalent_race_pace", "confidence"],
+    "forbidden_patterns": [
+      "\"type\":\\s*\"interval\"",
+      "\"type\":\\s*\"tempo\"",
+      "work bouts with varying",
+      "\"distance_miles\":\\s*[3-9]\\.\\d+[\\s\\S]{0,60}\"role\":\\s*\"work_rep\"",
+      "\"distance_key\""
+    ],
+    "required_patterns": [
+      "\"type\":\\s*\"(long_run|easy|progression|recovery)\"",
+      "\"intent_pattern\":\\s*null",
+      "\"equivalent_race_pace\":\\s*null"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

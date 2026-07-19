@@ -266,7 +266,7 @@ struct DripSection<Content: View>: View {
 // the older `StatCard` in DesignSystem.swift (icon + value + label, no
 // delta slot, no unit). New surfaces should prefer this one.
 
-enum DripDeltaTone { case positive, negative }
+enum DripDeltaTone { case positive, negative, neutral }
 
 struct DripStatTile: View {
     let label: String
@@ -293,7 +293,7 @@ struct DripStatTile: View {
                 KitEyebrow(
                     text: delta,
                     size: 10, em: 0.10,
-                    color: deltaTone == .positive ? Color.drip.energized : Color.drip.coral
+                    color: deltaColor
                 )
             }
         }
@@ -303,6 +303,14 @@ struct DripStatTile: View {
         .background(Color.drip.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+    }
+
+    private var deltaColor: Color {
+        switch deltaTone {
+        case .positive: return Color.drip.energized
+        case .negative: return Color.drip.coral
+        case .neutral:  return Color.drip.textSecondary
+        }
     }
 }
 
