@@ -75,6 +75,15 @@ const DEFAULTS: Required<DetectOptions> = {
   minWorkSec: 15,
 };
 
+// A lap that is short in BOTH distance and duration is a GPS artifact — an
+// auto-lap tick at the end of a run, or an accidental lap press — not a rep or a
+// recovery. Dropped from the lap segmenter so it can't skew the fast/slow split
+// or masquerade as a separator. (A standing rest is short in distance but NOT in
+// time, so it clears the duration bound and still separates the reps it sits
+// between.)
+const FRAGMENT_MAX_METERS = 40;
+const FRAGMENT_MAX_SECONDS = 15;
+
 /**
  * Standard interval distances, in meters, with their athlete-facing label.
  * Used to snap a bout's true length to the rep distance the athlete most likely
@@ -207,6 +216,180 @@ function median(xs: number[]): number {
 }
 
 /**
+ * Adaptive work/recovery velocity boundary for a set of laps.
+ *
+ * The fixed "recovery = below `recoveryFrac` (0.7) of work pace" rule assumes an
+ * athlete's recovery jogs are ≥30% slower than their reps. That breaks for a
+ * fast runner whose recoveries are EASY, not slow: 6 × 1mi @ ~5:30 with ~400m
+ * jog recoveries @ ~6:30 puts the recoveries at ~85% of rep velocity — above the
+ * 0.7 cutoff — so every recovery reads as more work and the reps glue into one
+ * block. No single fixed fraction can fix this: a recovery at 0.85 of rep pace
+ * and a legit tempo lap at 0.85 of a faster interval's pace are indistinguishable
+ * by ratio alone. The *gap* is the signal, not the ratio.
+ *
+ * So find the natural split between the fast (rep) laps and the slower (recovery)
+ * laps with Otsu's method — the threshold that best separates the velocities into
+ * two groups — and only trust it when the laps are genuinely BIMODAL: the two
+ * groups must be separated by a clear empty band (much wider than the spacing
+ * *within* either group) and the fast group must be meaningfully faster. A steady
+ * run (one cluster) or a smooth progression (evenly spaced, no band) fails those
+ * guards and returns null, so the caller keeps the fixed-fraction fallback and
+ * those sessions behave exactly as before.
+ *
+ * Returns the boundary velocity (m/s) — laps below it are recovery — or null when
+ * the laps aren't clearly bimodal.
+ */
+export function bimodalWorkRecoveryBoundary(
+  vels: number[],
+  standingVelMs: number,
+): number | null {
+  // Ignore near-standing points so a lone stop/cooldown fragment can't hijack
+  // the split — the two clusters we're separating are the running laps.
+  const v = vels.filter((x) => x > standingVelMs).sort((a, b) => a - b);
+  if (v.length < 4) return null;
+
+  const total = v.reduce((a, b) => a + b, 0);
+
+  // Otsu: choose split index k (low = v[0..k], high = v[k+1..]) that maximizes
+  // between-group separation w0·w1·(μ_high − μ_low)².
+  let bestK = -1;
+  let bestScore = -1;
+  let cumN = 0;
+  let cumSum = 0;
+  for (let k = 0; k < v.length - 1; k++) {
+    cumN += 1;
+    cumSum += v[k];
+    const w0 = cumN / v.length;
+    const w1 = 1 - w0;
+    const mu0 = cumSum / cumN;
+    const mu1 = (total - cumSum) / (v.length - cumN);
+    const score = w0 * w1 * (mu1 - mu0) ** 2;
+    if (score > bestScore) {
+      bestScore = score;
+      bestK = k;
+    }
+  }
+  if (bestK < 0) return null;
+
+  const low = v.slice(0, bestK + 1);
+  const high = v.slice(bestK + 1);
+  const muLow = low.reduce((a, b) => a + b, 0) / low.length;
+  const muHigh = high.reduce((a, b) => a + b, 0) / high.length;
+
+  // Guard 1: the fast group must be meaningfully faster than the slow group.
+  // Rejects a steady run (one cluster split down the middle → ratio ≈ 1).
+  if (muLow <= 0 || muHigh / muLow < 1.1) return null;
+
+  // Guard 2: a real empty band between the groups. The gap that separates them
+  // must dwarf the typical spacing WITHIN the groups — otherwise the data is a
+  // smooth continuum (a progression), not two distinct efforts.
+  const band = high[0] - low[low.length - 1];
+  const innerGaps: number[] = [];
+  for (let i = 1; i < low.length; i++) innerGaps.push(low[i] - low[i - 1]);
+  for (let i = 1; i < high.length; i++) innerGaps.push(high[i] - high[i - 1]);
+  const meanInner = innerGaps.length
+    ? innerGaps.reduce((a, b) => a + b, 0) / innerGaps.length
+    : 0;
+  if (meanInner > 0 && band < 2.5 * meanInner) return null;
+
+  return (low[low.length - 1] + high[0]) / 2;
+}
+
+/**
+ * Bimodal work/recovery boundary for DENSE per-second stream velocities.
+ *
+ * The lap path's gap test doesn't work here — adjacent per-second samples are
+ * ~0 apart, so there's no "empty band" to find. Detect the two speed clusters
+ * from the velocity DISTRIBUTION instead: histogram the moving samples, and if
+ * there are two clear modes (a rep-pace peak and a recovery-pace peak) separated
+ * by a real valley, return the valley velocity as the work/recovery boundary.
+ *
+ * Deliberately conservative — it only fires on a genuinely two-peaked
+ * distribution. A steady run (one peak), a smooth progression (a broad plateau,
+ * no valley), and a standing-rest interval session (the rests are below
+ * `standingVelMs` and never enter the histogram, leaving one moving peak) all
+ * return null, so the caller keeps the exact fixed-fraction fallback and their
+ * behavior is unchanged. Only fast-moving-recovery intervals — the case the 0.7
+ * cutoff mislabels — produce two moving peaks and get the corrected boundary.
+ */
+export function bimodalBoundaryFromDensity(
+  vels: number[],
+  standingVelMs: number,
+): number | null {
+  const v = vels.filter((x) => x > standingVelMs);
+  if (v.length < 60) return null; // too few samples to trust a distribution
+
+  let lo = Infinity, hi = -Infinity;
+  for (const x of v) {
+    if (x < lo) lo = x;
+    if (x > hi) hi = x;
+  }
+  if (hi - lo < 0.5) return null; // essentially one speed → not bimodal
+
+  const BINS = 24;
+  const width = (hi - lo) / BINS;
+  const hist = new Array(BINS).fill(0);
+  for (const x of v) {
+    let b = Math.floor((x - lo) / width);
+    if (b >= BINS) b = BINS - 1;
+    if (b < 0) b = 0;
+    hist[b] += 1;
+  }
+
+  // 3-bin moving-average smoothing to tame per-second GPS noise.
+  const sm = new Array(BINS).fill(0);
+  for (let i = 0; i < BINS; i++) {
+    let s = 0, cnt = 0;
+    for (let j = i - 1; j <= i + 1; j++) {
+      if (j >= 0 && j < BINS) { s += hist[j]; cnt += 1; }
+    }
+    sm[i] = s / cnt;
+  }
+
+  // Mode 1 = tallest bin. Mode 2 = tallest bin at a genuinely different speed
+  // (≥ ~15% of the velocity range away from mode 1).
+  let m1 = 0;
+  for (let i = 1; i < BINS; i++) if (sm[i] > sm[m1]) m1 = i;
+  const SEP = Math.max(2, Math.round(BINS * 0.15));
+  let m2 = -1;
+  for (let i = 0; i < BINS; i++) {
+    if (Math.abs(i - m1) < SEP) continue;
+    if (m2 < 0 || sm[i] > sm[m2]) m2 = i;
+  }
+  if (m2 < 0) return null;
+
+  const a = Math.min(m1, m2);
+  const b = Math.max(m1, m2);
+  if (b - a < 2) return null; // modes adjacent → no room for a valley
+
+  const peakHi = Math.max(sm[m1], sm[m2]);
+  const peakLo = Math.min(sm[m1], sm[m2]);
+  // The second mode must carry real mass, not be a noise bump.
+  if (peakLo < 0.15 * peakHi) return null;
+
+  // Reject a multi-modal continuum (e.g. a stepped progression): if a peak
+  // comparable to the smaller of our two modes sits OUTSIDE them, this isn't a
+  // clean two-cluster (rep/recovery) distribution and we must not split it.
+  let outsideMax = 0;
+  for (let i = 0; i < BINS; i++) {
+    if (i >= a && i <= b) continue;
+    if (sm[i] > outsideMax) outsideMax = sm[i];
+  }
+  if (outsideMax > 0.5 * peakLo) return null;
+
+  // Valley = the lowest smoothed count strictly between the two modes; require
+  // a real trough (well below the smaller peak), else it's one broad cluster.
+  let minC = Infinity;
+  for (let i = a + 1; i < b; i++) if (sm[i] < minC) minC = sm[i];
+  if (minC > 0.5 * peakLo) return null;
+  const valleyBins: number[] = [];
+  for (let i = a + 1; i < b; i++) if (sm[i] === minC) valleyBins.push(i);
+  const valley = valleyBins[Math.floor(valleyBins.length / 2)];
+
+  return lo + (valley + 0.5) * width;
+}
+
+/**
  * Segment a run into recovery-bounded work bouts.
  *
  * Returns the bouts and recoveries in chronological order, plus the work
@@ -243,7 +426,14 @@ export function detectWorkBouts(
   const moving = vel.slice(0, n).filter((v) => v > o.standingVelMs);
   const workVel = median(moving);
   if (workVel <= 0) return { segments: [], workVelMs: 0 };
-  const recoveryThreshold = o.recoveryFrac * workVel;
+
+  // Prefer the adaptive bimodal boundary when the run's velocity distribution
+  // has two clear speed clusters (fast reps + easy-but-not-slow recoveries) —
+  // the same blind spot the lap path had. Fall back to the fixed fraction for
+  // single-cluster runs (steady, progression, standing-rest intervals), leaving
+  // them unchanged.
+  const densityBoundary = bimodalBoundaryFromDensity(vel.slice(0, n), o.standingVelMs);
+  const recoveryThreshold = densityBoundary ?? o.recoveryFrac * workVel;
 
   // 1) Per-point classification.
   const cls: Segment[] = new Array(n);
@@ -389,7 +579,10 @@ export function boutsFromLaps(
       const vel = declaredVel > 0 ? declaredVel : dur_s > 0 ? dist_m / dur_s : 0;
       return { dist_m, dur_s, vel, start_index: l.start_index, end_index: l.end_index };
     })
-    .filter((l) => l.dist_m > 0 && l.dur_s > 0 && isFinite(l.vel));
+    .filter((l) =>
+      l.dist_m > 0 && l.dur_s > 0 && isFinite(l.vel) &&
+      !(l.dist_m < FRAGMENT_MAX_METERS && l.dur_s < FRAGMENT_MAX_SECONDS)
+    );
 
   if (norm.length < 2) return { segments: [], workVelMs: 0 };
 
@@ -403,7 +596,16 @@ export function boutsFromLaps(
   const fastCluster = norm.filter((l) => l.vel >= 0.7 * anchor).map((l) => l.vel);
   const workVel = median(fastCluster.length ? fastCluster : moving);
   if (workVel <= 0) return { segments: [], workVelMs: 0 };
-  const recoveryThreshold = o.recoveryFrac * workVel;
+
+  // Prefer the adaptive bimodal boundary — it separates the fast reps from
+  // easy-but-not-slow recovery jogs that the fixed 0.7 fraction wrongly counts
+  // as work. Fall back to the fixed fraction when the laps aren't clearly two-
+  // clustered (steady runs, smooth progressions), leaving those unchanged.
+  const adaptiveBoundary = bimodalWorkRecoveryBoundary(
+    norm.map((l) => l.vel),
+    o.standingVelMs,
+  );
+  const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
 
   const cls: Segment[] = norm.map((l) => (l.vel < recoveryThreshold ? "recovery" : "work"));
 

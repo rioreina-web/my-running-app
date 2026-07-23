@@ -112,6 +112,49 @@ Deno.test("workBouts: reproduces the real session shape — 2K opener then reps"
   assert(workVelMs > 4.5 && workVelMs < 5.6, `workVel ${workVelMs}`);
 });
 
+Deno.test("workBouts (GPS): FAST jog recoveries (only ~22% slower) still separate reps", () => {
+  // A manually-entered / lapless run of the same session type as Tuesday:
+  // 6 × 1mi @ ~5:32 (4.85 m/s) with ~400m jog recoveries @ ~7:04 (3.8 m/s). The
+  // recoveries sit ABOVE the old 0.7×work cutoff, so the fixed rule merged the
+  // whole thing into one block. The two speed clusters are detected from the
+  // velocity distribution instead.
+  const rep = { vel: 4.85, secs: 330 };
+  const jog = { vel: 3.8, secs: 100 };
+  const stream = buildStream([rep, jog, rep, jog, rep, jog, rep, jog, rep, jog, rep]);
+  const { segments } = detectWorkBouts(stream);
+  assertEquals(works(segments).length, 6, "fast recoveries must still separate the reps");
+  assertEquals(segments.filter((s) => s.kind === "recovery").length, 5);
+});
+
+Deno.test("workBouts (GPS): fast recoveries with accel/decel ramps still give clean reps", () => {
+  // Real GPS has transition seconds between rep and recovery. Those must not
+  // fill the valley enough to merge, nor fracture a rep.
+  const rep = { vel: 4.85, secs: 300 };
+  const jog = { vel: 3.8, secs: 90 };
+  const phases: Array<{ vel: number; secs: number }> = [];
+  for (let i = 0; i < 5; i++) {
+    phases.push(rep, { vel: 4.5, secs: 4 }, { vel: 4.1, secs: 4 }, jog, { vel: 4.1, secs: 4 }, { vel: 4.5, secs: 4 });
+  }
+  phases.push(rep);
+  const { segments } = detectWorkBouts(buildStream(phases));
+  assertEquals(works(segments).length, 6, "ramps must neither fragment nor merge the reps");
+});
+
+Deno.test("workBouts (GPS): a stepped progression is NOT split into fake work/recovery", () => {
+  // Five equal blocks getting faster, no recovery — one continuous progression.
+  // The distribution is multi-modal, not two-cluster, so it must not be split.
+  const stream = buildStream([
+    { vel: 4.3, secs: 200 },
+    { vel: 4.5, secs: 200 },
+    { vel: 4.7, secs: 200 },
+    { vel: 4.9, secs: 200 },
+    { vel: 5.1, secs: 200 },
+  ]);
+  const { segments } = detectWorkBouts(stream);
+  assertEquals(segments.filter((s) => s.kind === "recovery").length, 0, "no fabricated recovery");
+  assertEquals(works(segments).length, 1, "stays one continuous bout");
+});
+
 Deno.test("nearestRepDistance: snaps a measured bout to the standard rep", () => {
   assertEquals(nearestRepDistance(1003).label, "1k");
   assertEquals(nearestRepDistance(1610).label, "1mi");
@@ -223,6 +266,47 @@ Deno.test("boutsFromLaps: merges tempo laps, keeps reps, trims cooldown", () => 
   assertEquals(w[6].avg_pace_per_mile, "4:38"); // last 600
   // The trailing 150m stop is a cooldown, not a rep — trimmed.
   assertEquals(segments[segments.length - 1].kind, "work");
+});
+
+// A REAL recorded session (Strava activity 19404031188): 6 × 1 mile with ~400m
+// jog recoveries. The athlete is fast — reps at ~5:25-5:34/mi — and the jog
+// recoveries are EASY, not slow: ~6:22-7:04/mi, only ~15-25% slower than the
+// reps. Lap 6 also carries a ~21s water-break auto-pause (elapsed 129 / moving
+// 108). The fixed "recovery = below 70% of work pace" rule mislabeled every
+// recovery as more work and glued the reps together; the only place it ever
+// dipped slow enough was the water break, so the session collapsed into TWO
+// continuous blocks split at the water stop. The watch laps encode the true
+// structure — trust their fast/slow alternation. (Strava laps carry no
+// average_speed here, so velocity is derived from distance / moving_time.)
+const MILE_REPEATS_FAST_RECOVERIES: LapInput[] = [
+  { distance: 1609.34, moving_time: 328 }, // mile rep 1  (~5:29/mi)
+  { distance: 412.92, moving_time: 98 },   // recovery jog (~6:22/mi)
+  { distance: 1609.34, moving_time: 325 }, // mile rep 2  (~5:25/mi)
+  { distance: 424.7, moving_time: 103 },   // recovery jog (~6:31/mi)
+  { distance: 1609.34, moving_time: 333 }, // mile rep 3  (~5:34/mi)
+  { distance: 409.2, moving_time: 108 },   // recovery jog — WATER BREAK here
+  { distance: 1609.34, moving_time: 334 }, // mile rep 4  (~5:35/mi)
+  { distance: 414.41, moving_time: 100 },  // recovery jog
+  { distance: 1609.34, moving_time: 316 }, // mile rep 5  (~5:17/mi)
+  { distance: 406.99, moving_time: 102 },  // recovery jog
+  { distance: 1609.34, moving_time: 331 }, // mile rep 6  (~5:32/mi)
+  { distance: 335.63, moving_time: 97 },   // trailing partial recovery
+  { distance: 12.55, moving_time: 9 },     // trailing GPS fragment (auto-lap tick)
+];
+
+Deno.test("boutsFromLaps: mile repeats with FAST jog recoveries + a water break → 6 reps, not 2", () => {
+  const { segments } = boutsFromLaps(MILE_REPEATS_FAST_RECOVERIES);
+  const w = lapWorks(segments);
+  assertEquals(w.length, 6, "six mile reps — fast recoveries must still separate them");
+  // Each work bout is ~1 mile (a rep), not a multi-mile merged block.
+  for (const b of w) {
+    assert(b.distance_m > 1500 && b.distance_m < 1700, `rep ${b.index} = ${b.distance_m}m`);
+  }
+  // Five jog recoveries sit between the six reps (trailing partial + the 12m
+  // fragment are trimmed, not counted as separators).
+  assertEquals(segments.filter((s) => s.kind === "recovery").length, 5);
+  // The 21s water-break auto-pause must NOT be the thing that defines structure.
+  assert(w.length !== 2, "must not collapse into two water-break-split blocks");
 });
 
 Deno.test("boutsFromLaps: a steady run collapses to < 2 bouts (caller falls back)", () => {
