@@ -87,7 +87,8 @@ final class HistoryDetailViewModel {
                 source: currentEntry.source,
                 vitalWorkoutId: currentEntry.vitalWorkoutId,
                 paceSegments: currentEntry.paceSegments,
-                parsedStructure: currentEntry.parsedStructure
+                parsedStructure: currentEntry.parsedStructure,
+                title: currentEntry.title
             )
             isLinkingWorkout = false
             return true
@@ -124,6 +125,7 @@ final class HistoryDetailViewModel {
 
     @MainActor
     func saveEdits(
+        title: String,
         mood: String,
         workoutType: String,
         distanceText: String,
@@ -134,6 +136,12 @@ final class HistoryDetailViewModel {
         isSavingEdits = true
 
         var updateData: [String: AnyJSON] = [:]
+
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newTitle = trimmedTitle.isEmpty ? nil : trimmedTitle
+        if newTitle != currentEntry.displayTitle {
+            updateData["title"] = newTitle.map { .string($0) } ?? .null
+        }
 
         let newMood = mood.isEmpty ? nil : mood
         if newMood != currentEntry.mood {
@@ -198,7 +206,8 @@ final class HistoryDetailViewModel {
                 source: currentEntry.source,
                 vitalWorkoutId: currentEntry.vitalWorkoutId,
                 paceSegments: currentEntry.paceSegments,
-                parsedStructure: currentEntry.parsedStructure
+                parsedStructure: currentEntry.parsedStructure,
+                title: newTitle
             )
             isSavingEdits = false
             return true
@@ -248,7 +257,8 @@ final class HistoryDetailViewModel {
                 source: currentEntry.source,
                 vitalWorkoutId: currentEntry.vitalWorkoutId,
                 paceSegments: currentEntry.paceSegments,
-                parsedStructure: currentEntry.parsedStructure
+                parsedStructure: currentEntry.parsedStructure,
+                title: currentEntry.title
             )
 
             isSavingWorkoutNotes = false
@@ -327,17 +337,27 @@ final class HistoryDetailViewModel {
         let all = (await vital) + (await hk) + stravaRows
         guard !all.isEmpty else { return }
 
-        if let entryDist = currentEntry.workoutDistanceMiles {
-            matchedVitalWorkout = all.min(by: {
-                abs($0.distanceMiles - entryDist) < abs($1.distanceMiles - entryDist)
-            })
-            linkedStreamLogId = stravaRows.min(by: {
-                abs($0.distanceMiles - entryDist) < abs($1.distanceMiles - entryDist)
-            })?.id
-        } else {
-            matchedVitalWorkout = all.first
-            linkedStreamLogId = stravaRows.first?.id
+        // Rank candidates by how well they match THIS entry — start time first,
+        // then distance. Distance alone mislinks on a multi-run day: if the day
+        // holds a warmup, the main workout, a cooldown, and an evening run, a
+        // 7.5 mi interval memo and a 3.9 mi easy run are both "that day", and
+        // closest-by-distance can grab the wrong run (and does grab an arbitrary
+        // one when the entry has no distance). The memo's timestamp is copied
+        // from the run it describes, so start time is the reliable key; distance
+        // only breaks ties between runs at effectively the same time (e.g. the
+        // same activity arriving from two sources).
+        let entryTime = workoutDate.timeIntervalSince1970
+        let entryDist = currentEntry.workoutDistanceMiles
+        func closer(_ a: RunningWorkout, _ b: RunningWorkout) -> Bool {
+            let at = abs(a.startDate.timeIntervalSince1970 - entryTime)
+            let bt = abs(b.startDate.timeIntervalSince1970 - entryTime)
+            // >2 min apart → time decides; otherwise fall back to distance.
+            if abs(at - bt) > 120 { return at < bt }
+            guard let d = entryDist else { return at < bt }
+            return abs(a.distanceMiles - d) < abs(b.distanceMiles - d)
         }
+        matchedVitalWorkout = all.min(by: closer)
+        linkedStreamLogId = stravaRows.min(by: closer)?.id
     }
 
     /// Fetch Strava-imported workouts for a specific date (same pattern as
