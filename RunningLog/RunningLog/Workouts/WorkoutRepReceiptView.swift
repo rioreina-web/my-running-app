@@ -592,21 +592,24 @@ struct WorkoutRepReceiptView: View {
     /// Total run distance — lap sum, then the stream, then what the athlete
     /// logged. That last fallback is what lets a voice-logged run (no laps, no
     /// stream) still state its distance in Act 1 instead of dropping the cell.
+    /// Whole-run distance — the activity total as recorded (Strava/HealthKit),
+    /// NOT a sum of rep laps. Summing laps double-counts nothing, but it pairs
+    /// with the work-only time below to make pace = distance / time nonsense
+    /// (all your distance ÷ only your rep time → a pace faster than any split).
+    /// Prefer the real activity total; fall back to the GPS stream, then to
+    /// summed laps only when no activity total exists (e.g. a voice-only run).
     private var wrDistanceMi: Double {
-        let lapMi = orderedLaps.compactMap { $0.distance_meters }.reduce(0, +) / mpm
-        if lapMi > 0 { return lapMi }
+        if let d = summary.distanceMi, d > 0 { return d }
         if let d = stream?.distance, let last = d.last, last > 0 { return last / mpm }
-        return summary.distanceMi ?? 0
+        return orderedLaps.compactMap { $0.distance_meters }.reduce(0, +) / mpm
     }
-    /// Total moving time — sum of the WORK/distance lap times, so a pause
-    /// (regroup, water break) the watch recorded as a rest lap is not counted.
-    /// This is why the run reads its true moving time, not elapsed-with-stops.
+    /// Whole-run moving time — the activity total (Strava's moving_time already
+    /// excludes pauses like a water break), matched to the distance above so
+    /// pace is always a real pace. Falls back to the stream, then summed laps.
     private var wrTimeSec: Double {
-        let lapSec = Double(orderedLaps.filter { $0.is_rest != true }
-            .compactMap { $0.moving_time_seconds }.reduce(0, +))
-        if lapSec > 0 { return lapSec }
+        if let m = summary.durationMin, m > 0 { return m * 60 }
         if let t = sTimes.last, t > 0 { return t }
-        return (summary.durationMin ?? 0) * 60
+        return Double(orderedLaps.compactMap { $0.moving_time_seconds }.reduce(0, +))
     }
     private var wrPaceSec: Double { wrDistanceMi > 0 ? wrTimeSec / wrDistanceMi : 0 }
     private var wrAvgHR: Int? {
