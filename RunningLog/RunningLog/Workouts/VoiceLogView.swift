@@ -30,7 +30,6 @@ private enum JournalKind: String, CaseIterable {
 
 struct VoiceLogView: View {
     @Environment(CoachCheckInManager.self) private var checkInManager
-    @Environment(\.selectedTab) private var selectedTab
     // Beta-audit item #8 (2026-07-16): use the SHARED manager. A fresh
     // `HealthKitManager()` here had its own isAuthorized/readState that
     // diverged from the instance the app actually syncs with.
@@ -90,11 +89,6 @@ struct VoiceLogView: View {
                             // Quiet status annotation
                             if !viewModel.statusMessage.isEmpty {
                                 nsStatusLine
-                            }
-
-                            // Coach check-in eyebrow line
-                            if checkInManager.showBanner, checkInManager.pendingCheckIn != nil {
-                                nsCoachCheckInLine
                             }
 
                             // Mode toggle (only when idle)
@@ -222,10 +216,15 @@ struct VoiceLogView: View {
             }
         }
         .sheet(item: $selectedHistoryEntry) { entry in
-            HistoryDetailSheet(entry: entry) {
+            // Page through exactly what the athlete can see in the feed right
+            // now — same filter, same order — so the swipe matches the list
+            // they already have in their head.
+            HistoryDetailPager(entries: filteredHistoryLogs, initial: entry) {
                 Task { await viewModel.loadHistory() }
             }
-            .presentationDetents([.medium, .large])
+            // `.large` only: the page rail lives on the bottom edge and the
+            // medium detent crops it.
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
         .alert("Microphone access needed", isPresented: $showMicDeniedAlert) {
@@ -258,40 +257,6 @@ struct VoiceLogView: View {
         .padding(.top, 12)
         .padding(.bottom, 4)
         .transition(.opacity)
-    }
-
-    /// Coach check-in surfaced as a quiet single-line eyebrow.
-    @ViewBuilder
-    private var nsCoachCheckInLine: some View {
-        Button {
-            // Coach is tab 2 since the Train + Trends tabs were collapsed
-            // into a single Training tab (slot 1).
-            selectedTab.wrappedValue = 2
-        } label: {
-            HStack(spacing: 8) {
-                Text("COACH HAS A CHECK-IN WAITING")
-                    .font(.dripEyebrow(11))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.drip.coral)
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.drip.coral)
-                Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        checkInManager.dismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.drip.textTertiary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
     }
 
     /// Text segmented mode toggle with amber underline on the active mode.
@@ -1419,7 +1384,7 @@ struct WorkoutPickerSheet: View {
                 .from("training_logs")
                 .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, cleaned_notes")
                 .eq("user_id", value: userId)
-                .eq("source", value: "strava")
+                .in("source", values: ["garmin", "vital"])
                 .order("workout_date", ascending: false, nullsFirst: false)
                 .limit(limit)
                 .execute()
@@ -1438,7 +1403,7 @@ struct WorkoutPickerSheet: View {
                     durationMinutes: dur,
                     pacePerMile: dur / dist,
                     calories: 0,
-                    sourceApp: "Strava",
+                    sourceApp: "Garmin",
                     vitalWorkoutId: r.vital_workout_id
                 )
             }

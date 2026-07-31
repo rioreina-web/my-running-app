@@ -290,3 +290,115 @@ Deno.test("dewPointF: Magnus conversion is sane for Austin summer", () => {
   // drier air → lower dew point
   assert(dewPointF(85, 30) < dewPointF(85, 70));
 });
+
+Deno.test("flat pace: grade-only twin — heat kept, grade removed, independent of neutral", () => {
+  // 3% uphill mile reps in the heat: all four pace variants must separate.
+  const laps = [
+    lap(1609, 300, 170, { gradePct: 3 }), REC(200, 90),
+    lap(1609, 300, 172, { gradePct: 3 }),
+  ];
+  const m = analyzeKeySession(
+    { id: "tog", date: "2026-07-20", laps, weather: { tempF: 85, dewPointF: 74 } },
+    ZONES,
+  )!;
+  // flat (grade-only) is faster than raw (uphill credit) …
+  assert(m.flatPaceSecPerMile! < m.avgPaceSecPerMile, "flat should beat raw uphill");
+  // … but conditions (heat AND grade) is faster still, and neutral (heat-only)
+  // sits between raw and conditions on its own axis.
+  assert(m.conditionsPaceSecPerMile! < m.flatPaceSecPerMile!, "removing heat too should be faster");
+  assert(m.neutralPaceSecPerMile! < m.avgPaceSecPerMile);
+  assert(m.conditionsPaceSecPerMile! < m.neutralPaceSecPerMile!);
+  // per-system + rep carry the field too
+  assert(m.bySystem[0].flatPaceSecPerMile != null);
+  assert(m.reps[0].flatPaceSecPerMile != null);
+});
+
+Deno.test("flat pace: null on flat terrain; present without weather on hills", () => {
+  // flat, no weather → no flat pace (nothing to remove)
+  const flat = analyzeKeySession(
+    { id: "f0", date: "2026-07-21", laps: [lap(1000, 300), REC(180, 80), lap(1000, 300)] },
+    ZONES,
+  )!;
+  assertEquals(flat.flatPaceSecPerMile, null);
+  // hilly, NO weather → flat pace exists and equals conditions (no heat to strip)
+  const hilly = analyzeKeySession(
+    { id: "f1", date: "2026-07-21", laps: [lap(1609, 300, undefined, { gradePct: 4 }), REC(200, 90), lap(1609, 300, undefined, { gradePct: 4 })] },
+    ZONES,
+  )!;
+  assert(hilly.flatPaceSecPerMile != null);
+  assertAlmostEquals(hilly.flatPaceSecPerMile!, hilly.conditionsPaceSecPerMile!, 0.2);
+});
+
+Deno.test("flat pace: split-grade path feeds the same grade-only value", () => {
+  const segs = [{ seconds: 200, gradePct: 5 }];
+  const laps = [lap(1000, 300, undefined, { segments: segs }), REC(180, 80), lap(1000, 300, undefined, { segments: segs })];
+  const m = analyzeKeySession(
+    { id: "f2", date: "2026-07-22", laps, weather: { tempF: 85, dewPointF: 74 } },
+    ZONES,
+  )!;
+  assert(m.flatPaceSecPerMile! < m.avgPaceSecPerMile, "uphill split → faster flat pace");
+  assert(m.conditionsPaceSecPerMile! < m.flatPaceSecPerMile!, "heat removal stacks on top");
+});
+
+Deno.test("flat pace: flows through to system trend points", () => {
+  const s: KeySessionInput = {
+    id: "s-flat", date: "2026-07-23",
+    laps: [
+      lap(1609, 300, undefined, { gradePct: 3 }), REC(200, 90),
+      lap(1609, 300, undefined, { gradePct: 3 }), REC(200, 90),
+      lap(1609, 300, undefined, { gradePct: 3 }),
+    ],
+  };
+  const t = analyzeFastSegmentTrends([s], ZONES);
+  const sys = t.systems[0];
+  assert(sys.points[0].flatPaceSecPerMile != null);
+  assert(sys.points[0].flatPaceSecPerMile! < sys.points[0].avgPaceSecPerMile);
+});
+
+Deno.test("HR reads: drift from rep 2, recovery drop, null decoupling for intervals", () => {
+  const laps: WorkoutLap[] = [];
+  const hrs = [160, 166, 167, 168, 171];
+  for (let i = 0; i < 5; i++) {
+    laps.push(lap(1000, 300, hrs[i]));
+    if (i < 4) laps.push({ ...REC(150, 80), avg_heart_rate: hrs[i] - 20 });
+  }
+  const m = analyzeKeySession({ id: "hr1", date: "2026-07-20", laps }, ZONES)!;
+  // drift = last rep (171) − rep 2 (166)
+  assertEquals(m.hrDriftBpm, 5);
+  // recovery drop: rep max (avg+6 per fixture) − following rest HR (avg−20) = 26
+  assertAlmostEquals(m.recoveryHrDropBpm!, 26, 0.5);
+  // no ≥15-min continuous bout → decoupling honestly null
+  assertEquals(m.decouplingPct, null);
+});
+
+Deno.test("HR reads: drift suppressed for short reps (HR never stabilizes)", () => {
+  const laps: WorkoutLap[] = [];
+  for (let i = 0; i < 6; i++) {
+    laps.push(lap(200, 260, 130 + i * 5)); // ~32s reps, climbing HR
+    if (i < 5) laps.push(REC(60, 60));
+  }
+  const m = analyzeKeySession({ id: "hr2", date: "2026-07-24", laps }, ZONES)!;
+  assertEquals(m.hrDriftBpm, null);
+});
+
+Deno.test("HR reads: decoupling computed on a continuous >=15-min tempo bout", () => {
+  // 4 consecutive fast miles (no recovery laps) = one 20-min bout;
+  // pace held, HR climbing → positive decoupling.
+  const laps = [
+    lap(1609, 305, 155), lap(1609, 305, 158), lap(1609, 305, 165), lap(1609, 305, 168),
+  ];
+  const m = analyzeKeySession({ id: "hr3", date: "2026-07-19", laps }, ZONES)!;
+  assertEquals(m.repCount, 1); // merged into one continuous bout
+  assert(m.decouplingPct != null && m.decouplingPct! > 2, `got ${m.decouplingPct}`);
+});
+
+Deno.test("grade deadband: sub-1% phantom grades produce NO flat pace", () => {
+  // 8m of 'gain' over a mile ≈ 0.5% — GPS noise territory, not a hill.
+  const laps = [
+    lap(1609, 300, undefined, { elevGain: 8 }), REC(200, 90),
+    lap(1609, 300, undefined, { elevGain: 8 }),
+  ];
+  const m = analyzeKeySession({ id: "dead", date: "2026-07-21", laps }, ZONES)!;
+  assertEquals(m.flatPaceSecPerMile, null);
+  assertEquals(m.grade, null);
+});

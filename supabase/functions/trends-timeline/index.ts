@@ -17,6 +17,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import {
+  buildDailyTimeline,
   buildTrendsTimeline,
   flaggedRuns,
   trimmedRuns,
@@ -33,6 +34,7 @@ import {
 import type { PaceZones } from "../_shared/workoutSegmentation.ts";
 import { buildFastSegments, type FSLapRow, type FSStream, type FSWeather } from "./fastSegments.ts";
 import type { ZoneTable } from "../_shared/quality-volume.ts";
+import { fetchQualityLaps } from "../_shared/qualityLaps.ts";
 
 const LOG_COLS_BASE =
   "id, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, mood, source, pace_segments";
@@ -96,13 +98,16 @@ Deno.serve(async (req: Request) => {
     if (logIds.length > 0) {
       const featRes = await supabase
         .from("workout_features")
-        .select("training_log_id, intensity_score, total_duration_seconds, workout_structure")
+        .select("training_log_id, intensity_score, total_duration_seconds, workout_structure, workout_type")
         .in("training_log_id", logIds);
       // Features are an optimization — a failure here degrades to the
       // workout_type fallback rather than failing the whole request.
       if (!featRes.error) {
         const rows = (featRes.data ?? []) as Array<
-          TimelineFeature & { workout_structure?: string | null }
+          TimelineFeature & {
+            workout_structure?: string | null;
+            workout_type?: string | null;
+          }
         >;
         features = rows.map((r) => ({
           training_log_id: r.training_log_id,
@@ -113,6 +118,9 @@ Deno.serve(async (req: Request) => {
           keyFeaturesById.set(r.training_log_id, {
             training_log_id: r.training_log_id,
             workout_structure: r.workout_structure ?? null,
+            // Admits long runs as key sessions — they carry no MP-or-faster
+            // work, so without this label they never appear at all.
+            workout_type: r.workout_type ?? null,
           });
         }
       }
@@ -139,38 +147,50 @@ Deno.serve(async (req: Request) => {
     // float averages ~6:30 → slower than MP → booked as zero quality). Laps see
     // the rep. On real data that's the difference between 29 and 58 quality
     // miles over 90 days. Reused by the key-session classifier below.
-    const lapsByWorkout = await fetchLapsByWorkout(userId, logIds);
+    // Laps resolved once from the best source — native/derived, then the
+    // athlete's fix-reps correction where present (see `fetchQualityLaps`).
+    const lapsByWorkout = await fetchQualityLaps(supabase, userId, logIds);
 
-    const timeline = buildTrendsTimeline(
-      { logs, features, mentions, mpSecPerMile: zones.mp ?? null, lapsByWorkout },
-      weeks,
-    );
-    const flagged = flaggedRuns(logs);
-    const trimmed = trimmedRuns(logs);
-
-    // 4) Quality sessions (Section A of the redesigned Key Sessions chart).
-    //    Per-session work-bout pace, zone-grouped, heat-adjusted. Requires
-    //    rep-level laps + the athlete's pace zones; degrades to an empty array
-    //    when either is missing (manual/HealthKit-only athletes see the
-    //    empty-state, never a faked dot). Append-only: `key_pace_sec` on each
-    //    week is retained until iOS fully migrates off it.
+    // Quality sessions FIRST — the weekly key pace needs their work-bout (rep)
+    // pace, and Sections A/B render from them too. Additive: a failure here
+    // degrades to whole-workout pace + empty quality surfaces, never a 500.
+    const keyLogs = logs.map((l) => ({
+      id: l.id,
+      workout_date: l.workout_date,
+      workout_distance_miles: l.workout_distance_miles,
+      workout_duration_minutes: l.workout_duration_minutes ?? null,
+    }));
     let qualitySessions: ReturnType<typeof buildKeySessions> = [];
     let qualityVolume: ReturnType<typeof buildQualityVolume> = [];
     try {
-      if (lapsByWorkout.size > 0) {
-        const keyLogs = logs.map((l) => ({
-          id: l.id,
-          workout_date: l.workout_date,
-          workout_distance_miles: l.workout_distance_miles,
-        }));
-        qualitySessions = buildKeySessions(keyLogs, lapsByWorkout, keyFeaturesById, zones);
-        // Section B: weekly work-time per zone, over the same window.
-        qualityVolume = buildQualityVolume(keyLogs, lapsByWorkout, zones, weeks);
-      }
+      qualitySessions = buildKeySessions(keyLogs, lapsByWorkout, keyFeaturesById, zones);
+      qualityVolume = buildQualityVolume(keyLogs, lapsByWorkout, zones, weeks);
     } catch (e) {
-      // Sections A/B are additive — never fail the whole timeline on them.
       console.error("[trends-timeline] quality surfaces skipped:", e);
     }
+    // Rep pace per quality log — rest excluded — so the weekly key pace shows
+    // the 5:10 reps, not the 6:20 whole-workout blend.
+    const keyWorkPaceByLog = new Map<string, number>(
+      qualitySessions
+        .filter((s) => s.kind === "quality" && s.work_pace_sec > 0)
+        .map((s) => [s.log_id, s.work_pace_sec]),
+    );
+
+    const timelineInput = {
+      logs,
+      features,
+      mentions,
+      mpSecPerMile: zones.mp ?? null,
+      lapsByWorkout,
+      keyWorkPaceByLog,
+    };
+    const timeline = buildTrendsTimeline(timelineInput, weeks);
+    // Daily substrate for the v2 calendar (Month/Block scales). Same dedup +
+    // quality + mood logic as the weekly rollup, so days can't drift from the
+    // weeks they sum into.
+    const days = buildDailyTimeline(timelineInput, weeks);
+    const flagged = flaggedRuns(logs);
+    const trimmed = trimmedRuns(logs);
 
     // 5) Fast segments — the system-aware fast-work trend (volume vs. each
     //    system's own range, conditions-adjusted pace, mixed-session
@@ -192,8 +212,26 @@ Deno.serve(async (req: Request) => {
           easy: zones.easy ?? undefined,
         };
         const weatherByLog = await fetchWeatherByLog(userId, logIds);
-        // Altitude streams for the key workouts → split (segmented) grade.
-        const streamsByWorkout = await fetchStreamsByWorkout(userId, [...lapsByWorkout.keys()]);
+        // NOTE: split-grade from per-second altitude streams is OFF in the
+        // timeline path. Fetching every key workout's `external_streams` blob
+        // (tens–hundreds of KB each, serially) stalled the whole Trends
+        // response. The net-grade fallback (from lap elevation gain, with the
+        // GPS-noise deadband) keeps the hills adjustment working cheaply. If we
+        // want split-grade back, move it to a lazy per-session request, not the
+        // list load.
+        const streamsByWorkout = undefined;
+        // Total running miles per day (doubles summed) → a session's whole-day
+        // context, not just its own run.
+        const milesByDate = new Map<string, number>();
+        for (const l of logs) {
+          // Honor the athlete's trim flag here too — a trimmed duplicate
+          // (e.g. a voice memo double-logging a synced run) must not inflate
+          // the "X mi day" context. The weekly chart already filters this.
+          if ((l as { stats_excluded?: boolean | null }).stats_excluded === true) continue;
+          const d = String(l.workout_date).slice(0, 10);
+          const mi = l.workout_distance_miles ?? 0;
+          if (mi > 0) milesByDate.set(d, (milesByDate.get(d) ?? 0) + mi);
+        }
         fastSegments = buildFastSegments(
           logs.map((l) => ({
             id: l.id,
@@ -205,6 +243,7 @@ Deno.serve(async (req: Request) => {
           weatherByLog,
           zoneTable,
           streamsByWorkout,
+          milesByDate,
         );
       }
     } catch (e) {
@@ -214,6 +253,7 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         weeks: timeline,
+        days,
         flagged,
         trimmed,
         quality_sessions: qualitySessions,
@@ -265,39 +305,6 @@ async function fetchPaceZones(userId: string): Promise<PaceZones> {
     moderate: num(z.moderate),
     easy: num(z.easy),
   };
-}
-
-/**
- * Rep-level laps for a set of workout ids, grouped by `workout_id`. Selects
- * the segmentation columns plus the heat snapshot (adjusted pace + category)
- * that Section A carries alongside the raw pace. Chunked to keep the IN list
- * sane, matching `compute-workout-features.fetchLapsByWorkout`.
- */
-async function fetchLapsByWorkout(
-  userId: string,
-  workoutIds: string[],
-): Promise<Map<string, KeySessionLap[]>> {
-  const byId = new Map<string, KeySessionLap[]>();
-  if (workoutIds.length === 0) return byId;
-  for (let i = 0; i < workoutIds.length; i += 200) {
-    const chunk = workoutIds.slice(i, i + 200);
-    const { data, error } = await supabase
-      .from("running_workout_laps")
-      .select(
-        "workout_id, lap_index, is_rest, distance_meters, avg_pace_sec_per_mile, moving_time_seconds, elapsed_time_seconds, avg_heart_rate, max_heart_rate, total_elevation_gain, stream_start_index, stream_end_index, heat_adjusted_pace_sec_per_mile, heat_category",
-      )
-      .eq("user_id", userId)
-      .in("workout_id", chunk)
-      .order("lap_index", { ascending: true });
-    if (error) continue; // additive surface — skip the chunk, don't fail
-    for (const lap of (data ?? []) as Array<Record<string, unknown>>) {
-      const wid = String(lap.workout_id);
-      const arr = byId.get(wid) ?? [];
-      arr.push(lap as unknown as KeySessionLap);
-      byId.set(wid, arr);
-    }
-  }
-  return byId;
 }
 
 /**

@@ -47,16 +47,26 @@ export interface FSStream {
 }
 
 /**
+ * Grades with |g| below this are treated as FLAT. GPS altitude wobbles ±1–2 m,
+ * which over a chunk fabricates 1–3% micro-grades on flat ground — and because
+ * the grade model damps downhill credit (correct for real terrain), that noise
+ * doesn't cancel: flat runs read as net "hill cost" and earn a fake adjustment.
+ * The deadband kills the noise while real hills (≥1%) still count.
+ */
+export const GRADE_NOISE_DEADBAND_PCT = 1.0;
+
+/**
  * Slice a rep's window of the altitude stream into ~`chunkMeters` grade
  * segments (`{seconds, gradePct}`) for split-grade adjustment. Chunking at
- * ~50 m smooths per-point GPS-altitude noise while still capturing the ups and
- * downs within a rep. Grade is clamped to ±30% (matches the grade model).
+ * ~100 m smooths per-point GPS-altitude noise while still capturing real ups
+ * and downs within a rep; sub-deadband grades are zeroed (see above). Grade is
+ * clamped to ±30% (matches the grade model).
  */
 export function sliceGradeSegments(
   stream: FSStream,
   startIdx: number,
   endIdx: number,
-  chunkMeters = 50,
+  chunkMeters = 100,
 ): Array<{ seconds: number; gradePct: number }> {
   const { time, distance, altitude } = stream;
   const n = Math.min(time.length, distance.length, altitude.length);
@@ -73,6 +83,7 @@ export function sliceGradeSegments(
     if (dd > 0 && dt > 0) {
       let g = ((altitude[j] - altitude[i]) / dd) * 100;
       if (g > 30) g = 30; else if (g < -30) g = -30;
+      if (Math.abs(g) < GRADE_NOISE_DEADBAND_PCT) g = 0; // GPS-noise floor
       out.push({ seconds: dt, gradePct: Math.round(g * 100) / 100 });
     }
     i = j;
@@ -115,6 +126,7 @@ function volumeDTO(sv: SystemVolume) {
     work_miles: sv.workMiles,
     avg_pace_sec: Math.round(sv.avgPaceSecPerMile),
     neutral_pace_sec: sv.neutralPaceSecPerMile != null ? Math.round(sv.neutralPaceSecPerMile) : null,
+    flat_pace_sec: sv.flatPaceSecPerMile != null ? Math.round(sv.flatPaceSecPerMile) : null,
     conditions_pace_sec: sv.conditionsPaceSecPerMile != null ? Math.round(sv.conditionsPaceSecPerMile) : null,
     avg_hr: sv.avgHeartRate != null ? Math.round(sv.avgHeartRate) : null,
     volume_status: sv.volumeStatus,
@@ -132,17 +144,22 @@ export function buildFastSegments(
   weatherByLog: Map<string, FSWeather>,
   zones: ZoneTable,
   streamsByWorkout?: Map<string, FSStream>,
+  /** date (YYYY-MM-DD) → total running miles that day (doubles summed). */
+  dailyMilesByDate?: Map<string, number>,
 ) {
   const inputs: KeySessionInput[] = [];
   for (const log of logs) {
     const laps = lapsByWorkout.get(log.id);
     if (!laps || laps.length === 0) continue;
     const stream = streamsByWorkout?.get(log.id) ?? null;
+    const dateISO = String(log.workout_date).slice(0, 10);
     inputs.push({
       id: log.id,
-      date: String(log.workout_date).slice(0, 10),
+      date: dateISO,
       name: featuresById.get(log.id)?.workout_structure?.trim() || undefined,
-      totalMiles: log.workout_distance_miles ?? null,
+      // The whole DAY's mileage (all runs), not just this workout — a hard
+      // session on a double-run day sits inside a bigger day.
+      totalMiles: dailyMilesByDate?.get(dateISO) ?? (log.workout_distance_miles ?? null),
       laps: laps.map((l) => {
         const base = {
           distance_meters: Number(l.distance_meters ?? 0),
@@ -173,14 +190,21 @@ export function buildFastSegments(
     total_miles: s.totalMiles,
     rep_count: s.repCount,
     fast_miles: s.fastMiles,
+    // Avg rep/bout length (m) — the "rep length" row + the reps-vs-continuous
+    // read on the compare surface. A continuous effort is one long bout.
+    avg_rep_m: s.avgRepMeters,
     avg_pace_sec: Math.round(s.avgPaceSecPerMile),
     neutral_pace_sec: s.neutralPaceSecPerMile != null ? Math.round(s.neutralPaceSecPerMile) : null,
+    flat_pace_sec: s.flatPaceSecPerMile != null ? Math.round(s.flatPaceSecPerMile) : null,
     conditions_pace_sec: s.conditionsPaceSecPerMile != null ? Math.round(s.conditionsPaceSecPerMile) : null,
     avg_grade_pct: s.grade?.avgGradePct ?? null,
     avg_hr: s.avgHeartRate != null ? Math.round(s.avgHeartRate) : null,
     density_pct: Math.round(s.densityPct),
     avg_rest_sec: s.avgRestSeconds,
     meters_per_beat: s.metersPerBeat,
+    hr_drift_bpm: s.hrDriftBpm,
+    recovery_drop_bpm: s.recoveryHrDropBpm,
+    decoupling_pct: s.decouplingPct,
     feels_f: s.heat ? Math.round(s.heat.tempF) : null,
     by_system: s.bySystem.map(volumeDTO),
   }));
@@ -198,6 +222,7 @@ export function buildFastSegments(
       total_miles: p.totalMiles,
       avg_pace_sec: Math.round(p.avgPaceSecPerMile),
       neutral_pace_sec: p.neutralPaceSecPerMile != null ? Math.round(p.neutralPaceSecPerMile) : null,
+      flat_pace_sec: p.flatPaceSecPerMile != null ? Math.round(p.flatPaceSecPerMile) : null,
       conditions_pace_sec: p.conditionsPaceSecPerMile != null ? Math.round(p.conditionsPaceSecPerMile) : null,
       avg_hr: p.avgHeartRate != null ? Math.round(p.avgHeartRate) : null,
       volume_status: p.volumeStatus,

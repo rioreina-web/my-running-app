@@ -1,6 +1,14 @@
 import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   generateFitnessPrediction,
+  enduranceFactor,
+  longRunReadiness,
+  dedupeRaces,
+  thresholdCapacity,
+  THRESHOLD_TO_10K,
+  MARA_READY_LONGRUN_MILES,
+  MARA_READY_LONGRUN_COUNT,
+  MARA_MAX_ENDURANCE_PENALTY,
   detectRaces,
   detectTrainingAnchors,
   detectDetraining,
@@ -460,18 +468,22 @@ Deno.test("mile without speed evidence sits between the VDOT ratio and Riegel va
 
 // ── New test 7 (Part 1 fix #14): marathon volume factor ─────────────────────
 
-Deno.test("marathon volume factor at 20 mi/wk is ≈ +3%", () => {
+Deno.test("marathon endurance shading: thin long-run base shades within the literature 3–10% band", () => {
+  // v2 (2026-07-24): the marathon multiplier now reflects long-run TRAINING,
+  // not just weekly volume. A 10K-anchored athlete whose long runs top out at
+  // 10mi should read markedly slower over 26.2 than one who repeats 20-milers.
   const raceLog = log(daysAgo(28), "Raced the 10k, finish time 40:00.");
   const dates = [2, 5, 8, 11, 16, 19, 22, 25];
   const mk = (miles: number) => dates.map((d) => run(daysAgo(d), miles, 540));
-  // weeksSinceAnchor caps at 4 → weeklyMiles = total/4 = 20 vs 40.
-  const at20 = generateFitnessPrediction({ workouts: mk(10), voiceLogs: [raceLog], extendedVoiceLogs: [raceLog], now: NOW })!;
-  const at40 = generateFitnessPrediction({ workouts: mk(20), voiceLogs: [raceLog], extendedVoiceLogs: [raceLog], now: NOW })!;
-  // Decay differs between the scenarios, so compare marathon:10K ratios —
-  // the volume factor is the only marathon-specific multiplier.
-  const ratio = (at20.predictedMarathonSeconds / at20.predicted10kSeconds) /
-    (at40.predictedMarathonSeconds / at40.predicted10kSeconds);
-  assert(Math.abs(ratio - 1.03) < 0.003, `expected ≈1.03 (factor 1+((40−20)/40)·0.06), got ${ratio}`);
+  // Thin base: 20 mi/wk, longest run only 10mi, zero runs ≥16.
+  const thin = generateFitnessPrediction({ workouts: mk(10), voiceLogs: [raceLog], extendedVoiceLogs: [raceLog], now: NOW })!;
+  // Marathon-ready base: 40 mi/wk built from repeated 20-milers.
+  const ready = generateFitnessPrediction({ workouts: mk(20), voiceLogs: [raceLog], extendedVoiceLogs: [raceLog], now: NOW })!;
+  // Compare marathon:10K ratios — the endurance factor is the only
+  // marathon-specific multiplier, so this isolates it from decay.
+  const ratio = (thin.predictedMarathonSeconds / thin.predicted10kSeconds) /
+    (ready.predictedMarathonSeconds / ready.predicted10kSeconds);
+  assert(ratio > 1.03 && ratio < 1.10, `thin base shaded ${((ratio - 1) * 100).toFixed(1)}% vs ready; expected 3–10%`);
 });
 
 // ── New tests 8+9 (Part 2 A/B): heat normalization + rest-aware laps ────────
@@ -749,4 +761,183 @@ Deno.test("easy-run laps (unlabeled) do not slow the estimate", () => {
     Math.abs(withEasyLaps.estimated10kPaceSeconds - base.estimated10kPaceSeconds) < 1e-9,
     `easy laps changed the estimate: ${base.estimated10kPaceSeconds} → ${withEasyLaps.estimated10kPaceSeconds}`,
   );
+});
+
+// ── v2 endurance-aware projection (2026-07-24) ──────────────────────────────
+// The marathon/half is a race-equivalence conversion from 10K speed. Published
+// guidance (Riegel ~80% accurate; "assumes appropriate training for the
+// distance"; adjust 3–10% slower when endurance volume is inadequate) says the
+// conversion over-predicts without long-run base. These tests hold the RACE
+// constant and vary the TRAINING to prove the number reflects training.
+
+// Shared 32:00 10K anchor + high weekly volume so the volume floor is inert
+// (weeklyMiles ≥ 40 → volume factor 1.0) and the endurance factor is isolated.
+type SeedRace = NonNullable<PredictionInput["seededRaces"]>[number];
+const TENK_3200: SeedRace = { raceType: "tenK", paceSecondsPerMile: 1920 / 6.21371, date: daysAgo(30), totalTimeSeconds: 1920 };
+const HIGH_VOL_BASE = Array.from({ length: 24 }, (_, i) => run(daysAgo(1 + i), 7, 430)); // ~42 mi/wk of easy running
+
+function predictWithLongRuns(longs: WorkoutInput[], race: SeedRace = TENK_3200) {
+  return generateFitnessPrediction({
+    workouts: HIGH_VOL_BASE,
+    extendedWorkouts: [...HIGH_VOL_BASE, ...longs],
+    voiceLogs: [],
+    seededRaces: [race],
+    now: NOW,
+  })!;
+}
+
+Deno.test("v2: marathon reflects long-run TRAINING, not just the race", () => {
+  const rioLongs = [run(daysAgo(27), 17.8, 460), run(daysAgo(13), 15, 460), run(daysAgo(6), 14, 460), run(daysAgo(20), 13.5, 460), run(daysAgo(9), 13.1, 460)];
+  const readyLongs = [run(daysAgo(27), 20, 460), run(daysAgo(13), 20, 460), run(daysAgo(6), 21, 460), run(daysAgo(20), 20, 460)];
+  const rio = predictWithLongRuns(rioLongs);
+  const ready = predictWithLongRuns(readyLongs);
+  // Same race, same volume — only the long-run training differs.
+  assert(rio.predictedMarathonSeconds > ready.predictedMarathonSeconds, "thin long-run base must read slower over 26.2");
+  const ratio = (rio.predictedMarathonSeconds / rio.predicted10kSeconds) /
+    (ready.predictedMarathonSeconds / ready.predicted10kSeconds);
+  // A 17.8-mi ceiling (one run ≥16) lands ~2% slower than a 20-miler base.
+  assert(ratio > 1.015 && ratio < 1.03, `expected ~2% endurance shade, got ${((ratio - 1) * 100).toFixed(2)}%`);
+});
+
+Deno.test("v2: endurance shade spans the population sensibly (ready→0, thin→≤12%)", () => {
+  const at = (longest: number, count: number) => {
+    const longs: WorkoutInput[] = [];
+    for (let i = 0; i < Math.max(count, 1); i++) longs.push(run(daysAgo(6 + i * 5), i === 0 ? longest : Math.max(16, longest - 1), 460));
+    if (count === 0) longs.length = 0, longs.push(run(daysAgo(6), longest, 460));
+    return predictWithLongRuns(longs);
+  };
+  const ready = predictWithLongRuns([run(daysAgo(20), 21, 460), run(daysAgo(10), 20, 460), run(daysAgo(4), 20, 460)]);
+  const none = predictWithLongRuns([run(daysAgo(6), 6, 430)]); // never runs long
+  const readyFactor = ready.predictedMarathonSeconds / ready.predicted10kSeconds;
+  const noneFactor = none.predictedMarathonSeconds / none.predicted10kSeconds;
+  const shade = noneFactor / readyFactor;
+  // Longest run here is the 7mi base (not literal zero), so it shades ~8% —
+  // high, bounded well under the 12% ceiling, and inside the 3–10% band.
+  assert(shade > 1.07 && shade < 1.10, `thin base should shade ~8%, got ${((shade - 1) * 100).toFixed(1)}%`);
+});
+
+Deno.test("v2 unit: enduranceFactor spans 0%→ceiling; longRunReadiness reads longest+count", () => {
+  // Pure-function spread across the whole runner population.
+  const ready = enduranceFactor(20, 3, MARA_READY_LONGRUN_MILES, MARA_READY_LONGRUN_COUNT, MARA_MAX_ENDURANCE_PENALTY);
+  const zero = enduranceFactor(0, 0, MARA_READY_LONGRUN_MILES, MARA_READY_LONGRUN_COUNT, MARA_MAX_ENDURANCE_PENALTY);
+  const rioLike = enduranceFactor(17.8, 1, MARA_READY_LONGRUN_MILES, MARA_READY_LONGRUN_COUNT, MARA_MAX_ENDURANCE_PENALTY);
+  const short = enduranceFactor(13, 0, MARA_READY_LONGRUN_MILES, MARA_READY_LONGRUN_COUNT, MARA_MAX_ENDURANCE_PENALTY);
+  assertEquals(Math.round(ready * 1000) / 1000, 1.0); // a true 20-miler base → no shade
+  assertEquals(Math.round(zero * 1000) / 1000, 1.12); // literal zero base → full 12% ceiling
+  assert(rioLike > 1.015 && rioLike < 1.025, `rio-like ~2%, got ${rioLike}`);
+  assert(short > 1.03 && short < 1.06, `13mi-longest ~4-5%, got ${short}`); // monotonic between
+  assert(zero > short && short > rioLike && rioLike > ready, "penalty decreases as base grows");
+
+  const lr = longRunReadiness(
+    [run(daysAgo(5), 18, 460), run(daysAgo(12), 16, 460), run(daysAgo(40), 12, 460), run(daysAgo(200), 22, 460)],
+    NOW,
+  );
+  assertEquals(lr.longestMiles, 18); // the 22mi run is outside the 70-day window
+  assertEquals(lr.count16, 2); // 18 and 16 within window; 12 doesn't count, 22 too old
+});
+
+Deno.test("v2: a demonstrated marathon race anchor is NOT endurance-shaded", () => {
+  const maraRace: SeedRace = { raceType: "marathon", paceSecondsPerMile: 9000 / 26.21875, date: daysAgo(20), totalTimeSeconds: 9000 };
+  // Even with zero long runs logged, a real marathon result proves the endurance.
+  const r = predictWithLongRuns([run(daysAgo(6), 6, 430)], maraRace);
+  // marathon prediction should track the raced time closely (within decay), not be shaded up.
+  assert(Math.abs(r.predictedMarathonSeconds - 9000) < 9000 * 0.05, `marathon-anchored prediction drifted too far: ${r.predictedMarathonSeconds}`);
+});
+
+Deno.test("v2: half is shaded more gently than the marathon", () => {
+  const thin = [run(daysAgo(6), 10, 460), run(daysAgo(16), 9, 460)]; // short long runs
+  const r = predictWithLongRuns(thin);
+  const ready = predictWithLongRuns([run(daysAgo(20), 20, 460), run(daysAgo(10), 20, 460), run(daysAgo(4), 20, 460)]);
+  const halfShade = (r.predictedHalfSeconds / r.predicted10kSeconds) / (ready.predictedHalfSeconds / ready.predicted10kSeconds);
+  const maraShade = (r.predictedMarathonSeconds / r.predicted10kSeconds) / (ready.predictedMarathonSeconds / ready.predicted10kSeconds);
+  assert(halfShade >= 1.0 && halfShade < maraShade, `half (${halfShade.toFixed(3)}) should shade less than marathon (${maraShade.toFixed(3)})`);
+});
+
+Deno.test("v2 VALIDATION (not a fit target): Rio's real profile lands ~2:31", () => {
+  // 32:00 10K, longest long run 17.8mi (once), 13–15mi otherwise, ~high volume.
+  const rioLongs = [run(daysAgo(27), 17.8, 460), run(daysAgo(13), 15, 460), run(daysAgo(6), 14, 460), run(daysAgo(20), 13.5, 460), run(daysAgo(9), 13.1, 460), run(daysAgo(2), 13, 460)];
+  const rio = predictWithLongRuns(rioLongs);
+  const mm = Math.floor(rio.predictedMarathonSeconds / 60), ss = rio.predictedMarathonSeconds % 60;
+  console.log(`   Rio marathon prediction: ${Math.floor(mm/60)}:${String(mm%60).padStart(2,"0")}:${String(ss).padStart(2,"0")} (${rio.predictedMarathonSeconds}s)`);
+  // Independent check: falls in an honest 2:29:30–2:32:30 window around his 2:31.
+  assert(rio.predictedMarathonSeconds > 8970 && rio.predictedMarathonSeconds < 9150, `expected ~2:31, got ${rio.predictedMarathonSeconds}s`);
+});
+
+// ── v2 user-overridable marks + duplicate collapsing (2026-07-24) ───────────
+// One real race often lands in the log 2-3× (double-import, or a training run
+// auto-tagged "race"). The athlete must be able to correct any mark, and one
+// physical race must anchor once — not inflate confidence as "agreeing races".
+
+Deno.test("dedupeRaces collapses one real race logged 3× (Apr 12/14/15 ~33:00)", () => {
+  const races = [
+    { raceType: "tenK" as const, paceSecondsPerMile: 1984 / 6.21371, date: daysAgo(103), totalTimeSeconds: 1984 }, // Apr 15
+    { raceType: "tenK" as const, paceSecondsPerMile: 1984 / 6.21371, date: daysAgo(104), totalTimeSeconds: 1984 }, // Apr 14 (dup)
+    { raceType: "tenK" as const, paceSecondsPerMile: 1982 / 6.21371, date: daysAgo(106), totalTimeSeconds: 1982, sourceWorkoutId: "confirmed-1" }, // Apr 12, confirmed
+  ];
+  const out = dedupeRaces(races);
+  assertEquals(out.length, 1); // one physical event
+  assertEquals(out[0].sourceWorkoutId, "confirmed-1"); // keeps the confirmed representative
+  // A genuinely separate race (different time) is preserved.
+  const withDistinct = dedupeRaces([...races, { raceType: "tenK" as const, paceSecondsPerMile: 2400 / 6.21371, date: daysAgo(40), totalTimeSeconds: 2400 }]);
+  assertEquals(withDistinct.length, 2);
+});
+
+Deno.test("user can override a mark: excluding the wrong 'race' re-anchors the prediction", () => {
+  const real: SeedRace = { raceType: "tenK", paceSecondsPerMile: 1980 / 6.21371, date: daysAgo(20), totalTimeSeconds: 1980 }; // 33:00
+  const bogus = (excluded: boolean): SeedRace => ({ raceType: "tenK", paceSecondsPerMile: 1680 / 6.21371, date: daysAgo(15), totalTimeSeconds: 1680, userExcluded: excluded }); // a mislabeled 28:00 "race"
+  const withBogus = generateFitnessPrediction({ workouts: [], voiceLogs: [], seededRaces: [real, bogus(false)], now: NOW })!;
+  const corrected = generateFitnessPrediction({ workouts: [], voiceLogs: [], seededRaces: [real, bogus(true)], now: NOW })!;
+  // Uncorrected, the faster bogus mark anchors (~28:00). Corrected, the real 33:00 does.
+  assert(withBogus.predicted10kSeconds < 1750, `bogus mark should anchor fast, got ${withBogus.predicted10kSeconds}`);
+  assert(corrected.predicted10kSeconds > 1950 && corrected.predicted10kSeconds < 2050, `override should re-anchor to the real race, got ${corrected.predicted10kSeconds}`);
+});
+
+Deno.test("userExcludedFromFitness drops a workout from all signals", () => {
+  const race = log(daysAgo(20), "Raced the 10k, finish time 40:00.");
+  const bogusFast = run(daysAgo(3), 5, 260, 22); // a garbage 4:20/mi import
+  const withIt = generateFitnessPrediction({ workouts: [bogusFast], voiceLogs: [race], extendedVoiceLogs: [race], now: NOW })!;
+  const without = generateFitnessPrediction({ workouts: [{ ...bogusFast, userExcludedFromFitness: true }], voiceLogs: [race], extendedVoiceLogs: [race], now: NOW })!;
+  // The excluded workout must not drag the estimate (identical to it being absent).
+  const clean = generateFitnessPrediction({ workouts: [], voiceLogs: [race], extendedVoiceLogs: [race], now: NOW })!;
+  assertEquals(without.predicted10kSeconds, clean.predicted10kSeconds);
+});
+
+// ── v3 threshold pillar (2026-07-24) ────────────────────────────────────────
+// Sustained tempo/threshold work → a threshold capacity, independent of races.
+// Effort labels are coarse in production, so threshold is separated from VO2 by
+// rep GEOMETRY (sustained ≥0.8mi rep = threshold; short rep = VO2).
+
+function seg(effort: string, pace: string, mi: number) {
+  return { effort, pacePerMile: pace, distanceMiles: mi, durationSeconds: Math.round(paceStringToSeconds(pace) * mi) };
+}
+
+Deno.test("v3 threshold: sustained tempo work yields a threshold + 10K-equivalent", () => {
+  // Rio's real June 9 threshold session shape: 4×1mi 'fast' + steady + easy.
+  const s = thresholdCapacity([
+    log(daysAgo(5), "Threshold", { paceSegments: [
+      seg("fast", "5:26", 1), seg("fast", "5:27", 1), seg("fast", "5:37", 1), seg("fast", "5:59", 1),
+      seg("steady", "7:37", 1), seg("easy", "11:28", 1), seg("easy", "8:02", 1), seg("easy", "8:14", 0.39),
+    ] }),
+  ], NOW)!;
+  assert(s !== null);
+  // Distance-weighted over the four 1mi reps ≈ 5:37/mi; easy/steady excluded.
+  assert(Math.abs(s.thresholdPaceSeconds - 337) <= 2, `threshold pace ${s.thresholdPaceSeconds}`);
+  assertEquals(s.equivalentTenKPace, Math.round(s.thresholdPaceSeconds * THRESHOLD_TO_10K));
+  assertEquals(s.evidenceMiles, 4);
+});
+
+Deno.test("v3 threshold: short VO2 reps do NOT count as threshold; thin work → null", () => {
+  // 6×400m at 5K pace — all short reps, so no sustained threshold evidence.
+  const vo2 = log(daysAgo(4), "Intervals", { paceSegments: Array.from({ length: 6 }, () => seg("fast", "4:50", 0.25)) });
+  assertEquals(thresholdCapacity([vo2], NOW), null);
+  // A single 1.5mi tempo rep is below the 2mi evidence floor → null.
+  const thin = log(daysAgo(4), "Tempo", { paceSegments: [seg("tempo", "5:40", 1.5)] });
+  assertEquals(thresholdCapacity([thin], NOW), null);
+});
+
+Deno.test("v3 threshold: work older than the 6-week window is ignored", () => {
+  const old = log(daysAgo(60), "Threshold", { paceSegments: [seg("fast", "5:30", 2), seg("fast", "5:35", 2)] });
+  assertEquals(thresholdCapacity([old], NOW), null);
+  const fresh = log(daysAgo(10), "Threshold", { paceSegments: [seg("fast", "5:30", 2), seg("fast", "5:35", 2)] });
+  assert(thresholdCapacity([fresh], NOW) !== null);
 });

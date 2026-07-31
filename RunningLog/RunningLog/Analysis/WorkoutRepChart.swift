@@ -248,6 +248,33 @@ enum WorkoutLapsService {
         }
     }
 
+    /// Per-lap DESCRIPTIVE labels from the parser (`parsed_structure.lap_roles`):
+    /// `lap_index → "warmup" | "rep" | "recovery" | "cooldown"`. The splits view
+    /// uses these to decide a lap's work/rest label instead of the DB's generated
+    /// `is_rest` column, which flagged any sub-200m lap as rest and hid real reps.
+    /// This changes only the LABEL — never a split's distance/pace/HR — and every
+    /// lap is kept. Empty map when the workout hasn't been parsed yet (caller then
+    /// falls back to the stored `is_rest`).
+    static func fetchLapRoles(workoutId: UUID) async -> [Int: String] {
+        struct Role: Decodable { var lap_index: Int?; var role: String? }
+        struct Parsed: Decodable { var lap_roles: [Role]? }
+        struct Row: Decodable { var parsed_structure: Parsed? }
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs").select("parsed_structure")
+                .eq("id", value: workoutId.uuidString).limit(1).execute().value
+            guard let roles = rows.first?.parsed_structure?.lap_roles else { return [:] }
+            var map: [Int: String] = [:]
+            for r in roles {
+                if let i = r.lap_index, let role = r.role { map[i] = role.lowercased() }
+            }
+            return map
+        } catch {
+            Log.coach.error("WorkoutLapsService.fetchLapRoles failed: \(error)")
+            return [:]
+        }
+    }
+
     /// One-shot detail read: parsed reps, prescription (notes + pattern),
     /// coach insight and workout type in a SINGLE `training_logs` round-trip.
     ///

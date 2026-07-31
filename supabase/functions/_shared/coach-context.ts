@@ -732,6 +732,13 @@ export function splitsFromLaps(
 export function formatSplitsBlock(
   splits: WorkoutSplit[],
   zones: PaceZones | null,
+  opts: {
+    detectPattern?: boolean;
+    /** First-half→second-half delta (sec/mi) needed to call a fade. Default 12. */
+    patternThreshold?: number;
+    /** Easy/long register: only surface a large late fade; silent otherwise. */
+    largeDropoffOnly?: boolean;
+  } = {},
 ): string {
   if (splits.length === 0) return "";
   const work = splits.filter((s) => s.effortKind === "work" || s.effortKind === "unknown");
@@ -749,13 +756,64 @@ export function formatSplitsBlock(
   }
 
   // Pattern detection — compare first half vs second half of work reps.
-  const pattern = detectSplitPattern(work);
-  if (pattern) lines.push(`Pattern: ${pattern}`);
+  // Two registers:
+  //   • QUALITY sessions (targeting a pace) get the full read — fade / negative
+  //     split / consistent / mixed at the normal ≥12 sec/mi threshold.
+  //   • Easy / recovery / long runs use `largeDropoffOnly`: silent on normal
+  //     drift (expected), but a genuinely large late fade still surfaces because
+  //     it can signal fatigue or heat.
+  // `detectPattern: false` suppresses the line entirely. Default true for
+  // back-compat; the insight callers pass the register explicitly.
+  if (opts.detectPattern !== false) {
+    const pattern = detectSplitPattern(work, {
+      fadeThreshold: opts.patternThreshold,
+      largeDropoffOnly: opts.largeDropoffOnly,
+    });
+    if (pattern) lines.push(`Pattern: ${pattern}`);
+  }
 
   return lines.join("\n");
 }
 
-function detectSplitPattern(work: WorkoutSplit[]): string | null {
+/**
+ * True only for sessions where the athlete is TARGETING a pace — intervals,
+ * tempo, race-pace reps. Fade / negative-split / consistency verdicts only make
+ * sense here. Easy, Recovery, Moderate, Steady, plain Long, and non-run types
+ * return false: on those, pace drifting slower over the run is normal and a
+ * "fade" callout is a false signal.
+ *
+ * Covers both the current pace-zone labels (MP / HMP / LT / 10K / 5K / 3K /
+ * Mile) and legacy workout_type strings (tempo / intervals / threshold / …).
+ */
+export function isQualityWorkoutType(workoutType: string | null | undefined): boolean {
+  if (!workoutType) return false;
+  const t = workoutType.trim().toLowerCase();
+  const firstTok = t.split(/[\s·×x/,-]+/)[0];
+
+  // Explicit deny — aerobic effort zones + structural / non-run types.
+  const AEROBIC = new Set([
+    "easy", "recovery", "moderate", "steady", "long", "long_run", "long run",
+    "cross", "cross-train", "cross_train", "crosstrain", "strength", "rest", "walk",
+  ]);
+  if (AEROBIC.has(t) || AEROBIC.has(firstTok)) return false;
+
+  // Quality: race-pace zone labels + legacy quality strings. "Long wo" (long run
+  // with embedded quality) counts; plain "long" does not.
+  const QUALITY = new Set([
+    "mp", "hmp", "lt", "10k", "5k", "3k", "mile",
+    "tempo", "threshold", "intervals", "interval", "speed", "progression",
+    "workout", "wo", "race",
+  ]);
+  if (QUALITY.has(t) || QUALITY.has(firstTok)) return true;
+  if (t.includes("long wo") || t.includes("long_wo")) return true;
+
+  return false;
+}
+
+function detectSplitPattern(
+  work: WorkoutSplit[],
+  opts: { fadeThreshold?: number; largeDropoffOnly?: boolean } = {},
+): string | null {
   if (work.length < 2) return null;
 
   const mid = Math.floor(work.length / 2);
@@ -773,16 +831,33 @@ function detectSplitPattern(work: WorkoutSplit[]): string | null {
   const paces = work.map((s) => s.paceSecPerMile);
   const spread = Math.max(...paces) - Math.min(...paces);
 
-  if (Math.abs(delta) <= 3 && spread <= 8) {
+  // Easy / recovery / long register: only a genuinely LARGE late fade is worth a
+  // word (fatigue/heat signal). Everything else — normal drift, consistency,
+  // negative splits — stays silent, because those reads only mean something when
+  // the athlete was targeting a pace. Default large threshold is 25 sec/mi.
+  if (opts.largeDropoffOnly) {
+    const bigFade = opts.fadeThreshold ?? 25;
+    if (delta >= bigFade) {
+      return `Late fade — second half averaged ${delta} sec/mi slower than the first.`;
+    }
+    return null;
+  }
+
+  // Quality register. Thresholds are deliberately conservative: a "fade" is a
+  // real positive split (≥12 sec/mi second-half vs first-half on MOVING pace),
+  // not GPS jitter. (2026-07-19: raised from 4 — a 4 sec/mi delta on an easy run
+  // was reading as a "significant fade.")
+  const fadeThreshold = opts.fadeThreshold ?? 12;
+  if (Math.abs(delta) <= 8 && spread <= 15) {
     return `Consistent — work reps held within ${spread} sec/mi.`;
   }
-  if (delta >= 4) {
+  if (delta >= fadeThreshold) {
     return `Fade — second half averaged ${delta} sec/mi slower than the first.`;
   }
-  if (delta <= -4) {
+  if (delta <= -fadeThreshold) {
     return `Negative split — second half averaged ${Math.abs(delta)} sec/mi faster than the first.`;
   }
-  if (spread > 8) {
+  if (spread > 25) {
     return `Mixed — ${spread} sec/mi spread across reps without a clear fade/build pattern.`;
   }
   return null;

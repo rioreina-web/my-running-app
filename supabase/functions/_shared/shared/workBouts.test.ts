@@ -7,6 +7,7 @@ import {
   detectWorkBouts,
   formatWorkBouts,
   type LapInput,
+  lapRoles,
   nearestRepDistance,
   nearestTimeRep,
   RawStreams,
@@ -321,4 +322,155 @@ Deno.test("boutsFromLaps: a steady run collapses to < 2 bouts (caller falls back
 Deno.test("boutsFromLaps: too few laps → no segments", () => {
   assertEquals(boutsFromLaps([]).segments, []);
   assertEquals(boutsFromLaps([{ distance: 1000, moving_time: 200 }]).segments, []);
+});
+
+// ── lapRoles: descriptive per-lap labels, every lap kept ──────────────────
+
+// The real July 24 8×200m shape (rounded from the watch): 2mi warmup, then
+// 8 fast ~200m reps each followed by a slow recovery jog, then cooldown.
+// The reps measure 196–204m — the OLD `distance < 200` rule flagged three of
+// them as rest and the app hid them. lapRoles must label all 8 as reps.
+const JUL24_LAPS: LapInput[] = [
+  { lap_index: 1, distance: 1609, moving_time: 511 }, // warmup mi
+  { lap_index: 2, distance: 1609, moving_time: 457 }, // warmup mi
+  { lap_index: 3, distance: 32,  moving_time: 16 },   // tiny transition
+  { lap_index: 4, distance: 197, moving_time: 32 },   // rep 1 (sub-200!)
+  { lap_index: 5, distance: 65,  moving_time: 61 },   // recovery
+  { lap_index: 6, distance: 196, moving_time: 32 },   // rep 2 (sub-200!)
+  { lap_index: 7, distance: 58,  moving_time: 60 },   // recovery
+  { lap_index: 8, distance: 200, moving_time: 32 },   // rep 3
+  { lap_index: 9, distance: 67,  moving_time: 58 },   // recovery
+  { lap_index: 10, distance: 202, moving_time: 32 },  // rep 4
+  { lap_index: 11, distance: 50,  moving_time: 60 },  // recovery
+  { lap_index: 12, distance: 203, moving_time: 30 },  // rep 5
+  { lap_index: 13, distance: 85,  moving_time: 61 },  // recovery
+  { lap_index: 14, distance: 204, moving_time: 32 },  // rep 6
+  { lap_index: 15, distance: 80,  moving_time: 66 },  // recovery
+  { lap_index: 16, distance: 200, moving_time: 31 },  // rep 7
+  { lap_index: 17, distance: 65,  moving_time: 58 },  // recovery
+  { lap_index: 18, distance: 200, moving_time: 32 },  // rep 8 (last)
+  { lap_index: 19, distance: 1609, moving_time: 500 },// cooldown mi
+  { lap_index: 20, distance: 719,  moving_time: 219 },// cooldown
+];
+
+Deno.test("lapRoles: labels all 8 sub-200m reps as reps, keeps every lap", () => {
+  const roles = lapRoles(JUL24_LAPS);
+  // Every lap is present, none dropped, joined by lap_index.
+  assertEquals(roles.length, JUL24_LAPS.length);
+  const byIdx = new Map(roles.map((r) => [r.lap_index, r.role]));
+  // The 8 reps — including the sub-200m laps 4, 6 the old formula hid.
+  for (const idx of [4, 6, 8, 10, 12, 14, 16, 18]) {
+    assertEquals(byIdx.get(idx), "rep", `lap ${idx} should be a rep`);
+  }
+  assertEquals(roles.filter((r) => r.role === "rep").length, 8);
+  // Warmup before the first rep, cooldown after the last.
+  assertEquals(byIdx.get(1), "warmup");
+  assertEquals(byIdx.get(2), "warmup");
+  assertEquals(byIdx.get(19), "cooldown");
+  assertEquals(byIdx.get(20), "cooldown");
+  // Jogs between reps are recoveries.
+  for (const idx of [5, 7, 9, 11, 13, 15, 17]) {
+    assertEquals(byIdx.get(idx), "recovery", `lap ${idx} should be recovery`);
+  }
+});
+
+Deno.test("lapRoles: steady run has no rest laps (no fake reps/recoveries)", () => {
+  const steady: LapInput[] = Array.from({ length: 6 }, (_, i) => ({
+    lap_index: i + 1, distance: 1609, moving_time: 480, // uniform ~6:00/mi miles
+  }));
+  const roles = lapRoles(steady);
+  assertEquals(roles.length, 6);
+  assertEquals(roles.filter((r) => r.role === "recovery").length, 0);
+});
+
+// ── derivedLapsFromStream ───────────────────────────────────────────────
+import { derivedLapsFromStream } from "./workBouts.ts";
+
+/** Per-second stream with heart rate, from constant-velocity phases. */
+function buildStreamHR(phases: Array<{ vel: number; secs: number; hr: number }>) {
+  const time: number[] = [], distance: number[] = [], velocity_smooth: number[] = [], heartrate: number[] = [];
+  let t = 0, d = 0;
+  for (const ph of phases) {
+    for (let i = 0; i < ph.secs; i++) {
+      time.push(t); distance.push(d); velocity_smooth.push(ph.vel); heartrate.push(ph.hr);
+      d += ph.vel; t += 1;
+    }
+  }
+  return { time, distance, velocity_smooth, heartrate };
+}
+
+const paceSec = (l: { moving_time: number; distance: number }) =>
+  Math.round(l.moving_time / (l.distance / 1609.34));
+
+Deno.test("derivedLapsFromStream: recovers 3×1mi reps @ ~5:10 with jog recoveries (Garmin/no native laps)", () => {
+  // 3 mile reps @ 5.19 m/s (≈5:10/mi) with 90s jog recoveries @ 1.0 m/s.
+  const stream = buildStreamHR([
+    { vel: 5.19, secs: 310, hr: 163 },
+    { vel: 1.0, secs: 90, hr: 145 },
+    { vel: 5.19, secs: 310, hr: 168 },
+    { vel: 1.0, secs: 90, hr: 146 },
+    { vel: 5.0, secs: 320, hr: 170 },
+  ]);
+  const laps = derivedLapsFromStream(stream);
+
+  const work = laps.filter((l) => !l.is_rest);
+  const rest = laps.filter((l) => l.is_rest);
+  assertEquals(work.length, 3, "three work reps");
+  assertEquals(rest.length, 2, "two recoveries between them");
+
+  // Each rep parses to ~5:10–5:22, NOT the ~6:20 whole-workout blend.
+  for (const w of work) {
+    const p = paceSec(w);
+    assert(p >= 300 && p <= 330, `rep pace ${p}s should be ~5:00–5:30, got ${p}`);
+    assert(w.average_heartrate != null && w.average_heartrate > 150, "work HR carried");
+  }
+  // Recoveries are slow and HR-lower.
+  for (const r of rest) assert(paceSec(r) > 600, "recovery pace is a slow jog");
+
+  // Aggregate work pace ≈ 5:13 — the number the ladder should show.
+  const wm = work.reduce((s, l) => s + l.distance, 0);
+  const wt = work.reduce((s, l) => s + l.moving_time, 0);
+  const agg = Math.round(wt / (wm / 1609.34));
+  assert(agg >= 305 && agg <= 320, `aggregate work pace ${agg}s ≈ 5:13`);
+});
+
+Deno.test("derivedLapsFromStream: steady run → one whole-run lap, no phantom reps", () => {
+  // A continuous run has no recoveries to blend the pace, so its whole-workout
+  // pace already equals its work pace — one lap, not fabricated reps.
+  const stream = buildStreamHR([{ vel: 3.5, secs: 1800, hr: 150 }]);
+  const laps = derivedLapsFromStream(stream);
+  assertEquals(laps.length, 1, "one continuous effort");
+  assertEquals(laps[0].is_rest, false);
+  assert(laps[0].distance > 6000, "spans the whole run");
+});
+
+// ── lapsFromParsedStructure (fix-reps → laps) ───────────────────────────
+import { lapsFromParsedStructure } from "./workBouts.ts";
+
+Deno.test("lapsFromParsedStructure: corrected 2×1mi @5:10 structure → work+rest laps", () => {
+  const parsed = {
+    edited_by_user: true,
+    blocks: [
+      { role: "warmup", distance_miles: 1.0, duration_s: 480, avg_pace_per_mile: "8:00" },
+      { role: "work_rep", distance_miles: 1.0, duration_s: 310, avg_pace_per_mile: "5:10", avg_hr: 165 },
+      { role: "recovery", distance_miles: 0.1, duration_s: 90, avg_pace_per_mile: null },
+      { role: "work_rep", distance_miles: 1.0, duration_s: 314, avg_pace_per_mile: "5:14", avg_hr: 168 },
+      { role: "cooldown", distance_miles: 0.5, duration_s: 240, avg_pace_per_mile: "8:00" },
+    ],
+  };
+  const laps = lapsFromParsedStructure(parsed);
+  assertEquals(laps.length, 5);
+  // Only the two work_reps are non-rest, at rep pace.
+  const work = laps.filter((l) => !l.is_rest);
+  assertEquals(work.length, 2);
+  assertEquals(work[0].avg_pace_sec_per_mile, 310);
+  assertEquals(work[1].avg_pace_sec_per_mile, 314);
+  assertEquals(work[0].avg_heart_rate, 165);
+  // warmup / recovery / cooldown are all rest hints.
+  assertEquals(laps.filter((l) => l.is_rest).length, 3);
+});
+
+Deno.test("lapsFromParsedStructure: no blocks → empty (caller keeps existing laps)", () => {
+  assertEquals(lapsFromParsedStructure({ blocks: [] }).length, 0);
+  assertEquals(lapsFromParsedStructure(null).length, 0);
 });

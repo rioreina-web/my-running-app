@@ -103,6 +103,11 @@ final class AuthManager {
                     self.isLoading = false
                     self.splashTimeoutTask?.cancel()
                 case .signedOut:
+                    // Purge any queued offline uploads + their audio before we
+                    // drop the user id. Otherwise the next account to sign in on
+                    // this device would drain the departing user's memos into
+                    // their own account (cross-account voice-memo leak).
+                    OfflineQueueManager.shared.purgeAllForSignOut()
                     self.isAuthenticated = false
                     self.currentUserId = nil
                     self.userEmail = nil

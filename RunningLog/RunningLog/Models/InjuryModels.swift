@@ -68,6 +68,67 @@ struct Injury: Codable, Identifiable {
     }
 }
 
+// MARK: - LivingLogEntry (unified niggle + injury)
+
+/// One row in the unified Living Log. It is either a formal `injuries` row
+/// (manual / coach-chat) or a voice-niggle ache derived from `body_mentions`.
+/// This is the merge point for the two previously-disjoint systems: the
+/// surface renders both, deduped by body-part.
+struct LivingLogEntry: Identifiable {
+    let id: UUID
+    /// The backing injury — a real `injuries` row, or a synthesized stand-in
+    /// for a niggle-only ache (so the existing card can render it).
+    let injury: Injury
+    /// True when this ache comes from voice `body_mentions` and has no formal
+    /// `injuries` row. Drives the "resolve = write a niggle_resolution" path
+    /// and the verbatim severity word (vs a fabricated /10).
+    let isNiggle: Bool
+    /// Verbatim severity for niggles ("sore", "tight") — shown instead of a
+    /// /10 number, per detection-not-diagnosis ("surfaces, never interprets").
+    let severityWord: String?
+    let mentionsCount: Int?
+    /// Indices 0…13 into the trailing 14 days where a mention occurred.
+    let mentionDotIndices: Set<Int>
+    /// Most recent verbatim quote.
+    let lastQuote: String?
+
+    // MARK: Computed stat strip (Plate 28)
+    // Derived in InjuryService from training_logs + the ache's mention dates.
+    // Optional so a row with no matching training data still renders (the
+    // affected stat cells fall back to a quiet em-dash instead of breaking).
+    /// Average distance (mi) of the runs on the days this ache was mentioned.
+    var avgVolumeMiles: Double? = nil
+    /// Average 7-day rolling mileage ("acute load") around those mention days.
+    var avgLoad: Int? = nil
+    /// Recent 14-day mention-cadence trend. nil when fewer than 2 mentions
+    /// fall inside the trailing 14-day window (one point is not a trend).
+    var trend: AcheTrend? = nil
+
+    var bodyArea: String { injury.bodyArea }
+    var side: String { injury.side }
+}
+
+/// Direction of a Living Log ache over the trailing 14 days, derived purely
+/// from mention cadence (recent 7 days vs the prior 7). Surfaced from the
+/// athlete's own mentions -- never a diagnosis or an interpretation.
+enum AcheTrend: String {
+    case easing    = "EASING"
+    case steady    = "STEADY"
+    case worsening = "WORSENING"
+}
+
+/// Maps a verbatim severity word to a 1–10 score for sorting/synthesized rows.
+/// Display always prefers the verbatim word; this is only for ordering.
+enum NiggleSeverity {
+    static func score(_ hint: String?) -> Int {
+        let s = (hint ?? "").lowercased()
+        if s.contains("sever") || s.contains("really") || s.contains("very") || s.contains("bad") { return 7 }
+        if s.contains("pain") || s.contains("sore") { return 5 }
+        if s.contains("tight") || s.contains("mild") || s.contains("niggl") || s.contains("stiff") { return 3 }
+        return 4
+    }
+}
+
 // MARK: - InjuryStatus
 
 enum InjuryStatus: String, Codable, CaseIterable {

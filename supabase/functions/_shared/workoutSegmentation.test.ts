@@ -9,6 +9,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 import {
   buildZoneAnchors,
   paceToZone,
+  paceWeight,
   segmentFromLaps,
   segmentFromOverall,
   type LapInput,
@@ -19,6 +20,38 @@ const ZONES: PaceZones = {
   mile: 272, fiveK: 302, tenK: 314, hm: 328, mp: 343,
   steady: 362, moderate: 405, easy: 429,
 };
+
+Deno.test("paceWeight: exact anchor paces return their knot weight", () => {
+  const a = buildZoneAnchors(ZONES);
+  assertEquals(paceWeight(272, a), 8.0); // mile
+  assertEquals(paceWeight(302, a), 5.5); // 5k
+  assertEquals(paceWeight(343, a), 2.5); // mp
+  assertEquals(paceWeight(362, a), 1.5); // steady — an explicit knot again
+  assertEquals(paceWeight(429, a), 1.0); // easy
+});
+
+Deno.test("paceWeight: interpolates continuously between zones", () => {
+  const a = buildZoneAnchors(ZONES);
+  const near = (x: number, want: number) => assert(Math.abs(x - want) < 0.02, `${x} vs ${want}`);
+  // 308 sits midway between 5k(302→5.5) and 10k(314→4.0): 4.75.
+  near(paceWeight(308, a), 4.75);
+  // 353 sits between mp(343→2.5) and steady(362→1.5): ~1.97.
+  near(paceWeight(353, a), 1.97);
+});
+
+Deno.test("paceWeight: reps faster than mile extrapolate ABOVE the mile weight", () => {
+  const a = buildZoneAnchors(ZONES);
+  // 255 s/mi (~4:15) is faster than the 272 mile anchor → past 8.0.
+  const w = paceWeight(255, a);
+  assert(w > 8.0, `expected > 8.0, got ${w}`);
+  assert(Math.abs(w - 9.42) < 0.02, `expected ~9.42, got ${w}`);
+});
+
+Deno.test("paceWeight: slower than easy floors at 1.0; no anchors → 1.0", () => {
+  const a = buildZoneAnchors(ZONES);
+  assertEquals(paceWeight(500, a), 1.0);
+  assertEquals(paceWeight(343, []), 1.0);
+});
 
 Deno.test("paceToZone: midpoint cutoffs are athlete-relative", () => {
   const a = buildZoneAnchors(ZONES);

@@ -82,7 +82,9 @@ private struct PaceScale {
     let slow: Double
     let fast: Double
     let anchors: [AnchorMark]
-    let axisMarks: [(String, Double)]
+    /// label, pace, and whether it was pinned to the fast edge because it sits
+    /// beyond the fitted range.
+    let axisMarks: [(String, Double, Bool)]
 
     /// Built from the histogram's FITTED bounds (the same slow/fast the bars
     /// are bucketed with), so labels can never drift from the bars. Fast-end
@@ -101,11 +103,31 @@ private struct PaceScale {
         if let fk = z.fiveK?.pace,    inRange(fk) { a.append(AnchorMark(label: "5K", pace: fk, color: PaceSpectrum.stops[7])) }
         self.anchors = a
 
-        var m: [(String, Double)] = [("EASY", slow - 3)]
-        if let mp = z.marathon?.pace, inRange(mp) { m.append(("MP", mp)) }
-        if let lt = z.thresholdPace,  inRange(lt) { m.append(("LT", lt)) }
-        if let mile = z.mile?.pace,   inRange(mile) { m.append(("MILE", mile)) }
-        m.append(("FAST", fast + 2))
+        // Legend marks — REAL paces only, ordered slow → fast, so each one can
+        // be drawn at its true position on the same scale as the bars.
+        //
+        // These used to open with a synthetic ("EASY", slow - 3) and close with
+        // ("FAST", fast + 2) — edge markers wearing zone names — and the legend
+        // then spaced the whole list evenly by array index. With four marks that
+        // put MP at exactly 1/3 across, which for a 5:34 marathon pace landed it
+        // on 7:05–7:15: the athlete's EASY pace. (Rio, 2026-07-27.)
+        // The full ladder, slow → fast. `beyond` flags an anchor that sits off
+        // the fast end of the fitted range: the athlete has a mile pace even in
+        // a month where they ran nothing at it, and hiding it makes the legend
+        // look like the spectrum stops at 5K. Those get pinned to the edge and
+        // drawn in tertiary ink so the position reads as "past here", not "here".
+        var m: [(String, Double, Bool)] = []
+        func add(_ label: String, _ pace: Double?) {
+            guard let p = pace else { return }
+            if inRange(p) { m.append((label, p, false)) }
+            else if p < fast { m.append((label, fast, true)) }   // faster than the axis
+        }
+        add("EASY", easyMid)
+        add("STEADY", z.steadyMidpoint)
+        add("MP", z.marathon?.pace)
+        add("LT", z.thresholdPace)
+        add("5K", z.fiveK?.pace)
+        add("MILE", z.mile?.pace)
         self.axisMarks = m
     }
 }
@@ -117,6 +139,11 @@ private struct AnchorMark: Identifiable {
 // MARK: - Root
 
 struct PaceSignalView: View {
+    /// Inline inside the Trends tab: drop the own-scroll, the page header and
+    /// the background, so it composes into the parent's scroll instead of
+    /// nesting one. Pushed full-screen when false.
+    var embedded = false
+
     @State private var zonesService = PaceZonesService.shared
     @State private var service: SignalService
     @State private var tab: SignalTab = .spectrum
@@ -125,7 +152,8 @@ struct PaceSignalView: View {
     @State private var customStart = Calendar.current.date(byAdding: .month, value: -3, to: .now) ?? .now
     @State private var customEnd = Date.now
 
-    init(service: SignalService = .shared) {
+    init(embedded: Bool = false, service: SignalService = .shared) {
+        self.embedded = embedded
         _service = State(initialValue: service)
     }
 
@@ -164,21 +192,30 @@ struct PaceSignalView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                rangeBar.padding(.top, 14)
-                segmenter.padding(.top, 14)
-                content.padding(.top, 16)
-                theRead.padding(.top, 18)
+        Group {
+            if embedded {
+                stack
+            } else {
+                ScrollView {
+                    stack
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                        .padding(.bottom, 40)
+                }
+                .background(Color.drip.background.ignoresSafeArea())
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
         }
-        .background(Color.drip.background.ignoresSafeArea())
         .sheet(isPresented: $showCustom) { customSheet }
         .task(id: zones) { await service.refresh(zones: zones) }
+    }
+
+    private var stack: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !embedded { header }
+            rangeBar.padding(.top, embedded ? 0 : 14)
+            segmenter.padding(.top, 14)
+            content.padding(.top, 16)
+        }
     }
 
     // MARK: State router
@@ -277,10 +314,7 @@ struct PaceSignalView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(range.distributionLabel).font(.dripEyebrow(13)).tracking(1.6).foregroundStyle(Color.drip.textSecondary)
             if let scale {
-                SpectrumDistribution(scale: scale, buckets: windowDist).frame(height: 232)
-                Text("Every mile you ran, sorted by pace. A tall pale base at the easy end with a small dark tail is the shape you want. Drag across the bars to read any pace.")
-                    .font(.dripCaption(12)).italic().foregroundStyle(Color.drip.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SpectrumDistribution(scale: scale, buckets: windowDist).frame(height: 208)
             }
         }
     }
@@ -324,20 +358,6 @@ struct PaceSignalView: View {
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackgroundElevated))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.drip.divider, lineWidth: 1))
-    }
-
-    private var theRead: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("THE READ").font(.dripEyebrow(10.5)).tracking(1.2).foregroundStyle(Color.drip.coral)
-            Text("A well-shaped block leans on a deep base of easy miles with clean bumps at MP, LT and 5K, and little grey-zone junk between. Watch that the easy end stays easy — that's what lets the fast end be fast.")
-                .font(.dripBody(13)).foregroundStyle(Color.drip.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(15)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.drip.cardBackgroundElevated))
-        .overlay(alignment: .leading) { Rectangle().fill(Color.drip.coral).frame(width: 2) }
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private var customSheet: some View {
@@ -395,7 +415,6 @@ private struct SpectrumDistribution: View {
     let scale: PaceScale
     let buckets: [Double]
     @State private var scrubIndex: Int? = nil
-    private let leftPad: CGFloat = 30
 
     private var miMax: Double {
         let m = buckets.max() ?? 0
@@ -436,9 +455,11 @@ private struct SpectrumDistribution: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Top row: anchor labels normally; while scrubbing it swaps to the
-            // read-out for the touched bar, so nothing floats over the bars.
+        VStack(spacing: 10) {
+            // A single reserved line. Empty by default (the shape is the point);
+            // scrubbing fills it with the touched bucket's pace + miles. No
+            // permanent labels float over the bars — the pace axis lives once,
+            // along the bottom.
             ZStack {
                 if let si = scrubIndex, let r = scrubReadout(si) {
                     HStack(spacing: 8) {
@@ -446,53 +467,35 @@ private struct SpectrumDistribution: View {
                             .foregroundStyle(Color.drip.textPrimary)
                         Text(r.detail).font(.dripStat(11)).foregroundStyle(Color.drip.textSecondary)
                     }
-                    .frame(maxWidth: .infinity)
                 } else {
-                    GeometryReader { geo in
-                        let plotW = geo.size.width - leftPad
-                        let base = scale.anchors.map { leftPad + fraction($0.pace) * plotW }
-                        let xs = spread(base, minGap: 40, minX: 20, maxX: geo.size.width - 18)
-                        ForEach(Array(scale.anchors.enumerated()), id: \.element.id) { idx, a in
-                            VStack(spacing: 2) {
-                                Text(a.label).font(.dripDisplay(15)).foregroundStyle(a.color)
-                                Text(paceString(a.pace)).font(.dripEyebrow(9)).foregroundStyle(Color.drip.textSecondary)
-                            }
-                            .position(x: xs[idx], y: geo.size.height - 14)
-                        }
-                    }
+                    Text("Drag to read any pace")
+                        .font(.dripEyebrow(9)).tracking(0.8)
+                        .foregroundStyle(Color.drip.textTertiary)
                 }
             }
-            .frame(height: 36)
+            .frame(height: 16)
             .animation(.easeOut(duration: 0.12), value: scrubIndex)
 
-            // Bars + gridlines + scrub
+            // Bars — the distribution, full-bleed. No gridlines, no Y axis:
+            // depth (blue ramp) encodes pace, height encodes miles, and the
+            // exact number is a scrub away. The shape reads at a glance.
             GeometryReader { geo in
                 let w = geo.size.width, h = geo.size.height
-                let plotW = w - leftPad
                 let n = max(buckets.count, 1)
-                let cw = plotW / CGFloat(n)
+                let cw = w / CGFloat(n)
                 let vmax = miMax
                 ZStack(alignment: .topLeading) {
-                    ForEach([0, Int(vmax / 2), Int(vmax)], id: \.self) { v in
-                        let y = h - CGFloat(Double(v) / vmax) * h
-                        Path { p in p.move(to: CGPoint(x: leftPad, y: y)); p.addLine(to: CGPoint(x: w, y: y)) }
-                            .stroke(Color.drip.divider.opacity(v == 0 ? 1 : 0.5), lineWidth: 1)
-                        Text(v == Int(vmax) ? "\(v) MI" : "\(v)").font(.dripEyebrow(8)).foregroundStyle(Color.drip.textTertiary)
-                            .position(x: leftPad - 13, y: y)
-                    }
                     ForEach(0..<n, id: \.self) { i in
                         let mi = buckets[i]
                         let bh = CGFloat(mi / vmax) * h
                         let f = (Double(i) + 0.5) / Double(n)
                         RoundedRectangle(cornerRadius: 1.5).fill(PaceSpectrum.color(at: f))
                             .opacity(scrubIndex == nil || scrubIndex == i ? 1 : 0.4)
-                            .frame(width: cw * 0.76, height: bh)
-                            .position(x: leftPad + cw * (CGFloat(i) + 0.5), y: h - bh / 2)
+                            .frame(width: cw * 0.76, height: max(bh, 0))
+                            .position(x: cw * (CGFloat(i) + 0.5), y: h - bh / 2)
                     }
                     if let si = scrubIndex, si < n {
-                        // Just the marker in the plot — the numeric read-out
-                        // lives in the reserved row above, so nothing overlaps.
-                        let x = leftPad + cw * (CGFloat(si) + 0.5)
+                        let x = cw * (CGFloat(si) + 0.5)
                         let mi = buckets[si]
                         let bh = CGFloat(mi / vmax) * h
                         Path { p in p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: h)) }
@@ -506,26 +509,36 @@ private struct SpectrumDistribution: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { v in
-                            let idx = Int((v.location.x - leftPad) / cw)
+                            let idx = Int(v.location.x / cw)
                             scrubIndex = min(max(idx, 0), n - 1)
                         }
                 )
             }
 
-            // Gradient legend — a color key for the ramp, so its labels are
-            // spaced EVENLY across the bar (not by pace, which crams the fast
-            // end). The pace-accurate markers live in the top anchor row.
-            VStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 6).fill(PaceSpectrum.gradient).frame(height: 12)
+            // The one pace axis: the blue ramp itself, with zone ticks at their
+            // true pace positions. It's the colour key and the x-axis in a single
+            // strip — no second label row, no legend.
+            VStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 6).fill(PaceSpectrum.gradient).frame(height: 10)
                 GeometryReader { geo in
-                    let denom = CGFloat(max(scale.axisMarks.count - 1, 1))
+                    let base = scale.axisMarks.map { fraction($0.1) * geo.size.width }
+                    let xs = spread(base, minGap: 34, minX: 16, maxX: geo.size.width - 16)
                     ForEach(Array(scale.axisMarks.enumerated()), id: \.offset) { idx, m in
-                        let f = CGFloat(idx) / denom
-                        Text(m.0).font(.dripEyebrow(8.5)).foregroundStyle(Color.drip.textSecondary)
-                            .position(x: min(max(f * geo.size.width, 18), geo.size.width - 18), y: 6)
+                        // EASY carries a taller tick — it anchors the slow end
+                        // and it's where most of the volume lives.
+                        let tall = (m.0 == "EASY")
+                        VStack(spacing: 2) {
+                            Rectangle()
+                                .fill(m.2 ? Color.drip.textTertiary : Color.drip.textSecondary)
+                                .frame(width: tall ? 1.4 : 1, height: tall ? 8 : 5)
+                            Text(m.0).font(.dripEyebrow(tall ? 9.5 : 8.5))
+                                .foregroundStyle(m.2 ? Color.drip.textTertiary : Color.drip.textSecondary)
+                                .fixedSize()
+                        }
+                        .position(x: xs[idx], y: 10)
                     }
                 }
-                .frame(height: 13)
+                .frame(height: 22)
             }
         }
     }

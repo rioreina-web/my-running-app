@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends — multi-track unified chart prototype</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --pace-easy:#93B9D6; --pace-moderate:#74A8CC; --pace-steady:#578FC0; --pace-mp:#3F7CB5;
+  --pace-hmp:#2F66A8; --pace-lt:#27549B; --pace-10k:#20448B; --pace-5k:#1A3679;
+  --pace-3k:#142964; --pace-mile:#0E1D4E;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06); --shadow-press:0 1px 2px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:40px 24px 80px}
+.page-head{max-width:1100px;margin:0 auto 30px}
+.page-head .kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);margin-bottom:10px}
+.page-head h1{font-family:var(--font-display);font-weight:700;font-size:32px;letter-spacing:-.01em;margin-bottom:10px}
+.page-head p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:800px}
+.page-head p b{color:var(--ink)}
+.dsbar{max-width:1100px;margin:0 auto 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:#EDE9E3;border:1px solid #D8D3CC;border-radius:12px;padding:11px 14px}
+.dslabel{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.dsseg{display:inline-flex;background:#DFDAD3;border-radius:9px;padding:3px;gap:3px}
+.dsseg button{font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--ink-2);background:transparent;
+  border:0;padding:6px 13px;border-radius:7px;cursor:pointer}
+.dsseg button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:var(--shadow-press)}
+.dsnote{font-size:13px;color:var(--ink-2);flex:1;min-width:240px}
+.dsnote b{color:var(--ink)}
+.layout{display:flex;gap:40px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1160px;margin:0 auto}
+.notes{width:340px;max-width:100%}
+.notes h3{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);margin:24px 0 8px}
+.notes h3:first-child{margin-top:0}
+.notes p{font-size:13.5px;line-height:1.6;color:var(--ink-2);margin-bottom:9px}
+.notes p b{color:var(--ink)}
+.notes code{font-family:var(--font-mono);font-size:11.5px;background:rgba(0,0,0,.05);padding:1px 4px;border-radius:3px}
+.legend{display:flex;flex-wrap:wrap;gap:7px 15px;margin:6px 0 4px}
+.legend span{font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;color:var(--ink-2);display:flex;align-items:center;gap:5px}
+.sw{width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0}
+.sw.ring{border-radius:999px;background:transparent;border:1.6px solid var(--coral);width:9px;height:9px}
+
+/* phone */
+.phone{width:392px;height:860px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative;flex-shrink:0}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:30px;background:#14110E;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:14px 28px 6px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen{height:calc(860px - 46px - 64px);overflow-y:auto;padding:6px 18px 28px}
+.screen::-webkit-scrollbar{width:0}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .dot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .dot{background:var(--coral)}
+.tab span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--coral)}
+
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display-l{font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1.04;letter-spacing:-.01em}
+.body{font-family:var(--font-body);font-size:14.5px;line-height:1.56;color:var(--ink)}
+.body-sm{font-family:var(--font-body);font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.quote{font-family:var(--font-body);font-style:italic;font-size:14px;line-height:1.5;color:var(--ink)}
+.rule{display:flex;align-items:center;gap:8px;margin:18px 0}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+
+/* segmenter */
+.seg{display:flex;background:var(--paper-deep);border-radius:10px;padding:3px;gap:2px}
+.seg button{flex:1;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:transparent;border:0;padding:7px 0;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-press);font-weight:600}
+
+/* track chips */
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px}
+.chip{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.09em;text-transform:uppercase;
+  padding:5px 9px 5px 7px;border-radius:999px;border:1px solid var(--rule);background:transparent;color:var(--ink-3);
+  cursor:pointer;display:flex;align-items:center;gap:5px;transition:all .15s cubic-bezier(.2,.7,.2,1)}
+.chip .k{width:7px;height:7px;border-radius:2px;background:var(--ink-3);flex-shrink:0}
+.chip.on{background:var(--card);border-color:#DAD5CF;color:var(--ink);box-shadow:var(--shadow-press)}
+.chipsrow-label{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin:16px 0 0 2px}
+
+/* recovery sub-toggle */
+.subseg{display:inline-flex;background:var(--paper-deep);border-radius:8px;padding:2px;gap:2px;margin-top:8px}
+.subseg button{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);
+  background:transparent;border:0;padding:5px 11px;border-radius:6px;cursor:pointer}
+.subseg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:var(--shadow-press)}
+
+/* chart */
+.chartwrap{position:relative;margin-top:10px;touch-action:none;cursor:crosshair}
+
+/* persistent readout — mirrors the shipped TrendsTabView `readout` view:
+   sits above the chart, never occludes it, falls back to the latest week. */
+.readout{margin-top:14px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:9px 0 10px}
+.readout .hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px}
+.readout .wk{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink)}
+.readout .hint{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.readout .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 14px}
+.readout .cell{font-family:var(--font-mono);font-size:10px;letter-spacing:.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.readout .cell i{font-style:normal;color:var(--ink-3);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:1px}
+.readout .cell.dim{color:var(--ink-3);font-style:italic;font-family:var(--font-body);font-size:11.5px}
+.readout .cell b{font-weight:600}
+.readout .warn{color:var(--coral-deep)}
+.readout .row2{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.moodpill{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.nigpill{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;padding:3px 8px;border-radius:999px;color:var(--coral-deep);background:var(--coral-wash)}
+.empty{font-family:var(--font-body);font-size:12.5px;color:var(--ink-2);font-style:italic}
+.insight{border-left:2px solid rgba(212,89,42,.45);padding-left:13px;margin:14px 0}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="kicker">Post Run Drip · Trends · multi-track unified chart</div>
+  <h1>Your training week, six months wide.</h1>
+  <p>The hero is a <b>session grid</b>: <b>y is Mon→Sun, x is the weeks behind you</b>. Every dot is a quality session on the day it happened — <b>size is effort</b>, <b>colour is the pace of its fast segments</b>. Horizontal bands are your weekly rhythm; vertical gaps are where the work stopped. Volume, ACWR, recovery, mood and niggles run underneath on the same x-axis. <b>Tap the chips</b> to turn tracks on and off; <b>drag across the chart</b> to scrub a week.</p>
+</div>
+
+<div class="dsbar">
+  <span class="dslabel">Dataset</span>
+  <div class="dsseg" id="dsseg">
+    <button data-ds="sample" class="on">Sample (invented)</button>
+    <button data-ds="real">Your real data</button>
+  </div>
+  <span class="dsnote" id="dsnote"></span>
+</div>
+
+<div class="layout">
+
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>11:03</span><span>5G ▰▰▰</span></div>
+  <div class="screen">
+    <div style="padding-top:6px">
+      <div class="eyebrow coral">Trends · Mon · Jun 15</div>
+      <div class="display-l" style="margin:8px 0 4px">The shape of<br>your block.</div>
+      <div class="body-sm">Base → build · 26 weeks on one timeline</div>
+    </div>
+
+    <div style="margin:16px 0 0" class="seg" id="seg">
+      <button data-r="4">4 wk</button>
+      <button data-r="12" class="on">12 wk</button>
+      <button data-r="26">6 mo</button>
+    </div>
+
+    <div class="chipsrow-label">Tracks</div>
+    <div class="chips" id="chips"></div>
+    <div id="subwrap"></div>
+
+    <!-- READOUT + UNIFIED CHART -->
+    <div class="readout" id="readout"></div>
+    <div class="chartwrap" id="chartwrap">
+      <svg id="chart" width="100%" style="overflow:visible;display:block"></svg>
+    </div>
+
+    <div class="rule"><i></i></div>
+
+    <div class="eyebrow">What the chart shows</div>
+    <div id="insights"></div>
+
+    <div style="height:10px"></div>
+  </div>
+  <div class="tabbar">
+    <div class="tab"><span class="dot"></span><span>Log</span></div>
+    <div class="tab active"><span class="dot"></span><span>Trends</span></div>
+    <div class="tab"><span class="dot"></span><span>Train</span></div>
+    <div class="tab"><span class="dot"></span><span>Coach</span></div>
+  </div>
+</div>
+
+<div class="notes">
+  <h3>The hero grid</h3>
+  <p><b>y = day of week (Mon→Sun). x = week.</b> One dot per quality session, on the day it happened. <b>Size = effort</b> (quality load). <b>Colour = the pace of its fast segments</b>, on the blue depth ramp. Weekend rows carry a faint wash so the week reads as a shape.</p>
+  <p><b>What it shows that nothing else does:</b> the Tuesday band is a threshold habit, the Thursday band is intervals, the Sunday band is long-run marathon-pace work. That rhythm is invisible in any weekly-total chart. Two clean vertical gaps in the six-month view are the holiday and the work trip.</p>
+  <p><b>Open rings</b> are real work that didn't clear the effort floor — strides, a stray surge. Visible, never weighted like a session.</p>
+
+  <h3>The supporting tracks</h3>
+  <p><b>Volume</b> — weekly miles. The darker cap inside each bar is quality miles, so intensity rides inside volume instead of needing its own chart.</p>
+  <p><b>ACWR</b> — acute (this week) ÷ chronic (trailing 4-week mean), computed from the same miles. The gray band is 0.8–1.3. Above it the dot goes coral (ramping fast); below it the dot goes hollow (detraining, not danger).</p>
+  <p><b>Recovery</b> — one signal at a time (HRV deviation from your own baseline, sleep hours, or rest days). Three units can't share one axis honestly, so they take turns.</p>
+  <p><b>Mood</b> — dominant voice-log mood, on the warm mood palette.</p>
+  <p><b>Niggles</b> — a coral ring on any week a body part was mentioned. Surfaced verbatim in the scrub readout, never interpreted.</p>
+
+  <h3>Legend</h3>
+  <div class="legend">
+    <span><i class="sw" style="background:#E8E4DF;box-shadow:inset 0 0 0 1px #D6D0C9"></i>Easy miles</span>
+    <span><i class="sw" style="background:#6B6560"></i>Quality miles</span>
+    <span><i class="sw" style="background:#1A1815"></i>ACWR in zone</span>
+    <span><i class="sw" style="background:#D4592A"></i>ACWR &gt; 1.3</span>
+    <span><i class="sw" style="background:#0E1D4E"></i>Mile / 3K</span>
+    <span><i class="sw" style="background:#3F7CB5"></i>MP / HMP</span>
+    <span><i class="sw" style="background:transparent;box-shadow:inset 0 0 0 1px #9B9590"></i>Below floor</span>
+    <span><i class="sw" style="background:#2D8A4E"></i>Energized</span>
+    <span><i class="sw" style="background:#C4873A"></i>Tired</span>
+    <span><i class="sw" style="background:#C45A3A"></i>Struggling</span>
+    <span><i class="sw ring"></i>Niggle mentioned</span>
+    <span><i class="sw" style="background:transparent;border-radius:999px;box-shadow:inset 0 0 0 1.4px #9B9590"></i>Below effort floor</span>
+  </div>
+
+  <h3>Design calls worth arguing with</h3>
+  <p><b>Day-of-week beats pace as the y-axis.</b> Earlier versions plotted sessions by their pace. That reads as a scatter you have to decode. Day-of-week is a <i>categorical</i> axis the athlete already carries in her head — she knows Tuesday is threshold day — so the grid needs no decoding at all, and it surfaces a pattern (the weekly rhythm, and when it breaks) that a pace scatter can't.</p>
+  <p><b>Pace moved from position to colour.</b> Losing the pace axis costs precision, and the trade is worth it: colour is enough to see <i>what kind</i> of work a session was, and exact paces belong in the scrub readout, where they're stated as numbers rather than estimated off an axis. The <code>keySessions.ts</code> invariant — <i>"compare like with like"</i> — is respected by construction here, because nothing draws a line between sessions of different zones at all.</p>
+  <p><b>No dual axes, ever.</b> Each supporting track is its own band with its own scale, sharing one x. Two measures never fight over one y.</p>
+  <p><b>Coral is spent twice, deliberately.</b> ACWR out of zone and niggles — both genuine alerts. Note the shipped Swift chart still paints <b>key-session pace</b> coral, which contradicts the 2026-07-03 three-palette rule (blue = pace, coral = alert). This prototype moves pace to blue.</p>
+  <p><b>Recovery takes turns.</b> HRV in ms, sleep in hours and rest in days can't honestly share a band. A sub-toggle is more honest than three overlaid scales.</p>
+  <p><b>Default on:</b> volume, ACWR, pace, mood, niggles. <b>Default off:</b> key sessions, recovery. All seven on is a legitimate power-user state; it just isn't the 5-second view.</p>
+  <p><b>Empty weeks stay empty.</b> A week with no quality session has no dot and reads "No key session" in the readout — never an em-dash, per hard rule #8.</p>
+
+  <h3>Does the grid survive your real data?</h3>
+  <p>Partly. Flip the dataset toggle above the phone and compare — this is the honest test, and it changes the verdict.</p>
+  <p><b>Sample data (invented): 59 sessions, 32% of the grid full, a clean three-band rhythm.</b> That rhythm was a pattern I authored into the data and then congratulated the chart for revealing. Not evidence.</p>
+  <p><b>Your real data: 19 sessions, 10% of the grid full.</b> Monday and Thursday are empty all six months. The first eight weeks are entirely blank — there's no lap data before 23 March, so nothing can be classified. At <b>6 MO</b> the hero is mostly whitespace.</p>
+  <p><b>But the core premise holds at 12 weeks.</b> Tuesday is a genuine band (10 of your 19 sessions), Wednesday is a real second band, and Friday is where the strides live. That's a legible rhythm and it is worth showing. The grid is right — the <i>range</i> is wrong. <b>12 wk should be the default, and 6 MO probably shouldn't offer the grid at all.</b></p>
+  <p><b>Real data broke two things the sample never would have.</b> Your ACWR hits <b>1.77</b> and <b>1.57</b> — the band was hard-clamped at 1.55, so both spikes pinned to the top edge and the value label landed on top of the track title. Domain is adaptive now. Your sample-data ACWR never left 0.66–1.32, so neither bug could appear.</p>
+  <p><b>Recovery has no data at all.</b> No HRV, sleep or rest anywhere in the schema. On the real dataset that track renders its empty state instead of numbers, and the chip switches itself off.</p>
+
+  <h3>The effort score, calibrated on real data</h3>
+  <p><b>Quality load = Σ(work-bout seconds × zone weight) ÷ 60.</b> The weights are the canonical 1–5 scale already in <code>workoutSegmentation.ts</code> (mp 2.5 → mile 5.0). The score is the <b>sum</b>, not the average — averaging over the whole workout is the retired <code>intensity_score</code> that <code>quality-volume.ts</code> documents as broken.</p>
+  <p><b>Checked against 23 real sessions in prod.</b> Ranked by load, the top of the list is 6×1mi @ 5:12 (103), a 6.2mi 10K effort (102), a ten-rep 1K set (101) and 9×1K @ 5:08 (100). The bottom is 3×300m (11.7), 3×200m (6.4) and 2×200m (5.4).</p>
+  <p><b>The floor needs no tuning.</b> Strides top out at <b>13.1</b>; the smallest genuine session is <b>42.1</b>; nothing lands in between. Any floor from 15 to 40 keeps the same 19 of 23 and cuts the same 4 — all four unambiguously strides. Zero real sessions lost.</p>
+  <p><b>But the weights barely matter here.</b> Quality load correlates <b>0.965</b> with plain work-duration across those sessions — the mp→mile spread is only 2×, while work duration spans 30×. For the gate specifically, "≥ 5 minutes of work" gives the <i>identical</i> 19/4 split with no weight table to maintain. The weights earn their keep for <b>dot size</b>, where the 1.9× spread in load-per-minute is a real, visible difference.</p>
+  <p><b>The number stays hidden.</b> Quality load drives dot size and the anchor-session pick, and nothing else. The scrub readout describes the week in <b>minutes of work</b> — a figure you can check against your own watch — not in load units, which you can't. A synthetic score printed as fact is exactly the kind of unfalsifiable number the voice guide tells us not to ship.</p>
+  <p><b>Two things worth knowing.</b> About half of all quality load sits within 4 s/mi of a zone boundary, so a new race anchor can re-bracket it — if that bites, a continuous intensity factor (IF⁴) ranks these same sessions at r = 0.994 with no brackets to straddle. And textbook rTSS (IF²) would be <i>worse</i> than what you have: r = 0.988 with duration, even more volume-dominated. The 2026-06-12 scale beats the industry standard on your data.</p>
+
+  <h3>About the sample data</h3>
+  <p>26 weeks, reshaped from <code>TrendsSampleData</code> so the new tracks have something to say. The April dip is a work trip (24 mi, 3 rest days), the ramp back out of it pushes ACWR to <b>1.32</b> in the week of May 5 — which is also the week HRV drops 9 ms, sleep falls to 6.0 h, mood reads struggling, and the right achilles gets mentioned for the first time. That single vertical slice is the whole product thesis.</p>
+  <p>ACWR is computed live from the mileage series (acute ÷ trailing 4-week mean), not hand-authored, so it stays honest if you edit the miles.</p>
+</div>
+
+</div>
+
+<script>
+/* ============================================================
+   EFFORT SCORE — quality load
+   ------------------------------------------------------------
+   Canonical intensity weights, lifted verbatim from
+   _shared/workoutSegmentation.ts (decision 2026-06-12). The
+   score is the SUM over work bouts of seconds × weight — NOT
+   the average. Averaging over the whole workout is the retired
+   `intensity_score` that quality-volume.ts documents as broken
+   (it booked warmups and floats as quality, and scored a long
+   run with an MP block at zero).
+
+   LOAD_FLOOR calibrated against 23 real sessions in prod:
+   strides top out at 13.1, the smallest genuine session is
+   42.1, and nothing lands in between — so any floor from 15 to
+   40 gives the identical result. 25 sits mid-gap.
+   ============================================================ */
+const ZONE_WEIGHTS = {mile:5.0,"3k":4.5,"5k":4.0,"10k":3.5,hmp:3.0,mp:2.5};
+const LOAD_FLOOR = 25;
+
+/** Quality load for one work bout: weighted minutes. */
+const loadOf = ([zone,,secs]) => secs * (ZONE_WEIGHTS[zone] ?? 1) / 60;
+
+/* ============================================================
+   DATA — 26 weeks. Sessions are
+     [zone, workPaceSec, workSeconds, day]
+   listed in the order they happened. Load, acwr and the gate
+   are all computed below, never authored.
+   ============================================================ */
+const DATA_SAMPLE = [
+  {m:"Dec",d:"Dec 16",mi:32,q:5, hrv:+2,sleep:7.6,rest:1,mood:"positive",  nig:[],s:[["10k",396,1080,"Thu"],["mp",452,2040,"Sun"]]},
+  {m:"Dec",d:"Dec 23",mi:18,q:2, hrv:+4,sleep:8.1,rest:3,mood:"neutral",   nig:[],s:[["mile",352,180,"Thu"]],  quote:"Holiday week. Ran when I felt like it, which was twice."},
+  {m:"Dec",d:"Dec 30",mi:34,q:6, hrv:+1,sleep:7.4,rest:1,mood:"positive",  nig:[],s:[["5k",382,900,"Thu"],["mp",455,2100,"Sun"]]},
+  {m:"Jan",d:"Jan 6", mi:36,q:6, hrv:+3,sleep:7.5,rest:1,mood:"energized", nig:[],s:[["hmp",436,1920,"Tue"],["10k",394,1140,"Thu"]]},
+  {m:"Jan",d:"Jan 13",mi:35,q:7, hrv:-1,sleep:7.0,rest:1,mood:"tired",     nig:[],s:[["hmp",434,1860,"Tue"],["mp",449,1800,"Sun"]]},
+  {m:"Jan",d:"Jan 20",mi:38,q:8, hrv:+2,sleep:7.4,rest:1,mood:"positive",  nig:[],s:[["hmp",432,2040,"Tue"],["5k",379,960,"Thu"],["mp",447,1740,"Sun"]]},
+  {m:"Jan",d:"Jan 27",mi:37,q:7, hrv:+1,sleep:7.3,rest:1,mood:"positive",  nig:[],s:[["hmp",430,1980,"Tue"],["10k",390,1200,"Thu"]]},
+  {m:"Feb",d:"Feb 3", mi:40,q:9, hrv:-3,sleep:6.9,rest:0,mood:"tired",     nig:["L hip"],s:[["hmp",431,2100,"Tue"],["5k",378,840,"Thu"],["mp",445,1860,"Sun"]]},
+  {m:"Feb",d:"Feb 10",mi:39,q:8, hrv:+1,sleep:7.5,rest:1,mood:"positive",  nig:[],s:[["hmp",428,2160,"Tue"],["10k",388,1140,"Thu"]]},
+  {m:"Feb",d:"Feb 17",mi:42,q:10,hrv:+3,sleep:7.7,rest:1,mood:"energized", nig:[],s:[["hmp",427,2280,"Tue"],["5k",375,1020,"Thu"],["mp",442,1920,"Sun"]]},
+  {m:"Feb",d:"Feb 24",mi:41,q:9, hrv:0, sleep:7.2,rest:1,mood:"neutral",   nig:[],s:[["hmp",426,2160,"Tue"],["10k",386,1260,"Thu"]]},
+  {m:"Mar",d:"Mar 3", mi:44,q:11,hrv:-2,sleep:6.9,rest:0,mood:"tired",     nig:[],s:[["hmp",425,2400,"Tue"],["3k",358,780,"Thu"],["mp",440,2040,"Sun"]]},
+  {m:"Mar",d:"Mar 10",mi:43,q:10,hrv:+1,sleep:7.4,rest:1,mood:"positive",  nig:[],s:[["hmp",423,2280,"Tue"],["5k",372,1080,"Thu"]]},
+  {m:"Mar",d:"Mar 17",mi:46,q:12,hrv:+2,sleep:7.5,rest:1,mood:"positive",  nig:[],s:[["hmp",422,2400,"Tue"],["10k",383,1320,"Thu"],["mp",438,2100,"Sun"]]},
+  /* ---- last 12 weeks (default window) ---- */
+  {m:"Mar",d:"Mar 24",mi:38,q:8, hrv:+4,sleep:7.8,rest:2,mood:"positive",  nig:[],s:[["hmp",418,1800,"Tue"],["mp",436,1740,"Sun"]]},
+  {m:"Mar",d:"Mar 31",mi:41,q:9, hrv:+2,sleep:7.5,rest:1,mood:"positive",  nig:[],s:[["hmp",416,2160,"Tue"],["5k",369,1020,"Thu"]]},
+  {m:"Apr",d:"Apr 7", mi:43,q:10,hrv:0, sleep:7.1,rest:1,mood:"tired",     nig:[],s:[["hmp",414,2280,"Tue"],["10k",380,1260,"Thu"],["mp",433,1980,"Sun"]]},
+  {m:"Apr",d:"Apr 14",mi:24,q:3, hrv:-4,sleep:6.1,rest:3,mood:"tired",    nig:[],s:[["mile",344,200,"Thu"]], quote:"Work trip. Three runs, all short, all hotel treadmill."},
+  {m:"Apr",d:"Apr 21",mi:34,q:6, hrv:-1,sleep:7.0,rest:1,mood:"positive",  nig:[],s:[["hmp",415,1680,"Tue"],["mp",434,1620,"Sun"]]},
+  {m:"Apr",d:"Apr 28",mi:48,q:13,hrv:-3,sleep:6.8,rest:1,mood:"tired",     nig:[],s:[["hmp",408,2460,"Tue"],["5k",366,1140,"Thu"],["mp",430,2160,"Sun"]]},
+  {m:"May",d:"May 5", mi:52,q:14,hrv:-9,sleep:6.0,rest:0,mood:"struggling",nig:["R achilles"],s:[["hmp",407,2580,"Tue"],["10k",374,1380,"Thu"],["mp",429,2280,"Sun"]], quote:"Achilles grumbled on the warm-up, eased off after a mile."},
+  {m:"May",d:"May 12",mi:50,q:14,hrv:-5,sleep:6.6,rest:1,mood:"positive",  nig:[],s:[["hmp",405,2400,"Tue"],["5k",363,1200,"Thu"]]},
+  {m:"May",d:"May 19",mi:52,q:15,hrv:-2,sleep:7.2,rest:1,mood:"energized", nig:["R achilles"],s:[["hmp",404,2520,"Tue"],["3k",351,900,"Thu"],["mp",427,2220,"Sun"]]},
+  {m:"May",d:"May 26",mi:49,q:13,hrv:+1,sleep:7.4,rest:1,mood:"positive",  nig:[],s:[["hmp",403,2340,"Tue"],["10k",371,1320,"Thu"]]},
+  {m:"Jun",d:"Jun 2", mi:53,q:16,hrv:-6,sleep:6.5,rest:0,mood:"tired",     nig:["R achilles","L hip"],s:[["hmp",402,2640,"Tue"],["5k",360,1260,"Thu"],["mp",425,2400,"Sun"]]},
+  {m:"Jun",d:"Jun 9", mi:53,q:16,hrv:-3,sleep:6.9,rest:1,mood:"energized", nig:["R achilles"],s:[["hmp",401,2640,"Tue"],["mile",336,540,"Thu"],["mp",424,2340,"Sun"]], quote:"Heavy and short on patience today — nothing in the legs."},
+];
+
+/* ============================================================
+   REAL DATA — 26 weeks pulled live from prod (read-only) for
+   user 03857bf3, weeks of 2026-01-26 → 2026-07-20.
+
+   Sessions carry their load explicitly (index 4) because a real
+   session's laps span several zones, so load is the per-lap
+   weighted sum and can't be recomputed from a single zone label.
+
+   HRV / sleep / rest are absent: nothing in the schema supplies
+   them yet. The Recovery track renders its empty state rather
+   than inventing numbers.
+   ============================================================ */
+const DATA_REAL = [
+  {m:"Jan",d:"Jan 26",mi:62.0,q:0.0, hrv:null,sleep:null,rest:null,mood:"positive",  nig:[],s:[]},
+  {m:"Feb",d:"Feb 2", mi:43.4,q:0.0, hrv:null,sleep:null,rest:null,mood:"neutral",   nig:[],s:[]},
+  {m:"Feb",d:"Feb 9", mi:48.1,q:0.0, hrv:null,sleep:null,rest:null,mood:"positive",  nig:[],s:[]},
+  {m:"Feb",d:"Feb 16",mi:25.8,q:0.0, hrv:null,sleep:null,rest:null,mood:"struggling",nig:[],s:[]},
+  {m:"Feb",d:"Feb 23",mi:25.7,q:0.0, hrv:null,sleep:null,rest:null,mood:"neutral",   nig:[],s:[]},
+  {m:"Mar",d:"Mar 2", mi:32.2,q:0.0, hrv:null,sleep:null,rest:null,mood:"neutral",   nig:[],s:[]},
+  {m:"Mar",d:"Mar 9", mi:66.2,q:0.0, hrv:null,sleep:null,rest:null,mood:"neutral",   nig:[],s:[]},
+  {m:"Mar",d:"Mar 16",mi:51.7,q:0.0, hrv:null,sleep:null,rest:null,mood:"neutral",   nig:[],s:[]},
+  {m:"Mar",d:"Mar 23",mi:68.4,q:2.3, hrv:null,sleep:null,rest:null,mood:"",          nig:[],s:[["5k",272,626,"Fri",49.8]]},
+  {m:"Mar",d:"Mar 30",mi:89.5,q:12.0,hrv:null,sleep:null,rest:null,mood:"positive",  nig:[],s:[["hmp",312,1866,"Tue",103.5],["hmp",322,1929,"Sat",96.5]]},
+  {m:"Apr",d:"Apr 6", mi:60.3,q:12.0,hrv:null,sleep:null,rest:null,mood:"tired",     nig:[],s:[["hmp",307,1649,"Tue",93.2],["hmp",310,116,"Fri",6.4],["hmp",317,1976,"Sun",102.0]]},
+  {m:"Apr",d:"Apr 13",mi:60.9,q:0.0, hrv:null,sleep:null,rest:null,mood:"injured",   nig:[],s:[]},
+  {m:"Apr",d:"Apr 20",mi:34.4,q:4.0, hrv:null,sleep:null,rest:null,mood:"injured",   nig:[],s:[["hmp",296,1180,"Tue",74.5]]},
+  {m:"Apr",d:"Apr 27",mi:21.5,q:3.8, hrv:null,sleep:null,rest:null,mood:"",          nig:[],s:[["mp",332,1266,"Tue",55.8]]},
+  {m:"May",d:"May 4", mi:56.4,q:5.0, hrv:null,sleep:null,rest:null,mood:"injured",   nig:[],s:[["hmp",317,1586,"Tue",81.8]]},
+  {m:"May",d:"May 11",mi:72.2,q:7.4, hrv:null,sleep:null,rest:null,mood:"struggling",nig:[],s:[["10k",293,1338,"Tue",91.9],["mp",324,921,"Fri",44.0]]},
+  {m:"May",d:"May 18",mi:57.3,q:5.6, hrv:null,sleep:null,rest:null,mood:"tired",     nig:[],s:[["10k",308,1720,"Wed",100.3]]},
+  {m:"May",d:"May 25",mi:60.1,q:0.0, hrv:null,sleep:null,rest:null,mood:"positive",  nig:[],s:[]},
+  {m:"Jun",d:"Jun 1", mi:55.0,q:4.9, hrv:null,sleep:null,rest:null,mood:"tired",     nig:[],s:[["hmp",302,1219,"Tue",72.1],["mile",250,65,"Fri",5.4],["mile",244,140,"Fri",11.7]]},
+  {m:"Jun",d:"Jun 8", mi:58.3,q:4.0, hrv:null,sleep:null,rest:null,mood:"",          nig:["knee"],s:[["mp",323,1292,"Tue",62.8]]},
+  {m:"Jun",d:"Jun 15",mi:61.5,q:7.0, hrv:null,sleep:null,rest:null,mood:"positive",  nig:["knee"],s:[["hmp",314,1561,"Wed",84.5],["5k",277,553,"Fri",42.1]]},
+  {m:"Jun",d:"Jun 22",mi:52.3,q:4.2, hrv:null,sleep:null,rest:null,mood:"struggling",nig:[],s:[["mp",310,1307,"Tue",74.6]]},
+  {m:"Jun",d:"Jun 29",mi:74.8,q:0.0, hrv:null,sleep:null,rest:null,mood:"positive",  nig:[],s:[]},
+  {m:"Jul",d:"Jul 6", mi:56.8,q:6.0, hrv:null,sleep:null,rest:null,mood:"struggling",nig:[],s:[["mp",315,1895,"Wed",101.1]]},
+  {m:"Jul",d:"Jul 13",mi:72.6,q:4.5, hrv:null,sleep:null,rest:null,mood:"positive",  nig:["knee"],s:[["hmp",301,1354,"Tue",83.2]]},
+  {m:"Jul",d:"Jul 20",mi:67.7,q:6.6, hrv:null,sleep:null,rest:null,mood:"positive",  nig:["knee"],s:[["mp",328,1967,"Tue",87.3],["mile",251,157,"Fri",13.1]]},
+];
+
+/* Gate + score each session. `kept` are the ones that qualify as key
+   sessions; `dropped` are real work that didn't clear the floor (strides,
+   a stray surge) and are counted but never drawn as a session mark. */
+function prep(rows){
+rows.forEach((w,i)=>{
+  const from = Math.max(0, i-3);
+  const win = rows.slice(from, i+1);
+  const chronic = win.reduce((a,b)=>a+b.mi,0)/win.length;
+  w.acwr = chronic > 0 ? +(w.mi/chronic).toFixed(2) : null;
+});
+rows.forEach(w=>{
+  w.s.forEach(s=>{ if(s[4] == null) s[4] = loadOf(s); });
+  w.kept    = w.s.filter(s=>s[4] >= LOAD_FLOOR);
+  w.dropped = w.s.length - w.kept.length;
+  w.load    = w.kept.reduce((a,s)=>a+s[4], 0);
+  // The week's anchor session is its BIGGEST by quality load, not its
+  // fastest — "fastest work bout" always favours the shortest sharpest
+  // rep and makes a stride set outrank a 6×1mi. A week with no
+  // qualifying session has no anchor pace at all.
+  w.big  = w.kept.length ? w.kept.reduce((a,s)=> s[4] > a[4] ? s : a) : null;
+  w.pace = w.big ? w.big[1] : null;
+  w.zone = w.big ? w.big[0] : null;
+});
+return rows;
+}
+
+prep(DATA_SAMPLE); prep(DATA_REAL);
+let DATA = DATA_SAMPLE;
+/** True when the active dataset supplies no recovery stream at all. */
+const hasRecovery = () => DATA.some(w => w.hrv != null);
+
+/** Mon-first day index for the hero grid's y-axis. */
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const DAY_INITIAL = ["M","T","W","T","F","S","S"];
+const dayIndex = d => Math.max(DAYS.indexOf(d), 0);
+
+/* ============================================================
+   CONFIG
+   ============================================================ */
+const MOOD = {energized:"#2D8A4E",positive:"#4A9E6B",neutral:"#9B9590",tired:"#C4873A",struggling:"#C45A3A",injured:"#B83A4A"};
+const ZONE = {mile:"#0E1D4E","3k":"#142964","5k":"#1A3679","10k":"#20448B",hmp:"#2F66A8",mp:"#3F7CB5"};
+const ZONE_LABEL = {mile:"Mile","3k":"3K","5k":"5K","10k":"10K",hmp:"HMP",mp:"MP"};
+const ZONE_ORDER = ["mile","3k","5k","10k","hmp","mp"];
+
+const INK="#1A1815", INK2="#6B6560", INK3="#9B9590",
+      RULE="#E8E4E0", DEEP="#E8E4DF", CORAL="#D4592A", PAPER="#F5F3F0";
+
+/* The sessions grid leads: it is the hero, and everything under it is a
+   supporting track sharing the same weekly x-axis. */
+const ROW_H = 19;                       // one day row in the hero grid
+const TRACKS = [
+  {key:"sessions", label:"Key sessions", axis:"KEY SESSIONS", h:ROW_H*7, on:true,  sw:"#2F66A8"},
+  {key:"volume",   label:"Volume",       axis:"VOLUME · MI",         h:64, on:true,  sw:"#6B6560"},
+  {key:"acwr",     label:"ACWR",         axis:"ACWR · LOAD RATIO",   h:44, on:true,  sw:"#1A1815"},
+  {key:"recovery", label:"Recovery",     axis:"RECOVERY",            h:48, on:false, sw:"#9B9590"},
+  {key:"mood",     label:"Mood",         axis:"MOOD",                h:20, on:true,  sw:"#4A9E6B"},
+  {key:"niggles",  label:"Niggles",      axis:"NIGGLES",             h:20, on:true,  sw:"#D4592A"},
+];
+
+// PADL leaves a gutter for the hero grid's day labels. Every track shares
+// it, so columns stay aligned down the whole chart.
+const W = 352, PADL = 17, PADR = 8;
+const LABEL_H = 14, GAP = 13, AXIS_H = 20;
+
+let range = 12;
+let recoveryMode = "hrv";
+let scrub = null;
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const paceStr = s => s==null ? null : Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+const win = () => DATA.slice(-range);
+const slot = n => (W-PADL-PADR)/n;
+const xAt = (i,n) => PADL + slot(n)*(i+0.5);
+
+function txt(x,y,s,{size=8.5,fill=INK3,anchor="start",weight=500,ls=0.4}={}){
+  return `<text x="${x}" y="${y}" font-family="ui-monospace,SF Mono,Menlo,monospace" font-size="${size}" `
+       + `font-weight="${weight}" letter-spacing="${ls}" fill="${fill}" text-anchor="${anchor}">${esc(s)}</text>`;
+}
+function line(x1,y1,x2,y2,stroke,w=1,dash=null){
+  return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${w}"`
+       + (dash?` stroke-dasharray="${dash}"`:"") + ` stroke-linecap="round"/>`;
+}
+const rect = (x,y,w,h,fill,rx=0) => `<rect x="${x}" y="${y}" width="${Math.max(w,0)}" height="${Math.max(h,0)}" rx="${rx}" fill="${fill}"/>`;
+const dot  = (cx,cy,r,fill) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"/>`;
+const ring = (cx,cy,r,stroke,w=1.6) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${stroke}" stroke-width="${w}"/>`;
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render(){
+  const ws = win(), n = ws.length;
+  const active = TRACKS.filter(t=>t.on);
+
+  /* --- layout pass --- */
+  let y = 12, bands = {};
+  active.forEach(t=>{
+    bands[t.key] = {labelY:y, top:y+LABEL_H, bottom:y+LABEL_H+t.h};
+    y = y + LABEL_H + t.h + GAP;
+  });
+  const axisY = y + 2;
+  const H = axisY + AXIS_H;
+
+  let g = "";
+
+  /* ---------- VOLUME ---------- */
+  if(bands.volume){
+    const b = bands.volume, hgt = b.bottom-b.top;
+    const maxMi = Math.max(...ws.map(w=>w.mi), 1);
+    g += txt(PADL, b.labelY+9, "VOLUME · MI");
+    g += txt(W-PADR, b.labelY+9, Math.round(maxMi)+" MPW PEAK", {anchor:"end"});
+    g += line(PADL, b.bottom, W-PADR, b.bottom, RULE, 1);
+    const bw = Math.min(slot(n)*0.56, 18);
+    ws.forEach((w,i)=>{
+      const cx = xAt(i,n);
+      const tot = w.mi/maxMi*hgt, qh = w.q/maxMi*hgt;
+      g += rect(cx-bw/2, b.bottom-tot+qh, bw, tot-qh, DEEP, 1.5);       // easy base
+      g += rect(cx-bw/2, b.bottom-tot,    bw, qh,     INK2, 1.5);       // quality cap
+    });
+  }
+
+  /* ---------- ACWR ---------- */
+  if(bands.acwr){
+    const b = bands.acwr, hgt = b.bottom-b.top;
+    // Domain stretches to fit the data. Real ramps go well past 1.55 —
+    // clamping them to the top edge hides exactly the weeks that matter.
+    const vals = ws.map(w=>w.acwr).filter(v=>v!=null);
+    const LO = Math.min(0.55, ...vals) - 0.03;
+    const HI = Math.max(1.55, ...vals) + 0.05;
+    const yA = v => b.bottom - (Math.min(Math.max(v,LO),HI)-LO)/(HI-LO)*hgt;
+    g += txt(PADL, b.labelY+9, "ACWR · LOAD RATIO");
+    g += txt(W-PADR, b.labelY+9, "SAFE 0.8–1.3", {anchor:"end"});
+    // neutral-gray safe band (never green — mood owns green)
+    g += rect(PADL, yA(1.3), W-PADL-PADR, yA(0.8)-yA(1.3), DEEP, 2);
+    g += line(PADL, yA(1.0), W-PADR, yA(1.0), "#D6D0C9", 1, "2 3");
+    let d="";
+    ws.forEach((w,i)=>{ if(w.acwr==null) return;
+      d += (d?"L":"M") + xAt(i,n).toFixed(1) + " " + yA(w.acwr).toFixed(1) + " "; });
+    g += `<path d="${d}" fill="none" stroke="${INK}" stroke-width="1.4" stroke-opacity=".55" stroke-linejoin="round"/>`;
+    ws.forEach((w,i)=>{ if(w.acwr==null) return;
+      const cx=xAt(i,n), cy=yA(w.acwr);
+      if(w.acwr > 1.3){                       // coral = alert, ramping fast
+        g += dot(cx,cy,3.6,CORAL);
+        // Flip below the dot near the top of the band so the value never
+        // lands on the track label.
+        const below = cy - b.top < 13;
+        const lx = Math.min(Math.max(cx, PADL+12), W-PADR-12);
+        g += txt(lx, below ? cy+11 : cy-8, w.acwr.toFixed(2),
+          {anchor:"middle",fill:CORAL,size:8,weight:600});
+      } else if(w.acwr < 0.8){                // hollow = detraining, not danger
+        g += ring(cx,cy,3.2,INK3,1.4);
+      } else {
+        g += dot(cx,cy,2.6,INK);
+      }
+    });
+  }
+
+  /* ---------- KEY SESSIONS — the hero grid ----------
+     y = day of week, Mon at top to Sun at bottom. x = week.
+     One dot per session, placed on the day it happened.
+     Size  = effort (quality load).
+     Colour = the pace of its fast segments (zone, on the blue ramp).
+
+     Reading it: horizontal bands are the athlete's weekly rhythm — the
+     Tue/Thu/Sun row is a training pattern you cannot see any other way.
+     Vertical gaps are weeks the work stopped. */
+  if(bands.sessions){
+    const b = bands.sessions;
+    const yRow = r => b.top + r*ROW_H + ROW_H/2;
+
+    g += txt(PADL, b.labelY+9, "KEY SESSIONS");
+
+    const all = [];
+    ws.forEach((w,i)=> w.s.forEach(s=>
+      all.push({i, z:s[0], p:s[1], day:dayIndex(s[3]), load:s[4], kept:s[4] >= LOAD_FLOOR})));
+    const pts = all.filter(p=>p.kept);
+
+    // Inline zone legend — identity is never colour-alone, and the blue
+    // ramp's adjacent steps sit close together by design.
+    const present = [...new Set(pts.map(p=>p.z))]
+      .sort((a,c)=>ZONE_ORDER.indexOf(a)-ZONE_ORDER.indexOf(c));
+    let lx = W - PADR;
+    [...present].reverse().forEach(z=>{
+      g += txt(lx, b.labelY+9, ZONE_LABEL[z], {anchor:"end", fill:INK2, size:8});
+      lx -= (ZONE_LABEL[z].length * 4.9 + 5);
+      g += rect(lx, b.labelY+3.5, 5, 5, ZONE[z], 1);
+      lx -= 9;
+    });
+
+    // Day rows. Weekend rows carry a faint wash so the week reads as a
+    // shape rather than seven identical stripes.
+    for(let r=0; r<7; r++){
+      const top = b.top + r*ROW_H;
+      if(r >= 5) g += rect(PADL, top, W-PADL-PADR, ROW_H, "#EFEBE6", 0);
+      g += line(PADL, top+ROW_H, W-PADR, top+ROW_H, "#EDE9E4", 1);
+      g += txt(PADL-6, yRow(r)+3, DAY_INITIAL[r],
+        {anchor:"end", fill:r>=5?INK3:INK2, size:8.5, weight:600, ls:0});
+    }
+
+    // Scrub column highlight — the primary navigation affordance.
+    if(scrub!=null && scrub>=0 && scrub<n){
+      const cw = Math.min(slot(n)*0.9, 22);
+      g += rect(xAt(scrub,n)-cw/2, b.top, cw, ROW_H*7, "rgba(212,89,42,.07)", 3);
+    }
+
+    if(pts.length === 0){
+      g += txt((PADL+W-PADR)/2, yRow(3)+3, "NO QUALIFYING SESSIONS IN THIS WINDOW",
+        {anchor:"middle", fill:INK3});
+    } else {
+      // Radius from effort, normalised across the window's actual range so
+      // the spread is visible. Area carries the value.
+      const lo = Math.min(...pts.map(p=>p.load));
+      const hi = Math.max(...pts.map(p=>p.load));
+      const rCap = Math.min(ROW_H/2 - 1.5, slot(n)*0.44, 8);
+      const rOf = l => {
+        const t = hi > lo ? (l-lo)/(hi-lo) : 1;
+        return Math.max(2.6, 2.6 + Math.sqrt(t) * (rCap - 2.6));
+      };
+      // Below the floor: a small open ring on the same day. Real work that
+      // is not a key session — visible, but never weighted like one.
+      all.filter(p=>!p.kept).forEach(p=>{
+        g += ring(xAt(p.i,n), yRow(p.day), 2.4, INK3, 1.1);
+      });
+      pts.forEach(p=>{
+        const cx = xAt(p.i,n), cy = yRow(p.day), r = rOf(p.load);
+        g += `<circle cx="${cx}" cy="${cy}" r="${r+1.2}" fill="${PAPER}"/>`;
+        g += dot(cx, cy, r, ZONE[p.z]);
+      });
+    }
+  }
+
+  /* ---------- RECOVERY ---------- */
+  if(bands.recovery && !hasRecovery()){
+    // Empty-state, not fabricated numbers and never an em-dash (hard rule #8).
+    const b = bands.recovery;
+    g += txt(PADL, b.labelY+9, "RECOVERY");
+    g += txt(PADL, (b.top+b.bottom)/2 - 3, "NO HRV, SLEEP OR REST DATA YET", {fill:INK2});
+    g += txt(PADL, (b.top+b.bottom)/2 + 9, "CONNECT HEALTHKIT TO FILL THIS TRACK", {fill:INK3});
+  } else if(bands.recovery){
+    const b = bands.recovery, hgt = b.bottom-b.top;
+    if(recoveryMode==="hrv"){
+      const mx = Math.max(10, ...ws.map(w=>Math.abs(w.hrv)));
+      const yH = v => (b.top+b.bottom)/2 - v/mx*(hgt/2 - 6);
+      g += txt(PADL, b.labelY+9, "RECOVERY · HRV vs BASELINE");
+      g += txt(W-PADR, b.labelY+9, "MS", {anchor:"end"});
+      g += line(PADL, yH(0), W-PADR, yH(0), "#D6D0C9", 1, "2 3");
+      let d="";
+      ws.forEach((w,i)=>{ d += (d?"L":"M") + xAt(i,n).toFixed(1) + " " + yH(w.hrv).toFixed(1) + " "; });
+      g += `<path d="${d}" fill="none" stroke="${INK2}" stroke-width="1.5" stroke-linejoin="round"/>`;
+      ws.forEach((w,i)=>{
+        const cx=xAt(i,n), cy=yH(w.hrv);
+        g += dot(cx,cy,2.6, w.hrv <= -7 ? INK : INK2);
+        if(w.hrv <= -7) g += txt(cx, cy+13, w.hrv+" MS", {anchor:"middle",fill:INK2,size:8,weight:600});
+      });
+    } else if(recoveryMode==="sleep"){
+      const LO=4.5, HI=9;
+      const yS = v => b.bottom - (Math.min(Math.max(v,LO),HI)-LO)/(HI-LO)*hgt;
+      g += txt(PADL, b.labelY+9, "RECOVERY · SLEEP");
+      g += txt(W-PADR, b.labelY+9, "HOURS · TARGET 7.5", {anchor:"end"});
+      g += line(PADL, b.bottom, W-PADR, b.bottom, RULE, 1);
+      const bw = Math.min(slot(n)*0.56, 18);
+      ws.forEach((w,i)=>{
+        const cx=xAt(i,n), top=yS(w.sleep);
+        g += rect(cx-bw/2, top, bw, b.bottom-top, w.sleep<6.5?INK2:DEEP, 1.5);
+      });
+      g += line(PADL, yS(7.5), W-PADR, yS(7.5), "#C9C2BA", 1, "2 3");
+    } else {
+      const HI=3;
+      const yR = v => b.bottom - Math.min(v,HI)/HI*hgt;
+      g += txt(PADL, b.labelY+9, "RECOVERY · REST DAYS");
+      g += txt(W-PADR, b.labelY+9, "DAYS / WEEK", {anchor:"end"});
+      g += line(PADL, b.bottom, W-PADR, b.bottom, RULE, 1);
+      const bw = Math.min(slot(n)*0.56, 18);
+      ws.forEach((w,i)=>{
+        const cx=xAt(i,n);
+        // A zero-rest week is a real value, not a missing one: a flat tick on
+        // the baseline plus the numeral, kept inside the band so it never
+        // collides with the next track's label.
+        if(w.rest===0){
+          g += line(cx-bw/2, b.bottom, cx+bw/2, b.bottom, INK3, 1.6);
+          g += txt(cx, b.bottom-4, "0", {anchor:"middle",fill:INK3,size:8});
+          return;
+        }
+        const top=yR(w.rest);
+        g += rect(cx-bw/2, top, bw, b.bottom-top, DEEP, 1.5);
+      });
+    }
+  }
+
+  /* ---------- MOOD ---------- */
+  if(bands.mood){
+    const b = bands.mood, cy = (b.top+b.bottom)/2;
+    g += txt(PADL, b.labelY+9, "MOOD");
+    g += line(PADL, cy, W-PADR, cy, "#EFEBE6", 1);
+    ws.forEach((w,i)=>{
+      if(!w.mood) return;
+      const c = MOOD[w.mood]||INK3, cx = xAt(i,n);
+      g += `<circle cx="${cx}" cy="${cy}" r="8" fill="${c}" fill-opacity=".16"/>`;
+      g += dot(cx,cy,4.4,c);
+    });
+  }
+
+  /* ---------- NIGGLES ---------- */
+  if(bands.niggles){
+    const b = bands.niggles, cy = (b.top+b.bottom)/2;
+    g += txt(PADL, b.labelY+9, "NIGGLES");
+    g += line(PADL, cy, W-PADR, cy, "#EFEBE6", 1);
+    const any = ws.some(w=>w.nig.length);
+    if(!any){
+      g += txt(W-PADR, b.labelY+9, "NOTHING FLAGGED", {anchor:"end"});
+    }
+    ws.forEach((w,i)=>{
+      if(!w.nig.length) return;
+      const cx = xAt(i,n);
+      g += ring(cx,cy,3.4,CORAL,1.7);
+      if(w.nig.length>1) g += txt(cx+7, cy+3, "×"+w.nig.length, {anchor:"start",fill:INK3,size:8});
+    });
+  }
+
+  /* ---------- MONTH AXIS ---------- */
+  let last="";
+  ws.forEach((w,i)=>{
+    if(w.m!==last){ g += txt(xAt(i,n), axisY+8, w.m.toUpperCase(), {anchor:"middle",fill:INK3,ls:1}); last=w.m; }
+  });
+
+  /* ---------- SCRUB CROSSHAIR ---------- */
+  if(scrub!=null && scrub>=0 && scrub<n){
+    const cx = xAt(scrub,n);
+    const top = 6, bot = axisY - 4;
+    g += line(cx, top, cx, bot, "rgba(26,24,21,.20)", 1);
+    g += dot(cx, top, 2.8, CORAL);
+  }
+
+  const svg = document.getElementById("chart");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("height", H);
+  svg.innerHTML = g;
+
+  renderReadout(); renderChips(); renderSub(); renderInsights();
+}
+
+/* ============================================================
+   READOUT · CHIPS · SUB-TOGGLE · INSIGHTS
+   ============================================================ */
+function renderReadout(){
+  const ws = win();
+  // Scrubbed week, else the most recent week with miles — same fallback as
+  // TrendsTabView.readoutWeek.
+  const i = (scrub!=null && scrub>=0 && scrub<ws.length)
+    ? scrub
+    : ws.reduce((acc,w,k)=> w.mi>0 ? k : acc, ws.length-1);
+  const w = ws[i];
+  // The week's sessions, in the order they happened. Minutes, not load
+  // units — a number the athlete can check against her own watch. The
+  // score drives dot size and nothing that gets printed.
+  const sessionNote = w.s.length
+    ? w.s.map(s=>{
+        const on = s[4] >= LOAD_FLOOR;
+        const body = `${esc(s[3])} <b>${esc(ZONE_LABEL[s[0]])}</b> ${paceStr(s[1])} `
+                   + `<span style="color:var(--ink-3)">${Math.round(s[2]/60)} min</span>`;
+        return on ? body : `<span style="color:var(--ink-3)">${body} below floor</span>`;
+      }).join(`<span style="color:var(--ink-3)"> · </span>`)
+    : `<span style="font-family:var(--font-body);font-style:italic;color:var(--ink-3);font-size:11.5px">No quality work</span>`;
+  const acwrWord = w.acwr>1.3 ? "Ramping" : w.acwr<0.8 ? "Easing" : "In zone";
+  const acwrCls  = w.acwr>1.3 ? " warn" : "";
+
+  const cells = [
+    `<div class="cell"><i>Volume</i><b>${w.mi}</b> mi <span style="color:var(--ink-3)">· ${w.q} quality</span></div>`,
+    `<div class="cell${acwrCls}"><i>Load ratio</i><b>${w.acwr.toFixed(2)}</b> ${acwrWord}</div>`,
+    w.hrv != null
+      ? `<div class="cell"><i>Recovery</i><b>${w.hrv>0?"+":""}${w.hrv}</b> ms · ${w.sleep.toFixed(1)} h · ${w.rest} rest</div>`
+      : `<div class="cell"><i>Recovery</i><span style="font-family:var(--font-body);font-style:italic;color:var(--ink-3);font-size:11.5px">Not connected</span></div>`,
+    `<div class="cell" style="grid-column:1 / -1"><i>Sessions</i>${sessionNote}</div>`,
+  ];
+
+  const moodCol = MOOD[w.mood]||INK3;
+  const pills = [
+    `<span class="moodpill" style="color:${moodCol};background:${moodCol}29">${esc(w.mood||"not logged")}</span>`,
+    ...w.nig.map(nn=>`<span class="nigpill">${esc(nn)}</span>`),
+  ];
+
+  document.getElementById("readout").innerHTML =
+      `<div class="hd"><span class="wk">Week of ${esc(w.d)}</span>`
+    + `<span class="hint">${scrub!=null?"scrubbing":"drag to scrub"}</span></div>`
+    + `<div class="grid">${cells.join("")}</div>`
+    + `<div class="row2">${pills.join("")}</div>`;
+}
+
+function renderChips(){
+  document.getElementById("chips").innerHTML = TRACKS.map(t=>
+    `<button class="chip${t.on?" on":""}" data-t="${t.key}">`
+    + `<i class="k" style="background:${t.on?t.sw:"#C9C2BA"}"></i>${esc(t.label)}</button>`
+  ).join("");
+}
+function renderSub(){
+  const rec = TRACKS.find(t=>t.key==="recovery");
+  document.getElementById("subwrap").innerHTML = rec.on
+    ? `<div class="subseg" id="subseg">`
+      + ["hrv","sleep","rest"].map(k=>`<button data-s="${k}" class="${recoveryMode===k?"on":""}">${k}</button>`).join("")
+      + `</div>` : "";
+}
+function renderInsights(){
+  const ws = win();
+  const spike = ws.filter(w=>w.acwr>1.3);
+  const nig   = ws.filter(w=>w.nig.length);
+  const ps    = ws.filter(w=>w.pace!=null);
+  const out = [];
+
+  if(spike.length){
+    const s = spike[spike.length-1];
+    out.push(`Load ratio hit <b>${s.acwr.toFixed(2)}</b> the week of ${esc(s.d)} — ${s.mi} miles against a ${Math.round(s.mi/s.acwr)}-mile four-week average. That's the steepest ramp in this window.`);
+  }
+  if(nig.length){
+    const parts = [...new Set(nig.flatMap(w=>w.nig))];
+    const lowHrv = nig.filter(w=>w.hrv!=null && w.hrv<=-5).length;
+    out.push(`${parts.map(esc).join(" and ")} mentioned in ${nig.length} of ${ws.length} weeks`
+      + (lowHrv ? `, ${lowHrv} of them in weeks HRV sat 5 ms or more below your baseline` : "")
+      + `. Surfaced from your own words, never diagnosed.`);
+  }
+  // Pace claims are made WITHIN a zone, never across. Comparing a 5K
+  // session to an MP session and calling the gap progress is the mistake
+  // the per-zone threads exist to prevent.
+  const byZone = {};
+  ws.forEach((w,i)=> w.kept.forEach(s=>{ (byZone[s[0]] ||= []).push({i, p:s[1], mi:w.mi}); }));
+  const best = Object.entries(byZone)
+    .filter(([,v])=>v.length>=3)
+    .sort((a,c)=>c[1].length-a[1].length)[0];
+  if(best){
+    const [z,v] = best;
+    const a=v[0], b=v[v.length-1], delta=a.p-b.p;
+    if(delta>0) out.push(`Your ${esc(ZONE_LABEL[z])} sessions went from <b>${paceStr(a.p)}</b> to <b>${paceStr(b.p)}</b> /mi across ${v.length} of them — ${delta} seconds faster at the same effort, while weekly volume climbed from ${a.mi} to ${b.mi} miles. Same zone throughout, so that's a like-for-like comparison.`);
+  }
+  const q = [...ws].reverse().find(w=>w.quote);
+  document.getElementById("insights").innerHTML =
+    out.map(t=>`<div class="insight"><div class="body">${t}</div></div>`).join("")
+    + (q ? `<div class="insight"><div class="quote">"${esc(q.quote)}"</div><div class="body-sm" style="margin-top:5px">${esc(q.d)}</div></div>` : "");
+}
+
+/* ============================================================
+   INTERACTION
+   ============================================================ */
+const wrap = document.getElementById("chartwrap");
+
+function pick(ev){
+  const r = wrap.getBoundingClientRect();
+  const ws = win();
+  const frac = (ev.clientX - r.left - (PADL/W)*r.width) / ((1-(PADL+PADR)/W)*r.width);
+  const i = Math.min(Math.max(Math.floor(frac*ws.length),0), ws.length-1);
+  if(i!==scrub){ scrub = i; render(); }
+}
+wrap.addEventListener("pointermove", pick);
+wrap.addEventListener("pointerdown", pick);
+wrap.addEventListener("pointerleave", ()=>{ scrub=null; render(); });
+
+document.getElementById("seg").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  range = +b.dataset.r; scrub = null;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on", c===b));
+  render();
+});
+document.getElementById("chips").addEventListener("click", e=>{
+  const b = e.target.closest(".chip"); if(!b) return;
+  const t = TRACKS.find(t=>t.key===b.dataset.t);
+  if(t.on && TRACKS.filter(x=>x.on).length===1) return;   // never zero tracks
+  t.on = !t.on; render();
+});
+document.getElementById("subwrap").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  recoveryMode = b.dataset.s; render();
+});
+
+function datasetNote(){
+  const rows = DATA, wks = rows.length;
+  const kept = rows.reduce((a,w)=>a+w.kept.length,0);
+  const drop = rows.reduce((a,w)=>a+w.dropped,0);
+  const days = new Set(); rows.forEach(w=>w.kept.forEach(s=>days.add(s[3])));
+  const fill = (kept/(wks*7)*100).toFixed(0);
+  document.getElementById("dsnote").innerHTML =
+    `<b>${kept}</b> qualifying sessions across <b>${wks}</b> weeks `
+  + `(${drop} below floor) &middot; <b>${days.size} of 7</b> weekdays used `
+  + `&middot; grid is <b>${fill}%</b> full`;
+}
+document.getElementById("dsseg").addEventListener("click", e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  DATA = b.dataset.ds === "real" ? DATA_REAL : DATA_SAMPLE;
+  [...e.currentTarget.children].forEach(c=>c.classList.toggle("on", c===b));
+  scrub = null;
+  // The recovery track has nothing to draw on the real dataset; don't
+  // leave it silently on and empty.
+  if(!hasRecovery()) TRACKS.find(t=>t.key==="recovery").on = false;
+  render(); datasetNote();
+});
+
+render(); datasetNote();
+</script>
+</body>
+</html>

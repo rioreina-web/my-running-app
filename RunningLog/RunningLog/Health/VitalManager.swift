@@ -15,9 +15,9 @@ import os
 final class VitalManager {
     static let shared = VitalManager()
 
-    private let baseURL = "https://api.sandbox.tryvital.io/v2"
+    private let baseURL = "https://api.sandbox.us.junction.com/v2"
     private let apiKey: String = Bundle.main.infoDictionary?["VITAL_API_KEY"] as? String ?? ""
-    private let userId: String = Bundle.main.infoDictionary?["VITAL_USER_ID"] as? String ?? ""
+    var userId: String = Bundle.main.infoDictionary?["VITAL_USER_ID"] as? String ?? ""
 
     var recentWorkouts: [RunningWorkout] = []
     var isAuthorized = true // Vital is always authorized once connected
@@ -360,15 +360,7 @@ final class VitalManager {
 
     // MARK: - Network
 
-    // NOTE: Vital integration stubbed out — trial ended 2026-04-14.
-    // All network calls short-circuit to nil so upstream callers get empty results
-    // without triggering 401s. HealthKit is the wearable source for V1.
-    // Replacement (Terra) planned for V1.1 — restore this function to re-enable.
-    private func vitalRequest(url _: String, timeout _: TimeInterval = 30) async -> Data? {
-        return nil
-    }
-
-    private func vitalRequest_DISABLED(url urlString: String, timeout: TimeInterval = 30) async -> Data? {
+    private func vitalRequest(url urlString: String, timeout: TimeInterval = 30) async -> Data? {
         guard let url = URL(string: urlString) else {
             Log.health.error("Vital: invalid URL: \(urlString)")
             return nil

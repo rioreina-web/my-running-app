@@ -148,14 +148,25 @@ struct VolumeDetailView: View {
         }
     }
 
+    /// Trimmed 2026-07-27 (Rio) to the parts the overlap above doesn't already
+    /// show. Three things came out:
+    ///
+    ///   • `DetailHead` "The build." — a second headline for what section 01
+    ///     already names.
+    ///   • `VolumeChart` — weekly bars with the 4-week average. The overlap's
+    ///     volume track is the same chart from the same `[TrendsWeek]`, so the
+    ///     section was stacking one on top of the other.
+    ///   • `flagBanner` "DATA CHECK · LOOKS OFF" — a maintenance chore with a
+    ///     Restore button. It belongs on the workout in Log, where it can be
+    ///     fixed in context; at the top of an analytics surface it only makes
+    ///     the numbers below it look untrustworthy before they're read.
+    ///
+    /// What's left is what the overlap can't say: the three totals, the
+    /// acute:chronic band, and the read. `flagBanner`, `flagRow` and the
+    /// `flagged`/`trimmed`/`onSetExcluded` inputs stay wired so restoring the
+    /// banner is a one-line change if it turns out to be needed elsewhere.
     @ViewBuilder private var detailContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-                DetailHead(eyebrow: "Training volume · \(weeks.count) weeks", title: "The build.")
-
-                if !flagged.isEmpty || !trimmed.isEmpty {
-                    flagBanner.padding(.top, 14)
-                }
-
                 HStack(spacing: 8) {
                     DripStatTile(
                         label: "This wk",
@@ -167,17 +178,6 @@ struct VolumeDetailView: View {
                     DripStatTile(label: "4-wk avg", value: fourWeekAvg, unit: "mpw")
                     DripStatTile(label: "Peak", value: peakMiles, unit: "mpw")
                 }
-                .padding(.top, 14)
-
-                TrackEyebrow(text: "Weekly volume + 4-wk average").padding(.top, 18).padding(.bottom, 6)
-                VolumeChart(weeks: weeks).frame(height: 168)
-
-                HStack(spacing: 14) {
-                    legendSwatch(Color.drip.paperDeep, "Easy miles")
-                    legendSwatch(Color.drip.textSecondary, "Quality miles")
-                    legendSwatch(Color.drip.textPrimary, "4-wk avg")
-                }
-                .padding(.top, 8)
 
                 TrackEyebrow(text: "Load balance · acute : chronic").padding(.top, 18).padding(.bottom, 6)
                 ACWRBar(value: acwr).frame(height: 48)
@@ -446,49 +446,28 @@ struct KeySessionsDetailView: View {
                     )
                     .padding(.top, 8)
                     WorkoutsAndRepsSection().padding(.top, 24)
-                } else if zonesInRange.isEmpty {
-                    // Low data: sessions exist but no zone has a pair yet.
-                    // Not an empty state — first marks on the page, told
-                    // editorially with real numbers, plus the invitation:
-                    // the newest dot and the dashed slot its pair would fill.
-                    // Spec: outputs/key-sessions-low-data-editorial-mockup-2026-07-02.html.
-                    lowDataHeader
-                    zoneTally.padding(.top, 16)
-                    if let newest = newestSession {
-                        InvitationChart(session: newest)
-                            .frame(height: 96)
-                            .padding(.top, 10)
-                        Text("The second dot draws the line. Rest excluded; hot days normalized.")
-                            .font(.dripBody(11).italic())
-                            .foregroundStyle(Color.drip.textTertiary)
-                            .padding(.top, 6)
-                    }
-                    sectionRule
-                    WorkoutsAndRepsSection()
                 } else {
-                    header
-                    chipRow.padding(.top, 16)
-                    SectionAChart(sessions: zoneSessions, selectedID: $selectedID)
-                        .frame(height: 178)
-                        .padding(.top, 6)
-                    if let s = selectedSession { tapReadout(s).padding(.top, 10) }
-                    if hasAdjusted {
-                        Text("○ = heat-adjusted · tap a dot for raw pace")
-                            .font(.dripBody(11).italic())
-                            .foregroundStyle(Color.drip.textTertiary)
-                            .padding(.top, 6)
-                    }
-
-                    sectionRule
-                    SectionBView(volume: volume, activeZone: activeZone)
-
-                    sectionRule
-                    SectionCView(
-                        sessions: zoneSessions,
-                        zoneLabel: activeZone.map(KeyZone.label) ?? "quality"
-                    )
-
-                    WorkoutsAndRepsSection().padding(.top, 22)
+                    // Cut 2026-07-27 (Rio): the three zone-filtered sections
+                    // that used to sit here are out of Trends.
+                    //
+                    //   A · "SAME EFFORT, FASTER?"  zone chips + pace line
+                    //   B · "THE WORK BEHIND IT"    stacked quality minutes
+                    //   C · "SAME PACE, CHEAPER"    average work-HR line
+                    //
+                    // Each drew a trend line from four or five points, so a
+                    // flat result read as "nothing happened" over a block that
+                    // plainly wasn't flat — and the five-blue stack in B isn't
+                    // legible at phone width. The honest version of this
+                    // question lives in the head-to-head comparison, which
+                    // sets two real sessions against each other instead of
+                    // fitting a line through too few.
+                    //
+                    // `SectionAChart`, `SectionBView`, `SectionCView`,
+                    // `InvitationChart` and their helpers below are now
+                    // unreferenced — left in place for one pass rather than
+                    // deleted, so this is trivially reversible. Sweep them
+                    // when the structure settles.
+                    WorkoutsAndRepsSection()
                 }
             }
     }
@@ -710,10 +689,10 @@ private struct InvitationChart: View {
             let slotX = size.width * 0.74
             let r: CGFloat = 4.6
 
-            // The real session.
+            // The real session — in its zone's pace blue (matches Section A/B).
             ctx.fill(
                 Path(ellipseIn: CGRect(x: dotX - r, y: y - r, width: r * 2, height: r * 2)),
-                with: .color(Color.drip.coral)
+                with: .color(SectionBView.color(session.zone, active: nil))
             )
             canvasLabel(ctx, paceString(session.effectivePaceSec),
                         at: CGPoint(x: dotX, y: y - 13), anchor: .center, color: Color.drip.textPrimary)
@@ -747,6 +726,11 @@ private struct SectionAChart: View {
     @Binding var selectedID: String?
 
     private let padL: CGFloat = 8, padR: CGFloat = 8, top: CGFloat = 26
+
+    /// The PaceSpectrum blue for this chart's (single) zone — the same mapping
+    /// the Section-B bars use, so the pace line and the work bars agree on color
+    /// (three-palette rule: pace is blue, never coral).
+    private var zoneColor: Color { SectionBView.color(sessions.first?.zone ?? "", active: nil) }
 
     var body: some View {
         GeometryReader { geo in
@@ -803,7 +787,7 @@ private struct SectionAChart: View {
             for (i, p) in pts.enumerated() {
                 if i == 0 { line.move(to: p.point) } else { line.addLine(to: p.point) }
             }
-            ctx.stroke(line, with: .color(Color.drip.coral.opacity(0.45)), lineWidth: 1.6)
+            ctx.stroke(line, with: .color(zoneColor.opacity(0.45)), lineWidth: 1.6)
         }
 
         // Dots: filled = ideal, hollow = heat-adjusted. Selected = larger ring.
@@ -812,9 +796,9 @@ private struct SectionAChart: View {
             let rect = CGRect(x: p.point.x - r, y: p.point.y - r, width: r * 2, height: r * 2)
             if p.session.isHeatAdjusted {
                 ctx.fill(Path(ellipseIn: rect), with: .color(Color.drip.background))
-                ctx.stroke(Path(ellipseIn: rect), with: .color(Color.drip.coral), lineWidth: 2)
+                ctx.stroke(Path(ellipseIn: rect), with: .color(zoneColor), lineWidth: 2)
             } else {
-                ctx.fill(Path(ellipseIn: rect), with: .color(Color.drip.coral))
+                ctx.fill(Path(ellipseIn: rect), with: .color(zoneColor))
             }
         }
 
@@ -836,11 +820,13 @@ private struct SectionAChart: View {
 
 // MARK: - Key sessions (Section B: the work behind it)
 
-/// Weekly time-at-quality-pace, stacked by work zone. The zone selected in
-/// Section A is drawn in coral (one accent per cluster); the rest are ink
-/// tones. Answers "am I accumulating work at these paces, or was that one
-/// hero session?" Easy/recovery volume is deliberately out — this is the
-/// sharp end only.
+/// Weekly time-at-quality-pace, stacked by work zone. Each zone carries its
+/// own PaceSpectrum blue — faster zones sit deeper toward navy — so the stack
+/// reads in the same "color == pace" language as every other pace surface
+/// (three-palette rule: pace is blue, never coral). When a zone is selected
+/// in Section A, the rest dim so focus reads through value, not hue. Answers
+/// "am I accumulating work at these paces, or was that one hero session?"
+/// Easy/recovery volume is deliberately out — this is the sharp end only.
 private struct SectionBView: View {
     let volume: [QualityVolumeWeek]
     let activeZone: String?
@@ -849,14 +835,31 @@ private struct SectionBView: View {
     private var shown: [QualityVolumeWeek] { Array(volume.suffix(8)) }
     private var hasAny: Bool { shown.contains { $0.total > 0 } }
 
-    /// Ink tone per zone; the active zone is coral, faster zones darker ink,
-    /// MP/HMP lighter. One coral accent per visual cluster (spec).
+    /// Work zones that actually appear in the shown weeks, fast → slow. Drives
+    /// the legend so it only names zones the athlete has real time in.
+    private var zonesPresent: [String] {
+        let present = Set(shown.flatMap { wk in wk.zoneSeconds.filter { $0.value > 0 }.keys })
+        return KeyZone.order.filter { present.contains($0) }
+    }
+
+    /// PaceSpectrum blue per work zone (pace == blue; faster == deeper navy).
+    /// When a zone is selected in Section A, the others dim to 40% so the
+    /// selection reads through value — coral stays out of pace surfaces.
     static func color(_ zone: String, active: String?) -> Color {
-        if zone == active { return Color.drip.coral }
+        let base: Color
         switch zone.lowercased() {
-        case "mile", "3k", "5k", "10k": return Color.drip.textSecondary
-        default: return Color.drip.textTertiary // hmp, mp
+        case "mile": base = PaceSpectrum.mile
+        case "3k":   base = PaceSpectrum.threeK
+        case "5k":   base = PaceSpectrum.fiveK
+        case "10k":  base = PaceSpectrum.tenK
+        case "hmp":  base = PaceSpectrum.hmp
+        case "mp":   base = PaceSpectrum.mp
+        default:     base = PaceSpectrum.steady
         }
+        if let active, zone.lowercased() != active.lowercased() {
+            return base.opacity(0.4)
+        }
+        return base
     }
 
     var body: some View {
@@ -884,16 +887,16 @@ private struct SectionBView: View {
 
     private var narrative: String {
         if let z = activeZone.map(KeyZone.label) {
-            return "Minutes at quality paces, by week. \(z) in coral. One hero session isn't a block — this is the accumulation."
+            return "Minutes at quality paces, by week. \(z) stands out; the rest dim back. One hero session isn't a block — this is the accumulation."
         }
-        return "Minutes at quality paces, by week."
+        return "Minutes at quality paces, by week. Faster paces read deeper."
     }
 
     private var legend: some View {
-        HStack(spacing: 14) {
-            if let z = activeZone.map(KeyZone.label) { swatch(Color.drip.coral, z) }
-            swatch(Color.drip.textSecondary, "5K–10K")
-            swatch(Color.drip.textTertiary, "MP · HMP")
+        HStack(spacing: 12) {
+            ForEach(zonesPresent, id: \.self) { z in
+                swatch(SectionBView.color(z, active: nil), KeyZone.label(z))
+            }
             Spacer(minLength: 0)
         }
     }
@@ -1039,6 +1042,149 @@ private struct SectionCChart: View {
             if let f = sessions.first { canvasLabel(ctx, f.dateLabel.uppercased(), at: CGPoint(x: padL, y: h - 4), anchor: .leading) }
             if sessions.count > 1, let l = sessions.last { canvasLabel(ctx, l.dateLabel.uppercased(), at: CGPoint(x: w - padR, y: h - 4), anchor: .trailing) }
         }
+    }
+}
+
+// MARK: - Recovery
+
+/// The recovery headline for the Trends "Recovery" section: how well the
+/// athlete is resting and what the body is saying, read off `athlete_state`
+/// (readiness + the load/recovery balance from `recovery_read`), with the mood
+/// ribbon and niggle swimlanes rendered below it in the tab.
+///
+/// Surface, never prescribe. Hard rule #2 forbids the AI telling the athlete to
+/// rest or push, and the niggles rule forbids interpreting body signals — so
+/// every line here is descriptive (a readiness number, a hard-session count, a
+/// count of active mentions), never advice or diagnosis.
+struct RecoveryReadView: View {
+    var readiness: Int?
+    var hardSessions28d: Int?
+    var avgDaysBetweenHard: Double?
+    var downWeek: Bool?
+    /// Distinct active/possible body-part mentions from athlete_state — a count
+    /// only, surfaced never diagnosed.
+    var bodySignalCount: Int = 0
+
+    /// When true, render bare (no ScrollView / nav chrome) so it expands INLINE
+    /// in the Trends tab. False = the standalone pushed screen. Matches the
+    /// other detail views.
+    var embedded: Bool = false
+
+    var body: some View {
+        if embedded {
+            detailContent
+        } else {
+            ScrollView { detailContent.padding(20) }
+                .background(detailBackground)
+                .navigationTitle("Trends")
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var hasData: Bool {
+        readiness != nil || hardSessions28d != nil || avgDaysBetweenHard != nil || downWeek == true
+    }
+
+    @ViewBuilder private var detailContent: some View {
+        if !hasData {
+            EmptyStateView(
+                variant: .dataPending,
+                eyebrow: "Recovery read pending",
+                title: "Log a few more sessions and your rest-and-load balance fills in here."
+            )
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                // Only tiles with data render, so a thin state never shows an
+                // em-dash placeholder (hard rule #8). At least one is present
+                // whenever `hasData`.
+                HStack(spacing: 8) {
+                    if let r = readiness {
+                        DripStatTile(
+                            label: "Readiness",
+                            value: "\(r)",
+                            unit: "/100",
+                            delta: readinessCaption,
+                            deltaTone: readinessTone
+                        )
+                    }
+                    if let h = hardSessions28d {
+                        DripStatTile(label: "Hard · 28d", value: "\(h)", unit: h == 1 ? "session" : "sessions")
+                    }
+                    if let a = avgDaysBetweenHard {
+                        DripStatTile(label: "Between hard", value: String(format: "%.1f", a), unit: "days avg")
+                    }
+                }
+
+                statusRow.padding(.top, 12)
+
+                InsightBlock(text: recoveryRead).padding(.top, 16)
+            }
+        }
+    }
+
+    // A quiet fact row: down-week (neutral chip) + body signals. Coral is the
+    // one alert in this cluster — design system's one-coral-per-cluster rule.
+    private var statusRow: some View {
+        HStack(spacing: 8) {
+            if downWeek == true {
+                chip("DOWN WEEK · PLANNED BACK-OFF", tone: .neutral)
+            }
+            if bodySignalCount > 0 {
+                chip("WATCHING · \(bodySignalCount) BODY \(bodySignalCount == 1 ? "SIGNAL" : "SIGNALS")", tone: .alert)
+            } else {
+                chip("BODY · ALL CLEAR", tone: .neutral)
+            }
+        }
+    }
+
+    private enum ChipTone { case neutral, alert }
+    private func chip(_ text: String, tone: ChipTone) -> some View {
+        let color = tone == .alert ? Color.drip.injured : Color.drip.textSecondary
+        return Text(text)
+            .font(.dripEyebrow(9)).tracking(0.8)
+            .foregroundStyle(color)
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(color.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    private var readinessTone: DripDeltaTone {
+        guard let r = readiness else { return .neutral }
+        return r < 50 ? .negative : .neutral
+    }
+
+    private var readinessCaption: String? {
+        guard let r = readiness else { return nil }
+        switch r {
+        case ..<50: return "RUNNING LOW"
+        case 50..<75: return "STEADY"
+        default: return "WELL RESTED"
+        }
+    }
+
+    // Descriptive read, numbers only, no prescription. Prose em-dash is fine
+    // (hard rule #8 bans em-dashes only as empty-state placeholders).
+    private var recoveryRead: String {
+        var s = ""
+        if let r = readiness {
+            s += "Readiness sits at \(r) out of 100. "
+        }
+        if let h = hardSessions28d {
+            s += "You've run \(h) hard \(h == 1 ? "session" : "sessions") in the last 28 days"
+            if let a = avgDaysBetweenHard {
+                s += ", about one every \(String(format: "%.1f", a)) days"
+            }
+            s += ". "
+        }
+        if downWeek == true {
+            s += "This week reads as a planned back-off. "
+        }
+        if bodySignalCount > 0 {
+            s += "\(bodySignalCount) body-part \(bodySignalCount == 1 ? "mention is" : "mentions are") active below — surfaced from your own words, never diagnosed."
+        } else {
+            s += "Nothing's stacking on the body right now."
+        }
+        return s
     }
 }
 

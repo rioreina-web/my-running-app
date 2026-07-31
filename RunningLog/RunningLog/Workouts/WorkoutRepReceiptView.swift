@@ -146,7 +146,7 @@ struct WorkoutRepReceiptView: View {
 
     /// Work-rep windows in stream time (cumulative lap durations), plus the
     /// rest lap that follows each — used for shading, per-rep cadence, recovery.
-    private struct RepSlot { let rep: Int; let lap: WorkoutLapRow; let start: Double; let end: Double; let restStart: Double?; let restEnd: Double? }
+    private struct RepSlot { let rep: Int; let lap: WorkoutLapRow; let start: Double; let end: Double; let restStart: Double?; let restEnd: Double?; let restLap: WorkoutLapRow? }
     private var slots: [RepSlot] {
         var out: [RepSlot] = []
         var t = 0.0
@@ -158,14 +158,29 @@ struct WorkoutRepReceiptView: View {
                 repNum += 1
                 // rest = next lap if it's a rest
                 var rs: Double? = nil, re: Double? = nil
+                var restLap: WorkoutLapRow? = nil
                 if i + 1 < orderedLaps.count, orderedLaps[i + 1].is_rest == true {
-                    rs = t + dur; re = rs! + Double(orderedLaps[i + 1].moving_time_seconds ?? 0)
+                    let rl = orderedLaps[i + 1]
+                    rs = t + dur; re = rs! + Double(rl.moving_time_seconds ?? 0)
+                    restLap = rl
                 }
-                out.append(RepSlot(rep: repNum, lap: lap, start: t, end: t + dur, restStart: rs, restEnd: re))
+                out.append(RepSlot(rep: repNum, lap: lap, start: t, end: t + dur, restStart: rs, restEnd: re, restLap: restLap))
             }
             t += dur
         }
         return out
+    }
+
+    /// The recovery segment's measured pace, shown as-is — a fartlek float or an
+    /// alternation's fast recovery is a real pace we must not suppress or
+    /// re-label. The only thing filtered is a lap that didn't meaningfully move
+    /// (a standing rest, whose "pace" is GPS-drift noise, not effort): pace must
+    /// be positive and the lap must cover ≥ 40 m. No effort/character is inferred.
+    private func recoveryPace(_ rest: WorkoutLapRow?) -> Double? {
+        guard let rest,
+              let p = rest.avg_pace_sec_per_mile, p > 0,
+              (rest.distance_meters ?? 0) >= 40 else { return nil }
+        return p
     }
 
     // MARK: Stream arrays (downsampled for drawing)
@@ -223,6 +238,10 @@ struct WorkoutRepReceiptView: View {
     // Cached once in `rebuildDerived()` — `perRepCadence` scans the full stream
     // per rep, so this must not re-run on every redraw.
     @State private var rrReps: [RRRep] = []
+    /// Every lap as its own split — warmup, work reps, recovery jogs and
+    /// cooldown, in order — so the hero chart is the WHOLE workout, not just
+    /// the reps. Cached because building it scans the altitude stream per lap.
+    @State private var allSplits: [RRRep] = []
     private var targetSec: Double {
         let p = reps.compactMap { $0.avg_pace_sec_per_mile }
         return p.isEmpty ? 330 : p.reduce(0, +) / Double(p.count)
@@ -520,15 +539,18 @@ struct WorkoutRepReceiptView: View {
             tweaksRow
 
             if hasReps {
-                RRRepBars(reps: rrReps, targetSec: targetSec, colorByZone: colorByZone,
+                // Bars + table both driven by EVERY lap (warmup → reps →
+                // recoveries → cooldown), compressed to fit the screen width.
+                RRRepBars(reps: allSplits, targetSec: targetSec, colorByZone: colorByZone,
                           colorByPace: colorByPace, heatOn: heatOn, km: km, zones: hrZones,
-                          recoveries: recoveries, showElev: showElev)
-                RepsTable(reps: rrReps, km: km, heatOn: heatOn)
+                          showElev: showElev, fitToWidth: true)
+                LapSplitsList(laps: orderedLaps, km: km, mpSec: targetSec)
                 repsFooterLine
             } else if !continuousSplits.isEmpty {
                 RRRepBars(reps: continuousSplits, targetSec: continuousAvgPaceSec,
                           colorByZone: colorByZone, colorByPace: colorByPace,
-                          heatOn: heatOn, km: km, zones: hrZones, showElev: showElev)
+                          heatOn: heatOn, km: km, zones: hrZones, showElev: showElev,
+                          fitToWidth: true)
                 RepsTable(reps: continuousSplits, km: km, heatOn: heatOn)
                 repsFooterLine
             }
@@ -562,7 +584,7 @@ struct WorkoutRepReceiptView: View {
             let parts: [String] = {
                 var p = ["\(hasReps ? "REP" : "SPLIT") AVG \(rr_pace(avg, km: km))"]
                 if !rests.isEmpty {
-                    p.append("RECOVERIES \(clock(rests.reduce(0, +) / rests.count)) JOG")
+                    p.append("RECOVERIES \(clock(rests.reduce(0, +) / rests.count)) AVG")
                 }
                 return p
             }()
@@ -1023,14 +1045,14 @@ struct WorkoutRepReceiptView: View {
         return labels.count <= 8 ? labels.joined(separator: "·") : "\(reps.count) reps"
     }
 
-    // MARK: Loading
-
     /// True when the athlete's OWN words (cleaned notes / voice) describe a
-    /// structured workout — the only thing that lets a run be shown as reps when
-    /// the watch didn't record lap structure. Conservative on purpose: a false
-    /// negative just shows honest mile splits, a false positive resurrects the
-    /// fabricated-rep bug. Auto-import notes ("Morning Run · Avg pace: 6:47/mi")
-    /// contain no structure keywords, so they read as continuous.
+    /// structured workout. This gates only the workout TITLE — it lets the
+    /// memo's stated pattern name a run even when the splits are the watch's
+    /// continuous mile/km splits. It NEVER supplies split geometry (those come
+    /// from the watch). Conservative on purpose: a false negative just drops the
+    /// title to the plain type, a false positive lets a described-but-unlapped
+    /// run keep its name. Auto-import notes ("Morning Run · Avg pace: 6:47/mi")
+    /// contain no structure keywords, so they read as unnamed.
     private func mentionsStructuredWorkout(_ text: String?) -> Bool {
         guard let t = text?.lowercased(), !t.isEmpty else { return false }
         // Rep notation the athlete would type/say: "8x800", "6 × 1k", "4x1mi".
@@ -1041,6 +1063,8 @@ struct WorkoutRepReceiptView: View {
         ]
         return keywords.contains { t.contains($0) }
     }
+
+    // MARK: Loading
 
     private func updateType(_ t: String) {
         workoutType = t
@@ -1088,8 +1112,35 @@ struct WorkoutRepReceiptView: View {
                 cad: perRepCadence(s),
                 restSec: (s.restStart != nil && s.restEnd != nil) ? Int(s.restEnd! - s.restStart!) : nil,
                 adjPaceSec: s.lap.heat_adjusted_pace_sec_per_mile,
-                durSec: s.lap.moving_time_seconds
+                durSec: s.lap.moving_time_seconds,
+                restPaceSec: recoveryPace(s.restLap),
+                restHR: s.restLap?.avg_heart_rate
             )
+        }
+
+        // Every lap as its own bar — warmup, work reps, recovery jogs and
+        // cooldown all present, so the chart shows the whole workout end to
+        // end. `restSec` is nil for every row (each lap is its own bar, so
+        // rest is a bar of its own, not a gap after a rep).
+        do {
+            var cum = 0.0
+            allSplits = orderedLaps.enumerated().map { i, lap in
+                let start = cum
+                let end = cum + Double(lap.moving_time_seconds ?? 0)
+                cum = end
+                return RRRep(
+                    id: i + 1,
+                    label: rr_repLabel(lap.distance_meters ?? 0),
+                    distMi: (lap.distance_meters ?? 0) / mpm,
+                    paceSec: lap.avg_pace_sec_per_mile ?? 0,
+                    hr: lap.avg_heart_rate,
+                    cad: nil,
+                    restSec: nil,
+                    adjPaceSec: lap.heat_adjusted_pace_sec_per_mile,
+                    durSec: lap.moving_time_seconds,
+                    elevFt: elevNetFt(start: start, end: end)
+                )
+            }
         }
 
         // Time in HR zone (O(n) over the HR stream).
@@ -1159,6 +1210,7 @@ struct WorkoutRepReceiptView: View {
         }
         guard let workoutId else { loaded = true; return }
         async let l = WorkoutLapsService.fetchLaps(workoutId: workoutId)
+        async let rolesFetch = WorkoutLapsService.fetchLapRoles(workoutId: workoutId)
         async let pr = WorkoutLapsService.fetchParsedReps(workoutId: workoutId)
         async let z = WorkoutLapsService.fetchZones()
         async let ins = WorkoutLapsService.fetchInsight(workoutId: workoutId)
@@ -1167,30 +1219,45 @@ struct WorkoutRepReceiptView: View {
         async let sum = WorkoutLapsService.fetchSummary(workoutId: workoutId)
         async let bundle = ExternalStreamAdapter.load(forTrainingLogId: workoutId)
 
-        let lapRows = await l
+        let rawLapRows = await l
+        let roleByIndex = await rolesFetch
+        // Source each lap's work/rest LABEL from the parser
+        // (parsed_structure.lap_roles) rather than the DB's generated `is_rest`
+        // column — that column flags any lap under 200m as rest, which hid real
+        // sub-200m reps (a 200m interval day showed 5 of 8). The parser's
+        // velocity bout-detection labels them honestly. Only the is_rest tag is
+        // rewritten; distance / pace / HR stay exactly as the watch recorded, and
+        // every lap is kept. When the workout hasn't been parsed yet the map is
+        // empty and we fall back to the stored `is_rest` unchanged.
+        let lapRows: [WorkoutLapRow] = roleByIndex.isEmpty ? rawLapRows : rawLapRows.map { row in
+            guard let idx = row.lap_index, let role = roleByIndex[idx] else { return row }
+            var r = row
+            r.is_rest = role != "rep"   // only a "rep" is work; warmup/recovery/cooldown are rest
+            return r
+        }
         let parsed = await pr
         let sumVal = await sum
         summary = sumVal
 
-        // Rep geometry precedence — structure comes from YOU or the WATCH, never
-        // from the parser guessing at GPS.
+        // Rep geometry precedence — the actual splits come from the WATCH (it
+        // records the laps) or from YOU (a hand-correction). The LLM parser
+        // never restructures splits the watch already recorded: it re-splits
+        // continuous reps and bleeds recovery into work bouts (see
+        // `mergeWorkBouts` note). It supplies geometry only when the watch
+        // didn't lap the run at all but you described a structured workout.
         //
-        //   1. A hand-correction always wins.
+        //   1. A hand-correction always wins — this is YOU.
         //   2. Uniform watch auto-laps → the watch's own recorded splits, as-is.
-        //   3. REAL structure — the watch recorded rest laps, OR you mentioned a
-        //      workout ("8×1K", "tempo") in your notes/voice — plus a parse that
-        //      found ≥2 reps → use the parse's cleaner geometry. When the parse
-        //      is thin, fall back to merging the watch's work bouts.
-        //   4. Otherwise (a single continuous lap, no mention) → CONTINUOUS. Show
-        //      stream mile/km splits and IGNORE parsed_structure entirely. This
-        //      is the fix for a long run with water-break pauses being sliced into
-        //      a fake "4×(2K/9mi/2400m/2mi) interval": a parsed_structure inferred
-        //      from GPS alone (its `intent_pattern` is the parser's own words, not
-        //      yours) never manufactures reps. Better an honest set of mile splits
-        //      than an invented workout.
+        //   3. The watch recorded rest laps → the watch's own laps, merged
+        //      deterministically (a rep auto-split every km/mile is re-joined,
+        //      rests pass through). This is the workout as recorded; the parser
+        //      is not consulted for the geometry.
+        //   4. Otherwise → CONTINUOUS. Stream mile/km splits from the watch.
+        //      The parser NEVER supplies split geometry from the voice memo:
+        //      if the watch didn't lap it, the honest record is the watch's
+        //      own splits, not reps reconstructed from what you said.
         let rawHasRests = lapRows.contains { $0.is_rest == true }
         let parsedWork = parsed.laps.filter { $0.is_rest != true }.count
-        let mentionedWorkout = mentionsStructuredWorkout(sumVal.quote)
         if parsed.edited && parsedWork >= 1 {
             laps = parsed.laps
             trustRestTags = true
@@ -1198,16 +1265,14 @@ struct WorkoutRepReceiptView: View {
             laps = lapRows
             trustRestTags = false
             isContinuous = true
-        } else if (rawHasRests || mentionedWorkout) && parsedWork >= 2 {
-            laps = parsed.laps
-            trustRestTags = true
-        } else if !lapRows.isEmpty && rawHasRests {
+        } else if rawHasRests {
+            // The watch lapped work + rest — that IS the workout's splits.
             laps = WorkoutLapsService.mergeWorkBouts(lapRows)
             trustRestTags = true
         } else {
-            // No recorded structure, no mention → continuous. `isContinuous`
-            // forces the whole-run / mile-split path (see `reps`), so a
-            // GPS-inferred parse can never render here.
+            // No recorded lap structure → continuous. `isContinuous` forces the
+            // whole-run / mile-split path (see `reps`), so the chart shows the
+            // watch's own splits and a voice-memo parse can never render here.
             laps = lapRows
             trustRestTags = rawHasRests
             isContinuous = true
@@ -1245,11 +1310,15 @@ struct WorkoutRepReceiptView: View {
             }
         }
 
-        // When the run is continuous, ignore parsed_structure.intent_pattern —
-        // it holds the parser's OWN description of a structure it invented from
-        // GPS ("4 work bouts with varying distances and paces"), not anything you
-        // stated. Only a real, structured workout gets to name itself.
-        parsedIntent = isContinuous ? nil : parsed.intentPattern
+        // The workout TITLE comes from your voice memo, even when the SPLITS
+        // are the watch's continuous mile/km splits — title and geometry are
+        // separate concerns. Keep the parser's stated pattern whenever your own
+        // words named a workout ("8×1K", "tempo"), OR the watch actually lapped
+        // it as intervals. Null it only for a plain continuous run you never
+        // described, so a GPS-invented pattern ("4 work bouts with varying
+        // distances and paces") can never name a run you didn't call a workout.
+        let memoNamedWorkout = mentionsStructuredWorkout(sumVal.quote)
+        parsedIntent = (memoNamedWorkout || !isContinuous) ? parsed.intentPattern : nil
         zones = await z; insight = await ins; workoutType = await ty
         var pre2 = await pre
         if let ip = parsedIntent, !ip.isEmpty { pre2.pattern = ip }
@@ -1353,10 +1422,11 @@ struct RepsTable: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text("REP").frame(width: 76, alignment: .leading)
+                Text("REP").frame(width: 64, alignment: .leading)
                 Spacer(minLength: 0)
-                Text("PACE").frame(width: 64, alignment: .trailing)
-                Text("HR").frame(width: 36, alignment: .trailing)
+                Text("TIME").frame(width: 56, alignment: .trailing)
+                Text("PACE").frame(width: 60, alignment: .trailing)
+                Text("HR").frame(width: 34, alignment: .trailing)
             }
             .font(.dripStat(9)).tracking(1.0)
             .foregroundStyle(Color.drip.textTertiary)
@@ -1365,31 +1435,90 @@ struct RepsTable: View {
             .overlay(Rectangle().fill(Color.drip.textPrimary).frame(height: 1), alignment: .bottom)
 
             ForEach(reps) { r in
-                let pace = heatOn ? (r.adjPaceSec ?? r.paceSec) : r.paceSec
-                HStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        zoneChip(r.id, paceSec: pace)
-                        Text(r.label)
-                            .font(.dripStat(11))
-                            .foregroundStyle(Color.drip.textSecondary)
-                    }
-                    .frame(width: 76, alignment: .leading)
-                    Spacer(minLength: 0)
-                    Text(rr_pace(pace, km: km))
-                        .font(.dripStat(14))
-                        .foregroundStyle(Color.drip.textPrimary)
-                        .frame(width: 64, alignment: .trailing)
-                    // No HR on this rep → the cell is simply blank, never an
-                    // em-dash.
-                    Text(r.hr.map(String.init) ?? "")
-                        .font(.dripStat(12))
-                        .foregroundStyle(Color.drip.textSecondary)
-                        .frame(width: 36, alignment: .trailing)
+                repRow(r)
+                // The recovery between reps is an interval too: render each one
+                // as its own subordinate row so the rest reads as part of the
+                // session, not just an averaged footer note.
+                if let rest = r.restSec, rest > 0 {
+                    recoveryRow(r)
                 }
-                .padding(.vertical, 10)
-                .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
             }
         }
+    }
+
+    private func repRow(_ r: RRRep) -> some View {
+        let pace = heatOn ? (r.adjPaceSec ?? r.paceSec) : r.paceSec
+        return HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                zoneChip(r.id, paceSec: pace)
+                Text(r.label)
+                    .font(.dripStat(11))
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
+            .frame(width: 64, alignment: .leading)
+            Spacer(minLength: 0)
+            Text(clockMS(splitSec(r)))
+                .font(.dripStat(13))
+                .foregroundStyle(Color.drip.textSecondary)
+                .frame(width: 56, alignment: .trailing)
+            Text(rr_pace(pace, km: km))
+                .font(.dripStat(14))
+                .foregroundStyle(Color.drip.textPrimary)
+                .frame(width: 60, alignment: .trailing)
+            // No HR on this rep → the cell is simply blank, never an em-dash.
+            Text(r.hr.map(String.init) ?? "")
+                .font(.dripStat(12))
+                .foregroundStyle(Color.drip.textSecondary)
+                .frame(width: 34, alignment: .trailing)
+        }
+        .padding(.vertical, 10)
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+    }
+
+    /// The recovery interval that follows a rep — visually subordinate to the
+    /// work reps (grey dot instead of a numbered chip, muted ink, tinted band).
+    /// Labelled neutrally as REC and left to its own numbers: a fartlek float or
+    /// an alternation's fast recovery is neither a "jog" nor a "rest", so we
+    /// never characterise it — duration always shows, pace/HR show as measured.
+    private func recoveryRow(_ r: RRRep) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(PaceZoneScale.recoveryGrey)
+                    .frame(width: 8, height: 8)
+                    .padding(.horizontal, 6)
+                Text("REC")
+                    .font(.dripStat(9)).tracking(1.0)
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            .frame(width: 64, alignment: .leading)
+            Spacer(minLength: 0)
+            Text(clockMS(r.restSec ?? 0))
+                .font(.dripStat(13))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(width: 56, alignment: .trailing)
+            Text(r.restPaceSec.map { rr_pace($0, km: km) } ?? "")
+                .font(.dripStat(12))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(width: 60, alignment: .trailing)
+            Text(r.restHR.map(String.init) ?? "")
+                .font(.dripStat(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(width: 34, alignment: .trailing)
+        }
+        .padding(.vertical, 7)
+        .background(PaceZoneScale.recoveryGrey.opacity(0.08))
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+    }
+
+    private func clockMS(_ s: Int) -> String {
+        s < 60 ? String(format: "0:%02d", s) : String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    /// Actual split time for the rep: the recorded lap duration when we have it,
+    /// else pace × distance. Never a guess about the effort — just the clock.
+    private func splitSec(_ r: RRRep) -> Int {
+        r.durSec ?? Int((r.paceSec * r.distMi).rounded())
     }
 
     /// Rep index in its pace-zone colour. The pale end of the ramp needs ink to

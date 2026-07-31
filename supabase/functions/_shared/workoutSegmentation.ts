@@ -22,15 +22,23 @@
 export const ZONE_WEIGHTS: Record<Zone, number> = {
   recovery: 1.0,
   easy: 1.0,
-  moderate: 1.5,
-  steady: 2.0,
+  moderate: 1.25,
+  steady: 1.5,
   mp: 2.5, // marathon pace
-  hmp: 3.0, // half-marathon / threshold / LT band
-  "10k": 3.5,
-  "5k": 4.0,
-  "3k": 4.5,
-  mile: 5.0, // VO2max+ repeats
+  hmp: 3.25, // half-marathon / threshold / LT band
+  "10k": 4.0,
+  "5k": 5.5, // (2026-07-30) steep top end — true speed rewarded heavily
+  "3k": 6.75, // between 5k and mile; not user-specified, sits on the line
+  mile: 8.0, // VO2max+ / neuromuscular — top anchor; faster extrapolates > 8
 };
+
+// Continuous intensity curve, anchored at these zones' athlete paces. `recovery`
+// is the only non-knot — anything slower than easy floors to 1.0. Every zone
+// from easy through mile is a knot, and a bout between two knots is weighted by
+// linear interpolation on its actual pace (reps faster than mile extrapolate).
+const WEIGHT_KNOT_ZONES: ReadonlySet<Zone> = new Set<Zone>([
+  "easy", "moderate", "steady", "mp", "hmp", "10k", "5k", "3k", "mile",
+]);
 
 export type Zone =
   | "mile"
@@ -147,6 +155,53 @@ export function paceToZone(paceSecPerMile: number, anchors: ZoneAnchor[]): Zone 
     if (paceSecPerMile <= cutoff) return cur.zone;
   }
   return "recovery";
+}
+
+/**
+ * Continuous intensity weight for an actual pace — the "easy → mile trajectory"
+ * as one curve rather than a step-table. We take the athlete's zone anchors as
+ * (pace, weight) knots (moderate…mile, from `ZONE_WEIGHTS`) and:
+ *   • interpolate linearly between the two bracketing knots, so a bout between
+ *     zones (a progression, a cruise between steady and MP) gets a weight that
+ *     reflects exactly where it fell;
+ *   • extrapolate ABOVE the mile knot for reps faster than mile pace, using the
+ *     slope of the top segment — so a 300m at true mile-crushing pace can score
+ *     past 6.0, on the same continuous scale;
+ *   • floor at the easy weight (1.0) for anything slower than easy (jogs, float
+ *     recoveries, warmups).
+ *
+ * `paceToZone` still owns the discrete LABEL + time-in-zone buckets; this owns
+ * the intensity number. Returns 1.0 when anchors are unavailable — never lie.
+ */
+export function paceWeight(paceSecPerMile: number, anchors: ZoneAnchor[]): number {
+  if (!isFinite(paceSecPerMile) || paceSecPerMile <= 0) return 1.0;
+  // Knots ascending by pace → index 0 is fastest (mile, top weight), last is
+  // easy (weight 1.0).
+  const knots = anchors
+    .filter((a) => WEIGHT_KNOT_ZONES.has(a.zone))
+    .map((a) => ({ pace: a.pace, w: ZONE_WEIGHTS[a.zone] }))
+    .sort((x, y) => x.pace - y.pace);
+  if (knots.length === 0) return 1.0;
+  if (knots.length === 1) return knots[0].w;
+
+  const fastest = knots[0];
+  const slowest = knots[knots.length - 1];
+  if (paceSecPerMile >= slowest.pace) return slowest.w; // slower than easy → floor
+  if (paceSecPerMile <= fastest.pace) {
+    // Faster than mile — extrapolate along the top segment (never below the
+    // mile weight, so a small timing wobble can't dip a mile rep).
+    const a = knots[0], b = knots[1];
+    const slope = (a.w - b.w) / (a.pace - b.pace); // Δweight per sec/mi
+    return Math.max(fastest.w, fastest.w + slope * (paceSecPerMile - fastest.pace));
+  }
+  for (let i = 0; i < knots.length - 1; i++) {
+    const a = knots[i], b = knots[i + 1];
+    if (paceSecPerMile >= a.pace && paceSecPerMile <= b.pace) {
+      const t = (paceSecPerMile - a.pace) / (b.pace - a.pace);
+      return a.w + t * (b.w - a.w);
+    }
+  }
+  return slowest.w;
 }
 
 // ── Lap & bout shapes ──
@@ -325,7 +380,12 @@ function finalize(
   for (const b of bouts) {
     totalSeconds += b.seconds;
     totalMeters += b.distanceMeters;
-    weightedSum += b.seconds * ZONE_WEIGHTS[b.zone];
+    // Weight by ACTUAL pace on the continuous easy→mile curve (extrapolates
+    // past mile). Falls back to the zone's knot weight when anchors are absent
+    // (the overall-only path, where every bout is "easy" anyway).
+    weightedSum += b.seconds * (anchors.length > 0
+      ? paceWeight(b.paceSecPerMile, anchors)
+      : ZONE_WEIGHTS[b.zone]);
     if (HARD_ZONES.has(b.zone)) hardSeconds += b.seconds;
     else if (THRESHOLD_ZONES.has(b.zone)) thresholdSeconds += b.seconds;
     else if (b.zone === "mp" || b.zone === "steady" || b.zone === "moderate") {

@@ -33,38 +33,42 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The four canonical tabs — the beta IA (Phase A of the design overhaul,
-/// see `outputs/beta-design-overhaul-plan-2026-07-13.md`):
-/// **Log · Trends · Train · Coach** — input → overview → detail → synthesis.
+/// The three canonical tabs — **Log · Trends · Train** — input →
+/// overview → detail.
 ///
 /// Raw values match the integer tags `MainTabView` uses for `selectedTab`
 /// (the bar binds to `Binding<Int>`, so tags stay stable across IA
-/// changes — `VoiceLogView` jumps to tag 2 (Coach) and `CoachReadView`
-/// to tag 1 (Train) and both still work). Trends keeps its historical
-/// non-contiguous tag 4 but is *declared* second so `allCases`
-/// (declaration order) renders it in the second slot.
+/// changes — `CoachReadView` jumps to tag 1 (Train) and still works).
+/// Trends keeps its historical non-contiguous tag 4 but is *declared*
+/// second so `allCases` (declaration order) renders it in the second slot.
 ///
 /// Retired in Phase A: `training2` (6, evaluation calendar — its
 /// treatments were absorbed into Train's CALENDAR mode), `signal`
 /// (5, pace-spectrum prototype — now pushed from Trends' GO DEEPER),
 /// and `plan` (3 — Plan folded into Train's CALENDAR mode; the plan is
 /// a subset of training, not its own destination).
+///
+/// Retired 2026-07-28: `coach` (2, The Read). `CoachReadView` stays in
+/// the repo, unlinked, so the surface can come back as its own tab or as
+/// a pushed screen without rebuilding it.
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
     case trends = 4
     case training = 1
-    case coach = 2
 
     var id: Int { rawValue }
 
     /// Display label. Rendered uppercase by the view; stored sentence-
     /// case here so future copy tweaks read naturally in source.
+    ///
+    /// Trends 2 (tag 5, `TrendsInsightsTabView`) was removed 2026-07-27 when
+    /// Trends was restructured into a single tab. The view file remains in the
+    /// repo, unlinked.
     var label: String {
         switch self {
         case .log: "Log"
         case .trends: "Trends"
         case .training: "Train"
-        case .coach: "Coach"
         }
     }
 
@@ -80,9 +84,9 @@ enum DripTab: Int, CaseIterable, Identifiable {
 /// Optional props:
 /// - `badged`: tabs that should display a 6pt coral notification dot.
 ///   Wire from your host based on whatever signal you want to surface
-///   (e.g. `coachViewModel.unreadCount > 0 ? [.coach] : []`).
+///   (e.g. `planViewModel.hasUnseenChanges ? [.training] : []`).
 /// - `disabled`: tabs that should render dimmed and reject taps. Useful
-///   for gating `.plan` until a plan exists, etc.
+///   for gating a tab until its data exists, etc.
 struct DripTabBar: View {
     @Binding var selected: Int
     var badged: Set<DripTab> = []
@@ -226,14 +230,14 @@ private struct DripTabPressStyle: ButtonStyle {
     PreviewHost(initial: 0)
 }
 
-#Preview("Coach selected") {
-    PreviewHost(initial: 2)
+#Preview("Train selected") {
+    PreviewHost(initial: 1)
 }
 
-#Preview("Coach badged, Trends disabled") {
+#Preview("Train badged, Trends disabled") {
     PreviewHost(
-        initial: 1,
-        badged: [.coach],
+        initial: 0,
+        badged: [.training],
         disabled: [.trends]
     )
 }
@@ -243,7 +247,7 @@ private struct DripTabPressStyle: ButtonStyle {
     // verify the 0pt home-indicator clearance case. `.previewDevice` is
     // deprecated under the #Preview macro, so the device choice lives
     // with the simulator selection instead of the source.
-    PreviewHost(initial: 2, badged: [.coach])
+    PreviewHost(initial: 1, badged: [.training])
 }
 
 /// Lightweight wrapper so each preview can own its own `selected` state.

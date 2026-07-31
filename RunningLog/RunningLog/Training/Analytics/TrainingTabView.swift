@@ -50,6 +50,10 @@ struct TrainingTabView: View {
         case current = "Current", calendar = "Calendar", history = "History"
     }
 
+    // The This-Week section can page back to prior weeks. 0 = current week,
+    // 1 = last week, and so on. Forward paging never goes past the current week.
+    @State private var weekOffset = 0
+
     enum TrainingRoute: Identifiable, Equatable {
         case editGoal
         case recompute
@@ -111,6 +115,9 @@ struct TrainingTabView: View {
                         EditorialRule().padding(.vertical, 22)
                         goals
                     case .history:
+                        // Week / Month / Block selector — drives Volume × Pace
+                        // and the other scope-aware history sections.
+                        scopeToggle
                         WorkoutsAndRepsSection()
                             .padding(.top, 20)
                         EditorialRule().padding(.vertical, 22)
@@ -730,17 +737,20 @@ struct TrainingTabView: View {
     /// readout inline, planned days ahead when a plan exists, rest days
     /// named. Closes with the athlete's own fatigue words, verbatim.
     private var currentWeekSection: some View {
-        let days = vm.dayVolumes()
-        let hot = vm.hotRunCount()
+        let start = vm.weekStart(weeksAgo: weekOffset)
+        let isCurrent = vm.isCurrentWeek(start)
+        let days = vm.dayVolumes(forWeekStart: start)
+        let hot = vm.hotRunCount(forWeekStart: start)
+        let total = vm.weekTotalMiles(forWeekStart: start)
         return section {
-            sectionHead("THIS WEEK",
-                        trailing: hot > 0 ? "\(hot) HOT RUN\(hot == 1 ? "" : "S")" : "")
+            weekNavHeader(start: start, isCurrent: isCurrent, hot: hot)
             VStack(spacing: 0) {
                 ForEach(days) { d in
                     dayRow(d)
                 }
+                weekTotalRow(total)
             }
-            if let note = vm.weekMoodObservation() {
+            if let note = vm.weekMoodObservation(forWeekStart: start) {
                 Text(note)
                     .font(.system(size: 13, design: .serif).italic())
                     .foregroundStyle(Color.drip.textSecondary)
@@ -750,9 +760,80 @@ struct TrainingTabView: View {
         }
     }
 
+    /// Header for the This-Week section with back/forward paging. Back always
+    /// works (older weeks); forward is disabled on the current week, since
+    /// there are no future weeks to show here.
+    private func weekNavHeader(start: Date, isCurrent: Bool, hot: Int) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { weekOffset += 1 }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Text(isCurrent ? "THIS WEEK" : Self.weekRangeLabel(start))
+                .font(.dripEyebrow(11)).tracking(1.3)
+                .foregroundStyle(Color.drip.textSecondary)
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { weekOffset = max(0, weekOffset - 1) }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isCurrent ? Color.drip.textTertiary.opacity(0.35)
+                                                : Color.drip.textSecondary)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isCurrent)
+
+            Spacer()
+
+            if hot > 0 {
+                Text("\(hot) HOT RUN\(hot == 1 ? "" : "S")")
+                    .font(.dripEyebrow(10)).tracking(1.2)
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+        }
+        .padding(.bottom, 14)
+    }
+
+    /// Weekly total mileage, shown as the closing row under the day list.
+    private func weekTotalRow(_ total: Double) -> some View {
+        HStack(spacing: 10) {
+            Text("TOTAL")
+                .font(.dripEyebrow(9.5)).tracking(0.8)
+                .foregroundStyle(Color.drip.textSecondary)
+                .frame(width: 40, alignment: .leading)
+            Spacer()
+            Text("\(vm.formatMiles(total)) mi")
+                .font(.dripDisplay(18))
+                .foregroundStyle(Color.drip.textPrimary)
+        }
+        .padding(.top, 14)
+    }
+
+    /// "MAY 12 – 18" (or "MAY 30 – JUN 5" across a month boundary) for a week.
+    private static func weekRangeLabel(_ start: Date) -> String {
+        var cal = Calendar(identifier: .iso8601)
+        cal.firstWeekday = 2
+        let end = cal.date(byAdding: .day, value: 6, to: start) ?? start
+        let startFmt = DateFormatter(); startFmt.dateFormat = "MMM d"
+        let sameMonth = cal.isDate(start, equalTo: end, toGranularity: .month)
+        let endFmt = DateFormatter(); endFmt.dateFormat = sameMonth ? "d" : "MMM d"
+        return "\(startFmt.string(from: start)) – \(endFmt.string(from: end))".uppercased()
+    }
+
     @ViewBuilder private func dayRow(_ d: DayVolume) -> some View {
         let all = vm.sessions(on: d.date)
-        let run = all.filter { $0.miles > 0 }.max(by: { $0.miles < $1.miles })
+        // Label + pace come from the day's KEY run; miles is the whole-day total
+        // (doubles summed), so a hard day doesn't read as its easy morning leg.
+        let run = vm.dominantSession(on: d.date)
+        let runCount = all.filter { $0.miles > 0 }.count
         let memo = all.first { $0.miles == 0 && ($0.pullQuote?.isEmpty == false) }
         let planned = planVM.allScheduledWorkouts.first {
             Calendar.current.isDate($0.date, inSameDayAs: d.date) && $0.workoutType != .rest
@@ -765,9 +846,14 @@ struct TrainingTabView: View {
                     HStack(spacing: 10) {
                         dayLabel(d.label, accent: isToday)
                         typeChip(run.typeLabel, bucket: run.bucket)
-                        Text("\(vm.formatMiles(run.miles)) mi")
+                        Text("\(vm.formatMiles(d.split.total)) mi")
                             .font(.dripDisplay(16))
                             .foregroundStyle(Color.drip.textPrimary)
+                        if runCount > 1 {
+                            Text("\(runCount) runs")
+                                .font(.dripStat(11))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
                         Spacer()
                         if let pace = run.pace, !pace.isEmpty {
                             Text(pace)

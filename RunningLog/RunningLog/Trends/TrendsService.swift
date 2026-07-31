@@ -23,6 +23,11 @@ final class TrendsService {
 
     /// Full window (up to 26 weeks), oldest → newest. The view slices this.
     private(set) var weeks: [TrendsWeek] = []
+    /// Dense daily substrate backing the Trends-v2 calendar (Month/Block
+    /// scales), oldest → newest, one entry per day through today. Rest days
+    /// included so the weekday grid needs no gap-filling. Shares the weekly
+    /// builder's math, so days can't drift from `weeks`.
+    private(set) var days: [TrendsDay] = []
     /// Per-quality-session work-bout paces backing Section A of the Key
     /// Sessions chart. Date-sorted (oldest → newest). Empty when the athlete
     /// has no rep-level laps in range — the view shows the empty state.
@@ -50,10 +55,12 @@ final class TrendsService {
     /// Preview / test seam — inject a fixed window without hitting the network.
     init(
         preview weeks: [TrendsWeek],
+        days: [TrendsDay] = [],
         keySessions: [KeySession] = [],
         keyVolume: [QualityVolumeWeek] = []
     ) {
         self.weeks = weeks
+        self.days = days
         self.keySessions = keySessions
         self.keyVolume = keyVolume
         self.loaded = true
@@ -70,6 +77,7 @@ final class TrendsService {
             let data = try await callEdgeFunction(name: "trends-timeline", body: ["weeks": 26])
             let payload = try JSONDecoder().decode(TrendsTimelinePayload.self, from: data)
             weeks = payload.weeks.map { $0.toModel() }
+            days = (payload.days ?? []).map { $0.toModel() }
             flagged = (payload.flagged ?? []).map { $0.toModel() }
             trimmed = (payload.trimmed ?? []).map { $0.toModel() }
             keySessions = (payload.qualitySessions ?? []).map { $0.toModel() }
@@ -110,6 +118,7 @@ final class TrendsService {
 /// nullable — an empty week carries no fabricated values.
 private struct TrendsTimelinePayload: Decodable {
     let weeks: [TrendsWeekDTO]
+    let days: [TrendsDayDTO]?
     let flagged: [FlaggedRunDTO]?
     let trimmed: [FlaggedRunDTO]?
     let qualitySessions: [KeySessionDTO]?
@@ -117,10 +126,42 @@ private struct TrendsTimelinePayload: Decodable {
     let fastSegments: FastSegmentsDTO?
 
     enum CodingKeys: String, CodingKey {
-        case weeks, flagged, trimmed
+        case weeks, days, flagged, trimmed
         case qualitySessions = "quality_sessions"
         case qualityVolume = "quality_volume"
         case fastSegments = "fast_segments"
+    }
+}
+
+/// One `days[]` entry from `trends-timeline`. `type` is the coarse session
+/// channel (key | long | easy | rest); an unknown token degrades to `rest`.
+/// `niggles` are verbatim with the raw `severity_hint` passed through.
+private struct TrendsDayDTO: Decodable {
+    let date: String
+    let miles: Double
+    let type: String
+    let mood: String?
+    let niggles: [DayNiggleDTO]
+
+    struct DayNiggleDTO: Decodable {
+        let area: String
+        let side: String?
+        let severity: String?
+        let quote: String
+
+        func toModel() -> TrendsDay.DayNiggle {
+            TrendsDay.DayNiggle(area: area, side: side, severity: severity, quote: quote)
+        }
+    }
+
+    func toModel() -> TrendsDay {
+        TrendsDay(
+            date: date,
+            miles: miles,
+            type: TrendsDay.SessionChannel(token: type),
+            mood: mood,
+            niggles: niggles.map { $0.toModel() }
+        )
     }
 }
 
@@ -155,6 +196,11 @@ private struct KeySessionDTO: Decodable {
     let workHrAvg: Int?
     let structure: String?
     let distanceMi: Double?
+    /// Optional: older payloads (and any deploy predating `qualityLoad.ts`)
+    /// omit it. A nil load never clears the key-session floor.
+    let qualityLoad: Double?
+    /// Optional: predates the long-run change. Absent → "quality".
+    let kind: String?
 
     enum CodingKeys: String, CodingKey {
         case date
@@ -166,6 +212,8 @@ private struct KeySessionDTO: Decodable {
         case workHrAvg = "work_hr_avg"
         case structure
         case distanceMi = "distance_mi"
+        case qualityLoad = "quality_load"
+        case kind
     }
 
     private static let monthAbbr = [
@@ -193,7 +241,9 @@ private struct KeySessionDTO: Decodable {
             heatCategory: heatCategory,
             workHrAvg: workHrAvg,
             structure: structure,
-            distanceMi: distanceMi
+            distanceMi: distanceMi,
+            qualityLoad: qualityLoad,
+            kind: kind ?? "quality"
         )
     }
 }
@@ -257,7 +307,8 @@ private struct TrendsWeekDTO: Decodable {
             keyPaceSec: keyPaceSec,
             mood: mood ?? "",          // "" = no mood; the chart skips the dot
             niggles: niggles,
-            voiceQuote: voiceQuote
+            voiceQuote: voiceQuote,
+            weekStart: weekStart
         )
     }
 }

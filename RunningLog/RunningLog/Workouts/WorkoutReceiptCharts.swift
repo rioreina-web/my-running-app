@@ -40,6 +40,11 @@ struct RRRep: Identifiable {
     let adjPaceSec: Double? // heat-adjusted pace, sec/mi (nil if none)
     var durSec: Int? = nil  // actual split time for this rep, seconds
     var elevFt: Int? = nil  // net elevation gain over the split, feet
+    // The recovery that FOLLOWS this rep, so the splits table can render it as
+    // its own interval row. `restSec` is its duration; these carry its pace and
+    // HR when the rest lap actually moved (a jog) — nil for a standing rest.
+    var restPaceSec: Double? = nil  // recovery jog pace, sec/mi
+    var restHR: Int? = nil          // avg HR during the recovery
 }
 
 /// A work-rep time window inside the stream, for shading the timelines.
@@ -159,6 +164,11 @@ struct RRRepBars: View {
     /// Elevation profile overlay toggle. (HR lives in its own HR & DRIFT
     /// section now, not on these bars.)
     var showElev = true
+    /// Compress the whole strip to fit the plot width instead of holding a
+    /// readable floor and scrolling. Width stays proportional to distance, so
+    /// short reps read as slivers next to a long warmup — the honest, whole-
+    /// workout picture on one screen.
+    var fitToWidth = false
 
     /// Tap-selected rep id; drives the readout + bar highlight.
     @State private var selected: Int?
@@ -210,14 +220,22 @@ struct RRRepBars: View {
                 let plotW = geo.size.width - yAxisW
 
                 // Pace axis (faster sits higher), rounded to clean gridlines.
-                let paces = reps.map(pace)
+                // Bracket the range to the WORK reps: recovery/warmup jogs run
+                // minutes/mile slower and would otherwise stretch the axis into
+                // a cluttered 30-min ladder. Slow laps still draw (clamped to a
+                // nub at the base) — they just don't drive the scale. Frames the
+                // fast cluster the way Strava does, with ~4 clean gridlines.
+                let allPaces = reps.map(pace)
+                let fastest = allPaces.min() ?? 240
+                let work = allPaces.filter { $0 <= fastest * 1.6 }
+                let paces = work.count >= 2 ? work : allPaces
                 let dataMin = paces.min() ?? 240
                 let dataMax = paces.max() ?? 300
                 let spread = max(dataMax - dataMin, 1)
-                let rawStep = (spread + 16) / 4.5
-                let step: Double = [15.0, 20, 30, 60].first { $0 >= rawStep } ?? 60
-                let axisMin = (max(dataMin - 6, 1) / step).rounded(.down) * step
-                let axisMax = ((dataMax + 10) / step).rounded(.up) * step
+                let rawStep = (spread + 12) / 4
+                let step: Double = [10.0, 15, 20, 30, 45, 60, 90, 120].first { $0 >= rawStep } ?? 120
+                let axisMin = (max(dataMin - 4, 1) / step).rounded(.down) * step
+                let axisMax = ((dataMax + 6) / step).rounded(.up) * step
                 let axisSpan = max(axisMax - axisMin, 1)
                 let ticks = stride(from: axisMin, through: axisMax + 0.5, by: step).map { $0 }
 
@@ -284,7 +302,9 @@ struct RRRepBars: View {
         let minDist = max(dist.min() ?? 0.0001, 0.0001)
         let fitScale = max(plotW - totalBase, 1) / CGFloat(sumUnits)
         let floor: CGFloat = 16
-        let scrolling = fitScale * CGFloat(minDist) < floor
+        // fitToWidth forces the whole strip onto the screen — never scroll,
+        // even when that pushes short reps below the readable floor.
+        let scrolling = fitToWidth ? false : (fitScale * CGFloat(minDist) < floor)
         let scale = scrolling ? floor / CGFloat(minDist) : fitScale
         var layout: [(x: CGFloat, w: CGFloat)] = []
         var x: CGFloat = 0

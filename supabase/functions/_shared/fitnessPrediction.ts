@@ -39,6 +39,11 @@ export interface WorkoutInput {
   durationMinutes: number;
   paceSecondsPerMile: number;
   type?: string;
+  /** User override (2026-07-24): the athlete corrected this mark — e.g. flagged
+   *  it as a duplicate import or "not a real session". When true it is dropped
+   *  from every fitness signal (anchor, volume, quality, endurance). The user's
+   *  correction always wins over auto-detection. */
+  userExcludedFromFitness?: boolean;
 }
 
 /** Conditions on a training_logs row (weather_actual: temp_f + dew_point_f). */
@@ -229,6 +234,31 @@ const RANGE_ITEM_MILES: Record<RaceType, number> = {
 };
 
 const METERS_PER_MILE = 1609.344;
+
+// ---------------------------------------------------------------------------
+// Long-run endurance readiness (2026-07-24 — v2 "honesty" redesign).
+// ---------------------------------------------------------------------------
+//
+// The marathon (and, more gently, the half) is a race-equivalence conversion
+// from 10K speed — which ASSUMES the athlete has built the long-run durability
+// to hold that pace over the distance. The prior guard keyed ONLY off weekly
+// mileage (max +6% below 40 mi/wk), so an athlete with high volume made up of
+// SHORT runs or doubles got zero endurance penalty and the marathon read off
+// pure speed. This shades the point estimate UP based on the athlete's LONGEST
+// recent long runs — the actual driver of marathon durability — with weekly
+// mileage kept only as a floor.
+//
+// Distance is the dominant signal; repeat-count is secondary. Calibrated
+// against a real athlete (~60 mi/wk, longest long run 17.8 mi once): the
+// factor shades a 2:27:42 equivalence to ~2:31, matching the athlete's honest
+// self-assessment. Mirrored 1:1 in FitnessPredictorService.swift (parity).
+const LONGRUN_READINESS_LOOKBACK_DAYS = 70;   // 10 weeks
+const LONGRUN_COUNT_MIN_MILES = 16.0;         // a run that counts toward durability
+export const MARA_READY_LONGRUN_MILES = 20.0; // a true 20-miler = marathon-ready distance
+export const MARA_READY_LONGRUN_COUNT = 3.0;  // ~3 runs ≥16mi = repeat durability
+export const MARA_MAX_ENDURANCE_PENALTY = 0.12; // shade at ZERO long-run base (the calibration dial)
+export const HALF_READY_LONGRUN_MILES = 15.0; // a 15-miler = half-ready distance
+export const HALF_MAX_ENDURANCE_PENALTY = 0.06; // halves need less durability than fulls
 
 // ---------------------------------------------------------------------------
 // Heat normalization (Part 2A — server-only multi-signal).
@@ -451,6 +481,10 @@ export interface DetectedRace {
    *  laps exist for it, the race pace is read as its flat-cool equivalent —
    *  per-lap grade (Minetti) + heat (dew-point composite) adjusted. */
   sourceWorkoutId?: string;
+  /** User override (2026-07-24): the athlete flagged this "race" mark as wrong
+   *  — a mislabeled training run, or a duplicate of another race. When true it
+   *  is removed from anchor selection and confidence entirely. */
+  userExcluded?: boolean;
 }
 
 /**
@@ -913,11 +947,151 @@ export function detectDetraining(
 // usable fitness signal (the caller must NOT write a fabricated snapshot).
 // ---------------------------------------------------------------------------
 
+// ── Workout-driven capacities (v3, 2026-07-24) ──────────────────────────────
+// Segment effort labels in production are coarse (`fast`/`steady`/`easy`), so
+// we separate THRESHOLD from VO2 by rep GEOMETRY: a sustained hard segment
+// (≥ THRESHOLD_MIN_SEG_MILES) is threshold/tempo work; short reps are VO2
+// (a later pillar). Heart-rate refinement (pace-at-HR) is a planned follow-on —
+// the segment carries avg HR in the DB but it isn't wired into the engine yet.
+const THRESHOLD_LOOKBACK_DAYS = 42;          // threshold fitness fades ~6 weeks
+const THRESHOLD_MIN_SEG_MILES = 0.8;         // a sustained rep, not a short VO2 rep
+const THRESHOLD_MIN_EVIDENCE_MILES = 2.0;    // need ≥2mi of sustained work to trust it
+const THRESHOLD_EFFORTS = new Set(["tempo", "threshold", "race_pace", "fast"]);
+export const THRESHOLD_TO_10K = 0.95;        // 10K pace ≈ 95% of sustained-threshold pace (tunable)
+
+export interface ThresholdSignal {
+  thresholdPaceSeconds: number; // sec/mi, distance-weighted sustained-work pace
+  equivalentTenKPace: number;   // sec/mi, 10K-equivalent of that threshold
+  evidenceMiles: number;        // qualifying sustained hard mileage in window
+  freshnessWeeks: number;       // weeks since the most recent qualifying session
+}
+
+/**
+ * Threshold capacity from the athlete's tempo/threshold TRAINING (2026-07-24).
+ * Scans the trailing ~6 weeks of pace-segments for SUSTAINED hard work (hard
+ * effort AND ≥ THRESHOLD_MIN_SEG_MILES per rep — which excludes short VO2
+ * reps), and distance-weights their pace into a threshold estimate + a
+ * 10K-equivalent. Pure + deterministic; mirrored in Swift. Returns null when
+ * there isn't enough sustained work to trust. This is the training-driven
+ * signal for the half/marathon, independent of any race.
+ */
+export function thresholdCapacity(voiceLogs: VoiceLogInput[], now: Date): ThresholdSignal | null {
+  const start = new Date(now.getTime() - THRESHOLD_LOOKBACK_DAYS * 86_400_000);
+  let sumPaceMiles = 0;
+  let miles = 0;
+  let mostRecent: Date | null = null;
+  for (const log of voiceLogs) {
+    const d = parseDay(log.date);
+    if (!d || d < start || d > now) continue;
+    for (const seg of log.paceSegments ?? []) {
+      if (!THRESHOLD_EFFORTS.has(seg.effort)) continue;
+      if (seg.distanceMiles < THRESHOLD_MIN_SEG_MILES) continue; // short rep → VO2, not threshold
+      const p = paceStringToSeconds(seg.pacePerMile);
+      if (!(p > 0)) continue;
+      sumPaceMiles += p * seg.distanceMiles;
+      miles += seg.distanceMiles;
+      if (!mostRecent || d > mostRecent) mostRecent = d;
+    }
+  }
+  if (miles < THRESHOLD_MIN_EVIDENCE_MILES || !mostRecent) return null;
+  const thresholdPace = sumPaceMiles / miles;
+  return {
+    thresholdPaceSeconds: Math.round(thresholdPace),
+    equivalentTenKPace: Math.round(thresholdPace * THRESHOLD_TO_10K),
+    evidenceMiles: Math.round(miles * 10) / 10,
+    freshnessWeeks: Math.round((daysBetween(mostRecent, now) / 7) * 10) / 10,
+  };
+}
+
+/**
+ * Long-run durability signal for endurance-aware race projection (2026-07-24).
+ * Scans the trailing ~10 weeks for the athlete's longest single run and how
+ * many runs cleared the durability threshold. Pure + deterministic; mirrored
+ * in Swift. `count16` counts runs ≥ LONGRUN_COUNT_MIN_MILES.
+ */
+/**
+ * Collapse duplicate race marks (2026-07-24). One real race often lands in the
+ * log 2–3 times: a Garmin/Strava double-import a day apart, or a training run
+ * auto-tagged "race". Entries of the SAME distance within `dayWindow` days and
+ * within `pctTol` on time are treated as the same physical event — we keep a
+ * single representative (prefer one with a confirmed source row, else the
+ * fastest) so it anchors once instead of inflating confidence as "multiple
+ * agreeing races". Genuinely distinct races (different day or clearly different
+ * time) are preserved. Purely deterministic; mirrored in Swift.
+ */
+export function dedupeRaces(races: DetectedRace[], dayWindow = 3, pctTol = 0.02): DetectedRace[] {
+  const kept: DetectedRace[] = [];
+  for (const r of races) {
+    const dupOf = kept.findIndex((k) => {
+      if (k.raceType !== r.raceType) return false;
+      const dk = parseDay(k.date), dr = parseDay(r.date);
+      if (!dk || !dr) return false;
+      const daysApart = Math.abs(daysBetween(dk, dr));
+      const pctApart = Math.abs(k.totalTimeSeconds - r.totalTimeSeconds) /
+        Math.max(k.totalTimeSeconds, 1);
+      return daysApart <= dayWindow && pctApart <= pctTol;
+    });
+    if (dupOf === -1) {
+      kept.push(r);
+      continue;
+    }
+    // Same event: keep the better representative (confirmed source, else faster).
+    const existing = kept[dupOf];
+    const rScore = (r.sourceWorkoutId ? 1 : 0);
+    const eScore = (existing.sourceWorkoutId ? 1 : 0);
+    if (rScore > eScore || (rScore === eScore && r.totalTimeSeconds < existing.totalTimeSeconds)) {
+      kept[dupOf] = r;
+    }
+  }
+  return kept;
+}
+
+export function longRunReadiness(
+  workouts: WorkoutInput[],
+  now: Date,
+): { longestMiles: number; count16: number } {
+  const lookbackStart = new Date(now.getTime() - LONGRUN_READINESS_LOOKBACK_DAYS * 86_400_000);
+  let longestMiles = 0;
+  let count16 = 0;
+  for (const w of workouts) {
+    const d = parseDay(w.date);
+    if (!d || d < lookbackStart || d > now) continue;
+    const mi = w.distanceMiles;
+    if (!(mi > 0)) continue;
+    if (mi > longestMiles) longestMiles = mi;
+    if (mi >= LONGRUN_COUNT_MIN_MILES) count16 += 1;
+  }
+  return { longestMiles, count16 };
+}
+
+/**
+ * Endurance shading factor (≥ 1.0) applied to a race-equivalence time.
+ * readiness = distanceWeight·(longest/readyMiles) + countWeight·(count16/readyCount),
+ * clamped to [0,1]; factor = 1 + maxPenalty·(1 − readiness). Distance-dominant.
+ */
+export function enduranceFactor(
+  longestMiles: number,
+  count16: number,
+  readyMiles: number,
+  readyCount: number,
+  maxPenalty: number,
+  distanceWeight = 0.9,
+): number {
+  const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+  const readiness =
+    distanceWeight * clamp01(longestMiles / readyMiles) +
+    (1 - distanceWeight) * clamp01(count16 / readyCount);
+  return 1.0 + maxPenalty * (1.0 - readiness);
+}
+
 export function generateFitnessPrediction(input: PredictionInput): FitnessPredictionResult | null {
   const now = input.now ?? new Date();
-  const workouts = input.workouts ?? [];
+  // User overrides win over auto-detection: a workout the athlete flagged as a
+  // bad/duplicate mark is removed before any signal is computed from it.
+  const workouts = (input.workouts ?? []).filter((w) => !w.userExcludedFromFitness);
   const voiceLogs = input.voiceLogs ?? [];
-  const extendedWorkouts = input.extendedWorkouts && input.extendedWorkouts.length > 0 ? input.extendedWorkouts : workouts;
+  const extendedWorkouts = (input.extendedWorkouts && input.extendedWorkouts.length > 0 ? input.extendedWorkouts : workouts)
+    .filter((w) => !w.userExcludedFromFitness);
   const extendedVoiceLogs = input.extendedVoiceLogs && input.extendedVoiceLogs.length > 0 ? input.extendedVoiceLogs : voiceLogs;
   const priorSnapshots = input.priorSnapshots ?? [];
   const plan = input.plan ?? null;
@@ -940,12 +1114,16 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   const detected = detectRaces(extendedWorkouts, extendedVoiceLogs);
   // Merge confirmed_races (deduped by raceType+date), preferring the detected
   // entry when both exist.
-  const detectedRaces = [...detected];
+  const mergedRaces = [...detected];
   for (const seed of input.seededRaces ?? []) {
-    if (!detectedRaces.some((r) => r.raceType === seed.raceType && r.date === seed.date)) {
-      detectedRaces.push(seed);
+    if (!mergedRaces.some((r) => r.raceType === seed.raceType && r.date === seed.date)) {
+      mergedRaces.push(seed);
     }
   }
+  // Honor user corrections first (drop marks flagged "not a race"/duplicate),
+  // then collapse remaining near-duplicate imports so one real race anchors
+  // once instead of triple-counting toward confidence (2026-07-24).
+  const detectedRaces = dedupeRaces(mergedRaces.filter((r) => !r.userExcluded));
 
   // Voice paces + structured interval paces (fallback path when no anchor).
   const voicePaces: number[] = [];
@@ -1491,15 +1669,44 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   const mileRiegel = tenKSeconds * 0.14434; // Riegel-1.06: (1 / 6.21371)^1.06
   const mileSeconds = hasSpeedEvidence ? mileVDOT : Math.round((mileVDOT + mileRiegel) / 2.0);
 
+  // ── Long-run endurance shading (2026-07-24, v2) ──
+  // The marathon/half equivalence assumes the athlete can HOLD the pace over
+  // the distance. Weekly mileage alone can't prove that (high volume from
+  // short runs doesn't build 26.2-mile durability), so we shade the point
+  // estimate up from the athlete's longest recent long runs. Weekly mileage
+  // is kept as a floor — the stronger of the two penalties wins. Skipped when
+  // the anchor is a demonstrated race at that distance or longer.
+  const { longestMiles: longestLongRun, count16: longRunCount16 } = longRunReadiness(extendedWorkouts, now);
+  const marathonEnduranceFactor = enduranceFactor(
+    longestLongRun,
+    longRunCount16,
+    MARA_READY_LONGRUN_MILES,
+    MARA_READY_LONGRUN_COUNT,
+    MARA_MAX_ENDURANCE_PENALTY,
+  );
+  const halfEnduranceFactor = enduranceFactor(
+    longestLongRun,
+    longRunCount16,
+    HALF_READY_LONGRUN_MILES,
+    MARA_READY_LONGRUN_COUNT,
+    HALF_MAX_ENDURANCE_PENALTY,
+  );
+
   let marathonSecondsD: number = raceTime("marathon");
   const marathonVolumeFactor = weeklyMiles >= 40.0 ? 1.0 : 1.0 + ((40.0 - Math.max(weeklyMiles, 0)) / 40.0) * 0.06;
   if (chosenRace?.raceType !== "marathon") {
-    marathonSecondsD *= marathonVolumeFactor;
+    // Stronger of the volume floor and the long-run endurance shade.
+    marathonSecondsD *= Math.max(marathonVolumeFactor, marathonEnduranceFactor);
   }
   const marathonSeconds = Math.round(marathonSecondsD);
 
   const fiveKSeconds = raceTime("fiveK");
-  const halfSeconds = raceTime("half");
+  let halfSecondsD: number = raceTime("half");
+  // A demonstrated half or marathon race anchor already proves the endurance.
+  if (chosenRace?.raceType !== "half" && chosenRace?.raceType !== "marathon") {
+    halfSecondsD *= halfEnduranceFactor;
+  }
+  const halfSeconds = Math.round(halfSecondsD);
 
   // ── Distance-aware ranges (2026-07-16, mirrors Swift) ──
   // A flat ±% per tier claimed the same certainty for a mile predicted off a

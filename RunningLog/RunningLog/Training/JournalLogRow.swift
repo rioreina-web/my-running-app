@@ -36,6 +36,13 @@ struct JournalLogRow: View {
         return f.string(from: entry.displayDate).uppercased()
     }
 
+    /// Headline: the athlete's own title when set, else the day-of-week. The
+    /// date still appears in the meta line below, so day context isn't lost
+    /// when a custom title takes the headline.
+    private var headlineText: String {
+        entry.displayTitle ?? dayOfWeekLabel
+    }
+
     private var dateLabel: String {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
@@ -147,9 +154,10 @@ struct JournalLogRow: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Headline row — day of week (★ marks a key session) + kind tag
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(dayOfWeekLabel)
+                    Text(headlineText)
                         .font(.dripDisplay(20))
                         .foregroundStyle(Color.drip.textPrimary)
+                        .lineLimit(1)
                     if isKeySession {
                         Image(systemName: "star.fill")
                             .font(.system(size: 10))

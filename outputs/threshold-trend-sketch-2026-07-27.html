@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Threshold work — trend sketch</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300..800&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{--paper:#F5F3F0;--card:#FFF;--elev:#FAFAF8;--rule:#E8E4E0;--deep:#E8E4DF;
+        --ink:#1A1815;--ink2:#6B6560;--ink3:#9B9590;--coral:#D4592A;
+        --fd:"Crimson Pro",Georgia,serif;--fb:"PT Serif",Georgia,serif;
+        --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);font-family:var(--fb);padding:30px 18px 70px;
+       line-height:1.55;-webkit-font-smoothing:antialiased}
+  .page{max-width:940px;margin:0 auto}
+  .strip{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+         color:var(--ink2);display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+  .strip .d{width:3px;height:3px;border-radius:99px;background:var(--coral)}
+  h1{font-family:var(--fd);font-weight:700;font-size:34px;line-height:1.06;margin:10px 0 8px}
+  .lede{font-size:14.5px;color:var(--ink2);max-width:600px}
+  .lede b{color:var(--ink);font-weight:700}
+  .layout{display:grid;grid-template-columns:406px 1fr;gap:26px;margin-top:28px;align-items:start}
+  @media(max-width:880px){.layout{grid-template-columns:1fr}}
+
+  /* phone */
+  .phone{width:406px;max-width:100%;background:var(--paper);border:1px solid var(--rule);
+         border-radius:22px;padding:16px 14px 10px;box-shadow:0 2px 12px rgba(0,0,0,.05)}
+  .eyebrow{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+  .band{font-family:var(--fm);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+        color:var(--ink3);margin-top:4px}
+  .headline{font-family:var(--fd);font-weight:700;font-size:23px;line-height:1.18;margin:9px 0 5px}
+  .sub{font-size:13px;color:var(--ink2);line-height:1.55}
+  .card{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:14px;margin-top:14px}
+  .card-t{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+  .card-s{font-size:11.5px;color:var(--ink2);margin:5px 0 11px;line-height:1.5}
+  svg{display:block;width:100%;height:auto}
+
+  /* matched pair */
+  .mp-head{display:flex;justify-content:flex-end;gap:0;margin-bottom:2px}
+  .mp-head span{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;color:var(--ink3);
+                width:74px;text-align:right}
+  .row{display:flex;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:none}
+  .row .lbl{flex:1}
+  .row .lbl b{font-size:13.5px;font-weight:400;display:block}
+  .row .lbl i{font-family:var(--fm);font-size:8px;letter-spacing:.05em;text-transform:uppercase;
+              color:var(--ink3);font-style:normal}
+  .row .v{font-family:var(--fm);font-size:14px;width:74px;text-align:right;font-variant-numeric:tabular-nums}
+  .v.win{font-weight:600;color:var(--ink)}
+  .v.lose{color:var(--ink3)}
+  .v.same{color:var(--ink2)}
+  .verdict{border-left:2px solid var(--coral);padding-left:12px;margin-top:14px}
+  .verdict .vh{font-family:var(--fm);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+               color:var(--ink2);margin-bottom:4px}
+  .verdict p{font-size:13px;font-style:italic;line-height:1.55}
+  .verdict p+p{margin-top:7px}
+  .foot{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+        color:var(--ink3);text-align:center;margin:14px 0 4px}
+
+  /* notes column */
+  .notes h2{font-family:var(--fd);font-weight:700;font-size:21px;margin:0 0 8px}
+  .note{margin-bottom:18px}
+  .note .nt{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+            color:var(--coral);margin-bottom:4px}
+  .note p{font-size:13.5px;color:var(--ink2);line-height:1.55}
+  .note p b{color:var(--ink);font-weight:700}
+  .gaps{background:var(--ink);color:#F5F3F0;border-radius:14px;padding:17px;margin-top:6px}
+  .gaps .gt{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+            color:rgba(245,243,240,.55);margin-bottom:9px}
+  .gaps p{font-size:12.5px;line-height:1.6;color:rgba(245,243,240,.82)}
+  .gaps p+p{margin-top:7px}
+  .gaps b{color:#FBFAF8}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="strip">POST RUN DRIP <span class="d"></span> TRENDS <span class="d"></span> THRESHOLD WORK <span class="d"></span> SKETCH ON REAL DATA</div>
+  <h1>One chart, four numbers,<br>one sentence.</h1>
+  <p class="lede">Your 17 threshold sessions from the database, March 31 to July 21. Volume is the only thing plotted, because inside a capped pace band it is the only thing that really moves. Pace, heart rate, drift and heat arrive as a <b>matched-pair read</b> against the last session of similar size.</p>
+
+  <div class="layout">
+    <div class="phone">
+      <div class="eyebrow">THRESHOLD WORK</div>
+      <div class="band">10K → 95% MP · 5:06–5:52 /MI</div>
+      <div class="headline">66 miles of threshold across 17 sessions.</div>
+      <div class="sub">About one a week since the end of March, averaging 3.9 miles of work each.</div>
+
+      <div class="card">
+        <div class="card-t">Work in the band</div>
+        <div class="card-s">Miles inside 5:06–5:52 per session. Taller is more threshold work; the gaps are weeks you did none.</div>
+        <div id="bars"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-t">Jul 21 vs Jul 8</div>
+        <div class="card-s">Your last two sessions of the same size — 6.0 miles of work each — so the numbers are comparable without any adjusting.</div>
+        <div class="mp-head"><span>JUL 21</span><span>JUL 8</span></div>
+        <div id="pairs"></div>
+        <div class="verdict">
+          <div class="vh">The read</div>
+          <p>Same six miles of work, same 166 average heart rate, but 13 seconds a mile slower and drifting a little more. Three degrees hotter, and the heat model says about 2 of those 13 seconds were the weather.</p>
+          <p>Against spring the picture is the other way up: on March 31 you ran this same session at 5:12 with a heart rate of 170. You are holding it now for four fewer beats.</p>
+        </div>
+      </div>
+      <div class="foot">17 sessions · Mar 31 – Jul 21 2026</div>
+    </div>
+
+    <div class="notes">
+      <h2>Why this shape</h2>
+
+      <div class="note">
+        <div class="nt">Why volume is the only thing plotted</div>
+        <p>Capping the band at both ends means pace can only travel about 40 seconds. It stops being the noisy variable. Volume runs <b>1.2 to 6.0 miles</b> across these sessions — a five-fold spread — so it is the thing with something to say, and the thing a runner can actually act on.</p>
+      </div>
+
+      <div class="note">
+        <div class="nt">Why matched pairs instead of a trend line</div>
+        <p>Comparing a 1.2-mile session to a 6-mile one tells you nothing, which is what broke every earlier version of this chart. Matching on volume first means pace, heart rate and drift are being read <b>like for like</b>, and no regression is needed to say it.</p>
+      </div>
+
+      <div class="note">
+        <div class="nt">Why heat sits beside the verdict, not in it</div>
+        <p>Heat cost runs from <b>0.1s at 54°F to 12s at 76°F</b> in your data, so it is real and it is worth naming. But it is a condition, not a performance, so it explains the number rather than scoring it.</p>
+      </div>
+
+      <div class="note">
+        <div class="nt">Where the good news actually is</div>
+        <p>Your two cleanest matched pairs both say the same thing. <b>Mar 31 → Jul 8</b>: same 6 miles, 3s slower, 4 beats lower, 8°F hotter. <b>Apr 4 → Jul 21</b>: same 6 miles, 6s slower, 3 beats lower, 7°F hotter. Slower in the heat at a materially lower cost is the shape of getting fitter through a summer.</p>
+      </div>
+
+      <div class="gaps">
+        <div class="gt">What this sketch cannot do yet</div>
+        <p><b>Drift needs three reps.</b> Two of the 17 sessions have too few, so that row would show an empty state rather than a number. Per hard rule #8, an empty-state component, not a dash.</p>
+        <p><b>Five June sessions have no weather at all</b>, so heat cost is genuinely unknown for them — not zero. The row has to say so.</p>
+        <p><b>Hills is only half available.</b> The laps table carries elevation gain (8 to 100 ft here) but no grade-adjusted pace, so hills can be reported as feet climbed but not as a seconds cost. That needs a <code>flat_pace_sec_per_mile</code> column alongside the heat-adjusted one you already have.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const INK='#1A1815',INK2='#6B6560',INK3='#9B9590',RULE='#E8E4E0',DEEP='#E8E4DF',CORAL='#D4592A';
+// REAL threshold-band sessions from running_workout_laps
+const S=[
+ {d:'2026-03-31',mi:5.98,pace:312,hr:170,dr:5,heat:5.2,t:68},
+ {d:'2026-04-04',mi:6.00,pace:322,hr:169,dr:5,heat:7.9,t:72},
+ {d:'2026-04-07',mi:2.89,pace:316,hr:165,dr:6,heat:0.1,t:54},
+ {d:'2026-04-12',mi:5.99,pace:317,hr:158,dr:0,heat:6.5,t:69},
+ {d:'2026-04-28',mi:3.81,pace:332,hr:165,dr:8,heat:12.0,t:76},
+ {d:'2026-05-05',mi:4.00,pace:321,hr:171,dr:9,heat:6.2,t:69},
+ {d:'2026-05-12',mi:1.95,pace:308,hr:171,dr:null,heat:4.6,t:66},
+ {d:'2026-05-15',mi:2.49,pace:332,hr:150,dr:7,heat:6.5,t:72},
+ {d:'2026-05-20',mi:5.59,pace:308,hr:168,dr:4,heat:5.7,t:67},
+ {d:'2026-05-28',mi:1.24,pace:347,hr:172,dr:null,heat:null,t:null},
+ {d:'2026-06-02',mi:1.86,pace:315,hr:173,dr:8,heat:null,t:null},
+ {d:'2026-06-09',mi:3.51,pace:327,hr:165,dr:5,heat:null,t:null},
+ {d:'2026-06-17',mi:4.97,pace:314,hr:169,dr:6,heat:null,t:null},
+ {d:'2026-06-23',mi:1.86,pace:324,hr:159,dr:18,heat:7.5,t:79},
+ {d:'2026-07-08',mi:6.01,pace:315,hr:166,dr:4,heat:5.6,t:76},
+ {d:'2026-07-14',mi:1.99,pace:310,hr:169,dr:10,heat:5.7,t:75},
+ {d:'2026-07-21',mi:6.00,pace:328,hr:166,dr:6,heat:8.0,t:79},
+];
+const pace=s=>`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+const mono=(x,y,t,{s=8,f:fill=INK3,a='start',w=500,ls='.06em'}={})=>
+ `<text x="${x}" y="${y}" font-family="ui-monospace,'SF Mono',Menlo,monospace" font-size="${s}" fill="${fill}" text-anchor="${a}" font-weight="${w}" letter-spacing="${ls}">${t}</text>`;
+
+// ---- volume bars, one per session, spaced by real date ----
+(function(){
+  const W=372,H=150,x0=26,x1=W-8,y0=12,y1=H-24;
+  const t0=new Date(S[0].d).getTime(), t1=new Date(S[S.length-1].d).getTime();
+  const X=d=>x0+((new Date(d).getTime()-t0)/(t1-t0))*(x1-x0-12)+6;
+  const MAX=6.5, Y=m=>y1-(m/MAX)*(y1-y0);
+  let g='';
+  [2,4,6].forEach(m=>{g+=`<line x1="${x0}" x2="${x1}" y1="${Y(m)}" y2="${Y(m)}" stroke="${RULE}" stroke-width="1"/>`;
+    g+=mono(x0-5,Y(m)+3,m,{a:'end',s:7.5});});
+  g+=mono(x0-22,y0-2,'MI OF WORK',{s:7.5,f:INK2,ls:'.1em'});
+  g+=`<line x1="${x0}" x2="${x1}" y1="${y1}" y2="${y1}" stroke="${INK3}" stroke-width="1"/>`;
+  S.forEach(s=>{
+    const hi=(s.d==='2026-07-21'||s.d==='2026-07-08');
+    const bw=9, x=X(s.d)-bw/2;
+    g+=`<rect x="${x}" y="${Y(s.mi)}" width="${bw}" height="${y1-Y(s.mi)}" rx="2.5" fill="${hi?INK:DEEP}"/>`;
+    if(hi) g+=`<rect x="${x}" y="${Y(s.mi)}" width="${bw}" height="${y1-Y(s.mi)}" rx="2.5" fill="none" stroke="${INK}" stroke-width="1"/>`;
+  });
+  // the pair being compared
+  const a=X('2026-07-08'), b=X('2026-07-21');
+  g+=`<line x1="${a}" x2="${b}" y1="${y0+2}" y2="${y0+2}" stroke="${INK}" stroke-width="1.2"/>`;
+  g+=mono((a+b)/2,y0-1,'MATCHED',{s:7,f:INK,a:'middle',w:700,ls:'.1em'});
+  ['APR','MAY','JUN','JUL'].forEach((m,i)=>{
+    const dd=['2026-04-01','2026-05-01','2026-06-01','2026-07-01'][i];
+    g+=mono(X(dd),y1+14,m,{a:'middle',s:7.5});});
+  document.getElementById('bars').innerHTML=
+   `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Threshold miles per session, March to July">${g}</svg>`;
+})();
+
+// ---- matched pair rows ----
+(function(){
+  const A=S.find(s=>s.d==='2026-07-21'), B=S.find(s=>s.d==='2026-07-08');
+  const rows=[
+   {l:'Work in band',h:'MILES AT 5:06–5:52',a:A.mi.toFixed(1),b:B.mi.toFixed(1),dir:0},
+   {l:'Pace',h:'AVERAGE OF THE WORK',a:pace(A.pace),b:pace(B.pace),dir:B.pace<A.pace?-1:1},
+   {l:'Avg HR',h:'ON THE FAST SEGMENTS',a:A.hr,b:B.hr,dir:0},
+   {l:'Aerobic drift',h:'LAST THIRD − FIRST THIRD',a:'+'+A.dr,b:'+'+B.dr,dir:B.dr<A.dr?-1:1},
+   {l:'Heat cost',h:'SECONDS THE WEATHER TOOK',a:'+'+A.heat.toFixed(1)+'s',b:'+'+B.heat.toFixed(1)+'s',dir:0},
+   {l:'Conditions',h:'FEELS-LIKE ON THE DAY',a:A.t+'°',b:B.t+'°',dir:0},
+  ];
+  document.getElementById('pairs').innerHTML=rows.map(r=>`
+   <div class="row">
+     <div class="lbl"><b>${r.l}</b><i>${r.h}</i></div>
+     <div class="v ${r.dir===1?'win':r.dir===-1?'lose':'same'}">${r.a}</div>
+     <div class="v ${r.dir===-1?'win':r.dir===1?'lose':'same'}">${r.b}</div>
+   </div>`).join('');
+})();
+</script>
+</body>
+</html>

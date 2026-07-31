@@ -7,6 +7,21 @@ struct InjuryListView: View {
     @State private var selectedInjury: Injury?
     @State private var showAddInjury = false
 
+    /// Opens the detail/edit sheet for an ache. Voice aches are first promoted
+    /// to a real injuries row (idempotent) so they are fully editable, just
+    /// like a manually-added injury.
+    private func openForEdit(_ entry: LivingLogEntry) {
+        if entry.isNiggle {
+            Task { @MainActor in
+                if let injury = await injuryService.promoteToInjury(entry) {
+                    selectedInjury = injury
+                }
+            }
+        } else {
+            selectedInjury = entry.injury
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.drip.background.ignoresSafeArea()
@@ -20,39 +35,43 @@ struct InjuryListView: View {
                     // Plate 28 — editorial header replaces the medical-banner
                     // banner. Disclaimer is folded into the header as a quiet
                     // italic-serif line; legal cover preserved, urgency dropped.
-                    InjuryHeader28(activeCount: injuryService.activeInjuries.count)
+                    InjuryHeader28(activeCount: injuryService.activeEntries.count)
                         .padding(.horizontal, 20)
 
-                    // Active injuries — editorial entries separated by rules
-                    if !injuryService.activeInjuries.isEmpty {
+                    // Active aches — unified: voice niggles (from body_mentions)
+                    // merged with formal injuries, deduped by body-part.
+                    if !injuryService.activeEntries.isEmpty {
                         EditorialRule()
                             .padding(.horizontal, 20)
 
-                        ForEach(Array(injuryService.activeInjuries.enumerated()), id: \.element.id) { idx, injury in
+                        ForEach(Array(injuryService.activeEntries.enumerated()), id: \.element.id) { idx, entry in
                             InjuryEntry28(
-                                injury: injury,
-                                // mentionsCount / avgVolume / avgLoad / trend /
-                                // mentionDotIndices / lastQuote: deferred until
-                                // the injury_mentions backend table lands. For
-                                // now the row falls back to dashes (cells stay,
-                                // dots/quote sections hide). lastQuote uses the
-                                // existing description field as a stand-in so
-                                // the quote block doesn't go silent on day one.
-                                lastQuote: injury.description,
-                                onViewDetail: { selectedInjury = injury },
-                                onUpdate:     { selectedInjury = injury },
+                                injury: entry.injury,
+                                mentionsCount: entry.mentionsCount,
+                                avgVolumeMiles: entry.avgVolumeMiles,
+                                avgLoad: entry.avgLoad,
+                                trendLabel: entry.trend.flatMap { InjuryEntry28.TrendLabel(rawValue: $0.rawValue) },
+                                mentionDotIndices: entry.mentionDotIndices,
+                                lastQuote: entry.lastQuote,
+                                severityWord: entry.severityWord,
+                                // Voice aches are promoted to a real injuries row on
+                                // first open, then edited via the same sheet as manual
+                                // injuries (idempotent — no duplicate rows created).
+                                onViewDetail: { openForEdit(entry) },
+                                onUpdate:     { openForEdit(entry) },
                                 onMarkResolved: {
                                     Task {
-                                        _ = await injuryService.updateInjury(
-                                            id: injury.id,
-                                            status: .resolved
-                                        )
+                                        if entry.isNiggle {
+                                            _ = await injuryService.resolveNiggle(bodyArea: entry.bodyArea, side: entry.side)
+                                        } else {
+                                            _ = await injuryService.updateInjury(id: entry.injury.id, status: .resolved)
+                                        }
                                     }
                                 }
                             )
                             .padding(.horizontal, 20)
 
-                            if idx < injuryService.activeInjuries.count - 1 {
+                            if idx < injuryService.activeEntries.count - 1 {
                                 EditorialRule()
                                     .padding(.horizontal, 20)
                             }
@@ -62,17 +81,17 @@ struct InjuryListView: View {
                     // Resolved injuries — keep existing collapsed-section
                     // pattern for now. Editorial restyle is a follow-up; the
                     // pressing redesign was the active list.
-                    if !injuryService.resolvedInjuries.isEmpty {
+                    if !injuryService.resolvedEntries.isEmpty {
                         EditorialRule()
                             .padding(.horizontal, 20)
                         ResolvedInjuriesSection(
-                            injuries: injuryService.resolvedInjuries,
+                            injuries: injuryService.resolvedEntries.map(\.injury),
                             onSelect: { selectedInjury = $0 }
                         )
                     }
 
                     // Empty state — quieter, editorial. No big icon.
-                    if injuryService.injuries.isEmpty && !injuryService.isLoading {
+                    if injuryService.isEmpty && !injuryService.isLoading {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("No aches tracked.")
                                 .font(.dripDisplay(20))
@@ -134,7 +153,7 @@ struct InjuryListView: View {
         .toolbarBackground(Color.drip.background, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .onAppear {
-            Task { await injuryService.fetchInjuries() }
+            Task { await injuryService.fetchAll() }
         }
         .sheet(item: $selectedInjury) { injury in
             InjuryDetailSheet(injury: injury, injuryService: injuryService)

@@ -1,0 +1,1978 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendar — month view prototype</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06); --shadow-press:0 1px 2px rgba(0,0,0,.04);
+  --ease-out:cubic-bezier(0.2,0.7,0.2,1);
+  /* THE PACE SPECTRUM · Easy (pale sky) → Mile (navy) · one blue hue */
+  --z-easy:#93B9D6; --z-mod:#74A8CC; --z-steady:#578FC0; --z-mp:#3F7CB5; --z-hmp:#2F66A8;
+  --z-lt:#27549B; --z-10k:#20448B; --z-5k:#1A3679; --z-3k:#142964; --z-mile:#0E1D4E;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:40px 24px 80px}
+
+/* ---------- page chrome (prototype only, not part of the app) ---------- */
+.page-head{max-width:1120px;margin:0 auto 26px}
+.page-head .kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);margin-bottom:10px}
+.page-head h1{font-family:var(--font-display);font-weight:700;font-size:32px;letter-spacing:-.01em;margin-bottom:10px}
+.page-head p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:820px}
+.page-head p b{color:var(--ink)}
+.layout{display:flex;gap:44px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1120px;margin:0 auto}
+.notes{width:340px;max-width:100%}
+.notes h3{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);margin:24px 0 8px}
+.notes h3:first-child{margin-top:0}
+.notes p{font-size:13.5px;line-height:1.6;color:var(--ink-2);margin-bottom:9px}
+.notes p b{color:var(--ink)}
+.notes code{font-family:var(--font-mono);font-size:11.5px;background:rgba(0,0,0,.05);padding:1px 4px;border-radius:3px}
+.notes ul{margin:0 0 9px 16px}
+.notes li{font-size:13.5px;line-height:1.6;color:var(--ink-2);margin-bottom:5px}
+.notes li b{color:var(--ink)}
+
+.dsbar{max-width:1120px;margin:0 auto 24px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:#EDE9E3;border:1px solid #D8D3CC;border-radius:12px;padding:11px 14px}
+.dslabel{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.dsseg{display:inline-flex;background:#DFDAD3;border-radius:9px;padding:3px;gap:3px}
+.dsseg button{font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--ink-2);background:transparent;
+  border:0;padding:6px 13px;border-radius:7px;cursor:pointer}
+.dsseg button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:var(--shadow-press)}
+.dsnote{font-size:13px;color:var(--ink-2);flex:1;min-width:260px}
+.dsnote b{color:var(--ink)}
+
+/* pace spectrum legend (shown only in pace mode) */
+.spectrum{margin-top:12px}
+.spectrum .sbar{height:9px;border-radius:3px;display:flex;overflow:hidden}
+.spectrum .sbar span{flex:1}
+.spectrum .sticks{display:flex;justify-content:space-between;margin-top:5px;
+  font-family:var(--font-mono);font-size:8px;letter-spacing:.08em;color:var(--ink-3)}
+
+/* time in zone strip */
+.tiz{display:flex;height:14px;border-radius:3px;overflow:hidden;margin-top:10px}
+.tiz span{display:block}
+.tizlbl{display:flex;flex-wrap:wrap;gap:3px 10px;margin-top:6px;font-family:var(--font-mono);
+  font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tizlbl i{display:inline-block;width:6px;height:6px;border-radius:1px;margin-right:4px;vertical-align:middle}
+
+/* ---------- iOS frame ---------- */
+.phone{width:390px;height:844px;background:var(--paper);border-radius:44px;position:relative;overflow:hidden;
+  box-shadow:0 0 0 11px #14120F,0 0 0 13px #2E2A26,0 26px 60px rgba(0,0,0,.34);flex:0 0 auto}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;
+  padding:14px 28px 4px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen{position:absolute;inset:0;top:0;display:flex;flex-direction:column;padding-top:36px}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 20px 18px;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+
+/* ---------- shared type ---------- */
+.eyebrow{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display-xl{font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1;letter-spacing:-.015em}
+.display-m{font-family:var(--font-display);font-weight:700;font-size:23px;line-height:1.06;letter-spacing:-.01em}
+.display-s{font-family:var(--font-display);font-weight:700;font-size:17px;line-height:1.1}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.quote{font-family:var(--font-body);font-style:italic;font-size:13.5px;line-height:1.5;color:var(--ink)}
+.bodysm{font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.hair{height:1px;background:var(--rule)}
+
+/* ---------- plate strip ---------- */
+.plate{display:flex;justify-content:space-between;padding:2px 20px 12px;font-family:var(--font-mono);
+  font-size:9.5px;letter-spacing:.14em;color:var(--ink-3);text-transform:uppercase}
+
+/* ---------- month header ---------- */
+.mhead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding-bottom:2px}
+.mnav{display:flex;gap:4px;padding-bottom:5px}
+.mnav button{width:29px;height:29px;border-radius:999px;border:1px solid var(--rule);background:transparent;
+  color:var(--ink-2);font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .15s var(--ease-out)}
+.mnav button:hover:not(:disabled){background:var(--coral);border-color:var(--coral);color:#fff}
+.mnav button:disabled{opacity:.28;cursor:default}
+.mblock{margin-top:3px}
+
+/* ---------- summary stat row ---------- */
+.sumrow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin:13px 0 0}
+.stat{background:var(--paper);padding:9px 2px 8px;display:flex;flex-direction:column;gap:4px;align-items:flex-start;
+  cursor:pointer;border:0;text-align:left;transition:background .15s var(--ease-out);position:relative}
+.stat:hover{background:var(--paper-deep)}
+.stat .slbl{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.stat .sval{font-family:var(--font-mono);font-weight:600;font-size:19px;color:var(--ink);line-height:1;display:flex;align-items:baseline;gap:2px}
+.stat .sunit{font-family:var(--font-mono);font-size:8.5px;color:var(--ink-3);font-weight:600}
+.moodbars{display:flex;gap:2px;align-items:flex-end;height:14px}
+.moodbars i{width:5px;border-radius:1px;display:block}
+
+/* ---------- calendar grid ---------- */
+.gridwrap{margin-top:16px}
+.dowrow{display:grid;grid-template-columns:repeat(7,1fr) 42px;gap:2px;margin-bottom:5px}
+.dowrow span{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.08em;color:var(--ink-3);text-align:center;text-transform:uppercase}
+.dowrow span.wk{color:var(--coral);letter-spacing:.1em}
+.weekrow{display:grid;grid-template-columns:repeat(7,1fr) 42px;gap:2px;margin-bottom:2px}
+
+.cell{position:relative;height:62px;border:0;padding:0;background:transparent;cursor:pointer;
+  border-radius:5px;overflow:hidden;transition:opacity .2s var(--ease-out),background .15s var(--ease-out);
+  display:block;font:inherit;color:inherit;-webkit-tap-highlight-color:transparent}
+.cell.weekend{background:rgba(232,228,223,.55)}
+.cell:hover{background:var(--paper-deep)}
+.cell.out{opacity:.3}
+.cell.dim{opacity:.16}
+.cell.future{opacity:.42}
+.cell .dnum{position:absolute;top:4px;left:5px;font-family:var(--font-mono);font-size:9px;font-weight:500;
+  color:var(--ink-3);letter-spacing:-.01em;z-index:2}
+.cell.hastoday .dnum{color:var(--coral);font-weight:700}
+.cell .bars{position:absolute;left:0;right:0;bottom:5px;height:41px;display:flex;flex-direction:column-reverse;
+  align-items:center;justify-content:flex-start;gap:1.5px}
+.cell .bars i{width:17px;display:block;border-radius:1.5px;min-height:2px}
+.cell .restdash{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:9px;height:1.5px;
+  background:var(--ink-3);opacity:.4;border-radius:1px}
+.cell .moodstrip{position:absolute;left:0;right:0;bottom:0;height:3.5px}
+.cell .nig{position:absolute;left:0;top:0;bottom:3.5px;width:2.5px;background:var(--mood-injured);
+  border-radius:0 2px 2px 0}
+.cell .keydot{position:absolute;top:4px;right:5px;width:4px;height:4px;border-radius:999px;background:var(--coral);z-index:2}
+.cell.hastoday{box-shadow:inset 0 0 0 1.5px var(--coral)}
+.cell.sel{box-shadow:inset 0 0 0 1.5px var(--ink)}
+
+/* week rail */
+.wkcell{position:relative;background:var(--paper-deep);border-radius:5px;border:0;cursor:pointer;padding:6px 4px 5px;
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;height:62px;
+  transition:background .15s var(--ease-out);font:inherit;color:inherit;-webkit-tap-highlight-color:transparent}
+.wkcell:hover{background:#DED8D1}
+.wkcell .wkm{font-family:var(--font-mono);font-weight:600;font-size:12.5px;color:var(--ink);line-height:1;font-variant-numeric:tabular-nums}
+.wkcell .wku{font-family:var(--font-mono);font-size:7px;color:var(--ink-3);letter-spacing:.08em;margin-top:2px}
+.wkcell .wkbarwrap{width:100%;height:4px;background:rgba(0,0,0,.07);border-radius:2px;overflow:hidden;margin-top:auto}
+.wkcell .wkbar{height:100%;border-radius:2px;background:var(--ink-2)}
+.wkcell .wkbar.hot{background:var(--coral)}
+.wkcell .wkbar.down{background:var(--ink-3)}
+.wkcell .wkmood{width:100%;height:3px;border-radius:2px;margin-top:3px}
+.wkcell.partial{opacity:.4}
+
+/* ---------- lens chips ---------- */
+.lens{display:flex;flex-wrap:wrap;gap:5px;margin-top:14px}
+.chip{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;
+  padding:5px 9px;border-radius:999px;border:1px solid var(--rule);background:transparent;color:var(--ink-2);
+  cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s var(--ease-out)}
+.chip:hover{border-color:var(--ink-3);color:var(--ink)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.chip .sw{width:7px;height:7px;border-radius:2px;display:block}
+.chip .ct{opacity:.55;font-size:8.5px}
+
+/* ---------- month story ---------- */
+.story{margin-top:18px;padding:14px 0 0;border-top:1px solid var(--rule)}
+.story .sline{display:flex;gap:9px;padding:8px 0;align-items:flex-start;cursor:pointer;border:0;background:none;
+  text-align:left;width:100%;font:inherit;color:inherit;transition:opacity .15s var(--ease-out)}
+.story .sline:hover{opacity:.6}
+.story .sline .sdot{width:5px;height:5px;border-radius:999px;background:var(--coral);flex:0 0 auto;margin-top:7px}
+.story .sline p{font-size:13.5px;line-height:1.5;color:var(--ink)}
+.story .sline p b{font-weight:400;color:var(--coral)}
+.story .sline p span{color:var(--ink-3);font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;display:block;margin-top:2px}
+
+/* ---------- niggle ribbon ---------- */
+.ribbon{margin-top:18px;border-top:1px solid var(--rule);padding-top:13px}
+.nrow{display:flex;align-items:center;gap:9px;padding:8px 0;cursor:pointer;border:0;background:none;width:100%;
+  font:inherit;color:inherit;text-align:left;transition:opacity .15s var(--ease-out)}
+.nrow:hover{opacity:.62}
+.nrow .nname{font-family:var(--font-display);font-weight:700;font-size:13px;width:104px;flex:0 0 auto;line-height:1.2}
+.nrow .nname em{display:block;font-family:var(--font-mono);font-style:normal;font-size:8px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:2px;font-weight:400}
+.nrow .ndots{flex:1;display:flex;gap:1px;align-items:flex-end;height:16px}
+.nrow .ndots i{flex:1;background:var(--rule);border-radius:1px;height:3px;display:block}
+.nrow .nstat{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);width:40px;text-align:right;flex:0 0 auto}
+
+/* ---------- block spine ---------- */
+.spine{margin-top:18px;border-top:1px solid var(--rule);padding-top:13px}
+.spinebars{display:flex;gap:4px;align-items:flex-end;height:54px;margin-top:9px}
+.spinebars button{flex:1;background:none;border:0;padding:0;cursor:pointer;display:flex;flex-direction:column;
+  justify-content:flex-end;height:100%;gap:2px}
+.spinebars i{display:block;width:14px;margin:0 auto;background:var(--ink-3);border-radius:2px;opacity:.5;transition:all .15s var(--ease-out)}
+.spinebars button.cur i{opacity:1;background:var(--coral)}
+.spinebars button:hover i{opacity:.85}
+.spinebars em{font-family:var(--font-mono);font-style:normal;font-size:7px;color:var(--ink-3);text-align:center;letter-spacing:-.02em}
+
+/* ---------- tab bar ---------- */
+.tabbar{border-top:1px solid var(--rule);background:var(--paper);display:grid;grid-template-columns:repeat(5,1fr);
+  padding:9px 0 22px;flex:0 0 auto}
+.tabbar .tab{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
+.tabbar .tdot{width:6px;height:6px;border-radius:999px;border:1.5px solid var(--ink-3);box-sizing:border-box}
+.tabbar .tab.on .tdot{background:var(--coral);border-color:var(--coral)}
+.tabbar .tlbl{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.tabbar .tab.on .tlbl{color:var(--ink);font-weight:600}
+
+
+/* ================= WEEK VIEW ================= */
+.gran{display:inline-flex;background:var(--paper-deep);border-radius:8px;padding:2.5px;gap:2.5px;margin-bottom:11px}
+.gran button{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);background:transparent;border:0;padding:5px 13px;border-radius:6px;cursor:pointer;
+  transition:all .15s var(--ease-out)}
+.gran button.on{background:var(--paper);color:var(--ink);font-weight:600;box-shadow:var(--shadow-press)}
+
+/* day rows */
+.drows{margin-top:14px;border-top:1px solid var(--rule)}
+.drow{display:flex;gap:10px;width:100%;padding:11px 0 11px 9px;border:0;border-bottom:1px solid var(--rule);
+  background:transparent;cursor:pointer;text-align:left;font:inherit;color:inherit;position:relative;
+  align-items:flex-start;transition:background .15s var(--ease-out);-webkit-tap-highlight-color:transparent}
+.drow:hover{background:var(--paper-deep)}
+.drow.istoday{background:rgba(212,89,42,.05)}
+.drow .dmood{position:absolute;left:0;top:7px;bottom:7px;width:3px;border-radius:0 2px 2px 0}
+.drow .ddate{flex:0 0 30px;display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding-top:1px}
+.drow .ddate em{font-family:var(--font-mono);font-style:normal;font-size:8px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3)}
+.drow .ddate b{font-family:var(--font-display);font-weight:700;font-size:17px;line-height:1;color:var(--ink)}
+.drow.isrest .ddate b{color:var(--ink-3)}
+.drow .dmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.drow .dtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.drow .dname{font-family:var(--font-display);font-weight:700;font-size:14.5px;line-height:1.15;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drow.isrest .dname{color:var(--ink-3);font-weight:400;font-style:italic;font-family:var(--font-body);font-size:13px}
+.drow .dkey{display:inline-block;width:5px;height:5px;border-radius:999px;background:var(--coral);
+  vertical-align:middle;margin-right:5px}
+.drow .dkm{font-family:var(--font-mono);font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.drow .dkm i{font-style:normal;font-size:8px;color:var(--ink-3);margin-left:1px}
+.drow .dbar{height:7px;border-radius:3px;display:flex;overflow:hidden;background:transparent}
+.drow .dbar span{display:block;height:100%}
+.drow .dbar.empty{background:repeating-linear-gradient(90deg,var(--rule) 0 3px,transparent 3px 6px);width:100%!important}
+.drow .dmeta{display:flex;flex-wrap:wrap;gap:2px 9px;font-family:var(--font-mono);font-size:9px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.drow .dmeta b{color:var(--ink-2);font-weight:600}
+.drow .dmeta .lo{color:var(--mood-tired)}
+.drow .dmeta .ng{color:var(--mood-injured)}
+
+/* pace breakdown */
+.zbar{height:16px;border-radius:4px;display:flex;overflow:hidden;margin-top:10px}
+.zbar span{display:block;height:100%}
+.zlist{margin-top:10px}
+.zrow{display:flex;align-items:center;gap:9px;padding:6px 0;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:.07em;text-transform:uppercase}
+.zrow i{width:8px;height:8px;border-radius:2px;flex:0 0 auto}
+.zrow .zn{color:var(--ink-2);width:64px;flex:0 0 auto}
+.zrow .zp{flex:1;color:var(--ink-3);font-size:9px;padding-left:2px}
+.zrow .zv{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.zrow .zpc{color:var(--ink-3);width:34px;text-align:right;flex:0 0 auto;font-variant-numeric:tabular-nums}
+
+/* recovery chart */
+.recwrap{margin-top:11px}
+.recchart{width:100%;height:96px;display:block}
+.reclbl{display:flex;justify-content:space-between;margin-top:4px}
+.reclbl span{font-family:var(--font-mono);font-size:8px;letter-spacing:.08em;color:var(--ink-3);
+  flex:1;text-align:center;text-transform:uppercase}
+.reckey{display:flex;gap:14px;margin-top:9px;font-family:var(--font-mono);font-size:8.5px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.reckey i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.reckey i.ln{height:2px;border-radius:1px;vertical-align:3px}
+
+/* pattern cards — label, number, four words, block context. No paragraph. */
+.pcard{width:100%;text-align:left;font:inherit;color:inherit;background:var(--card);border:0;
+  border-radius:10px;padding:12px 13px 11px;margin-top:8px;cursor:pointer;box-shadow:var(--shadow-card);
+  display:block;transition:transform .15s var(--ease-out)}
+.pcard:hover{transform:translateY(-1px)}
+.pcard .phead{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+.pcard .pdot{width:6px;height:6px;border-radius:999px;flex:0 0 auto}
+.pcard .plbl{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .pval{font-family:var(--font-mono);font-weight:600;font-size:13px;color:var(--ink);
+  font-variant-numeric:tabular-nums;flex:0 0 auto;white-space:nowrap}
+.pcard .pfoot{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:2px}
+.pcard .pverdict{font-family:var(--font-display);font-weight:700;font-size:15px;line-height:1.25;flex:1}
+.pcard .pspark{flex:0 0 auto;opacity:.9}
+
+/* block-context strip, shared by cards and sheets */
+.ctx{margin-top:2px}
+.ctxbars{display:flex;gap:2px;align-items:flex-end;height:40px}
+.ctxbars button{flex:1;background:none;border:0;padding:0;cursor:pointer;height:100%;
+  display:flex;align-items:flex-end}
+.ctxbars i{display:block;width:100%;border-radius:1.5px;background:#C4BDB5;transition:background .15s var(--ease-out)}
+.ctxbars button.cur i{background:var(--coral)}
+.ctxbars button:hover i{background:var(--ink-3)}
+.ctxaxis{display:flex;justify-content:space-between;margin-top:5px;font-family:var(--font-mono);
+  font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+
+/* comparison rows — the drill-down primitive */
+.cmp{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--rule)}
+.cmp:last-child{border-bottom:0}
+.cmp .cl{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);flex:0 0 96px}
+.cmp .ct{flex:1;font-family:var(--font-mono);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+.cmp .cd{font-family:var(--font-mono);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;
+  flex:0 0 auto}
+.cmp .cd.up{color:var(--mood-energized)}
+.cmp .cd.dn{color:var(--coral)}
+.cmp .cd.flat{color:var(--ink-3)}
+.rankbar{display:flex;gap:2px;align-items:flex-end;height:30px;margin-top:8px}
+.rankbar button{flex:1;background:none;border:0;padding:0;cursor:pointer;height:100%;display:flex;align-items:flex-end}
+.rankbar i{display:block;width:100%;border-radius:1.5px;background:#C4BDB5}
+.rankbar button.cur i{background:var(--coral)}
+.rankbar button:hover i{background:var(--ink-3)}
+
+/* ---------- sheet ---------- */
+.scrim{position:absolute;inset:0;background:rgba(26,24,21,.42);opacity:0;pointer-events:none;
+  transition:opacity .26s var(--ease-out);z-index:40}
+.scrim.on{opacity:1;pointer-events:auto}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:80%;background:var(--paper);z-index:50;
+  border-radius:20px 20px 0 0;transform:translateY(102%);transition:transform .3s var(--ease-out);
+  display:flex;flex-direction:column;box-shadow:0 -8px 34px rgba(0,0,0,.2)}
+.sheet.on{transform:translateY(0)}
+.sheet .grab{width:34px;height:4px;border-radius:999px;background:var(--ink-3);opacity:.35;margin:9px auto 0;flex:0 0 auto}
+.sheet .shead{padding:12px 22px 10px;flex:0 0 auto}
+.sheet .sbody{overflow-y:auto;padding:0 22px 30px;scrollbar-width:none}
+.sheet .sbody::-webkit-scrollbar{display:none}
+.sheet .sclose{position:absolute;top:14px;right:16px;width:26px;height:26px;border-radius:999px;border:0;
+  background:var(--paper-deep);color:var(--ink-2);cursor:pointer;font-size:14px;line-height:1;display:flex;
+  align-items:center;justify-content:center}
+.sheet .sclose:hover{background:var(--coral);color:#fff}
+.daynav{display:flex;gap:4px}
+.daynav button{width:25px;height:25px;border-radius:999px;border:1px solid var(--rule);background:transparent;
+  color:var(--ink-2);cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center}
+.daynav button:hover:not(:disabled){background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.daynav button:disabled{opacity:.25;cursor:default}
+
+.pill{display:inline-flex;padding:3px 8px;border-radius:999px;font-family:var(--font-mono);font-size:9px;
+  font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.metarow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);margin:14px 0;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.metarow .m{background:var(--paper);padding:9px 4px;display:flex;flex-direction:column;gap:4px}
+.metarow .ml{font-family:var(--font-mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.metarow .mv{font-family:var(--font-mono);font-weight:600;font-size:15px;color:var(--ink);line-height:1}
+.metarow .mv small{font-size:8.5px;color:var(--ink-3);font-weight:600;margin-left:1px}
+
+.runrow{padding:13px 0;border-bottom:1px solid var(--rule)}
+.runrow:last-child{border-bottom:0}
+.runhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.runhead .rname{font-family:var(--font-display);font-weight:700;font-size:15.5px;line-height:1.2}
+.runhead .rkm{font-family:var(--font-mono);font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.runmeta{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2);margin-top:5px;
+  display:flex;flex-wrap:wrap;gap:4px 10px}
+.runmeta b{color:var(--ink);font-weight:600}
+.reps{width:100%;border-collapse:collapse;margin-top:10px;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.reps th{text-align:left;font-size:8px;font-weight:500;letter-spacing:.1em;color:var(--ink-3);text-transform:uppercase;
+  padding:5px 3px;border-bottom:1px solid var(--rule)}
+.reps td{padding:6px 3px;border-bottom:1px solid var(--rule);font-size:11px;color:var(--ink);font-weight:600}
+.reps td:first-child{color:var(--ink-3);font-weight:500}
+.reps tr.fast td{color:var(--coral)}
+.reps .rb{display:inline-block;height:5px;background:var(--ink-3);border-radius:999px;opacity:.45;vertical-align:middle;margin-right:5px}
+.reps tr.fast .rb{background:var(--coral);opacity:1}
+
+.sect{margin-top:20px}
+.sect>.eyebrow{margin-bottom:8px;display:block}
+.nigcard{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--rule);cursor:pointer;
+  border-left:0;border-right:0;border-top:0;background:none;width:100%;font:inherit;color:inherit;text-align:left}
+.nigcard:hover{opacity:.62}
+.nigcard .nb{width:3px;height:26px;border-radius:2px;background:var(--mood-injured);flex:0 0 auto}
+.nigcard .nn{font-family:var(--font-display);font-weight:700;font-size:14px}
+.nigcard .nw{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);margin-top:2px}
+.nigcard .nsev{margin-left:auto;font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+
+.daybars{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-top:9px}
+.daybars button{background:none;border:0;padding:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
+.daybars .dbwrap{width:100%;height:44px;display:flex;align-items:flex-end;justify-content:center}
+.daybars i{width:60%;border-radius:2px;display:block;min-height:2px}
+.daybars em{font-family:var(--font-mono);font-style:normal;font-size:8px;color:var(--ink-3);letter-spacing:.04em}
+.daybars b{font-family:var(--font-mono);font-size:9.5px;font-weight:600;color:var(--ink)}
+.daybars button:hover i{opacity:.7}
+
+.moodarc{display:flex;gap:3px;align-items:flex-end;height:34px;margin-top:9px}
+.moodarc i{flex:1;border-radius:2px;display:block;min-height:3px}
+
+.keylist{display:flex;flex-direction:column}
+.keyitem{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--rule);cursor:pointer;
+  border-left:0;border-right:0;border-top:0;background:none;width:100%;font:inherit;color:inherit;text-align:left}
+.keyitem:last-child{border-bottom:0}
+.keyitem:hover{opacity:.62}
+.keyitem .kd{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);width:44px;flex:0 0 auto}
+.keyitem .kn{font-family:var(--font-display);font-weight:700;font-size:14px;flex:1}
+.keyitem .kv{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--coral);flex:0 0 auto}
+
+.dotstrip{display:flex;gap:2px;align-items:flex-end;height:22px;margin-top:9px}
+.dotstrip i{flex:1;border-radius:1px;background:var(--rule);display:block;min-height:3px}
+.legendline{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:8px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+.emptynote{font-size:12.5px;color:var(--ink-3);font-style:italic;padding:10px 0}
+</style>
+</head>
+<body>
+<body>
+<div class="page-head">
+  <div class="kicker">Prototype · Calendar tab · month view</div>
+  <h1>The month, told as volume, mood, key sessions and niggles</h1>
+  <p>Real Strava data, <b>1 May – 27 July 2026</b>, 115 runs and 1,135 km, pulled live. Weekly totals reconcile with
+  <code>key-sessions-data.json</code> to within 0.3 km. Mood, journal notes and body mentions are synthetic — those live
+  in Supabase, not Strava — but every one is anchored to something the training actually did on that date.
+  <b>Everything is clickable.</b></p>
+</div>
+
+<div class="dsbar">
+  <span class="dslabel">Day bar fill</span>
+  <span class="dsseg" id="fillseg">
+    <button data-fill="type" class="on">Session type</button>
+    <button data-fill="pace">Pace spectrum</button>
+  </span>
+  <span class="dsnote" id="fillnote"><b>Type</b> — coral key, dark long, light easy. Three values, legible at 17 px.</span>
+</div>
+
+<div class="layout">
+<div class="notes">
+  <h3>The one idea</h3>
+  <p>A calendar cell is not a label — it's a <b>bar chart bar</b>. Height is the day's kilometres, on a fixed 0–30 km
+  scale so months compare. That makes every week row a seven-bar chart and the month a stack of five, read left to
+  right like any other chart.</p>
+
+  <h3>Four channels, no collision</h3>
+  <ul>
+    <li><b>Volume</b> — bar height. Doubles split into stacked segments, so a 12 + 6 day looks different from an 18.</li>
+    <li><b>Session type</b> — bar fill. Coral is a key session, dark warm grey is a long run, light grey is easy. One
+    coral, per the brand rule: intensity is the only thing that gets the accent.</li>
+    <li><b>Mood</b> — a 3.5 px strip on the bottom edge, full width. Rest days still carry it, which is the point —
+    mood is not a property of a run.</li>
+    <li><b>Niggles</b> — a bar down the cell's left edge, opacity by severity. Peripheral until you look for it, and unambiguous about which day it belongs to.</li>
+  </ul>
+
+  <h3>Weekly volume is a column, not a footnote</h3>
+  <p>The eighth column is the week. Number, a bar scaled against the block's biggest week, and a mood-average tick
+  underneath. It sits <i>inside</i> the grid so a heavy week and the days that made it are on one line.</p>
+
+  <h3>What it makes visible</h3>
+  <p><b>11–17 May.</b> 116 km — the biggest week of the block. The mood strip goes amber then terracotta mid-week and
+  the achilles notch appears. Volume and cost, same row.</p>
+  <p><b>25–31 May.</b> The row goes short and gappy. 64 km, finals week. Then <b>28 May</b> is the fastest long run of
+  the block. Down weeks work.</p>
+  <p><b>22–28 June.</b> Three rest cells and a 28.6 km bar in the same row. The hamstring thread explains it.</p>
+
+  <h3>Interactions</h3>
+  <ul>
+    <li><b>Day</b> → sheet with runs, reps, mood, note, niggle mentions. Arrows step day to day.</li>
+    <li><b>Week column</b> → sheet with the seven bars, ACWR, quality %, mood arc, key sessions.</li>
+    <li><b>Lens chips</b> → dim everything except key days, long runs, niggle days or hard days.</li>
+    <li><b>Mood swatches</b> → isolate one mood across the month.</li>
+    <li><b>Story lines</b> → jump straight to the day or week they describe.</li>
+    <li><b>Niggle threads</b> → sheet with the mention timeline and the rest days around it.</li>
+    <li><b>Block spine</b> → 13 weeks of context; tap a bar to change month.</li>
+  </ul>
+
+  <h3>Why the pace spectrum isn't on the day bars</h3>
+  <p>The blue ramp is a <i>within-session</i> encoding — it colours a pace trace, a time-in-zone bar, a rep. It answers
+  “how fast was this bit.” A calendar cell is a whole day: 21 July is a 3.2 k shakeout, a 6×1mi, a 1.6 k jog and a
+  6.3 k evening. There is no single pace for that day, so colouring the bar by one is an average of things that never
+  happened together.</p>
+  <p>Flip the toggle above the phone and it shows: ten sequential steps need area, and a 17 px bar doesn't have it.
+  The trends session grid gets away with the spectrum because its dots are sized by effort. Blue is also a fourth hue
+  next to mood green/amber and niggle rose, on warm paper built around one coral.</p>
+  <p><b>Where it does belong, and now does:</b> the rep table in the day sheet, and a time-in-zone strip under it.
+  That's the same level the spectrum already lives at in <code>pace-spectrum-mockup.html</code>, and it's the one place
+  in this view with room to read the ramp.</p>
+
+  <h3>Something the wiring turned up</h3>
+  <p>Binding the spectrum to real data instead of invented thresholds exposed a gap.
+  <code>zones.run_zones_ms</code> (source: <code>RacePace</code>) has five boundaries — 6:46 / 5:50 / 5:14 / 4:54 /
+  4:36 per mile — so <b>six bands</b>. The published spectrum has <b>ten stops</b>. Four of them can never be reached.
+  Either the zone model gets finer or the spectrum drops to six; right now a legend promises resolution the data
+  can't deliver. Worth deciding before this ships anywhere.</p>
+
+  <h3>Week view · rows, not columns</h3>
+  <p>The month grid is columns because a cell only has to be a glyph. A week has room, so it flips to seven rows —
+  which is the only shape that fits per-day workout detail, pace mix, sleep, HRV and a niggle word on one line.</p>
+  <p><b>This is where the pace spectrum belongs.</b> Each day's bar is width ∝ volume, segmented by pace zone, so
+  21 July reads as half easy / half MP at a glance and 24 July shows its navy sliver of 200s. Same encoding rolls up
+  into the week's <i>Volume by pace</i> bar.</p>
+
+  <h3>Sleep and HRV are synthetic</h3>
+  <p>There is no sleep or HRV model in the app yet — <code>VITAL-GARMIN-APPLY-NOTES.md</code> is still un-applied and
+  <code>VitalManager</code> is stubbed. These values are shaped like Vital/Junction's payload
+  (<code>duration_s</code>, <code>efficiency</code>, <code>hrv_rmssd</code>, <code>resting_hr</code>) and driven by
+  what the training actually did: a hard day the night before costs sleep and HRV, and baselines are 28-day trailing
+  means, so a week's delta is measured against the athlete rather than a population.</p>
+
+  <h3>Patterns state the counter-evidence</h3>
+  <p>Every card opens to the working. Polarisation lists every run with the zone it landed in; load-vs-recovery lists
+  all thirteen weeks so you can see whether this one is unusual; spacing lists every key session with its gap; niggle
+  timing shows the co-occurrence bars and says plainly that categories overlap and none of it is causal. A card that
+  can't show its evidence shouldn't make the claim.</p>
+
+  <h3>Open questions</h3>
+  <p>Cells are 41 × 62 px — under the 44 px touch minimum on width. Either the row grows to 68 px and the grid scrolls,
+  or the tap target extends into the 2 px gutter. Leaning toward the latter.</p>
+  <p>Mood is one value per day here. If voice logs produce several, the strip should probably become a gradient rather
+  than average them into mush.</p>
+  <p>Pattern tone is a three-state dot — green / amber / rose. The thresholds are guesses (78% easy, ACWR 1.08,
+  HRV −4). They want calibrating against more than one athlete before any of them turn into a nudge.</p>
+</div>
+
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>▮▮▮ ⌁ 100%</span></div>
+  <div class="screen">
+    <div class="plate"><span>Post Run Drip</span><span id="plateRight">Calendar</span></div>
+    <div class="scroll" id="scroll">
+
+      <div class="gran" id="gran">
+        <button data-g="month" class="on">Month</button>
+        <button data-g="week">Week</button>
+      </div>
+
+      <div class="mhead">
+        <div class="mblock">
+          <div class="eyebrow coral" id="mEyebrow">Marathon block · week 12</div>
+          <div class="display-xl" id="mTitle">July.</div>
+        </div>
+        <div class="mnav">
+          <button id="prevM" aria-label="Previous month">‹</button>
+          <button id="nextM" aria-label="Next month">›</button>
+        </div>
+      </div>
+
+      <div class="sumrow" id="sumrow"></div>
+
+      <div id="monthview">
+      <div class="gridwrap">
+        <div class="dowrow" id="dowrow"></div>
+        <div id="grid"></div>
+      </div>
+
+      <div class="lens" id="lens"></div>
+
+      <div class="story">
+        <div class="eyebrow" style="margin-bottom:2px">The month in three lines</div>
+        <div id="story"></div>
+      </div>
+
+      <div class="ribbon">
+        <div class="eyebrow">Niggles this month</div>
+        <div id="ribbon"></div>
+      </div>
+
+      <div class="spine">
+        <div class="eyebrow">The block · weekly volume</div>
+        <div class="spinebars" id="spine"></div>
+      </div>
+
+      </div><!-- /monthview -->
+
+      <div id="weekview" style="display:none">
+        <div class="drows" id="drows"></div>
+
+        <div class="story" style="margin-top:20px">
+          <div class="eyebrow">Volume by pace</div>
+          <div class="bodysm" id="zsub" style="margin-top:2px"></div>
+          <div class="zbar" id="zbar"></div>
+          <div class="zlist" id="zlist"></div>
+        </div>
+
+        <div class="ribbon">
+          <div class="eyebrow">Recovery</div>
+          <div class="bodysm" id="recsub" style="margin-top:2px"></div>
+          <div class="recwrap">
+            <div id="recchartwrap"></div>
+            <div class="reclbl" id="reclbl"></div>
+            <div class="reckey">
+              <span><i style="background:#D8D2CB"></i>Sleep h</span>
+              <span><i class="ln" style="background:#D4592A"></i>HRV rmssd</span>
+              <span><i class="ln" style="background:#9B9590"></i>28-day baseline</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ribbon">
+          <div class="eyebrow">Patterns</div>
+          <div id="patterns"></div>
+        </div>
+      </div>
+
+    </div>
+    <div class="tabbar">
+      <div class="tab"><span class="tdot"></span><span class="tlbl">Today</span></div>
+      <div class="tab"><span class="tdot"></span><span class="tlbl">Log</span></div>
+      <div class="tab on"><span class="tdot"></span><span class="tlbl">Train</span></div>
+      <div class="tab"><span class="tdot"></span><span class="tlbl">Trends</span></div>
+      <div class="tab"><span class="tdot"></span><span class="tlbl">You</span></div>
+    </div>
+  </div>
+
+  <div class="scrim" id="scrim"></div>
+  <div class="sheet" id="sheet">
+    <div class="grab"></div>
+    <button class="sclose" id="sclose" aria-label="Close">✕</button>
+    <div class="shead" id="shead"></div>
+    <div class="sbody" id="sbody"></div>
+  </div>
+</div>
+</div>
+
+<script id="data" type="application/json">{"generated":"2026-07-27","athlete":{"name":"Rio","city":"Austin, TX","units":"km","racePace":{"type":"FastestHalfMarathon","time":"1h 8m"}},"moodOrder":["struggling","tired","neutral","positive","energized"],"niggles":[{"id":"n1","area":"Left achilles","side":"left","word":"tight","opened":"2026-05-15","closed":"2026-06-03","peak":4,"mentions":{"2026-05-15":["tight",3],"2026-05-17":["tight",3],"2026-05-19":["sore",4],"2026-05-20":["sore",4],"2026-05-22":["tight",3],"2026-05-23":["sore",4],"2026-05-25":["tight",2],"2026-05-29":["tight",2],"2026-06-02":["easing",1]},"resolvedNote":"Gone after the down week. Calf raises stayed in."},{"id":"n2","area":"Right hamstring","side":"right","word":"sore","opened":"2026-06-23","closed":"2026-07-06","peak":6,"mentions":{"2026-06-23":["grabby",5],"2026-06-24":["sore",5],"2026-06-25":["sore",6],"2026-06-26":["sore",5],"2026-06-27":["held on",4],"2026-06-28":["sore",4],"2026-06-30":["tight",3],"2026-07-02":["tight",2],"2026-07-05":["easing",1]},"resolvedNote":"Three days off around it. Never became a real injury."},{"id":"n3","area":"Left foot","side":"left","word":"achy","opened":"2026-07-15","closed":null,"peak":3,"mentions":{"2026-07-15":["achy",2],"2026-07-17":["achy",3],"2026-07-19":["tender",3],"2026-07-21":["achy",2],"2026-07-24":["tender",3],"2026-07-26":["achy",2]},"resolvedNote":null}],"days":{"2026-05-01":{"date":"2026-05-01","dow":4,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":null,"moodScore":null,"note":null,"niggles":[],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":8.1,"hrv":83,"restingHr":40,"efficiency":91,"source":"synthetic","hrvBaseline":83.0,"sleepBaseline":8.1}},"2026-05-02":{"date":"2026-05-02","dow":5,"km":1.6,"runs":[{"id":"18362372916","start":"06:08","name":"Morning Run","km":1.56,"sec":1130,"elev":2,"effort":2,"paceMi":1163,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":1130,"elev":2,"mood":"neutral","moodScore":3,"note":"Shakeout only. Legs still under Saturday.","niggles":[],"future":false,"zoneKm":{"Recovery":1.56},"qualityZoneKm":0,"recovery":{"sleepH":8.2,"hrv":84,"restingHr":40,"efficiency":91,"source":"synthetic","hrvBaseline":83.5,"sleepBaseline":8.15}},"2026-05-03":{"date":"2026-05-03","dow":6,"km":5.7,"runs":[{"id":"18362373032","start":"07:31","name":"Morning Run","km":5.68,"sec":1765,"elev":40,"effort":17,"paceMi":500,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":1765,"elev":40,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Recovery":5.68},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":77,"restingHr":42,"efficiency":86,"source":"synthetic","hrvBaseline":81.3,"sleepBaseline":7.9}},"2026-05-04":{"date":"2026-05-04","dow":0,"km":11.6,"runs":[{"id":"18383269651","start":"08:50","name":"Morning Run","km":11.58,"sec":3113,"elev":57,"effort":79,"paceMi":433,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3113,"elev":57,"mood":"positive","moodScore":4,"note":"Easy 11.6 in the warm. Felt like nothing.","niggles":[],"future":false,"zoneKm":{"Easy":11.58},"qualityZoneKm":0,"recovery":{"sleepH":7.9,"hrv":83,"restingHr":41,"efficiency":89,"source":"synthetic","hrvBaseline":81.8,"sleepBaseline":7.9}},"2026-05-05":{"date":"2026-05-05","dow":1,"km":16.0,"runs":[{"id":"18384513776","start":"06:05","name":"Morning Run","km":3.23,"sec":894,"elev":9,"effort":4,"paceMi":446,"isKey":false},{"id":"18384520874","start":"06:27","name":"Morning Run","km":9.54,"sec":2056,"elev":46,"effort":101,"paceMi":347,"isKey":true,"kind":"intervals","label":"5x1mi","avgHr":165.2,"maxHr":180,"grade":"EASED","tier":"watch","qualityKm":8.05,"keyPaceMi":317,"tempF":69.0,"dewF":64,"heatAdjPct":3.3,"reps":[{"dist":1609.0,"time":316,"paceSecPerMi":316.0,"hr":164.0},{"dist":1609.0,"time":321,"paceSecPerMi":321.0,"hr":173.0},{"dist":1609.0,"time":326,"paceSecPerMi":326.0,"hr":168.0},{"dist":1609.0,"time":302,"paceSecPerMi":302.0,"hr":175.0},{"dist":1609.0,"time":321,"paceSecPerMi":321.0,"hr":178.0}],"drift":2.45,"fade":5.0},{"id":"18385364361","start":"07:13","name":"Morning Run","km":3.23,"sec":924,"elev":13,"effort":21,"paceMi":460,"isKey":false}],"nRuns":3,"double":true,"type":"key","sec":3874,"elev":68,"mood":"energized","moodScore":5,"note":"5\u00d71mi. 5:17 average and the last one was the fastest. That's the sign.","niggles":[],"future":false,"zoneKm":{"Easy":7.955,"MP":6.436,"LT":1.609},"qualityZoneKm":8.04,"recovery":{"sleepH":7.2,"hrv":75,"restingHr":42,"efficiency":85,"source":"synthetic","hrvBaseline":80.4,"sleepBaseline":7.76}},"2026-05-06":{"date":"2026-05-06","dow":2,"km":12.9,"runs":[{"id":"18405890278","start":"11:01","name":"Lunch Run","km":12.9,"sec":3680,"elev":30,"effort":64,"paceMi":459,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3680,"elev":30,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":12.9},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":78,"restingHr":42,"efficiency":86,"source":"synthetic","hrvBaseline":80.0,"sleepBaseline":7.7}},"2026-05-07":{"date":"2026-05-07","dow":3,"km":8.1,"runs":[{"id":"18413715607","start":"09:58","name":"Morning Run","km":8.05,"sec":2159,"elev":17,"effort":44,"paceMi":431,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2159,"elev":17,"mood":"neutral","moodScore":3,"note":"Legs a bit flat off Tuesday. Kept it honest.","niggles":[],"future":false,"zoneKm":{"Easy":8.05},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":77,"restingHr":42,"efficiency":86,"source":"synthetic","hrvBaseline":79.6,"sleepBaseline":7.66}},"2026-05-08":{"date":"2026-05-08","dow":4,"km":12.9,"runs":[{"id":"18425948299","start":"08:17","name":"Morning Run","km":12.89,"sec":3393,"elev":44,"effort":93,"paceMi":424,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3393,"elev":44,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Moderate":12.89},"qualityZoneKm":0,"recovery":{"sleepH":8.0,"hrv":84,"restingHr":40,"efficiency":90,"source":"synthetic","hrvBaseline":80.1,"sleepBaseline":7.7}},"2026-05-09":{"date":"2026-05-09","dow":5,"km":21.2,"runs":[{"id":"18439421005","start":"07:06","name":"Morning Run","km":21.22,"sec":5394,"elev":178,"effort":145,"paceMi":409,"isKey":true,"kind":"long","label":"21K long","avgHr":152.0,"maxHr":164,"grade":"FADED","tier":"alert","qualityKm":7.43,"keyPaceMi":412,"tempF":69.2,"dewF":64,"heatAdjPct":3.32,"reps":null,"drift":4.98,"fade":37.0}],"nRuns":1,"double":false,"type":"long","sec":5394,"elev":178,"mood":"energized","moodScore":5,"note":"21 km and never had to think about it.","niggles":[],"future":false,"zoneKm":{"Moderate":21.22},"qualityZoneKm":0,"recovery":{"sleepH":8.1,"hrv":85,"restingHr":40,"efficiency":91,"source":"synthetic","hrvBaseline":80.7,"sleepBaseline":7.74}},"2026-05-10":{"date":"2026-05-10","dow":6,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"positive","moodScore":4,"note":"Off. Deliberately.","niggles":[],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":7.0,"hrv":74,"restingHr":43,"efficiency":84,"source":"synthetic","hrvBaseline":80.0,"sleepBaseline":7.67}},"2026-05-11":{"date":"2026-05-11","dow":0,"km":11.7,"runs":[{"id":"18465193581","start":"09:19","name":"Morning Run","km":11.72,"sec":3076,"elev":53,"effort":74,"paceMi":422,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3076,"elev":53,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Moderate":11.72},"qualityZoneKm":0,"recovery":{"sleepH":7.2,"hrv":69,"restingHr":45,"efficiency":85,"source":"synthetic","hrvBaseline":79.0,"sleepBaseline":7.63}},"2026-05-12":{"date":"2026-05-12","dow":1,"km":21.3,"runs":[{"id":"18475603911","start":"06:05","name":"Morning Run","km":3.13,"sec":901,"elev":13,"effort":8,"paceMi":463,"isKey":false},{"id":"18476698825","start":"06:28","name":"Morning Run","km":11.69,"sec":3320,"elev":49,"effort":96,"paceMi":457,"isKey":false},{"id":"18484468048","start":"18:19","name":"Evening Run","km":6.45,"sec":1786,"elev":36,"effort":39,"paceMi":446,"isKey":false}],"nRuns":3,"double":true,"type":"long","sec":6007,"elev":98,"mood":"positive","moodScore":4,"note":"Double. Both easy. This is the week I try to hold 110.","niggles":[],"future":false,"zoneKm":{"Easy":21.27},"qualityZoneKm":0,"recovery":{"sleepH":6.5,"hrv":61,"restingHr":46,"efficiency":81,"source":"synthetic","hrvBaseline":77.5,"sleepBaseline":7.53}},"2026-05-13":{"date":"2026-05-13","dow":2,"km":11.3,"runs":[{"id":"18504429969","start":"13:49","name":"Afternoon Run","km":11.28,"sec":3124,"elev":69,"effort":84,"paceMi":446,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3124,"elev":69,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":11.28},"qualityZoneKm":0,"recovery":{"sleepH":6.7,"hrv":64,"restingHr":46,"efficiency":82,"source":"synthetic","hrvBaseline":76.5,"sleepBaseline":7.47}},"2026-05-14":{"date":"2026-05-14","dow":3,"km":20.9,"runs":[{"id":"18505649685","start":"08:49","name":"Morning Run","km":12.89,"sec":3501,"elev":83,"effort":86,"paceMi":437,"isKey":false},{"id":"18513271574","start":"20:01","name":"Evening Run","km":8.05,"sec":2349,"elev":32,"effort":23,"paceMi":469,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":5850,"elev":115,"mood":"tired","moodScore":2,"note":"Second double in three days. Evening one was a grind.","niggles":[],"future":false,"zoneKm":{"Easy":20.94},"qualityZoneKm":0,"recovery":{"sleepH":6.7,"hrv":63,"restingHr":46,"efficiency":82,"source":"synthetic","hrvBaseline":75.5,"sleepBaseline":7.41}},"2026-05-15":{"date":"2026-05-15","dow":4,"km":18.6,"runs":[{"id":"18516709508","start":"06:20","name":"Morning Run","km":12.11,"sec":5217,"elev":54,"effort":45,"paceMi":693,"isKey":false},{"id":"18522697599","start":"18:44","name":"Evening Run","km":6.45,"sec":1779,"elev":29,"effort":27,"paceMi":444,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":6996,"elev":83,"mood":"struggling","moodScore":1,"note":"Achilles tight from the first step. Walked a chunk of the morning run.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"tight","severity":3}],"future":false,"zoneKm":{"Recovery":12.11,"Easy":6.45},"qualityZoneKm":0,"recovery":{"sleepH":6.8,"hrv":64,"restingHr":45,"efficiency":83,"source":"synthetic","hrvBaseline":74.7,"sleepBaseline":7.37}},"2026-05-16":{"date":"2026-05-16","dow":5,"km":21.1,"runs":[{"id":"18530188852","start":"07:08","name":"Morning Run","km":21.09,"sec":5241,"elev":101,"effort":170,"paceMi":400,"isKey":true,"kind":"long","label":"21K long","avgHr":156.0,"maxHr":172,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":7.38,"keyPaceMi":403,"tempF":69.2,"dewF":64,"heatAdjPct":3.32,"reps":null,"drift":2.21,"fade":-7.6}],"nRuns":1,"double":false,"type":"long","sec":5241,"elev":101,"mood":"positive","moodScore":4,"note":"Long run went fine, which I did not expect after yesterday.","niggles":[],"future":false,"zoneKm":{"Moderate":21.09},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":71,"restingHr":44,"efficiency":86,"source":"synthetic","hrvBaseline":74.5,"sleepBaseline":7.38}},"2026-05-17":{"date":"2026-05-17","dow":6,"km":11.3,"runs":[{"id":"18546469099","start":"11:19","name":"Lunch Run","km":11.27,"sec":3146,"elev":51,"effort":46,"paceMi":449,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3146,"elev":51,"mood":"tired","moodScore":2,"note":"Achilles still there. Not worse.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"tight","severity":3}],"future":false,"zoneKm":{"Easy":11.27},"qualityZoneKm":0,"recovery":{"sleepH":6.1,"hrv":58,"restingHr":47,"efficiency":79,"source":"synthetic","hrvBaseline":73.5,"sleepBaseline":7.3}},"2026-05-18":{"date":"2026-05-18","dow":0,"km":12.1,"runs":[{"id":"18555286016","start":"08:23","name":"Morning Run","km":12.13,"sec":3292,"elev":68,"effort":79,"paceMi":437,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3292,"elev":68,"mood":"tired","moodScore":2,"note":"116 km. Most I've ever run in a week. Feels like it.","niggles":[],"future":false,"zoneKm":{"Easy":12.13},"qualityZoneKm":0,"recovery":{"sleepH":7.3,"hrv":71,"restingHr":44,"efficiency":86,"source":"synthetic","hrvBaseline":73.4,"sleepBaseline":7.3}},"2026-05-19":{"date":"2026-05-19","dow":1,"km":11.3,"runs":[{"id":"18575314908","start":"17:47","name":"Afternoon Run","km":11.31,"sec":3121,"elev":66,"effort":78,"paceMi":444,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3121,"elev":66,"mood":"tired","moodScore":2,"note":"Sore. Backed off the pace without deciding to.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"sore","severity":4}],"future":false,"zoneKm":{"Easy":11.31},"qualityZoneKm":0,"recovery":{"sleepH":6.4,"hrv":61,"restingHr":45,"efficiency":80,"source":"synthetic","hrvBaseline":72.7,"sleepBaseline":7.25}},"2026-05-20":{"date":"2026-05-20","dow":2,"km":15.2,"runs":[{"id":"18580267196","start":"06:05","name":"Morning Run","km":3.15,"sec":910,"elev":19,"effort":11,"paceMi":465,"isKey":false},{"id":"18581432805","start":"06:29","name":"Morning Run","km":9.98,"sec":2442,"elev":30,"effort":111,"paceMi":394,"isKey":true,"kind":"intervals","label":"10x1K","avgHr":167.1,"maxHr":176,"grade":"HELD","tier":"good","qualityKm":9.0,"keyPaceMi":308,"tempF":69.0,"dewF":64,"heatAdjPct":3.3,"reps":[{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":162.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":168.0},{"dist":1000,"time":190,"paceSecPerMi":305.8,"hr":166.0},{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":168.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":169.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":191,"paceSecPerMi":307.4,"hr":169.0},{"dist":1000,"time":190,"paceSecPerMi":305.8,"hr":169.0}],"drift":2.07,"fade":0.0},{"id":"18581432490","start":"07:18","name":"Morning Run","km":2.12,"sec":606,"elev":21,"effort":10,"paceMi":460,"isKey":false}],"nRuns":3,"double":true,"type":"key","sec":3958,"elev":70,"mood":"positive","moodScore":4,"note":"Session went better than the legs deserved. 5:16s.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"sore","severity":4}],"future":false,"zoneKm":{"Easy":6.25,"LT":9.0},"qualityZoneKm":9.0,"recovery":{"sleepH":6.9,"hrv":68,"restingHr":44,"efficiency":83,"source":"synthetic","hrvBaseline":72.5,"sleepBaseline":7.24}},"2026-05-21":{"date":"2026-05-21","dow":3,"km":11.1,"runs":[{"id":"18595610514","start":"08:08","name":"Morning Run","km":11.11,"sec":3066,"elev":43,"effort":62,"paceMi":444,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3066,"elev":43,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":11.11},"qualityZoneKm":0,"recovery":{"sleepH":6.5,"hrv":61,"restingHr":46,"efficiency":81,"source":"synthetic","hrvBaseline":72.0,"sleepBaseline":7.2}},"2026-05-22":{"date":"2026-05-22","dow":4,"km":15.9,"runs":[{"id":"18609548846","start":"08:31","name":"Morning Run","km":15.9,"sec":4241,"elev":87,"effort":116,"paceMi":429,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":4241,"elev":87,"mood":"neutral","moodScore":3,"note":"Achilles tight on the first 2 km then quiet.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"tight","severity":3}],"future":false,"zoneKm":{"Moderate":15.9},"qualityZoneKm":0,"recovery":{"sleepH":7.2,"hrv":70,"restingHr":43,"efficiency":85,"source":"synthetic","hrvBaseline":71.9,"sleepBaseline":7.2}},"2026-05-23":{"date":"2026-05-23","dow":5,"km":7.3,"runs":[{"id":"18623320550","start":"07:05","name":"Morning Run","km":3.27,"sec":975,"elev":11,"effort":8,"paceMi":480,"isKey":false},{"id":"18623320788","start":"07:53","name":"Morning Run","km":0.82,"sec":483,"elev":5,"effort":0,"paceMi":944,"isKey":false},{"id":"18623320682","start":"08:28","name":"Morning Run","km":3.23,"sec":1020,"elev":1,"effort":4,"paceMi":508,"isKey":false}],"nRuns":3,"double":true,"type":"easy","sec":2478,"elev":17,"mood":"struggling","moodScore":1,"note":"Started, stopped, started again. Body said no. Logged it anyway.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"sore","severity":4}],"future":false,"zoneKm":{"Recovery":7.32},"qualityZoneKm":0,"recovery":{"sleepH":7.3,"hrv":71,"restingHr":43,"efficiency":86,"source":"synthetic","hrvBaseline":71.8,"sleepBaseline":7.2}},"2026-05-24":{"date":"2026-05-24","dow":6,"km":22.5,"runs":[{"id":"18638037142","start":"10:06","name":"Morning Run","km":22.52,"sec":5669,"elev":134,"effort":210,"paceMi":405,"isKey":true,"kind":"long","label":"22.5K long","avgHr":161.0,"maxHr":179,"grade":"HELD","tier":"good","qualityKm":7.88,"keyPaceMi":409,"tempF":74.6,"dewF":64,"heatAdjPct":3.86,"reps":null,"drift":3.87,"fade":2.7}],"nRuns":1,"double":false,"type":"long","sec":5669,"elev":134,"mood":"energized","moodScore":5,"note":"22.5 km, biggest effort of the block, and it felt controlled.","niggles":[],"future":false,"zoneKm":{"Moderate":22.52},"qualityZoneKm":0,"recovery":{"sleepH":6.7,"hrv":66,"restingHr":45,"efficiency":82,"source":"synthetic","hrvBaseline":71.6,"sleepBaseline":7.18}},"2026-05-25":{"date":"2026-05-25","dow":0,"km":13.2,"runs":[{"id":"18655520058","start":"19:11","name":"Evening Run","km":13.19,"sec":3314,"elev":70,"effort":91,"paceMi":404,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3314,"elev":70,"mood":"tired","moodScore":2,"note":"Evening 13. Head not in it \u2014 finals week starts.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"tight","severity":2}],"future":false,"zoneKm":{"Moderate":13.19},"qualityZoneKm":0,"recovery":{"sleepH":6.2,"hrv":67,"restingHr":44,"efficiency":79,"source":"synthetic","hrvBaseline":71.4,"sleepBaseline":7.14}},"2026-05-26":{"date":"2026-05-26","dow":1,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"neutral","moodScore":3,"note":"Off. Studying.","niggles":[],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":6.0,"hrv":65,"restingHr":44,"efficiency":78,"source":"synthetic","hrvBaseline":71.2,"sleepBaseline":7.1}},"2026-05-27":{"date":"2026-05-27","dow":2,"km":14.8,"runs":[{"id":"18682740940","start":"17:42","name":"Afternoon Run","km":14.83,"sec":3851,"elev":103,"effort":97,"paceMi":418,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3851,"elev":103,"mood":"positive","moodScore":4,"note":"Got out at 5:42. First run in two days that felt free.","niggles":[],"future":false,"zoneKm":{"Moderate":14.83},"qualityZoneKm":0,"recovery":{"sleepH":6.5,"hrv":72,"restingHr":43,"efficiency":81,"source":"synthetic","hrvBaseline":71.2,"sleepBaseline":7.08}},"2026-05-28":{"date":"2026-05-28","dow":3,"km":20.0,"runs":[{"id":"18689850984","start":"08:02","name":"Morning Run","km":20.02,"sec":4821,"elev":127,"effort":172,"paceMi":388,"isKey":true,"kind":"long","label":"20K steady","avgHr":159.0,"maxHr":174,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":7.01,"keyPaceMi":387,"tempF":67.9,"dewF":60,"heatAdjPct":2.79,"reps":null,"drift":-3.45,"fade":-26.6}],"nRuns":1,"double":false,"type":"long","sec":4821,"elev":127,"mood":"energized","moodScore":5,"note":"20 km at 4:01/km. Fastest long run of the block, in the middle of finals.","niggles":[],"future":false,"zoneKm":{"Steady":20.02},"qualityZoneKm":0,"recovery":{"sleepH":6.2,"hrv":67,"restingHr":44,"efficiency":79,"source":"synthetic","hrvBaseline":71.0,"sleepBaseline":7.05}},"2026-05-29":{"date":"2026-05-29","dow":4,"km":11.3,"runs":[{"id":"18703507873","start":"09:29","name":"Morning Run","km":11.33,"sec":2834,"elev":35,"effort":null,"paceMi":403,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2834,"elev":35,"mood":"positive","moodScore":4,"note":null,"niggles":[{"niggleId":"n1","area":"Left achilles","word":"tight","severity":2}],"future":false,"zoneKm":{"Moderate":11.33},"qualityZoneKm":0,"recovery":{"sleepH":6.3,"hrv":68,"restingHr":43,"efficiency":80,"source":"synthetic","hrvBaseline":70.5,"sleepBaseline":6.98}},"2026-05-30":{"date":"2026-05-30","dow":5,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"neutral","moodScore":3,"note":"Off. Exams.","niggles":[],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":6.9,"hrv":75,"restingHr":42,"efficiency":83,"source":"synthetic","hrvBaseline":70.2,"sleepBaseline":6.94}},"2026-05-31":{"date":"2026-05-31","dow":6,"km":4.9,"runs":[{"id":"18734446607","start":"14:55","name":"Finals \ud83d\udc7d","km":4.91,"sec":1309,"elev":7,"effort":null,"paceMi":429,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":1309,"elev":7,"mood":"positive","moodScore":4,"note":"Finals run \ud83d\udc7d \u2014 5 km to get the week off my back.","niggles":[],"future":false,"zoneKm":{"Moderate":4.91},"qualityZoneKm":0,"recovery":{"sleepH":6.1,"hrv":68,"restingHr":44,"efficiency":79,"source":"synthetic","hrvBaseline":69.9,"sleepBaseline":6.89}},"2026-06-01":{"date":"2026-06-01","dow":0,"km":19.4,"runs":[{"id":"18746387942","start":"08:37","name":"Morning Run","km":9.35,"sec":2616,"elev":39,"effort":11,"paceMi":450,"isKey":false},{"id":"18749451220","start":"18:21","name":"Evening Run","km":10.07,"sec":2780,"elev":47,"effort":81,"paceMi":444,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":5396,"elev":86,"mood":"positive","moodScore":4,"note":"Double back on. Down week did its job \u2014 64 km and I feel new.","niggles":[],"future":false,"zoneKm":{"Easy":19.42},"qualityZoneKm":0,"recovery":{"sleepH":7.8,"hrv":80,"restingHr":41,"efficiency":89,"source":"synthetic","hrvBaseline":69.8,"sleepBaseline":6.89}},"2026-06-02":{"date":"2026-06-02","dow":1,"km":14.0,"runs":[{"id":"18754266498","start":"06:04","name":"Morning Run","km":3.31,"sec":956,"elev":15,"effort":17,"paceMi":465,"isKey":false},{"id":"18755653581","start":"06:27","name":"Morning Run","km":10.67,"sec":3737,"elev":99,"effort":84,"paceMi":563,"isKey":false}],"nRuns":2,"double":true,"type":"easy","sec":4693,"elev":114,"mood":"neutral","moodScore":3,"note":"Hills. Slow on purpose.","niggles":[{"niggleId":"n1","area":"Left achilles","word":"easing","severity":1}],"future":false,"zoneKm":{"Easy":3.31,"Recovery":10.67},"qualityZoneKm":0,"recovery":{"sleepH":6.9,"hrv":70,"restingHr":42,"efficiency":83,"source":"synthetic","hrvBaseline":69.6,"sleepBaseline":6.88}},"2026-06-03":{"date":"2026-06-03","dow":2,"km":11.0,"runs":[{"id":"18776982211","start":"17:43","name":"Afternoon Run","km":11.03,"sec":2979,"elev":57,"effort":88,"paceMi":435,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2979,"elev":57,"mood":"positive","moodScore":4,"note":"Achilles hasn't said anything in a week.","niggles":[],"future":false,"zoneKm":{"Easy":11.03},"qualityZoneKm":0,"recovery":{"sleepH":7.6,"hrv":79,"restingHr":41,"efficiency":88,"source":"synthetic","hrvBaseline":69.6,"sleepBaseline":6.88}},"2026-06-04":{"date":"2026-06-04","dow":3,"km":14.0,"runs":[{"id":"18791435395","start":"19:09","name":"Evening Run","km":14.02,"sec":3846,"elev":99,"effort":96,"paceMi":442,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3846,"elev":99,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":14.02},"qualityZoneKm":0,"recovery":{"sleepH":7.3,"hrv":74,"restingHr":42,"efficiency":86,"source":"synthetic","hrvBaseline":69.5,"sleepBaseline":6.88}},"2026-06-05":{"date":"2026-06-05","dow":4,"km":5.0,"runs":[{"id":"18795776860","start":"06:25","name":"Morning Run","km":1.44,"sec":1011,"elev":6,"effort":3,"paceMi":1131,"isKey":false},{"id":"18796471176","start":"07:18","name":"Morning Run","km":3.61,"sec":1632,"elev":10,"effort":24,"paceMi":728,"isKey":false}],"nRuns":2,"double":true,"type":"easy","sec":2643,"elev":16,"mood":"struggling","moodScore":1,"note":"Two false starts. Stopped both. No reason I can name \u2014 just nothing there.","niggles":[],"future":false,"zoneKm":{"Recovery":5.05},"qualityZoneKm":0,"recovery":{"sleepH":7.9,"hrv":81,"restingHr":40,"efficiency":89,"source":"synthetic","hrvBaseline":69.4,"sleepBaseline":6.88}},"2026-06-06":{"date":"2026-06-06","dow":5,"km":18.4,"runs":[{"id":"18809987015","start":"06:40","name":"Loop x PD \ud83d\udfea","km":18.4,"sec":4343,"elev":121,"effort":188,"paceMi":380,"isKey":true,"kind":"long","label":"Loop x PD 18K","avgHr":164.0,"maxHr":176,"grade":"EASED","tier":"watch","qualityKm":6.44,"keyPaceMi":379,"tempF":75.0,"dewF":70,"heatAdjPct":4.5,"reps":null,"drift":6.24,"fade":8.7}],"nRuns":1,"double":false,"type":"long","sec":4343,"elev":121,"mood":"energized","moodScore":5,"note":"Loop x PD \ud83d\udfea \u2014 was cooking for this one. 18.4 km at 3:56/km.","niggles":[],"future":false,"zoneKm":{"Steady":18.4},"qualityZoneKm":0,"recovery":{"sleepH":8.0,"hrv":82,"restingHr":40,"efficiency":90,"source":"synthetic","hrvBaseline":69.3,"sleepBaseline":6.87}},"2026-06-07":{"date":"2026-06-07","dow":6,"km":6.7,"runs":[{"id":"18836290200","start":"19:23","name":"Evening Run","km":6.68,"sec":1801,"elev":28,"effort":46,"paceMi":434,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":1801,"elev":28,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":6.68},"qualityZoneKm":0,"recovery":{"sleepH":7.2,"hrv":75,"restingHr":42,"efficiency":85,"source":"synthetic","hrvBaseline":69.3,"sleepBaseline":6.88}},"2026-06-08":{"date":"2026-06-08","dow":0,"km":12.7,"runs":[{"id":"18838086385","start":"08:42","name":"Morning Run","km":12.73,"sec":3473,"elev":64,"effort":85,"paceMi":439,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3473,"elev":64,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":12.73},"qualityZoneKm":0,"recovery":{"sleepH":7.9,"hrv":83,"restingHr":40,"efficiency":89,"source":"synthetic","hrvBaseline":69.8,"sleepBaseline":6.9}},"2026-06-09":{"date":"2026-06-09","dow":1,"km":15.1,"runs":[{"id":"18852923230","start":"06:06","name":"Morning Run","km":3.17,"sec":910,"elev":5,"effort":5,"paceMi":462,"isKey":false},{"id":"18852923472","start":"06:30","name":"Morning Run","km":11.9,"sec":3171,"elev":45,"effort":85,"paceMi":429,"isKey":false}],"nRuns":2,"double":true,"type":"easy","sec":4081,"elev":50,"mood":"positive","moodScore":4,"note":"Double. Easy is genuinely easy again.","niggles":[],"future":false,"zoneKm":{"Easy":3.17,"Moderate":11.9},"qualityZoneKm":0,"recovery":{"sleepH":7.2,"hrv":75,"restingHr":41,"efficiency":85,"source":"synthetic","hrvBaseline":70.3,"sleepBaseline":6.93}},"2026-06-10":{"date":"2026-06-10","dow":2,"km":19.1,"runs":[{"id":"18865130509","start":"07:52","name":"Morning Run","km":12.61,"sec":3435,"elev":77,"effort":75,"paceMi":438,"isKey":false},{"id":"18871914348","start":"18:34","name":"Evening Run","km":6.45,"sec":1830,"elev":43,"effort":39,"paceMi":457,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":5265,"elev":120,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":19.06},"qualityZoneKm":0,"recovery":{"sleepH":7.7,"hrv":82,"restingHr":40,"efficiency":88,"source":"synthetic","hrvBaseline":71.0,"sleepBaseline":6.96}},"2026-06-11":{"date":"2026-06-11","dow":3,"km":9.7,"runs":[{"id":"18885019056","start":"18:22","name":"Evening Run","km":9.67,"sec":2702,"elev":47,"effort":54,"paceMi":449,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2702,"elev":47,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":9.67},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":77,"restingHr":41,"efficiency":86,"source":"synthetic","hrvBaseline":71.5,"sleepBaseline":6.99}},"2026-06-12":{"date":"2026-06-12","dow":4,"km":6.5,"runs":[{"id":"18896464178","start":"18:03","name":"Evening Run","km":6.45,"sec":1842,"elev":36,"effort":30,"paceMi":460,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":1842,"elev":36,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":6.45},"qualityZoneKm":0,"recovery":{"sleepH":8.0,"hrv":84,"restingHr":39,"efficiency":90,"source":"synthetic","hrvBaseline":72.2,"sleepBaseline":7.03}},"2026-06-13":{"date":"2026-06-13","dow":5,"km":21.1,"runs":[{"id":"18904696920","start":"06:34","name":"Morning Run","km":21.09,"sec":5171,"elev":225,"effort":211,"paceMi":395,"isKey":true,"kind":"long","label":"21K long","avgHr":162.0,"maxHr":173,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":7.38,"keyPaceMi":392,"tempF":75.0,"dewF":70,"heatAdjPct":4.5,"reps":null,"drift":-1.35,"fade":-11.0}],"nRuns":1,"double":false,"type":"long","sec":5171,"elev":225,"mood":"energized","moodScore":5,"note":"21 km with 225 m of climb and still ran 4:05/km.","niggles":[],"future":false,"zoneKm":{"Moderate":21.09},"qualityZoneKm":0,"recovery":{"sleepH":8.1,"hrv":85,"restingHr":39,"efficiency":91,"source":"synthetic","hrvBaseline":72.7,"sleepBaseline":7.06}},"2026-06-14":{"date":"2026-06-14","dow":6,"km":9.7,"runs":[{"id":"18920866465","start":"10:54","name":"Morning Run","km":9.67,"sec":2590,"elev":48,"effort":59,"paceMi":431,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2590,"elev":48,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":9.67},"qualityZoneKm":0,"recovery":{"sleepH":7.0,"hrv":74,"restingHr":42,"efficiency":84,"source":"synthetic","hrvBaseline":73.2,"sleepBaseline":7.09}},"2026-06-15":{"date":"2026-06-15","dow":0,"km":11.3,"runs":[{"id":"18936428107","start":"16:52","name":"Afternoon Run","km":11.27,"sec":3078,"elev":61,"effort":77,"paceMi":440,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3078,"elev":61,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":11.27},"qualityZoneKm":0,"recovery":{"sleepH":7.8,"hrv":82,"restingHr":41,"efficiency":89,"source":"synthetic","hrvBaseline":73.6,"sleepBaseline":7.11}},"2026-06-16":{"date":"2026-06-16","dow":1,"km":19.4,"runs":[{"id":"18949790012","start":"09:03","name":"Morning Run","km":11.27,"sec":3011,"elev":58,"effort":68,"paceMi":430,"isKey":false},{"id":"18952124970","start":"19:04","name":"Evening Run","km":8.11,"sec":2240,"elev":37,"effort":43,"paceMi":444,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":5251,"elev":95,"mood":"positive","moodScore":4,"note":"Double. Both boring. That's the goal.","niggles":[],"future":false,"zoneKm":{"Moderate":11.27,"Easy":8.11},"qualityZoneKm":0,"recovery":{"sleepH":7.1,"hrv":74,"restingHr":42,"efficiency":85,"source":"synthetic","hrvBaseline":74.1,"sleepBaseline":7.13}},"2026-06-17":{"date":"2026-06-17","dow":2,"km":15.6,"runs":[{"id":"18956881964","start":"06:06","name":"Morning Run","km":3.23,"sec":936,"elev":11,"effort":7,"paceMi":467,"isKey":false},{"id":"18956889343","start":"06:30","name":"Morning Run","km":8.51,"sec":1849,"elev":37,"effort":96,"paceMi":349,"isKey":true,"kind":"intervals","label":"8x1K","avgHr":167.0,"maxHr":178,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":8.0,"keyPaceMi":314,"tempF":75.0,"dewF":70,"heatAdjPct":4.5,"reps":[{"dist":1000,"time":199,"paceSecPerMi":320.3,"hr":160.0},{"dist":1000,"time":195,"paceSecPerMi":313.8,"hr":171.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":169.0},{"dist":1000,"time":197,"paceSecPerMi":317.0,"hr":170.0},{"dist":1000,"time":200,"paceSecPerMi":321.9,"hr":174.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":170.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":171.0}],"drift":1.22,"fade":-6.4},{"id":"18957574459","start":"07:16","name":"Morning Run","km":3.83,"sec":1098,"elev":26,"effort":22,"paceMi":461,"isKey":false}],"nRuns":3,"double":true,"type":"key","sec":3883,"elev":74,"mood":"energized","moodScore":5,"note":"8.5 km session at 5:00/mi pace on the fast bits. Best legs in a month.","niggles":[],"future":false,"zoneKm":{"Easy":7.57,"MP":3.0,"LT":5.0},"qualityZoneKm":8.0,"recovery":{"sleepH":7.6,"hrv":81,"restingHr":41,"efficiency":88,"source":"synthetic","hrvBaseline":74.6,"sleepBaseline":7.16}},"2026-06-18":{"date":"2026-06-18","dow":3,"km":11.2,"runs":[{"id":"18977899674","start":"17:25","name":"Afternoon Run","km":11.21,"sec":3106,"elev":73,"effort":91,"paceMi":446,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3106,"elev":73,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":11.21},"qualityZoneKm":0,"recovery":{"sleepH":7.0,"hrv":72,"restingHr":43,"efficiency":84,"source":"synthetic","hrvBaseline":75.0,"sleepBaseline":7.17}},"2026-06-19":{"date":"2026-06-19","dow":4,"km":9.9,"runs":[{"id":"18986504888","start":"06:55","name":"Morning Run","km":4.24,"sec":1282,"elev":38,"effort":30,"paceMi":487,"isKey":false},{"id":"19014308866","start":"08:00","name":"Morning Run \u2014 WU/CD","km":5.63,"sec":1680,"elev":0,"effort":null,"paceMi":480,"isKey":false}],"nRuns":2,"double":true,"type":"easy","sec":2962,"elev":38,"mood":"neutral","moodScore":3,"note":"Broken up \u2014 jog then WU/CD. Schedule, not legs.","niggles":[],"future":false,"zoneKm":{"Recovery":9.87},"qualityZoneKm":0,"recovery":{"sleepH":7.9,"hrv":83,"restingHr":40,"efficiency":89,"source":"synthetic","hrvBaseline":75.4,"sleepBaseline":7.2}},"2026-06-20":{"date":"2026-06-20","dow":5,"km":21.3,"runs":[{"id":"19000018348","start":"06:36","name":"Morning Run","km":21.33,"sec":5547,"elev":195,"effort":145,"paceMi":419,"isKey":true,"kind":"long","label":"21K long","avgHr":151.0,"maxHr":170,"grade":"EASED","tier":"watch","qualityKm":7.47,"keyPaceMi":418,"tempF":75.0,"dewF":70,"heatAdjPct":4.5,"reps":null,"drift":2.97,"fade":8.1}],"nRuns":1,"double":false,"type":"long","sec":5547,"elev":195,"mood":"positive","moodScore":4,"note":"21.3 km. Solid, unremarkable, exactly right.","niggles":[],"future":false,"zoneKm":{"Moderate":21.33},"qualityZoneKm":0,"recovery":{"sleepH":8.0,"hrv":84,"restingHr":40,"efficiency":90,"source":"synthetic","hrvBaseline":75.9,"sleepBaseline":7.23}},"2026-06-21":{"date":"2026-06-21","dow":6,"km":10.8,"runs":[{"id":"19014204417","start":"12:16","name":"Lunch Run","km":10.81,"sec":2886,"elev":71,"effort":72,"paceMi":429,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2886,"elev":71,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Moderate":10.81},"qualityZoneKm":0,"recovery":{"sleepH":6.9,"hrv":73,"restingHr":43,"efficiency":83,"source":"synthetic","hrvBaseline":76.1,"sleepBaseline":7.23}},"2026-06-22":{"date":"2026-06-22","dow":0,"km":19.3,"runs":[{"id":"19022199276","start":"07:28","name":"Morning Run","km":12.93,"sec":3514,"elev":83,"effort":72,"paceMi":437,"isKey":false},{"id":"19029064608","start":"18:46","name":"Evening Run","km":6.37,"sec":1793,"elev":33,"effort":41,"paceMi":453,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":5307,"elev":116,"mood":"neutral","moodScore":3,"note":"Double.","niggles":[],"future":false,"zoneKm":{"Easy":19.3},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":69,"restingHr":44,"efficiency":86,"source":"synthetic","hrvBaseline":76.2,"sleepBaseline":7.28}},"2026-06-23":{"date":"2026-06-23","dow":1,"km":23.4,"runs":[{"id":"19035729819","start":"06:06","name":"Morning Run","km":3.2,"sec":918,"elev":9,"effort":9,"paceMi":462,"isKey":false},{"id":"19035729944","start":"06:27","name":"Morning Run","km":9.68,"sec":2926,"elev":60,"effort":79,"paceMi":486,"isKey":true,"kind":"intervals","label":"mile/1K/600 set","avgHr":154.3,"maxHr":183,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":6.8,"keyPaceMi":309,"tempF":75.0,"dewF":70,"heatAdjPct":4.5,"reps":[{"dist":1000,"time":201,"paceSecPerMi":323.5,"hr":147.0},{"dist":1000,"time":211,"paceSecPerMi":339.6,"hr":166.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":164.0},{"dist":599.0,"time":112,"paceSecPerMi":300.8,"hr":167.0},{"dist":1000,"time":188,"paceSecPerMi":302.6,"hr":170.0},{"dist":601.0,"time":111,"paceSecPerMi":297.3,"hr":170.0},{"dist":1000,"time":188,"paceSecPerMi":302.6,"hr":170.0},{"dist":602.0,"time":104,"paceSecPerMi":278.2,"hr":169}],"drift":6.74,"fade":-38.1},{"id":"19035729859","start":"07:29","name":"Morning Run","km":4.07,"sec":1229,"elev":19,"effort":15,"paceMi":486,"isKey":false},{"id":"19042635886","start":"18:24","name":"Evening Run","km":6.4,"sec":1837,"elev":33,"effort":29,"paceMi":462,"isKey":false}],"nRuns":4,"double":true,"type":"key","sec":6910,"elev":121,"mood":"tired","moodScore":2,"note":"Hamstring grabbed on the session. Finished it slower than planned.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"grabby","severity":5}],"future":false,"zoneKm":{"Easy":12.478,"MP":2.0,"LT":4.2,"5K":0.602,"Recovery":4.07},"qualityZoneKm":6.8,"recovery":{"sleepH":6.5,"hrv":59,"restingHr":45,"efficiency":81,"source":"synthetic","hrvBaseline":76.0,"sleepBaseline":7.29}},"2026-06-24":{"date":"2026-06-24","dow":2,"km":12.8,"runs":[{"id":"19050409932","start":"08:16","name":"Morning Run","km":12.82,"sec":3621,"elev":94,"effort":63,"paceMi":455,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3621,"elev":94,"mood":"tired","moodScore":2,"note":"Still sore. Ran anyway. Probably shouldn't have.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"sore","severity":5}],"future":false,"zoneKm":{"Easy":12.82},"qualityZoneKm":0,"recovery":{"sleepH":6.7,"hrv":62,"restingHr":45,"efficiency":82,"source":"synthetic","hrvBaseline":75.6,"sleepBaseline":7.3}},"2026-06-25":{"date":"2026-06-25","dow":3,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"struggling","moodScore":1,"note":"Off. Hamstring.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"sore","severity":6}],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":6.7,"hrv":61,"restingHr":45,"efficiency":82,"source":"synthetic","hrvBaseline":75.4,"sleepBaseline":7.32}},"2026-06-26":{"date":"2026-06-26","dow":4,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"struggling","moodScore":1,"note":"Off again. Getting frustrated.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"sore","severity":5}],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":7.3,"hrv":68,"restingHr":43,"efficiency":86,"source":"synthetic","hrvBaseline":75.4,"sleepBaseline":7.35}},"2026-06-27":{"date":"2026-06-27","dow":5,"km":28.6,"runs":[{"id":"19087453621","start":"06:37","name":"Forgot to turn it off Ks again","km":28.6,"sec":7245,"elev":160,"effort":263,"paceMi":408,"isKey":true,"kind":"long","label":"2hr / 28.6K","avgHr":160.0,"maxHr":170,"grade":"FADED","tier":"alert","qualityKm":10.01,"keyPaceMi":405,"tempF":75.0,"dewF":70,"heatAdjPct":4.5,"reps":null,"drift":7.25,"fade":19.0}],"nRuns":1,"double":false,"type":"long","sec":7245,"elev":160,"mood":"positive","moodScore":4,"note":"28.6 km, 2 hours, forgot to turn it off. Hamstring held on the whole way.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"held on","severity":4}],"future":false,"zoneKm":{"Moderate":28.6},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":69,"restingHr":43,"efficiency":86,"source":"synthetic","hrvBaseline":75.2,"sleepBaseline":7.37}},"2026-06-28":{"date":"2026-06-28","dow":6,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"tired","moodScore":2,"note":"Off. Earned it.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"sore","severity":4}],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":6.3,"hrv":58,"restingHr":46,"efficiency":80,"source":"synthetic","hrvBaseline":74.9,"sleepBaseline":7.38}},"2026-06-29":{"date":"2026-06-29","dow":0,"km":11.4,"runs":[{"id":"19127383035","start":"12:51","name":"Lunch Run","km":11.43,"sec":3244,"elev":73,"effort":82,"paceMi":457,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3244,"elev":73,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":11.43},"qualityZoneKm":0,"recovery":{"sleepH":8.2,"hrv":86,"restingHr":39,"efficiency":91,"source":"synthetic","hrvBaseline":75.1,"sleepBaseline":7.39}},"2026-06-30":{"date":"2026-06-30","dow":1,"km":17.7,"runs":[{"id":"19127339906","start":"06:17","name":"4 mi \u2014 WU & CD","km":6.44,"sec":1800,"elev":0,"effort":null,"paceMi":450,"isKey":false},{"id":"19127352055","start":"06:18","name":"7 mi fartlek","km":11.27,"sec":2400,"elev":0,"effort":null,"paceMi":343,"isKey":true,"kind":"fartlek","label":"7mi fartlek 4'/2'","avgHr":null,"maxHr":null,"grade":"HELD","tier":"good","qualityKm":8.45,"keyPaceMi":343,"tempF":75.0,"dewF":70,"heatAdjPct":4.5,"reps":null,"drift":0,"fade":0}],"nRuns":2,"double":true,"type":"key","sec":4200,"elev":0,"mood":"energized","moodScore":5,"note":"7 mi fartlek \u2014 4' at 5:20s. Hamstring quiet the whole way.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"tight","severity":3}],"future":false,"zoneKm":{"Easy":6.44,"MP":11.27},"qualityZoneKm":11.27,"recovery":{"sleepH":7.3,"hrv":76,"restingHr":40,"efficiency":86,"source":"synthetic","hrvBaseline":75.3,"sleepBaseline":7.41}},"2026-07-01":{"date":"2026-07-01","dow":2,"km":19.6,"runs":[{"id":"19138875702","start":"09:16","name":"Morning Run","km":13.08,"sec":3456,"elev":52,"effort":85,"paceMi":425,"isKey":false},{"id":"19144335709","start":"18:43","name":"Evening Run","km":6.5,"sec":1757,"elev":29,"effort":46,"paceMi":435,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":5213,"elev":81,"mood":"positive","moodScore":4,"note":"Double. 107 km week and the legs are ahead of it.","niggles":[],"future":false,"zoneKm":{"Moderate":13.08,"Easy":6.5},"qualityZoneKm":0,"recovery":{"sleepH":7.7,"hrv":81,"restingHr":40,"efficiency":88,"source":"synthetic","hrvBaseline":75.4,"sleepBaseline":7.41}},"2026-07-02":{"date":"2026-07-02","dow":3,"km":16.3,"runs":[{"id":"19152687687","start":"10:47","name":"Morning Run","km":11.27,"sec":3150,"elev":0,"effort":null,"paceMi":450,"isKey":false},{"id":"19157721352","start":"19:47","name":"Evening Run","km":5.05,"sec":1424,"elev":19,"effort":19,"paceMi":454,"isKey":false}],"nRuns":2,"double":true,"type":"easy","sec":4574,"elev":19,"mood":"neutral","moodScore":3,"note":null,"niggles":[{"niggleId":"n2","area":"Right hamstring","word":"tight","severity":2}],"future":false,"zoneKm":{"Easy":16.32},"qualityZoneKm":0,"recovery":{"sleepH":7.5,"hrv":78,"restingHr":40,"efficiency":87,"source":"synthetic","hrvBaseline":75.5,"sleepBaseline":7.42}},"2026-07-03":{"date":"2026-07-03","dow":4,"km":10.5,"runs":[{"id":"19168308283","start":"08:00","name":"Morning jog","km":10.46,"sec":3120,"elev":0,"effort":null,"paceMi":480,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3120,"elev":0,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Recovery":10.46},"qualityZoneKm":0,"recovery":{"sleepH":8.3,"hrv":87,"restingHr":38,"efficiency":92,"source":"synthetic","hrvBaseline":75.7,"sleepBaseline":7.43}},"2026-07-04":{"date":"2026-07-04","dow":5,"km":20.0,"runs":[{"id":"19176659405","start":"06:34","name":"Cooked \ud83d\udfea \ud83c\uddfa\ud83c\uddf8","km":20.01,"sec":4732,"elev":208,"effort":214,"paceMi":380,"isKey":true,"kind":"tempo","label":"20K tempo","avgHr":167.0,"maxHr":181,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":15.01,"keyPaceMi":376,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":null,"drift":0.38,"fade":-14.5}],"nRuns":1,"double":false,"type":"key","sec":4732,"elev":208,"mood":"energized","moodScore":5,"note":"Cooked \ud83d\udfea \ud83c\uddfa\ud83c\uddf8 \u2014 20 km at 3:56/km with 208 m of climb.","niggles":[],"future":false,"zoneKm":{"Steady":20.01},"qualityZoneKm":0,"recovery":{"sleepH":8.4,"hrv":88,"restingHr":38,"efficiency":92,"source":"synthetic","hrvBaseline":75.9,"sleepBaseline":7.45}},"2026-07-05":{"date":"2026-07-05","dow":6,"km":11.7,"runs":[{"id":"19191237495","start":"09:38","name":"Morning Run","km":11.73,"sec":3109,"elev":43,"effort":91,"paceMi":426,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3109,"elev":43,"mood":"positive","moodScore":4,"note":"Hamstring officially gone.","niggles":[{"niggleId":"n2","area":"Right hamstring","word":"easing","severity":1}],"future":false,"zoneKm":{"Moderate":11.73},"qualityZoneKm":0,"recovery":{"sleepH":7.1,"hrv":75,"restingHr":41,"efficiency":85,"source":"synthetic","hrvBaseline":75.9,"sleepBaseline":7.44}},"2026-07-06":{"date":"2026-07-06","dow":0,"km":13.0,"runs":[{"id":"19201538254","start":"08:08","name":"Morning Run","km":13.04,"sec":3493,"elev":43,"effort":66,"paceMi":431,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3493,"elev":43,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":13.04},"qualityZoneKm":0,"recovery":{"sleepH":8.1,"hrv":87,"restingHr":39,"efficiency":91,"source":"synthetic","hrvBaseline":76.1,"sleepBaseline":7.45}},"2026-07-07":{"date":"2026-07-07","dow":1,"km":20.4,"runs":[{"id":"19215452039","start":"08:19","name":"Morning Run","km":13.9,"sec":3835,"elev":72,"effort":74,"paceMi":444,"isKey":false},{"id":"19222220441","start":"19:00","name":"Evening Run","km":6.48,"sec":1817,"elev":36,"effort":42,"paceMi":451,"isKey":false}],"nRuns":2,"double":true,"type":"long","sec":5652,"elev":108,"mood":"neutral","moodScore":3,"note":"Double.","niggles":[],"future":false,"zoneKm":{"Easy":20.38},"qualityZoneKm":0,"recovery":{"sleepH":7.4,"hrv":79,"restingHr":40,"efficiency":86,"source":"synthetic","hrvBaseline":76.2,"sleepBaseline":7.46}},"2026-07-08":{"date":"2026-07-08","dow":2,"km":14.4,"runs":[{"id":"19229242125","start":"06:06","name":"Morning Run","km":3.21,"sec":940,"elev":15,"effort":9,"paceMi":472,"isKey":false},{"id":"19229242469","start":"06:28","name":"Morning Run","km":10.31,"sec":2264,"elev":44,"effort":110,"paceMi":353,"isKey":true,"kind":"intervals","label":"10x1K/800","avgHr":164.5,"maxHr":176,"grade":"EASED","tier":"watch","qualityKm":9.68,"keyPaceMi":315,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":[{"dist":1000,"time":198,"paceSecPerMi":318.6,"hr":157.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":166.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":166.0},{"dist":1000,"time":194,"paceSecPerMi":312.2,"hr":168.0},{"dist":1000,"time":192,"paceSecPerMi":309.0,"hr":168.0},{"dist":1000,"time":190,"paceSecPerMi":305.8,"hr":170.0},{"dist":825.0,"time":165,"paceSecPerMi":321.8,"hr":165.0},{"dist":853.0,"time":168,"paceSecPerMi":317.1,"hr":168.0},{"dist":1000,"time":204,"paceSecPerMi":328.3,"hr":165},{"dist":1000,"time":196,"paceSecPerMi":315.4,"hr":168.0}],"drift":1.89,"fade":6.1},{"id":"19229242045","start":"07:17","name":"Morning Run","km":0.93,"sec":318,"elev":9,"effort":1,"paceMi":552,"isKey":false}],"nRuns":3,"double":true,"type":"key","sec":3522,"elev":68,"mood":"energized","moodScore":5,"note":"10.3 km session, 5:52/mi on the reps. Legs are somewhere new.","niggles":[],"future":false,"zoneKm":{"Easy":3.842,"MP":4.678,"LT":5.0,"Recovery":0.93},"qualityZoneKm":9.68,"recovery":{"sleepH":7.6,"hrv":82,"restingHr":40,"efficiency":88,"source":"synthetic","hrvBaseline":76.2,"sleepBaseline":7.45}},"2026-07-09":{"date":"2026-07-09","dow":3,"km":12.9,"runs":[{"id":"19242849300","start":"06:56","name":"Morning Run","km":12.87,"sec":3595,"elev":63,"effort":48,"paceMi":450,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3595,"elev":63,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":12.87},"qualityZoneKm":0,"recovery":{"sleepH":7.3,"hrv":77,"restingHr":41,"efficiency":86,"source":"synthetic","hrvBaseline":76.2,"sleepBaseline":7.45}},"2026-07-10":{"date":"2026-07-10","dow":4,"km":6.5,"runs":[{"id":"19256443016","start":"08:25","name":"Morning Run","km":6.51,"sec":1895,"elev":34,"effort":11,"paceMi":469,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":1895,"elev":34,"mood":"neutral","moodScore":3,"note":"Short and easy. Saving it.","niggles":[],"future":false,"zoneKm":{"Easy":6.51},"qualityZoneKm":0,"recovery":{"sleepH":8.2,"hrv":88,"restingHr":38,"efficiency":91,"source":"synthetic","hrvBaseline":76.4,"sleepBaseline":7.46}},"2026-07-11":{"date":"2026-07-11","dow":5,"km":24.1,"runs":[{"id":"19269767324","start":"06:35","name":"Morning Run","km":24.12,"sec":6154,"elev":251,"effort":226,"paceMi":411,"isKey":true,"kind":"long","label":"24K long","avgHr":161.0,"maxHr":174,"grade":"HELD","tier":"good","qualityKm":8.44,"keyPaceMi":410,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":null,"drift":4.23,"fade":-0.3}],"nRuns":1,"double":false,"type":"long","sec":6154,"elev":251,"mood":"energized","moodScore":5,"note":"24.1 km, 251 m up. Longest and hilliest of the block and I finished running.","niggles":[],"future":false,"zoneKm":{"Moderate":24.12},"qualityZoneKm":0,"recovery":{"sleepH":8.3,"hrv":89,"restingHr":38,"efficiency":92,"source":"synthetic","hrvBaseline":76.5,"sleepBaseline":7.46}},"2026-07-12":{"date":"2026-07-12","dow":6,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"positive","moodScore":4,"note":"Off. Fully off.","niggles":[],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":7.2,"hrv":78,"restingHr":41,"efficiency":85,"source":"synthetic","hrvBaseline":76.6,"sleepBaseline":7.47}},"2026-07-13":{"date":"2026-07-13","dow":0,"km":9.7,"runs":[{"id":"19295211981","start":"07:53","name":"Morning Run","km":9.67,"sec":2688,"elev":40,"effort":40,"paceMi":447,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2688,"elev":40,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":9.67},"qualityZoneKm":0,"recovery":{"sleepH":7.6,"hrv":77,"restingHr":42,"efficiency":88,"source":"synthetic","hrvBaseline":76.5,"sleepBaseline":7.46}},"2026-07-14":{"date":"2026-07-14","dow":1,"km":21.0,"runs":[{"id":"19308651785","start":"06:05","name":"Morning Run","km":3.5,"sec":1068,"elev":14,"effort":7,"paceMi":491,"isKey":false},{"id":"19308651644","start":"06:31","name":"Morning Run","km":8.57,"sec":1965,"elev":31,"effort":94,"paceMi":369,"isKey":true,"kind":"intervals","label":"1200/800/400 x3","avgHr":165.3,"maxHr":184,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":7.24,"keyPaceMi":301,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":[{"dist":1203.0,"time":236,"paceSecPerMi":315.8,"hr":162.0},{"dist":804.0,"time":154,"paceSecPerMi":308.4,"hr":167.0},{"dist":406.0,"time":74,"paceSecPerMi":293.4,"hr":164.0},{"dist":1211.0,"time":223,"paceSecPerMi":296.3,"hr":178.0},{"dist":807.0,"time":149,"paceSecPerMi":297.0,"hr":175.0},{"dist":402.0,"time":73,"paceSecPerMi":292.1,"hr":158.0},{"dist":1200.0,"time":228,"paceSecPerMi":305.7,"hr":177.0},{"dist":804.0,"time":146,"paceSecPerMi":292.1,"hr":172.0},{"dist":399.0,"time":71,"paceSecPerMi":286.0,"hr":154.0}],"drift":1.36,"fade":-11.7},{"id":"19308651779","start":"07:17","name":"Morning Run","km":2.38,"sec":803,"elev":5,"effort":4,"paceMi":542,"isKey":false},{"id":"19316471388","start":"18:33","name":"Evening Run","km":6.51,"sec":1710,"elev":26,"effort":48,"paceMi":423,"isKey":false}],"nRuns":4,"double":true,"type":"key","sec":5546,"elev":76,"mood":"positive","moodScore":4,"note":"Session + double. Fine, not sparkling.","niggles":[],"future":false,"zoneKm":{"Recovery":5.88,"MP":1.203,"LT":4.022,"5K":2.011,"Easy":1.334,"Moderate":6.51},"qualityZoneKm":7.24,"recovery":{"sleepH":6.9,"hrv":69,"restingHr":43,"efficiency":83,"source":"synthetic","hrvBaseline":76.3,"sleepBaseline":7.46}},"2026-07-15":{"date":"2026-07-15","dow":2,"km":11.3,"runs":[{"id":"19326597275","start":"08:00","name":"Treadmill","km":11.27,"sec":3045,"elev":0,"effort":null,"paceMi":435,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3045,"elev":0,"mood":"tired","moodScore":2,"note":"Treadmill. Foot achy underneath \u2014 new one.","niggles":[{"niggleId":"n3","area":"Left foot","word":"achy","severity":2}],"future":false,"zoneKm":{"Easy":11.27},"qualityZoneKm":0,"recovery":{"sleepH":6.9,"hrv":70,"restingHr":43,"efficiency":83,"source":"synthetic","hrvBaseline":75.9,"sleepBaseline":7.43}},"2026-07-16":{"date":"2026-07-16","dow":3,"km":11.3,"runs":[{"id":"19344148047","start":"18:47","name":"Evening Run","km":11.26,"sec":3094,"elev":74,"effort":74,"paceMi":442,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3094,"elev":74,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":11.26},"qualityZoneKm":0,"recovery":{"sleepH":7.1,"hrv":71,"restingHr":43,"efficiency":85,"source":"synthetic","hrvBaseline":75.9,"sleepBaseline":7.44}},"2026-07-17":{"date":"2026-07-17","dow":4,"km":10.4,"runs":[{"id":"19355747090","start":"17:44","name":"Afternoon Run","km":10.44,"sec":2910,"elev":71,"effort":66,"paceMi":449,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2910,"elev":71,"mood":"tired","moodScore":2,"note":"Foot again. Not stopping me, just there.","niggles":[{"niggleId":"n3","area":"Left foot","word":"achy","severity":3}],"future":false,"zoneKm":{"Easy":10.44},"qualityZoneKm":0,"recovery":{"sleepH":7.5,"hrv":76,"restingHr":41,"efficiency":87,"source":"synthetic","hrvBaseline":75.6,"sleepBaseline":7.42}},"2026-07-18":{"date":"2026-07-18","dow":5,"km":21.7,"runs":[{"id":"19363488404","start":"06:38","name":"Morning Run","km":21.7,"sec":5489,"elev":175,"effort":180,"paceMi":407,"isKey":true,"kind":"long","label":"21.7K long","avgHr":158.0,"maxHr":170,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":7.59,"keyPaceMi":402,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":null,"drift":-1.35,"fade":-13.3}],"nRuns":1,"double":false,"type":"long","sec":5489,"elev":175,"mood":"positive","moodScore":4,"note":"21.7 km. Foot quiet once warm.","niggles":[],"future":false,"zoneKm":{"Moderate":21.7},"qualityZoneKm":0,"recovery":{"sleepH":7.8,"hrv":79,"restingHr":41,"efficiency":89,"source":"synthetic","hrvBaseline":75.4,"sleepBaseline":7.41}},"2026-07-19":{"date":"2026-07-19","dow":6,"km":9.9,"runs":[{"id":"19378185056","start":"09:13","name":"Morning Run","km":9.89,"sec":2818,"elev":54,"effort":52,"paceMi":458,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":2818,"elev":54,"mood":"neutral","moodScore":3,"note":"Tender first mile.","niggles":[{"niggleId":"n3","area":"Left foot","word":"tender","severity":3}],"future":false,"zoneKm":{"Easy":9.89},"qualityZoneKm":0,"recovery":{"sleepH":6.5,"hrv":66,"restingHr":44,"efficiency":81,"source":"synthetic","hrvBaseline":75.2,"sleepBaseline":7.4}},"2026-07-20":{"date":"2026-07-20","dow":0,"km":10.9,"runs":[{"id":"19390287737","start":"08:18","name":"Morning Run","km":10.95,"sec":3160,"elev":62,"effort":50,"paceMi":464,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3160,"elev":62,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":10.95},"qualityZoneKm":0,"recovery":{"sleepH":7.8,"hrv":81,"restingHr":41,"efficiency":89,"source":"synthetic","hrvBaseline":75.6,"sleepBaseline":7.41}},"2026-07-21":{"date":"2026-07-21","dow":1,"km":23.2,"runs":[{"id":"19404024604","start":"06:05","name":"Morning Run","km":3.24,"sec":944,"elev":3,"effort":6,"paceMi":469,"isKey":false},{"id":"19404031188","start":"06:28","name":"Morning Run","km":12.07,"sec":2590,"elev":48,"effort":122,"paceMi":345,"isKey":true,"kind":"intervals","label":"6x1mi","avgHr":164.2,"maxHr":173,"grade":"HELD","tier":"good","qualityKm":9.66,"keyPaceMi":328,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":[{"dist":1609.0,"time":328,"paceSecPerMi":328.0,"hr":160.0},{"dist":1609.0,"time":325,"paceSecPerMi":325.0,"hr":165.0},{"dist":1609.0,"time":333,"paceSecPerMi":333.0,"hr":166.0},{"dist":1609.0,"time":334,"paceSecPerMi":334.0,"hr":167.0},{"dist":1609.0,"time":316,"paceSecPerMi":316.0,"hr":170.0},{"dist":1609.0,"time":331,"paceSecPerMi":331.0,"hr":169.0}],"drift":2.53,"fade":-3.0},{"id":"19404030838","start":"07:26","name":"Morning Run","km":1.63,"sec":496,"elev":17,"effort":4,"paceMi":488,"isKey":false},{"id":"19410782759","start":"18:28","name":"Evening Run","km":6.27,"sec":1730,"elev":29,"effort":44,"paceMi":444,"isKey":false}],"nRuns":4,"double":true,"type":"key","sec":5760,"elev":97,"mood":"energized","moodScore":5,"note":"12.1 km of miles at 5:28. Slower than July 8 and I didn't care \u2014 foot never spoke.","niggles":[{"niggleId":"n3","area":"Left foot","word":"achy","severity":2}],"future":false,"zoneKm":{"Easy":11.926,"MP":9.654,"Recovery":1.63},"qualityZoneKm":9.65,"recovery":{"sleepH":6.9,"hrv":71,"restingHr":42,"efficiency":83,"source":"synthetic","hrvBaseline":76.0,"sleepBaseline":7.43}},"2026-07-22":{"date":"2026-07-22","dow":2,"km":15.7,"runs":[{"id":"19418690788","start":"08:12","name":"Morning Run","km":15.71,"sec":4394,"elev":77,"effort":83,"paceMi":450,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":4394,"elev":77,"mood":"positive","moodScore":4,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":15.71},"qualityZoneKm":0,"recovery":{"sleepH":7.3,"hrv":76,"restingHr":42,"efficiency":86,"source":"synthetic","hrvBaseline":76.5,"sleepBaseline":7.45}},"2026-07-23":{"date":"2026-07-23","dow":3,"km":11.8,"runs":[{"id":"19432667484","start":"08:01","name":"Morning Run","km":11.78,"sec":3309,"elev":60,"effort":61,"paceMi":452,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3309,"elev":60,"mood":"neutral","moodScore":3,"note":null,"niggles":[],"future":false,"zoneKm":{"Easy":11.78},"qualityZoneKm":0,"recovery":{"sleepH":7.3,"hrv":75,"restingHr":42,"efficiency":86,"source":"synthetic","hrvBaseline":77.0,"sleepBaseline":7.47}},"2026-07-24":{"date":"2026-07-24","dow":4,"km":14.1,"runs":[{"id":"19445335217","start":"06:25","name":"200s","km":9.26,"sec":4136,"elev":51,"effort":27,"paceMi":719,"isKey":true,"kind":"intervals","label":"8x200","avgHr":132.6,"maxHr":173,"grade":"NEGATIVE SPLIT","tier":"strong","qualityKm":1.6,"keyPaceMi":254,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":[{"dist":197.0,"time":32,"paceSecPerMi":260.9,"hr":94.0},{"dist":196.0,"time":32,"paceSecPerMi":262.2,"hr":130.0},{"dist":200.0,"time":32,"paceSecPerMi":256.9,"hr":133.0},{"dist":202.0,"time":32,"paceSecPerMi":255.2,"hr":145.0},{"dist":203.0,"time":30,"paceSecPerMi":238.0,"hr":148.0},{"dist":204.0,"time":32,"paceSecPerMi":253.0,"hr":148.0},{"dist":200.0,"time":31,"paceSecPerMi":249.0,"hr":145.0},{"dist":200.0,"time":32,"paceSecPerMi":258.0,"hr":145.0}],"drift":27.56,"fade":-8.0},{"id":"19451226734","start":"17:03","name":"Afternoon Run","km":4.84,"sec":1391,"elev":23,"effort":18,"paceMi":463,"isKey":false}],"nRuns":2,"double":true,"type":"key","sec":5527,"elev":74,"mood":"tired","moodScore":2,"note":"200s. Legs flat after Tuesday. Foot tender on the turns.","niggles":[{"niggleId":"n3","area":"Left foot","word":"tender","severity":3}],"future":false,"zoneKm":{"Mile":1.602,"Easy":12.498},"qualityZoneKm":1.6,"recovery":{"sleepH":7.7,"hrv":80,"restingHr":40,"efficiency":88,"source":"synthetic","hrvBaseline":77.5,"sleepBaseline":7.49}},"2026-07-25":{"date":"2026-07-25","dow":5,"km":21.1,"runs":[{"id":"19459862815","start":"06:36","name":"Morning Run","km":21.11,"sec":5355,"elev":109,"effort":147,"paceMi":408,"isKey":true,"kind":"long","label":"21K long","avgHr":152.0,"maxHr":163,"grade":"EASED","tier":"watch","qualityKm":7.39,"keyPaceMi":411,"tempF":78.0,"dewF":72,"heatAdjPct":5.0,"reps":null,"drift":3.06,"fade":5.5}],"nRuns":1,"double":false,"type":"long","sec":5355,"elev":109,"mood":"positive","moodScore":4,"note":"21 km. Held 4:14/km without pushing.","niggles":[],"future":false,"zoneKm":{"Moderate":21.11},"qualityZoneKm":0,"recovery":{"sleepH":8.0,"hrv":83,"restingHr":40,"efficiency":90,"source":"synthetic","hrvBaseline":78.0,"sleepBaseline":7.51}},"2026-07-26":{"date":"2026-07-26","dow":6,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":"neutral","moodScore":3,"note":"Off. Foot achy walking around.","niggles":[{"niggleId":"n3","area":"Left foot","word":"achy","severity":2}],"future":false,"zoneKm":{},"qualityZoneKm":0,"recovery":{"sleepH":6.7,"hrv":70,"restingHr":43,"efficiency":82,"source":"synthetic","hrvBaseline":78.4,"sleepBaseline":7.52}},"2026-07-27":{"date":"2026-07-27","dow":0,"km":12.9,"runs":[{"id":"19485647954","start":"07:35","name":"Morning Run","km":12.89,"sec":3510,"elev":54,"effort":47,"paceMi":438,"isKey":false}],"nRuns":1,"double":false,"type":"easy","sec":3510,"elev":54,"mood":"positive","moodScore":4,"note":"Easy 12.9 to open the week.","niggles":[],"future":false,"zoneKm":{"Easy":12.89},"qualityZoneKm":0,"recovery":{"sleepH":7.9,"hrv":83,"restingHr":40,"efficiency":89,"source":"synthetic","hrvBaseline":78.3,"sleepBaseline":7.51}},"2026-07-28":{"date":"2026-07-28","dow":1,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":null,"moodScore":null,"note":null,"niggles":[],"future":true,"zoneKm":{},"qualityZoneKm":0},"2026-07-29":{"date":"2026-07-29","dow":2,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":null,"moodScore":null,"note":null,"niggles":[],"future":true,"zoneKm":{},"qualityZoneKm":0},"2026-07-30":{"date":"2026-07-30","dow":3,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":null,"moodScore":null,"note":null,"niggles":[],"future":true,"zoneKm":{},"qualityZoneKm":0},"2026-07-31":{"date":"2026-07-31","dow":4,"km":0,"runs":[],"nRuns":0,"double":false,"type":"rest","sec":0,"elev":0,"mood":null,"moodScore":null,"note":null,"niggles":[],"future":true,"zoneKm":{},"qualityZoneKm":0}},"weeks":{"2026-04-27":{"weekStart":"2026-04-27","km":7.3,"runs":2,"restDays":1,"keyCount":0,"qualityKm":null,"qualityPct":null,"acwr":null,"avgMood":3.5,"niggleMentions":0,"partial":true,"zoneKm":{"Recovery":7.24},"sleepAvg":7.9,"hrvAvg":81,"rhrAvg":41,"hrvBaseline":81.3,"sleepBaseline":7.9,"keyDates":[],"longDate":"2026-05-03"},"2026-05-04":{"weekStart":"2026-05-04","km":82.7,"runs":8,"restDays":1,"keyCount":2,"qualityKm":15.5,"qualityPct":18.8,"acwr":1.0,"avgMood":4.14,"niggleMentions":0,"partial":false,"zoneKm":{"Easy":40.49,"MP":6.44,"LT":1.61,"Moderate":34.11},"sleepAvg":7.6,"hrvAvg":79,"rhrAvg":41,"hrvBaseline":80.0,"sleepBaseline":7.67,"keyDates":["2026-05-05","2026-05-09"],"longDate":"2026-05-09"},"2026-05-11":{"weekStart":"2026-05-11","km":116.2,"runs":11,"restDays":0,"keyCount":1,"qualityKm":7.4,"qualityPct":6.4,"acwr":1.17,"avgMood":2.86,"niggleMentions":2,"partial":false,"zoneKm":{"Moderate":32.81,"Easy":71.21,"Recovery":12.11},"sleepAvg":6.8,"hrvAvg":64,"rhrAvg":46,"hrvBaseline":73.5,"sleepBaseline":7.3,"keyDates":["2026-05-16"],"longDate":"2026-05-12"},"2026-05-18":{"weekStart":"2026-05-18","km":95.4,"runs":11,"restDays":0,"keyCount":2,"qualityKm":16.9,"qualityPct":17.7,"acwr":0.97,"avgMood":2.86,"niggleMentions":4,"partial":false,"zoneKm":{"Easy":40.8,"LT":9.0,"Moderate":38.42,"Recovery":7.32},"sleepAvg":6.9,"hrvAvg":67,"rhrAvg":44,"hrvBaseline":71.6,"sleepBaseline":7.18,"keyDates":["2026-05-20","2026-05-24"],"longDate":"2026-05-24"},"2026-05-25":{"weekStart":"2026-05-25","km":64.2,"runs":5,"restDays":2,"keyCount":1,"qualityKm":7.0,"qualityPct":10.9,"acwr":0.72,"avgMood":3.57,"niggleMentions":2,"partial":false,"zoneKm":{"Moderate":44.26,"Steady":20.02},"sleepAvg":6.3,"hrvAvg":69,"rhrAvg":43,"hrvBaseline":69.9,"sleepBaseline":6.89,"keyDates":["2026-05-28"],"longDate":"2026-05-28"},"2026-06-01":{"weekStart":"2026-06-01","km":88.5,"runs":10,"restDays":0,"keyCount":1,"qualityKm":6.4,"qualityPct":7.2,"acwr":0.97,"avgMood":3.57,"niggleMentions":1,"partial":false,"zoneKm":{"Easy":54.46,"Recovery":15.72,"Steady":18.4},"sleepAvg":7.5,"hrvAvg":77,"rhrAvg":41,"hrvBaseline":69.3,"sleepBaseline":6.88,"keyDates":["2026-06-06"],"longDate":"2026-06-01"},"2026-06-08":{"weekStart":"2026-06-08","km":93.9,"runs":9,"restDays":0,"keyCount":1,"qualityKm":7.4,"qualityPct":7.9,"acwr":1.1,"avgMood":3.86,"niggleMentions":0,"partial":false,"zoneKm":{"Easy":60.75,"Moderate":32.99},"sleepAvg":7.6,"hrvAvg":80,"rhrAvg":40,"hrvBaseline":73.2,"sleepBaseline":7.09,"keyDates":["2026-06-13"],"longDate":"2026-06-13"},"2026-06-15":{"weekStart":"2026-06-15","km":99.5,"runs":11,"restDays":0,"keyCount":2,"qualityKm":15.5,"qualityPct":15.6,"acwr":1.15,"avgMood":3.86,"niggleMentions":0,"partial":false,"zoneKm":{"Easy":38.16,"Moderate":43.41,"MP":3.0,"LT":5.0,"Recovery":9.87},"sleepAvg":7.5,"hrvAvg":78,"rhrAvg":41,"hrvBaseline":76.1,"sleepBaseline":7.23,"keyDates":["2026-06-17","2026-06-20"],"longDate":"2026-06-20"},"2026-06-22":{"weekStart":"2026-06-22","km":84.1,"runs":8,"restDays":3,"keyCount":2,"qualityKm":16.8,"qualityPct":20.0,"acwr":0.92,"avgMood":2.14,"niggleMentions":6,"partial":false,"zoneKm":{"Easy":44.6,"MP":2.0,"LT":4.2,"5K":0.6,"Recovery":4.07,"Moderate":28.6},"sleepAvg":6.9,"hrvAvg":64,"rhrAvg":44,"hrvBaseline":74.9,"sleepBaseline":7.38,"keyDates":["2026-06-23","2026-06-27"],"longDate":"2026-06-27"},"2026-06-29":{"weekStart":"2026-06-29","km":107.2,"runs":10,"restDays":0,"keyCount":2,"qualityKm":23.5,"qualityPct":21.9,"acwr":1.12,"avgMood":4.0,"niggleMentions":3,"partial":false,"zoneKm":{"Easy":40.69,"MP":11.27,"Moderate":24.81,"Recovery":10.46,"Steady":20.01},"sleepAvg":7.8,"hrvAvg":82,"rhrAvg":39,"hrvBaseline":75.9,"sleepBaseline":7.44,"keyDates":["2026-06-30","2026-07-04"],"longDate":"2026-07-04"},"2026-07-06":{"weekStart":"2026-07-06","km":91.3,"runs":9,"restDays":1,"keyCount":2,"qualityKm":18.1,"qualityPct":19.8,"acwr":0.96,"avgMood":4.0,"niggleMentions":0,"partial":false,"zoneKm":{"Easy":56.64,"MP":4.68,"LT":5.0,"Recovery":0.93,"Moderate":24.12},"sleepAvg":7.7,"hrvAvg":83,"rhrAvg":40,"hrvBaseline":76.6,"sleepBaseline":7.47,"keyDates":["2026-07-08","2026-07-11"],"longDate":"2026-07-11"},"2026-07-13":{"weekStart":"2026-07-13","km":95.3,"runs":10,"restDays":0,"keyCount":2,"qualityKm":14.8,"qualityPct":15.5,"acwr":1.01,"avgMood":3.14,"niggleMentions":3,"partial":false,"zoneKm":{"Easy":53.86,"Recovery":5.88,"MP":1.2,"LT":4.02,"5K":2.01,"Moderate":28.21},"sleepAvg":7.2,"hrvAvg":73,"rhrAvg":42,"hrvBaseline":75.2,"sleepBaseline":7.4,"keyDates":["2026-07-14","2026-07-18"],"longDate":"2026-07-18"},"2026-07-20":{"weekStart":"2026-07-20","km":96.8,"runs":10,"restDays":1,"keyCount":3,"qualityKm":18.6,"qualityPct":19.2,"acwr":0.99,"avgMood":3.43,"niggleMentions":3,"partial":false,"zoneKm":{"Easy":62.87,"MP":9.65,"Recovery":1.63,"Mile":1.6,"Moderate":21.11},"sleepAvg":7.4,"hrvAvg":77,"rhrAvg":41,"hrvBaseline":78.4,"sleepBaseline":7.52,"keyDates":["2026-07-21","2026-07-24","2026-07-25"],"longDate":"2026-07-21"},"2026-07-27":{"weekStart":"2026-07-27","km":12.9,"runs":1,"restDays":0,"keyCount":0,"qualityKm":null,"qualityPct":null,"acwr":null,"avgMood":4.0,"niggleMentions":0,"partial":false,"zoneKm":{"Easy":12.89},"sleepAvg":7.9,"hrvAvg":83,"rhrAvg":40,"hrvBaseline":78.3,"sleepBaseline":7.51,"keyDates":[],"longDate":"2026-07-27"}},"weatherNote":"Heat values are estimated from station climatology for the session date + start hour (Austin TX; 05-28 in Fayetteville AR). Live per-session weather wires in via the existing fetch-workout-weather edge function.","zoneOrder":["Mile","5K","LT","MP","Steady","Moderate","Easy","Recovery"]}</script>
+<script>
+(function(){
+"use strict";
+const D = JSON.parse(document.getElementById('data').textContent);
+const DAYS = D.days, WEEKS = D.weeks, NIG = D.niggles;
+const TODAY = '2026-07-27';
+const MAX_DAY_KM = 30;          // fixed scale so months compare
+const BAR_H = 41;
+const MAX_WEEK_KM = 116.2;
+
+const MOOD_COLOR = {
+  energized:'#2D8A4E', positive:'#4A9E6B', neutral:'#9B9590',
+  tired:'#C4873A', struggling:'#C45A3A', injured:'#B83A4A'
+};
+const TYPE_COLOR = { key:'#D4592A', long:'#6B6560', easy:'#C4BDB5', rest:'transparent' };
+
+/* The pace spectrum, bound to REAL zone data rather than invented thresholds.
+   key-sessions-data.json → zones.run_zones_ms (source: RacePace, 1:08 half) gives five
+   boundaries in m/s: 3.963 / 4.604 / 5.128 / 5.478 / 5.828 → 6:46 / 5:50 / 5:14 / 4:54 / 4:36 per mile.
+   That is SIX bands. The published spectrum has TEN stops, so four of them are unreachable
+   until the zone model gets finer. Each band is named for a race pace that actually falls inside it
+   (his HMP is 5:11, MP ≈ 5:27, LT ≈ 5:05, 5K ≈ 4:47, 3K ≈ 4:36). */
+const PACE_STOPS = [
+  { max: 276, name:'Mile',     c:'#0E1D4E' },  // faster than 4:36 — 3K/mile
+  { max: 294, name:'5K',       c:'#1A3679' },  // 4:36–4:54 — 10K/5K
+  { max: 314, name:'LT',       c:'#27549B' },  // 4:54–5:14 — LT/HMP
+  { max: 350, name:'MP',       c:'#3F7CB5' },  // 5:14–5:50 — MP
+  { max: 390, name:'Steady',   c:'#578FC0' },  // 5:50–6:30
+  { max: 430, name:'Moderate', c:'#74A8CC' },  // 6:30–7:10
+  { max: 475, name:'Easy',     c:'#93B9D6' },  // 7:10–7:55
+  { max: 1e9, name:'Recovery', c:'#B4CFE2' }   // slower than 7:55
+]
+const zoneOf = sec => PACE_STOPS.find(z => sec <= z.max) || PACE_STOPS[PACE_STOPS.length-1];
+let fillMode = 'type';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DOW = ['M','T','W','T','F','S','S'];
+const DOWFULL = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
+let month = 6;                  // 0-indexed; July
+let lens = null;                // 'key' | 'long' | 'niggle' | 'hard' | mood name
+let selected = null;
+
+/* ---------------------------------------------------------------- helpers */
+const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h !== undefined) n.innerHTML = h; return n; };
+const iso = d => d.toISOString().slice(0,10);
+const parse = s => { const [y,m,dd] = s.split('-').map(Number); return new Date(Date.UTC(y, m-1, dd)); };
+const addDays = (s,n) => { const d = parse(s); d.setUTCDate(d.getUTCDate()+n); return iso(d); };
+const mondayOf = s => { const d = parse(s); const wd = (d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-wd); return iso(d); };
+const ord = n => n + (n>3 && n<21 ? 'th' : ['th','st','nd','rd'][Math.min(n%10,4)] || 'th');
+const paceStr = sec => sec ? Math.floor(sec/60) + ':' + String(Math.round(sec%60)).padStart(2,'0') : '—';
+const paceKm = day => day.sec && day.km ? paceStr(day.sec/day.km) : '—';
+const hms = s => { const h = Math.floor(s/3600), m = Math.round((s%3600)/60); return h ? h+'h '+String(m).padStart(2,'0')+'m' : m+' min'; };
+const longDate = s => { const d = parse(s); return DOWFULL[(d.getUTCDay()+6)%7] + ', ' + MONTHS[d.getUTCMonth()] + ' ' + ord(d.getUTCDate()) + '.'; };
+const shortDate = s => { const d = parse(s); return MONTHS[d.getUTCMonth()].slice(0,3) + ' ' + d.getUTCDate(); };
+
+function monthDays(m){
+  return Object.keys(DAYS).filter(k => parse(k).getUTCMonth() === m && !DAYS[k].future);
+}
+function monthWeeks(m){
+  const set = new Set(monthDays(m).map(mondayOf));
+  return [...set].sort().filter(w => WEEKS[w]);
+}
+function keyRuns(day){ return day.runs.filter(r => r.isKey); }
+
+function dayMatches(d){
+  if (!lens) return true;
+  if (lens === 'key')    return keyRuns(d).length > 0;
+  if (lens === 'long')   return d.type === 'long';
+  if (lens === 'niggle') return d.niggles.length > 0;
+  if (lens === 'hard')   return d.moodScore !== null && d.moodScore <= 2;
+  return d.mood === lens;
+}
+
+/* ---------------------------------------------------------------- summary */
+function renderSummary(){
+  const ds = monthDays(month);
+  const km = ds.reduce((a,k) => a + DAYS[k].km, 0);
+  const runs = ds.reduce((a,k) => a + DAYS[k].nRuns, 0);
+  const keys = ds.reduce((a,k) => a + keyRuns(DAYS[k]).length, 0);
+  const counts = {};
+  ds.forEach(k => { const m = DAYS[k].mood; if (m) counts[m] = (counts[m]||0)+1; });
+  const maxc = Math.max(1, ...Object.values(counts));
+
+  const bars = D.moodOrder.map(m =>
+    `<i style="height:${Math.max(3, Math.round((counts[m]||0)/maxc*14))}px;background:${MOOD_COLOR[m]}"></i>`).join('');
+
+  const wrap = document.getElementById('sumrow');
+  wrap.innerHTML = '';
+  const defs = [
+    ['Volume', km.toFixed(0), 'km', () => openMonthBreakdown('volume')],
+    ['Runs', runs, '', () => openMonthBreakdown('runs')],
+    ['Key', keys, 'sess', () => openMonthBreakdown('key')],
+    ['Mood', null, '', () => openMonthBreakdown('mood')]
+  ];
+  defs.forEach(([lbl, val, unit, fn]) => {
+    const b = el('button','stat');
+    b.innerHTML = `<span class="slbl">${lbl}</span>` + (val === null
+      ? `<span class="moodbars">${bars}</span>`
+      : `<span class="sval">${val}${unit ? `<span class="sunit">${unit}</span>` : ''}</span>`);
+    b.onclick = fn;
+    wrap.appendChild(b);
+  });
+}
+
+/* ---------------------------------------------------------------- grid */
+function renderGrid(){
+  const dow = document.getElementById('dowrow');
+  dow.innerHTML = DOW.map(d => `<span>${d}</span>`).join('') + '<span class="wk">Wk</span>';
+
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  const first = monthDays(month)[0];
+  const last = monthDays(month)[monthDays(month).length-1];
+  let cur = mondayOf(first);
+  const endWeek = mondayOf(last);
+
+  while (cur <= endWeek){
+    const row = el('div','weekrow');
+    for (let i=0;i<7;i++){
+      const key = addDays(cur, i);
+      row.appendChild(dayCell(key));
+    }
+    row.appendChild(weekCell(cur));
+    grid.appendChild(row);
+    cur = addDays(cur, 7);
+  }
+}
+
+function dayCell(key){
+  const d = DAYS[key];
+  const b = el('button','cell');
+  if (!d){ b.className = 'cell out'; b.disabled = true; return b; }
+
+  const dt = parse(key);
+  const inMonth = dt.getUTCMonth() === month;
+  if (!inMonth) b.classList.add('out');
+  if ([5,6].includes((dt.getUTCDay()+6)%7)) b.classList.add('weekend');
+  if (key === TODAY) b.classList.add('hastoday');
+  if (key === selected) b.classList.add('sel');
+  if (d.future) b.classList.add('future');
+  if (inMonth && lens && !dayMatches(d)) b.classList.add('dim');
+
+  let html = `<span class="dnum">${dt.getUTCDate()}</span>`;
+
+  if (d.km > 0){
+    const total = Math.max(3, Math.round(d.km / MAX_DAY_KM * BAR_H));
+    const segs = d.runs.map(r => {
+      const h = Math.max(2, Math.round(r.km / d.km * total));
+      let c;
+      if (fillMode === 'pace'){
+        // the honest best case: rep pace for a key session, whole-run pace otherwise
+        c = zoneOf(r.isKey && r.keyPaceMi ? r.keyPaceMi : r.paceMi).c;
+      } else {
+        c = r.isKey ? TYPE_COLOR.key : (d.type === 'long' ? TYPE_COLOR.long : TYPE_COLOR.easy);
+      }
+      return `<i style="height:${h}px;background:${c}"></i>`;
+    }).join('');
+    html += `<span class="bars">${segs}</span>`;
+  } else if (!d.future){
+    html += `<span class="restdash"></span>`;
+  }
+
+  if (keyRuns(d).length) html += `<span class="keydot"></span>`;
+  if (d.niggles.length){
+    const sev = Math.max(...d.niggles.map(n => n.severity));
+    html += `<span class="nig" style="opacity:${(0.3 + sev/10).toFixed(2)}"></span>`;
+  }
+  if (d.mood) html += `<span class="moodstrip" style="background:${MOOD_COLOR[d.mood]}"></span>`;
+
+  b.innerHTML = html;
+  b.onclick = () => openDay(key);
+  b.title = shortDate(key) + ' · ' + (d.km ? d.km.toFixed(1)+' km' : 'rest');
+  return b;
+}
+
+function weekCell(ws){
+  const w = WEEKS[ws];
+  const b = el('button','wkcell');
+  if (!w){ b.style.visibility = 'hidden'; return b; }
+  if (w.partial || w.km === 0) b.classList.add('partial');
+
+  const pct = Math.min(100, w.km / MAX_WEEK_KM * 100);
+  const cls = w.acwr == null ? '' : (w.acwr > 1.12 ? 'hot' : (w.acwr < 0.85 ? 'down' : ''));
+  const moodCol = w.avgMood == null ? 'transparent'
+    : MOOD_COLOR[D.moodOrder[Math.max(0, Math.min(4, Math.round(w.avgMood) - 1))]];
+
+  b.innerHTML =
+    `<span><span class="wkm">${w.km.toFixed(0)}</span><span class="wku" style="display:block">km</span></span>` +
+    `<span style="width:100%"><span class="wkbarwrap"><span class="wkbar ${cls}" style="width:${pct}%"></span></span>` +
+    `<span class="wkmood" style="background:${moodCol}"></span></span>`;
+  b.onclick = () => openWeek(ws);
+  b.title = 'Week of ' + shortDate(ws) + ' · ' + w.km + ' km';
+  return b;
+}
+
+/* ---------------------------------------------------------------- lens chips */
+function renderLens(){
+  const ds = monthDays(month).map(k => DAYS[k]);
+  const wrap = document.getElementById('lens');
+  wrap.innerHTML = '';
+
+  const chips = [
+    ['key','Key', ds.filter(d => keyRuns(d).length).length, '#D4592A'],
+    ['long','Long', ds.filter(d => d.type === 'long').length, '#6B6560'],
+    ['niggle','Niggle', ds.filter(d => d.niggles.length).length, '#B83A4A'],
+    ['hard','Hard days', ds.filter(d => d.moodScore && d.moodScore <= 2).length, '#C4873A']
+  ];
+  chips.forEach(([id, label, n, col]) => {
+    const c = el('button','chip' + (lens === id ? ' on' : ''));
+    c.innerHTML = `<span class="sw" style="background:${col}"></span>${label}<span class="ct">${n}</span>`;
+    c.onclick = () => { lens = lens === id ? null : id; renderAll(); };
+    wrap.appendChild(c);
+  });
+
+  if (fillMode === 'pace'){
+    const sp = el('div','spectrum');
+    sp.style.width = '100%';
+    sp.innerHTML =
+      `<span class="dslabel" style="font-size:9px">The pace spectrum</span>
+       <div class="sbar">${PACE_STOPS.slice().reverse().map(z => `<span style="background:${z.c}"></span>`).join('')}</div>
+       <div class="sticks"><span>Easy</span><span>Steady</span><span>MP</span><span>LT</span><span>5K</span><span>Mile</span></div>`;
+    wrap.appendChild(sp);
+  }
+
+  D.moodOrder.slice().reverse().forEach(m => {
+    const n = ds.filter(d => d.mood === m).length;
+    if (!n) return;
+    const c = el('button','chip' + (lens === m ? ' on' : ''));
+    c.innerHTML = `<span class="sw" style="background:${MOOD_COLOR[m]};border-radius:999px"></span>${m}<span class="ct">${n}</span>`;
+    c.onclick = () => { lens = lens === m ? null : m; renderAll(); };
+    wrap.appendChild(c);
+  });
+}
+
+/* ---------------------------------------------------------------- story */
+function renderStory(){
+  const ws = monthWeeks(month);
+  const full = ws.filter(w => !WEEKS[w].partial && WEEKS[w].km > 20);
+  const wrap = document.getElementById('story');
+  wrap.innerHTML = '';
+  const lines = [];
+
+  if (full.length){
+    const big = full.reduce((a,b) => WEEKS[b].km > WEEKS[a].km ? b : a);
+    const sml = full.reduce((a,b) => WEEKS[b].km < WEEKS[a].km ? b : a);
+    lines.push({
+      html: `Heaviest week <b>${WEEKS[big].km} km</b>, lightest <b>${WEEKS[sml].km} km</b>.` +
+            `<span>${shortDate(big)} vs ${shortDate(sml)} \u00b7 ${(WEEKS[big].km - WEEKS[sml].km).toFixed(0)} km apart</span>`,
+      go: () => openWeek(big)
+    });
+  }
+
+  const keyDays = monthDays(month).filter(k => keyRuns(DAYS[k]).length);
+  if (keyDays.length){
+    // rep pace only compares fairly at similar rep length — 200s always "win" on pace
+    const longEnough = k => {
+      const rs = keyRuns(DAYS[k])[0].reps;
+      return !rs || !rs.length || rs.reduce((a,x)=>a+x.dist,0)/rs.length >= 800;
+    };
+    const pool = keyDays.filter(longEnough).length ? keyDays.filter(longEnough) : keyDays;
+    const best = pool.reduce((a,b) => {
+      const pa = keyRuns(DAYS[a])[0].keyPaceMi || 9999, pb = keyRuns(DAYS[b])[0].keyPaceMi || 9999;
+      return pb < pa ? b : a;
+    });
+    const r = keyRuns(DAYS[best])[0];
+    lines.push({
+      html: `<b>${keyDays.length} key sessions.</b> Sharpest ${r.label || r.kind} at ${paceStr(r.keyPaceMi)}/mi.` +
+            `<span>${shortDate(best)} \u00b7 ${DAYS[best].km.toFixed(1)} km that day</span>`,
+      go: () => openDay(best)
+    });
+  }
+
+  const nigDays = monthDays(month).filter(k => DAYS[k].niggles.length);
+  const hard = monthDays(month).filter(k => DAYS[k].moodScore && DAYS[k].moodScore <= 2);
+  if (nigDays.length){
+    const areas = [...new Set(nigDays.flatMap(k => DAYS[k].niggles.map(n => n.area)))];
+    lines.push({
+      html: `<b>${nigDays.length} days</b> with a body mention \u2014 ${areas.join(', ').toLowerCase()}.` +
+            `<span>${hard.length} day${hard.length===1?'':'s'} tired or worse \u00b7 from ${shortDate(nigDays[0])}</span>`,
+      go: () => openNiggle(NIG.find(n => n.area === areas[0]).id)
+    });
+  } else {
+    lines.push({
+      html: `<b>No body mentions all month.</b> ${hard.length} day${hard.length===1?'':'s'} logged tired or worse.` +
+            `<span>Cleanest stretch of the block</span>`,
+      go: () => { lens = 'hard'; renderAll(); }
+    });
+  }
+
+  lines.forEach(l => {
+    const b = el('button','sline');
+    b.innerHTML = `<span class="sdot"></span><p>${l.html}</p>`;
+    b.onclick = l.go;
+    wrap.appendChild(b);
+  });
+}
+
+/* ---------------------------------------------------------------- niggle ribbon */
+function renderRibbon(){
+  const wrap = document.getElementById('ribbon');
+  wrap.innerHTML = '';
+  const ds = monthDays(month);
+  const active = NIG.filter(n => ds.some(k => DAYS[k].niggles.some(x => x.niggleId === n.id)));
+
+  if (!active.length){
+    wrap.innerHTML = `<p class="emptynote">Nothing logged this month. Blank is the good outcome.</p>`;
+    return;
+  }
+  active.forEach(n => {
+    const dots = ds.map(k => {
+      const m = DAYS[k].niggles.find(x => x.niggleId === n.id);
+      if (!m) return `<i></i>`;
+      const h = 3 + m.severity * 2;
+      return `<i style="height:${h}px;background:${MOOD_COLOR.injured};opacity:${(0.35 + m.severity/10).toFixed(2)}"></i>`;
+    }).join('');
+    const count = ds.filter(k => DAYS[k].niggles.some(x => x.niggleId === n.id)).length;
+    const b = el('button','nrow');
+    b.innerHTML = `<span class="nname">${n.area}<em>${n.closed ? 'Resolved' : 'Active'}</em></span>` +
+                  `<span class="ndots">${dots}</span>` +
+                  `<span class="nstat">${count}×</span>`;
+    b.onclick = () => openNiggle(n.id);
+    wrap.appendChild(b);
+  });
+}
+
+/* ---------------------------------------------------------------- block spine */
+function renderSpine(){
+  const wrap = document.getElementById('spine');
+  wrap.innerHTML = '';
+  const ws = Object.keys(WEEKS).sort().filter(w => !WEEKS[w].partial && WEEKS[w].km > 20);
+  const mine = new Set(monthWeeks(month));
+  ws.forEach(w => {
+    const h = Math.max(4, Math.round(WEEKS[w].km / MAX_WEEK_KM * 44));
+    const b = el('button', mine.has(w) ? 'cur' : '');
+    b.innerHTML = `<i style="height:${h}px"></i><em>${parse(w).getUTCDate()}/${parse(w).getUTCMonth()+1}</em>`;
+    b.onclick = () => { month = parse(w).getUTCMonth(); lens = null; renderAll(); };
+    b.title = 'Week of ' + shortDate(w) + ' · ' + WEEKS[w].km + ' km';
+    wrap.appendChild(b);
+  });
+}
+
+/* ---------------------------------------------------------------- sheet */
+const scrim = document.getElementById('scrim');
+const sheet = document.getElementById('sheet');
+function showSheet(headHTML, bodyNode){
+  document.getElementById('shead').innerHTML = headHTML;
+  const sb = document.getElementById('sbody');
+  sb.innerHTML = ''; sb.appendChild(bodyNode); sb.scrollTop = 0;
+  scrim.classList.add('on'); sheet.classList.add('on');
+}
+function closeSheet(){ scrim.classList.remove('on'); sheet.classList.remove('on'); selected = null; renderGrid(); }
+scrim.onclick = closeSheet;
+document.getElementById('sclose').onclick = closeSheet;
+
+/* ---- day sheet ---- */
+function openDay(key){
+  const d = DAYS[key];
+  if (!d) return;
+  selected = key; renderGrid();
+
+  const ws = mondayOf(key), w = WEEKS[ws];
+  const head =
+    `<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px">
+       <div>
+         <div class="eyebrow">${d.km ? d.nRuns + (d.nRuns>1?' runs':' run') : 'Rest day'}${d.double?' · double':''}</div>
+         <div class="display-m" style="margin-top:3px">${longDate(key)}</div>
+       </div>
+       <div class="daynav">
+         <button id="dPrev">‹</button><button id="dNext">›</button>
+       </div>
+     </div>`;
+
+  const body = el('div');
+
+  if (d.mood){
+    const p = el('div');
+    p.style.marginTop = '12px';
+    p.innerHTML = `<span class="pill" style="background:${MOOD_COLOR[d.mood]}1f;color:${MOOD_COLOR[d.mood]}">${d.mood}</span>`;
+    if (d.note) p.innerHTML += `<p class="quote" style="margin-top:9px">“${d.note}”</p>`;
+    body.appendChild(p);
+  }
+
+  const meta = el('div','metarow');
+  meta.innerHTML =
+    `<div class="m"><span class="ml">Volume</span><span class="mv">${d.km.toFixed(1)}<small>km</small></span></div>
+     <div class="m"><span class="ml">Time</span><span class="mv">${d.sec ? hms(d.sec) : '—'}</span></div>
+     <div class="m"><span class="ml">Pace</span><span class="mv">${paceKm(d)}<small>/km</small></span></div>
+     <div class="m"><span class="ml">Climb</span><span class="mv">${d.elev || 0}<small>m</small></span></div>`;
+  body.appendChild(meta);
+
+  if (d.runs.length){
+    const s = el('div','sect');
+    s.appendChild(el('div','eyebrow','The runs'));
+    d.runs.forEach(r => s.appendChild(runRow(r)));
+    body.appendChild(s);
+  } else if (!d.future){
+    body.appendChild(el('p','emptynote','No run logged. Rest is data too.'));
+  }
+
+  if (d.niggles.length){
+    const s = el('div','sect');
+    s.appendChild(el('div','eyebrow','Body mentions'));
+    d.niggles.forEach(n => {
+      const b = el('button','nigcard');
+      b.innerHTML = `<span class="nb" style="opacity:${(0.35 + n.severity/10).toFixed(2)}"></span>
+        <span><span class="nn">${n.area}</span><span class="nw">“${n.word}”</span></span>
+        <span class="nsev">${n.side !== 'unknown' && n.side ? n.side : ''}</span>`;
+      b.onclick = () => openNiggle(n.niggleId);
+      s.appendChild(b);
+    });
+    body.appendChild(s);
+  }
+
+  /* ---- How it compares. EVERY day gets one; the shape changes, not the presence. ---- */
+  {
+    const median = arr => { const s = [...arr].sort((x,y) => x-y);
+      return s.length ? (s.length % 2 ? s[(s.length-1)/2] : (s[s.length/2-1] + s[s.length/2]) / 2) : null; };
+    const maxRunKm = x => Math.max(0, ...x.runs.map(r => r.km));
+    const dayClass = x => !x.km ? 'rest'
+      : x.runs.some(r => r.isKey) ? 'key'
+      : maxRunKm(x) >= 18 ? 'long'
+      : x.nRuns >= 2 ? 'double' : 'easy';
+    const past = Object.keys(DAYS).sort().filter(k => !DAYS[k].future);
+    const cls = dayClass(d);
+    const s = el('div','sect');
+    s.appendChild(el('div','eyebrow','How it compares'));
+
+    if (cls === 'key'){
+      const keyRun = d.runs.find(r => r.isKey && r.keyPaceMi);
+      const meanRep = r => { const x = r.reps || []; return x.length ? x.reduce((c,v)=>c+v.dist,0)/x.length : null; };
+      const mine = meanRep(keyRun);
+      const comparable = r => {
+        if (mine == null) return meanRep(r) == null;
+        const m = meanRep(r);
+        return m != null && m >= mine * 0.5 && m <= mine * 2;
+      };
+      const peers = past.flatMap(k => DAYS[k].runs
+        .filter(r => r.isKey && r.kind === keyRun.kind && r.keyPaceMi && comparable(r))
+        .map(r => ({ date:k, r, v:r.keyPaceMi })));
+      const idx = peers.findIndex(p => p.r.id === keyRun.id);
+      const faster = peers.filter(p => p.v < keyRun.keyPaceMi).length;
+      const prev = idx > 0 ? peers[idx-1] : null;
+      const repLbl = mine == null ? keyRun.kind
+        : `${mine >= 1000 ? (mine/1000).toFixed(1)+' km' : Math.round(mine)+' m'} reps`;
+      s.appendChild(cmpRow('Rank', peers.length === 1 ? `only ${repLbl} in the block`
+        : `${faster+1}${['st','nd','rd'][faster] || 'th'} of ${peers.length} \u00b7 ${repLbl}`));
+      if (prev) s.appendChild(cmpRow('vs previous', `${paceStr(prev.v)}/mi \u00b7 ${shortDate(prev.date)}`,
+        delta(keyRun.keyPaceMi, prev.v), {unit:'s/mi', dp:0, goodUp:false}));
+      if (keyRun.heatAdjPct) s.appendChild(cmpRow('Heat', `${Math.round(keyRun.tempF)}\u00b0F, dew ${keyRun.dewF}`,
+        keyRun.heatAdjPct, {unit:'%', dp:1, goodUp:false}));
+      if (keyRun.avgHr) s.appendChild(cmpRow('Avg HR', String(Math.round(keyRun.avgHr)),
+        prev && prev.r.avgHr ? delta(Math.round(keyRun.avgHr), Math.round(prev.r.avgHr)) : undefined, {dp:0, goodUp:false}));
+      if (peers.length > 1) s.appendChild(rankStrip(peers, idx, true, 'taller = faster'));
+
+    } else if (cls === 'rest'){
+      const i = past.indexOf(d.date);
+      let since = null;
+      for (let j = i-1; j >= 0; j--){ if (DAYS[past[j]].km === 0){ since = i - j; break; } }
+      const rests = past.filter(k => DAYS[k].km === 0);
+      const before = DAYS[past[i-1]];
+      s.appendChild(cmpRow('Days since rest', since == null ? 'first of the block' : since + ' days'));
+      s.appendChild(cmpRow('Rest days', `${rests.length} in ${past.length} days`));
+      s.appendChild(cmpRow('Day before', before
+        ? `${before.km.toFixed(1)} km${before.qualityZoneKm >= 4 ? ', quality' : ''}${before.mood ? ' \u00b7 ' + before.mood : ''}`
+        : '\u2014'));
+      if (w) s.appendChild(cmpRow('Week so far', `${w.km.toFixed(0)} km of ${w.runs} runs`));
+      const wk = [];
+      for (let j = 0; j < 7; j++){ const k = addDays(mondayOf(d.date), j); if (DAYS[k]) wk.push({ date:k, v:DAYS[k].km }); }
+      s.appendChild(rankStrip(wk, wk.findIndex(x => x.date === d.date), false, 'the week around it'));
+
+    } else {
+      const LBL = { easy:'easy days', long:'long runs', double:'double days' };
+      const LBL2 = { easy:'easy day', long:'long run', double:'double' };
+      const peers = past.filter(k => dayClass(DAYS[k]) === cls)
+        .map(k => ({ date:k, v: DAYS[k].sec / DAYS[k].km }));
+      const idx = peers.findIndex(p => p.date === d.date);
+      const mePace = d.sec / d.km;
+      const medPace = median(peers.map(p => p.v));
+      const medKm = median(past.filter(k => dayClass(DAYS[k]) === cls).map(k => DAYS[k].km));
+      const faster = peers.filter(p => p.v < mePace).length;
+      s.appendChild(cmpRow('Rank', `${faster+1}${['st','nd','rd'][faster] || 'th'} of ${peers.length} \u00b7 ${LBL[cls]}`));
+      s.appendChild(cmpRow('Pace', paceStr(mePace) + '/km',
+        delta(medPace, mePace), {unit:'s', dp:0}));
+      s.appendChild(cmpRow('Volume', d.km.toFixed(1) + ' km', delta(d.km, medKm), {unit:' km'}));
+      const eff = d.runs.reduce((c,r) => c + (r.effort || 0), 0);
+      if (eff) s.appendChild(cmpRow('Effort', String(eff)));
+      if (peers.length > 1) s.appendChild(rankStrip(peers, idx, true, `every ${LBL2[cls]} in the block`));
+    }
+    body.appendChild(s);
+  }
+
+  if (w){
+    const s = el('div','sect');
+    s.appendChild(el('div','eyebrow','Week context'));
+    const b = el('button','keyitem');
+    const idx = (parse(key).getUTCDay()+6)%7 + 1;
+    b.innerHTML = `<span class="kd">${shortDate(ws)}</span>
+      <span class="kn" style="font-family:var(--font-body);font-weight:400;font-size:13px">Day ${idx} of a ${w.km} km week</span>
+      <span class="kv">${w.km}<span style="font-size:8px"> KM</span></span>`;
+    b.onclick = () => openWeek(ws);
+    s.appendChild(b);
+    body.appendChild(s);
+  }
+
+  showSheet(head, body);
+
+  const prev = addDays(key,-1), next = addDays(key,1);
+  const pb = document.getElementById('dPrev'), nb = document.getElementById('dNext');
+  if (DAYS[prev]) pb.onclick = () => openDay(prev); else pb.disabled = true;
+  if (DAYS[next] && !DAYS[next].future) nb.onclick = () => openDay(next); else nb.disabled = true;
+}
+
+function runRow(r){
+  const n = el('div','runrow');
+  let html =
+    `<div class="runhead"><span class="rname">${r.isKey && r.label ? r.label : r.name}</span>
+       <span class="rkm">${r.km.toFixed(2)} km</span></div>
+     <div class="runmeta">
+       <span>${r.start}</span>
+       <span><b>${paceStr(r.sec / r.km)}</b>/km</span>
+       <span><b>${paceStr(r.paceMi)}</b>/mi</span>
+       <span>${hms(r.sec)}</span>
+       ${r.elev ? `<span>${r.elev} m ↑</span>` : ''}
+       ${r.effort ? `<span>effort <b>${r.effort}</b></span>` : ''}
+     </div>`;
+
+  if (r.isKey){
+    html += `<div class="runmeta" style="margin-top:6px;color:var(--coral)">
+       <span>Key · ${r.kind}</span>
+       ${r.avgHr ? `<span>avg HR <b>${Math.round(r.avgHr)}</b></span>` : ''}
+       ${r.maxHr ? `<span>max <b>${r.maxHr}</b></span>` : ''}
+       ${r.tempF ? `<span>${Math.round(r.tempF)}°F / dew ${r.dewF}</span>` : ''}
+       ${r.heatAdjPct ? `<span>heat +${r.heatAdjPct}%</span>` : ''}
+       ${r.grade ? `<span>${r.grade}</span>` : ''}
+     </div>`;
+    if (r.reps && r.reps.length){
+      const fastest = Math.min(...r.reps.map(x => x.paceSecPerMi));
+      const slowest = Math.max(...r.reps.map(x => x.paceSecPerMi));
+      const rows = r.reps.map((x,i) => {
+        const w = 26 - (x.paceSecPerMi - fastest) / Math.max(1, slowest - fastest) * 16;
+        const z = zoneOf(x.paceSecPerMi);
+        return `<tr class="${x.paceSecPerMi === fastest ? 'fast' : ''}">
+          <td>${i+1}</td><td>${(x.dist/1000).toFixed(2)}</td>
+          <td><span class="rb" style="width:${w.toFixed(0)}px;background:${z.c};opacity:1"></span>${paceStr(x.paceSecPerMi)}</td>
+          <td>${z.name}</td>
+          <td>${x.hr ? Math.round(x.hr) : '—'}</td></tr>`;
+      }).join('');
+      html += `<table class="reps"><thead><tr><th>#</th><th>km</th><th>Pace /mi</th><th>Zone</th><th>HR</th></tr></thead><tbody>${rows}</tbody></table>`;
+
+      // time in zone — work bouts only, weighted by rep duration
+      const byZone = {};
+      r.reps.forEach(x => { const z = zoneOf(x.paceSecPerMi); byZone[z.name] = (byZone[z.name]||0) + x.time; });
+      const totS = Object.values(byZone).reduce((a,c)=>a+c,0) || 1;
+      const order = PACE_STOPS.slice().reverse().filter(z => byZone[z.name]);
+      html += `<div class="tiz">${order.map(z =>
+        `<span style="flex:${byZone[z.name]};background:${z.c}"></span>`).join('')}</div>
+        <div class="tizlbl">${order.map(z =>
+        `<span><i style="background:${z.c}"></i>${z.name} ${Math.round(byZone[z.name]/totS*100)}%</span>`).join('')}</div>`;
+      if (r.drift != null || r.fade != null){
+        html += `<div class="runmeta" style="margin-top:7px">
+          ${r.fade != null ? `<span>fade <b>${r.fade > 0 ? '+' : ''}${r.fade}s</b>/mi</span>` : ''}
+          ${r.drift != null ? `<span>HR drift <b>${r.drift}%</b></span>` : ''}
+        </div>`;
+      }
+    }
+  }
+  n.innerHTML = html;
+  return n;
+}
+
+/* ---- week sheet ---- */
+function openWeek(ws){
+  const w = WEEKS[ws];
+  if (!w) return;
+  const keys = [];
+  for (let i=0;i<7;i++){ const k = addDays(ws,i); if (DAYS[k]) keys.push(k); }
+
+  const head =
+    `<div class="eyebrow">${w.runs} runs · ${w.restDays} rest</div>
+     <div class="display-m" style="margin-top:3px">Week of ${shortDate(ws)}.</div>`;
+
+  const body = el('div');
+
+  const meta = el('div','metarow');
+  meta.innerHTML =
+    `<div class="m"><span class="ml">Volume</span><span class="mv">${w.km.toFixed(0)}<small>km</small></span></div>
+     <div class="m"><span class="ml">Quality</span><span class="mv">${w.qualityPct != null ? w.qualityPct.toFixed(0)+'<small>%</small>' : '—'}</span></div>
+     <div class="m"><span class="ml">ACWR</span><span class="mv">${w.acwr != null ? w.acwr.toFixed(2) : '—'}</span></div>
+     <div class="m"><span class="ml">Key</span><span class="mv">${w.keyCount}</span></div>`;
+  body.appendChild(meta);
+
+  const s1 = el('div','sect');
+  s1.appendChild(el('div','eyebrow','Day by day'));
+  const bars = el('div','daybars');
+  const mx = Math.max(...keys.map(k => DAYS[k].km), 1);
+  keys.forEach(k => {
+    const d = DAYS[k];
+    const b = el('button');
+    const h = d.km ? Math.max(3, Math.round(d.km / mx * 44)) : 2;
+    const col = d.km === 0 ? '#D8D2CB'
+      : (keyRuns(d).length ? TYPE_COLOR.key : (d.type === 'long' ? TYPE_COLOR.long : TYPE_COLOR.easy));
+    b.innerHTML = `<span class="dbwrap"><i style="height:${h}px;background:${col}"></i></span>
+                   <b>${d.km ? d.km.toFixed(0) : '–'}</b><em>${DOW[(parse(k).getUTCDay()+6)%7]}</em>`;
+    b.onclick = () => openDay(k);
+    bars.appendChild(b);
+  });
+  s1.appendChild(bars);
+  body.appendChild(s1);
+
+  const s2 = el('div','sect');
+  s2.appendChild(el('div','eyebrow','Mood across the week'));
+  const arc = el('div','moodarc');
+  arc.innerHTML = keys.map(k => {
+    const d = DAYS[k];
+    if (!d.mood) return `<i style="height:3px;background:var(--rule)"></i>`;
+    return `<i style="height:${6 + d.moodScore*6}px;background:${MOOD_COLOR[d.mood]}"></i>`;
+  }).join('');
+  s2.appendChild(arc);
+  s2.appendChild(el('div','legendline',`<span>${keys[0] ? DOW[0] : ''} struggling ↓</span><span>energized ↑</span>`));
+  body.appendChild(s2);
+
+  const kd = keys.filter(k => keyRuns(DAYS[k]).length);
+  if (kd.length){
+    const s3 = el('div','sect');
+    s3.appendChild(el('div','eyebrow','Key sessions'));
+    const list = el('div','keylist');
+    kd.forEach(k => {
+      const r = keyRuns(DAYS[k])[0];
+      const b = el('button','keyitem');
+      b.innerHTML = `<span class="kd">${shortDate(k)}</span>
+        <span class="kn">${r.label || r.kind}</span>
+        <span class="kv">${paceStr(r.keyPaceMi)}<span style="font-size:8px"> /MI</span></span>`;
+      b.onclick = () => openDay(k);
+      list.appendChild(b);
+    });
+    s3.appendChild(list);
+    body.appendChild(s3);
+  }
+
+  const nm = keys.flatMap(k => DAYS[k].niggles.map(n => ({...n, date:k})));
+  if (nm.length){
+    const s4 = el('div','sect');
+    s4.appendChild(el('div','eyebrow',`Body mentions · ${nm.length}`));
+    nm.forEach(n => {
+      const b = el('button','nigcard');
+      b.innerHTML = `<span class="nb" style="opacity:${(0.35 + n.severity/10).toFixed(2)}"></span>
+        <span><span class="nn">${n.area}</span><span class="nw">${shortDate(n.date)} · “${n.word}”</span></span>
+        <span class="nsev">${n.side !== 'unknown' && n.side ? n.side : ''}</span>`;
+      b.onclick = () => openNiggle(n.niggleId);
+      s4.appendChild(b);
+    });
+    body.appendChild(s4);
+  }
+
+  showSheet(head, body);
+}
+
+/* ---- niggle sheet ---- */
+function openNiggle(id){
+  const n = NIG.find(x => x.id === id);
+  if (!n) return;
+  const dates = Object.keys(n.mentions).sort();
+  const from = dates[0], to = dates[dates.length-1];
+  const span = [];
+  for (let k = from; k <= addDays(to, 3); k = addDays(k,1)) span.push(k);
+
+  const head =
+    `<div class="eyebrow" style="color:${MOOD_COLOR.injured}">${n.closed ? 'Resolved' : 'Active'} · ${dates.length} mentions</div>
+     <div class="display-m" style="margin-top:3px">${n.area}.</div>`;
+
+  const body = el('div');
+
+  const meta = el('div','metarow');
+  const restIn = span.filter(k => DAYS[k] && DAYS[k].km === 0 && !DAYS[k].future).length;
+  meta.innerHTML =
+    `<div class="m"><span class="ml">First</span><span class="mv" style="font-size:12px">${shortDate(from)}</span></div>
+     <div class="m"><span class="ml">Latest</span><span class="mv" style="font-size:12px">${shortDate(to)}</span></div>
+     <div class="m"><span class="ml">Worst word</span><span class="mv" style="font-size:12px">${
+                 Object.values(n.mentions).reduce((a,c) => c[1] > a[1] ? c : a)[0]}</span></div>
+     <div class="m"><span class="ml">Rest days</span><span class="mv">${restIn}</span></div>`;
+  body.appendChild(meta);
+
+  const s1 = el('div','sect');
+  s1.appendChild(el('div','eyebrow','Mentions over time'));
+  const strip = el('div','dotstrip');
+  strip.innerHTML = span.map(k => {
+    const m = (DAYS[k] ? DAYS[k].niggles : []).find(x => x.niggleId === id);
+    if (!m) return `<i></i>`;
+    return `<i style="height:${3 + m.severity*3}px;background:${MOOD_COLOR.injured};opacity:${(0.35 + m.severity/10).toFixed(2)}"></i>`;
+  }).join('');
+  s1.appendChild(strip);
+  s1.appendChild(el('div','legendline',`<span>${shortDate(from)}</span><span>${shortDate(span[span.length-1])}</span>`));
+  body.appendChild(s1);
+
+  const s2 = el('div','sect');
+  s2.appendChild(el('div','eyebrow','What you said'));
+  dates.forEach(k => {
+    const m = n.mentions[k];
+    const b = el('button','nigcard');
+    b.innerHTML = `<span class="nb" style="opacity:${(0.35 + m[1]/10).toFixed(2)}"></span>
+      <span><span class="nn" style="font-size:13px">${shortDate(k)}</span>
+      <span class="nw">“${m[0]}”${DAYS[k] && DAYS[k].km ? ' · ' + DAYS[k].km.toFixed(1) + ' km' : ' · rest'}</span></span>
+      <span class="nsev"></span>`;
+    b.onclick = () => openDay(k);
+    s2.appendChild(b);
+  });
+  body.appendChild(s2);
+
+  if (n.resolvedNote){
+    const s3 = el('div','sect');
+    s3.appendChild(el('div','eyebrow','Outcome'));
+    s3.appendChild(el('p','quote','“' + n.resolvedNote + '”'));
+    body.appendChild(s3);
+  }
+
+  showSheet(head, body);
+}
+
+/* ---- month breakdown sheet ---- */
+function openMonthBreakdown(kind){
+  const ds = monthDays(month);
+  const ws = monthWeeks(month);
+  const head =
+    `<div class="eyebrow">${MONTHS[month]} 2026</div>
+     <div class="display-m" style="margin-top:3px">${
+       kind==='volume'?'Where the volume went.' : kind==='runs'?'Every run.' :
+       kind==='key'?'The key sessions.' : 'How it felt.'}</div>`;
+  const body = el('div');
+
+  if (kind === 'mood'){
+    const counts = {};
+    ds.forEach(k => { const m = DAYS[k].mood; if (m) counts[m] = (counts[m]||0)+1; });
+    const tot = Object.values(counts).reduce((a,b)=>a+b,0) || 1;
+    const s = el('div','sect');
+    if (fillMode === 'pace'){
+    const sp = el('div','spectrum');
+    sp.style.width = '100%';
+    sp.innerHTML =
+      `<span class="dslabel" style="font-size:9px">The pace spectrum</span>
+       <div class="sbar">${PACE_STOPS.slice().reverse().map(z => `<span style="background:${z.c}"></span>`).join('')}</div>
+       <div class="sticks"><span>Easy</span><span>Steady</span><span>MP</span><span>LT</span><span>5K</span><span>Mile</span></div>`;
+    wrap.appendChild(sp);
+  }
+
+  D.moodOrder.slice().reverse().forEach(m => {
+      const n = counts[m] || 0;
+      const b = el('button','keyitem');
+      b.innerHTML = `<span class="kd" style="width:66px;color:${MOOD_COLOR[m]}">${m}</span>
+        <span style="flex:1;height:6px;background:var(--rule);border-radius:3px;overflow:hidden">
+          <span style="display:block;height:100%;width:${(n/tot*100).toFixed(0)}%;background:${MOOD_COLOR[m]}"></span></span>
+        <span class="kv" style="color:var(--ink-2);width:34px;text-align:right">${n}d</span>`;
+      b.onclick = () => { lens = lens === m ? null : m; renderAll(); closeSheet(); };
+      s.appendChild(b);
+    });
+    body.appendChild(s);
+    const notes = ds.filter(k => DAYS[k].note);
+    const s2 = el('div','sect');
+    s2.appendChild(el('div','eyebrow',`Journal · ${notes.length} entries`));
+    notes.forEach(k => {
+      const b = el('button','nigcard');
+      b.innerHTML = `<span class="nb" style="background:${MOOD_COLOR[DAYS[k].mood]||'#ccc'}"></span>
+        <span><span class="nn" style="font-size:12.5px">${shortDate(k)}</span>
+        <span class="nw" style="font-family:var(--font-body);font-style:italic;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink)">“${DAYS[k].note}”</span></span>`;
+      b.onclick = () => openDay(k);
+      s2.appendChild(b);
+    });
+    body.appendChild(s2);
+  } else if (kind === 'key'){
+    const kd = ds.filter(k => keyRuns(DAYS[k]).length);
+    const s = el('div','sect');
+    kd.forEach(k => {
+      const r = keyRuns(DAYS[k])[0];
+      const b = el('button','keyitem');
+      b.innerHTML = `<span class="kd">${shortDate(k)}</span>
+        <span class="kn">${r.label || r.kind}<span style="display:block;font-family:var(--font-mono);font-size:9px;
+          letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:400;margin-top:2px">
+          ${r.km.toFixed(1)} km${r.avgHr?' · '+Math.round(r.avgHr)+' bpm':''}${r.grade?' · '+r.grade:''}</span></span>
+        <span class="kv">${paceStr(r.keyPaceMi)}<span style="font-size:8px"> /MI</span></span>`;
+      b.onclick = () => openDay(k);
+      s.appendChild(b);
+    });
+    body.appendChild(s);
+  } else {
+    const s = el('div','sect');
+    s.appendChild(el('div','eyebrow','By week'));
+    const mx = Math.max(...ws.map(w => WEEKS[w].km), 1);
+    ws.forEach(w => {
+      const b = el('button','keyitem');
+      const v = kind === 'runs' ? WEEKS[w].runs : WEEKS[w].km;
+      b.innerHTML = `<span class="kd">${shortDate(w)}</span>
+        <span style="flex:1;height:6px;background:var(--rule);border-radius:3px;overflow:hidden">
+          <span style="display:block;height:100%;width:${(WEEKS[w].km/mx*100).toFixed(0)}%;
+            background:${WEEKS[w].acwr>1.12?'var(--coral)':'var(--ink-2)'}"></span></span>
+        <span class="kv" style="color:var(--ink);width:52px;text-align:right">${v}${kind==='runs'?'<span style="font-size:8px"> RUNS</span>':'<span style="font-size:8px"> KM</span>'}</span>`;
+      b.onclick = () => openWeek(w);
+      s.appendChild(b);
+    });
+    body.appendChild(s);
+
+    const s2 = el('div','sect');
+    const typeKm = { key:0, long:0, easy:0 };
+    ds.forEach(k => {
+      const d = DAYS[k];
+      d.runs.forEach(r => {
+        if (r.isKey) typeKm.key += r.km;
+        else if (d.type === 'long') typeKm.long += r.km;
+        else typeKm.easy += r.km;
+      });
+    });
+    const tot = typeKm.key + typeKm.long + typeKm.easy || 1;
+    s2.appendChild(el('div','eyebrow','By session type'));
+    [['Key sessions','key'],['Long runs','long'],['Easy','easy']].forEach(([lbl,t]) => {
+      const b = el('div','keyitem');
+      b.style.cursor = 'default';
+      b.innerHTML = `<span class="kd" style="width:76px">${lbl}</span>
+        <span style="flex:1;height:6px;background:var(--rule);border-radius:3px;overflow:hidden">
+          <span style="display:block;height:100%;width:${(typeKm[t]/tot*100).toFixed(0)}%;background:${TYPE_COLOR[t]}"></span></span>
+        <span class="kv" style="color:var(--ink-2);width:52px;text-align:right">${typeKm[t].toFixed(0)}<span style="font-size:8px"> KM</span></span>`;
+      s2.appendChild(b);
+    });
+    body.appendChild(s2);
+  }
+
+  showSheet(head, body);
+}
+
+/* ---------------------------------------------------------------- month nav */
+function renderHead(){
+  document.getElementById('mTitle').textContent = MONTHS[month] + '.';
+  const ws = monthWeeks(month);
+  const all = Object.keys(WEEKS).sort().filter(w => !WEEKS[w].partial && WEEKS[w].km > 20);
+  const n = all.indexOf(ws.find(w => all.includes(w))) + 1;
+  document.getElementById('mEyebrow').textContent =
+    `Marathon block · weeks ${n}–${n + ws.filter(w=>all.includes(w)).length - 1}`;
+  document.getElementById('plateRight').textContent = MONTHS[month].slice(0,3) + ' 2026';
+  document.getElementById('prevM').disabled = month <= 4;
+  document.getElementById('nextM').disabled = month >= 6;
+}
+document.getElementById('prevM').onclick = () => {
+  if (gran === 'week'){ const l = allWeeks(), i = l.indexOf(weekStart); if (i > 0){ weekStart = l[i-1]; renderAll(); } return; }
+  if (month > 4){ month--; lens = null; renderAll(); }
+};
+document.getElementById('nextM').onclick = () => {
+  if (gran === 'week'){ const l = allWeeks(), i = l.indexOf(weekStart); if (i < l.length-1){ weekStart = l[i+1]; renderAll(); } return; }
+  if (month < 6){ month++; lens = null; renderAll(); }
+};
+
+/* ---------------------------------------------------------------- fill toggle */
+document.getElementById('fillseg').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  fillMode = btn.dataset.fill;
+  [...document.querySelectorAll('#fillseg button')].forEach(x => x.classList.toggle('on', x === btn));
+  document.getElementById('fillnote').innerHTML = fillMode === 'pace'
+    ? '<b>Pace</b> — ten sequential steps in a 17 px bar, and a whole-day cell forced to carry one pace it never actually ran. Compare the two rows for 21 July.'
+    : '<b>Type</b> — coral key, dark long, light easy. Three values, legible at 17 px.';
+  renderAll();
+});
+
+
+/* ================================================================ WEEK VIEW */
+const ZONE_COLOR = { Mile:'#0E1D4E', '5K':'#1A3679', LT:'#27549B', MP:'#3F7CB5',
+                     Steady:'#578FC0', Moderate:'#74A8CC', Easy:'#93B9D6', Recovery:'#B4CFE2' };
+const ZONE_NOTE  = { Mile:'faster than 4:36/mi', '5K':'4:36–4:54', LT:'4:54–5:14', MP:'5:14–5:50',
+                     Steady:'5:50–6:30', Moderate:'6:30–7:10', Easy:'7:10–7:55', Recovery:'slower than 7:55' };
+let weekStart = '2026-07-20';
+
+const weekDays = ws => { const o = []; for (let i=0;i<7;i++){ const k = addDays(ws,i); if (DAYS[k]) o.push(DAYS[k]); } return o; };
+const allWeeks = () => Object.keys(WEEKS).sort().filter(w => !WEEKS[w].partial && WEEKS[w].km > 20);
+
+function sessionName(d){
+  if (!d.km) return 'Rest';
+  const k = d.runs.find(r => r.isKey);
+  if (k) return k.label || (k.kind === 'long' ? 'Long run' : k.kind);
+  if (d.type === 'long') return 'Long run';
+  if (d.double) return d.nRuns + ' × easy';
+  return 'Easy';
+}
+
+/* ---- day rows ---- */
+function renderWeekRows(){
+  const wrap = document.getElementById('drows');
+  wrap.innerHTML = '';
+  const ds = weekDays(weekStart);
+  const mx = Math.max(...ds.map(d => d.km), 1);
+
+  ds.forEach(d => {
+    const b = el('button','drow' + (d.km ? '' : ' isrest') + (d.date === TODAY ? ' istoday' : ''));
+    const rec = d.recovery;
+    const zk = d.zoneKm || {};
+    const segs = D.zoneOrder.slice().reverse().filter(z => zk[z])
+      .map(z => `<span style="flex:${zk[z]};background:${ZONE_COLOR[z]}"></span>`).join('');
+
+    const nig = d.niggles.length
+      ? `<span class="ng">${d.niggles[0].area.split(' ')[1] || d.niggles[0].area} “${d.niggles[0].word}”</span>` : '';
+    const lowSleep = rec && rec.sleepH < rec.sleepBaseline - 0.6;
+    const lowHrv = rec && rec.hrv < rec.hrvBaseline - 6;
+
+    b.innerHTML =
+      `<span class="dmood" style="background:${d.mood ? MOOD_COLOR[d.mood] : 'var(--rule)'}"></span>
+       <span class="ddate"><em>${DOW[d.dow]}</em><b>${parse(d.date).getUTCDate()}</b></span>
+       <span class="dmain">
+         <span class="dtop">
+           <span class="dname">${d.runs.some(r=>r.isKey)?'<i class="dkey"></i>':''}${sessionName(d)}</span>
+           <span class="dkm">${d.km ? d.km.toFixed(1) : '–'}<i>km</i></span>
+         </span>
+         <span class="dbar${d.km ? '' : ' empty'}" style="width:${d.km ? (d.km/mx*100).toFixed(1) : 100}%">${segs}</span>
+         <span class="dmeta">
+           ${d.km ? `<span><b>${paceKm(d)}</b>/km</span><span>${hms(d.sec)}</span>` : '<span>no run logged</span>'}
+           ${d.km && d.elev ? `<span>${d.elev} m ↑</span>` : ''}
+           ${rec ? `<span class="${lowSleep?'lo':''}">sleep <b>${rec.sleepH}h</b></span>` : ''}
+           ${rec ? `<span class="${lowHrv?'lo':''}">hrv <b>${rec.hrv}</b></span>` : ''}
+           ${nig}
+         </span>
+       </span>`;
+    b.onclick = () => openDay(d.date);
+    wrap.appendChild(b);
+  });
+}
+
+/* ---- volume by pace ---- */
+function renderZones(){
+  const w = WEEKS[weekStart], zk = w.zoneKm || {};
+  const tot = Object.values(zk).reduce((a,c)=>a+c,0) || 1;
+  const order = D.zoneOrder.slice().reverse().filter(z => zk[z]);
+  document.getElementById('zbar').innerHTML =
+    order.map(z => `<span style="flex:${zk[z]};background:${ZONE_COLOR[z]}"></span>`).join('');
+  const list = document.getElementById('zlist');
+  list.innerHTML = '';
+  D.zoneOrder.filter(z => zk[z]).forEach(z => {
+    const r = el('div','zrow');
+    r.innerHTML = `<i style="background:${ZONE_COLOR[z]}"></i><span class="zn">${z}</span>
+      <span class="zp">${ZONE_NOTE[z]}</span>
+      <span class="zv">${zk[z].toFixed(1)}</span><span class="zpc">${(zk[z]/tot*100).toFixed(0)}%</span>`;
+    list.appendChild(r);
+  });
+}
+
+/* ---- recovery ---- */
+function renderRecovery(){
+  const ds = weekDays(weekStart), W = 310, H = 96, PB = 16;
+  const recs = ds.map(d => d.recovery);
+  const has = recs.some(Boolean);
+  const box = document.getElementById('recchartwrap');
+  if (!has){ box.innerHTML = '<p class="emptynote">No recovery data for this week.</p>'; return; }
+
+  const sMax = 9.5, cw = W / 7;
+  const hv = recs.filter(Boolean).map(r => r.hrv);
+  const hMin = Math.min(...hv) - 6, hMax = Math.max(...hv) + 6;
+  const base = recs.find(Boolean).hrvBaseline;
+  const y = v => PB + (1 - (v - hMin) / (hMax - hMin)) * (H - PB - 20);
+
+  let svg = `<svg class="recchart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+  // sleep bars
+  ds.forEach((d,i) => {
+    if (!d.recovery) return;
+    const bh = d.recovery.sleepH / sMax * (H - PB - 20);
+    const low = d.recovery.sleepH < d.recovery.sleepBaseline - 0.6;
+    svg += `<rect x="${i*cw + cw*0.22}" y="${H-20-bh}" width="${cw*0.56}" height="${bh}" rx="2"
+             fill="${low ? '#C4873A' : '#D8D2CB'}" opacity="${low ? '.55' : '.9'}"/>`;
+  });
+  // hrv baseline
+  svg += `<line x1="0" x2="${W}" y1="${y(base)}" y2="${y(base)}" stroke="#9B9590" stroke-width="1"
+           stroke-dasharray="3 3" opacity=".7"/>`;
+  // hrv line
+  const pts = ds.map((d,i) => d.recovery ? `${i*cw + cw/2},${y(d.recovery.hrv)}` : null).filter(Boolean);
+  svg += `<polyline fill="none" stroke="#D4592A" stroke-width="2" stroke-linejoin="round"
+           stroke-linecap="round" points="${pts.join(' ')}"/>`;
+  ds.forEach((d,i) => {
+    if (!d.recovery) return;
+    const below = d.recovery.hrv < base - 6;
+    svg += `<circle cx="${i*cw + cw/2}" cy="${y(d.recovery.hrv)}" r="${below ? 3.4 : 2.6}"
+             fill="${below ? '#B83A4A' : '#D4592A'}"/>`;
+  });
+  svg += `</svg>`;
+  box.innerHTML = svg;
+  document.getElementById('reclbl').innerHTML = ds.map(d =>
+    `<span>${DOW[d.dow]}<br>${d.recovery ? d.recovery.sleepH : '–'}</span>`).join('');
+}
+
+/* ---- drill-down primitives ---- */
+function pct(a,b){ return b ? Math.round(a/b*100) : 0; }
+const delta = (a,b) => a == null || b == null ? null : a - b;
+function dcls(d, goodUp = true){
+  if (d == null || Math.abs(d) < 0.005) return 'flat';
+  return (d > 0) === goodUp ? 'up' : 'dn';
+}
+const sgn = (d, dp = 1) => d == null ? '\u2014' : (d > 0 ? '+' : '') + d.toFixed(dp);
+
+/* Block context: one bar per week, current in coral, every bar tappable. */
+function ctxStrip(vals, cur, onPick, h = 40){
+  const ws = allWeeks();
+  const wrap = el('div','ctx'), bars = el('div','ctxbars');
+  bars.style.height = h + 'px';
+  const mn = Math.min(...vals), mx = Math.max(...vals), rng = (mx - mn) || 1;
+  vals.forEach((v,i) => {
+    const btn = el('button', i === cur ? 'cur' : '');
+    btn.innerHTML = `<i style="height:${Math.max(3, 4 + (v-mn)/rng*(h-4)).toFixed(1)}px"></i>`;
+    btn.title = shortDate(ws[i]) + ' \u00b7 ' + (Math.round(v*100)/100);
+    if (onPick) btn.onclick = () => onPick(ws[i]);
+    bars.appendChild(btn);
+  });
+  wrap.appendChild(bars);
+  const ax = el('div','ctxaxis');
+  ax.innerHTML = `<span>${shortDate(ws[0])}</span><span>${mn.toFixed(1)} \u2013 ${mx.toFixed(1)}</span><span>${shortDate(ws[ws.length-1])}</span>`;
+  wrap.appendChild(ax);
+  return wrap;
+}
+function sparkSVG(vals, cur, w = 74, h = 20){
+  const mn = Math.min(...vals), mx = Math.max(...vals), rng = (mx - mn) || 1, bw = w / vals.length;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">` + vals.map((v,i) => {
+    const bh = Math.max(2.5, 3 + (v-mn)/rng*(h-3));
+    return `<rect x="${(i*bw+0.5).toFixed(1)}" y="${(h-bh).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${bh.toFixed(1)}" rx="1" fill="${i===cur?'#D4592A':'#D3CCC4'}"/>`;
+  }).join('') + `</svg>`;
+}
+/* A bar per peer, current in coral, each tappable. invert = lower value draws taller. */
+function rankStrip(items, cur, invert, caption){
+  const wrap = el('div');
+  const rb = el('div','rankbar');
+  const vals = items.map(x => x.v);
+  const mn = Math.min(...vals), mx = Math.max(...vals), rng = (mx - mn) || 1;
+  items.forEach((x,i) => {
+    const t = invert ? (mx - x.v) / rng : (x.v - mn) / rng;
+    const btn = el('button', i === cur ? 'cur' : '');
+    btn.innerHTML = `<i style="height:${(6 + t*22).toFixed(1)}px"></i>`;
+    btn.title = shortDate(x.date);
+    btn.onclick = () => openDay(x.date);
+    rb.appendChild(btn);
+  });
+  wrap.appendChild(rb);
+  wrap.appendChild(el('div','ctxaxis',
+    `<span>${shortDate(items[0].date)}</span><span>${caption}</span><span>${shortDate(items[items.length-1].date)}</span>`));
+  return wrap;
+}
+
+function cmpRow(label, text, d, opts = {}){
+  const r = el('div','cmp');
+  r.innerHTML = `<span class="cl">${label}</span><span class="ct">${text}</span>` +
+    (d === undefined ? '' : `<span class="cd ${dcls(d, opts.goodUp !== false)}">${sgn(d, opts.dp === undefined ? 1 : opts.dp)}${opts.unit || ''}</span>`);
+  return r;
+}
+
+/* One number per week per pattern, so every card carries block context. */
+function patternSeries(){
+  const out = { pol:[], rec:[], spc:[], nig:[] };
+  allWeeks().forEach(k => {
+    const x = WEEKS[k], zk = x.zoneKm || {};
+    const t = Object.values(zk).reduce((a,c)=>a+c,0) || 1;
+    out.pol.push(pct(Object.keys(zk).filter(k => !['Mile','5K','LT','MP'].includes(k)).reduce((a,c)=>a+zk[c],0), t));
+    out.rec.push(x.hrvAvg != null ? x.hrvAvg - x.hrvBaseline : 0);
+    const kd = x.keyDates || [];
+    out.spc.push(kd.length < 2 ? 7 : Math.min(...kd.slice(1).map((d,i) => Math.round((parse(d)-parse(kd[i]))/864e5))));
+    let n = 0; for (let i=0;i<7;i++){ const d = DAYS[addDays(k,i)]; if (d) n += d.niggles.length; }
+    out.nig.push(n);
+  });
+  return out;
+}
+
+/* ---- patterns ---- */
+
+function patterns(){
+  const w = WEEKS[weekStart], ds = weekDays(weekStart);
+  const S = patternSeries(), ci = allWeeks().indexOf(weekStart);
+  const zk = w.zoneKm || {}, tot = Object.values(zk).reduce((a,c)=>a+c,0) || 1;
+  const QUALITY = ['Mile','5K','LT','MP'];
+  const easyKm = Object.keys(zk).filter(k => !QUALITY.includes(k)).reduce((a,k) => a + zk[k], 0);
+  const qualKm = tot - easyKm;
+  const out = [];
+
+  /* 1 — polarisation */
+  const easyPct = pct(easyKm, tot);
+  // an "easy" run that drifted: non-key run whose whole-run pace lands MP or faster
+  const drift = ds.flatMap(d => d.runs.filter(r => !r.isKey && r.paceMi && r.paceMi <= 350));
+  out.push({
+    id:'pol', label:'Polarisation', value: `${easyPct} / ${100-easyPct}`,
+    series: S.pol, cur: ci,
+    tone: qualKm === 0 ? 'warn' : (easyPct >= 78 ? 'good' : 'ok'),
+    verdict: qualKm === 0 ? 'No quality at all.'
+           : easyPct >= 78 ? 'Easy stayed easy.' : 'Easy days ran hot.',
+    detail: () => {
+      const bx = el('div');
+      const s0 = el('div','sect');
+      s0.appendChild(el('div','eyebrow','Easy share \u00b7 every week'));
+      s0.appendChild(ctxStrip(S.pol, ci, k => { weekStart = k; renderAll(); closeSheet(); }));
+      bx.appendChild(s0);
+
+      const avg = S.pol.reduce((a,c)=>a+c,0) / S.pol.length;
+      const s1 = el('div','sect');
+      s1.appendChild(el('div','eyebrow','This week'));
+      s1.appendChild(cmpRow('Easy share', easyPct + '%', delta(easyPct, avg), {unit:'%', dp:0}));
+      s1.appendChild(cmpRow('Quality', qualKm.toFixed(1) + ' km'));
+      s1.appendChild(cmpRow('Drifted runs', drift.length
+        ? drift.length + ' of ' + ds.reduce((a,d)=>a+d.nRuns,0) : 'none'));
+      bx.appendChild(s1);
+
+      const s = el('div','sect');
+      s.appendChild(el('div','eyebrow','Run by run'));
+      ds.filter(d => d.km).forEach(d => d.runs.forEach(r => {
+        const z = r.isKey && r.keyPaceMi ? zoneOf(r.keyPaceMi) : zoneOf(r.paceMi);
+        const it = el('button','keyitem');
+        it.innerHTML = `<span class="kd">${shortDate(d.date)}</span>
+          <span class="kn" style="font-size:13px">${r.isKey && r.label ? r.label : r.name}
+            <span style="display:block;font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;
+            text-transform:uppercase;color:var(--ink-3);font-weight:400;margin-top:2px">${r.km.toFixed(1)} km \u00b7 ${paceStr(r.paceMi)}/mi</span></span>
+          <span class="kv" style="color:${z.c}">${z.name}</span>`;
+        it.onclick = () => openDay(d.date);
+        s.appendChild(it);
+      }));
+      bx.appendChild(s);
+      bx.appendChild(el('p','emptynote',
+        'Zone from rep pace on a key session, whole-run average otherwise. Warm-up and cool-down count as easy.'));
+      return bx;
+    }
+  });
+
+  /* 2 — load vs recovery */
+  const acwr = w.acwr, hrvD = w.hrvAvg - w.hrvBaseline, slpD = +(w.sleepAvg - w.sleepBaseline).toFixed(2);
+  const diverging = acwr != null && acwr > 1.08 && hrvD < -4;
+  out.push({
+    id:'rec', label:'Load vs recovery', value: `${acwr != null ? acwr.toFixed(2) : '\u2014'} \u00b7 ${sgn(hrvD,0)}`,
+    series: S.rec, cur: ci,
+    tone: diverging ? 'warn' : (hrvD < -4 ? 'ok' : 'good'),
+    verdict: diverging ? 'Load up, recovery down.'
+           : hrvD < -4 ? 'Recovery down, load steady.'
+           : 'Moving together.',
+    detail: () => {
+      const bx = el('div');
+      const s0 = el('div','sect');
+      s0.appendChild(el('div','eyebrow','HRV vs baseline \u00b7 every week'));
+      s0.appendChild(ctxStrip(S.rec, ci, k => { weekStart = k; renderAll(); closeSheet(); }));
+      bx.appendChild(s0);
+
+      const prevK = allWeeks()[ci-1], pv = prevK ? WEEKS[prevK] : null;
+      const s1 = el('div','sect');
+      s1.appendChild(el('div','eyebrow', pv ? 'Against last week' : 'This week'));
+      s1.appendChild(cmpRow('Volume', w.km.toFixed(0) + ' km', pv ? delta(w.km, pv.km) : undefined, {unit:' km', dp:0}));
+      s1.appendChild(cmpRow('ACWR', acwr != null ? acwr.toFixed(2) : '\u2014',
+        pv && pv.acwr != null && acwr != null ? delta(acwr, pv.acwr) : undefined, {dp:2, goodUp:false}));
+      s1.appendChild(cmpRow('HRV', String(w.hrvAvg), pv ? delta(w.hrvAvg, pv.hrvAvg) : undefined, {dp:0}));
+      s1.appendChild(cmpRow('vs baseline', String(w.hrvBaseline), hrvD, {dp:0}));
+      s1.appendChild(cmpRow('Sleep', w.sleepAvg + 'h', pv ? delta(w.sleepAvg, pv.sleepAvg) : undefined, {unit:'h'}));
+      s1.appendChild(cmpRow('Resting HR', String(w.rhrAvg), pv ? delta(w.rhrAvg, pv.rhrAvg) : undefined, {dp:0, goodUp:false}));
+      bx.appendChild(s1);
+
+      const s = el('div','sect');
+      s.appendChild(el('div','eyebrow','Both signals, all weeks'));
+      const list = el('div','keylist');
+      allWeeks().forEach(k => {
+        const x = WEEKS[k]; if (x.hrvAvg == null) return;
+        const d = x.hrvAvg - x.hrvBaseline;
+        const div = x.acwr > 1.08 && d < -4;
+        const it = el('button','keyitem');
+        it.innerHTML = `<span class="kd">${shortDate(k)}</span>
+          <span class="kn" style="font-family:var(--font-body);font-weight:400;font-size:12.5px">
+            ${x.km} km \u00b7 ACWR ${x.acwr != null ? x.acwr.toFixed(2) : '\u2014'} \u00b7 ${x.sleepAvg}h</span>
+          <span class="kv" style="color:${div ? 'var(--mood-injured)' : 'var(--ink-3)'}">${sgn(d,0)}</span>`;
+        it.onclick = () => { weekStart = k; renderAll(); closeSheet(); };
+        list.appendChild(it);
+      });
+      s.appendChild(list); bx.appendChild(s);
+      bx.appendChild(el('p','emptynote',
+        'HRV against its own 28-day trailing mean. Only the combination \u2014 elevated ACWR and HRV below baseline \u2014 is worth reading. Either alone is noise.'));
+      return bx;
+    }
+  });
+
+  /* 3 — session spacing */
+  const kd = w.keyDates || [];
+  const gaps = kd.slice(1).map((k,i) => Math.round((parse(k) - parse(kd[i]))/864e5));
+  const btb = gaps.filter(g => g === 1).length;
+  const maxRun = d => Math.max(0, ...d.runs.map(r => r.km));
+  const longD = ds.reduce((a,b) => maxRun(b) > maxRun(a) ? b : a, ds[0]);
+  const dayBefore = DAYS[addDays(longD.date,-1)];
+  const tiredLong = dayBefore && (dayBefore.qualityZoneKm >= 4 || (dayBefore.moodScore && dayBefore.moodScore <= 2));
+  out.push({
+    id:'spc', label:'Session spacing', value: `${kd.length} key \u00b7 ${gaps.length ? gaps.join('/') : '\u2014'}d`,
+    series: S.spc, cur: ci,
+    tone: btb ? 'warn' : (tiredLong ? 'ok' : 'good'),
+    verdict: btb ? 'Two hard days together.'
+           : tiredLong ? 'Long run on tired legs.'
+           : 'Hard days had room.',
+    detail: () => {
+      const bx = el('div');
+      const s0 = el('div','sect');
+      s0.appendChild(el('div','eyebrow','Shortest gap \u00b7 every week'));
+      s0.appendChild(ctxStrip(S.spc, ci, k => { weekStart = k; renderAll(); closeSheet(); }));
+      bx.appendChild(s0);
+
+      const allGaps = []; let p2 = null;
+      allWeeks().forEach(k => (WEEKS[k].keyDates||[]).forEach(dte => {
+        if (p2) allGaps.push(Math.round((parse(dte)-parse(p2))/864e5)); p2 = dte; }));
+      const avgGap = allGaps.reduce((a,c)=>a+c,0) / (allGaps.length || 1);
+
+      const s1 = el('div','sect');
+      s1.appendChild(el('div','eyebrow','This week'));
+      s1.appendChild(cmpRow('Key sessions', String(kd.length)));
+      s1.appendChild(cmpRow('Shortest gap', gaps.length ? Math.min(...gaps) + ' days' : '\u2014',
+        gaps.length ? delta(Math.min(...gaps), avgGap) : undefined, {unit:'d'}));
+      s1.appendChild(cmpRow('Long run', maxRun(longD).toFixed(1) + ' km, ' + shortDate(longD.date)));
+      s1.appendChild(cmpRow('Day before', dayBefore
+        ? (dayBefore.km ? dayBefore.km.toFixed(1) + ' km' + (dayBefore.qualityZoneKm >= 4 ? ', quality' : '') : 'rest')
+          + (dayBefore.mood ? ' \u00b7 ' + dayBefore.mood : '') : '\u2014'));
+      bx.appendChild(s1);
+
+      const s = el('div','sect');
+      s.appendChild(el('div','eyebrow','Every key session in the block'));
+      const list = el('div','keylist');
+      let prev = null;
+      allWeeks().forEach(k => (WEEKS[k].keyDates||[]).forEach(dte => {
+        const gap = prev ? Math.round((parse(dte)-parse(prev))/864e5) : null;
+        const r = DAYS[dte].runs.find(x => x.isKey);
+        const it = el('button','keyitem');
+        it.innerHTML = `<span class="kd">${shortDate(dte)}</span>
+          <span class="kn" style="font-size:13px">${r.label || r.kind}
+            <span style="display:block;font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;
+            text-transform:uppercase;color:var(--ink-3);font-weight:400;margin-top:2px">${r.keyPaceMi ? paceStr(r.keyPaceMi)+'/mi' : ''}</span></span>
+          <span class="kv" style="color:${gap === 1 ? 'var(--mood-injured)' : 'var(--ink-3)'}">${gap ? gap+'d' : 'start'}</span>`;
+        it.onclick = () => openDay(dte);
+        list.appendChild(it); prev = dte;
+      }));
+      s.appendChild(list); bx.appendChild(s);
+      bx.appendChild(el('p','emptynote','Gap is days since the previous key session. Rose marks a back-to-back.'));
+      return bx;
+    }
+  });
+
+  /* 4 — niggle correlation */
+  const allM = [];
+  Object.keys(DAYS).forEach(k => DAYS[k].niggles.forEach(n => allM.push({...n, date:k})));
+  const after = allM.filter(m => { const p = DAYS[addDays(m.date,-1)]; return p && p.qualityZoneKm >= 4; }).length;
+  const onDouble = allM.filter(m => DAYS[m.date].double).length;
+  const onLowSleep = allM.filter(m => { const r = DAYS[m.date].recovery; return r && r.sleepH < r.sleepBaseline - 0.6; }).length;
+  const thisWk = ds.reduce((a,d) => a + d.niggles.length, 0);
+  const top = [['the day after a key session', after], ['on a double day', onDouble], ['after a short night', onLowSleep]]
+    .sort((a,b) => b[1]-a[1])[0];
+  out.push({
+    id:'nig', label:'Niggle timing', value: `${thisWk} wk \u00b7 ${allM.length} block`,
+    series: S.nig, cur: ci,
+    tone: thisWk === 0 ? 'good' : 'ok',
+    verdict: thisWk === 0 ? 'Nothing logged.' : `${thisWk} mention${thisWk===1?'':'s'} this week.`,
+    detail: () => {
+      const bx = el('div');
+      const s0 = el('div','sect');
+      s0.appendChild(el('div','eyebrow','Mentions \u00b7 every week'));
+      s0.appendChild(ctxStrip(S.nig, ci, k => { weekStart = k; renderAll(); closeSheet(); }));
+      bx.appendChild(s0);
+
+      const s = el('div','sect');
+      s.appendChild(el('div','eyebrow','What they coincided with'));
+      [['Day after a key session', after], ['On a double day', onDouble],
+       ['After a night below baseline', onLowSleep], ['On a rest day', allM.filter(m => DAYS[m.date].km === 0).length]]
+      .forEach(([lbl,n]) => {
+        const it = el('div','keyitem'); it.style.cursor = 'default';
+        it.innerHTML = `<span class="kd" style="width:auto;flex:0 0 118px;white-space:normal;line-height:1.3">${lbl}</span>
+          <span style="flex:1;height:6px;background:var(--rule);border-radius:3px;overflow:hidden">
+            <span style="display:block;height:100%;width:${pct(n,allM.length)}%;background:var(--mood-injured)"></span></span>
+          <span class="kv" style="color:var(--ink-2);width:44px;text-align:right">${n} / ${allM.length}</span>`;
+        s.appendChild(it);
+      });
+      bx.appendChild(s);
+
+      if (thisWk){
+        const s1 = el('div','sect');
+        s1.appendChild(el('div','eyebrow','This week, in your words'));
+        ds.forEach(d => d.niggles.forEach(n => {
+          const it = el('button','nigcard');
+          it.innerHTML = `<span class="nb"></span><span><span class="nn" style="font-size:13px">${n.area}</span>
+            <span class="nw">${shortDate(d.date)} \u00b7 \u201c${n.word}\u201d \u00b7 ${d.km ? d.km.toFixed(1)+' km' : 'rest'}</span></span>`;
+          it.onclick = () => openDay(d.date);
+          s1.appendChild(it);
+        }));
+        bx.appendChild(s1);
+      }
+
+      const s2 = el('div','sect');
+      s2.appendChild(el('div','eyebrow','Threads'));
+      NIG.forEach(n => {
+        const it = el('button','nigcard');
+        it.innerHTML = `<span class="nb"></span><span><span class="nn">${n.area}</span>
+          <span class="nw">${Object.keys(n.mentions).length} mentions \u00b7 ${n.closed ? 'resolved' : 'active'}</span></span>
+          <span class="nsev">\u201c${n.word}\u201d</span>`;
+        it.onclick = () => openNiggle(n.id);
+        s2.appendChild(it);
+      });
+      bx.appendChild(s2);
+      bx.appendChild(el('p','emptynote',
+        'Detection, not diagnosis. These bars say when mentions happened, never why. Categories overlap \u2014 one mention can sit in several.'));
+      return bx;
+    }
+  });
+
+  return out;
+}
+
+function renderPatterns(){
+  const wrap = document.getElementById('patterns');
+  wrap.innerHTML = '';
+  const TONE = { good:'#2D8A4E', ok:'#C4873A', warn:'#B83A4A' };
+  patterns().forEach(p => {
+    const b = el('button','pcard');
+    b.innerHTML =
+      `<span class="phead"><span class="pdot" style="background:${TONE[p.tone]}"></span>
+         <span class="plbl">${p.label}</span><span class="pval">${p.value}</span></span>
+       <span class="pfoot"><span class="pverdict">${p.verdict}</span>
+         <span class="pspark">${sparkSVG(p.series, p.cur)}</span></span>`;
+    b.onclick = () => {
+      showSheet(`<div class="eyebrow">${p.label}</div>
+        <div class="display-m" style="margin-top:3px">${p.verdict}</div>`, p.detail());
+    };
+    wrap.appendChild(b);
+  });
+}
+
+/* ---- week head + nav ---- */
+function renderWeekHead(){
+  const w = WEEKS[weekStart];
+  const list = allWeeks(), i = list.indexOf(weekStart);
+  document.getElementById('mTitle').textContent = 'Week of ' + shortDate(weekStart) + '.';
+  document.getElementById('mTitle').style.fontSize = '30px';
+  document.getElementById('mEyebrow').textContent = `Marathon block · week ${i+1} of ${list.length}`;
+  document.getElementById('plateRight').textContent = shortDate(weekStart) + ' – ' + shortDate(addDays(weekStart,6));
+  document.getElementById('prevM').disabled = i <= 0;
+  document.getElementById('nextM').disabled = i >= list.length - 1;
+
+  const wrap = document.getElementById('sumrow');
+  wrap.innerHTML = '';
+  const hrvD = w.hrvAvg - w.hrvBaseline;
+  [['Volume', w.km.toFixed(0), 'km', () => openWeek(weekStart)],
+   ['ACWR', w.acwr != null ? w.acwr.toFixed(2) : '—', '', () => document.querySelectorAll('.pcard')[1].click()],
+   ['Quality', w.qualityPct != null ? w.qualityPct.toFixed(0) : '—', '%', () => document.querySelectorAll('.pcard')[0].click()],
+   ['Sleep', w.sleepAvg != null ? w.sleepAvg.toFixed(1) : '—', 'h', () => document.querySelectorAll('.pcard')[1].click()]
+  ].forEach(([l,v,u,fn]) => {
+    const b = el('button','stat');
+    b.innerHTML = `<span class="slbl">${l}</span><span class="sval">${v}${u?`<span class="sunit">${u}</span>`:''}</span>`;
+    b.onclick = fn; wrap.appendChild(b);
+  });
+
+  const qz = ['Mile','5K','LT','MP'].reduce((a,k) => a + (w.zoneKm[k]||0), 0);
+  document.getElementById('zsub').textContent =
+    `${w.km.toFixed(0)} km · ${(w.km - qz).toFixed(0)} aerobic · ${qz.toFixed(1)} at MP or faster`;
+  document.getElementById('recsub').textContent =
+    `HRV ${w.hrvAvg} vs ${w.hrvBaseline} baseline · ${hrvD >= 0 ? '+' : ''}${hrvD.toFixed(0)}`;
+}
+
+function renderWeek(){
+  renderWeekHead(); renderWeekRows(); renderZones(); renderRecovery(); renderPatterns();
+}
+
+/* ---------------------------------------------------------------- granularity */
+let gran = 'month';
+document.getElementById('gran').addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  gran = btn.dataset.g;
+  [...document.querySelectorAll('#gran button')].forEach(x => x.classList.toggle('on', x === btn));
+  document.getElementById('monthview').style.display = gran === 'month' ? '' : 'none';
+  document.getElementById('weekview').style.display  = gran === 'week'  ? '' : 'none';
+  document.querySelector('.dsbar').style.display = gran === 'month' ? '' : 'none';
+  document.getElementById('scroll').scrollTop = 0;
+  renderAll();
+});
+
+/* ---------------------------------------------------------------- boot */
+function renderAll(){
+  if (gran === 'week'){ renderWeek(); return; }
+  document.getElementById('mTitle').style.fontSize = '';
+  renderHead(); renderSummary(); renderGrid(); renderLens();
+  renderStory(); renderRibbon(); renderSpine();
+}
+renderAll();
+})();
+</script>
+</body>
+</html>

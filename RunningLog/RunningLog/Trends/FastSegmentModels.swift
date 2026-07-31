@@ -146,10 +146,49 @@ struct FastSession: Identifiable {
     var avgGradePct: Double? = nil
     /// Whole-run distance (miles) — fast work in context.
     var totalMiles: Double? = nil
+    // ── Compare-surface metrics (all optional; older payloads omit them) ──
+    /// Grade-only flat-equivalent pace (heat kept). nil on flat terrain.
+    var flatPaceSec: Int? = nil
+    /// HR drift across the set (last rep − rep 2, bpm). nil for short reps.
+    var hrDriftBpm: Double? = nil
+    /// Mean HR drop into the recoveries (bpm). Bigger = recovering faster.
+    var recoveryDropBpm: Double? = nil
+    /// Aerobic decoupling (% efficiency lost) — continuous efforts only.
+    var decouplingPct: Double? = nil
+    /// Average rep / bout length in meters. A continuous effort is one long bout.
+    var avgRepM: Int? = nil
 
     /// Dominant system by work volume — the headline label.
     var primarySystem: FastSystem? {
         bySystem.max(by: { $0.workMiles < $1.workMiles })?.system
+    }
+
+    /// A continuous effort (tempo, threshold, steady, long) rather than reps:
+    /// one bout, so the rep-only rows (rep length, density, rest, recovery)
+    /// don't apply. Rep sessions have ≥ 2 bouts.
+    var isContinuous: Bool { repCount <= 1 }
+
+    /// Heat cost (s/mi the heat gave back) — derived: raw − heat-adjusted.
+    var heatCostSec: Int? {
+        guard let n = neutralPaceSec else { return nil }
+        let d = avgPaceSec - n
+        return d > 0 ? d : nil
+    }
+    /// Hill cost (s/mi the grade gave back) — derived: raw − grade-adjusted.
+    var hillCostSec: Int? {
+        guard let f = flatPaceSec else { return nil }
+        let d = avgPaceSec - f
+        return d > 0 ? d : nil
+    }
+
+    /// Pace under the athlete's adjustment toggles, with honest fallbacks.
+    func pace(heat: Bool, hills: Bool) -> Int {
+        switch (heat, hills) {
+        case (true, true): return conditionsPaceSec ?? neutralPaceSec ?? flatPaceSec ?? avgPaceSec
+        case (true, false): return neutralPaceSec ?? avgPaceSec
+        case (false, true): return flatPaceSec ?? avgPaceSec
+        case (false, false): return avgPaceSec
+        }
     }
 }
 
@@ -176,6 +215,18 @@ struct FastSystemTrendPoint: Identifiable {
     let avgHr: Int?
     let status: VolumeStatus
     var effectivePaceSec: Int { conditionsPaceSec ?? neutralPaceSec ?? avgPaceSec }
+
+    /// Pace under the athlete's adjustment toggles, mirroring `FastSession.pace`
+    /// with the fields a trend point carries. There's no grade-only pace here,
+    /// so hills-alone has no dedicated value and honestly falls back to raw.
+    func pace(heat: Bool, hills: Bool) -> Int {
+        switch (heat, hills) {
+        case (true, true): return conditionsPaceSec ?? neutralPaceSec ?? avgPaceSec
+        case (true, false): return neutralPaceSec ?? avgPaceSec
+        case (false, true): return avgPaceSec
+        case (false, false): return avgPaceSec
+        }
+    }
 }
 
 // MARK: - Sample data (V1 — real wiring is a follow-up)

@@ -678,6 +678,261 @@ export function workBoutCount(segments: BoutOrRecovery[]): number {
   return segments.reduce((n, s) => (s.kind === "work" ? n + 1 : n), 0);
 }
 
+/** Parse "M:SS" → sec/mile, or null. */
+function parsePaceStr(p: string | null | undefined): number | null {
+  if (!p) return null;
+  const m = String(p).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const s = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  return s > 0 ? s : null;
+}
+
+/** A block of a corrected `parsed_structure` (from correct-workout-structure). */
+export interface ParsedBlock {
+  role?: string;               // warmup | work_rep | recovery | cooldown
+  is_rest?: boolean;
+  distance_miles?: number;
+  distance_meters?: number;
+  duration_s?: number;
+  moving_time_seconds?: number;
+  avg_pace_per_mile?: string | null;
+  avg_pace_sec_per_mile?: number | null;
+  avg_hr?: number | null;
+}
+
+/** A lap row in the shape `segmentFromLaps` consumes (subset of running_workout_laps). */
+export interface StructureLap {
+  lap_index: number;
+  is_rest: boolean;
+  distance_meters: number;
+  moving_time_seconds: number;
+  elapsed_time_seconds: number;
+  avg_pace_sec_per_mile: number | null;
+  avg_heart_rate: number | null;
+}
+
+/**
+ * Convert a corrected `parsed_structure` into lap rows, so a session the athlete
+ * has FIXED drives the same lap-based surfaces (key sessions, the pace ladder,
+ * quality volume) as native/derived laps — the athlete's correction is the
+ * verdict. Each block becomes one lap; `work_rep` is work, everything else
+ * (warmup / recovery / cooldown) is a rest hint. Pace is preserved so
+ * `segmentFromLaps` classifies each lap to the athlete's zones.
+ *
+ * Returns [] when the structure has no usable blocks (caller keeps the existing
+ * laps).
+ */
+export function lapsFromParsedStructure(parsed: unknown): StructureLap[] {
+  const blocks = (parsed as { blocks?: ParsedBlock[] } | null)?.blocks;
+  if (!Array.isArray(blocks) || blocks.length === 0) return [];
+  const out: StructureLap[] = [];
+  let idx = 0;
+  for (const b of blocks) {
+    const dm = b.distance_meters ?? (b.distance_miles != null ? b.distance_miles * 1609.34 : 0);
+    if (!(dm > 0)) continue;
+    const secs = Math.round(b.duration_s ?? b.moving_time_seconds ?? 0);
+    const paceSec = b.avg_pace_sec_per_mile ?? parsePaceStr(b.avg_pace_per_mile) ??
+      (secs > 0 ? Math.round(secs / (dm / 1609.34)) : null);
+    const isRest = b.is_rest ?? (b.role ? b.role !== "work_rep" : false);
+    out.push({
+      lap_index: idx++,
+      is_rest: isRest,
+      distance_meters: Math.round(dm),
+      moving_time_seconds: secs,
+      elapsed_time_seconds: secs,
+      avg_pace_sec_per_mile: paceSec,
+      avg_heart_rate: b.avg_hr ?? null,
+    });
+  }
+  return out;
+}
+
+/**
+ * A lap row in the Strava `external_streams.laps` shape, derived from the
+ * per-second stream. Written when a provider (Garmin via Junction/Vital) gives
+ * us the stream but NO native laps — so the existing lap trigger + all the
+ * lap-based analytics (segmentFromLaps → key sessions → the pace ladder) keep
+ * working. See `derivedLapsFromStream`.
+ */
+export interface DerivedLap {
+  lap_index: number;
+  distance: number;          // meters
+  moving_time: number;       // seconds
+  elapsed_time: number;      // seconds
+  average_speed: number;     // m/s
+  average_heartrate: number | null;
+  max_heartrate: number | null;
+  start_index: number | null;
+  end_index: number | null;
+  /** Recovery hint. `segmentFromLaps` treats pace as truth, but we set it. */
+  is_rest: boolean;
+}
+
+/** Nearest stream index for a time value (time[] is monotonic). */
+function indexAtTime(time: number[], t: number): number | null {
+  const n = time.length;
+  if (n === 0) return null;
+  let lo = 0, hi = n - 1;
+  if (t <= time[0]) return 0;
+  if (t >= time[n - 1]) return n - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (time[mid] < t) lo = mid + 1; else hi = mid;
+  }
+  // lo is the first index with time[lo] >= t; pick the closer neighbour.
+  if (lo > 0 && Math.abs(time[lo - 1] - t) <= Math.abs(time[lo] - t)) return lo - 1;
+  return lo;
+}
+
+/** Mean + max HR over a stream window [i0, i1] (skips zeros). */
+function hrOverWindow(hr: number[], i0: number | null, i1: number | null): { avg: number | null; max: number | null } {
+  if (i0 == null || i1 == null || hr.length === 0) return { avg: null, max: null };
+  const lo = Math.max(0, Math.min(i0, i1));
+  const hi = Math.min(hr.length - 1, Math.max(i0, i1));
+  let sum = 0, cnt = 0, mx = 0;
+  for (let i = lo; i <= hi; i++) {
+    const h = hr[i];
+    if (h && h > 0) { sum += h; cnt += 1; if (h > mx) mx = h; }
+  }
+  return cnt > 0 ? { avg: Math.round(sum / cnt), max: mx } : { avg: null, max: null };
+}
+
+/**
+ * Derive rep-level laps from the per-second stream, in the Strava lap shape the
+ * `sync_workout_laps_from_streams` trigger consumes.
+ *
+ * Reuses the tested `detectWorkBouts` (recovery-bounded, bimodal-boundary
+ * detection) so the derived reps match exactly what the parser sees — no second
+ * detector to drift. Each work bout and each recovery between reps becomes one
+ * lap; a recovery's time window is bounded by the surrounding work bouts (the
+ * `Recovery` shape carries duration/distance but not its own clock, and
+ * `detectWorkBouts` trims leading/trailing recoveries, so every recovery sits
+ * between two bouts). HR is averaged from the stream over each window.
+ *
+ * Returns [] when nothing segments (a steady run, or no usable stream) — the
+ * caller then simply writes no laps, and the surface degrades honestly.
+ */
+export function derivedLapsFromStream(
+  streams: RawStreams & { heartrate?: number[] },
+  opts: DetectOptions = {},
+): DerivedLap[] {
+  const { segments } = detectWorkBouts(streams, opts);
+  if (segments.length === 0) return [];
+
+  const time = streams.time ?? [];
+  const hr = streams.heartrate ?? [];
+
+  // Work-bout clock windows, keyed by bout index, to place the recoveries.
+  const workWindow = new Map<number, { start_s: number; end_s: number }>();
+  for (const s of segments) {
+    if (s.kind === "work") workWindow.set(s.index, { start_s: s.start_s, end_s: s.end_s });
+  }
+
+  const laps: DerivedLap[] = [];
+  let lapIndex = 0;
+  for (const s of segments) {
+    if (s.kind === "work") {
+      const i0 = indexAtTime(time, s.start_s);
+      const i1 = indexAtTime(time, s.end_s);
+      const { avg, max } = hrOverWindow(hr, i0, i1);
+      laps.push({
+        lap_index: lapIndex++,
+        distance: s.distance_m,
+        moving_time: Math.round(s.duration_s),
+        elapsed_time: Math.round(s.duration_s),
+        average_speed: s.avg_vel_ms,
+        average_heartrate: avg,
+        max_heartrate: max,
+        start_index: i0,
+        end_index: i1,
+        is_rest: false,
+      });
+    } else {
+      // Recovery window = [end of the bout it follows, start of the next bout].
+      const prev = workWindow.get(s.after_bout);
+      const next = workWindow.get(s.after_bout + 1);
+      const start_s = prev?.end_s ?? 0;
+      const end_s = next?.start_s ?? (start_s + s.duration_s);
+      const i0 = indexAtTime(time, start_s);
+      const i1 = indexAtTime(time, end_s);
+      const { avg, max } = hrOverWindow(hr, i0, i1);
+      laps.push({
+        lap_index: lapIndex++,
+        distance: s.distance_m,
+        moving_time: Math.round(s.duration_s),
+        elapsed_time: Math.round(s.duration_s),
+        average_speed: s.avg_vel_ms,
+        average_heartrate: avg,
+        max_heartrate: max,
+        start_index: i0,
+        end_index: i1,
+        is_rest: true,
+      });
+    }
+  }
+  return laps;
+}
+
+export type LapRole = "warmup" | "rep" | "recovery" | "cooldown";
+
+/**
+ * Per-lap DESCRIPTIVE label for the splits view.
+ *
+ * The splits chart lists every lap the watch recorded, exactly as recorded —
+ * this only TAGS each row (warmup / rep / recovery / cooldown) so the athlete
+ * can read the structure. It NEVER merges, drops, re-orders, or re-paces a lap,
+ * and it is not `is_rest`: the split's distance/pace/HR are always the watch's
+ * own numbers. A lap is a "rep" when it clears the same velocity work/recovery
+ * boundary `boutsFromLaps` uses; the easy laps before the first rep are
+ * "warmup", after the last are "cooldown", and easy laps between reps are
+ * "recovery". Keyed by the lap's own `lap_index` so the client joins 1:1.
+ */
+export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: LapRole }> {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+  const o = DEFAULTS;
+
+  const rows = laps.map((l, i) => {
+    const dist_m = Number(l.distance ?? 0);
+    const dur_s = Number(l.moving_time ?? l.elapsed_time ?? 0);
+    const declaredVel = Number(l.average_speed ?? 0);
+    const vel = declaredVel > 0 ? declaredVel : dur_s > 0 ? dist_m / dur_s : 0;
+    const lap_index = l.lap_index ?? i;
+    // A lap short in BOTH distance and duration is a GPS artifact, not a rep.
+    const isFragment = dist_m < FRAGMENT_MAX_METERS && dur_s < FRAGMENT_MAX_SECONDS;
+    const valid = dist_m > 0 && dur_s > 0 && isFinite(vel);
+    return { lap_index, vel, valid, isFragment };
+  });
+
+  // Work-velocity boundary from the non-fragment laps — the SAME basis as
+  // boutsFromLaps, so the labels agree with the detected structure.
+  const normVels = rows.filter((r) => r.valid && !r.isFragment).map((r) => r.vel);
+  if (normVels.length < 2) {
+    // Too little to separate reps from rest — don't guess; call each valid lap a
+    // rep (the list still shows every lap regardless of label).
+    return rows.map((r) => ({ lap_index: r.lap_index, role: "rep" as LapRole }));
+  }
+  const moving = normVels.filter((v) => v > o.standingVelMs);
+  const sortedVel = [...moving].sort((a, b) => a - b);
+  const anchor = sortedVel[Math.min(sortedVel.length - 1, Math.floor(sortedVel.length * 0.9))];
+  const fastCluster = normVels.filter((v) => v >= 0.7 * anchor);
+  const workVel = median(fastCluster.length ? fastCluster : moving);
+  const adaptiveBoundary = bimodalWorkRecoveryBoundary(normVels, o.standingVelMs);
+  const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
+
+  const isWork = rows.map((r) => r.valid && !r.isFragment && r.vel >= recoveryThreshold);
+  const firstWork = isWork.indexOf(true);
+  const lastWork = isWork.lastIndexOf(true);
+
+  return rows.map((r, i) => {
+    let role: LapRole;
+    if (isWork[i]) role = "rep";
+    else if (firstWork < 0 || i < firstWork) role = "warmup";
+    else if (i > lastWork) role = "cooldown";
+    else role = "recovery";
+    return { lap_index: r.lap_index, role };
+  });
+}
+
 /**
  * Render detected bouts as a compact, model-readable block for the parser
  * prompt. Empty string when nothing was detected (caller substitutes "(none)").

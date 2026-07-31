@@ -36,6 +36,17 @@ struct FastSegmentsDTO: Decodable {
     let systems: [SystemTrendDTO]
     let sessions: [SessionDTO]
 
+    private enum CodingKeys: String, CodingKey { case systems, sessions }
+
+    /// Tolerant decode: a malformed or older-shaped `fast_segments` block
+    /// degrades to empty instead of failing the whole Trends payload. (Fast
+    /// Segments must never be able to take down the Trends tab.)
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        systems = (try? c.decode([SystemTrendDTO].self, forKey: .systems)) ?? []
+        sessions = (try? c.decode([SessionDTO].self, forKey: .sessions)) ?? []
+    }
+
     func toData() -> FastSegmentsData {
         FastSegmentsData(
             systems: systems.compactMap { $0.toModel() },
@@ -59,7 +70,7 @@ struct FastSegmentsDTO: Decodable {
         let sessionId: String
         let dateLabel: String
         let sessionName: String?
-        let reps: Int
+        let reps: Int?
         let workMiles: Double
         let totalMiles: Double?
         let avgPaceSec: Int
@@ -84,7 +95,7 @@ struct FastSegmentsDTO: Decodable {
 
         func toModel() -> FastSystemTrendPoint {
             FastSystemTrendPoint(
-                id: sessionId, dateLabel: dateLabel, sessionName: sessionName, reps: reps,
+                id: sessionId, dateLabel: dateLabel, sessionName: sessionName, reps: reps ?? 0,
                 workMiles: workMiles, totalMiles: totalMiles,
                 avgPaceSec: avgPaceSec, neutralPaceSec: neutralPaceSec,
                 conditionsPaceSec: conditionsPaceSec, avgHr: avgHr,
@@ -113,6 +124,12 @@ struct FastSegmentsDTO: Decodable {
         let metersPerBeat: Double?
         let feelsF: Int?
         let bySystem: [VolumeDTO]
+        // Optional compare-surface metrics — decode(if present) tolerates old payloads.
+        let flatPaceSec: Int?
+        let hrDriftBpm: Double?
+        let recoveryDropBpm: Double?
+        let decouplingPct: Double?
+        let avgRepM: Int?
 
         enum CodingKeys: String, CodingKey {
             case id, date, name
@@ -130,6 +147,11 @@ struct FastSegmentsDTO: Decodable {
             case metersPerBeat = "meters_per_beat"
             case feelsF = "feels_f"
             case bySystem = "by_system"
+            case flatPaceSec = "flat_pace_sec"
+            case hrDriftBpm = "hr_drift_bpm"
+            case recoveryDropBpm = "recovery_drop_bpm"
+            case decouplingPct = "decoupling_pct"
+            case avgRepM = "avg_rep_m"
         }
 
         func toModel() -> FastSession {
@@ -140,7 +162,10 @@ struct FastSegmentsDTO: Decodable {
                 avgRestSec: avgRestSec, metersPerBeat: metersPerBeat, feelsF: feelsF,
                 bySystem: bySystem.compactMap { $0.toModel() },
                 conditionsPaceSec: conditionsPaceSec, avgGradePct: avgGradePct,
-                totalMiles: totalMiles
+                totalMiles: totalMiles,
+                flatPaceSec: flatPaceSec, hrDriftBpm: hrDriftBpm,
+                recoveryDropBpm: recoveryDropBpm, decouplingPct: decouplingPct,
+                avgRepM: avgRepM
             )
         }
     }

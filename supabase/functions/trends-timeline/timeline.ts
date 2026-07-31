@@ -69,6 +69,11 @@ export interface TimelineInput {
   /** Rep-level laps by workout id. Preferred over `pace_segments` for quality,
    *  which mile splits systematically undercount on interval sessions. */
   lapsByWorkout?: Map<string, QualityLap[]>;
+  /** Work-bout (rep) pace per quality log, sec/mi — rest excluded, from
+   *  `buildKeySessions`. When present, the weekly key pace uses THIS instead of
+   *  `workout_pace_per_mile` (which blends the reps with the recovery jogs: a
+   *  6×mile @ 5:10 averages to ~6:20 over the whole workout). */
+  keyWorkPaceByLog?: Map<string, number>;
 }
 
 // ─── Output type (mirrors the iOS TrendsWeek decode shape) ─────────────
@@ -83,6 +88,41 @@ export interface TrendsWeekOut {
   mood: string | null;
   niggles: string[];
   voice_quote: string | null;
+}
+
+/**
+ * A single body mention as it lands on a day. `severity` is the raw
+ * `body_mentions.severity_hint` (tight | sore | pain | sharp) — the view
+ * maps it to an opacity ramp; the endpoint never interprets it. `quote` is
+ * verbatim (CLAUDE.md niggle contract).
+ */
+export interface TrendsDayNiggle {
+  area: string;
+  side: string | null;
+  severity: string | null;
+  quote: string;
+}
+
+/**
+ * One calendar day. The daily substrate the Trends-v2 calendar (Month/Block
+ * scales) renders on — dense (one entry per day in the window, rest days
+ * included so the weekday grid needs no gap-filling on device).
+ *
+ * `type` is the coarse session channel the calendar colors by, NOT a pace
+ * zone: `key` (coral accent), `long` (dark-grey channel, takes precedence
+ * over key), `easy` (light grey), `rest` (no run). Per-zone pace lives in the
+ * weekly quality surfaces, not here.
+ *
+ * `mood` is that day's dominant mood from ANY log carrying one (a mood-only
+ * check-in counts even with zero distance); null on a day with no logged
+ * feeling — never fabricated.
+ */
+export interface TrendsDayOut {
+  date: string; // "YYYY-MM-DD" (UTC day)
+  miles: number; // deduped running miles that day (doubles summed)
+  type: "key" | "long" | "easy" | "rest";
+  mood: string | null;
+  niggles: TrendsDayNiggle[];
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────
@@ -112,6 +152,20 @@ const QUALITY_TYPES = new Set([
  * counts as quality.
  */
 const QUALITY_INTENSITY_THRESHOLD = 1.5;
+
+/**
+ * Long-run workout types — the calendar's dark-grey channel. A long run is
+ * its own visual category even when it carries an embedded quality block, so
+ * `long` takes precedence over `key` in the daily `type`.
+ */
+const LONG_TYPES = new Set([
+  "long",
+  "long_run",
+  "long run",
+  "longrun",
+  "long_wo",
+  "long wo",
+]);
 
 /** Severity ranking for picking the week's representative voice quote. */
 const SEVERITY_RANK: Record<string, number> = {
@@ -189,6 +243,10 @@ function isQuality(log: TimelineLog, feature: TimelineFeature | undefined): bool
   return QUALITY_TYPES.has(type);
 }
 
+function isLong(log: TimelineLog): boolean {
+  return LONG_TYPES.has((log.workout_type ?? "").toLowerCase());
+}
+
 function logPaceSec(log: TimelineLog): number | null {
   const parsed = parsePaceToSec(log.workout_pace_per_mile);
   if (parsed) return parsed;
@@ -205,10 +263,12 @@ function logPaceSec(log: TimelineLog): number | null {
 // timeline matches the Training tab. (Real fix is upstream in reconcile-log;
 // this keeps the analytics honest until then.)
 
-const GPS_SOURCES = new Set(["strava", "auto_sync"]);
+const GPS_SOURCES = new Set(["garmin", "vital", "strava", "auto_sync"]);
 
 function sourcePriority(s: string | null | undefined): number {
   switch ((s ?? "").toLowerCase()) {
+    case "garmin": return 4;     // native device data (power, cadence, streams)
+    case "vital": return 4;      // aggregator device data
     case "strava": return 3;     // most reliable distance + segments
     case "auto_sync": return 2;  // HealthKit fallback
     case "voice_log": return 1;  // annotation only
@@ -394,7 +454,10 @@ export function buildTrendsTimeline(
         if (bi !== ai) return bi - ai;
         return (logPaceSec(a) ?? 1e9) - (logPaceSec(b) ?? 1e9);
       });
-      keyPaceSec = logPaceSec(ranked[0]);
+      const keyLog = ranked[0];
+      // The REP pace, not the whole-workout blend — falls back only when we have
+      // no lap-derived work pace for this session.
+      keyPaceSec = input.keyWorkPaceByLog?.get(keyLog.id) ?? logPaceSec(keyLog);
     }
 
     // Dominant mood (modal; tie → most recent log's mood).
@@ -416,6 +479,97 @@ export function buildTrendsTimeline(
       voice_quote: voiceQuote,
     };
   });
+}
+
+/**
+ * Daily substrate for the Trends-v2 calendar. Shares the weekly builder's
+ * dedup / inclusion / quality / mood logic verbatim so a day can never
+ * disagree with the week it rolls into — the same "one home for the math"
+ * rule the timeline exists to enforce.
+ *
+ * Returns a DENSE array: one entry per UTC day from the oldest window's
+ * Monday through `reference` (today), rest days included. Days beyond the
+ * reference (the rest of the current partial week) are not emitted.
+ */
+export function buildDailyTimeline(
+  input: TimelineInput,
+  weeks: number,
+  reference: Date = new Date(),
+): TrendsDayOut[] {
+  const featuresById = new Map<string, TimelineFeature>();
+  for (const f of input.features) featuresById.set(f.training_log_id, f);
+
+  // Running miles: same filter → include (athlete decision) → dedup pipeline
+  // as the weekly builder, then grouped by UTC day.
+  const running = input.logs.filter((l) => {
+    const type = (l.workout_type ?? "").toLowerCase();
+    return !NON_RUNNING_TYPES.has(type) && (l.workout_distance_miles ?? 0) > 0;
+  });
+  const deduped = dedupeRunLogs(running.filter(isIncluded));
+  const runsByDay = new Map<string, TimelineLog[]>();
+  for (const l of deduped) {
+    const key = isoDate(dayUTC(l.workout_date));
+    (runsByDay.get(key) ?? runsByDay.set(key, []).get(key)!).push(l);
+  }
+
+  // Mood is a property of a logged feeling, not of a run: a mood-only
+  // check-in (zero distance, dropped by the running filter) still colors its
+  // day. Gather from ANY log with a mood, excluding only explicit trims.
+  const moodLogsByDay = new Map<string, TimelineLog[]>();
+  for (const l of input.logs) {
+    if (!l.mood || l.stats_excluded === true) continue;
+    const key = isoDate(dayUTC(l.workout_date));
+    (moodLogsByDay.get(key) ?? moodLogsByDay.set(key, []).get(key)!).push(l);
+  }
+
+  // Niggles by day — verbatim, never interpreted.
+  const nigByDay = new Map<string, TimelineMention[]>();
+  for (const m of input.mentions) {
+    const key = isoDate(dayUTC(m.mentioned_at));
+    (nigByDay.get(key) ?? nigByDay.set(key, []).get(key)!).push(m);
+  }
+
+  const windows = buildWeekWindows(weeks, reference);
+  const firstStart = windows[0].start;
+  const lastDay = new Date(Date.UTC(
+    reference.getUTCFullYear(),
+    reference.getUTCMonth(),
+    reference.getUTCDate(),
+  ));
+
+  const out: TrendsDayOut[] = [];
+  for (
+    const d = new Date(firstStart);
+    d.getTime() <= lastDay.getTime();
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
+    const key = isoDate(d);
+    const dayRuns = runsByDay.get(key) ?? [];
+    const miles = dayRuns.reduce((s, l) => s + (l.workout_distance_miles ?? 0), 0);
+
+    let type: TrendsDayOut["type"] = "rest";
+    if (dayRuns.length > 0) {
+      if (dayRuns.some(isLong)) type = "long";
+      else if (dayRuns.some((l) => isQuality(l, featuresById.get(l.id)))) type = "key";
+      else type = "easy";
+    }
+
+    const niggles = (nigByDay.get(key) ?? []).map((m) => ({
+      area: m.body_area,
+      side: m.side,
+      severity: m.severity_hint ?? null,
+      quote: m.verbatim_quote,
+    }));
+
+    out.push({
+      date: key,
+      miles: Math.round(miles * 10) / 10,
+      type,
+      mood: dominantMood(moodLogsByDay.get(key) ?? []),
+      niggles,
+    });
+  }
+  return out;
 }
 
 // ─── Sub-derivations ───────────────────────────────────────────────────

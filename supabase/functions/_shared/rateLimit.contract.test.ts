@@ -100,6 +100,11 @@ const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   // Coach JWT via getAuthenticatedUser; on-demand generation keyed on the
   // calling coach. Cached per training_log so re-opens don't re-bill.
   { fn: "coach-workout-read",           feature: "coach_workout_read" },
+  // 2026-07-20 — Trends "The Effort" comparison. Athlete JWT via
+  // getAuthenticatedUser; Layer-1 diff is deterministic, the gate bounds
+  // the Gemini verdict layer (which falls back to the bare diff on any
+  // failure, so a capped user still gets the numbers).
+  { fn: "compare-workouts",             feature: "workout_comparison" },
 ];
 
 /**

@@ -16,8 +16,14 @@ final class PendingUpload {
     var retryCount: Int
     var status: String // "pending", "uploading", "failed"
     var lastError: String?
+    // The account that created this item, stamped at enqueue. The queue drains
+    // whenever the network returns — if we resolved the owner from "whoever is
+    // signed in now," a memo recorded offline by user A could drain into user
+    // B's account after a device hand-off (A signs out, B signs in). Optional
+    // so pre-existing rows from before this field migrate cleanly.
+    var ownerUserId: String?
 
-    init(type: String, payload: Data, localFilePath: String? = nil) {
+    init(type: String, payload: Data, localFilePath: String? = nil, ownerUserId: String? = nil) {
         self.id = UUID()
         self.type = type
         self.payload = payload
@@ -25,6 +31,7 @@ final class PendingUpload {
         self.createdAt = Date()
         self.retryCount = 0
         self.status = "pending"
+        self.ownerUserId = ownerUserId
     }
 }
 
@@ -69,7 +76,7 @@ final class OfflineQueueManager {
 
         guard let payloadData = try? JSONEncoder().encode(payloadDict) else { return }
 
-        let upload = PendingUpload(type: "voiceLog", payload: payloadData, localFilePath: audioURL.path)
+        let upload = PendingUpload(type: "voiceLog", payload: payloadData, localFilePath: audioURL.path, ownerUserId: AuthManager.shared.currentUserId)
         context.insert(upload)
         do {
             try context.save()
@@ -89,7 +96,7 @@ final class OfflineQueueManager {
 
         guard let payloadData = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
-        let upload = PendingUpload(type: "manualWorkout", payload: payloadData)
+        let upload = PendingUpload(type: "manualWorkout", payload: payloadData, ownerUserId: AuthManager.shared.currentUserId)
         context.insert(upload)
         do {
             try context.save()
@@ -107,7 +114,7 @@ final class OfflineQueueManager {
         guard let container else { return }
         let context = container.mainContext
 
-        let upload = PendingUpload(type: "trainingLog", payload: payload)
+        let upload = PendingUpload(type: "trainingLog", payload: payload, ownerUserId: AuthManager.shared.currentUserId)
         context.insert(upload)
         do {
             try context.save()
@@ -161,8 +168,21 @@ final class OfflineQueueManager {
 
         logger.info("Draining offline queue: \(uploads.count) items")
 
+        let currentUserId = AuthManager.shared.currentUserId
+
         for upload in uploads {
             guard !Task.isCancelled else { break }
+
+            // Ownership guard: never upload an item into an account other than
+            // the one that created it. If the signed-in user doesn't match the
+            // item's stamped owner, leave it queued and skip — the sign-out
+            // purge is what removes another account's items from this device.
+            // (Items with a nil owner predate this field; allow them through
+            // for backward compatibility.)
+            if let owner = upload.ownerUserId, owner != currentUserId {
+                logger.error("Skipping queued upload owned by a different account: \(upload.id) (\(upload.type))")
+                continue
+            }
 
             upload.status = "uploading"
             do { try context.save() } catch { Log.app.error("SwiftData save failed (mark uploading): \(error)") }
@@ -345,6 +365,34 @@ final class OfflineQueueManager {
             ErrorReporter.shared.report(error, context: "OfflineQueueManager.uploadTrainingLog: Training log upload failed for item \(upload.id)")
             return false
         }
+    }
+
+    // MARK: - Sign-out purge
+
+    /// Clears every queued item and its on-disk audio. Called on sign-out so a
+    /// departing account leaves nothing behind for the next person to sign in
+    /// on the same device — the cross-account voice-memo leak fix. Any pending
+    /// upload cancels; a queued memo that never made it up is lost by design
+    /// (correct-account integrity beats retrying it into the wrong account).
+    @MainActor
+    func purgeAllForSignOut() {
+        drainTask?.cancel()
+        guard let container else { return }
+        let context = container.mainContext
+        guard let items = try? context.fetch(FetchDescriptor<PendingUpload>()) else { return }
+        var purged = 0
+        for item in items {
+            if let filePath = item.localFilePath {
+                try? FileManager.default.removeItem(atPath: filePath)
+            }
+            context.delete(item)
+            purged += 1
+        }
+        if purged > 0 {
+            do { try context.save() } catch { Log.app.error("SwiftData save failed (purge on sign-out): \(error)") }
+            logger.info("Purged \(purged) queued upload(s) on sign-out")
+        }
+        refreshCountSync(context: context)
     }
 
     // MARK: - Count

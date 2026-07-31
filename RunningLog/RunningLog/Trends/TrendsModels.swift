@@ -69,6 +69,57 @@ struct TrendsWeek: Identifiable {
     let niggles: [String]
     /// An optional verbatim voice-log line to surface in an insight.
     var voiceQuote: String? = nil
+    /// Monday of this week, "yyyy-MM-dd". `TrendsSessionGrid` uses it to place
+    /// a session in the right column. Empty for monthly rollups, which have no
+    /// single week — the grid hides itself in that case rather than guessing.
+    var weekStart: String = ""
+}
+
+// MARK: - Day model (Trends-v2 calendar substrate)
+
+/// One calendar day on the Trends-v2 grid. The daily substrate the Month/Block
+/// calendar renders on — **dense** (one entry per day in the window, rest days
+/// included) so the weekday layout needs no gap-filling on device.
+///
+/// Source: `trends-timeline` → `days[]` (`buildDailyTimeline`). Shares the
+/// weekly builder's dedup / quality / mood logic, so a day can never disagree
+/// with the week it sums into.
+struct TrendsDay: Identifiable {
+    let id = UUID()
+    /// "yyyy-MM-dd" (UTC day).
+    let date: String
+    /// Deduped running miles that day (doubles summed). 0 on a rest day.
+    let miles: Double
+    /// The coarse session channel the calendar colours by.
+    let type: SessionChannel
+    /// Dominant mood that day (closed vocabulary), or `nil` when no feeling was
+    /// logged — a true rest day carries no mood, and it is never fabricated.
+    let mood: String?
+    /// Body mentions that landed on this day, verbatim. Surface, never diagnose.
+    let niggles: [DayNiggle]
+
+    /// The session channel the calendar colours by — **not** a pace zone. Per
+    /// the calendar encoding: `key` gets the coral accent, `long` its own dark-
+    /// grey channel (precedence over key), `easy` light grey, `rest` no run.
+    enum SessionChannel: String {
+        case key, long, easy, rest
+
+        /// Unknown/absent tokens degrade to `rest`, never a faked session.
+        init(token: String?) {
+            self = SessionChannel(rawValue: (token ?? "").lowercased()) ?? .rest
+        }
+    }
+
+    /// One body mention on a day, verbatim. `severity` is the raw
+    /// `body_mentions.severity_hint` (tight | sore | pain | sharp); the view
+    /// maps it to an opacity ramp — the model never interprets it.
+    struct DayNiggle: Identifiable {
+        let id = UUID()
+        let area: String
+        let side: String?
+        let severity: String?
+        let quote: String
+    }
 }
 
 // MARK: - Key session (Section A of the redesigned Key Sessions chart)
@@ -95,6 +146,22 @@ struct KeySession: Identifiable {
     let workHrAvg: Int?
     let structure: String?     // "5K 5×1km · 6.0 mi"
     let distanceMi: Double?
+    /// Weighted minutes of work — Σ(work-bout seconds × zone weight) — from
+    /// `trends-timeline`. Drives dot size on the session grid and the gate
+    /// that decides whether this counts as a key session at all. Optional so
+    /// an older payload still decodes; a nil load never clears the floor.
+    /// See `QualityLoad` in `TrendsQualityLoad.swift`.
+    var qualityLoad: Double? = nil
+    /// `"quality"` = a rep/threshold session, classified by its work bouts.
+    /// `"long_run"` = an aerobic anchor session with no MP-or-faster work,
+    /// admitted on the classifier's label. Their paces are NOT comparable —
+    /// a long run's is the whole run's mean, a quality session's is its work
+    /// bouts — so the grid colours and labels them apart and never plots them
+    /// on one scale.
+    var kind: String = "quality"
+
+    /// Convenience for the grid and the readout.
+    var isLongRun: Bool { kind == "long_run" }
 
     /// The heat model applied only when conditions weren't ideal AND an
     /// adjusted number exists. Drives the hollow-dot rendering.

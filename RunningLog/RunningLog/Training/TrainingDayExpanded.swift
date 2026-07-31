@@ -493,7 +493,7 @@ struct TrainingDayExpanded: View {
         // use that.
         let gps = dayLogs.first {
             let s = $0.source?.lowercased() ?? ""
-            return s == "strava" || s == "auto_sync"
+            return s == "garmin" || s == "vital" || s == "strava" || s == "auto_sync"
         }
         return gps ?? dayLogs.max(by: { ($0.miles ?? 0) < ($1.miles ?? 0) })
     }

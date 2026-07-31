@@ -1,6 +1,75 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Distance units (user-selectable)
+//
+// The app stores every distance internally in MILES. This is purely a
+// display-layer choice: `DistanceUnit` is the athlete's preference (default
+// `.miles`), persisted under the `"distanceUnit"` UserDefaults key so any
+// view using `@AppStorage("distanceUnit")` re-renders the instant it flips.
+// `DistanceFormat` is the single place that converts a stored mile value into
+// what the user sees — distance, unit label, and pace. Route every distance/
+// pace label through it so units can never drift screen-to-screen again.
+
+enum DistanceUnit: String, CaseIterable, Identifiable {
+    case miles
+    case kilometers
+
+    var id: String { rawValue }
+
+    /// Uppercase column/stat label — "MI" / "KM".
+    var label: String { self == .miles ? "MI" : "KM" }
+    /// Lowercase inline / per-unit label — "mi" / "km".
+    var short: String { self == .miles ? "mi" : "km" }
+    /// Full name for the Settings picker.
+    var displayName: String { self == .miles ? "Miles" : "Kilometers" }
+}
+
+enum DistanceFormat {
+    static let kmPerMile = 1.609344
+
+    /// The current preference, read straight from storage. Views that must
+    /// re-render on change should hold their own `@AppStorage("distanceUnit")`
+    /// and pass the resolved unit in, rather than relying on this.
+    static var current: DistanceUnit {
+        DistanceUnit(rawValue: UserDefaults.standard.string(forKey: "distanceUnit") ?? "") ?? .miles
+    }
+
+    /// Convert a stored mile value into the target unit's numeric value.
+    static func convert(miles: Double, to unit: DistanceUnit) -> Double {
+        unit == .kilometers ? miles * kmPerMile : miles
+    }
+
+    /// Formatted distance value only (no unit), matching the app's convention:
+    /// whole numbers at 100+, one decimal below.
+    static func value(miles: Double, unit: DistanceUnit = current) -> String {
+        let v = convert(miles: miles, to: unit)
+        return v >= 100 ? String(format: "%.0f", v) : String(format: "%.1f", v)
+    }
+
+    /// Value + inline unit, e.g. "12.4 mi" / "20.0 km".
+    static func string(miles: Double, unit: DistanceUnit = current) -> String {
+        "\(value(miles: miles, unit: unit)) \(unit.short)"
+    }
+
+    /// Convert a pace given in seconds-per-mile into "m:ss" for the target
+    /// unit. km pace is *slower* per unit, so seconds ÷ 1.609344.
+    static func paceMMSS(secPerMile: Double, unit: DistanceUnit = current) -> String {
+        let sec = unit == .kilometers ? secPerMile / kmPerMile : secPerMile
+        let t = Int(sec.rounded())
+        return "\(t / 60):\(String(format: "%02d", t % 60))"
+    }
+
+    /// Re-express an already-formatted per-mile pace string ("8:24") in the
+    /// target unit. Returns the input unchanged if it can't be parsed.
+    static func convertPaceString(_ mmssPerMile: String, to unit: DistanceUnit) -> String {
+        guard unit == .kilometers else { return mmssPerMile }
+        let parts = mmssPerMile.split(separator: ":")
+        guard parts.count == 2, let m = Int(parts[0]), let s = Int(parts[1]) else { return mmssPerMile }
+        return paceMMSS(secPerMile: Double(m * 60 + s), unit: unit)
+    }
+}
+
 // MARK: - Color Palette
 
 extension Color {

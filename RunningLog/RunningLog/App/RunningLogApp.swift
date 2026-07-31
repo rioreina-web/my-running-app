@@ -27,14 +27,84 @@ struct RunningLogApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(AuthManager.shared)
-                .environment(NetworkMonitor.shared)
-                .environment(VitalManager.shared)
-                .environmentObject(HealthKitManager.shared)
+            #if DEBUG
+            // Boot straight into a preview-seeded surface for visual iteration,
+            // bypassing auth/nav. Launch with `-trendsV2Preview 1`. Remove with
+            // the v2 dev scaffolding once the surface is real.
+            if CommandLine.arguments.contains("-trendsV2Zone") {
+                TrendsZoneDetailView(zone: "5k", sessions: KeySession.previewLadder)
+                    .preferredColorScheme(.light)
+            } else if CommandLine.arguments.contains("-trendsV2New") {
+                // Standalone view of the efficiency curve + key-sessions list.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("EFFICIENCY · THE ENGINE").font(.dripCaption(9))
+                            .foregroundStyle(Color.drip.textSecondary)
+                        TrendsEfficiencyView.preview
+                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
+                        Text("KEY SESSIONS · THE ACTUAL RUNS").font(.dripCaption(9))
+                            .foregroundStyle(Color.drip.textSecondary)
+                        TrendsKeySessionsView(sessions: KeySession.previewLadder)
+                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
+                    }
+                    .padding(24)
+                }
+                .background(Color.drip.background)
                 .preferredColorScheme(.light)
-                .background(KeyboardDismissHelper())
+            } else if CommandLine.arguments.contains("-trendsV2Recovery") {
+                // Standalone recovery card for visual iteration (screenshots).
+                ScrollView {
+                    // Full Approach A ("good data" state): day-to-day read, the
+                    // convergence card, and the week-to-week load ramp.
+                    let days = TrendsDay.previewMonthRich
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("DAY TO DAY · PUSH OR PULL TODAY?").font(.dripCaption(9))
+                            .foregroundStyle(Color.drip.textSecondary)
+                        TrendsRecoveryDayView(days: days, biometrics: .previewGood)
+                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
+                        Text("THE CONVERGENCE · THIS WEEK").font(.dripCaption(9))
+                            .foregroundStyle(Color.drip.textSecondary)
+                        TrendsRecoveryView(days: days, scale: .month, biometrics: .previewGood)
+                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
+                        Text("WEEK TO WEEK · ARE YOU OVERLOADING?").font(.dripCaption(9))
+                            .foregroundStyle(Color.drip.textSecondary)
+                        TrendsRecoveryWeekView(days: days)
+                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
+                    }
+                    .padding(24)
+                }
+                .background(Color.drip.background)
+                .preferredColorScheme(.light)
+            } else if CommandLine.arguments.contains("-trendsV2Preview") {
+                NavigationStack {
+                    TrendsV2View(
+                        service: TrendsService(
+                            preview: [],
+                            days: TrendsDay.previewMonthRich,
+                            keySessions: KeySession.previewLadder
+                        ),
+                        previewMode: true,
+                        demoBiometrics: .previewGood
+                    )
+                }
+                .preferredColorScheme(.light)
+            } else {
+                rootScene
+            }
+            #else
+            rootScene
+            #endif
         }
+    }
+
+    private var rootScene: some View {
+        RootView()
+            .environment(AuthManager.shared)
+            .environment(NetworkMonitor.shared)
+            .environment(VitalManager.shared)
+            .environmentObject(HealthKitManager.shared)
+            .preferredColorScheme(.light)
+            .background(KeyboardDismissHelper())
     }
 
     private func configureAppearance() {
@@ -80,7 +150,7 @@ struct MainTabView: View {
             // icons — see design-system/ui_kits/ios_app/Primitives.jsx::TabBar
             // and Post Run Drip Design System/ui_kits/ios_app/tokens.css.
             //
-            // Routing: all 4 tab views render simultaneously in a ZStack
+            // Routing: all tab views render simultaneously in a ZStack
             // and we toggle `.opacity` + `.allowsHitTesting` based on
             // `selectedTab`. This matches the system TabView's behaviour
             // (each tab's `@State` and scroll position survive a swap)
@@ -92,7 +162,7 @@ struct MainTabView: View {
             // independently; this just stops the cancellations from
             // happening in the first place.)
             //
-            // Cost: 4 view trees alive at once instead of 1. Acceptable
+            // Cost: 3 view trees alive at once instead of 1. Acceptable
             // for the user-visible win and avoids the refetch storm
             // (loadActivePlan / fitness-prediction / scheduled-workouts
             // each previously refired on every tab re-entry).
@@ -101,6 +171,7 @@ struct MainTabView: View {
             // Coach). Train 2 + Signal evaluation tabs retired; Plan
             // folded into Train's CALENDAR mode. See
             // outputs/beta-design-overhaul-plan-2026-07-13.md.
+            // 2026-07-28: Coach (The Read) retired → 3 tabs.
             ZStack {
                 // Tab 0 — Log (front door)
                 NavigationStack {
@@ -130,6 +201,10 @@ struct MainTabView: View {
                     .opacity(selectedTab == 4 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 4)
 
+                // Tab 5 — Trends 2 removed 2026-07-27. Trends is one tab now;
+                // `TrendsInsightsTabView` stays in the repo, unlinked, and the
+                // `trends-insights` edge function stays deployed.
+
                 // Tab 1 — Train (the detail surface: CURRENT · CALENDAR ·
                 // HISTORY). Phase A folded the Plan tab into CALENDAR —
                 // the plan is a subset of training, not its own
@@ -139,17 +214,12 @@ struct MainTabView: View {
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 2 — COACH (The Read) = the v5 editorial narrative
-                // (the-read-storytelling-mock.html). Renders sectioned reads
-                // from daily_coaching_reads, falling back to the flat
-                // paragraph for pre-v5 rows. The cards ModelOfYouView is
-                // retained in the repo as the "evidence" drill-down.
-                // Note: the iOS coach-mode surface (CoachTabView) lost its
-                // tab in Phase A — the web coach portal is canonical for
-                // coach work (adaptive-coach-plan-builder-spec-2026-07-03).
-                NavigationStack { CoachReadView() }
-                    .opacity(selectedTab == 2 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 2)
+                // Tab 2 — COACH (The Read) removed 2026-07-28. The tab bar
+                // is Log · Trends · Train. `CoachReadView` stays in the repo,
+                // unlinked, so the surface can be restored as a tab or as a
+                // pushed screen without rebuilding it. The web coach portal
+                // remains canonical for coach work
+                // (adaptive-coach-plan-builder-spec-2026-07-03).
             }
             .safeAreaInset(edge: .bottom) {
                 DripTabBar(selected: $selectedTab)

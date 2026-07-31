@@ -12,9 +12,11 @@
 
 export type WorkoutRow = Record<string, unknown>;
 
-/** Source richness: strava > auto_sync > voice_log > check_in > everything else. */
+/** Source richness: garmin/vital > strava > auto_sync > voice_log > check_in. */
 export function sourcePriority(src: unknown): number {
   switch (src) {
+    case "garmin": return 5;
+    case "vital": return 5;
     case "strava": return 4;
     case "auto_sync": return 3;
     case "voice_log": return 2;

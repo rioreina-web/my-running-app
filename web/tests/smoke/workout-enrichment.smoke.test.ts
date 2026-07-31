@@ -170,6 +170,53 @@ test("buildSplits: the closing third over band reads off-target", () => {
   assert.equal(out!.splitLabel, "Splits"); // no heat-adj column
 });
 
+// ── splits: quality session rep grouping ─────────────────
+test("buildSplits: a quality session groups into warm-up / reps / cool-down", () => {
+  // 2mi warm-up (1 lap), 5×1mi reps at 5K pace with 0.25mi jog recoveries,
+  // 1mi cool-down. Band high = 400s (6:40) — reps at 390, jogs + wu/cd slower.
+  const laps: EnrichLap[] = [];
+  let idx = 0;
+  laps.push(lap({ lap_index: idx++, distance_meters: 3218, avg_pace_sec_per_mile: 540, heat_adjusted_pace_sec_per_mile: null })); // 2mi warmup
+  for (let r = 0; r < 5; r++) {
+    laps.push(lap({ lap_index: idx++, distance_meters: 1609, avg_pace_sec_per_mile: 388 + r * 3, heat_adjusted_pace_sec_per_mile: null })); // rep
+    if (r < 4) laps.push(lap({ lap_index: idx++, distance_meters: 402, avg_pace_sec_per_mile: 560, heat_adjusted_pace_sec_per_mile: null })); // jog
+  }
+  laps.push(lap({ lap_index: idx++, distance_meters: 1609, avg_pace_sec_per_mile: 545, heat_adjusted_pace_sec_per_mile: null })); // cooldown
+
+  const out = buildSplits(laps, { isLong: false, bandHigh: 400, plannedMi: 9, ranMi: 9 });
+  assert.ok(out);
+  const names = out!.splits.map((s) => s.name);
+  assert.match(names[0], /^Warm-up/);
+  assert.equal(names.filter((n) => n.startsWith("Rep ")).length, 5);
+  assert.match(names[1], /^Rep 1 · 1\.0 mi/);
+  assert.match(names[names.length - 1], /^Cool-down/);
+  // recoveries are folded out — no jog rows
+  assert.equal(names.some((n) => /0\.2 mi/.test(n)), false);
+});
+
+test("buildSplits: sub-mile reps render in metres", () => {
+  const laps: EnrichLap[] = [
+    lap({ lap_index: 0, distance_meters: 1609, avg_pace_sec_per_mile: 540, heat_adjusted_pace_sec_per_mile: null }), // wu
+    lap({ lap_index: 1, distance_meters: 800, avg_pace_sec_per_mile: 360, heat_adjusted_pace_sec_per_mile: null }),
+    lap({ lap_index: 2, distance_meters: 800, avg_pace_sec_per_mile: 362, heat_adjusted_pace_sec_per_mile: null }),
+  ];
+  const out = buildSplits(laps, { isLong: false, bandHigh: 380, plannedMi: 3, ranMi: 3 });
+  const reps = out!.splits.filter((s) => s.name.startsWith("Rep "));
+  assert.equal(reps.length, 2);
+  assert.match(reps[0].name, /800m/);
+});
+
+test("buildSplits: no work laps falls back to a flat per-lap list", () => {
+  const laps: EnrichLap[] = [
+    lap({ lap_index: 0, distance_meters: 1609, avg_pace_sec_per_mile: 560, heat_adjusted_pace_sec_per_mile: null }),
+    lap({ lap_index: 1, distance_meters: 1609, avg_pace_sec_per_mile: 555, heat_adjusted_pace_sec_per_mile: null }),
+  ];
+  // band far faster than anything run → nothing classifies as a rep
+  const out = buildSplits(laps, { isLong: false, bandHigh: 300, plannedMi: 2, ranMi: 2 });
+  assert.ok(out);
+  assert.equal(out!.splits.every((s) => s.name.startsWith("Lap ")), true);
+});
+
 // ── heat-adjusted headline ───────────────────────────────
 test("heatAdjHeadline: weighted adj pace, delta to raw, in-band verdict", () => {
   const laps = [

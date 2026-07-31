@@ -121,6 +121,25 @@ Deno.test("heat-adjusted pace uses the uniform session ratio", () => {
   assertEquals(s.work_pace_adj_sec, 342);
 });
 
+Deno.test("quality_load: weighted work-minutes, rest + easy excluded", () => {
+  const laps: KeySessionLap[] = [
+    easy(0),      // excluded from load
+    rep(1, 358),
+    rest(2),      // excluded from load
+    rep(3, 360),
+    rest(4),      // excluded from load
+    rep(5, 365),
+    easy(6),      // excluded from load
+  ];
+  const s = deriveKeySession(LOG, laps, undefined, ZONES)!;
+  // Same three 5k work bouts the pace test asserts (zone = 5k → weight 4.0).
+  // Load = Σ(bout sec × 4.0) / 60, over work bouts only.
+  const workSec = movSecs(1000, 358) + movSecs(1000, 360) + movSecs(1000, 365);
+  const expected = Math.round((workSec * 4.0 / 60) * 10) / 10;
+  assertEquals(s.quality_load, expected);
+  assert(s.quality_load > 0, "a real rep session carries load");
+});
+
 Deno.test("time-weighted work HR over work bouts only", () => {
   const laps: KeySessionLap[] = [
     easy(0, 540), // no HR

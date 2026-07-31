@@ -236,6 +236,11 @@ struct TelemetryChartCanvas: View {
     @Binding var scrub: Double?
     var height: CGFloat = 220
 
+    /// While the athlete is scrubbing this chart, the horizontal drag belongs
+    /// to us — not to `HistoryDetailPager`'s page turn. Defaults to a constant
+    /// binding, so this is a no-op when no pager is hosting the chart.
+    @Environment(\.pageTurnLocked) private var pageTurnLocked
+
     private let pad = EdgeInsets(top: 16, leading: 38, bottom: 26, trailing: 12)
 
     var body: some View {
@@ -259,6 +264,12 @@ struct TelemetryChartCanvas: View {
                     .onChanged { value in
                         switch value {
                         case .second(true, let drag):
+                            // Guarded: @State writes are not deduped, and an
+                            // unguarded assignment here would re-render the
+                            // pager on every scrub frame.
+                            if !pageTurnLocked.wrappedValue {
+                                pageTurnLocked.wrappedValue = true
+                            }
                             if let drag = drag {
                                 let f = (drag.location.x - rect.minX) / max(rect.width, 1)
                                 scrub = min(max(Double(f), 0), 1)
@@ -267,7 +278,12 @@ struct TelemetryChartCanvas: View {
                             break
                         }
                     }
-                    .onEnded { _ in scrub = nil }
+                    .onEnded { _ in
+                        scrub = nil
+                        if pageTurnLocked.wrappedValue {
+                            pageTurnLocked.wrappedValue = false
+                        }
+                    }
             )
         }
         .frame(height: height)

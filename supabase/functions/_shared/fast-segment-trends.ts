@@ -43,7 +43,7 @@
 
 import { isQualityPace, type ZoneTable } from "./quality-volume.ts";
 import { adjustPace } from "./pace-heat-adjustment.ts";
-import { combineConditions, gradeAdjustRun, type RunSegment } from "./pace-grade-adjustment.ts";
+import { adjustPaceForGrade, combineConditions, gradeAdjustRun, type RunSegment } from "./pace-grade-adjustment.ts";
 
 const METERS_PER_MILE = 1609.344;
 
@@ -185,6 +185,10 @@ export interface FastRep {
   gradePct: number;
   /** Heat-adjusted cool-weather-equivalent pace (faster). null with no weather. */
   neutralPaceSecPerMile: number | null;
+  /** Grade-adjusted flat-equivalent pace (heat KEPT — the grade-only twin of
+   *  `neutralPaceSecPerMile`, so the two adjustments toggle independently).
+   *  null on flat/unknown terrain. */
+  flatPaceSecPerMile: number | null;
   /** Conditions-adjusted pace: heat AND grade both removed (cool + flat). null
    *  when neither applied. The honest cross-day fitness pace. */
   conditionsPaceSecPerMile: number | null;
@@ -199,6 +203,8 @@ export interface SystemVolume {
   workSeconds: number;
   avgPaceSecPerMile: number;
   neutralPaceSecPerMile: number | null;
+  /** Grade-only flat-equivalent pace (heat kept). null on flat terrain. */
+  flatPaceSecPerMile: number | null;
   conditionsPaceSecPerMile: number | null;
   avgHeartRate: number | null;
   expectedMiles: [number, number];
@@ -219,6 +225,9 @@ export interface KeySessionMetrics {
   avgPaceSecPerMile: number;
   /** Distance-weighted heat-adjusted session pace (cool-equivalent). */
   neutralPaceSecPerMile: number | null;
+  /** Distance-weighted grade-only flat-equivalent pace (heat kept). null on
+   *  flat/unknown terrain. Lets heat and hills toggle independently. */
+  flatPaceSecPerMile: number | null;
   /** Distance-weighted conditions-adjusted pace (cool + flat) — heat and grade
    *  both removed. The honest cross-day fitness signal. */
   conditionsPaceSecPerMile: number | null;
@@ -234,6 +243,17 @@ export interface KeySessionMetrics {
   avgRepMeters: number;
   avgRepSeconds: number;
   elevationGainM: number;
+  /** HR drift across the set: last rep's avg HR − rep 2's avg HR (rep 1 is
+   *  never the baseline — HR lags the effort and reads ~10 bpm low). null with
+   *  < 3 reps, missing HR, or short reps (< 60 s avg — HR never stabilizes). */
+  hrDriftBpm: number | null;
+  /** Mean HR drop into the recovery: rep max HR − the following rest bout's
+   *  avg HR, averaged over rests that carry HR. Bigger = recovering faster. */
+  recoveryHrDropBpm: number | null;
+  /** Aerobic decoupling (% efficiency lost, first half → second half) of the
+   *  longest CONTINUOUS effort — only when that effort is ≥ 15 min across ≥ 2
+   *  laps. Interval sessions honestly read null; this is a tempo/steady signal. */
+  decouplingPct: number | null;
   heat: { tempF: number; dewPointF: number; adjustmentSecPerMile: number } | null;
   /** Terrain effect: session's distance-weighted average grade (%) and the
    *  sec/mile the hills cost (>0 net uphill). null on flat/unknown terrain. */
@@ -252,6 +272,8 @@ export interface SystemTrendPoint {
   totalMiles: number | null;
   avgPaceSecPerMile: number;
   neutralPaceSecPerMile: number | null;
+  /** Grade-only flat-equivalent pace (heat kept). */
+  flatPaceSecPerMile: number | null;
   conditionsPaceSecPerMile: number | null;
   avgHeartRate: number | null;
   volumeStatus: VolumeStatus;
@@ -312,6 +334,9 @@ export function analyzeKeySession(
   const bouts: Bout[] = [];
   let restSeconds = 0;
   let cur: Bout | null = null;
+  /** Rest laps that FOLLOW each bout (bout index → rest laps), for the
+   *  recovery-HR-drop read. */
+  const restAfterBout = new Map<number, WorkoutLap[]>();
   for (let i = firstFast; i <= lastFast; i++) {
     if (fastFlags[i]) {
       if (!cur) cur = { laps: [], distanceMeters: 0, durationSeconds: 0 };
@@ -321,6 +346,11 @@ export function analyzeKeySession(
     } else {
       if (cur) { bouts.push(cur); cur = null; }
       restSeconds += laps[i].moving_time_seconds;
+      if (bouts.length > 0) {
+        const arr = restAfterBout.get(bouts.length - 1) ?? [];
+        arr.push(laps[i]);
+        restAfterBout.set(bouts.length - 1, arr);
+      }
     }
   }
   if (cur) bouts.push(cur);
@@ -351,6 +381,14 @@ export function analyzeKeySession(
       flatPaceSec = paceSec * factor; // uphill: factor<1 → faster flat pace
     } else {
       gradePct = boutGradePct(b.laps, b.distanceMeters);
+      // Net-grade fallback: only when the terrain is REAL (≥1%) — net grade is
+      // built from ascent-only elevation_gain, so GPS noise reads as a phantom
+      // uphill on flat routes. Below the deadband the rep is treated as flat.
+      if (Math.abs(gradePct) >= 1.0) {
+        flatPaceSec = adjustPaceForGrade(paceSec, gradePct).adjustedPaceSeconds;
+      } else {
+        gradePct = 0;
+      }
     }
 
     const hasGrade = flatPaceSec != null || Math.abs(gradePct) > 0.1;
@@ -358,7 +396,7 @@ export function analyzeKeySession(
     let conditions: number | null = null;
     if (hasConditions) {
       conditions = flatPaceSec != null
-        ? flatPaceSec / (1 + heatPct) // heat on top of split-grade flat pace
+        ? flatPaceSec / (1 + heatPct) // heat on top of the grade-only flat pace
         : combineConditions(paceSec, gradePct, heatPct).conditionsAdjustedPaceSeconds;
     }
     const hr = timeWeightedHR(b.laps);
@@ -371,6 +409,7 @@ export function analyzeKeySession(
       paceSecPerMile: round1(paceSec),
       gradePct: round1(gradePct),
       neutralPaceSecPerMile: neutral != null ? round1(neutral) : null,
+      flatPaceSecPerMile: flatPaceSec != null ? round1(flatPaceSec) : null,
       conditionsPaceSecPerMile: conditions != null ? round1(conditions) : null,
       avgHeartRate: hr,
     };
@@ -402,6 +441,11 @@ export function analyzeKeySession(
     const num = reps.reduce((s, r) => s + (r.conditionsPaceSecPerMile ?? r.paceSecPerMile) * r.distanceMiles, 0);
     conditionsPace = num / fastMiles;
   }
+  let flatPace: number | null = null;
+  if (reps.some((r) => r.flatPaceSecPerMile != null) && fastMiles > 0) {
+    const num = reps.reduce((s, r) => s + (r.flatPaceSecPerMile ?? r.paceSecPerMile) * r.distanceMiles, 0);
+    flatPace = num / fastMiles;
+  }
   const avgGradePct = fastMeters > 0
     ? reps.reduce((s, r) => s + r.gradePct * r.distanceMeters, 0) / fastMeters
     : 0;
@@ -421,6 +465,61 @@ export function analyzeKeySession(
   const elevation = input.laps
     .slice(firstFast, lastFast + 1)
     .reduce((s, l) => s + (l.total_elevation_gain ?? 0), 0);
+
+  // ── HR reads: drift, recovery drop, decoupling ──
+  // Drift from rep 2 (rep 1 lags), only for reps long enough for HR to mean
+  // anything, and only when the set has a real last-vs-early comparison.
+  let hrDrift: number | null = null;
+  if (reps.length >= 3) {
+    const r2 = reps[1].avgHeartRate;
+    const rl = reps[reps.length - 1].avgHeartRate;
+    if (r2 != null && rl != null && fastTime / reps.length >= 60) {
+      hrDrift = round1(rl - r2);
+    }
+  }
+  // Recovery drop: bout max HR → the following rest bout's time-weighted HR.
+  const drops: number[] = [];
+  bouts.forEach((b, i) => {
+    const rests = (restAfterBout.get(i) ?? []).filter(
+      (l) => l.avg_heart_rate != null && l.moving_time_seconds > 0,
+    );
+    if (rests.length === 0) return;
+    const restTimeHr = rests.reduce((s, l) => s + l.moving_time_seconds, 0);
+    const restHr = rests.reduce((s, l) => s + l.avg_heart_rate! * l.moving_time_seconds, 0) / restTimeHr;
+    const boutMax = maxOrNull(b.laps.map((l) => l.max_heart_rate ?? l.avg_heart_rate ?? null));
+    if (boutMax != null) drops.push(boutMax - restHr);
+  });
+  const recoveryDrop = drops.length
+    ? round1(drops.reduce((a, b) => a + b, 0) / drops.length)
+    : null;
+  // Decoupling: efficiency (speed/HR) lost first half → second half of the
+  // longest CONTINUOUS effort — a tempo/steady signal. Interval sessions
+  // (no ≥15-min continuous bout of ≥2 laps) honestly read null.
+  let decoupling: number | null = null;
+  const longest = bouts.reduce((a, b) => (b.durationSeconds > a.durationSeconds ? b : a));
+  if (longest.durationSeconds >= 900 && longest.laps.length >= 2) {
+    const half = longest.durationSeconds / 2;
+    let acc = 0;
+    const firstHalf: WorkoutLap[] = [];
+    const secondHalf: WorkoutLap[] = [];
+    for (const l of longest.laps) {
+      (acc < half ? firstHalf : secondHalf).push(l);
+      acc += l.moving_time_seconds;
+    }
+    const eff = (ls: WorkoutLap[]): number | null => {
+      const withHr = ls.filter((l) => l.avg_heart_rate != null && l.moving_time_seconds > 0 && l.distance_meters > 0);
+      if (withHr.length === 0) return null;
+      const time = withHr.reduce((s, l) => s + l.moving_time_seconds, 0);
+      const dist = withHr.reduce((s, l) => s + l.distance_meters, 0);
+      const hr = withHr.reduce((s, l) => s + l.avg_heart_rate! * l.moving_time_seconds, 0) / time;
+      return hr > 0 ? (dist / time) / hr : null;
+    };
+    const e1 = eff(firstHalf);
+    const e2 = eff(secondHalf);
+    if (e1 != null && e2 != null && e1 > 0 && firstHalf.length > 0 && secondHalf.length > 0) {
+      decoupling = round1(((e1 - e2) / e1) * 100);
+    }
+  }
 
   const heat = weather
     ? {
@@ -453,6 +552,7 @@ export function analyzeKeySession(
     fastTimeSeconds: Math.round(fastTime),
     avgPaceSecPerMile: round1(avgPace),
     neutralPaceSecPerMile: neutralPace != null ? round1(neutralPace) : null,
+    flatPaceSecPerMile: flatPace != null ? round1(flatPace) : null,
     conditionsPaceSecPerMile: conditionsPace != null ? round1(conditionsPace) : null,
     avgHeartRate: avgHR != null ? round1(avgHR) : null,
     maxHeartRate: maxHR,
@@ -464,6 +564,9 @@ export function analyzeKeySession(
     avgRepMeters: Math.round(fastMeters / reps.length),
     avgRepSeconds: Math.round(fastTime / reps.length),
     elevationGainM: round1(elevation),
+    hrDriftBpm: hrDrift,
+    recoveryHrDropBpm: recoveryDrop,
+    decouplingPct: decoupling,
     heat,
     grade,
     bySystem,
@@ -502,6 +605,11 @@ function buildSystemVolumes(reps: FastRep[]): SystemVolume[] {
       ? nWithCond.reduce((s, r) => s + r.conditionsPaceSecPerMile! * r.distanceMiles, 0) /
         nWithCond.reduce((s, r) => s + r.distanceMiles, 0)
       : null;
+    const nWithFlat = g.filter((r) => r.flatPaceSecPerMile != null);
+    const flat = nWithFlat.length
+      ? nWithFlat.reduce((s, r) => s + r.flatPaceSecPerMile! * r.distanceMiles, 0) /
+        nWithFlat.reduce((s, r) => s + r.distanceMiles, 0)
+      : null;
     const expected = SYSTEM_WORK_VOLUME_MILES[system];
     out.push({
       system,
@@ -510,6 +618,7 @@ function buildSystemVolumes(reps: FastRep[]): SystemVolume[] {
       workSeconds: Math.round(seconds),
       avgPaceSecPerMile: round1(avgPace),
       neutralPaceSecPerMile: neutral != null ? round1(neutral) : null,
+      flatPaceSecPerMile: flat != null ? round1(flat) : null,
       conditionsPaceSecPerMile: conditions != null ? round1(conditions) : null,
       avgHeartRate: avgHR != null ? round1(avgHR) : null,
       expectedMiles: expected,
@@ -550,6 +659,7 @@ export function analyzeFastSegmentTrends(
         totalMiles: s.totalMiles,
         avgPaceSecPerMile: sv.avgPaceSecPerMile,
         neutralPaceSecPerMile: sv.neutralPaceSecPerMile,
+        flatPaceSecPerMile: sv.flatPaceSecPerMile,
         conditionsPaceSecPerMile: sv.conditionsPaceSecPerMile,
         avgHeartRate: sv.avgHeartRate,
         volumeStatus: sv.volumeStatus,

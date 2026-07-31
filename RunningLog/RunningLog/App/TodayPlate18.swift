@@ -397,6 +397,9 @@ func formatDeltaSeconds(_ seconds: Int) -> String {
 struct TodayJournalEntry: View {
     let log: TodayLastLog
 
+    @AppStorage("distanceUnit") private var distanceUnitRaw = DistanceUnit.miles.rawValue
+    private var unit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .miles }
+
     private var moodColor: Color {
         let m = (log.mood ?? "").lowercased()
         switch m {
@@ -471,14 +474,14 @@ struct TodayJournalEntry: View {
     private var headlineLine: String {
         let typeName = CoachIntent.displayName(for: log.typeKey)
         if let m = log.distanceMiles, m > 0 {
-            return "\(typeName), \(formatMiles(m)) mi."
+            return "\(typeName), \(DistanceFormat.string(miles: m, unit: unit))."
         }
         return "\(typeName)."
     }
 
     private var metaLine: String? {
         var parts: [String] = []
-        if let p = log.pacePerMile { parts.append("\(p) / mi") }
+        if let p = log.pacePerMile { parts.append("\(DistanceFormat.convertPaceString(p, to: unit)) / \(unit.short)") }
         if let dur = log.durationMinutes, dur > 0 {
             parts.append("\(Int(dur.rounded())) min")
         }
@@ -486,11 +489,6 @@ struct TodayJournalEntry: View {
             parts.append(mood.uppercased())
         }
         return parts.isEmpty ? nil : parts.joined(separator: "   ·   ")
-    }
-
-    private func formatMiles(_ m: Double) -> String {
-        if m == m.rounded() { return String(format: "%.0f", m) }
-        return String(format: "%.1f", m)
     }
 }
 

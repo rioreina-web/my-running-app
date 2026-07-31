@@ -380,7 +380,7 @@ final class HistoryDetailViewModel {
                 .from("training_logs")
                 .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id")
                 .eq("user_id", value: userId)
-                .eq("source", value: "strava")
+                .in("source", values: ["garmin", "vital"])
                 .gte("workout_date", value: iso.string(from: start))
                 .lt("workout_date", value: iso.string(from: end))
                 .execute()
@@ -398,7 +398,7 @@ final class HistoryDetailViewModel {
                     durationMinutes: dur,
                     pacePerMile: dur / dist,
                     calories: 0,
-                    sourceApp: "Strava",
+                    sourceApp: "Garmin",
                     vitalWorkoutId: r.vital_workout_id
                 )
             }

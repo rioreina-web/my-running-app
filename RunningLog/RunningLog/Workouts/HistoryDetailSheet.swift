@@ -29,6 +29,7 @@ struct HistoryDetailSheet: View {
 
     // Edit mode state
     @State var isEditing = false
+    @State var editTitle: String = ""
     @State var editMood: String = ""
     @State var editWorkoutType: String = ""
     @State var editDistanceText: String = ""
@@ -37,6 +38,9 @@ struct HistoryDetailSheet: View {
 
     // Vital workout detail
     @State var showVitalDetail = false
+
+    // "The Effort, compared" — workout comparison sheet
+    @State var showComparison = false
 
     init(entry: TrainingLog, onUpdate: @escaping () -> Void) {
         self.entry = entry
@@ -89,6 +93,7 @@ struct HistoryDetailSheet: View {
                     Button {
                         Task {
                             let saved = await vm.saveEdits(
+                                title: editTitle,
                                 mood: editMood,
                                 workoutType: editWorkoutType,
                                 distanceText: editDistanceText,
@@ -170,6 +175,15 @@ struct HistoryDetailSheet: View {
             // keep `entry.id` because their id is not a training_logs row id.
             WorkoutRepDetailSheet(workoutId: workoutDetailId)
         }
+        .sheet(isPresented: $showComparison) {
+            // "The Effort, compared" — deterministic diff vs. a similar past
+            // session + the coach's read (compare-workouts edge function).
+            // Same id rule as WorkoutRepDetailSheet above: the laps-bearing
+            // training_logs row. Lowercased to match PostgREST's uuid text
+            // representation (the manual picker excludes the current row by
+            // string comparison).
+            WorkoutComparisonSheet(workoutId: workoutDetailId.uuidString.lowercased())
+        }
         .task {
             await vm.matchVitalWorkout()
             // Poll notes and the coach insight concurrently — each waits up to
@@ -209,7 +223,14 @@ struct HistoryDetailSheet: View {
         }
     }
 
-    private func enterEditMode() {
+    // Intentionally `internal` (not `private`) so the `editorialBody`
+    // extension in HistoryDetailSheet+Editorial.swift can trigger edit mode
+    // from the inline "EDIT" affordance on the VOICE SUMMARY section.
+    func enterEditMode() {
+        // Start editing from the current header — the athlete's own title if set,
+        // otherwise the workout title — so a tap-to-edit refines the workout name
+        // rather than opening a blank field.
+        editTitle = vm.currentEntry.resolvedTitle ?? ""
         editMood = vm.currentEntry.mood ?? ""
         editWorkoutType = vm.currentEntry.workoutType ?? ""
         editDistanceText = vm.currentEntry.workoutDistanceMiles.map { String(format: "%.2f", $0) } ?? ""

@@ -98,6 +98,11 @@ struct TrainingLog: Codable, Identifiable {
     let vitalWorkoutId: String?
     let paceSegments: [PaceSegment]?
     let parsedStructure: ParsedStructure?
+    /// Optional athlete-authored entry title. Shown as the journal entry
+    /// header when set; the entry falls back to the day-of-week/date when
+    /// this is nil or empty. Defaulted so existing memberwise-init call
+    /// sites (and tests) keep compiling without passing it.
+    var title: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -121,7 +126,27 @@ struct TrainingLog: Codable, Identifiable {
         case vitalWorkoutId = "vital_workout_id"
         case paceSegments = "pace_segments"
         case parsedStructure = "parsed_structure"
+        case title
     }
+
+    /// Trimmed title if the athlete set a non-empty one, else nil. Views use
+    /// this to decide whether to show a custom header or fall back to the date.
+    var displayTitle: String? {
+        guard let t = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// The workout itself, as a concise journal title, when the athlete hasn't
+    /// set their own. Uses the workout-type label ("Intervals", "Easy", "Long
+    /// Run") — clean and reliable, and editable if they want something sharper
+    /// ("8×200m"). nil for a row with no workout type (a pure voice memo / rest
+    /// day), where the header falls back to the day-of-week.
+    var workoutTitle: String? { workoutTypeLabel }
+
+    /// The header shown for this entry: the athlete's own title, else the
+    /// workout, else the day-of-week (resolved by the view).
+    var resolvedTitle: String? { displayTitle ?? workoutTitle }
 
     // MARK: - Source
 

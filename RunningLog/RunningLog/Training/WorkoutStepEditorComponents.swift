@@ -38,7 +38,10 @@ enum WorkoutLabelGrammar {
     /// Canonical grammar name for a zone. Differs from `NamedPace.shortName`
     /// in two places: `.hm` reads "HMP" and `.moderate` reads "Moderate" —
     /// matching the web's label vocabulary exactly.
-    static func grammarName(_ zone: NamedPace) -> String {
+    // Pure zone → label mapping, no actor state — `nonisolated` so it can be
+    // passed to `.map(...)` from any context (the default MainActor isolation
+    // otherwise rejects the bare function reference).
+    nonisolated static func grammarName(_ zone: NamedPace) -> String {
         switch zone {
         case .recovery: return "Easy"
         case .easy: return "Easy"

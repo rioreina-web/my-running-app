@@ -257,6 +257,10 @@ const FEATURE_LIMITS: Record<string, Record<string, number>> = {
   // Coach-portal WorkoutDrawer "the read" — on-demand AI observation per key
   // session, keyed on the calling coach. Cheap, cached per log; modest caps.
   coach_workout_read: { free: 10, pro: 25, unlimited: 100 },
+  // Trends "The Effort" comparison (compare-workouts). The diff itself is
+  // deterministic; the gate bounds the cheap Gemini verdict on top. Athletes
+  // hit this while browsing Trends — post_run-style generosity.
+  workout_comparison: { free: 20, pro: 50, unlimited: 200 },
 };
 
 /**
@@ -415,6 +419,7 @@ export const MONTHLY_LLM_CAPS: Record<string, number> = {
   check_in:            100,
   daily_read:           50,
   coach_workout_read:  100,
+  workout_comparison:  200,
 };
 
 /** Fallback for features missing from MONTHLY_LLM_CAPS. */

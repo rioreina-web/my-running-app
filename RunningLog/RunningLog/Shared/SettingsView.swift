@@ -11,6 +11,8 @@ struct SettingsView: View {
     @AppStorage("smartInsightsEnabled") private var smartInsightsEnabled = true
     @AppStorage("isCoachMode") private var isCoachMode = false
     @AppStorage("userMaxHR") private var userMaxHR: Int = 180
+    // Display units for distance & pace. Default Miles; flips the whole app.
+    @AppStorage("distanceUnit") private var distanceUnit: String = DistanceUnit.miles.rawValue
     @State private var maxHRText: String = ""
     @State private var displayNameText: String = ""
     @State private var bioText: String = ""
@@ -29,6 +31,7 @@ struct SettingsView: View {
     @State private var showBackup = false
     @State private var showRestore = false
     @State private var showAthleteProfile = false
+    @State private var showDeleteAccount = false
     @State private var syncService = WorkoutSyncService()
     @State private var backfillResultMessage: String?
     @State private var isStravaSyncing = false
@@ -60,6 +63,7 @@ struct SettingsView: View {
                         appSection
                         if AuthManager.shared.isAuthenticated {
                             signOutSection
+                            deleteAccountSection
                         } else {
                             signInSection
                         }
@@ -104,6 +108,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showAthleteProfile) {
                 AthleteProfileView()
+            }
+            .sheet(isPresented: $showDeleteAccount) {
+                DeleteAccountSheet()
             }
         }
     }
@@ -350,6 +357,33 @@ struct SettingsView: View {
                             .font(.dripCaption(12))
                             .foregroundStyle(Color.drip.textTertiary)
                     }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+
+                Divider().overlay(Color.drip.divider).padding(.leading, 16)
+
+                // Distance units — flips distance & pace across the whole app.
+                HStack {
+                    Image(systemName: "ruler")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color.drip.coral)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Units")
+                            .font(.dripBody(14))
+                            .foregroundStyle(Color.drip.textPrimary)
+                        Text("Distance & pace shown in miles or kilometers")
+                            .font(.dripCaption(12))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    Spacer()
+                    Picker("Units", selection: $distanceUnit) {
+                        ForEach(DistanceUnit.allCases) { unit in
+                            Text(unit.label).tag(unit.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 116)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
@@ -756,6 +790,23 @@ struct SettingsView: View {
         .disabled(isSigningOut)
     }
 
+    // MARK: - Delete Account Section
+
+    // Understated on purpose: a rarely-used, irreversible action shouldn't
+    // compete with everyday controls. The weight lives in the confirmation
+    // sheet, which requires typing DELETE before the button arms.
+    private var deleteAccountSection: some View {
+        Button {
+            showDeleteAccount = true
+        } label: {
+            Text("Delete Account")
+                .font(.dripCaption(12))
+                .foregroundStyle(Color.drip.textTertiary)
+                .underline()
+        }
+        .padding(.top, 2)
+    }
+
     // MARK: - Footer
 
     private var footerSection: some View {
@@ -874,6 +925,157 @@ struct EditorialSectionHeader: View {
                 .frame(height: 1)
         }
         .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - Delete Account confirmation sheet
+
+/// A deliberate, hard-to-fat-finger confirmation for permanent account
+/// deletion. Spells out exactly what is erased, then requires the athlete to
+/// type DELETE before the destructive button arms. On success it clears the
+/// local session so RootView returns to the sign-in screen.
+struct DeleteAccountSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmText = ""
+    @State private var isDeleting = false
+    @State private var errorMessage: String?
+
+    private var isArmed: Bool {
+        confirmText.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "DELETE"
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                DripBackground().ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("DELETE ACCOUNT")
+                                .font(.dripEyebrow(10))
+                                .tracking(10 * 0.16)
+                                .foregroundStyle(Color.drip.injured)
+                            Text("This can't be undone.")
+                                .font(.dripDisplay(27))
+                                .foregroundStyle(Color.drip.textPrimary)
+                        }
+
+                        Text("Deleting your account permanently removes everything tied to it:")
+                            .font(.dripBody(14))
+                            .foregroundStyle(Color.drip.textSecondary)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            erasedRow("Every run, workout, and pace split")
+                            erasedRow("All voice memos and their transcripts")
+                            erasedRow("Niggles, moods, and check-ins")
+                            erasedRow("Training plans and coaching history")
+                            erasedRow("Your profile, bio, and photo")
+                            erasedRow("Your sign-in — you'll be logged out")
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.drip.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Type DELETE to confirm")
+                                .font(.dripCaption(12))
+                                .foregroundStyle(Color.drip.textSecondary)
+                            TextField("DELETE", text: $confirmText)
+                                .font(.dripBody(16))
+                                .textInputAutocapitalization(.characters)
+                                .autocorrectionDisabled()
+                                .padding(12)
+                                .background(Color.drip.cardBackground)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(.dripCaption(12))
+                                .foregroundStyle(Color.drip.injured)
+                        }
+
+                        Button {
+                            Task { await performDeletion() }
+                        } label: {
+                            HStack {
+                                if isDeleting { ProgressView().tint(.white) }
+                                Text(isDeleting ? "Deleting…" : "Delete My Account")
+                                    .font(.dripLabel(14))
+                            }
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color.drip.injured)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        }
+                        .disabled(!isArmed || isDeleting)
+                        .opacity(!isArmed || isDeleting ? 0.5 : 1)
+
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Cancel")
+                                .font(.dripLabel(14))
+                                .foregroundStyle(Color.drip.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                        }
+                        .disabled(isDeleting)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 24)
+                    .padding(.bottom, 40)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isDeleting)
+        }
+    }
+
+    private func erasedRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(Color.drip.injured)
+                .frame(width: 3, height: 3)
+                .padding(.top, 7)
+            Text(text)
+                .font(.dripBody(13.5))
+                .foregroundStyle(Color.drip.textPrimary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private struct DeleteResponse: Decodable {
+        let ok: Bool?
+        let error: String?
+    }
+
+    private func performDeletion() async {
+        isDeleting = true
+        errorMessage = nil
+        do {
+            let response: DeleteResponse = try await supabase.functions.invoke("delete-account")
+            if let serverError = response.error {
+                await MainActor.run {
+                    errorMessage = serverError
+                    isDeleting = false
+                }
+                return
+            }
+            // Data + auth identity are gone server-side. Clear the local
+            // session; RootView swaps to the sign-in screen.
+            try? await AuthManager.shared.signOut()
+            await MainActor.run { dismiss() }
+        } catch {
+            Log.app.error("Account deletion failed: \(error.localizedDescription)")
+            await MainActor.run {
+                errorMessage = "Couldn't delete your account. Please check your connection and try again."
+                isDeleting = false
+            }
+        }
     }
 }
 

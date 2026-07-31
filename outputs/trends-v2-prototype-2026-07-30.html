@@ -1,0 +1,1602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends v2 · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --pace-easy:#93B9D6; --pace-moderate:#74A8CC; --pace-steady:#578FC0; --pace-mp:#3F7CB5;
+  --pace-hmp:#2F66A8; --pace-lt:#27549B; --pace-10k:#20448B; --pace-5k:#1A3679;
+  --pace-3k:#142964; --pace-mile:#0E1D4E; --pace-easy-text:#5E93BE;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:#1A1815; color:var(--ink); font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  min-height:100vh; display:flex; flex-direction:column; align-items:center;
+  padding:36px 16px 56px;
+}
+
+/* ---------- shell ---------- */
+.stage-note{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  color:#6B6560; margin-bottom:20px; text-align:center; line-height:1.9;
+}
+.stage-note b{color:#C9C3BC; font-weight:500}
+.device{
+  width:392px; height:844px; background:var(--paper); border-radius:44px;
+  box-shadow:0 0 0 10px #2B2724, 0 30px 60px rgba(0,0,0,.5);
+  overflow:hidden; display:flex; flex-direction:column; position:relative;
+}
+.notch{
+  position:absolute; top:10px; left:50%; transform:translateX(-50%);
+  width:108px; height:26px; background:#1A1815; border-radius:999px; z-index:20;
+}
+.statusbar{
+  height:44px; flex:0 0 44px; display:flex; align-items:flex-end; justify-content:space-between;
+  padding:0 26px 4px; font-family:var(--font-mono); font-size:11px; font-weight:600; color:var(--ink);
+}
+.plate-strip{
+  display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:9px;
+  letter-spacing:.14em; color:var(--ink-3); text-transform:uppercase; padding:8px 24px 0;
+  flex:0 0 auto;
+}
+.scroll{flex:1; overflow-y:auto; padding:0 24px 32px; scroll-behavior:smooth}
+.scroll::-webkit-scrollbar{display:none}
+.scroll{scrollbar-width:none}
+
+/* ---------- type ---------- */
+.eyebrow{
+  font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-2);
+}
+.eyebrow--coral{color:var(--coral)}
+.h-display{font-family:var(--font-display); font-weight:700; color:var(--ink); letter-spacing:-.015em; line-height:1.06; margin:0}
+.body{font-family:var(--font-body); font-size:14px; line-height:1.6; color:var(--ink); margin:0}
+.body-sm{font-family:var(--font-body); font-size:12.5px; line-height:1.55; color:var(--ink-2); margin:0}
+.quote{font-family:var(--font-body); font-style:italic; font-size:12.5px; line-height:1.5; color:var(--ink-3); margin:0}
+.mono{font-family:var(--font-mono); font-variant-numeric:tabular-nums}
+.caption{font-family:var(--font-mono); font-size:9px; letter-spacing:.10em; color:var(--ink-3); text-transform:uppercase}
+
+/* ---------- structure ---------- */
+.section{margin-top:26px}
+.section-head{display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:8px}
+.e-rule{display:flex; align-items:center; gap:8px; margin:26px 0}
+.e-rule::before,.e-rule::after{content:""; flex:1; height:1px; background:var(--rule)}
+.e-rule .dot{width:3px; height:3px; border-radius:999px; background:var(--rule)}
+.card{background:var(--card); border-radius:12px; padding:16px; box-shadow:var(--shadow-card)}
+.card + .card{margin-top:10px}
+
+/* ---------- scale switch ---------- */
+.scale-row{display:flex; justify-content:space-between; align-items:baseline; padding-top:6px}
+.scale-opts{display:flex; gap:14px}
+.scale{
+  font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--ink-3); border-bottom:1.5px solid transparent;
+  padding-bottom:2px; cursor:pointer; transition:color .15s;
+}
+.scale:hover{color:var(--ink-2)}
+.scale.is-active{color:var(--coral); border-bottom-color:var(--coral)}
+
+/* ---------- verdict ---------- */
+.verdict h1{font-size:30px; margin:10px 0 0}
+.verdict .body{margin-top:10px}
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:14px}
+.chip{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.10em; text-transform:uppercase;
+  color:var(--ink-2); border:1px solid var(--rule); border-radius:999px; padding:4px 9px;
+  background:var(--paper-elevated);
+}
+.chip b{color:var(--ink); font-weight:600}
+
+/* ---------- lede sentence above every chart ---------- */
+.lede{
+  font-family:var(--font-body); font-size:14.5px; line-height:1.5; color:var(--ink);
+  margin:0 0 12px; font-weight:400;
+}
+.lede b{font-weight:700}
+
+/* ---------- legend ---------- */
+.legend{display:flex; flex-wrap:wrap; gap:10px 14px; margin-top:10px}
+.lg{display:flex; align-items:center; gap:5px; font-family:var(--font-mono); font-size:8.5px;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3)}
+.lg i{width:8px; height:8px; border-radius:2px; display:inline-block}
+.lg i.round{border-radius:999px; width:7px; height:7px}
+.lg i.tick{width:2px; height:9px; border-radius:0}
+
+/* ---------- disclosure ---------- */
+.disclose{
+  margin-top:12px; padding-top:10px; border-top:1px solid var(--rule);
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.10em; text-transform:uppercase;
+  color:var(--ink-3); cursor:pointer; user-select:none; display:flex; justify-content:space-between;
+}
+.disclose:hover{color:var(--coral)}
+.detail{display:none; margin-top:12px}
+.is-open .detail{display:block}
+.is-open .disclose .dlabel::after{content:" ↑"}
+.disclose .dlabel::after{content:" ↓"}
+
+table.num{width:100%; border-collapse:collapse; font-family:var(--font-mono); font-variant-numeric:tabular-nums}
+table.num th{
+  text-align:left; font-size:8.5px; font-weight:500; letter-spacing:.10em; text-transform:uppercase;
+  color:var(--ink-3); padding:5px 3px; border-bottom:1px solid var(--rule);
+}
+table.num td{padding:6px 3px; border-bottom:1px solid var(--rule); font-size:11px; color:var(--ink); font-weight:500}
+table.num td:first-child{color:var(--ink-2)}
+table.num tr:last-child td{border-bottom:0}
+td.absent, span.absent{font-family:var(--font-body); font-style:italic; font-size:10.5px; color:var(--ink-3); font-weight:400; letter-spacing:0}
+
+/* ---------- recovery ---------- */
+.rec-state{font-family:var(--font-display); font-weight:700; font-size:28px; letter-spacing:-.015em; color:var(--ink); margin:8px 0 0}
+.rec-state.is-alert{color:var(--coral)}
+.sig{display:grid; grid-template-columns:66px 1fr 58px; gap:10px; align-items:center;
+  padding:11px 0; border-bottom:1px solid var(--rule)}
+.sig:last-of-type{border-bottom:0}
+.sig-name{font-family:var(--font-mono); font-size:9px; letter-spacing:.10em; text-transform:uppercase; color:var(--ink-2)}
+.sig-val{font-family:var(--font-mono); font-size:12.5px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums}
+.sig-delta{font-family:var(--font-mono); font-size:8.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); margin-top:3px}
+/* agreement is carried by ink weight, not colour — coral stays on the headline only */
+.sig-read{font-family:var(--font-mono); font-size:9px; letter-spacing:.09em; text-align:right; text-transform:uppercase}
+.sig-read.agrees{color:var(--ink); font-weight:600}
+.sig-read.holds{color:var(--ink-3); font-weight:500}
+.dormant{
+  margin-top:12px; padding:12px 14px; background:var(--paper-deep); border-radius:10px;
+}
+.dormant .caption{color:var(--ink-2)}
+.dormant p{margin:6px 0 0}
+
+/* ---------- pace ladder ---------- */
+.zrow{display:grid; grid-template-columns:10px 1fr 74px 58px; gap:8px; align-items:center;
+  padding:12px 0; border-bottom:1px solid var(--rule)}
+.zrow:last-of-type{border-bottom:0}
+.zswatch{width:10px; height:28px; border-radius:2px}
+.zname{font-family:var(--font-display); font-weight:700; font-size:16px; color:var(--ink); line-height:1.1}
+.zsub{font-family:var(--font-mono); font-size:8.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); margin-top:3px}
+.zpace{font-family:var(--font-mono); font-weight:600; font-size:15px; color:var(--ink); font-variant-numeric:tabular-nums; text-align:right; line-height:1.1}
+.zdelta{font-family:var(--font-mono); font-size:9px; letter-spacing:.06em; color:var(--ink-2); text-align:right; margin-top:3px; text-transform:uppercase}
+.zvol{margin-top:6px}
+.zbar{height:3px; background:var(--paper-deep); border-radius:999px; overflow:hidden}
+.zbar span{display:block; height:100%; border-radius:999px}
+
+/* ---------- key sessions ---------- */
+.ks{padding:12px 0; border-bottom:1px solid var(--rule)}
+.ks:last-of-type{border-bottom:0}
+.ks-head{display:flex; justify-content:space-between; align-items:baseline; gap:8px}
+.ks-name{font-family:var(--font-display); font-weight:700; font-size:16px; color:var(--ink)}
+.ks-pace{font-family:var(--font-mono); font-weight:600; font-size:14px; color:var(--ink); font-variant-numeric:tabular-nums}
+.ks-meta{font-family:var(--font-mono); font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-3); margin-top:5px}
+.ks-note{font-family:var(--font-body); font-style:italic; font-size:12.5px; color:var(--ink-2); margin-top:6px; line-height:1.45}
+.mood-pill{display:inline-flex; padding:2px 7px; border-radius:999px; font-family:var(--font-mono);
+  font-size:8.5px; font-weight:600; letter-spacing:.10em; text-transform:uppercase}
+
+/* ---------- lens ---------- */
+.lensrow{display:flex; flex-wrap:wrap; gap:5px; margin-top:12px}
+.lenschip{
+  display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--ink-2); border:1px solid var(--rule); border-radius:999px; padding:4px 8px;
+  background:var(--paper-elevated); transition:all .15s; user-select:none;
+}
+.lenschip i{width:6px; height:6px; border-radius:999px; display:inline-block}
+.lenschip b{color:var(--ink); font-weight:600}
+.lenschip:hover{border-color:var(--ink-3)}
+.lenschip.is-on{border-color:var(--ink); background:var(--card); color:var(--ink)}
+.lenschip.is-clear{color:var(--ink-3); border-style:dashed}
+
+/* ---------- empty state ---------- */
+.empty{padding:14px 0}
+.empty p{font-family:var(--font-body); font-style:italic; font-size:12.5px; color:var(--ink-3); margin:5px 0 0; line-height:1.5}
+
+/* ---------- tab bar ---------- */
+.tabbar{
+  flex:0 0 auto; background:var(--paper); border-top:1px solid var(--rule);
+  padding:10px 0 22px; display:grid; grid-template-columns:repeat(4,1fr);
+}
+.tab{display:flex; flex-direction:column; align-items:center; gap:7px; cursor:pointer}
+.tab .tdot{width:6px; height:6px; border-radius:999px; background:transparent; border:1.5px solid var(--ink-3)}
+.tab.is-active .tdot{background:var(--coral); border-color:var(--coral)}
+.tab .tlbl{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3)}
+.tab.is-active .tlbl{color:var(--ink); font-weight:600}
+
+/* ---------- footer plate caption ---------- */
+.plate-foot{
+  margin-top:28px; text-align:center;
+  font-family:var(--font-body); font-style:italic; font-size:11.5px; color:var(--ink-3);
+}
+svg{display:block; overflow:visible}
+</style>
+</head>
+<body>
+
+<div class="stage-note">
+  <b>Post Run Drip · Trends v2 — prototype</b><br>
+  Tap <b>Month · Block · Season</b> to change the time scale · tap <b>show the numbers</b> under any chart
+</div>
+
+<div class="device">
+  <div class="notch"></div>
+  <div class="statusbar"><span>9:41</span><span class="mono">▮▮▮ ⌁</span></div>
+  <div class="plate-strip">
+    <span>RUNNING LOG — TRENDS · V2 SYNTHESIS</span>
+    <span id="plateFig">FIG. 01 · JUL 30</span>
+  </div>
+
+  <div class="scroll" id="scroll"></div>
+
+  <div class="tabbar">
+    <div class="tab"><span class="tdot"></span><span class="tlbl">Log</span></div>
+    <div class="tab is-active"><span class="tdot"></span><span class="tlbl">Trends</span></div>
+    <div class="tab"><span class="tdot"></span><span class="tlbl">Train</span></div>
+    <div class="tab"><span class="tdot"></span><span class="tlbl">Coach</span></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   1 · DATA — synthetic Maya. Deterministic (seeded), 53 weeks.
+   Self-coached, 3:28 marathon PB (Nov 2025) chasing 3:16.
+   ============================================================ */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rnd = mulberry32(20260730);
+
+const TODAY = new Date(2026,6,30,12,0,0);       // Thu 30 Jul 2026, anchored at midday
+const WEEKS = 53;
+const WEEK_MILES = [
+  32,34,36,33,38,40,37,42,44,40,46,44,48,       //  0-12  base + marathon block 1
+  38,30,22,                                      // 13-15  taper · NOV 9 MARATHON 3:28:41
+  12,18,22,26,28,30,32,34,                       // 16-23  recovery + winter base
+  36,33,38,40,42,38,44,46,42,48,44,40,           // 24-35  spring build · APR 12 HALF 1:36:20
+  20,26,30,                                      // 36-38  recovery
+  34,38,36,42,45,40,47,49,44,51,53,46,53,47      // 39-52  marathon block 2 (current)
+];
+const DOW_SHARE = [0,0.13,0.12,0.14,0.08,0.16,0.37]; // Mon rest → Sun long
+const MOODS = {
+  energized :{label:"Energized" ,color:"var(--mood-energized)" ,rank:5},
+  positive  :{label:"Positive"  ,color:"var(--mood-positive)"  ,rank:4},
+  neutral   :{label:"Neutral"   ,color:"var(--mood-neutral)"   ,rank:3},
+  tired     :{label:"Tired"     ,color:"var(--mood-tired)"     ,rank:2},
+  struggling:{label:"Struggling",color:"var(--mood-struggling)",rank:1},
+  injured   :{label:"Injured"   ,color:"var(--mood-injured)"   ,rank:1}
+};
+const ZONE = {
+  easy    :{name:"Easy"    ,sub:"Daily aerobic"      ,color:"var(--pace-easy)"    ,text:"var(--pace-easy-text)"},
+  moderate:{name:"Moderate",sub:"Upper aerobic"      ,color:"var(--pace-moderate)",text:"var(--pace-moderate)"},
+  steady  :{name:"Steady"  ,sub:"Marathon-prep"      ,color:"var(--pace-steady)"  ,text:"var(--pace-steady)"},
+  mp      :{name:"MP"      ,sub:"Marathon pace"      ,color:"var(--pace-mp)"      ,text:"var(--pace-mp)"},
+  hmp     :{name:"HMP"     ,sub:"Half-marathon pace" ,color:"var(--pace-hmp)"     ,text:"var(--pace-hmp)"},
+  lt      :{name:"LT"      ,sub:"1-hour race pace"   ,color:"var(--pace-lt)"      ,text:"var(--pace-lt)"},
+  k5      :{name:"5K"      ,sub:"5K pace reps"       ,color:"var(--pace-5k)"      ,text:"var(--pace-5k)"},
+  long    :{name:"Long"    ,sub:"Long run"           ,color:"var(--pace-steady)"  ,text:"var(--pace-steady)"}
+};
+
+/* Calendar-field arithmetic, anchored at midday. Adding 86400000 ms per day is
+   wrong across a DST transition — it lands on 23:00 or 01:00 of an adjacent day
+   and silently shifts getDay(), which leaves a "week" with no Sunday in it. */
+function addDays(d,n){return new Date(d.getFullYear(), d.getMonth(), d.getDate()+n, 12, 0, 0)}
+function fmtDay(d){return d.toLocaleDateString("en-US",{month:"short",day:"numeric"}).toUpperCase()}
+function fmtMon(d){return d.toLocaleDateString("en-US",{month:"short"}).toUpperCase()}
+function pace(sec){const m=Math.floor(sec/60),s=Math.round(sec%60); return m+":"+String(s).padStart(2,"0")}
+function signed(v,unit){return (v>0?"+":"−")+Math.abs(v)+unit}
+
+/* --- build 371 days (53 weeks) ending today --- */
+const START = addDays(TODAY, -(WEEKS*7-1));
+const days = [];
+for(let w=0; w<WEEKS; w++){
+  const target = WEEK_MILES[w];
+  const raceWeek = (w===15 || w===35);
+  for(let dw=0; dw<7; dw++){
+    const idx = w*7+dw;
+    const date = addDays(START, idx);
+    const dow  = date.getDay();                     // 0 Sun … 6 Sat
+    let share  = DOW_SHARE[(dow+6)%7];              // reindex Mon-first
+    share *= 0.86 + rnd()*0.28;
+    let miles = +(target*share).toFixed(1);
+    if(dow===1 && rnd()<0.55) miles = 0;            // occasional Monday off
+    if(miles < 1.2) miles = 0;
+
+    /* --- session type --- */
+    let type = "rest", zone = null, isKey = false;
+    if(miles>0){
+      if(dow===0){ type="long"; zone="long"; isKey = miles>=12; }
+      else if(dow===2){ type="quality"; isKey=true; zone = ["mp","hmp","k5","mp","hmp"][w%5]; }
+      else if(dow===6 && w%3===1){ type="quality"; isKey=true; zone="mp"; }
+      else { type="easy"; zone = rnd()<0.18 ? "moderate" : "easy"; }
+    }
+    /* --- summer heat --- */
+    const month = date.getMonth();
+    const summer = (month>=5 && month<=7);
+    const tempF  = summer ? Math.round(72+rnd()*14) : Math.round(44+rnd()*24);
+    const dewF   = summer ? Math.round(64+rnd()*10) : Math.round(30+rnd()*20);
+    const heatPct = Math.max(0, Math.min(0.075, (tempF-58)/58*0.10 + (dewF-52)/100*0.09));
+
+    /* --- pace model: improves over the year, raw stalls in the heat --- */
+    const prog = w/(WEEKS-1);
+    let base;
+    if(zone==="easy")           base = 548 - 26*prog;
+    else if(zone==="moderate")  base = 512 - 24*prog;
+    else if(zone==="long")      base = 528 - 24*prog;
+    else if(zone==="mp")        base = 442 - 26*prog;
+    else if(zone==="hmp")       base = 419 - 25*prog;
+    else if(zone==="k5")        base = 378 - 24*prog;
+    else                        base = 540;
+    const neutral = base + (rnd()*8-4);
+    const raw = neutral*(1+heatPct);
+
+    /* --- mood: honest, load- and season-sensitive --- */
+    const loadStress = target/53;
+    const r = rnd() + 0.14 - (summer?0.12:0) - Math.max(0,loadStress-0.70)*0.55 + (raceWeek?0.18:0);
+    let mood = r>0.82?"energized": r>0.58?"positive": r>0.34?"neutral":"tired";
+    /* "struggling" is reserved — it needs a low read AND real load behind it */
+    if(r<0.08 && loadStress>0.88) mood = "struggling";
+    if(miles===0 && rnd()<0.4) mood = r>0.5?"positive":"neutral";
+
+    /* --- sleep (HealthKit) --- */
+    let sleep = 7.3 - loadStress*0.55 + (rnd()*1.1-0.55) - (summer?0.30:0);
+    if(idx >= WEEKS*7-21) sleep -= 0.45;          // the last three weeks have run short
+    sleep = Math.max(5.2, Math.min(8.8, sleep));
+
+    /* --- within-run HR metrics on key sessions --- */
+    let hr=null, drift=null, hrAtEasy=null;
+    if(isKey){
+      hr = Math.round((zone==="k5"?171:zone==="hmp"?166:zone==="mp"?159:148) + (rnd()*5-2) + heatPct*90);
+      drift = zone==="long" || zone==="mp" ? +(8.4 - 5.6*prog + (rnd()*1.8-0.9)).toFixed(1) : null;
+    }
+    if(type==="easy" && zone==="easy"){
+      hrAtEasy = Math.round(153 - 12*prog + heatPct*105 + (rnd()*3-1.5));
+    }
+    days.push({idx,date,dow,week:w,miles,type,zone,isKey,mood,sleep:+sleep.toFixed(1),
+               tempF,dewF,heatPct,rawPace:raw,neutralPace:neutral,hr,drift,hrAtEasy,niggles:[]});
+  }
+}
+
+/* --- niggles: verbatim, closed vocabulary, clustered in the big weeks --- */
+const NIGGLE_SPEC = [
+  {week:46, dow:0, area:"right achilles", sev:"tight",      words:"tight right achilles again on the last two miles"},
+  {week:49, dow:2, area:"right achilles", sev:"grumbling",  words:"achilles grumbling on the warm-up, eased off after a mile"},
+  {week:51, dow:0, area:"right achilles", sev:"noticeable", words:"same right achilles — noticeable walking down the stairs after"},
+  {week:44, dow:4, area:"left calf",      sev:"a bit ropey",words:"left calf felt a bit ropey"},
+  {week:28, dow:0, area:"right achilles", sev:"slight",     words:"slight achilles niggle, nothing new"}
+];
+const SEV_OPACITY = {slight:0.35, "a bit ropey":0.5, tight:0.7, grumbling:0.85, noticeable:1};
+NIGGLE_SPEC.forEach(n=>{
+  const d = days.find(x=>x.week===n.week && x.dow===n.dow);
+  if(d) d.niggles.push({area:n.area, words:n.words, sev:n.sev});
+});
+
+/* --- nocturnal biometrics (Tier 2) -------------------------------------
+   Modelled to respect what recovery-trend-v2 §7.2–7.3 established, because a
+   prototype that makes HRV look clean would design the wrong product:
+     · device error (Garmin MAPE ~10.5%) is LARGER than the training effect (d≈0.36)
+     · cycle phase is larger than both (HRV d 0.80, RHR d 1.41 — the biggest in the data)
+     · so the noise here is deliberately bigger than the signal.                        */
+const HRV_BASE = 62, RHR_BASE = 48, CYCLE_LEN = 28;
+days.forEach((d,i)=>{
+  const cd = ((i+5) % CYCLE_LEN) + 1;
+  d.cycleDay = cd;
+  d.lateLuteal = cd >= 22;                       // the window that moves these on its own
+  const cyc = Math.cos((cd-1)/CYCLE_LEN*2*Math.PI);
+  const load7 = days.slice(Math.max(0,i-6), i+1).reduce((s,x)=>s+x.miles,0);
+  const loadZ = (load7-40)/14;
+  const late  = i >= days.length-18 ? (i-(days.length-18))/18 : 0;   // the divergence to demo
+  const nse = () => (rnd()+rnd()+rnd()-1.5);
+  d.hrv = Math.max(18, HRV_BASE + cyc*3.2 - loadZ*1.6 - late*5.5 + nse()*4.4);
+  d.rhr = Math.max(36, RHR_BASE - cyc*1.9 + loadZ*0.9 + late*3.2 + nse()*2.0);
+  d.nightValid = rnd() > 0.13;                   // not every night records
+});
+
+/* --- races (anchors) --- */
+const RACES = [
+  {date:addDays(START,15*7+6), name:"Marathon", time:"3:28:41", note:"lifetime PB · the anchor"},
+  {date:addDays(START,35*7+6), name:"Half",     time:"1:36:20", note:"course PB"}
+];
+
+/* --- weekly rollup --- */
+const weeks = [];
+for(let w=0; w<WEEKS; w++){
+  const ds = days.filter(d=>d.week===w);
+  const miles = +ds.reduce((s,d)=>s+d.miles,0).toFixed(1);
+  const counts={}; ds.forEach(d=>counts[d.mood]=(counts[d.mood]||0)+1);
+  const modal = Object.keys(counts).sort((a,b)=>counts[b]-counts[a])[0];
+  const keys = ds.filter(d=>d.isKey);
+  const sleep = +(ds.reduce((s,d)=>s+d.sleep,0)/ds.length).toFixed(2);
+  const nig = ds.flatMap(d=>d.niggles.map(n=>({...n,date:d.date})));
+  weeks.push({w, start:ds[0].date, end:ds[6].date, miles, modal, keys, sleep, niggles:nig,
+              moodRank:+(ds.reduce((s,d)=>s+MOODS[d.mood].rank,0)/ds.length).toFixed(2)});
+}
+/* ACWR — acute 7d ÷ chronic 28d, per day */
+days.forEach((d,i)=>{
+  if(i<27){ d.acwr = null; return; }            /* no band before 28 days of history */
+  const a = days.slice(i-6, i+1).reduce((s,x)=>s+x.miles,0);
+  const c = days.slice(i-27, i+1).reduce((s,x)=>s+x.miles,0)/4;
+  d.acwr = c>4 ? +(a/c).toFixed(2) : null;
+});
+weeks.forEach(wk=>{
+  const ds = days.filter(d=>d.week===wk.w);
+  const last = ds[ds.length-1];
+  wk.acwr = last ? last.acwr : null;
+});
+
+/* ============================================================
+   2 · SCALES — near term → long term
+   ============================================================ */
+const SCALES = {
+  month : {label:"Month",  gran:"day",  days:28,  fig:"FIG. 01", axis:"28 DAYS · DAILY"},
+  block : {label:"Block",  gran:"day",  days:84,  fig:"FIG. 02", axis:"12 WEEKS · DAILY"},
+  season: {label:"Season", gran:"week", days:371, fig:"FIG. 03", axis:"52 WEEKS · WEEKLY"}
+};
+let scale = "month";
+
+function window_(){
+  const s = SCALES[scale];
+  const dd = days.slice(-s.days);
+  const ww = weeks.filter(w=>w.end >= dd[0].date);
+  return {s, dd, ww};
+}
+
+/* buckets for the timeline: one per day, or one per week at season scale */
+function buckets(){
+  const {s,dd,ww} = window_();
+  if(s.gran==="day"){
+    return dd.map(d=>({
+      date:d.date, miles:d.miles, mood:d.mood, moodRank:MOODS[d.mood].rank,
+      keys:d.isKey?[d]:[], keyMiles:d.isKey?d.miles:0,
+      niggles:d.niggles.map(n=>({...n,date:d.date})),
+      acwr:d.acwr, sleep:d.sleep, zone:d.zone
+    }));
+  }
+  return ww.map(w=>({
+    date:w.start, miles:w.miles, mood:w.modal, moodRank:MOODS[w.modal].rank,
+    keys:w.keys, keyMiles:w.keys.reduce((s,d)=>s+d.miles,0),
+    niggles:w.niggles, acwr:w.acwr, sleep:w.sleep,
+    zone:w.keys.length?w.keys[0].zone:null
+  }));
+}
+
+/* ============================================================
+   3 · THE COPY — every chart states its conclusion first.
+   ============================================================ */
+const COPY = {
+  month:{
+    dateline:"Jul 3 – Jul 30 · last 4 weeks",
+    headline:"Hot, tired, and quietly faster.",
+    body:"Raw paces have barely moved this month, and heart rate at easy pace hasn’t either — four weeks is too short to settle that argument. What did move: the heat is charging you less than it was, the sharp end came down a few seconds, and every achilles mention landed in your two biggest weeks. The logs read tired.",
+    timeline:"Your <b>right-achilles</b> mentions land in your two biggest weeks — 53 and 53 miles. Nothing in the down week between them. The pattern is load-shaped, in your own words."
+  },
+  block:{
+    dateline:"May 8 – Jul 30 · marathon block, week 12 of 18",
+    headline:"The engine is growing under the fatigue.",
+    body:"Quality pace came down while weekly miles climbed 38 → 53, and heart rate at easy pace dropped three beats once the heat is priced out. The mood went the other way. Fitness is being built here, and it’s being paid for too.",
+    timeline:"Volume climbed for eleven weeks with one real down week. Your mood dots warmed through June and cooled through July — <b>the cooling tracks the heat, not the load</b>."
+  },
+  season:{
+    dateline:"Aug 2025 – Jul 2026 · 52 weeks",
+    headline:"Two years of base, and the first real jump.",
+    body:"Since last August the same easy pace costs you eleven fewer beats, and your half came down to 1:36:20 in April. Your marathon anchor is still the 3:28:41 from November — everything since then is direction, not proof.",
+    timeline:"Across the year your niggles cluster in the back half of <b>every</b> block, not at peak mileage. The pattern is cumulative, not acute — a different thing to watch for."
+  }
+};
+
+/* ============================================================
+   4 · CHART PRIMITIVES — real calendar axes, no silent flips
+   ============================================================ */
+const W = 302;                       // viewBox width
+const cssvar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* xAt lets the caller supply the exact x of each mark, so labels sit under the
+   thing they label instead of half a bucket away. */
+function xAxisLabels(bk, y, xAt){
+  const n = bk.length, out=[];
+  const X = xAt || (i => 4 + (i/Math.max(1,n-1))*(W-8));
+  const put=(i,txt,anchor)=>{
+    out.push(`<text x="${X(i).toFixed(1)}" y="${y}" text-anchor="${anchor}" font-family="ui-monospace,monospace"
+      font-size="7" letter-spacing="0.9" fill="${cssvar('--ink-3')}">${txt}</text>`);
+  };
+  if(n<=48){                                   /* short window → real dates */
+    const st = Math.max(1, Math.round((n-1)/3));
+    for(let i=0;i<n-1;i+=st) put(i, fmtDay(bk[i].date), i===0?"start":"middle");
+    put(n-1, fmtDay(bk[n-1].date), "end");
+  } else {                                     /* long window → months, min 20px apart */
+    let last="", lastX=-99;
+    bk.forEach((b,i)=>{
+      const m = fmtMon(b.date), x = X(i);
+      if(m!==last && i < n-2 && x-lastX > 20){ last=m; lastX=x; put(i, m, i===0?"start":"middle"); }
+      else if(m!==last) last=m;
+    });
+  }
+  return out.join("");
+}
+
+/* the centrepiece: four lanes, one shared calendar axis */
+function timelineSVG(){
+  const bk = buckets();
+  const n  = bk.length;
+  const maxM = Math.max(...bk.map(b=>b.miles), 1);
+  const step = (W-8)/n;
+  const bw   = Math.max(1.4, step*0.66);
+  const ink  = cssvar('--ink'), ink3 = cssvar('--ink-3'), coral = cssvar('--coral'),
+        deep = cssvar('--paper-deep'), rule = cssvar('--rule');
+
+  const VT=16, VH=56;                 // volume lane
+  const MT=VT+VH+22, MH=24;           // mood lane
+  const NT=MT+MH+22;                  // niggle lane  (ticks NT → NT+10, words at NT+19)
+  const AT=NT+34, AH=30;              // acwr lane
+  const H = AT+AH+20;
+
+  let s="";
+  /* lane labels */
+  const lab=(y,t,extra="")=>`<text x="0" y="${y}" font-family="ui-monospace,monospace" font-size="7"
+     letter-spacing="1" fill="${ink3}">${t}</text>${extra}`;
+  s += lab(VT-5, scale==="season"?"WEEKLY VOLUME · MI":"DAILY VOLUME · MI");
+  s += `<text x="${W}" y="${VT-5}" text-anchor="end" font-family="ui-monospace,monospace" font-size="7"
+        letter-spacing="1" fill="${ink3}">PEAK ${maxM.toFixed(0)}</text>`;
+
+  /* volume bars + key-session caps */
+  bk.forEach((b,i)=>{
+    const x = 4 + i*step + (step-bw)/2;
+    const h = b.miles/maxM*VH;
+    if(h>0){
+      s += `<rect x="${x.toFixed(1)}" y="${(VT+VH-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}"
+             fill="${ink}" opacity="0.30" rx="0.8"/>`;
+      if(b.keys.length){                     /* cap is proportional to key-session miles — no exaggeration */
+        const z = ZONE[b.keys[0].zone] || ZONE.mp;
+        const capH = Math.min(h, Math.max(2, h*(b.keyMiles/b.miles)));
+        s += `<rect x="${x.toFixed(1)}" y="${(VT+VH-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${capH.toFixed(1)}"
+               fill="${cssvar(z.color.replace('var(','').replace(')',''))}" rx="0.8"/>`;
+      }
+    }
+  });
+  s += `<line x1="4" y1="${VT+VH}" x2="${W-4}" y2="${VT+VH}" stroke="${rule}" stroke-width="1"/>`;
+
+  /* mood lane — position is the vocabulary order, not a score */
+  s += lab(MT-5, "MOOD · LABEL, NOT SCORE");
+  bk.forEach((b,i)=>{
+    const x = 4 + i*step + step/2;
+    const y = MT + (5-b.moodRank)/4*(MH-6) + 3;
+    const c = cssvar(MOODS[b.mood].color.replace('var(','').replace(')',''));
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${scale==='season'?2.6:2.1}" fill="${c}" opacity="0.9"/>`;
+  });
+
+  /* niggle lane — verbatim body-part ticks, each area named once */
+  s += lab(NT-7, "NIGGLES · YOUR WORDS");
+  const named = new Set(), boxes = []; let anyN=false;
+  bk.forEach((b,i)=>{
+    if(!b.niggles.length) return; anyN=true;
+    const x = 4 + i*step + step/2;
+    s += `<rect x="${(x-1).toFixed(1)}" y="${NT}" width="2" height="10" fill="${coral}" rx="1"/>`;
+    const area = b.niggles[0].area;
+    const wpx = area.length*4.6;
+    const anchor = x > W*0.72 ? "end" : "start";
+    const x0 = anchor==="end" ? x-3-wpx : x+3, x1 = x0+wpx;
+    const clash = boxes.some(r=>!(x1 < r[0]-5 || x0 > r[1]+5));
+    if(!named.has(area) && !clash){
+      named.add(area); boxes.push([x0,x1]);
+      s += `<text x="${(anchor==="end"?x-3:x+3).toFixed(1)}" y="${NT+19}" text-anchor="${anchor}"
+             font-family="ui-monospace,monospace" font-size="6.5" letter-spacing="0.6"
+             fill="${coral}">${area.toUpperCase()}</text>`;
+    }
+  });
+  if(!anyN){
+    s += `<text x="0" y="${NT+9}" font-family="Georgia,serif" font-style="italic" font-size="9"
+           fill="${ink3}">No body mentions in this window.</text>`;
+  }
+
+  /* acwr lane — neutral-gray normal band (never green) */
+  const aMin=0.4, aMax=1.6;
+  const ay = v => AT + (aMax-v)/(aMax-aMin)*AH;
+  s += lab(AT-6, "ACUTE ÷ CHRONIC LOAD",
+    `<text x="${W}" y="${AT-6}" text-anchor="end" font-family="ui-monospace,monospace"
+      font-size="6.5" letter-spacing="0.8" fill="${ink3}">GRAY BAND = YOUR NORMAL 0.8–1.3</text>`);
+  s += `<rect x="4" y="${ay(1.3).toFixed(1)}" width="${W-8}" height="${(ay(0.8)-ay(1.3)).toFixed(1)}"
+         fill="${deep}" opacity="0.9"/>`;
+  const pts = bk.map((b,i)=>b.acwr==null?null:`${(4+i*step+step/2).toFixed(1)},${ay(Math.max(aMin,Math.min(aMax,b.acwr))).toFixed(1)}`)
+                .filter(Boolean).join(" ");
+  s += `<polyline points="${pts}" fill="none" stroke="${ink}" stroke-width="1.3" opacity="0.75"/>`;
+  const lastA = [...bk].reverse().find(b=>b.acwr!=null);
+  if(lastA){
+    const li = bk.lastIndexOf(lastA);
+    s += `<circle cx="${(4+li*step+step/2).toFixed(1)}" cy="${ay(Math.min(aMax,lastA.acwr)).toFixed(1)}" r="2.4"
+           fill="${lastA.acwr>1.3?coral:ink}"/>`;
+  }
+
+  /* race anchors at season scale */
+  if(scale==="season"){
+    RACES.forEach(r=>{
+      const fi = bk.findIndex(b=>b.date > r.date);
+      const i = fi === -1 ? bk.length-1 : fi-1;
+      if(i<0) return;
+      const x = 4 + i*step + step/2;
+      const txt = r.name.toUpperCase()+" "+r.time.slice(0,r.time.lastIndexOf(":"));
+      s += `<line x1="${x.toFixed(1)}" y1="${VT-2}" x2="${x.toFixed(1)}" y2="${AT+AH}" stroke="${ink}"
+             stroke-width="0.8" stroke-dasharray="2 3" opacity="0.45"/>`;
+      s += `<rect x="${(x+2).toFixed(1)}" y="${VT+1}" width="${txt.length*4.7}" height="9" fill="${cssvar('--card')}" opacity="0.92"/>`;
+      s += `<text x="${(x+3.5).toFixed(1)}" y="${VT+8}" font-family="ui-monospace,monospace" font-size="6.5"
+             letter-spacing="0.6" fill="${cssvar('--ink-2')}">${txt}</text>`;
+    });
+  }
+
+  s += xAxisLabels(bk, H-6, i => 4 + i*step + step/2);
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto">${s}</svg>`;
+}
+
+/* Small line chart. Two rules it must never break:
+   — points are positioned by DATE, so a six-week gap is six weeks wide;
+   — the y-domain includes any reference line or band, so nothing draws off-canvas. */
+function lineSVG(series, opts){
+  const o = Object.assign({h:64, stroke:cssvar('--ink'), band:null, dash:null}, opts||{});
+  if(series.length < 2) return "";
+  const vals = series.map(p=>p.v)
+    .concat(o.dash!=null ? [o.dash] : [])
+    .concat(o.band || []);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi-lo)*0.18 || 1;
+  const y = v => 10 + (hi+pad-v)/((hi+pad)-(lo-pad))*(o.h-24);
+  const t0 = series[0].date.getTime();
+  const span = (series[series.length-1].date.getTime()-t0) || 1;
+  const xd = d => 4 + ((d.getTime()-t0)/span)*(W-8);
+  const x  = i => xd(series[i].date);
+  let s="";
+  if(o.band){
+    s += `<rect x="4" y="${y(o.band[1]).toFixed(1)}" width="${W-8}" height="${Math.abs(y(o.band[0])-y(o.band[1])).toFixed(1)}"
+           fill="${cssvar('--paper-deep')}" opacity="0.8"/>`;
+  }
+  if(o.dash!=null){
+    s += `<line x1="4" y1="${y(o.dash).toFixed(1)}" x2="${W-4}" y2="${y(o.dash).toFixed(1)}"
+           stroke="${cssvar('--ink-3')}" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>`;
+  }
+  s += `<polyline points="${series.map((p,i)=>x(i).toFixed(1)+","+y(p.v).toFixed(1)).join(" ")}"
+         fill="none" stroke="${o.stroke}" stroke-width="1.6" stroke-linejoin="round"/>`;
+  const last = series[series.length-1];
+  s += `<circle cx="${x(series.length-1).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="2.6" fill="${o.stroke}"/>`;
+  s += xAxisLabels(series, o.h-4, i=>x(i));
+  return `<svg viewBox="0 0 ${W} ${o.h}" width="100%" style="height:auto">${s}</svg>`;
+}
+
+/* zone sparkline for the pace ladder */
+function sparkSVG(vals, color, w=58, h=26){
+  const lo=Math.min(...vals), hi=Math.max(...vals), sp=(hi-lo)||1;
+  /* NO axis inversion. Pace is plotted as pace: the slowest value sits at the top,
+     so the line falls as you get faster. Stated once under the ladder, in words. */
+  const y = v => 2 + (hi-v)/sp*(h-4);
+  const pts = vals.map((v,i)=>`${(2+i/(vals.length-1)*(w-4)).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" opacity="0.9"/>
+    <circle cx="${(w-2).toFixed(1)}" cy="${y(vals[vals.length-1]).toFixed(1)}" r="1.9" fill="${color}"/>
+  </svg>`;
+}
+
+/* The timeline's conclusion is DERIVED too — it reports where the mentions
+   actually fell, including "they don't track your mileage", which is a real
+   finding. It never says what a mention means. */
+function timelineLede(){
+  const {dd, ww} = window_();
+  const nigs = dd.flatMap(d=>d.niggles.map(n=>({...n, date:d.date})));
+  if(!nigs.length)
+    return "No body mentions in this window. Volume, mood and load are still plotted together — the quiet stretch is worth seeing too.";
+  const areas={}; nigs.forEach(n=>areas[n.area]=(areas[n.area]||0)+1);
+  const [area,count] = Object.entries(areas).sort((a,b)=>b[1]-a[1])[0];
+  if(count < 2)
+    return `One mention in this window — <b>${area}</b>, on ${fmtDay(nigs[0].date)}. One isn’t a pattern. It’s plotted here so you can see what it sat next to.`;
+  const ranked = [...ww].sort((a,b)=>b.miles-a.miles);
+  const hit = ww.filter(w=>w.niggles.some(n=>n.area===area));
+  const third = Math.max(1, Math.ceil(ww.length/3));
+  const big = hit.filter(w=>ranked.findIndex(r=>r.w===w.w) < third);
+  const mi = hit.map(w=>w.miles.toFixed(0));
+  const miles = mi.length>1 ? mi.slice(0,-1).join(", ")+" and "+mi[mi.length-1] : mi[0];
+  if(big.length === hit.length)
+    return `Every <b>${area}</b> mention lands in your highest-mileage weeks — ${miles} miles. Nothing in the lighter ones. That shape is load-shaped; what it means is your call.`;
+  if(big.length === 0)
+    return `Your <b>${area}</b> mentions don’t track your mileage — they fall in weeks of ${miles} miles, none of them near your biggest. That’s a real finding, and a reassuring one.`;
+  return `${big.length} of ${hit.length} <b>${area}</b> mentions land in your bigger weeks (${miles} miles); the others don’t. Too mixed to call a pattern either way.`;
+}
+
+/* ===================== THE CALENDAR ==============================
+   Mileage, key sessions, niggles and mood on a real calendar grid, so
+   weekday rhythm is visible — the one pattern a time-series axis hides.
+   Month/Block: weeks as rows, weekdays as columns, big enough to mark.
+   Season: transposed and dense — 53 weeks across, 7 weekdays down.     */
+function calGrid(){
+  const {dd} = window_();
+  const rows=[]; let row=null;
+  dd.forEach(d=>{
+    const col = (d.date.getDay()+6)%7;              // Monday = 0
+    if(!row || col===0){ row = new Array(7).fill(null); rows.push(row); }
+    row[col] = d;
+  });
+  return rows;
+}
+
+function calendarSVG(){
+  const rows = calGrid();
+  const {dd} = window_();
+  const ink=cssvar('--ink'), ink2=cssvar('--ink-2'), ink3=cssvar('--ink-3'),
+        coral=cssvar('--coral'), rose=cssvar('--mood-injured'),
+        rule=cssvar('--rule'), deep=cssvar('--paper-deep'), card=cssvar('--card');
+  const DOW = ["M","T","W","T","F","S","S"];
+  const moodCol = m => cssvar(MOODS[m].color.replace('var(','').replace(')',''));
+  const dim = d => (lens && !lensMatch(d)) ? 0.13 : 1;
+
+  /* Session type owns the bar fill — NOT pace zone. Tested and rejected in
+     calendar-month-prototype: at bar width a ten-step ramp collapses into one
+     wash and destroys the long-run channel. One coral: intensity is the accent. */
+  const EASY = "#C9C3BC";                    // light warm grey — legible against the cell ground
+  const typeFill = d => d.isKey && d.zone!=="long" ? coral
+                      : d.zone==="long"            ? ink2
+                      :                              EASY;
+
+  /* ---------- season: a year at a glance ---------- */
+  if(scale==="season"){
+    const cw=5.2, chh=5.2, x0=16, y0=16, H=y0+7*chh+12;
+    let s="";
+    DOW.forEach((d,i)=> s+=`<text x="10" y="${y0+i*chh+4.6}" text-anchor="end" font-family="ui-monospace,monospace"
+      font-size="4.6" fill="${ink3}">${i%2===0?d:""}</text>`);
+    rows.forEach((r,w)=>{
+      r.forEach((d,i)=>{
+        if(!d) return;
+        const x=x0+w*cw, y=y0+i*chh;
+        s+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${cw-1}" height="${chh-1}" rx="0.8"
+             fill="${d.miles===0?"none":typeFill(d)}" opacity="${(d.miles===0?1:(0.3+Math.min(1,d.miles/20)*0.7)*dim(d)).toFixed(2)}"
+             stroke="${d.miles===0?rule:"none"}" stroke-width="0.4"/>`;
+        if(d.niggles.length)
+          s+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="1.5" height="${chh-1}" fill="${rose}"/>`;
+      });
+    });
+    let last="", lastX=-99;
+    rows.forEach((r,w)=>{
+      const d = r.find(Boolean); if(!d) return;
+      const m = fmtMon(d.date), x = x0+w*cw;
+      if(m!==last && x-lastX > 17){ last=m; lastX=x;
+        s+=`<text x="${x.toFixed(1)}" y="${y0-4}" font-family="ui-monospace,monospace"
+             font-size="5.4" letter-spacing="0.5" fill="${ink3}">${m}</text>`; }
+      else if(m!==last) last=m;
+    });
+    return `<svg viewBox="0 0 ${x0+rows.length*cw+4} ${H}" width="100%" style="height:auto">${s}</svg>`;
+  }
+
+  /* ---------- month / block: the cell is a bar-chart bar ---------- */
+  const RAIL=40, GUT=2;
+  const cw=(W-RAIL)/7, chh = scale==="month" ? 62 : 48;
+  const HEAD=13, MOOD=3.5, BARW=Math.min(20, cw*0.5);
+  const barTop = HEAD+3, barBot = chh-MOOD-3, barMax = barBot-barTop;
+  const FIXED = 20;                       // miles — fixed so months compare
+  const y0=16, H=y0+rows.length*chh+6;
+  const maxWeek = Math.max(...calGrid().map(r=>r.reduce((a,d)=>a+(d?d.miles:0),0)), 1);
+  let s="";
+
+  DOW.forEach((d,i)=> s+=`<text x="${(i*cw+cw/2).toFixed(1)}" y="${y0-5}" text-anchor="middle"
+    font-family="ui-monospace,monospace" font-size="7" letter-spacing="0.6" fill="${ink3}">${d}</text>`);
+  s+=`<text x="${W}" y="${y0-5}" text-anchor="end" font-family="ui-monospace,monospace" font-size="7"
+       letter-spacing="0.6" fill="${ink3}">WEEK</text>`;
+
+  rows.forEach((r,w)=>{
+    const y=y0+w*chh;
+    r.forEach((d,i)=>{
+      const x=i*cw;
+      if(!d) return;
+      const op = dim(d);
+      s+=`<rect x="${(x+GUT/2).toFixed(1)}" y="${(y+1).toFixed(1)}" width="${(cw-GUT).toFixed(1)}"
+           height="${(chh-2).toFixed(1)}" rx="2.5" fill="${cssvar('--paper')}" opacity="${op}"/>`;
+      /* date numeral, top-left */
+      s+=`<text x="${(x+GUT/2+4).toFixed(1)}" y="${(y+11).toFixed(1)}" font-family="ui-monospace,monospace"
+           font-size="7.5" fill="${ink3}" opacity="${op}">${d.date.getDate()}</text>`;
+      /* volume bar, bottom-anchored, fixed scale */
+      if(d.miles>0){
+        const bh = Math.max(2.5, Math.min(1, d.miles/FIXED)*barMax);
+        s+=`<rect x="${(x+cw/2-BARW/2).toFixed(1)}" y="${(y+barBot-bh).toFixed(1)}" width="${BARW.toFixed(1)}"
+             height="${bh.toFixed(1)}" rx="1.5" fill="${typeFill(d)}" opacity="${op}"/>`;
+      }
+      /* key-session dot, top-right */
+      if(d.isKey && d.zone!=="long")
+        s+=`<circle cx="${(x+cw-GUT/2-5).toFixed(1)}" cy="${(y+8).toFixed(1)}" r="2" fill="${coral}" opacity="${op}"/>`;
+      /* mood: full-width strip on the bottom edge — rest days carry it too */
+      s+=`<rect x="${(x+GUT/2).toFixed(1)}" y="${(y+chh-1-MOOD).toFixed(1)}" width="${(cw-GUT).toFixed(1)}"
+           height="${MOOD}" rx="1.4" fill="${moodCol(d.mood)}" opacity="${(0.85*op).toFixed(2)}"/>`;
+      /* niggle: left edge, opacity by the athlete's own severity word */
+      if(d.niggles.length){
+        const sev = SEV_OPACITY[d.niggles[0].sev] || 0.7;
+        s+=`<rect x="${(x+GUT/2).toFixed(1)}" y="${(y+1).toFixed(1)}" width="2.5" height="${(chh-2).toFixed(1)}"
+             rx="1.2" fill="${rose}" opacity="${(sev*op).toFixed(2)}"/>`;
+      }
+      /* today */
+      if(+d.date === +days[days.length-1].date)
+        s+=`<rect x="${(x+GUT/2+0.75).toFixed(1)}" y="${(y+1.75).toFixed(1)}" width="${(cw-GUT-1.5).toFixed(1)}"
+             height="${(chh-3.5).toFixed(1)}" rx="2.5" fill="none" stroke="${coral}" stroke-width="1.5"/>`;
+    });
+
+    /* the week rail — an eighth column, inside the grid */
+    const days_ = r.filter(Boolean);
+    const wk = days_.reduce((a,d)=>a+d.miles,0);
+    const partial = days_.length < 7;
+    const rx = 7*cw;
+    s+=`<text x="${W-2}" y="${(y+16).toFixed(1)}" text-anchor="end" font-family="ui-monospace,monospace"
+         font-size="13" font-weight="600" fill="${partial?ink3:ink}">${wk.toFixed(0)}</text>`;
+    s+=`<text x="${W-2}" y="${(y+24).toFixed(1)}" text-anchor="end" font-family="ui-monospace,monospace"
+         font-size="6" letter-spacing="0.5" fill="${ink3}">${partial?"PART":"MI"}</text>`;
+    const bw=(wk/maxWeek)*(RAIL-8);
+    s+=`<rect x="${(rx+4).toFixed(1)}" y="${(y+29).toFixed(1)}" width="${(RAIL-8).toFixed(1)}" height="3" rx="1.5" fill="${deep}"/>`;
+    s+=`<rect x="${(rx+4).toFixed(1)}" y="${(y+29).toFixed(1)}" width="${bw.toFixed(1)}" height="3" rx="1.5"
+         fill="${partial?ink3:ink2}"/>`;
+    if(days_.length){
+      const avg = days_.reduce((a,d)=>a+MOODS[d.mood].rank,0)/days_.length;
+      const key = ["struggling","tired","neutral","positive","energized"][Math.max(0,Math.min(4,Math.round(avg)-1))];
+      s+=`<rect x="${(rx+4).toFixed(1)}" y="${(y+35).toFixed(1)}" width="${(RAIL-8).toFixed(1)}" height="2.5" rx="1.2"
+           fill="${moodCol(key)}" opacity="0.85"/>`;
+    }
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="height:auto">${s}</svg>`;
+}
+
+/* ---- the lens: isolate one thing across the calendar ------------------
+   Borrowed from calendar-month-prototype. Tapping a chip dims every day that
+   doesn't match, which is the cheapest pattern-finding tool on the screen. */
+let lens = null;
+function lensMatch(d){
+  if(!lens) return true;
+  if(lens==="key")    return d.isKey && d.zone!=="long";
+  if(lens==="long")   return d.zone==="long" && d.miles>0;
+  if(lens==="niggle") return d.niggles.length>0;
+  return d.mood === lens;
+}
+function lensOptions(){
+  const {dd} = window_();
+  const opts = [
+    {id:"key",    label:"Key",    color:"var(--coral)",        n:dd.filter(d=>d.isKey&&d.zone!=="long").length},
+    {id:"long",   label:"Long",   color:"var(--ink-2)",        n:dd.filter(d=>d.zone==="long"&&d.miles>0).length},
+    {id:"niggle", label:"Niggle", color:"var(--mood-injured)", n:dd.filter(d=>d.niggles.length).length}
+  ];
+  ["energized","positive","neutral","tired","struggling"].forEach(m=>{
+    const n = dd.filter(d=>d.mood===m).length;
+    if(n) opts.push({id:m, label:MOODS[m].label, color:MOODS[m].color, n});
+  });
+  return opts.filter(o=>o.n>0);
+}
+function lensLede(){
+  if(!lens) return "";
+  const {dd} = window_();
+  const hit = dd.filter(lensMatch);
+  if(!hit.length) return "";
+  const DAYNAME=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const c={}; hit.forEach(d=>c[d.date.getDay()]=(c[d.date.getDay()]||0)+1);
+  const top = Object.entries(c).sort((a,b)=>b[1]-a[1])[0];
+  const label = (lensOptions().find(o=>o.id===lens)||{}).label;
+  const half = Math.floor(dd.length/2);
+  const late = hit.filter(d=>d.idx >= dd[half].idx).length;
+  let where;
+  if(hit.length <= 3){
+    const what = d => d.miles===0 ? "a rest day"
+                    : d.zone==="long" ? "a long run"
+                    : d.isKey ? "a key session" : "an easy day";
+    const list = hit.map(d=>`${fmtDay(d.date)} (${what(d)})`);
+    where = list.length>1 ? list.slice(0,-1).join(", ")+" and "+list[list.length-1]+"."
+                          : list[0]+".";
+    return `<b>${(lensOptions().find(o=>o.id===lens)||{}).label}</b> — ${hit.length} of ${dd.length} days: ${where}`;
+  }
+  if(+top[1] >= hit.length*0.6 && hit.length>2) where = `Most of them fall on a <b>${DAYNAME[+top[0]]}</b>.`;
+  else if(late >= hit.length*0.75 && hit.length>3) where = `They bunch in the <b>second half</b> of this window.`;
+  else if(late <= hit.length*0.25 && hit.length>3) where = `They sit in the <b>first half</b> of this window and stop.`;
+  else where = `They spread fairly evenly across the window.`;
+  return `<b>${label}</b> — ${hit.length} of ${dd.length} days. ${where}`;
+}
+
+/* The calendar makes one pattern legible/* The calendar makes one pattern legible that a time axis cannot: which DAY.
+   Still co-occurrence only — where the mentions fell, never what they mean. */
+function weekdayLede(){
+  const {dd} = window_();
+  const nigs = dd.flatMap(d=>d.niggles.map(n=>({...n, date:d.date})));
+  if(nigs.length < 2) return "";
+  const DAYNAME = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const onOrAfterKey = nigs.filter(n=>{
+    const i = days.findIndex(d=>+d.date === +n.date);
+    return i>=0 && ((days[i] && days[i].isKey) || (days[i-1] && days[i-1].isKey));
+  });
+  const dows = nigs.map(n=>n.date.getDay());
+  const same = dows.every(d=>d===dows[0]);
+  if(same)
+    return ` Every one of them lands on a <b>${DAYNAME[dows[0]]}</b>.`;
+  if(onOrAfterKey.length === nigs.length)
+    return ` All of them fall on a key session or the day after one.`;
+  if(onOrAfterKey.length >= 2)
+    return ` ${onOrAfterKey.length} of ${nigs.length} fall on a key session or the morning after.`;
+  return " They scatter across the week — no weekday rhythm to them.";
+}
+
+/* the ladder headline is DERIVED from the rows — it can never contradict the chart */
+function ladderLede(rows){
+  const nm = z => ZONE[z].name;
+  const easy  = rows.find(r=>r.z==="easy");
+  const race  = rows.filter(r=>r.z!=="easy");
+  const down  = race.filter(r=>r.delta <= -2), up = race.filter(r=>r.delta >= 2);
+  let s;
+  if(!race.length)          s = "Not enough race-pace work in this window to read a ladder.";
+  else if(down.length===race.length)
+    s = `Every race pace came down together — <b>${down.map(r=>nm(r.z)).join(", ")}</b>. That's the shape of a block that's working.`;
+  else if(down.length)
+    s = `<b>${down.map(r=>nm(r.z)).join(" and ")}</b> came down. <b>${up.concat(race.filter(r=>Math.abs(r.delta)<2)).map(r=>nm(r.z)).join(" and ")}</b> didn't — and the miles behind ${up.length>1?"those zones":"that zone"} are thin enough that it may be sample size, not fitness.`;
+  else
+    s = "No race pace moved in this window. Volume went somewhere; it hasn't shown up at the sharp end yet.";
+  if(easy && Math.abs(easy.delta) <= 6)
+    s += ` <b>Easy</b> barely moved — that's discipline, not a plateau.`;
+  else if(easy && easy.delta < -6)
+    s += ` <b>Easy</b> crept ${Math.abs(easy.delta)}s/mi faster too, which is worth a look: easy days drifting quick is how the sharp end goes flat.`;
+  return s;
+}
+
+/* ============================================================
+   5 · SECTIONS
+   ============================================================ */
+function el(html){const t=document.createElement("template"); t.innerHTML=html.trim(); return t.content.firstElementChild}
+
+function verdictSection(){
+  const c = COPY[scale];
+  return `
+  <div class="section verdict" style="margin-top:14px">
+    <div class="scale-row">
+      <span class="eyebrow">The 5-second view</span>
+      <div class="scale-opts">
+        ${Object.keys(SCALES).map(k=>`<span class="scale ${k===scale?'is-active':''}" data-scale="${k}">${SCALES[k].label}</span>`).join("")}
+      </div>
+    </div>
+    <h1 class="h-display">${c.headline}</h1>
+    <p class="quote" style="margin-top:8px">— ${c.dateline} —</p>
+    <p class="body">${c.body}</p>
+    <div class="chips">
+      ${(()=>{ /* chips are counted from the window — they can't drift from the charts below */
+        const {dd} = window_();
+        const mi   = dd.reduce((s,d)=>s+d.miles,0);
+        const keys = dd.filter(d=>d.isKey).length;
+        const nig  = dd.reduce((s,d)=>s+d.niggles.length,0);
+        const cnt={}; dd.forEach(d=>cnt[d.mood]=(cnt[d.mood]||0)+1);
+        const modal = Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+        return [
+          [mi.toLocaleString(undefined,{maximumFractionDigits:0}),"MI"],
+          [keys,"KEY SESSIONS"],
+          [nig, nig===1?"NIGGLE":"NIGGLES"],
+          [MOODS[modal].label.toUpperCase(),"MOST DAYS"]
+        ].map(([v,l])=>`<span class="chip"><b>${v}</b> ${l}</span>`).join("");
+      })()}
+    </div>
+  </div>`;
+}
+
+function calendarSection(){
+  const bk = buckets();
+  const nig = bk.flatMap(b=>b.niggles);
+  const {ww} = window_();
+  return `
+  <div class="section">
+    <div class="section-head">
+      <span class="eyebrow">The block, as a calendar</span>
+      <span class="caption">${SCALES[scale].axis}</span>
+    </div>
+    <div class="card" id="cardCal">
+      <p class="lede">${lens ? lensLede() : timelineLede()+weekdayLede()}</p>
+      ${calendarSVG()}
+      <div class="lensrow">
+        ${lensOptions().map(o=>`
+          <span class="lenschip ${lens===o.id?"is-on":""}" data-lens="${o.id}">
+            <i style="background:${o.color}"></i>${o.label} <b>${o.n}</b>
+          </span>`).join("")}
+        ${lens?`<span class="lenschip is-clear" data-lens="clear">clear</span>`:""}
+      </div>
+      <div class="legend">
+        <span class="lg"><i style="background:var(--coral)"></i>key session</span>
+        <span class="lg"><i style="background:var(--ink-2)"></i>long run</span>
+        <span class="lg"><i style="background:#C9C3BC"></i>easy</span>
+        <span class="lg"><i class="tick" style="background:var(--mood-injured);width:3px;height:10px"></i>niggle</span>
+        <span class="lg"><i style="background:var(--mood-positive);height:3px;width:10px;border-radius:2px"></i>mood</span>
+      </div>
+      <p class="quote" style="margin-top:8px;font-size:11.5px">${scale==="season"
+        ? "A year at this size holds volume, session type and niggles. Bar height and mood need a bigger cell \u2014 they\u2019re on the Month and Block grids."
+        : "Bar height is that day\u2019s miles on a fixed 0\u201320 scale, so months compare. Mood runs along the bottom edge of every day, including rest days \u2014 mood isn\u2019t a property of a run."}</p>
+      <div class="disclose" data-toggle="cardCal">
+        <span class="dlabel">Show the numbers</span>
+        <span>${ww.length} weeks</span>
+      </div>
+      <div class="detail">
+        <table class="num">
+          <thead><tr><th>Week</th><th>Miles</th><th>Key</th><th>Mood</th><th>Sleep</th><th>Niggles</th></tr></thead>
+          <tbody>
+          ${ww.slice(-8).reverse().map(w=>`
+            <tr>
+              <td>${fmtDay(w.start)}</td>
+              <td>${w.miles.toFixed(0)}</td>
+              <td>${w.keys.length}</td>
+              <td>${MOODS[w.modal].label}</td>
+              <td>${Math.floor(w.sleep)}:${String(Math.round((w.sleep%1)*60)).padStart(2,"0")}</td>
+              <td>${w.niggles.length?w.niggles.map(n=>n.area).join(", "):'<span class="absent">none logged</span>'}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    ${nig.length?`
+    <div class="card">
+      <span class="eyebrow">In your own words</span>
+      ${nig.slice(-3).reverse().map(n=>`
+        <p class="body" style="margin-top:10px;font-style:italic">\u201C${n.words}\u201D</p>
+        <p class="caption" style="margin-top:4px">${fmtDay(n.date)} \u00B7 ${n.area}</p>
+      `).join("")}
+      <p class="quote" style="margin-top:12px">Mentions are surfaced verbatim and never interpreted. What they mean is your call.</p>
+    </div>`:""}
+  </div>`;
+}
+
+/* ======================= HRV STATUS (Tier 2) ==========================
+   Implemented per docs/specs/recovery-trend-v2-2026-07-27.md §2c and §3:
+     · weekly means only — a single night NEVER changes status
+     · lnRMSSD, compared to the athlete's own 28-day baseline
+     · the threshold is 0.5 × her OWN between-night SD, not an imported %
+     · HRV is read ONLY paired with resting HR — 1 of 9 cells is interpretable
+     · gates: ≥5 valid nights in the week, ≥28 days of baseline
+     · late luteal suppresses Tier-2 escalation; it never corrects the number
+   There is deliberately no 0–100 status, no "readiness", no colour ring.     */
+let garminConnected = false;                 // prototype-only switch, see the demo control
+
+function nocturnal(){
+  const dd = days;                                       // biometrics read the full history
+  const last7 = dd.slice(-7);
+  const n7 = last7.filter(d=>d.nightValid).length;
+  if(!garminConnected)  return {state:"dark"};
+  if(n7 < 5)            return {state:"gated", why:"nights", n7};
+  const valid = dd.filter(d=>d.nightValid);
+  const recent = valid.slice(-7), base = valid.slice(-35,-7);
+  if(base.length < 21)  return {state:"gated", why:"baseline", have:base.length};
+
+  const mean   = a => a.reduce((s,x)=>s+x,0)/a.length;
+  const lnMean = a => Math.exp(mean(a.map(Math.log)));
+  const sd     = a => { const m=mean(a); return Math.sqrt(mean(a.map(x=>(x-m)*(x-m)))) };
+
+  const hrvNow=lnMean(recent.map(d=>d.hrv)), hrvBase=lnMean(base.map(d=>d.hrv)), hrvSD=sd(base.map(d=>d.hrv));
+  const rhrNow=mean(recent.map(d=>d.rhr)),   rhrBase=mean(base.map(d=>d.rhr)),   rhrSD=sd(base.map(d=>d.rhr));
+  const dir = (n,b,s) => (n-b) >  0.5*s ?  1
+                       : (n-b) < -0.5*s ? -1 : 0;        // smallest-worthwhile-change convention
+  const h = dir(hrvNow,hrvBase,hrvSD), r = dir(rhrNow,rhrBase,rhrSD);
+
+  const CELL = {
+    "-1,1" :{key:"interpretable", label:"HRV down, resting HR up",
+             read:"The one combination this card is willing to read. Overnight, your heart rate sat a little higher while HRV sat a little lower — the direction that isn’t ambiguous."},
+    "-1,-1":{key:"saturation",    label:"HRV down, resting HR down too",
+             read:"HRV is down and your resting heart rate is down with it. In a block like this that combination usually means the opposite of tired — but it’s genuinely ambiguous, so this card isn’t going to guess."},
+    "-1,0" :{key:"quiet", label:"HRV down, resting HR flat",  read:"HRV drifted down on its own. Without resting heart rate moving with it, there’s nothing here to read."},
+    "1,-1" :{key:"quiet", label:"HRV up, resting HR down",    read:"Both moved the comfortable way. That’s compatible with adapting and with overreaching in equal measure, so it stays quiet."},
+    "1,0"  :{key:"quiet", label:"HRV up, resting HR flat",    read:"A rising HRV on its own says nothing — it points at adaptation and at functional overreaching at the same time."},
+    "1,1"  :{key:"odd",   label:"HRV up, resting HR up",      read:"An odd pairing. More often an artifact or the start of an illness than anything about training."},
+    "0,1"  :{key:"weak",  label:"HRV flat, resting HR up",    read:"Resting heart rate nudged up on its own. Weak on its own; it only speaks if your own words agree strongly."},
+    "0,-1" :{key:"quiet", label:"HRV flat, resting HR down",  read:"Nothing moved far enough to mean anything."},
+    "0,0"  :{key:"quiet", label:"Both inside your usual range",read:"Both sat inside their usual range this week. The boring answer, and the true one."}
+  };
+  const cell = CELL[h+","+r];
+  const conf = base.length>=56 ? "medium" : "low";
+  return {state:"live", h, r, cell, conf, n7,
+          hrvNow, hrvBase, hrvSD, rhrNow, rhrBase, rhrSD,
+          lateLuteal: last7.filter(d=>d.lateLuteal).length >= 4,
+          baseDays: base.length,
+          series: valid.slice(-56)};
+}
+
+function recoverySignals(){
+  const {dd} = window_();
+  const avg = a => a.reduce((s,x)=>s+x,0)/a.length;
+  const hhmm = h => { let m=Math.round(h*60); return Math.floor(m/60)+"h "+String(m%60).padStart(2,"0")+"m"; };
+
+  /* compare against the window immediately before this one; fall back to split-half
+     when there isn't one (the season view already reaches back as far as the data goes) */
+  const st = dd[0].idx;
+  const prior = days.slice(Math.max(0, st-dd.length), st);
+  const usePrior = prior.length >= dd.length*0.8;
+  const half = Math.floor(dd.length/2);
+  const prevSet = usePrior ? prior : days.slice(st, st+half);
+  const nowSet  = usePrior ? dd    : dd.slice(half);
+  const vsLabel = usePrior ? `vs previous ${scale==="month"?"4 weeks":"12 weeks"}` : "vs first half";
+
+  const sNow = avg(nowSet.map(d=>d.sleep)), sPrev = avg(prevSet.map(d=>d.sleep));
+  const sDelta = Math.round((sNow-sPrev)*60);
+  const tired  = dd.filter(d=>d.mood==="tired"||d.mood==="struggling").length;
+  const tiredPct = tired/dd.length;
+  const nigs = dd.flatMap(d=>d.niggles);
+  const areas = {}; nigs.forEach(n=>areas[n.area]=(areas[n.area]||0)+1);
+  const repeat = Object.entries(areas).sort((a,b)=>b[1]-a[1])[0];
+  const mNow = nowSet.reduce((s,d)=>s+d.miles,0), mPrev = prevSet.reduce((s,d)=>s+d.miles,0);
+  const mPct = Math.round((mNow/mPrev-1)*100);
+  const acwrs = dd.map(d=>d.acwr).filter(v=>v!=null);
+  const aNow = acwrs[acwrs.length-1], aMax = Math.max(...acwrs);
+
+  /* Tiered by evidence weight, per recovery-trend-v2 §2b. Tier 1 leads because
+     the runner literature puts the predictive signal in cheap self-report, not
+     in autonomic measures. Tier 3 annotates and can never agree. */
+  const noc = nocturnal();
+  const t2 = noc.state === "live";
+  const hrvDir = t2 ? (noc.h===-1?"down":noc.h===1?"up":"flat") : null;
+  const rhrDir = t2 ? (noc.r===-1?"down":noc.r===1?"up":"flat") : null;
+
+  return [
+    {tier:1, name:"Niggles", value:nigs.length+(nigs.length===1?" mention":" mentions"),
+             delta:repeat&&repeat[1]>1?repeat[1]+"× "+repeat[0]:"no repeat area",  agrees:!!(repeat&&repeat[1]>1)},
+    {tier:1, name:"Mood",    value:tired+" of "+dd.length+" days", delta:"tired or struggling", agrees:tiredPct>=0.45},
+    {tier:1, name:"Sleep quality", value:'<span class="absent">not captured</span>',
+             delta:"one tap a night would add it", agrees:false, gap:true},
+    {tier:2, name:"Resting HR", value:t2?noc.rhrNow.toFixed(1)+" bpm":'<span class="absent">no watch data</span>',
+             delta:t2?rhrDir+" vs your baseline":"needs 28 nights", agrees:t2&&noc.r===1},
+    {tier:2, name:"HRV",     value:t2?noc.hrvNow.toFixed(1)+" ms":'<span class="absent">no watch data</span>',
+             delta:t2?hrvDir+" — only read with resting HR":"needs 28 nights", agrees:t2&&noc.h===-1&&noc.r===1},
+    {tier:3, name:"Sleep",   value:hhmm(sNow), delta:(sDelta<0?"−":"+")+Math.abs(sDelta)+"m "+vsLabel, agrees:false},
+    {tier:3, name:"Load",    value:Math.round(dd.reduce((s,d)=>s+d.miles,0))+" mi",
+             delta:(mPct>=0?"+":"−")+Math.abs(mPct)+"% "+vsLabel, agrees:false}
+  ];
+}
+function recoveryVerdict(sigs){
+  /* §2d: active needs >=1 Tier-1 AND >=1 Tier-2 agreeing. Biometrics alone
+     never fire — not as taste, but because single-source biometric inference
+     is unsupported. Tier 1 alone can reach quiet with real copy. */
+  const t1 = sigs.filter(s=>s.tier===1 && s.agrees);
+  const t2 = sigs.filter(s=>s.tier===2 && s.agrees);
+  const names = a => a.length>1 ? a.slice(0,-1).map(s=>s.name.toLowerCase()).join(", ")+" and "+a[a.length-1].name.toLowerCase()
+                                : a[0].name.toLowerCase();
+  if(t1.length && t2.length) return {state:"A shape worth watching.", alert:true, tag:"active",
+    note:`Your own words moved and the overnight numbers moved with them — ${names(t1)}, alongside ${names(t2)}. Any one of those is noise. Together it’s a shape worth watching, and what it means is yours.`};
+  if(t1.length>=2) return {state:"Your own words are moving.", alert:true, tag:"active",
+    note:`${names(t1).replace(/^./,c=>c.toUpperCase())} are both pointing the same way. That’s the side of this the evidence actually supports, and it doesn’t need a watch to say so.`};
+  if(t1.length===1) return {state:"One thing is moving.", alert:false, tag:"quiet",
+    note:`Only ${names(t1)} is moving. One signal on its own isn’t a pattern — it stays in the list below so you can see it, and it doesn’t reach further than that.`};
+  if(t2.length) return {state:"Numbers moved, your words didn’t.", alert:false, tag:"quiet",
+    note:"The overnight numbers drifted this week, but nothing in your own words did. On its own that isn’t a pattern — as likely a late night or a glass of wine as anything about training. Noted, not flagged."};
+  return {state:"No shape here.", alert:false, tag:"quiet",
+    note:"Your load moved around this window and the recovery signals didn’t track it either way. That’s the boring answer, and it’s the true one."};
+}
+
+/* the 3×3 grid, drawn. 8 of 9 cells are marked quiet on the face of it — the
+   yield is the point, not a limitation to hide. */
+function quadrantSVG(h, r){
+  const w=150, cw=42, ch=24, x0=34, y0=14;
+  const rows=[1,0,-1], cols=[-1,0,1];              // HRV ↑↓ down the side, RHR →
+  let s=`<text x="0" y="${y0-5}" font-family="ui-monospace,monospace" font-size="6.5" letter-spacing="0.7" fill="${cssvar('--ink-3')}">HRV</text>`;
+  s+=`<text x="${x0}" y="${y0-5}" font-family="ui-monospace,monospace" font-size="6.5" letter-spacing="0.7" fill="${cssvar('--ink-3')}">RESTING HR →</text>`;
+  rows.forEach((rv,i)=>{
+    s+=`<text x="30" y="${y0+i*ch+15}" text-anchor="end" font-family="ui-monospace,monospace" font-size="6.5"
+         letter-spacing="0.6" fill="${cssvar('--ink-3')}">${rv===1?"UP":rv===0?"FLAT":"DOWN"}</text>`;
+    cols.forEach((cv,j)=>{
+      const here = (rv===h && cv===r);
+      const interp = (rv===-1 && cv===1);
+      s+=`<rect x="${x0+j*cw}" y="${y0+i*ch}" width="${cw-3}" height="${ch-3}" rx="2"
+           fill="${here?(interp?cssvar('--coral'):cssvar('--paper-deep')):cssvar('--paper')}"
+           stroke="${interp?cssvar('--coral'):cssvar('--rule')}" stroke-width="${interp?1.2:1}"/>`;
+      s+=`<text x="${x0+j*cw+(cw-3)/2}" y="${y0+i*ch+14}" text-anchor="middle"
+           font-family="ui-monospace,monospace" font-size="6" letter-spacing="0.4"
+           fill="${here&&interp?"#fff":cssvar(here?'--ink':'--ink-3')}">${interp?"READ":"QUIET"}</text>`;
+    });
+  });
+  rows.forEach((rv,i)=>cols.forEach((cv,j)=>{}));
+  s+=`<text x="${x0}" y="${y0+3*ch+10}" font-family="ui-monospace,monospace" font-size="6" letter-spacing="0.5"
+       fill="${cssvar('--ink-3')}">ONE CELL OF NINE IS INTERPRETABLE</text>`;
+  return `<svg viewBox="0 0 ${w+30} ${y0+3*ch+16}" width="100%" style="height:auto">${s}</svg>`;
+}
+
+function hrvSection(){
+  const n = nocturnal();
+  const head = `<div class="section-head">
+      <span class="eyebrow">Overnight · HRV and resting HR</span>
+      <span class="caption" id="garminToggle" style="cursor:pointer;text-decoration:underline">demo: ${garminConnected?"connected":"not connected"} ⇄</span>
+    </div>`;
+
+  if(n.state==="dark") return `<div class="section">${head}
+    <div class="card">
+      <div class="empty">
+        <p class="body">No overnight data yet.</p>
+        <p>HRV and resting heart rate arrive once a watch is connected. When they do, they join the signals above — neither of them will ever raise something on its own.</p>
+      </div>
+      <div class="dormant">
+        <span class="caption">What it will need first</span>
+        <p class="body-sm">28 nights before a baseline means anything, and at least 5 recorded nights in a week before that week counts. Below either, this stays dark rather than guessing.</p>
+      </div>
+    </div></div>`;
+
+  if(n.state==="gated") return `<div class="section">${head}
+    <div class="card"><div class="empty">
+      <p class="body">${n.why==="nights"?`Only ${n.n7} of the last 7 nights recorded.`:`${n.have} nights of baseline so far.`}</p>
+      <p>${n.why==="nights"?"Five nights in a week is the floor for a weekly average that means anything. It’ll fill in on its own.":"Twenty-eight is the floor. Until then there’s nothing honest to compare this week against."}</p>
+    </div></div></div>`;
+
+  const t1 = recoverySignals().filter(s=>s.tier===1 && s.agrees);
+  const escalates = n.cell.key==="interpretable" && t1.length>=1 && !n.lateLuteal;
+  const band = (label, now, base, sd, series, key) => {
+    const s = series.map(d=>({date:d.date, v:d[key]}));
+    return `<div style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span class="caption">${label}</span>
+        <span class="mono" style="font-size:11px;font-weight:600">${now.toFixed(key==="hrv"?1:1)}<span style="color:var(--ink-3);font-weight:500"> vs ${base.toFixed(1)} baseline</span></span>
+      </div>
+      ${lineSVG(s,{h:56, band:[base-0.5*sd, base+0.5*sd]})}
+    </div>`;
+  };
+
+  return `<div class="section">${head}
+    <div class="card" id="cardHRV">
+      <p class="lede"><b>${n.cell.label}.</b> ${n.cell.read}</p>
+      ${quadrantSVG(n.h, n.r)}
+      ${n.lateLuteal?`<div class="dormant" style="margin-top:12px">
+        <span class="caption">Cycle annotation</span>
+        <p class="body-sm">This window of your cycle typically moves these numbers on its own, often more than training does. Reading the dip as fatigue would be premature — so nothing escalates from here this week.</p>
+      </div>`:""}
+      <p class="quote" style="margin-top:12px">${
+        escalates
+          ? `Paired with ${t1.map(s=>s.name.toLowerCase()).join(" and ")} above, this is eligible to join the read — biometrics never speak alone.`
+          : n.cell.key==="interpretable"
+            ? "Nothing in your own words is moving with it, so this stays an observation about the numbers only."
+            : "Held quiet. It renders here so you can see it; it doesn’t reach the read above."}</p>
+      <div class="disclose" data-toggle="cardHRV">
+        <span class="dlabel">Show your own baselines</span>
+        <span>${n.conf} confidence</span>
+      </div>
+      <div class="detail">
+        ${band("lnRMSSD · 7-night mean", n.hrvNow, n.hrvBase, n.hrvSD, n.series, "hrv")}
+        ${band("Resting HR · 7-night mean", n.rhrNow, n.rhrBase, n.rhrSD, n.series, "rhr")}
+        <p class="quote" style="margin-top:10px">Bands are half of your own between-night spread — not a published range. ${n.baseDays} nights of baseline, ${n.n7} of the last 7 recorded. Confidence stays ${n.conf} until there are two cycles behind it.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function recoverySection(){
+  const sigs = recoverySignals();
+  const r = recoveryVerdict(sigs);
+  const bk = buckets();
+  const sleepSeries = bk.map(b=>({date:b.date, v:b.sleep}));
+  return `
+  <div class="section">
+    <div class="section-head">
+      <span class="eyebrow">Recovery · convergence</span>
+      <span class="caption">${r.tag}${sigs.filter(s=>s.agrees).length?" · "+sigs.filter(s=>s.agrees).length+" agreeing":""}</span>
+    </div>
+    <div class="card" id="cardRec">
+      <h2 class="rec-state ${r.alert?'is-alert':''}">${r.state}</h2>
+      <p class="body" style="margin-top:10px">${r.note}</p>
+      <div style="margin-top:14px">
+        ${[[1,"Tier 1 · your own words","Elevated 1–2 weeks before a problem in the runner cohorts. This is the evidenced side."],
+           [2,"Tier 2 · overnight, corroborating","Read only as a pair, only against your own baseline, never on its own."],
+           [3,"Tier 3 · annotation","Shown for context. Neither of these ever agrees or disagrees."]]
+          .map(([t,label,why])=>{
+            const rows = sigs.filter(x=>x.tier===t);
+            if(!rows.length) return "";
+            return `<div style="margin-top:${t===1?0:16}px">
+              <span class="caption" style="color:var(--ink-2)">${label}</span>
+              <p class="quote" style="margin:4px 0 2px;font-size:11.5px">${why}</p>
+              ${rows.map(x=>`
+                <div class="sig">
+                  <span class="sig-name">${x.name}</span>
+                  <span><span class="sig-val">${x.value}</span><div class="sig-delta">${x.delta}</div></span>
+                  <span class="sig-read ${x.agrees?"agrees":"holds"}">${
+                    x.gap ? "gap" : x.tier===3 ? "context" : x.agrees ? "agrees" : "holds"}</span>
+                </div>`).join("")}
+            </div>`;
+          }).join("")}
+      </div>
+      <div class="disclose" data-toggle="cardRec">
+        <span class="dlabel">Show sleep against load</span><span>HealthKit</span>
+      </div>
+      <div class="detail">
+        ${(()=>{
+          const srt = bk.map(b=>b.sleep).sort((a,b)=>a-b);
+          const q = f => srt[Math.min(srt.length-1, Math.floor(srt.length*f))];
+          const lo = q(0.25), hi = q(0.75);
+          return `<p class="lede" style="font-size:13.5px">Nightly sleep across the window. The gray band is the middle half of <em>your own</em> nights here — ${lo.toFixed(1)} to ${hi.toFixed(1)} hours — not a target anyone set for you.</p>
+            ${lineSVG(sleepSeries,{h:72, band:[lo,hi]})}`;
+        })()}
+        <p class="caption" style="margin-top:6px">Hours slept · higher is more</p>
+      </div>
+      <div class="dormant">
+        <span class="caption">The gap worth closing</span>
+        <p class="body-sm">Self-reported sleep <em>quality</em> is the best-evidenced single signal in the runner literature, and it isn’t captured. One tap a night would be a cheaper input than the whole watch pipeline.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function ladderSection(){
+  const c = COPY[scale];
+  const {ww} = window_();
+  const zones = ["easy","mp","hmp","k5"];
+  const rows = zones.map(z=>{
+    const per = ww.map(w=>{
+      const ds = days.filter(d=>d.week===w.w && d.zone===z && d.miles>0);
+      if(!ds.length) return null;
+      return {v:ds.reduce((s,d)=>s+d.neutralPace,0)/ds.length, mi:ds.reduce((s,d)=>s+d.miles,0)};
+    });
+    const vals = per.filter(Boolean).map(p=>p.v);
+    const mi   = per.filter(Boolean).reduce((s,p)=>s+p.mi,0);
+    const totalMi = ww.reduce((s,w)=>s+w.miles,0);
+    if(vals.length<2) return null;
+    const delta = Math.round(vals[vals.length-1]-vals[0]);
+    return {z, vals, now:vals[vals.length-1], delta, mi, pct:Math.round(mi/totalMi*100)};
+  });
+  const dropped = zones.filter((z,i)=>!rows[i]).map(z=>ZONE[z].name);
+  const shown = rows.filter(Boolean);
+
+  return `
+  <div class="section">
+    <div class="section-head">
+      <span class="eyebrow">The pace ladder</span>
+      <span class="caption">heat + hills priced out</span>
+    </div>
+    <div class="card" id="cardLadder">
+      <p class="lede">${ladderLede(shown)}</p>
+      ${dropped.length?`<p class="quote" style="margin:2px 0 10px">${dropped.join(" and ")} ${dropped.length>1?"aren’t":"isn’t"} shown — fewer than two weeks of that work in this window. Not missing, just not enough to draw a line through.</p>`:""}
+      <p class="caption" style="margin:-4px 0 4px">Pace plotted as pace · the line sits lower when you’re faster · no axis flips on this screen</p>
+      ${shown.map(r=>{
+        const Z = ZONE[r.z];
+        const col = cssvar(Z.text.replace('var(','').replace(')',''));
+        return `
+        <div class="zrow">
+          <span class="zswatch" style="background:${Z.color}"></span>
+          <div>
+            <div class="zname">${Z.name}</div>
+            <div class="zsub">${Z.sub}</div>
+            <div class="zvol">
+              <div class="zbar"><span style="width:${Math.min(100,r.pct)}%;background:${Z.color}"></span></div>
+              <div class="zsub" style="margin-top:4px">${r.mi.toFixed(0)} mi supporting · ${r.pct}% of the window</div>
+            </div>
+          </div>
+          <div>
+            <div class="zpace">${pace(r.now)}</div>
+            <div class="zdelta" style="${r.delta<0?'color:var(--ink)':''}">${
+              r.delta===0 ? "unchanged" : Math.abs(r.delta)+"s/mi "+(r.delta<0?"faster":"slower")}</div>
+          </div>
+          <div style="text-align:right">${sparkSVG(r.vals, col)}</div>
+        </div>`;
+      }).join("")}
+      <p class="quote" style="margin-top:12px">${(()=>{
+        const from = window_().dd[0].date;
+        const inWin = days.filter(d=>d.date>=from && d.miles>0);
+        const tot = inWin.reduce((s,d)=>s+d.miles,0);
+        const aer = inWin.filter(d=>["easy","moderate","long"].includes(d.zone)).reduce((s,d)=>s+d.miles,0);
+        const pct = Math.round(aer/tot*100);
+        return `${pct}% of the miles behind these paces were easy, moderate or long. `+
+          (pct>=75 ? "The base is carrying the sharp end, which is the arrangement you want."
+                   : "That aerobic share is thinner than the 80/20 shape — worth knowing, not worth acting on tonight.");
+      })()}</p>
+      <div class="disclose" data-toggle="cardLadder"><span class="dlabel">Show the numbers</span><span>neutral-equivalent</span></div>
+      <div class="detail">
+        <table class="num">
+          <thead><tr><th>Zone</th><th>Start</th><th>Now</th><th>Change</th><th>Miles</th></tr></thead>
+          <tbody>
+          ${shown.map(r=>`<tr><td>${ZONE[r.z].name}</td><td>${pace(r.vals[0])}</td><td>${pace(r.now)}</td>
+            <td>${r.delta===0?'<span class="absent">no change</span>':signed(r.delta,"s")}</td><td>${r.mi.toFixed(0)}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        <p class="quote" style="margin-top:10px">Paces shown are neutral-equivalent: what you’d have run cool, dry and flat. Raw paces sit slower through the summer.</p>
+      </div>
+    </div>
+  </div>`;
+}
+
+function metricsSection(){
+  const {ww} = window_();
+
+  /* HR at the easy pace band */
+  const hrSeries = ww.map(w=>{
+    const ds = days.filter(d=>d.week===w.w && d.hrAtEasy!=null);
+    return ds.length?{date:w.start, v:ds.reduce((s,d)=>s+d.hrAtEasy,0)/ds.length,
+                      neutral:ds.reduce((s,d)=>s+d.hrAtEasy-d.heatPct*105,0)/ds.length}:null;
+  }).filter(Boolean);
+  const hrGate = hrSeries.length < 3;
+  const hrNow = hrGate?0:Math.round(hrSeries[hrSeries.length-1].neutral),
+        hrThen = hrGate?0:Math.round(hrSeries[0].neutral);
+  /* the sentence is gated on effect size — a move inside the noise is reported as noise */
+  const hrDrop = hrThen - hrNow;
+  const hrLede = hrDrop >= 3
+    ? `Nine-minute miles cost you <b>${hrThen} bpm</b> at the start of this window. They cost <b>${hrNow}</b> now, once the heat is priced out. That’s the aerobic base, measured without a race.`
+    : hrDrop <= -3
+      ? `The same nine-minute miles are costing <b>${Math.abs(hrDrop)} more beats</b> than at the start of this window — ${hrThen} to ${hrNow}, heat already accounted for. Not a verdict on its own; look at it next to sleep and mood above.`
+      : `Heart rate at this pace ${hrDrop===0?"hasn’t moved":`moved <b>${Math.abs(hrDrop)} ${Math.abs(hrDrop)===1?"beat":"beats"}</b>`} across the window — inside the week-to-week noise on this measure. Nothing is proven here yet. Switch to Season to see whether it’s moving underneath.`;
+
+  /* drift on long / MP efforts */
+  const drSeries = ww.map(w=>{
+    const ds = days.filter(d=>d.week===w.w && d.drift!=null);
+    return ds.length?{date:w.start, v:+(ds.reduce((s,d)=>s+d.drift,0)/ds.length).toFixed(1)}:null;
+  }).filter(Boolean);
+
+  /* heat cost */
+  const htSeries = ww.map(w=>{
+    const ds = days.filter(d=>d.week===w.w && d.miles>0 && d.heatPct>0.005);
+    return ds.length?{date:w.start, v:+(ds.reduce((s,d)=>s+d.heatPct*d.neutralPace,0)/ds.length).toFixed(1)}:null;
+  }).filter(Boolean);
+
+  const gate = drSeries.length<4;
+
+  return `
+  <div class="section">
+    <div class="section-head">
+      <span class="eyebrow">What the work is costing you</span>
+      <span class="caption">3 metrics</span>
+    </div>
+
+    <div class="card" id="cardHR">
+      <span class="eyebrow ${hrDrop>=3?"eyebrow--coral":""}">${hrGate?"Heart rate at easy pace":hrDrop>=3?"Same pace, fewer beats":hrDrop<=-3?"Same pace, more beats":"Same pace, same beats — so far"}</span>
+      ${hrGate?`
+        <div class="empty">
+          <p class="body">Not enough easy running in the 8:45–9:15 band here to compare.</p>
+          <p>Three weeks with runs in that pace band will fill this in.</p>
+        </div>`:`
+      <p class="lede" style="margin-top:8px">${hrLede}</p>
+      ${lineSVG(hrSeries.map(p=>({date:p.date,v:Math.round(p.neutral)})),{h:70})}
+      <p class="caption" style="margin-top:6px">Heart rate at the 8:45–9:15 / mi band · lower is better · heat-corrected</p>
+      <div class="disclose" data-toggle="cardHR"><span class="dlabel">Show raw against corrected</span><span>${hrSeries.length} wks</span></div>
+      <div class="detail">
+        <table class="num">
+          <thead><tr><th>Week</th><th>Raw HR</th><th>Heat-corrected</th></tr></thead>
+          <tbody>${hrSeries.slice(-6).reverse().map(p=>`<tr><td>${fmtDay(p.date)}</td>
+            <td>${Math.round(p.v)}</td><td>${Math.round(p.neutral)}</td></tr>`).join("")}</tbody>
+        </table>
+        <p class="quote" style="margin-top:10px">Raw heart rate and heat-corrected heart rate can point opposite ways in summer. Both are true; only one of them is about fitness.</p>
+      </div>`}
+    </div>
+
+    <div class="card" id="cardDrift">
+      <span class="eyebrow">The drift inside the long run</span>
+      ${gate?`
+        <div class="empty">
+          <p class="body">Not enough long runs in this window to read a trend.</p>
+          <p>Four continuous efforts of an hour or more will fill this in. Switch to Block or Season to see it now.</p>
+        </div>`:`
+        ${(()=>{
+          const first = drSeries[0].v, recent = +(drSeries.slice(-3).reduce((s,p)=>s+p.v,0)/Math.min(3,drSeries.length)).toFixed(1);
+          const d = +(first-recent).toFixed(1);
+          const line = d >= 1
+            ? `Your heart rate used to climb <b>${first}%</b> through the back half of long runs. The last ${Math.min(3,drSeries.length)} average <b>${recent}%</b>. You’re holding together deeper into the run.`
+            : d <= -1
+              ? `Drift has gone the other way — <b>${first}%</b> early in this window, <b>${recent}%</b> now. Worth reading next to the heat card below before drawing anything from it.`
+              : `Drift is sitting flat at about <b>${recent}%</b> across this window. No direction to report yet.`;
+          const inRange = 5 >= Math.min(...drSeries.map(p=>p.v)) - 1 && 5 <= Math.max(...drSeries.map(p=>p.v)) + 1;
+          return `<p class="lede" style="margin-top:8px">${line}</p>
+            ${lineSVG(drSeries,{h:70, dash:inRange?5:null})}
+            <p class="caption" style="margin-top:6px">HR drift, first half → second half · lower is better${inRange?" · dashed line = 5%":" · 5% sits outside this range"}</p>`;
+        })()}
+        <div class="disclose" data-toggle="cardDrift"><span class="dlabel">Show the numbers</span><span>${drSeries.length} efforts</span></div>
+        <div class="detail">
+          <table class="num">
+            <thead><tr><th>Week</th><th>Drift</th><th>Rep sessions</th></tr></thead>
+            <tbody>${drSeries.slice(-6).reverse().map(p=>`<tr><td>${fmtDay(p.date)}</td><td>${p.v}%</td>
+              <td class="absent">not measured on reps</td></tr>`).join("")}</tbody>
+          </table>
+        </div>`}
+    </div>
+
+    <div class="card" id="cardHeat">
+      <span class="eyebrow">What the heat is taking</span>
+      ${htSeries.length<3?`
+        <div class="empty">
+          <p class="body">No hot runs in this window.</p>
+          <p>Once you run above 70°F with a dew point over 60, the cost shows up here.</p>
+        </div>`:`
+        ${(()=>{
+          const now = Math.round(htSeries[htSeries.length-1].v);
+          const peak = Math.round(Math.max(...htSeries.map(p=>p.v)));
+          return `<p class="lede" style="margin-top:8px">${
+            now < peak-1
+              ? `The heat is charging you about <b>${now} seconds a mile</b> now, down from ${peak} at the worst of it. Same pace, same evening — you’re acclimating.`
+              : `The heat is charging you about <b>${now} seconds a mile</b>, which is the steepest it has been in this window. Nothing here is about fitness — it’s weather, and it’s why the raw paces read flat.`
+          }</p>`;
+        })()}
+        ${lineSVG(htSeries,{h:66})}
+        <p class="caption" style="margin-top:6px">Seconds per mile charged by temp + dew point · lower is better</p>
+        <div class="disclose" data-toggle="cardHeat"><span class="dlabel">Show the numbers</span><span>${htSeries.length} wks</span></div>
+        <div class="detail">
+          <table class="num">
+            <thead><tr><th>Week</th><th>Cost</th></tr></thead>
+            <tbody>${htSeries.slice(-6).reverse().map(p=>`<tr><td>${fmtDay(p.date)}</td><td>${Math.round(p.v)} s/mi</td></tr>`).join("")}</tbody>
+          </table>
+          <p class="quote" style="margin-top:10px">This is why July can look like a plateau when it isn’t.</p>
+        </div>`}
+    </div>
+  </div>`;
+}
+
+function sessionsSection(){
+  const {dd} = window_();
+  const keys = dd.filter(d=>d.isKey).slice(-5).reverse();
+  return `
+  <div class="section">
+    <div class="section-head">
+      <span class="eyebrow">Key sessions</span>
+      <span class="caption">last ${keys.length}</span>
+    </div>
+    <div class="card">
+      ${keys.length?keys.map(d=>{
+        const Z = ZONE[d.zone]||ZONE.mp;
+        const M = MOODS[d.mood];
+        return `
+        <div class="ks">
+          <div class="ks-head">
+            <span class="ks-name" style="color:${Z.text}">${Z.name} ${d.miles.toFixed(1)} mi</span>
+            <span class="ks-pace">${pace(d.rawPace)} / mi</span>
+          </div>
+          <div class="ks-meta">
+            ${fmtDay(d.date)} · ${d.hr?d.hr+" BPM":'<span class="absent">no heart rate on this one</span>'} · ${d.tempF}°F / ${d.dewF}° DEW ·
+            ${d.drift!=null?"DRIFT "+d.drift+"%":'<span class="absent">drift not measured on reps</span>'}
+          </div>
+          <div style="margin-top:8px; display:flex; gap:6px; align-items:center">
+            <span class="mood-pill" style="color:${M.color};border:1px solid ${M.color}">${M.label}</span>
+            <span class="mood-pill" style="color:var(--ink-2);border:1px solid var(--rule)">neutral-eq ${pace(d.neutralPace)}</span>
+          </div>
+        </div>`;
+      }).join(""):`
+        <div class="empty">
+          <p class="body">No key sessions in this window.</p>
+          <p>Quality days and long runs land here as you log them.</p>
+        </div>`}
+    </div>
+  </div>`;
+}
+
+function seasonSection(){
+  if(scale!=="season") return "";
+  return `
+  <div class="section">
+    <div class="section-head"><span class="eyebrow">Race anchors</span><span class="caption">reality, not direction</span></div>
+    <div class="card">
+      <p class="lede">Your pace zones are anchored on the <b>3:28:41</b> you actually ran, not the 3:16 you’re chasing.</p>
+      ${RACES.map(r=>`
+        <div class="zrow" style="grid-template-columns:1fr 90px">
+          <div><div class="zname">${r.name}</div><div class="zsub">${fmtDay(r.date)} · ${r.note}</div></div>
+          <div class="zpace">${r.time}</div>
+        </div>`).join("")}
+      <p class="quote" style="margin-top:12px">Goal is direction. A race is proof. Everything on this screen is measured against the proof.</p>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   6 · RENDER
+   ============================================================ */
+function render(){
+  document.getElementById("plateFig").textContent = SCALES[scale].fig + " · JUL 30";
+  document.getElementById("scroll").innerHTML =
+    verdictSection() +
+    `<div class="e-rule"><span class="dot"></span></div>` +
+    calendarSection() +
+    recoverySection() +
+    hrvSection() +
+    `<div class="e-rule"><span class="dot"></span></div>` +
+    ladderSection() +
+    metricsSection() +
+    sessionsSection() +
+    seasonSection() +
+    `<p class="plate-foot">— restraint as foundation, intensity as accent —</p>`;
+
+  document.querySelectorAll("[data-scale]").forEach(n=>{
+    n.onclick = ()=>{ scale = n.dataset.scale; lens = null; render(); document.getElementById("scroll").scrollTop = 0; };
+  });
+  document.querySelectorAll("[data-lens]").forEach(n=>{
+    n.onclick = ()=>{ const v=n.dataset.lens; lens = (v==="clear"||lens===v) ? null : v; render(); };
+  });
+  const gt = document.getElementById("garminToggle");
+  if(gt) gt.onclick = ()=>{ garminConnected = !garminConnected; render(); };
+  document.querySelectorAll("[data-toggle]").forEach(n=>{
+    n.onclick = ()=> document.getElementById(n.dataset.toggle).classList.toggle("is-open");
+  });
+}
+
+try { render(); }
+catch(err){
+  document.getElementById("scroll").innerHTML =
+    `<div class="section"><span class="eyebrow eyebrow--coral">This screen failed to draw</span>
+     <h1 class="h-display" style="font-size:24px;margin-top:8px">Something broke.</h1>
+     <p class="body" style="margin-top:10px">${err && err.message ? err.message : String(err)}</p>
+     <p class="quote" style="margin-top:10px">Send this line back and it can be fixed.</p></div>`;
+  throw err;
+}
+</script>
+</body>
+</html>

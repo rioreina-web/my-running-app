@@ -44,6 +44,7 @@ import {
   splitsFromLaps,
   splitsFromPaceSegments,
   splitsFromExtractedIntervals,
+  isQualityWorkoutType,
   type CoachContext,
   type ScheduledLite as CoachScheduledLite,
   type ExecutedSummary,
@@ -137,7 +138,7 @@ async function loadAthleteStateBlock(userId: string): Promise<string> {
     const { data } = await adminClient
       .from("athlete_state")
       .select(
-        "recent_training_summary, weekly_avg_miles, rolling_28d_miles, fitness_prediction, fitness_trend, confirmed_races, load_distribution, fitness_signal, injury_risk_score, possible_injuries, niggle_recurrence, patterns, fitness_vs_6mo_ago_label",
+        "recent_training_summary, weekly_avg_miles, rolling_28d_miles, fitness_prediction, fitness_trend, confirmed_races, load_distribution, fitness_signal, injury_risk_score, possible_injuries, niggle_recurrence, patterns, fitness_vs_6mo_ago_label, goal_race, goal_time_seconds, current_phase, active_goals",
       )
       .eq("user_id", userId)
       .maybeSingle();
@@ -198,6 +199,33 @@ async function loadAthleteStateBlock(userId: string): Promise<string> {
           return Number.isFinite(sec) && sec > 0 ? `${dist} ${fmtT(sec)} (${when})` : `${dist} (${when})`;
         });
       lines.push(`- Recent races: ${recent.join(", ")}`);
+    }
+
+    // DIRECTION — what they're training toward + where they are in the arc. The
+    // insight was previously blind to this (it read fitness/races = reality, but
+    // not the goal = direction). Carried as quiet context: the coach reads a run
+    // THROUGH the goal, it does not recite the goal every time.
+    if (typeof st.current_phase === "string" && st.current_phase.length > 0) {
+      lines.push(`- Training phase: ${st.current_phase}`);
+    }
+    const goals = (st.active_goals as Array<Record<string, unknown>>) ?? [];
+    const g = goals[0]; // soonest upcoming goal
+    if (g) {
+      const bits: string[] = [String(g.title ?? "goal")];
+      const days = Number(g.days_until);
+      if (Number.isFinite(days)) bits.push(days >= 0 ? `${days} days out` : `${Math.abs(days)} days ago`);
+      const tgtPace = typeof g.target_pace_per_mile === "string" ? g.target_pace_per_mile : "";
+      if (tgtPace) bits.push(`target ${tgtPace}/mi`);
+      const gap = Number(g.gap_vs_current_sec_per_mile);
+      if (Number.isFinite(gap) && gap !== 0) {
+        bits.push(gap > 0 ? `${gap}s/mi off current fitness` : `${Math.abs(gap)}s/mi ahead of target`);
+      }
+      lines.push(`- Goal: ${bits.join(", ")}`);
+    } else if (typeof st.goal_race === "string" && st.goal_race.length > 0) {
+      const gt = typeof st.goal_time_seconds === "number" && st.goal_time_seconds > 0
+        ? ` in ${fmtT(st.goal_time_seconds)}`
+        : "";
+      lines.push(`- Goal: ${st.goal_race}${gt}`);
     }
 
     const ld = st.load_distribution as Record<string, unknown> | null;
@@ -681,7 +709,19 @@ async function generateInsight(
     : watchSplits.length > 0
     ? watchSplits
     : voiceSplits;
-  const splitsBlock = formatSplitsBlock(splits, coachCtx.zones);
+  // Quality sessions (intervals, tempo, race-pace reps) get the full split read.
+  // Easy / steady / long runs use the large-dropoff-only register: silent on
+  // normal drift (expected), but a genuinely big late fade still surfaces since
+  // it can signal fatigue or heat. This is what stopped an easy run from being
+  // called a "significant fade" while still catching a real dropoff.
+  const isQuality = isQualityWorkoutType(log.workout_type);
+  const splitsBlock = formatSplitsBlock(
+    splits,
+    coachCtx.zones,
+    isQuality
+      ? { detectPattern: true }
+      : { detectPattern: true, largeDropoffOnly: true },
+  );
 
   // Prescription-vs-execution — pass real pace_segments now so per-rep
   // comparison fires when the scheduled workout has structured steps.

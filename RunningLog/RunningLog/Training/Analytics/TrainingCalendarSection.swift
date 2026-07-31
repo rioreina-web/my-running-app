@@ -27,7 +27,17 @@ struct TrainingCalendarSection: View {
     /// Host presents the day detail (e.g. `route = .day($0)`).
     var onTapDay: (Date) -> Void
 
+    /// Distance/pace units — reads the app-wide Settings preference so this
+    /// section re-renders the instant the athlete flips Miles ↔ Kilometers.
+    @AppStorage("distanceUnit") private var distanceUnitRaw = DistanceUnit.miles.rawValue
+    private var unit: DistanceUnit { DistanceUnit(rawValue: distanceUnitRaw) ?? .miles }
+
     private static let moodWords = ["energized", "positive", "neutral", "tired", "struggling", "injured"]
+
+    /// Planned/estimated sessions use plum — a fourth semantic distinct from
+    /// pace (blue), mood (warm), and today (coral). Matches `--mood-speed` in
+    /// the design system. Change here to restyle every planned marker at once.
+    private static let plannedColor = Color(hex: "6B4A8A")
 
     private static let dowFmt: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEE"
@@ -36,14 +46,19 @@ struct TrainingCalendarSection: View {
 
     var body: some View {
         let weeks = vm.gridWeeks()
-        if weeks.isEmpty {
-            Text("No training in this window yet. Your logged runs land here.")
-                .font(.dripBody(14).italic())
-                .foregroundStyle(Color.drip.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 24)
-        } else {
-            VStack(alignment: .leading, spacing: 0) {
+        let hasData = weeks.contains { wk in
+            wk.cells.contains { $0.miles > 0 || $0.plannedMiles > 0 }
+        }
+        VStack(alignment: .leading, spacing: 0) {
+            periodNav
+
+            if !hasData {
+                Text("No training logged in this window. Page back to find earlier weeks.")
+                    .font(.dripBody(14).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 24)
+            } else {
                 switch vm.scope {
                 case .week:
                     weekView(weeks.last!)
@@ -52,20 +67,70 @@ struct TrainingCalendarSection: View {
                 }
                 legend.padding(.top, 20)
             }
-            .padding(.top, 4)
         }
+        .padding(.top, 4)
+    }
+
+    // MARK: Period navigation — page the calendar window through history
+    //
+    // Backward steps one whole window into the past (a week, a 5-week month,
+    // or a block); forward returns toward now and never pages past the
+    // current period, mirroring the This-Week pager. "Return to now" appears
+    // only when the athlete has scrolled off the current period.
+
+    private var periodNav: some View {
+        HStack(spacing: 12) {
+            Button { withAnimation(.easeInOut(duration: 0.2)) { vm.calendarGoBack() } } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.drip.coral)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 8)
+
+            VStack(spacing: 2) {
+                Text(vm.calendarRangeLabel)
+                    .font(.dripEyebrow(11)).tracking(1.3)
+                    .foregroundStyle(Color.drip.textPrimary)
+                if !vm.calendarIsCurrent {
+                    Button { withAnimation(.easeInOut(duration: 0.2)) { vm.calendarGoToCurrent() } } label: {
+                        Text("RETURN TO NOW")
+                            .font(.dripEyebrow(8.5)).tracking(1.0)
+                            .foregroundStyle(Color.drip.coral)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Button { withAnimation(.easeInOut(duration: 0.2)) { vm.calendarGoForward() } } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(vm.calendarIsCurrent ? Color.drip.textTertiary : Color.drip.coral)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.calendarIsCurrent)
+        }
+        .padding(.bottom, 16)
     }
 
     // MARK: WEEK — stacked day rows
 
     private func weekView(_ wk: GridWeek) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            // The period nav names the week; this row carries just the total.
             HStack(alignment: .firstTextBaseline) {
-                Text("WEEK OF \(wk.label.uppercased())")
+                Text("TOTAL")
                     .font(.dripEyebrow(10.5)).tracking(1.2)
-                    .foregroundStyle(Color.drip.textPrimary)
+                    .foregroundStyle(Color.drip.textTertiary)
                 Spacer()
-                Text("\(vm.formatMiles(weekMiles(wk))) MI")
+                Text("\(DistanceFormat.value(miles: weekMiles(wk), unit: unit)) \(unit.label)")
                     .font(.dripEyebrow(10.5)).tracking(0.8)
                     .foregroundStyle(Color.drip.textSecondary)
             }
@@ -130,7 +195,7 @@ struct TrainingCalendarSection: View {
             if c.isRest {
                 Text("REST").font(.dripEyebrow(8)).foregroundStyle(Color.drip.textTertiary)
             } else if c.miles > 0 {
-                Text(vm.formatMiles(c.miles))
+                Text(DistanceFormat.value(miles: c.miles, unit: unit))
                     .font(.dripStat(14)).foregroundStyle(chipText(c))
             }
         }
@@ -140,70 +205,99 @@ struct TrainingCalendarSection: View {
     // MARK: MONTH / BLOCK — calendar grid
 
     private func monthView(_ weeks: [GridWeek]) -> some View {
-        VStack(spacing: 5) {
+        // Scales: day-block size rides the biggest single day; the weekly
+        // well's fill rides the biggest week — both within the visible window.
+        let maxDay = max(0.001, weeks.flatMap { $0.cells }.map { max($0.miles, $0.plannedMiles) }.max() ?? 0)
+        let maxWeek = max(0.001, weeks.map(weekMiles).max() ?? 0)
+        return VStack(spacing: 5) {
             HStack(spacing: 5) {
                 ForEach(Array(["M", "T", "W", "T", "F", "S", "S"].enumerated()), id: \.offset) { item in
                     Text(item.element).font(.dripEyebrow(9)).foregroundStyle(Color.drip.textTertiary)
                         .frame(maxWidth: .infinity)
                 }
-                Text("MI").font(.dripEyebrow(9)).foregroundStyle(Color.drip.textSecondary)
-                    .frame(width: 30)
+                Text(unit.label).font(.dripEyebrow(9)).foregroundStyle(Color.drip.textSecondary)
+                    .frame(width: 40)
             }
             ForEach(weeks) { wk in
                 HStack(spacing: 5) {
-                    ForEach(wk.cells) { c in monthCell(c) }
-                    VStack(spacing: 2) {
-                        Text(vm.formatMiles(weekMiles(wk)))
-                            .font(.dripStat(12)).foregroundStyle(Color.drip.textPrimary)
-                        Text("MI").font(.dripEyebrow(6.5)).foregroundStyle(Color.drip.textTertiary)
-                    }
-                    .frame(width: 30, height: 64)
-                    .background(Color.drip.paperDeep)
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    ForEach(wk.cells) { c in monthCell(c, maxDay: maxDay) }
+                    weeklyMileageWell(wk, maxWeek: maxWeek)
                 }
             }
         }
     }
 
-    private func monthCell(_ c: DayCell) -> some View {
-        Button { tap(c) } label: {
+    /// The right-hand weekly total: a roomier well whose neutral fill scales
+    /// to the block's biggest week, so volume reads at a glance. Gray fill
+    /// keeps it out of the pace (blue) / mood (warm) / alert (coral) palettes.
+    private func weeklyMileageWell(_ wk: GridWeek, maxWeek: Double) -> some View {
+        let logged = weekMiles(wk)                                   // logged only
+        let planned = wk.cells.reduce(0) { $0 + $1.plannedMiles }    // plan estimate
+        let frac = min(1, CGFloat(logged / maxWeek))                 // fill = logged
+        return ZStack {
+            RoundedRectangle(cornerRadius: 8).fill(Color.drip.paperDeep)
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(Color.drip.textTertiary.opacity(0.30))
+                    .frame(height: geo.size.height * frac)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            }
+            VStack(spacing: 2) {
+                if logged > 0 {
+                    Text(DistanceFormat.value(miles: logged, unit: unit))
+                        .font(.dripStat(13)).foregroundStyle(Color.drip.textPrimary)
+                    Text(unit.label).font(.dripEyebrow(7)).tracking(0.9)
+                        .foregroundStyle(Color.drip.textSecondary)
+                    if planned > 0 {   // partly-logged week that still has plan ahead
+                        Text("+\(DistanceFormat.value(miles: planned, unit: unit))")
+                            .font(.dripEyebrow(7)).foregroundStyle(Self.plannedColor)
+                    }
+                } else if planned > 0 {   // fully upcoming week — show the estimate
+                    Text(DistanceFormat.value(miles: planned, unit: unit))
+                        .font(.dripStat(13)).foregroundStyle(Self.plannedColor)
+                    Text("EST").font(.dripEyebrow(7)).tracking(0.9)
+                        .foregroundStyle(Self.plannedColor)
+                } else {
+                    Text(DistanceFormat.value(miles: logged, unit: unit))
+                        .font(.dripStat(13)).foregroundStyle(Color.drip.textPrimary)
+                    Text(unit.label).font(.dripEyebrow(7)).tracking(0.9)
+                        .foregroundStyle(Color.drip.textSecondary)
+                }
+            }
+        }
+        .frame(width: 40, height: 72)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func monthCell(_ c: DayCell, maxDay: Double) -> some View {
+        let mood = moodWord(c.date)
+        return Button { tap(c) } label: {
             VStack(spacing: 3) {
                 Text("\(dayNum(c.date))")
                     .font(.dripEyebrow(8.5))
                     .foregroundStyle(c.isFuture ? Color.drip.textTertiary : Color.drip.textSecondary)
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(c.miles > 0 ? dayColor(c) : Color.clear)
-                        .frame(width: 26, height: 26)
-                        .overlay {
-                            if c.isFuture && c.miles == 0 {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .strokeBorder(Color.drip.textTertiary, style: StrokeStyle(lineWidth: 1.2, dash: [2.5]))
-                            } else if c.isRest {
-                                RoundedRectangle(cornerRadius: 6).fill(Color.drip.paperDeep)
-                            }
-                        }
-                    if c.miles > 0 {
-                        Text(vm.formatMiles(c.miles))
-                            .font(.dripStat(10)).foregroundStyle(chipText(c))
-                    }
-                }
+
                 Spacer(minLength: 0)
+                dayBlock(c, maxDay: maxDay)
+                Spacer(minLength: 0)
+
+                // Mood ribbon — its own channel, in the band beneath the block.
+                if let mood {
+                    RoundedRectangle(cornerRadius: 2).fill(moodColor(mood))
+                        .frame(width: 22, height: 4)
+                } else {
+                    Color.clear.frame(height: 4)
+                }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 64)
-            .padding(.top, 5)
+            .frame(height: 72)
+            .padding(.vertical, 5)
             .background(cellBackground(c))
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .overlay(alignment: .topLeading) {
                 if isKey(c) {
-                    RoundedRectangle(cornerRadius: 1).fill(Color.drip.textPrimary)
-                        .frame(width: 7, height: 7).padding(4)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                if let mood = moodWord(c.date) {
-                    Circle().fill(moodColor(mood)).frame(width: 7, height: 7).padding(4)
+                    FiveStar().fill(Color.drip.textPrimary)
+                        .frame(width: 9, height: 9).padding(4)
                 }
             }
             .overlay {
@@ -213,6 +307,56 @@ struct TrainingCalendarSection: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    /// The day tile: SIZE encodes distance, COLOR encodes pace. The mileage
+    /// number rides inside larger tiles and drops off the smallest ones —
+    /// short days stay clean and are a tap away.
+    private func dayBlock(_ c: DayCell, maxDay: Double) -> some View {
+        let side = tileSide(c.isPlanned ? c.plannedMiles : c.miles, maxDay: maxDay)
+        return ZStack {
+            if c.isPlanned {
+                // Planned/upcoming session: plum, sized by its estimate, so it
+                // reads as distinct from a solid-blue logged run.
+                RoundedRectangle(cornerRadius: 5).fill(Self.plannedColor)
+                    .frame(width: side, height: side)
+                Text(DistanceFormat.value(miles: c.plannedMiles, unit: unit))
+                    .font(.dripStat(tileFont(side)))
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.7)
+            } else if c.isFuture && c.miles == 0 {
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color.drip.textTertiary, style: StrokeStyle(lineWidth: 1.2, dash: [2.5]))
+                    .frame(width: 22, height: 22)
+                Text("—").font(.dripEyebrow(9)).foregroundStyle(Color.drip.textTertiary)
+            } else if c.isRest {
+                RoundedRectangle(cornerRadius: 5).fill(Color.drip.paperDeep)
+                    .frame(width: 20, height: 20)
+                Text("REST").font(.dripEyebrow(6.5)).foregroundStyle(Color.drip.textTertiary)
+            } else if c.miles > 0 {
+                RoundedRectangle(cornerRadius: 5).fill(dayColor(c))
+                    .frame(width: side, height: side)
+                // Every run shows its distance; the numeral scales with the tile.
+                Text(DistanceFormat.value(miles: c.miles, unit: unit))
+                    .font(.dripStat(tileFont(side)))
+                    .foregroundStyle(chipText(c))
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .frame(height: 38)
+    }
+
+    /// Map a day's distance to a tile side length, 22…38 pt. The floor is
+    /// tall enough that even a short run's distance still fits inside.
+    private func tileSide(_ miles: Double, maxDay: Double) -> CGFloat {
+        guard miles > 0 else { return 22 }
+        let t = min(1, CGFloat(miles / maxDay))
+        return 22 + 16 * t
+    }
+
+    /// Numeral scales with the tile so every run stays labelled.
+    private func tileFont(_ side: CGFloat) -> CGFloat {
+        side >= 32 ? 10 : side >= 27 ? 9 : 8
     }
 
     private func cellBackground(_ c: DayCell) -> Color {
@@ -249,37 +393,77 @@ struct TrainingCalendarSection: View {
     // MARK: Legend
 
     private var legend: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("PACE · EASY TO HARD").font(.dripEyebrow(9.5)).tracking(1.1)
-                .foregroundStyle(Color.drip.textSecondary)
-            HStack(spacing: 2) {
-                Rectangle().fill(IntensityRamp.easy)
-                Rectangle().fill(IntensityRamp.aerobic)
-                Rectangle().fill(IntensityRamp.threshold)
+        VStack(alignment: .leading, spacing: 14) {
+            // Pace — color
+            VStack(alignment: .leading, spacing: 8) {
+                Text("PACE · EASY TO HARD").font(.dripEyebrow(9.5)).tracking(1.1)
+                    .foregroundStyle(Color.drip.textSecondary)
+                HStack(spacing: 2) {
+                    Rectangle().fill(IntensityRamp.easy)
+                    Rectangle().fill(IntensityRamp.aerobic)
+                    Rectangle().fill(IntensityRamp.threshold)
+                }
+                .frame(height: 10)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
             }
-            .frame(height: 10)
-            .clipShape(RoundedRectangle(cornerRadius: 3))
-            HStack(spacing: 14) {
-                legendKey(square: true, color: Color.drip.textPrimary, "Key session")
-                legendKey(square: false, color: Color.drip.positive, "Mood")
-                legendKey(square: false, color: Color.drip.coral, "Today")
+
+            // Size — distance
+            HStack(spacing: 12) {
+                Text("SIZE · \(unit.short.uppercased()) RUN").font(.dripEyebrow(9.5)).tracking(1.1)
+                    .foregroundStyle(Color.drip.textSecondary)
                 Spacer()
+                sizeSwatch(12); sizeSwatch(17); sizeSwatch(22)
+            }
+
+            // Markers
+            HStack(spacing: 16) {
+                HStack(spacing: 6) {
+                    FiveStar().fill(Color.drip.textPrimary).frame(width: 9, height: 9)
+                    Text("KEY SESSION").font(.dripEyebrow(8.5)).tracking(0.6)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+                HStack(spacing: 6) {
+                    Circle().strokeBorder(Color.drip.coral, lineWidth: 1.5).frame(width: 9, height: 9)
+                    Text("TODAY").font(.dripEyebrow(8.5)).tracking(0.6)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2).fill(Self.plannedColor).frame(width: 9, height: 9)
+                    Text("PLANNED").font(.dripEyebrow(8.5)).tracking(0.6)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+                Spacer()
+            }
+
+            // Mood — warm ribbon, its own channel
+            VStack(alignment: .leading, spacing: 8) {
+                Text("MOOD").font(.dripEyebrow(9.5)).tracking(1.1)
+                    .foregroundStyle(Color.drip.textSecondary)
+                HStack(spacing: 12) {
+                    moodLegendItem("energized"); moodLegendItem("positive"); moodLegendItem("neutral")
+                    Spacer()
+                }
+                HStack(spacing: 12) {
+                    moodLegendItem("tired"); moodLegendItem("struggling"); moodLegendItem("injured")
+                    Spacer()
+                }
             }
         }
     }
 
-    private func legendKey(square: Bool, color: Color, _ label: String) -> some View {
+    private func sizeSwatch(_ s: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 3).fill(IntensityRamp.aerobic)
+            .frame(width: s, height: s)
+    }
+
+    private func moodLegendItem(_ word: String) -> some View {
         HStack(spacing: 6) {
-            Group {
-                if square {
-                    RoundedRectangle(cornerRadius: 1).fill(color).frame(width: 9, height: 9)
-                } else {
-                    Circle().fill(color).frame(width: 9, height: 9)
-                }
-            }
-            Text(label.uppercased()).font(.dripEyebrow(8.5)).tracking(0.6)
+            RoundedRectangle(cornerRadius: 2).fill(moodColor(word))
+                .frame(width: 14, height: 4)
+            Text(word.uppercased()).font(.dripEyebrow(8)).tracking(0.5)
                 .foregroundStyle(Color.drip.textTertiary)
         }
+        .frame(width: 96, alignment: .leading)
     }
 
     private var keyTag: some View {
@@ -329,6 +513,9 @@ struct TrainingCalendarSection: View {
     private func sessionTitle(_ c: DayCell, _ ss: [SessionDetail]) -> String {
         if c.isRest { return "Rest" }
         if c.isFuture && c.miles == 0 { return "Planned" }
+        // Label the day by its KEY run (hardest), not the first (often easy) leg
+        // of a doubles day — otherwise a track session reads as "Recovery".
+        if let dom = vm.dominantSession(on: c.date) { return dom.typeLabel }
         if let first = ss.first { return first.typeLabel }
         return "Run"
     }
@@ -337,8 +524,10 @@ struct TrainingCalendarSection: View {
         if c.isRest { return "Nothing logged" }
         if c.isFuture && c.miles == 0 { return "Upcoming" }
         var parts: [String] = []
-        if c.miles > 0 { parts.append("\(vm.formatMiles(c.miles)) mi") }
-        if let p = ss.first?.pace { parts.append("\(p) / mi") }
+        if c.miles > 0 { parts.append("\(DistanceFormat.value(miles: c.miles, unit: unit)) \(unit.short)") }   // whole-day total
+        if let p = vm.dominantSession(on: c.date)?.pace {
+            parts.append("\(DistanceFormat.convertPaceString(p, to: unit)) / \(unit.short)")
+        }
         if ss.count > 1 { parts.append("\(ss.count) runs") }
         return parts.joined(separator: " · ")
     }
@@ -361,5 +550,29 @@ struct TrainingCalendarSection: View {
         case "injured":    return Color.drip.injured
         default:           return Color.drip.neutral
         }
+    }
+}
+
+// MARK: - Key-session star
+//
+// A filled five-point star marking a key session, drawn as a vector so it
+// stays faithful to the design system (SF Symbols are flagged as an
+// emoji-rule violation — see `MoodBadge` in DesignSystem.swift).
+
+private struct FiveStar: Shape {
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let outer = min(rect.width, rect.height) / 2
+        let inner = outer * 0.42
+        var path = Path()
+        for i in 0..<10 {
+            let angle = -Double.pi / 2 + Double(i) * Double.pi / 5
+            let r = i.isMultiple(of: 2) ? outer : inner
+            let pt = CGPoint(x: center.x + CGFloat(cos(angle)) * r,
+                             y: center.y + CGFloat(sin(angle)) * r)
+            if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
+        }
+        path.closeSubpath()
+        return path
     }
 }

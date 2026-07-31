@@ -15,10 +15,12 @@ import {
   findSimilarPriorWorkout,
   formatProgressionBlock,
   formatSplitsBlock,
+  isQualityWorkoutType,
   splitsFromPaceSegments,
   splitsFromExtractedIntervals,
   type ScheduledLite as CoachScheduledLite,
 } from "../_shared/coach-context.ts";
+import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -735,11 +737,37 @@ Deno.serve(async (req) => {
         avg_heart_rate?: number;
       }> | null,
     );
-    const splitsBlock = formatSplitsBlock(watchSplits, coachCtx.zones);
+    // Quality sessions get the full split read; easy / steady / long runs use
+    // the large-dropoff-only register — silent on normal drift, but a real big
+    // late fade still surfaces (matches generate-workout-insight).
+    const splitsBlock = isQualityWorkoutType(existingType)
+      ? formatSplitsBlock(watchSplits, coachCtx.zones, { detectPattern: true })
+      : formatSplitsBlock(watchSplits, coachCtx.zones, {
+          detectPattern: true,
+          largeDropoffOnly: true,
+        });
+
+    // Athlete-state block — the SAME canonical context the Daily Read / Coach
+    // surfaces read (goals, phase, mileage, load, niggles, patterns). Without
+    // this the voice-log insight was goal-blind and thinner than the HealthKit
+    // insight; now both reason from the same direction. Wrapped so a state
+    // failure never blocks memo ingest — saving the memo matters more than the
+    // insight.
+    let athleteStateContext = "";
+    try {
+      const st = await getOrBuildAthleteState(supabase, authUserId);
+      const block = stateToPromptContext(st);
+      if (block) athleteStateContext = `\n\n## Athlete state\n${block}`;
+    } catch (err) {
+      console.warn("process-training-memo: athlete-state load failed:", err);
+    }
 
     let coachAnchorContext = "";
+    if (athleteStateContext) {
+      coachAnchorContext = athleteStateContext;
+    }
     if (pacesBlock) {
-      coachAnchorContext = `\n\n${pacesBlock}`;
+      coachAnchorContext += `\n\n${pacesBlock}`;
     }
     if (classificationLine) {
       coachAnchorContext += `\n\n## Zone classification (deterministic — trust this over your own pace math)\n${classificationLine}`;
@@ -782,7 +810,7 @@ Deno.serve(async (req) => {
         const paceS = avgPaceSec % 60;
         garminContext += `Total: ${Number(existingRecord.workout_distance_miles).toFixed(1)} mi in ${Math.round(totalMin)} min (${paceM}:${String(paceS).padStart(2, "0")}/mi avg)\n`;
       }
-      garminContext += "\nUSE THIS DATA in your coach_insight. Compare what the runner SAID about their workout to what the WATCH DATA shows. Note discrepancies. Analyze effort distribution. Were easy segments actually easy? Did they fade or negative split? Be specific about paces.\n";
+      garminContext += "\nUSE THIS DATA in your coach_insight. Compare what the runner SAID about their workout to what the WATCH DATA shows. Note discrepancies. Analyze effort distribution. Were easy segments actually easy? Only call out a fade or negative split on a quality session (tempo / intervals / race-pace reps) AND when it's a real, sizable pace change — normal drift on an easy, steady, or long run is expected and must not be labeled a fade. Be specific about paces.\n";
     }
 
     // Structured prompt with distinct fields and few-shot examples

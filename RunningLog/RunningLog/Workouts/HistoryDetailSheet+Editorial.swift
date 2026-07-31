@@ -20,6 +20,7 @@
 //
 
 import SwiftUI
+import Supabase
 
 // MARK: - File-private date helpers
 //
@@ -61,20 +62,44 @@ extension HistoryDetailSheet {
                 // ── Top hairline ─────────────────────────────────────────
                 DripHairline().padding(.horizontal, 24).padding(.top, 24)
 
-                // ── Day heading ──────────────────────────────────────────
+                // ── Day heading / custom title ───────────────────────────
+                // Header shows the athlete's own title when set, with the
+                // day + date carried underneath as an eyebrow so the date
+                // context is never lost. With no title, the day-of-week is
+                // the header (original behavior). In edit mode the title is
+                // a free-text field (blank = falls back to the date).
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(vm.currentEntry.displayDate.dayOfWeekString)
-                        .font(.dripDisplay(44))
-                        .foregroundStyle(Color.drip.textPrimary)
-
                     if isEditing {
-                        EditableMoodPicker(selectedMood: $editMood)
-                    } else if let mood = vm.currentEntry.mood, !mood.isEmpty {
-                        MoodBadge(mood: mood)
-                    } else {
-                        Text("— " + vm.currentEntry.displayDate.fullDateString + " —")
-                            .font(.dripBody(13).italic())
+                        TextField("Add a title (optional)", text: $editTitle, axis: .vertical)
+                            .font(.dripDisplay(30))
+                            .foregroundStyle(Color.drip.textPrimary)
+                            .lineLimit(1 ... 3)
+                        Text(headerDateEyebrow)
+                            .font(.dripEyebrow(11)).tracking(1.2)
                             .foregroundStyle(Color.drip.textTertiary)
+                        EditableMoodPicker(selectedMood: $editMood)
+                    } else {
+                        // The workout is the title (athlete's own title wins if
+                        // set); the day-of-week is the fallback only when there's
+                        // no workout to name.
+                        let headerTitle = vm.currentEntry.resolvedTitle
+                        Text(headerTitle ?? vm.currentEntry.displayDate.dayOfWeekString)
+                            .font(.dripDisplay(44))
+                            .foregroundStyle(Color.drip.textPrimary)
+
+                        if headerTitle != nil {
+                            Text(headerDateEyebrow)
+                                .font(.dripEyebrow(11)).tracking(1.2)
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+
+                        if let mood = vm.currentEntry.mood, !mood.isEmpty {
+                            MoodBadge(mood: mood)
+                        } else if headerTitle == nil {
+                            Text("— " + vm.currentEntry.displayDate.fullDateString + " —")
+                                .font(.dripBody(13).italic())
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,7 +146,7 @@ extension HistoryDetailSheet {
                 // notes field bound to $editNotesText (persisted by
                 // saveEdits as cleaned_notes).
                 if isEditing {
-                    editorialSection(eyebrow: "NOTES") {
+                    editorialSection(eyebrow: "VOICE SUMMARY") {
                         TextField("How did the run feel?", text: $editNotesText, axis: .vertical)
                             .font(.dripBody(14))
                             .foregroundStyle(Color.drip.textPrimary)
@@ -131,9 +156,25 @@ extension HistoryDetailSheet {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 } else if let cleaned = vm.currentEntry.cleanedNotes, !cleaned.isEmpty {
-                    editorialSection(eyebrow: "VOICE SUMMARY") {
+                    // Read mode: the eyebrow row carries an inline EDIT link so
+                    // the athlete can jump straight into editing the summary,
+                    // not just via the toolbar Edit button.
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            DripEyebrow(text: "VOICE SUMMARY")
+                            Spacer()
+                            Button { enterEditMode() } label: {
+                                Text("EDIT")
+                                    .font(.dripCaption(10)).tracking(1.4)
+                                    .foregroundStyle(Color.drip.coral)
+                            }
+                            .buttonStyle(.plain)
+                        }
                         FormattedSummaryText(text: cleaned)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 22)
                 }
 
                 // ── Verbatim transcript ──────────────────────────────────
@@ -161,6 +202,33 @@ extension HistoryDetailSheet {
                 if !isEditing, vm.linkedStreamLogId != nil {
                     editorialSection(eyebrow: "WORKOUT") {
                         WorkoutRepReceiptView(workoutId: workoutDetailId)
+                    }
+                }
+
+                // ── Compare — "The Effort, compared" entry point ─────────
+                // Gated the same way as the WORKOUT section: only a session
+                // with a real lap stream can be segmented and compared.
+                // Opens the comparison sheet on the auto-suggested fairest
+                // prior session (CHANGE ↗ inside for the manual picker).
+                if !isEditing, vm.linkedStreamLogId != nil {
+                    Button {
+                        showComparison = true
+                    } label: {
+                        HStack {
+                            DripEyebrow(text: "VS. YOUR LAST SIMILAR SESSION")
+                            Spacer()
+                            Text("COMPARE ↗")
+                                .font(.dripCaption(10))
+                                .tracking(1.4)
+                                .foregroundStyle(Color.drip.coral)
+                        }
+                        .padding(.vertical, 10)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                    .overlay(alignment: .bottom) {
+                        DripHairline().padding(.horizontal, 24)
                     }
                 }
 
@@ -219,6 +287,16 @@ extension HistoryDetailSheet {
                 Spacer().frame(height: 40)
             }
         }
+    }
+
+    // Day + date eyebrow shown under a custom title (or above the mood
+    // picker in edit mode) so the entry's date context survives when the
+    // athlete replaces the day-of-week header with their own title.
+    // e.g. "WEDNESDAY  ·  MAY 22".
+    private var headerDateEyebrow: String {
+        vm.currentEntry.displayDate.dayOfWeekString.uppercased()
+            + "  ·  "
+            + vm.currentEntry.displayDate.editorialDateString
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -428,6 +506,21 @@ private struct VoiceTranscriptText: View {
 
     private func load() async {
         guard text == nil else { return }
+        // Transcripts live in the PRIVATE `training-memos` bucket, but the stored
+        // URL is a public-object path a private bucket rejects (400 "Bucket not
+        // found") — a naked GET can never read it. Download by path through the
+        // authenticated storage client, which carries the athlete's session.
+        // Fall back to a direct fetch for any genuinely public URL.
+        if let path = Self.storagePath(from: url) {
+            do {
+                let data = try await supabase.storage.from("training-memos").download(path: path)
+                text = (String(data: data, encoding: .utf8) ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return
+            } catch {
+                // fall through to a direct URL fetch (handles legacy public URLs)
+            }
+        }
         guard let u = URL(string: url) else { failed = true; return }
         do {
             let (data, response) = try await URLSession.shared.data(from: u)
@@ -440,5 +533,15 @@ private struct VoiceTranscriptText: View {
         } catch {
             failed = true
         }
+    }
+
+    /// Bucket-relative object path from a stored `training-memos` URL (public or
+    /// signed), e.g. ".../training-memos/<uid>/<file>.txt" → "<uid>/<file>.txt".
+    /// Strips any signed-URL query token so `download(path:)` gets the bare path.
+    private static func storagePath(from urlString: String) -> String? {
+        guard let range = urlString.range(of: "/training-memos/") else { return nil }
+        var path = String(urlString[range.upperBound...])
+        if let q = path.firstIndex(of: "?") { path = String(path[..<q]) }
+        return path.removingPercentEncoding ?? path
     }
 }

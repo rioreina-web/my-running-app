@@ -6,9 +6,22 @@
 //  see" surface (the tab was previously a tombstone; see git history in
 //  this folder). Built from the approved prototype `trends-tab-prototype.html`.
 //
-//  Structure: editorial header → range segmenter → live readout → the
-//  unified multi-track chart (`UnifiedTrainingChart`) → auto-surfaced
-//  pattern insights → an ask bar that hands off to The Read.
+//  Simplified 2026-07-27 (Rio) into ONE tab, one scroll, four sections
+//  ordered by the question being asked:
+//
+//    header → range segmenter → live readout
+//    1 · Pace spectrum   (PaceSignalView — where the miles live)
+//    2 · ACWR            (VolumeDetailView — acute:chronic band + week totals)
+//    3 · Key sessions    (TrendsSessionGrid + KeySessionsDetailView + head-to-head)
+//    4 · Recovery        (RecoveryReadView + MoodDetailView + NigglesDetailView)
+//        Race prediction (RacePredictionTrack) → auto-surfaced insights.
+//
+//  Dropped in this pass: the `UnifiedTrainingChart` multi-track hero — each of
+//  its tracks now has a section that reads it better, and it was the heaviest
+//  thing on the tab. Kept in the repo if the vertical week-read is wanted back.
+//  Still unlinked, not deleted: the Sharp End fitness read, the pace×effort
+//  map, the workload scatter, the Compare trend grid, Threshold work, and the
+//  Trends 2 tab (`TrendsInsightsTabView`).
 //
 //  Voice + brand rules honored: coral as punctuation (key-session dots +
 //  scrub marker only), mood via the muted mood palette, niggles labeled
@@ -20,24 +33,27 @@
 //
 
 import SwiftUI
+import Supabase
 
 struct TrendsTabView: View {
     @Environment(\.selectedTab) private var selectedTab
-    @Environment(\.coachAsk) private var coachAsk
 
     @State private var range: TrendsRange = .twelveWeek
     @State private var scrubIndex: Int?
     @State private var service: TrendsService
-    /// D · deep-dive group (Effort · Fitness · Signal) — swaps the rows below.
-    @State private var deepGroup: DeepGroup = .fitness
-    /// Which deep-dive row is expanded in place (by title); nil = all collapsed.
-    @State private var expandedRow: String?
-    // Canonical intensity-weighted ACWR from athlete_state — passed to the
-    // volume drilldown so it stops recomputing its own miles-based ratio (§1).
-    @State private var canonicalAcwr: Double?
-    private enum DeepGroup: String, CaseIterable {
-        case effort = "Effort", fitness = "Fitness", signal = "Signal"
-    }
+    // Canonical athlete_state projection: the intensity-weighted ACWR passed to
+    // the volume section (so it stops recomputing its own miles-based ratio, §1)
+    // and the recovery read (readiness, hard-session balance, body signals).
+    @State private var athleteState: TrendsAthleteState?
+    // Head-to-head pair (the one Compare surface that survived the fitness
+    // cull). Seeded to the two most recent sessions on first load.
+    @State private var compareA: String = ""
+    @State private var compareB: String = ""
+    @State private var compareZones = PaceZonesService.shared
+    @State private var openWorkoutLog: TrainingLog?
+    #if DEBUG
+    @State private var showV2 = false
+    #endif
 
     init(service: TrendsService = .shared) {
         _service = State(initialValue: service)
@@ -48,6 +64,7 @@ struct TrendsTabView: View {
         Array(service.weeks.suffix(range.rawValue))
     }
 
+    /// The chart window. One granularity now — weekly.
     /// The week the readout describes: the scrubbed one if the athlete is
     /// scrubbing, else the most recent week with actual training. The
     /// current week is often a partial, run-less week (early-week), so
@@ -85,9 +102,38 @@ struct TrendsTabView: View {
         .task(id: selectedTab.wrappedValue) {
             if selectedTab.wrappedValue == 4 {
                 await service.refresh()
-                canonicalAcwr = await TrendsAthleteState.fetch()?.acwr
+                athleteState = await TrendsAthleteState.fetch()
             }
         }
+        // Head-to-head "Open workout" — presented from the tab, not from the
+        // card, so the sheet survives the card re-rendering on scrub.
+        .sheet(item: $openWorkoutLog) { log in
+            HistoryDetailSheet(entry: log, onUpdate: {})
+        }
+        #if DEBUG
+        .fullScreenCover(isPresented: $showV2) {
+            NavigationStack {
+                // Seed with preview days so the calendar renders in-sim without
+                // depending on a signed-in user or a synced backend — this
+                // entry exists to iterate on the v2 visuals, not the data path.
+                // Live surface: the same service the tab already loaded with
+                // your real timeline. No preview seed, no demo biometrics — the
+                // demo-only sections show their honest empty states.
+                TrendsV2View(service: service)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Close") { showV2 = false }
+                        }
+                        ToolbarItem(placement: .principal) {
+                            Text("TRENDS · V2")
+                                .font(.dripEyebrow(11)).tracking(1.3)
+                                .foregroundStyle(Color.drip.textSecondary)
+                        }
+                    }
+                    .toolbarBackground(Color.drip.background, for: .navigationBar)
+            }
+        }
+        #endif
     }
 
     // MARK: state-aware content
@@ -118,309 +164,186 @@ struct TrendsTabView: View {
         }
     }
 
+    /// One tab, one scroll, four sections, one rhythm. Every section is built
+    /// the same way — eyebrow + one line of what it answers, then its content —
+    /// so once you've read 01 you know how to read 04.
+    ///
+    ///   01 PACE SPECTRUM   where the miles live
+    ///   02 ACWR            acute vs. chronic load, with the week's totals
+    ///   03 KEY SESSIONS    the grid, the detail, then two side by side
+    ///   04 RECOVERY        how well you're resting, then mood and niggles
+    ///      RACE PREDICTION where this points
+    ///
+    /// Restructured 2026-07-27 (Rio, simplification pass). Pace spectrum leads;
+    /// ACWR is promoted to its own section carrying just the three totals + the
+    /// acute:chronic band; Recovery leads with a readiness/rest read off
+    /// athlete_state and folds mood + niggles beneath it.
+    ///
+    /// The `UnifiedTrainingChart` multi-track hero was dropped in this pass. It
+    /// stacked volume/sessions/mood/niggles on one shared x-axis — a genuinely
+    /// good overlap — but each of those now has a section that reads it better,
+    /// and the hero was the single heaviest thing on the tab. Kept in the repo
+    /// (`UnifiedTrainingChart.swift`) if the vertical read is wanted back.
     private var loadedContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // A · the 5-second view — what moved this week, one card per group.
-            Text("THIS WEEK")
-                .font(.dripEyebrow(11)).tracking(1.3)
-                .foregroundStyle(Color.drip.textSecondary)
-                .padding(.top, 14)
-            thisWeekStrip
-                .padding(.top, 8)
-
             segmenter
-                .padding(.top, 20)
+                .padding(.top, 16)
 
             readout
                 .padding(.top, 14)
 
-            UnifiedTrainingChart(weeks: window, scrubIndex: $scrubIndex)
+            // 01 · PACE SPECTRUM — where the miles live
+            sectionHead("Pace spectrum", "Every mile, sorted by pace")
+                .padding(.top, 22)
+            PaceSignalView(embedded: true)
                 .padding(.top, 6)
 
+            EditorialRule().padding(.vertical, 22)
+
+            // 02 · ACWR — the three week totals and the acute:chronic band.
+            // The multi-track Load hero was dropped in the simplification pass;
+            // ACWR stands on its own with just enough volume context to read it.
+            sectionHead("ACWR", "Acute vs. chronic load, with the week's totals")
+            VolumeDetailView(
+                weeks: service.weeks,
+                flagged: service.flagged,
+                trimmed: service.trimmed,
+                onSetExcluded: { id, excluded in
+                    Task { await service.setExcluded(id, excluded: excluded) }
+                },
+                canonicalAcwr: athleteState?.acwr,
+                embedded: true
+            )
+            .padding(.top, 14)
+
+            EditorialRule().padding(.vertical, 22)
+
+            // 03 · KEY SESSIONS — grid, detail, then two side by side.
+            // Head-to-head lives here rather than as its own section: it is
+            // what you get when you want two of these sessions compared, not
+            // a separate destination.
+            sectionHead("Key sessions", "Every session, on the day you ran it")
+            TrendsSessionGrid(
+                weeks: window,
+                sessions: service.keySessions,
+                scrubIndex: $scrubIndex
+            )
+            .padding(.top, 10)
+            KeySessionsDetailView(
+                sessions: service.keySessions,
+                volume: service.keyVolume,
+                embedded: true
+            )
+            .padding(.top, 12)
+            subHead("Two side by side")
+                .padding(.top, 22)
+            headToHead
+                .padding(.top, 8)
+
+            EditorialRule().padding(.vertical, 22)
+
+            // 04 · RECOVERY — how well you're resting leads (readiness + the
+            // load/rest balance off athlete_state), then how it felt and what
+            // the body said (mood + niggles from the voice logs). Mood and
+            // Niggles self-head, so they need no sub-eyebrow of their own.
+            sectionHead("Recovery", "How well you're resting, and what the body's saying")
+            RecoveryReadView(
+                readiness: athleteState?.last_readiness_score,
+                hardSessions28d: athleteState?.load_distribution?.recovery_read?.hard_sessions_28d,
+                avgDaysBetweenHard: athleteState?.load_distribution?.recovery_read?.avg_days_between_hard,
+                downWeek: athleteState?.load_distribution?.recovery_read?.down_week,
+                bodySignalCount: athleteState?.bodySignalCount ?? 0,
+                embedded: true
+            )
+            .padding(.top, 6)
+            MoodDetailView(weeks: service.weeks, embedded: true)
+                .padding(.top, 24)
+            NigglesDetailView(weeks: service.weeks, embedded: true)
+                .padding(.top, 24)
+
+            EditorialRule().padding(.vertical, 22)
+
+            // RACE PREDICTION — where the block points
+            sectionHead("Race prediction", "What this block projects to")
             RacePredictionTrack()
-                .padding(.top, 14)
+                .padding(.top, 8)
 
-            goDeeper
-                .padding(.top, 16)
-
-            EditorialRule()
-                .padding(.vertical, 20)
+            EditorialRule().padding(.vertical, 22)
 
             insights
-
-            askBar
-                .padding(.top, 18)
         }
     }
 
-    // MARK: drill-down entries
-
-    /// Each track on the timeline opens a full detail screen. Destinations
-    /// are driven by the full loaded window (not the range slice) so the
-    /// detail is rich regardless of the overview's selected range.
-    private var goDeeper: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("GO DEEPER")
+    /// Section eyebrow + one line of what the section answers.
+    private func sectionHead(_ title: String, _ sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title.uppercased())
                 .font(.dripEyebrow(11)).tracking(1.3)
                 .foregroundStyle(Color.drip.textSecondary)
-                .padding(.bottom, 10)
+            Text(sub)
+                .font(.dripBody(13))
+                .foregroundStyle(Color.drip.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            // Group sub-nav — one group's rows show at a time (swap, not scroll).
-            deepGroupNav
-                .padding(.bottom, 4)
+    /// A second thing inside a section — head-to-head under Key sessions,
+    /// niggles under Mood. Deliberately quieter than `sectionHead` so the
+    /// five sections stay countable and a sub-block never reads as a sixth.
+    private func subHead(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.dripEyebrow(10)).tracking(1.2)
+            .foregroundStyle(Color.drip.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            switch deepGroup {
-            case .effort:
-                expandableRow("Training volume", "Load, intensity & the safe band") {
-                    VolumeDetailView(
-                        weeks: service.weeks,
-                        flagged: service.flagged,
-                        trimmed: service.trimmed,
-                        onSetExcluded: { id, excluded in
-                            Task { await service.setExcluded(id, excluded: excluded) }
-                        },
-                        canonicalAcwr: canonicalAcwr,
-                        embedded: true
-                    )
-                }
-                // The Signal prototype's pace-spectrum surface, absorbed
-                // here in Phase A (it was its own tab). Pushed, not
-                // embedded — it owns its own scroll and range controls.
-                pushRow("Pace spectrum", "Where your miles live, zone by zone") {
-                    PaceSignalView()
-                }
-            case .fitness:
-                expandableRow("Key sessions", "Same-effort pace + rep splits") {
-                    KeySessionsDetailView(sessions: service.keySessions, volume: service.keyVolume, embedded: true)
-                }
-                // The sharp end — fast segments read one pace system at a time
-                // (volume vs. its own range, conditions-adjusted pace). Pushed,
-                // like the pace spectrum: it owns its own scroll + system chips.
-                pushRow("Fast segments", "By system — volume, pace, heat & grade") {
-                    FastSegmentsView(
-                        trends: service.fastSegments.systems,
-                        sessions: service.fastSegments.sessions
-                    )
-                }
-            case .signal:
-                expandableRow("Mood", "How the block has felt") {
-                    MoodDetailView(weeks: service.weeks, embedded: true)
-                }
-                expandableRow("Niggles", "Recurrence, in your words") {
-                    NigglesDetailView(weeks: service.weeks, embedded: true)
-                }
-            }
+    /// The head-to-head pair. Everything else on the old Fitness group — the
+    /// Sharp End read, the pace×effort map, the workload scatter, the trend
+    /// grid, Threshold work — is unlinked; those files stay in the repo.
+    @ViewBuilder
+    private var headToHead: some View {
+        let ordered = service.fastSegments.sessions.sorted { $0.date < $1.date }
+        if ordered.count < 2 {
+            EmptyStateView(
+                variant: .dataPending,
+                eyebrow: "Not enough to compare yet",
+                title: "Two key sessions with lap data and this puts them side by side."
+            )
+        } else {
+            HeadToHeadCard(
+                sessions: ordered,
+                aID: $compareA,
+                bID: $compareB,
+                heat: true,
+                hills: true,
+                zones: compareZones.zones,
+                onOpenWorkout: openWorkout
+            )
+            .onAppear { seedComparePair(ordered) }
         }
     }
 
-    /// Segmented Effort · Fitness · Signal switcher. Active segment reads coral
-    /// (the one coral accent in this cluster, per the three-palette rule).
-    private var deepGroupNav: some View {
-        HStack(spacing: 0) {
-            ForEach(DeepGroup.allCases, id: \.self) { g in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { deepGroup = g }
-                } label: {
-                    Text(g.rawValue.uppercased())
-                        .font(.dripEyebrow(10)).tracking(1.0)
-                        .foregroundStyle(deepGroup == g ? Color.drip.coral : Color.drip.textTertiary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
-                        .background(deepGroup == g ? Color.drip.cardBackgroundElevated : Color.clear)
-                }
-                .buttonStyle(.plain)
+    /// Default to the two most recent sessions, newest as B.
+    private func seedComparePair(_ ordered: [FastSession]) {
+        guard compareA.isEmpty || compareB.isEmpty, ordered.count >= 2 else { return }
+        compareB = ordered[ordered.count - 1].id
+        compareA = ordered[ordered.count - 2].id
+    }
+
+    /// Tapped "Open workout" on the head-to-head card.
+    private func openWorkout(_ id: String) {
+        Task {
+            let rows: [TrainingLog] = (try? await supabase
+                .from("training_logs")
+                .select()
+                .eq("id", value: id)
+                .limit(1)
+                .execute()
+                .value) ?? []
+            if let log = rows.first {
+                await MainActor.run { openWorkoutLog = log }
             }
         }
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.drip.divider, lineWidth: 1))
-    }
-
-    /// A row that PUSHES a full-screen destination — same anatomy as
-    /// `expandableRow` but with a trailing chevron.right, for surfaces
-    /// that own their own scroll (e.g. the pace spectrum).
-    private func pushRow<Destination: View>(
-        _ title: String,
-        _ subtitle: String,
-        @ViewBuilder destination: @escaping () -> Destination
-    ) -> some View {
-        NavigationLink {
-            destination()
-        } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title.uppercased())
-                        .font(.dripEyebrow(10)).tracking(1.0)
-                        .foregroundStyle(Color.drip.textSecondary)
-                    Text(subtitle)
-                        .font(.dripBody(14))
-                        .foregroundStyle(Color.drip.textPrimary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.drip.textTertiary)
-            }
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-            .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// A summary row that expands its chart IN PLACE (no push-navigation). The
-    /// content is the detail view rendered `embedded: true` (bare, no scroll/nav).
-    private func expandableRow<Content: View>(
-        _ title: String,
-        _ subtitle: String,
-        @ViewBuilder content: @escaping () -> Content
-    ) -> some View {
-        let isOpen = expandedRow == title
-        return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    expandedRow = isOpen ? nil : title
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title.uppercased())
-                            .font(.dripEyebrow(10)).tracking(1.0)
-                            .foregroundStyle(Color.drip.textSecondary)
-                        Text(subtitle)
-                            .font(.dripBody(14))
-                            .foregroundStyle(Color.drip.textPrimary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(isOpen ? Color.drip.coral : Color.drip.textTertiary)
-                        .rotationEffect(.degrees(isOpen ? 180 : 0))
-                }
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
-                .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
-            }
-            .buttonStyle(.plain)
-
-            if isOpen {
-                content()
-                    .padding(.top, 10)
-                    .padding(.bottom, 14)
-            }
-        }
-    }
-
-    // MARK: this-week strip (the 5-second "what changed" answer)
-
-    /// Most recent week with real training; the strip describes it.
-    private var latestWeek: TrendsWeek? { window.last(where: { $0.miles > 0 }) ?? window.last }
-    private var priorWeek: TrendsWeek? {
-        guard let cur = latestWeek, let idx = window.firstIndex(where: { $0.id == cur.id }) else { return nil }
-        return window[..<idx].last(where: { $0.miles > 0 })
-    }
-    private var latestKeyWeek: TrendsWeek? { window.last(where: { $0.keyPaceSec != nil }) }
-    private var priorKeyWeek: TrendsWeek? {
-        guard let cur = latestKeyWeek, let idx = window.firstIndex(where: { $0.id == cur.id }) else { return nil }
-        return window[..<idx].last(where: { $0.keyPaceSec != nil })
-    }
-    private func paceStr(_ sec: Int) -> String { "\(sec / 60):\(String(format: "%02d", sec % 60))" }
-    /// Neutral delta with a direction arrow (no green/coral — three-palette rule).
-    private func deltaStr(_ d: Double, unit: String) -> String? {
-        let r = Int(d.rounded())
-        guard r != 0 else { return nil }
-        return "\(r > 0 ? "↑" : "↓") \(abs(r))\(unit)"
-    }
-    /// Niggles-only now that mood carries its own strip card — no more
-    /// double-reporting the same mood in two cards.
-    private var signalValue: String {
-        guard let cur = latestWeek else { return "clear" }
-        if let n = cur.niggles.first(where: { !$0.isEmpty }) { return n.lowercased() }
-        return "clear"
-    }
-
-    /// A · the horizontal what-changed strip: one card per deep-dive group
-    /// (Effort · Fitness · Signal), each tappable into its detail view.
-    private var thisWeekStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                if let cur = latestWeek {
-                    stripCard(eyebrow: "EFFORT",
-                              value: "\(Int(cur.miles.rounded())) mi",
-                              delta: priorWeek.flatMap { deltaStr(cur.miles - $0.miles, unit: "") }) {
-                        VolumeDetailView(
-                            weeks: service.weeks, flagged: service.flagged, trimmed: service.trimmed,
-                            onSetExcluded: { id, ex in Task { await service.setExcluded(id, excluded: ex) } },
-                            canonicalAcwr: canonicalAcwr
-                        )
-                    }
-                }
-                if let kw = latestKeyWeek, let kp = kw.keyPaceSec {
-                    stripCard(eyebrow: "FITNESS",
-                              value: "\(paceStr(kp))/mi",
-                              delta: priorKeyWeek?.keyPaceSec.flatMap { deltaStr(Double(kp - $0), unit: "s") }) {
-                        KeySessionsDetailView(sessions: service.keySessions, volume: service.keyVolume)
-                    }
-                }
-                // Mood gets its own card — the qualitative stream is half
-                // the product's signal. Value renders in the mood's own
-                // warm-palette color (mood-only hues; three-palette rule).
-                if let mw = latestMoodWeek {
-                    stripCard(eyebrow: "MOOD",
-                              value: mw.mood.lowercased(),
-                              valueColor: TrendsMoodColor.color(mw.mood),
-                              delta: priorMoodLabel(before: mw)) {
-                        MoodDetailView(weeks: service.weeks)
-                    }
-                }
-                stripCard(eyebrow: "SIGNAL", value: signalValue, delta: nil) {
-                    NigglesDetailView(weeks: service.weeks)
-                }
-            }
-            .padding(.vertical, 2)
-        }
-    }
-
-    /// Most recent week that carries a logged mood, and the differing mood
-    /// before it — powers the MOOD strip card. Facts only; a week with no
-    /// mood is skipped, never guessed.
-    private var latestMoodWeek: TrendsWeek? {
-        window.last(where: { !$0.mood.isEmpty })
-    }
-    private func priorMoodLabel(before cur: TrendsWeek) -> String? {
-        guard let idx = window.firstIndex(where: { $0.id == cur.id }) else { return nil }
-        guard let prior = window[..<idx].last(where: { !$0.mood.isEmpty }),
-              prior.mood.lowercased() != cur.mood.lowercased() else { return nil }
-        return "was \(prior.mood.lowercased())"
-    }
-
-    private func stripCard<Destination: View>(
-        eyebrow: String, value: String, valueColor: Color = Color.drip.textPrimary,
-        delta: String?,
-        @ViewBuilder destination: @escaping () -> Destination
-    ) -> some View {
-        NavigationLink {
-            destination()
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(eyebrow)
-                    .font(.dripEyebrow(9)).tracking(1.0)
-                    .foregroundStyle(Color.drip.textTertiary)
-                Text(value)
-                    .font(.dripDisplay(20))
-                    .foregroundStyle(valueColor)
-                    .lineLimit(1)
-                Text(delta ?? " ")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Color.drip.textSecondary)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .frame(minWidth: 118, alignment: .leading)
-            .background(Color.drip.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.drip.divider, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
     }
 
     private var loadingState: some View {
@@ -439,10 +362,28 @@ struct TrendsTabView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("TRENDS · \(Self.todayLabel)")
-                .font(.dripEyebrow(11))
-                .tracking(1.3)
-                .foregroundStyle(Color.drip.coral)
+            HStack(alignment: .top) {
+                Text("TRENDS · \(Self.todayLabel)")
+                    .font(.dripEyebrow(11))
+                    .tracking(1.3)
+                    .foregroundStyle(Color.drip.coral)
+                #if DEBUG
+                Spacer()
+                // TEMP dev entry to the parallel Trends-v2 surface so the
+                // calendar can be seen in-sim while it's wired. Remove when v2
+                // takes over the tab (or is gated behind a real flag).
+                Button {
+                    showV2 = true
+                } label: {
+                    Text("v2 ›")
+                        .font(.dripCaption(9))
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                #endif
+            }
 
             Text("The shape of\nyour block.")
                 .font(.dripDisplay(32))
@@ -456,7 +397,6 @@ struct TrendsTabView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: range segmenter
 
     private var segmenter: some View {
         HStack(spacing: 2) {
@@ -517,7 +457,7 @@ struct TrendsTabView: View {
                 .padding(.top, 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .animation(.easeInOut(duration: 0.12), value: week.id)
+            .animation(.easeInOut(duration: 0.12), value: week.dateLabel)
         }
     }
 
@@ -564,43 +504,6 @@ struct TrendsTabView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: ask bar
-
-    private var askBar: some View {
-        Button {
-            // Stage a question about the scrubbed (or latest) week, then
-            // hand off to The Read (tab tag 2), which presents the composer.
-            if let week = readoutWeek {
-                coachAsk.stage(
-                    question: Self.askPrompt(for: week),
-                    focus: "week of \(week.dateLabel)"
-                )
-            }
-            selectedTab.wrappedValue = 2
-        } label: {
-            HStack(spacing: 10) {
-                Text("Ask about a week, a pattern, a pace…")
-                    .font(.dripBody(14))
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                ZStack {
-                    Circle()
-                        .fill(Color.drip.coral)
-                        .frame(width: 30, height: 30)
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .background(Color.drip.cardBackground)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: derived insights
 
     private var paceInsight: String? {
@@ -634,12 +537,6 @@ struct TrendsTabView: View {
         return f.string(from: Date()).uppercased()
     }
 
-    /// Build the contextual question the ask bar stages for a given week.
-    /// Kept light — the coach has the full picture; this just points it at
-    /// the week the athlete was looking at.
-    private static func askPrompt(for w: TrendsWeek) -> String {
-        "Walk me through the week of \(w.dateLabel) — \(Int(w.miles)) mi. What stands out?"
-    }
 }
 
 // MARK: - Insight block (coral left bar + prose)

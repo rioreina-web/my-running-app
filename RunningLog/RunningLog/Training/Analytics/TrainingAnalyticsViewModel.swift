@@ -206,6 +206,12 @@ struct DayCell: Identifiable {
     let split: ZoneSplit
     let isRest: Bool
     let isFuture: Bool
+    /// Estimated distance from the active plan for an upcoming day. Kept
+    /// separate from `miles` (logged) so plan estimates never inflate the
+    /// logged weekly/block totals. 0 when there's no plan or no session.
+    var plannedMiles: Double = 0
+    /// An upcoming day that the plan has a run scheduled for.
+    var isPlanned: Bool = false
 }
 
 /// One row of the mileage-by-day grid (a week, Mon→Sun).
@@ -356,9 +362,22 @@ final class TrainingAnalyticsViewModel {
     // Selected scope. Persisted so deep-linking back returns the user
     // to the same window.
     var scope: TrainingScope = .week {
-        didSet { UserDefaults.standard.set(scope.rawValue, forKey: Self.scopeKey) }
+        didSet {
+            UserDefaults.standard.set(scope.rawValue, forKey: Self.scopeKey)
+            // Switching Week ↔ Month ↔ Block re-anchors the calendar on the
+            // current period — a deep-history offset in one scope shouldn't
+            // strand the athlete in a different window after a scope flip.
+            if scope != oldValue { calendarPeriodOffset = 0 }
+        }
     }
     private static let scopeKey = "training.analytics.scope"
+
+    /// Calendar-mode period paging. 0 = the current period (the window ending
+    /// this week); each increment steps one whole window into the past so the
+    /// athlete can review history. Forward paging never goes past the current
+    /// period. Calendar mode only — the Current and History surfaces stay
+    /// anchored to now.
+    var calendarPeriodOffset = 0
 
     var isLoading = false
     var hasLoaded = false
@@ -383,7 +402,7 @@ final class TrainingAnalyticsViewModel {
     @ObservationIgnored private var logsByDay: [Date: [TodayLogRow]] = [:]
     @ObservationIgnored private var cacheToken = 0
     @ObservationIgnored private var weekVolumesCache: (token: Int, scope: TrainingScope, value: [WeekVolume])?
-    @ObservationIgnored private var gridWeeksCache: (token: Int, scope: TrainingScope, value: [GridWeek])?
+    @ObservationIgnored private var gridWeeksCache: (token: Int, scope: TrainingScope, offset: Int, value: [GridWeek])?
     @ObservationIgnored private var dayVolumesCache: (token: Int, value: [DayVolume])?
     @ObservationIgnored private var easyPaceTrendCache: (token: Int, scope: TrainingScope, value: [EasyPacePoint])?
     // Splits are fetched per session (laps query) on demand; cache so
@@ -398,6 +417,10 @@ final class TrainingAnalyticsViewModel {
     private var planStart: Date?
     private var planTotalWeeks: Int?
     private var planLabel: String?
+    /// Planned distance (miles) per calendar day, from the active plan's
+    /// scheduled workouts. Drives the calendar's estimated upcoming days.
+    /// Empty when no plan is active.
+    private var plannedMilesByDay: [Date: Double] = [:]
 
     private let cal = Calendar.iso8601Monday
     private let log = Logger(subsystem: "com.runninglog", category: "training-analytics")
@@ -513,8 +536,10 @@ final class TrainingAnalyticsViewModel {
     }
 
     /// Runs this week logged in hot conditions (dewpoint ≥ 65° or ≥ 78°).
-    func hotRunCount() -> Int {
-        logs(inWeekStarting: thisWeekStart)
+    func hotRunCount() -> Int { hotRunCount(forWeekStart: thisWeekStart) }
+
+    func hotRunCount(forWeekStart start: Date) -> Int {
+        logs(inWeekStarting: start)
             .filter { conditionsByLog[$0.id]?.isHot == true }
             .count
     }
@@ -523,11 +548,13 @@ final class TrainingAnalyticsViewModel {
     /// fatigue-class mood labels, verbatim, with their weekdays. Nil when
     /// the week carried none. Observation only; never advice (the "push or
     /// pull" call belongs to the athlete/coach — AI advises, never acts).
-    func weekMoodObservation() -> String? {
+    func weekMoodObservation() -> String? { weekMoodObservation(forWeekStart: thisWeekStart) }
+
+    func weekMoodObservation(forWeekStart start: Date) -> String? {
         let fatigueMoods: Set<String> = ["tired", "struggling", "injured"]
         var seen = Set<String>()
         let f = DateFormatter(); f.dateFormat = "EEEE"
-        let hits: [String] = logs(inWeekStarting: thisWeekStart).compactMap { row in
+        let hits: [String] = logs(inWeekStarting: start).compactMap { row in
             guard let m = row.mood?.lowercased(), fatigueMoods.contains(m) else { return nil }
             let key = "\(m)-\(cal.startOfDay(for: row.date))"
             guard seen.insert(key).inserted else { return nil }
@@ -546,6 +573,17 @@ final class TrainingAnalyticsViewModel {
             let weeks = cal.dateComponents([.weekOfYear], from: plan.startDate, to: plan.endDate).weekOfYear
             planTotalWeeks = weeks.map { max(1, $0) }
         }
+
+        // Estimated distance per upcoming day, summed across any scheduled
+        // sessions on that date. Logged totals are untouched by this.
+        var byDay: [Date: Double] = [:]
+        for sw in planService.allScheduledWorkouts {
+            let miles = sw.workout?.totalDistanceMiles ?? 0
+            guard miles > 0 else { continue }
+            byDay[cal.startOfDay(for: sw.date), default: 0] += miles
+        }
+        plannedMilesByDay = byDay
+        gridWeeksCache = nil   // planned data arrived — force a recompute
 
         goals = Self.buildGoals(plan: planService.activePlan,
                                 goal: planService.activeGoal,
@@ -609,6 +647,65 @@ final class TrainingAnalyticsViewModel {
             }
         }
     }
+
+    // MARK: Calendar-mode window (offset-aware, for TrainingCalendarSection)
+
+    /// How many weeks the current scope's calendar window spans. This is also
+    /// the step size for one page back/forward.
+    private func calendarStepWeeks() -> Int {
+        switch scope {
+        case .week:  return 1
+        case .month: return 5
+        case .block: return blockWeekCount()
+        }
+    }
+
+    /// The newest week-start in the currently paged calendar window. At offset
+    /// 0 this is `thisWeekStart`; each page-back steps one whole window earlier.
+    private var calendarAnchorWeekStart: Date {
+        let step = calendarStepWeeks()
+        return cal.date(byAdding: .weekOfYear,
+                        value: -(max(0, calendarPeriodOffset) * step),
+                        to: thisWeekStart) ?? thisWeekStart
+    }
+
+    /// Week-starts (ascending) the paged calendar renders, oldest → newest.
+    /// Mirrors `scopedWeekStarts()` but anchored on `calendarAnchorWeekStart`
+    /// so Calendar mode can move through history; the analytics surfaces keep
+    /// using `scopedWeekStarts()` and stay pinned to now.
+    private func calendarWeekStarts() -> [Date] {
+        let anchor = calendarAnchorWeekStart
+        let n = calendarStepWeeks()
+        return (0..<n).reversed().compactMap {
+            cal.date(byAdding: .weekOfYear, value: -$0, to: anchor)
+        }
+    }
+
+    /// True when the calendar is showing the current, up-to-now period.
+    var calendarIsCurrent: Bool { calendarPeriodOffset == 0 }
+
+    /// Human label for the paged window — "WEEK OF MAR 3" (week) or
+    /// "MAR 3 – APR 6" (month/block).
+    var calendarRangeLabel: String {
+        let starts = calendarWeekStarts()
+        guard let first = starts.first, let last = starts.last else { return "" }
+        if scope == .week {
+            return "WEEK OF \(Self.monthDayLabel(first))"
+        }
+        let end = cal.date(byAdding: .day, value: 6, to: last) ?? last
+        return "\(Self.monthDayLabel(first)) – \(Self.monthDayLabel(end))"
+    }
+
+    /// Step one whole window into the past.
+    func calendarGoBack() { calendarPeriodOffset += 1 }
+
+    /// Step one window forward (toward now); never past the current period.
+    func calendarGoForward() {
+        if calendarPeriodOffset > 0 { calendarPeriodOffset -= 1 }
+    }
+
+    /// Jump straight back to the current period.
+    func calendarGoToCurrent() { calendarPeriodOffset = 0 }
 
     /// Number of weeks in the block window. Uses elapsed plan weeks (capped
     /// at 12 for legibility) when a plan exists, else a rolling 5 weeks.
@@ -788,9 +885,30 @@ final class TrainingAnalyticsViewModel {
     }
 
     private func computeDayVolumes() -> [DayVolume] {
+        dayVolumes(forWeekStart: thisWeekStart)
+    }
+
+    /// Monday start of the week `weeksAgo` before the current one (0 = current).
+    func weekStart(weeksAgo: Int) -> Date {
+        cal.date(byAdding: .weekOfYear, value: -max(0, weeksAgo), to: thisWeekStart) ?? thisWeekStart
+    }
+
+    /// True when `start` is the current, in-progress week.
+    func isCurrentWeek(_ start: Date) -> Bool {
+        cal.isDate(start, inSameDayAs: thisWeekStart)
+    }
+
+    /// Total miles logged in the week beginning `start`.
+    func weekTotalMiles(forWeekStart start: Date) -> Double {
+        split(forWeekStarting: start).total
+    }
+
+    /// Day rows (Mon→Sun) for the week beginning `start`. Same shape as
+    /// `dayVolumes()` but for any week, so the This-Week section can page back.
+    func dayVolumes(forWeekStart start: Date) -> [DayVolume] {
         let today = cal.startOfDay(for: Date())
         return (0..<7).compactMap { offset in
-            guard let day = cal.date(byAdding: .day, value: offset, to: thisWeekStart) else { return nil }
+            guard let day = cal.date(byAdding: .day, value: offset, to: start) else { return nil }
             let split = self.split(forDay: day)
             let isFuture = day > today
             let isRest = !isFuture && split.total == 0
@@ -847,21 +965,27 @@ final class TrainingAnalyticsViewModel {
     // MARK: Outputs — mileage by day grid
 
     func gridWeeks() -> [GridWeek] {
-        if let c = gridWeeksCache, c.token == cacheToken, c.scope == scope { return c.value }
+        if let c = gridWeeksCache, c.token == cacheToken, c.scope == scope,
+           c.offset == calendarPeriodOffset { return c.value }
         let value = computeGridWeeks()
-        gridWeeksCache = (cacheToken, scope, value)
+        gridWeeksCache = (cacheToken, scope, calendarPeriodOffset, value)
         return value
     }
 
     private func computeGridWeeks() -> [GridWeek] {
         let today = cal.startOfDay(for: Date())
-        return scopedWeekStarts().map { ws in
+        return calendarWeekStarts().map { ws in
             let cells: [DayCell] = (0..<7).compactMap { offset in
                 guard let day = cal.date(byAdding: .day, value: offset, to: ws) else { return nil }
                 let split = self.split(forDay: day)
                 let isFuture = day > today
                 let isRest = !isFuture && split.total == 0
-                return DayCell(date: day, miles: split.total, split: split, isRest: isRest, isFuture: isFuture)
+                // Upcoming days carry a plan estimate (if any); logged `miles`
+                // stays 0 for them so totals remain logged-only.
+                let planned = isFuture ? (plannedMilesByDay[cal.startOfDay(for: day)] ?? 0) : 0
+                return DayCell(date: day, miles: split.total, split: split,
+                               isRest: isRest, isFuture: isFuture,
+                               plannedMiles: planned, isPlanned: planned > 0)
             }
             return GridWeek(label: Self.monthDayLabel(ws), weekStart: ws, cells: cells)
         }
@@ -926,6 +1050,26 @@ final class TrainingAnalyticsViewModel {
                             hr: seg.avgHeartRate,
                             color: bucket(forPaceSeconds: p).color)
         }
+    }
+
+    /// The day's "session of note" — the hardest-intensity run, ties broken by
+    /// distance. Lets a doubles day be labelled by its KEY workout rather than
+    /// the first (often easy) leg of the day. nil when nothing with miles ran.
+    func dominantSession(on day: Date) -> SessionDetail? {
+        func rank(_ b: IntensityBucket) -> Int {
+            switch b {
+            case .threshold: return 2
+            case .aerobic:   return 1
+            case .easy:      return 0
+            }
+        }
+        return sessions(on: day)
+            .filter { $0.miles > 0 }
+            .max { a, b in
+                rank(a.bucket) != rank(b.bucket)
+                    ? rank(a.bucket) < rank(b.bucket)
+                    : a.miles < b.miles
+            }
     }
 
     /// Aggregate summary for a whole day (sums every logged session).

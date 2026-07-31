@@ -30,6 +30,11 @@ import {
   type Zone,
 } from "../_shared/workoutSegmentation.ts";
 import { buildWeekWindows } from "./timeline.ts";
+import {
+  aerobicLoadForBouts,
+  longRunLoadFromMinutes,
+  qualityLoadForBouts,
+} from "./qualityLoad.ts";
 
 // ─── Input types (superset of the laps we read) ────────────────────────
 
@@ -49,6 +54,10 @@ export interface KeySessionLap extends LapInput {
 export interface KeySessionFeature {
   training_log_id: string;
   workout_structure?: string | null;
+  /** The classifier's session label. `long_run` is the one that matters here:
+   *  a long run carries no MP-or-faster work, so without this it would never
+   *  become a key session at all. */
+  workout_type?: string | null;
 }
 
 /** Minimal log shape (a subset of `TimelineLog` from timeline.ts). */
@@ -56,6 +65,8 @@ export interface KeySessionLog {
   id: string;
   workout_date: string; // ISO date or datetime
   workout_distance_miles: number | null;
+  /** Only needed for a long run with no laps — see `longRunLoadFromMinutes`. */
+  workout_duration_minutes?: number | null;
 }
 
 // ─── Output type (mirrors the iOS KeySession decode shape) ─────────────
@@ -70,6 +81,16 @@ export interface KeySessionOut {
   work_hr_avg: number | null; // time-weighted avg HR over work bouts
   structure: string | null; // "5K 5×1km · 6.0 mi" style, from features
   distance_mi: number | null;
+  /** Weighted minutes of work — Σ(work-bout seconds × ZONE_WEIGHTS[zone]).
+   *  For a long run, Σ over ALL bouts. Scored here, gated on the client
+   *  (`QualityLoad.floor`) so the floor is tunable without a deploy.
+   *  See `./qualityLoad.ts`. */
+  quality_load: number;
+  /** `quality` = a rep/threshold session, classified by its work bouts.
+   *  `long_run` = an aerobic anchor session with no work bouts, admitted on
+   *  the classifier's label. The client colours and labels them differently;
+   *  they are not comparable on pace. */
+  kind: "quality" | "long_run";
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────
@@ -134,10 +155,30 @@ function heatSnapshot(
 
 // ─── Per-session derivation ────────────────────────────────────────────
 
+/** Aerobic zones a long run's dominant pace can land in. */
+const AEROBIC_ZONES: ReadonlySet<Zone> = new Set<Zone>([
+  "steady",
+  "moderate",
+  "easy",
+  "recovery",
+]);
+
 /**
- * Derive a single Section-A dot from one workout's laps. Returns null when
- * the session has no classifiable work bouts (a pure easy run, a manual log
- * with no laps, etc.) — the caller simply omits it.
+ * Derive a single Section-A entry from one workout.
+ *
+ * Two ways in:
+ *   1. QUALITY — the session has work bouts (MP-or-faster). Pace and zone come
+ *      from those bouts; load is Σ over them.
+ *   2. LONG RUN — no work bouts, but the classifier labelled it `long_run`.
+ *      A long run is a key session by any coach's definition, and gating on
+ *      MP-or-faster work made every one of them invisible: on real data 14 of
+ *      15 long runs (11.4–17.8 mi, avg 93 min) carry not one MP-or-faster lap,
+ *      so the Saturday row of the session grid was empty while the athlete was
+ *      running 13.8 miles on it. Load is Σ over ALL bouts — for an aerobic
+ *      session the whole run is the stimulus.
+ *
+ * Returns null otherwise (a pure easy midweek run, a manual log with nothing
+ * to classify) — the caller simply omits it.
  */
 export function deriveKeySession(
   log: KeySessionLog,
@@ -145,11 +186,43 @@ export function deriveKeySession(
   feature: KeySessionFeature | undefined,
   zones: PaceZones,
 ): KeySessionOut | null {
-  if (!laps || laps.length === 0) return null;
+  const isLongRun = feature?.workout_type === "long_run";
+
+  // A long run with no laps at all still counts — it just can't be
+  // pace-classified, so it reports as easy (the definition of the session
+  // type, not a guess at a number we don't have).
+  if (!laps || laps.length === 0) {
+    if (!isLongRun) return null;
+    return longRunOut(log, feature, "easy", null, longRunLoadFromMinutes(log.workout_duration_minutes));
+  }
 
   const seg = segmentFromLaps(laps, zones);
   const workBouts = seg.bouts.filter((b) => b.isWork && b.paceSecPerMile > 0);
-  if (workBouts.length === 0) return null;
+
+  if (workBouts.length === 0) {
+    if (!isLongRun) return null;
+    // Dominant aerobic zone across the whole run: an easy plod and a steady
+    // long run are different sessions and should not read the same.
+    let zone: Zone = "easy";
+    let best = -1;
+    const zoneSecs = new Map<Zone, number>();
+    for (const b of seg.bouts) {
+      if (b.seconds <= 0) continue;
+      zoneSecs.set(b.zone, (zoneSecs.get(b.zone) ?? 0) + b.seconds);
+    }
+    for (const [z, secs] of zoneSecs) {
+      if (AEROBIC_ZONES.has(z) && secs > best) { best = secs; zone = z; }
+    }
+    const timeWeightedPace = paceOverBouts(seg.bouts);
+    const load = aerobicLoadForBouts(seg.bouts);
+    return longRunOut(
+      log,
+      feature,
+      zone,
+      timeWeightedPace,
+      load > 0 ? load : longRunLoadFromMinutes(log.workout_duration_minutes),
+    );
+  }
 
   // Distance-weighted mean work pace (rest excluded by construction). Falls
   // back to time-weighting when a bout is missing distance.
@@ -209,6 +282,52 @@ export function deriveKeySession(
     work_hr_avg: workHrAvg,
     structure,
     distance_mi: distanceMi,
+    quality_load: qualityLoadForBouts(workBouts),
+    kind: "quality",
+  };
+}
+
+/** Time-weighted mean pace across every bout that has one. null when none do. */
+function paceOverBouts(bouts: readonly { seconds: number; paceSecPerMile: number }[]): number | null {
+  let secs = 0, weighted = 0;
+  for (const b of bouts) {
+    if (b.seconds <= 0 || b.paceSecPerMile <= 0) continue;
+    secs += b.seconds;
+    weighted += b.paceSecPerMile * b.seconds;
+  }
+  return secs > 0 ? Math.round(weighted / secs) : null;
+}
+
+/**
+ * A long run's Section-A entry. Pace here is the run's own mean, not a
+ * work-bout pace — the two are not comparable, which is exactly why `kind`
+ * exists and why the client never draws them on one scale.
+ */
+function longRunOut(
+  log: KeySessionLog,
+  feature: KeySessionFeature | undefined,
+  zone: Zone,
+  paceSec: number | null,
+  load: number,
+): KeySessionOut {
+  const distanceMi = log.workout_distance_miles ?? null;
+  const structure = feature?.workout_structure && feature.workout_structure.trim()
+    ? feature.workout_structure.trim()
+    : distanceMi && distanceMi > 0
+      ? `Long ${Math.round(distanceMi * 10) / 10} mi`
+      : "Long";
+  return {
+    date: dayISO(log.workout_date),
+    log_id: log.id,
+    zone,
+    work_pace_sec: paceSec ?? 0,
+    work_pace_adj_sec: null,
+    heat_category: null,
+    work_hr_avg: null,
+    structure,
+    distance_mi: distanceMi,
+    quality_load: load,
+    kind: "long_run",
   };
 }
 
@@ -237,9 +356,12 @@ export function buildKeySessions(
 ): KeySessionOut[] {
   const out: KeySessionOut[] = [];
   for (const log of logs) {
-    const laps = lapsByWorkout.get(log.id);
-    if (!laps || laps.length === 0) continue;
-    const session = deriveKeySession(log, laps, featuresById.get(log.id), zones);
+    const laps = lapsByWorkout.get(log.id) ?? [];
+    const feature = featuresById.get(log.id);
+    // Long runs are admitted with no laps at all — 4 of 14 real ones have
+    // none. Everything else still needs laps to classify.
+    if (laps.length === 0 && feature?.workout_type !== "long_run") continue;
+    const session = deriveKeySession(log, laps, feature, zones);
     if (session) out.push(session);
   }
   out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));

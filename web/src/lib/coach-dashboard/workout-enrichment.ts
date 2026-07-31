@@ -71,6 +71,13 @@ export function fmtClock(totalSeconds: number): string {
 
 const lapMiles = (l: EnrichLap) => Number(l.distance_meters ?? 0) / METERS_PER_MILE;
 
+// A rep's distance as a compact label: sub-mile reads in metres rounded to the
+// nearest 100 ("800m"), a mile or more in miles ("1.0 mi").
+function repDistLabel(mi: number): string {
+  if (mi < 0.95) return `${Math.round((mi * METERS_PER_MILE) / 100) * 100}m`;
+  return `${mi.toFixed(1)} mi`;
+}
+
 // Distance-weighted average of a per-lap value (pace, hr) over the laps that
 // have both a positive distance and a value. Returns null when nothing weighs in.
 function weightedAvg(laps: EnrichLap[], value: (l: EnrichLap) => number | null | undefined): number | null {
@@ -245,17 +252,72 @@ export function buildSplits(
       startMi = endMi;
     }
   } else {
-    // Per work-lap.
-    for (const l of runLaps) {
-      const mi = lapMiles(l);
-      const raw = l.avg_pace_sec_per_mile != null ? Number(l.avg_pace_sec_per_mile) : null;
-      const adj = l.heat_adjusted_pace_sec_per_mile != null ? Number(l.heat_adjusted_pace_sec_per_mile) : null;
-      splits.push({
-        name: `Lap ${l.lap_index + 1} · ${mi.toFixed(1)} mi`,
-        pace: raw != null ? fmtPaceSec(raw) : null,
-        adj: adj != null ? fmtPaceSec(adj) : undefined,
-        onTarget: !overBand(raw),
-      });
+    // Quality session — group the actual laps into warm-up / reps / cool-down.
+    // Work laps are the reps (at or faster than the prescribed band, or — when
+    // there's no prescription — faster than the run's own median by a margin);
+    // the slower leading/trailing laps are the warm-up and cool-down, and the
+    // easy laps between reps are recoveries, folded out of the rep list.
+    const pace = (l: EnrichLap) => Number(l.avg_pace_sec_per_mile ?? 0);
+    const bandKnown = Number.isFinite(opts.bandHigh);
+    const sorted = runLaps.map(pace).filter((p) => p > 0).sort((a, b) => a - b);
+    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+    const workThreshold = bandKnown ? opts.bandHigh : median - 15;
+    const isWork = (l: EnrichLap) => {
+      const p = pace(l);
+      return p > 0 && p <= workThreshold;
+    };
+
+    let firstWork = -1;
+    let lastWork = -1;
+    runLaps.forEach((l, i) => {
+      if (isWork(l)) {
+        if (firstWork < 0) firstWork = i;
+        lastWork = i;
+      }
+    });
+
+    if (firstWork < 0) {
+      // No lap reads as a rep — fall back to a flat per-lap list.
+      for (const l of runLaps) {
+        const raw = pace(l) > 0 ? pace(l) : null;
+        const adj = l.heat_adjusted_pace_sec_per_mile != null ? Number(l.heat_adjusted_pace_sec_per_mile) : null;
+        splits.push({
+          name: `Lap ${l.lap_index + 1} · ${lapMiles(l).toFixed(1)} mi`,
+          pace: raw != null ? fmtPaceSec(raw) : null,
+          adj: adj != null ? fmtPaceSec(adj) : undefined,
+          onTarget: !overBand(raw),
+        });
+      }
+    } else {
+      const aggregate = (laps: EnrichLap[], name: string) => {
+        const mi = laps.reduce((s, l) => s + lapMiles(l), 0);
+        if (mi <= 0) return;
+        const raw = weightedAvg(laps, (l) => l.avg_pace_sec_per_mile);
+        const adj = weightedAvg(laps, (l) => l.heat_adjusted_pace_sec_per_mile);
+        splits.push({
+          name: `${name} · ${mi.toFixed(1)} mi`,
+          pace: raw != null ? fmtPaceSec(raw) : null,
+          adj: adj != null ? fmtPaceSec(adj) : undefined,
+          onTarget: true, // warm-up / cool-down aren't measured against the band
+        });
+      };
+
+      aggregate(runLaps.slice(0, firstWork), "Warm-up");
+      let rep = 0;
+      for (let i = firstWork; i <= lastWork; i++) {
+        const l = runLaps[i];
+        if (!isWork(l)) continue; // recovery jog between reps
+        rep++;
+        const raw = pace(l) > 0 ? pace(l) : null;
+        const adj = l.heat_adjusted_pace_sec_per_mile != null ? Number(l.heat_adjusted_pace_sec_per_mile) : null;
+        splits.push({
+          name: `Rep ${rep} · ${repDistLabel(lapMiles(l))}`,
+          pace: raw != null ? fmtPaceSec(raw) : null,
+          adj: adj != null ? fmtPaceSec(adj) : undefined,
+          onTarget: !overBand(raw),
+        });
+      }
+      aggregate(runLaps.slice(lastWork + 1), "Cool-down");
     }
   }
 

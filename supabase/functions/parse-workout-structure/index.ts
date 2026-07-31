@@ -19,7 +19,7 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0"
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { detectWorkBouts, boutsFromLaps, workBoutCount, formatWorkBouts, type WorkBout, type BoutOrRecovery, type LapInput } from "../_shared/shared/workBouts.ts";
+import { detectWorkBouts, boutsFromLaps, workBoutCount, formatWorkBouts, lapRoles, type WorkBout, type BoutOrRecovery, type LapInput } from "../_shared/shared/workBouts.ts";
 import { isUserEdited } from "../_shared/structureOverride.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
@@ -258,6 +258,15 @@ Deno.serve(async (req) => {
         parsed.work.target_pace_per_mile = null;
       }
       parsed.prescription_stripped = true;
+    }
+
+    // 4d) PER-LAP LABELS for the splits view — DESCRIPTIVE ONLY.
+    // Tag every recorded lap (warmup / rep / recovery / cooldown) so the splits
+    // chart can label each row while showing the watch's own numbers as-is. This
+    // never merges, drops, or re-paces a split — it only names it. Keyed by
+    // lap_index so the client joins 1:1 against running_workout_laps.
+    if (rawLaps.length) {
+      parsed.lap_roles = lapRoles(rawLaps);
     }
 
     parsed.parsed_at = new Date().toISOString();
