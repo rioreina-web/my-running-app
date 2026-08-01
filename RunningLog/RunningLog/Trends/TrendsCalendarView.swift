@@ -48,6 +48,8 @@ struct TrendsCalendarView: View {
     /// Dense daily substrate, oldest → newest (one entry per day through today).
     let days: [TrendsDay]
     let scale: TrendsCalendarScale
+    /// Tapping a day with runs drills into that day's workouts.
+    var onSelectDay: ((TrendsDay) -> Void)? = nil
 
     /// Fixed volume scale — a day's miles map to bar height against this, so a
     /// light month and a heavy month are drawn on one ruler. Spec §4.
@@ -94,6 +96,8 @@ struct TrendsCalendarView: View {
                     dayCell(day)
                         .frame(maxWidth: .infinity)
                         .frame(height: scale.cellHeight)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if day.miles > 0 { onSelectDay?(day) } }
                 } else {
                     // A day outside the window edge (partial first/last week).
                     Color.clear

@@ -92,6 +92,41 @@ final class TrendsService {
         }
     }
 
+    /// The workouts logged on a given UTC day ("yyyy-MM-dd"), newest first —
+    /// for the calendar-day / key-session drill-downs, which open the full
+    /// `HistoryDetailPager`. Mirrors `TrainingPlanService.loadLogEntries`.
+    @MainActor
+    func fetchWorkouts(dayISO: String) async -> [TrainingLog] {
+        guard let next = Self.nextDayISO(dayISO) else { return [] }
+        do {
+            let entries: [TrainingLog] = try await supabase
+                .from("training_logs")
+                .select()
+                .eq("user_id", value: AuthManager.shared.userId)
+                .gte("workout_date", value: dayISO)
+                .lt("workout_date", value: next)
+                .order("workout_date", ascending: false, nullsFirst: false)
+                .limit(20)
+                .execute()
+                .value
+            return entries
+        } catch {
+            Log.coach.error("Trends day workouts load failed: \(error.localizedDescription)")
+            return []
+        }
+    }
+
+    /// "2026-07-28" → "2026-07-29".
+    private static func nextDayISO(_ iso: String) -> String? {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        let parts = iso.split(separator: "-")
+        guard parts.count == 3, let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2]),
+              let date = cal.date(from: DateComponents(year: y, month: m, day: d)),
+              let next = cal.date(byAdding: .day, value: 1, to: date) else { return nil }
+        let f = DateFormatter(); f.timeZone = TimeZone(identifier: "UTC")!; f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: next)
+    }
+
     /// Trim (excluded = true), Keep/Restore (excluded = false) a run. Writes
     /// `training_logs.stats_excluded` (owner UPDATE is RLS-allowed), then
     /// reloads so the chart + lists recompute.

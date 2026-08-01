@@ -21,10 +21,18 @@ struct ZoneSelection: Identifiable {
     var id: String { zone }
 }
 
+/// A day's workouts to open in the detail pager (calendar-day / key-session tap).
+struct DayWorkouts: Identifiable {
+    let id = UUID()
+    let entries: [TrainingLog]
+    let initial: TrainingLog
+}
+
 struct TrendsV2View: View {
     @State private var service: TrendsService
     @State private var scale: TrendsCalendarScale = .month
     @State private var selectedZone: ZoneSelection?
+    @State private var dayWorkouts: DayWorkouts?
     /// Demo-only overnight biometrics for the recovery card, until the
     /// `daily_biometrics` pipeline is live. Live builds pass nil → Tier 2
     /// renders its honest "no watch data" state.
@@ -57,6 +65,22 @@ struct TrendsV2View: View {
         .task { await service.refresh() }
         .sheet(item: $selectedZone) { sel in
             TrendsZoneDetailView(zone: sel.zone, sessions: service.keySessions)
+        }
+        .sheet(item: $dayWorkouts) { dw in
+            HistoryDetailPager(entries: dw.entries, initial: dw.initial, onUpdate: {})
+        }
+    }
+
+    /// Fetch a day's workouts and open the detail pager, focused on `focusLogId`
+    /// when given (a tapped key session), else the first run of the day.
+    private func openDay(_ dayISO: String, focusLogId: String? = nil) {
+        Task {
+            let entries = await service.fetchWorkouts(dayISO: dayISO)
+            guard !entries.isEmpty else { return }
+            let initial = focusLogId
+                .flatMap { id in entries.first { $0.id.uuidString.lowercased() == id.lowercased() } }
+                ?? entries[0]
+            dayWorkouts = DayWorkouts(entries: entries, initial: initial)
         }
     }
 
@@ -188,7 +212,8 @@ struct TrendsV2View: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, 14)
 
-                TrendsCalendarView(days: service.days, scale: scale)
+                TrendsCalendarView(days: service.days, scale: scale,
+                                   onSelectDay: { openDay($0.date) })
 
                 legend
                     .padding(.top, 14)
@@ -303,7 +328,12 @@ struct TrendsV2View: View {
             }
             .padding(.bottom, 12)
 
-            card { TrendsKeySessionsView(sessions: service.keySessions) }
+            card {
+                TrendsKeySessionsView(
+                    sessions: service.keySessions,
+                    onSelect: { openDay($0.date, focusLogId: $0.id) }
+                )
+            }
         }
     }
 

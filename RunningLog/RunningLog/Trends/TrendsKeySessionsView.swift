@@ -13,6 +13,8 @@ import SwiftUI
 struct TrendsKeySessionsView: View {
     let sessions: [KeySession]
     var limit: Int = 5
+    /// Tapping a session opens its full workout detail.
+    var onSelect: ((KeySession) -> Void)? = nil
 
     private var recent: [KeySession] {
         Array(sessions.sorted { $0.date > $1.date }.prefix(limit))
@@ -28,7 +30,9 @@ struct TrendsKeySessionsView: View {
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(recent.enumerated()), id: \.element.id) { i, s in
-                    row(s)
+                    Button { onSelect?(s) } label: { row(s) }
+                        .buttonStyle(.plain)
+                        .disabled(onSelect == nil)
                     if i < recent.count - 1 {
                         Rectangle().fill(Color.drip.divider).frame(height: 1)
                     }
