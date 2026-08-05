@@ -160,6 +160,22 @@ struct TrainingLog: Codable, Identifiable {
         processingStatus == "pending" || processingStatus == "processing"
     }
 
+    /// Two-stage reveal: the transcript is on the row (`cleanedNotes` holds the
+    /// athlete's raw words) but the AI analysis (mood, niggles, structure) is
+    /// still running. The journal renders these as normal entries — the words
+    /// appear ~6-9s in; the analysis fills in when the status flips to
+    /// `completed`.
+    var isTranscribed: Bool {
+        processingStatus == "transcribed"
+    }
+
+    /// Still somewhere in the pipeline (queued, processing, or transcribed-but-
+    /// unanalyzed). Used by stale-retry sweeps — NOT by row rendering, which
+    /// deliberately treats `transcribed` as displayable.
+    var isInFlight: Bool {
+        isPending || isTranscribed
+    }
+
     var isFailed: Bool {
         processingStatus == "failed"
     }

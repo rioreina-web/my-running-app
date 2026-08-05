@@ -31,60 +31,31 @@ struct RunningLogApp: App {
             // Boot straight into a preview-seeded surface for visual iteration,
             // bypassing auth/nav. Launch with `-trendsV2Preview 1`. Remove with
             // the v2 dev scaffolding once the surface is real.
-            if CommandLine.arguments.contains("-trendsV2Zone") {
-                TrendsZoneDetailView(zone: "5k", sessions: KeySession.previewLadder)
+            if CommandLine.arguments.contains("-workoutSignals") {
+                // Act 2 of the workout detail sheet, signals-first — for
+                // visual iteration. Remove with the dev scaffolding.
+                WorkoutSignalsPreviewScene()
                     .preferredColorScheme(.light)
-            } else if CommandLine.arguments.contains("-trendsV2New") {
-                // Standalone view of the efficiency curve + key-sessions list.
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("EFFICIENCY · THE ENGINE").font(.dripCaption(9))
-                            .foregroundStyle(Color.drip.textSecondary)
-                        TrendsEfficiencyView.preview
-                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
-                        Text("KEY SESSIONS · THE ACTUAL RUNS").font(.dripCaption(9))
-                            .foregroundStyle(Color.drip.textSecondary)
-                        TrendsKeySessionsView(sessions: KeySession.previewLadder)
-                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
-                    }
-                    .padding(24)
-                }
-                .background(Color.drip.background)
-                .preferredColorScheme(.light)
-            } else if CommandLine.arguments.contains("-trendsV2Recovery") {
-                // Standalone recovery card for visual iteration (screenshots).
-                ScrollView {
-                    // Full Approach A ("good data" state): day-to-day read, the
-                    // convergence card, and the week-to-week load ramp.
-                    let days = TrendsDay.previewMonthRich
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("DAY TO DAY · PUSH OR PULL TODAY?").font(.dripCaption(9))
-                            .foregroundStyle(Color.drip.textSecondary)
-                        TrendsRecoveryDayView(days: days, biometrics: .previewGood)
-                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
-                        Text("THE CONVERGENCE · THIS WEEK").font(.dripCaption(9))
-                            .foregroundStyle(Color.drip.textSecondary)
-                        TrendsRecoveryView(days: days, scale: .month, biometrics: .previewGood)
-                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
-                        Text("WEEK TO WEEK · ARE YOU OVERLOADING?").font(.dripCaption(9))
-                            .foregroundStyle(Color.drip.textSecondary)
-                        TrendsRecoveryWeekView(days: days)
-                            .padding(16).background(RoundedRectangle(cornerRadius: 12).fill(Color.drip.cardBackground))
-                    }
-                    .padding(24)
-                }
-                .background(Color.drip.background)
-                .preferredColorScheme(.light)
+            // Removed 2026-08-05 with the surfaces they existed to iterate on:
+            // `-trendsV2Zone` (TrendsZoneDetailView), `-trendsV2New`
+            // (TrendsEfficiencyView + TrendsKeySessionsView) and
+            // `-trendsV2Recovery` (the three convergence cards). Those views
+            // were the last thing keeping seventeen orphaned Trends files in
+            // the target; all of it is in git if a screenshot harness is
+            // wanted back.
             } else if CommandLine.arguments.contains("-trendsV2Preview") {
                 NavigationStack {
+                    // v2 rebuilt 2026-08-03: no previewMode / demoBiometrics
+                    // any more — the five-signal surface has no demo-only
+                    // section, so it renders the same way against seeded and
+                    // live data.
                     TrendsV2View(
                         service: TrendsService(
                             preview: [],
                             days: TrendsDay.previewMonthRich,
-                            keySessions: KeySession.previewLadder
-                        ),
-                        previewMode: true,
-                        demoBiometrics: .previewGood
+                            keySessions: KeySession.previewLadder,
+                            paceBands: .preview
+                        )
                     )
                 }
                 .preferredColorScheme(.light)

@@ -64,6 +64,12 @@ export async function fetchQualityLaps(
  * Fix-reps: replace the laps of any workout the athlete corrected
  * (`parsed_structure.edited_by_user`) with laps rebuilt from that correction.
  * Only the edited rows are fetched; a failure leaves existing laps in place.
+ *
+ * The rebuilt laps carry no weather — `parsed_structure` records what the
+ * athlete ran, not the conditions she ran it in. So we lift the heat ratio off
+ * the native laps we are about to discard and re-apply it. Without this, every
+ * corrected workout reports a zero correction and Pace Bands says "no
+ * correction on file" about a session that has one on file.
  */
 async function applyCorrectedStructures(
   db: Db,
@@ -82,7 +88,35 @@ async function applyCorrectedStructures(
     if (error) continue;
     for (const row of (data ?? []) as Array<{ id: string; parsed_structure: unknown }>) {
       const laps = lapsFromParsedStructure(row.parsed_structure);
-      if (laps.length) byId.set(String(row.id), laps as unknown as KeySessionLap[]);
+      if (!laps.length) continue;
+      const ratio = heatRatioOf(byId.get(String(row.id)));
+      const carried = ratio == null ? laps : laps.map((l) => withHeat(l, ratio));
+      byId.set(String(row.id), carried as unknown as KeySessionLap[]);
     }
   }
+}
+
+/**
+ * adjusted ÷ raw for a workout, taken from whichever native lap carries both.
+ * Uniform across a session — one weather snapshot per workout — so the first
+ * usable lap answers for all of them. Null when no lap had weather; the caller
+ * then leaves the rebuilt laps unadjusted, which is the honest result.
+ */
+function heatRatioOf(original: KeySessionLap[] | undefined): number | null {
+  for (const l of original ?? []) {
+    const raw = Number((l as { avg_pace_sec_per_mile?: number | null }).avg_pace_sec_per_mile);
+    const adj = Number(
+      (l as { heat_adjusted_pace_sec_per_mile?: number | null }).heat_adjusted_pace_sec_per_mile,
+    );
+    if (Number.isFinite(raw) && raw > 0 && Number.isFinite(adj) && adj > 0) return adj / raw;
+  }
+  return null;
+}
+
+/** A rebuilt lap with the workout's heat ratio applied to its own raw pace. */
+function withHeat<T>(lap: T, ratio: number): T {
+  if ((lap as { is_rest?: boolean | null }).is_rest === true) return lap;
+  const raw = Number((lap as { avg_pace_sec_per_mile?: number | null }).avg_pace_sec_per_mile);
+  if (!Number.isFinite(raw) || raw <= 0) return lap;
+  return { ...lap, heat_adjusted_pace_sec_per_mile: Math.round(raw * ratio) };
 }

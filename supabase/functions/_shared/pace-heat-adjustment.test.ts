@@ -5,10 +5,67 @@
 import { assert, assertAlmostEquals, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   adjustPace,
+  BEYOND_CHART_SCORE,
+  compositeScore,
+  dewPointMultiplier,
   heatAdjustmentPct,
   heatSurfacing,
+  isBeyondChart,
   repLengthFactor,
 } from "./pace-heat-adjustment.ts";
+
+// ── The spreadsheet is the source of truth ─────────────────────────
+// "Dew Point Calculator Emy" v2. These pin the port to the sheet's own cells;
+// if one of these fails, the code has drifted from the calibration.
+
+Deno.test("SHEET REFERENCE: 5:15/mi at 78°F / 75°F dew → 5:33/mi", () => {
+  const a = adjustPace(315, 78, 75);           // continuous, no rep scaling
+  assertAlmostEquals(a.multiplier, 1.132994901, 1e-9);        // sheet B8
+  assertAlmostEquals(a.compositeScore, 162.9746176, 1e-6);    // sheet B9
+  assertAlmostEquals(a.adjustmentPercent, 0.05594923511, 1e-9); // sheet B10
+  assertEquals(Math.round(a.adjustedPaceSeconds), 333);       // sheet B11 → 5:33
+});
+
+Deno.test("dew multiplier: flat 1.01 to the 65°F pivot, exponential above", () => {
+  assertEquals(dewPointMultiplier(45), 1.01);
+  assertEquals(dewPointMultiplier(55), 1.01);
+  assertEquals(dewPointMultiplier(65), 1.01);   // pivot itself is flat
+  assertAlmostEquals(dewPointMultiplier(70), 1.0697312, 1e-6);
+  assertAlmostEquals(dewPointMultiplier(75), 1.1329949, 1e-6);
+  assertAlmostEquals(dewPointMultiplier(80), 1.2000000, 1e-6);
+  // Strictly increasing above the pivot — no flat spots, no inversions.
+  for (let d = 66; d <= 90; d++) {
+    assert(dewPointMultiplier(d) > dewPointMultiplier(d - 1), `flat/inverted at ${d}`);
+  }
+});
+
+Deno.test("dew point outweighs temperature at equal composite pressure", () => {
+  // The whole point of the exponential: a saturated 78/75 morning must not read
+  // easier than a dry 96/67 afternoon just because the air is cooler.
+  const humid = adjustPace(315, 78, 75);
+  const dry = adjustPace(315, 96, 67);
+  assert(humid.adjustmentPercent > 0.05, `humid ${humid.adjustmentPercent}`);
+  // 18 degrees hotter but 8 degrees drier lands within a point of each other,
+  // where a plain temp+dew sum would rate the dry day far harder.
+  assert(Math.abs(humid.adjustmentPercent - dry.adjustmentPercent) < 0.01,
+    `humid ${humid.adjustmentPercent} vs dry ${dry.adjustmentPercent}`);
+});
+
+Deno.test("past composite 185 the chart refuses rather than prescribes", () => {
+  const a = adjustPace(315, 100, 80);
+  assert(a.compositeScore > BEYOND_CHART_SCORE, `score ${a.compositeScore}`);
+  assertEquals(a.beyondChart, true);
+  assertEquals(isBeyondChart(100, 80), true);
+  // Still returns a usable (clamped) number so no caller has to handle null.
+  assertEquals(a.adjustmentPercent, 0.100);
+  // Ordinary hot conditions are NOT beyond the chart.
+  assertEquals(adjustPace(315, 78, 75).beyondChart, false);
+  assertEquals(adjustPace(315, 92, 71).beyondChart, false);
+});
+
+Deno.test("compositeScore helper agrees with adjustPace", () => {
+  assertAlmostEquals(compositeScore(78, 75), adjustPace(315, 78, 75).compositeScore, 1e-12);
+});
 
 Deno.test("repLengthFactor: half ≤0.75mi, ramp to full at 1.5mi", () => {
   assertEquals(repLengthFactor(0.4), 0.5);     // 400m rep
@@ -21,11 +78,11 @@ Deno.test("repLengthFactor: half ≤0.75mi, ramp to full at 1.5mi", () => {
 });
 
 Deno.test("continuous run gets the full table adjustment", () => {
-  // Hadley example: 74°F air + 71°F dew (~145 sum) → ~3% continuous.
+  // 74°F air + 71°F dew → composite ~150.8 → ~3.5% continuous.
   const a = adjustPace(450, 74, 71); // 7:30/mi, no distance = continuous
   assertEquals(a.repLengthFactor, 1.0);
   assertAlmostEquals(a.effectiveAdjustmentPercent, a.adjustmentPercent, 1e-9);
-  assert(a.adjustmentPercent > 0.025 && a.adjustmentPercent < 0.035, `got ${a.adjustmentPercent}`);
+  assert(a.adjustmentPercent > 0.030 && a.adjustmentPercent < 0.040, `got ${a.adjustmentPercent}`);
 });
 
 Deno.test("a short interval rep gets HALF the heat penalty", () => {

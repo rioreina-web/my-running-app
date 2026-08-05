@@ -223,9 +223,14 @@ async function callProcessor(job: ClaimedJob): Promise<CallResult> {
     }
 
     const text = await res.text().catch(() => "");
-    // 409/processing-races and "already processed" shapes come back as
-    // 2xx from the processors; anything else: 429 + 5xx retry, 4xx don't.
-    const retryable = res.status === 429 || res.status >= 500;
+    // 409 = "already processing": with the client now direct-invoking
+    // process-training-memo on insert (2026-08-04), the drain routinely races
+    // an in-flight run. That's a healthy state, not a failure — retry with
+    // backoff, and the next attempt hits the "already processed" 200
+    // short-circuit and completes the job. Marking it failed here would
+    // clobber processing_status on a memo that's actively being processed.
+    // Otherwise: 429 + 5xx retry, remaining 4xx don't.
+    const retryable = res.status === 409 || res.status === 429 || res.status >= 500;
     return {
       kind: "err",
       retryable,

@@ -126,3 +126,103 @@ Deno.test("ANTI-DRIFT: daily miles sum to the weekly rollup for every week", () 
     );
   }
 });
+
+// ─── Day mood = the hardest session's mood ─────────────────────────────
+//
+// A day is not the average of how it felt. These guard `hardestSessionMood`
+// against a regression back to a modal count, which returns the wrong answer
+// for the commonest shape of a workout day.
+
+Deno.test("day mood: a good warm-up and cool-down do NOT outvote a bad workout", () => {
+  const input: TimelineInput = {
+    logs: [
+      { id: "wu", workout_date: "2026-06-15T06:00:00Z", workout_distance_miles: 2, workout_duration_minutes: 18, workout_type: "easy", workout_pace_per_mile: "9:00", mood: "positive" },
+      { id: "wo", workout_date: "2026-06-15T06:30:00Z", workout_distance_miles: 6, workout_duration_minutes: 40, workout_type: "tempo", workout_pace_per_mile: "6:40", mood: "tired" },
+      { id: "cd", workout_date: "2026-06-15T07:20:00Z", workout_distance_miles: 2, workout_duration_minutes: 18, workout_type: "easy", workout_pace_per_mile: "9:00", mood: "positive" },
+    ],
+    features: [
+      { training_log_id: "wu", intensity_score: 0.4, total_duration_seconds: 1080 },
+      { training_log_id: "wo", intensity_score: 2.6, total_duration_seconds: 2400 },
+      { training_log_id: "cd", intensity_score: 0.4, total_duration_seconds: 1080 },
+    ],
+    mentions: [],
+  };
+  const day = buildDailyTimeline(input, 2, REF).find((d) => d.date === "2026-06-15")!;
+  // Modal would say "positive", 2 votes to 1. The workout carries the day.
+  assertEquals(day.mood, "tired");
+});
+
+Deno.test("day mood: falls back to distance when no intensity feature exists", () => {
+  const input: TimelineInput = {
+    logs: [
+      { id: "shakeout", workout_date: "2026-06-15T06:00:00Z", workout_distance_miles: 3, workout_duration_minutes: 27, workout_type: "easy", workout_pace_per_mile: "9:00", mood: "positive" },
+      { id: "long", workout_date: "2026-06-15T15:00:00Z", workout_distance_miles: 18, workout_duration_minutes: 145, workout_type: "long", workout_pace_per_mile: "8:03", mood: "struggling" },
+    ],
+    features: [],
+    mentions: [],
+  };
+  const day = buildDailyTimeline(input, 2, REF).find((d) => d.date === "2026-06-15")!;
+  assertEquals(day.mood, "struggling");
+});
+
+Deno.test("day mood: a rest-day check-in still colours its day", () => {
+  const input: TimelineInput = {
+    logs: [
+      { id: "checkin", workout_date: "2026-06-12", workout_distance_miles: 0, workout_duration_minutes: 0, workout_type: "check_in", workout_pace_per_mile: null, mood: "energized", source: "check_in" },
+    ],
+    features: [],
+    mentions: [],
+  };
+  const day = buildDailyTimeline(input, 2, REF).find((d) => d.date === "2026-06-12")!;
+  assertEquals(day.type, "rest");
+  assertEquals(day.mood, "energized");
+});
+
+Deno.test("day mood: a session outranks a mood-only check-in on the same day", () => {
+  const input: TimelineInput = {
+    logs: [
+      { id: "wo", workout_date: "2026-06-15T06:30:00Z", workout_distance_miles: 8, workout_duration_minutes: 52, workout_type: "tempo", workout_pace_per_mile: "6:30", mood: "struggling" },
+      { id: "ci", workout_date: "2026-06-15T21:00:00Z", workout_distance_miles: 0, workout_duration_minutes: 0, workout_type: "check_in", workout_pace_per_mile: null, mood: "positive", source: "check_in" },
+    ],
+    features: [{ training_log_id: "wo", intensity_score: 2.4, total_duration_seconds: 3120 }],
+    mentions: [],
+  };
+  const day = buildDailyTimeline(input, 2, REF).find((d) => d.date === "2026-06-15")!;
+  assertEquals(day.mood, "struggling");
+});
+
+Deno.test("day mood: never fabricated when a run carries no feeling", () => {
+  const input: TimelineInput = {
+    logs: [
+      { id: "r", workout_date: "2026-06-15", workout_distance_miles: 7, workout_duration_minutes: 55, workout_type: "easy", workout_pace_per_mile: "7:51", mood: null },
+    ],
+    features: [],
+    mentions: [],
+  };
+  const day = buildDailyTimeline(input, 2, REF).find((d) => d.date === "2026-06-15")!;
+  assertEquals(day.miles, 7);
+  assertEquals(day.mood, null);
+});
+
+Deno.test("week mood stays modal — the rank rule is a day-level rule", () => {
+  // One hard "tired" session against four easy "positive" days. The DAY the
+  // workout falls on reads tired; the WEEK still reads positive, because a
+  // week is a distribution over separate days, not readings of one session.
+  const input: TimelineInput = {
+    logs: [
+      { id: "a", workout_date: "2026-06-09", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
+      { id: "b", workout_date: "2026-06-10", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
+      { id: "c", workout_date: "2026-06-11", workout_distance_miles: 8, workout_duration_minutes: 52, workout_type: "tempo", workout_pace_per_mile: "6:30", mood: "tired" },
+      { id: "d", workout_date: "2026-06-12", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
+      { id: "e", workout_date: "2026-06-13", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
+    ],
+    features: [{ training_log_id: "c", intensity_score: 2.5, total_duration_seconds: 3120 }],
+    mentions: [],
+  };
+  const days = buildDailyTimeline(input, 2, REF);
+  assertEquals(days.find((d) => d.date === "2026-06-11")!.mood, "tired");
+
+  const weeks = buildTrendsTimeline(input, 2, REF);
+  const week = weeks.find((w) => w.week_start === "2026-06-08")!;
+  assertEquals(week.mood, "positive");
+});

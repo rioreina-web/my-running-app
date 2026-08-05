@@ -28,6 +28,7 @@
  * `{{placeholder}}` throws, an unused variable throws.
  */
 
+import { TEMPLATE as ASK_NARRATION_V1 } from "./prompts/ask-narration.v1.ts";
 import { TEMPLATE as BLOCK_REVIEW_V1 } from "./prompts/block-review.v1.ts";
 import { TEMPLATE as COACHING_AGENT_SIMPLE_V1 } from "./prompts/coaching-agent-simple.v1.ts";
 import { TEMPLATE as COACHING_AGENT_MODERATE_V1 } from "./prompts/coaching-agent-moderate.v1.ts";
@@ -73,6 +74,7 @@ import { TEMPLATE as WEEKLY_COACHING_REPORT_V1 } from "./prompts/weekly-coaching
  * is a 2-line change: create the .ts file, add an entry here.
  */
 const REGISTRY: Record<string, string> = {
+  "ask-narration.v1": ASK_NARRATION_V1,
   "block-review.v1": BLOCK_REVIEW_V1,
   "coaching-agent-simple.v1": COACHING_AGENT_SIMPLE_V1,
   "coaching-agent-moderate.v1": COACHING_AGENT_MODERATE_V1,

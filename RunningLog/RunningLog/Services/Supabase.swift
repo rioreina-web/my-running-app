@@ -213,16 +213,69 @@ func callEdgeFunction(name: String, body: [String: Any]) async throws -> Data {
 /// clears PostgREST). The edge function writes with the service role, bypassing
 /// that broken layer. Callers still insert the `training_logs` row themselves
 /// over PostgREST (which works).
+/// Raw-bytes upload (2026-08-04, latency Phase 5.2): the m4a bytes go up as
+/// the request body with an audio/* Content-Type — ~25% fewer bytes on the
+/// wire than the old base64-in-JSON shape (which also cost the function a
+/// per-byte decode loop). The edge function still accepts the JSON shape, so
+/// older builds and queued offline retries keep working.
 func uploadVoiceMemoAudio(_ audioData: Data, contentType: String = "audio/m4a") async throws -> String {
-    let data = try await callEdgeFunction(
-        name: "upload-voice-memo",
-        body: [
-            "audioBase64": audioData.base64EncodedString(),
-            "contentType": contentType,
-        ]
-    )
+    guard let url = URL(string: "\(supabaseURL)/functions/v1/upload-voice-memo") else {
+        throw URLError(.badURL)
+    }
+
+    let bearerToken: String
+    if let session = try? await supabase.auth.session {
+        bearerToken = session.accessToken
+    } else {
+        bearerToken = supabaseAnonKey
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
+    request.setValue(supabaseAnonKey, forHTTPHeaderField: "apikey")
+
     struct Resp: Decodable { let audio_url: String }
-    return try JSONDecoder().decode(Resp.self, from: data).audio_url
+
+    var lastError: Error?
+    for attempt in 0 ..< 2 {
+        do {
+            // upload(for:from:) streams the body — no extra in-memory copy.
+            let (data, response) = try await URLSession.shared.upload(for: request, from: audioData)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return try JSONDecoder().decode(Resp.self, from: data).audio_url
+            }
+            if (200 ..< 300).contains(httpResponse.statusCode) {
+                return try JSONDecoder().decode(Resp.self, from: data).audio_url
+            }
+            let message = parseErrorMessage(from: data)
+            if httpResponse.statusCode >= 500 {
+                edgeFunctionLogger.error("upload-voice-memo returned \(httpResponse.statusCode): \(message)")
+                lastError = EdgeFunctionError.httpError(
+                    statusCode: httpResponse.statusCode, function: "upload-voice-memo", message: message
+                )
+                if attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    continue
+                }
+            } else {
+                // 4xx — client error, not retryable.
+                throw EdgeFunctionError.httpError(
+                    statusCode: httpResponse.statusCode, function: "upload-voice-memo", message: message
+                )
+            }
+        } catch let error as EdgeFunctionError {
+            throw error
+        } catch let error as URLError where isRetryableError(error) {
+            lastError = error
+            if attempt == 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                continue
+            }
+        }
+    }
+    throw lastError ?? URLError(.unknown)
 }
 
 private func isRetryableError(_ error: URLError) -> Bool {

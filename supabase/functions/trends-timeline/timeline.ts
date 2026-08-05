@@ -123,6 +123,14 @@ export interface TrendsDayOut {
   type: "key" | "long" | "easy" | "rest";
   mood: string | null;
   niggles: TrendsDayNiggle[];
+  // Sleep + overnight biometrics (additive, 2026-08-05). Decorated in
+  // index.ts from daily_biometrics (device, service-written) and
+  // daily_checkins (one-tap self-report). Absent when there is no data for
+  // the night — never fabricated, same contract as `mood`.
+  hrv_rmssd?: number | null;
+  resting_hr?: number | null;
+  sleep_total_min?: number | null;
+  sleep_quality?: string | null; // 'rough' | 'ok' | 'good'
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────
@@ -565,7 +573,10 @@ export function buildDailyTimeline(
       date: key,
       miles: Math.round(miles * 10) / 10,
       type,
-      mood: dominantMood(moodLogsByDay.get(key) ?? []),
+      // The DAY's mood is the hardest session's mood, not the modal one.
+      // See `hardestSessionMood`. The week keeps `dominantMood` — that is a
+      // distribution over separate days, a different question.
+      mood: hardestSessionMood(moodLogsByDay.get(key) ?? [], featuresById),
       niggles,
     });
   }
@@ -574,6 +585,63 @@ export function buildDailyTimeline(
 
 // ─── Sub-derivations ───────────────────────────────────────────────────
 
+/**
+ * A single day's mood: **the mood of the hardest session that logged one.**
+ *
+ * Not the modal mood. If the warm-up went well, the workout went badly and the
+ * cool-down went well, that is a bad day — and a modal count returns "good",
+ * 2 votes to 1. The session that mattered is the one carrying the signal, and
+ * counting logs launders it under the easy volume either side of it.
+ *
+ * Ranking, in order:
+ *   1. `intensity_score` — the canonical load number, from `features`.
+ *   2. Distance — a long run with no computed feature still outranks a
+ *      3-mile shakeout.
+ *   3. Most recent — a deterministic tiebreak, never a coin flip.
+ *
+ * A mood-only check-in (zero distance, no feature) ranks last, so it colours
+ * the day only when no session carried a mood — which is exactly right on a
+ * rest day, where the check-in IS the day. If you decide a deliberate
+ * end-of-day check-in should outrank the session it follows, this is the one
+ * function to change.
+ *
+ * Returns null when nothing logged a feeling. A mood is never fabricated and
+ * never carried forward from yesterday.
+ *
+ * NB: this is a DAY-level rule. `buildTrendsTimeline` deliberately keeps
+ * `dominantMood` for the week, because rolling up seven separate days asks
+ * "what was the common register?", not "which of these simultaneous readings
+ * represents this session?" — picking the single hardest session out of a
+ * whole week would be a sample of one.
+ */
+function hardestSessionMood(
+  logs: TimelineLog[],
+  featuresById: Map<string, TimelineFeature>,
+): string | null {
+  const withMood = logs.filter((l) => l.mood);
+  if (withMood.length === 0) return null; // never fabricate a feeling
+
+  const ranked = [...withMood].sort((a, b) => {
+    const ai = featuresById.get(a.id)?.intensity_score ?? -1;
+    const bi = featuresById.get(b.id)?.intensity_score ?? -1;
+    if (bi !== ai) return bi - ai;
+
+    const ad = a.workout_distance_miles ?? 0;
+    const bd = b.workout_distance_miles ?? 0;
+    if (bd !== ad) return bd - ad;
+
+    return new Date(b.workout_date).getTime() - new Date(a.workout_date).getTime();
+  });
+
+  return ranked[0].mood!.toLowerCase();
+}
+
+/**
+ * Modal mood across a set of logs (tie → the most recent log's mood).
+ *
+ * Used for the WEEK only. For a single day, see `hardestSessionMood` — a day's
+ * sessions are readings of one training unit, and there the hardest one wins.
+ */
 function dominantMood(logs: TimelineLog[]): string | null {
   const withMood = logs.filter((l) => l.mood);
   if (withMood.length === 0) return null; // never fabricate a feeling

@@ -34,6 +34,21 @@ const genAI = new GoogleGenerativeAI(geminiApiKey);
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
 /**
+ * Run a promise off the critical path. Supabase's EdgeRuntime.waitUntil keeps
+ * the worker alive until it settles; off-platform we just detach. Callers must
+ * pass promises that never throw (or .catch first) — this is fire-and-forget.
+ */
+function runInBackground(p: Promise<unknown>): void {
+  try {
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+      EdgeRuntime.waitUntil(p);
+      return;
+    }
+  } catch { /* fall through */ }
+  void p;
+}
+
+/**
  * Fire parse-workout-structure for this row AFTER the response returns. The
  * pg_net trigger that was supposed to do this is dead on Supabase (ALTER
  * DATABASE SET app.settings.* is permission-denied), so we invoke the parser
@@ -54,13 +69,7 @@ function fireParseStructure(trainingLogId: string, userId: string): void {
       if (!r.ok) console.warn(`[process-training-memo] parse-structure ${r.status} for ${trainingLogId}`);
     })
     .catch((e) => console.warn(`[process-training-memo] parse-structure fetch failed: ${e}`));
-  try {
-    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
-      EdgeRuntime.waitUntil(p);
-      return;
-    }
-  } catch { /* fall through */ }
-  void p;
+  runInBackground(p);
 }
 
 const VALID_MOODS = ["energized", "positive", "neutral", "tired", "struggling", "injured"] as const;
@@ -360,7 +369,7 @@ Deno.serve(async (req) => {
     // an attacker can't distinguish "not yours" from "doesn't exist".
     const { data: ownerRow, error: ownerErr } = await supabase
       .from("training_logs")
-      .select("user_id, notes, cleaned_notes, audio_url")
+      .select("user_id, notes, cleaned_notes, audio_url, processing_status")
       .eq("id", recordId)
       .maybeSingle();
     if (ownerErr || !ownerRow || ownerRow.user_id !== authUserId) {
@@ -384,7 +393,13 @@ Deno.serve(async (req) => {
     const typedNotes = ((ownerRow.notes as string | null) ?? "").trim();
     const audioUrlStr = (ownerRow.audio_url as string | null) ?? record.audio_url ?? null;
     const hasAudio = !!audioUrlStr;
-    if (ownerRow.cleaned_notes) {
+    // "Already processed" short-circuit. Gated on processing_status =
+    // 'completed', NOT on cleaned_notes alone: the two-stage reveal writes the
+    // raw transcript to cleaned_notes at status 'transcribed' BEFORE the
+    // analysis runs, so a cleaned_notes-only guard would make any retry of a
+    // half-done row skip the analysis forever. cleaned_notes stays in the
+    // condition so a completed row with no notes (edge case) still reprocesses.
+    if (ownerRow.cleaned_notes && ownerRow.processing_status === "completed") {
       return new Response(JSON.stringify({ message: "Skipped: already processed" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -404,7 +419,14 @@ Deno.serve(async (req) => {
       .eq("id", record.id)
       .single();
 
-    if (currentStatus?.processing_status === "processing") {
+    // 'transcribed' counts as in-flight too: the two-stage reveal flips the
+    // row to 'transcribed' mid-run (transcript written, analysis still
+    // going), and without it here a racing drain retry inside that 5-12s
+    // window would start a duplicate transcription + analysis.
+    if (
+      currentStatus?.processing_status === "processing" ||
+      currentStatus?.processing_status === "transcribed"
+    ) {
       const lastAttempt = currentStatus.last_processing_attempt
         ? new Date(currentStatus.last_processing_attempt)
         : null;
@@ -555,6 +577,24 @@ Deno.serve(async (req) => {
       .order("workout_date", { ascending: false })
       .limit(5);
 
+    // Athlete state — launched HERE, in parallel with transcription, because
+    // it takes no transcript input. It was previously awaited serially after
+    // transcription, which put a full 2-6s rebuild on the critical path (the
+    // blanket invalidation trigger meant the 60-min cache never hit). Wrapped
+    // so a state failure never blocks memo ingest — saving the memo matters
+    // more than the insight.
+    const tStatePromiseStart = Date.now();
+    const athleteStatePromise = (async () => {
+      try {
+        const st = await getOrBuildAthleteState(supabase, authUserId);
+        console.log(`[memo-timing] athlete-state=${Date.now() - tStatePromiseStart}ms`);
+        return st;
+      } catch (err) {
+        console.warn("process-training-memo: athlete-state load failed:", err);
+        return null;
+      }
+    })();
+
     // ── Step 1: get the transcript ──
     // Voice memos: transcribe the audio (Groq → OpenAI → Gemini fallback).
     // Typed notes: the athlete's text IS the transcript — skip transcription.
@@ -579,7 +619,10 @@ Deno.serve(async (req) => {
           method: "POST",
           headers: { Authorization: `Bearer ${groqKey}` },
           body: formData,
-          signal: AbortSignal.timeout(30000),
+          // 12s, not 30s: a typical 60s memo transcribes on Groq in 2-3s, so a
+          // long timeout only ever delays the OpenAI fallback when Groq is
+          // degraded-but-up. Same model, same output — we just fail over faster.
+          signal: AbortSignal.timeout(12000),
         });
 
         if (groqRes.ok) {
@@ -660,16 +703,35 @@ Deno.serve(async (req) => {
     console.log(`Transcription complete via ${transcriptionProvider}: "${transcription.slice(0, 100)}..."`);
     console.log(`[memo-timing] transcription=${tTranscribed - tStart}ms provider=${transcriptionProvider}`);
 
+    // ── Two-stage reveal: put the athlete's own words on the row NOW ──
+    // The transcript is ready ~6-10s in; the analysis takes another 5-12s.
+    // Write the raw transcript as cleaned_notes and flip the status to
+    // 'transcribed' so the Log entry renders the athlete's words immediately;
+    // mood / niggles / extracted structure fill in when the final UPDATE flips
+    // it to 'completed'. Safe against retries because the "already processed"
+    // short-circuit above is gated on processing_status = 'completed'.
+    const earlyRevealPromise = supabase
+      .from("training_logs")
+      .update({ cleaned_notes: transcription, processing_status: "transcribed" })
+      .eq("id", record.id)
+      .then(({ error }: { error: { message: string } | null }) => {
+        if (error) console.warn(`[process-training-memo] early reveal failed: ${error.message}`);
+      });
+
     // ── Step 2: Analyze transcript with Gemini ──
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Await the recent logs + coach context + scheduled workout + similar
-    // prior workout — all fetched in parallel with transcription.
-    const [recentRes, coachCtx, scheduledRes, prior] = await Promise.all([
+    // prior workout + athlete state — all fetched in parallel with
+    // transcription. (The early-reveal write rides along so it's settled well
+    // before the final results UPDATE — no write-ordering race.)
+    const [recentRes, coachCtx, scheduledRes, prior, athleteState] = await Promise.all([
       recentLogsPromise,
       coachContextPromise,
       scheduledPromise,
       priorPromise,
+      athleteStatePromise,
+      earlyRevealPromise,
     ]);
     const recentLogs = recentRes.data;
     const scheduledLite = (scheduledRes.data ?? null) as CoachScheduledLite | null;
@@ -750,16 +812,17 @@ Deno.serve(async (req) => {
     // Athlete-state block — the SAME canonical context the Daily Read / Coach
     // surfaces read (goals, phase, mileage, load, niggles, patterns). Without
     // this the voice-log insight was goal-blind and thinner than the HealthKit
-    // insight; now both reason from the same direction. Wrapped so a state
-    // failure never blocks memo ingest — saving the memo matters more than the
-    // insight.
+    // insight; now both reason from the same direction. Fetched in parallel
+    // with transcription (athleteStatePromise above) — same context, no longer
+    // paid for serially on the critical path.
     let athleteStateContext = "";
-    try {
-      const st = await getOrBuildAthleteState(supabase, authUserId);
-      const block = stateToPromptContext(st);
-      if (block) athleteStateContext = `\n\n## Athlete state\n${block}`;
-    } catch (err) {
-      console.warn("process-training-memo: athlete-state load failed:", err);
+    if (athleteState) {
+      try {
+        const block = stateToPromptContext(athleteState);
+        if (block) athleteStateContext = `\n\n## Athlete state\n${block}`;
+      } catch (err) {
+        console.warn("process-training-memo: athlete-state format failed:", err);
+      }
     }
 
     let coachAnchorContext = "";
@@ -832,32 +895,44 @@ Deno.serve(async (req) => {
     // Save full transcript to storage (audio path only — a typed note has no
     // audio storage path to derive the transcript filename from, and the note
     // text already lives on the row as `notes`/`cleaned_notes`).
+    //
+    // The upload itself runs in the BACKGROUND (runInBackground): the athlete
+    // is waiting on processing_status, and the .txt artifact is never read on
+    // the hot path. transcript_url is safe to write before the upload lands —
+    // getPublicUrl is pure string construction (see the 2026-07-15 note below),
+    // so the identifier is deterministic; a failed upload logs and leaves a
+    // dangling identifier, exactly as a failed awaited upload left a null one.
     let transcriptUrl: string | null = null;
     if (analysis.transcription && hasAudio && storagePath) {
       const transcriptFileName = storagePath.replace(/\.(m4a|mp3|wav)$/, "_transcript.txt");
       const transcriptContent = new TextEncoder().encode(analysis.transcription);
 
-      const { error: uploadError } = await supabase.storage
+      // NOTE (2026-07-15): training-memos is a PRIVATE bucket now.
+      // getPublicUrl is pure string construction — we keep it because the
+      // URL-shaped string is the canonical identifier format stored in
+      // training_logs (readers parse the storage path back out of it and
+      // download with the service role). It is not a fetchable link.
+      const { data: urlData } = supabase.storage
         .from("training-memos")
-        .upload(transcriptFileName, transcriptContent, {
-          contentType: "text/plain",
-          upsert: true,
-        });
+        .getPublicUrl(transcriptFileName);
+      transcriptUrl = urlData.publicUrl;
 
-      if (!uploadError) {
-        // NOTE (2026-07-15): training-memos is a PRIVATE bucket now.
-        // getPublicUrl is pure string construction — we keep it because the
-        // URL-shaped string is the canonical identifier format stored in
-        // training_logs (readers parse the storage path back out of it and
-        // download with the service role). It is not a fetchable link.
-        const { data: urlData } = supabase.storage
+      runInBackground(
+        supabase.storage
           .from("training-memos")
-          .getPublicUrl(transcriptFileName);
-        transcriptUrl = urlData.publicUrl;
-        console.log(`Saved transcript to: ${transcriptUrl}`);
-      } else {
-        console.error(`Failed to save transcript: ${uploadError.message}`);
-      }
+          .upload(transcriptFileName, transcriptContent, {
+            contentType: "text/plain",
+            upsert: true,
+          })
+          .then(({ error: uploadError }) => {
+            if (uploadError) {
+              console.error(`Failed to save transcript: ${uploadError.message}`);
+            } else {
+              console.log(`Saved transcript to: ${transcriptUrl}`);
+            }
+          })
+          .catch((e) => console.error(`Transcript upload threw: ${e}`)),
+      );
     }
 
     // Build update payload — only overwrite distance/duration if no HealthKit values exist
@@ -975,28 +1050,35 @@ Deno.serve(async (req) => {
     // not the silent no-op it is on the athlete-state rebuild path). Awaited
     // so failures log, but writeNiggleMentions never throws.
     const mentionDate = (existingRecord?.workout_date as string | null) ?? new Date().toISOString();
+    // Kept AWAITED deliberately (unlike the resolution/memory writes below):
+    // the niggle chips render alongside the journal entry, and backgrounding
+    // this write made them pop in a beat late. It's also the cheapest write.
     await writeNiggleMentions(supabase, authUserId, record.id, mentionDate, analysis.extracted_data);
     // The all-clear signal: when the athlete says a niggle is better now,
     // record a resolution watermark so it drops out of active analysis until
-    // (and unless) a new mention comes in after this date.
-    await writeNiggleResolutions(supabase, authUserId, record.id, mentionDate, analysis.extracted_data);
+    // (and unless) a new mention comes in after this date. Background: nothing
+    // athlete-visible reads it in the seconds after the entry appears, and the
+    // writer never throws — runInBackground still runs it to completion.
+    runInBackground(writeNiggleResolutions(supabase, authUserId, record.id, mentionDate, analysis.extracted_data));
 
     // ── Long-term memory extraction (roadmap 4.1, "it knows you") ─────────
     // Dedup-or-reinforce the LLM's memory_candidates into user_memories:
     // durable facts, preferences, constraints, life context, gear, and
     // quotable episodes — the athlete's own framing only. Zero extra LLM cost
     // (the candidates rode in the memo analysis response above). Service-role,
-    // awaited so failures log, but writeMemoryCandidates never throws. The memo
-    // text is the provenance excerpt; mentionDate dates episodes.
+    // backgrounded (runInBackground) so the athlete isn't waiting on it —
+    // failures still log, writeMemoryCandidates never throws, and the write
+    // always runs to completion. Long-term memory is read by later coaching
+    // surfaces, never by the entry that's about to render.
     const memoExcerpt = (analysis.cleaned_notes || analysis.transcription || "").slice(0, 200);
-    await writeMemoryCandidates(
+    runInBackground(writeMemoryCandidates(
       supabase,
       authUserId,
       record.id,
       mentionDate,
       memoExcerpt,
       analysis.memory_candidates,
-    );
+    ));
 
     // ── A (2026-06-17 rev3): AI Insight is ON DEMAND, not generated here. ──
     // Earlier revs generated the v5 insight from this function (first async via

@@ -5,16 +5,38 @@
  * iOS should eventually call this via edge function to prevent drift.
  *
  * Formula:
- *   1. dpMultiplier  = 1.0 + max(0, (dewPointF - 55) * 0.003495)
+ *   1. dpMultiplier  = 1.01                                    (dew ≤ 65°F)
+ *                    = 1.01 × 1.011557695^(dewPointF - 65)     (dew > 65°F)
  *   2. compositeScore = tempF + (dewPointF × dpMultiplier)
  *   3. adjustmentPct  = interpolate(compositeScore, adjustmentTable)
  *   4. repFactor      = repLengthFactor(distanceMiles)
  *   5. adjustedPace   = paceSeconds × (1 + adjustmentPct × repFactor)
  *
- * Validation (2026-06-23): the table is a faithful (slightly conservative)
- * implementation of Coach Mark Hadley's "temperature + dew point" chart, which
- * aligns with Daniels VDOT heat guidance and Runner's Connect dew-point work.
- * Dew point (not relative humidity) is the right moisture metric for runners.
+ * RECALIBRATION (2026-08-05, Rio): this now matches "Dew Point Calculator Emy"
+ * v2 EXACTLY — the spreadsheet is the source of truth, this is the port.
+ *
+ * What changed and why. The previous version used a LINEAR multiplier
+ * (1 + (dew-55) × 0.003495) against a table shifted ~10 composite points to the
+ * right of Coach Mark Hadley's published "temperature + dew point" chart. The
+ * shift is intentional — the multiplier is supposed to inflate the score enough
+ * to absorb it. But at 72–75°F dew the linear form only added ~5 points where
+ * the table demanded ~10, so the model under-corrected by roughly half a row.
+ * Measured against 590 real laps (May–Aug 2026) it returned a mean adjustment
+ * of 3.60% where both the sheet (4.37%) and Hadley's chart (4.34%) agree.
+ *
+ * The exponential multiplier fixes this: it contributes ~+10 points at 75°F dew,
+ * exactly the shift the table expects. It also weights dew point more heavily
+ * than temperature, which is the physiologically correct bias — dew point, not
+ * air temperature, determines whether sweat can evaporate at all. Hadley's plain
+ * temp+dew sum treats the two as interchangeable and consequently reads a
+ * 78°F/75°F-dew morning (RH ~90%) as easier than a 96°F/67°F-dew afternoon.
+ *
+ * Reference point, pinned in the tests: 5:15/mi at 78°F / 75°F dew → 5:33/mi.
+ *
+ * Above a composite of 185 the chart stops. The sheet returns NA() there and
+ * shows "Very tough conditions to run marathon pace work"; we surface the same
+ * intent via `beyondChart` while still returning the 10% cap so no consumer has
+ * to handle a null. Prefer showing the refusal over showing the number.
  *
  * REP-LENGTH SCALING (decision 2026-06-23, Rio): the table is calibrated for
  * CONTINUOUS running of ~1.5 mi or longer. Shorter reps get less of the penalty
@@ -26,21 +48,43 @@
  * 600m interval reps get the scaled-down amount. Unknown length → full.
  */
 
+// ── Dew Point Multiplier ───────────────────────────────────────
+// Exponential above a 65°F pivot. Flat 1.01 below it — cool air is not free,
+// but it doesn't scale either. Constants are the spreadsheet's, not rounded.
+
+export const DEW_MULT_FLOOR = 1.01;
+export const DEW_MULT_PIVOT_F = 65;
+export const DEW_MULT_BASE = 1.011557695;
+
+/** The multiplier the composite score applies to dew point. */
+export function dewPointMultiplier(dewPointF: number): number {
+  if (!isFinite(dewPointF) || dewPointF <= DEW_MULT_PIVOT_F) return DEW_MULT_FLOOR;
+  return DEW_MULT_FLOOR * Math.pow(DEW_MULT_BASE, dewPointF - DEW_MULT_PIVOT_F);
+}
+
 // ── Adjustment Table ───────────────────────────────────────────
-// Composite score → adjustment percentage (from dew point research v2)
+// Composite score → adjustment percentage. Matches "Dew Point Calculator Emy"
+// v2 cell B10 exactly; each segment's slope is the sheet's own.
 
 const ADJUSTMENT_TABLE: Array<{ score: number; pct: number }> = [
   { score: 100, pct: 0.000 },
-  { score: 110, pct: 0.004 },
-  { score: 120, pct: 0.010 },
-  { score: 130, pct: 0.015 },
-  { score: 140, pct: 0.021 },
-  { score: 150, pct: 0.030 },
-  { score: 160, pct: 0.045 },
-  { score: 170, pct: 0.065 },
-  { score: 180, pct: 0.090 },
-  { score: 190, pct: 0.120 },
+  { score: 110, pct: 0.005 }, // slope 0.0005
+  { score: 120, pct: 0.008 }, // slope 0.0003
+  { score: 130, pct: 0.012 }, // slope 0.0004
+  { score: 140, pct: 0.020 }, // slope 0.0008
+  { score: 150, pct: 0.034 }, // slope 0.0014
+  { score: 160, pct: 0.050 }, // slope 0.0016
+  { score: 170, pct: 0.070 }, // slope 0.0020
+  { score: 185, pct: 0.100 }, // slope 0.0020 — chart ends here
 ];
+
+/** Past this composite the chart has nothing to say. The sheet refuses; we flag
+ *  it and clamp, so callers can show the refusal without handling a null. */
+export const BEYOND_CHART_SCORE = 185;
+
+/** Copy for the refusal, verbatim from the sheet. */
+export const BEYOND_CHART_MESSAGE =
+  "Very tough conditions to run marathon pace work";
 
 // ── Rep-length scaling ─────────────────────────────────────────
 
@@ -150,6 +194,9 @@ export interface DewPointAdjustment {
   effectiveAdjustmentPercent: number;
   adjustmentSecondsPerMile: number;
   heatCategory: HeatCategory;
+  /** Composite is past the end of the chart (>185). The returned pace is a
+   *  clamped extrapolation — show `BEYOND_CHART_MESSAGE` instead of using it. */
+  beyondChart: boolean;
 }
 
 /**
@@ -163,8 +210,8 @@ export function adjustPace(
   dewPointF: number,
   distanceMiles?: number | null,
 ): DewPointAdjustment {
-  // 1. Dew Point Multiplier — baseline at 55°F DP
-  const dpMultiplier = 1.0 + Math.max(0, (dewPointF - 55) * 0.003495);
+  // 1. Dew Point Multiplier — flat below the 65°F pivot, exponential above
+  const dpMultiplier = dewPointMultiplier(dewPointF);
 
   // 2. Composite Score = Temp + (Dew Point × Multiplier)
   const compositeScore = tempF + (dewPointF * dpMultiplier);
@@ -190,6 +237,7 @@ export function adjustPace(
     effectiveAdjustmentPercent: effectivePct,
     adjustmentSecondsPerMile: adjustedSeconds - paceSeconds,
     heatCategory: heatCategory(compositeScore),
+    beyondChart: compositeScore > BEYOND_CHART_SCORE,
   };
 }
 
@@ -214,8 +262,13 @@ export function adjustAllPaces(
  * Useful for weather cards and heat warnings.
  */
 export function compositeScore(tempF: number, dewPointF: number): number {
-  const dpMultiplier = 1.0 + Math.max(0, (dewPointF - 55) * 0.003495);
-  return tempF + (dewPointF * dpMultiplier);
+  return tempF + (dewPointF * dewPointMultiplier(dewPointF));
+}
+
+/** True when conditions are past the end of the chart — the caller should show
+ *  `BEYOND_CHART_MESSAGE` instead of prescribing a pace. */
+export function isBeyondChart(tempF: number, dewPointF: number): boolean {
+  return compositeScore(tempF, dewPointF) > BEYOND_CHART_SCORE;
 }
 
 /** Continuous-run adjustment fraction for a temp/dew (no rep scaling). Used by
@@ -259,6 +312,8 @@ export function buildWeatherJson(
     composite_score: Math.round(score * 10) / 10,
     heat_category: heatCategory(score),
     adjustment_pct: Math.round(adjPct * 10000) / 10000,
+    // Past the end of the chart — UI should refuse rather than prescribe.
+    beyond_chart: score > BEYOND_CHART_SCORE,
     // Whether the UI/coach should apply the adjustment, just mention it, or hide it.
     surfacing: heatSurfacing(tempF, dewPointF),
     fetched_at: fetchedAt,

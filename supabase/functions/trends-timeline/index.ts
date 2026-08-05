@@ -33,6 +33,11 @@ import {
 } from "./keySessions.ts";
 import type { PaceZones } from "../_shared/workoutSegmentation.ts";
 import { buildFastSegments, type FSLapRow, type FSStream, type FSWeather } from "./fastSegments.ts";
+import {
+  buildPaceBands,
+  type FitnessSnapshotRow,
+  type PaceBandLap,
+} from "./paceBands.ts";
 import type { ZoneTable } from "../_shared/quality-volume.ts";
 import { fetchQualityLaps } from "../_shared/qualityLaps.ts";
 
@@ -192,6 +197,62 @@ Deno.serve(async (req: Request) => {
     const flagged = flaggedRuns(logs);
     const trimmed = trimmedRuns(logs);
 
+    // Sleep + overnight biometrics onto the daily substrate (additive,
+    // 2026-08-05): daily_biometrics (device data, written by vital-webhook)
+    // and daily_checkins (the one-tap self-report). Feeds the recovery
+    // ledger's Overnight + Sleep factors. Errors leave the days untouched —
+    // supabase-js reports errors in-band, so a missing table (migration not
+    // yet pushed) degrades to no decoration, never a 500. Only one source
+    // ('garmin') exists today; if more arrive, last row per date wins.
+    try {
+      const [bio, checkins] = await Promise.all([
+        supabase
+          .from("daily_biometrics")
+          .select("date, hrv_rmssd, resting_hr, sleep_total_min")
+          .eq("user_id", userId)
+          .gte("date", since),
+        supabase
+          .from("daily_checkins")
+          .select("date, sleep_quality")
+          .eq("user_id", userId)
+          .gte("date", since),
+      ]);
+      const bioByDate = new Map<string, Record<string, unknown>>();
+      for (const r of (bio.data ?? []) as Array<Record<string, unknown>>) {
+        bioByDate.set(String(r.date).slice(0, 10), r);
+      }
+      const qualByDate = new Map<string, string>();
+      for (const r of (checkins.data ?? []) as Array<Record<string, unknown>>) {
+        if (typeof r.sleep_quality === "string") {
+          qualByDate.set(String(r.date).slice(0, 10), r.sleep_quality);
+        }
+      }
+      for (const d of days) {
+        const b = bioByDate.get(d.date);
+        if (b) {
+          if (typeof b.hrv_rmssd === "number") d.hrv_rmssd = b.hrv_rmssd;
+          if (typeof b.resting_hr === "number") d.resting_hr = b.resting_hr;
+          if (typeof b.sleep_total_min === "number") d.sleep_total_min = b.sleep_total_min;
+        }
+        const q = qualByDate.get(d.date);
+        if (q) d.sleep_quality = q;
+      }
+    } catch (e) {
+      console.error("[trends-timeline] sleep/biometrics decoration skipped:", e);
+    }
+
+    // Per-session weather, fetched ONCE and shared by fast segments (which
+    // needs temp + dew for its conditions adjustment) and pace bands (which
+    // reports dew alongside a session, but never decides membership on it).
+    // Both consumers require laps, so skip the round trip without them, and
+    // swallow a failure — weather is additive to every surface that reads it.
+    const weatherByLog = lapsByWorkout.size > 0
+      ? await fetchWeatherByLog(userId, logIds).catch((e) => {
+        console.error("[trends-timeline] weather skipped:", e);
+        return new Map<string, FSWeather>();
+      })
+      : new Map<string, FSWeather>();
+
     // 5) Fast segments — the system-aware fast-work trend (volume vs. each
     //    system's own range, conditions-adjusted pace, mixed-session
     //    breakdown). Reuses the same laps + zones as Sections A/B, plus
@@ -211,7 +272,6 @@ Deno.serve(async (req: Request) => {
           moderate: zones.moderate ?? undefined,
           easy: zones.easy ?? undefined,
         };
-        const weatherByLog = await fetchWeatherByLog(userId, logIds);
         // NOTE: split-grade from per-second altitude streams is OFF in the
         // timeline path. Fetching every key workout's `external_streams` blob
         // (tens–hundreds of KB each, serially) stalled the whole Trends
@@ -250,6 +310,40 @@ Deno.serve(async (req: Request) => {
       console.error("[trends-timeline] fast segments skipped:", e);
     }
 
+    // 6) Pace bands — "am I doing the work at the pace I'm supposed to be
+    //    doing it at?" One band at a time (HM / MP), membership decided on
+    //    heat-adjusted lap pace against a weekly-median anchor that steps
+    //    across the window. Reuses the same laps and weather as everything
+    //    above; the only extra read is `fitness_snapshots`. Additive: a
+    //    failure here never fails the timeline, and a missing anchor returns
+    //    null so the surface hides itself rather than guessing a band.
+    let paceBands: ReturnType<typeof buildPaceBands> = null;
+    try {
+      if (lapsByWorkout.size > 0) {
+        const snapshots = await fetchFitnessSnapshots(userId, since);
+        if (snapshots.length > 0) {
+          const dewByLog = new Map<string, number>();
+          for (const [id, w] of weatherByLog) dewByLog.set(id, w.dewPointF);
+          paceBands = buildPaceBands(
+            logs
+              // The athlete's own trim decision holds here too — a
+              // double-logged run must not put its minutes in a band twice.
+              .filter((l) => (l as { stats_excluded?: boolean | null }).stats_excluded !== true)
+              .map((l) => ({
+                id: l.id,
+                workout_date: l.workout_date,
+                workout_distance_miles: l.workout_distance_miles,
+              })),
+            lapsByWorkout as unknown as Map<string, PaceBandLap[]>,
+            snapshots,
+            dewByLog,
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[trends-timeline] pace bands skipped:", e);
+    }
+
     return new Response(
       JSON.stringify({
         weeks: timeline,
@@ -259,6 +353,7 @@ Deno.serve(async (req: Request) => {
         quality_sessions: qualitySessions,
         quality_volume: qualityVolume,
         fast_segments: fastSegments,
+        pace_bands: paceBands,
         generated_at: new Date().toISOString(),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -336,6 +431,33 @@ async function fetchWeatherByLog(
     }
   }
   return out;
+}
+
+/**
+ * The athlete's race-prediction snapshots, which anchor the pace bands.
+ *
+ * Reaches ~8 weeks further back than the session window on purpose: the
+ * anchor is a weekly median and the junk filter is relative to the series
+ * median, so both are steadier with more history behind them. A read failure
+ * returns `[]` — pace bands then emit nothing rather than a guessed band.
+ */
+async function fetchFitnessSnapshots(
+  userId: string,
+  since: string,
+): Promise<FitnessSnapshotRow[]> {
+  const from = new Date(new Date(since + "T00:00:00Z").getTime() - 56 * 86400_000)
+    .toISOString();
+  const { data, error } = await supabase
+    .from("fitness_snapshots")
+    .select("created_at, predicted_half_seconds, predicted_marathon_seconds, confidence_tier")
+    .eq("user_id", userId)
+    .gte("created_at", from)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("[trends-timeline] fitness_snapshots read failed:", error);
+    return [];
+  }
+  return (data ?? []) as unknown as FitnessSnapshotRow[];
 }
 
 /**

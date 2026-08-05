@@ -71,6 +71,10 @@ struct TodayHomeView: View {
                         coachNoteSection(note: note)
                     }
                     TodayMoodPrompt()
+                    // The one-tap sleep check-in rides with the mood prompt —
+                    // one daily ritual, two words. Tier-1 recovery signal;
+                    // writes `daily_checkins`, feeds the ledger's Sleep factor.
+                    SleepCheckInPrompt()
                     EditorialRule()
                     yesterdaySection
                     if let workout = tomorrowWorkout {

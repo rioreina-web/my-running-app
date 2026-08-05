@@ -1,0 +1,266 @@
+--- a/supabase/functions/trends-timeline/timeline.ts
++++ b/supabase/functions/trends-timeline/timeline.ts
+@@ -415,6 +415,10 @@
+     t: dayUTC(m.mentioned_at).getTime(),
+   }));
+ 
++  // The week's mood is built from the SAME day labels the daily timeline
++  // emits — see `moodByDay`. Not from this week's run logs.
++  const dayMoods = moodByDay(input, featuresById);
++
+   const windows = buildWeekWindows(weeks, reference);
+ 
+   return windows.map(({ start, end }) => {
+@@ -460,8 +464,9 @@
+       keyPaceSec = input.keyWorkPaceByLog?.get(keyLog.id) ?? logPaceSec(keyLog);
+     }
+ 
+-    // Dominant mood (modal; tie → most recent log's mood).
+-    const mood = dominantMood(weekLogs);
++    // The week's mood: modal over this week's DAY labels (tie → most recent
++    // day). See `modalDayMood` for why the unit is the day and not the log.
++    const mood = modalDayMood(dayMoods, start, end);
+ 
+     // Niggles — distinct verbatim labels, ordered by mention date.
+     const niggles = distinctNiggleLabels(weekMentions);
+@@ -514,13 +519,9 @@
+ 
+   // Mood is a property of a logged feeling, not of a run: a mood-only
+   // check-in (zero distance, dropped by the running filter) still colors its
+-  // day. Gather from ANY log with a mood, excluding only explicit trims.
+-  const moodLogsByDay = new Map<string, TimelineLog[]>();
+-  for (const l of input.logs) {
+-    if (!l.mood || l.stats_excluded === true) continue;
+-    const key = isoDate(dayUTC(l.workout_date));
+-    (moodLogsByDay.get(key) ?? moodLogsByDay.set(key, []).get(key)!).push(l);
+-  }
++  // day. `moodByDay` gathers from ANY log with a mood, excluding only explicit
++  // trims — and the weekly builder now reads the very same map.
++  const dayMoods = moodByDay(input, featuresById);
+ 
+   // Niggles by day — verbatim, never interpreted.
+   const nigByDay = new Map<string, TimelineMention[]>();
+@@ -565,10 +566,11 @@
+       date: key,
+       miles: Math.round(miles * 10) / 10,
+       type,
+-      // The DAY's mood is the hardest session's mood, not the modal one.
+-      // See `hardestSessionMood`. The week keeps `dominantMood` — that is a
+-      // distribution over separate days, a different question.
+-      mood: hardestSessionMood(moodLogsByDay.get(key) ?? [], featuresById),
++      // The DAY's mood is the hardest session's mood, not the modal one — see
++      // `hardestSessionMood`. The week rolls these labels up modally in
++      // `modalDayMood`, which is a distribution over separate days: a
++      // different question, one level up.
++      mood: dayMoods.get(key) ?? null,
+       niggles,
+     });
+   }
+@@ -600,8 +602,8 @@
+  * Returns null when nothing logged a feeling. A mood is never fabricated and
+  * never carried forward from yesterday.
+  *
+- * NB: this is a DAY-level rule. `buildTrendsTimeline` deliberately keeps
+- * `dominantMood` for the week, because rolling up seven separate days asks
++ * NB: this is a DAY-level rule. The week rolls the resulting labels up
++ * modally in `modalDayMood`, because rolling up seven separate days asks
+  * "what was the common register?", not "which of these simultaneous readings
+  * represents this session?" — picking the single hardest session out of a
+  * whole week would be a sample of one.
+@@ -629,34 +631,92 @@
+ }
+ 
+ /**
+- * Modal mood across a set of logs (tie → the most recent log's mood).
++ * Every day's mood, keyed by ISO date. **The one place a mood is resolved.**
++ *
++ * Both builders read this map, so a week can no longer disagree with the days
++ * drawn underneath it. It replaces a second, subtly different rollup
++ * (`dominantMood`) that counted raw logs inside a week and diverged from the
++ * daily timeline in two ways that both showed on screen:
+  *
+- * Used for the WEEK only. For a single day, see `hardestSessionMood` — a day's
+- * sessions are readings of one training unit, and there the hardest one wins.
++ *   1. It counted LOGS, not days. Three logs on one hard Tuesday (warm-up,
++ *      workout, cool-down) cast three votes, so a single session could carry
++ *      a whole week — exactly the laundering `hardestSessionMood` exists to
++ *      prevent, reintroduced one level up.
++ *   2. It read only `weekLogs`, which is filtered to runs with distance > 0.
++ *      Mood-only check-ins were dropped, so a week of two runs and five
++ *      rest-day check-ins took its label from the two runs. The daily
++ *      builder had the opposite rule, documented three lines from here.
++ *
++ * Mood-only check-ins are included; explicit trims (`stats_excluded`) are not.
+  */
+-function dominantMood(logs: TimelineLog[]): string | null {
+-  const withMood = logs.filter((l) => l.mood);
+-  if (withMood.length === 0) return null; // never fabricate a feeling
+-  const counts = new Map<string, number>();
+-  for (const l of withMood) {
+-    const key = l.mood!.toLowerCase();
+-    counts.set(key, (counts.get(key) ?? 0) + 1);
++function moodByDay(
++  input: TimelineInput,
++  featuresById: Map<string, TimelineFeature>,
++): Map<string, string> {
++  const byDay = new Map<string, TimelineLog[]>();
++  for (const l of input.logs) {
++    if (!l.mood || l.stats_excluded === true) continue;
++    const key = isoDate(dayUTC(l.workout_date));
++    (byDay.get(key) ?? byDay.set(key, []).get(key)!).push(l);
++  }
++
++  const out = new Map<string, string>();
++  for (const [key, logs] of byDay) {
++    const mood = hardestSessionMood(logs, featuresById);
++    if (mood) out.set(key, mood);
+   }
++  return out;
++}
++
++/**
++ * A week's mood: the modal DAY label across `[start, end)`, ties broken toward
++ * the most recent day.
++ *
++ * The unit is deliberately the day, not the log. A day's several logs are
++ * readings of one training unit and `hardestSessionMood` has already collapsed
++ * them; a week is a distribution over separate days, and asks the different
++ * question "what was the common register?" Counting logs here would let one
++ * heavily-logged session outvote four quiet ones.
++ *
++ * Returns null when no day in the week logged a feeling. A mood is never
++ * fabricated and never carried in from the week before.
++ */
++function modalDayMood(
++  dayMoods: Map<string, string>,
++  start: Date,
++  end: Date,
++): string | null {
++  const s = start.getTime();
++  const e = end.getTime();
++
++  // Oldest → newest, so "last seen" is "most recent".
++  const inWeek = [...dayMoods.entries()]
++    .filter(([date]) => {
++      const t = dayUTC(date).getTime();
++      return t >= s && t < e;
++    })
++    .sort((a, b) => a[0].localeCompare(b[0]));
++
++  if (inWeek.length === 0) return null; // never fabricate a feeling
++
++  const counts = new Map<string, number>();
++  const lastSeen = new Map<string, number>();
++  inWeek.forEach(([, mood], i) => {
++    counts.set(mood, (counts.get(mood) ?? 0) + 1);
++    lastSeen.set(mood, i);
++  });
++
+   let best: string | null = null;
+   let bestN = -1;
++  let bestSeen = -1;
+   for (const [mood, n] of counts) {
+-    if (n > bestN) {
++    const seen = lastSeen.get(mood)!;
++    if (n > bestN || (n === bestN && seen > bestSeen)) {
+       best = mood;
+       bestN = n;
++      bestSeen = seen;
+     }
+   }
+-  // Tie-break: if the most recent log's mood is also a max, prefer it.
+-  const recent = [...withMood].sort(
+-    (a, b) => new Date(b.workout_date).getTime() - new Date(a.workout_date).getTime(),
+-  )[0];
+-  if (recent?.mood && (counts.get(recent.mood.toLowerCase()) ?? 0) === bestN) {
+-    return recent.mood.toLowerCase();
+-  }
+   return best;
+ }
+ 
+--- a/supabase/functions/trends-timeline/timelineDaily.test.ts
++++ b/supabase/functions/trends-timeline/timelineDaily.test.ts
+@@ -226,3 +226,83 @@
+   const week = weeks.find((w) => w.week_start === "2026-06-08")!;
+   assertEquals(week.mood, "positive");
+ });
++
++// ─── Week mood = modal over DAYS ───────────────────────────────────────
++//
++// The week used to count raw logs inside its own window (`dominantMood`),
++// which diverged from the days drawn underneath it in two ways. These pin
++// both, because both were visible on the Trends chart.
++
++Deno.test("week mood counts days, not logs — one heavily-logged session cannot carry the week", () => {
++  const input: TimelineInput = {
++    logs: [
++      // Mon: one tired run.
++      { id: "mon", workout_date: "2026-06-08T07:00:00Z", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "tired" },
++      // Tue: warm-up / workout / cool-down. The day reads TIRED (hardest wins),
++      // but it is three log rows.
++      { id: "wu", workout_date: "2026-06-09T06:00:00Z", workout_distance_miles: 2, workout_duration_minutes: 18, workout_type: "easy", workout_pace_per_mile: "9:00", mood: "positive" },
++      { id: "wo", workout_date: "2026-06-09T06:30:00Z", workout_distance_miles: 6, workout_duration_minutes: 40, workout_type: "tempo", workout_pace_per_mile: "6:40", mood: "tired" },
++      { id: "cd", workout_date: "2026-06-09T07:20:00Z", workout_distance_miles: 2, workout_duration_minutes: 18, workout_type: "easy", workout_pace_per_mile: "9:00", mood: "positive" },
++      // Wed: one positive run.
++      { id: "wed", workout_date: "2026-06-10T07:00:00Z", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
++    ],
++    features: [{ training_log_id: "wo", intensity_score: 2.6, total_duration_seconds: 2400 }],
++    mentions: [],
++  };
++
++  const days = buildDailyTimeline(input, 2, REF);
++  assertEquals(days.find((d) => d.date === "2026-06-09")!.mood, "tired");
++
++  const week = buildTrendsTimeline(input, 2, REF).find((w) => w.week_start === "2026-06-08")!;
++  // Days: tired, tired, positive → tired.
++  // Counting LOGS gave positive 3–2, letting Tuesday's warm-up and cool-down
++  // outvote the two days that actually went badly.
++  assertEquals(week.mood, "tired");
++});
++
++Deno.test("week mood includes rest-day check-ins", () => {
++  const input: TimelineInput = {
++    logs: [
++      { id: "r1", workout_date: "2026-06-08", workout_distance_miles: 8, workout_duration_minutes: 60, workout_type: "easy", workout_pace_per_mile: "7:30", mood: "tired" },
++      { id: "r2", workout_date: "2026-06-09", workout_distance_miles: 8, workout_duration_minutes: 60, workout_type: "easy", workout_pace_per_mile: "7:30", mood: "tired" },
++      { id: "c1", workout_date: "2026-06-10", workout_distance_miles: 0, workout_duration_minutes: 0, workout_type: "check_in", workout_pace_per_mile: null, mood: "positive", source: "check_in" },
++      { id: "c2", workout_date: "2026-06-11", workout_distance_miles: 0, workout_duration_minutes: 0, workout_type: "check_in", workout_pace_per_mile: null, mood: "positive", source: "check_in" },
++      { id: "c3", workout_date: "2026-06-12", workout_distance_miles: 0, workout_duration_minutes: 0, workout_type: "check_in", workout_pace_per_mile: null, mood: "positive", source: "check_in" },
++    ],
++    features: [],
++    mentions: [],
++  };
++  const week = buildTrendsTimeline(input, 2, REF).find((w) => w.week_start === "2026-06-08")!;
++  // The old rule read only runs with distance, so three days of check-ins were
++  // invisible and the week reported "tired" off two sessions.
++  assertEquals(week.mood, "positive");
++});
++
++Deno.test("week mood: a tie goes to the more recent day", () => {
++  const input: TimelineInput = {
++    logs: [
++      { id: "a", workout_date: "2026-06-08", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
++      { id: "b", workout_date: "2026-06-09", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
++      { id: "c", workout_date: "2026-06-10", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "tired" },
++      { id: "d", workout_date: "2026-06-11", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "tired" },
++    ],
++    features: [],
++    mentions: [],
++  };
++  const week = buildTrendsTimeline(input, 2, REF).find((w) => w.week_start === "2026-06-08")!;
++  assertEquals(week.mood, "tired");
++});
++
++Deno.test("week mood: an explicitly trimmed log never colours the week", () => {
++  const input: TimelineInput = {
++    logs: [
++      { id: "keep", workout_date: "2026-06-08", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "positive" },
++      { id: "trim1", workout_date: "2026-06-09", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "injured", stats_excluded: true },
++      { id: "trim2", workout_date: "2026-06-10", workout_distance_miles: 6, workout_duration_minutes: 48, workout_type: "easy", workout_pace_per_mile: "8:00", mood: "injured", stats_excluded: true },
++    ],
++    features: [],
++    mentions: [],
++  };
++  const week = buildTrendsTimeline(input, 2, REF).find((w) => w.week_start === "2026-06-08")!;
++  assertEquals(week.mood, "positive");
++});

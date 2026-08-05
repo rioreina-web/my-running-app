@@ -39,6 +39,13 @@ final class TrendsService {
     /// conditions-adjusted pace, mixed-session breakdown). Empty until a load
     /// returns `fast_segments` — the Fast segments surface shows its empty state.
     private(set) var fastSegments: FastSegmentsData = .empty
+    /// The Pace Bands surface — one band at a time (HM / MP), membership
+    /// decided on heat-adjusted lap pace against a weekly-median anchor.
+    /// `nil` until a load returns `pace_bands`, and `nil` for good whenever
+    /// the athlete has no usable fitness anchor or nothing has held a band for
+    /// longer than two minutes. The Trends row hides itself in that case
+    /// rather than rendering a guessed band.
+    private(set) var paceBands: PaceBands?
     /// Implausible runs the timeline set aside (watch-not-paused etc.),
     /// undecided — surfaced to Trim or Keep. Never deleted.
     private(set) var flagged: [TrendsFlaggedRun] = []
@@ -57,12 +64,14 @@ final class TrendsService {
         preview weeks: [TrendsWeek],
         days: [TrendsDay] = [],
         keySessions: [KeySession] = [],
-        keyVolume: [QualityVolumeWeek] = []
+        keyVolume: [QualityVolumeWeek] = [],
+        paceBands: PaceBands? = nil
     ) {
         self.weeks = weeks
         self.days = days
         self.keySessions = keySessions
         self.keyVolume = keyVolume
+        self.paceBands = paceBands
         self.loaded = true
     }
 
@@ -83,6 +92,7 @@ final class TrendsService {
             keySessions = (payload.qualitySessions ?? []).map { $0.toModel() }
             keyVolume = (payload.qualityVolume ?? []).map { $0.toModel() }
             fastSegments = payload.fastSegments?.toData() ?? .empty
+            paceBands = payload.paceBands?.toModel()
             loaded = true
             lastError = nil
             Log.coach.info("Trends timeline loaded (\(self.weeks.count) weeks)")
@@ -114,6 +124,50 @@ final class TrendsService {
             Log.coach.error("Trends day workouts load failed: \(error.localizedDescription)")
             return []
         }
+    }
+
+    /// A day's logs plus the one the pager should open on.
+    ///
+    /// Both drill-downs land here — the lanes' day-grain tap and the week
+    /// sheet's day rows — so a day can never open on one session from the
+    /// chart and a different one from the week list. The ranking itself lives
+    /// in `TrendsSessionOrder`, which mirrors the server's mood ordering.
+    ///
+    /// `entries` is passed through in feed order: `HistoryDetailPager` mirrors
+    /// it into reading order itself and explicitly warns against re-sorting, so
+    /// every log on the day stays reachable by paging.
+    ///
+    /// Returns `nil` when the day has no logs — nothing to open.
+    @MainActor
+    func resolveDay(dayISO: String, focusLogId: String? = nil) async -> DayWorkouts? {
+        let entries = await fetchWorkouts(dayISO: dayISO)
+        guard !entries.isEmpty else { return nil }
+
+        // An explicit tap on one session wins over the ranking.
+        if let focusLogId,
+           let focused = entries.first(where: {
+               $0.id.uuidString.lowercased() == focusLogId.lowercased()
+           }) {
+            return DayWorkouts(entries: entries, initial: focused)
+        }
+
+        // Quality load by log id, from the timeline the tab already holds.
+        var loadByLogID: [String: Double] = [:]
+        for s in keySessions where QualityLoad.qualifies(s.qualityLoad) {
+            loadByLogID[s.id.lowercased()] = s.qualityLoad ?? 0
+        }
+
+        let candidates = entries.map { log in
+            TrendsSessionOrder.Candidate(
+                qualityLoad: loadByLogID[log.id.uuidString.lowercased()] ?? 0,
+                distanceMi: log.workoutDistanceMiles ?? 0,
+                at: log.displayDate
+            )
+        }
+        let initial = TrendsSessionOrder.hardestIndex(candidates)
+            .map { entries[$0] } ?? entries[0]
+
+        return DayWorkouts(entries: entries, initial: initial)
     }
 
     /// "2026-07-28" → "2026-07-29".
@@ -159,12 +213,16 @@ private struct TrendsTimelinePayload: Decodable {
     let qualitySessions: [KeySessionDTO]?
     let qualityVolume: [QualityVolumeDTO]?
     let fastSegments: FastSegmentsDTO?
+    /// Optional: any deploy predating `paceBands.ts` omits it, and the module
+    /// itself returns null when there's no usable anchor.
+    let paceBands: PaceBandsDTO?
 
     enum CodingKeys: String, CodingKey {
         case weeks, days, flagged, trimmed
         case qualitySessions = "quality_sessions"
         case qualityVolume = "quality_volume"
         case fastSegments = "fast_segments"
+        case paceBands = "pace_bands"
     }
 }
 
@@ -177,6 +235,20 @@ private struct TrendsDayDTO: Decodable {
     let type: String
     let mood: String?
     let niggles: [DayNiggleDTO]
+    /// Sleep + overnight biometrics (additive, 2026-08-05). Optional: any
+    /// deploy predating the decoration — or a night with no data — omits them.
+    let hrvRmssd: Double?
+    let restingHr: Double?
+    let sleepTotalMin: Int?
+    let sleepQuality: String?
+
+    enum CodingKeys: String, CodingKey {
+        case date, miles, type, mood, niggles
+        case hrvRmssd = "hrv_rmssd"
+        case restingHr = "resting_hr"
+        case sleepTotalMin = "sleep_total_min"
+        case sleepQuality = "sleep_quality"
+    }
 
     struct DayNiggleDTO: Decodable {
         let area: String
@@ -195,7 +267,11 @@ private struct TrendsDayDTO: Decodable {
             miles: miles,
             type: TrendsDay.SessionChannel(token: type),
             mood: mood,
-            niggles: niggles.map { $0.toModel() }
+            niggles: niggles.map { $0.toModel() },
+            hrvRmssd: hrvRmssd,
+            restingHr: restingHr,
+            sleepTotalMin: sleepTotalMin,
+            sleepQuality: sleepQuality
         )
     }
 }

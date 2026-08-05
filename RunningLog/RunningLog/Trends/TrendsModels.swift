@@ -40,6 +40,12 @@ enum TrendsRange: Int, CaseIterable, Identifiable {
         case .sixMonth: "6 mo"
         }
     }
+
+    /// The same window expressed in days, for the day-grained surfaces
+    /// (the pace spectrum) that hang off this one control. Trends ships ONE
+    /// time control; anything embedded in the tab reads its window from here
+    /// rather than carrying a second, independently-set range of its own.
+    var days: Int { rawValue * 7 }
 }
 
 // MARK: - Week model
@@ -97,6 +103,25 @@ struct TrendsDay: Identifiable {
     let mood: String?
     /// Body mentions that landed on this day, verbatim. Surface, never diagnose.
     let niggles: [DayNiggle]
+
+    // Sleep + overnight biometrics (additive, 2026-08-05). All optional with
+    // nil defaults: a day with no watch data and no check-in carries none, and
+    // it is never fabricated — same contract as `mood`. Source:
+    // `trends-timeline` → `days[]`, decorated from `daily_biometrics` +
+    // `daily_checkins`.
+
+    /// Nocturnal HRV (rmssd, ms) from `daily_biometrics`, or nil. Context —
+    /// never read on its own or on a single night (recovery-trend-v2 §2c).
+    var hrvRmssd: Double? = nil
+    /// Nocturnal resting HR (bpm) from `daily_biometrics`, or nil. The HRV
+    /// disambiguator.
+    var restingHr: Double? = nil
+    /// Total sleep minutes from `daily_biometrics`, or nil. Tier-3 annotation
+    /// only — never sleep stages or scores (recovery-trend-v2 §7.4).
+    var sleepTotalMin: Int? = nil
+    /// Self-reported sleep quality for the night, closed vocab
+    /// ('rough' | 'ok' | 'good'), or nil when unrated. The Tier-1 signal.
+    var sleepQuality: String? = nil
 
     /// The session channel the calendar colours by — **not** a pace zone. Per
     /// the calendar encoding: `key` gets the coral accent, `long` its own dark-

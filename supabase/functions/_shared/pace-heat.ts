@@ -24,18 +24,18 @@ export interface DewPointAdjustment {
 }
 
 /** Composite-score → adjustment-percent interpolation table (matches
- *  PaceCalculator.adjustmentTable exactly). */
+ *  PaceCalculator.adjustmentTable and pace-heat-adjustment.ts exactly).
+ *  Recalibrated 2026-08-05 to "Dew Point Calculator Emy" v2. */
 const ADJUSTMENT_TABLE: ReadonlyArray<readonly [number, number]> = [
   [100, 0.000],
-  [110, 0.004],
-  [120, 0.010],
-  [130, 0.015],
-  [140, 0.021],
-  [150, 0.030],
-  [160, 0.045],
-  [170, 0.065],
-  [180, 0.090],
-  [190, 0.120],
+  [110, 0.005],
+  [120, 0.008],
+  [130, 0.012],
+  [140, 0.020],
+  [150, 0.034],
+  [160, 0.050],
+  [170, 0.070],
+  [185, 0.100],
 ];
 
 function interpolate(score: number): number {
@@ -67,8 +67,10 @@ export function adjustPaceForHeat(
   tempF: number,
   dewPointF: number
 ): DewPointAdjustment {
-  // 1. Dew-point multiplier (baseline at 55°F dew point).
-  const multiplier = 1.0 + Math.max(0, (dewPointF - 55) * 0.003495);
+  // 1. Dew-point multiplier — flat 1.01 below the 65°F pivot, exponential above.
+  const multiplier = dewPointF <= 65
+    ? 1.01
+    : 1.01 * Math.pow(1.011557695, dewPointF - 65);
 
   // 2. Composite score.
   const compositeScore = tempF + dewPointF * multiplier;
@@ -95,10 +97,12 @@ if (Deno.env.get("DENO_ENV") === "dev") {
   const cases: Array<{ pace: number; temp: number; dp: number; expectPct: number }> = [
     // Cool morning: 50F / 45F DP → composite < 100 → 0% adjustment.
     { pace: 420, temp: 50, dp: 45, expectPct: 0.0 },
-    // Warm: 72F / 62F DP → composite ~136 → ~1.8%.
-    { pace: 420, temp: 72, dp: 62, expectPct: 0.018 },
-    // Hot: 85F / 72F DP → composite ~163 → ~5.5%.
-    { pace: 420, temp: 85, dp: 72, expectPct: 0.055 },
+    // Warm: 72F / 62F DP → composite ~134.6 → ~1.6%.
+    { pace: 420, temp: 72, dp: 62, expectPct: 0.016 },
+    // Hot: 85F / 72F DP → composite ~163.8 → ~5.8%.
+    { pace: 420, temp: 85, dp: 72, expectPct: 0.058 },
+    // The sheet's reference point: 78F / 75F DP → composite ~163.0 → ~5.6%.
+    { pace: 315, temp: 78, dp: 75, expectPct: 0.056 },
   ];
   for (const c of cases) {
     const r = adjustPaceForHeat(c.pace, c.temp, c.dp);

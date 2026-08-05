@@ -51,7 +51,75 @@ interface TrainingLog {
   workout_notes: string | null;
   mood: string | null;
   source: string | null;
+  felt_rpe: number | null;
 }
+
+// ── Per-workout stress load (weighted training-minutes) ──
+// Mechanical load, standardized to the SAME unit as
+// weeklyAnalytics.computeWeightedLoadForLog so values accumulate into one
+// coherent CTL/ATL/TSB curve (Phase 2). Source ladder is PACE-FIRST — pace is
+// the mechanical truth (athlete-pace-anchored ZONE_WEIGHTS); RPE and type only
+// rescue logs where intra-workout pace data is absent (a manual "hard 40min"
+// with no splits would otherwise segment to easy and under-score).
+//
+// RPE→intensity mirrors the ZONE_WEIGHTS ladder so an RPE-scored workout lands
+// on the same scale as a pace-scored one. HR tier is reserved (needs a
+// per-athlete HRmax/HRrest profile we don't yet store — do NOT fake it with
+// 220-age; that violates no-hardcoded-defaults + no-hallucination).
+const RPE_TO_INTENSITY: Record<number, number> = {
+  1: 1.0, 2: 1.0, 3: 1.25, 4: 1.5, 5: 2.0, 6: 2.5, 7: 3.25, 8: 4.0, 9: 5.5, 10: 8.0,
+};
+
+// Non-running work is a different KIND of stress (cardiovascular, not
+// mechanical) — kept out of running load. Mirrors CLAUDE.md + the fitness math.
+const STRESS_EXCLUDED_TYPES = new Set(["cross_training", "strength", "rest"]);
+
+function computeStressLoad(
+  log: TrainingLog,
+  seg: SegmentationResult,
+  intensityScore: number,
+  totalDurationSeconds: number,
+): { stress_load: number; stress_source: string } {
+  const durMin = totalDurationSeconds / 60;
+  if (durMin <= 0) return { stress_load: 0, stress_source: "none" };
+
+  const type = (log.workout_type ?? "").toLowerCase();
+  if (STRESS_EXCLUDED_TYPES.has(type)) {
+    return { stress_load: 0, stress_source: "excluded" };
+  }
+
+  // Tier 1 — pace: real intra-workout pace data (rep-level laps or per-mile
+  // segments). This is a genuine intensity measurement; trust it.
+  const hasRealPaceData =
+    (log.pace_segments?.length ?? 0) > 0 || seg.bouts.length > 1;
+  if (hasRealPaceData && intensityScore > 0) {
+    return { stress_load: intensityScore * durMin, stress_source: "pace" };
+  }
+
+  // Tier 2 — RPE: no usable splits, but the athlete logged perceived effort.
+  // Rescues manual/unsegmented quality sessions from scoring as easy.
+  if (log.felt_rpe != null) {
+    const rpe = Math.max(1, Math.min(10, Math.round(log.felt_rpe)));
+    return { stress_load: RPE_TO_INTENSITY[rpe] * durMin, stress_source: "rpe" };
+  }
+
+  // Tier 3 — type fallback: a typed-but-unsplit log (uses the same fallback
+  // weights as computeWeightedLoadForLog's fallback path for consistency).
+  if (type && TYPE_FALLBACK_WEIGHTS[type] != null) {
+    return { stress_load: TYPE_FALLBACK_WEIGHTS[type] * durMin, stress_source: "type" };
+  }
+
+  // Last resort — degenerate easy estimate from whatever intensity we have.
+  return { stress_load: Math.max(1.0, intensityScore) * durMin, stress_source: "type" };
+}
+
+// Fallback per-type weights (kept in sync with weeklyAnalytics.TYPE_FALLBACK_WEIGHTS).
+const TYPE_FALLBACK_WEIGHTS: Record<string, number> = {
+  easy: 1.0, recovery: 1.0, long_run: 1.1, long: 1.1, strides: 1.5,
+  progression: 1.6, tempo: 1.8, threshold: 1.8, intervals: 2.5,
+  mile_repeats: 3.0, mp_run: 2.7, race: 2.8, rest: 0.0,
+  cross_training: 0.7, strength: 0.5,
+};
 
 // Threshold + hard seconds above this floor marks a session as "quality" for
 // the recovery-spacing read (avoids treating a few warmup strides as a hard day).
@@ -332,7 +400,7 @@ Deno.serve(async (req) => {
     if ("response" in auth) return auth.response;
     const { userId: user_id } = auth;
 
-    const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, workout_notes, mood, source";
+    const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, workout_notes, mood, source, felt_rpe";
 
     // Fetch workouts to process
     let query = supabase
@@ -403,6 +471,7 @@ Deno.serve(async (req) => {
     const features: Array<Record<string, unknown>> = [];
     const typeBackfill: Array<{ id: string; workout_type: string }> = [];
     const notesBackfill: Array<{ id: string; workout_notes: string }> = [];
+    const stressBackfill: Array<{ id: string; stress_load: number; stress_source: string }> = [];
     const featuresSoFar: Array<{ workout_date: string; total_distance_miles: number | null; hard_effort_minutes: number | null }> = [];
 
     for (let i = 0; i < allLogs.length; i++) {
@@ -426,6 +495,16 @@ Deno.serve(async (req) => {
       if (targetLogIds.has(log.id)) {
         const rolling = computeRollingAggregates(new Date(log.workout_date), featuresSoFar);
         features.push({ ...feat, ...rolling });
+        // Persist per-workout stress load onto training_logs so the workout
+        // carries its own load (visible in-app + the atomic unit for CTL).
+        // Always recompute (derived value) — don't guard on null.
+        const stress = computeStressLoad(
+          log,
+          seg,
+          feat.intensity_score ?? 0,
+          feat.total_duration_seconds ?? 0,
+        );
+        stressBackfill.push({ id: log.id, ...stress });
         // Backfill the untyped training_logs (don't clobber a set type).
         if (!log.workout_type && seg.workoutKind) {
           typeBackfill.push({ id: log.id, workout_type: seg.workoutKind });
@@ -481,10 +560,30 @@ Deno.serve(async (req) => {
       if (!error) notesBackfilled++;
     }
 
-    console.log(`Computed ${features.length} workout features for user ${user_id}; backfilled ${typesBackfilled} types, ${notesBackfilled} notes`);
+    // Write per-workout stress load. This is a derived value, so it always
+    // overwrites (unlike the null-guarded type/notes backfills above). Guard
+    // against the columns not existing yet (migration 20260731120000) so the
+    // function degrades gracefully if it lands before the migration.
+    let stressWritten = 0;
+    for (const s of stressBackfill) {
+      const { error } = await supabase
+        .from("training_logs")
+        .update({ stress_load: s.stress_load, stress_source: s.stress_source })
+        .eq("id", s.id);
+      if (error) {
+        if (/stress_load|stress_source|column/i.test(error.message)) {
+          console.warn("stress_load columns missing; skipping (deploy migration 20260731120000)");
+          break;
+        }
+      } else {
+        stressWritten++;
+      }
+    }
+
+    console.log(`Computed ${features.length} workout features for user ${user_id}; backfilled ${typesBackfilled} types, ${notesBackfilled} notes, ${stressWritten} stress loads`);
 
     return new Response(
-      JSON.stringify({ success: true, computed: features.length, types_backfilled: typesBackfilled, notes_backfilled: notesBackfilled, user_id }),
+      JSON.stringify({ success: true, computed: features.length, types_backfilled: typesBackfilled, notes_backfilled: notesBackfilled, stress_written: stressWritten, user_id }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

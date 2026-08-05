@@ -94,7 +94,6 @@ final class VoiceLogViewModel {
             // workout detail sheet. Falls back to a fresh insert on any miss, so
             // a memo is never lost.
             var response: [TrainingLog] = []
-            var didAttach = false
             if let vid = selectedWorkout?.vitalWorkoutId, !vid.isEmpty {
                 struct IdRow: Decodable { let id: UUID }
                 let existing: [IdRow]? = try? await supabase
@@ -117,7 +116,6 @@ final class VoiceLogViewModel {
                         .select()
                         .execute()
                         .value) ?? []
-                    didAttach = !response.isEmpty
                 }
             }
 
@@ -159,68 +157,36 @@ final class VoiceLogViewModel {
 
             await loadHistory()
 
-            // Processing is handled server-side by a DB trigger (pg_net calls
-            // the edge function automatically on INSERT). iOS just polls for
-            // completion so the UI auto-updates.
+            // Direct-invoke processing (2026-08-04, latency Phase 1): the
+            // INSERT trigger only ENQUEUES a voice_processing_jobs row; nothing
+            // ran until the drain cron fired, which cost a uniform 0-60s
+            // (measured mean 25.6s) of dead time per memo. Now BOTH paths kick
+            // process-training-memo immediately — the attach path always did
+            // (its UPDATE never fired the enqueue trigger), and the insert path
+            // joins it. The outbox row stays behind as the retry net: if this
+            // call is lost to a dropped connection, the drain picks the job up,
+            // and if both run, the function's completed short-circuit +
+            // concurrency guard make the second call a no-op.
             if let insertedLog = response.first {
                 let capturedRecordId = insertedLog.id.uuidString
                 let capturedUserId = userId
 
-                // On the attach path we UPDATEd an existing run row, so the
-                // AFTER INSERT trigger that normally enqueues voice processing
-                // never fired. Kick process-training-memo explicitly; the poll
-                // below still picks up completion. (Insert path keeps relying on
-                // the server-side enqueue, unchanged.)
-                if didAttach {
-                    Task { [weak self] in
-                        _ = await self?.callProcessingFunction(
-                            record: insertedLog,
-                            checkInManager: checkInManager
-                        )
-                    }
+                Task { [weak self] in
+                    _ = await self?.callProcessingFunction(
+                        record: insertedLog,
+                        checkInManager: checkInManager
+                    )
                 }
 
                 Task { [weak self] in
-                    // Poll every 3s for up to 60s
-                    for _ in 0..<20 {
-                        try? await Task.sleep(for: .seconds(3))
-                        struct StatusRow: Decodable { let processing_status: String }
-                        let result: [StatusRow]? = try? await supabase
-                            .from("training_logs")
-                            .select("processing_status")
-                            .eq("id", value: capturedRecordId)
-                            .execute()
-                            .value
-                        // Row gone: dedup merged this memo into the matching run
-                        // and deleted the standalone row. That's a normal outcome,
-                        // NOT "still pending" — stop polling immediately and
-                        // refresh so the UI shows the merged entry instead of
-                        // spinning until the 60s timeout. (An empty array means the
-                        // row is gone; nil means a transient query error → retry.)
-                        if let rows = result, rows.isEmpty {
-                            await MainActor.run {
-                                _ = Task { await self?.loadHistory() }
-                            }
-                            return
-                        }
-                        let status = result?.first?.processing_status ?? "pending"
-                        if status == "completed" || status == "failed" {
-                            await MainActor.run {
-                                _ = Task { await self?.loadHistory() }
-                            }
-                            // Compute workout features after successful processing
-                            if status == "completed" {
-                                _ = try? await callEdgeFunction(
-                                    name: "compute-workout-features",
-                                    body: ["user_id": capturedUserId]
-                                )
-                            }
-                            return
-                        }
-                    }
-                    // Timed out — refresh anyway
-                    await MainActor.run {
-                        _ = Task { await self?.loadHistory() }
+                    guard let self else { return }
+                    let status = await self.watchProcessing(recordId: capturedRecordId)
+                    // Compute workout features after successful processing
+                    if status == "completed" {
+                        _ = try? await callEdgeFunction(
+                            name: "compute-workout-features",
+                            body: ["user_id": capturedUserId]
+                        )
                     }
                 }
             }
@@ -302,31 +268,14 @@ final class VoiceLogViewModel {
 
             await loadHistory()
 
-            // Processing is handled server-side by a DB trigger (pg_net calls
-            // process-check-in automatically on INSERT). iOS just polls for
-            // completion so the UI auto-updates.
+            // Processing is handled server-side by the outbox drain (which now
+            // runs every 15s — check-ins go to process-check-in, which has no
+            // client direct-invoke path). iOS just polls for completion so the
+            // UI auto-updates.
             let capturedId = recordId.uuidString
             Task { [weak self] in
-                for _ in 0..<20 {
-                    try? await Task.sleep(for: .seconds(3))
-                    struct StatusRow: Decodable { let processing_status: String }
-                    let result: [StatusRow]? = try? await supabase
-                        .from("training_logs")
-                        .select("processing_status")
-                        .eq("id", value: capturedId)
-                        .execute()
-                        .value
-                    let status = result?.first?.processing_status ?? "pending"
-                    if status == "completed" || status == "failed" {
-                        await MainActor.run {
-                            _ = Task { await self?.loadHistory() }
-                        }
-                        return
-                    }
-                }
-                await MainActor.run {
-                    _ = Task { await self?.loadHistory() }
-                }
+                guard let self else { return }
+                _ = await self.watchProcessing(recordId: capturedId)
             }
         } catch {
             Log.app.error("Failed to upload check-in: \(error)")
@@ -407,44 +356,38 @@ final class VoiceLogViewModel {
 
             await loadHistory()
 
-            // Poll for the analysis pass (mood + niggle/injury-mention
-            // extraction) to finish so the parsed result appears in place
-            // without a manual refresh. Mirrors the audio path: every 3s for
-            // up to 60s. The note is processed by the outbox drain, so this
-            // just watches processing_status flip off "pending".
             let capturedRecordId = inserted.id.uuidString
             let capturedUserId = userId
+
+            // Direct-invoke the analysis pass (2026-08-04, latency Phase 1):
+            // the INSERT trigger enqueued a 'note' job, but waiting on the
+            // drain cron cost up to a minute of dead time. Call
+            // process-training-memo now (it takes the text branch — the note
+            // IS the transcript); the outbox row stays as the retry net and
+            // the drain no-ops once this completes.
+            Task {
+                let payload: [String: Any] = [
+                    "type": "INSERT",
+                    "table": "training_logs",
+                    "schema": "public",
+                    "record": ["id": capturedRecordId, "audio_url": ""],
+                ]
+                _ = try? await callEdgeFunction(name: "process-training-memo", body: payload)
+            }
+
+            // Watch for the analysis pass (mood + niggle/injury-mention
+            // extraction) to finish so the parsed result appears in place
+            // without a manual refresh.
             Task { [weak self] in
-                for _ in 0..<20 {
-                    try? await Task.sleep(for: .seconds(3))
-                    struct StatusRow: Decodable { let processing_status: String }
-                    let result: [StatusRow]? = try? await supabase
-                        .from("training_logs")
-                        .select("processing_status")
-                        .eq("id", value: capturedRecordId)
-                        .execute()
-                        .value
-                    // Row gone (dedup merged it into a run and deleted the
-                    // standalone row): stop and refresh, don't spin to timeout.
-                    if let rows = result, rows.isEmpty {
-                        await MainActor.run { _ = Task { await self?.loadHistory() } }
-                        return
-                    }
-                    let status = result?.first?.processing_status ?? "pending"
-                    if status == "completed" || status == "failed" {
-                        await MainActor.run { _ = Task { await self?.loadHistory() } }
-                        // Recompute workout features so the ML pipeline stays current.
-                        if status == "completed" {
-                            _ = try? await callEdgeFunction(
-                                name: "compute-workout-features",
-                                body: ["user_id": capturedUserId]
-                            )
-                        }
-                        return
-                    }
+                guard let self else { return }
+                let status = await self.watchProcessing(recordId: capturedRecordId)
+                // Recompute workout features so the ML pipeline stays current.
+                if status == "completed" {
+                    _ = try? await callEdgeFunction(
+                        name: "compute-workout-features",
+                        body: ["user_id": capturedUserId]
+                    )
                 }
-                // Timed out — refresh anyway.
-                await MainActor.run { _ = Task { await self?.loadHistory() } }
             }
 
             return true
@@ -667,6 +610,62 @@ final class VoiceLogViewModel {
 
     // MARK: - Helpers
 
+    /// Watch a row's `processing_status` until it reaches a terminal state.
+    ///
+    /// Cadence: 1s ticks for the first 15s, then 3s, for up to 60s total. The
+    /// transcript typically lands ~6-9s in and the full analysis ~15-20s in
+    /// (post the 2026-08-04 latency work), so the tight early cadence is what
+    /// makes those transitions feel instant; the 3s tail keeps the slow path
+    /// cheap.
+    ///
+    /// Refreshes the journal on EVERY status change — most importantly
+    /// pending → `transcribed` (the two-stage reveal: the athlete's own words
+    /// render immediately; mood, niggles, and structure fill in when the
+    /// status flips to `completed`).
+    ///
+    /// Returns the terminal status ("completed" / "failed"), or nil when the
+    /// row disappeared (dedup merged it — a normal outcome) or the watch
+    /// timed out.
+    private func watchProcessing(recordId: String) async -> String? {
+        var lastStatus = "pending"
+        var waited: Double = 0
+        while waited < 60 {
+            let interval: Double = waited < 15 ? 1 : 3
+            try? await Task.sleep(for: .seconds(interval))
+            waited += interval
+
+            struct StatusRow: Decodable { let processing_status: String? }
+            let result: [StatusRow]? = try? await supabase
+                .from("training_logs")
+                .select("processing_status")
+                .eq("id", value: recordId)
+                .execute()
+                .value
+
+            // Row gone: dedup merged this memo into the matching run and
+            // deleted the standalone row. That's a normal outcome, NOT "still
+            // pending" — stop watching and refresh so the UI shows the merged
+            // entry. (An empty array means the row is gone; nil means a
+            // transient query error → keep watching.)
+            if let rows = result, rows.isEmpty {
+                await MainActor.run { _ = Task { await self.loadHistory() } }
+                return nil
+            }
+
+            let status = result?.first?.processing_status ?? "pending"
+            if status != lastStatus {
+                await MainActor.run { _ = Task { await self.loadHistory() } }
+            }
+            lastStatus = status
+            if status == "completed" || status == "failed" {
+                return status
+            }
+        }
+        // Timed out — refresh anyway.
+        await MainActor.run { _ = Task { await self.loadHistory() } }
+        return nil
+    }
+
     private func pollForCompletion(recordId: UUID, maxWait: Int) async -> Bool {
         let pollInterval: UInt64 = 2_000_000_000
         let maxAttempts = maxWait / 2
@@ -778,8 +777,12 @@ final class VoiceLogViewModel {
     private func autoRetryStaleRecords(logs: [TrainingLog]) async {
         let fiveMinutesAgo = Date().addingTimeInterval(-5 * 60)
 
+        // isInFlight (not isPending): a row stuck at `transcribed` — the
+        // two-stage reveal wrote the transcript but the worker died before the
+        // analysis — is just as stale, and the server-side "already processed"
+        // guard is status-gated so retrying it re-runs the analysis correctly.
         guard let staleLog = logs.first(where: { log in
-            log.isPending &&
+            log.isInFlight &&
                 log.audioUrl != nil &&
                 log.createdAt < fiveMinutesAgo
         }) else { return }

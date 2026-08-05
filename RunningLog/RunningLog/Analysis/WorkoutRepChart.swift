@@ -391,6 +391,13 @@ enum WorkoutLapsService {
         /// summary, not per-lap `running_workout_laps.temp_f/dew_point_f`.
         var weatherTempF: Double?
         var weatherDewF: Double?
+        /// True when a voice memo is actually attached to this run — the audio
+        /// is on the row, or the memo pipeline wrote `cleaned_notes`. An
+        /// auto-import note ("Morning Run · Avg pace: 6:47/mi") is neither, so
+        /// an imported run reads as memo-less and gets the record affordance.
+        var hasMemo: Bool = false
+        /// True when the memo has audio (vs a typed note) — the row's eyebrow.
+        var hasAudio: Bool = false
 
         /// Display name for the italic source line. Unknown sources render as
         /// themselves rather than a guess.
@@ -422,11 +429,12 @@ enum WorkoutLapsService {
             var workout_distance_miles: Double?
             var workout_duration_minutes: Double?
             var weather_actual: WeatherActual?
+            var audio_url: String?
         }
         do {
             let rows: [Row] = try await supabase
                 .from("training_logs")
-                .select("workout_date,source,mood,cleaned_notes,notes,workout_distance_miles,workout_duration_minutes,weather_actual")
+                .select("workout_date,source,mood,cleaned_notes,notes,workout_distance_miles,workout_duration_minutes,weather_actual,audio_url")
                 .eq("id", value: workoutId.uuidString).limit(1).execute().value
             guard let r = rows.first else { return WorkoutSummary() }
             // Cleaned notes win over the raw transcript, but both are the
@@ -434,6 +442,8 @@ enum WorkoutLapsService {
             let quote = [r.cleaned_notes, r.notes]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .first { !$0.isEmpty }
+            let hasAudio = !(r.audio_url?.isEmpty ?? true)
+            let hasCleaned = !(r.cleaned_notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             return WorkoutSummary(
                 date: parseWorkoutDate(r.workout_date),
                 source: r.source,
@@ -442,7 +452,9 @@ enum WorkoutLapsService {
                 distanceMi: r.workout_distance_miles,
                 durationMin: r.workout_duration_minutes,
                 weatherTempF: r.weather_actual?.temp_f,
-                weatherDewF: r.weather_actual?.dew_point_f
+                weatherDewF: r.weather_actual?.dew_point_f,
+                hasMemo: hasAudio || hasCleaned,
+                hasAudio: hasAudio
             )
         } catch {
             Log.coach.error("WorkoutLapsService.fetchSummary failed: \(error)")

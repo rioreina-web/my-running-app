@@ -215,6 +215,33 @@ extension Font {
     }
 }
 
+// MARK: - Dynamic Type floors
+
+/// Sizes for the micro editorial labels, as `@ScaledMetric` bases.
+///
+/// **Why this exists.** Every drip font above is built with a literal point
+/// size — `.system(size:)` and `.custom(_:size:)` with no `relativeTo:` — so
+/// none of them respond to the reader's Dynamic Type setting. At display and
+/// body sizes that is the editorial intent. At the micro end it is an
+/// accessibility failure: the chart eyebrows, axis labels and legends on the
+/// Trends page sit at 7.5–8pt and stay there at every accessibility size.
+///
+/// A surface opts in by declaring a `@ScaledMetric` against one of these
+/// bases and passing the result to `dripEyebrow(_:)`:
+///
+///     @ScaledMetric(relativeTo: .caption2)
+///     private var eyebrowMicro: CGFloat = DripTypeFloor.eyebrowMicro
+///
+/// The base is the *floor* — 9pt rather than the 7.5–8pt these labels used,
+/// because below 9 the mono face stops being legible for readers who need
+/// the setting at all. Scaling only ever goes up from there.
+enum DripTypeFloor {
+    /// Chart furniture: lane headers, legends, axis ticks, footnotes.
+    static let eyebrowMicro: CGFloat = 9
+    /// Row-level labels that already sat at 8.5–9.5pt.
+    static let eyebrowSmall: CGFloat = 10
+}
+
 // MARK: - GlowingOrb (no-op for editorial — clean backgrounds)
 
 struct GlowingOrb: View {

@@ -176,6 +176,43 @@ Deno.serve(async (req) => {
     return res(200, { streamed: items.length });
   }
 
+  // Sleep + HRV -> daily_biometrics. Garmin delivers these on daily.data.sleep.*
+  // (backfill included; Garmin uses `daily.`, not `historical.`). Junction restates
+  // tentative -> confirmed for the same night, so upsert on the PK and let the
+  // confirmed row overwrite the tentative one.
+  if (eventType.endsWith("data.sleep.created") || eventType.endsWith("data.sleep.updated")) {
+    if (!userId) return res(200, { ignored: "no user mapping", vitalUserId: payload.user_id });
+    const d2 = payload.data;
+    const sleeps: Record<string, any>[] = Array.isArray(d2) ? d2 : Array.isArray(d2?.sleep) ? d2.sleep : d2 ? [d2] : [];
+    let sleepRows = 0;
+    for (const s of sleeps) {
+      if (!s?.calendar_date) continue;
+      const src = s.source ?? {};
+      const row = {
+        user_id: userId,
+        date: s.calendar_date,
+        source: "garmin",
+        vital_sleep_id: s.id != null ? String(s.id) : null,
+        sleep_state: s.state ?? null,                 // 'tentative' | 'confirmed' — confirm on live payload
+        hrv_rmssd: typeof s.average_hrv === "number" ? s.average_hrv : null,
+        resting_hr: typeof s.hr_resting === "number" ? s.hr_resting : null,
+        hr_lowest: typeof s.hr_lowest === "number" ? s.hr_lowest : null,
+        sleep_total_min: typeof s.total === "number" ? Math.round(s.total / 60) : null,
+        respiratory_rate: typeof s.respiratory_rate === "number" ? s.respiratory_rate : null,
+        device_model: src.app_id ?? "Garmin",
+        firmware_version: src.firmware_version ?? null,   // confirm field path on live payload
+        app_version: src.app_version ?? null,
+        updated_at: new Date().toISOString(),
+      };
+      const { error } = await db
+        .from("daily_biometrics")
+        .upsert(row, { onConflict: "user_id,date,source" });
+      if (error) { console.error(`[vital-webhook] sleep upsert ${s.id}: ${error.message}`); continue; }
+      sleepRows++;
+    }
+    return res(200, { sleep_rows: sleepRows });
+  }
+
   const isWorkoutEvent = eventType.endsWith("workouts.created") || eventType.endsWith("workouts.updated");
   if (!isWorkoutEvent) return res(200, { ignored: eventType });
   if (!userId) return res(200, { ignored: "no user mapping", vitalUserId: payload.user_id });

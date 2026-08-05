@@ -184,12 +184,21 @@ struct JournalLogRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 14)
 
-                // Mood footer
+                // Mood footer. During the two-stage reveal (`transcribed`:
+                // the athlete's words are on the row, analysis still running)
+                // a quiet placeholder holds the mood line's spot — mood +
+                // niggle chips fill in when the status flips to completed.
                 if let mood = moodLabel {
                     Text(mood)
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .tracking(1.0)
                         .foregroundStyle(moodColor)
+                        .padding(.top, 14)
+                } else if entry.isTranscribed {
+                    Text("ANALYZING…")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .tracking(1.0)
+                        .foregroundStyle(Color.drip.textTertiary)
                         .padding(.top, 14)
                 }
 

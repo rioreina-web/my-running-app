@@ -37,23 +37,28 @@ Deno.test("heat adjustment is a fraction in [0,1), not a percent", () => {
 });
 
 Deno.test("fraction → percent for display reproduces golden athlete May 19/20", () => {
-  // The real persisted values for user 03857bf3…: May 20 (67°F/67°dew) ≈ 1.9%,
-  // May 19 (85°F/71°dew) ≈ 4.3%. The Read multiplies ×100 to surface these.
+  // Goldens for user 03857bf3…: May 20 (67°F/67°dew), May 19 (85°F/71°dew).
+  //
+  // RECALIBRATED 2026-08-05: these moved when the model was ported to "Dew Point
+  // Calculator Emy" v2 (1.9% → 1.7%, 4.3% → 5.4%). That is expected — the old
+  // linear multiplier under-corrected humid conditions. What this test actually
+  // guards is the FRACTION-vs-PERCENT contract, not the calibration; the numbers
+  // are here to make an accidental ×100 obvious.
   const pct = (f: number) => Math.round(f * 1000) / 10;
 
   const may20 = adjustPaceForHeat(307, 67, 67);
   assert(
-    pct(may20.adjustmentPercent) >= 1.5 && pct(may20.adjustmentPercent) <= 2.5,
-    `May 20 percent should be ~1.9, got ${pct(may20.adjustmentPercent)}`,
+    pct(may20.adjustmentPercent) >= 1.2 && pct(may20.adjustmentPercent) <= 2.2,
+    `May 20 percent should be ~1.7, got ${pct(may20.adjustmentPercent)}`,
   );
-  // ~6 s/mi slower on a 307 s/mi rep.
+  // ~5 s/mi slower on a 307 s/mi rep.
   const slowdown = 307 * may20.adjustmentPercent;
-  assert(slowdown >= 4 && slowdown <= 8, `May 20 slowdown should be ~6 s/mi, got ${slowdown}`);
+  assert(slowdown >= 3 && slowdown <= 8, `May 20 slowdown should be ~5 s/mi, got ${slowdown}`);
 
   const may19 = adjustPaceForHeat(307, 85, 71);
   assert(
-    pct(may19.adjustmentPercent) >= 3.5 && pct(may19.adjustmentPercent) <= 5,
-    `May 19 percent should be ~4.3, got ${pct(may19.adjustmentPercent)}`,
+    pct(may19.adjustmentPercent) >= 4.5 && pct(may19.adjustmentPercent) <= 6.5,
+    `May 19 percent should be ~5.4, got ${pct(may19.adjustmentPercent)}`,
   );
 
   // The surfacing threshold lives in PERCENT space: a 1.9% run must clear the

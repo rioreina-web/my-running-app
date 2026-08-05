@@ -215,12 +215,30 @@ async function applyHeatToLaps(
   for (const lap of laps as Array<{ id: string | number; distance_meters: number | null; avg_pace_sec_per_mile: number | null; is_rest: boolean | null }>) {
     const pace = Number(lap.avg_pace_sec_per_mile);
     const distMi = Number(lap.distance_meters) / 1609.34;
-    const heatAdj = (lap.is_rest !== true && Number.isFinite(pace) && pace > 0)
-      ? Math.round(adjustPace(pace, tempF, dewF, Number.isFinite(distMi) ? distMi : null).neutralEquivalentPaceSeconds)
-      : null;
+    const runnable = lap.is_rest !== true && Number.isFinite(pace) && pace > 0;
+    const a = adjustPace(
+      runnable ? pace : 600,
+      tempF,
+      dewF,
+      Number.isFinite(distMi) ? distMi : null,
+    );
+    const heatAdj = runnable ? Math.round(a.neutralEquivalentPaceSeconds) : null;
+    // Write ALL the heat columns, not just the pace. Leaving score/pct/category
+    // to the SQL migration path is how the two writers drifted: that path had no
+    // rep-length scaling, so short reps got the full penalty while laps this
+    // function touched got the correct half. One writer now, one answer.
+    // `heat_adjustment_pct` is the EFFECTIVE fraction (after rep scaling), so it
+    // always reconciles with heat_adjusted_pace_sec_per_mile.
     await supabase
       .from("running_workout_laps")
-      .update({ temp_f: tempF, dew_point_f: dewF, heat_adjusted_pace_sec_per_mile: heatAdj })
+      .update({
+        temp_f: tempF,
+        dew_point_f: dewF,
+        heat_adjusted_pace_sec_per_mile: heatAdj,
+        heat_composite_score: a.compositeScore,
+        heat_category: a.heatCategory,
+        heat_adjustment_pct: runnable ? a.effectiveAdjustmentPercent : null,
+      })
       .eq("id", lap.id);
   }
 }

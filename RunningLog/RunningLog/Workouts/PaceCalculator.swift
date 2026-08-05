@@ -286,20 +286,43 @@ enum PaceCalculator {
 
     /// Calculate heat-adjusted pace based on temperature and dew point
     /// Returns adjustment details including the adjusted pace in seconds per mile
-    /// Interpolation table: composite score → adjustment percentage
-    /// Based on dew point pace adjustment research (v2)
+    /// Interpolation table: composite score → adjustment percentage.
+    ///
+    /// Recalibrated 2026-08-05 to match "Dew Point Calculator Emy" v2 exactly.
+    /// The previous table paired a LINEAR dew multiplier with breakpoints shifted
+    /// ~10 composite points right of Hadley's published chart; at 72–75°F dew the
+    /// linear form only supplied half that shift, so the model under-corrected by
+    /// ~0.75pp. The exponential multiplier below closes it.
+    ///
+    /// Must stay in lockstep with supabase/functions/_shared/pace-heat-adjustment.ts
+    /// and pace-heat.ts. Reference point: 5:15/mi at 78°F / 75°F dew → 5:33/mi.
     private static let adjustmentTable: [(score: Double, pct: Double)] = [
         (100, 0.000),
-        (110, 0.004),
-        (120, 0.010),
-        (130, 0.015),
-        (140, 0.021),
-        (150, 0.030),
-        (160, 0.045),
-        (170, 0.065),
-        (180, 0.090),
-        (190, 0.120),
+        (110, 0.005),
+        (120, 0.008),
+        (130, 0.012),
+        (140, 0.020),
+        (150, 0.034),
+        (160, 0.050),
+        (170, 0.070),
+        (185, 0.100),   // chart ends here — see beyondChart
     ]
+
+    /// Past this composite the chart has nothing to say. The source sheet returns
+    /// NA(); we clamp and flag so the UI can refuse instead of prescribing.
+    static let beyondChartScore: Double = 185
+
+    /// Copy for the refusal, verbatim from the sheet.
+    static let beyondChartMessage = "Very tough conditions to run marathon pace work"
+
+    /// Dew-point multiplier: flat below the 65°F pivot, exponential above it.
+    /// Weights dew point above air temperature — dew point is what decides
+    /// whether sweat can evaporate, which is the mechanism that actually limits
+    /// the runner in humid conditions.
+    static func dewPointMultiplier(_ dewPointF: Double) -> Double {
+        guard dewPointF.isFinite, dewPointF > 65 else { return 1.01 }
+        return 1.01 * pow(1.011557695, dewPointF - 65)
+    }
 
     /// Interpolate adjustment percentage from composite score
     private static func interpolateAdjustment(_ score: Double) -> Double {
@@ -321,8 +344,8 @@ enum PaceCalculator {
         temperatureF: Double,
         dewPointF: Double
     ) -> DewPointAdjustment {
-        // 1. Dew Point Multiplier — baseline at 55°F DP
-        let dpMultiplier = 1.0 + max(0, (dewPointF - 55) * 0.003495)
+        // 1. Dew Point Multiplier — flat below the 65°F pivot, exponential above
+        let dpMultiplier = dewPointMultiplier(dewPointF)
 
         // 2. Composite Score = Temp + (Dew Point × Multiplier)
         let compositeScore = temperatureF + (dewPointF * dpMultiplier)
@@ -373,6 +396,11 @@ struct DewPointAdjustment {
     let multiplier: Double
     let compositeScore: Double
     let adjustmentPercent: Double
+
+    /// Conditions are past the end of the chart. `adjustedPaceSeconds` is a
+    /// clamped extrapolation — show `PaceCalculator.beyondChartMessage` rather
+    /// than prescribing a pace off it.
+    var beyondChart: Bool { compositeScore > PaceCalculator.beyondChartScore }
 
     /// The pace the athlete's effort is *worth* in neutral conditions — the
     /// inverse of the prescriptive `adjustedPaceSeconds`. Running in heat costs

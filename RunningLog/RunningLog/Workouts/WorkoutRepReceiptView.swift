@@ -5,11 +5,12 @@
 //  Direction A · "Rep Receipt" — the dense, full-screen workout detail.
 //  A drop-in for `WorkoutRepChart(workoutId:)` inside `WorkoutRepDetailSheet`.
 //  Keeps everything the current screen does (type picker, prescribed-workout
-//  notes, ANALYSIS + on-demand AI insight, heat-adjust) and adds the full
-//  Strava-stream telemetry the redesign called for:
+//  notes, heat-adjust) and adds the full Strava-stream telemetry the redesign
+//  called for. Act 2 is signals-first as of 2026-08-03 — the AI insight path
+//  is gone; see WorkoutReceiptSignals.swift.
 //
 //    HERO rep chart (distance-width bars + HR line + target refs) →
-//    stat strip → THE READ (weather woven in) → time-in-HR-zone →
+//    stat strip → SIGNALS + one-line read → time-in-HR-zone →
 //    HR-over-session → pace trace → cadence → elevation+grade →
 //    per-rep HR recovery → SPLITS vs target (diverging bars + rest jogs) →
 //    [comparison vs recent same-type — see port note] → route.
@@ -48,12 +49,13 @@ struct WorkoutRepReceiptView: View {
     @State private var showStructureEditor = false
     @State private var prescription: WorkoutPrescription?
     @State private var parsedIntent: String?
-    @State private var insight: String?
     @State private var workoutType: String?
     @State private var loaded = false
     @State private var showTypePicker = false
-    @State private var insightLoading = false
-    @State private var insightError: String?
+    /// Act 2 — the voice memo opens on tap, and the niggles this run carries.
+    @State private var memoExpanded = false
+    @State private var niggles: [ReceiptNiggle] = []
+    @State private var showMemoRecorder = false
     // stream data
     @State private var stream: VitalWorkoutStream?
     @State private var route: [CLLocationCoordinate2D] = []
@@ -202,6 +204,10 @@ struct WorkoutRepReceiptView: View {
     // computed once in rebuildDerived so the per-split elevation scan never
     // runs inside body.
     @State private var continuousSplits: [RRRep] = []
+    /// True when `continuousSplits` came from the imported per-second stream
+    /// rather than the watch's own laps — the hero then says MILE SPLITS, so
+    /// the table never claims a provenance it doesn't have.
+    @State private var continuousFromStream = false
     private var sGrade: [Double] {
         guard let alt = stream?.altitude, let dist = stream?.distance, alt.count == dist.count, alt.count > 1 else { return [] }
         return alt.indices.map { i in
@@ -328,6 +334,16 @@ struct WorkoutRepReceiptView: View {
                     initialIntent: parsedIntent ?? prescription?.pattern,
                     onSaved: { Task { await load() } }
                 )
+            }
+        }
+        .sheet(isPresented: $showMemoRecorder) {
+            if let workoutId {
+                // The pipeline (transcribe → mood → niggles) runs server-side
+                // after the attach, so the reload picks up the audio straight
+                // away and the words as they land.
+                AttachMemoSheet(workoutId: workoutId, dateLabel: displayTitle) {
+                    Task { await load() }
+                }
             }
         }
     }
@@ -500,30 +516,210 @@ struct WorkoutRepReceiptView: View {
 
     // MARK: Act 2 — the story
 
+    /// SIGNALS → the workout recipe → the memo → niggles → the hero.
+    /// Everything above the hairline is signal: a chip, a row of the note, one
+    /// line of the athlete's own words. Nothing is a paragraph.
     private var actTwo: some View {
         VStack(alignment: .leading, spacing: 24) {
-            theRead
+            signalsSection
+            workoutRecipeSection
             qualitativeRow
             heroWorkoutsAndReps
         }
     }
 
-    /// The mood the athlete logged and the words they used, verbatim. Surfaced,
-    /// never interpreted (niggles rule). Drops out when the run carries neither
-    /// — no placeholder, no invented sentiment.
-    @ViewBuilder private var qualitativeRow: some View {
-        let quote = summary.quote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let mood = summary.mood ?? ""
-        if !mood.isEmpty || !quote.isEmpty {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                if !mood.isEmpty { MoodBadge(mood: mood) }
-                if !quote.isEmpty {
-                    Text("\u{201C}\(quote)\u{201D}")
-                        .font(.dripBody(13)).italic()
+    // MARK: Act 2 — signals
+
+    /// The five chips, then the read as a single sentence. Replaces the
+    /// multi-sentence AI paragraph and its "Generate AI insight" button
+    /// (removed 2026-08-03) — the chart and these numbers say it.
+    @ViewBuilder private var signalsSection: some View {
+        let signals = receiptSignals
+        if !signals.isEmpty || !computedRead.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SIGNALS")
+                    .font(.dripEyebrow(11)).tracking(1.3)
+                    .foregroundStyle(Color.drip.coral)
+                if !signals.isEmpty {
+                    FlowLayout(spacing: 8) {
+                        ForEach(signals) { SignalChip(signal: $0) }
+                    }
+                }
+                Text(computedRead)
+                    .font(.dripBody(13)).italic()
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Every chip is one measured quantity. A chip whose input is missing is
+    /// simply absent — never a placeholder, never a zero (hard rule #8).
+    private var receiptSignals: [ReceiptSignal] {
+        var out: [ReceiptSignal] = []
+
+        // SPREAD — the work reps' pace range, stated as a band around the
+        // midpoint so "±13s" is literally true of the fastest and slowest rep.
+        if let spread = repSpreadSec {
+            let half = Int((Double(spread) / 2).rounded())
+            out.append(.init(key: "SPREAD", value: "±\(half)s",
+                             tone: spread <= 15 ? .good : spread <= 30 ? .warn : .hot))
+        }
+
+        // HR — the zone that carried the session, and the rep it arrived on.
+        if let (zone, rep) = hrZoneOnset {
+            let n = Int(zone.dropFirst()) ?? 4
+            out.append(.init(key: "HR", value: "\(zone) FROM R\(rep)",
+                             tone: n <= 3 ? .good : n == 4 ? .warn : .hot))
+        }
+
+        // DRIFT — aerobic decoupling, first half vs second (same maths as
+        // DripHRDriftChart, so the chip and the chart can't disagree).
+        if let drift = driftPct {
+            out.append(.init(key: "DRIFT", value: "\(drift > 0 ? "+" : "")\(drift)%",
+                             tone: abs(drift) < 5 ? .good : abs(drift) <= 10 ? .warn : .hot))
+        }
+
+        // HEAT — what the conditions cost, already gated at ≥3 s/mi.
+        if let heat = heatAdjustSec {
+            out.append(.init(key: "HEAT", value: "+\(heat)s/\(km ? "km" : "mi")", tone: .warn))
+        }
+
+        // VS PLAN — only when the note actually states a target pace. Without
+        // one there is nothing to compare against, so the chip drops out
+        // rather than measuring the reps against their own average.
+        if let target = prescribedTargetSec, !reps.isEmpty {
+            let delta = Int((targetSec - target).rounded())
+            let a = abs(delta)
+            let value = a <= 5 ? "ON TARGET" : "\(delta > 0 ? "+" : "-")\(a)s/\(km ? "km" : "mi")"
+            out.append(.init(key: "VS PLAN", value: value,
+                             tone: a <= 5 ? .good : a <= 15 ? .warn : .hot))
+        }
+
+        return out
+    }
+
+    /// Fastest-to-slowest work-rep range, in seconds per mile. Needs at least
+    /// two reps — one rep has no spread.
+    private var repSpreadSec: Int? {
+        let paces = reps.compactMap { $0.avg_pace_sec_per_mile }.filter { $0 > 0 }
+        guard paces.count >= 2, let hi = paces.max(), let lo = paces.min() else { return nil }
+        return Int((hi - lo).rounded())
+    }
+
+    /// The zone that carried the most time, and the first work rep whose average
+    /// HR lands in it. Nil when no rep carries HR.
+    private var hrZoneOnset: (zone: String, rep: Int)? {
+        guard !zoneSeconds.isEmpty, zoneSeconds.values.contains(where: { $0 > 0 }) else { return nil }
+        let zone = dominantZone
+        guard let z = hrZones.first(where: { $0.id == zone }) else { return nil }
+        for (i, r) in reps.enumerated() {
+            guard let hr = r.avg_heart_rate, hr > 0 else { continue }
+            if hr >= z.lo && hr < z.hi { return (zone, i + 1) }
+        }
+        return nil
+    }
+
+    /// Aerobic decoupling across the work reps: how far the pace-to-HR ratio
+    /// moved from the first half to the second. Positive = HR rising for the
+    /// same pace. Needs HR on at least four reps to mean anything.
+    private var driftPct: Int? {
+        let rows = reps.compactMap { r -> (pace: Double, hr: Double)? in
+            guard let p = r.avg_pace_sec_per_mile, p > 0, let h = r.avg_heart_rate, h > 0
+            else { return nil }
+            return (p, Double(h))
+        }
+        guard rows.count >= 4 else { return nil }
+        let m = rows.count / 2
+        let first = Array(rows.prefix(m)), second = Array(rows.suffix(rows.count - m))
+        func mean(_ a: [Double]) -> Double { a.isEmpty ? 0 : a.reduce(0, +) / Double(a.count) }
+        let ratioA = mean(first.map(\.pace)) / max(mean(first.map(\.hr)), 1)
+        let ratioB = mean(second.map(\.pace)) / max(mean(second.map(\.hr)), 1)
+        guard ratioA > 0 else { return nil }
+        return Int(((ratioB - ratioA) / ratioA * 100).rounded())
+    }
+
+    /// A target pace stated in the workout note ("1 mi @ 6:00"), in sec per
+    /// mile. Nil when the note names no pace — we never invent a target, and
+    /// never treat the session's own average as one.
+    private var prescribedTargetSec: Double? {
+        let text = [prescription?.notes, prescription?.pattern, parsedIntent]
+            .compactMap { $0 }.joined(separator: " ")
+        guard !text.isEmpty,
+              let r = text.range(of: #"(?:@|at)\s*(\d{1,2}):(\d{2})"#, options: .regularExpression)
+        else { return nil }
+        let stamp = text[r].split(separator: ":")
+        guard stamp.count == 2,
+              let mm = Int(stamp[0].filter(\.isNumber)), let ss = Int(stamp[1].prefix(2))
+        else { return nil }
+        let perMile = Double(mm * 60 + ss)
+        // Notes are written in the athlete's display unit; targetSec is sec/mi.
+        return km ? perMile * 1.60934 : perMile
+    }
+
+    // MARK: Act 2 — the workout, as a recipe
+
+    /// The prescribed session, one row per segment. Falls back to the note as a
+    /// single line whenever the structure can't be read — the note is never
+    /// hidden, and a recipe is never guessed.
+    @ViewBuilder private var workoutRecipeSection: some View {
+        let source = prescription?.notes ?? prescription?.pattern
+        if let text = source?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("THE WORKOUT")
+                        .font(.dripEyebrow(11)).tracking(1.3)
+                        .foregroundStyle(Color.drip.textSecondary)
+                    Spacer(minLength: 8)
+                    Text(repHeadline.uppercased())
+                        .font(.dripStat(9)).tracking(1.0)
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .lineLimit(1)
+                }
+                if let steps = WorkoutRecipeParser.parse(text) {
+                    WorkoutRecipeView(steps: steps)
+                } else {
+                    Text(text)
+                        .font(.dripBody(13))
                         .foregroundStyle(Color.drip.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    // MARK: Act 2 — the athlete's own words, and what their body said
+
+    /// The memo as one line until tapped, then the niggles this run carried.
+    /// Both surfaced, never interpreted (niggles rule). Each drops out when the
+    /// run carries nothing — no placeholder, no invented sentiment.
+    @ViewBuilder private var qualitativeRow: some View {
+        let quote = summary.quote?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let mood = summary.mood ?? ""
+        // The memo slot never silently disappears: with a memo it's the
+        // collapsed row, without one it's the record affordance (§6). An
+        // auto-imported run has notes but no memo, so `hasMemo` — not the
+        // presence of text — is what decides.
+        let showMemo = summary.hasMemo && !quote.isEmpty
+        let showRecord = !summary.hasMemo && workoutId != nil
+        if showMemo || showRecord || !mood.isEmpty || !niggles.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                if showMemo {
+                    VoiceMemoRow(mood: mood.isEmpty ? nil : mood, quote: quote,
+                                 kind: summary.hasAudio ? "VOICE MEMO" : "NOTE",
+                                 expanded: $memoExpanded)
+                } else {
+                    if !mood.isEmpty { MoodBadge(mood: mood) }
+                    if showRecord {
+                        RecordMemoCard { showMemoRecorder = true }
+                    }
+                }
+                if !niggles.isEmpty {
+                    FlowLayout(spacing: 8) {
+                        ForEach(niggles) { NiggleChip(niggle: $0) }
+                    }
+                }
             }
         }
     }
@@ -532,9 +728,15 @@ struct WorkoutRepReceiptView: View {
     /// place by leading here: what the session actually was, rep by rep.
     private var heroWorkoutsAndReps: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(heroEyebrow)
-                .font(.dripEyebrow(11)).tracking(1.3)
-                .foregroundStyle(Color.drip.textSecondary)
+            // Eyebrow left, the rep-average line right — it used to sit under
+            // the table, where it read as an afterthought.
+            HStack(alignment: .firstTextBaseline) {
+                Text(heroEyebrow)
+                    .font(.dripEyebrow(11)).tracking(1.3)
+                    .foregroundStyle(Color.drip.textSecondary)
+                Spacer(minLength: 8)
+                repsSummaryLine
+            }
 
             tweaksRow
 
@@ -545,25 +747,39 @@ struct WorkoutRepReceiptView: View {
                           colorByPace: colorByPace, heatOn: heatOn, km: km, zones: hrZones,
                           showElev: showElev, fitToWidth: true)
                 LapSplitsList(laps: orderedLaps, km: km, mpSec: targetSec)
-                repsFooterLine
             } else if !continuousSplits.isEmpty {
                 RRRepBars(reps: continuousSplits, targetSec: continuousAvgPaceSec,
                           colorByZone: colorByZone, colorByPace: colorByPace,
                           heatOn: heatOn, km: km, zones: hrZones, showElev: showElev,
                           fitToWidth: true)
                 RepsTable(reps: continuousSplits, km: km, heatOn: heatOn)
-                repsFooterLine
+            } else {
+                noSplitsRow
             }
 
             if workoutId != nil { fixRepsButton }
         }
     }
 
-    /// "WORKOUTS & REPS · 6×800" — the eyebrow names the session.
+    /// "WORKOUTS & REPS" for a session with reps; otherwise the splits' own
+    /// provenance — the watch's recorded laps, or the mile splits derived from
+    /// the imported stream when the watch never lapped the run.
     private var heroEyebrow: String {
-        hasReps
-            ? "WORKOUTS & REPS · \(repHeadline.uppercased())"
+        if hasReps { return "WORKOUTS & REPS" }
+        if continuousSplits.isEmpty { return "SPLITS" }
+        return continuousFromStream
+            ? "MILE SPLITS"
             : "SPLITS · \(continuousSplits.count) \(lapsAreKm ? "KM" : "MI")"
+    }
+
+    /// The one honest thing to say when the activity carries no laps and no
+    /// stream: nothing was imported. We never synthesise splits to fill a
+    /// table (spec §5).
+    private var noSplitsRow: some View {
+        Text("No splits from Strava")
+            .font(.dripBody(13)).italic()
+            .foregroundStyle(Color.drip.textTertiary)
+            .padding(.vertical, 6)
     }
 
     private var continuousAvgPaceSec: Double {
@@ -571,8 +787,9 @@ struct WorkoutRepReceiptView: View {
         return p.isEmpty ? 0 : p.reduce(0, +) / Double(p.count)
     }
 
-    /// "REP AVG 6:41 · RECOVERIES 2:00 JOG". No TARGET — see `RepsTable`.
-    @ViewBuilder private var repsFooterLine: some View {
+    /// "REP AVG 6:41 · RECOVERIES 2:00 AVG" — sits beside the hero eyebrow.
+    /// No TARGET — see `RepsTable`.
+    @ViewBuilder private var repsSummaryLine: some View {
         let rows = hasReps ? rrReps : continuousSplits
         if !rows.isEmpty {
             // Respect the HEAT-ADJ toggle so the average tracks the (faster)
@@ -752,39 +969,6 @@ struct WorkoutRepReceiptView: View {
         let idxs = sTimes.indices.filter { sTimes[$0] > start && sTimes[$0] <= end }
         guard let first = idxs.first, let last = idxs.last else { return nil }
         return Int((sAltFt[last] - sAltFt[first]).rounded())
-    }
-
-    /// THE READ — observation, never prescription. The old `weatherSentence`
-    /// that opened this section is gone: the conditions plate in Act 1 now
-    /// states temp and dew as facts, and repeating them here in prose was the
-    /// duplication the redesign set out to kill. Heat context still lives
-    /// inside the read prose itself, where it belongs.
-    ///
-    /// The coral eyebrow is this cluster's one coral element — which is why the
-    /// insight button below sits in quiet ink rather than a second coral wash.
-    private var theRead: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("THE READ")
-                .font(.dripEyebrow(11)).tracking(1.3)
-                .foregroundStyle(Color.drip.coral)
-            if insightLoading {
-                HStack(spacing: 8) { ProgressView().tint(Color.drip.coral); Text("Analyzing your workout…").font(.dripBody(14)).foregroundStyle(Color.drip.textSecondary) }
-            } else if let ins = insight, ins.trimmingCharacters(in: .whitespacesAndNewlines).count >= 40 {
-                Text(ins).font(.dripBody(14)).lineSpacing(3).foregroundStyle(Color.drip.textPrimary).fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text(computedRead).font(.dripBody(14)).lineSpacing(3).foregroundStyle(Color.drip.textPrimary).fixedSize(horizontal: false, vertical: true)
-                if workoutId != nil {
-                    Button { Task { await generateInsight() } } label: {
-                        HStack(spacing: 6) { Image(systemName: "sparkles").font(.system(size: 12, weight: .semibold)); Text("Generate AI insight").font(.dripLabel(13)) }
-                            .foregroundStyle(Color.drip.textSecondary)
-                            .padding(.horizontal, 14).padding(.vertical, 9)
-                            .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain).padding(.top, 2)
-                }
-            }
-            if let err = insightError { Text(err).font(.dripStat(10)).foregroundStyle(Color.drip.struggling) }
-        }
     }
 
     private var tweaksRow: some View {
@@ -999,17 +1183,33 @@ struct WorkoutRepReceiptView: View {
               d >= PaceCalculator.heatDewPointFloorF else { return nil }
         return (t, d)
     }
+    /// The read, in one sentence: what happened, in numbers this run actually
+    /// carries. Every clause is conditional on its own data — a run with no HR
+    /// makes no claim about zones, and nothing here grades the session
+    /// ("controlled and even" was said whatever the spread was). The chips
+    /// carry the status; this line carries the facts.
     private var computedRead: String {
+        let unit = km ? "/km" : "/mi"
         if reps.isEmpty {
             let dist = String(format: "%.1f", km ? wrDistanceMi * 1.60934 : wrDistanceMi)
-            let unit = km ? "km" : "mi"
-            let hr = wrAvgHR.map { ", average heart rate \($0)" } ?? ""
-            return "\(dist) \(unit) at \(rr_pace(wrPaceSec, km: km))\(km ? "/km" : "/mi")\(hr). A steady aerobic effort with no rep structure to break out — \(dominantZone) carried the most time."
+            var s = "\(dist) \(km ? "km" : "mi") at \(rr_pace(wrPaceSec, km: km))\(unit)"
+            if let hr = wrAvgHR { s += ", average heart rate \(hr)" }
+            s += ". No rep structure to break out"
+            if let zone = timedZone { s += " — \(zone) carried the most time" }
+            return s + "."
         }
-        let n = reps.count
-        let avg = rr_pace(targetSec, km: km)
-        let spread = Int((reps.compactMap { $0.avg_pace_sec_per_mile }.max() ?? 0) - (reps.compactMap { $0.avg_pace_sec_per_mile }.min() ?? 0))
-        return "\(n) reps inside a \(spread)-second spread at \(avg)\(km ? "/km" : "/mi"), HR pinned to \(dominantZone) from the second rep on. Controlled and even — exactly the session you drew up."
+        var s = "\(reps.count) reps at \(rr_pace(targetSec, km: km))\(unit)"
+        if let spread = repSpreadSec { s += ", inside a \(spread)-second spread" }
+        if let (zone, rep) = hrZoneOnset { s += ", HR in \(zone) from rep \(rep) on" }
+        return s + "."
+    }
+
+    /// The zone that actually carried time. Nil when the run has no HR at all —
+    /// `dominantZone` falls back to "Z4" for the chart's scaling, which must
+    /// never become a sentence claiming a zone the athlete never recorded.
+    private var timedZone: String? {
+        guard zoneSeconds.values.contains(where: { $0 > 0 }) else { return nil }
+        return dominantZone
     }
     private func prettyType(_ t: String) -> String {
         WorkoutLabel.display(t)
@@ -1070,19 +1270,6 @@ struct WorkoutRepReceiptView: View {
         workoutType = t
         guard let workoutId else { return }
         Task { await WorkoutLapsService.setType(workoutId: workoutId, type: t) }
-    }
-
-    @MainActor private func generateInsight() async {
-        guard let workoutId else { return }
-        insightLoading = true; insightError = nil
-        struct Req: Encodable { let training_log_id: String }
-        struct Resp: Decodable { let insight: String?; let error: String? }
-        do {
-            let resp: Resp = try await supabase.functions.invoke("generate-workout-insight", options: .init(body: Req(training_log_id: workoutId.uuidString)))
-            let text = resp.insight?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !text.isEmpty { insight = text } else { insightError = resp.error ?? "Couldn't generate insight. Try again." }
-        } catch { insightError = "Couldn't reach the coach. Try again."; Log.coach.error("generateInsight failed: \(error)") }
-        insightLoading = false
     }
 
     /// Compute the heavy stream-derived arrays a single time, after the workout
@@ -1198,6 +1385,7 @@ struct WorkoutRepReceiptView: View {
     private func chooseContinuousSplits() {
         let ls = lapSplits
         continuousSplits = ls.isEmpty ? mileReps : ls
+        continuousFromStream = ls.isEmpty && !mileReps.isEmpty
     }
 
     private func load() async {
@@ -1213,11 +1401,14 @@ struct WorkoutRepReceiptView: View {
         async let rolesFetch = WorkoutLapsService.fetchLapRoles(workoutId: workoutId)
         async let pr = WorkoutLapsService.fetchParsedReps(workoutId: workoutId)
         async let z = WorkoutLapsService.fetchZones()
-        async let ins = WorkoutLapsService.fetchInsight(workoutId: workoutId)
         async let ty = WorkoutLapsService.fetchType(workoutId: workoutId)
         async let pre = WorkoutLapsService.fetchPrescription(workoutId: workoutId)
         async let sum = WorkoutLapsService.fetchSummary(workoutId: workoutId)
         async let bundle = ExternalStreamAdapter.load(forTrainingLogId: workoutId)
+        // The body-part mentions this run carried. Non-fatal: the chip row just
+        // drops out if it fails, the rest of the sheet is unaffected.
+        async let nigs = ReceiptNiggleService.fetch(workoutId: workoutId,
+                                                    userId: AuthManager.shared.userId)
 
         let rawLapRows = await l
         let roleByIndex = await rolesFetch
@@ -1319,7 +1510,7 @@ struct WorkoutRepReceiptView: View {
         // distances and paces") can never name a run you didn't call a workout.
         let memoNamedWorkout = mentionsStructuredWorkout(sumVal.quote)
         parsedIntent = (memoNamedWorkout || !isContinuous) ? parsed.intentPattern : nil
-        zones = await z; insight = await ins; workoutType = await ty
+        zones = await z; workoutType = await ty
         var pre2 = await pre
         if let ip = parsedIntent, !ip.isEmpty { pre2.pattern = ip }
         prescription = pre2
@@ -1339,6 +1530,7 @@ struct WorkoutRepReceiptView: View {
         // Athlete's observed max HR — set BEFORE rebuildDerived() so the zone
         // bucketing (which reads `maxHR`) scales to the real ceiling.
         athleteMaxHR = await WorkoutLapsService.fetchObservedMaxHR(userId: AuthManager.shared.userId)
+        niggles = await nigs
         rebuildDerived()
         // After the derived arrays exist — the default row depends on climb /
         // grade / reps, none of which are known before rebuildDerived().

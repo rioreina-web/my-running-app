@@ -65,29 +65,6 @@ private struct TrackEyebrow: View {
     }
 }
 
-private struct InsightBlock: View {
-    let text: String
-    var quote: String? = nil
-    var quoteAttribution: String? = nil
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(text)
-                .font(.dripBody(15)).lineSpacing(3)
-                .foregroundStyle(Color.drip.textPrimary)
-            if let quote {
-                Text("\u{201C}\(quote)\u{201D}\(quoteAttribution.map { "  — \($0)" } ?? "")")
-                    .font(.dripBody(14).italic())
-                    .foregroundStyle(Color.drip.textSecondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 13)
-        .overlay(alignment: .leading) {
-            Rectangle().fill(Color.drip.coral.opacity(0.5)).frame(width: 2)
-        }
-    }
-}
-
 /// Draw a small mono label into a Canvas context.
 private func canvasLabel(
     _ ctx: GraphicsContext, _ s: String, at p: CGPoint,
@@ -181,8 +158,10 @@ struct VolumeDetailView: View {
 
                 TrackEyebrow(text: "Load balance · acute : chronic").padding(.top, 18).padding(.bottom, 6)
                 ACWRBar(value: acwr).frame(height: 48)
-
-                InsightBlock(text: acwrNarrative).padding(.top, 16)
+                // `acwrNarrative` used to print here — "Acute:chronic is 0.92 —
+                // inside the 0.8–1.3 band. A steady, controlled ramp." The bar
+                // already draws the value, the band and where the value sits in
+                // it. The sentence was the chart, retyped. (Rio, 2026-08-03.)
             }
     }
 
@@ -328,13 +307,6 @@ struct VolumeDetailView: View {
         return chronic > 0 ? acute / chronic : 1.0
     }
 
-    private var acwrNarrative: String {
-        let r = acwr
-        if r > 1.5 { return String(format: "Acute:chronic is %.2f — a spike. Worth an easier few days before the next quality block.", r) }
-        if r > 1.3 { return String(format: "Acute:chronic is %.2f, just past the sweet spot. Climbing, but keep an eye on it.", r) }
-        if r < 0.8 { return String(format: "Acute:chronic is %.2f — below the sweet spot, a lighter stretch.", r) }
-        return String(format: "Acute:chronic is %.2f — inside the 0.8–1.3 band. A steady, controlled ramp.", r)
-    }
 }
 
 private struct VolumeChart: View {
@@ -1116,8 +1088,10 @@ struct RecoveryReadView: View {
                 }
 
                 statusRow.padding(.top, 12)
-
-                InsightBlock(text: recoveryRead).padding(.top, 16)
+                // `recoveryRead` used to print here — "Readiness sits at 72 out
+                // of 100. You've run 9 hard sessions in the last 28 days, about
+                // one every 3.1 days." Three tiles above say exactly that, in
+                // the numbers themselves. (Rio, 2026-08-03.)
             }
         }
     }
@@ -1164,28 +1138,6 @@ struct RecoveryReadView: View {
 
     // Descriptive read, numbers only, no prescription. Prose em-dash is fine
     // (hard rule #8 bans em-dashes only as empty-state placeholders).
-    private var recoveryRead: String {
-        var s = ""
-        if let r = readiness {
-            s += "Readiness sits at \(r) out of 100. "
-        }
-        if let h = hardSessions28d {
-            s += "You've run \(h) hard \(h == 1 ? "session" : "sessions") in the last 28 days"
-            if let a = avgDaysBetweenHard {
-                s += ", about one every \(String(format: "%.1f", a)) days"
-            }
-            s += ". "
-        }
-        if downWeek == true {
-            s += "This week reads as a planned back-off. "
-        }
-        if bodySignalCount > 0 {
-            s += "\(bodySignalCount) body-part \(bodySignalCount == 1 ? "mention is" : "mentions are") active below — surfaced from your own words, never diagnosed."
-        } else {
-            s += "Nothing's stacking on the body right now."
-        }
-        return s
-    }
 }
 
 // MARK: - Mood
@@ -1210,19 +1162,42 @@ struct MoodDetailView: View {
 
     @ViewBuilder private var detailContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-                DetailHead(eyebrow: "Mood · from your voice logs", title: "How the block has felt.")
+                // Embedded, the Trends tab already heads this block. Rendering
+                // DetailHead here too put a third headline level inside one
+                // section — section head, then a 26pt display line, then the
+                // track eyebrows. (Rio, 2026-08-03.)
+                if !embedded {
+                    DetailHead(eyebrow: "Mood · from your voice logs", title: "How the block has felt.")
+                }
 
-                TrackEyebrow(text: "Week by week").padding(.top, 16).padding(.bottom, 8)
+                TrackEyebrow(text: "Week by week").padding(.top, embedded ? 0 : 16).padding(.bottom, 8)
                 ribbon
                 legend.padding(.top, 12)
 
                 TrackEyebrow(text: "Distribution").padding(.top, 20).padding(.bottom, 8)
                 distribution
 
-                InsightBlock(
-                    text: "Energy reads strongest mid-week and dips after the long run. A daily ribbon lands in a later build — this is the weekly read.",
-                    quote: latestQuote?.0, quoteAttribution: latestQuote?.1
-                ).padding(.top, 18)
+                // Her words, not ours. The generated sentence that used to
+                // introduce this quote is gone (it claimed a weekday pattern
+                // this view holds no daily data to see); the quote stays,
+                // because it is the one piece of language on the surface the
+                // athlete actually wrote. (Rio, 2026-08-03.)
+                if let q = latestQuote {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\u{201C}\(q.0)\u{201D}")
+                            .font(.dripBody(14).italic())
+                            .foregroundStyle(Color.drip.textPrimary)
+                        Text(q.1)
+                            .font(.dripCaption(11))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 13)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Color.drip.coral.opacity(0.5)).frame(width: 2)
+                    }
+                    .padding(.top, 18)
+                }
             }
     }
 
@@ -1343,7 +1318,17 @@ struct NigglesDetailView: View {
 
     @ViewBuilder private var detailContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-                DetailHead(eyebrow: "Niggles · recurrence", title: niggleTitle, tag: "surface, don't diagnose")
+                // Same as MoodDetailView: the tab heads this block when
+                // embedded, so the display headline would be a second one.
+                // `niggleTitle` still carries the count, in a quiet register.
+                if embedded {
+                    Text(niggleTitle)
+                        .font(.dripBody(15))
+                        .foregroundStyle(Color.drip.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    DetailHead(eyebrow: "Niggles · recurrence", title: niggleTitle, tag: "surface, don't diagnose")
+                }
 
                 if labels.isEmpty {
                     Text("Nothing stacking right now. Body-part mentions show up here when you voice them.")
@@ -1359,8 +1344,8 @@ struct NigglesDetailView: View {
                     }
                 }
 
-                Text("Surfaced from what you said, never interpreted. If anything gets sharper, see a clinician.")
-                    .font(.dripBody(13).italic())
+                Text("In your words. Never interpreted.")
+                    .font(.dripCaption(11))
                     .foregroundStyle(Color.drip.textTertiary)
                     .padding(.top, 12)
             }

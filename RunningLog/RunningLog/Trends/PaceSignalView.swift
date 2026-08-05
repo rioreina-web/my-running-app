@@ -144,6 +144,21 @@ struct PaceSignalView: View {
     /// nesting one. Pushed full-screen when false.
     var embedded = false
 
+    /// The window, in days, imposed by the host. When set, this view stops
+    /// owning a time range: its own WEEKLY/MONTHLY/3M/… bar is hidden and the
+    /// window comes from the host's control instead.
+    ///
+    /// The Trends tab used to show three independent time controls stacked in
+    /// one viewport — the tab's 4WK/12WK/6MO, this view's six-chip range bar,
+    /// and the SPECTRUM/OVER TIME toggle — with nothing reconciling the first
+    /// two. The tab could read "6 MO" while the spectrum below it summed a
+    /// single week. One range now wins; this is how it gets down here.
+    /// (Rio, 2026-08-03.)
+    var fixedWindowDays: Int? = nil
+    /// What to call `fixedWindowDays` in the section title ("12 WK"). Ignored
+    /// when the view owns its own range.
+    var fixedWindowLabel: String? = nil
+
     @State private var zonesService = PaceZonesService.shared
     @State private var service: SignalService
     @State private var tab: SignalTab = .spectrum
@@ -152,10 +167,20 @@ struct PaceSignalView: View {
     @State private var customStart = Calendar.current.date(byAdding: .month, value: -3, to: .now) ?? .now
     @State private var customEnd = Date.now
 
-    init(embedded: Bool = false, service: SignalService = .shared) {
+    init(
+        embedded: Bool = false,
+        fixedWindowDays: Int? = nil,
+        fixedWindowLabel: String? = nil,
+        service: SignalService = .shared
+    ) {
         self.embedded = embedded
+        self.fixedWindowDays = fixedWindowDays
+        self.fixedWindowLabel = fixedWindowLabel
         _service = State(initialValue: service)
     }
+
+    /// True when the host owns the range — the tab-embedded case.
+    private var hostControlsRange: Bool { fixedWindowDays != nil }
 
     private var zones: PaceZonesEngine? { zonesService.zones }
     private var scale: PaceScale? {
@@ -166,12 +191,33 @@ struct PaceSignalView: View {
 
     private var windowDays: Int {
         let raw: Int
-        if range == .custom {
+        if let fixed = fixedWindowDays {
+            raw = fixed
+        } else if range == .custom {
             raw = max(1, Calendar.current.dateComponents([.day], from: customStart, to: customEnd).day ?? 7)
         } else {
             raw = range.nominalDays
         }
         return min(max(raw, 1), max(service.days.count, 1))
+    }
+
+    /// Title over the spectrum histogram. Names the host's window when the
+    /// host owns it, so the label can't claim a range the bars didn't sum.
+    private var distributionTitle: String {
+        if hostControlsRange { return (fixedWindowLabel ?? "\(windowDays) days").uppercased() }
+        return range.distributionLabel
+    }
+
+    /// Share of the window's miles run in the Easy zone. The one number the
+    /// histogram's shape doesn't state outright, so it survives as a caption
+    /// after the VOLUME/WORKLOAD/MOOD tiles come out of the embedded surface.
+    private var easyPct: Int? {
+        let total = window.reduce(0.0) { $0 + $1.miles }
+        guard total > 0 else { return nil }
+        let easy = window.reduce(0.0) { acc, d in
+            acc + d.comp.filter { $0.zone == 0 }.reduce(0.0) { $0 + $1.mi }
+        }
+        return Int((easy / total * 100).rounded())
     }
     private var window: [SignalDay] { Array(service.days.suffix(windowDays)) }
     private var windowAcwr: [Double] { Array(service.acwr.suffix(windowDays)) }
@@ -212,8 +258,12 @@ struct PaceSignalView: View {
     private var stack: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !embedded { header }
-            rangeBar.padding(.top, embedded ? 0 : 14)
-            segmenter.padding(.top, 14)
+            if !hostControlsRange {
+                rangeBar.padding(.top, embedded ? 0 : 14)
+                segmenter.padding(.top, 14)
+            } else {
+                segmenter
+            }
             content.padding(.top, 16)
         }
     }
@@ -229,7 +279,14 @@ struct PaceSignalView: View {
             noRunsState
         } else {
             VStack(alignment: .leading, spacing: 16) {
-                tiles
+                // The tiles restate what the host already says. VOLUME is the
+                // load section's "This wk / 4-wk avg / Peak", WORKLOAD is the
+                // acute:chronic band directly above, MOOD is the mood ribbon
+                // below — and because each was computed over a different window
+                // they contradicted their twins on screen (60 mi vs 67,
+                // TIRED vs struggling). They stay on the standalone surface,
+                // which has no host to duplicate. (Rio, 2026-08-03.)
+                if !hostControlsRange { tiles }
                 if tab == .spectrum { spectrumSection } else { overTimeSection }
             }
         }
@@ -312,7 +369,17 @@ struct PaceSignalView: View {
 
     private var spectrumSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(range.distributionLabel).font(.dripEyebrow(13)).tracking(1.6).foregroundStyle(Color.drip.textSecondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text(distributionTitle)
+                    .font(.dripEyebrow(13)).tracking(1.6)
+                    .foregroundStyle(Color.drip.textSecondary)
+                Spacer()
+                if let p = easyPct {
+                    Text("\(p)% EASY")
+                        .font(.dripEyebrow(10)).tracking(0.8)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+            }
             if let scale {
                 SpectrumDistribution(scale: scale, buckets: windowDist).frame(height: 208)
             }
@@ -324,9 +391,8 @@ struct PaceSignalView: View {
             Text("OVER TIME · \(windowDays) DAYS").font(.dripEyebrow(13)).tracking(1.6).foregroundStyle(Color.drip.textSecondary)
             DailyOverTimeChart(days: window, acwr: windowAcwr).frame(height: 300)
             SpectrumKey()
-            Text("One bar per day — that day's miles, stacked by pace. Rest days are gaps. Tap any day for its detail; scroll to move through time.")
-                .font(.dripCaption(12)).italic().foregroundStyle(Color.drip.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
+            Text("One bar per day. Tap for detail.")
+                .font(.dripCaption(11)).foregroundStyle(Color.drip.textTertiary)
         }
     }
 
