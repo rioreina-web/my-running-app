@@ -595,6 +595,30 @@ final class VoiceLogViewModel {
 
             } catch {
                 Log.app.error("Processing attempt \(attempt) failed: \(error)")
+
+                // Not every failure of THIS call is a failure of the memo.
+                //
+                // The audio is already uploaded and the row is enqueued in
+                // `voice_processing_jobs`, and the drain worker calls
+                // process-training-memo with the SERVICE ROLE key — which
+                // bypasses the per-user rate limit that rejected us here. So
+                // for the two failures the outbox demonstrably recovers from,
+                // the memo still lands; showing a red "Could not process voice
+                // log. Please try again." banner would be a lie, and worse, it
+                // invites a manual retry that spends more quota.
+                //
+                //   429 — daily/monthly voice_memo quota. Drain finishes it.
+                //   409 — "already processing": the drain raced us and is
+                //         mid-run. Routine since the 2026-08-04 direct-invoke
+                //         change; never was a real error.
+                //
+                // Anything else (5xx, auth, transport) still surfaces — those
+                // can strand the memo and the athlete should know.
+                if Self.isOutboxRecoverable(error) {
+                    Log.app.info("Direct invoke deferred to the drain worker for \(record.id); not surfacing to the athlete")
+                    return await pollForCompletion(recordId: record.id, maxWait: 60)
+                }
+
                 ErrorReporter.shared.report(error, context: "process voice log")
 
                 if attempt < maxRetries {
@@ -609,6 +633,20 @@ final class VoiceLogViewModel {
     }
 
     // MARK: - Helpers
+
+    /// True for direct-invoke failures the `voice_processing_jobs` outbox will
+    /// finish on its own, so the athlete should never see a banner for them.
+    ///
+    /// Both are server-side "come back later" signals, not data loss: the audio
+    /// is uploaded and the job row exists, and the drain worker re-invokes with
+    /// the service-role key (which skips the user-keyed rate limit entirely).
+    static func isOutboxRecoverable(_ error: Error) -> Bool {
+        guard let edgeError = error as? EdgeFunctionError else { return false }
+        switch edgeError {
+        case let .httpError(statusCode, _, _):
+            return statusCode == 429 || statusCode == 409
+        }
+    }
 
     /// Watch a row's `processing_status` until it reaches a terminal state.
     ///

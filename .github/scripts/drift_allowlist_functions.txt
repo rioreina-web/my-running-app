@@ -1,5 +1,12 @@
-# Known exceptions for the function-inventory drift check.
-# Format: <slug> <repo-only|prod-only>
+# Known exceptions for the function drift checks.
+# Format: <slug> <repo-only|prod-only|content-ok>
+#
+#   repo-only   — in the repo, deliberately not deployed (inventory check)
+#   prod-only   — live in prod with no repo source (inventory check)
+#   content-ok  — deployed bundle may differ from repo source (content check).
+#                 Use sparingly: this asserts "we accept prod running something
+#                 other than this file." Always say why and when it ends.
+#
 # Remove each line when resolved.
 
 # coaching-feedback removed from this list 2026-06-11: source restored to

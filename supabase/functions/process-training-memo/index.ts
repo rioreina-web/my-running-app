@@ -18,6 +18,8 @@ import {
   isQualityWorkoutType,
   splitsFromPaceSegments,
   splitsFromExtractedIntervals,
+  splitsFromLaps,
+  splitsFromParsedBlocks,
   type ScheduledLite as CoachScheduledLite,
 } from "../_shared/coach-context.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
@@ -379,13 +381,18 @@ Deno.serve(async (req) => {
       );
     }
     // From here on, authUserId is the verified owner of record.id.
-
-    const rlBlocked = await enforceFeatureRateLimit(authUserId, "voice_memo", corsHeaders, { isServiceRole });
-    if (rlBlocked) return rlBlocked;
-
-    // Hard monthly ceiling: ≤200 voice-memo uploads processed per user/month.
-    const capped = await enforceMonthlyCap(authUserId, "voice_memo", corsHeaders, { isServiceRole });
-    if (capped) return capped;
+    //
+    // NOTE (2026-08-06): the rate-limit + monthly-cap gates used to sit HERE,
+    // before the no-op short-circuits below. That charged the user's daily
+    // voice_memo quota for calls that did no work — polling retries, the
+    // journal's stale-record sweep, duplicate invokes racing the drain — and
+    // one stuck memo could burn the whole day's budget on failed retries
+    // (429 loop, memo pinned at 'pending' forever). The gates now run AFTER
+    // the already-processed / nothing-to-process / already-in-flight guards,
+    // immediately before real work starts, so only calls that actually begin
+    // a transcription+analysis run are metered. (enforceMonthlyCap's own
+    // docstring already prescribed this: "call it AFTER any cached-return
+    // short-circuit.")
 
     // A row is processable when it has audio to transcribe OR typed notes to
     // analyze directly (manual notes take the text path). Read both from the
@@ -439,6 +446,17 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── Quota gates — only charged when real work is about to start ──────
+    // Daily per-user ceiling (free: 20/day). Service-role callers (the
+    // drain worker) bypass, so a queued retry can always complete even
+    // after the athlete's own budget is spent.
+    const rlBlocked = await enforceFeatureRateLimit(authUserId, "voice_memo", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
+
+    // Hard monthly ceiling: ≤200 voice-memo uploads processed per user/month.
+    const capped = await enforceMonthlyCap(authUserId, "voice_memo", corsHeaders, { isServiceRole });
+    if (capped) return capped;
+
     // Mark as processing
     await updateProcessingStatus(record.id, "processing");
 
@@ -451,7 +469,7 @@ Deno.serve(async (req) => {
     // linkage column exists.
     const { data: existingRecord, error: existingErr } = await supabase
       .from("training_logs")
-      .select("workout_distance_miles, workout_duration_minutes, pace_segments, vital_workout_id, workout_date, workout_type, external_streams")
+      .select("workout_distance_miles, workout_duration_minutes, pace_segments, vital_workout_id, workout_date, workout_type, external_streams, parsed_structure")
       .eq("id", record.id)
       .single();
 
@@ -469,6 +487,8 @@ Deno.serve(async (req) => {
     // over, so parse-workout-structure + the insight see the actual GPS.
     let mergedStreams: unknown = null;
     let mergedPaceSegments: unknown = null;
+    let siblingRunId: string | null = null;
+    let siblingParsedStructure: unknown = null;
     {
       const er = existingRecord as {
         workout_distance_miles?: number | null;
@@ -483,7 +503,7 @@ Deno.serve(async (req) => {
         const day = String(erDate).slice(0, 10);
         const { data: siblings } = await supabase
           .from("training_logs")
-          .select("id, workout_distance_miles, external_streams, pace_segments")
+          .select("id, workout_distance_miles, external_streams, pace_segments, parsed_structure")
           .eq("user_id", authUserId)
           .neq("id", record.id)
           .not("external_streams", "is", null)
@@ -493,13 +513,47 @@ Deno.serve(async (req) => {
         const match = (siblings ?? []).find((s: { workout_distance_miles?: number | null }) =>
           typeof s.workout_distance_miles === "number" &&
           Math.abs((s.workout_distance_miles as number) - (erDist as number)) <= 0.3
-        ) as { external_streams?: unknown; pace_segments?: unknown } | undefined;
+        ) as { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown } | undefined;
         if (match) {
           mergedStreams = match.external_streams ?? null;
+          // The laps table is keyed on the SIBLING row's id (the lap-writer
+          // trigger fired when Strava sync wrote its external_streams). Keep
+          // the id so the splits block below can read the true rep structure.
+          siblingRunId = match.id ?? null;
+          siblingParsedStructure = match.parsed_structure ?? null;
           const erHasSegs = Array.isArray(er?.pace_segments) && (er!.pace_segments as unknown[]).length > 0;
           if (!erHasSegs) mergedPaceSegments = match.pace_segments ?? null;
           console.log(`[process-training-memo] merged GPS from sibling run into voice row ${record.id}`);
         }
+      }
+    }
+
+    // ── Watch laps — the true rep structure ─────────────────────────────
+    // running_workout_laps holds the actual lap presses (work reps + flagged
+    // recoveries). Far richer than pace_segments, which are PER-MILE averages
+    // that smear work + recovery together — feeding those to the model as
+    // "reps" is how a 5×4:00 threshold session got read back as "4×1 mile".
+    // The voice row rarely has laps of its own (no streams yet at this point),
+    // so fall back to the sibling GPS run found above.
+    const watchLaps: Array<{
+      lap_index?: number | null;
+      distance_meters?: number | null;
+      moving_time_seconds?: number | null;
+      avg_pace_sec_per_mile?: number | null;
+      avg_heart_rate?: number | null;
+      is_rest?: boolean | null;
+    }> = [];
+    for (const lapWorkoutId of [record.id, siblingRunId]) {
+      if (!lapWorkoutId) continue;
+      const { data: lapRows } = await supabase
+        .from("running_workout_laps")
+        .select("lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, avg_heart_rate, is_rest")
+        .eq("workout_id", lapWorkoutId)
+        .eq("user_id", authUserId)
+        .order("lap_index", { ascending: true });
+      if (lapRows && lapRows.length > 0) {
+        watchLaps.push(...(lapRows as typeof watchLaps));
+        break;
       }
     }
 
@@ -786,19 +840,57 @@ Deno.serve(async (req) => {
         )
       : null;
 
-    // Splits block — Garmin/HealthKit segments if available. Voice path
-    // can't use voice-extracted intervals here because the LLM hasn't
-    // run yet; those become available on the row after this function
-    // writes extracted_data. For voice-only workouts with no watch data,
+    // Splits block — fidelity ladder, mirroring generate-workout-insight:
+    //   1. parsed_structure blocks — recovery-segmented by the structure
+    //      parser from the GPS stream (own row, else the sibling GPS run's).
+    //      The only source that reliably separates JOGGED recoveries for
+    //      athletes at any pace — the lap `is_rest` heuristic is absolute
+    //      (<200m / <2.0 m/s) and misses recoveries run at a normal jog.
+    //   2. running_workout_laps — actual lap presses (true rep structure,
+    //      rest flagged + relative recovery filter). Fetched above,
+    //      sibling-aware.
+    //   3. pace_segments — PER-MILE averages. Work + recovery smeared
+    //      together; usable pacing context but NOT rep structure.
+    // Voice-extracted intervals can't participate here because the LLM hasn't
+    // run yet; those become available on the row after this function writes
+    // extracted_data. For voice-only workouts with no watch data at all,
     // splits are surfaced in workout_notes via the LLM's own extraction.
-    const watchSplits = splitsFromPaceSegments(
-      existingRecord?.pace_segments as Array<{
+    const parsedBlocks =
+      ((existingRecord as { parsed_structure?: { blocks?: unknown } } | null)
+        ?.parsed_structure?.blocks ??
+        (siblingParsedStructure as { blocks?: unknown } | null)?.blocks) as
+        | Array<{
+            role?: string;
+            rep_num?: number | null;
+            distance_miles?: number | string;
+            duration_s?: number | string;
+            avg_pace_per_mile?: string;
+            avg_hr?: number | null;
+          }>
+        | null
+        | undefined;
+    const parsedSplits = splitsFromParsedBlocks(parsedBlocks);
+    const lapSplits = splitsFromLaps(watchLaps);
+    const segSplits = splitsFromPaceSegments(
+      (existingRecord?.pace_segments ?? mergedPaceSegments) as Array<{
         effort?: string;
         distance_miles?: number | string;
         pace_per_mile?: string;
         avg_heart_rate?: number;
       }> | null,
     );
+    const workReps = (s: Array<{ effortKind: string }>) =>
+      s.filter((x) => x.effortKind === "work").length;
+    const splitSource: "parsed" | "laps" | "segments" = workReps(parsedSplits) >= 2
+      ? "parsed"
+      : workReps(lapSplits) >= 2
+      ? "laps"
+      : "segments";
+    const watchSplits = splitSource === "parsed"
+      ? parsedSplits
+      : splitSource === "laps"
+      ? lapSplits
+      : segSplits;
     // Quality sessions get the full split read; easy / steady / long runs use
     // the large-dropoff-only register — silent on normal drift, but a real big
     // late fade still surfaces (matches generate-workout-insight).
@@ -856,22 +948,29 @@ Deno.serve(async (req) => {
       recentContext += "\nUse this context to give advice that connects to their training patterns. Do NOT repeat information from previous sessions — focus on TODAY's memo.\n";
     }
 
-    // Build Garmin/watch data context for sharper coaching
+    // Build Garmin/watch data context for sharper coaching. Built from the
+    // SAME fidelity-laddered splits as the splits block above — never from raw
+    // pace_segments, which are per-mile averages: labeling those "reps" is how
+    // a 5×4:00 threshold session got narrated back as "actual 4×1 mile reps"
+    // a minute-per-mile slower than the athlete actually ran.
     let garminContext = "";
-    if (existingRecord?.pace_segments && Array.isArray(existingRecord.pace_segments) && existingRecord.pace_segments.length > 0) {
-      garminContext = "\n\n## GPS Watch Data (Garmin)\nThe runner's watch recorded these pace segments for this workout:\n";
-      for (const seg of existingRecord.pace_segments) {
-        const hr = seg.avg_heart_rate ? ` (${seg.avg_heart_rate} bpm)` : "";
-        garminContext += `- ${seg.effort}: ${Number(seg.distance_miles).toFixed(2)} mi @ ${seg.pace_per_mile}/mi${hr}\n`;
+    if (watchSplits.length > 0) {
+      garminContext = splitSource === "parsed"
+        ? "\n\n## GPS Watch Data (parsed workout structure)\nThe workout structure below was segmented from the GPS stream — recoveries are separated out, and each work line is a true rep as executed:\n"
+        : splitSource === "laps"
+        ? "\n\n## GPS Watch Data (recorded laps)\nThe runner's watch recorded these laps. Rest/recovery laps are excluded — each line below is a WORK rep as the watch captured it:\n"
+        : "\n\n## GPS Watch Data (per-distance splits)\nOnly distance-based splits (per mile/km) are available for this workout. Each line AVERAGES work and any recovery jogs within that distance — these are NOT reps. Do not describe them as reps, and do not contradict the runner's own account of the rep structure based on them:\n";
+      for (const s of watchSplits) {
+        const hr = s.avgHeartRate ? ` (${s.avgHeartRate} bpm)` : "";
+        garminContext += `- ${s.label}: ${s.distanceMiles.toFixed(2)} mi @ ${formatPaceMMSS(s.paceSecPerMile)}/mi${hr}\n`;
       }
-      if (existingRecord.workout_distance_miles) {
-        const totalMin = existingRecord.workout_duration_minutes || 0;
-        const avgPaceSec = totalMin > 0 && existingRecord.workout_distance_miles > 0
-          ? Math.round((totalMin * 60) / existingRecord.workout_distance_miles)
-          : 0;
+      const totalDist = existingRecord?.workout_distance_miles ?? 0;
+      if (totalDist > 0) {
+        const totalMin = existingRecord?.workout_duration_minutes || 0;
+        const avgPaceSec = totalMin > 0 ? Math.round((totalMin * 60) / totalDist) : 0;
         const paceM = Math.floor(avgPaceSec / 60);
         const paceS = avgPaceSec % 60;
-        garminContext += `Total: ${Number(existingRecord.workout_distance_miles).toFixed(1)} mi in ${Math.round(totalMin)} min (${paceM}:${String(paceS).padStart(2, "0")}/mi avg)\n`;
+        garminContext += `Total: ${Number(totalDist).toFixed(1)} mi in ${Math.round(totalMin)} min (${paceM}:${String(paceS).padStart(2, "0")}/mi avg)\n`;
       }
       garminContext += "\nUSE THIS DATA in your coach_insight. Compare what the runner SAID about their workout to what the WATCH DATA shows. Note discrepancies. Analyze effort distribution. Were easy segments actually easy? Only call out a fade or negative split on a quality session (tempo / intervals / race-pace reps) AND when it's a real, sizable pace change — normal drift on an easy, steady, or long run is expected and must not be labeled a fade. Be specific about paces.\n";
     }

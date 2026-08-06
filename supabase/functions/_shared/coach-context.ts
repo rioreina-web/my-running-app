@@ -594,6 +594,17 @@ function classifyEffortKind(rawEffort: string | undefined | null): WorkoutSplit[
 
 /**
  * Normalize Garmin/HealthKit `pace_segments` rows into WorkoutSplit shape.
+ *
+ * MILE-SPLIT GUARD (2026-08-06): Strava-synced pace_segments are per-mile
+ * averages (`splits_standard`), each tagged only "fast"/"steady"/"easy" — all
+ * of which classify as "work". Labeling those `Rep N` presented mile splits
+ * (work + recovery smeared together) to the LLM as rep structure: a 5×4:00
+ * threshold session read back as "4×1 mile reps" a minute/mi slower than the
+ * athlete ran. When the work segments are uniformly ~1 mile (± a trailing
+ * partial), they're mile splits, and are labeled `Mile N` instead. A genuine
+ * 1-mile-rep session caught by this reads "Mile 3 @ 5:50/mi" — still accurate,
+ * just less presumptuous. Callers wanting true rep structure should prefer
+ * `splitsFromLaps` / parsed blocks; this source is the fallback.
  */
 export function splitsFromPaceSegments(
   segments: Array<{
@@ -627,6 +638,86 @@ export function splitsFromPaceSegments(
       distanceMiles: dist,
       paceSecPerMile: paceSec,
       avgHeartRate: seg.avg_heart_rate,
+      effortKind,
+    });
+  }
+
+  // Distance-split guard — see docstring. All work segments a uniform ~1 mile
+  // or ~1 km (the last may be a trailing partial) ⇒ these are per-distance
+  // splits, not reps. Deliberately DISTANCE-based, never pace-based, so it
+  // behaves identically for a 5:00/mi runner and a 12:00/mi runner.
+  const work = out.filter((s) => s.effortKind === "work");
+  if (work.length >= 2) {
+    const KM_MI = 0.6214;
+    const near = (d: number, unit: number) => Math.abs(d - unit) <= unit * 0.06;
+    const last = work[work.length - 1];
+    const uniform = (unit: number) =>
+      work.slice(0, -1).every((s) => near(s.distanceMiles, unit)) &&
+      (near(last.distanceMiles, unit) || last.distanceMiles < unit);
+    const unitLabel = uniform(1) ? "Mile" : uniform(KM_MI) ? "Km" : null;
+    if (unitLabel) {
+      let idx = 0;
+      for (const s of out) {
+        if (s.effortKind === "work") {
+          idx++;
+          s.label = `${unitLabel} ${idx}`;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Normalize parse-workout-structure's recovery-segmented execution blocks into
+ * WorkoutSplit shape. This is the HIGHEST-fidelity split source: the parser
+ * segments the GPS stream by where the athlete actually slowed down, so
+ * continuous efforts are already merged (a 2k is one rep, not two 1k laps) and
+ * recoveries are already separated — including jogged recoveries that the
+ * lap-level `is_rest` heuristic (absolute <200m / <2.0 m/s thresholds) misses
+ * for athletes whose recovery jog is a normal running pace. Moved here from
+ * generate-workout-insight (2026-08-06) so process-training-memo can read the
+ * sibling GPS run's parsed structure through the same ladder.
+ */
+export function splitsFromParsedBlocks(
+  blocks:
+    | Array<{
+        role?: string;
+        rep_num?: number | null;
+        distance_miles?: number | string;
+        duration_s?: number | string;
+        avg_pace_per_mile?: string;
+        avg_hr?: number | null;
+      }>
+    | null
+    | undefined,
+): WorkoutSplit[] {
+  if (!Array.isArray(blocks) || blocks.length === 0) return [];
+  const out: WorkoutSplit[] = [];
+  let workIndex = 0;
+  for (const b of blocks) {
+    const role = (b.role ?? "").toLowerCase();
+    const dist = typeof b.distance_miles === "number"
+      ? b.distance_miles
+      : parseFloat(String(b.distance_miles ?? "0"));
+    const paceParts = (b.avg_pace_per_mile ?? "").split(":");
+    const paceSec = paceParts.length === 2
+      ? parseInt(paceParts[0], 10) * 60 + parseInt(paceParts[1], 10)
+      : NaN;
+    if (!dist || dist <= 0 || !isFinite(paceSec)) continue;
+    const effortKind: WorkoutSplit["effortKind"] = role === "warmup"
+      ? "warmup"
+      : role === "cooldown"
+      ? "cooldown"
+      : role === "work_rep"
+      ? "work"
+      : "unknown";
+    if (effortKind === "work") workIndex += 1;
+    out.push({
+      label: effortKind === "work" ? `Rep ${workIndex}` : (b.role ?? "segment"),
+      distanceMiles: dist,
+      paceSecPerMile: paceSec,
+      avgHeartRate: typeof b.avg_hr === "number" ? b.avg_hr : undefined,
       effortKind,
     });
   }
@@ -693,8 +784,8 @@ export function splitsFromLaps(
   const work = laps
     .filter((l) => l.is_rest !== true)
     .sort((a, b) => (a.lap_index ?? 0) - (b.lap_index ?? 0));
-  const out: WorkoutSplit[] = [];
-  let repIdx = 0;
+  // First pass: normalize distances/paces and drop noise fragments.
+  const candidates: Array<{ distMi: number; paceSec: number; hr?: number }> = [];
   for (const l of work) {
     const meters = typeof l.distance_meters === "number"
       ? l.distance_meters
@@ -709,16 +800,30 @@ export function splitsFromLaps(
       paceSec = l.moving_time_seconds / distMi;
     }
     if (!paceSec || !Number.isFinite(paceSec) || paceSec <= 0) continue;
-    repIdx++;
-    out.push({
-      label: `Rep ${repIdx}`,
-      distanceMiles: distMi,
-      paceSecPerMile: Math.round(paceSec),
-      avgHeartRate: typeof l.avg_heart_rate === "number" ? l.avg_heart_rate : undefined,
-      effortKind: "work",
+    candidates.push({
+      distMi,
+      paceSec,
+      hr: typeof l.avg_heart_rate === "number" ? l.avg_heart_rate : undefined,
     });
   }
-  return out;
+  // Second pass: RELATIVE recovery filter. `is_rest` is a generated column
+  // with ABSOLUTE thresholds (<200m or slower than 2.0 m/s ≈ walking) — it
+  // catches standing rests but misses jogged recoveries run at a normal pace
+  // (e.g. 400m at 10:30/mi between 8:00/mi reps). Mirror deriveWorkoutNotes'
+  // rule: a lap much slower than the fastest kept lap (>1.5×) is a
+  // recovery/boundary, not a rep — a ratio, so it holds at any absolute speed.
+  // Guard: only filter when ≥2 laps survive, so a lone-fast-lap outlier can't
+  // erase an otherwise-even session.
+  const fastest = Math.min(...candidates.map((c) => c.paceSec));
+  const kept = candidates.filter((c) => c.paceSec <= fastest * 1.5);
+  const final = kept.length >= 2 ? kept : candidates;
+  return final.map((c, i) => ({
+    label: `Rep ${i + 1}`,
+    distanceMiles: c.distMi,
+    paceSecPerMile: Math.round(c.paceSec),
+    avgHeartRate: c.hr,
+    effortKind: "work" as const,
+  }));
 }
 
 /**
