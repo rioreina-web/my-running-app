@@ -14,6 +14,13 @@ import {
   type SegmentationResult,
 } from "../_shared/workoutSegmentation.ts";
 import { deriveWorkoutNotes } from "../_shared/workout-notes.ts";
+import {
+  buildEffortProfile,
+  densityBaselineFromSamples,
+  restSampleFrom,
+  type EffortLap,
+  type RestSample,
+} from "../_shared/effortModel.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -52,7 +59,10 @@ interface TrainingLog {
   mood: string | null;
   source: string | null;
   felt_rpe: number | null;
+  weather_actual: { temp_f?: number | null; dew_point_f?: number | null } | null;
 }
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // ── Per-workout stress load (weighted training-minutes) ──
 // Mechanical load, standardized to the SAME unit as
@@ -129,7 +139,7 @@ const QUALITY_SECONDS_FLOOR = 240;
  *  then an undifferentiated easy block. */
 function segmentLog(
   log: TrainingLog,
-  laps: LapInput[] | undefined,
+  laps: EffortLap[] | undefined,
   zones: PaceZones,
 ): SegmentationResult {
   if (laps && laps.length > 0) return segmentFromLaps(laps, zones);
@@ -360,22 +370,22 @@ async function fetchPaceZones(userId: string): Promise<PaceZones> {
 async function fetchLapsByWorkout(
   userId: string,
   workoutIds: string[],
-): Promise<Map<string, LapInput[]>> {
-  const byId = new Map<string, LapInput[]>();
+): Promise<Map<string, EffortLap[]>> {
+  const byId = new Map<string, EffortLap[]>();
   if (workoutIds.length === 0) return byId;
   // Chunk to keep the IN list sane.
   for (let i = 0; i < workoutIds.length; i += 200) {
     const chunk = workoutIds.slice(i, i + 200);
     const { data } = await supabase
       .from("running_workout_laps")
-      .select("workout_id, lap_index, is_rest, distance_meters, avg_pace_sec_per_mile, moving_time_seconds, elapsed_time_seconds, avg_heart_rate")
+      .select("workout_id, lap_index, is_rest, distance_meters, avg_pace_sec_per_mile, moving_time_seconds, elapsed_time_seconds, avg_heart_rate, total_elevation_gain, temp_f, dew_point_f")
       .eq("user_id", userId)
       .in("workout_id", chunk)
       .order("lap_index", { ascending: true });
     for (const lap of (data ?? []) as Array<Record<string, unknown>>) {
       const wid = String(lap.workout_id);
       const arr = byId.get(wid) ?? [];
-      arr.push(lap as LapInput);
+      arr.push(lap as EffortLap);
       byId.set(wid, arr);
     }
   }
@@ -400,7 +410,7 @@ Deno.serve(async (req) => {
     if ("response" in auth) return auth.response;
     const { userId: user_id } = auth;
 
-    const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, workout_notes, mood, source, felt_rpe";
+    const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, workout_notes, mood, source, felt_rpe, weather_actual";
 
     // Fetch workouts to process
     let query = supabase
@@ -472,6 +482,13 @@ Deno.serve(async (req) => {
     const typeBackfill: Array<{ id: string; workout_type: string }> = [];
     const notesBackfill: Array<{ id: string; workout_notes: string }> = [];
     const stressBackfill: Array<{ id: string; stress_load: number; stress_source: string }> = [];
+    const effortBackfill: Array<{ id: string } & Record<string, unknown>> = [];
+    // The athlete's rest habit, accumulated as the chronological loop advances.
+    // Strictly backward-looking: a session's density is measured against how
+    // this athlete rested BEFORE it, never against sessions it hasn't run yet.
+    // (Feeding the whole history in would let a future block redefine the past
+    // and make a backfill disagree with what the athlete saw on the day.)
+    const restSamples: RestSample[] = [];
     const featuresSoFar: Array<{ workout_date: string; total_distance_miles: number | null; hard_effort_minutes: number | null }> = [];
 
     for (let i = 0; i < allLogs.length; i++) {
@@ -485,6 +502,18 @@ Deno.serve(async (req) => {
       }
 
       const feat = computeFeatures(log, seg, prevWorkout, prevHardWorkout);
+
+      // Effort profile — density + conditions. Needs rep-level laps: without
+      // them there is no rest to measure, and we don't guess one. Built for
+      // EVERY log (not just the targets) so the rest habit accumulates across
+      // the full history even in single-workout mode.
+      const effortLaps = lapsByWorkout.get(log.id);
+      const effort = effortLaps && effortLaps.length > 0
+        ? buildEffortProfile(effortLaps, zones, {
+          conditions: log.weather_actual ?? null,
+          baseline: densityBaselineFromSamples(restSamples),
+        })
+        : null;
 
       featuresSoFar.push({
         workout_date: log.workout_date,
@@ -505,6 +534,20 @@ Deno.serve(async (req) => {
           feat.total_duration_seconds ?? 0,
         );
         stressBackfill.push({ id: log.id, ...stress });
+        if (effort) {
+          effortBackfill.push({
+            id: log.id,
+            // Density-aware twin of stress_load, same weighted-minutes unit.
+            // Written alongside rather than over stress_load: flipping the
+            // canonical load changes every athlete's CTL/ATL/TSB curve and is a
+            // deliberate call with a backfill, not a side effect of this change.
+            effort_load: round1(effort.effortLoad),
+            density_pct: effort.density.densityPct,
+            rest_ratio: effort.density.restRatio,
+            density_multiplier: effort.density.multiplier,
+            density_baseline_source: effort.density.baselineSource,
+          });
+        }
         // Backfill the untyped training_logs (don't clobber a set type).
         if (!log.workout_type && seg.workoutKind) {
           typeBackfill.push({ id: log.id, workout_type: seg.workoutKind });
@@ -516,6 +559,13 @@ Deno.serve(async (req) => {
           const derived = deriveWorkoutNotes(seg, lapsByWorkout.get(log.id));
           if (derived) notesBackfill.push({ id: log.id, workout_notes: derived });
         }
+      }
+
+      // Fold this session into the rest habit AFTER it has been measured, so it
+      // never contributes to its own baseline.
+      if (effort) {
+        const sample = restSampleFrom(effort.density);
+        if (sample) restSamples.push(sample);
       }
     }
 
@@ -580,10 +630,27 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`Computed ${features.length} workout features for user ${user_id}; backfilled ${typesBackfilled} types, ${notesBackfilled} notes, ${stressWritten} stress loads`);
+    // Write the density-aware effort figures. Same graceful-degradation posture
+    // as stress_load above: the columns arrive with migration 20260806140000,
+    // and the function must survive landing before it.
+    let effortWritten = 0;
+    for (const e of effortBackfill) {
+      const { id, ...cols } = e;
+      const { error } = await supabase.from("training_logs").update(cols).eq("id", id);
+      if (error) {
+        if (/effort_load|density_|rest_ratio|column/i.test(error.message)) {
+          console.warn("effort/density columns missing; skipping (deploy migration 20260806140000)");
+          break;
+        }
+      } else {
+        effortWritten++;
+      }
+    }
+
+    console.log(`Computed ${features.length} workout features for user ${user_id}; backfilled ${typesBackfilled} types, ${notesBackfilled} notes, ${stressWritten} stress loads, ${effortWritten} effort loads`);
 
     return new Response(
-      JSON.stringify({ success: true, computed: features.length, types_backfilled: typesBackfilled, notes_backfilled: notesBackfilled, stress_written: stressWritten, user_id }),
+      JSON.stringify({ success: true, computed: features.length, types_backfilled: typesBackfilled, notes_backfilled: notesBackfilled, stress_written: stressWritten, effort_written: effortWritten, user_id }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

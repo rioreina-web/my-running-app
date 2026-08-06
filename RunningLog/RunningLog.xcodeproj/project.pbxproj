@@ -15,15 +15,31 @@
 		B3AF91722F25A1020065C876 /* SwiftTasksVision in Frameworks */ = {isa = PBXBuildFile; productRef = B3AF91712F25A1010065C876 /* SwiftTasksVision */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		C1A0DE00000000000000A008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B3AF912F2F2589D70065C876 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B3AF91362F2589D70065C876;
+			remoteInfo = RunningLog;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		B3323FE42F8D9DAB00832A45 /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
 		B3AF91372F2589D70065C876 /* RunningLog.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RunningLog.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C1A0DE00000000000000A002 /* RunningLogTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunningLogTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		B3AF91392F2589D70065C876 /* RunningLog */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = RunningLog;
+			sourceTree = "<group>";
+		};
+		C1A0DE00000000000000A001 /* RunningLogTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RunningLogTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -42,6 +58,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C1A0DE00000000000000A005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -49,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				B3AF91392F2589D70065C876 /* RunningLog */,
+				C1A0DE00000000000000A001 /* RunningLogTests */,
 				B3AF915C2F2590E80065C876 /* Frameworks */,
 				B3AF91382F2589D70065C876 /* Products */,
 				B3323FE42F8D9DAB00832A45 /* Secrets.xcconfig */,
@@ -59,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				B3AF91372F2589D70065C876 /* RunningLog.app */,
+				C1A0DE00000000000000A002 /* RunningLogTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -103,6 +128,29 @@
 			productReference = B3AF91372F2589D70065C876 /* RunningLog.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C1A0DE00000000000000A003 /* RunningLogTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C1A0DE00000000000000A00B /* Build configuration list for PBXNativeTarget "RunningLogTests" */;
+			buildPhases = (
+				C1A0DE00000000000000A004 /* Sources */,
+				C1A0DE00000000000000A005 /* Frameworks */,
+				C1A0DE00000000000000A006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C1A0DE00000000000000A007 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C1A0DE00000000000000A001 /* RunningLogTests */,
+			);
+			name = RunningLogTests;
+			packageProductDependencies = (
+			);
+			productName = RunningLogTests;
+			productReference = C1A0DE00000000000000A002 /* RunningLogTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -115,6 +163,10 @@
 				TargetAttributes = {
 					B3AF91362F2589D70065C876 = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					C1A0DE00000000000000A003 = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = B3AF91362F2589D70065C876;
 					};
 				};
 			};
@@ -138,12 +190,20 @@
 			projectRoot = "";
 			targets = (
 				B3AF91362F2589D70065C876 /* RunningLog */,
+				C1A0DE00000000000000A003 /* RunningLogTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		B3AF91352F2589D70065C876 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C1A0DE00000000000000A006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -194,7 +254,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C1A0DE00000000000000A004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C1A0DE00000000000000A007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B3AF91362F2589D70065C876 /* RunningLog */;
+			targetProxy = C1A0DE00000000000000A008 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		B3AF91402F2589D80065C876 /* Debug */ = {
@@ -386,6 +461,48 @@
 			};
 			name = Release;
 		};
+		C1A0DE00000000000000A009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BD3P4WVWVC;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.postrundrip.app.RunningLogTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunningLog.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RunningLog";
+			};
+			name = Debug;
+		};
+		C1A0DE00000000000000A00A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = BD3P4WVWVC;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.postrundrip.app.RunningLogTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/RunningLog.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/RunningLog";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -403,6 +520,15 @@
 			buildConfigurations = (
 				B3AF91432F2589D80065C876 /* Debug */,
 				B3AF91442F2589D80065C876 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C1A0DE00000000000000A00B /* Build configuration list for PBXNativeTarget "RunningLogTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C1A0DE00000000000000A009 /* Debug */,
+				C1A0DE00000000000000A00A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

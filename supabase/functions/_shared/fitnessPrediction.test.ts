@@ -1,4 +1,4 @@
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertAlmostEquals, assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   generateFitnessPrediction,
   enduranceFactor,
@@ -539,7 +539,14 @@ Deno.test("heat: the same interval session in 95°F/70°F dew reads FITTER than 
     hotEfforts[0].paceSeconds < coolEfforts[0].paceSeconds,
     `hot rep must normalize faster: ${hotEfforts[0].paceSeconds} vs ${coolEfforts[0].paceSeconds}`,
   );
-  assertEquals(coolEfforts[0].paceSeconds, 320); // cool + short rest → untouched
+  // Cool + short rest → effectively untouched. Approximate, not exact: 55°F/45°F
+  // dew is composite 100.45, a hair over the adjustment table's zero knot, so
+  // the model returns a ~0.02% correction (319.964, not a flat 320). Asserting
+  // exact float equality against a modelled value is brittle by construction —
+  // the Emy-v2 recalibration (2026-08-05) moved the first knot and broke it.
+  // The claim worth locking is "a cool day costs nothing meaningful", so the
+  // tolerance is what a coach would call nothing: under a tenth of a second.
+  assertAlmostEquals(coolEfforts[0].paceSeconds, 320, 0.1);
 
   // End-to-end: anchored on a 36:30 10K (~352 s/mi) the rep signals land
   // NEAR the estimate — cool reps (10K-equiv ≈ 367) slow it a few seconds

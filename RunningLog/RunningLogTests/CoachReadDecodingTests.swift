@@ -172,6 +172,11 @@ struct CoachReadDecodingTests {
             id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
             readDate: ISO8601DateFormatter().date(from: "2026-05-19T00:00:00Z")!,
             headline: "Test headline",
+            // v5 sectioned narrative absent on purpose: this test pins the
+            // legacy `paragraph` round-trip, which pre-v5 rows still take.
+            eyebrow: nil,
+            sections: nil,
+            question: nil,
             paragraph: [
                 .text("Plain start. "),
                 .workout(workoutId: UUID(uuidString: "aaaaaaaa-1111-1111-1111-111111111111")!),

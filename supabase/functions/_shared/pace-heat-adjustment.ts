@@ -46,6 +46,60 @@
  *   • ≥ 1.5 mi   → 1.0 × adjustment (full)
  * Apply PER BOUT: an easy run / tempo (≥1.5 mi) gets the full adjustment; 1k /
  * 600m interval reps get the scaled-down amount. Unknown length → full.
+ *
+ * A continuous run is ONE bout, not N reps. Do not pass the length of an
+ * individual mile split of a continuous run — six 1-mile splits of a 6-mile run
+ * would each land mid-ramp at 0.67 × and under-credit the whole run by a third.
+ * Pass `null` for continuous geometry; pass the rep length only when the athlete
+ * actually stood still between bouts.
+ *
+ * INTENSITY SCALING (decision 2026-08-05, Rio): the table is a QUALITY-WORK
+ * chart. Hadley published it to answer "how much slower should I run my tempo
+ * today," and the sheet's own out-of-range string is "Very tough conditions to
+ * run marathon pace work." Applying it at full strength as retroactive credit on
+ * a recovery jog is using it off-label: metabolic heat production scales with
+ * running speed, so an easy run generates less heat, sheds a larger fraction of
+ * it, and is forced to give up less pace. Périard frames the slowdown itself as
+ * behavioral thermoregulation — deliberately cutting heat production — which is
+ * a lever the easy run has barely pulled.
+ *
+ * Scaled on fraction-of-threshold-SPEED (LT pace ÷ actual pace):
+ *   • ≤ 0.78 (recovery, ~28% slower than LT) → 0.75 ×
+ *   • 0.78–0.95                              → ramps linearly 0.75 × → 1.0 ×
+ *   • ≥ 0.95 (LT / MP / race and faster)     → 1.0 × (the chart as published)
+ * Threshold pace unknown → 1.0 ×, same convention as rep length: never invent a
+ * discount we can't justify.
+ *
+ * CALIBRATION HONESTY — read before retuning these constants. The 0.75 floor is
+ * a COACHING JUDGMENT, not a fitted parameter. Measured against 1191 real laps
+ * (Jan–Aug 2026, one athlete, dew 43–78°F), regressing pace on composite score
+ * while controlling for the season fitness trend:
+ *   • HR 145–152 (n=220): 0.077–0.097 %/composite-pt → 4.8–6.1% at composite
+ *     163. The table's 5.6% sits inside that. THE CHART IS RIGHT HERE.
+ *   • HR 128–143 (n=183): estimates ranged 1.0% / 7.6% / 4.5% across 5bpm bins
+ *     with standard errors of ±3.2–4.4pp. That is noise, not signal — easy pace
+ *     is chosen rather than constrained (terrain, company, recovery days), so
+ *     the effect never separates from the variance. WE CANNOT SEE THE EASY END.
+ *   • HR 153+ : unusable — session prescription (5K reps vs MP work) swamps
+ *     conditions entirely.
+ *   • Acclimatization (split on prior-14-day heat exposure) came out the wrong
+ *     way with SEs of ±0.04–0.10. Inconclusive; deliberately NOT modeled.
+ * So: 1.0 × at moderate-and-harder is empirically anchored. The 0.75 floor is
+ * the smallest departure consistent with the mechanism, chosen because it lands
+ * a HR-142 easy run near the ~20–21 s/mi the neighbouring (weakly-resolved)
+ * bands imply, rather than the 25 s/mi the unscaled chart gives. If you retune
+ * it, retune it from coaching conviction — this dataset will not adjudicate.
+ *
+ * CREDIT ONLY (decision 2026-08-05, Rio): the intensity factor scales the
+ * BACKWARD-LOOKING credit (`neutralEquivalentPaceSeconds` — "what was this run
+ * worth in neutral air") and NOT the prescriptive target
+ * (`adjustedPaceSeconds` — "what should I run today"). The two uses genuinely
+ * differ: a prescription holds EFFORT constant and asks what pace that buys, so
+ * the full slowdown is correct at every intensity — an easy run in soup really
+ * should be run slower to stay easy. The credit runs the inference backwards and
+ * is where over-application inflates a 7:44 jog into a 7:19 one. Rep-length
+ * scaling, by contrast, applies to BOTH — a 600m rep neither earns nor owes the
+ * continuous penalty in either direction.
  */
 
 // ── Dew Point Multiplier ───────────────────────────────────────
@@ -104,15 +158,77 @@ export function repLengthFactor(distanceMiles?: number | null): number {
   return 0.5 + frac * 0.5;
 }
 
+// ── Intensity scaling ──────────────────────────────────────────
+// Keyed on fraction-of-threshold-SPEED, not on a zone label. Zone classifier
+// labels are not trustworthy enough to move a number the athlete sees (see the
+// pace_segment-labels decision); a pace ratio against the athlete's own LT is
+// derived from PaceEngine and carries no classifier in the path.
+
+export const INTENSITY_FULL_RATIO = 0.95;  // ≥ this × LT speed → full chart
+export const INTENSITY_FLOOR_RATIO = 0.78; // ≤ this × LT speed → floor
+export const INTENSITY_FLOOR = 0.75;       // the floor itself — coaching judgment
+
+/**
+ * Fraction of the heat adjustment a bout at this intensity earns, from the
+ * athlete's threshold pace. Both paces in sec/mile; slower pace = bigger number.
+ *
+ * Returns 1.0 when threshold pace is unknown or nonsense — an athlete with no
+ * anchor gets the chart as published rather than an invented discount.
+ */
+export function intensityFactor(
+  paceSeconds: number,
+  thresholdPaceSeconds?: number | null,
+): number {
+  if (
+    thresholdPaceSeconds == null || !isFinite(thresholdPaceSeconds) ||
+    thresholdPaceSeconds <= 0 || !isFinite(paceSeconds) || paceSeconds <= 0
+  ) return 1.0;
+
+  // Fraction of threshold SPEED. LT pace 6:20 run at 7:44 → 380/464 = 0.82.
+  const ratio = thresholdPaceSeconds / paceSeconds;
+
+  if (ratio >= INTENSITY_FULL_RATIO) return 1.0;
+  if (ratio <= INTENSITY_FLOOR_RATIO) return INTENSITY_FLOOR;
+  const frac = (ratio - INTENSITY_FLOOR_RATIO) /
+    (INTENSITY_FULL_RATIO - INTENSITY_FLOOR_RATIO);
+  return INTENSITY_FLOOR + frac * (1.0 - INTENSITY_FLOOR);
+}
+
 // ── Heat Category ──────────────────────────────────────────────
+//
+// The LABEL boundaries. Deliberately decoupled from the adjustment table's
+// zero knot (2026-08-05).
+//
+// They used to share the number 100, which was a collision, not a decision:
+// below the 65°F dew pivot the multiplier is flat, so the composite is
+// essentially `temp + dew`, and the ideal/warm line landed on
+// `temp + dew ≈ 99`. That put a 55°F morning with a 45°F dew point — composite
+// 100.45, a near-perfect day to run — into "Warm", which the iOS pace chart
+// renders as a sun icon, the word "Warm", and a warm-tinted card
+// (PaceChartView.swift). The time cost it was flagging: 0.02%. A fifth of a
+// second per mile. The label was shouting while the model whispered.
+//
+// The table's zero at 100 is a physical claim — below it, heat costs no time —
+// and it stays. The label answers a different question, "did this day feel
+// like a factor", so "ideal" now runs to 110, where the cost first reaches
+// ~0.5%. A day can cost a rounding error and still be an ideal day.
+//
+// Mirrored in `pace-heat.ts:heatCategoryFromScore`, the Swift
+// `PaceCalculator.heatCategory`, and SQL `heat_category_for()` — four
+// implementations, one ladder. Change all four together.
+
+export const HEAT_IDEAL_MAX_SCORE = 110;
+export const HEAT_WARM_MAX_SCORE = 130;
+export const HEAT_HOT_MAX_SCORE = 150;
+export const HEAT_VERY_HOT_MAX_SCORE = 170;
 
 export type HeatCategory = "ideal" | "warm" | "hot" | "very_hot" | "dangerous";
 
 export function heatCategory(compositeScore: number): HeatCategory {
-  if (compositeScore < 100) return "ideal";
-  if (compositeScore < 130) return "warm";
-  if (compositeScore < 150) return "hot";
-  if (compositeScore < 170) return "very_hot";
+  if (compositeScore < HEAT_IDEAL_MAX_SCORE) return "ideal";
+  if (compositeScore < HEAT_WARM_MAX_SCORE) return "warm";
+  if (compositeScore < HEAT_HOT_MAX_SCORE) return "hot";
+  if (compositeScore < HEAT_VERY_HOT_MAX_SCORE) return "very_hot";
   return "dangerous";
 }
 
@@ -190,8 +306,16 @@ export interface DewPointAdjustment {
   adjustmentPercent: number;
   /** Rep-length factor actually applied (0.5–1.0). */
   repLengthFactor: number;
-  /** Effective adjustment after scaling = adjustmentPercent × repLengthFactor. */
+  /** Intensity factor applied to the CREDIT only (0.75–1.0). 1.0 when the
+   *  athlete has no threshold anchor, or the bout was at LT and faster. */
+  intensityFactor: number;
+  /** PRESCRIPTIVE adjustment = adjustmentPercent × repLengthFactor. Drives
+   *  `adjustedPaceSeconds`. Deliberately NOT intensity-scaled. */
   effectiveAdjustmentPercent: number;
+  /** RETROACTIVE adjustment = effectiveAdjustmentPercent × intensityFactor.
+   *  Drives `neutralEquivalentPaceSeconds`. Equal to the prescriptive figure at
+   *  LT-and-faster, smaller below it. */
+  creditAdjustmentPercent: number;
   adjustmentSecondsPerMile: number;
   heatCategory: HeatCategory;
   /** Composite is past the end of the chart (>185). The returned pace is a
@@ -200,15 +324,21 @@ export interface DewPointAdjustment {
 }
 
 /**
- * Heat-adjust a pace from temperature + dew point. Pass `distanceMiles` for a
- * single bout/rep so the rep-length scaling applies; omit it for a continuous
- * run (defaults to the full adjustment).
+ * Heat-adjust a pace from temperature + dew point.
+ *
+ * `distanceMiles` — the length of ONE bout, for rep-length scaling. Omit it for
+ * continuous running and for prescriptive targets. Never pass the length of an
+ * individual split of a continuous run.
+ *
+ * `thresholdPaceSeconds` — the athlete's LT pace, for intensity scaling of the
+ * CREDIT. Omit it and the credit equals the prescription (full chart).
  */
 export function adjustPace(
   paceSeconds: number,
   tempF: number,
   dewPointF: number,
   distanceMiles?: number | null,
+  thresholdPaceSeconds?: number | null,
 ): DewPointAdjustment {
   // 1. Dew Point Multiplier — flat below the 65°F pivot, exponential above
   const dpMultiplier = dewPointMultiplier(dewPointF);
@@ -219,22 +349,31 @@ export function adjustPace(
   // 3. Interpolate adjustment from composite score table
   const adjustmentPct = interpolateAdjustment(compositeScore);
 
-  // 4. Scale by rep length, then 5. apply to pace
+  // 4. Rep-length scaling applies to BOTH directions — a 600m rep neither owes
+  //    nor earns the continuous-running penalty.
   const factor = repLengthFactor(distanceMiles);
   const effectivePct = adjustmentPct * factor;
   const adjustedSeconds = paceSeconds * (1 + effectivePct);
 
+  // 5. Intensity scaling applies to the CREDIT ONLY. The prescription holds
+  //    effort constant and is correct at full strength at any intensity; the
+  //    credit runs the inference backwards and over-pays the easy run.
+  const intensity = intensityFactor(paceSeconds, thresholdPaceSeconds);
+  const creditPct = effectivePct * intensity;
+
   return {
     originalPaceSeconds: paceSeconds,
     adjustedPaceSeconds: adjustedSeconds,
-    neutralEquivalentPaceSeconds: paceSeconds / (1 + effectivePct),
+    neutralEquivalentPaceSeconds: paceSeconds / (1 + creditPct),
     temperatureF: tempF,
     dewPointF: dewPointF,
     multiplier: dpMultiplier,
     compositeScore,
     adjustmentPercent: adjustmentPct,
     repLengthFactor: factor,
+    intensityFactor: intensity,
     effectiveAdjustmentPercent: effectivePct,
+    creditAdjustmentPercent: creditPct,
     adjustmentSecondsPerMile: adjustedSeconds - paceSeconds,
     heatCategory: heatCategory(compositeScore),
     beyondChart: compositeScore > BEYOND_CHART_SCORE,

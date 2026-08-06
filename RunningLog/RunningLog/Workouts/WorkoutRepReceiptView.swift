@@ -878,10 +878,15 @@ struct WorkoutRepReceiptView: View {
     /// heat-adjusted pace — without this the HEAT-ADJ toggle can't move them
     /// (single-lap / steady runs looked unaffected). Full adjustment: a
     /// continuous mile isn't an interval rep, so no rep-length scaling.
+    ///
+    /// Intensity-scaled off the athlete's LT — this is the CREDIT direction, and
+    /// the table is calibrated on quality work, so an easy split earns less of
+    /// it. Nil threshold (no anchor yet) → unscaled, per the engine's contract.
     private func mileHeatAdjusted(_ paceSec: Double) -> Double? {
         guard paceSec > 0, let t = condTempF, let d = condDewF else { return nil }
         return PaceCalculator.calculateDewPointAdjustment(
-            paceSeconds: paceSec, temperatureF: t, dewPointF: d
+            paceSeconds: paceSec, temperatureF: t, dewPointF: d,
+            thresholdPaceSeconds: PaceZonesService.shared.zones?.thresholdPace
         ).neutralEquivalentPaceSeconds
     }
 
@@ -1481,19 +1486,42 @@ struct WorkoutRepReceiptView: View {
         // open-meteo-backfill run that only got the run summary, which left
         // HEAT-ADJ greyed out on a genuinely humid run. The dew-point floor is
         // still enforced downstream in `heatConds`, so a cool run stays inert.
+        // Did the athlete actually stand still inside this session? That — not
+        // the length of a split — is what earns the short-rep heat discount.
+        // Mirrors `heat_rep_length_factor_for_lap` in
+        // 20260805210000_heat_intensity_scaling.sql.
+        let isIntervalGeometry = laps.contains { $0.is_rest == true }
+
         if let runTempF = lapRows.compactMap({ $0.temp_f }).max() ?? sumVal.weatherTempF,
            let runDewF = lapRows.compactMap({ $0.dew_point_f }).max() ?? sumVal.weatherDewF {
             laps = laps.map { rep in
-                guard rep.temp_f == nil else { return rep }
                 var r = rep
-                r.temp_f = runTempF
-                r.dew_point_f = runDewF
-                if r.is_rest != true, let p = r.avg_pace_sec_per_mile, p > 0 {
+                if r.temp_f == nil { r.temp_f = runTempF }
+                if r.dew_point_f == nil { r.dew_point_f = runDewF }
+                // Fill the adjusted pace on its OWN condition, not on temp/dew
+                // being absent — a rep can carry weather and still have no
+                // adjusted pace (a merged bout, or a lap the backend never
+                // stamped), and gating the recompute on `temp_f == nil` left
+                // exactly those rows nil and the toggle inert. A stored value
+                // always wins: it's the backend's calibrated number.
+                if r.is_rest != true,
+                   r.heat_adjusted_pace_sec_per_mile == nil,
+                   let p = r.avg_pace_sec_per_mile, p > 0 {
                     r.heat_adjusted_pace_sec_per_mile = PaceCalculator
                         .calculateDewPointAdjustment(
                             paceSeconds: p,
-                            temperatureF: runTempF,
-                            dewPointF: runDewF
+                            temperatureF: r.temp_f ?? runTempF,
+                            dewPointF: r.dew_point_f ?? runDewF,
+                            // Rep-length scaling only for genuine interval
+                            // geometry. The mile splits of a continuous run are
+                            // ONE bout carved up, not reps — passing each split's
+                            // length lands them mid-ramp at 0.67× and quietly
+                            // cuts the run's adjustment by a third.
+                            distanceMiles: isIntervalGeometry
+                                ? r.distance_meters.map { $0 / 1609.344 }
+                                : nil,
+                            thresholdPaceSeconds: PaceZonesService.shared.zones?
+                                .thresholdPace
                         )
                         .neutralEquivalentPaceSeconds
                 }
@@ -1564,8 +1592,13 @@ struct ConditionsPlate: View {
         if let t = tempF { out.append(Cell(value: "\(Int(t.rounded()))°", label: "Temp")) }
         if let d = dewF { out.append(Cell(value: "\(Int(d.rounded()))°", label: "Dewpoint")) }
         if let h = heatAdjSec {
-            // Negative: in neutral air the same effort is worth this much faster.
-            out.append(Cell(value: "−\(h)s/\(km ? "km" : "mi")", label: "Heat Adj"))
+            // ONE framing across the whole screen: heat COST you this much. The
+            // SIGNALS chip says "HEAT +25s/mi" from the same number, and a cell
+            // reading "−25s/mi" two inches above it read as a contradiction even
+            // though both were correct (cost vs. credit). Cost is the honest
+            // frame here — the credit is already expressed by the HEAT-ADJ
+            // toggle, which restates the splits themselves.
+            out.append(Cell(value: "+\(h)s/\(km ? "km" : "mi")", label: "Heat Cost"))
         }
         if let c = climb { out.append(Cell(value: "+\(c) \(km ? "m" : "ft")", label: "Climb")) }
         return out

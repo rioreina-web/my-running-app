@@ -52,8 +52,11 @@ struct TrendsWeekDrill: Identifiable {
         days: [TrendsDay],
         keySessions: [KeySession]
     ) -> TrendsWeekDrill {
+        // Mirrors `weekBuckets`' grouping key exactly, `nil` fallback included
+        // — a date the calendar can't parse groups under itself there, and has
+        // to match under itself here or the column opens an empty sheet.
         let weekDays = days.filter {
-            TrendsWeekday.weekStart(from: $0.date) == weekStartISO
+            (TrendsWeekday.weekStart(from: $0.date) ?? $0.date) == weekStartISO
         }
         let channels = TrendsSignalBuilder.channels(for: weekDays, keySessions: keySessions)
         return TrendsWeekDrill(

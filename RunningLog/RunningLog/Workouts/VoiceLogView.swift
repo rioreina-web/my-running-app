@@ -1377,14 +1377,21 @@ struct WorkoutPickerSheet: View {
             let workout_duration_minutes: Double?
             let vital_workout_id: String?
             let cleaned_notes: String?
+            let source: String?
         }
         do {
             let userId = AuthManager.shared.userId
             let rows: [Row] = try await supabase
                 .from("training_logs")
-                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, cleaned_notes")
+                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, cleaned_notes, source")
                 .eq("user_id", value: userId)
-                .in("source", values: ["garmin", "vital"])
+                // MUST include "strava". This list is the ONLY way a synced run
+                // reaches the link picker, and the picker is the ONLY way
+                // VoiceLogViewModel learns a run's vital_workout_id — which is
+                // what its attach-to-existing-row branch keys on. Omitting a
+                // source here silently downgrades every memo for that source
+                // into a NEW duplicate training_logs row.
+                .in("source", values: ["garmin", "vital", "strava", "auto_sync", "strava_backfill"])
                 .order("workout_date", ascending: false, nullsFirst: false)
                 .limit(limit)
                 .execute()
@@ -1403,7 +1410,7 @@ struct WorkoutPickerSheet: View {
                     durationMinutes: dur,
                     pacePerMile: dur / dist,
                     calories: 0,
-                    sourceApp: "Garmin",
+                    sourceApp: (r.source ?? "").lowercased() == "strava" ? "Strava" : "Garmin",
                     vitalWorkoutId: r.vital_workout_id
                 )
             }

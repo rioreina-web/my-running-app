@@ -29,9 +29,17 @@ struct TrendsTabView: View {
 
     @State private var service = TrendsService.shared
 
+    /// Visits to the Trends page, ever. Read by `TrendsV2View` to retire the
+    /// section explainers once the page has stopped being new.
+    @AppStorage("trendsV2Visits") private var visitCount: Int = 0
+
     #if DEBUG
     @State private var showLegacy = false
     #endif
+    /// The Signal Lab, opened as a sheet from the Trends header. A sheet and
+    /// not a tab, deliberately: the tab bar is the app's daily destinations,
+    /// and the Lab is where you go when you want to look hard at one thing.
+    @State private var showLab = false
 
     /// The Trends tab's index in `DripTabBar`.
     private static let tabIndex = 4
@@ -45,6 +53,13 @@ struct TrendsTabView: View {
             // athlete never opens.
             .task(id: selectedTab.wrappedValue) {
                 if selectedTab.wrappedValue == Self.tabIndex {
+                    // A visit is counted here rather than in `TrendsV2View`'s
+                    // `onAppear`, because every tab is constructed at launch
+                    // and merely hidden with `.opacity` — `onAppear` fires
+                    // once, for a page nobody has opened. This is the same
+                    // signal the fetch gate uses, and it's what decides
+                    // whether the section explainers still show.
+                    visitCount += 1
                     await service.refresh()
                 }
             }
@@ -56,8 +71,10 @@ struct TrendsTabView: View {
         TrendsV2View(
             service: service,
             autoLoad: false,
-            onOpenLegacy: { showLegacy = true }
+            onOpenLegacy: { showLegacy = true },
+            onOpenLab: { showLab = true }
         )
+        .sheet(isPresented: $showLab) { SignalLabView(service: service) }
         .fullScreenCover(isPresented: $showLegacy) {
             NavigationStack {
                 TrendsLegacyTabView()
@@ -75,7 +92,12 @@ struct TrendsTabView: View {
             }
         }
         #else
-        TrendsV2View(service: service, autoLoad: false)
+        TrendsV2View(
+            service: service,
+            autoLoad: false,
+            onOpenLab: { showLab = true }
+        )
+        .sheet(isPresented: $showLab) { SignalLabView(service: service) }
         #endif
     }
 }

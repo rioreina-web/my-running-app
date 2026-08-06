@@ -324,6 +324,70 @@ enum PaceCalculator {
         return 1.01 * pow(1.011557695, dewPointF - 65)
     }
 
+    // MARK: Rep-length scaling
+
+    /// The adjustment table is calibrated for CONTINUOUS running of ~1.5 mi or
+    /// longer. A short rep earns less of the penalty because the body sheds heat
+    /// during the recovery between reps. Must stay in lockstep with
+    /// `repLengthFactor` in supabase/functions/_shared/pace-heat-adjustment.ts —
+    /// the backend stamps `running_workout_laps.heat_adjusted_pace_sec_per_mile`
+    /// with the scaled value, and an unscaled iOS recompute would disagree with
+    /// the rows next to it.
+    static let heatFullMiles: Double = 1.5   // ≥ this → full adjustment
+    static let heatHalfMiles: Double = 0.75  // ≤ this → half adjustment
+
+    /// Fraction of the heat adjustment a bout of this length earns: 0.5 for a
+    /// short rep, ramping to 1.0 at 1.5 mi. Unknown length — a continuous run —
+    /// gets the full adjustment.
+    ///
+    /// A continuous run is ONE bout. Never pass the length of an individual mile
+    /// split of a continuous run: six 1-mile splits of a 6-miler would each land
+    /// mid-ramp at 0.67× and under-credit the run by a third.
+    static func heatRepLengthFactor(_ distanceMiles: Double?) -> Double {
+        guard let d = distanceMiles, d.isFinite else { return 1.0 }
+        if d >= heatFullMiles { return 1.0 }
+        if d <= heatHalfMiles { return 0.5 }
+        return 0.5 + (d - heatHalfMiles) / (heatFullMiles - heatHalfMiles) * 0.5
+    }
+
+    // MARK: Intensity scaling (credit only)
+
+    /// The adjustment table is a QUALITY-WORK chart — Hadley published it to
+    /// answer "how much slower should my tempo be today," and the sheet's
+    /// out-of-range string names marathon-pace work specifically. Metabolic heat
+    /// production scales with running speed, so an easy run makes less heat,
+    /// sheds a larger share of it, and gives up less pace. Scaling the credit
+    /// down at easy intensity stops a 7:44 jog reading as a 7:19 one.
+    ///
+    /// The 0.75 floor is a COACHING JUDGMENT, not a fitted parameter — 1191 real
+    /// laps put the chart dead-on at moderate effort (HR 145–152 → 4.8–6.1% vs
+    /// the table's 5.6%) but could not resolve the easy end at all (±3–4pp).
+    /// Full rationale in supabase/functions/_shared/pace-heat-adjustment.ts.
+    /// Must stay in lockstep with `intensityFactor` there.
+    static let heatIntensityFullRatio: Double = 0.95  // ≥ this × LT speed → full
+    static let heatIntensityFloorRatio: Double = 0.78 // ≤ this × LT speed → floor
+    static let heatIntensityFloor: Double = 0.75
+
+    /// Fraction of the heat adjustment a bout at this intensity earns, from the
+    /// athlete's threshold pace. Both in sec/mile. Unknown threshold → 1.0: an
+    /// athlete with no anchor gets the chart as published, never an invented
+    /// discount.
+    static func heatIntensityFactor(
+        paceSeconds: Double,
+        thresholdPaceSeconds: Double?
+    ) -> Double {
+        guard let lt = thresholdPaceSeconds, lt.isFinite, lt > 0,
+              paceSeconds.isFinite, paceSeconds > 0 else { return 1.0 }
+
+        // Fraction of threshold SPEED. LT 6:20 run at 7:44 → 380/464 = 0.82.
+        let ratio = lt / paceSeconds
+        if ratio >= heatIntensityFullRatio { return 1.0 }
+        if ratio <= heatIntensityFloorRatio { return heatIntensityFloor }
+        let frac = (ratio - heatIntensityFloorRatio)
+            / (heatIntensityFullRatio - heatIntensityFloorRatio)
+        return heatIntensityFloor + frac * (1.0 - heatIntensityFloor)
+    }
+
     /// Interpolate adjustment percentage from composite score
     private static func interpolateAdjustment(_ score: Double) -> Double {
         if score <= adjustmentTable.first!.score { return 0 }
@@ -339,10 +403,18 @@ enum PaceCalculator {
         return adjustmentTable.last!.pct
     }
 
+    /// Heat-adjust a pace from temperature + dew point.
+    ///
+    /// - `distanceMiles`: the length of ONE bout, for rep-length scaling. Omit
+    ///   for continuous running and for prescriptive targets.
+    /// - `thresholdPaceSeconds`: the athlete's LT pace, for intensity scaling of
+    ///   the CREDIT. Omit and the credit equals the prescription.
     static func calculateDewPointAdjustment(
         paceSeconds: Double,
         temperatureF: Double,
-        dewPointF: Double
+        dewPointF: Double,
+        distanceMiles: Double? = nil,
+        thresholdPaceSeconds: Double? = nil
     ) -> DewPointAdjustment {
         // 1. Dew Point Multiplier — flat below the 65°F pivot, exponential above
         let dpMultiplier = dewPointMultiplier(dewPointF)
@@ -353,8 +425,22 @@ enum PaceCalculator {
         // 3. Interpolate adjustment from composite score table
         let adjustmentPct = interpolateAdjustment(compositeScore)
 
-        // 4. Adjusted Pace
-        let adjustedSeconds = paceSeconds * (1 + adjustmentPct)
+        // 4. Scale it to the length of the bout — a 600m rep doesn't pay the
+        //    full continuous-running penalty. Applies BOTH directions.
+        let repFactor = heatRepLengthFactor(distanceMiles)
+        let effectivePct = adjustmentPct * repFactor
+
+        // 5. Adjusted Pace — prescriptive, deliberately NOT intensity-scaled.
+        //    Holding effort constant, the full slowdown is right at any
+        //    intensity: an easy run in soup really should be run slower.
+        let adjustedSeconds = paceSeconds * (1 + effectivePct)
+
+        // 6. Intensity scaling — CREDIT ONLY. This is the direction where the
+        //    quality-work chart over-pays an easy run.
+        let intensity = heatIntensityFactor(
+            paceSeconds: paceSeconds,
+            thresholdPaceSeconds: thresholdPaceSeconds
+        )
 
         return DewPointAdjustment(
             originalPaceSeconds: paceSeconds,
@@ -363,7 +449,10 @@ enum PaceCalculator {
             dewPointF: dewPointF,
             multiplier: dpMultiplier,
             compositeScore: compositeScore,
-            adjustmentPercent: adjustmentPct
+            adjustmentPercent: adjustmentPct,
+            repLengthFactor: repFactor,
+            intensityFactor: intensity,
+            effectiveAdjustmentPercent: effectivePct
         )
     }
 
@@ -395,7 +484,24 @@ struct DewPointAdjustment {
     let dewPointF: Double
     let multiplier: Double
     let compositeScore: Double
+    /// Raw table adjustment, on a continuous-run basis, BEFORE rep-length scaling.
     let adjustmentPercent: Double
+    /// Rep-length factor actually applied (0.5–1.0). 1.0 when no bout length
+    /// was supplied.
+    var repLengthFactor: Double = 1.0
+    /// Intensity factor applied to the CREDIT only (0.75–1.0). 1.0 when the
+    /// athlete has no threshold anchor, or the bout was at LT and faster.
+    var intensityFactor: Double = 1.0
+    /// PRESCRIPTIVE adjustment = `adjustmentPercent × repLengthFactor`. Drives
+    /// `adjustedPaceSeconds`. Deliberately NOT intensity-scaled.
+    var effectiveAdjustmentPercent: Double
+
+    /// RETROACTIVE adjustment = `effectiveAdjustmentPercent × intensityFactor`.
+    /// Drives `neutralEquivalentPaceSeconds`. Equal to the prescriptive figure
+    /// at LT-and-faster, smaller below it.
+    var creditAdjustmentPercent: Double {
+        effectiveAdjustmentPercent * intensityFactor
+    }
 
     /// Conditions are past the end of the chart. `adjustedPaceSeconds` is a
     /// clamped extrapolation — show `PaceCalculator.beyondChartMessage` rather
@@ -408,8 +514,12 @@ struct DewPointAdjustment {
     /// cool-weather-equivalent. This is what the completed-workout HEAT-ADJ
     /// toggle shows (credit for the conditions). Prescriptive surfaces
     /// (targets to run *today*) use `adjustedPaceSeconds`, which is slower.
+    ///
+    /// Uses `creditAdjustmentPercent`, so it is intensity-scaled: below LT this
+    /// is a SMALLER correction than `adjustedPaceSeconds` implies. The two are
+    /// not exact inverses by design.
     var neutralEquivalentPaceSeconds: Double {
-        originalPaceSeconds / (1 + adjustmentPercent)
+        originalPaceSeconds / (1 + creditAdjustmentPercent)
     }
 
     var adjustmentSecondsPerMile: Double {
@@ -428,8 +538,15 @@ struct DewPointAdjustment {
         String(format: "%.1f%%", adjustmentPercent * 100)
     }
 
+    /// Label ladder. `ideal` runs to 110, NOT to the adjustment table's zero
+    /// knot at 100. The two answer different questions, and sharing a number
+    /// put a 55°F morning with a 45°F dew point — composite 100.45, a 0.02%
+    /// time cost — into `.warm`, which this view renders as a sun icon and a
+    /// tinted card. Kept in lockstep with the server
+    /// (`_shared/pace-heat-adjustment.ts:heatCategory`, `pace-heat.ts`) and
+    /// SQL `heat_category_for()`; change all four together.
     var heatCategory: HeatCategory {
-        if compositeScore < 100 {
+        if compositeScore < 110 {
             .ideal
         } else if compositeScore < 130 {
             .warm

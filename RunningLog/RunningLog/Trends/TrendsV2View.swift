@@ -43,6 +43,10 @@ struct TrendsV2View: View {
     @State private var customTo: Date = Date()
     @State private var dayWorkouts: DayWorkouts?
     @State private var weekDrill: TrendsWeekDrill?
+    /// Explainers the athlete has asked back for, this visit only.
+    @State private var revealedExplainers: Set<String> = []
+    /// Written by `TrendsTabView` when the tab becomes active.
+    @AppStorage("trendsV2Visits") private var visitCount: Int = 0
 
     /// When false the host owns loading. The tab gates its fetch on becoming
     /// active, so no request fires for a tab the athlete never opens — every
@@ -50,15 +54,22 @@ struct TrendsV2View: View {
     private let autoLoad: Bool
     /// Set by the tab host in DEBUG builds to offer the `v1 ›` door.
     private let onOpenLegacy: (() -> Void)?
+    /// Set by the tab host to offer the `lab ›` door — the Signal Lab, where a
+    /// signal gets looked at hard rather than glanced at. Same shape as
+    /// `onOpenLegacy` because it is the same kind of door: a place you go, not
+    /// somewhere you land.
+    private let onOpenLab: (() -> Void)?
 
     init(
         service: TrendsService = .shared,
         autoLoad: Bool = true,
-        onOpenLegacy: (() -> Void)? = nil
+        onOpenLegacy: (() -> Void)? = nil,
+        onOpenLab: (() -> Void)? = nil
     ) {
         _service = State(initialValue: service)
         self.autoLoad = autoLoad
         self.onOpenLegacy = onOpenLegacy
+        self.onOpenLab = onOpenLab
     }
 
     // MARK: Derived — one build per render, shared by every section
@@ -110,18 +121,14 @@ struct TrendsV2View: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .top) {
                 DripEyebrow(text: "Trends", coral: true)
+                Spacer()
+                if let onOpenLab {
+                    doorChip("lab ›", action: onOpenLab)
+                }
                 if let onOpenLegacy {
-                    Spacer()
                     // The reverse of the door v1 used to carry. Dev-only, and
                     // it goes away with the legacy surface.
-                    Button(action: onOpenLegacy) {
-                        Text("v1 ›")
-                            .font(.dripCaption(9))
-                            .foregroundStyle(Color.drip.textTertiary)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
+                    doorChip("v1 ›", action: onOpenLegacy)
                 }
             }
             Text("Running Log — \(window.plateTitle)".uppercased())
@@ -130,6 +137,19 @@ struct TrendsV2View: View {
                 .foregroundStyle(Color.drip.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The header's outbound doors. One shape, so a second door can't quietly
+    /// become a different kind of control from the first.
+    private func doorChip(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.dripCaption(9))
+                .foregroundStyle(Color.drip.textTertiary)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: State-aware content
@@ -149,7 +169,8 @@ struct TrendsV2View: View {
             EditorialRule().padding(.vertical, 24)
 
             section(eyebrow: "Five signals", number: "01",
-                    sub: "Mileage, key work, recovery, mood, niggles — one time axis. Drag across to read a day down all five.") {
+                    sub: "Mileage, key work, recovery, mood, niggles — one time axis. Drag across to read a day down all five.",
+                    anchor: "signals") {
                 TrendsSignalLanes(set: set) { bucket in
                     // A day-grain column maps to one day's workouts; a weekly
                     // column maps to seven, so it opens the week instead of
@@ -162,12 +183,12 @@ struct TrendsV2View: View {
                 }
                 .padding(.top, 14)
             }
-            .id("signals")
 
             EditorialRule().padding(.vertical, 24)
 
             section(eyebrow: "Recovery score · \(recoveryDayLabel(set))", number: "02",
-                    sub: "Every score shows its own arithmetic. Starts at 50, and each line carries the evidence it moved on.") {
+                    sub: "Every score shows its own arithmetic. Starts at 50, and each line carries the evidence it moved on.",
+                    anchor: "recovery") {
                 if let ledger = ledger(for: set) {
                     TrendsRecoveryLedgerView(
                         ledger: ledger,
@@ -182,15 +203,20 @@ struct TrendsV2View: View {
                     )
                 }
             }
-            .id("recovery")
 
             EditorialRule().padding(.vertical, 24)
 
             section(eyebrow: "What lines up", number: "03",
-                    sub: "Computed from the window in view. When there isn't enough to say, it says that.") {
+                    sub: "Computed from the window in view. When there isn't enough to say, it says that.",
+                    anchor: "findings") {
                 TrendsFindingsView(findings: read.findings).padding(.top, 6)
             }
-            .id("findings")
+
+            // The door to Ask. Trends shows the shape; Ask explains it. Kept
+            // at the foot rather than in the header because it is the next
+            // thing to read, not a control competing with the signals.
+            EditorialRule().padding(.vertical, 24)
+            AskBar()
 
         } else if service.isLoading {
             loadingState
@@ -223,30 +249,65 @@ struct TrendsV2View: View {
 
     // MARK: Section chrome
 
+    /// The explainer paragraphs introduce the page. Charming on visit one,
+    /// wallpaper by visit ten — and they push the actual signal down the
+    /// screen every single time. They ship for the first three visits and
+    /// then retire behind a chevron, which recalls them for as long as the
+    /// page is on screen and forgets by the next visit. Nothing about the
+    /// toggle is persisted: the athlete asked once, not forever.
+    private var explainersAreAutomatic: Bool { visitCount <= 3 }
+
     @ViewBuilder
     private func section<Content: View>(
         eyebrow: String,
         number: String,
         sub: String,
+        anchor: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
+        let showsSub = explainersAreAutomatic || revealedExplainers.contains(anchor)
+
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 DripEyebrow(text: eyebrow)
                 Spacer(minLength: 8)
+                if !explainersAreAutomatic {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            if revealedExplainers.contains(anchor) {
+                                revealedExplainers.remove(anchor)
+                            } else {
+                                revealedExplainers.insert(anchor)
+                            }
+                        }
+                    } label: {
+                        Text("⌄")
+                            .font(.dripEyebrow(11))
+                            .foregroundStyle(Color.drip.textTertiary)
+                            .rotationEffect(.degrees(showsSub ? 180 : 0))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        showsSub ? "Hide what this section counts"
+                                 : "What this section counts"
+                    )
+                }
                 Text(number)
                     .font(.dripEyebrow(9))
                     .tracking(1.3)
                     .foregroundStyle(Color.drip.textTertiary)
             }
-            Text(sub)
-                .font(.dripBody(12.5))
-                .foregroundStyle(Color.drip.textSecondary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 4)
+            if showsSub {
+                Text(sub)
+                    .font(.dripBody(12.5))
+                    .foregroundStyle(Color.drip.textSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            }
             content()
         }
+        .id(anchor)
     }
 
     // MARK: Ledger for the window's last day

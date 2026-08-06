@@ -18,6 +18,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import {
   buildDailyTimeline,
+  analyticsRunLogs,
   buildTrendsTimeline,
   flaggedRuns,
   trimmedRuns,
@@ -38,6 +39,7 @@ import {
   type FitnessSnapshotRow,
   type PaceBandLap,
 } from "./paceBands.ts";
+import { buildBandLaps } from "./bandLaps.ts";
 import type { ZoneTable } from "../_shared/quality-volume.ts";
 import { fetchQualityLaps } from "../_shared/qualityLaps.ts";
 
@@ -317,27 +319,37 @@ Deno.serve(async (req: Request) => {
     //    above; the only extra read is `fitness_snapshots`. Additive: a
     //    failure here never fails the timeline, and a missing anchor returns
     //    null so the surface hides itself rather than guessing a band.
+    //
+    //    `band_laps` rides alongside on the same reads: the same laps, the
+    //    same weekly anchors, but shipped un-bucketed and with the full
+    //    race-pace ladder, so the Signal Lab's threshold band can be
+    //    re-anchored and re-widened on-device without a round trip. Sibling,
+    //    not replacement — see the header note in `bandLaps.ts` for why the
+    //    two payloads gate their session lists differently on purpose.
     let paceBands: ReturnType<typeof buildPaceBands> = null;
+    let bandLaps: ReturnType<typeof buildBandLaps> = null;
     try {
       if (lapsByWorkout.size > 0) {
         const snapshots = await fetchFitnessSnapshots(userId, since);
         if (snapshots.length > 0) {
           const dewByLog = new Map<string, number>();
           for (const [id, w] of weatherByLog) dewByLog.set(id, w.dewPointF);
-          paceBands = buildPaceBands(
-            logs
-              // The athlete's own trim decision holds here too — a
-              // double-logged run must not put its minutes in a band twice.
-              .filter((l) => (l as { stats_excluded?: boolean | null }).stats_excluded !== true)
-              .map((l) => ({
-                id: l.id,
-                workout_date: l.workout_date,
-                workout_distance_miles: l.workout_distance_miles,
-              })),
-            lapsByWorkout as unknown as Map<string, PaceBandLap[]>,
-            snapshots,
-            dewByLog,
-          );
+          // The SAME pipeline the weekly and daily builders use — running
+          // only, the athlete's trim decision, then one row per physical
+          // workout. Filtering on `stats_excluded` alone (as this did until
+          // 2026-08-05) is not enough: a run that was both synced from Strava
+          // and spoken about lands as two rows with identical timestamp,
+          // distance and laps, neither trimmed, and every minute inside the
+          // band got counted twice.
+          const bandLogs = analyticsRunLogs(logs as unknown as TimelineLog[])
+            .map((l) => ({
+              id: l.id,
+              workout_date: l.workout_date,
+              workout_distance_miles: l.workout_distance_miles,
+            }));
+          const bandLapRows = lapsByWorkout as unknown as Map<string, PaceBandLap[]>;
+          paceBands = buildPaceBands(bandLogs, bandLapRows, snapshots, dewByLog);
+          bandLaps = buildBandLaps(bandLogs, bandLapRows, snapshots, dewByLog);
         }
       }
     } catch (e) {
@@ -354,6 +366,7 @@ Deno.serve(async (req: Request) => {
         quality_volume: qualityVolume,
         fast_segments: fastSegments,
         pace_bands: paceBands,
+        band_laps: bandLaps,
         generated_at: new Date().toISOString(),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },

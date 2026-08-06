@@ -19,6 +19,11 @@ struct TrendsWindowPicker: View {
     @Binding var customFrom: Date
     @Binding var customTo: Date
 
+    @ScaledMetric(relativeTo: .caption2)
+    private var microType: CGFloat = DripTypeFloor.eyebrowMicro
+    @ScaledMetric(relativeTo: .caption2)
+    private var smallType: CGFloat = DripTypeFloor.eyebrowSmall
+
     var body: some View {
         VStack(spacing: 10) {
             HStack(spacing: 5) {
@@ -35,7 +40,7 @@ struct TrendsWindowPicker: View {
                     DatePicker("From", selection: $customFrom, displayedComponents: .date)
                         .labelsHidden()
                     Text("to")
-                        .font(.dripEyebrow(9))
+                        .font(.dripEyebrow(smallType))
                         .tracking(0.9)
                         .textCase(.uppercase)
                         .foregroundStyle(Color.drip.textTertiary)
@@ -52,7 +57,7 @@ struct TrendsWindowPicker: View {
     private func pill(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title.uppercased())
-                .font(.dripEyebrow(9.5).weight(.semibold))
+                .font(.dripEyebrow(smallType).weight(.semibold))
                 .tracking(0.9)
                 .foregroundStyle(selected ? Color.drip.background : Color.drip.textSecondary)
                 .frame(maxWidth: .infinity)
@@ -96,6 +101,11 @@ struct TrendsReadHeader: View {
     /// render as plain cells rather than claiming to be buttons.
     var onJump: ((String) -> Void)?
 
+    @ScaledMetric(relativeTo: .caption2)
+    private var microType: CGFloat = DripTypeFloor.eyebrowMicro
+    @ScaledMetric(relativeTo: .caption2)
+    private var smallType: CGFloat = DripTypeFloor.eyebrowSmall
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DripEyebrow(text: "The read · \(read.dateRange)")
@@ -123,7 +133,7 @@ struct TrendsReadHeader: View {
             chips.padding(.top, 16)
 
             Text("Every number counted from the window in view · deltas compare the back half to the front half")
-                .font(.dripEyebrow(8.5))
+                .font(.dripEyebrow(microType))
                 .tracking(0.5)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.drip.textTertiary)
@@ -201,12 +211,14 @@ struct TrendsReadHeader: View {
                 .minimumScaleFactor(0.6)
                 .padding(.top, compact ? 4 : 0)
             Text(key.uppercased())
-                .font(.dripEyebrow(7.5))
+                .font(.dripEyebrow(microType))
                 .tracking(0.7)
                 .foregroundStyle(Color.drip.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .padding(.top, 5)
             Text(detail)
-                .font(.dripEyebrow(8))
+                .font(.dripEyebrow(microType))
                 .foregroundStyle(Color.drip.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -230,6 +242,11 @@ struct TrendsRecoveryLedgerView: View {
     /// Scrolls back up to the signal lanes, where this score has a trend line.
     /// The number and its history sit two sections apart; this is the link.
     var onSeeTrend: (() -> Void)?
+
+    @ScaledMetric(relativeTo: .caption2)
+    private var microType: CGFloat = DripTypeFloor.eyebrowMicro
+    @ScaledMetric(relativeTo: .caption2)
+    private var smallType: CGFloat = DripTypeFloor.eyebrowSmall
 
     private var bandColour: Color { TrendsSignalLanes.bandColour(ledger.total) }
 
@@ -255,7 +272,7 @@ struct TrendsRecoveryLedgerView: View {
                     Text((abs(d) < noise
                             ? "level vs yesterday"
                             : "\(d >= 0 ? "+" : "−")\(abs(d)) vs yesterday").uppercased())
-                        .font(.dripEyebrow(9))
+                        .font(.dripEyebrow(smallType))
                         .tracking(0.9)
                         .foregroundStyle(Color.drip.textSecondary)
                         .padding(.bottom, 7)
@@ -281,7 +298,7 @@ struct TrendsRecoveryLedgerView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(groupedFactors, id: \.label) { group in
                     Text(group.label.uppercased())
-                        .font(.dripEyebrow(8))
+                        .font(.dripEyebrow(microType))
                         .tracking(1.2)
                         .foregroundStyle(Color.drip.textTertiary)
                         .padding(.top, 13)
@@ -297,7 +314,7 @@ struct TrendsRecoveryLedgerView: View {
 
             HStack(alignment: .firstTextBaseline) {
                 Text(ledger.arithmetic.uppercased())
-                    .font(.dripEyebrow(9.5))
+                    .font(.dripEyebrow(smallType))
                     .tracking(0.9)
                     .foregroundStyle(Color.drip.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -312,7 +329,7 @@ struct TrendsRecoveryLedgerView: View {
             // idea (§2f): a read from three inputs must not look identical
             // to one from seven. It changes tone, never the number.
             Text(coverage)
-                .font(.dripEyebrow(8.5))
+                .font(.dripEyebrow(microType))
                 .tracking(0.5)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.drip.textSecondary)
@@ -320,7 +337,7 @@ struct TrendsRecoveryLedgerView: View {
                 .padding(.top, 12)
 
             Text("Load is measured against your own 8-week average, not an acute:chronic ratio · your words lead, the watch corroborates · today's run counts tomorrow")
-                .font(.dripEyebrow(8.5))
+                .font(.dripEyebrow(microType))
                 .tracking(0.5)
                 .textCase(.uppercase)
                 .foregroundStyle(Color.drip.textTertiary)
@@ -393,9 +410,11 @@ struct TrendsRecoveryLedgerView: View {
                 HStack(spacing: 0) {
                     ForEach(Self.gaugeBands, id: \.label) { band in
                         Text(band.label.uppercased())
-                            .font(.dripEyebrow(7.5))
+                            .font(.dripEyebrow(microType))
                             .tracking(0.6)
                             .foregroundStyle(Color.drip.textTertiary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                             .frame(width: max(0, w * (band.hi - band.lo) / span),
                                    alignment: .leading)
                     }
@@ -420,7 +439,7 @@ struct TrendsRecoveryLedgerView: View {
                     .font(.dripLabel(14))
                     .foregroundStyle(Color.drip.textPrimary)
                 Text(factor.evidence.uppercased())
-                    .font(.dripEyebrow(8))
+                    .font(.dripEyebrow(microType))
                     .tracking(0.6)
                     .foregroundStyle(Color.drip.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -459,6 +478,11 @@ struct TrendsRecoveryLedgerView: View {
 struct TrendsFindingsView: View {
     let findings: [TrendsRead.Finding]
 
+    @ScaledMetric(relativeTo: .caption2)
+    private var microType: CGFloat = DripTypeFloor.eyebrowMicro
+    @ScaledMetric(relativeTo: .caption2)
+    private var smallType: CGFloat = DripTypeFloor.eyebrowSmall
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(findings.enumerated()), id: \.element.id) { index, finding in
@@ -474,7 +498,7 @@ struct TrendsFindingsView: View {
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(finding.meta.uppercased())
-                            .font(.dripEyebrow(8))
+                            .font(.dripEyebrow(microType))
                             .tracking(0.8)
                             .foregroundStyle(Color.drip.textTertiary)
                     }

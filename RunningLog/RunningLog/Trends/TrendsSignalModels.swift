@@ -265,7 +265,11 @@ struct TrendsBucketSet {
     var degradationNote: String {
         switch grain {
         case .day:
-            "\(buckets.count) daily columns · gridlines mark Mondays · mood is a colour, never a height · niggle opacity is the athlete's own severity word"
+            // Mood went back to colour-only on 2026-08-06 — the height ramp
+            // read as a bar chart of feelings. The clause is corrected rather
+            // than dropped: the chart states its own encodings, and a false
+            // one is worse than none.
+            "\(buckets.count) daily columns · gridlines mark Mondays · mood is a colour, one swatch per logged day · niggle opacity is the athlete's own severity word"
         case .week:
             "\(buckets.count) weekly columns · mood shows the week's most-logged label and niggles show mentions per week — day-level detail needs the 30-day or 3-month view"
         }

@@ -52,8 +52,11 @@
 //  still clamps at 8, so all four bands are now attainable.
 //
 //  ─────────────────────────────────────────────────────────────────────
-//  Factors 2 and 3 (recent load, body mentions) are carried over unchanged —
-//  they were right. They live here so all five read from one file.
+//  Factor 3 (body mentions) is carried over unchanged — it was right. Factor
+//  2 (recent load) was carried over on 08-05 and then recalibrated on 08-06,
+//  when the backtest showed its flat per-mile charge made a normal training
+//  week read Worn forever — see its own doc comment. All factors live here so
+//  the arithmetic has exactly one home.
 //
 
 import Foundation
@@ -149,11 +152,27 @@ enum TrendsRecoveryFactors {
         )
     }
 
-    // MARK: - 2 · The work you're still carrying (unchanged)
+    // MARK: - 2 · The work you're still carrying (recalibrated 2026-08-06)
 
     /// The last three days, decayed. Not yesterday alone: a single-day term
     /// flips between +5 and −7 overnight, and the cost of Sunday's long run
     /// does not vanish at midnight on Monday.
+    ///
+    /// **Recalibrated 2026-08-06** against 202 days of production history
+    /// (`outputs/recovery-score-backtest.py`, re-run after the retool). The
+    /// old flat charge — 0.42 × the decayed daily equivalent — cost about −3
+    /// on any normal training day, so a healthy, well-managed block could
+    /// never read better than Worn: across seven real months the top two
+    /// bands occurred on 2% of days and Clear on none. Carrying your usual
+    /// load is the normal state of an athlete in training; it is not fresh
+    /// fatigue, and it now scores 0.
+    ///
+    /// The carried load is read against the athlete's OWN 8-week average
+    /// daily load — the same window the Load factor uses, never a population
+    /// number. Only carrying meaningfully more than your own usual subtracts;
+    /// carrying meaningfully less credits. With under two weeks of baseline
+    /// the old absolute charge remains as the fallback, so a brand-new
+    /// athlete still gets a sane row.
     static func recentLoad(days: [TrendsDay], at i: Int) -> Factor? {
         guard i > 0 else { return nil }
         let weights: [Double] = [1.0, 0.6, 0.3]
@@ -180,11 +199,33 @@ enum TrendsRecoveryFactors {
             )
         }
 
-        let cost = -min(8, Int((dailyEquivalent * 0.42).rounded()))
         let sum = recentMiles.reduce(0, +)
-        let evidence = String(format: "%.0f mi over %d days", sum, recentMiles.count)
+        let milesPart = String(format: "%.0f mi over %d days", sum, recentMiles.count)
             + (restDays > 0 ? " · \(restDays) clear" : "")
-        return Factor(name: "Recent load", evidence: evidence, points: cost)
+
+        // The athlete's own average daily load over the 8-week window ending
+        // a week ago (56 → 7 days back), zero days included.
+        let baselineDays = days[max(0, i - 55)..<max(0, i - 6)]
+        let baselineDaily = baselineDays.count >= 14
+            ? baselineDays.reduce(0) { $0 + $1.miles } / Double(baselineDays.count)
+            : 0
+
+        guard baselineDaily > 0.5 else {
+            // Not enough history for a personal read — the absolute fallback.
+            let cost = -min(8, Int((dailyEquivalent * 0.42).rounded()))
+            return Factor(name: "Recent load", evidence: milesPart, points: cost)
+        }
+
+        let ratio = dailyEquivalent / baselineDaily
+        let (points, reading): (Int, String) = switch ratio {
+        case ...0.5: (4, "well under your usual")
+        case ...0.85: (2, "lighter than your usual")
+        case ...1.25: (0, "about your usual")
+        case ...1.6: (-4, "heavier than your usual")
+        case ...2.0: (-6, "well over your usual")
+        default: (-8, "far over your usual")
+        }
+        return Factor(name: "Recent load", evidence: milesPart + " · " + reading, points: points)
     }
 
     // MARK: - 3 · Body mentions (unchanged)

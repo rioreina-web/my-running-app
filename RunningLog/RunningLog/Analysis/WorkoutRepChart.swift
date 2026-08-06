@@ -134,16 +134,32 @@ enum WorkoutLapsService {
                 j += 1
             }
             let miles = dist / 1609.344
+            let mergedPace: Double? = miles > 0 ? time / miles : nil
+            // The merged bout is a NEW split — its pace is the joined pace and
+            // its length is the joined length, so the constituent laps' stored
+            // heat-adjusted paces no longer describe it. Recompute here rather
+            // than dropping it: leaving this nil is what made HEAT-ADJ inert on
+            // every workout the watch lapped with rests (the toggle stayed
+            // enabled — temp/dew survive the merge — but had nothing to show).
+            // Rep-length scaling uses the MERGED distance, which is the honest
+            // bout length: two auto-lapped miles re-joined into one 2 mi rep
+            // earns the full adjustment, not each half's short-rep discount.
+            let mergedHeatAdj: Double? = {
+                guard let p = mergedPace, p > 0, let t = temp, let d = dew else { return nil }
+                return PaceCalculator.calculateDewPointAdjustment(
+                    paceSeconds: p, temperatureF: t, dewPointF: d, distanceMiles: miles
+                ).neutralEquivalentPaceSeconds
+            }()
             out.append(WorkoutLapRow(
                 lap_index: idx,
                 distance_meters: dist > 0 ? dist : nil,
                 moving_time_seconds: time > 0 ? Int(time) : nil,
-                avg_pace_sec_per_mile: miles > 0 ? time / miles : nil,
+                avg_pace_sec_per_mile: mergedPace,
                 avg_heart_rate: hrTime > 0 ? Int((hrWeighted / hrTime).rounded()) : nil,
                 is_rest: false,
                 temp_f: temp,
                 dew_point_f: dew,
-                heat_adjusted_pace_sec_per_mile: nil
+                heat_adjusted_pace_sec_per_mile: mergedHeatAdj
             ))
             idx += 1
             i = j

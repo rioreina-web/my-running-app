@@ -19,20 +19,18 @@
 //  than the best structure for one.
 //
 //  Two encodings are deliberate and load-bearing:
-//   • **Mood is colour AND height.** This reverses the original call. The spec
-//     left it open, noting a height encoding is "the closest thing on the
-//     screen to treating mood as numeric, and mood is stored as TEXT
-//     deliberately", and it was first resolved colour-only in the safe
-//     direction. That made mood the one channel on the page encoded by colour
-//     alone — across adjacent warm hues (tired amber, struggling terracotta,
-//     injured rose) that are indistinguishable to a red-green colour-blind
-//     reader and to anyone running a colour filter. Colour-alone is the
-//     accessibility failure; treating mood as ordered is not, because the app
-//     already orders it: the ramp is derived from
-//     `TrendsRecoveryFactors.moodPoints`, the same table the recovery receipt
-//     scores moods with, so the chart and the ledger cannot carry two
-//     different orderings. The stored value is still TEXT and the readout
-//     still speaks the word, never a number.
+//   • **Mood is colour only** (2026-08-06). Every logged day is one swatch of
+//     the same height, so the lane reads as a ribbon rather than as a bar
+//     chart of feelings. It was tried the other way — a rank-derived height as
+//     a redundant channel for readers who cannot separate the adjacent warm
+//     hues (tired amber, struggling terracotta, injured rose) — and the ramp
+//     cost more legibility for every reader than it bought for those it
+//     helped. The redundancy moved off the drawing rather than disappearing:
+//     the scrub readout names the mood in words, each column's VoiceOver
+//     label speaks it down all five lanes, and the audio graph still places
+//     mood on the `TrendsRecoveryFactors.moodPoints` ordering via
+//     `TrendsMoodColor.rank`. Colour carries the glance; words carry the
+//     certainty.
 //   • **Bar height is miles against the window maximum, one scale for the whole
 //     lane.** Never per-column relative fill — that makes the same 8-mile day
 //     look different in a light month than in a heavy one.
@@ -514,7 +512,7 @@ struct TrendsSignalLanes: View {
         ctx.fill(Path(ellipseIn: dot), with: .color(Self.bandColour(last.recovery)))
     }
 
-    // 4 · Mood — colour AND height, so the channel survives a colour filter.
+    // 4 · Mood — colour only, one equal-height swatch per logged day.
     // Unlogged renders as empty ground: a day with no feeling logged is a
     // fact about the week, not a zero.
     private func drawMood(_ ctx: GraphicsContext, layout: Layout) {
@@ -531,21 +529,21 @@ struct TrendsSignalLanes: View {
 
         for (i, b) in set.buckets.enumerated() {
             guard let mood = b.mood else { continue }
-            // Marks sit on the lane floor and rise by rank, so the reading is
-            // the same one the mileage lane teaches: taller is more.
-            let markH = max(2, CGFloat(TrendsMoodColor.height(mood)) * h)
-            let rect = CGRect(x: layout.x(i), y: top + h - markH,
-                              width: max(1, layout.slot - 0.4), height: markH)
+            // One height for every mood — the lane fills, and only the hue
+            // changes. Rank lives in the readout and the audio graph now,
+            // never in the drawing.
+            let rect = CGRect(x: layout.x(i), y: top,
+                              width: max(1, layout.slot - 0.4), height: h)
             ctx.fill(Path(rect), with: .color(TrendsMoodColor.color(mood).opacity(0.92)))
         }
 
         drawMoodLegend(ctx, layout: layout, lane: lane)
     }
 
-    /// The ramp, drawn as the six words in ascending height with the two ends
-    /// named. Says what the height means without spending a line of prose on
-    /// it — and the words are what the readout speaks, so legend and readout
-    /// use one vocabulary.
+    /// The six mood colours in order, worst to best, with the two ends named.
+    /// Equal-height swatches: the legend teaches the hues and nothing else.
+    /// The words are what the readout speaks, so legend and readout use one
+    /// vocabulary.
     private func drawMoodLegend(_ ctx: GraphicsContext, layout: Layout, lane: Int) {
         let ly = layout.bottom(lane) + 6
         let swatchMax: CGFloat = 7
@@ -564,12 +562,11 @@ struct TrendsSignalLanes: View {
             return CGFloat(text.count) * microType * 0.62
         }
 
-        // Worst → best, left to right, so the swatches climb.
+        // Worst → best, left to right. Equal heights — see `drawMood`.
         let ramp = TrendsMoodColor.ordered.reversed()
         var x = label("Injured", at: 0, anchor: .leading) + 8
         for mood in ramp {
-            let hgt = max(1.5, CGFloat(TrendsMoodColor.height(mood)) * swatchMax)
-            let rect = CGRect(x: x, y: ly + swatchMax - hgt, width: swatchW, height: hgt)
+            let rect = CGRect(x: x, y: ly, width: swatchW, height: swatchMax)
             ctx.fill(Path(roundedRect: rect, cornerRadius: 0.5),
                      with: .color(TrendsMoodColor.color(mood).opacity(0.92)))
             x += swatchW + gap
@@ -708,6 +705,72 @@ struct TrendsSignalLanes: View {
         return "\(miles) \(b.channel.readoutLabel)"
     }
 
+    // MARK: - Spoken forms
+
+    /// One column, spoken. Channels with nothing to say are omitted rather
+    /// than read out as "none" — a VoiceOver reader shouldn't have to sit
+    /// through four negatives per day to reach the one fact that moved.
+    /// A rest day is not an absence, though: zero miles is a fact, and it
+    /// says so.
+    func axLabel(_ b: TrendsBucket) -> String {
+        let date = set.grain == .day
+            ? Self.spokenDate(b.startISO)
+            : "Week of \(Self.spokenDate(b.startISO))"
+
+        var parts: [String] = []
+
+        if b.miles > 0 {
+            var run = String(format: "%.1f miles", b.miles)
+            if set.grain == .week {
+                if b.keyCount > 0 {
+                    run += ", \(b.keyCount) key session\(b.keyCount == 1 ? "" : "s")"
+                }
+            } else {
+                run += ", \(Self.spokenChannel(b.channel))"
+            }
+            parts.append(run)
+        } else {
+            parts.append(set.grain == .day ? "rest day" : "no miles")
+        }
+
+        parts.append("recovery \(b.recovery), \(TrendsRecoveryLedger.Band.of(b.recovery).rawValue)")
+
+        if let mood = b.mood, !mood.isEmpty { parts.append("mood \(mood)") }
+
+        if !b.niggles.isEmpty {
+            let said = b.niggles.map { n in
+                [n.area, n.severity].compactMap { $0 }.joined(separator: ", ")
+            }
+            parts.append("niggle: \(said.joined(separator: "; "))")
+        }
+
+        return "\(date) — \(parts.joined(separator: "; "))"
+    }
+
+    private static let spokenMonths = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+
+    /// "2026-07-14" → "July 14". The axis abbreviates; speech should not.
+    static func spokenDate(_ iso: String) -> String {
+        let p = iso.prefix(10).split(separator: "-")
+        guard p.count == 3, let m = Int(p[1]), (1...12).contains(m), let d = Int(p[2])
+        else { return iso }
+        return "\(spokenMonths[m - 1]) \(d)"
+    }
+
+    /// The readout's channel words, written out for speech.
+    static func spokenChannel(_ c: TrendsSessionChannel) -> String {
+        switch c {
+        case .rest: "rest day"
+        case .easy: "easy run"
+        case .long: "long run"
+        case .key: "key session"
+        case .keyLong: "long run with key work"
+        }
+    }
+
     // MARK: - Palette
 
     /// Dark warm grey — the long-run channel. Not a mood, not a pace.
@@ -731,5 +794,125 @@ struct TrendsSignalLanes: View {
         case .steady: Color.drip.neutral
         case .clear: Color.drip.positive
         }
+    }
+}
+
+// MARK: - Audio graph
+
+/// The five lanes as an audio graph.
+///
+/// **Why every series is normalised to its own lane.** The five signals have
+/// nothing like a shared scale — miles run 0…20, recovery 8…96, key work 0…3.
+/// Plotting them against one numeric axis would flatten mileage into a
+/// straight line and make the graph a worse description of the data than the
+/// picture it describes. Each series is therefore mapped to 0…100 *of its own
+/// lane*, exactly as the Canvas draws it, so the pitch contour the reader
+/// hears is the shape the sighted reader sees. Nothing is lost to that
+/// normalisation, because every point also carries a `label` holding the real
+/// value in words — the graph sounds like the chart and speaks like the data.
+///
+/// Mood and niggles are discrete, not continuous, and days with neither
+/// contribute no point at all: an unlogged mood is not a low mood.
+extension TrendsSignalLanes: AXChartDescriptorRepresentable {
+
+    func makeChartDescriptor() -> AXChartDescriptor {
+        let buckets = set.buckets
+        let grainWord = set.grain == .day ? "day" : "week"
+
+        let xAxis = AXNumericDataAxisDescriptor(
+            title: "Date",
+            range: 0...Double(max(1, buckets.count - 1)),
+            gridlinePositions: [],
+            valueDescriptionProvider: { value in
+                guard !buckets.isEmpty else { return "" }
+                let i = min(buckets.count - 1, max(0, Int(value.rounded())))
+                let iso = buckets[i].startISO
+                return set.grain == .day
+                    ? Self.spokenDate(iso)
+                    : "week of \(Self.spokenDate(iso))"
+            }
+        )
+
+        let yAxis = AXNumericDataAxisDescriptor(
+            title: "Level within its own lane",
+            range: 0...100,
+            gridlinePositions: [],
+            valueDescriptionProvider: { "\(Int($0.rounded())) percent of lane" }
+        )
+
+        func makeSeries(
+            _ name: String,
+            continuous: Bool,
+            _ point: (TrendsBucket) -> (normalised: Double, spoken: String)?
+        ) -> AXDataSeriesDescriptor {
+            AXDataSeriesDescriptor(
+                name: name,
+                isContinuous: continuous,
+                dataPoints: buckets.enumerated().compactMap { i, b in
+                    guard let p = point(b) else { return nil }
+                    return AXDataPoint(
+                        x: Double(i),
+                        y: min(100, max(0, p.normalised)),
+                        additionalValues: [],
+                        label: p.spoken
+                    )
+                }
+            )
+        }
+
+        let maxMiles = buckets.map(\.miles).max() ?? 0
+        let maxKey = Double(buckets.map(\.keyCount).max() ?? 0)
+
+        let series = [
+            makeSeries("Mileage", continuous: true) { b in
+                guard maxMiles > 0 else { return (0, "no miles") }
+                return (b.miles / maxMiles * 100, String(format: "%.1f miles", b.miles))
+            },
+            makeSeries("Key work", continuous: true) { b in
+                guard maxKey > 0 else { return (0, "no key sessions") }
+                let word = b.keyCount == 1 ? "1 key session" : "\(b.keyCount) key sessions"
+                return (Double(b.keyCount) / maxKey * 100, word)
+            },
+            makeSeries("Recovery", continuous: true) { b in
+                // The score's real clamp, matching the lane's own floor.
+                let n = (Double(b.recovery) - 8) / (96 - 8) * 100
+                return (n, "\(b.recovery), \(TrendsRecoveryLedger.Band.of(b.recovery).rawValue)")
+            },
+            makeSeries("Mood", continuous: false) { b in
+                guard let mood = b.mood, !mood.isEmpty else { return nil }
+                return (TrendsMoodColor.rank(mood) * 100, mood)
+            },
+            makeSeries("Niggles", continuous: false) { b in
+                guard b.hasNiggle else { return nil }
+                let said = b.niggles.map { n in
+                    [n.area, n.severity].compactMap { $0 }.joined(separator: ", ")
+                }
+                return (Double(TrendsSeverity.rank(b.loudestSeverity)) / 4 * 100,
+                        said.joined(separator: "; "))
+            },
+        ]
+
+        return AXChartDescriptor(
+            title: "Five signals",
+            summary: "Mileage, key work, recovery, mood and niggles over "
+                + "\(buckets.count) \(grainWord)\(buckets.count == 1 ? "" : "s"), "
+                + "each series scaled to its own lane.",
+            xAxis: xAxis,
+            yAxis: yAxis,
+            additionalAxes: [],
+            series: series
+        )
+    }
+
+    /// The window picker rebuilds the whole bucket set, so the cached
+    /// descriptor has to be refreshed rather than left describing the range
+    /// the athlete just navigated away from.
+    func updateChartDescriptor(_ descriptor: AXChartDescriptor) {
+        let fresh = makeChartDescriptor()
+        descriptor.title = fresh.title
+        descriptor.summary = fresh.summary
+        descriptor.xAxis = fresh.xAxis
+        descriptor.yAxis = fresh.yAxis
+        descriptor.series = fresh.series
     }
 }

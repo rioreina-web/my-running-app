@@ -225,6 +225,67 @@ struct RecoveryCarriedOverTests {
         let f = try #require(TrendsRecoveryFactors.recentLoad(days: days, at: 4))
         #expect(f.points == 6)
     }
+}
+
+// MARK: - Recent load · recalibrated 2026-08-06
+
+@Suite("TrendsRecoveryFactors.recentLoad recalibration")
+struct RecoveryRecentLoadRecalibrationTests {
+
+    /// The defect the recalibration fixes: the flat 0.42 × miles charge cost
+    /// about −3 on ANY normal training day, so a healthy block could never
+    /// read better than Worn (the 2026-08-06 backtest measured the top two
+    /// bands at 2% of 145 real days). Carrying your usual load is the normal
+    /// state of training — it must not be a standing penalty.
+    @Test("carrying your usual load scores zero, not a standing charge")
+    func usualLoadIsNotFatigue() throws {
+        // Eight weeks at a steady 8 mi/day: the carried load IS the baseline.
+        let f = try #require(TrendsRecoveryFactors.recentLoad(days: block(60), at: 59))
+        #expect(f.points == 0)
+        #expect(f.evidence.contains("about your usual"))
+    }
+
+    @Test("carrying well over your own usual subtracts")
+    func heavyStretchSubtracts() throws {
+        var days = block(60)
+        for i in 56...58 { days[i] = day(days[i].date, 14) }
+        let f = try #require(TrendsRecoveryFactors.recentLoad(days: days, at: 59))
+        #expect(f.points == -6)   // 14 vs 8 usual → ratio 1.75
+        #expect(f.evidence.contains("well over your usual"))
+    }
+
+    @Test("a light stretch against your own usual credits")
+    func lightStretchCredits() throws {
+        var days = block(60)
+        for i in 56...58 { days[i] = day(days[i].date, 3) }
+        let f = try #require(TrendsRecoveryFactors.recentLoad(days: days, at: 59))
+        #expect(f.points == 4)    // 3 vs 8 usual → ratio 0.375
+        #expect(f.evidence.contains("well under your usual"))
+    }
+
+    /// A brand-new athlete has no baseline to be relative to. The absolute
+    /// fallback keeps the row sane instead of silent.
+    @Test("under two weeks of history falls back to the absolute charge")
+    func noBaselineFallsBack() throws {
+        let f = try #require(TrendsRecoveryFactors.recentLoad(days: block(5), at: 4))
+        #expect(f.points == -3)   // 8 mi/day × 0.42, the old arithmetic
+        #expect(!f.evidence.contains("usual"))
+    }
+
+    /// The evidence still counts and states — miles first, the personal
+    /// reading second, no instruction.
+    @Test("the evidence names the miles and the personal reading")
+    func evidenceCountsAndStates() throws {
+        let f = try #require(TrendsRecoveryFactors.recentLoad(days: block(60), at: 59))
+        #expect(f.evidence.contains("mi over 3 days"))
+        #expect(f.evidence.contains("·"))
+    }
+}
+
+// MARK: - Carried over unchanged · body & baseline
+
+@Suite("TrendsRecoveryFactors carried-over factors · body & baseline")
+struct RecoveryCarriedOverBodyBaselineTests {
 
     /// Two mentions of one area is the clustering trigger; one is not a
     /// pattern, and neither is ever interpreted.

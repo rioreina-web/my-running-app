@@ -86,6 +86,11 @@ struct TrendsThresholdView: View {
             if p.hasCorrection {
                 bits.append("RAW \(TrendsFormat.pace(p.rawSec))")
             }
+            // Only worth saying when the time came in pieces — on a single
+            // unbroken block the two numbers are the same number.
+            if p.isFragmented {
+                bits.append("LONGEST BLOCK \(minuteLabel(p.blockMinutes))")
+            }
             if let hr = p.hrAvg { bits.append("\(hr) BPM") }
             switch p.grade {
             case .work: break
@@ -95,7 +100,16 @@ struct TrendsThresholdView: View {
             return bits.joined(separator: " · ")
         }
 
-        var bits = ["\(read.points.count) SESSIONS TOUCHED THE BAND"]
+        var bits = ["\(read.points.count) SESSIONS IN THE BAND"]
+        // What the minimums held out, said out loud. A gate that quietly
+        // deletes running reads as "there was none".
+        if read.excludedSessions > 0 {
+            bits.append(
+                "\(read.excludedSessions) BELOW THE MINIMUM"
+                    + (read.excludedMinutes >= 1
+                        ? " (\(minuteLabel(read.excludedMinutes)) MIN)" : "")
+            )
+        }
         if read.cruiseMinutes >= 1 {
             bits.append("\(minuteLabel(read.cruiseMinutes)) MIN UNDER THE FLOOR")
         }
@@ -146,14 +160,14 @@ struct TrendsThresholdView: View {
     }
 
     private var accessibilitySummary: String {
-        "Threshold sessions against the \(read.band.proseLabel) pace band. "
+        "Threshold sessions against the \(read.anchor.proseLabel) pace band. "
             + "\(read.workPoints.count) graded sessions, \(minuteLabel(read.workMinutes)) minutes in band."
     }
 
     private func draw(_ ctx: GraphicsContext, layout: Layout) {
         guard !read.points.isEmpty else { return }
 
-        let bandColor = read.band.color
+        let bandColor = read.anchorColor
 
         // ---- the band, as one shaded region
         let bandRect = CGRect(
@@ -262,9 +276,9 @@ struct TrendsThresholdView: View {
 
     private var legend: some View {
         HStack(spacing: 14) {
-            legendItem(fill: read.band.color, label: "Threshold work")
+            legendItem(fill: read.anchorColor, label: "Threshold work")
             if !read.cruisePoints.isEmpty {
-                legendItem(fill: read.band.color.opacity(0.28), label: "Under \(read.hrFloor) bpm")
+                legendItem(fill: read.anchorColor.opacity(0.28), label: "Under \(read.hrFloor) bpm")
             }
             if !read.unclassedPoints.isEmpty {
                 legendItem(fill: nil, label: "No HR")
@@ -283,7 +297,7 @@ struct TrendsThresholdView: View {
                 .fill(fill ?? Color.drip.cardBackground)
                 .overlay(
                     Circle().stroke(
-                        fill == nil ? read.band.color.opacity(0.55) : Color.clear,
+                        fill == nil ? read.anchorColor.opacity(0.55) : Color.clear,
                         lineWidth: 1
                     )
                 )
@@ -364,11 +378,35 @@ struct TrendsThresholdView: View {
 // MARK: - Preview
 
 #if DEBUG
-#Preview("Threshold · HM band") {
+#Preview("Threshold · HM ±5%") {
     ScrollView {
         VStack(alignment: .leading) {
             TrendsThresholdView(
-                read: ThresholdBuilder.build(bands: .preview, band: .hm)
+                read: ThresholdBuilder.build(lab: .preview, settings: .default)
+            )
+        }
+        .padding(24)
+    }
+    .background(Color.drip.background)
+}
+
+/// The same window re-anchored on 10K with the slow edge clamped — the case
+/// the controls exist for. A different set of sessions should draw.
+#Preview("Threshold · 10K, slow edge tight") {
+    ScrollView {
+        VStack(alignment: .leading) {
+            TrendsThresholdView(
+                read: ThresholdBuilder.build(
+                    lab: .preview,
+                    settings: BandSettings(
+                        anchor: .k10,
+                        fastPct: 5,
+                        slowPct: 2,
+                        minTotalMinutes: 6,
+                        minBlockMinutes: 4,
+                        hrFloor: 160
+                    )
+                )
             )
         }
         .padding(24)

@@ -30,23 +30,23 @@ enum TrendsMoodColor {
         "energized", "positive", "neutral", "tired", "struggling", "injured",
     ]
 
-    /// Height fraction for a mood mark, 0…1.
+    /// Rank for the VoiceOver audio graph, 0…1. **Never a drawn height.**
     ///
-    /// **Why mood has a height at all.** Colour-alone is not a safe encoding:
-    /// three of these six are adjacent warm hues (tired amber, struggling
-    /// terracotta, injured rose) and two are adjacent greens, so a
-    /// colour-blind reader or anyone with a colour filter on sees one ribbon
-    /// where the chart means six values. Height is the redundant channel.
+    /// Mood is drawn as colour alone (2026-08-06): one swatch per logged day,
+    /// all the same height. The height ramp this replaced read as a bar chart
+    /// of feelings and made the lane harder to scan than the colour did on
+    /// its own.
     ///
-    /// **Why an ordering is legitimate.** The app already orders these words —
-    /// the recovery receipt scores them +12 down to −18. This ramp is the
-    /// same order, so the chart and the ledger cannot disagree. It is a rank,
-    /// never a measurement: the stored value stays TEXT and every readout
-    /// still speaks the word.
+    /// The ordering survives here because the audio graph has to place each
+    /// point on an axis. It is the same order the recovery receipt scores
+    /// moods in (`TrendsRecoveryFactors.moodPoints`, +12 down to −18), so the
+    /// chart and the ledger cannot disagree. It is a rank, never a
+    /// measurement: the stored value stays TEXT and every readout still
+    /// speaks the word.
     ///
     /// A word outside the vocabulary sits at the neutral step rather than at
     /// either extreme — the same fallback `color(_:)` makes.
-    static func height(_ mood: String) -> Double {
+    static func rank(_ mood: String) -> Double {
         let steps: [Double] = [1.0, 0.85, 0.7, 0.55, 0.4, 0.25]
         guard let i = ordered.firstIndex(of: mood.lowercased()) else { return 0.7 }
         return steps[i]

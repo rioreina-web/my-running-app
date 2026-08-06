@@ -54,8 +54,13 @@ function interpolate(score: number): number {
   return last[1];
 }
 
+/** Label ladder. "ideal" runs to 110, NOT to the adjustment table's zero knot
+ *  at 100 — the two answer different questions and sharing a number put a
+ *  55°F/45°F-dew morning (composite 100.45, cost 0.02%) into "Warm". See the
+ *  full rationale in `pace-heat-adjustment.ts:heatCategory`. Keep in lockstep
+ *  with that, the Swift PaceCalculator, and SQL `heat_category_for()`. */
 export function heatCategoryFromScore(score: number): HeatCategory {
-  if (score < 100) return "ideal";
+  if (score < 110) return "ideal";
   if (score < 130) return "warm";
   if (score < 150) return "hot";
   if (score < 170) return "very_hot";

@@ -576,7 +576,7 @@ export function buildPaceBands(
  * whole band LOW CONFIDENCE — a claim about data that contributed nothing to
  * the anchor.
  */
-function latestConfidence(rows: FitnessSnapshotRow[]): string | null {
+export function latestConfidence(rows: FitnessSnapshotRow[]): string | null {
   const clean = usableSnapshots(rows);
   // `usableSnapshots` sorts ascending by created_at.
   return clean.length > 0 ? clean[clean.length - 1].confidenceTier : null;

@@ -36,6 +36,10 @@ struct SignalLabView: View {
     @State private var window: TrendsWindow = .threeMonths
     @State private var customFrom: Date = Date().addingTimeInterval(-89 * 86_400)
     @State private var customTo: Date = Date()
+    /// The athlete's threshold band. Shared rather than local so anything else
+    /// that reads the same band later cannot disagree about what "in band"
+    /// means for the same athlete.
+    @State private var settingsStore = BandSettingsStore.shared
 
     /// Called when a chart's session should open in the log.
     private let onOpenSession: ((String) -> Void)?
@@ -64,11 +68,25 @@ struct SignalLabView: View {
 
     private var driftRead: AerobicDriftRead { AerobicDriftBuilder.build(cards: insights.cards) }
 
+    /// The band the athlete set, read off the raw laps. Falls back to the
+    /// server's fixed HM ±5% bucketing when the backend predates `band_laps` —
+    /// the section keeps working, the controls just have nothing to move.
     private var thresholdRead: ThresholdRead? {
-        service.paceBands.map {
+        if let lab = service.bandLaps {
+            return ThresholdBuilder.build(
+                lab: lab,
+                settings: settingsStore.settings,
+                windowDays: window.days
+            )
+        }
+        return service.paceBands.map {
             ThresholdBuilder.build(bands: $0, band: .hm, windowDays: window.days)
         }
     }
+
+    /// True once the raw laps are on hand — the controls are inert without
+    /// them, so they don't render.
+    private var bandIsAdjustable: Bool { service.bandLaps != nil }
 
     private var efficiencyRead: BeatEfficiencyRead {
         BeatEfficiencyBuilder.build(keySessions: service.keySessions, windowDates: windowDates)
@@ -195,19 +213,57 @@ struct SignalLabView: View {
     // MARK: 02 · threshold
 
     private var thresholdSection: some View {
-        section(number: "02", eyebrow: "Threshold pace", title: thresholdTitle, sub: thresholdSub) {
-            if let read = thresholdRead, !read.isEmpty {
-                LabCard {
-                    TrendsThresholdView(read: read, onSelect: onOpenSession)
+        @Bindable var store = settingsStore
+        return section(number: "02", eyebrow: "Threshold pace", title: thresholdTitle, sub: thresholdSub) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let read = thresholdRead, !read.isEmpty {
+                    LabCard {
+                        TrendsThresholdView(read: read, onSelect: onOpenSession)
+                    }
+                } else if bandIsAdjustable {
+                    // A band the athlete set can be set to catch nothing. Say
+                    // which band found nothing and how to open it back up —
+                    // the controls sit directly below.
+                    EmptyStateView(
+                        variant: .dataPending,
+                        eyebrow: "Nothing clears this band",
+                        title: emptyBandTitle
+                    )
+                } else {
+                    EmptyStateView(
+                        variant: .dataPending,
+                        eyebrow: "No band work yet",
+                        title: "This reads every session that spent time inside your half-marathon pace band. Once a few land, the trend draws itself."
+                    )
                 }
-            } else {
-                EmptyStateView(
-                    variant: .dataPending,
-                    eyebrow: "No band work yet",
-                    title: "This reads every session that spent time inside your half-marathon pace band. Once a few land, the trend draws itself."
-                )
+
+                if bandIsAdjustable {
+                    TrendsThresholdControls(
+                        settings: $store.settings,
+                        ladder: service.bandLaps?.latestLadder,
+                        accent: store.settings.anchor.color(in: service.bandLaps?.latestLadder)
+                    )
+                    .padding(.top, 16)
+                }
             }
         }
+    }
+
+    /// What the current band asked for, so an empty chart is a readable
+    /// result rather than a dead end.
+    private var emptyBandTitle: String {
+        let s = settingsStore.settings
+        var t = "No session in this window held "
+        t += s.minTotalMinutes > 0 ? "\(Int(s.minTotalMinutes.rounded())) minutes" : "time"
+        if s.minBlockMinutes > 0 {
+            t += " (\(Int(s.minBlockMinutes.rounded())) unbroken)"
+        }
+        t += " inside \(s.anchor.proseLabel) \(s.widthLabel)."
+        if let read = thresholdRead, read.excludedSessions > 0 {
+            t += " \(read.excludedSessions) came close and fell under the minimum."
+        }
+        t += " Widen an edge or lower a minimum and it fills in."
+        return t
     }
 
     private var thresholdTitle: String {
@@ -227,12 +283,28 @@ struct SignalLabView: View {
 
     private var thresholdSub: String {
         guard let read = thresholdRead else { return "" }
-        var s = "Every session with time inside the \(read.band.proseLabel) band "
-            + "(\(TrendsFormat.pace(read.fastSec))–\(TrendsFormat.pace(read.slowSec))), heat-neutral. "
-            + "Minutes count as work when the average heart rate over them clears \(read.hrFloor) bpm."
+        var s = "Every session with time inside the \(read.anchor.proseLabel) band "
+            + "(\(TrendsFormat.pace(read.fastSec))–\(TrendsFormat.pace(read.slowSec)), "
+            + "\(read.settings.widthLabel)), heat-neutral."
+        if read.hrFloor > 0 {
+            s += " Minutes count as work when the average heart rate over them clears "
+                + "\(read.hrFloor) bpm."
+        } else {
+            s += " The effort floor is off, so every in-band minute counts as work."
+        }
         if read.cruiseMinutes >= 1 {
             s += " \(Int(read.cruiseMinutes.rounded())) minutes here sat in the band on pace and "
                 + "under that floor on effort — long-run cruising, held apart."
+        }
+        // Never let a minimum quietly delete running from the read.
+        if read.excludedSessions > 0 {
+            s += " \(read.excludedSessions) further "
+                + "\(read.excludedSessions == 1 ? "session" : "sessions") touched the band for "
+                + "\(Int(read.excludedMinutes.rounded())) minutes in total and fell under the "
+                + "minimum, so \(read.excludedSessions == 1 ? "it is" : "they are") left out here."
+        }
+        if bandIsAdjustable && read.isAdjusted {
+            s += " This is your band, not the shipped one."
         }
         return s
     }
@@ -419,7 +491,8 @@ struct SignalLabView: View {
             preview: [],
             days: TrendsDay.previewMonthRich,
             keySessions: KeySession.previewLadder,
-            paceBands: .preview
+            paceBands: .preview,
+            bandLaps: .preview
         )
     )
 }

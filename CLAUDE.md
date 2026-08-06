@@ -57,8 +57,10 @@ surface in v1.5. Strength + mobility are deferred future products.
 
 ## Information architecture (athlete-facing)
 
-**Target IA (as of 2026-05-28): four-tab bottom nav — Log · Trends ·
-Train · Coach.** Mental flow: input → overview → detail → synthesis.
+**Shipping IA (as of 2026-08-05): three-tab bottom nav — Log · Trends ·
+Train.** Mental flow: input → overview → detail. Synthesis (Coach) was
+retired as a tab on 2026-07-28; the analysis half of it came back on
+2026-08-05 as **Ask**, a sheet opened from the foot of Trends.
 
 - **Log** — voice-first front door at top (record button + voice/manual
   toggle) and the 6-month training journal scrolling below. Last 6
@@ -75,6 +77,14 @@ Train · Coach.** Mental flow: input → overview → detail → synthesis.
   past + planned, coach plan layered if present), HISTORY (longer-arc
   analytics — pace × volume distribution, cycle comparison overlays,
   fitness arcs). Plan is a *subset* of Train, not its own tab.
+- **Ask** *(2026-08-05)* — the analysis surface, opened from the foot of
+  Trends (`AskBar` in `RunningLog/Analysis/AskView.swift`). Trends shows the
+  shape of the block; Ask interrogates it. Chip per analyzer, answer as
+  computed fact lines + chart + coverage, narration on top. This is the
+  screen the pace spectrum / threshold / race-prediction content was waiting
+  for when it was parked in Trends v1 — they answer "how fast am I", which
+  Trends deliberately doesn't. See "The Ask surface" below.
+
 - **Coach** — the AI Daily Read as observation, on demand. Maya taps
   generate; AI produces a minimal-format paragraph (eyebrow date +
   headline + 2-4 observation sentences + italic soft questions). Voice
@@ -83,10 +93,12 @@ Train · Coach.** Mental flow: input → overview → detail → synthesis.
   anchors and goals silently. Maya can ask Coach to read her journey
   through specific lenses ("how does fitness compare to last cycle?").
 
-**Code as of 2026-05-28 ships 5 tabs** (`Log · Train · Trends · Coach ·
-Plan`, in `RunningLog/App/RunningLogApp.swift:60-140`). The target 4-tab
-IA is the Phase 3 deliverable in Maya's roadmap — Plan collapses into
-Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
+**Code as of 2026-08-05 ships 3 tabs** — `DripTab` in
+`RunningLog/App/DripTabBar.swift` declares exactly `log` · `trends` ·
+`training` (the raw values are non-contiguous for historical reasons;
+declaration order is display order). Plan folded into Train's CALENDAR
+mode (2026-07-13); Trends 2 was removed 2026-07-27; Coach (The Read) was
+removed 2026-07-28.
 
 ## Where things live
 
@@ -259,6 +271,53 @@ embedded quality references — those references don't carry the
 precision of a pace-zone workout). Non-running labels: `Cross-train`,
 `Strength`, `Rest`, `Race`.
 
+## The Ask surface (analysis)
+
+**Computed first, narrated second.** Every answer is real math over real rows
+before a model sees it, and the model cannot introduce a number the math
+didn't print. Three layers:
+
+| Layer | Where | What it does |
+|---|---|---|
+| 0 · Route | `supabase/functions/ask/index.ts` | Free text → an analyzer id from a **closed enum**. Regex fast path first, then the cheapest model tier. Chips skip this layer entirely. |
+| 1 · Analyze | `supabase/functions/_shared/analyzers/` | Deterministic. Emits `FactLine[]` + `Coverage` + an optional chart spec. No model. Never writes. |
+| 2 · Narrate | `_shared/prompts/ask-narration.v1.ts` | Two sentences over the fact lines and nothing else. Every numeric token is checked against them. |
+
+**The rule that makes it safe: if a number is not in `facts`, it does not
+exist.** The UI renders from `facts`; the model may speak only `facts`. There
+is no third source. `_shared/analyzers/types.ts:factLinesToStrings` is the
+single seam between layers — the same array is both what the model is shown
+and what the guard licenses, so the two can never disagree. Do not build the
+prompt from `facts` anywhere else.
+
+**Degradation is the design.** Missing API key, rejected number, exhausted
+quota — all produce `narration: null` with the analysis intact and
+`annotated: false`. The facts always render; the narration is a bonus, never
+a dependency. Generalized from `compare-workouts`, which established the
+pattern for one question.
+
+**Cost.** Layer 1 is never rate-limited, so tapping a chip is free. The
+`analysis` bucket is charged only when a Layer-2 call is actually made.
+
+**Adding an analyzer** = one file in `_shared/analyzers/` + one line in its
+`index.ts`. No prompt surgery, no endpoint change, no app release — the chip
+rail is built from the server's `__catalog__` response. Full registry of 50
+analyzers across 11 training principles, with a build-status audit against
+this repo, in `ASK-REGISTRY.md`. Architecture in `ASK-APPLY.md`; Phase A
+placement notes in `ASK-PHASE-A-APPLY.md`.
+
+**Before launch (hard rule #3):** `ask-narration` is a golden family — it is
+athlete-facing and safety-baitable. It needs recorded cassettes in
+`_evals/cassettes/ask-narration/` AND an entry in the golden list in
+`.github/scripts/check_eval_coverage.py`. Neither exists yet. Record first,
+then add the entry, or CI blocks the next PR that touches the prompt.
+
+**Client:** `RunningLog/Analysis/Ask{Models,Service,Components,View}.swift`.
+Note the deliberate key-case split — the response envelope is snake_case, the
+analyzer payload is camelCase (it is the TS interface serialized as-is), so
+`AskResponse` declares explicit `CodingKeys` and no decoder-wide
+`.convertFromSnakeCase` may be introduced.
+
 ## Design system
 
 The canonical visual language is **Post Run Drip** — *"restraint as
@@ -335,25 +394,28 @@ question is settled.
 
 ### IA — current state vs. target (read before touching nav)
 
-**Current code:** iOS ships **5 tabs** (`Log · Train · Trends · Coach
-· Plan`) in `RunningLog/App/RunningLogApp.swift:60-140`.
+**Current code:** iOS ships **3 tabs** (`Log · Trends · Train`) —
+`DripTab` in `RunningLog/App/DripTabBar.swift`, mounted in
+`RunningLog/App/RunningLogApp.swift`.
 
-**Design system:** Documents a 5-tab nav (`LOG · TRAIN · TRENDS · COACH
-· RUNS`) — slightly different (Runs vs Plan as the 5th).
+**Design system:** still documents a 5-tab nav (`LOG · TRAIN · TRENDS ·
+COACH · RUNS`). It is two reductions behind the code. Treat the code as
+truth for nav; the design system remains truth for voice and tokens.
 
-**Target IA as of 2026-05-28:** **4 tabs — `Log · Trends · Train ·
-Coach`.** Plan collapses into Train as a subset (calendar mode shows
-past + planned together; coach-issued plans layer in for athletes on
-plans). Runs as a separate tab is also out. The 4-tab nav reflects
-Maya's needs (input → overview → detail → synthesis) and aligns the
-product with the journey-centric framing.
+**Built but NOT mounted — read this before "rebuilding" anything.**
+Several finished surfaces are in the repo with no route to them. They
+were deliberately unlinked, not abandoned, and grepping for a view name
+will find the file but not tell you it's dark:
 
-Phase 3 of Maya's roadmap untethers Train from `activePlan` and ships
-the 4-tab nav. See `outputs/maya-product-roadmap-2026-05-28.md`.
+| Surface | File | Status |
+|---|---|---|
+| The Read | `Coaching/Read/CoachReadView.swift` | Unlinked 2026-07-28 with the Coach tab. Intact. |
+| Model of You | `Coaching/ModelOfYou/ModelOfYouView.swift` | Never mounted. |
+| Signal Lab | `Analysis/SignalLabView.swift` | Reachable only via the `lab ›` door in the Trends header. |
+| Trends v1 | `Trends/TrendsLegacyTabView.swift` | DEBUG-only, behind the `v1 ›` door. Holds the pace spectrum, threshold miles and race prediction. |
 
-**Until Phase 3 lands**, code still ships 5 tabs. Don't add new
-surfaces to the soon-to-be-removed Plan tab. Don't build "Runs" as
-a separate tab.
+Before adding a surface, check whether the thing you want already
+exists and simply has no door. Before deleting one, check the same.
 
 ### Known iOS drift from the spec
 
@@ -603,6 +665,11 @@ Highlights:
 
 ## Files worth knowing about
 
+- `supabase/functions/_shared/analyzers/` — the Ask analyzer registry
+  (contract in `types.ts`, registration in `index.ts`, row adapters in
+  `data.ts`). Phase A: `compare_session`, `zone_trend`, `load_balance`.
+- `supabase/functions/_shared/narration-guard.ts` — the Layer-2 number guard
+  shared by Ask and `compare-workouts`
 - `supabase/functions/_shared/dataAnalysis.ts` — quant analytics
   (ACWR, volume, compliance, fatigue extraction)
 - `supabase/functions/_shared/weeklyAnalytics.ts` — shared types

@@ -46,6 +46,12 @@ final class TrendsService {
     /// longer than two minutes. The Trends row hides itself in that case
     /// rather than rendering a guessed band.
     private(set) var paceBands: PaceBands?
+    /// The adjustable-band substrate — every lap of every session plus the
+    /// week's race-pace ladder, so band width, anchor and minimums are decided
+    /// on device. `nil` against a backend that predates `bandLaps.ts`, or when
+    /// the athlete has no usable fitness anchor; the threshold section then
+    /// falls back to the fixed `paceBands` read.
+    private(set) var bandLaps: BandLaps?
     /// Implausible runs the timeline set aside (watch-not-paused etc.),
     /// undecided — surfaced to Trim or Keep. Never deleted.
     private(set) var flagged: [TrendsFlaggedRun] = []
@@ -65,13 +71,15 @@ final class TrendsService {
         days: [TrendsDay] = [],
         keySessions: [KeySession] = [],
         keyVolume: [QualityVolumeWeek] = [],
-        paceBands: PaceBands? = nil
+        paceBands: PaceBands? = nil,
+        bandLaps: BandLaps? = nil
     ) {
         self.weeks = weeks
         self.days = days
         self.keySessions = keySessions
         self.keyVolume = keyVolume
         self.paceBands = paceBands
+        self.bandLaps = bandLaps
         self.loaded = true
     }
 
@@ -93,6 +101,7 @@ final class TrendsService {
             keyVolume = (payload.qualityVolume ?? []).map { $0.toModel() }
             fastSegments = payload.fastSegments?.toData() ?? .empty
             paceBands = payload.paceBands?.toModel()
+            bandLaps = payload.bandLaps?.toModel()
             loaded = true
             lastError = nil
             Log.coach.info("Trends timeline loaded (\(self.weeks.count) weeks)")
@@ -216,6 +225,11 @@ private struct TrendsTimelinePayload: Decodable {
     /// Optional: any deploy predating `paceBands.ts` omits it, and the module
     /// itself returns null when there's no usable anchor.
     let paceBands: PaceBandsDTO?
+    /// The un-bucketed sibling of `pace_bands` — raw laps plus each week's
+    /// race-pace ladder, so the Signal Lab's band can be re-anchored and
+    /// re-widened on device. Optional for the same reason: a deploy predating
+    /// `bandLaps.ts` omits it, and the section falls back to the fixed band.
+    let bandLaps: BandLapsDTO?
 
     enum CodingKeys: String, CodingKey {
         case weeks, days, flagged, trimmed
@@ -223,6 +237,7 @@ private struct TrendsTimelinePayload: Decodable {
         case qualityVolume = "quality_volume"
         case fastSegments = "fast_segments"
         case paceBands = "pace_bands"
+        case bandLaps = "band_laps"
     }
 }
 

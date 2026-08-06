@@ -212,7 +212,20 @@ async function applyHeatToLaps(
     .select("id, distance_meters, avg_pace_sec_per_mile, is_rest")
     .eq("workout_id", workoutId);
   if (!laps || laps.length === 0) return;
-  for (const lap of laps as Array<{ id: string | number; distance_meters: number | null; avg_pace_sec_per_mile: number | null; is_rest: boolean | null }>) {
+
+  const typedLaps = laps as Array<{ id: string | number; distance_meters: number | null; avg_pace_sec_per_mile: number | null; is_rest: boolean | null }>;
+
+  // Rep-length scaling is earned by standing still between bouts, not by a lap
+  // happening to be short. The mile splits of a continuous run are ONE bout
+  // carved up: scaling each of them lands them mid-ramp at 0.67× and silently
+  // cuts the run's adjustment by a third. Decide once, per workout.
+  const isIntervalGeometry = typedLaps.some((l) => l.is_rest === true);
+
+  // Threshold pace for intensity scaling of the CREDIT. Absent → the engine
+  // falls back to the chart as published, which is the conservative direction.
+  const thresholdPace = await thresholdPaceForWorkout(supabase, workoutId);
+
+  for (const lap of typedLaps) {
     const pace = Number(lap.avg_pace_sec_per_mile);
     const distMi = Number(lap.distance_meters) / 1609.34;
     const runnable = lap.is_rest !== true && Number.isFinite(pace) && pace > 0;
@@ -220,15 +233,19 @@ async function applyHeatToLaps(
       runnable ? pace : 600,
       tempF,
       dewF,
-      Number.isFinite(distMi) ? distMi : null,
+      isIntervalGeometry && Number.isFinite(distMi) ? distMi : null,
+      thresholdPace,
     );
     const heatAdj = runnable ? Math.round(a.neutralEquivalentPaceSeconds) : null;
     // Write ALL the heat columns, not just the pace. Leaving score/pct/category
     // to the SQL migration path is how the two writers drifted: that path had no
     // rep-length scaling, so short reps got the full penalty while laps this
     // function touched got the correct half. One writer now, one answer.
-    // `heat_adjustment_pct` is the EFFECTIVE fraction (after rep scaling), so it
-    // always reconciles with heat_adjusted_pace_sec_per_mile.
+    // `heat_adjustment_pct` is the CREDIT fraction (after BOTH rep-length and
+    // intensity scaling), so it always reconciles with
+    // heat_adjusted_pace_sec_per_mile. It is NOT the prescriptive figure — a
+    // target to run today uses effectiveAdjustmentPercent, which omits the
+    // intensity scaling. See the header of _shared/pace-heat-adjustment.ts.
     await supabase
       .from("running_workout_laps")
       .update({
@@ -237,10 +254,45 @@ async function applyHeatToLaps(
         heat_adjusted_pace_sec_per_mile: heatAdj,
         heat_composite_score: a.compositeScore,
         heat_category: a.heatCategory,
-        heat_adjustment_pct: runnable ? a.effectiveAdjustmentPercent : null,
+        heat_adjustment_pct: runnable ? a.creditAdjustmentPercent : null,
+        heat_intensity_factor: runnable ? a.intensityFactor : null,
       })
       .eq("id", lap.id);
   }
+}
+
+/** The athlete's LT pace for this workout, for intensity scaling of the heat
+ *  credit. Prefers the `threshold` zone (written by paces.ts's
+ *  oneHourPaceSecPerMile); older blobs predate that key, so fall back to `hm`.
+ *  HM is slower than LT for every runner whose half takes under an hour and
+ *  much slower for everyone else, which makes the ratio lower and the discount
+ *  smaller — the fallback errs toward the chart as published rather than
+ *  inventing a discount on an athlete we can't classify confidently. */
+async function thresholdPaceForWorkout(
+  supabase: SupabaseClientLike,
+  workoutId: string,
+): Promise<number | null> {
+  const { data: log } = await supabase
+    .from("training_logs")
+    .select("user_id")
+    .eq("id", workoutId)
+    .maybeSingle();
+  const userId = (log as { user_id?: string } | null)?.user_id;
+  if (!userId) return null;
+
+  const { data: state } = await supabase
+    .from("athlete_state")
+    .select("pace_zones")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const zones = (state as { pace_zones?: Record<string, unknown> } | null)?.pace_zones;
+  if (!zones) return null;
+
+  for (const key of ["threshold", "hm"]) {
+    const v = Number(zones[key]);
+    if (Number.isFinite(v) && v > 0) return v;
+  }
+  return null;
 }
 
 /** Local date (YYYY-MM-DD) + local hour from a run's metadata. Strava's

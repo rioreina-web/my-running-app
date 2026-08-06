@@ -54,7 +54,7 @@ export type Zone =
 
 // Zones at or faster than MP count as "work" (faster than steady). Anything
 // slower is aerobic background (easy/steady running, warmup, cooldown, float).
-const WORK_ZONES: ReadonlySet<Zone> = new Set<Zone>(["mile", "3k", "5k", "10k", "hmp", "mp"]);
+export const WORK_ZONES: ReadonlySet<Zone> = new Set<Zone>(["mile", "3k", "5k", "10k", "hmp", "mp"]);
 // Race-pace-and-faster — these drive `hard_seconds`.
 const HARD_ZONES: ReadonlySet<Zone> = new Set<Zone>(["mile", "3k", "5k", "10k"]);
 // The threshold band drives `threshold_seconds`.

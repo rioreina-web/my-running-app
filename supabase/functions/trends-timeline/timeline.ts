@@ -306,6 +306,26 @@ function isIncluded(log: TimelineLog): boolean {
   return isPlausibleRun(log);                      // undecided → heuristic
 }
 
+/**
+ * The canonical "which runs count" pipeline: running only → the athlete's
+ * inclusion decision → one row per physical workout.
+ *
+ * Exported because it is NOT optional for anything that reads training_logs
+ * for analytics. Skipping it double-counts every run the athlete both synced
+ * and spoke about: on the live athlete, four sessions in a 90-day window carry
+ * a `strava` row and a `voice_log` row with identical timestamp, distance,
+ * duration and lap count, including the two largest threshold sessions in the
+ * block. `pace_bands` and `band_laps` both bypassed this and reported those
+ * sessions twice — see the header note in `bandLaps.ts`.
+ */
+export function analyticsRunLogs(logs: TimelineLog[]): TimelineLog[] {
+  const running = logs.filter((l) => {
+    const type = (l.workout_type ?? "").toLowerCase();
+    return !NON_RUNNING_TYPES.has(type) && (l.workout_distance_miles ?? 0) > 0;
+  });
+  return dedupeRunLogs(running.filter(isIncluded));
+}
+
 /// One row per physical workout. Per UTC day: if a GPS row exists, drop
 /// voice_log rows; cluster remaining by distance (±0.1 mi); within a
 /// cross-source cluster keep the highest-priority source, else keep all
@@ -407,15 +427,10 @@ export function buildTrendsTimeline(
   const featuresById = new Map<string, TimelineFeature>();
   for (const f of input.features) featuresById.set(f.training_log_id, f);
 
-  // Running logs only, with a parsed day for bucketing.
-  const running = input.logs.filter((l) => {
-    const type = (l.workout_type ?? "").toLowerCase();
-    return !NON_RUNNING_TYPES.has(type) && (l.workout_distance_miles ?? 0) > 0;
-  });
-  // Included = athlete's decision (stats_excluded) overriding the heuristic.
-  // Excluded runs aren't deleted — see flaggedRuns()/trimmedRuns().
-  const included = running.filter(isIncluded);
-  const deduped = dedupeRunLogs(included);
+  // Running only → included (the athlete's stats_excluded decision overriding
+  // the heuristic) → one row per physical workout. Excluded runs aren't
+  // deleted — see flaggedRuns()/trimmedRuns().
+  const deduped = analyticsRunLogs(input.logs);
   const runLogs = deduped.map((l) => ({ log: l, t: dayUTC(l.workout_date).getTime() }));
 
   const mentionsWithT = input.mentions.map((m) => ({
@@ -507,13 +522,9 @@ export function buildDailyTimeline(
   const featuresById = new Map<string, TimelineFeature>();
   for (const f of input.features) featuresById.set(f.training_log_id, f);
 
-  // Running miles: same filter → include (athlete decision) → dedup pipeline
-  // as the weekly builder, then grouped by UTC day.
-  const running = input.logs.filter((l) => {
-    const type = (l.workout_type ?? "").toLowerCase();
-    return !NON_RUNNING_TYPES.has(type) && (l.workout_distance_miles ?? 0) > 0;
-  });
-  const deduped = dedupeRunLogs(running.filter(isIncluded));
+  // The same pipeline as the weekly builder — literally, not by restatement —
+  // then grouped by UTC day. The anti-drift test pins daily sums to weekly.
+  const deduped = analyticsRunLogs(input.logs);
   const runsByDay = new Map<string, TimelineLog[]>();
   for (const l of deduped) {
     const key = isoDate(dayUTC(l.workout_date));

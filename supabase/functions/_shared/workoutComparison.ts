@@ -42,6 +42,12 @@ import {
   type WorkoutKind,
   type Zone,
 } from "./workoutSegmentation.ts";
+import {
+  densityFromBouts,
+  describeDensityDiff,
+  gradeFactor,
+  type DensityProfile,
+} from "./effortModel.ts";
 
 const METERS_PER_MILE = 1609.344;
 
@@ -190,7 +196,15 @@ export interface WorkProfile {
   qualityVolumeMeters: number; // dominant-zone work distance
   qualityVolumeSeconds: number; // dominant-zone work time
   tempF: number | null;
+  /** Dew point, F. The heat model's actual driver — `tempF` alone can't tell a
+   *  75F-dew slog from a dry morning at the same temperature. */
+  dewPointF: number | null;
   hasHr: boolean;
+  /** Rep-block density — work relative to the recovery that bought it. The
+   *  measurement `avgRecoverySec` alone can't give: 60s between 1K reps and
+   *  60s between 400s are not the same session. Baseline-free here (a
+   *  head-to-head needs no reference), so `multiplier` stays 1.0. */
+  density: DensityProfile;
 }
 
 // ── Comparability ──
@@ -413,16 +427,9 @@ function wholeRunMetrics(bouts: Bout[]): WholeRun {
   return { distanceMeters: Math.round(distanceMeters), durationSec: Math.round(durationSec), avgPaceSec, avgHr, decouplingPct };
 }
 
-// Grade-adjustment model (lap-level, documented + capped — labeled MODEL in the
-// UI, same posture as heat-adjusted pace). Uphill costs more than downhill saves.
-const GRADE_MAX_PCT = 8;
-const GRADE_K_UP = 0.03; // per +1% grade: ~3% "faster-equivalent" credit
-const GRADE_K_DOWN = 0.015; // per −1% grade: smaller discount
-
-function gradeFactor(gradePct: number): number {
-  const g = Math.max(-GRADE_MAX_PCT, Math.min(GRADE_MAX_PCT, gradePct));
-  return g >= 0 ? 1 - GRADE_K_UP * g : 1 - GRADE_K_DOWN * g;
-}
+// Grade-adjustment model now lives in `effortModel.ts` (imported above) so the
+// comparison and the effort/load path can never drift to two different grade
+// curves. Same posture as before: documented, capped, labeled MODEL in the UI.
 
 interface Environment {
   elevationGainM: number;
@@ -532,10 +539,12 @@ export function buildWorkProfile(
     fadePct: null,
     avgRecoverySec: null,
     recoveryHrDropBpm: null,
+    density: densityFromBouts([]),
     avgWorkHr: null,
     qualityVolumeMeters: 0,
     qualityVolumeSeconds: 0,
     tempF: numOrNull(workout.weather?.temp_f),
+    dewPointF: numOrNull(workout.weather?.dew_point_f),
     hasHr: false,
   };
 
@@ -669,6 +678,7 @@ export function buildWorkProfile(
     qualityVolumeMeters: Math.round(volM),
     qualityVolumeSeconds: Math.round(volS),
     hasHr: hrSec > 0,
+    density: densityFromBouts(seg.bouts),
   };
 }
 
@@ -992,6 +1002,10 @@ export function buildFactLines(
       `Avg recovery between reps: ${Math.round(diff.avgRecoverySec.a)}s -> ${Math.round(diff.avgRecoverySec.b)}s (${signed(diff.avgRecoverySec.delta, "s")})`,
     );
   }
+  // Density — what the recovery bought, relative to the work it separated.
+  // Stated as measurement only: no "harder", no ranking. The rest ratio is the
+  // shape-independent figure, so 10×1K and 6×mile stay comparable on it.
+  lines.push(...describeDensityDiff(a.density, b.density));
   if (diff.recoveryHrDropBpm) {
     lines.push(
       `HR drop in recoveries: ${Math.round(diff.recoveryHrDropBpm.a)} bpm -> ${Math.round(diff.recoveryHrDropBpm.b)} bpm (${signed(diff.recoveryHrDropBpm.delta, " bpm")}; a bigger drop means the heart came down faster)`,
@@ -1018,6 +1032,19 @@ export function buildFactLines(
   if (diff.tempF) {
     lines.push(
       `Temperature: ${Math.round(diff.tempF.a)}F -> ${Math.round(diff.tempF.b)}F (${signed(diff.tempF.delta, "F")})`,
+    );
+  }
+  // Dew point + heat category. Temperature alone under-describes the day: the
+  // heat model is driven by DEW POINT, so a fact line that stops at "78F" lets
+  // the verdict describe a 75F-dew slog and a dry 78F morning identically. The
+  // numbers were on the profile all along and simply never reached the prompt.
+  const dewA = a.dewPointF, dewB = b.dewPointF;
+  if (dewA != null || dewB != null) {
+    lines.push(
+      `Dew point: ${dewA != null ? `${Math.round(dewA)}F` : "unavailable"} -> ` +
+      `${dewB != null ? `${Math.round(dewB)}F` : "unavailable"}` +
+      `${a.heatCategory || b.heatCategory ? ` (${a.heatCategory ?? "unknown"} -> ${b.heatCategory ?? "unknown"})` : ""}` +
+      ` — dew point drives the heat model, not temperature alone`,
     );
   }
   if (diff.unavailable.length > 0) {
