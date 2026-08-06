@@ -43,6 +43,10 @@ export interface TimelineLog {
   // Per-segment splits, used to count quality mile-by-mile rather than
   // all-or-nothing on the whole workout.
   pace_segments?: QualitySegment[] | null;
+  // The real per-workout internal-load unit. NULL on every row until the
+  // 20260731120000 backfill runs; the demand term degrades to duration x
+  // intensity in the meantime.
+  stress_load?: number | null;
 }
 
 export interface TimelineFeature {
@@ -131,6 +135,13 @@ export interface TrendsDayOut {
   resting_hr?: number | null;
   sleep_total_min?: number | null;
   sleep_quality?: string | null; // 'rough' | 'ok' | 'good'
+  // Load inputs for the recovery-need DEMAND term (2026-08-06,
+  // `outputs/recovery-need-model-2026-08-06.md` §2). Summed over the day's
+  // deduped runs. `duration_min` is 0 on a rest day; `stress_load` is null
+  // until its backfill runs, which is what makes the fallback ladder in
+  // `TrendsRecoveryDemand.sessionLoad` necessary rather than defensive.
+  duration_min?: number | null;
+  stress_load?: number | null;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────
@@ -556,6 +567,33 @@ export function buildDailyTimeline(
     reference.getUTCDate(),
   ));
 
+  // A paused watch produces rows like "10 mi in 236 min", and the demand
+  // term's EWMA would carry that artifact for six weeks. The design doc clips
+  // at a fixed 14 min/mi, but a hardcoded pace constant is exactly what this
+  // repo forbids (see `feedback_no_hardcoded_paces` — all paces come from real
+  // data), and 14 min/mi is also simply wrong for some athletes. So the gate is
+  // ATHLETE-RELATIVE: anything slower than twice the athlete's own median pace
+  // in this window is re-imputed at that median. Self-calibrating, no constant.
+  const observedPaces: number[] = [];
+  for (const l of deduped) {
+    const mi = l.workout_distance_miles ?? 0;
+    const min = l.workout_duration_minutes ?? 0;
+    if (mi > 0 && min > 0) observedPaces.push(min / mi);
+  }
+  observedPaces.sort((a, b) => a - b);
+  const medianPace = observedPaces.length > 0
+    ? observedPaces[Math.floor(observedPaces.length / 2)]
+    : null;
+
+  /** Duration in minutes, with the paused-watch artifact re-imputed. */
+  const cleanDuration = (l: TimelineLog): number => {
+    const min = l.workout_duration_minutes ?? 0;
+    const mi = l.workout_distance_miles ?? 0;
+    if (min <= 0) return 0;
+    if (medianPace === null || mi <= 0) return min;
+    return min / mi > 2 * medianPace ? mi * medianPace : min;
+  };
+
   const out: TrendsDayOut[] = [];
   for (
     const d = new Date(firstStart);
@@ -565,6 +603,14 @@ export function buildDailyTimeline(
     const key = isoDate(d);
     const dayRuns = runsByDay.get(key) ?? [];
     const miles = dayRuns.reduce((s, l) => s + (l.workout_distance_miles ?? 0), 0);
+    const durationMin = dayRuns.reduce((s, l) => s + cleanDuration(l), 0);
+    // Null (not 0) when NO run that day carries a stress_load — 0 would be
+    // indistinguishable from a genuinely zero-load day and would poison the
+    // chronic baseline once the backfill lands.
+    const stressRuns = dayRuns.filter((l) => typeof l.stress_load === "number");
+    const stressLoad = stressRuns.length > 0
+      ? stressRuns.reduce((s, l) => s + (l.stress_load ?? 0), 0)
+      : null;
 
     let type: TrendsDayOut["type"] = "rest";
     if (dayRuns.length > 0) {
@@ -589,6 +635,8 @@ export function buildDailyTimeline(
       // distribution over separate days, a different question.
       mood: hardestSessionMood(moodLogsByDay.get(key) ?? [], featuresById),
       niggles,
+      duration_min: Math.round(durationMin),
+      stress_load: stressLoad,
     });
   }
   return out;

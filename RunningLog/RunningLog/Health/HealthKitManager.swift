@@ -57,6 +57,23 @@ class HealthKitManager: ObservableObject {
         if let steps = HKQuantityType.quantityType(forIdentifier: .stepCount) {
             types.insert(steps)
         }
+        // Overnight recovery trio, read by `HealthBiometricsSync` and pushed to
+        // `daily_biometrics` (source 'healthkit'). Watch-only in practice — a
+        // phone-only athlete grants these and simply has no samples, which the
+        // sync reports honestly rather than fabricating.
+        //
+        // NOTE: `.heartRateVariabilitySDNN` is Apple's ONLY HRV type, and SDNN
+        // is not the RMSSD that Garmin-via-Junction reports. They must never be
+        // pooled — see the header of `ingest-biometrics/index.ts`.
+        if let hrv = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) {
+            types.insert(hrv)
+        }
+        if let restingHR = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) {
+            types.insert(restingHR)
+        }
+        if let sleep = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+            types.insert(sleep)
+        }
         return types
     }
 
@@ -134,6 +151,44 @@ class HealthKitManager: ObservableObject {
         }
     }
 
+    /// Bump whenever `typesToRead` GAINS a type.
+    /// v2 (2026-08-06): added sleepAnalysis + restingHeartRate + HRV SDNN.
+    private static let readTypesVersion = 2
+    private static let readTypesVersionKey = "healthKitReadTypesVersion"
+
+    /// Re-present the permission sheet once after `typesToRead` grows.
+    ///
+    /// Necessary because `checkAuthorizationStatus()` probes for visible data
+    /// FIRST and returns `.visibleData` early — deliberately, so that adding a
+    /// type doesn't demote an existing user to "not authorized". The side
+    /// effect is that an existing user is never re-asked, so a newly added
+    /// type stays permanently unrequested and its queries return empty with no
+    /// error. That is indistinguishable from "this athlete has no watch", and
+    /// it is exactly how a recovery feature ships to zero users and looks fine.
+    ///
+    /// HealthKit only lists types the user hasn't handled yet, so an existing
+    /// athlete sees a short sheet (Sleep, Resting HR, HRV) and someone who has
+    /// already handled them sees nothing at all.
+    ///
+    /// Deliberately does nothing when the FIRST sheet was never handled —
+    /// onboarding owns that moment and shouldn't be pre-empted on launch.
+    func ensureAuthorizationCoversCurrentTypes() async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let defaults = UserDefaults.standard
+        guard defaults.integer(forKey: Self.readTypesVersionKey) < Self.readTypesVersion else { return }
+        if readState == .unknown { await checkAuthorizationStatus() }
+        guard readState != .notDetermined, readState != .unavailable else { return }
+
+        do {
+            try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
+            defaults.set(Self.readTypesVersion, forKey: Self.readTypesVersionKey)
+            await checkAuthorizationStatus()
+        } catch {
+            // Leave the version unset so the next launch retries.
+            Log.health.error("HealthKit re-authorization failed: \(error.localizedDescription)")
+        }
+    }
+
     func requestAuthorization() async -> Bool {
         guard HKHealthStore.isHealthDataAvailable() else {
             Log.health.warning("HealthKit not available on this device")
@@ -146,6 +201,9 @@ class HealthKitManager: ObservableObject {
 
         do {
             try await healthStore.requestAuthorization(toShare: [], read: typesToRead)
+            // The sheet has now covered the current type set — record it so
+            // `ensureAuthorizationCoversCurrentTypes` doesn't ask again.
+            UserDefaults.standard.set(Self.readTypesVersion, forKey: Self.readTypesVersionKey)
             // A non-throwing return does NOT mean granted — HealthKit
             // reports success on "Don't Allow" too. Probe what's actually
             // visible instead of assuming.

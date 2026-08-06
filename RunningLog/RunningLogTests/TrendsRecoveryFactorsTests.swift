@@ -90,7 +90,12 @@ struct RecoveryClearDaysTests {
     /// old one was for ordinary training.
     @Test("no ordinary streak length scores worse than zero")
     func ordinaryStreaksNeverNegative() {
-        for streak in 0...13 {
+        // `block(streak + 2, clearAt: [0])` read at `streak + 1` gives the
+        // factor `since == streak + 1`, so the loop bound runs one ahead of
+        // the ladder's bands. 12 is the last streak that stays inside the
+        // non-negative 8...13 band; 13 lands on 14, which the ladder scores
+        // −3 deliberately. The old 0...13 bound crossed that line by one.
+        for streak in 0...12 {
             let days = block(streak + 2, clearAt: [0])
             let f = TrendsRecoveryFactors.clearDays(days: days, at: streak + 1)
             #expect(f.points >= 0, "streak of \(streak) scored \(f.points)")
@@ -172,6 +177,23 @@ struct RecoveryMoodTests {
     func evidenceDeduplicates() {
         let f = TrendsRecoveryFactors.mood(days: moodBlock(["tired", "tired", "tired"]), at: 2)
         #expect(f.evidence.hasPrefix("TIRED · 3 days in 7"))
+    }
+
+    /// The 2026-08-06 asymmetry. A big session can leave an athlete elated in
+    /// the moment yet needing days to recover, so mood's UPSIDE is capped small
+    /// (energized +4, matching a good sleep — no larger) while the DOWNSIDE
+    /// keeps full weight (a dragging self-report is the evidenced early signal).
+    /// Reverting energized to +12 / positive to +7 would let a good feeling
+    /// lift the score out of a load-driven hole — this pins that shut.
+    @Test("positive mood upside is capped; negative keeps full weight")
+    func moodUpsideIsCapped() {
+        #expect(TrendsRecoveryFactors.mood(days: moodBlock(["energized"]), at: 0).points == 4)
+        #expect(TrendsRecoveryFactors.mood(days: moodBlock(["positive"]), at: 0).points == 2)
+        // Downside unchanged — feeling wrecked is still a real signal.
+        #expect(TrendsRecoveryFactors.mood(days: moodBlock(["struggling"]), at: 0).points == -14)
+        #expect(TrendsRecoveryFactors.mood(days: moodBlock(["injured"]), at: 0).points == -18)
+        // And the upside is no bigger than a good night's sleep.
+        #expect(TrendsRecoveryFactors.mood(days: moodBlock(["energized"]), at: 0).points <= 4)
     }
 }
 
@@ -323,9 +345,25 @@ struct RecoveryCarriedOverBodyBaselineTests {
 @Suite("TrendsRecoveryFactors.all")
 struct RecoveryAssemblyTests {
 
-    @Test("five factors on any day past the first")
-    func fiveFactors() {
-        #expect(TrendsRecoveryFactors.all(days: block(60), at: 59).count == 5)
+    /// Four past the warm-up gate, not the old five: the demand swap
+    /// (2026-08-06) replaced the two overlapping load ratios — `Recent load`
+    /// and `Load` — with the single `Recovery need` term. One row left the
+    /// receipt; no signal did.
+    @Test("four factors on any day past the warm-up gate")
+    func fourFactors() {
+        let factors = TrendsRecoveryFactors.all(days: block(60), at: 59)
+        #expect(factors.count == 4)
+        #expect(factor("Recovery need", factors) != nil)
+    }
+
+    /// Below the gate the need index is untrustworthy, so the previous load
+    /// pair still carries those windows — and the receipt keeps its old shape.
+    @Test("below the warm-up gate the old load pair still ships")
+    func belowGateKeepsOldPair() {
+        let factors = TrendsRecoveryFactors.all(days: block(30), at: 29)
+        #expect(factors.count == 5)
+        #expect(factor("Load", factors) != nil)
+        #expect(factor("Recent load", factors) != nil)
     }
 
     /// Day zero has no yesterday, so recent load is absent rather than zero.
@@ -347,11 +385,25 @@ struct RecoveryAssemblyTests {
         #expect(total >= 60, "consistent block scored \(total)")
     }
 
+    /// The rule the mood cap exists to enforce (2026-08-06): a big recent
+    /// training load with an upbeat mood must NOT read as a good band. A hard
+    /// session can feel great in the moment and still need days to recover —
+    /// so a positive feeling cannot cancel the load-driven recovery need.
+    @Test("feeling good cannot lift a big-load day into a good band")
+    func feelingGoodCannotCancelLoad() {
+        var days = block(60, clearAt: [56])
+        for i in 57..<60 { days[i] = day(days[i].date, 20) }              // a heavy 3-day block
+        for i in 53..<60 { days[i] = day(days[i].date, days[i].miles, mood: "energized") }
+        let factors = TrendsRecoveryFactors.all(days: days, at: 59)
+        let total = TrendsRecoveryLedger.base + factors.reduce(0) { $0 + $1.points }
+        #expect(total < 60, "big load + energized scored \(total) — a good feeling cancelled the load")
+    }
+
     /// With both biometric pipelines carrying data, the receipt grows to
     /// seven rows — and the score stays byte-identical to five-factor
     /// arithmetic when neither has data (the previous two tests).
-    @Test("seven factors when overnight and sleep both have data")
-    func sevenFactorsWithBiometrics() {
+    @Test("six factors when overnight and sleep both have data")
+    func sixFactorsWithBiometrics() {
         var days = block(60)
         for i in 25..<60 {
             days[i].hrvRmssd = 60 + (i % 2 == 0 ? 4.0 : -4.0)
@@ -359,7 +411,9 @@ struct RecoveryAssemblyTests {
         }
         days[59].sleepQuality = "good"
         let factors = TrendsRecoveryFactors.all(days: days, at: 59)
-        #expect(factors.count == 7)
+        // Six, not the old seven — see `fourFactors`: the demand swap folded
+        // two load rows into one.
+        #expect(factors.count == 6)
         #expect(factor("Overnight", factors) != nil)
         #expect(factor("Sleep", factors)?.points == 4)
     }
@@ -396,7 +450,7 @@ struct RecoveryGroupingTests {
         let factors = TrendsRecoveryFactors.all(days: block(60), at: 59)
         #expect(factor("Mood", factors)?.hasData == false)
         #expect(factor("Body mentions", factors)?.hasData == true)
-        #expect(factor("Load", factors)?.hasData == true)
+        #expect(factor("Recovery need", factors)?.hasData == true)
     }
 }
 

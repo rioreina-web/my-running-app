@@ -633,6 +633,55 @@ struct TrendsRecoveryLedger {
 
     var band: Band { Band.of(total) }
 
+    // MARK: The quadrant read (2026-08-06)
+
+    /// Whether the athlete's own Tier-1 signals — sleep quality, soreness,
+    /// mood — are currently saying the recovery need is being met.
+    enum Supply { case holding, dragging }
+
+    /// Demand x supply. The number and the receipt are unchanged; this picks
+    /// the SENTENCE, and it is the whole point of splitting the score into two
+    /// terms (`outputs/recovery-need-model-2026-08-06.md` §4).
+    ///
+    /// `quietButDragging` is the cell a load-only score structurally cannot
+    /// produce — light training, low words — and it is precisely the cell that
+    /// caught the only real injury episode in Rio's 202 days. It exists only
+    /// because supply is a separate term that can speak while demand is quiet.
+    enum Quadrant {
+        case adaptingWell       // high demand · supply holding
+        case followingDown      // high demand · supply dragging — the flag
+        case fresh              // low demand  · supply holding
+        case quietButDragging   // low demand  · supply dragging — the tell
+        case unknown            // warm-up gate closed: no trustworthy demand
+
+        /// Describes and states; never prescribes. Every word here is checked
+        /// against the copy ban list (rest / ice / should / must / because /
+        /// caused / recovered / ready / risk).
+        var sentence: String {
+            switch self {
+            case .adaptingWell:
+                "A big block, and nothing on the recovery side is following it down."
+            case .followingDown:
+                "A big block, and your own signals are following it down."
+            case .fresh:
+                "Nothing's asking much of you, and nothing's dragging."
+            case .quietButDragging:
+                "Training is light, but your words are low — worth a look at sleep, life, a niggle."
+            case .unknown:
+                "Not enough training history yet to read the load side."
+            }
+        }
+    }
+
+    let quadrant: Quadrant
+
+    /// Tier-1 supply: the athlete's own words. Dragging when any words-sourced
+    /// factor is currently subtracting. Sleep and soreness lead here; mood is
+    /// the minor corroborator, which is already encoded in their point weights.
+    var supply: Supply {
+        factors.contains { $0.source == .words && $0.points < 0 } ? .dragging : .holding
+    }
+
     /// The arithmetic line: "Starts at 50 + 6 − 3 + 0 + 4 + 0 =".
     var arithmetic: String {
         let terms = factors.map { ($0.points >= 0 ? "+ " : "− ") + String(abs($0.points)) }
@@ -649,7 +698,7 @@ struct TrendsRecoveryLedger {
 
     static func ledger(days: [TrendsDay], at i: Int) -> TrendsRecoveryLedger {
         guard days.indices.contains(i) else {
-            return TrendsRecoveryLedger(factors: [], total: base, rawSum: base)
+            return TrendsRecoveryLedger(factors: [], total: base, rawSum: base, quadrant: .unknown)
         }
 
         // The five factors — mood over the trailing week, recent load, body
@@ -660,7 +709,23 @@ struct TrendsRecoveryLedger {
         let factors = TrendsRecoveryFactors.all(days: days, at: i)
 
         let raw = base + factors.reduce(0) { $0 + $1.points }
-        return TrendsRecoveryLedger(factors: factors, total: min(96, max(8, raw)), rawSum: raw)
+
+        // The quadrant needs supply, which is a property of the factors we
+        // just built — so it is derived here rather than inside the factor
+        // builder, keeping "what the words say" in exactly one place.
+        let dragging = factors.contains { $0.source == .words && $0.points < 0 }
+        let quadrant: Quadrant = switch TrendsRecoveryDemand.demandLevel(days: days, at: i) {
+        case .high: dragging ? .followingDown : .adaptingWell
+        case .low: dragging ? .quietButDragging : .fresh
+        case .unknown: .unknown
+        }
+
+        return TrendsRecoveryLedger(
+            factors: factors,
+            total: min(96, max(8, raw)),
+            rawSum: raw,
+            quadrant: quadrant
+        )
     }
 }
 

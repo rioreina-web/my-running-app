@@ -219,10 +219,18 @@ struct MainTabView: View {
                     // Auto-sync HealthKit workouts to training_logs on launch.
                     // Vital replaced by HealthKit for V1 — Terra integration planned for V1.1.
                     _ = await HealthKitManager.shared.requestAuthorization()
+                    // Existing athletes granted a smaller type set and are never
+                    // re-asked by the probe path, so the overnight trio would
+                    // stay unrequested and silently empty. One-time top-up.
+                    await HealthKitManager.shared.ensureAuthorizationCoversCurrentTypes()
                     let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
                     if !hkWorkouts.isEmpty {
                         await WorkoutSyncService().syncUnloggedWorkouts(workouts: hkWorkouts)
                     }
+                    // Sleep / resting HR / HRV → daily_biometrics. Feeds the
+                    // recovery ledger's Overnight + Sleep factors, which have
+                    // had no producer since Vital went quiet on 2026-04-03.
+                    await HealthBiometricsSync.shared.sync()
                 }()
                 _ = await (profile, paceProfile, paceZones, dailyRead, maxHRSync, tzSync, healthKitSync)
             }

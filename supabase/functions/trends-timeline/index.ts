@@ -43,8 +43,13 @@ import { buildBandLaps } from "./bandLaps.ts";
 import type { ZoneTable } from "../_shared/quality-volume.ts";
 import { fetchQualityLaps } from "../_shared/qualityLaps.ts";
 
+// `stress_load` is the real per-workout internal-load unit. It is NULL on
+// every row today (the 20260731120000 migration is applied but its backfill
+// has never been run), so the demand term falls back to duration x intensity.
+// Selecting it now means demand upgrades itself the moment that backfill runs,
+// with no further deploy — see `TrendsRecoveryDemand.sessionLoad`.
 const LOG_COLS_BASE =
-  "id, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, mood, source, pace_segments";
+  "id, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, mood, source, pace_segments, stress_load";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -204,29 +209,44 @@ Deno.serve(async (req: Request) => {
     // and daily_checkins (the one-tap self-report). Feeds the recovery
     // ledger's Overnight + Sleep factors. Errors leave the days untouched —
     // supabase-js reports errors in-band, so a missing table (migration not
-    // yet pushed) degrades to no decoration, never a 500. Only one source
-    // ('garmin') exists today; if more arrive, last row per date wins.
+    // yet pushed) degrades to no decoration, never a 500.
+    //
+    // TWO producers now write `daily_biometrics`: 'garmin' (vital-webhook,
+    // RMSSD) and 'healthkit' (ingest-biometrics, SDNN). Those are different
+    // metrics on different scales. Taking "last row per date wins" would
+    // interleave them across a window and manufacture a step change the
+    // Overnight factor reads as a real physiological shift. So we PIN one
+    // source for the whole window before decorating anything — see
+    // `pickBiometricSource` below.
     try {
       const [bio, checkins] = await Promise.all([
         supabase
           .from("daily_biometrics")
-          .select("date, hrv_rmssd, resting_hr, sleep_total_min")
+          .select("date, source, hrv_rmssd, resting_hr, sleep_total_min")
           .eq("user_id", userId)
           .gte("date", since),
         supabase
           .from("daily_checkins")
-          .select("date, sleep_quality")
+          .select("date, sleep_quality, mood")
           .eq("user_id", userId)
           .gte("date", since),
       ]);
+      const bioRows = (bio.data ?? []) as Array<Record<string, unknown>>;
+      const pinnedSource = pickBiometricSource(bioRows);
       const bioByDate = new Map<string, Record<string, unknown>>();
-      for (const r of (bio.data ?? []) as Array<Record<string, unknown>>) {
+      for (const r of bioRows) {
+        if (pinnedSource !== null && r.source !== pinnedSource) continue;
         bioByDate.set(String(r.date).slice(0, 10), r);
       }
       const qualByDate = new Map<string, string>();
+      const moodByDate = new Map<string, string>();
       for (const r of (checkins.data ?? []) as Array<Record<string, unknown>>) {
+        const key = String(r.date).slice(0, 10);
         if (typeof r.sleep_quality === "string") {
-          qualByDate.set(String(r.date).slice(0, 10), r.sleep_quality);
+          qualByDate.set(key, r.sleep_quality);
+        }
+        if (typeof r.mood === "string" && r.mood) {
+          moodByDate.set(key, r.mood.toLowerCase());
         }
       }
       for (const d of days) {
@@ -238,6 +258,13 @@ Deno.serve(async (req: Request) => {
         }
         const q = qualByDate.get(d.date);
         if (q) d.sleep_quality = q;
+        // Mood from the one-tap check-in FILLS IN only when no run carried a
+        // mood that day. A run-attached mood (hardest-session, from a voice
+        // log) is contemporaneous with the effort and wins; the check-in
+        // rescues the many days — rest days, unlogged runs — that had nothing.
+        // This is the coverage gap the 2026-08-05 backtest measured.
+        const m = moodByDate.get(d.date);
+        if (m && !d.mood) d.mood = m;
       }
     } catch (e) {
       console.error("[trends-timeline] sleep/biometrics decoration skipped:", e);
@@ -384,6 +411,44 @@ function clampWeeks(raw: unknown): number {
   const n = typeof raw === "number" ? Math.floor(raw) : MAX_WEEKS;
   if (Number.isNaN(n)) return MAX_WEEKS;
   return Math.min(MAX_WEEKS, Math.max(MIN_WEEKS, n));
+}
+
+/**
+ * Choose the ONE `daily_biometrics.source` to read for this window.
+ *
+ * Garmin (via Junction) reports HRV as RMSSD; Apple Health reports SDNN. Same
+ * column, different metric, different scale. The Overnight factor compares an
+ * athlete's trailing 7 nights against their own 28-day baseline at 0.5x their
+ * own SD — that is scale-free and so tolerates either metric perfectly well,
+ * but ONLY if every night in both windows came from the same producer. Mixing
+ * them puts a producer-shaped step change inside the comparison.
+ *
+ * Rule: the source with the most nights in the window wins; 'garmin' breaks a
+ * tie because RMSSD is the metric the design and its literature base are
+ * written against. Deliberately NOT a fixed garmin-always preference — an
+ * athlete with 3 stale Garmin nights and 180 Apple nights would otherwise fall
+ * below the factor's 5-night floor and see the Overnight factor vanish.
+ *
+ * Returns null when there are no rows, in which case nothing is filtered.
+ */
+function pickBiometricSource(rows: Array<Record<string, unknown>>): string | null {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const s = typeof r.source === "string" ? r.source : "";
+    if (!s) continue;
+    counts.set(s, (counts.get(s) ?? 0) + 1);
+  }
+  if (counts.size === 0) return null;
+
+  let best: string | null = null;
+  let bestCount = -1;
+  for (const [source, count] of counts) {
+    if (count > bestCount || (count === bestCount && source === "garmin")) {
+      best = source;
+      bestCount = count;
+    }
+  }
+  return best;
 }
 
 /**

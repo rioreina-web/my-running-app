@@ -256,6 +256,11 @@ private struct TrendsDayDTO: Decodable {
     let restingHr: Double?
     let sleepTotalMin: Int?
     let sleepQuality: String?
+    /// Load inputs for the recovery-need demand term (additive, 2026-08-06).
+    /// Optional for the same reason as the biometrics: a deploy predating them
+    /// omits them, and the demand term then degrades to miles x intensity.
+    let durationMin: Int?
+    let stressLoad: Double?
 
     enum CodingKeys: String, CodingKey {
         case date, miles, type, mood, niggles
@@ -263,6 +268,8 @@ private struct TrendsDayDTO: Decodable {
         case restingHr = "resting_hr"
         case sleepTotalMin = "sleep_total_min"
         case sleepQuality = "sleep_quality"
+        case durationMin = "duration_min"
+        case stressLoad = "stress_load"
     }
 
     struct DayNiggleDTO: Decodable {
@@ -286,7 +293,9 @@ private struct TrendsDayDTO: Decodable {
             hrvRmssd: hrvRmssd,
             restingHr: restingHr,
             sleepTotalMin: sleepTotalMin,
-            sleepQuality: sleepQuality
+            sleepQuality: sleepQuality,
+            durationMin: durationMin,
+            stressLoad: stressLoad
         )
     }
 }

@@ -123,6 +123,19 @@ struct TrendsDay: Identifiable {
     /// ('rough' | 'ok' | 'good'), or nil when unrated. The Tier-1 signal.
     var sleepQuality: String? = nil
 
+    // Load inputs for the recovery-need DEMAND term (2026-08-06,
+    // `outputs/recovery-need-model-2026-08-06.md` §2).
+
+    /// Total running minutes that day, paused-watch artifacts already
+    /// re-imputed server-side. 0 on a rest day.
+    var durationMin: Int? = nil
+    /// The real per-workout internal-load unit, summed over the day's runs.
+    /// `nil` until the `20260731120000` backfill runs — which is why
+    /// `TrendsRecoveryDemand` carries a fallback ladder rather than assuming
+    /// this is present. Never 0-for-missing: a zero-load day and an
+    /// unmeasured day are different facts.
+    var stressLoad: Double? = nil
+
     /// The session channel the calendar colours by — **not** a pace zone. Per
     /// the calendar encoding: `key` gets the coral accent, `long` its own dark-
     /// grey channel (precedence over key), `easy` light grey, `rest` no run.

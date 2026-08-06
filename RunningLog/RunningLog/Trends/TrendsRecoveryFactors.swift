@@ -43,13 +43,17 @@
 //  before.
 //
 //  ─────────────────────────────────────────────────────────────────────
-//  3 · THE TOP BAND WAS UNREACHABLE
+//  3 · THE TOP BAND WAS UNREACHABLE — THEN GATED BEHIND THE NIGHTS
 //
 //  Old factor maxima summed to 50 + 10 + 5 + 0 + 4 + 0 = **69**, against a
-//  `Clear` band that starts at 75. No athlete, however fresh, could ever
-//  reach the best band — and the floor was 9, so the whole scale lived in
-//  9…69 while presenting as 8…96. The retooled maxima reach 78 and the floor
-//  still clamps at 8, so all four bands are now attainable.
+//  `Clear` band that starts at 75 — no athlete could reach the best band. The
+//  retool lifted the maxima so every band was attainable. The 08-06 mood cap
+//  (see `moodPoints`) then pulled mood's upside back down, so words + runs
+//  alone top out at **70 (Steady)**: `Clear` now requires the biometric
+//  factors too. That is intentional — a positive mood after a big session must
+//  not manufacture "recovered" while days of load debt remain. The recovery
+//  need is owned by the load factors; the top band is reserved for when words,
+//  runs, and nights all agree. The floor still clamps at 8.
 //
 //  ─────────────────────────────────────────────────────────────────────
 //  Factor 3 (body mentions) is carried over unchanged — it was right. Factor
@@ -67,10 +71,19 @@ enum TrendsRecoveryFactors {
 
     // MARK: - Tunables, in one place
 
-    /// Points per mood label. Unchanged from the shipped table apart from
-    /// `energized`, lifted 10 → 12 so the top band is reachable.
+    /// Points per mood label — deliberately **asymmetric** (recalibrated
+    /// 2026-08-06). Feeling bad is informative about recovery; feeling good is
+    /// not a green light. A big session can leave an athlete elated in the
+    /// moment yet needing three to four days to recover — so a positive mood
+    /// must not be able to lift the score out of the load-driven hole it's
+    /// sitting in. The upside is therefore capped small (energized +4 —
+    /// matching a good sleep, no larger), while the downside keeps its full
+    /// weight (struggling/injured), because a dragging self-report is the
+    /// evidenced early signal. Mood is a proxy and the input most confounded by
+    /// in-session affect, so it is the weakest of the self-report factors; the
+    /// recovery *need* is owned by the load factors, not by how a run felt.
     static let moodPoints: [String: Int] = [
-        "energized": 12, "positive": 7, "neutral": 0,
+        "energized": 4, "positive": 2, "neutral": 0,
         "tired": -8, "struggling": -14, "injured": -18,
     ]
 
@@ -96,11 +109,97 @@ enum TrendsRecoveryFactors {
         var out: [Factor] = [mood(days: days, at: i)]
         out.append(bodyMentions(days: days, at: i))
         if let sleepRow = sleep(days: days, at: i) { out.append(sleepRow) }
-        if let load = recentLoad(days: days, at: i) { out.append(load) }
-        out.append(loadVsBaseline(days: days, at: i))
+
+        // DEMAND (2026-08-06, `outputs/recovery-need-model-2026-08-06.md` §2).
+        // One Banister fitness–fatigue balance replaces the two overlapping
+        // mileage ratios — but only once it has the history to be trusted.
+        // Below the warm-up gate the need index over-reads badly (CTL is still
+        // climbing from a cold start, which reads as a permanent hole), so the
+        // previous pair carries those windows unchanged. New athletes and short
+        // windows therefore score exactly as they did before this change.
+        if let need = recoveryNeed(days: days, at: i) {
+            out.append(need)
+            if let spike = sessionSpike(days: days, at: i) { out.append(spike) }
+        } else {
+            if let load = recentLoad(days: days, at: i) { out.append(load) }
+            out.append(loadVsBaseline(days: days, at: i))
+        }
+
         out.append(clearDays(days: days, at: i))
         if let overnightRow = overnight(days: days, at: i) { out.append(overnightRow) }
         return out
+    }
+
+    // MARK: - 2b · Recovery need, from the load balance (2026-08-06)
+
+    /// The demand term: how deep a hole training has dug, as a normalized
+    /// difference against the athlete's OWN chronic load.
+    ///
+    /// Returns nil when the warm-up gate is closed (under six weeks of
+    /// history) — the caller then falls back to the older pair rather than
+    /// showing a hole that is an artifact of a short series.
+    ///
+    /// **Carrying your usual load never costs anything.** That is a fixed
+    /// point of the 2026-08-06 recalibration, not a tuning choice: being in
+    /// training is the normal state of an athlete in training, and a score
+    /// that charges for it can never read better than Worn during a healthy
+    /// block.
+    ///
+    /// Being in line reads **+5**, not 0, and the difference matters. This one
+    /// factor replaces two, and in the shipped ledger a steady block collected
+    /// 0 from `recentLoad` *plus 5* from `loadVsBaseline` — consistency was
+    /// credited. Mapping "usual" to 0 here would have quietly removed 5 points
+    /// from every well-managed block and pulled it a band lower, which is the
+    /// same class of miscalibration the 08-05 retool was written to undo. The
+    /// doc's "costs 0" means it must not subtract; it does not.
+    ///
+    /// The positive end is generously weighted (up to +11) where the other
+    /// factors' upside is capped. That is not a contradiction of the
+    /// asymmetry rule — that rule is about SUPPLY (feeling good is not
+    /// evidence of being recovered). On the demand side a genuinely small
+    /// load hole is direct evidence of a genuinely small recovery need, and
+    /// the ledger's ceiling depends on it: without this range `Clear` becomes
+    /// mathematically unreachable again, which is the exact bug the 08-05
+    /// retool existed to fix.
+    static func recoveryNeed(days: [TrendsDay], at i: Int) -> Factor? {
+        let balance = TrendsRecoveryDemand.balance(days: days, at: i)
+        guard let index = balance.needIndex else { return nil }
+
+        let pct = Int(abs(index).rounded())
+        let (points, reading): (Int, String) = switch index {
+        case ..<(-30): (11, "\(pct)% under your usual load")
+        case ..<(-15): (9, "\(pct)% under your usual load")
+        case ..<(-5):  (7, "\(pct)% under your usual load")
+        case ..<10:    (5, "in line with your usual load")
+        case ..<25:    (-2, "\(pct)% over your usual load")
+        case ..<45:    (-6, "\(pct)% over your usual load")
+        case ..<70:    (-9, "\(pct)% over your usual load")
+        default:       (-12, "\(pct)% over your usual load")
+        }
+        return Factor(name: "Recovery need", evidence: reading, points: points)
+    }
+
+    // MARK: - 2c · The session spike, as its own contributor
+
+    /// A day more than twice the athlete's longest day in the prior 30 —
+    /// the single best-evidenced load finding in running (HRR 2.28, Frandsen
+    /// 2025, 588k sessions). Kept out of the EWMA on purpose: a smoother
+    /// erases exactly the thing this measures.
+    ///
+    /// Nil on any day that isn't one, so the receipt gains a row only when
+    /// there is something to say.
+    static func sessionSpike(days: [TrendsDay], at i: Int) -> Factor? {
+        guard let multiple = TrendsRecoveryDemand.spikeMultiple(days: days, at: i),
+              multiple >= TrendsRecoveryDemand.spikeThreshold else { return nil }
+        let rounded = (multiple * 10).rounded() / 10
+        return Factor(
+            name: "Big day",
+            // "day", not "run" — the substrate sums doubles, so this is a
+            // day-level reading of a session-level finding. Say what was
+            // actually measured.
+            evidence: String(format: "%.1fx your longest day in 30 d", rounded),
+            points: -5
+        )
     }
 
     // MARK: - 1 · Mood, over the trailing week
@@ -450,13 +549,22 @@ enum TrendsRecoveryFactors {
     /// Exposed so a test can assert every band stays attainable — the shipped
     /// scale had a `Clear` band that no athlete could ever reach.
     ///
-    /// Words + runs only (the five always-on factors): 50 + 12 + 6 + 0 + 5 + 5
-    /// = 78 best, 8 worst after the clamp. With the two biometric factors
-    /// present the raw range widens to 85 / −4, and the ledger's 8…96 clamp
-    /// still holds both ends.
+    /// After the 2026-08-06 mood cap, **words + runs alone top out at Steady,
+    /// not Clear**: 50 + 4 (energized) + 6 + 0 + 5 + 5 = 70. That is by design —
+    /// the top band should require the athlete's words, runs, *and* nights to
+    /// agree, which is what "fully recovered" means. With the two biometric
+    /// factors present the best reaches 50 + 4 + 6 + 0 + 5 + 5 + 3 + 4 = 77, so
+    /// Clear stays attainable, but only with sleep and overnight data. The worst
+    /// clamps at 8. Both ends sit inside the ledger's 8…96 clamp.
+    /// **Unchanged by the 2026-08-06 demand swap, on purpose.** The old load
+    /// pair contributed at best +6 (recent load) +5 (load vs baseline) = +11;
+    /// `recoveryNeed` alone tops out at +11 so the ceiling is preserved to the
+    /// point. Had it been capped lower — the obvious reading of "positives
+    /// smaller than negatives" — the best attainable total would have fallen to
+    /// 72 and `Clear` (75) would have become unreachable again.
     static var theoreticalRange: (low: Int, high: Int) {
-        let best = TrendsRecoveryLedger.base + 12 + 6 + 0 + 5 + 5 + 3 + 4   // = 85
-        let rawWorst = TrendsRecoveryLedger.base - 18 - 8 - 6 - 5 - 5 - 6 - 6
+        let best = TrendsRecoveryLedger.base + 4 + 11 + 0 + 5 + 3 + 4       // = 77
+        let rawWorst = TrendsRecoveryLedger.base - 18 - 12 - 5 - 6 - 5 - 6 - 6
         let worst = max(8, rawWorst)                                        // clamped = 8
         return (worst, best)
     }
