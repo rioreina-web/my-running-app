@@ -200,8 +200,13 @@ final class AthleteProfileService {
     private static let cacheKey = "athlete_profile_cache"
     private static let cacheTimestampKey = "athlete_profile_cache_timestamp"
 
-    init() {
-        loadFromLocalCache()
+    /// - Parameter loadCache: pass `false` to start empty. The cache lives in
+    ///   `UserDefaults`, which is ambient and shared with whatever the app
+    ///   last did on this device — a test asserting "a fresh service has no
+    ///   profile" otherwise passes on a clean simulator and fails on one the
+    ///   app has actually run on.
+    init(loadCache: Bool = true) {
+        if loadCache { loadFromLocalCache() }
     }
 
     /// Build or fetch the athlete profile. Uses 24-hour server-side cache.
