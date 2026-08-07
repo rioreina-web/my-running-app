@@ -39,6 +39,80 @@ const STRAVA_CLIENT_SECRET = Deno.env.get("STRAVA_CLIENT_SECRET") ?? "";
 // settles). Falls back to a detached promise off-platform.
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
+// ── Device-twin absorption (auto_sync ↔ strava) ─────────────────────
+//
+// The same physical run reaches training_logs through two independent
+// writers that do not know about each other:
+//
+//   • HealthKit  — client-side, fires on app launch (RunningLogApp.swift),
+//                  writes source "auto_sync" keyed `sync-<ISO date>`.
+//   • strava-sync — this function, keyed `strava_<activity id>`.
+//
+// A Garmin/Apple Watch run lands in Apple Health *and* in Strava, so both
+// fire. The dedup above only looks for `vital_workout_id = strava_<id>`,
+// which an auto_sync row never has — so whichever writer lost the race got
+// a second row. That is how 2026-08-06's 5x4min ended up rendered from a
+// lapless HealthKit copy ("no rep structure to break out") while the Strava
+// copy sat unread with all ten laps.
+//
+// Strava is authoritative for runs: it is the only source that carries lap
+// markers, and lap geometry is what makes rep detection possible at all
+// (ExternalStreamsPayload, the HealthKit payload, has no `laps` field —
+// a HealthKit row is structurally incapable of ever showing splits).
+//
+// So: before inserting, look for a device twin and PROMOTE it in place.
+// Promoting rather than inserting-then-merging keeps the row id stable, so
+// the voice memo, coach reads, workout_features and niggles already hanging
+// off that row stay attached instead of being orphaned by a delete.
+const TWIN_TIME_WINDOW_MS = 15 * 60 * 1000; // start times drift by device clock
+const TWIN_DISTANCE_TOLERANCE_MI = 0.3;     // GPS vs HealthKit rounding
+const TWIN_SOURCES = ["auto_sync", "vital", "garmin"];
+
+async function findDeviceTwin(
+  db: ReturnType<typeof createClient>,
+  userId: string,
+  runDate: string,
+  runDistanceMiles: number,
+): Promise<{ id: string; source: string } | null> {
+  try {
+    const base = new Date(runDate).getTime();
+    const lo = new Date(base - TWIN_TIME_WINDOW_MS).toISOString();
+    const hi = new Date(base + TWIN_TIME_WINDOW_MS).toISOString();
+    const { data, error } = await db
+      .from("training_logs")
+      .select("id, source, workout_date, workout_distance_miles")
+      .eq("user_id", userId)
+      .in("source", TWIN_SOURCES)
+      .gte("workout_date", lo)
+      .lte("workout_date", hi);
+    if (error) {
+      console.warn(`[strava-sync] twin lookup failed for ${userId}: ${error.message}`);
+      return null;
+    }
+    const candidates = (data ?? []) as Array<
+      { id: string; source: string; workout_date: string; workout_distance_miles: number | null }
+    >;
+    // Closest start time among those that also agree on distance. Two real
+    // runs inside 15 min that also match to 0.3 mi would be a warm-up logged
+    // twice, not a double — either way collapsing them is the right call.
+    let best: { id: string; source: string } | null = null;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    for (const c of candidates) {
+      const mi = c.workout_distance_miles ?? 0;
+      if (Math.abs(mi - runDistanceMiles) > TWIN_DISTANCE_TOLERANCE_MI) continue;
+      const delta = Math.abs(new Date(c.workout_date).getTime() - base);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = { id: c.id, source: c.source };
+      }
+    }
+    return best;
+  } catch (err) {
+    console.warn(`[strava-sync] findDeviceTwin threw: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
 // Fold a matching orphan voice_log row (a memo recorded BEFORE this run synced,
 // so it has audio + notes but no telemetry) into the run row we just wrote.
 // The run stays canonical (keeps GPS/laps/streams) and inherits the memo's
@@ -527,6 +601,59 @@ async function syncUser(row: CredRow, lookbackDays: number, perUserLimit: number
           await reconcileVoiceOrphan(db, userId, existingRow.id, a.start_date, distanceMiles);
         }
       } else {
+        // Strava is authoritative for runs. If HealthKit already wrote this
+        // same physical run as an `auto_sync` row, promote that row in place
+        // rather than inserting a second one — see findDeviceTwin above.
+        const twin = await findDeviceTwin(db, userId, a.start_date, distanceMiles);
+        if (twin) {
+          const { error: promoteErr } = await db
+            .from("training_logs")
+            .update({
+              source: "strava",
+              vital_workout_id: stravaKey,
+              external_id: stravaKey,
+              workout_date: a.start_date,
+              workout_distance_miles: distanceMiles,
+              workout_duration_minutes: durationMinutes,
+              notes: noteLines.join("\n"),
+              pace_segments: paceSegments,
+              external_streams: externalStreams,
+              processing_status: "completed",
+              // Anything DERIVED from the lapless HealthKit copy is wrong by
+              // construction (one "steady" block, confidence 0.5, geometry
+              // "model"). Clear it so the laps that just landed drive a fresh
+              // parse + read. Anything the athlete OWNS — audio_url,
+              // transcript_url, cleaned_notes, workout_notes, mood, RPE — is
+              // deliberately untouched: the memo is the one thing the
+              // HealthKit row holds that Strava cannot supply.
+              parsed_structure: null,
+              coach_insight: null,
+              coach_insight_status: "pending",
+            })
+            .eq("id", twin.id);
+          if (promoteErr) {
+            result.errors.push({ id: a.id, error: `promote: ${promoteErr.message}` });
+          } else {
+            result.imported++;
+            console.log(
+              `[strava-sync] promoted ${twin.source} row ${twin.id} → strava ${a.id} (absorbed device twin)`,
+            );
+            // Features were computed off the lapless copy — drop them so the
+            // next compute pass rebuilds from real lap geometry.
+            const { error: featErr } = await db
+              .from("workout_features")
+              .delete()
+              .eq("training_log_id", twin.id);
+            if (featErr) {
+              console.warn(`[strava-sync] stale feature cleanup failed for ${twin.id}: ${featErr.message}`);
+            }
+            fireParseStructure(twin.id, userId);
+            fireWorkoutWeather(twin.id, userId);
+            await reconcileVoiceOrphan(db, userId, twin.id, a.start_date, distanceMiles);
+          }
+          continue;
+        }
+
         const { data: insertedRow, error: insertErr } = await db
           .from("training_logs")
           .insert({
