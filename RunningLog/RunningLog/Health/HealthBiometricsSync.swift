@@ -66,6 +66,24 @@ actor HealthBiometricsSync {
     /// samples from being permanently missed by the watermark.
     private static let restatementWindowNights = 7
 
+    /// Set once the backfill window has been walked with HRV actually visible.
+    ///
+    /// **Why this exists.** The first sync sets the watermark whether or not
+    /// HRV was readable, and iOS never reports a denied READ scope — a denied
+    /// HRV query returns `[]`, indistinguishable from a watch that recorded
+    /// nothing. That is exactly what happened here: 192 nights of resting HR
+    /// landed from 2026-01-11 with `hrv_rmssd` empty on every one of them, and
+    /// the watermark then capped every later sync at the 7-night restatement
+    /// window. Granting the permission afterwards would have filled today
+    /// forward and left January–August permanently blank, because Apple Health
+    /// holds those samples but nothing would ever ask for them again.
+    ///
+    /// So the grant must be sufficient on its own. Until this flag is set, each
+    /// sync cheaply probes for a single HRV sample; the first one to see any
+    /// re-opens the full `backfillNights` window, and the flag is written only
+    /// after that wider push succeeds.
+    private static let hrvBackfilledKey = "healthBiometricsHRVBackfilled"
+
     private var isRunning = false
 
     // MARK: - Entry point
@@ -96,12 +114,30 @@ actor HealthBiometricsSync {
 
         // Window start: the watermark pulled back by the restatement window,
         // or the full backfill on first run.
+        //
+        // `hrvArrived` overrides the watermark for one sync. It is checked only
+        // while the flag is unset, and the probe is a single-sample query, so
+        // the steady-state cost once HRV is backfilled — or on a phone-only
+        // athlete who will never have it — is one bounded query per launch.
+        let fullBackfill = calendar.date(byAdding: .day, value: -Self.backfillNights, to: today) ?? today
+        let needsHRVBackfill = !defaults.bool(forKey: Self.hrvBackfilledKey)
+        // Not `needsHRVBackfill && await …` — `await` may not sit to the right
+        // of a short-circuiting operator, and the probe must stay skipped once
+        // the flag is set.
+        var hrvArrived = false
+        if needsHRVBackfill {
+            hrvArrived = await hasAnyHRV(from: fullBackfill, to: today)
+        }
+
         let start: Date
-        if let last = defaults.object(forKey: Self.lastSyncedKey) as? Date {
+        if let last = defaults.object(forKey: Self.lastSyncedKey) as? Date, !hrvArrived {
             let rewound = calendar.date(byAdding: .day, value: -Self.restatementWindowNights, to: last) ?? last
             start = calendar.startOfDay(for: min(rewound, today))
         } else {
-            start = calendar.date(byAdding: .day, value: -Self.backfillNights, to: today) ?? today
+            if hrvArrived {
+                Log.health.info("biometrics sync: HRV now readable — reopening the \(Self.backfillNights)-night window")
+            }
+            start = fullBackfill
         }
         // End of the window is the end of TODAY — last night's sleep is filed
         // under today's date (matching `SleepCheckInPrompt`, which writes the
@@ -131,6 +167,13 @@ actor HealthBiometricsSync {
         do {
             let uploaded = try await upload(nights)
             defaults.set(today, forKey: Self.lastSyncedKey)
+            // Only claim the HRV backfill once the FULL window has been walked
+            // with HRV actually in hand. A 7-night restatement that happens to
+            // carry HRV must not close the door on the two-year history.
+            if needsHRVBackfill, start == fullBackfill, nights.contains(where: { $0.hrv_sdnn != nil }) {
+                defaults.set(true, forKey: Self.hrvBackfilledKey)
+                Log.health.info("biometrics sync: HRV backfill complete")
+            }
             Log.health.info("biometrics sync: uploaded \(uploaded) nights")
             return uploaded
         } catch {
@@ -371,6 +414,27 @@ actor HealthBiometricsSync {
         }
         let unit = HKUnit.secondUnit(with: .milli)
         return samples.map { (date: $0.startDate, value: $0.quantity.doubleValue(for: unit)) }
+    }
+
+    /// Is there ANY HRV sample in the window? One row, no sort, no unit
+    /// conversion — this answers "has the permission started producing data",
+    /// not "what is it". Deliberately separate from
+    /// `heartRateVariabilitySamples` so the per-launch probe never pays for
+    /// two years of samples it would immediately discard.
+    private func hasAnyHRV(from start: Date, to end: Date) async -> Bool {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) else { return false }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: nil
+            ) { _, results, _ in
+                continuation.resume(returning: !(results ?? []).isEmpty)
+            }
+            healthStore.execute(query)
+        }
     }
 
     // MARK: - Upload
