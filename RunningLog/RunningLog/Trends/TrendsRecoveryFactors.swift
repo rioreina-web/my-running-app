@@ -451,11 +451,18 @@ enum TrendsRecoveryFactors {
 
         let hrvNow = window.compactMap { $0.hrvRmssd }
         let rhrNow = window.compactMap { $0.restingHr }
-        guard hrvNow.count >= 5, rhrNow.count >= 5 else { return nil }   // ≥5 valid nights
-
         let hrvBase = baseWin.compactMap { $0.hrvRmssd }
         let rhrBase = baseWin.compactMap { $0.restingHr }
-        guard hrvBase.count >= 14, rhrBase.count >= 14 else { return nil } // ≥2 wks baseline
+
+        // Resting HR is the REQUIRED axis; HRV is the one that upgrades the
+        // reading. These used to share a single guard, which meant a producer
+        // that supplies RHR but no HRV scored nothing at all — the Apple Health
+        // path shipped 2026-08-06 with 192 nights of RHR and zero HRV (iOS
+        // never reports a denied READ scope, so the HRV query just returns an
+        // empty array) and the whole factor went dark. One missing series must
+        // not discard a working one.
+        guard rhrNow.count >= 5, rhrBase.count >= 14 else { return nil }
+        let hasHRV = hrvNow.count >= 5 && hrvBase.count >= 14
 
         // Direction, thresholded at 0.5 × the athlete's OWN between-night SD.
         func dir(_ now: [Double], _ base: [Double]) -> Int {
@@ -469,8 +476,27 @@ enum TrendsRecoveryFactors {
             return 0                                // flat
         }
 
-        let h = dir(hrvNow, hrvBase)   // HRV direction
         let r = dir(rhrNow, rhrBase)   // resting-HR direction
+
+        // ── RHR alone ──────────────────────────────────────────────────────
+        //
+        // Deliberately gentler than the two-axis reading below. What earns −6
+        // there is not the HRV drop by itself but the CROSS-CHECK: only one of
+        // nine cells subtracts, and both-low stays quiet because it usually
+        // means adaptation. With one axis that discipline is gone — a lone RHR
+        // rise cannot distinguish accumulated fatigue from a late meal, a warm
+        // room, alcohol, or the start of a cold. So it reads as a nudge, not a
+        // verdict, and the evidence string says which reading the athlete is
+        // getting rather than implying the full one.
+        guard hasHRV else {
+            switch r {
+            case 1:  return Factor(name: "Overnight", evidence: "7-day resting HR up · no HRV data", points: -3, source: .nights)
+            case -1: return Factor(name: "Overnight", evidence: "7-day resting HR down · no HRV data", points: 2, source: .nights)
+            default: return Factor(name: "Overnight", evidence: "resting HR inside your usual range · no HRV data", points: 0, source: .nights)
+            }
+        }
+
+        let h = dir(hrvNow, hrvBase)   // HRV direction
 
         // The 3×3 table (v2 §2c), compressed to points.
         switch (h, r) {

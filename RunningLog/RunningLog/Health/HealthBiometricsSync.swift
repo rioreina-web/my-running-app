@@ -84,7 +84,11 @@ actor HealthBiometricsSync {
         isRunning = true
         defer { isRunning = false }
 
-        guard AuthManager.shared.currentUserId != nil else { return 0 }
+        // Cheap "don't bother" check only — it reads a CACHED id, so it is not
+        // proof of a usable token. `upload` re-checks against the live session;
+        // this guard exists so a signed-out launch doesn't run 730 nights of
+        // HealthKit queries just to fail at the last step.
+        guard await AuthManager.shared.currentUserId != nil else { return 0 }
 
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
@@ -382,13 +386,55 @@ actor HealthBiometricsSync {
     }
 
     /// Chunked to stay under `ingest-biometrics`'s 400-night ceiling.
+    ///
+    /// The Authorization header is set EXPLICITLY rather than left to the SDK.
+    /// `sync()` runs from the launch `.task` alongside session restore, and a
+    /// cached `currentUserId` outlives an expired or not-yet-restored token —
+    /// so the implicit path could send the anon key instead. The anon key is a
+    /// structurally valid JWT, so it clears the platform's `verify_jwt` gate
+    /// and only fails inside the function, at `auth.getUser`, as a 401. That is
+    /// the shape of the 401s seen on 2026-08-06 with `daily_biometrics` empty.
+    ///
+    /// `supabase.auth.session` refreshes an expired token before returning, so
+    /// this both proves and repairs the session. No session means no upload and
+    /// no watermark write — the same nights are retried on the next launch.
     private func upload(_ nights: [Night]) async throws -> Int {
+        let accessToken: String
+        do {
+            accessToken = try await supabase.auth.session.accessToken
+        } catch {
+            throw NSError(
+                domain: "HealthBiometricsSync",
+                code: 401,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "no valid auth session (\(error.localizedDescription)) — nothing uploaded, will retry next launch"]
+            )
+        }
+
         var total = 0
         for chunk in stride(from: 0, to: nights.count, by: 300).map({ Array(nights[$0..<min($0 + 300, nights.count)]) }) {
-            let response: UploadResponse = try await supabase.functions.invoke(
-                "ingest-biometrics",
-                options: .init(body: UploadBody(nights: chunk))
-            )
+            let response: UploadResponse
+            do {
+                response = try await supabase.functions.invoke(
+                    "ingest-biometrics",
+                    options: .init(
+                        headers: ["Authorization": "Bearer \(accessToken)"],
+                        body: UploadBody(nights: chunk)
+                    )
+                )
+            } catch let FunctionsError.httpError(code, data) {
+                // `FunctionsError`'s own description is just the status code.
+                // Carry the function's `{"error": ...}` body through — the
+                // difference between "Authentication required" and a 500 from
+                // the upsert is the whole diagnosis, and this path is silent
+                // by design, so the log line is the only place it surfaces.
+                let detail = String(data: data, encoding: .utf8) ?? "<no body>"
+                throw NSError(
+                    domain: "HealthBiometricsSync",
+                    code: code,
+                    userInfo: [NSLocalizedDescriptionKey: "ingest-biometrics returned \(code): \(detail)"]
+                )
+            }
             if let error = response.error {
                 throw NSError(
                     domain: "HealthBiometricsSync",
