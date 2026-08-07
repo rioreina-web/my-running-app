@@ -146,7 +146,8 @@ extension HistoryDetailSheet {
                 // notes field bound to $editNotesText (persisted by
                 // saveEdits as cleaned_notes).
                 if isEditing {
-                    editorialSection(eyebrow: "VOICE SUMMARY") {
+                    // Label matches read mode's "SUMMARY" eyebrow.
+                    editorialSection(eyebrow: "SUMMARY") {
                         TextField("How did the run feel?", text: $editNotesText, axis: .vertical)
                             .font(.dripBody(14))
                             .foregroundStyle(Color.drip.textPrimary)
@@ -155,50 +156,26 @@ extension HistoryDetailSheet {
                             .background(Color.drip.cardBackgroundElevated)
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
-                } else if let cleaned = vm.currentEntry.cleanedNotes, !cleaned.isEmpty {
-                    // Read mode: the eyebrow row carries an inline EDIT link so
-                    // the athlete can jump straight into editing the summary,
-                    // not just via the toolbar Edit button.
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            DripEyebrow(text: "VOICE SUMMARY")
-                            Spacer()
-                            Button { enterEditMode() } label: {
-                                Text("EDIT")
-                                    .font(.dripCaption(10)).tracking(1.4)
-                                    .foregroundStyle(Color.drip.coral)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        FormattedSummaryText(text: cleaned)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 22)
-                }
-
-                // ── Verbatim transcript ──────────────────────────────────
-                // The athlete's actual words (Whisper/Gemini), fetched from the
-                // stored transcript file — distinct from the cleaned VOICE
-                // SUMMARY above, which is an AI rewrite.
-                if !isEditing,
-                   let turl = vm.currentEntry.transcriptUrl, !turl.isEmpty {
-                    editorialSection(eyebrow: "TRANSCRIPT") {
-                        VoiceTranscriptText(url: turl)
-                    }
+                } else if hasMemoBlock {
+                    // Read mode: summary + play row + the words behind a tap.
+                    memoBlock
                 }
 
                 // ── Workout detail (full analytics, inline) ──────────────
-                // The linked run's rep-by-rep charts, telemetry, splits, and
-                // route rendered directly in the entry — the same content the
-                // "VIEW DETAIL ↗" link opens full-screen (kept above). Placed
-                // after the athlete's own words (voice summary + transcript) so
-                // the qualitative record reads first, quantitative after.
+                // The run's rep-by-rep charts, telemetry, splits, and route
+                // rendered directly in the entry. Placed after the athlete's own
+                // words (voice summary + transcript) so the qualitative record
+                // reads first, quantitative after.
                 //
-                // Gated on `vm.linkedStreamLogId` (a Strava training_logs row
-                // with a real stream), NOT on hasLinkedWorkout: a stream-less
-                // voice/manual entry would otherwise embed an inline "Logged
-                // without GPS" block, which is noise inside the journal.
+                // This is THE workout detail when it renders — the "VIEW DETAIL ↗"
+                // link above stands down rather than opening a modal copy of what
+                // is already on screen (see `showsViewDetailLink`).
+                //
+                // Gated on `vm.linkedStreamLogId` (a training_logs row carrying a
+                // real GPS stream — possibly this entry's own row), NOT on
+                // hasLinkedWorkout: a stream-less voice/manual entry would
+                // otherwise embed an inline "Logged without GPS" block, which is
+                // noise inside the journal.
                 if !isEditing, vm.linkedStreamLogId != nil {
                     editorialSection(eyebrow: "WORKOUT") {
                         WorkoutRepReceiptView(workoutId: workoutDetailId)
@@ -232,26 +209,32 @@ extension HistoryDetailSheet {
                     }
                 }
 
-                // ── AI insight (auto once processed — no manual CTA) ─────
-                // Appears on its own once the server has generated the coach
-                // insight (voice logs: process-training-memo). Until then the
-                // whole section is hidden — no "Not yet generated" placeholder,
-                // no "Ask the coach" button, so an entry with nothing to say
-                // stays pure record. `refreshCoachInsightWhenReady()` (.task)
-                // polls so it slots in live if the sheet is already open when
-                // the insight lands.
-                if !isEditing, let insight = vm.coachInsight, !insight.isEmpty {
-                    editorialSection(eyebrow: "AI INSIGHT") {
-                        Text(insight)
-                            .font(.dripBody(14).italic())
-                            .foregroundStyle(Color.drip.textPrimary)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                // ── The read (AI insight, behind one tap) ────────────────
+                // Was an always-on paragraph that ran ~70 words and competed
+                // with the athlete's own summary for the page. It is now a
+                // single row: coral ✦ + "READ THE INSIGHT". Nothing generated
+                // is thrown away — it just waits to be asked for.
+                if !isEditing {
+                    insightBlock
                 }
 
                 // ── Workout notes (inline composer, no white card) ───────
-                if !isEditing {
+                // Writes `workout_notes` — the SAME column the receipt's
+                // "THE WORKOUT" section edits. While `linkedStreamLogId` was
+                // permanently nil the receipt never rendered here, so this was
+                // the only editor and the duplication was invisible. Now that
+                // both can appear in one scroll (S0, 2026-08-07), showing two
+                // editors for one column under two different labels — "WORKOUT
+                // NOTES" and "THE WORKOUT" — is exactly the "two places" this
+                // work is meant to remove.
+                //
+                // The receipt's is the better home: it sits beside the reps the
+                // description describes, and `EditWorkoutNotesSheet` re-fires
+                // the structure parser on save. So this composer stands down
+                // when the receipt is present, and remains the only way to add
+                // a description to a stream-less entry (a voice log with no run
+                // that day), where the receipt never appears.
+                if !isEditing, vm.linkedStreamLogId == nil {
                     editorialNotesComposer
                 }
 
@@ -299,6 +282,260 @@ extension HistoryDetailSheet {
             + vm.currentEntry.displayDate.editorialDateString
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    // MARK: - The memo block
+    //
+    // One section covering what used to be two: "VOICE SUMMARY" (an AI
+    // paraphrase) stacked directly above "TRANSCRIPT" (the same content,
+    // verbatim) — two voices saying one thing, ~95 words before the athlete
+    // reached anything they hadn't already lived.
+    //
+    // Now: the summary reads quiet and small (13.5pt, textSecondary — it is
+    // deliberately subordinate to the stat strip), the recording is a single
+    // play row, and the verbatim words sit behind "READ THE WORDS ↓".
+    //
+    // NOTE: the type change only pays off if the summary itself is short.
+    // At 13.5pt anything past ~30 words reads as a paragraph again. The
+    // `process-training-memo` prompt should be capped at two sentences —
+    // what the session was, then how it felt. See the redesign prototype
+    // at repo root for the copy spec.
+    // ════════════════════════════════════════════════════════════════════
+
+    /// Non-empty cleaned summary, if there is one.
+    private var summaryText: String? {
+        guard let cleaned = vm.currentEntry.cleanedNotes,
+              !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return cleaned
+    }
+
+    /// Playable memo audio, if the row has any. Voice logs carry `audio_url`;
+    /// Strava imports and manual entries don't, so the play row simply doesn't
+    /// render for them — no broken player.
+    private var memoAudioUrl: String? {
+        guard let a = vm.currentEntry.audioUrl, !a.isEmpty else { return nil }
+        return a
+    }
+
+    /// Stored verbatim transcript, if the memo was transcribed.
+    private var memoTranscriptUrl: String? {
+        guard let t = vm.currentEntry.transcriptUrl, !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// Whether there is anything at all to show — otherwise the section is
+    /// hidden entirely rather than rendering an empty labelled block.
+    var hasMemoBlock: Bool {
+        summaryText != nil || memoAudioUrl != nil || memoTranscriptUrl != nil
+    }
+
+    @ViewBuilder
+    var memoBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                // "SUMMARY" when there's a written summary to edit; "THE MEMO"
+                // when all we have is the recording, so the label never
+                // promises text that isn't there.
+                DripEyebrow(text: summaryText != nil ? "SUMMARY" : "THE MEMO")
+                Spacer()
+                if summaryText != nil {
+                    Button { enterEditMode() } label: {
+                        Text("EDIT")
+                            .font(.dripCaption(10)).tracking(1.4)
+                            .foregroundStyle(Color.drip.coral)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let cleaned = summaryText {
+                // Quieter than the old 14pt textPrimary: the summary supports
+                // the numbers, it doesn't lead the page.
+                FormattedSummaryText(
+                    text: cleaned,
+                    size: 13.5,
+                    color: Color.drip.textSecondary
+                )
+            }
+
+            if let audio = memoAudioUrl {
+                MemoPlayerRow(url: audio)
+                    .padding(.top, summaryText == nil ? 0 : 5)
+            }
+
+            if let transcript = memoTranscriptUrl {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { showTranscript.toggle() }
+                } label: {
+                    Text(showTranscript ? "HIDE THE WORDS ↑" : "READ THE WORDS ↓")
+                        .font(.dripEyebrow(9.5)).tracking(1.14)
+                        .foregroundStyle(showTranscript ? Color.drip.coral : Color.drip.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 3)
+
+                if showTranscript {
+                    VoiceTranscriptText(url: transcript)
+                        .padding(.leading, 14)
+                        .overlay(alignment: .leading) {
+                            Rectangle()
+                                .fill(Color.drip.paperDeep)
+                                .frame(width: 2)
+                        }
+                        .padding(.top, 2)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // MARK: - The read (AI insight, on request)
+    //
+    // Three states, in priority order:
+    //   • open      — the athlete tapped; text + a close affordance
+    //   • ready     — an insight exists (server-written or previously
+    //                 generated); one coral row invites it
+    //   • absent    — nothing generated yet. If the entry has enough to go
+    //                 on, the row generates on tap (wiring up the previously
+    //                 orphaned `vm.generateCoachInsight()`); if it doesn't,
+    //                 a dashed row says why, rather than lying about a
+    //                 capability that would fail.
+    // ════════════════════════════════════════════════════════════════════
+
+    private var hasInsight: Bool {
+        guard let i = vm.coachInsight else { return false }
+        return !i.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// An insight needs something to read: either the athlete's own words or a
+    /// linked run with telemetry. With neither, `generate-workout-insight`
+    /// has no material and would return boilerplate.
+    private var canGenerateInsight: Bool {
+        summaryText != nil || memoTranscriptUrl != nil || vm.linkedStreamLogId != nil
+    }
+
+    @ViewBuilder
+    var insightBlock: some View {
+        if hasInsight, showInsight, let insight = vm.coachInsight {
+            openInsightPanel(insight)
+        } else if hasInsight {
+            insightRow(label: "READ THE INSIGHT", enabled: true) {
+                withAnimation(.easeInOut(duration: 0.2)) { showInsight = true }
+            }
+        } else if vm.isGeneratingInsight {
+            insightRow(label: "WRITING YOUR INSIGHT…", enabled: false, dashed: true, action: nil)
+        } else if vm.insightError != nil {
+            // Retryable, and deliberately NOT typeset as "THE READ" — an error
+            // rendered in the insight panel reads like the coach's actual take.
+            insightRow(label: "COULDN'T GET IT · RETRY", enabled: true) {
+                Task { await generateThenReveal() }
+            }
+        } else if canGenerateInsight {
+            insightRow(label: "READ THE INSIGHT", enabled: true) {
+                Task { await generateThenReveal() }
+            }
+        } else {
+            insightRow(label: "INSIGHT NEEDS A MEMO", enabled: false, dashed: true, action: nil)
+        }
+    }
+
+    /// Generate on demand, then open the panel — but only if something actually
+    /// came back. Revealing unconditionally would open an empty panel on failure.
+    private func generateThenReveal() async {
+        await vm.generateCoachInsight()
+        guard hasInsight else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { showInsight = true }
+    }
+
+    @ViewBuilder
+    private func insightRow(
+        label: String,
+        enabled: Bool,
+        dashed: Bool = false,
+        action: (() -> Void)?
+    ) -> some View {
+        Button { action?() } label: {
+            HStack(spacing: 9) {
+                if vm.isGeneratingInsight {
+                    ProgressView()
+                        .tint(Color.drip.coral)
+                        .scaleEffect(0.6)
+                        .frame(width: 12, height: 12)
+                } else {
+                    Text("✦")
+                        .font(.system(size: 12))
+                        .foregroundStyle(enabled ? Color.drip.coral : Color.drip.textTertiary)
+                }
+                Text(label)
+                    .font(.dripEyebrow(10)).tracking(1.2)
+                    .foregroundStyle(enabled ? Color.drip.textPrimary : Color.drip.textTertiary)
+                Spacer()
+                if enabled {
+                    Text("→")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .frame(maxWidth: .infinity)
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(
+                        Color.drip.divider,
+                        style: StrokeStyle(lineWidth: 1, dash: dashed ? [4, 3] : [])
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(action == nil)
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+    }
+
+    @ViewBuilder
+    private func openInsightPanel(_ insight: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("✦ THE READ")
+                    .font(.dripEyebrow(9.5)).tracking(1.14)
+                    .foregroundStyle(Color.drip.coral)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { showInsight = false }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Color.drip.textTertiary)
+                        // Keep the 44pt tap target the 10pt glyph doesn't give.
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Hide the insight")
+            }
+            Text(insight)
+                .font(.dripBody(14))
+                .foregroundStyle(Color.drip.textPrimary)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 17)
+        .padding(.top, 14)
+        .padding(.bottom, 15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.drip.cardBackgroundElevated)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Color.drip.coral).frame(width: 2)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+    }
+
     // ────────────────────────────────────────────────────────────────────
     // Editorial section — eyebrow + body, no card chrome
     // ────────────────────────────────────────────────────────────────────
@@ -344,29 +581,59 @@ extension HistoryDetailSheet {
     // ────────────────────────────────────────────────────────────────────
     // Linked source — single hairline row, coral "VIEW DETAIL ↗" link
     // ────────────────────────────────────────────────────────────────────
-    private var linkedSourceRow: some View {
-        Button {
-            if vm.matchedVitalWorkout != nil {
-                showVitalDetail = true
-            }
-        } label: {
-            HStack {
-                DripEyebrow(
-                    text: "LINKED · " + (vm.matchedVitalWorkout?.sourceApp.uppercased() ?? "HEALTHKIT")
-                )
-                Spacer()
+
+    /// Should this row offer "VIEW DETAIL ↗"?
+    ///
+    /// Only when there is somewhere to go that isn't already on this screen.
+    /// Two cases where there isn't (2026-08-07):
+    ///
+    /// 1. **The receipt is already inline.** `linkedStreamLogId != nil` renders
+    ///    the full receipt further down this same scroll, against the same id
+    ///    the link would open. Offering the link there sends the athlete to a
+    ///    modal copy of what they can already see — the opposite of one session,
+    ///    one page. (Before today this could not happen: `linkedStreamLogId` was
+    ///    always nil, so the inline section never rendered and the link was the
+    ///    only door. See `HistoryDetailViewModel.fetchStreamCarryingLogsForDate`.)
+    /// 2. **Nothing matched.** The row is shown on `hasLinkedWorkout` (a date
+    ///    and a distance) but the tap only acted on `matchedVitalWorkout != nil`,
+    ///    which is filled asynchronously and often not at all. That rendered a
+    ///    coral affordance that did nothing.
+    private var showsViewDetailLink: Bool {
+        vm.linkedStreamLogId == nil && vm.matchedVitalWorkout != nil
+    }
+
+    /// The row's content, with or without the link. Kept separate so the
+    /// non-navigating case can render as plain content rather than a disabled
+    /// Button — `.disabled` on a `.plain` button dims its whole label, which
+    /// would grey out the "LINKED · STRAVA" eyebrow for no reason.
+    private var linkedSourceRowContent: some View {
+        HStack {
+            DripEyebrow(
+                text: "LINKED · " + (vm.matchedVitalWorkout?.sourceApp.uppercased() ?? "HEALTHKIT")
+            )
+            Spacer()
+            if showsViewDetailLink {
                 Text("VIEW DETAIL ↗")
                     .font(.dripCaption(10))
                     .tracking(1.4)
                     .foregroundStyle(Color.drip.coral)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 24)
-            .overlay(alignment: .bottom) {
-                DripHairline().padding(.horizontal, 24)
-            }
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 24)
+        .overlay(alignment: .bottom) {
+            DripHairline().padding(.horizontal, 24)
+        }
+    }
+
+    @ViewBuilder
+    private var linkedSourceRow: some View {
+        if showsViewDetailLink {
+            Button { showVitalDetail = true } label: { linkedSourceRowContent }
+                .buttonStyle(.plain)
+        } else {
+            linkedSourceRowContent
+        }
     }
 
     // ────────────────────────────────────────────────────────────────────
@@ -397,13 +664,62 @@ extension HistoryDetailSheet {
     // ────────────────────────────────────────────────────────────────────
     private var editorialNotesComposer: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Collapsed by default. An empty section labelled "WORKOUT NOTES /
+            // OPTIONAL" was pure chrome on the great majority of entries —
+            // a heading, a subheading, and an empty box saying nothing. It now
+            // opens on demand, and stays open whenever there's a note to show.
+            if !isEditingWorkoutNotes, workoutNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { isEditingWorkoutNotes = true }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("＋")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.drip.coral)
+                        Text("ADD A NOTE")
+                            .font(.dripEyebrow(9.5)).tracking(1.14)
+                            .foregroundStyle(Color.drip.textTertiary)
+                        Spacer()
+                    }
+                    .padding(.vertical, 2)
+                }
+                .buttonStyle(.plain)
+            } else {
+                notesEditor
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
+        .overlay(alignment: .top) {
+            DripHairline().padding(.horizontal, 24)
+        }
+    }
+
+    @ViewBuilder
+    private var notesEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 DripEyebrow(text: "WORKOUT NOTES")
                 Spacer()
-                Text("OPTIONAL")
-                    .font(.dripCaption(10))
-                    .tracking(1.4)
-                    .foregroundStyle(Color.drip.textTertiary)
+                // Collapse back down if the athlete opened the composer and
+                // typed nothing — otherwise the row is a one-way door.
+                if workoutNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { isEditingWorkoutNotes = false }
+                    } label: {
+                        Text("CLOSE")
+                            .font(.dripCaption(10))
+                            .tracking(1.4)
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text("OPTIONAL")
+                        .font(.dripCaption(10))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
             }
             TextEditor(text: $workoutNotesText)
                 .font(.dripBody(15).italic())
@@ -411,7 +727,7 @@ extension HistoryDetailSheet {
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 64)
 
-            if !workoutNotesText.trimmingCharacters(in: .whitespaces).isEmpty {
+            if !workoutNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 HStack {
                     Spacer()
                     Button {
@@ -429,28 +745,32 @@ extension HistoryDetailSheet {
                 }
             }
         }
+        // Padding and the top hairline are applied by `editorialNotesComposer`,
+        // which wraps this — don't reapply them here.
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 24)
-        .padding(.top, 22)
-        .overlay(alignment: .top) {
-            DripHairline().padding(.horizontal, 24)
-        }
+        // Sticky once shown. An entry that arrives WITH a note renders this
+        // editor while the flag is still false, so select-all-delete (to rewrite
+        // the note) would flip the branch back to "＋ ADD A NOTE" mid-edit —
+        // tearing down the focused TextEditor and dismissing the keyboard.
+        .onAppear { isEditingWorkoutNotes = true }
     }
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Verbatim voice transcript — fetches the athlete's actual words from the
-// stored transcript .txt (public storage URL). Distinct from the cleaned
-// "VOICE SUMMARY"; this is exactly what was said. Manages its own load state.
+// Verbatim voice transcript — the athlete's actual words (Whisper/Gemini),
+// fetched from the stored transcript file in the private `training-memos`
+// bucket. Distinct from the cleaned summary; this is exactly what was said.
+// Manages its own load state.
+//
+// The internal "Show full transcript ↓" toggle is gone: disclosure is now
+// owned by the parent ("READ THE WORDS ↓" in `memoBlock`), so by the time
+// this renders the athlete has already asked for the words. Showing them
+// clamped behind a second toggle would be two taps for one intent.
 // ────────────────────────────────────────────────────────────────────────
 private struct VoiceTranscriptText: View {
     let url: String
-    /// Lines shown when collapsed. The full transcript is always fetched + kept;
-    /// this only limits the DISPLAY until the athlete taps "Show full transcript".
-    private let collapsedLineLimit = 4
     @State private var text: String?
     @State private var failed = false
-    @State private var expanded = false
 
     var body: some View {
         Group {
@@ -460,25 +780,16 @@ private struct VoiceTranscriptText: View {
                         .font(.dripBody(13).italic())
                         .foregroundStyle(Color.drip.textSecondary)
                 } else {
-                    // Minimized by default: show a few lines, tail-truncated, with
-                    // a coral link to enlarge. `.fixedSize(vertical:)` is dropped
-                    // here on purpose — it forces full height and would defeat the
-                    // lineLimit collapse. In the sheet's ScrollView the expanded
-                    // text lays out fully anyway.
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text(t)
-                            .font(.dripBody(15))
-                            .foregroundStyle(Color.drip.textPrimary)
-                            .lineSpacing(3)
-                            .lineLimit(expanded ? nil : collapsedLineLimit)
-                            .textSelection(.enabled)
-                        if isLong(t) {
-                            DripTextLink(title: expanded ? "Show less ↑" : "Show full transcript ↓") {
-                                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // The words, verbatim and in full — italic and quiet, so
+                    // they read as a quotation of the recording rather than as
+                    // the section's main body copy.
+                    Text(t)
+                        .font(.dripBody(13.5).italic())
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else if failed {
                 Text("Couldn't load the transcript.")
@@ -496,52 +807,26 @@ private struct VoiceTranscriptText: View {
         .task(id: url) { await load() }
     }
 
-    /// Whether the transcript is long enough to be worth collapsing — so a short
-    /// memo that already fits within `collapsedLineLimit` lines doesn't get a
-    /// pointless toggle. Heuristic: character count (a full column line is ~55
-    /// chars) or explicit line breaks beyond the limit.
-    private func isLong(_ t: String) -> Bool {
-        t.count > collapsedLineLimit * 55 || t.filter { $0 == "\n" }.count >= collapsedLineLimit
-    }
-
+    /// Fetch through `TrainingMemoStorage` (see MemoPlayerRow.swift) so the
+    /// transcript and the audio resolve the private-bucket path the same way
+    /// and can't drift apart. The path/fallback logic used to live inline here.
     private func load() async {
-        guard text == nil else { return }
-        // Transcripts live in the PRIVATE `training-memos` bucket, but the stored
-        // URL is a public-object path a private bucket rejects (400 "Bucket not
-        // found") — a naked GET can never read it. Download by path through the
-        // authenticated storage client, which carries the athlete's session.
-        // Fall back to a direct fetch for any genuinely public URL.
-        if let path = Self.storagePath(from: url) {
-            do {
-                let data = try await supabase.storage.from("training-memos").download(path: path)
-                text = (String(data: data, encoding: .utf8) ?? "")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                return
-            } catch {
-                // fall through to a direct URL fetch (handles legacy public URLs)
-            }
-        }
-        guard let u = URL(string: url) else { failed = true; return }
+        // No `guard text == nil` here: this runs from `.task(id: url)`, so a
+        // changed url must be able to replace an already-loaded transcript
+        // (and clear a previous failure) rather than leaving the old words up.
+        // Clearing `text` first closes the window where the PREVIOUS entry's
+        // words are still on screen under the new entry's heading.
+        failed = false
+        text = nil
         do {
-            let (data, response) = try await URLSession.shared.data(from: u)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                failed = true
-                return
-            }
+            let data = try await TrainingMemoStorage.data(for: url)
+            // A slow first fetch could otherwise land after a newer one and
+            // clobber the correct text.
+            guard !Task.isCancelled else { return }
             text = (String(data: data, encoding: .utf8) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             failed = true
         }
-    }
-
-    /// Bucket-relative object path from a stored `training-memos` URL (public or
-    /// signed), e.g. ".../training-memos/<uid>/<file>.txt" → "<uid>/<file>.txt".
-    /// Strips any signed-URL query token so `download(path:)` gets the bare path.
-    private static func storagePath(from urlString: String) -> String? {
-        guard let range = urlString.range(of: "/training-memos/") else { return nil }
-        var path = String(urlString[range.upperBound...])
-        if let q = path.firstIndex(of: "?") { path = String(path[..<q]) }
-        return path.removingPercentEncoding ?? path
     }
 }

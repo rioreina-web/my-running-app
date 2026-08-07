@@ -170,10 +170,34 @@ struct RRRepBars: View {
     /// workout picture on one screen.
     var fitToWidth = false
 
+    /// Elevation-profile honesty floors, in feet.
+    ///
+    /// A barometric altimeter drifts a foot or two per lap even on a flat
+    /// track. Scaling the profile to the data range alone stretched that
+    /// noise across half the plot, so a track session rendered as a mountain
+    /// range. `elevDrawFloorFt` is the spread below which a run counts as
+    /// flat and the profile is not drawn at all; `elevMinRangeFt` is the
+    /// tightest the scale may ever zoom once it does draw, so a 20 ft roller
+    /// can't be shown the way a 400 ft climb is.
+    private static let elevDrawFloorFt: Double = 15
+    private static let elevMinRangeFt: Double = 60
+
     /// Tap-selected rep id; drives the readout + bar highlight.
     @State private var selected: Int?
 
     private func pace(_ r: RRRep) -> Double { heatOn ? (r.adjPaceSec ?? r.paceSec) : r.paceSec }
+
+    /// The heat-adjusted (neutral-air equivalent) pace for a rep — what the
+    /// tap readout shows BESIDE the raw split pace, never instead of it. The
+    /// bars move to the adjusted scale when HEAT-ADJ is on, so the readout
+    /// used to show a number that silently wasn't the pace on the watch.
+    /// Nil when the toggle is off, when the rep carries no adjustment, or
+    /// when the adjustment rounds to the same displayed pace — an ADJ cell
+    /// identical to PACE is noise, not information.
+    private func adjPace(_ r: RRRep) -> Double? {
+        guard heatOn, let a = r.adjPaceSec, a > 0 else { return nil }
+        return abs(a - r.paceSec) >= 1 ? a : nil
+    }
 
     /// The dashed reference line. With HEAT-ADJ on, use the adjusted mean so the
     /// line tracks the (faster) bars instead of sitting at the raw average —
@@ -343,21 +367,25 @@ struct RRRepBars: View {
                 var cum: [Double] = []; var acc = 0.0
                 for e in elevs { acc += Double(e ?? 0); cum.append(acc) }
                 let lo = cum.min() ?? 0, hi = cum.max() ?? 1
-                let range = max(hi - lo, 1)
-                let band = plotH * 0.5
-                func ey(_ v: Double) -> CGFloat { baseY - CGFloat((v - lo) / range) * band }
-                var area = Path()
-                area.move(to: CGPoint(x: 0, y: baseY))
-                for i in cum.indices { area.addLine(to: CGPoint(x: cx(i), y: ey(cum[i]))) }
-                area.addLine(to: CGPoint(x: width, y: baseY))
-                area.closeSubpath()
-                ctx.fill(area, with: .color(Color.drip.textSecondary.opacity(0.20)))
-                var ridge = Path()
-                for (k, i) in cum.indices.enumerated() {
-                    let pt = CGPoint(x: cx(i), y: ey(cum[i]))
-                    if k == 0 { ridge.move(to: pt) } else { ridge.addLine(to: pt) }
+                // Flat ground draws nothing. Absence of a line means absence
+                // of terrain, which is the honest read on a track.
+                if hi - lo >= Self.elevDrawFloorFt {
+                    let range = max(hi - lo, Self.elevMinRangeFt)
+                    let band = plotH * 0.5
+                    func ey(_ v: Double) -> CGFloat { baseY - CGFloat((v - lo) / range) * band }
+                    var area = Path()
+                    area.move(to: CGPoint(x: 0, y: baseY))
+                    for i in cum.indices { area.addLine(to: CGPoint(x: cx(i), y: ey(cum[i]))) }
+                    area.addLine(to: CGPoint(x: width, y: baseY))
+                    area.closeSubpath()
+                    ctx.fill(area, with: .color(Color.drip.textSecondary.opacity(0.20)))
+                    var ridge = Path()
+                    for (k, i) in cum.indices.enumerated() {
+                        let pt = CGPoint(x: cx(i), y: ey(cum[i]))
+                        if k == 0 { ridge.move(to: pt) } else { ridge.addLine(to: pt) }
+                    }
+                    ctx.stroke(ridge, with: .color(Color.drip.textSecondary.opacity(0.55)), lineWidth: 1)
                 }
-                ctx.stroke(ridge, with: .color(Color.drip.textSecondary.opacity(0.55)), lineWidth: 1)
             }
 
             if avgLineSec >= axisMin && avgLineSec <= axisMax {
@@ -402,11 +430,20 @@ struct RRRepBars: View {
     private func readout(_ r: RRRep, index: Int) -> some View {
         let recov = recoveries.first { $0.id == r.id }?.drop
         let dec = decoupling(index)
-        return HStack(spacing: 12) {
+        let adj = adjPace(r)
+        // Six cells (SPLIT PACE ADJ HR ELEV REC/DRIFT) is the widest this row
+        // ever gets; tighten the gutter rather than let it clip on a small
+        // phone. The cells themselves hold one line and shrink a touch.
+        return HStack(spacing: adj == nil ? 12 : 9) {
             Text("REP \(r.id)").font(.dripStat(11)).tracking(1).foregroundStyle(Color.drip.coral)
-            HStack(spacing: 11) {
+            HStack(spacing: adj == nil ? 11 : 8) {
                 readoutCell("SPLIT", clockMS(splitSec(r)))
-                readoutCell("PACE", rr_pace(pace(r), km: km))
+                // PACE is always the pace that was actually run. ADJ is the
+                // heat credit alongside it, tinted to match the HEAT-ADJ chip.
+                readoutCell("PACE", rr_pace(r.paceSec, km: km))
+                if let adj {
+                    readoutCell("ADJ", rr_pace(adj, km: km), tone: Color.drip.tired)
+                }
                 readoutCell("HR", r.hr.map(String.init) ?? "—")
                 readoutCell("ELEV", r.elevFt.map { "\($0 > 0 ? "+" : "")\($0)" } ?? "—")
                 if let recov { readoutCell("REC", "−\(recov)") }
@@ -420,10 +457,16 @@ struct RRRepBars: View {
         .padding(.vertical, 2)
     }
 
-    private func readoutCell(_ label: String, _ value: String) -> some View {
+    /// `tone` marks a derived number (currently the heat-adjusted pace) so it
+    /// never reads as a measured one.
+    private func readoutCell(_ label: String, _ value: String, tone: Color? = nil) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.dripStat(8)).tracking(0.6).foregroundStyle(Color.drip.textTertiary)
-            Text(value).font(.dripStat(13)).foregroundStyle(Color.drip.textPrimary)
+            Text(label).font(.dripStat(8)).tracking(0.6)
+                .foregroundStyle(tone ?? Color.drip.textTertiary)
+                .lineLimit(1).fixedSize()
+            Text(value).font(.dripStat(13))
+                .foregroundStyle(tone ?? Color.drip.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.85)
         }
     }
 
@@ -551,6 +594,13 @@ struct LapSplitsList: View {
     let laps: [WorkoutLapRow]
     var km: Bool = false
     var mpSec: Double? = nil
+    /// Mirrors the receipt's HEAT-ADJ toggle. On, WORK laps render their
+    /// stored neutral-air equivalent pace (tinted, so a credited number never
+    /// passes for a measured one) and the whole screen — chart, readout,
+    /// table — agrees. Recovery laps stay raw: the adjustment table is
+    /// calibrated on quality work, so an adjusted jog pace isn't a number
+    /// anyone should read off.
+    var heatOn: Bool = false
 
     private func clock(_ s: Int) -> String {
         s < 60 ? String(format: "0:%02d", s) : String(format: "%d:%02d", s / 60, s % 60)
@@ -586,7 +636,14 @@ struct LapSplitsList: View {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 let lap = row.lap
                 let isRest = lap.is_rest == true
-                let paceSec = lap.avg_pace_sec_per_mile ?? 0
+                let rawPace = lap.avg_pace_sec_per_mile ?? 0
+                // Adjusted only when the toggle is on, the lap is work, the
+                // row actually stores an adjustment, and it moves the
+                // displayed pace by at least a second.
+                let storedAdj = lap.heat_adjusted_pace_sec_per_mile ?? 0
+                let adjPace: Double? = (heatOn && !isRest && rawPace > 0 && storedAdj > 0
+                                        && abs(storedAdj - rawPace) >= 1) ? storedAdj : nil
+                let paceSec = adjPace ?? rawPace
                 let dot = paceSec > 0
                     ? PaceZoneScale.color(forPaceSec: paceSec, mpSec: mpSec)
                     : PaceZoneScale.recoveryGrey
@@ -606,7 +663,9 @@ struct LapSplitsList: View {
                         .frame(width: 50, alignment: .trailing)
                     Text(paceSec > 0 ? rr_pace(paceSec, km: km) : "—")
                         .font(.dripStat(13))
-                        .foregroundStyle(isRest ? Color.drip.textTertiary : Color.drip.textSecondary)
+                        .foregroundStyle(adjPace != nil
+                                         ? Color.drip.tired
+                                         : (isRest ? Color.drip.textTertiary : Color.drip.textSecondary))
                         .lineLimit(1)
                         .frame(width: 50, alignment: .trailing)
                     Text(lap.avg_heart_rate.map(String.init) ?? "")

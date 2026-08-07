@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Post Run Drip — Log Detail Redesign v2</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.10);
+  --mood-tired:#C4873A; --sage:#4A9E6B; --rose:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --tracking-label:.12em; --tracking-meta:.14em;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DEDAD4;font-family:var(--font-body);color:var(--ink);
+  padding:40px 32px 80px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+.page-head{max-width:2320px;margin:0 auto 34px}
+.page-eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--ink-2)}
+.page-title{font-family:var(--font-display);font-size:40px;font-weight:600;margin-top:7px;letter-spacing:-.015em}
+.page-sub{font-size:15px;color:var(--ink-2);margin-top:11px;max-width:74ch;line-height:1.6}
+.page-sub b{color:var(--ink);font-weight:700}
+.spec{display:flex;gap:24px;margin-top:16px;flex-wrap:wrap}
+.spec div{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.spec b{color:var(--coral);font-weight:600}
+
+.rail{display:flex;gap:26px;align-items:flex-start;overflow-x:auto;padding-bottom:26px;
+  max-width:2320px;margin:0 auto;scrollbar-width:thin}
+.col{flex:0 0 364px}
+.col-head{margin-bottom:13px;padding-left:2px;height:140px;display:flex;flex-direction:column}
+.col-head .wc{margin-top:auto}
+.col-tag{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--ink-3)}
+.col-tag.now{color:var(--rose)}
+.col-tag.pick{color:var(--coral)}
+.col-name{font-family:var(--font-display);font-size:21px;font-weight:600;margin-top:3px;letter-spacing:-.01em}
+.col-why{font-size:12.5px;color:var(--ink-2);line-height:1.52;margin-top:6px}
+.col-why b{color:var(--ink)}
+.wc{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3)}
+.wc b{color:var(--coral);font-weight:600}
+
+.phone{background:var(--paper);border-radius:30px;overflow:hidden;
+  box-shadow:0 12px 34px rgba(0,0,0,.15);height:812px;display:flex;flex-direction:column}
+.phone.dim{opacity:.55;filter:saturate(.7)}
+.status{display:flex;justify-content:space-between;align-items:center;padding:13px 21px 5px;
+  font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+.status .batt{color:var(--sage);font-weight:600}
+.grabber{width:36px;height:4px;border-radius:2px;background:var(--paper-deep);margin:5px auto 0}
+.navbar{display:flex;justify-content:space-between;align-items:center;padding:11px 20px 2px;font-size:14.5px;
+  font-family:var(--font-display);font-weight:600}
+.navbar .edit{color:var(--coral)}
+.navbar .done{color:var(--ink-2)}
+.scroll{flex:1;overflow-y:auto;padding:0 22px 20px;scrollbar-width:thin}
+.scroll::-webkit-scrollbar{width:5px}
+.scroll::-webkit-scrollbar-thumb{background:var(--paper-deep);border-radius:3px}
+
+.plate{display:flex;justify-content:space-between;align-items:flex-end;
+  padding:12px 0 9px;border-bottom:1px solid var(--rule)}
+.plate-l,.plate-r{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--ink-3)}
+.title{font-family:var(--font-display);font-size:37px;font-weight:600;letter-spacing:-.018em;
+  line-height:1.02;margin-top:17px}
+.eyebrow-date{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-3);margin-top:7px}
+.mood{display:inline-flex;align-items:center;gap:6px;margin-top:11px;padding:5px 11px;border-radius:999px;
+  background:rgba(196,135,58,.13);font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--mood-tired)}
+.mood i{width:5px;height:5px;border-radius:50%;background:var(--mood-tired)}
+
+.stats{display:flex;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:17px}
+.stat{flex:1;padding:12px 0 11px;text-align:center;border-right:1px solid var(--rule)}
+.stat:last-child{border-right:0}
+.stat-k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:var(--tracking-label);color:var(--ink-3)}
+.stat-v{font-family:var(--font-display);font-size:25px;font-weight:600;margin-top:3px;letter-spacing:-.012em}
+.stat-v s{font-family:var(--font-mono);font-size:9.5px;font-weight:400;color:var(--ink-3);text-decoration:none;margin-left:2px}
+
+.srow{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.faint{color:var(--ink-3)}
+.link{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--coral);cursor:pointer;background:none;border:0;padding:0}
+.sec{padding-top:19px}
+.sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.muted{color:var(--ink-2)}
+.hair{height:1px;background:var(--rule);margin-top:20px}
+
+/* ---- OLD ---- */
+.old-p{font-size:14.5px;line-height:1.6}
+.old-p.ital{font-style:italic}
+.showfull{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--coral);
+  border-bottom:1px solid var(--coral);display:inline-block;margin-top:9px;padding-bottom:1px}
+
+/* ---- NEW: summary, shrunk + trimmed ---- */
+/* Opt 1 — quiet: down 1.5px, ink-2, tighter leading */
+.sum-quiet{font-size:13.5px;line-height:1.56;color:var(--ink-2)}
+/* Opt 2 — deck: magazine standfirst, ink but only 2 lines, tight */
+.sum-deck{font-family:var(--font-display);font-size:16.5px;font-weight:400;line-height:1.34;
+  letter-spacing:-.006em;color:var(--ink)}
+/* Opt 3 — mono-lead: first clause bold, rest quiet */
+.sum-lead{font-size:13.5px;line-height:1.56;color:var(--ink-2)}
+.sum-lead b{color:var(--ink);font-weight:700}
+
+/* ---- play row (the transcript, minimized) ---- */
+.playrow{display:flex;align-items:center;gap:11px;margin-top:14px;padding:9px 13px 9px 11px;
+  background:var(--card);border:1px solid var(--rule);border-radius:999px;cursor:pointer;
+  transition:border-color .16s}
+.playrow:hover{border-color:var(--coral)}
+.play{width:26px;height:26px;border-radius:50%;background:var(--coral);color:#fff;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:9px;padding-left:2px}
+.wave{flex:1;display:flex;align-items:flex-end;gap:2px;height:19px}
+.wave i{flex:1;background:var(--paper-deep);border-radius:1px;min-width:1px}
+.wave i.on{background:var(--coral)}
+.dur{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);flex:0 0 auto}
+.playrow .cap{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-2);flex:1}
+
+.readtx{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-3);margin-top:11px;cursor:pointer;background:none;border:0;
+  padding:0;display:block}
+.readtx:hover{color:var(--coral)}
+.txbox{margin-top:12px;padding-left:14px;border-left:2px solid var(--paper-deep)}
+.txbox p{font-style:italic;font-size:13.5px;line-height:1.58;color:var(--ink-2)}
+.txbox .tag{font-family:var(--font-mono);font-size:8.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+
+/* ---- insight button ---- */
+.insight-btn{width:100%;margin-top:20px;padding:13px 16px;background:transparent;
+  border:1px solid var(--rule);border-radius:10px;cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  transition:border-color .16s,background .16s}
+.insight-btn:hover{border-color:var(--coral);background:var(--coral-wash)}
+.insight-btn .lhs{display:flex;align-items:center;gap:9px}
+.insight-btn .spark{color:var(--coral);font-size:12px;line-height:1}
+.insight-btn .lbl{font-family:var(--font-mono);font-size:10px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--ink)}
+.insight-btn .arw{color:var(--ink-3);font-size:12px}
+.insight-btn.pending{border-style:dashed}
+.insight-btn.pending .lbl{color:var(--ink-3)}
+
+.insight-open{margin-top:20px;padding:16px 17px 15px;background:var(--paper-elevated);
+  border-left:2px solid var(--coral);border-radius:0 8px 8px 0}
+.insight-open .ih{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.insight-open .ih .t{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-label);
+  text-transform:uppercase;color:var(--coral)}
+.insight-open .ih .x{font-family:var(--font-mono);font-size:12px;color:var(--ink-3);cursor:pointer;background:none;border:0}
+.insight-open p{font-size:14px;line-height:1.58}
+.insight-open p+p{margin-top:9px}
+.insight-open .ev{display:flex;gap:14px;margin-top:13px;padding-top:12px;border-top:1px solid var(--rule)}
+.ev-cell .k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:var(--tracking-label);color:var(--ink-3)}
+.ev-cell .v{font-family:var(--font-mono);font-size:13px;font-weight:600;margin-top:3px;color:var(--ink)}
+
+.composer{display:flex;justify-content:space-between;align-items:center;margin-top:22px;
+  padding-top:13px;border-top:1px solid var(--rule);cursor:pointer}
+.composer .l{display:flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:9.5px;
+  letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--ink-3)}
+.composer .plus{color:var(--coral);font-size:13px}
+.footer-note{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);text-align:center;margin-top:26px}
+
+.pager{border-top:1px solid var(--rule);background:var(--paper);padding:9px 20px 13px;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto}
+.ticks{display:flex;gap:14px;align-items:center;overflow:hidden}
+.tick{text-align:center}
+.tick .d{width:5px;height:5px;border-radius:50%;background:var(--paper-deep);margin:0 auto 5px}
+.tick.fill .d{background:var(--ink-3)}
+.tick.cur .d{background:var(--coral);width:6px;height:6px}
+.tick .l{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tick.cur .l{color:var(--coral)}
+.count{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-3);flex:0 0 auto}
+
+.notes{max-width:2320px;margin:12px auto 0;display:flex;gap:22px;flex-wrap:wrap}
+.note{flex:1 1 300px;background:var(--paper);border-radius:12px;padding:19px 21px}
+.note h4{font-family:var(--font-mono);font-size:9.5px;letter-spacing:var(--tracking-meta);
+  text-transform:uppercase;color:var(--coral);font-weight:500}
+.note ul{margin:11px 0 0;padding-left:0;list-style:none}
+.note li{font-size:13px;line-height:1.55;color:var(--ink-2);padding-left:15px;position:relative;margin-bottom:7px}
+.note li::before{content:"—";position:absolute;left:0;color:var(--ink-3)}
+.note li b{color:var(--ink)}
+.note li code{font-family:var(--font-mono);font-size:11.5px;background:var(--paper-deep);
+  padding:1px 4px;border-radius:3px;color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="page-eyebrow">Post Run Drip · Journal · Entry Detail · v2</div>
+  <h1 class="page-title">Summary reads. Memo plays. Insight waits.</h1>
+  <p class="page-sub">Summary stays as the thing you read — just quieter and trimmed to two sentences. The transcript stops being a wall of text and becomes what it actually is: <b>a recording you can play</b>, one row tall, with the words behind a tap. The AI read moves behind a button. Three columns below are three degrees of "quieter" for the summary — pick the one that reads right to you.</p>
+  <div class="spec">
+    <div>Summary · <b>53 → 20 words</b></div>
+    <div>Transcript · <b>41 words → 1 row</b></div>
+    <div>Insight · <b>68 words → 1 button</b></div>
+    <div>Sheet total · <b>162 → 20 words</b></div>
+  </div>
+</div>
+
+<div class="rail">
+
+  <!-- ============================ NOW ============================ -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag now">Today</div>
+      <div class="col-name">What ships now</div>
+      <p class="col-why">Three prose blocks in a row, all roughly the same weight. Nothing tells your eye which one to read.</p>
+      <div class="wc">162 words · <b>121 AI-written</b></div>
+    </div>
+    <div class="phone dim">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">VOICE SUMMARY</span><span class="link">EDIT</span></div>
+          <p class="old-p">I ran a session with steady, easy, and fast intervals on a hilly and humid course. I felt like I wasn't moving very fast and my fitness isn't quite where I want it to be, especially on the fast segments. Despite this, I felt healthy overall, and a previous knee issue resolved itself.</p>
+        </div>
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">TRANSCRIPT</span></div>
+          <p class="old-p">Ran a session that was six minutes steady, two minutes easy, two minutes fast, two minutes easy. It was on a hilly course in a pretty humid, humid day. I honestly just feel like I'm not moving very fast in s…</p>
+          <span class="showfull">Show full transcript ↓</span>
+        </div>
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">AI INSIGHT</span></div>
+          <p class="old-p ital">This session shows a slight fade, with the reps slowing in the second half, anchored by the 5:52/mi on the seventh rep. Given the very hot and humid conditions, this is an understandable outcome for a workout targeting the steady zone. Getting this volume of work done while feeling banged up is a credit to your toughness, but notice that some recoveries also drifted into your moderate zone.</p>
+        </div>
+        <div class="sec"><div class="sec-head"><span class="eyebrow">WORKOUT NOTES</span><span class="eyebrow faint">OPTIONAL</span></div></div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ OPT 1 ============================ -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag pick">Option 1 · recommended</div>
+      <div class="col-name">Quiet summary</div>
+      <p class="col-why">Summary drops to <b>13.5px in warm gray</b> — deliberately subordinate to the numbers. Two sentences. The big type on the page is the date and the stats, where it belongs.</p>
+      <div class="wc">20 words · <b>1 play row</b> · 1 button</div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 4 · 07:12</span></div>
+        <h2 class="title">Tuesday.</h2>
+        <div class="eyebrow-date">Steady · Easy · Fast reps</div>
+        <div class="mood"><i></i>Tired</div>
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">SUMMARY</span><span class="link">EDIT</span></div>
+          <p class="sum-quiet">Steady, easy and fast reps on a hilly, humid course. Felt flat on the fast segments; knee held up fine.</p>
+          <div class="playrow" onclick="playToggle(this)">
+            <div class="play">▶</div>
+            <div class="wave">
+              <i style="height:32%"></i><i style="height:58%"></i><i style="height:44%"></i><i style="height:78%"></i>
+              <i style="height:52%"></i><i style="height:88%"></i><i style="height:36%"></i><i style="height:64%"></i>
+              <i style="height:48%"></i><i style="height:82%"></i><i style="height:40%"></i><i style="height:70%"></i>
+              <i style="height:56%"></i><i style="height:30%"></i><i style="height:66%"></i><i style="height:46%"></i>
+              <i style="height:74%"></i><i style="height:38%"></i><i style="height:60%"></i><i style="height:50%"></i>
+              <i style="height:84%"></i><i style="height:42%"></i><i style="height:68%"></i><i style="height:34%"></i>
+            </div>
+            <div class="dur">0:42</div>
+          </div>
+          <button class="readtx" onclick="txToggle(this)">Read the words ↓</button>
+        </div>
+
+        <button class="insight-btn" onclick="openInsight(this)">
+          <span class="lhs"><span class="spark">✦</span><span class="lbl">Read the insight</span></span>
+          <span class="arw">→</span>
+        </button>
+
+        <div class="composer"><span class="l"><span class="plus">+</span>Add a note</span></div>
+        <div class="footer-note">— Logged Aug 4 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ OPT 2 ============================ -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag">Option 2</div>
+      <div class="col-name">Summary as deck</div>
+      <p class="col-why">Instead of shrinking it, <b>re-role</b> it: Crimson Pro 16.5px sitting under the date like a magazine standfirst, above the stats. Reads as the caption to the run, not a paragraph.</p>
+      <div class="wc">20 words · <b>1 play row</b> · 1 button</div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 4 · 07:12</span></div>
+        <h2 class="title">Tuesday.</h2>
+        <div class="eyebrow-date">Steady · Easy · Fast reps</div>
+        <p class="sum-deck" style="margin-top:11px">Steady, easy and fast reps on a hilly, humid course. Felt flat on the fast segments; knee held up fine.</p>
+        <div class="mood"><i></i>Tired</div>
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">THE MEMO</span><span class="link">EDIT</span></div>
+          <div class="playrow" style="margin-top:0" onclick="playToggle(this)">
+            <div class="play">▶</div>
+            <div class="wave">
+              <i style="height:32%"></i><i style="height:58%"></i><i style="height:44%"></i><i style="height:78%"></i>
+              <i style="height:52%"></i><i style="height:88%"></i><i style="height:36%"></i><i style="height:64%"></i>
+              <i style="height:48%"></i><i style="height:82%"></i><i style="height:40%"></i><i style="height:70%"></i>
+              <i style="height:56%"></i><i style="height:30%"></i><i style="height:66%"></i><i style="height:46%"></i>
+              <i style="height:74%"></i><i style="height:38%"></i><i style="height:60%"></i><i style="height:50%"></i>
+              <i style="height:84%"></i><i style="height:42%"></i><i style="height:68%"></i><i style="height:34%"></i>
+            </div>
+            <div class="dur">0:42</div>
+          </div>
+          <button class="readtx" onclick="txToggle(this)">Read the words ↓</button>
+        </div>
+
+        <button class="insight-btn" onclick="openInsight(this)">
+          <span class="lhs"><span class="spark">✦</span><span class="lbl">Read the insight</span></span>
+          <span class="arw">→</span>
+        </button>
+
+        <div class="composer"><span class="l"><span class="plus">+</span>Add a note</span></div>
+        <div class="footer-note">— Logged Aug 4 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ OPT 3 ============================ -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag">Option 3</div>
+      <div class="col-name">Lead clause bold</div>
+      <p class="col-why">Same quiet size as Option 1, but the <b>first clause carries ink weight</b> so it survives a two-second glance. The rest is there if you slow down.</p>
+      <div class="wc">20 words · <b>1 play row</b> · 1 button</div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 4 · 07:12</span></div>
+        <h2 class="title">Tuesday.</h2>
+        <div class="eyebrow-date">Steady · Easy · Fast reps</div>
+        <div class="mood"><i></i>Tired</div>
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">SUMMARY</span><span class="link">EDIT</span></div>
+          <p class="sum-lead"><b>Felt flat on the fast segments.</b> Steady, easy and fast reps on a hilly, humid course — knee held up fine.</p>
+          <div class="playrow" onclick="playToggle(this)">
+            <div class="play">▶</div>
+            <div class="wave">
+              <i style="height:32%"></i><i style="height:58%"></i><i style="height:44%"></i><i style="height:78%"></i>
+              <i style="height:52%"></i><i style="height:88%"></i><i style="height:36%"></i><i style="height:64%"></i>
+              <i style="height:48%"></i><i style="height:82%"></i><i style="height:40%"></i><i style="height:70%"></i>
+              <i style="height:56%"></i><i style="height:30%"></i><i style="height:66%"></i><i style="height:46%"></i>
+              <i style="height:74%"></i><i style="height:38%"></i><i style="height:60%"></i><i style="height:50%"></i>
+              <i style="height:84%"></i><i style="height:42%"></i><i style="height:68%"></i><i style="height:34%"></i>
+            </div>
+            <div class="dur">0:42</div>
+          </div>
+          <button class="readtx" onclick="txToggle(this)">Read the words ↓</button>
+        </div>
+
+        <button class="insight-btn" onclick="openInsight(this)">
+          <span class="lhs"><span class="spark">✦</span><span class="lbl">Read the insight</span></span>
+          <span class="arw">→</span>
+        </button>
+
+        <div class="composer"><span class="l"><span class="plus">+</span>Add a note</span></div>
+        <div class="footer-note">— Logged Aug 4 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ OPENED ============================ -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag">Option 1 · everything open</div>
+      <div class="col-name">Both taps spent</div>
+      <p class="col-why">Words revealed <i>and</i> insight opened — the worst case for length. Still shorter than what ships today, and every word is here because you asked.</p>
+      <div class="wc">Playing · <b>words shown</b> · insight open</div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 4 · 07:12</span></div>
+        <h2 class="title">Tuesday.</h2>
+        <div class="eyebrow-date">Steady · Easy · Fast reps</div>
+        <div class="mood"><i></i>Tired</div>
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">7.95<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">48:17</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">6:04<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow">LINKED · CONNECT</span><span class="link">VIEW DETAIL ↗</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">SUMMARY</span><span class="link">EDIT</span></div>
+          <p class="sum-quiet">Steady, easy and fast reps on a hilly, humid course. Felt flat on the fast segments; knee held up fine.</p>
+          <div class="playrow">
+            <div class="play">❚❚</div>
+            <div class="wave">
+              <i class="on" style="height:32%"></i><i class="on" style="height:58%"></i><i class="on" style="height:44%"></i>
+              <i class="on" style="height:78%"></i><i class="on" style="height:52%"></i><i class="on" style="height:88%"></i>
+              <i class="on" style="height:36%"></i><i class="on" style="height:64%"></i><i class="on" style="height:48%"></i>
+              <i style="height:82%"></i><i style="height:40%"></i><i style="height:70%"></i>
+              <i style="height:56%"></i><i style="height:30%"></i><i style="height:66%"></i><i style="height:46%"></i>
+              <i style="height:74%"></i><i style="height:38%"></i><i style="height:60%"></i><i style="height:50%"></i>
+              <i style="height:84%"></i><i style="height:42%"></i><i style="height:68%"></i><i style="height:34%"></i>
+            </div>
+            <div class="dur">0:16</div>
+          </div>
+          <button class="readtx" style="color:var(--coral)">Hide the words ↑</button>
+          <div class="txbox">
+            <div class="tag">Verbatim · 0:42</div>
+            <p>Ran a session that was six minutes steady, two minutes easy, two minutes fast, two minutes easy. It was on a hilly course in a pretty humid, humid day. I honestly just feel like I'm not moving very fast, and my fitness isn't where I want it to be. Knee felt fine the whole way though.</p>
+          </div>
+        </div>
+
+        <div class="insight-open">
+          <div class="ih"><span class="t">✦ The read</span><button class="x">✕</button></div>
+          <p>Reps faded in the second half — the 7th came in at <b>5:52</b>, twelve seconds off your first. In this humidity, that's the expected shape, not a fitness problem.</p>
+          <p class="muted" style="font-size:13px">Watch the recoveries: three drifted into moderate.</p>
+          <div class="ev">
+            <div class="ev-cell"><div class="k">FADE</div><div class="v">−12s</div></div>
+            <div class="ev-cell"><div class="k">DEW PT</div><div class="v">72°</div></div>
+            <div class="ev-cell"><div class="k">REC DRIFT</div><div class="v">3 / 7</div></div>
+          </div>
+        </div>
+
+        <div class="composer"><span class="l"><span class="plus">+</span>Add a note</span></div>
+        <div class="footer-note">— Logged Aug 4 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 24</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">48/50</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================ EDGE ============================ -->
+  <div class="col">
+    <div class="col-head">
+      <div class="col-tag">Edge cases</div>
+      <div class="col-name">Empty & pending</div>
+      <p class="col-why">No memo, nothing linked, insight still cooking, audio missing but transcript present. The page has to hold up when there's <b>nothing to say</b>.</p>
+      <div class="wc">Four states in one column</div>
+    </div>
+    <div class="phone">
+      <div class="status"><span>3:05</span><span class="batt">90</span></div>
+      <div class="grabber"></div>
+      <div class="navbar"><span class="edit">Edit</span><span class="done">Done</span></div>
+      <div class="scroll">
+        <div class="plate"><span class="plate-l">Journal · Entry Detail</span><span class="plate-r">Aug 6 · 06:40</span></div>
+        <h2 class="title">Thursday.</h2>
+        <div class="eyebrow-date">No memo recorded</div>
+        <div class="stats">
+          <div class="stat"><div class="stat-k">DIST</div><div class="stat-v">5.02<s>mi</s></div></div>
+          <div class="stat"><div class="stat-k">TIME</div><div class="stat-v">41:08</div></div>
+          <div class="stat"><div class="stat-k">PACE</div><div class="stat-v">8:11<s>/mi</s></div></div>
+        </div>
+        <div class="srow"><span class="eyebrow faint">LINKED · NONE</span><span class="link">LINK A RUN →</span></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow faint">SUMMARY</span></div>
+          <p class="sum-quiet" style="color:var(--ink-3);font-style:italic">No memo for this run.</p>
+          <button class="readtx" style="color:var(--coral)">＋ Record one now</button>
+        </div>
+
+        <button class="insight-btn pending">
+          <span class="lhs"><span class="spark" style="color:var(--ink-3)">✦</span><span class="lbl">Insight needs a memo</span></span>
+        </button>
+
+        <div class="hair"></div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">STILL PROCESSING</span></div>
+          <button class="insight-btn pending" style="margin-top:8px">
+            <span class="lhs"><span class="spark" style="color:var(--ink-3)">✦</span><span class="lbl">Writing your insight…</span></span>
+          </button>
+          <p class="col-why" style="font-size:11.5px;margin-top:8px">Dashed border, present-tense label. Fills in live via your existing 8×3s poll — no spinner, no empty section.</p>
+        </div>
+
+        <div class="sec">
+          <div class="sec-head"><span class="eyebrow">AUDIO GONE, WORDS REMAIN</span></div>
+          <p class="sum-quiet">Easy shakeout, legs felt heavy from Tuesday.</p>
+          <button class="readtx" style="margin-top:9px;color:var(--coral)">Read the words ↓</button>
+          <p class="col-why" style="font-size:11.5px;margin-top:8px">If <code style="font-family:var(--font-mono);font-size:11px">audio_url</code> is nil but the transcript isn't, the play row simply doesn't render. No broken player.</p>
+        </div>
+
+        <div class="composer"><span class="l"><span class="plus">+</span>Add a note</span></div>
+        <div class="footer-note">— Logged Aug 6 —</div>
+      </div>
+      <div class="pager">
+        <div class="ticks">
+          <div class="tick fill"><div class="d"></div><div class="l">Jul 28</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 1</div></div>
+          <div class="tick fill"><div class="d"></div><div class="l">Aug 4</div></div>
+          <div class="tick cur"><div class="d"></div><div class="l">Aug 6</div></div>
+        </div>
+        <div class="count">50/50</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h4>The three changes</h4>
+    <ul>
+      <li><b>Summary shrinks and trims.</b> 15.5px ink → <b>13.5px warm gray</b>, two sentences instead of three. It stops competing with your stats for the top of the visual hierarchy.</li>
+      <li><b>Transcript becomes a play row.</b> 41 words of wall → one 44pt row: play button, waveform, duration. Words behind <b>"Read the words ↓"</b>.</li>
+      <li><b>Insight becomes a button.</b> <code>✦ Read the insight →</code>. Opens inline, capped at two sentences plus an evidence row.</li>
+      <li><b>"WORKOUT NOTES / OPTIONAL"</b> → a single <b>＋ Add a note</b> row. An empty labelled section is worse than no section.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h4>What the summary prompt has to change to</h4>
+    <ul>
+      <li><b>Two sentences, hard cap.</b> Sentence one: what the session was. Sentence two: how it felt. Nothing else.</li>
+      <li><b>Drop "I ran a session with…"</b> — the reader is the runner. Start at the content: "Steady, easy and fast reps on a hilly, humid course."</li>
+      <li><b>No hedging clauses.</b> "Despite this, I felt healthy overall" → "knee held up fine."</li>
+      <li>At 13.5px, <b>anything over ~30 words looks like a paragraph again</b>. The type change only works if the prompt change ships with it.</li>
+    </ul>
+  </div>
+  <div class="note">
+    <h4>Build notes — checked against your code</h4>
+    <ul>
+      <li><code>audio_url</code> is already on <code>training_logs</code> and on the <code>TrainingLog</code> model, so the data is there.</li>
+      <li><b>But there is no <code>AVAudioPlayer</code> anywhere in the app yet</b> — the play row is genuinely new UI, not a re-skin. Budget for a small <code>MemoPlayer</code> view.</li>
+      <li><b>Duration isn't stored.</b> The <code>0:42</code> needs either a new column or reading it off the asset after load. A column is cheaper than a fetch on every row.</li>
+      <li>Some paths write a <b>public</b> URL (<code>audioPublicURL</code>) while the transcript loads from the <b>private</b> <code>training-memos</code> bucket. Playback needs the signed-URL path, same as <code>VoiceTranscriptText</code> already does.</li>
+      <li><code>generateCoachInsight()</code> exists in the view model and is <b>wired to nothing</b> (see the comment at line 461). A button is its obvious home — generate on tap, not on every memo.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+function playToggle(row){
+  var bars = row.querySelectorAll('.wave i');
+  var playing = row.classList.toggle('playing');
+  row.querySelector('.play').textContent = playing ? '❚❚' : '▶';
+  bars.forEach(function(b,i){ b.classList.toggle('on', playing && i < 9); });
+  row.querySelector('.dur').textContent = playing ? '0:16' : '0:42';
+}
+function txToggle(btn){
+  var box = btn.parentElement.querySelector('.txbox');
+  if (box){ box.remove(); btn.textContent = 'Read the words ↓'; btn.style.color=''; return; }
+  box = document.createElement('div');
+  box.className = 'txbox';
+  box.innerHTML = '<div class="tag">Verbatim · 0:42</div><p>Ran a session that was six minutes steady, ' +
+    'two minutes easy, two minutes fast, two minutes easy. It was on a hilly course in a pretty humid, ' +
+    'humid day. I honestly just feel like I\'m not moving very fast, and my fitness isn\'t where I want ' +
+    'it to be. Knee felt fine the whole way though.</p>';
+  btn.parentElement.insertBefore(box, btn.nextSibling);
+  btn.textContent = 'Hide the words ↑';
+  btn.style.color = 'var(--coral)';
+}
+function openInsight(btn){
+  var box = document.createElement('div');
+  box.className = 'insight-open';
+  box.innerHTML = '<div class="ih"><span class="t">✦ The read</span><button class="x">✕</button></div>' +
+    '<p>Reps faded in the second half — the 7th came in at <b>5:52</b>, twelve seconds off your first. ' +
+    'In this humidity, that\'s the expected shape, not a fitness problem.</p>' +
+    '<p class="muted" style="font-size:13px">Watch the recoveries: three drifted into moderate.</p>' +
+    '<div class="ev">' +
+      '<div class="ev-cell"><div class="k">FADE</div><div class="v">−12s</div></div>' +
+      '<div class="ev-cell"><div class="k">DEW PT</div><div class="v">72°</div></div>' +
+      '<div class="ev-cell"><div class="k">REC DRIFT</div><div class="v">3 / 7</div></div>' +
+    '</div>';
+  btn.replaceWith(box);
+  box.querySelector('.x').addEventListener('click', function(){
+    var b = document.createElement('button');
+    b.className = 'insight-btn';
+    b.innerHTML = '<span class="lhs"><span class="spark">✦</span><span class="lbl">Read the insight</span></span><span class="arw">→</span>';
+    b.addEventListener('click', function(){ openInsight(b); });
+    box.replaceWith(b);
+  });
+}
+</script>
+</body>
+</html>

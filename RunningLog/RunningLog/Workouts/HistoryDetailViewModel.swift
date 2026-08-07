@@ -11,6 +11,14 @@ final class HistoryDetailViewModel {
     var isLinkingWorkout = false
     var isSavingEdits = false
     var isSavingWorkoutNotes = false
+    /// True while `generateCoachInsight()` is in flight, so the "✦ READ THE
+    /// INSIGHT" row can show "WRITING YOUR INSIGHT…" instead of looking dead
+    /// for the several seconds the edge function takes.
+    var isGeneratingInsight = false
+    /// Why the last on-demand generation failed. Kept separate from
+    /// `coachInsight` on purpose: an error stored as the insight would read as
+    /// the coach's actual take, and would permanently block the retry path.
+    var insightError: String?
     var matchedVitalWorkout: RunningWorkout?
     /// The training_logs row id of the linked Strava import (if any). Strava runs
     /// are stored as their own training_logs row carrying the GPS stream + laps —
@@ -148,7 +156,9 @@ final class HistoryDetailViewModel {
             updateData["mood"] = newMood.map { .string($0) } ?? .null
         }
 
-        let newType = workoutType.isEmpty ? nil : workoutType
+        // Normalized before the comparison so re-saving an entry the picker
+        // loaded as "interval" doesn't write "interval" straight back.
+        let newType = WorkoutLabel.normalize(workoutType.isEmpty ? nil : workoutType)
         if newType != currentEntry.workoutType {
             updateData["workout_type"] = newType.map { .string($0) } ?? .null
         }
@@ -185,6 +195,22 @@ final class HistoryDetailViewModel {
                 .eq("id", value: entryId.uuidString)
                 .execute()
 
+            // A Strava-linked run is two rows, and the workout receipt renders
+            // from the OTHER one — so an edit to any field the receipt reads
+            // that lands only here saves cleanly and changes nothing the
+            // athlete can see. Mirror those fields.
+            //
+            // `workout_type` joined `workout_notes` on 2026-08-07: the receipt
+            // reads it via `WorkoutLapsService.fetchType` and writes it via
+            // `setType`, both against the stream row, so the two pickers were
+            // editing different rows with no reconciliation at all.
+            //
+            // (Patch; the real fix is one session identity per run.)
+            let mirrored = updateData.filter { Self.streamRowMirroredFields.contains($0.key) }
+            if !mirrored.isEmpty {
+                await mirrorToStreamRow(mirrored)
+            }
+
             currentEntry = TrainingLog(
                 id: currentEntry.id,
                 createdAt: currentEntry.createdAt,
@@ -219,6 +245,72 @@ final class HistoryDetailViewModel {
         }
     }
 
+    // MARK: - Mirror workout notes onto the linked stream row
+
+    /// Copy `workout_notes` onto the Strava import row when this entry is
+    /// linked to one.
+    ///
+    /// A Strava-linked run occupies TWO `training_logs` rows: this journal
+    /// entry (`entryId`), and the import that carries the GPS stream and laps
+    /// (`linkedStreamLogId`). Every write in this view model targets
+    /// `entryId`, but `WorkoutRepReceiptView` — the WORKOUT section embedded
+    /// below, and the full-screen detail sheet — resolves its row as
+    /// `linkedStreamLogId ?? entryId` and reads `workout_notes` off THAT row.
+    /// So on a linked run the athlete's edit saved, returned 200, and the
+    /// screen never changed. Silent, and indistinguishable from a broken app.
+    ///
+    /// Mirroring keeps both rows agreeing so no reader has to know which one
+    /// it got. Best-effort by design: a failure here must never fail the save
+    /// the athlete actually asked for — the journal row is already written and
+    /// is the record of truth.
+    ///
+    /// This is a patch. The fix is one session identity shared by both rows so
+    /// there is one place to write and one place to read — see
+    /// `docs/specs/runs-and-notes-split.md`. Delete this when that lands.
+
+    /// Columns the workout receipt reads off the STREAM row rather than the
+    /// journal row. An edit to any of these that writes only to `entryId` is
+    /// invisible on the receipt.
+    ///
+    /// Keep this list honest: adding a field to the journal's edit mode without
+    /// adding it here recreates the silent-no-op bug in a new costume. The
+    /// known remaining gaps are `mood` and `cleaned_notes` — deliberately NOT
+    /// mirrored, because on a split pair those genuinely belong to the note,
+    /// not the run, and overwriting the run's copy would be the merge decision
+    /// `merge_voice_orphan_into_run` already makes differently.
+    private static let streamRowMirroredFields: Set<String> = [
+        "workout_notes", "workout_type",
+    ]
+
+    /// Copy an already-saved field set onto the linked stream row.
+    ///
+    /// Best-effort by design: a failure here must never fail the save the
+    /// athlete actually asked for — the journal row is already written and is
+    /// the record of truth. No-ops when there is no separate stream row, which
+    /// since 2026-08-05 is the common case (a memo attaches to the run's row
+    /// rather than creating a second one).
+    @MainActor
+    private func mirrorToStreamRow(_ fields: [String: AnyJSON]) async {
+        guard let mirrorId = linkedStreamLogId, mirrorId != entryId, !fields.isEmpty else { return }
+        do {
+            try await supabase
+                .from("training_logs")
+                .update(fields)
+                .eq("id", value: mirrorId.uuidString)
+                .execute()
+        } catch {
+            Log.database.error("mirror \(fields.keys.sorted()) to linked stream row failed: \(error)")
+        }
+    }
+
+    @MainActor
+    private func mirrorWorkoutNotes(_ text: String?) async {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        await mirrorToStreamRow([
+            "workout_notes": (trimmed?.isEmpty == false) ? .string(trimmed!) : .null,
+        ])
+    }
+
     // MARK: - Save Workout Notes
 
     @MainActor
@@ -235,6 +327,8 @@ final class HistoryDetailViewModel {
                 .update(updateData)
                 .eq("id", value: entryId.uuidString)
                 .execute()
+
+            await mirrorWorkoutNotes(text)
 
             currentEntry = TrainingLog(
                 id: currentEntry.id,
@@ -318,23 +412,53 @@ final class HistoryDetailViewModel {
 
     // MARK: - Match Vital Workout
 
+    /// How close a candidate has to be to count as the same session.
+    ///
+    /// These are `_shared/voiceOrphanMatch.ts`'s numbers on purpose. That is the
+    /// ONE matcher `docs/specs/runs-and-notes-split.md` keeps when the other
+    /// eight are deleted, so anything that still has to guess should converge on
+    /// it rather than invent a tenth set of thresholds.
+    private static let matchWindowSeconds: TimeInterval = 4 * 60 * 60
+    private static let matchDistanceFloorMiles = 0.5
+    private static let matchDistanceFraction = 0.08
+
+    /// Is this candidate close enough to be the same run as this entry?
+    ///
+    /// Before 2026-08-07 there was no such test. Ranking ran through `min(by:)`
+    /// over every candidate on the local calendar day, and `min` always returns
+    /// a winner — so a run 23 hours away won simply by being the only one on the
+    /// day. The `120` in `closer` below is a tie-break switch (rank by time, or
+    /// by distance when two candidates are effectively simultaneous), never a
+    /// match window. This is the match window.
+    static func isPlausibleMatch(_ c: RunningWorkout,
+                                 entryTime: TimeInterval,
+                                 entryDist: Double?) -> Bool {
+        guard abs(c.startDate.timeIntervalSince1970 - entryTime) <= matchWindowSeconds else {
+            return false
+        }
+        // No distance on the entry → time has to carry it alone. (`hasLinkedWorkout`
+        // requires a distance today, so this is defensive rather than live.)
+        guard let d = entryDist else { return true }
+        let tolerance = max(matchDistanceFloorMiles, matchDistanceFraction * c.distanceMiles)
+        return abs(c.distanceMiles - d) <= tolerance
+    }
+
     @MainActor
     func matchVitalWorkout() async {
         guard currentEntry.hasLinkedWorkout, let workoutDate = currentEntry.workoutDate else { return }
 
         // Pull from all wearable sources — Vital is stubbed, HealthKit covers Apple
-        // Watch + Garmin-via-Apple-Health, and we add Strava-imported training_logs
-        // mapped to RunningWorkout so parsed detail views can reach them.
+        // Watch + Garmin-via-Apple-Health, and we add stream-carrying training_logs
+        // rows mapped to RunningWorkout so parsed detail views can reach them.
         async let vital = VitalManager.shared.fetchRunningWorkouts(for: workoutDate)
         async let hk = HealthKitManager.shared.fetchRunningWorkouts(for: workoutDate)
-        async let strava = Self.fetchStravaRunningWorkoutsForDate(workoutDate)
+        async let streams = Self.fetchStreamCarryingLogsForDate(workoutDate)
 
-        // Keep the Strava rows separately: they're real training_logs rows (with
-        // the stream), so they're the ones "VIEW DETAIL" should open. The merged
-        // list still drives the "LINKED · <source>" label + closest-by-distance
-        // display match, unchanged.
-        let stravaRows = await strava
-        let all = (await vital) + (await hk) + stravaRows
+        // Keep the stream rows separately: they're real training_logs rows with a
+        // GPS stream, so they're the ones "VIEW DETAIL" should open. The merged
+        // list still drives the "LINKED · <source>" label.
+        let streamRows = await streams
+        let all = (await vital) + (await hk) + streamRows
         guard !all.isEmpty else { return }
 
         // Rank candidates by how well they match THIS entry — start time first,
@@ -356,19 +480,55 @@ final class HistoryDetailViewModel {
             guard let d = entryDist else { return at < bt }
             return abs(a.distanceMiles - d) < abs(b.distanceMiles - d)
         }
-        matchedVitalWorkout = all.min(by: closer)
-        linkedStreamLogId = stravaRows.min(by: closer)?.id
+        func best(_ xs: [RunningWorkout]) -> RunningWorkout? {
+            xs.filter { Self.isPlausibleMatch($0, entryTime: entryTime, entryDist: entryDist) }
+              .min(by: closer)
+        }
+        matchedVitalWorkout = best(all)
+        // May resolve to `entryId` itself — see `fetchStreamCarryingLogsForDate`.
+        // That's correct: the receipt then renders against this very row and
+        // `workoutDetailId` collapses to `entry.id`, which is what it already
+        // falls back to.
+        linkedStreamLogId = best(streamRows)?.id
     }
 
-    /// Fetch Strava-imported workouts for a specific date (same pattern as
-    /// TrainingTabView.fetchStravaRunningWorkouts but filtered by date).
-    private static func fetchStravaRunningWorkoutsForDate(_ date: Date) async -> [RunningWorkout] {
+    /// Every `training_logs` row for this day that actually carries a GPS stream.
+    ///
+    /// **Why this is a stream test and not a source allowlist (2026-08-07).**
+    /// This query used to read `.in("source", ["garmin", "vital"])`. There has
+    /// never been a `garmin` or a `vital` row in the database — Vital was never
+    /// connected — so it returned `[]` on every call, `linkedStreamLogId` was
+    /// permanently `nil`, and three things downstream had therefore never run on
+    /// a live device: the inline WORKOUT receipt and the COMPARE row (both gated
+    /// on `linkedStreamLogId != nil` in `HistoryDetailSheet+Editorial`), and
+    /// `mirrorWorkoutNotes` below. The sibling query in
+    /// `VoiceLogView.fetchStravaRunningWorkouts` carries the corrected source
+    /// list and a comment about this exact failure mode; the two drifted apart.
+    ///
+    /// A source allowlist is the wrong shape for the question. What the caller
+    /// needs is "a row with telemetry to chart," and every new source string
+    /// (`strava`, `auto_sync`, `strava_backfill`, whatever comes next) silently
+    /// breaks an allowlist while leaving the call site looking correct. So ask
+    /// the real question: `external_streams IS NOT NULL`.
+    ///
+    /// The entry's own row is deliberately NOT excluded. Since the 2026-08-05
+    /// picker fix, a memo recorded against a synced run attaches to that run's
+    /// row instead of creating a second one — so for a session logged since
+    /// then, the stream is on `entryId` itself and there is no sibling to find.
+    /// Including it lets that row win on a zero time delta, which is what makes
+    /// the receipt render for the modern (single-row) shape as well as the
+    /// historical split-pair one.
+    ///
+    /// `external_streams` is filtered on but never selected: the blob is large
+    /// and no caller here reads it.
+    static func fetchStreamCarryingLogsForDate(_ date: Date) async -> [RunningWorkout] {
         struct Row: Decodable {
             let id: String
             let workout_date: Date?
             let workout_distance_miles: Double?
             let workout_duration_minutes: Double?
             let vital_workout_id: String?
+            let source: String?
         }
         let cal = Calendar.current
         let start = cal.startOfDay(for: date)
@@ -378,9 +538,9 @@ final class HistoryDetailViewModel {
             let userId = AuthManager.shared.userId
             let rows: [Row] = try await supabase
                 .from("training_logs")
-                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id")
+                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, source")
                 .eq("user_id", value: userId)
-                .in("source", values: ["garmin", "vital"])
+                .not("external_streams", operator: .is, value: "null")
                 .gte("workout_date", value: iso.string(from: start))
                 .lt("workout_date", value: iso.string(from: end))
                 .execute()
@@ -398,12 +558,57 @@ final class HistoryDetailViewModel {
                     durationMinutes: dur,
                     pacePerMile: dur / dist,
                     calories: 0,
-                    sourceApp: "Garmin",
+                    // Was hardcoded "Garmin", which was invisible while this
+                    // query returned nothing and would now label every Strava
+                    // run "LINKED · GARMIN". Mirrors VoiceLogView:1413.
+                    sourceApp: Self.sourceAppLabel(r.source),
                     vitalWorkoutId: r.vital_workout_id
                 )
             }
         } catch {
+            Log.database.error("fetchStreamCarryingLogsForDate failed: \(error)")
             return []
+        }
+    }
+
+    /// The `training_logs` row id for a workout that came from the DEVICE
+    /// (HealthKit / Vital), whose `id` is a device sample UUID and not a row id
+    /// at all.
+    ///
+    /// **Why this exists (2026-08-07, S2).** `WorkoutRepDetailSheet` documents
+    /// `workoutId` as "the `training_logs` row id", and `WorkoutRepReceiptView`
+    /// queries `training_logs` with it. But `DayDetailSheet` (the plan day
+    /// sheet) fed it `RunningWorkout.id` straight off
+    /// `VitalManager.fetchRunningWorkouts` — a device UUID. No row has that id,
+    /// so every query returned nothing and the receipt opened blank. Nothing
+    /// errored; the two id types are both `UUID`, so the compiler can't tell
+    /// them apart. (A `TrainingLogID` wrapper type would make this
+    /// uncompilable — worth doing where there's a compiler to check it.)
+    ///
+    /// Resolves through the same day query and the same plausibility test the
+    /// journal uses, so this adds no new matcher — see
+    /// `docs/specs/runs-and-notes-split.md` on why that matters.
+    /// Returns nil when the device workout has no imported row yet, which is a
+    /// real state: the run happened but Strava hasn't synced it.
+    static func streamLogId(matching workout: RunningWorkout) async -> UUID? {
+        let candidates = await fetchStreamCarryingLogsForDate(workout.startDate)
+        let t = workout.startDate.timeIntervalSince1970
+        let d = workout.distanceMiles
+        return candidates
+            .filter { isPlausibleMatch($0, entryTime: t, entryDist: d) }
+            .min { abs($0.startDate.timeIntervalSince1970 - t) < abs($1.startDate.timeIntervalSince1970 - t) }?
+            .id
+    }
+
+    /// `training_logs.source` → the label the LINKED row shows.
+    private static func sourceAppLabel(_ source: String?) -> String {
+        switch (source ?? "").lowercased() {
+        case "strava", "strava_backfill": return "Strava"
+        case "auto_sync": return "Apple Health"
+        case "garmin": return "Garmin"
+        case "vital": return "Vital"
+        case "manual": return "Manual"
+        default: return "Strava"
         }
     }
 
@@ -460,14 +665,25 @@ final class HistoryDetailViewModel {
 
     // MARK: - Generate Coach Insight
     //
-    // Retained as a reusable capability (e.g. a future manual "regenerate"),
-    // but no longer wired to a button: the entry-level AI Insight now appears
-    // automatically once `process-training-memo` has written `coach_insight`
-    // (see `refreshCoachInsightWhenReady`). Calls the workout-specific
-    // `generate-workout-insight` by training_log_id.
+    // Wired to the "✦ READ THE INSIGHT" row in the journal entry sheet: when
+    // no insight exists yet, tapping generates one on demand. (This function
+    // sat orphaned for a while — the insight used to appear automatically and
+    // nothing called this. The redesign moved the insight behind a tap, which
+    // gave it a home again.)
+    //
+    // Calls the workout-specific `generate-workout-insight` by training_log_id.
+    //
+    // NOTE on cost: `process-training-memo` still generates an insight
+    // server-side for every voice memo, so this on-demand path is usually a
+    // no-op fallback rather than the primary source. If we want to actually
+    // stop paying for insights nobody reads, drop the eager generation from
+    // that edge function and let this be the only producer.
 
     @MainActor
     func generateCoachInsight() async {
+        guard !isGeneratingInsight else { return }
+        isGeneratingInsight = true
+        defer { isGeneratingInsight = false }
         let id = currentEntry.id
         Log.coach.debug("generateCoachInsight() → generate-workout-insight for \(id)")
 
@@ -490,16 +706,22 @@ final class HistoryDetailViewModel {
                 options: .init(body: Req(training_log_id: id.uuidString))
             )
             let text = resp.insight?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            await MainActor.run {
-                self.coachInsight = text.isEmpty
-                    ? (resp.error ?? "Couldn't generate insight. Try again.")
-                    : text
+            if text.isEmpty {
+                // Failures go to `insightError`, never to `coachInsight` — an
+                // error string stored as the insight would make `hasInsight`
+                // true, so the retry path would keep re-showing the error and
+                // could never call this function again.
+                insightError = resp.error ?? "Couldn't generate an insight. Tap to try again."
+            } else {
+                coachInsight = text
+                insightError = nil
+                // Persist it. Without this, reopening the entry finds
+                // `coach_insight` still null and pays for another generation.
+                saveCoachInsight(text)
             }
         } catch {
             Log.coach.error("generateCoachInsight failed: \(error)")
-            await MainActor.run {
-                self.coachInsight = "Couldn't reach the coach. Try again."
-            }
+            insightError = "Couldn't reach the coach. Tap to try again."
         }
     }
 

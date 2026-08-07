@@ -74,19 +74,12 @@ struct WorkoutsAndRepsSection: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.drip.divider, lineWidth: 1))
         .task { await load() }
+        // Was a hand-rolled copy of WorkoutRepDetailSheet's chrome — the same
+        // NavigationStack + ScrollView + "WORKOUT" toolbar, duplicated. Three
+        // surfaces each had one, so the missing Done button and the missing
+        // opaque nav bar had to be fixed in four places. One place now. (S2)
         .sheet(item: $sheet) { s in
-            NavigationStack {
-                ScrollView {
-                    WorkoutRepReceiptView(workoutId: s.id).padding(20)
-                }
-                .background(Color.drip.background.ignoresSafeArea())
-                .toolbar {
-                    ToolbarItem(placement: .principal) {
-                        Text("WORKOUT").font(.dripStat(10)).tracking(1.0)
-                            .foregroundStyle(Color.drip.textSecondary)
-                    }
-                }
-            }
+            WorkoutRepDetailSheet(workoutId: s.id)
         }
     }
 

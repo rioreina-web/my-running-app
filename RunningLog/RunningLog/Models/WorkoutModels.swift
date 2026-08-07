@@ -732,7 +732,18 @@ struct EditableWorkoutStep: Identifiable {
         } else if let intensity = step.targetPaceIntensity {
             self.paceSelection = .custom(intensity.percentage)
         } else {
-            self.paceSelection = .none
+            // A step can carry a zone with NO targetPaceIntensity — that is
+            // exactly what zone-based web authoring produces. Reading only
+            // `targetPaceIntensity` above dropped it: "7 × 1mi at threshold"
+            // round-tripped to a step with no zone at all, and saving from
+            // the iOS editor then wrote the loss back. The recovery branch
+            // below has always read `paceZone` directly; this is the parent
+            // step catching up to it. Same class of silent structural loss
+            // as the May 2026 repeats/recovery regression.
+            self.paceSelection = EditableWorkoutStep.paceSelection(
+                from: step.paceZone,
+                adjustment: step.paceAdjustment
+            )
         }
 
         // Carry over interval structure verbatim. Before this fix, repeats

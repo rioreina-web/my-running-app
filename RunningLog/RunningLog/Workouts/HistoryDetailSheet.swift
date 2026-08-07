@@ -25,7 +25,16 @@ struct HistoryDetailSheet: View {
     @State var showWorkoutPicker = false
     @State var selectedWorkout: RunningWorkout?
     @State var workoutNotesText: String = ""
+    /// Drives the notes composer: false + empty text collapses it to a single
+    /// "＋ ADD A NOTE" row instead of an empty labelled section. (Declared long
+    /// ago and unused until the composer was collapsed.)
     @State var isEditingWorkoutNotes = false
+    /// "READ THE WORDS ↓" — reveals the verbatim transcript under the memo.
+    /// Per-sheet, so paging to another entry starts collapsed again.
+    @State var showTranscript = false
+    /// "✦ READ THE INSIGHT" — reveals (or generates, then reveals) the coach's
+    /// read. Starts false on every entry: the insight is opt-in per visit.
+    @State var showInsight = false
 
     // Edit mode state
     @State var isEditing = false
@@ -372,6 +381,12 @@ struct WorkoutStatItem: View {
 
 struct FormattedSummaryText: View {
     let text: String
+    /// Body size. Defaults to the original 14pt; the journal's SUMMARY section
+    /// passes 13.5 so the summary sits below the stat strip in the hierarchy.
+    var size: CGFloat = 14
+    /// Body color. Defaults to the original ink; the journal passes
+    /// `textSecondary` for the same reason.
+    var color: Color = Color.drip.textPrimary
 
     private var parsedElements: [SummaryElement] {
         parseText(text)
@@ -390,18 +405,19 @@ struct FormattedSummaryText: View {
                 case let .bullet(content):
                     HStack(alignment: .top, spacing: 8) {
                         Text("–")
-                            .font(.dripBody(14))
+                            .font(.dripBody(size))
                             .foregroundStyle(Color.drip.textTertiary)
                         Text(content)
-                            .font(.dripBody(14))
-                            .foregroundStyle(Color.drip.textPrimary)
+                            .font(.dripBody(size))
+                            .foregroundStyle(color)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 case let .paragraph(content):
                     Text(content)
-                        .font(.dripBody(14))
-                        .foregroundStyle(Color.drip.textPrimary)
+                        .font(.dripBody(size))
+                        .foregroundStyle(color)
                         .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

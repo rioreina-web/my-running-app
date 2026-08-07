@@ -44,6 +44,7 @@ import {
   splitsFromLaps,
   splitsFromPaceSegments,
   splitsFromExtractedIntervals,
+  splitsFromParsedBlocks,
   isQualityWorkoutType,
   type CoachContext,
   type ScheduledLite as CoachScheduledLite,
@@ -51,59 +52,6 @@ import {
   type WorkoutSplit,
 } from "../_shared/coach-context.ts";
 
-/**
- * Build rep splits from the parsed_structure execution blocks. These come from
- * parse-workout-structure's recovery segmentation — continuous efforts are
- * already merged into single reps (a continuous 2k is ONE rep, not two 1ks), so
- * this is the truest rep structure available, above raw mile/km laps. Returns
- * [] when there are no parsed blocks or <2 work reps.
- */
-function splitsFromParsedBlocks(
-  blocks:
-    | Array<{
-        role?: string;
-        rep_num?: number | null;
-        distance_miles?: number | string;
-        duration_s?: number | string;
-        avg_pace_per_mile?: string;
-        avg_hr?: number | null;
-      }>
-    | null
-    | undefined,
-): WorkoutSplit[] {
-  if (!Array.isArray(blocks) || blocks.length === 0) return [];
-  const out: WorkoutSplit[] = [];
-  let workIndex = 0;
-  for (const b of blocks) {
-    const role = (b.role ?? "").toLowerCase();
-    const dist = typeof b.distance_miles === "number"
-      ? b.distance_miles
-      : parseFloat(String(b.distance_miles ?? "0"));
-    const paceParts = (b.avg_pace_per_mile ?? "").split(":");
-    const paceSec = paceParts.length === 2
-      ? parseInt(paceParts[0], 10) * 60 + parseInt(paceParts[1], 10)
-      : NaN;
-    if (!dist || dist <= 0 || !isFinite(paceSec)) continue;
-    const effortKind: WorkoutSplit["effortKind"] = role === "warmup"
-      ? "warmup"
-      : role === "cooldown"
-      ? "cooldown"
-      : role === "work_rep"
-      ? "work"
-      : role === "recovery"
-      ? "unknown"
-      : "unknown";
-    if (effortKind === "work") workIndex += 1;
-    out.push({
-      label: effortKind === "work" ? `Rep ${workIndex}` : (b.role ?? "segment"),
-      distanceMiles: dist,
-      paceSecPerMile: paceSec,
-      avgHeartRate: typeof b.avg_hr === "number" ? b.avg_hr : undefined,
-      effortKind,
-    });
-  }
-  return out;
-}
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { captureException, flushSentry } from "../_shared/sentry.ts";

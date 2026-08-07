@@ -297,21 +297,21 @@ struct TrainingLog: Codable, Identifiable {
         return String(format: "%d:%02d", paceMinutes, paceSeconds)
     }
 
+    /// Delegates to `WorkoutLabel` (2026-08-07). This was the fourth switch
+    /// over `workout_type` in the app — `WorkoutLabel.swift` was written to be
+    /// the last one and this copy survived it, missing the whole race-pace half
+    /// of the taxonomy (MP / HMP / LT / 10K / 5K / 3K / Mile all fell through
+    /// to `nil`, so a run typed with any of them showed no title at all).
+    ///
+    /// The `nil` for a `nil`/blank type is preserved deliberately —
+    /// `resolvedTitle` falls back to the weekday on nil, and
+    /// `WorkoutLabel.display` returns "Run" rather than nil, which would title
+    /// every untyped entry "Run".
     var workoutTypeLabel: String? {
-        guard let type = workoutType else { return nil }
-        switch type {
-        case "easy": return "Easy"
-        case "tempo": return "Tempo"
-        case "interval", "intervals": return "Intervals"
-        case "long_run", "long": return "Long Run"
-        case "progression": return "Progression"
-        case "recovery": return "Recovery"
-        case "race": return "Race"
-        case "cross_training": return "Cross-train"
-        case "strength": return "Strength"
-        case "other": return "Workout"
-        default: return nil
-        }
+        guard let type = workoutType?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !type.isEmpty
+        else { return nil }
+        return WorkoutLabel.display(type)
     }
 
     // MARK: - Manual entry

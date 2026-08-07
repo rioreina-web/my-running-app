@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { TrainingLog } from "@/lib/types";
 import { formatDuration, MOOD_CONFIG, WORKOUT_TYPE_CONFIG } from "@/lib/utils";
@@ -776,6 +777,14 @@ function JournalEntry({
               >
                 Edit
               </button>
+              {/* The three-act detail. Inline expand stays for a quick look;
+                  this is the full read — conditions, splits, pace trace. */}
+              <Link
+                href={`/workouts/${log.id}`}
+                className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary/70 transition-colors hover:text-coral"
+              >
+                Full detail →
+              </Link>
             </>
           )}
         </div>

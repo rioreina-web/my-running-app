@@ -77,6 +77,11 @@ struct DayDetailSheet: View {
     @State private var completedVitalWorkouts: [RunningWorkout] = []
     @State private var showVitalDetail = false
     @State private var selectedVitalWorkout: RunningWorkout?
+    /// The `training_logs` row id for `selectedVitalWorkout`. NOT the same as
+    /// `selectedVitalWorkout.id`, which is a HealthKit/Vital device UUID — see
+    /// `resolveAndPresentDetail`.
+    @State private var resolvedDetailLogId: UUID?
+    @State private var resolvingDetail = false
 
     /// Server-generated coaching insight for the linked training_logs row.
     /// Populated in `.task` when the sheet appears. Trimmed to a single
@@ -347,7 +352,10 @@ struct DayDetailSheet: View {
                                 ForEach(completedVitalWorkouts) { vitalWorkout in
                                     Button {
                                         selectedVitalWorkout = vitalWorkout
-                                        showVitalDetail = true
+                                        // Resolve the DEVICE workout to its
+                                        // training_logs row before opening —
+                                        // see resolveAndPresentDetail.
+                                        Task { await resolveAndPresentDetail(vitalWorkout) }
                                     } label: {
                                         VStack(spacing: 12) {
                                             HStack(spacing: 0) {
@@ -512,9 +520,9 @@ struct DayDetailSheet: View {
                 Text(exportErrorMessage ?? "An error occurred while exporting")
             }
             .sheet(isPresented: $showVitalDetail) {
-                if let vitalWorkout = selectedVitalWorkout {
+                if let rowId = resolvedDetailLogId {
                     // Canonical workout detail — rep-by-rep chart, notes, splits.
-                    WorkoutRepDetailSheet(workoutId: vitalWorkout.id)
+                    WorkoutRepDetailSheet(workoutId: rowId)
                 }
             }
             .task {
@@ -536,6 +544,29 @@ struct DayDetailSheet: View {
                 }
             }
         }
+    }
+
+    // MARK: - Workout detail
+
+    /// Open the canonical workout detail for a completed run on this day.
+    ///
+    /// `completedVitalWorkouts` comes from `VitalManager.fetchRunningWorkouts`,
+    /// so each element's `id` is a **HealthKit/Vital device UUID**. This sheet
+    /// used to hand that straight to `WorkoutRepDetailSheet`, which documents
+    /// its parameter as "the `training_logs` row id" and queries `training_logs`
+    /// with it. No row has a device UUID for an id, so the receipt opened
+    /// blank — silently, since both types are `UUID` and nothing errors.
+    ///
+    /// Resolve to the real row first (2026-08-07, S2). If the run hasn't been
+    /// imported yet there is no row to open, so we don't present an empty
+    /// sheet — that's a real state, not a failure.
+    @MainActor
+    private func resolveAndPresentDetail(_ workout: RunningWorkout) async {
+        guard !resolvingDetail else { return }
+        resolvingDetail = true
+        defer { resolvingDetail = false }
+        resolvedDetailLogId = await HistoryDetailViewModel.streamLogId(matching: workout)
+        if resolvedDetailLogId != nil { showVitalDetail = true }
     }
 
     // MARK: - Insight fetch

@@ -186,7 +186,7 @@ enum WorkoutRecipeParser {
         var out: [RecipeStep] = []
         for piece in split(text) {
             guard let step = read(piece) else { continue }
-            let isRest = step.detail.map(looksLikeRest) ?? false || looksLikeRest(piece)
+            let isRest = (step.detail.map { looksLikeRest($0) } ?? false) || looksLikeRest(piece)
             if isRest, let last = out.indices.last, out[last].isWork, out[last].rest == nil {
                 out[last].rest = [step.distance, step.detail].compactMap { $0 }.joined(separator: " ")
                 continue
@@ -648,16 +648,15 @@ enum ReceiptMemoService {
     static func attach(workoutId: UUID, localURL: URL) async -> Bool {
         let userId = AuthManager.shared.userId
         guard !userId.isEmpty else { return false }
+        let publicURL: String
         do {
+            // Upload through the service-role edge function, NOT
+            // supabase.storage directly — direct client uploads to
+            // `training-memos` have been rejected by storage RLS since
+            // 2026-06-02 (see uploadVoiceMemoAudio in Supabase.swift). This
+            // was the last caller still on the broken path.
             let data = try Data(contentsOf: localURL)
-            let path = "\(userId)/\(localURL.lastPathComponent)"
-            try await supabase.storage
-                .from("training-memos")
-                .upload(path, data: data,
-                        options: FileOptions(contentType: "audio/m4a", upsert: true))
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: path).absoluteString
+            publicURL = try await uploadVoiceMemoAudio(data)
 
             struct Patch: Encodable {
                 let audio_url: String
@@ -668,7 +667,22 @@ enum ReceiptMemoService {
                 .update(Patch(audio_url: publicURL, processing_status: "pending"))
                 .eq("id", value: workoutId.uuidString)
                 .execute()
+        } catch {
+            // Upload or row-update failed — the memo genuinely didn't land.
+            Log.coach.error("ReceiptMemoService.attach failed: \(error)")
+            return false
+        }
 
+        // From here the memo is SAFE regardless of what happens next: the
+        // UPDATE above set processing_status='pending' with a fresh audio_url,
+        // which fires the `auto_process_voice_log_on_attach` trigger
+        // (20260806220000) and enqueues a voice_processing_jobs row. The drain
+        // worker will process it with the service-role key — bypassing the
+        // per-user rate limit — within ~a minute. The direct invoke below is
+        // only the fast path; its failure (429 quota, 409 already-processing,
+        // network blip) must NOT surface as "Couldn't attach the memo",
+        // because the attach already succeeded.
+        do {
             struct Record: Encodable { let id: String; let user_id: String; let audio_url: String }
             struct Req: Encodable { let record: Record; let old_record: String? }
             _ = try await supabase.functions.invoke(
@@ -678,11 +692,10 @@ enum ReceiptMemoService {
                     old_record: nil
                 ))
             ) as FunctionsIgnoredResponse
-            return true
         } catch {
-            Log.coach.error("ReceiptMemoService.attach failed: \(error)")
-            return false
+            Log.coach.info("ReceiptMemoService fast-path invoke deferred to drain worker: \(error)")
         }
+        return true
     }
 }
 

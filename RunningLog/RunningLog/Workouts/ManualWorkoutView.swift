@@ -77,27 +77,12 @@ struct ManualWorkoutView: View {
         ("injured", "cross.case.fill", Color.drip.injured)
     ]
 
-    // Run subtypes offered when logging a NEW run — the pace-zone
-    // taxonomy. "Tempo"/"Threshold" are intentionally not here (retired
-    // as ambiguous); legacy values are still preserved on edit via
-    // `runTypeOptions` below.
-    private let newRunTypes: [(String, String)] = [
-        ("easy", "Easy"), ("moderate", "Moderate"), ("steady", "Steady"),
-        ("mp", "MP"), ("hmp", "HMP"), ("lt", "LT"),
-        ("10k", "10K"), ("5k", "5K"), ("3k", "3K"), ("mile", "Mile"),
-        ("long_run", "Long run"), ("recovery", "Recovery"),
-        ("race", "Race"), ("other", "Other")
-    ]
-
-    // The options actually shown in the picker. If the loaded run carries
-    // a legacy type ("tempo", "intervals", …) that isn't in the canonical
-    // set, we append it so editing an old run never silently rewrites its
-    // type. New runs only ever see the canonical list.
+    // The options actually shown in the picker. Both the canonical list and the
+    // preserve-a-legacy-value rule moved to `WorkoutLabel` on 2026-08-07 — this
+    // view had the only correct copy of each, and the journal + receipt pickers
+    // each had their own divergent one. See `WorkoutLabel.offered`.
     private var runTypeOptions: [(String, String)] {
-        if runType.isEmpty || newRunTypes.contains(where: { $0.0 == runType }) {
-            return newRunTypes
-        }
-        return newRunTypes + [(runType, WorkoutLabel.display(runType))]
+        WorkoutLabel.options(including: runType)
     }
 
     private var isEditing: Bool { existing != nil }

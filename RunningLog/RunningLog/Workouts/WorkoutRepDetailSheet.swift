@@ -26,6 +26,8 @@ import SwiftUI
 struct WorkoutRepDetailSheet: View {
     let workoutId: UUID
 
+    @Environment(\.dismiss) private var dismiss
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -33,11 +35,24 @@ struct WorkoutRepDetailSheet: View {
                     .padding(20)
             }
             .background(Color.drip.background.ignoresSafeArea())
+            // Without an opaque nav bar the 34pt headline scrolls UNDER it and
+            // clips — the artefact in the 2026-08-06 screenshot.
+            // `HistoryDetailSheet` and `EditWorkoutNotesSheet` both set this;
+            // this sheet was the one that didn't. (2026-08-07)
+            .toolbarBackground(Color.drip.background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text("WORKOUT")
                         .font(.dripStat(10)).tracking(1.0)
                         .foregroundStyle(Color.drip.textSecondary)
+                }
+                // Drag-to-dismiss was the only way out. Every other sheet in
+                // the app offers an explicit exit.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.dripBody(15))
+                        .foregroundStyle(Color.drip.coral)
                 }
             }
         }

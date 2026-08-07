@@ -155,10 +155,21 @@ Deno.serve(async (req) => {
     if (capped) return capped;
 
     // ── the session ──
+    // NOTE: `scheduled_workout_id` and `start_time` are intentionally NOT
+    // selected — neither column exists on training_logs in this schema, and
+    // including them made PostgREST reject the entire select (400), which
+    // nulled `log` and made this function return 404 "Workout not found" on
+    // EVERY call. `coach_workout_reads` has zero rows as a result.
+    //
+    // `process-training-memo` and `generate-workout-insight` both hit this and
+    // both carry the same note; this one was missed. The scheduled-workout
+    // enrichment below is guarded on the field being truthy, so it no-ops
+    // (undefined) until a real linkage column exists. `start_time` was never
+    // read at all.
     const { data: log } = await supabase
       .from("training_logs")
       .select(
-        "id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, cleaned_notes, scheduled_workout_id, weather_actual, start_time",
+        "id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, cleaned_notes, weather_actual",
       )
       .eq("id", logId)
       .eq("user_id", athleteId)

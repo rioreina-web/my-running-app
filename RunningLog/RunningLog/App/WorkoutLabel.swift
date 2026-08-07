@@ -73,4 +73,80 @@ enum WorkoutLabel {
                 .capitalized
         }
     }
+
+    // ────────────────────────────────────────────────────────────────────
+    // The offer list — what a picker is allowed to show (2026-08-07)
+    // ────────────────────────────────────────────────────────────────────
+    //
+    // `display(_:)` fixed how a stored key is RENDERED. It did not fix which
+    // keys get WRITTEN, so three pickers each kept their own list and they
+    // disagreed:
+    //
+    //   ManualWorkoutView.newRunTypes        14 keys, the canonical taxonomy
+    //   EditableWorkoutTypeSection (journal)  6 keys, incl. "interval"
+    //   WorkoutRepReceiptView.typeOptions     9 keys, incl. "intervals"
+    //
+    // The database shows the cost: `interval` (14 rows) and `intervals` (9
+    // rows) are both live, for one concept. `tempo` (13) and `threshold` (10)
+    // are stored too, though the taxonomy in CLAUDE.md retired both as
+    // ambiguous. Every consumer that groups or filters by `workout_type` — the
+    // quality-session filter, Trends key-session classification, the Ask
+    // analyzers — splits those rows across two buckets.
+    //
+    // So: one list, here, next to the mapper that renders it.
+
+    /// Run types offered when logging or re-typing a run — the pace-zone
+    /// taxonomy from CLAUDE.md. "Tempo" and "Threshold" are deliberately absent
+    /// (retired as ambiguous — the pace zone IS the label; Threshold is LT).
+    /// Legacy values already stored are preserved on edit via
+    /// `options(including:)`.
+    static let offered: [(String, String)] = [
+        ("easy", "Easy"), ("moderate", "Moderate"), ("steady", "Steady"),
+        ("mp", "MP"), ("hmp", "HMP"), ("lt", "LT"),
+        ("10k", "10K"), ("5k", "5K"), ("3k", "3K"), ("mile", "Mile"),
+        ("long_run", "Long run"), ("recovery", "Recovery"),
+        ("race", "Race"), ("other", "Other"),
+    ]
+
+    /// The offer list, plus `current` when it's a legacy value that isn't in
+    /// it — so opening an old run's picker never silently rewrites its type,
+    /// while a new run only ever sees the canonical set. Generalized from
+    /// `ManualWorkoutView.runTypeOptions`, which was the only place that got
+    /// this right.
+    static func options(including current: String?) -> [(String, String)] {
+        guard let raw = current?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+            !raw.isEmpty,
+            !offered.contains(where: { $0.0 == raw })
+        else { return offered }
+        return offered + [(raw, display(raw))]
+    }
+
+    /// Fold a key to its canonical spelling before WRITING it.
+    ///
+    /// Call this on every write of `workout_type`. It only collapses spellings
+    /// of the same concept — it does not reinterpret a workout. `threshold` →
+    /// `lt` is the one judgement call, and it's the taxonomy's own: "Threshold
+    /// maps to LT (unambiguous)", per this file's header.
+    ///
+    /// Anything unrecognised passes through lowercased and untouched. Never
+    /// invent a type the athlete didn't choose.
+    static func normalize(_ workoutType: String?) -> String? {
+        guard let raw = workoutType?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased(),
+            !raw.isEmpty
+        else { return nil }
+
+        switch raw {
+        case "interval":                          return "intervals"
+        case "longrun", "long":                   return "long_run"
+        case "longwo":                            return "long_wo"
+        case "cross_training", "crosstraining", "crosstrain":
+            return "cross_train"
+        case "threshold":                         return "lt"
+        default:                                  return raw
+        }
+    }
 }

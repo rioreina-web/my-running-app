@@ -548,24 +548,12 @@ struct CoachReadView: View {
     private func workoutDetailSheet(for id: UUID) -> some View {
         // Route to the real workout analysis — Direction A "Rep Receipt":
         // hero rep chart, HR/pace/cadence/elevation telemetry, ANALYSIS +
-        // SPLITS, vs-recent comparison, type override. WorkoutRepReceiptView
-        // needs only the id (same entry point WorkoutsAndRepsSection uses), so
-        // no TrainingLog→RunningWorkout bridge is required.
-        NavigationStack {
-            ScrollView {
-                WorkoutRepReceiptView(workoutId: id)
-                    .padding(20)
-            }
-            .background(Color.drip.background.ignoresSafeArea())
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text("WORKOUT")
-                        .font(.dripStat(10))
-                        .foregroundStyle(Color.drip.textSecondary)
-                        .tracking(0.8)
-                }
-            }
-        }
+        // SPLITS, vs-recent comparison, type override.
+        //
+        // Was a hand-rolled copy of WorkoutRepDetailSheet's chrome (and drifted
+        // from it — tracking 0.8 where the canonical sheet uses 1.0). Presents
+        // the canonical sheet since 2026-08-07 (S2).
+        WorkoutRepDetailSheet(workoutId: id)
     }
 
     // MARK: - Date helpers

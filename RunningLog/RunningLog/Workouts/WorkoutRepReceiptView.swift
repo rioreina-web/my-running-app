@@ -47,6 +47,9 @@ struct WorkoutRepReceiptView: View {
     @State private var laps: [WorkoutLapRow] = []
     @State private var zones: RepChartZones = .none
     @State private var showStructureEditor = false
+    /// "THE WORKOUT" free-text editor — writes `workout_notes` to `workoutId`,
+    /// the same row `fetchPrescription` reads it from.
+    @State private var showNotesEditor = false
     @State private var prescription: WorkoutPrescription?
     @State private var parsedIntent: String?
     @State private var workoutType: String?
@@ -102,7 +105,17 @@ struct WorkoutRepReceiptView: View {
     @State private var expandedTrace: TraceRow?
 
     private let mpm = 1609.344
-    static let typeOptions = ["intervals", "threshold", "tempo", "fartlek", "progression", "easy", "long_run", "recovery", "race"]
+
+    /// Was a private 9-key list here — `["intervals", "threshold", "tempo",
+    /// "fartlek", "progression", "easy", "long_run", "recovery", "race"]`.
+    /// It offered "threshold" and "tempo", both retired by the taxonomy, and
+    /// spelled intervals differently from the journal's picker. Single source
+    /// of truth since 2026-08-07: `WorkoutLabel.offered`. Legacy values already
+    /// on a row are preserved via `options(including:)` so re-typing an old run
+    /// never silently rewrites it.
+    private var typeOptions: [(String, String)] {
+        WorkoutLabel.options(including: workoutType)
+    }
 
     /// The rows of Act 3. `telemetry` is the unified HR × pace × cadence ×
     /// elevation panel (RRTelemetryPanel) — it replaced the four separate
@@ -336,6 +349,21 @@ struct WorkoutRepReceiptView: View {
                 )
             }
         }
+        .sheet(isPresented: $showNotesEditor) {
+            if let workoutId {
+                // Seeded from `notes` ONLY, never from `pattern`. When the
+                // section is rendering the parser's headline (notes nil,
+                // pattern set) the editor opens empty on purpose: `pattern` is
+                // a machine guess, and pre-filling it would launder that guess
+                // into the athlete's own words the moment they hit Save.
+                EditWorkoutNotesSheet(
+                    workoutId: workoutId,
+                    dateLabel: displayTitle,
+                    initialText: prescription?.notes ?? "",
+                    onSaved: { Task { await load() } }
+                )
+            }
+        }
         .sheet(isPresented: $showMemoRecorder) {
             if let workoutId {
                 // The pipeline (transcribe → mood → niggles) runs server-side
@@ -384,7 +412,7 @@ struct WorkoutRepReceiptView: View {
             }
             .buttonStyle(.plain)
             .confirmationDialog("Change workout type", isPresented: $showTypePicker, titleVisibility: .visible) {
-                ForEach(Self.typeOptions, id: \.self) { t in Button(prettyType(t)) { updateType(t) } }
+                ForEach(typeOptions, id: \.0) { opt in Button(opt.1) { updateType(opt.0) } }
                 Button("Cancel", role: .cancel) {}
             }
 
@@ -663,9 +691,17 @@ struct WorkoutRepReceiptView: View {
     /// The prescribed session, one row per segment. Falls back to the note as a
     /// single line whenever the structure can't be read — the note is never
     /// hidden, and a recipe is never guessed.
+    ///
+    /// Editable in place (2026-08-06). The section writes to the SAME
+    /// `training_logs` row it reads from (`workoutId`), which is the point: the
+    /// journal sheet's edit mode saves `workout_notes` to the voice-log row,
+    /// while a Strava-linked run renders this receipt from the *import* row —
+    /// so editing there saved cleanly and changed nothing here. Tapping the
+    /// section edits the row on screen.
     @ViewBuilder private var workoutRecipeSection: some View {
         let source = prescription?.notes ?? prescription?.pattern
-        if let text = source?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+        let text = source?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !text.isEmpty {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("THE WORKOUT")
@@ -676,6 +712,13 @@ struct WorkoutRepReceiptView: View {
                         .font(.dripStat(9)).tracking(1.0)
                         .foregroundStyle(Color.drip.textTertiary)
                         .lineLimit(1)
+                    // The affordance sits next to the thing it edits. No global
+                    // edit mode — one field, one tap, one write.
+                    if workoutId != nil {
+                        Text("EDIT")
+                            .font(.dripStat(9)).tracking(1.2)
+                            .foregroundStyle(Color.drip.coral)
+                    }
                 }
                 if let steps = WorkoutRecipeParser.parse(text) {
                     WorkoutRecipeView(steps: steps)
@@ -686,6 +729,29 @@ struct WorkoutRepReceiptView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { if workoutId != nil { showNotesEditor = true } }
+        } else if workoutId != nil {
+            // Was: nothing at all. An imported run with no description had no
+            // way to acquire one — the section simply didn't render, so there
+            // was nothing to tap.
+            Button { showNotesEditor = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
+                    Text("ADD THE WORKOUT")
+                        .font(.dripStat(9)).tracking(1.2)
+                }
+                .foregroundStyle(Color.drip.textTertiary)
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .foregroundStyle(Color.drip.divider)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -746,7 +812,7 @@ struct WorkoutRepReceiptView: View {
                 RRRepBars(reps: allSplits, targetSec: targetSec, colorByZone: colorByZone,
                           colorByPace: colorByPace, heatOn: heatOn, km: km, zones: hrZones,
                           showElev: showElev, fitToWidth: true)
-                LapSplitsList(laps: orderedLaps, km: km, mpSec: targetSec)
+                LapSplitsList(laps: orderedLaps, km: km, mpSec: targetSec, heatOn: heatOn)
             } else if !continuousSplits.isEmpty {
                 RRRepBars(reps: continuousSplits, targetSec: continuousAvgPaceSec,
                           colorByZone: colorByZone, colorByPace: colorByPace,
@@ -969,11 +1035,26 @@ struct WorkoutRepReceiptView: View {
     /// Net elevation change (ft, signed) over a stream time window
     /// [start, end] — end altitude minus start altitude, so a net descent
     /// reads negative. nil when there's no usable altitude stream.
+    ///
+    /// Both endpoints are MEDIANS of the first/last few samples in the
+    /// window, not single readings. A barometric altimeter jitters a foot or
+    /// two sample to sample, and a bare two-sample difference lets one bad
+    /// reading define an entire lap -- which is how a flat track produced a
+    /// per-lap elevation profile that looked like hills.
     private func elevNetFt(start: Double, end: Double) -> Int? {
         guard sAltFt.count > 1, sTimes.count == sAltFt.count else { return nil }
         let idxs = sTimes.indices.filter { sTimes[$0] > start && sTimes[$0] <= end }
-        guard let first = idxs.first, let last = idxs.last else { return nil }
-        return Int((sAltFt[last] - sAltFt[first]).rounded())
+        guard !idxs.isEmpty else { return nil }
+        let n = min(5, max(1, idxs.count / 4))
+        func median(_ vals: [Double]) -> Double {
+            let s = vals.sorted()
+            guard !s.isEmpty else { return 0 }
+            return s.count % 2 == 1 ? s[s.count / 2]
+                                    : (s[s.count / 2 - 1] + s[s.count / 2]) / 2
+        }
+        let head = median(idxs.prefix(n).map { sAltFt[$0] })
+        let tail = median(idxs.suffix(n).map { sAltFt[$0] })
+        return Int((tail - head).rounded())
     }
 
     private var tweaksRow: some View {
@@ -1272,9 +1353,15 @@ struct WorkoutRepReceiptView: View {
     // MARK: Loading
 
     private func updateType(_ t: String) {
-        workoutType = t
+        // Normalize on write, not on read. `display(_:)` already made
+        // "interval" and "intervals" LOOK the same everywhere, which hid the
+        // fact that they were being stored as two values — and every consumer
+        // that GROUPS by workout_type (the quality-session filter, Trends key
+        // sessions, the Ask analyzers) still saw two buckets.
+        let normalized = WorkoutLabel.normalize(t) ?? t
+        workoutType = normalized
         guard let workoutId else { return }
-        Task { await WorkoutLapsService.setType(workoutId: workoutId, type: t) }
+        Task { await WorkoutLapsService.setType(workoutId: workoutId, type: normalized) }
     }
 
     /// Compute the heavy stream-derived arrays a single time, after the workout
