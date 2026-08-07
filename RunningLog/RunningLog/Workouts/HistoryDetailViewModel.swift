@@ -278,8 +278,16 @@ final class HistoryDetailViewModel {
     /// mirrored, because on a split pair those genuinely belong to the note,
     /// not the run, and overwriting the run's copy would be the merge decision
     /// `merge_voice_orphan_into_run` already makes differently.
+    ///
+    /// `workout_distance_miles` / `workout_duration_minutes` joined on
+    /// 2026-08-07: `WorkoutRepChart.fetchSummary` reads both off the stream row
+    /// and `wrDistanceMi` / `wrTimeSec` prefer them over the GPS stream and the
+    /// summed laps, so they drive the receipt's headline distance, time AND the
+    /// average pace derived from the pair. A distance correction typed in the
+    /// journal was the loudest silent no-op left on the screen.
     private static let streamRowMirroredFields: Set<String> = [
         "workout_notes", "workout_type",
+        "workout_distance_miles", "workout_duration_minutes",
     ]
 
     /// Copy an already-saved field set onto the linked stream row.
