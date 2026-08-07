@@ -22,8 +22,14 @@ struct CompareMetric: Identifiable {
     let isPace: Bool
     /// Numeric value for deltas / plotting (nil when the session can't carry it).
     let value: (FastSession, Bool, Bool) -> Double?
-    /// Display string for the head-to-head grid.
+    /// Display string for the head-to-head grid — always the RAW, measured
+    /// figure. Adjusted variants live in `subValues` beneath it.
     let display: (FastSession, Bool, Bool) -> String
+    /// Secondary lines under the headline figure, as (caption, value) pairs.
+    /// The caption list must be IDENTICAL for every session so the A and B
+    /// columns line up — use "—" for a session that can't carry the value; the
+    /// grid drops any sub-line that is "—" on both sides.
+    var subValues: (FastSession) -> [(caption: String, value: String)] = { _ in [] }
     /// Axis / tile unit line, e.g. "bpm · ▲ steadier".
     let trendUnit: String
 
@@ -32,9 +38,24 @@ struct CompareMetric: Identifiable {
 
 enum CompareMetrics {
     static let all: [CompareMetric] = [
+        // Pace is the one number the athlete actually ran, so it is the raw
+        // clock pace — never an adjusted one. The model's opinions (heat, then
+        // heat + terrain) sit underneath it in smaller type, where they can be
+        // read as commentary rather than mistaken for the result. Bold-is-
+        // stronger follows the headline, so the duel is decided on raw pace.
         CompareMetric(id: "pace", label: "Pace", hint: "per mile", dir: .lowerBetter, group: "OUTPUT", isPace: true,
-            value: { s, h, hi in Double(s.pace(heat: h, hills: hi)) },
-            display: { s, h, hi in TrendsFormat.pace(s.pace(heat: h, hills: hi)) },
+            value: { s, _, _ in Double(s.avgPaceSec) },
+            display: { s, _, _ in TrendsFormat.pace(s.avgPaceSec) },
+            subValues: { s in
+                // On flat ground the terrain adjustment is suppressed upstream,
+                // so "cool + flat" lands on the same number as "heat-adj" —
+                // print it once rather than twice.
+                let terrainMoved = s.conditionsPaceSec != nil && s.conditionsPaceSec != s.neutralPaceSec
+                return [
+                    (caption: "heat-adj", value: TrendsFormat.pace(s.neutralPaceSec)),
+                    (caption: "cool + flat", value: terrainMoved ? TrendsFormat.pace(s.conditionsPaceSec) : "—"),
+                ]
+            },
             trendUnit: "min/mi · ▲ faster"),
         CompareMetric(id: "vol", label: "Fast volume", hint: "mi at pace", dir: .higherBetter, group: "OUTPUT", isPace: false,
             value: { s, _, _ in s.fastMiles },

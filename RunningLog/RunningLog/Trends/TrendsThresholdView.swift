@@ -26,10 +26,17 @@ struct TrendsThresholdView: View {
     /// Tapping a session opens its workout.
     var onSelect: ((String) -> Void)?
 
+    /// 168 in the inline card; the full-screen detail passes 250.
+    ///
+    /// A parameter rather than a second view: two threshold charts is how the
+    /// card and the detail start disagreeing about the same miles. Everything
+    /// downstream — the `Layout`, the domain, the mark radius — already reads
+    /// this, so the taller frame is genuinely the same picture with more room.
+    var chartHeight: CGFloat = 168
+
     @State private var scrubIndex: Int?
 
     // Geometry, in points.
-    private let chartHeight: CGFloat = 168
     private let gutter: CGFloat = 34
     private let axisHeight: CGFloat = 16
 
@@ -324,6 +331,25 @@ struct TrendsThresholdView: View {
         let gutter: CGFloat
         let read: ThresholdRead
 
+        /// Computed once. `radius` used to walk every point to find this, and
+        /// `x` calls `radius` for its inset — so a single drag allocated one
+        /// array per point per event. Scrubbing a six-month window is not the
+        /// place to be doing O(n²) work.
+        private let maxMinutes: Double
+        /// Horizontal breathing room at each end, so the largest mark can't
+        /// clip. Does not vary with the point, so it is not recomputed per point.
+        private let inset: CGFloat
+
+        init(width: CGFloat, height: CGFloat, gutter: CGFloat, read: ThresholdRead) {
+            self.width = width
+            self.height = height
+            self.gutter = gutter
+            self.read = read
+            self.maxMinutes = read.points.map(\.minutes).max() ?? 1
+            let scale = CGFloat(max(1, height / 152).squareRoot())
+            self.inset = max(12, (3.5 + 6) * scale + 2)
+        }
+
         /// The pace domain, padded a little past the band so a session outside
         /// it still lands on screen.
         private var domain: (fast: Double, slow: Double) {
@@ -348,18 +374,27 @@ struct TrendsThresholdView: View {
         func x(_ i: Int) -> CGFloat {
             let n = read.points.count
             guard n > 1 else { return gutter + plotWidth / 2 }
-            // Inset by one radius' worth at each end so edge dots aren't clipped.
-            let inset: CGFloat = 12
             let usable = max(1, plotWidth - inset * 2)
             return gutter + inset + usable * CGFloat(i) / CGFloat(n - 1)
         }
 
         /// Area, not diameter, tracks minutes — so a 30-minute block reads
         /// twice the 15-minute one rather than four times it.
+        ///
+        /// The `3.5 + 6` pair was tuned against the inline card's 152pt plot.
+        /// On the detail's taller frame the same dots read as pinpricks, so the
+        /// whole ramp scales with the frame — by its square root, so a 54%
+        /// taller chart grows marks 24% rather than 54% and the picture stays
+        /// a scatter rather than becoming a bubble chart.
         func radius(minutes: Double) -> CGFloat {
-            let maxMin = read.points.map(\.minutes).max() ?? 1
-            guard maxMin > 0 else { return 4 }
-            return 3.5 + 6 * CGFloat((minutes / maxMin).squareRoot())
+            guard maxMinutes > 0 else { return 4 * frameScale }
+            let t = min(1, minutes / maxMinutes)
+            return (3.5 + 6 * CGFloat(t.squareRoot())) * frameScale
+        }
+
+        /// 1 at the inline card's plot height, growing by its square root.
+        private var frameScale: CGFloat {
+            CGFloat(max(1, height / 152).squareRoot())
         }
 
         func index(atX px: CGFloat) -> Int? {

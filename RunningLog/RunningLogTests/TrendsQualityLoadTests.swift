@@ -37,7 +37,7 @@ struct TrendsQualityLoadTests {
 
     @Test("Zone lookup is case-insensitive")
     func zoneLookupIgnoresCase() {
-        #expect(TrendsZoneWeight.weight("HMP") == 3.0)
+        #expect(TrendsZoneWeight.weight("HMP") == 3.25)
         #expect(TrendsZoneWeight.weight("Mile") == 8.0)
     }
 
@@ -45,10 +45,10 @@ struct TrendsQualityLoadTests {
 
     @Test("One bout scores seconds × weight ÷ 60")
     func singleBoutScore() {
-        // 30 minutes at HMP → 1800 × 3.0 / 60 = 90
-        #expect(QualityLoad.score(workSeconds: 1800, zone: "hmp") == 90)
-        // 10 minutes at 5K → 600 × 4.0 / 60 = 40
-        #expect(QualityLoad.score(workSeconds: 600, zone: "5k") == 40)
+        // 30 minutes at HMP → 1800 × 3.25 / 60 = 97.5
+        #expect(QualityLoad.score(workSeconds: 1800, zone: "hmp") == 97.5)
+        // 10 minutes at 5K → 600 × 5.5 / 60 = 55
+        #expect(QualityLoad.score(workSeconds: 600, zone: "5k") == 55)
     }
 
     @Test("Zero or negative work seconds score zero, never NaN")
@@ -64,8 +64,8 @@ struct TrendsQualityLoadTests {
             (180, "5k"), (180, "5k"), (180, "5k"), (180, "5k"), (180, "5k"),
             (1200, "mp"),
         ]
-        // 900×4/60 = 60, plus 1200×2.5/60 = 50 → 110
-        #expect(QualityLoad.total(bouts) == 110)
+        // 900×5.5/60 = 82.5, plus 1200×2.5/60 = 50 → 132.5
+        #expect(QualityLoad.total(bouts) == 132.5)
 
         // The retired whole-workout intensity_score would have divided the
         // weighted sum by total time and produced ~3.1 — a number that says

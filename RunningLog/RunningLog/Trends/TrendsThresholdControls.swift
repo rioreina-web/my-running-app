@@ -27,14 +27,50 @@
 import SwiftUI
 
 struct TrendsThresholdControls: View {
+
+    /// How the four blocks are assembled.
+    ///
+    /// **Why `tabbed` exists.** Stacked, the four blocks run to roughly 700pt:
+    /// the athlete scrolls past three settings to reach the fourth, and can
+    /// never see the chart and the control she is moving at the same time. The
+    /// full-screen detail has the width to lay them out as a strip instead, and
+    /// nothing is hidden by doing so — each segment carries its own current
+    /// value, which is `summaryLine` distributed across four labels rather than
+    /// folded away behind one.
+    enum Layout {
+        /// Summary line + ADJUST, four blocks stacked. The inline card's.
+        case inline
+        /// Four-segment strip, one block below it. The detail's.
+        case tabbed
+    }
+
+    /// Which block the strip is showing. View state, forgotten on dismiss —
+    /// the athlete opened a tab, she didn't set a preference.
+    private enum Block: String, CaseIterable, Identifiable {
+        case anchor, band, minimum, floor
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .anchor: "Anchor"
+            case .band: "Band"
+            case .minimum: "Minimum"
+            case .floor: "Floor"
+            }
+        }
+    }
+
     @Binding var settings: BandSettings
     /// The ladder in force at the end of the window — turns each chip into a
     /// real pace instead of an initialism. Nil before any data loads.
     let ladder: BandLadder?
     /// Colour of the current anchor, so the controls and the band agree.
     let accent: Color
+    var layout: Layout = .inline
+    /// Which segment the strip opens on. Only read by `.tabbed`.
+    var initialBlock: String? = nil
 
     @State private var expanded = false
+    @State private var block: Block = .anchor
     @State private var customText = ""
     @FocusState private var customFocused: Bool
 
@@ -44,6 +80,15 @@ struct TrendsThresholdControls: View {
     private var smallType: CGFloat = DripTypeFloor.eyebrowSmall
 
     var body: some View {
+        switch layout {
+        case .inline: inlineBody
+        case .tabbed: tabbedBody
+        }
+    }
+
+    // MARK: Inline — unchanged
+
+    private var inlineBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
@@ -58,6 +103,86 @@ struct TrendsThresholdControls: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: expanded)
+    }
+
+    // MARK: Tabbed
+
+    private var tabbedBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            blockStrip
+
+            Group {
+                switch block {
+                case .anchor: anchorBlock
+                case .band: edgeBlock
+                case .minimum: minimumBlock
+                case .floor: floorBlock
+                }
+            }
+            .padding(.top, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .animation(.easeInOut(duration: 0.16), value: block)
+        .onAppear {
+            if let initialBlock, let b = Block(rawValue: initialBlock) { block = b }
+        }
+    }
+
+    /// The strip is also the read. Each segment carries its own current value,
+    /// so the complete settings summary is visible without opening anything —
+    /// the property the collapsed inline header has and this must not lose.
+    private var blockStrip: some View {
+        HStack(spacing: 0) {
+            ForEach(Block.allCases) { b in
+                Button {
+                    block = b
+                    if b != .anchor { customFocused = false }
+                } label: {
+                    VStack(spacing: 4) {
+                        Text(b.title.uppercased())
+                            .font(.dripEyebrow(smallType).weight(.semibold))
+                            .tracking(1.0)
+                            .foregroundStyle(
+                                block == b ? Color.drip.textPrimary : Color.drip.textTertiary
+                            )
+                        Text(value(for: b))
+                            .font(.dripEyebrow(microType))
+                            .tracking(0.4)
+                            .monospacedDigit()
+                            .foregroundStyle(
+                                block == b ? accent : Color.drip.textTertiary
+                            )
+                            .accessibilityHidden(true)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .overlay(alignment: .bottom) {
+                        Rectangle()
+                            .fill(block == b ? Color.drip.coral : Color.clear)
+                            .frame(height: 2)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(b.title)
+                .accessibilityValue(value(for: b))
+                .accessibilityAddTraits(block == b ? [.isSelected] : [])
+            }
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.drip.divider).frame(height: 1)
+        }
+    }
+
+    /// One segment's current setting, in the shortest honest form.
+    private func value(for b: Block) -> String {
+        switch b {
+        case .anchor: settings.anchor.label
+        case .band: settings.widthLabel
+        case .minimum:
+            "\(Int(settings.minTotalMinutes.rounded()))/\(Int(settings.minBlockMinutes.rounded()))"
+        case .floor: settings.hrFloor > 0 ? "\(settings.hrFloor)" : "OFF"
+        }
     }
 
     // MARK: Header
@@ -91,7 +216,15 @@ struct TrendsThresholdControls: View {
         .accessibilityHint(expanded ? "Collapses the controls" : "Opens the band controls")
     }
 
-    private var summaryLine: String {
+    private var summaryLine: String { Self.summaryLine(settings, ladder: ladder) }
+
+    /// The band, in one line.
+    ///
+    /// Static so every surface that states the current band — this header, and
+    /// the Trends tab's `Adjust ›` row — says it from one definition. Two
+    /// hand-written summaries of the same settings is how a screen ends up
+    /// describing a band it isn't drawing.
+    static func summaryLine(_ settings: BandSettings, ladder: BandLadder?) -> String {
         var s = "\(settings.anchor.label) \(settings.widthLabel)"
         if let ladder {
             let edges = settings.edges(anchorSec: settings.anchor.sec(in: ladder))
@@ -107,7 +240,10 @@ struct TrendsThresholdControls: View {
 
     private var anchorBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            fieldHeader("Anchor", trailing: settings.isDefault ? nil : "Reset") {
+            fieldHeader(
+                blockTitle(inline: "Anchor", tabbed: "What the band sits on"),
+                trailing: settings.isDefault ? nil : (layout == .tabbed ? "Reset all" : "Reset")
+            ) {
                 settings = .default
                 customText = ""
             }
@@ -259,7 +395,8 @@ struct TrendsThresholdControls: View {
 
     private var edgeBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            fieldHeader("Band", trailing: nil, action: nil)
+            fieldHeader(blockTitle(inline: "Band", tabbed: "Where the two edges sit"),
+                        trailing: nil, action: nil)
 
             edgeSlider(
                 label: "Fast edge",
@@ -333,7 +470,8 @@ struct TrendsThresholdControls: View {
 
     private var minimumBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            fieldHeader("Minimum per session", trailing: nil, action: nil)
+            fieldHeader(blockTitle(inline: "Minimum per session", tabbed: "Minimum per session"),
+                        trailing: nil, action: nil)
 
             stepRow(
                 label: "Total in band",
@@ -363,7 +501,7 @@ struct TrendsThresholdControls: View {
     private var floorBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             fieldHeader(
-                "Effort floor",
+                blockTitle(inline: "Effort floor", tabbed: "Effort floor"),
                 trailing: settings.hrFloor > 0 ? "Turn off" : "Turn on"
             ) {
                 settings.hrFloor = settings.hrFloor > 0 ? 0 : BandSettings.default.hrFloor
@@ -399,6 +537,14 @@ struct TrendsThresholdControls: View {
     }
 
     // MARK: Chrome
+
+    /// Block headings differ by layout. Inline, the heading is the only name
+    /// the block has, so it names the setting. Tabbed, the segment above it
+    /// already says "Band" — repeating it spends a line saying nothing, so the
+    /// heading says what the control *does* instead.
+    private func blockTitle(inline: String, tabbed: String) -> String {
+        layout == .tabbed ? tabbed : inline
+    }
 
     private func fieldHeader(
         _ title: String,
@@ -488,13 +634,15 @@ struct TrendsThresholdControls: View {
 #if DEBUG
 private struct ThresholdControlsHarness: View {
     @State var settings: BandSettings = .default
+    var layout: TrendsThresholdControls.Layout = .inline
 
     var body: some View {
         ScrollView {
             TrendsThresholdControls(
                 settings: $settings,
                 ladder: BandLadder(mp: 338, hmp: 323, lt: 318, k10: 308, k5: 295, k3: 286, mile: 274),
-                accent: settings.anchor.color(in: nil)
+                accent: settings.anchor.color(in: nil),
+                layout: layout
             )
             .padding(24)
         }
@@ -502,5 +650,10 @@ private struct ThresholdControlsHarness: View {
     }
 }
 
-#Preview("Threshold controls") { ThresholdControlsHarness() }
+#Preview("Threshold controls · inline") { ThresholdControlsHarness() }
+
+/// The detail's layout. Worth its own preview: the strip has to stay legible at
+/// four segments on the narrowest phone, and each segment's value is the read —
+/// if one truncates, the settings summary is no longer complete.
+#Preview("Threshold controls · tabbed") { ThresholdControlsHarness(layout: .tabbed) }
 #endif

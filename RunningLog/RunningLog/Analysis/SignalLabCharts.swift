@@ -31,8 +31,9 @@ struct LabDriftChart: View {
             LabReadout(text: readout)
             GeometryReader { geo in
                 Canvas { ctx, size in draw(ctx, size: size) }
-                    .contentShape(Rectangle())
-                    .gesture(scrubGesture(width: geo.size.width))
+                    .labScrub(width: geo.size.width, selection: $scrubIndex) { x, w in
+                        index(atX: x, width: w)
+                    }
             }
             .frame(height: height)
             .padding(.top, 10)
@@ -68,20 +69,6 @@ struct LabDriftChart: View {
             bits.append("\(read.overBand.count) OVER \(Int(read.bandHi))%")
         }
         return bits.joined(separator: " · ")
-    }
-
-    private func scrubGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12)
-            .onChanged { value in
-                guard abs(value.translation.width) >= abs(value.translation.height) else { return }
-                scrubIndex = index(atX: value.location.x, width: width)
-            }
-            .simultaneously(
-                with: SpatialTapGesture().onEnded { value in
-                    let i = index(atX: value.location.x, width: width)
-                    scrubIndex = (scrubIndex == i) ? nil : i
-                }
-            )
     }
 
     private func index(atX px: CGFloat, width: CGFloat) -> Int? {
@@ -133,6 +120,10 @@ struct LabDriftChart: View {
             )
         }
 
+        if let i = scrubIndex, read.points.indices.contains(i) {
+            LabDraw.crosshair(ctx, x: x(i), from: 0, to: h)
+        }
+
         for (i, p) in read.points.enumerated() {
             LabDraw.dot(
                 ctx,
@@ -150,27 +141,35 @@ struct LabDriftChart: View {
 /// Metres per heartbeat, reps and long efforts as separate series on one axis.
 struct LabEfficiencyChart: View {
     let read: BeatEfficiencyRead
+    /// Handed the session id of the scrubbed point when the athlete asks for
+    /// it. Absent, the chart still scrubs — it just cannot be opened from.
+    var onOpenSession: ((String) -> Void)?
+
     @State private var scrubID: String?
 
     private let height: CGFloat = 180
     private let gutter: CGFloat = 38
     private let rightPad: CGFloat = 46
 
+    init(read: BeatEfficiencyRead, onOpenSession: ((String) -> Void)? = nil) {
+        self.read = read
+        self.onOpenSession = onOpenSession
+    }
+
+    /// The selected point, when there is one and it is still in the read.
+    private var selected: BeatEfficiencyPoint? {
+        guard let id = scrubID else { return nil }
+        return read.all.first { $0.id == id }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LabReadout(text: readout)
+            LabReadout(text: readout, onOpen: openAction)
             GeometryReader { geo in
                 Canvas { ctx, size in draw(ctx, size: size) }
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 12)
-                            .onChanged { value in
-                                guard abs(value.translation.width) >= abs(value.translation.height)
-                                else { return }
-                                scrubID = nearest(x: value.location.x, width: geo.size.width)?.id
-                            }
-                            .onEnded { _ in }
-                    )
+                    .labScrub(width: geo.size.width, selection: $scrubID) { x, w in
+                        nearest(x: x, width: w)?.id
+                    }
             }
             .frame(height: height)
             .padding(.top, 10)
@@ -188,8 +187,15 @@ struct LabEfficiencyChart: View {
         }
     }
 
+    /// Only offered when something is selected and a handler exists — the
+    /// affordance never appears pointing at nothing.
+    private var openAction: (() -> Void)? {
+        guard let p = selected, let open = onOpenSession else { return nil }
+        return { open(p.id) }
+    }
+
     private var readout: String {
-        if let id = scrubID, let p = read.all.first(where: { $0.id == id }) {
+        if let p = selected {
             return [
                 p.dateLabel.uppercased(),
                 String(format: "%.2f M/BEAT", p.metresPerBeat),
@@ -242,6 +248,11 @@ struct LabEfficiencyChart: View {
             guard v >= lo else { continue }
             LabDraw.gridline(ctx, y: y(v), from: gutter, to: w - rightPad)
             LabDraw.label(ctx, String(format: "%.2f", v), at: CGPoint(x: gutter - 6, y: y(v)), anchor: .trailing)
+        }
+
+        // Drawn before the series so the marks sit on top of the pointer.
+        if let p = selected {
+            LabDraw.crosshair(ctx, x: xFor(p, width: w), from: 0, to: h - 12)
         }
 
         let series: [(pts: [BeatEfficiencyPoint], color: Color, name: String)] = [
@@ -359,25 +370,36 @@ struct LabMoodLoadChart: View {
 /// Raw pace and the same run heat-neutral, paired. The gap is the charge.
 struct LabHeatChart: View {
     let read: HeatImpactRead
+    var onOpenSession: ((String) -> Void)?
+
     @State private var scrubIndex: Int?
 
     private let height: CGFloat = 180
     private let gutter: CGFloat = 38
 
+    init(read: HeatImpactRead, onOpenSession: ((String) -> Void)? = nil) {
+        self.read = read
+        self.onOpenSession = onOpenSession
+    }
+
+    private var selected: HeatImpactPoint? {
+        guard let i = scrubIndex, read.points.indices.contains(i) else { return nil }
+        return read.points[i]
+    }
+
+    private var openAction: (() -> Void)? {
+        guard let p = selected, let open = onOpenSession else { return nil }
+        return { open(p.id) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LabReadout(text: readout)
+            LabReadout(text: readout, onOpen: openAction)
             GeometryReader { geo in
                 Canvas { ctx, size in draw(ctx, size: size) }
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 12)
-                            .onChanged { value in
-                                guard abs(value.translation.width) >= abs(value.translation.height)
-                                else { return }
-                                scrubIndex = index(atX: value.location.x, width: geo.size.width)
-                            }
-                    )
+                    .labScrub(width: geo.size.width, selection: $scrubIndex) { x, w in
+                        index(atX: x, width: w)
+                    }
             }
             .frame(height: height)
             .padding(.top, 10)
@@ -391,8 +413,7 @@ struct LabHeatChart: View {
     }
 
     private var readout: String {
-        if let i = scrubIndex, read.points.indices.contains(i) {
-            let p = read.points[i]
+        if let p = selected {
             var bits = [
                 p.dateLabel.uppercased(),
                 "RAW \(TrendsFormat.pace(p.rawSec))",
@@ -435,6 +456,10 @@ struct LabHeatChart: View {
         for sec in stride(from: Int(fast / 30) * 30 + 30, to: Int(slow), by: 30) {
             LabDraw.gridline(ctx, y: y(sec), from: gutter, to: w)
             LabDraw.label(ctx, TrendsFormat.pace(sec), at: CGPoint(x: gutter - 6, y: y(sec)), anchor: .trailing)
+        }
+
+        if let i = scrubIndex, read.points.indices.contains(i) {
+            LabDraw.crosshair(ctx, x: x(i), from: 0, to: h - 12)
         }
 
         for (i, p) in read.points.enumerated() {

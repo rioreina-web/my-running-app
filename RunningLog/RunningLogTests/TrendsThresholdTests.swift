@@ -299,3 +299,156 @@ struct ThresholdBandTests {
         #expect(read.points.map(\.date) == ["2026-04-04", "2026-06-02", "2026-07-21"])
     }
 }
+
+// MARK: - The time control (2026-08-07)
+
+/// The window presets, and the range the control states.
+///
+/// Not threshold arithmetic, but the threshold detail states its range from
+/// these, and a control that names a range the chart beneath it is not drawing
+/// is the exact confusion the single-time-control rule exists to prevent.
+@Suite("Trends window")
+struct TrendsWindowTests {
+
+    /// Every preset reads in months or years. "30 D" sat in a row with
+    /// "3 MO / 6 MO / 1 YR" as the only member in a different unit.
+    @Test("presets label in month units")
+    func monthUnits() {
+        #expect(TrendsWindow.thirtyDays.label == "1 MO")
+        #expect(TrendsWindow.thirtyDays.plateTitle == "1-Month View")
+        // The window itself did not move.
+        #expect(TrendsWindow.thirtyDays.days == 30)
+        #expect(TrendsWindow.thirtyDays.id == "30d")
+    }
+
+    /// UTC, calendar-field based. The file header's standing warning: never do
+    /// this by adding 86_400 per day — that bug shipped once and blanked the
+    /// screen in America/Chicago while passing every test under UTC.
+    @Test("ISO days parse at UTC midnight, or not at all")
+    func isoParsing() throws {
+        let d = try #require(TrendsWindow.day(fromISO: "2026-08-07"))
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let c = cal.dateComponents([.year, .month, .day, .hour], from: d)
+        #expect(c.year == 2026 && c.month == 8 && c.day == 7 && c.hour == 0)
+        // A full timestamp is tolerated; junk is not.
+        #expect(TrendsWindow.day(fromISO: "2026-08-07T12:00:00Z") == d)
+        #expect(TrendsWindow.day(fromISO: "not-a-date") == nil)
+        #expect(TrendsWindow.day(fromISO: "") == nil)
+    }
+
+    /// The meta line reads the RESOLVED SLICE, never the preset's nominal span.
+    ///
+    /// A preset is `days.suffix(n)` — the last n rows that exist. An athlete
+    /// twelve days into her timeline on the 1-month view is looking at twelve
+    /// days, and a control that labelled that "Jul 9 – Aug 7" would be naming a
+    /// range the chart beneath it is not drawing.
+    @Test("the range label names the days actually in the window")
+    func rangeLabelFollowsTheSlice() throws {
+        let days = TrendsDay.previewMonthRich
+        let set = TrendsSignalBuilder.build(days: days, keySessions: [], window: .thirtyDays)
+        let first = try #require(set.days.first?.date)
+        let last = try #require(set.days.last?.date)
+        #expect(first != last, "the fixture needs more than one day for this to mean anything")
+        #expect(
+            set.dateRangeLabel
+                == "\(TrendsSignalBuilder.shortLabel(first)) – \(TrendsSignalBuilder.shortLabel(last))"
+        )
+    }
+
+    /// A window wider than the timeline must not invent the days it is missing.
+    ///
+    /// The fixture's length is deliberately not assumed — `suffix(n)` is a
+    /// count of rows, so the year view holds at least what the month view does
+    /// and never more than the timeline itself, whatever the fixture is.
+    @Test("a wider window never claims days the timeline doesn't have")
+    func widerWindowThanData() throws {
+        let days = TrendsDay.previewMonthRich
+        let month = TrendsSignalBuilder.build(days: days, keySessions: [], window: .thirtyDays)
+        let year = TrendsSignalBuilder.build(days: days, keySessions: [], window: .oneYear)
+
+        #expect(year.days.count >= month.days.count)
+        #expect(year.days.count <= days.count)
+        // Whatever it holds, the label names ITS OWN first and last day.
+        for set in [month, year] {
+            let first = try #require(set.days.first?.date)
+            let last = try #require(set.days.last?.date)
+            let expected = first == last
+                ? TrendsSignalBuilder.shortLabel(first)
+                : "\(TrendsSignalBuilder.shortLabel(first)) – \(TrendsSignalBuilder.shortLabel(last))"
+            #expect(set.dateRangeLabel == expected)
+        }
+    }
+
+    /// Run DAYS, not runs — a double day is one day, and the meta line's copy
+    /// says so.
+    @Test("run days count days that carried running")
+    func runDaysCountsDays() {
+        let set = TrendsSignalBuilder.build(
+            days: TrendsDay.previewMonthRich, keySessions: [], window: .thirtyDays
+        )
+        #expect(set.runDays == set.days.filter { $0.miles > 0 }.count)
+        #expect(set.runDays + set.restDays == set.days.count)
+    }
+
+    /// An empty slice states nothing rather than a bare dash or a stale range.
+    @Test("an empty window has no range to state")
+    func emptySlice() {
+        let set = TrendsSignalBuilder.build(days: [], keySessions: [], window: .thirtyDays)
+        #expect(set.dateRangeLabel.isEmpty)
+    }
+}
+
+// MARK: - One band, two surfaces
+
+@Suite("Threshold detail shares the inline read")
+struct ThresholdDetailParityTests {
+
+    /// The settings are load-bearing on the read.
+    ///
+    /// The inline card and the detail are handed the SAME `ThresholdRead`, built
+    /// once by the host. Asserting two identical builder calls match would prove
+    /// only that the builder is deterministic. What is worth pinning is the
+    /// contrast: if a future refactor let the detail build its own read from its
+    /// own settings, THIS is the difference the athlete would see — one band,
+    /// two sets of numbers.
+    @Test("moving the band moves the read")
+    func settingsAreLoadBearing() {
+        let shipped = ThresholdBuilder.build(lab: .preview, settings: .default)
+
+        var tightened = BandSettings.default
+        tightened.slowPct = 1          // the leak the 2026-08-02 audit found
+        let narrow = ThresholdBuilder.build(lab: .preview, settings: tightened)
+
+        // A tighter slow edge can only ever admit fewer sessions, never more.
+        #expect(narrow.points.count <= shipped.points.count)
+        #expect(narrow.slowSec < shipped.slowSec)
+
+        var noFloor = BandSettings.default
+        noFloor.hrFloor = 0
+        let ungraded = ThresholdBuilder.build(lab: .preview, settings: noFloor)
+
+        // With the floor off every in-band minute is work, so nothing is held
+        // apart as cruising and nothing is left ungradeable.
+        #expect(ungraded.cruisePoints.isEmpty)
+        #expect(ungraded.unclassedPoints.isEmpty)
+        #expect(ungraded.workPoints.count == ungraded.points.count)
+    }
+
+    /// The detail's session list renders `read.points` — every session that
+    /// cleared the minimums, not just the graded work. A list that showed only
+    /// `workPoints` would silently drop the cruising sessions the slow edge let
+    /// in, which are the whole reason the effort floor exists.
+    @Test("the list covers every counted session, not just graded work")
+    func listCoversAllPoints() {
+        // No `windowDays`, so the fixture's 2026 dates are not filtered against
+        // a wall clock that keeps moving. A test that quietly empties itself in
+        // January is a test that stops guarding anything.
+        let read = ThresholdBuilder.build(lab: .preview, settings: .default)
+        #expect(read.points.count >= read.workPoints.count)
+        #expect(
+            read.points.count
+                == read.workPoints.count + read.cruisePoints.count + read.unclassedPoints.count
+        )
+    }
+}

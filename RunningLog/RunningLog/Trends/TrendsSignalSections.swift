@@ -14,10 +14,32 @@ import SwiftUI
 
 /// The one time control on Trends. Everything below it re-reads at the
 /// selected window; nothing carries a second range of its own.
+///
+/// **Pinned mode (2026-08-07).** This used to sit in the scrolling stack, above
+/// four long sections — by the time you were reading section 04 the range was a
+/// scroll-to-top away, which is not "one control" so much as one control you
+/// have to go and find. It now lives in the host's `safeAreaInset`, and
+/// `isPinned` says whether the content beneath it has moved.
+///
+/// **`isPinned` changes nothing about the layout.** Only a hairline appears, so
+/// content reads as passing *under* the bar. It was drafted as "shorter pills
+/// when stuck", which is a nice idea and a feedback loop: this view is the top
+/// safe-area inset, so changing its height moves `contentOffset`, which changes
+/// `isPinned`, which changes its height. Constant geometry is what makes the
+/// pin honest. The hosts add hysteresis on top.
 struct TrendsWindowPicker: View {
     @Binding var window: TrendsWindow
     @Binding var customFrom: Date
     @Binding var customTo: Date
+
+    /// Draws the hairline. Set by the host from its own scroll position; the
+    /// picker never reads a scroll offset itself, and never changes size.
+    var isPinned: Bool = false
+
+    /// "Jul 9 – Aug 7" and "24 runs" — the dates the chosen window resolved to,
+    /// and how much running is inside them. Nil on surfaces that state the
+    /// range elsewhere (the Lab has its own lede).
+    var meta: (range: String, count: String)? = nil
 
     @ScaledMetric(relativeTo: .caption2)
     private var microType: CGFloat = DripTypeFloor.eyebrowMicro
@@ -51,7 +73,40 @@ struct TrendsWindowPicker: View {
                 .onChange(of: customFrom) { _, _ in window = .custom(from: customFrom, to: customTo) }
                 .onChange(of: customTo) { _, _ in window = .custom(from: customFrom, to: customTo) }
             }
+
+            if let meta {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(meta.range)
+                        .foregroundStyle(Color.drip.textTertiary)
+                    Spacer(minLength: 0)
+                    Text(meta.count)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+                .font(.dripEyebrow(microType))
+                .tracking(0.9)
+                .textCase(.uppercase)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(meta.range), \(meta.count)")
+            }
         }
+        // Constant, so the inset's height never moves. The picker supplies its
+        // own 24 because a `safeAreaInset` spans the full window and carries no
+        // ambient padding — it is no longer inside the page's padded stack.
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        // The fill matches the page rather than a card: what makes the bar read
+        // as the page's own edge instead of a floating widget is that it is the
+        // same paper. Always drawn, so the bar is opaque at rest too — content
+        // must not show through it mid-scroll.
+        .background(Color.drip.background)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.drip.divider)
+                .frame(height: 1)
+                .opacity(isPinned ? 1 : 0)
+        }
+        .animation(.easeInOut(duration: 0.18), value: isPinned)
     }
 
     private func pill(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -95,7 +150,7 @@ private struct TrendsAnchorPressStyle: ButtonStyle {
 // MARK: - The read
 
 struct TrendsReadHeader: View {
-    let read: TrendsRead
+    let read: TrendsSignalRead
     let set: TrendsBucketSet
     /// Scrolls the page to a section id. `nil` in previews, where the chips
     /// render as plain cells rather than claiming to be buttons.
@@ -106,21 +161,26 @@ struct TrendsReadHeader: View {
     @ScaledMetric(relativeTo: .caption2)
     private var smallType: CGFloat = DripTypeFloor.eyebrowSmall
 
+    /// Headline plus its accent clause as one run of text. Built by
+    /// interpolation rather than `Text + Text` — the `+` operator is
+    /// deprecated as of iOS 26.
+    ///
+    /// Coral is punctuation, not paint — one coral element in this cluster,
+    /// and it's the accent clause.
+    private var headline: Text {
+        let base = Text(read.headline).foregroundStyle(Color.drip.textPrimary)
+        guard !read.headlineAccent.isEmpty else { return base }
+        return Text("\(base) \(Text(read.headlineAccent).foregroundStyle(Color.drip.coral))")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             DripEyebrow(text: "The read · \(read.dateRange)")
 
-            // Headline. Coral is punctuation, not paint — one coral element in
-            // this cluster, and it's the accent clause.
-            (
-                Text(read.headline)
-                    .foregroundStyle(Color.drip.textPrimary)
-                + Text(read.headlineAccent.isEmpty ? "" : " \(read.headlineAccent)")
-                    .foregroundStyle(Color.drip.coral)
-            )
-            .font(.dripDisplay(27))
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.top, 8)
+            headline
+                .font(.dripDisplay(27))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
 
             Text(read.note)
                 .font(.dripBody(12.5))
@@ -243,6 +303,14 @@ struct TrendsRecoveryLedgerView: View {
     /// The number and its history sit two sections apart; this is the link.
     var onSeeTrend: (() -> Void)?
 
+    /// The receipt — factor rows, arithmetic, coverage, method note — folded
+    /// away by default. The card's job at a glance is the number, the band and
+    /// the move since yesterday; expanded, it ran past a full screen height and
+    /// pushed section 03 out of reach. Nothing here is persisted: the athlete
+    /// asked to see the working once, not forever, so the next visit opens
+    /// folded again. Same rule the section explainers follow.
+    @State private var showsReceipt = false
+
     @ScaledMetric(relativeTo: .caption2)
     private var microType: CGFloat = DripTypeFloor.eyebrowMicro
     @ScaledMetric(relativeTo: .caption2)
@@ -264,11 +332,11 @@ struct TrendsRecoveryLedgerView: View {
                 Spacer(minLength: 4)
                 if let previous {
                     // Day-to-day moves smaller than the surface's own noise
-                    // threshold (`TrendsRead.noiseThreshold`) are not reported
+                    // threshold (`TrendsSignalRead.noiseThreshold`) are not reported
                     // as movement — the Read below calls those moves noise,
                     // and this line must not contradict it.
                     let d = ledger.total - previous
-                    let noise = Int(TrendsRead.noiseThreshold)
+                    let noise = Int(TrendsSignalRead.noiseThreshold)
                     Text((abs(d) < noise
                             ? "level vs yesterday"
                             : "\(d >= 0 ? "+" : "−")\(abs(d)) vs yesterday").uppercased())
@@ -291,59 +359,109 @@ struct TrendsRecoveryLedgerView: View {
                 gauge.padding(.top, 12)
             }
 
-            // Rows grouped by where the evidence came from — WORDS / RUNS /
-            // NIGHTS — so the evidence hierarchy is visible on the receipt:
-            // the athlete's words lead, the watch corroborates. Empty groups
-            // vanish; an athlete with no night pipeline sees two.
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(groupedFactors, id: \.label) { group in
-                    Text(group.label.uppercased())
-                        .font(.dripEyebrow(microType))
-                        .tracking(1.2)
-                        .foregroundStyle(Color.drip.textTertiary)
-                        .padding(.top, 13)
-                        .padding(.bottom, 6)
-                    Divider().overlay(Color.drip.divider)
-                    ForEach(group.factors) { factor in
-                        factorRow(factor)
+            // The fold. Above it the card is a glance; below it, a receipt.
+            Divider().overlay(Color.drip.divider).padding(.top, 16)
+
+            receiptToggle
+
+            if showsReceipt {
+                // Rows grouped by where the evidence came from — WORDS / RUNS /
+                // NIGHTS — so the evidence hierarchy is visible on the receipt:
+                // the athlete's words lead, the watch corroborates. Empty groups
+                // vanish; an athlete with no night pipeline sees two.
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(groupedFactors, id: \.label) { group in
+                        Text(group.label.uppercased())
+                            .font(.dripEyebrow(microType))
+                            .tracking(1.2)
+                            .foregroundStyle(Color.drip.textTertiary)
+                            .padding(.top, 13)
+                            .padding(.bottom, 6)
                         Divider().overlay(Color.drip.divider)
+                        ForEach(group.factors) { factor in
+                            factorRow(factor)
+                            Divider().overlay(Color.drip.divider)
+                        }
                     }
                 }
-            }
-            .padding(.top, 3)
+                .padding(.top, 3)
 
-            HStack(alignment: .firstTextBaseline) {
-                Text(ledger.arithmetic.uppercased())
-                    .font(.dripEyebrow(smallType))
-                    .tracking(0.9)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(ledger.arithmetic.uppercased())
+                        .font(.dripEyebrow(smallType))
+                        .tracking(0.9)
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Text("\(ledger.total)")
+                        .font(.dripStat(14))
+                        .foregroundStyle(bandColour)
+                }
+                .padding(.top, 11)
+
+                // Coverage — the cheap version of the Daily Read's confidence
+                // idea (§2f): a read from three inputs must not look identical
+                // to one from seven. It changes tone, never the number.
+                Text(coverage)
+                    .font(.dripEyebrow(microType))
+                    .tracking(0.5)
+                    .textCase(.uppercase)
                     .foregroundStyle(Color.drip.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Text("\(ledger.total)")
-                    .font(.dripStat(14))
-                    .foregroundStyle(bandColour)
+                    .padding(.top, 12)
+
+                Text("Load is measured against your own 8-week average, not an acute:chronic ratio · your words lead, the watch corroborates · today's run counts tomorrow")
+                    .font(.dripEyebrow(microType))
+                    .tracking(0.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
             }
-            .padding(.top, 11)
-
-            // Coverage — the cheap version of the Daily Read's confidence
-            // idea (§2f): a read from three inputs must not look identical
-            // to one from seven. It changes tone, never the number.
-            Text(coverage)
-                .font(.dripEyebrow(microType))
-                .tracking(0.5)
-                .textCase(.uppercase)
-                .foregroundStyle(Color.drip.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 12)
-
-            Text("Load is measured against your own 8-week average, not an acute:chronic ratio · your words lead, the watch corroborates · today's run counts tomorrow")
-                .font(.dripEyebrow(microType))
-                .tracking(0.5)
-                .textCase(.uppercase)
-                .foregroundStyle(Color.drip.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 6)
         }
+    }
+
+    /// The one door into the receipt. It names what's behind it rather than
+    /// saying "more", and it carries the coverage count while folded — so the
+    /// collapsed card still admits how much evidence the score had, which is
+    /// the one thing from the receipt that changes how much to trust the
+    /// number.
+    private var receiptToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.22)) { showsReceipt.toggle() }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text((showsReceipt ? "Hide the arithmetic" : "How this was scored").uppercased())
+                    .font(.dripEyebrow(smallType))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.drip.textSecondary)
+                if !showsReceipt {
+                    Text("·")
+                        .font(.dripEyebrow(microType))
+                        .foregroundStyle(Color.drip.textTertiary)
+                    Text(coverage)
+                        .font(.dripEyebrow(microType))
+                        .tracking(0.5)
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                Spacer(minLength: 6)
+                Text("⌄")
+                    .font(.dripEyebrow(smallType))
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .rotationEffect(.degrees(showsReceipt ? 180 : 0))
+            }
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(TrendsAnchorPressStyle(cornerRadius: 4))
+        .padding(.top, 10)
+        .accessibilityLabel(
+            showsReceipt ? "Hide the arithmetic behind the score"
+                         : "Show the arithmetic behind the score"
+        )
     }
 
     /// Factors grouped by evidence source, words → runs → nights.
@@ -476,7 +594,7 @@ struct TrendsRecoveryLedgerView: View {
 // MARK: - Findings
 
 struct TrendsFindingsView: View {
-    let findings: [TrendsRead.Finding]
+    let findings: [TrendsSignalRead.Finding]
 
     @ScaledMetric(relativeTo: .caption2)
     private var microType: CGFloat = DripTypeFloor.eyebrowMicro
@@ -514,7 +632,7 @@ struct TrendsFindingsView: View {
         }
     }
 
-    private func tint(_ tone: TrendsRead.Finding.Tone) -> Color {
+    private func tint(_ tone: TrendsSignalRead.Finding.Tone) -> Color {
         switch tone {
         case .niggle: Color.drip.injured
         case .mood: Color.drip.tired

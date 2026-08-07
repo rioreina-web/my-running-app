@@ -217,7 +217,7 @@ struct TrendsWindowTests {
 
 // MARK: - The read
 
-@Suite("TrendsRead")
+@Suite("TrendsSignalRead")
 struct TrendsReadTests {
 
     /// The most important line on the surface: the difference between a tool
@@ -227,7 +227,7 @@ struct TrendsReadTests {
         let flat = (0..<40).map {
             day(String(format: "2026-06-%02d", 1 + $0 % 28), 6, "easy", mood: "neutral")
         }
-        let read = TrendsRead.compute(
+        let read = TrendsSignalRead.compute(
             TrendsSignalBuilder.build(days: flat, keySessions: [], window: .thirtyDays)
         )
         #expect(read.note.contains("Nothing is proven here yet"))
@@ -238,7 +238,7 @@ struct TrendsReadTests {
         let clean = (0..<40).map {
             day(String(format: "2026-06-%02d", 1 + $0 % 28), 6, "easy", mood: "positive")
         }
-        let read = TrendsRead.compute(
+        let read = TrendsSignalRead.compute(
             TrendsSignalBuilder.build(days: clean, keySessions: [], window: .thirtyDays)
         )
         #expect(read.findings.contains { $0.text.contains("Absence is a real finding") })

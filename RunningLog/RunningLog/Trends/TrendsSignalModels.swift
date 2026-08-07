@@ -12,7 +12,7 @@
 //  1. **One time control.** `TrendsWindow` is the only range on the surface.
 //     Every section reads its slice from here; nothing carries a second,
 //     independently-set range of its own.
-//  2. **Ledes are functions, not strings.** `TrendsRead` computes the
+//  2. **Ledes are functions, not strings.** `TrendsSignalRead` computes the
 //     headline, the noise line and the findings from the same array the
 //     chart draws, so prose cannot drift from the picture above it.
 //  3. **No silent degradation.** When the window is wide enough to force
@@ -54,9 +54,13 @@ enum TrendsWindow: Equatable, Identifiable, Hashable {
         }
     }
 
+    /// Pill label. Every preset reads in months or years — "30 D" sat in a row
+    /// with "3 MO / 6 MO / 1 YR" as the only member using a different unit,
+    /// which made the row read as four options and one oddity. The window is
+    /// still 30 days; only the word changed.
     var label: String {
         switch self {
-        case .thirtyDays: "30 D"
+        case .thirtyDays: "1 MO"
         case .threeMonths: "3 MO"
         case .sixMonths: "6 MO"
         case .oneYear: "1 YR"
@@ -79,7 +83,7 @@ enum TrendsWindow: Equatable, Identifiable, Hashable {
     /// Plate title for the header strip.
     var plateTitle: String {
         switch self {
-        case .thirtyDays: "30-Day View"
+        case .thirtyDays: "1-Month View"
         case .threeMonths: "3-Month View"
         case .sixMonths: "6-Month View"
         case .oneYear: "1-Year View"
@@ -88,6 +92,24 @@ enum TrendsWindow: Equatable, Identifiable, Hashable {
     }
 
     var isCustom: Bool { if case .custom = self { return true }; return false }
+
+    /// "2026-08-07" → a UTC-midnight `Date`, calendar-field based rather than
+    /// by arithmetic on a time interval.
+    ///
+    /// The window's own date range is NOT computed from this — see
+    /// `TrendsBucketSet.dateRangeLabel`, which reads the resolved slice. A
+    /// preset is a trailing count of rows, not a span of calendar days, and an
+    /// athlete with twelve days of timeline must not be told she is looking at
+    /// a month.
+    static func day(fromISO iso: String) -> Date? {
+        let parts = iso.prefix(10).split(separator: "-")
+        guard parts.count == 3,
+              let y = Int(parts[0]), let m = Int(parts[1]), let d = Int(parts[2])
+        else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return cal.date(from: DateComponents(year: y, month: m, day: d))
+    }
 }
 
 // MARK: - Session channel
@@ -271,7 +293,7 @@ struct TrendsBucketSet {
             // one is worse than none.
             "\(buckets.count) daily columns · gridlines mark Mondays · mood is a colour, one swatch per logged day · niggle opacity is the athlete's own severity word"
         case .week:
-            "\(buckets.count) weekly columns · mood shows the week's most-logged label and niggles show mentions per week — day-level detail needs the 30-day or 3-month view"
+            "\(buckets.count) weekly columns · mood shows the week's most-logged label and niggles show mentions per week — day-level detail needs the 1-month or 3-month view"
         }
     }
 
@@ -283,6 +305,27 @@ struct TrendsBucketSet {
     var niggleAreas: Set<String> { Set(days.flatMap { $0.niggles.map { $0.area.lowercased() } }) }
     var moodLoggedDays: Int { days.filter { ($0.mood?.isEmpty == false) }.count }
     var restDays: Int { days.filter { $0.miles <= 0 }.count }
+    /// Days that carried running. The time control's meta line counts these
+    /// rather than `days.count`, so the range never claims a month of training
+    /// when it holds a month of calendar and nine runs.
+    var runDays: Int { days.filter { $0.miles > 0 }.count }
+
+    /// "Jul 9 – Aug 7" — the days actually in the window.
+    ///
+    /// Read off the SLICE, never off the preset's nominal span. A preset is
+    /// `days.suffix(n)`: it takes the last n rows that exist, so an athlete
+    /// twelve days into her timeline on the 1-month view is looking at twelve
+    /// days. A control that labelled that "Jul 9 – Aug 7" would be stating a
+    /// range the chart beneath it is not drawing.
+    ///
+    /// Routed through `TrendsSignalBuilder.shortLabel` — the one table this
+    /// surface names days from, so the meta line and the axis cannot start
+    /// disagreeing about what to call July.
+    var dateRangeLabel: String {
+        guard let first = days.first?.date, let last = days.last?.date else { return "" }
+        guard first != last else { return TrendsSignalBuilder.shortLabel(first) }
+        return "\(TrendsSignalBuilder.shortLabel(first)) – \(TrendsSignalBuilder.shortLabel(last))"
+    }
 
     /// The window's most-logged mood.
     ///
@@ -735,7 +778,7 @@ struct TrendsRecoveryLedger {
 /// chart draws — three hand-written headlines had to be thrown away once
 /// because they contradicted the charts beneath them, and prose written once
 /// and rendered forever drifts silently.
-struct TrendsRead {
+struct TrendsSignalRead {
 
     /// Recovery moves smaller than this are noise, and the screen says so.
     /// This is the most important threshold on the surface: it's the
@@ -759,9 +802,9 @@ struct TrendsRead {
         enum Tone { case niggle, mood, neutral }
     }
 
-    static func compute(_ set: TrendsBucketSet) -> TrendsRead {
+    static func compute(_ set: TrendsBucketSet) -> TrendsSignalRead {
         guard !set.buckets.isEmpty, let firstDay = set.days.first, let lastDay = set.days.last else {
-            return TrendsRead(
+            return TrendsSignalRead(
                 headline: "Not enough logged yet.",
                 headlineAccent: "",
                 note: "The signal chart needs a few days of runs or voice logs before it can say anything.",
@@ -810,7 +853,7 @@ struct TrendsRead {
             note = "Down \(String(format: "%.1f", abs(dRec))) points with mileage \(dMiles >= 0 ? "up" : "down") \(Int(abs(dMiles).rounded()))%. Load isn't the obvious explanation here."
         }
 
-        return TrendsRead(
+        return TrendsSignalRead(
             headline: headline,
             headlineAccent: accent,
             note: note,
@@ -844,7 +887,7 @@ struct TrendsRead {
             // Say what we can count, and name where the detail lives.
             let weeksWith = set.buckets.filter(\.hasNiggle).count
             out.append(Finding(
-                text: "\(mentionCount) body mention\(mentionCount == 1 ? "" : "s") across \(set.buckets.count) weeks, in \(weeksWith) of them. Whether they land on your key sessions needs day-level detail — that's the 30-day or 3-month view.",
+                text: "\(mentionCount) body mention\(mentionCount == 1 ? "" : "s") across \(set.buckets.count) weeks, in \(weeksWith) of them. Whether they land on your key sessions needs day-level detail — that's the 1-month or 3-month view.",
                 meta: "\(set.niggleAreas.count) area\(set.niggleAreas.count == 1 ? "" : "s") · weekly buckets",
                 tone: .niggle
             ))

@@ -9,10 +9,16 @@
 //
 //  The previous tab is intact in `TrendsLegacyTabView` and is one tap away in
 //  DEBUG builds via the `v1 ›` capsule in the v2 header. Nothing was deleted:
-//  the pace spectrum, threshold miles and race prediction live there until
-//  they get a screen that suits them — they answer "how fast am I", which is
-//  a different question from "how am I trending", and mixing the two is what
-//  made the old tab an eleven-block scroll.
+//  the pace spectrum and race prediction live there until they get a screen
+//  that suits them — they answer "how fast am I", which is a different question
+//  from "how am I trending", and mixing the two is what made the old tab an
+//  eleven-block scroll.
+//
+//  Threshold pace is the one exception, promoted onto the tab as section 04:
+//  it is the only pace surface drawn against a band the athlete sets herself,
+//  which makes it a trend she moves rather than a number she reads. The Lab
+//  keeps its copy — both render `TrendsThresholdView` off the shared
+//  `BandSettingsStore`, so there is one renderer and one band.
 //
 //  This host exists for one reason beyond the swap: the tab must not fetch
 //  until the athlete actually opens it. Every tab in `RunningLogApp` is
@@ -75,7 +81,9 @@ struct TrendsTabView: View {
             onOpenLab: { showLab = true }
         )
         .sheet(isPresented: $showLab) { SignalLabView(service: service) }
-        .fullScreenCover(isPresented: $showLegacy) {
+        // A sheet, not a fullScreenCover: a sheet can always be swiped away,
+        // so a missing toolbar can never trap the athlete on this screen again.
+        .sheet(isPresented: $showLegacy) {
             NavigationStack {
                 TrendsLegacyTabView()
                     .toolbar {

@@ -87,7 +87,7 @@ struct HeadToHeadCard: View {
                 coachNote(a, b)
                     .padding(.top, 16)
 
-                Text("Bold is the stronger figure. Equal figures stay gray — restraint as foundation, intensity as accent.")
+                Text("Pace is the clock — what you actually ran. The smaller lines beneath it are adjustments, not results. Bold is the stronger figure; equal figures stay gray.")
                     .font(.dripBody(11)).italic()
                     .foregroundColor(Color.drip.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -175,6 +175,7 @@ struct HeadToHeadCard: View {
 
     private func row(_ m: CompareMetric, _ a: FastSession, _ b: FastSession) -> some View {
         let win = winnerSide(m, a, b)   // 1 = A, -1 = B, 0 = none
+        let subs = subRows(m, a, b)
         return VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -188,9 +189,56 @@ struct HeadToHeadCard: View {
                 valueText(m, b, isWinner: win == -1, neutral: win == 0)
                     .frame(width: 70, alignment: .trailing)
             }
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+            .padding(.bottom, subs.isEmpty ? 8 : 4)
+
+            ForEach(subs) { s in
+                subRow(s.caption, s.a, s.b)
+            }
+
             Rectangle().fill(Color.drip.divider).frame(height: 1)
+                .padding(.top, subs.isEmpty ? 0 : 6)
         }
+    }
+
+    /// One secondary line of a metric row, in both columns.
+    private struct SubLine: Identifiable {
+        let caption: String
+        let a: String
+        let b: String
+        var id: String { caption }
+    }
+
+    /// The adjusted-pace lines under a headline figure. A line where BOTH
+    /// sessions read "—" carries nothing, so it is dropped rather than shown
+    /// as a pair of dashes.
+    private func subRows(_ m: CompareMetric, _ a: FastSession, _ b: FastSession) -> [SubLine] {
+        let av = m.subValues(a), bv = m.subValues(b)
+        guard !av.isEmpty, av.count == bv.count else { return [] }
+        var out: [SubLine] = []
+        for i in av.indices {
+            let l = av[i], r = bv[i]
+            if l.value == "—" && r.value == "—" { continue }
+            out.append(SubLine(caption: l.caption, a: l.value, b: r.value))
+        }
+        return out
+    }
+
+    /// One secondary line: indented caption on the left, the two adjusted
+    /// figures under their columns. Always tertiary, never bold — these are the
+    /// model's reading of the session, not the session.
+    private func subRow(_ caption: String, _ av: String, _ bv: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(caption).font(.dripEyebrow(8)).tracking(8 * 0.05)
+                .foregroundColor(Color.drip.textTertiary)
+                .padding(.leading, 10)
+            Spacer()
+            Text(av).font(.dripStat(11)).foregroundColor(Color.drip.textTertiary)
+                .frame(width: 70, alignment: .trailing)
+            Text(bv).font(.dripStat(11)).foregroundColor(Color.drip.textTertiary)
+                .frame(width: 70, alignment: .trailing)
+        }
+        .padding(.bottom, 2)
     }
 
     /// 1 if A wins the metric, -1 if B, 0 if neutral / tie / missing.
@@ -276,7 +324,10 @@ struct HeadToHeadCard: View {
         out += "."
 
         // What the other one bought, honestly.
-        let paceGap = l.pace(heat: heat, hills: hills) - w.pace(heat: heat, hills: hills)
+        // Raw clock pace, matching the headline figure in the grid above — a
+        // read that quotes a number the athlete can't find on screen is worse
+        // than no read at all.
+        let paceGap = l.avgPaceSec - w.avgPaceSec
         if l.densityPct > w.densityPct, paceGap > 0 {
             out += " \(l.dateLabel) bought its density at \(paceGap) seconds slower."
         } else if l.fastMiles > w.fastMiles + 0.05 {

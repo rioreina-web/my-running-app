@@ -47,6 +47,24 @@ import { adjustPaceForGrade, combineConditions, gradeAdjustRun, type RunSegment 
 
 const METERS_PER_MILE = 1609.344;
 
+/**
+ * Hill-cost resolution floor, seconds per mile.
+ *
+ * Grade adjustment reads an altitude stream that carries ±1–2 m of GPS /
+ * barometric noise, and the grade model damps downhill credit (full uphill
+ * cost, half the downhill gift — right for real terrain). Those two facts
+ * combine badly: zero-mean altitude noise does NOT cancel, it accumulates in
+ * one direction, so a dead-flat track can report a few seconds per mile of
+ * "hill cost" that never happened.
+ *
+ * Smoothing and 200 m chunking (see `trends-timeline/fastSegments.ts`) cut that
+ * residue to ~1 s/mi. This floor is the last guard: a hill effect smaller than
+ * the model's own noise is not a measurement, so the rep is reported as flat
+ * rather than given a number the data can't support. Real terrain clears it
+ * easily — a 1% average grade is worth ~15 s/mi.
+ */
+export const HILL_RESOLUTION_SEC = 3;
+
 // ── Pace systems ───────────────────────────────────────────────
 
 /** The seven race-anchored "fast" systems, sharpest last. Aerobic zones
@@ -389,6 +407,13 @@ export function analyzeKeySession(
       } else {
         gradePct = 0;
       }
+    }
+
+    // Resolution floor — below it, what we're measuring is the altitude noise,
+    // not the terrain. Report the rep as flat instead of inventing a number.
+    if (flatPaceSec != null && Math.abs(flatPaceSec - paceSec) < HILL_RESOLUTION_SEC) {
+      flatPaceSec = null;
+      gradePct = 0;
     }
 
     const hasGrade = flatPaceSec != null || Math.abs(gradePct) > 0.1;

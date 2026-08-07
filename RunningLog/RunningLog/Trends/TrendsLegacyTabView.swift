@@ -112,7 +112,11 @@ struct TrendsLegacyTabView: View {
             .padding(.bottom, 100)
         }
         .background(Color.drip.background)
-        .toolbar(.hidden, for: .navigationBar)
+        // NOTE: do not hide the navigation bar here. This view is no longer
+        // mounted as a tab — its only route is the DEBUG `v1 ›` door in
+        // `TrendsTabView`, which presents it inside a NavigationStack whose
+        // toolbar carries the Close button. Hiding the bar took that button
+        // with it and left the screen with no exit (2026-08-06).
         // Reset the scrub when the window changes so the readout falls back
         // to the latest week of the new range.
         .onChange(of: range) { _, _ in scrubIndex = nil }

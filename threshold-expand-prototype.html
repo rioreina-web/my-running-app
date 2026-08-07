@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Threshold pace — expandable, one sticky time control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.07); --coral-line:rgba(212,89,42,.28);
+  --band:#4A6BAE;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--fb);-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 24px 80px}
+.eyebrow{font-family:var(--fm);font-size:11px;letter-spacing:.12em;color:var(--ink-2);text-transform:uppercase}
+.eyebrow.coral{color:var(--coral)}
+header.top{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:26px}
+header.top h1{font-family:var(--fd);font-weight:700;font-size:34px;line-height:1.06;margin:9px 0 0;letter-spacing:-.01em}
+header.top p{font-size:14.5px;line-height:1.6;max-width:66ch;margin:12px 0 0;color:var(--ink-2)}
+header.top p b{color:var(--ink)}
+
+.stage{display:flex;gap:34px;align-items:flex-start;flex-wrap:wrap}
+.col{flex:0 0 auto}
+.col > .cap{font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;color:var(--ink-3);
+  text-transform:uppercase;margin:0 0 10px 4px}
+.col > .cap b{color:var(--coral)}
+
+.phone{width:390px;height:800px;background:var(--paper);border-radius:34px;border:1px solid #DAD5CF;
+  box-shadow:0 8px 30px rgba(0,0,0,.10);overflow:hidden;display:flex;flex-direction:column;position:relative}
+.status{height:32px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 22px 4px;
+  font-family:var(--fm);font-size:10.5px;flex:0 0 auto;background:var(--paper);z-index:40}
+.screen{flex:1;overflow-y:auto;scrollbar-width:thin;position:relative}
+.screen::-webkit-scrollbar{width:5px}
+.screen::-webkit-scrollbar-thumb{background:#DAD5CF;border-radius:3px}
+.pad{padding:0 20px 30px}
+.tabbar{flex:0 0 auto;height:52px;border-top:1px solid var(--rule);background:#FAFAF8;
+  display:flex;align-items:center;justify-content:space-around;padding-bottom:5px;z-index:40}
+.tabbar div{text-align:center;font-family:var(--fm);font-size:8.5px;letter-spacing:.10em;color:var(--ink-3);text-transform:uppercase}
+.tabbar div .dot{width:5px;height:5px;border-radius:99px;background:#D5D0CA;margin:0 auto 5px}
+.tabbar div.on{color:var(--coral)} .tabbar div.on .dot{background:var(--coral)}
+
+/* ============ THE STICKY TIME CONTROL ============ */
+.timebar{position:sticky;top:0;z-index:30;background:var(--paper);
+  padding:10px 20px 9px;border-bottom:1px solid transparent;transition:border-color .18s, box-shadow .18s, padding .18s}
+.timebar.stuck{border-bottom-color:var(--rule);box-shadow:0 6px 14px -12px rgba(0,0,0,.5);padding-top:7px;padding-bottom:7px}
+.timebar .rail{display:flex;gap:5px}
+.pill{flex:1;font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-2);background:var(--card);border:1px solid var(--rule);
+  border-radius:99px;height:31px;cursor:pointer;transition:background .14s,color .14s,border-color .14s,height .18s;
+  display:flex;align-items:center;justify-content:center;padding:0}
+.timebar.stuck .pill{height:27px;font-size:9.5px}
+.pill.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.timebar .meta{font-family:var(--fm);font-size:9px;letter-spacing:.09em;color:var(--ink-3);
+  text-transform:uppercase;margin-top:7px;display:flex;justify-content:space-between;gap:10px}
+.timebar.stuck .meta{margin-top:5px;font-size:8.5px}
+.timebar .meta b{color:var(--ink-2);font-weight:400}
+.custom{display:none;gap:8px;align-items:center;margin-top:9px}
+.custom.on{display:flex}
+.custom input{font-family:var(--fm);font-size:11px;color:var(--ink);background:var(--card);
+  border:1px solid var(--rule);border-radius:7px;padding:6px 8px;flex:1;min-width:0}
+.custom span{font-family:var(--fm);font-size:9px;letter-spacing:.1em;color:var(--ink-3);text-transform:uppercase}
+
+/* ============ page chrome ============ */
+.tabhead{padding:12px 0 2px}
+.tabhead h2{font-family:var(--fd);font-weight:700;font-size:29px;margin:6px 0 0;line-height:1.05}
+.rule{height:1px;background:var(--rule);margin:22px 0}
+.filler{padding:18px 0}
+.filler .k{font-family:var(--fm);font-size:9px;letter-spacing:.14em;color:var(--ink-3);text-transform:uppercase}
+.filler p{font-size:14px;line-height:1.55;color:var(--ink-2);margin:8px 0 0}
+.filler p b{color:var(--ink)}
+.ghost{margin-top:12px;height:74px;border-radius:10px;border:1px solid var(--rule);background:
+  repeating-linear-gradient(135deg,#fff,#fff 9px,#FAF8F6 9px,#FAF8F6 18px)}
+
+/* ============ section head + EXPAND ============ */
+.sechead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.sechead .num{font-family:var(--fm);font-size:9px;letter-spacing:.16em;color:var(--ink-3)}
+.sechead h3{font-family:var(--fm);font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-2);margin:0;font-weight:400}
+.expandbtn{font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink);background:var(--card);border:1px solid var(--rule);border-radius:99px;
+  padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.expandbtn:hover{border-color:var(--ink-3)}
+.expandbtn svg{display:block}
+
+/* ============ the card ============ */
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:2px 12px 12px;margin-top:12px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--rule)}
+.stats div{padding:12px 4px 11px;text-align:center;border-right:1px solid var(--rule)}
+.stats div:last-child{border-right:0}
+.stats .k{font-family:var(--fm);font-size:8px;letter-spacing:.1em;color:var(--ink-3);text-transform:uppercase}
+.stats .v{font-family:var(--fm);font-size:20px;font-weight:600;line-height:1;margin-top:7px;font-variant-numeric:tabular-nums}
+.stats .v u{text-decoration:none;font-size:9.5px;color:var(--ink-3);margin-left:2px;font-weight:400}
+.readout{font-family:var(--fm);font-size:9px;letter-spacing:.05em;color:var(--ink-3);line-height:1.4;
+  min-height:26px;margin-top:11px;text-transform:uppercase}
+.readout b{color:var(--ink);font-weight:600}
+canvas{display:block;width:100%;cursor:crosshair}
+.leg{display:flex;gap:12px;flex-wrap:wrap;margin-top:9px;padding-top:8px;border-top:1px solid var(--rule)}
+.leg span{font-family:var(--fm);font-size:8.5px;color:var(--ink-2);letter-spacing:.05em;display:flex;align-items:center;gap:5px;text-transform:uppercase}
+.leg i{width:9px;height:9px;border-radius:99px;display:inline-block;border:1.5px solid var(--band)}
+.leg i.solid{background:var(--band)}
+.leg i.bar{width:14px;height:9px;border-radius:2px;border:0;background:rgba(74,107,174,.14);box-shadow:inset 0 1px 0 rgba(74,107,174,.5),inset 0 -1px 0 rgba(74,107,174,.5)}
+
+/* summary line under card (collapsed control read) */
+.bandline{display:flex;align-items:baseline;gap:8px;margin-top:13px;cursor:pointer}
+.bandline .s{font-family:var(--fm);font-size:9.5px;letter-spacing:.07em;color:var(--ink-2);
+  text-transform:uppercase;line-height:1.4;flex:1}
+.bandline .a{font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:.11em;color:var(--ink);text-transform:uppercase;white-space:nowrap}
+
+/* ============ THE SHEET ============ */
+.sheet{position:absolute;inset:0;background:var(--paper);z-index:60;display:flex;flex-direction:column;
+  transform:translateY(100%);transition:transform .34s cubic-bezier(.32,.72,0,1);pointer-events:none}
+.sheet.open{transform:translateY(0);pointer-events:auto}
+.sheet .grab{height:22px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.sheet .grab i{width:34px;height:4px;border-radius:99px;background:#D5D0CA;display:block}
+.sheethead{flex:0 0 auto;padding:2px 20px 0}
+.sheethead .row{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.sheethead h3{font-family:var(--fd);font-weight:700;font-size:23px;margin:5px 0 0;line-height:1.08}
+.sheethead .k{font-family:var(--fm);font-size:9px;letter-spacing:.15em;color:var(--coral);text-transform:uppercase}
+.done{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink);background:none;border:0;cursor:pointer;padding:4px 0}
+.sheet .timebar{background:var(--paper);border-bottom:1px solid var(--rule);position:static;padding:11px 20px 10px;margin-top:11px}
+.sheetbody{flex:1;overflow-y:auto;padding:0 20px 28px;scrollbar-width:thin}
+.sheetbody::-webkit-scrollbar{width:5px}
+.sheetbody::-webkit-scrollbar-thumb{background:#DAD5CF;border-radius:3px}
+
+/* control tabs — the "easier to work with" move */
+.ctabs{display:flex;gap:0;margin-top:16px;border-bottom:1px solid var(--rule)}
+.ctab{flex:1;font-family:var(--fm);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);background:none;border:0;border-bottom:2px solid transparent;padding:9px 2px 8px;cursor:pointer}
+.ctab.on{color:var(--ink);border-bottom-color:var(--coral)}
+.ctab .d{display:block;font-size:8.5px;font-weight:400;letter-spacing:.04em;color:var(--ink-3);margin-top:4px;
+  font-variant-numeric:tabular-nums;text-transform:none}
+.ctab.on .d{color:var(--coral)}
+.cpane{display:none;padding-top:15px} .cpane.on{display:block}
+
+.fh{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.fh .t{font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;color:var(--ink-2);text-transform:uppercase}
+.fh button{font-family:var(--fm);font-size:8.5px;font-weight:600;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);background:none;border:0;cursor:pointer;padding:0}
+.fh button:hover{color:var(--coral)}
+.note{font-size:12px;line-height:1.5;color:var(--ink-3);margin:11px 0 0}
+.note b{color:var(--ink-2)}
+
+.chips{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.chip{height:42px;border-radius:7px;background:var(--card);border:1px solid var(--rule);cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0;
+  transition:background .12s,border-color .12s}
+.chip .l{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.08em;color:var(--ink-2)}
+.chip .p{font-family:var(--fm);font-size:9px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.chip.on{background:var(--band);border-color:var(--band)}
+.chip.on .l,.chip.on .p{color:#fff} .chip.on .p{opacity:.8}
+.paceinput{display:none;gap:8px;margin-top:9px}
+.paceinput.on{display:flex}
+.paceinput input{font-family:var(--fm);font-size:13px;padding:8px 10px;border:1px solid var(--rule);
+  border-radius:7px;background:var(--card);width:90px}
+.paceinput button{font-family:var(--fm);font-size:9.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  background:var(--ink);color:var(--paper);border:0;border-radius:7px;padding:0 14px;cursor:pointer}
+
+.srow{margin-top:14px}
+.srow .top{display:flex;align-items:baseline;gap:8px}
+.srow .top .l{font-family:var(--fm);font-size:9px;letter-spacing:.12em;color:var(--ink-3);
+  text-transform:uppercase;flex:1}
+.srow .top .v{font-family:var(--fm);font-size:11px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.srow .top .p{font-family:var(--fm);font-size:11px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;margin:7px 0 0;accent-color:var(--band);height:22px}
+
+.step{display:flex;align-items:center;gap:9px;margin-top:13px}
+.step .l{font-family:var(--fm);font-size:9px;letter-spacing:.12em;color:var(--ink-3);text-transform:uppercase;flex:1}
+.step button{width:32px;height:30px;border-radius:6px;background:var(--card);border:1px solid var(--rule);
+  font-family:var(--fb);font-size:16px;color:var(--ink);cursor:pointer;line-height:1}
+.step button:disabled{color:#CFC9C3;cursor:default}
+.step .v{font-family:var(--fm);font-size:11px;font-weight:600;min-width:56px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* session list */
+.listhead{display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 0;
+  padding-top:16px;border-top:1px solid var(--rule)}
+.listhead .t{font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;color:var(--ink-2);text-transform:uppercase}
+.listhead .c{font-family:var(--fm);font-size:9px;color:var(--ink-3);letter-spacing:.06em}
+.srowitem{display:grid;grid-template-columns:54px 1fr auto;gap:10px;align-items:center;
+  padding:11px 0;border-bottom:1px solid var(--rule);cursor:pointer}
+.srowitem:hover{background:rgba(0,0,0,.015)}
+.srowitem .d{font-family:var(--fm);font-size:9.5px;color:var(--ink-3);letter-spacing:.05em;text-transform:uppercase}
+.srowitem .m{font-family:var(--fd);font-size:15px;font-weight:600;line-height:1.15}
+.srowitem .m s{display:block;font-family:var(--fm);font-size:8.5px;color:var(--ink-3);text-decoration:none;
+  letter-spacing:.06em;text-transform:uppercase;margin-top:3px}
+.srowitem .g{font-family:var(--fm);font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;
+  padding:3px 7px;border-radius:99px;white-space:nowrap}
+.g.work{background:rgba(74,107,174,.12);color:var(--band)}
+.g.cruise{background:rgba(155,149,144,.16);color:var(--ink-2)}
+.g.unclassed{background:rgba(212,89,42,.10);color:var(--coral)}
+.empty{font-size:13px;line-height:1.5;color:var(--ink-3);padding:26px 0;text-align:center}
+
+.scrim{position:absolute;inset:0;background:rgba(26,24,21,.24);z-index:50;opacity:0;pointer-events:none;transition:opacity .3s}
+.scrim.on{opacity:1;pointer-events:auto}
+
+.notes{margin-top:40px;max-width:70ch}
+.notes h4{font-family:var(--fd);font-size:20px;font-weight:700;margin:26px 0 0}
+.notes p{font-size:14px;line-height:1.62;color:var(--ink-2);margin:9px 0 0}
+.notes p b{color:var(--ink)}
+.notes ul{margin:9px 0 0;padding-left:18px}
+.notes li{font-size:14px;line-height:1.6;color:var(--ink-2);margin:5px 0}
+.notes li b{color:var(--ink)}
+.notes code{font-family:var(--fm);font-size:12.5px;background:#EEEAE5;padding:1px 5px;border-radius:4px;color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow coral">Trends · section 04 · prototype</div>
+  <h1>Threshold pace, with room to work</h1>
+  <p>Two changes, no new data. <b>Left:</b> the one time control now sticks to the top of the
+  scroll, so the range is one tap away from any section instead of four sections up — and the
+  presets read 1&nbsp;MO / 3&nbsp;MO / 6&nbsp;MO / 1&nbsp;YR / CUSTOM. <b>Right:</b> the threshold
+  card expands full-screen, where the chart gets 250pt instead of 168, the four band controls stop
+  stacking into one tall column, and every session in the window is listed and tappable.
+  Everything is live — change the range or the band and both panes recount.</p>
+</header>
+
+<div class="stage">
+
+  <!-- =============== PANE 1 : the tab =============== -->
+  <div class="col">
+    <div class="cap"><b>1 ·</b> The tab — sticky time control</div>
+    <div class="phone">
+      <div class="status"><span id="clock">12:58</span><span>◾◾◾ ᯤ 89%</span></div>
+      <div class="screen" id="screen">
+        <div class="pad">
+          <div class="tabhead">
+            <div class="eyebrow coral">Trends</div>
+            <h2 id="tabTitle">Running Log — 1-Month View</h2>
+          </div>
+        </div>
+
+        <!-- the one time control -->
+        <div class="timebar" id="timebar">
+          <div class="rail" id="railA"></div>
+          <div class="custom" id="customA">
+            <input type="date" id="fromA"><span>to</span><input type="date" id="toA">
+          </div>
+          <div class="meta"><span id="metaRange">JUL 8 – AUG 7</span><b id="metaCount">14 runs</b></div>
+        </div>
+
+        <div class="pad">
+          <div class="filler">
+            <div class="k">The read · 01–03</div>
+            <p>Coverage <b>37%</b> — 11 of 30 days carry a check-in, so read the mood lane as a
+            sample, not the month.</p>
+            <div class="ghost"></div>
+            <div class="ghost"></div>
+          </div>
+
+          <div class="rule"></div>
+
+          <!-- section 04 -->
+          <div class="sechead">
+            <div>
+              <div class="num">04</div>
+              <h3>Threshold pace</h3>
+            </div>
+            <button class="expandbtn" onclick="openSheet()">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3">
+                <path d="M6 1h3v3M4 9H1V6M9 1L5.6 4.4M1 9l3.4-3.4"/></svg>
+              Expand
+            </button>
+          </div>
+
+          <div class="card">
+            <div class="stats" id="statsA"></div>
+            <div class="readout" id="readoutA"></div>
+            <canvas id="cvA" height="150"></canvas>
+            <div class="leg">
+              <span><i class="bar"></i> The band</span>
+              <span><i class="solid"></i> Work</span>
+              <span><i></i> Under the floor</span>
+            </div>
+          </div>
+
+          <div class="bandline" onclick="openSheet('band')">
+            <div class="s" id="bandlineA"></div>
+            <div class="a">Adjust ›</div>
+          </div>
+
+          <div class="rule"></div>
+          <div class="filler"><div class="k">Ask</div><p>Trends shows the shape. Ask explains it.</p></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div><span class="dot"></span>Log</div>
+        <div class="on"><span class="dot"></span>Trends</div>
+        <div><span class="dot"></span>Read</div>
+        <div><span class="dot"></span>Train</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============== PANE 2 : the sheet =============== -->
+  <div class="col">
+    <div class="cap"><b>2 ·</b> Expanded — full-screen detail</div>
+    <div class="phone">
+      <div class="status"><span>12:58</span><span>◾◾◾ ᯤ 89%</span></div>
+      <div class="screen" style="overflow:hidden">
+        <div class="pad" style="opacity:.35;pointer-events:none">
+          <div class="tabhead"><div class="eyebrow coral">Trends</div><h2>Running Log</h2></div>
+        </div>
+      </div>
+      <div class="scrim on"></div>
+      <div class="sheet open" id="sheet">
+        <div class="grab"><i></i></div>
+        <div class="sheethead">
+          <div class="row">
+            <div>
+              <div class="k">Section 04</div>
+              <h3>Threshold pace</h3>
+            </div>
+            <button class="done" onclick="closeSheet()">Done</button>
+          </div>
+        </div>
+        <div class="timebar">
+          <div class="rail" id="railB"></div>
+          <div class="custom" id="customB">
+            <input type="date" id="fromB"><span>to</span><input type="date" id="toB">
+          </div>
+          <div class="meta"><span id="metaRangeB">JUL 8 – AUG 7</span><b id="metaBand"></b></div>
+        </div>
+
+        <div class="sheetbody">
+          <div class="card" style="margin-top:14px">
+            <div class="stats" id="statsB"></div>
+            <div class="readout" id="readoutB"></div>
+            <canvas id="cvB" height="250"></canvas>
+            <div class="leg">
+              <span><i class="bar"></i> The band</span>
+              <span><i class="solid"></i> Work</span>
+              <span><i></i> Under the floor</span>
+              <span id="legFloor"></span>
+            </div>
+          </div>
+
+          <!-- the four controls, tabbed instead of stacked -->
+          <div class="ctabs">
+            <button class="ctab on" data-p="anchor" onclick="ctab('anchor')">Anchor<span class="d" id="dAnchor"></span></button>
+            <button class="ctab" data-p="band" onclick="ctab('band')">Band<span class="d" id="dBand"></span></button>
+            <button class="ctab" data-p="min" onclick="ctab('min')">Minimum<span class="d" id="dMin"></span></button>
+            <button class="ctab" data-p="floor" onclick="ctab('floor')">Floor<span class="d" id="dFloor"></span></button>
+          </div>
+
+          <div class="cpane on" id="pAnchor">
+            <div class="fh"><div class="t">What the band sits on</div><button onclick="resetAll()">Reset all</button></div>
+            <div class="chips" id="chips"></div>
+            <div class="paceinput" id="paceinput">
+              <input id="paceText" placeholder="5:35" inputmode="numeric">
+              <button onclick="commitPace()">Use</button>
+            </div>
+            <p class="note" id="anchorGloss"></p>
+          </div>
+
+          <div class="cpane" id="pBand">
+            <div class="fh"><div class="t">Where the two edges sit</div></div>
+            <div class="srow">
+              <div class="top"><span class="l">Fast edge</span><span class="v" id="fastPctV"></span><span class="p" id="fastPaceV"></span></div>
+              <input type="range" id="fastR" min="0" max="12" step="0.5">
+            </div>
+            <div class="srow">
+              <div class="top"><span class="l">Slow edge</span><span class="v" id="slowPctV"></span><span class="p" id="slowPaceV"></span></div>
+              <input type="range" id="slowR" min="0" max="12" step="0.5">
+            </div>
+            <p class="note">Tighten the <b>slow edge</b> to keep long-run cruising out; leave the
+            fast edge open so genuine hard reps still count.</p>
+          </div>
+
+          <div class="cpane" id="pMin">
+            <div class="fh"><div class="t">Minimum per session</div></div>
+            <div class="step"><span class="l">Total in band</span>
+              <button onclick="bump('minTotal',-1)">−</button><span class="v" id="minTotalV"></span><button onclick="bump('minTotal',1)">+</button></div>
+            <div class="step"><span class="l">Longest unbroken</span>
+              <button onclick="bump('minBlock',-1)">−</button><span class="v" id="minBlockV"></span><button onclick="bump('minBlock',1)">+</button></div>
+            <p class="note">A long run that touches the band four times for three minutes each clears a
+            twelve-minute total and fails a five-minute block. Sessions held out are
+            <b id="excludedNote"></b> — counted, never dropped in silence.</p>
+          </div>
+
+          <div class="cpane" id="pFloor">
+            <div class="fh"><div class="t">Effort floor</div><button onclick="toggleFloor()" id="floorToggle"></button></div>
+            <div id="floorBody">
+              <div class="step"><span class="l">Average HR at or above</span>
+                <button onclick="bump('hrFloor',-1)">−</button><span class="v" id="hrFloorV"></span><button onclick="bump('hrFloor',1)">+</button></div>
+            </div>
+            <p class="note" id="floorNote"></p>
+          </div>
+
+          <!-- every session in the window -->
+          <div class="listhead"><div class="t">Sessions in this window</div><div class="c" id="listCount"></div></div>
+          <div id="list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <h4>What changed, and what deliberately didn't</h4>
+  <p><b>Still one time control.</b> Both panes are bound to the same window. Change the range in the
+  sheet and the tab behind it is already changed — the sheet does not own a second range that can
+  disagree with the page. That was the rule in <code>CLAUDE.md</code> and it holds.</p>
+  <p><b>Still one renderer.</b> The chart in the sheet is the same view as the chart in the card,
+  handed a taller frame. There is no second threshold chart to drift.</p>
+  <p><b>Still one band.</b> The controls in the sheet write to the same shared
+  <code>BandSettingsStore</code>, so the Signal Lab's threshold section cannot start disagreeing
+  with this one about the same miles.</p>
+  <h4>The three moves</h4>
+  <ul>
+    <li><b>Sticky window bar.</b> It was already at the top of the scroll and already had 30d/3mo/6mo/1yr/custom.
+    It just scrolled away above four long sections. Now it pins, and shrinks slightly once stuck so it
+    costs less of the screen. <code>30 D</code> relabels to <code>1 MO</code>.</li>
+    <li><b>Expand.</b> A chevron-out button on the section head, plus the whole "Adjust ›" line, open
+    a full-screen detail. The inline card stays exactly as it is for the glance.</li>
+    <li><b>Tabbed controls.</b> Anchor / Band / Minimum / Floor were four blocks stacked into roughly
+    700pt of scroll. As tabs they are one screen, and each tab's current value shows on the tab itself,
+    so the read is still complete without opening anything.</li>
+  </ul>
+</div>
+
+</div>
+
+<script>
+/* ===================== synthetic history ===================== */
+let seed = 20260807;
+function rnd(){ seed = (seed*1664525 + 1013904223) % 4294967296; return seed/4294967296; }
+const DAY = 86400000;
+const TODAY = new Date(Date.UTC(2026,7,7));
+
+// the race-pace ladder, sec/mi, improving ~1.1 s/mi per month going forward
+const LADDER_NOW = { mp:338, hmp:323, lt:321, k10:309, k5:297, k3:285, mile:268 };
+const ZONES = [
+  {k:'mp',  l:'MP',  gloss:'Marathon pace. The widest band and the one most likely to catch long-run cruising — the effort floor earns its keep here.'},
+  {k:'hmp', l:'HMP', gloss:'Half-marathon pace. The shipped default: close enough to threshold that most tempo work lands inside it.'},
+  {k:'lt',  l:'LT',  gloss:'Lactate threshold, from your own race history rather than a formula off max HR.'},
+  {k:'k10', l:'10K', gloss:'10K pace. Cruise-interval territory — expect shorter totals and more sessions failing the block minimum.'},
+  {k:'k5',  l:'5K',  gloss:'5K pace. A narrow, fast band; most long-run miles fall well outside it.'},
+  {k:'k3',  l:'3K',  gloss:'3K pace. Reps, not tempo. The minimums matter more than the edges here.'},
+  {k:'mile',l:'MILE',gloss:'Mile pace. Almost nothing but the reps themselves lands inside this one.'},
+];
+function ladderAt(d){
+  const monthsBack = (TODAY - d) / (DAY*30.44);
+  const drift = monthsBack * 1.15;            // slower the further back you look
+  const L = {};
+  for (const k in LADDER_NOW) L[k] = Math.round(LADDER_NOW[k] + drift);
+  return L;
+}
+
+// ~400 days of sessions
+const SESSIONS = (()=>{
+  const out = [];
+  for (let back = 400; back >= 0; back--){
+    const d = new Date(TODAY - back*DAY);
+    const dow = d.getUTCDay();
+    if (dow === 1) continue;                       // Mondays off, mostly
+    if (rnd() < 0.14) continue;                    // scattered rest
+    const L = ladderAt(d);
+    const roll = rnd();
+    let kind, mins, block, pace;
+    if (roll < 0.16){                              // tempo / threshold
+      kind='tempo';
+      mins = 14 + rnd()*28;
+      block = mins * (0.55 + rnd()*0.45);
+      pace = L.hmp + (rnd()*26 - 10);
+    } else if (roll < 0.24){                       // intervals
+      kind='reps';
+      mins = 8 + rnd()*18;
+      block = mins * (0.18 + rnd()*0.3);
+      pace = L.k10 + (rnd()*22 - 12);
+    } else if (roll < 0.36){                       // long run w/ steady miles
+      kind='long';
+      mins = 6 + rnd()*22;
+      block = mins * (0.25 + rnd()*0.45);
+      pace = L.mp + (rnd()*30 - 4);
+    } else {                                       // easy — clips nothing
+      kind='easy';
+      mins = rnd()*7;
+      block = mins * (0.4 + rnd()*0.5);
+      pace = L.mp + 40 + rnd()*70;
+    }
+    const heat = rnd() < 0.42 ? Math.round(rnd()*13) : 0;
+    const adj = Math.round(pace);
+    const hasHR = rnd() > 0.09;
+    // HR tracks how hard the pace is relative to that day's HMP
+    const rel = (L.hmp - adj) / 26;
+    const hr = hasHR ? Math.round(165 + rel*10 + (rnd()*8 - 4)) : null;
+    out.push({
+      id:'log-'+back,
+      date:d,
+      dateLabel: d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}),
+      kind, minutes:+mins.toFixed(1), blockMinutes:+block.toFixed(1),
+      adjSec:adj, rawSec:adj+heat, correctionSec:heat, hrAvg:hr, ladder:L
+    });
+  }
+  return out;
+})();
+
+/* ===================== state ===================== */
+const WINDOWS = [
+  {id:'1mo', label:'1 MO', days:30,  title:'1-Month View'},
+  {id:'3mo', label:'3 MO', days:91,  title:'3-Month View'},
+  {id:'6mo', label:'6 MO', days:182, title:'6-Month View'},
+  {id:'1yr', label:'1 YR', days:365, title:'1-Year View'},
+];
+const S = {
+  windowId:'1mo',
+  customFrom: new Date(TODAY - 59*DAY),
+  customTo: TODAY,
+  anchor:'hmp', customSec:null,
+  fastPct:5, slowPct:5,
+  minTotal:8, minBlock:5, hrFloor:160,
+  scrubA:null, scrubB:null, ctab:'anchor'
+};
+const DEFAULTS = {anchor:'hmp',customSec:null,fastPct:5,slowPct:5,minTotal:8,minBlock:5,hrFloor:160};
+
+function pace(sec){ if(sec==null) return '—'; const m=Math.floor(sec/60), s=Math.round(sec%60);
+  return m+':'+String(s).padStart(2,'0'); }
+function anchorSecIn(L){ return S.anchor==='custom' ? S.customSec : L[S.anchor]; }
+function anchorLabel(){ return S.anchor==='custom' ? pace(S.customSec) : ZONES.find(z=>z.k===S.anchor).l; }
+function widthLabel(){ const f=fmtPct(S.fastPct), s=fmtPct(S.slowPct);
+  return S.fastPct===S.slowPct ? '±'+f+'%' : '−'+f+'% / +'+s+'%'; }
+function fmtPct(v){ return v===Math.round(v) ? String(v) : v.toFixed(1); }
+function edges(a){ return { fast:Math.round(a*(1-S.fastPct/100)), slow:Math.round(a*(1+S.slowPct/100)) }; }
+function isDefault(){ return S.anchor===DEFAULTS.anchor && S.fastPct===5 && S.slowPct===5 &&
+  S.minTotal===8 && S.minBlock===5 && S.hrFloor===160; }
+
+function bounds(){
+  if (S.windowId==='custom') return {from:S.customFrom, to:S.customTo};
+  const w = WINDOWS.find(w=>w.id===S.windowId);
+  return {from:new Date(TODAY - (w.days-1)*DAY), to:TODAY};
+}
+function fmtDay(d){ return d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'}).toUpperCase(); }
+
+/* ===================== the read ===================== */
+function buildRead(){
+  const b = bounds();
+  const inWindow = SESSIONS.filter(s => s.date >= b.from && s.date <= b.to);
+  const points = [], excluded = [];
+  let excludedMinutes = 0;
+  for (const s of inWindow){
+    const a = anchorSecIn(s.ladder); if(!a) continue;
+    const e = edges(a);
+    if (s.adjSec < e.fast || s.adjSec > e.slow) continue;   // not in band at all
+    if (s.minutes < S.minTotal || s.blockMinutes < S.minBlock){
+      excluded.push(s); excludedMinutes += s.minutes; continue;
+    }
+    let grade;
+    if (S.hrFloor === 0) grade = 'work';
+    else if (s.hrAvg == null) grade = 'unclassed';
+    else grade = s.hrAvg >= S.hrFloor ? 'work' : 'cruise';
+    points.push({...s, grade, anchorSec:a});
+  }
+  const nowL = ladderAt(b.to);
+  const aNow = anchorSecIn(nowL) || LADDER_NOW.hmp;
+  const e = edges(aNow);
+  const work = points.filter(p=>p.grade==='work');
+  const cruise = points.filter(p=>p.grade==='cruise');
+  const workMin = work.reduce((t,p)=>t+p.minutes,0);
+  const hrPts = work.filter(p=>p.hrAvg!=null);
+  return {
+    points, work, cruise, excluded, excludedMinutes,
+    runsInWindow: inWindow.length,
+    anchorSec:aNow, fastSec:e.fast, slowSec:e.slow,
+    workMinutes: workMin,
+    best: work.length ? work.reduce((a,p)=>p.adjSec<a.adjSec?p:a) : null,
+    hrAvg: hrPts.length ? Math.round(hrPts.reduce((t,p)=>t+p.hrAvg,0)/hrPts.length) : null,
+    cruiseMinutes: cruise.reduce((t,p)=>t+p.minutes,0),
+    from:b.from, to:b.to
+  };
+}
+
+/* ===================== chart ===================== */
+function drawChart(cv, read, scrub, tall){
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = +cv.getAttribute('height');
+  cv.width = w*dpr; cv.height = h*dpr; cv.style.height = h+'px';
+  const c = cv.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+  const GUT = 38, AX = 16, H = h - AX;
+  if (!read.points.length){
+    c.font = '11px ui-monospace, Menlo, monospace'; c.fillStyle = '#9B9590'; c.textAlign='center';
+    c.fillText('nothing clears this band', w/2, h/2); return;
+  }
+  // y domain: band plus every mark, padded
+  const secs = read.points.map(p=>p.adjSec).concat([read.fastSec, read.slowSec, read.anchorSec]);
+  let lo = Math.min(...secs) - 8, hi = Math.max(...secs) + 8;
+  const y = s => H * (s - lo) / (hi - lo);              // faster (lower sec) at top
+  const t0 = read.from.getTime(), t1 = Math.max(read.to.getTime(), t0 + DAY);
+  const x = d => GUT + (w - GUT - 8) * (d.getTime() - t0) / (t1 - t0);
+
+  // band
+  c.fillStyle = 'rgba(74,107,174,.12)';
+  c.fillRect(GUT, y(read.fastSec), w-GUT, y(read.slowSec)-y(read.fastSec));
+  c.strokeStyle = 'rgba(74,107,174,.45)'; c.lineWidth = 1;
+  [read.fastSec, read.slowSec].forEach(s=>{ c.beginPath();
+    c.moveTo(GUT, Math.round(y(s))+.5); c.lineTo(w, Math.round(y(s))+.5); c.stroke(); });
+
+  // y labels
+  c.font = '9px ui-monospace, Menlo, monospace'; c.fillStyle='#9B9590'; c.textAlign='right'; c.textBaseline='middle';
+  [read.fastSec, read.anchorSec, read.slowSec].forEach(s=> c.fillText(pace(s), GUT-6, y(s)));
+
+  // scrub line
+  if (scrub!=null && read.points[scrub]){
+    const px = x(read.points[scrub].date);
+    c.strokeStyle='#9B9590'; c.setLineDash([2,3]); c.beginPath();
+    c.moveTo(px,0); c.lineTo(px,H); c.stroke(); c.setLineDash([]);
+  }
+
+  // marks — area = minutes
+  const maxMin = Math.max(...read.points.map(p=>p.minutes), 1);
+  read.points.forEach((p,i)=>{
+    const r = 3.4 + (tall?9:6.5) * Math.sqrt(p.minutes/maxMin);
+    const px = x(p.date), py = y(p.adjSec);
+    // heat correction tail
+    if (p.correctionSec > 0){
+      c.strokeStyle='rgba(212,89,42,.55)'; c.lineWidth=1; c.beginPath();
+      c.moveTo(px, py); c.lineTo(px, y(p.rawSec)); c.stroke();
+      c.beginPath(); c.arc(px, y(p.rawSec), 3, 0, 7); c.stroke();
+    }
+    c.beginPath(); c.arc(px, py, r, 0, 7);
+    if (p.grade === 'work'){ c.fillStyle = '#4A6BAE'; c.fill(); }
+    else if (p.grade === 'cruise'){ c.strokeStyle='#4A6BAE'; c.lineWidth=1.6; c.fillStyle='#fff'; c.fill(); c.stroke(); }
+    else { c.strokeStyle='#D4592A'; c.lineWidth=1.6; c.fillStyle='#fff'; c.fill(); c.stroke(); }
+    if (i === scrub){ c.strokeStyle='#1A1815'; c.lineWidth=1.6; c.beginPath(); c.arc(px,py,r+3.5,0,7); c.stroke(); }
+  });
+
+  // x axis
+  c.font='9px ui-monospace, Menlo, monospace'; c.fillStyle='#9B9590'; c.textBaseline='top';
+  c.textAlign='left';  c.fillText(fmtDay(read.from), GUT, H+4);
+  c.textAlign='right'; c.fillText(fmtDay(read.to), w-2, H+4);
+  cv._layout = {x, points:read.points, GUT, w};
+}
+function nearestIndex(cv, clientX){
+  const L = cv._layout; if(!L) return null;
+  const r = cv.getBoundingClientRect(); const px = clientX - r.left;
+  let best=null, bd=1e9;
+  L.points.forEach((p,i)=>{ const d=Math.abs(L.x(p.date)-px); if(d<bd){bd=d;best=i;} });
+  return bd <= 34 ? best : null;
+}
+
+/* ===================== readouts ===================== */
+function statsHTML(read){
+  const m = Math.round(read.workMinutes);
+  return `<div><div class="k">In band</div><div class="v">${m}<u>min</u></div></div>
+  <div><div class="k">Sessions</div><div class="v">${read.work.length}</div></div>
+  <div><div class="k">Best</div><div class="v">${read.best?pace(read.best.adjSec):'—'}</div></div>
+  <div><div class="k">Avg HR</div><div class="v">${read.hrAvg??'—'}${read.hrAvg?'<u>bpm</u>':''}</div></div>`;
+}
+function readoutHTML(read, scrub){
+  if (scrub!=null && read.points[scrub]){
+    const p = read.points[scrub]; const b=[];
+    b.push('<b>'+p.dateLabel.toUpperCase()+'</b>');
+    b.push(Math.round(p.minutes)+' min in band');
+    b.push('<b>'+pace(p.adjSec)+'</b>');
+    if (p.correctionSec>0) b.push('raw '+pace(p.rawSec));
+    if (p.blockMinutes + .05 < p.minutes) b.push('longest block '+Math.round(p.blockMinutes));
+    if (p.hrAvg) b.push(p.hrAvg+' bpm');
+    if (p.grade==='cruise') b.push('under the '+S.hrFloor+' floor');
+    if (p.grade==='unclassed') b.push('no HR — not graded');
+    return b.join(' · ');
+  }
+  const b = ['<b>'+read.points.length+'</b> sessions in the band'];
+  if (read.excluded.length) b.push(read.excluded.length+' below the minimum ('+Math.round(read.excludedMinutes)+' min)');
+  if (read.cruiseMinutes>=1) b.push(Math.round(read.cruiseMinutes)+' min under the floor');
+  return b.join(' · ');
+}
+function bandSummary(read){
+  let s = anchorLabel()+' '+widthLabel()+' · '+pace(read.fastSec)+'–'+pace(read.slowSec);
+  if (S.minTotal>0 || S.minBlock>0) s += ' · min '+S.minTotal+'/'+S.minBlock+' min';
+  s += S.hrFloor>0 ? ' · floor '+S.hrFloor : ' · no floor';
+  return s;
+}
+
+/* ===================== render ===================== */
+function railHTML(){
+  return WINDOWS.map(w=>`<button class="pill ${S.windowId===w.id?'on':''}" onclick="setWindow('${w.id}')">${w.label}</button>`)
+    .join('') + `<button class="pill ${S.windowId==='custom'?'on':''}" onclick="setWindow('custom')">Custom</button>`;
+}
+function setWindow(id){ S.windowId=id; S.scrubA=S.scrubB=null; render(); }
+
+function render(){
+  const read = buildRead();
+
+  document.getElementById('railA').innerHTML = railHTML();
+  document.getElementById('railB').innerHTML = railHTML();
+  document.getElementById('customA').className = 'custom' + (S.windowId==='custom'?' on':'');
+  document.getElementById('customB').className = 'custom' + (S.windowId==='custom'?' on':'');
+  const iso = d => d.toISOString().slice(0,10);
+  ['fromA','fromB'].forEach(i=>document.getElementById(i).value = iso(S.customFrom));
+  ['toA','toB'].forEach(i=>document.getElementById(i).value = iso(S.customTo));
+
+  const w = WINDOWS.find(w=>w.id===S.windowId);
+  document.getElementById('tabTitle').textContent = 'Running Log — ' +
+    (w ? w.title : Math.round((S.customTo-S.customFrom)/DAY+1)+'-Day View');
+  const rangeText = fmtDay(read.from)+' – '+fmtDay(read.to);
+  document.getElementById('metaRange').textContent = rangeText;
+  document.getElementById('metaRangeB').textContent = rangeText;
+  document.getElementById('metaCount').textContent = read.runsInWindow+' runs';
+  document.getElementById('metaBand').textContent = anchorLabel()+' '+widthLabel();
+
+  document.getElementById('statsA').innerHTML = statsHTML(read);
+  document.getElementById('statsB').innerHTML = statsHTML(read);
+  document.getElementById('readoutA').innerHTML = readoutHTML(read, S.scrubA);
+  document.getElementById('readoutB').innerHTML = readoutHTML(read, S.scrubB);
+  document.getElementById('bandlineA').textContent = bandSummary(read);
+  document.getElementById('legFloor').innerHTML = S.hrFloor>0
+    ? '<i style="border-color:#D4592A"></i> No HR' : '';
+
+  // control tab values
+  document.getElementById('dAnchor').textContent = anchorLabel();
+  document.getElementById('dBand').textContent = widthLabel();
+  document.getElementById('dMin').textContent = S.minTotal+'/'+S.minBlock;
+  document.getElementById('dFloor').textContent = S.hrFloor>0 ? S.hrFloor : 'off';
+
+  // anchor chips
+  const nowL = ladderAt(read.to);
+  document.getElementById('chips').innerHTML =
+    ZONES.map(z=>`<button class="chip ${S.anchor===z.k?'on':''}" onclick="setAnchor('${z.k}')">
+      <span class="l">${z.l}</span><span class="p">${pace(nowL[z.k])}</span></button>`).join('') +
+    `<button class="chip ${S.anchor==='custom'?'on':''}" onclick="setAnchor('custom')">
+      <span class="l">${S.anchor==='custom'?pace(S.customSec):'SET'}</span><span class="p">my pace</span></button>`;
+  document.getElementById('paceinput').className = 'paceinput' + (S.anchor==='custom'?' on':'');
+  document.getElementById('anchorGloss').textContent = S.anchor==='custom'
+    ? 'Your own number. Everything below reads against it instead of a race-pace zone.'
+    : ZONES.find(z=>z.k===S.anchor).gloss;
+
+  // band sliders
+  document.getElementById('fastR').value = S.fastPct;
+  document.getElementById('slowR').value = S.slowPct;
+  document.getElementById('fastPctV').textContent = '−'+fmtPct(S.fastPct)+'%';
+  document.getElementById('slowPctV').textContent = '+'+fmtPct(S.slowPct)+'%';
+  document.getElementById('fastPaceV').textContent = pace(read.fastSec);
+  document.getElementById('slowPaceV').textContent = pace(read.slowSec);
+
+  document.getElementById('minTotalV').textContent = S.minTotal+' min';
+  document.getElementById('minBlockV').textContent = S.minBlock+' min';
+  document.getElementById('excludedNote').textContent = read.excluded.length
+    ? read.excluded.length+' this window ('+Math.round(read.excludedMinutes)+' min)'
+    : 'none this window';
+
+  document.getElementById('hrFloorV').textContent = S.hrFloor>0 ? S.hrFloor+' bpm' : 'off';
+  document.getElementById('floorToggle').textContent = S.hrFloor>0 ? 'Turn off' : 'Turn on';
+  document.getElementById('floorBody').style.display = S.hrFloor>0 ? '' : 'none';
+  document.getElementById('floorNote').innerHTML = S.hrFloor>0
+    ? 'In-band minutes count as <b>work</b> when average heart rate over them clears this. Under it they are logged as <b>cruising</b> and held apart — not deleted.'
+    : 'Off — every in-band minute counts as work, including sessions with no heart rate. The right setting without a strap, and the wrong one with.';
+
+  // session list
+  document.getElementById('listCount').textContent =
+    read.points.length + ' counted · ' + read.excluded.length + ' held out';
+  document.getElementById('list').innerHTML = read.points.length
+    ? read.points.slice().reverse().map(p=>`<div class="srowitem">
+        <div class="d">${p.dateLabel}</div>
+        <div class="m">${pace(p.adjSec)} <s>${Math.round(p.minutes)} min · block ${Math.round(p.blockMinutes)}${p.hrAvg?' · '+p.hrAvg+' bpm':' · no hr'}</s></div>
+        <div class="g ${p.grade}">${p.grade==='work'?'Work':p.grade==='cruise'?'Cruise':'No HR'}</div>
+      </div>`).join('')
+    : '<div class="empty">No session in this window held '+S.minTotal+' minutes ('+S.minBlock+
+      ' unbroken) inside '+anchorLabel()+' '+widthLabel()+'. Widen an edge or lower a minimum and it fills in.</div>';
+
+  drawChart(document.getElementById('cvA'), read, S.scrubA, false);
+  drawChart(document.getElementById('cvB'), read, S.scrubB, true);
+}
+
+/* ===================== interactions ===================== */
+function setAnchor(k){
+  if (k==='custom' && !S.customSec) S.customSec = 335;
+  S.anchor = k; S.scrubA=S.scrubB=null; render();
+  if (k==='custom') document.getElementById('paceText').focus();
+}
+function commitPace(){
+  const t = document.getElementById('paceText').value.trim();
+  let sec = null;
+  if (t.includes(':')){ const [m,s]=t.split(':').map(Number);
+    if (Number.isFinite(m)&&Number.isFinite(s)&&s<60) sec = m*60+s; }
+  else if (Number.isFinite(+t)) sec = +t;
+  if (sec!=null && sec>=180 && sec<=1200){ S.customSec=sec; S.anchor='custom'; render(); }
+}
+const LIMITS = {minTotal:[0,45], minBlock:[0,30], hrFloor:[120,190]};
+function bump(k,dir){
+  const [lo,hi]=LIMITS[k]; S[k]=Math.min(hi,Math.max(lo,S[k]+dir)); render();
+}
+function toggleFloor(){ S.hrFloor = S.hrFloor>0 ? 0 : 160; render(); }
+function resetAll(){ Object.assign(S, DEFAULTS); render(); }
+function ctab(p){
+  S.ctab=p;
+  document.querySelectorAll('.ctab').forEach(b=>b.classList.toggle('on', b.dataset.p===p));
+  ['anchor','band','min','floor'].forEach(k=>{
+    document.getElementById('p'+k[0].toUpperCase()+k.slice(1)).classList.toggle('on', k===p);
+  });
+}
+function openSheet(tab){
+  document.getElementById('sheet').classList.add('open');
+  if (tab) ctab(tab);
+}
+function closeSheet(){ /* the right pane stays open — it IS the second state */ }
+
+document.getElementById('fastR').addEventListener('input', e=>{ S.fastPct=+e.target.value; render(); });
+document.getElementById('slowR').addEventListener('input', e=>{ S.slowPct=+e.target.value; render(); });
+document.getElementById('paceText').addEventListener('keydown', e=>{ if(e.key==='Enter') commitPace(); });
+['fromA','fromB'].forEach(id=>document.getElementById(id).addEventListener('change', e=>{
+  S.customFrom=new Date(e.target.value+'T00:00:00Z'); S.windowId='custom'; render(); }));
+['toA','toB'].forEach(id=>document.getElementById(id).addEventListener('change', e=>{
+  S.customTo=new Date(e.target.value+'T00:00:00Z'); S.windowId='custom'; render(); }));
+
+['cvA','cvB'].forEach((id,n)=>{
+  const cv = document.getElementById(id);
+  const set = e => {
+    const i = nearestIndex(cv, (e.touches?e.touches[0]:e).clientX);
+    if (n===0) S.scrubA=i; else S.scrubB=i; render();
+  };
+  cv.addEventListener('mousemove', set);
+  cv.addEventListener('mouseleave', ()=>{ if(n===0)S.scrubA=null; else S.scrubB=null; render(); });
+  cv.addEventListener('touchmove', e=>{ e.preventDefault(); set(e); }, {passive:false});
+});
+
+// sticky-shadow state
+const screen = document.getElementById('screen'), timebar = document.getElementById('timebar');
+screen.addEventListener('scroll', ()=>{
+  timebar.classList.toggle('stuck', screen.scrollTop > 8);
+});
+
+window.addEventListener('resize', render);
+render();
+ctab('anchor');
+</script>
+</body>
+</html>

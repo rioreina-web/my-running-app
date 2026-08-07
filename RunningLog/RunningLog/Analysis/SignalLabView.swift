@@ -27,7 +27,14 @@
 //  second threshold chart. Two renderers for one metric is how two surfaces
 //  start disagreeing about the same miles.
 //
+//  That section now also renders on the Trends tab itself, as `TrendsV2View`'s
+//  section 04. Same view, same `BandSettingsStore.shared`, so moving the band
+//  in either place moves it in both. Keep it that way: if this section needs a
+//  behaviour the tab's shouldn't have, the fork belongs in `TrendsThresholdView`
+//  behind a parameter, not in a copy of it.
+//
 
+import Supabase
 import SwiftUI
 
 struct SignalLabView: View {
@@ -42,7 +49,17 @@ struct SignalLabView: View {
     @State private var settingsStore = BandSettingsStore.shared
 
     /// Called when a chart's session should open in the log.
+    ///
+    /// Optional, and when it is absent the Lab opens the workout itself rather
+    /// than doing nothing. It was previously required in practice — the hook
+    /// existed, section 02 called it, and neither `TrendsTabView` call site
+    /// passed one, so every "open this session" affordance on the screen was
+    /// wired to nil. A surface reached from two places should not depend on
+    /// both of them remembering to plumb the same closure.
     private let onOpenSession: ((String) -> Void)?
+
+    /// The workout opened from a chart, when the Lab is hosting it itself.
+    @State private var openWorkoutLog: TrainingLog?
 
     init(
         service: TrendsService = .shared,
@@ -88,6 +105,10 @@ struct SignalLabView: View {
     /// them, so they don't render.
     private var bandIsAdjustable: Bool { service.bandLaps != nil }
 
+    /// Scroll state for the pinned time control. Set by the host, never read
+    /// by the picker itself.
+    @State private var pickerIsPinned = false
+
     private var efficiencyRead: BeatEfficiencyRead {
         BeatEfficiencyBuilder.build(keySessions: service.keySessions, windowDates: windowDates)
     }
@@ -122,20 +143,64 @@ struct SignalLabView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 10)
 
-                TrendsWindowPicker(window: $window, customFrom: $customFrom, customTo: $customTo)
-                    .padding(.top, 18)
-
                 content
             }
             .padding(.horizontal, 24)
             .padding(.top, 20)
             .padding(.bottom, 60)
         }
+        // Two thresholds, as on the Trends tab — a single one flickers the
+        // hairline for anyone resting at exactly that offset.
+        .onScrollGeometryChange(for: CGFloat.self) { geo in
+            geo.contentOffset.y
+        } action: { _, y in
+            let pinned = pickerIsPinned ? y > 4 : y > 12
+            if pinned != pickerIsPinned { pickerIsPinned = pinned }
+        }
+        // Same treatment as the Trends tab (2026-08-07): the one time control
+        // pins rather than scrolling away above six sections. Don't let the two
+        // surfaces drift into pinning differently — it's the same control.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            TrendsWindowPicker(
+                window: $window,
+                customFrom: $customFrom,
+                customTo: $customTo,
+                isPinned: pickerIsPinned
+            )
+        }
         .background(Color.drip.background)
         .presentationDragIndicator(.visible)
+        // Presented from the screen rather than from a card, so the sheet
+        // survives the card re-rendering as the athlete scrubs — the same
+        // reason `TrendsLegacyTabView` hoists its head-to-head sheet.
+        .sheet(item: $openWorkoutLog) { log in
+            HistoryDetailSheet(entry: log, onUpdate: {})
+        }
         .task {
             await service.refresh()
             await insights.refresh()
+        }
+    }
+
+    /// What the charts call when a scrubbed point should open.
+    ///
+    /// Prefers the injected handler so an embedding surface can route the
+    /// workout into its own navigation; falls back to opening it here.
+    private func openSession(_ id: String) {
+        if let onOpenSession {
+            onOpenSession(id)
+            return
+        }
+        Task {
+            let rows: [TrainingLog] = (try? await supabase
+                .from("training_logs")
+                .select()
+                .eq("id", value: id)
+                .limit(1)
+                .execute()
+                .value) ?? []
+            guard let log = rows.first else { return }
+            await MainActor.run { openWorkoutLog = log }
         }
     }
 
@@ -218,7 +283,7 @@ struct SignalLabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if let read = thresholdRead, !read.isEmpty {
                     LabCard {
-                        TrendsThresholdView(read: read, onSelect: onOpenSession)
+                        TrendsThresholdView(read: read, onSelect: openSession)
                     }
                 } else if bandIsAdjustable {
                     // A band the athlete set can be set to catch nothing. Say
@@ -321,7 +386,9 @@ struct SignalLabView: View {
                         + "estimated."
                 )
             } else {
-                LabCard { LabEfficiencyChart(read: efficiencyRead) }
+                LabCard {
+                    LabEfficiencyChart(read: efficiencyRead, onOpenSession: openSession)
+                }
             }
         }
     }
@@ -392,7 +459,9 @@ struct SignalLabView: View {
                         + "recorded it."
                 )
             } else {
-                LabCard { LabHeatChart(read: heatRead) }
+                LabCard {
+                    LabHeatChart(read: heatRead, onOpenSession: openSession)
+                }
             }
         }
     }

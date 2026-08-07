@@ -56,23 +56,74 @@ export interface FSStream {
 export const GRADE_NOISE_DEADBAND_PCT = 1.0;
 
 /**
+ * Chunk length for the grade slice, in metres.
+ *
+ * A chunk's grade is (alt[end] − alt[start]) / chunkMeters, so the noise in
+ * that grade scales as 1/chunkMeters while a REAL hill's grade does not —
+ * genuine terrain holds its gradient over hundreds of metres. Widening 100 →
+ * 200 m therefore halves the fabricated grade without blunting real hills.
+ * (2026-08-06: a flat track was reading +7 s/mi of "hill cost" at 100 m.)
+ */
+export const GRADE_CHUNK_METERS = 200;
+
+/**
+ * Half-width, in samples, of the centred moving average applied to altitude
+ * before grades are measured. Streams are ~1 Hz, so ±7 samples ≈ 15 s ≈ 60–80 m
+ * of running — shorter than any real grade feature, longer than GPS/barometric
+ * wobble. Averaging 15 samples cuts the altitude noise by ≈ √15 (~4×).
+ *
+ * The window SHRINKS symmetrically at the ends of the slice (see
+ * `smoothAltitudeWindow`) so a steady climb is reproduced exactly rather than
+ * flattened at its edges.
+ */
+export const ALTITUDE_SMOOTH_HALF_WINDOW = 7;
+
+/**
+ * Centred moving average of `alt` over [a, b], with a symmetrically shrinking
+ * window at the edges. Symmetry matters: on a linear ramp a symmetric mean
+ * returns the exact centre value, so smoothing a real climb does not change
+ * its measured gradient — only the noise around it.
+ */
+export function smoothAltitudeWindow(
+  alt: number[],
+  a: number,
+  b: number,
+  halfWindow = ALTITUDE_SMOOTH_HALF_WINDOW,
+): number[] {
+  const out = new Array<number>(b - a + 1);
+  for (let i = a; i <= b; i++) {
+    const h = Math.min(halfWindow, i - a, b - i);
+    if (h <= 0) { out[i - a] = alt[i]; continue; }
+    let sum = 0;
+    for (let k = i - h; k <= i + h; k++) sum += alt[k];
+    out[i - a] = sum / (2 * h + 1);
+  }
+  return out;
+}
+
+/**
  * Slice a rep's window of the altitude stream into ~`chunkMeters` grade
- * segments (`{seconds, gradePct}`) for split-grade adjustment. Chunking at
- * ~100 m smooths per-point GPS-altitude noise while still capturing real ups
- * and downs within a rep; sub-deadband grades are zeroed (see above). Grade is
- * clamped to ±30% (matches the grade model).
+ * segments (`{seconds, gradePct}`) for split-grade adjustment.
+ *
+ * Three layers of noise control, in order: the altitude is smoothed (centred,
+ * edge-symmetric), grades are measured over ~200 m chunks, and sub-deadband
+ * grades are zeroed. All three exist because the grade model damps downhill
+ * credit — correct for real terrain, but it means zero-mean GPS noise does NOT
+ * cancel out, it accumulates as phantom hill cost. Grade is clamped to ±30%
+ * (matches the grade model).
  */
 export function sliceGradeSegments(
   stream: FSStream,
   startIdx: number,
   endIdx: number,
-  chunkMeters = 100,
+  chunkMeters = GRADE_CHUNK_METERS,
 ): Array<{ seconds: number; gradePct: number }> {
   const { time, distance, altitude } = stream;
   const n = Math.min(time.length, distance.length, altitude.length);
   const a = Math.max(0, Math.trunc(startIdx));
   const b = Math.min(Math.trunc(endIdx), n - 1);
   if (!(b > a)) return [];
+  const alt = smoothAltitudeWindow(altitude, a, b);
   const out: Array<{ seconds: number; gradePct: number }> = [];
   let i = a;
   while (i < b) {
@@ -81,7 +132,7 @@ export function sliceGradeSegments(
     const dd = distance[j] - distance[i];
     const dt = time[j] - time[i];
     if (dd > 0 && dt > 0) {
-      let g = ((altitude[j] - altitude[i]) / dd) * 100;
+      let g = ((alt[j - a] - alt[i - a]) / dd) * 100;
       if (g > 30) g = 30; else if (g < -30) g = -30;
       if (Math.abs(g) < GRADE_NOISE_DEADBAND_PCT) g = 0; // GPS-noise floor
       out.push({ seconds: dt, gradePct: Math.round(g * 100) / 100 });
