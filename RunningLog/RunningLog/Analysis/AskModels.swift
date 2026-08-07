@@ -153,6 +153,10 @@ struct AskResponse: Decodable {
     let annotated: Bool?
     let analyzerId: String?
     let analyzerLabel: String?
+    /// What the analyzer actually answered, when narrower than its standing
+    /// label — "Is my 10K pace improving?" for a chip that reads LT. Nil means
+    /// the chip's wording was accurate and the card keeps the asked question.
+    let resolvedTitle: String?
     let facts: [AskFact]
     let series: AskSeries?
     let coverage: AskCoverage?
@@ -170,6 +174,7 @@ struct AskResponse: Decodable {
         case success, mode, annotated
         case analyzerId = "analyzer_id"
         case analyzerLabel = "analyzer_label"
+        case resolvedTitle = "resolved_title"
         case facts, series, coverage, empty, narration, followups
         case disambiguation, catalog
     }
@@ -181,6 +186,7 @@ struct AskResponse: Decodable {
         annotated = try c.decodeIfPresent(Bool.self, forKey: .annotated)
         analyzerId = try c.decodeIfPresent(String.self, forKey: .analyzerId)
         analyzerLabel = try c.decodeIfPresent(String.self, forKey: .analyzerLabel)
+        resolvedTitle = try c.decodeIfPresent(String.self, forKey: .resolvedTitle)
         // Absent arrays decode as empty, never nil — the view never has to
         // distinguish "no facts" from "facts key missing".
         facts = try c.decodeIfPresent([AskFact].self, forKey: .facts) ?? []

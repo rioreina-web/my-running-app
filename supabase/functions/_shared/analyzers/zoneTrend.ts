@@ -289,6 +289,9 @@ export const zoneTrend: Analyzer = {
     }));
 
     return {
+      // The chip says "LT" because that is the question most athletes mean.
+      // The answer says whichever system the athlete actually ran.
+      title: `Is my ${trend.system} pace improving?`,
       facts,
       series: {
         kind: "line",

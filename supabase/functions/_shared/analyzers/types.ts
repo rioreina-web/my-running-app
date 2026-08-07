@@ -106,6 +106,21 @@ export interface EmptyState {
 // ── Result ───────────────────────────────────────────────────────
 
 export interface AnalyzerResult {
+  /**
+   * What this run actually answered, when that differs from the analyzer's
+   * standing `label`.
+   *
+   * An analyzer whose chip reads "Is my LT pace improving?" may resolve to a
+   * different pace system — `zone_trend` picks the system the athlete has
+   * actually run most, which is often 10K. Without this, the card keeps the
+   * chip's headline while every fact underneath says something else, and the
+   * answer reads as a mismatch even though the math is right.
+   *
+   * Null means "the standing label was accurate" — the client falls back to
+   * the question it asked. This is a display string only; it is NOT part of
+   * `factLinesToStrings`, so it licenses no numbers for Layer 2.
+   */
+  title?: string | null;
   facts: FactLine[];
   series?: SeriesSpec | null;
   coverage: Coverage;

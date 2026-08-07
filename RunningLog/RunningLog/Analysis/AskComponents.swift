@@ -97,19 +97,31 @@ struct AskGroupHeader: View {
 
 // MARK: - Fact grid
 
+/// Facts in a two-up grid, hairline-separated.
+///
+/// An ODD number of facts spans the last one full-width rather than leaving a
+/// blank quadrant. The old `LazyVGrid` let the grid's own divider background
+/// show through the unfilled slot, which rendered as a gray placeholder box —
+/// hard rule #8, and the single thing that made a complete three-fact answer
+/// look like a broken four-fact one.
 struct AskFactGrid: View {
     let facts: [AskFact]
 
-    private var columns: [GridItem] {
-        facts.count == 1
-            ? [GridItem(.flexible(), spacing: 1)]
-            : [GridItem(.flexible(), spacing: 1), GridItem(.flexible(), spacing: 1)]
+    /// Pairs, with a trailing single when the count is odd.
+    private var rows: [[AskFact]] {
+        stride(from: 0, to: facts.count, by: 2).map { start in
+            Array(facts[start ..< Swift.min(start + 2, facts.count)])
+        }
     }
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 1) {
-            ForEach(facts) { fact in
-                AskFactCell(fact: fact)
+        VStack(spacing: 1) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 1) {
+                    ForEach(row) { fact in
+                        AskFactCell(fact: fact)
+                    }
+                }
             }
         }
         .background(Color.drip.divider)
@@ -174,13 +186,19 @@ struct AskFactCell: View {
 struct AskCoverageRow: View {
     let coverage: AskCoverage
 
+    /// What the answer stands on. Kept to the two counts.
     private var summary: String {
-        var parts = [
+        [
             "\(coverage.sessionsUsed) \(coverage.sessionsUsed == 1 ? "session" : "sessions")",
             "\(coverage.windowDays) days",
-        ]
-        parts.append(contentsOf: coverage.missing)
-        return parts.joined(separator: " · ")
+        ].joined(separator: " · ")
+    }
+
+    /// The holes, on their own line. Dot-joining these onto the counts made
+    /// "1 of 73 runs used the fallback load estimate" read as a third statistic
+    /// rather than the caveat it is.
+    private var caveats: String? {
+        coverage.missing.isEmpty ? nil : coverage.missing.joined(separator: " · ")
     }
 
     private var tierColor: Color {
@@ -211,19 +229,32 @@ struct AskCoverageRow: View {
                     .fixedSize()
             }
             .padding(.top, 11)
+
+            if let caveatText = caveats {
+                Text(caveatText.uppercased())
+                    .font(.dripEyebrow(8.5))
+                    .tracking(0.8)
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            }
         }
     }
 }
 
 // MARK: - Chart
 
-/// Renders an analyzer's `SeriesSpec`. Deliberately plain: this chart exists
-/// to show the shape behind the facts, not to be explored. Tapping, scrubbing
-/// and legends belong to Trends.
+/// Renders an analyzer's `SeriesSpec` — the shape behind the facts.
+///
+/// Currently static: no scrubbing, no legend, no tap target. That is a known
+/// gap rather than a principle. Ask exists to interrogate the block, and a
+/// chart you cannot query is a picture of an answer rather than an answer.
+/// Adding scrub + tap-through is scoped work; it needs `SeriesPoint` to carry
+/// a workout id, which the analyzer contract does not yet emit.
 ///
 /// `invertY` matters — for a pace series lower is faster, so the axis flips
-/// and an improving athlete's line rises. Getting this backwards would make
-/// every pace chart in the surface read as a decline.
+/// and an improving athlete's line rises. Getting this backwards makes every
+/// pace chart in the surface read as a decline. It was backwards.
 struct AskChart: View {
     let series: AskSeries
 
@@ -231,11 +262,27 @@ struct AskChart: View {
     private var secondary: [Double] { series.points.compactMap(\.y2) }
     private var hasSecondary: Bool { secondary.count == series.points.count && series.points.count > 1 }
 
+    /// Bars are measured from zero; lines are windowed to their own range.
+    ///
+    /// This is not a style preference. A bar encodes magnitude by AREA, so a
+    /// floating baseline makes 58 / 60 / 63 miles read as a threefold
+    /// difference. A line encodes direction by SLOPE, and zero-baselining a
+    /// pace series would flatten every trend into a straight line. Same chart
+    /// component, two honest conventions.
     private var bounds: (lo: Double, hi: Double) {
         var all = values
         if hasSecondary { all += secondary }
         if let band = series.band, band.count == 2 { all += band }
         guard let min = all.min(), let max = all.max() else { return (0, 1) }
+
+        if series.kind == .bar {
+            // Zero floor. Only the top is padded — the baseline is the point.
+            let top = Swift.max(max, 0)
+            let floor = Swift.min(min, 0)
+            if top == floor { return (floor, floor + 1) }
+            return (floor, top + (top - floor) * 0.08)
+        }
+
         if min == max { return (min - 1, max + 1) }
         let pad = (max - min) * 0.12
         return (min - pad, max + pad)
@@ -255,10 +302,22 @@ struct AskChart: View {
             func x(_ i: Int) -> CGFloat {
                 inset + plotWidth * CGFloat(i) / CGFloat(series.points.count - 1)
             }
+            /// Value → screen y, where y = 0 is the TOP of the canvas.
+            ///
+            /// `normalized` is "how high up the plot does this sit", 0 at the
+            /// bottom and 1 at the top, so the return is always
+            /// `plotHeight * (1 - normalized)`.
+            ///
+            ///   • Normal series (miles): more is higher. normalized = t.
+            ///   • Inverted series (pace): lower is faster, and faster is
+            ///     higher. normalized = 1 - t.
+            ///
+            /// These two branches were swapped, which drew every bar chart
+            /// upside down (the smallest week rendered as the tallest bar) and
+            /// made every improving pace line fall.
             func y(_ v: Double) -> CGFloat {
                 let t = (v - lo) / span
-                // invertY: lower value (faster pace) sits higher on screen.
-                let normalized = series.isInverted ? t : 1 - t
+                let normalized = series.isInverted ? 1 - t : t
                 return plotHeight * (1 - normalized)
             }
 
@@ -276,14 +335,17 @@ struct AskChart: View {
             switch series.kind {
             case .bar:
                 let slot = plotWidth / CGFloat(series.points.count)
+                // Every bar is drawn against the zero line, not the canvas
+                // floor, so a series that dips below zero still reads honestly.
+                let baseline = y(Swift.max(lo, 0))
                 for (i, point) in series.points.enumerated() {
                     let barX = inset + slot * CGFloat(i) + slot * 0.2
                     let top = y(point.y)
                     let rect = CGRect(
                         x: barX,
-                        y: top,
+                        y: Swift.min(top, baseline),
                         width: slot * 0.6,
-                        height: Swift.max(1, plotHeight - top)
+                        height: Swift.max(1, Swift.abs(baseline - top))
                     )
                     let isLast = i == series.points.count - 1
                     context.fill(

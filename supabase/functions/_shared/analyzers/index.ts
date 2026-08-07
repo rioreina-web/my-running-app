@@ -5,29 +5,74 @@
  * map entry. Adding a question to Ask is a two-line change here plus one new
  * file — no prompt surgery, no endpoint change, no client release.
  *
- * PHASE A ships three analyzers, chosen because their underlying math is the
- * deepest and because between them they exercise every part of the contract:
- * a session-level comparison, a multi-session trend with a chart, and a
- * whole-block aggregate. The remaining 47 are enumerated in ASK-REGISTRY.md
- * with a build-status audit against this repo.
- *
  * The registry is also the router's closed enum: Layer 0 may only ever return
  * an id present in `ANALYZER_IDS`, and may only fill params declared in that
  * analyzer's `params`. It cannot invent a question and it cannot write a query.
+ *
+ * ── Coverage ──
+ *
+ * Phase A shipped three: a session comparison, a multi-session trend, and a
+ * whole-block aggregate — chosen to exercise every part of the contract.
+ *
+ * Phase B (2026-08-07) adds six more, and they are cheap for a specific
+ * reason: `athlete_state` is already the app's computed layer, so most of
+ * these read a field the state builders maintain rather than recomputing it.
+ * That keeps Ask from ever disagreeing with the Trends tile — a second
+ * implementation of `fitness_prediction` would drift from the first within a
+ * month. The two that go to raw laps (`race_pace_specificity`, `heat_effect`)
+ * do so because state carries no per-lap detail.
+ *
+ * `race_pace_specificity` is the exception in kind: it is not a wrapper. Both
+ * of its operands — the goal pace and the training paces — have been persisted
+ * for months, and nothing ever divided one by the other. See its header.
+ *
+ * The remaining registry (50 analyzers across 11 training principles) with a
+ * build-status audit against this repo is in `ASK-REGISTRY.md`.
  */
 
 import type { Analyzer } from "./types.ts";
 import { compareSession } from "./compareSession.ts";
 import { loadBalance } from "./loadBalance.ts";
 import { zoneTrend } from "./zoneTrend.ts";
+import { decoupling, efficiency } from "./efficiency.ts";
+import { heatEffect } from "./heatEffect.ts";
+import { moodTrend } from "./moodTrend.ts";
+import { niggleTimeline } from "./niggleTimeline.ts";
+import { racePaceSpecificity } from "./racePaceSpecificity.ts";
+import { raceProjection } from "./raceProjection.ts";
 
 export * from "./types.ts";
-export { compareSession, loadBalance, zoneTrend };
+export {
+  compareSession,
+  decoupling,
+  efficiency,
+  heatEffect,
+  loadBalance,
+  moodTrend,
+  niggleTimeline,
+  racePaceSpecificity,
+  raceProjection,
+  zoneTrend,
+};
 
 export const ANALYZERS: Record<string, Analyzer> = {
-  [compareSession.id]: compareSession,
+  // Load
   [loadBalance.id]: loadBalance,
+  // Adaptation
   [zoneTrend.id]: zoneTrend,
+  [efficiency.id]: efficiency,
+  [raceProjection.id]: raceProjection,
+  // Durability
+  [decoupling.id]: decoupling,
+  // Specificity
+  [racePaceSpecificity.id]: racePaceSpecificity,
+  // Conditions
+  [heatEffect.id]: heatEffect,
+  // The body
+  [moodTrend.id]: moodTrend,
+  [niggleTimeline.id]: niggleTimeline,
+  // Comparison
+  [compareSession.id]: compareSession,
 };
 
 export const ANALYZER_IDS: string[] = Object.keys(ANALYZERS);

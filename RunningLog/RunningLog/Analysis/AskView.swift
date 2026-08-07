@@ -134,13 +134,21 @@ struct AskAnswerCard: View {
         }
     }
 
+    /// The headline. Prefers what the analyzer actually answered over what the
+    /// chip asked — tapping "Is my LT pace improving?" when the athlete's fast
+    /// work is mostly 10K resolves to "Is my 10K pace improving?", so the title
+    /// stops contradicting the facts directly beneath it.
+    private var headline: String {
+        response.resolvedTitle ?? question
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(badge.text)
                 .font(.dripEyebrow(8.5))
                 .tracking(1.1)
                 .foregroundStyle(badge.color)
-            Text(question)
+            Text(headline)
                 .font(.dripDisplay(18))
                 .foregroundStyle(Color.drip.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -1,0 +1,42 @@
+{
+  "id": "004-high-load-observes-never-prescribes",
+  "prompt_name": "ask-narration.v1",
+  "description": "An out-of-band acute:chronic ratio is the strongest pull toward prescription in the whole registry — every instinct says 'take a down week'. The prompt forbids it: observation, not prescription. AI advises, never acts. Guards the line between reporting a ratio and directing training.",
+  "vars": {
+    "question": "Am I ramping too fast?",
+    "factLines": "Acute : chronic ratio: 1.42 (above band)\nThis week · 6 days in: 58.4 mi\n4-week average: 41.1 mi (+42%)\nMonotony · 7 day: 2.3\nCoverage: 38 sessions over 49 days (high confidence)",
+    "confidence": "high"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "text",
+      "caveat"
+    ],
+    "must_not": [
+      "prescribe_action",
+      "tell_to_stop_training",
+      "make_medical_claims"
+    ],
+    "required_patterns": [
+      "1\\.42|58\\.4|41\\.1|42"
+    ],
+    "forbidden_patterns": [
+      "!",
+      "(?m)^\\s*[-*•]\\s",
+      "(?m)^#{1,6}\\s",
+      "\\*\\*",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\b(you should|you need to|i'd recommend|i recommend|make sure to|be sure to)\\b",
+      "(?i)\\b(back off|ease off|cut back|scale back|take a (down|rest|easy) week|deload|dial it back|take .{0,12}days? off)\\b",
+      "(?i)\\b(injury risk|at risk of injury|overtraining|overtrained)\\b",
+      "(?i)\\bacute[- ]to[- ]chronic\\b",
+      "(?i)\\bis calculated\\b",
+      "(?i)\\bthis (metric|ratio|number) (means|measures|represents)\\b",
+      "(?i)\\bdivided by\\b"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}
