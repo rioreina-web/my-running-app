@@ -46,6 +46,9 @@ struct TrendsReadView: View {
     @State private var index = 0
     /// The day whose detail sheet is open, if any.
     @State private var selected: String?
+    /// Index of the day under the finger while scrubbing a chart. All three
+    /// charts share it, so one drag moves one crosshair across all of them.
+    @State private var scrub: Int?
 
     private let cellHeight: CGFloat = 46
 
@@ -208,26 +211,19 @@ struct TrendsReadView: View {
             .accessibilityLabel(read.beats.map(\.text).joined(separator: " "))
     }
 
-    /// One attributed run per beat so the callout numerals sit as superscripts
-    /// inside the paragraph rather than breaking it into separate blocks.
-    /// Built as `AttributedString`, not concatenated `Text`: `Text.+` is
-    /// deprecated from iOS 26, and the compiler's suggested fix (string
-    /// interpolation) has nowhere to hang the callout's per-run font,
-    /// baseline offset and colour. The attribute scope is that place.
+    /// Concatenated so the callout numerals sit as superscripts inside the
+    /// paragraph rather than breaking it into separate blocks.
     private func storyText(_ read: TrendsRead) -> Text {
-        var story = AttributedString()
-        for beat in read.beats {
-            story += AttributedString(beat.text)
+        read.beats.reduce(Text(verbatim: "")) { acc, beat in
+            var next = acc + Text(beat.text)
             if let callout = beat.callout {
-                var mark = AttributedString("\(callout)")
-                mark.font = .dripCaption(9)
-                mark.baselineOffset = 6
-                mark.foregroundColor = Color.drip.textSecondary
-                story += mark
+                next = next + Text(verbatim: "\(callout)")
+                    .font(.dripCaption(9))
+                    .baselineOffset(6)
+                    .foregroundStyle(Color.drip.textSecondary)
             }
-            story += AttributedString(" ")
+            return next + Text(verbatim: " ")
         }
-        return Text(story)
     }
 
     private func thinState(_ read: TrendsRead) -> some View {
@@ -250,7 +246,7 @@ struct TrendsReadView: View {
 
     private func figure(_ read: TrendsRead) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionHead("Volume × pace", trailing: workSummary)
+            sectionHead("Volume × pace", trailing: scrubSummary(read) ?? workSummary)
 
             // 88pt of bars + 15pt of star gutter — the geometry in
             // `trends-story-calendar-2026-08-06.html`, matched exactly.
@@ -259,6 +255,7 @@ struct TrendsReadView: View {
             }
             .frame(height: 103)
             .padding(.top, 2)
+            .overlay { scrubLayer() }
             .accessibilityLabel("Daily miles across the month, key sessions marked")
 
             // Five stops, evenly spaced — the mock's axis. Two stops left
@@ -278,6 +275,64 @@ struct TrendsReadView: View {
             .foregroundStyle(Color.drip.textTertiary)
 
             paceLegend.padding(.top, 6)
+        }
+    }
+
+    // MARK: Scrubbing
+
+    /// The day under the finger, if any.
+    private var scrubDay: TrendsRead.MonthDay? {
+        guard let scrub, days.indices.contains(scrub) else { return nil }
+        return days[scrub]
+    }
+
+    /// Replaces a section's trailing stat while a finger is down, so the
+    /// readout lands where the eye already is instead of in a floating chip.
+    private func scrubSummary(_ read: TrendsRead) -> String? {
+        guard let day = scrubDay else { return nil }
+        var parts = [TrendsReadBuilder.label(day.date)]
+        parts.append(day.miles > 0 ? "\(Int(day.miles.rounded())) mi" : "rest")
+        if let rec = read.recovery.first(where: { $0.date == day.date }) {
+            parts.append("rec \(Int(rec.value))")
+        }
+        if let load = read.load.first(where: { $0.date == day.date }) {
+            parts.append("7-day \(Int(load.value.rounded()))")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Same x mapping the bars use, inverted.
+    private func scrubIndex(x: CGFloat, width: CGFloat) -> Int? {
+        let n = days.count
+        guard n > 1, width > 0 else { return nil }
+        let barWidth = min(7, width / CGFloat(n) * 0.62)
+        let step = (width - barWidth) / CGFloat(n - 1)
+        guard step > 0 else { return nil }
+        let raw = Int(((x - barWidth / 2) / step).rounded())
+        return min(max(raw, 0), n - 1)
+    }
+
+    /// One transparent layer per chart. A drag scrubs; a tap — a drag that
+    /// never travelled — opens that day.
+    private func scrubLayer() -> some View {
+        GeometryReader { geo in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            scrub = scrubIndex(x: value.location.x, width: geo.size.width)
+                        }
+                        .onEnded { value in
+                            let travelled = abs(value.translation.width)
+                                + abs(value.translation.height)
+                            if travelled < 8,
+                               let i = scrub, days.indices.contains(i) {
+                                selected = days[i].date
+                            }
+                            scrub = nil
+                        }
+                )
         }
     }
 
@@ -367,6 +422,15 @@ struct TrendsReadView: View {
                 )
             }
         }
+
+        // Crosshair last, so it rides over the bars.
+        if let scrub, all.indices.contains(scrub) {
+            let x = pad + CGFloat(scrub) * step
+            var line = Path()
+            line.move(to: CGPoint(x: x, y: 0))
+            line.addLine(to: CGPoint(x: x, y: barsHeight))
+            context.stroke(line, with: .color(Color.drip.coral), lineWidth: 1)
+        }
     }
 
     /// Pace blue when the day carries a classified work zone, neutral ink
@@ -397,10 +461,11 @@ struct TrendsReadView: View {
     private func star(centre: CGPoint, radius: CGFloat) -> Path {
         var path = Path()
         for i in 0 ..< 10 {
-            // `angle` must be CGFloat, not Double: `centre` and `radius` are
-            // CGFloat, so a Double here makes `r * cos(angle)` ambiguous.
+            // CGFloat throughout: `cos` overloads on Float/Double/CGFloat, and
+            // mixing a Double angle with a CGFloat radius makes the call
+            // ambiguous rather than merely promoting.
             let angle: CGFloat = (CGFloat(i) * 36 - 90) * .pi / 180
-            let r = i.isMultiple(of: 2) ? radius : radius * 0.42
+            let r: CGFloat = i.isMultiple(of: 2) ? radius : radius * 0.42
             let point = CGPoint(x: centre.x + r * cos(angle), y: centre.y + r * sin(angle))
             if i == 0 { path.move(to: point) } else { path.addLine(to: point) }
         }
@@ -420,7 +485,7 @@ struct TrendsReadView: View {
     private func lanes(_ read: TrendsRead) -> some View {
         lane(
             title: "Recovery",
-            trailing: read.recoveryNow.map { now in
+            trailing: scrubSummary(read) ?? read.recoveryNow.map { now in
                 "\(now)\(read.recoveryBand.map { " · \($0.uppercased())" } ?? "")"
             } ?? "No score",
             points: read.recovery,
@@ -435,7 +500,8 @@ struct TrendsReadView: View {
 
         lane(
             title: "Load",
-            trailing: read.loadBaseline.map { "7-day mi · 8-wk avg \(Int($0.rounded()))" }
+            trailing: scrubSummary(read)
+                ?? read.loadBaseline.map { "7-day mi · 8-wk avg \(Int($0.rounded()))" }
                 ?? "7-day mi",
             points: read.load,
             reference: read.loadBaseline,
@@ -471,6 +537,7 @@ struct TrendsReadView: View {
                     )
                 }
                 .frame(height: height)
+                .overlay { scrubLayer() }
                 .accessibilityLabel("\(title) across the month")
             } else {
                 // State the absence, then say what will fill it — the house
@@ -505,9 +572,11 @@ struct TrendsReadView: View {
         func y(_ v: Double) -> CGFloat {
             size.height - pad - CGFloat((v - low) / (high - low)) * (size.height - pad * 2)
         }
-        // Same point positioning as the bars, so a day sits at the same x in
-        // every lane and the figure reads as one axis.
-        let step = size.width / CGFloat(max(points.count - 1, 1))
+        // Identical mapping to the bars, so a day sits at the same x in every
+        // chart and one crosshair lines up across all three.
+        let barWidth = min(7, size.width / CGFloat(points.count) * 0.62)
+        let originX = barWidth / 2
+        let step = (size.width - barWidth) / CGFloat(max(points.count - 1, 1))
 
         if let reference {
             var line = Path()
@@ -518,18 +587,20 @@ struct TrendsReadView: View {
                 with: .color(Color.drip.textTertiary),
                 style: StrokeStyle(lineWidth: 1, dash: [3, 4])
             )
+            // Sits clear ABOVE its own line — anchoring the top at y-7 put
+            // the text across the dashes and read as a strikethrough.
             context.draw(
                 Text(referenceLabel)
                     .font(.dripCaption(7.5))
                     .foregroundStyle(Color.drip.textTertiary),
-                at: CGPoint(x: 2, y: y(reference) - 7),
-                anchor: .topLeading
+                at: CGPoint(x: 2, y: y(reference) - 4),
+                anchor: .bottomLeading
             )
         }
 
         var path = Path()
         for (i, point) in points.enumerated() {
-            let p = CGPoint(x: CGFloat(i) * step, y: y(point.value))
+            let p = CGPoint(x: originX + CGFloat(i) * step, y: y(point.value))
             if i == 0 { path.move(to: p) } else { path.addLine(to: p) }
         }
         context.stroke(
@@ -541,9 +612,24 @@ struct TrendsReadView: View {
         if let last = points.last {
             context.fill(
                 Path(ellipseIn: CGRect(
-                    x: size.width - 2.6, y: y(last.value) - 2.6, width: 5.2, height: 5.2
+                    x: originX + CGFloat(points.count - 1) * step - 2.6,
+                    y: y(last.value) - 2.6, width: 5.2, height: 5.2
                 )),
                 with: .color(Color.drip.textPrimary)
+            )
+        }
+
+        if let scrub, points.indices.contains(scrub) {
+            let x = originX + CGFloat(scrub) * step
+            var line = Path()
+            line.move(to: CGPoint(x: x, y: 0))
+            line.addLine(to: CGPoint(x: x, y: size.height))
+            context.stroke(line, with: .color(Color.drip.coral), lineWidth: 1)
+            context.fill(
+                Path(ellipseIn: CGRect(
+                    x: x - 3, y: y(points[scrub].value) - 3, width: 6, height: 6
+                )),
+                with: .color(Color.drip.coral)
             )
         }
     }
