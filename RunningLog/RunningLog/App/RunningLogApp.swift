@@ -172,6 +172,17 @@ struct MainTabView: View {
                     .opacity(selectedTab == 4 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 4)
 
+                #if DEBUG
+                // Tab 7 — The Read (DEBUG only). The story-and-month
+                // surface, running beside Trends so the two reads can be
+                // compared on device. Shares `TrendsService.shared` with
+                // tag 4, so it never doubles the fetch. Remove this branch
+                // and the `DripTab.read` case together.
+                NavigationStack { TrendsReadTabView() }
+                    .opacity(selectedTab == 7 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 7)
+                #endif
+
                 // Tab 5 — Trends 2 removed 2026-07-27. Trends is one tab now;
                 // `TrendsInsightsTabView` stays in the repo, unlinked, and the
                 // `trends-insights` edge function stays deployed.

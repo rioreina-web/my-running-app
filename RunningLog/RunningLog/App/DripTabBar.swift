@@ -54,6 +54,16 @@ import UIKit
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
     case trends = 4
+    #if DEBUG
+    /// The Read (`TrendsReadView`) — the story-and-month surface, run
+    /// beside Trends so the two can be compared on device before either
+    /// becomes the tab. DEBUG only: the release IA is three tabs, and
+    /// this case must not widen it.
+    ///
+    /// Tag 7 is fresh. 2, 3, 5 and 6 are *retired* tags (see above), so
+    /// reusing one would make old jump-to-tab call sites land here.
+    case read = 7
+    #endif
     case training = 1
 
     var id: Int { rawValue }
@@ -68,6 +78,9 @@ enum DripTab: Int, CaseIterable, Identifiable {
         switch self {
         case .log: "Log"
         case .trends: "Trends"
+        #if DEBUG
+        case .read: "Read"
+        #endif
         case .training: "Train"
         }
     }
