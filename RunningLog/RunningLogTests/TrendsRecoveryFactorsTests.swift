@@ -589,4 +589,165 @@ struct RecoverySleepTests {
         #expect(g.points == 0)
         #expect(g.evidence.contains("in line"))
     }
+
+    /// The median makes outlier rejection structural rather than a side effect
+    /// of a wide gate. A mean would move ~34 min on this input; the median does
+    /// not move at all, so the result no longer depends on the gate being wide
+    /// enough to hide it.
+    @Test("one freak night cannot move the median at all")
+    func medianIgnoresASingleNight() throws {
+        var days = block(30)
+        for i in 9..<30 { days[i].sleepTotalMin = 420 }
+        days[29].sleepTotalMin = 90            // 1.5 h — far worse than the old test's 3 h
+        let f = try #require(TrendsRecoveryFactors.sleep(days: days, at: 29))
+        #expect(f.points == 0)
+        #expect(f.evidence.contains("in line"))
+    }
+
+    /// The threshold is 0.5 × the athlete's own between-night SD, so the same
+    /// 30-minute shift is signal for a consistent sleeper and noise for a
+    /// variable one. Under the old fixed ±45 both read "in line".
+    @Test("the gate scales to the athlete's own variability")
+    func thresholdScalesWithSD() throws {
+        // Metronome sleeper: base alternates 415/425 (SD 5 → threshold floors
+        // at 20). A 30-minute drop is plainly unlike them, and now reads so.
+        var steady = block(30)
+        for i in 9..<23 { steady[i].sleepTotalMin = i.isMultiple(of: 2) ? 415 : 425 }
+        for i in 23..<30 { steady[i].sleepTotalMin = 390 }
+        let tight = try #require(TrendsRecoveryFactors.sleep(days: steady, at: 29))
+        #expect(tight.points == -3, "a metronome sleeper's 30 min drop should register")
+
+        // Variable sleeper: base swings 300…540 (SD ≈ 85 → threshold caps at
+        // 60). The same 30-minute drop is inside their ordinary scatter.
+        var swingy = block(30)
+        let pattern = [300.0, 540, 360, 480, 300, 540, 420]
+        for i in 9..<23 { swingy[i].sleepTotalMin = Int(pattern[(i - 9) % 7]) }
+        for i in 23..<30 { swingy[i].sleepTotalMin = 390 }
+        let loose = try #require(TrendsRecoveryFactors.sleep(days: swingy, at: 29))
+        #expect(loose.points == 0, "the same drop inside a variable sleeper's scatter is not signal")
+    }
+
+    /// Adequacy is surfaced as measurement and scored at zero — the deviation
+    /// model cannot see a chronic deficit, because the deficit IS the baseline.
+    @Test("chronic short sleep is stated in the evidence and costs nothing")
+    func chronicShortSleepIsSurfacedNotCharged() throws {
+        var short = block(30)
+        for i in 9..<30 { short[i].sleepTotalMin = 355 }   // ~5h55 every night
+        let f = try #require(TrendsRecoveryFactors.sleep(days: short, at: 29))
+        #expect(f.points == 0, "a flat baseline has no deviation to charge for")
+        #expect(f.evidence.contains("in line"))
+        #expect(f.evidence.contains("watch median 5h55"))
+    }
+
+    /// …and stays quiet once the athlete is over the seven-hour line, so the
+    /// note never becomes permanent furniture on the receipt.
+    @Test("no adequacy note above seven hours")
+    func noNoteWhenSleepIsAdequate() throws {
+        var fine = block(30)
+        for i in 9..<30 { fine[i].sleepTotalMin = 450 }    // 7h30
+        let f = try #require(TrendsRecoveryFactors.sleep(days: fine, at: 29))
+        #expect(!f.evidence.contains("watch median"))
+    }
+}
+
+// MARK: - Defect 3 · a degraded read announced itself as a full one
+
+/// Until 2026-08-07 the receipt's coverage line said "full read" whenever any
+/// nights factor existed, and the band gauge drew `Clear` as open territory
+/// regardless. On the production athlete both were false at once: HRV was
+/// empty (0 of 30 nights) so Overnight ran its resting-HR-only branch, and
+/// `daily_checkins` had never held a row so Sleep only ever ran its Tier-3
+/// duration fallback. The score was honest; the frame around it was not.
+@Suite("TrendsRecoveryLedger degradation + ceiling")
+struct RecoveryDegradationTests {
+
+    /// 30 days of resting HR and sleep duration, no HRV, no nightly rating —
+    /// the exact shape of the shipped Apple Health pipeline.
+    private func rhrOnlyBlock() -> [TrendsDay] {
+        var days = block(30)
+        for i in days.indices {
+            days[i].restingHr = 50
+            days[i].sleepTotalMin = 420
+        }
+        return days
+    }
+
+    @Test("resting HR without HRV is marked degraded, not silently scored")
+    func overnightDegradesLoudly() throws {
+        let days = rhrOnlyBlock()
+        let f = try #require(TrendsRecoveryFactors.overnight(days: days, at: 29))
+        #expect(f.degraded != nil, "RHR-only branch must name the missing HRV")
+        #expect(f.bestCase == 2, "one-axis ceiling is +2, not the two-axis +3")
+    }
+
+    @Test("both axes present scores a full read with no degradation")
+    func overnightFullReadIsClean() throws {
+        var days = rhrOnlyBlock()
+        for i in days.indices { days[i].hrvRmssd = 60 }
+        let f = try #require(TrendsRecoveryFactors.overnight(days: days, at: 29))
+        #expect(f.degraded == nil)
+        #expect(f.bestCase == 3)
+    }
+
+    @Test("sleep duration without a nightly rating is marked degraded")
+    func sleepFallbackDegradesLoudly() throws {
+        let f = try #require(TrendsRecoveryFactors.sleep(days: rhrOnlyBlock(), at: 29))
+        #expect(f.degraded != nil, "TST fallback must say the rating is missing")
+        #expect(f.bestCase == 2, "fallback tops out at +2, not the Tier-1 +4")
+    }
+
+    @Test("a logged rating takes the Tier-1 branch and is not degraded")
+    func sleepTierOneIsClean() throws {
+        var days = rhrOnlyBlock()
+        days[29].sleepQuality = "good"
+        let f = try #require(TrendsRecoveryFactors.sleep(days: days, at: 29))
+        #expect(f.points == 4)
+        #expect(f.degraded == nil)
+        #expect(f.bestCase == 4)
+    }
+
+    /// The regression that motivated all of this: with both night channels
+    /// degraded the roof lands at 74 and `Clear` starts at 75, so the best
+    /// band is arithmetically out of reach and the gauge must say so.
+    @Test("no HRV and no sleep rating puts Clear out of reach")
+    func clearIsUnreachableOnDegradedInputs() {
+        let ledger = TrendsRecoveryLedger.ledger(days: rhrOnlyBlock(), at: 29)
+        #expect(ledger.ceiling < 75, "ceiling is \(ledger.ceiling), expected under 75")
+        #expect(ledger.unreachableBands.contains(.clear))
+        #expect(!ledger.degradations.isEmpty)
+    }
+
+    /// …and with every channel live it must come back, or the ceiling logic
+    /// has replaced one unreachable band with a permanent one.
+    @Test("full inputs restore Clear")
+    func clearReturnsOnFullInputs() {
+        var days = rhrOnlyBlock()
+        for i in days.indices {
+            days[i].hrvRmssd = 60
+            days[i].sleepQuality = "good"
+        }
+        let ledger = TrendsRecoveryLedger.ledger(days: days, at: 29)
+        #expect(ledger.ceiling >= 75, "ceiling is \(ledger.ceiling), expected 75+")
+        #expect(ledger.unreachableBands.isEmpty)
+        #expect(ledger.degradations.isEmpty)
+    }
+
+    /// The ceiling is a bound, so no day may ever score above it.
+    @Test("the score never exceeds its own ceiling")
+    func ceilingBoundsTheScore() {
+        let days = rhrOnlyBlock()
+        for i in days.indices {
+            let ledger = TrendsRecoveryLedger.ledger(days: days, at: i)
+            #expect(ledger.total <= ledger.ceiling,
+                    "day \(i) scored \(ledger.total) over a ceiling of \(ledger.ceiling)")
+        }
+    }
+
+    /// An athlete with no watch at all keeps the old two-group receipt: no
+    /// nights factors, so nothing to degrade and no cap to draw.
+    @Test("no night pipeline degrades nothing")
+    func noNightsNoDegradation() {
+        let ledger = TrendsRecoveryLedger.ledger(days: block(30), at: 29)
+        #expect(ledger.degradations.isEmpty)
+    }
 }

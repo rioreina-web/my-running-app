@@ -176,7 +176,7 @@ enum TrendsRecoveryFactors {
         case ..<70:    (-9, "\(pct)% over your usual load")
         default:       (-12, "\(pct)% over your usual load")
         }
-        return Factor(name: "Recovery need", evidence: reading, points: points)
+        return Factor(name: "Recovery need", evidence: reading, points: points, bestCase: 11)
     }
 
     // MARK: - 2c · The session spike, as its own contributor
@@ -228,7 +228,8 @@ enum TrendsRecoveryFactors {
                 evidence: "nothing logged in \(moodWindowDays) days",
                 points: 0,
                 source: .words,
-                hasData: false
+                hasData: false,
+                bestCase: moodPoints.values.max() ?? 0
             )
         }
 
@@ -247,7 +248,8 @@ enum TrendsRecoveryFactors {
             name: "Mood",
             evidence: "\(words.joined(separator: " · ").uppercased()) · \(logged.count) \(dayWord) in 7",
             points: points,
-            source: .words
+            source: .words,
+            bestCase: moodPoints.values.max() ?? 0
         )
     }
 
@@ -294,7 +296,8 @@ enum TrendsRecoveryFactors {
             return Factor(
                 name: "Recent load",
                 evidence: "nothing in the last \(recentMiles.count) days",
-                points: 6
+                points: 6,
+                bestCase: 6
             )
         }
 
@@ -312,7 +315,7 @@ enum TrendsRecoveryFactors {
         guard baselineDaily > 0.5 else {
             // Not enough history for a personal read — the absolute fallback.
             let cost = -min(8, Int((dailyEquivalent * 0.42).rounded()))
-            return Factor(name: "Recent load", evidence: milesPart, points: cost)
+            return Factor(name: "Recent load", evidence: milesPart, points: cost, bestCase: 6)
         }
 
         let ratio = dailyEquivalent / baselineDaily
@@ -324,7 +327,7 @@ enum TrendsRecoveryFactors {
         case ...2.0: (-6, "well over your usual")
         default: (-8, "far over your usual")
         }
-        return Factor(name: "Recent load", evidence: milesPart + " · " + reading, points: points)
+        return Factor(name: "Recent load", evidence: milesPart + " · " + reading, points: points, bestCase: 6)
     }
 
     // MARK: - 3 · Body mentions (unchanged)
@@ -379,7 +382,7 @@ enum TrendsRecoveryFactors {
         case ..<0.85: (3, "\(pct)% under your 8-wk average")
         default: (5, "in line with your 8-wk average")
         }
-        return Factor(name: "Load", evidence: evidence, points: points)
+        return Factor(name: "Load", evidence: evidence, points: points, bestCase: 5)
     }
 
     // MARK: - 5 · Clear days (retooled — was "Days on")
@@ -428,7 +431,7 @@ enum TrendsRecoveryFactors {
         default:
             (-5, "\(since) days since one clear")
         }
-        return Factor(name: "Clear days", evidence: evidence, points: points)
+        return Factor(name: "Clear days", evidence: evidence, points: points, bestCase: 5)
     }
 
     // MARK: - 6 · Overnight (HRV paired with resting HR) — 2026-08-05
@@ -489,10 +492,11 @@ enum TrendsRecoveryFactors {
         // verdict, and the evidence string says which reading the athlete is
         // getting rather than implying the full one.
         guard hasHRV else {
+            let noHRV = Factor.Gap.hrv
             switch r {
-            case 1:  return Factor(name: "Overnight", evidence: "7-day resting HR up · no HRV data", points: -3, source: .nights)
-            case -1: return Factor(name: "Overnight", evidence: "7-day resting HR down · no HRV data", points: 2, source: .nights)
-            default: return Factor(name: "Overnight", evidence: "resting HR inside your usual range · no HRV data", points: 0, source: .nights)
+            case 1:  return Factor(name: "Overnight", evidence: "7-day resting HR up · no HRV data", points: -3, source: .nights, gap: noHRV, bestCase: 2)
+            case -1: return Factor(name: "Overnight", evidence: "7-day resting HR down · no HRV data", points: 2, source: .nights, gap: noHRV, bestCase: 2)
+            default: return Factor(name: "Overnight", evidence: "resting HR inside your usual range · no HRV data", points: 0, source: .nights, gap: noHRV, bestCase: 2)
             }
         }
 
@@ -501,13 +505,13 @@ enum TrendsRecoveryFactors {
         // The 3×3 table (v2 §2c), compressed to points.
         switch (h, r) {
         case (-1, 1):   // HRV down, RHR up — the ONE interpretable cell
-            return Factor(name: "Overnight", evidence: "7-day HRV down, resting HR up", points: -6, source: .nights)
+            return Factor(name: "Overnight", evidence: "7-day HRV down, resting HR up", points: -6, source: .nights, bestCase: 3)
         case (-1, -1):  // both low — usually adaptation, stay quiet
-            return Factor(name: "Overnight", evidence: "HRV & resting HR both low · usually adaptation", points: 0, source: .nights)
+            return Factor(name: "Overnight", evidence: "HRV & resting HR both low · usually adaptation", points: 0, source: .nights, bestCase: 3)
         case (1, -1):   // HRV up, RHR down — settled
-            return Factor(name: "Overnight", evidence: "overnight numbers settled", points: 3, source: .nights)
+            return Factor(name: "Overnight", evidence: "overnight numbers settled", points: 3, source: .nights, bestCase: 3)
         default:
-            return Factor(name: "Overnight", evidence: "overnight numbers inside your usual range", points: 0, source: .nights)
+            return Factor(name: "Overnight", evidence: "overnight numbers inside your usual range", points: 0, source: .nights, bestCase: 3)
         }
     }
 
@@ -529,11 +533,18 @@ enum TrendsRecoveryFactors {
         // Preferred: self-reported quality for the night (Tier 1).
         if let q = day.sleepQuality?.lowercased() {
             switch q {
-            case "good":  return Factor(name: "Sleep", evidence: "good · logged", points: 4, source: .words)
-            case "rough": return Factor(name: "Sleep", evidence: "rough · logged", points: -6, source: .words)
-            default:      return Factor(name: "Sleep", evidence: "ok · logged", points: 0, source: .words)
+            case "good":  return Factor(name: "Sleep", evidence: "good · logged", points: 4, source: .words, bestCase: 4)
+            case "rough": return Factor(name: "Sleep", evidence: "rough · logged", points: -6, source: .words, bestCase: 4)
+            default:      return Factor(name: "Sleep", evidence: "ok · logged", points: 0, source: .words, bestCase: 4)
             }
         }
+
+        // Everything below this line is the Tier-3 duration fallback. It scores
+        // a real number off a weak input, so it is marked degraded: without the
+        // nightly rating the factor's range collapses from +4/−6 to +2/−3, and
+        // a receipt that shows "SLEEP · IN LINE WITH YOUR AVERAGE" gives no hint
+        // that the strongest branch never ran.
+        let noRating = Factor.Gap.sleepRating
 
         // No sleep data of any kind in the trailing 21 days → no factor.
         let recent = Array(days[max(0, i - 20)...i])
@@ -541,23 +552,74 @@ enum TrendsRecoveryFactors {
             return nil
         }
 
-        // Fallback: total sleep time vs the athlete's own 3-week average. Weak
-        // on purpose — single-night TST error is ±83…160 min, so use a 7-day
-        // mean and a wide gate, and never react to one night.
+        // Fallback: total sleep time vs the athlete's own 3-week baseline. Weak
+        // on purpose — single-night TST error is ±83…160 min.
+        //
+        // **Median, not mean (2026-08-10).** "Never react to one night" used to
+        // be enforced by making the gate wide enough to hide a single night
+        // inside it: one 3-hour night moves a 7-day MEAN by ~34 minutes, which
+        // is most of the way to the old ±45. That coupled two unrelated jobs to
+        // one number — outlier rejection and signal detection — and the outlier
+        // job set the floor, so the gate could never be tightened. A median does
+        // the rejection structurally: one freak night cannot move it at all,
+        // which frees the threshold below to be about noise and nothing else.
         let window = Array(days[max(0, i - 6)...i]).compactMap { $0.sleepTotalMin }
         let base = Array(days[max(0, i - 20)...max(0, i - 7)]).compactMap { $0.sleepTotalMin }
         guard window.count >= 5, base.count >= 7 else {
-            return Factor(name: "Sleep", evidence: "not enough sleep data yet", points: 0, source: .words, hasData: false)
+            return Factor(name: "Sleep", evidence: "not enough sleep data yet", points: 0, source: .words, hasData: false, gap: noRating, bestCase: 2)
         }
-        let mNow = Double(window.reduce(0, +)) / Double(window.count)
-        let mBase = Double(base.reduce(0, +)) / Double(base.count)
-        let delta = mNow - mBase   // minutes
-        if delta <= -45 {
-            return Factor(name: "Sleep", evidence: "sleeping ~\(Int(-delta)) min under your average", points: -3, source: .words)
-        } else if delta >= 45 {
-            return Factor(name: "Sleep", evidence: "sleeping above your average", points: 2, source: .words)
+        let baseMinutes = base.map(Double.init)
+        let delta = median(window.map(Double.init)) - median(baseMinutes)
+
+        // Threshold scaled to the athlete's OWN between-night SD, at the same
+        // 0.5 × SD that `overnight` uses. A fixed ±45 encodes one athlete's
+        // variability as everyone's: at Rio's SD of ~69 min it lands near 1.1
+        // standard errors and reads about right, but a metronome sleeper on
+        // SD 25 would need a two-hour swing before the factor said anything,
+        // and would sit at "in line with your average" through a week that was
+        // plainly unlike them. Floored and capped so neither extreme produces
+        // a hair-trigger nor a permanently mute row.
+        let threshold = min(60, max(20, 0.5 * stdev(baseMinutes)))
+
+        let level = adequacyNote(medianMinutes: median(window.map(Double.init)))
+        if delta <= -threshold {
+            return Factor(name: "Sleep", evidence: "sleeping ~\(Int(-delta)) min under your average" + level, points: -3, source: .words, gap: noRating, bestCase: 2)
+        } else if delta >= threshold {
+            return Factor(name: "Sleep", evidence: "sleeping above your average" + level, points: 2, source: .words, gap: noRating, bestCase: 2)
         }
-        return Factor(name: "Sleep", evidence: "sleep in line with your average", points: 0, source: .words)
+        return Factor(name: "Sleep", evidence: "sleep in line with your average" + level, points: 0, source: .words, gap: noRating, bestCase: 2)
+    }
+
+    /// Appended to the Sleep evidence when the measured median is under seven
+    /// hours. **Measurement, not verdict, and deliberately worth zero points.**
+    ///
+    /// Every term above asks "is this week unlike your recent weeks" — a
+    /// question an athlete who has been short for months answers with "no
+    /// change", forever. Rio has 75 nights under six hours in six months and
+    /// the factor said something negative on ten of them, because six hours IS
+    /// his baseline and the comparison is against himself. The level is the
+    /// thing a deviation model structurally cannot surface, so it is surfaced
+    /// as the number the watch recorded.
+    ///
+    /// Zero points is the whole point. Charging for a chronic deficit would
+    /// subtract the same amount every single day — a constant offset that
+    /// lowers the scale without improving a single day's reading, which is the
+    /// same class of miscalibration as charging for being in training. And it
+    /// would not survive the measurement anyway: HealthKit reports the sleep
+    /// the watch observed, which is a floor on true sleep rather than an
+    /// estimate of it, so an absolute verdict off it would be unearned.
+    private static func adequacyNote(medianMinutes m: Double) -> String {
+        guard m > 0, m < 420 else { return "" }
+        let mins = Int(m.rounded())
+        return " · watch median \(mins / 60)h\(String(format: "%02d", mins % 60))"
+    }
+
+    /// Median, so one freak night cannot move the reading. See `sleep`.
+    static func median(_ xs: [Double]) -> Double {
+        guard !xs.isEmpty else { return 0 }
+        let s = xs.sorted()
+        let mid = s.count / 2
+        return s.count.isMultiple(of: 2) ? (s[mid - 1] + s[mid]) / 2 : s[mid]
     }
 
     /// Population SD (n), matching the between-night SD used for the SWC
