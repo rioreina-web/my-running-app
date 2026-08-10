@@ -156,6 +156,21 @@ struct TrendsReadWindow: Identifiable {
     let days: [TrendsDay]
 }
 
+/// A calendar month of the payload.
+///
+/// Distinct from `TrendsReadWindow`'s rolling 30 days, and both are needed: a
+/// rolling window is the honest unit for "the last month of training", but the
+/// grid draws real weekday columns under a heading that says July, so what it
+/// slices has to be July.
+struct TrendsReadMonth: Identifiable {
+    /// "2026-08" — sorts chronologically and keys the grid.
+    let id: String
+    /// "August 2026".
+    let title: String
+    /// Days in the month, oldest first.
+    let days: [TrendsDay]
+}
+
 // MARK: - Builder
 
 enum TrendsReadBuilder {
@@ -200,6 +215,29 @@ enum TrendsReadBuilder {
     static func date(_ key: String) -> Date? { dayFormatter.date(from: key) }
 
     // MARK: Months
+
+    /// The payload split into calendar months, **newest month first**, each
+    /// month's days oldest first.
+    ///
+    /// Every day lands in exactly one month and none are dropped, which is the
+    /// property that matters: a read scoped to a month must sum that month and
+    /// nothing else. Summing the payload instead was the six-month bug — 180
+    /// days at 8 miles announcing "1440 mi" under a heading that said July.
+    ///
+    /// Keys are sliced off the day string rather than reconstructed through a
+    /// `DateComponents` round-trip. The day key is already `yyyy-MM-dd` in UTC,
+    /// so its first seven characters ARE the month key, and going via `Date`
+    /// only adds a timezone that could move a day across a boundary.
+    static func months(_ days: [TrendsDay]) -> [TrendsReadMonth] {
+        let grouped = Dictionary(grouping: days) { String($0.date.prefix(7)) }
+        return grouped.keys.sorted(by: >).map { key in
+            TrendsReadMonth(
+                id: key,
+                title: date("\(key)-01").map { monthTitleFormatter.string(from: $0) } ?? key,
+                days: (grouped[key] ?? []).sorted { $0.date < $1.date }
+            )
+        }
+    }
 
     /// Rolling **30-day** windows, newest first, each one stepped back a
     /// month from the last.
@@ -408,8 +446,9 @@ enum TrendsReadBuilder {
         // 2 · niggles — count, area, recency. Never severity.
         let niggleDays = ordered.filter { !$0.niggles.isEmpty }
         if let firstNiggle = niggleDays.first {
-            let mentions = niggleDays.reduce(0) { $0 + $1.niggles.count }
-            let area = dominantArea(niggleDays) ?? "a niggle"
+            let top = dominantArea(niggleDays)
+            let area = top?.label ?? "a niggle"
+            let mentions = top?.count ?? niggleDays.reduce(0) { $0 + $1.niggles.count }
             callouts[firstNiggle.date] = next
             let quiet = daysSince(niggleDays.last?.date, in: ordered)
             beats.append(.init(
@@ -469,8 +508,9 @@ enum TrendsReadBuilder {
     ) -> String {
         // Alert first.
         if let last = niggleDays.last, daysSince(last.date, in: days) < 7 {
-            let mentions = niggleDays.reduce(0) { $0 + $1.niggles.count }
-            let area = dominantArea(niggleDays) ?? "Niggle"
+            let top = dominantArea(niggleDays)
+            let area = top?.label ?? "Niggle"
+            let mentions = top?.count ?? niggleDays.reduce(0) { $0 + $1.niggles.count }
             return "\(area.capitalizedFirst), \(mentions) "
                 + "\(mentions == 1 ? "mention" : "mentions")."
         }
@@ -568,9 +608,16 @@ enum TrendsReadBuilder {
         return calendar.dateComponents([.day], from: from, to: to).day ?? .max
     }
 
-    /// Most-mentioned body area, verbatim. Ties break on first appearance so
-    /// the same window always names the same area.
-    private static func dominantArea(_ days: [TrendsDay]) -> String? {
+    /// Most-mentioned body area **and its own mention count**.
+    ///
+    /// The count travels with the label deliberately. Both callers used to name
+    /// this area and then quote `niggleDays.reduce(0) { $0 + $1.niggles.count }`
+    /// beside it — every mention in the window, whatever the body part. One calf
+    /// mention and one knee mention rendered as "Left calf, 2 mentions", which
+    /// is not a rounding difference but a false statement about the calf. The
+    /// niggle rules are explicit that the surface reports what was said and
+    /// where; a count that silently spans other body parts reports neither.
+    private static func dominantArea(_ days: [TrendsDay]) -> (label: String, count: Int)? {
         var counts: [String: Int] = [:]
         var order: [String] = []
         for day in days {
@@ -585,7 +632,7 @@ enum TrendsReadBuilder {
         }
         // Most mentions wins; a tie goes to whichever appeared first, so the
         // same window always names the same area.
-        return order.max { a, b in
+        let winner = order.max { a, b in
             let countA = counts[a] ?? 0
             let countB = counts[b] ?? 0
             if countA != countB { return countA < countB }
@@ -593,6 +640,7 @@ enum TrendsReadBuilder {
             let firstB = order.firstIndex(of: b) ?? 0
             return firstA > firstB
         }
+        return winner.map { ($0, counts[$0] ?? 0) }
     }
 
     private static func tally(_ days: [TrendsDay]) -> [(mood: String, count: Int)] {
