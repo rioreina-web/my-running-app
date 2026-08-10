@@ -299,6 +299,15 @@ struct ScheduledWorkout: Identifiable, Codable {
     /// taps the time pill on the workout detail and picks something
     /// custom.
     var scheduledHour: Int?
+    /// Plan intent: was this session scheduled AS a key session?
+    ///
+    /// THREE STATES. nil = nothing said, fall through to the derived rule.
+    /// true = key. false = deliberately not key. Set when the session is
+    /// scheduled, which is what makes a key session knowable BEFORE you run it.
+    ///
+    /// Intent only — no pipeline writes it. Requires migration
+    /// 20260810190200; decodes to nil against an older schema.
+    var isKeySession: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -321,6 +330,7 @@ struct ScheduledWorkout: Identifiable, Codable {
         case poolTemplateId = "pool_template_id"
         case weatherForecast = "weather_forecast"
         case scheduledHour = "scheduled_hour"
+        case isKeySession = "is_key_session"
     }
 
     init(

@@ -34,7 +34,7 @@ import {
   aerobicLoadForBouts,
   longRunLoadFromMinutes,
   qualityLoadForBouts,
-} from "./qualityLoad.ts";
+} from "../_shared/qualityLoad.ts";
 
 // ─── Input types (superset of the laps we read) ────────────────────────
 
@@ -84,7 +84,7 @@ export interface KeySessionOut {
   /** Weighted minutes of work — Σ(work-bout seconds × ZONE_WEIGHTS[zone]).
    *  For a long run, Σ over ALL bouts. Scored here, gated on the client
    *  (`QualityLoad.floor`) so the floor is tunable without a deploy.
-   *  See `./qualityLoad.ts`. */
+   *  See `../_shared/qualityLoad.ts`. */
   quality_load: number;
   /** `quality` = a rep/threshold session, classified by its work bouts.
    *  `long_run` = an aerobic anchor session with no work bouts, admitted on

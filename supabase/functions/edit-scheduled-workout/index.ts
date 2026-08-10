@@ -50,6 +50,20 @@ interface EditBody {
   confirm_race_week?: boolean;
   /** Duplicate mode: copy this workout onto the given date instead of editing. */
   duplicate_to_date?: string;
+  /**
+   * Plan intent — is this scheduled session a key session?
+   *
+   * THREE STATES, and the JSON distinction matters:
+   *   `true` / `false` — set it (false = deliberately NOT a key session)
+   *   `null`           — CLEAR it, fall back to the derived rule
+   *   omitted          — leave it alone
+   *
+   * `null` and "omitted" look identical if you reach for a truthiness check,
+   * which is why every test below uses `!== undefined`.
+   *
+   * Intent only. No pipeline writes this.
+   */
+  is_key_session?: boolean | null;
 }
 
 const WORKOUT_STATUSES = new Set(["scheduled", "completed", "skipped", "modified"]);
@@ -76,6 +90,8 @@ interface ScheduledWorkoutRow {
   workout_data: unknown;
   notes: string | null;
   source: string | null;
+  /** Plan intent. null = nothing said. Requires migration 20260810190200. */
+  is_key_session?: boolean | null;
 }
 
 function parseLocalDate(s: string): Date {
@@ -127,11 +143,17 @@ export async function handleEditWorkout(
   const hasNotes = body.notes !== undefined;
   const hasStatus = typeof body.status === "string" && body.status.length > 0;
   const isDuplicate = body.duplicate_to_date !== undefined && body.duplicate_to_date !== null;
+  // `undefined` means "leave it"; `null` means "clear it". Both are falsy, so
+  // this MUST be an explicit undefined check.
+  const hasKeySession = body.is_key_session !== undefined;
   if (isDuplicate && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.duplicate_to_date))) {
     return json({ error: "duplicate_to_date must be YYYY-MM-DD" }, 400);
   }
-  if (!hasData && !hasType && !hasNotes && !hasStatus && !isDuplicate) {
-    return json({ error: "Nothing to change: provide workout_data, workout_type, notes, status, or duplicate_to_date" }, 400);
+  if (!hasData && !hasType && !hasNotes && !hasStatus && !isDuplicate && !hasKeySession) {
+    return json({ error: "Nothing to change: provide workout_data, workout_type, notes, status, is_key_session, or duplicate_to_date" }, 400);
+  }
+  if (hasKeySession && body.is_key_session !== null && typeof body.is_key_session !== "boolean") {
+    return json({ error: "is_key_session must be true, false, or null" }, 400);
   }
   if (hasData && (typeof body.workout_data !== "object" || Array.isArray(body.workout_data))) {
     return json({ error: "workout_data must be an object" }, 400);
@@ -164,7 +186,7 @@ export async function handleEditWorkout(
   // 1. Load + verify ownership.
   const { data: source, error: sourceErr } = await supabase
     .from("scheduled_workouts")
-    .select("id, user_id, plan_id, date, day_of_week, week_number, session, workout_type, workout_data, notes, source")
+    .select("id, user_id, plan_id, date, day_of_week, week_number, session, workout_type, workout_data, notes, source, is_key_session")
     .eq("id", id)
     .maybeSingle<ScheduledWorkoutRow>();
   if (sourceErr) {
@@ -325,6 +347,9 @@ export async function handleEditWorkout(
   if (hasType) patch.workout_type = body.workout_type;
   if (hasNotes) patch.notes = body.notes ?? null;
   if (hasStatus) patch.status = body.status;
+  // null here is a real write — it clears the intent and hands the day back to
+  // the derived rule. Distinct from omitting the field, which changes nothing.
+  if (hasKeySession) patch.is_key_session = body.is_key_session ?? null;
 
   const { error: updErr } = await supabase
     .from("scheduled_workouts")
@@ -342,6 +367,7 @@ export async function handleEditWorkout(
       workout_type: source.workout_type,
       workout_data: source.workout_data,
       notes: source.notes,
+      is_key_session: source.is_key_session ?? null,
     },
     after: {
       id: source.id,

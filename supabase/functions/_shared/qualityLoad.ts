@@ -29,9 +29,16 @@
  * Calibration (23 real lap-scored sessions, 2026-07-27): stride sets score
  * 5.4–13.1, the smallest genuine session 42.1, the largest 103.5, and the
  * gap between 13.1 and 42.1 is empty.
+ *
+ * LIVES IN _shared BECAUSE TWO FUNCTIONS NEED IT: trends-timeline scores
+ * sessions for the Key Sessions grid, and compute-workout-features persists
+ * the same number onto workout_features so the calendar, the journal and the
+ * coach portal can ask the same question without recomputing it. One copy of
+ * the formula — same discipline as _shared/workoutSegmentation.ts. Two copies
+ * is how four disagreeing key-session rules happened in the first place.
  */
 
-import { ZONE_WEIGHTS, type Bout } from "../_shared/workoutSegmentation.ts";
+import { ZONE_WEIGHTS, type Bout } from "./workoutSegmentation.ts";
 
 /**
  * Weighted minutes of work in one session. Rest, warmup and cooldown fall
@@ -85,4 +92,48 @@ export function longRunLoadFromMinutes(
 ): number {
   if (!durationMinutes || durationMinutes <= 0) return 0;
   return Math.round(durationMinutes * 10) / 10;
+}
+
+/**
+ * THE BRANCH. Which formula applies to a session, and what it scores.
+ *
+ * This is the single most dangerous piece of logic in the key-session change,
+ * so it lives here as a pure function with its own tests rather than inline in
+ * an edge-function handler.
+ *
+ *   work bouts present        → 'quality',  qualityLoadForBouts(bouts)
+ *   no work bouts + long_run  → 'long_run', aerobicLoadForBouts(bouts)
+ *                                           (longRunLoadFromMinutes if lapless)
+ *   otherwise                 → null,       null
+ *
+ * ⚠️  THE `long_run` GUARD IS LOAD-BEARING. `aerobicLoadForBouts` counts EVERY
+ * bout. Widen this to "any run with no work bouts" and a routine 60-minute
+ * easy run scores ~60, clears the floor of 25, and EVERY DAY in the athlete's
+ * calendar gets a star. `easyRunScoresNothing` in the tests is that exact
+ * case, named on purpose. Do not relax it.
+ *
+ * Returns null rather than 0 for an ordinary run: "we did not score this" and
+ * "we scored this at zero" are different claims, and only the first should
+ * leave a day unstarred-but-explainable.
+ */
+export function qualityLoadForSession(
+  workoutKind: string | null | undefined,
+  bouts: readonly Bout[],
+  durationMinutes: number | null | undefined,
+): { quality_load: number | null; quality_kind: string | null } {
+  const hasWork = bouts.some((b) => b.isWork && b.seconds > 0);
+
+  if (hasWork) {
+    return { quality_load: qualityLoadForBouts(bouts), quality_kind: "quality" };
+  }
+
+  if (workoutKind === "long_run") {
+    const load = aerobicLoadForBouts(bouts);
+    return {
+      quality_load: load > 0 ? load : longRunLoadFromMinutes(durationMinutes),
+      quality_kind: "long_run",
+    };
+  }
+
+  return { quality_load: null, quality_kind: null };
 }

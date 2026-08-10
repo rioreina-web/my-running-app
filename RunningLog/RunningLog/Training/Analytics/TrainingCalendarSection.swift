@@ -516,24 +516,26 @@ struct TrainingCalendarSection: View {
 
     // MARK: Key session
     //
-    // The derived rule here is UNCHANGED for now — `split.threshold > 0`, the
-    // same one this file has always used. What is new is that the athlete can
-    // overrule it: mark a day the rule missed, or un-mark a day it starred for
-    // a single downhill mile.
+    // This USED to be the entire definition:
     //
-    // That rule is still wrong, and knowingly so. `split.threshold` is any
-    // mileage faster than 1.07 x MP with NO MINIMUM, so a stray fast stretch
-    // stars the whole day, and it has no concept of a long run at all — which
-    // is why this surface and the journal disagree. Replacing it needs
-    // persisted `quality_load`, which is the next change. Doing it here would
-    // mean every existing star disappearing until that backfill ran.
+    //     !c.isFuture && c.split.threshold > 0
     //
-    // When it lands: pass nothing, call `keySessions.isKey(on:)`, delete the
-    // argument below. Nothing else on this line changes.
+    // and that was the bug. `split.threshold` is any mileage faster than
+    // 1.07 × MP with NO MINIMUM, so one downhill mile, a Strava segment sprint,
+    // or a few strides at the end of an easy run starred the whole day. The
+    // star meant "you touched fast pace", not "this was a key session" — and it
+    // disagreed with the journal, with Trends, and with the coach portal, each
+    // of which had invented its own rule.
+    //
+    // All four are gone. There is one definition now and it lives in
+    // `KeySession`, fed by `KeySessionStore`: the athlete's word, then the
+    // plan's intent, then Σ quality_load clearing QualityLoad.floor.
+    //
+    // `split.threshold` is still right for the tile COLOUR (`dayColor`) and the
+    // intensity bars — "was there fast running today" is a fine question. It
+    // was just the wrong answer to "was this a key session."
 
-    private func isKey(_ c: DayCell) -> Bool {
-        keySessions.isKey(on: c.date, derived: !c.isFuture && c.split.threshold > 0)
-    }
+    private func isKey(_ c: DayCell) -> Bool { keySessions.isKey(on: c.date) }
 
     private func keyProvenance(_ c: DayCell) -> KeySessionMark.Provenance {
         keySessions.provenance(on: c.date)

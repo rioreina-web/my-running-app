@@ -453,6 +453,13 @@ final class TrainingAnalyticsViewModel {
         loadFailed = false
         logs = fetched.dedupedByPhysicalWorkout().sorted { $0.date < $1.date }
         rebuildLogIndex()         // refresh day index + invalidate memo caches
+
+        // Feed the key-session store the DEDUPED set. It sums quality_load per
+        // day off these ids; handing it raw rows would double-count a run that
+        // arrived from both Strava and HealthKit, pushing an easy day over the
+        // floor. LogDedup is the canonical picker — the store must not
+        // reimplement it.
+        await KeySessionStore.shared.ingestLoads(forDedupedLogs: logs)
         splitsCache.removeAll()   // logs changed — drop stale per-session splits
 
         // Current-fitness snapshot (cheap — reads the history table).
@@ -1006,7 +1013,14 @@ final class TrainingAnalyticsViewModel {
             typeLabel: Self.typeLabel(row.typeKey),
             miles: row.miles ?? 0,
             pace: row.pace,
-            pullQuote: rpe?.pullQuote ?? row.cleanedNotes,
+            // `rpe_pull_quote` is extracted from the memo, so it is already the
+            // athlete's. `cleanedNotes` is not: on a synced run it holds
+            // Strava's auto-title, and the day sheet was rendering “Evening
+            // Run” in italic quotation marks under the session header — the
+            // same typographic voice it uses for a real memo. Quote marks are a
+            // claim about authorship; only put words inside them the athlete
+            // actually said.
+            pullQuote: rpe?.pullQuote ?? PlaceholderNote.athleteWords(row.cleanedNotes),
             feltLine: feltLine(for: row, rpe: rpe),
             bucket: split(for: row).hardestBucket,
             source: row.source
@@ -1455,6 +1469,13 @@ final class TrainingAnalyticsViewModel {
     }
 
     // MARK: Outputs — felt vs planned
+    //
+    // NOT DEAD CODE. The rendered section was replaced by
+    // `WeekTrainingLoadSection` on 2026-08-10, so nothing calls
+    // `feltVsPlanned()` from a view right now — but `feltInsight()` below
+    // reads it, and that sentence is a candidate for the header insight
+    // slot. Deliberately unlinked, not abandoned; deleting the model would
+    // take the insight with it.
 
     func feltVsPlanned() -> [FeltVsPlanned] {
         // Only hard sessions, only where felt RPE actually exists.

@@ -162,12 +162,7 @@ struct DayAnalysisSheet: View {
     /// The athlete's stored answer for this day. nil = they've said nothing.
     private var keyOverride: Bool? { keySessions.override(on: day) }
 
-    /// Phase-1 derived rule: the calendar's existing one, passed in rather than
-    /// reinvented, so this sheet and the calendar cannot disagree. Becomes
-    /// `keySessions.isKey(on: day)` once quality_load is persisted.
-    private var keyIsSet: Bool {
-        keySessions.isKey(on: day, derived: summary.zone.threshold > 0)
-    }
+    private var keyIsSet: Bool { keySessions.isKey(on: day) }
 
     private var keyProvenance: KeySessionMark.Provenance { keySessions.provenance(on: day) }
 

@@ -472,7 +472,11 @@ struct TrainingTabTwoView: View {
         return Color.drip.textPrimary
     }
 
-    private func isKey(_ c: DayCell) -> Bool { !c.isFuture && c.split.threshold > 0 }
+    // Was a byte-identical copy of the calendar's old Rule 1. This whole view
+    // is RETIRED as a tab (RunningLogApp.swift:194) and is dead code that
+    // should be deleted outright — it is rewired rather than left alone only so
+    // that no fifth key-session rule survives anywhere in the codebase.
+    private func isKey(_ c: DayCell) -> Bool { KeySessionStore.shared.isKey(on: c.date) }
 
     private func sessionTitle(_ c: DayCell, _ ss: [SessionDetail]) -> String {
         if c.isRest { return "Rest" }

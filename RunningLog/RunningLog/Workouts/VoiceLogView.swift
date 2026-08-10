@@ -697,6 +697,58 @@ struct VoiceLogView: View {
                     .padding(.horizontal, 24)
             }
             .buttonStyle(.plain)
+            .contextMenu { keySessionMenu(for: log) }
+        }
+    }
+
+    /// "FRI AUG 7" — built outside the ViewBuilder, where a DateFormatter can
+    /// just be configured normally.
+    private static func keyDayLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE MMM d"
+        return f.string(from: date).uppercased()
+    }
+
+    /// Long-press a journal entry to declare its day a key session, without
+    /// opening the day sheet.
+    ///
+    /// A long-press menu rather than `.swipeActions` because this feed is a
+    /// LazyVStack in a ScrollView, not a List — swipe actions do not exist
+    /// outside a List, and a hand-rolled horizontal drag here would compete
+    /// with the vertical scroll and with the row's own tap target.
+    ///
+    /// The three options are stated explicitly rather than cycled, because a
+    /// menu should say what each choice does. The DAY is named in the header
+    /// for the same reason the day sheet says "MARKS FRI AUG 7": the override
+    /// is day-scoped, and on a doubles day this row is one of two.
+    @ViewBuilder
+    private func keySessionMenu(for log: TrainingLog) -> some View {
+        let day = log.displayDate
+        let current = KeySessionStore.shared.override(on: day)
+
+        Section("KEY SESSION · MARKS \(Self.keyDayLabel(day))") {
+            Button {
+                Task { await KeySessionStore.shared.set(true, on: day) }
+            } label: {
+                Label("Key session", systemImage: current == true ? "checkmark" : "star")
+            }
+
+            Button {
+                Task { await KeySessionStore.shared.set(false, on: day) }
+            } label: {
+                Label("Not a key session", systemImage: current == false ? "checkmark" : "star.slash")
+            }
+
+            // Only offered when there IS something to withdraw — "back to auto"
+            // on a day you never marked is a no-op that reads like a bug.
+            if current != nil {
+                Button {
+                    Task { await KeySessionStore.shared.clear(on: day) }
+                } label: {
+                    Label("Back to auto", systemImage: "arrow.uturn.backward")
+                }
+            }
         }
     }
 

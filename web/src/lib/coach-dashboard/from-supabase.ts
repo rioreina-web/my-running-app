@@ -39,6 +39,7 @@ import {
   verdictTitle,
   type EnrichLap,
 } from "./workout-enrichment";
+import { isKeySession as resolveKeySession } from "./key-session";
 
 // ── Row shapes we read (the client is untyped, so we assert these) ──────────
 interface LogRow {
@@ -108,6 +109,16 @@ interface ScheduledRow {
   workout_type: string | null;
   workout_data: { steps?: import("@/components/coach/workout-helpers").WorkoutStep[]; name?: string } | null;
   date: string | null;
+  /** Plan intent. null = nothing said. Requires migration 20260810190200. */
+  is_key_session?: boolean | null;
+}
+interface DayOverrideRow {
+  date: string;
+  value: boolean;
+}
+interface FeatureLoadRow {
+  training_log_id: string;
+  quality_load: number | null;
 }
 interface PaceProfileRow {
   marathon_pace_seconds: number | null;
@@ -156,22 +167,12 @@ const WORKOUT_ZONE: Record<string, PaceZone | null> = {
   other: "easy",
   rest: null,
 };
-// Quality/long/race sessions — the ones that get a ★. Both spellings of
-// interval, plus threshold, are the fixes for the missed Tuesdays.
-const KEY_TYPES = new Set([
-  "long_run",
-  "long",
-  "tempo",
-  "threshold",
-  "interval",
-  "intervals",
-  "fartlek",
-  "race",
-  "progression",
-  "workout",
-]);
-// Pace zones that count as "quality" volume for content-based key detection.
-const QUALITY_ZONES = new Set<PaceZone>(["mp", "hm", "threshold", "tenK", "fiveK", "threeK", "mile"]);
+// KEY_TYPES and QUALITY_ZONES lived here — a fourth vocabulary of workout_type
+// spellings and a fourth zone set, feeding a three-clause rule with two
+// constants (12 miles, 2.5 quality miles) that existed nowhere else. All of it
+// is deleted. The one definition is ./key-session.ts, which reads the same
+// three inputs the athlete's app does. Do not add a type set back here: that
+// is precisely how four rules became five.
 const TYPE_LABEL: Record<string, string> = {
   easy: "Easy",
   recovery: "Recovery",
@@ -280,6 +281,9 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
   const since = new Date();
   since.setDate(since.getDate() - 90);
   const sinceISO = since.toISOString().slice(0, 10);
+  // Derived key-session status never applies to a day that hasn't happened;
+  // a declaration does. See ./key-session.ts.
+  const todayISO = new Date().toISOString().slice(0, 10);
 
   const [logs, plan, moments, state, mentions, paceProfile, settings] = await Promise.all([
     safe<LogRow[]>(
@@ -406,12 +410,59 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
     ? (await safe<ScheduledRow[]>(
         supabase
           .from("scheduled_workouts")
-          .select("id, workout_type, workout_data, date")
+          .select("id, workout_type, workout_data, date, is_key_session")
           .eq("plan_id", plan.id)
           .gte("date", sinceISO)
           .limit(500),
       )) ?? []
     : [];
+  // ── The three key-session inputs (see ./key-session.ts) ──────────────────
+  //
+  // Plan intent, keyed by date. A day is intended-key if ANY session that day
+  // says so; intended-NOT-key only if a session says false and none says true.
+  // On a doubles day, one key session makes the day a key day.
+  const planIntentByDate = new Map<string, boolean>();
+  for (const sw of planWorkouts) {
+    if (!sw.date || sw.is_key_session === null || sw.is_key_session === undefined) continue;
+    planIntentByDate.set(sw.date, (planIntentByDate.get(sw.date) ?? false) || sw.is_key_session);
+  }
+
+  // The athlete's own declarations. Read through the admin client: RLS on
+  // day_overrides is athlete-scoped (`user_id = auth.uid()`), so the coach's
+  // cookie client would correctly see none of them.
+  const overrideRows =
+    (await safe<DayOverrideRow[]>(
+      admin
+        .from("day_overrides")
+        .select("date, value")
+        .eq("user_id", athleteId)
+        .eq("field", "is_key_session")
+        .gte("date", sinceISO),
+    )) ?? [];
+  const overrideByDate = new Map<string, boolean>();
+  for (const o of overrideRows) overrideByDate.set(o.date, o.value);
+
+  // The derived stimulus: Σ quality_load per day.
+  //
+  // NOTE this sums the raw log rows, where the iOS side sums DEDUPED ones. A
+  // cross-source duplicate (the same run from Strava and HealthKit) could in
+  // principle be counted twice here. In practice only the GPS row carries laps,
+  // so only it gets a non-null quality_load and the duplicate contributes zero
+  // — but if a day ever stars for the coach and not the athlete, this is the
+  // first place to look.
+  const featureRows = logIds.length
+    ? (await safe<FeatureLoadRow[]>(
+        admin
+          .from("workout_features")
+          .select("training_log_id, quality_load")
+          .in("training_log_id", logIds),
+      )) ?? []
+    : [];
+  const loadByLogId = new Map<string, number>();
+  for (const f of featureRows) {
+    if (f.quality_load != null) loadByLogId.set(f.training_log_id, f.quality_load);
+  }
+
   const plannedByWeek = new Map<string, number>();
   for (const sw of planWorkouts) {
     if (!sw.date) continue;
@@ -704,18 +755,24 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
     const mood: Mood = primary && primary.mood && MOODS.has(primary.mood as Mood) ? (primary.mood as Mood) : "neutral";
     const mention = mentionByDate.get(iso);
     const niggle = mention ? { area: niggleArea(mention), quote: mention.verbatim_quote } : null;
-    // A day is "key" if any run is a quality/long/race TYPE, OR a long effort
-    // by distance (catches mis-typed long runs), OR carries real quality-zone
-    // volume from its splits (catches mis-typed workouts — only trusted when we
-    // have the athlete's calibrated pace table).
-    const qualityMiles = (Object.entries(zoneMiles) as [PaceZone, number][]).reduce(
-      (s, [z, mi]) => s + (QUALITY_ZONES.has(z) ? mi ?? 0 : 0),
-      0,
-    );
-    const key =
-      runLogs.some((l) => KEY_TYPES.has((l.workout_type ?? "").toLowerCase())) ||
-      runLogs.some((l) => numMiles(l.workout_distance_miles) >= 12) ||
-      (athletePaces !== undefined && qualityMiles >= 2.5);
+    // A day is key by the ONE definition: what the athlete said, else what the
+    // plan intended, else whether the day's summed stimulus clears the floor.
+    // The coach now sees exactly what the athlete sees — including a day the
+    // athlete explicitly un-marked, which no amount of derivation can re-star.
+    //
+    // Σ over the day's logs. Undefined (not 0) when nothing on this day was
+    // scored, so "no work" and "not scored yet" stay distinguishable.
+    const scored = runLogs
+      .map((l) => loadByLogId.get(l.id))
+      .filter((v): v is number => v !== undefined);
+    const dayLoad = scored.length ? scored.reduce((a, b) => a + b, 0) : undefined;
+
+    const key = resolveKeySession({
+      override: overrideByDate.get(iso),
+      planIntent: planIntentByDate.get(iso),
+      dayLoad,
+      isFuture: iso > todayISO,
+    });
     const sessions = runLogs.length;
 
     const id = dayLogs[0]?.id ?? `rest-${iso}`;

@@ -60,31 +60,19 @@ struct JournalLogRow: View {
         WorkoutLabel.display(entry.workoutType).uppercased()
     }
 
-    /// Key (quality) session — earns a star marker. The athlete's declaration
-    /// wins; the workout_type set below is only the fallback for days they
-    /// have said nothing about.
+    /// Key (quality) session — earns a star marker.
     ///
-    /// That set is knowingly wrong and knowingly temporary. It has no concept
-    /// of how much work was actually done, so it stars a 3-mile shakeout
-    /// labelled "tempo"; and because the calendar's rule has no concept of a
-    /// long run, the two surfaces give opposite answers on almost every
-    /// interesting day. It survives only until `quality_load` is persisted —
-    /// deleting it now would leave the journal with no stars at all.
-    private var isKeySession: Bool {
-        keySessions.isKey(on: entry.displayDate, derived: derivedKeyByType)
-    }
+    /// This used to be a hardcoded `Set<String>` of workout_type spellings —
+    /// "Rule 2" of the four. It had no concept of how much work was actually
+    /// done, so it starred a 3-mile shakeout labelled "tempo" and, because the
+    /// calendar's rule had no concept of a long run, the two surfaces gave
+    /// opposite answers on almost every interesting day. The set is deleted.
+    ///
+    /// One definition now, shared with every other surface.
+    private var isKeySession: Bool { keySessions.isKey(on: entry.displayDate) }
 
     private var keyProvenance: KeySessionMark.Provenance {
         keySessions.provenance(on: entry.displayDate)
-    }
-
-    private var derivedKeyByType: Bool {
-        let key: Set<String> = [
-            "intervals", "interval", "tempo", "threshold", "fartlek", "progression",
-            "race", "long_run", "long", "longrun", "long_wo",
-            "mp", "hmp", "lt", "10k", "5k", "3k", "mile",
-        ]
-        return key.contains((entry.workoutType ?? "").lowercased())
     }
 
     private var distanceLabel: String? {

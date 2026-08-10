@@ -295,6 +295,15 @@ final class TrainingPlanService {
                 .value
 
             allScheduledWorkouts = workouts
+
+            // Hand the plan's key-session intent to the one store that resolves
+            // it. Done here rather than fetched by the store, because the plan
+            // is already loaded and a second fetch is how two versions of the
+            // truth start.
+            await KeySessionStore.shared.ingestPlanIntent(
+                workouts.map { (date: $0.date, isKey: $0.isKeySession) }
+            )
+
             print("[ScheduledWorkouts] Loaded \(workouts.count) workouts for plan \(planId.uuidString.prefix(8))")
         } catch {
             print("[ScheduledWorkouts] ERROR: \(error)")

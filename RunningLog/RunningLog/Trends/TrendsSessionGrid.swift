@@ -128,7 +128,12 @@ struct TrendsSessionGrid: View {
                 row: row,
                 zone: session.zone,
                 load: load,
-                qualifies: QualityLoad.qualifies(session.qualityLoad),
+                // Filled-vs-open follows the ONE definition, so this grid and
+                // the Train calendar can never show a different set of key
+                // days (KEY-SESSION-APPLY.md §Verify 7). A day the athlete
+                // declared not-key draws open here even if it scored well;
+                // a day they declared key draws filled even if it didn't.
+                qualifies: KeySessionStore.shared.isKey(onDayKey: session.date),
                 isLongRun: session.isLongRun
             )
         }
@@ -348,7 +353,7 @@ extension TrendsSessionGrid {
                 } else {
                     base = "\(day) \(KeyZone.label(session.zone)) \(TrendsFormat.pace(session.workPaceSec))"
                 }
-                return QualityLoad.qualifies(session.qualityLoad)
+                return KeySessionStore.shared.isKey(onDayKey: session.date)
                     ? base
                     : base + " (below floor)"
             }

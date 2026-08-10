@@ -14,6 +14,7 @@ import {
   type SegmentationResult,
 } from "../_shared/workoutSegmentation.ts";
 import { deriveWorkoutNotes } from "../_shared/workout-notes.ts";
+import { qualityLoadForSession } from "../_shared/qualityLoad.ts";
 import {
   buildEffortProfile,
   densityBaselineFromSamples,
@@ -264,6 +265,9 @@ function computeFeatures(
     // WS1: derived classification (persisted so the Read can name the session).
     workout_type: seg.workoutKind,
     workout_structure: seg.structure,
+    // The stimulus score every client surface reads to decide "key session".
+    // The long_run branch inside is load-bearing — see _shared/qualityLoad.ts.
+    ...qualityLoadForSession(seg.workoutKind, seg.bouts, log.workout_duration_minutes),
   };
 }
 
@@ -569,16 +573,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Upsert. workout_type/workout_structure require migration
-    // 20260613200000. Deploy order is migration-first, but guard against the
-    // function landing first (this repo has been bitten by deploy ordering):
-    // on a missing-column error, retry without the two new fields.
+    // Upsert. workout_type/workout_structure require migration 20260613200000;
+    // quality_load/quality_kind require 20260810190100. Deploy order is
+    // migration-first, but guard against the function landing first (this repo
+    // has been bitten by deploy ordering): on a missing-column error, retry
+    // without the derived fields.
     if (features.length > 0) {
       let { error: upsertError } = await supabase
         .from("workout_features")
         .upsert(features, { onConflict: "training_log_id" });
-      if (upsertError && /workout_type|workout_structure|column/i.test(upsertError.message)) {
-        const stripped = features.map(({ workout_type: _wt, workout_structure: _ws, ...rest }) => rest);
+      if (upsertError && /workout_type|workout_structure|quality_load|quality_kind|column/i.test(upsertError.message)) {
+        const stripped = features.map(({
+          workout_type: _wt,
+          workout_structure: _ws,
+          quality_load: _ql,
+          quality_kind: _qk,
+          ...rest
+        }) => rest);
         ({ error: upsertError } = await supabase
           .from("workout_features")
           .upsert(stripped, { onConflict: "training_log_id" }));

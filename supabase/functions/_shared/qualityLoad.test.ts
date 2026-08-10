@@ -3,8 +3,9 @@ import {
   aerobicLoadForBouts,
   longRunLoadFromMinutes,
   qualityLoadForBouts,
+  qualityLoadForSession,
 } from "./qualityLoad.ts";
-import type { Bout } from "../_shared/workoutSegmentation.ts";
+import type { Bout } from "./workoutSegmentation.ts";
 
 /** Minimal bout builder — only the fields the score reads. */
 function bout(seconds: number, zone: string, isWork = true): Bout {
@@ -115,4 +116,81 @@ Deno.test("a real long run clears the key-session floor", () => {
   assertEquals(longRunLoadFromMinutes(93) > 25, true);
   // And the shortest one still does.
   assertEquals(longRunLoadFromMinutes(75) > 25, true);
+});
+
+
+// ─── THE EASY-RUN REGRESSION ────────────────────────────────────────────
+//
+// Named on purpose, not covered by accident. `aerobicLoadForBouts` counts
+// EVERY bout, so if the long_run guard in `qualityLoadForSession` is ever
+// widened to "any run with no work bouts", a routine easy run scores its own
+// duration, clears the floor of 25, and every single day in the athlete's
+// calendar gets a star. These tests are the tripwire.
+
+const easyBout = (seconds: number) => bout(seconds, "easy", false);
+const workBout = (seconds: number, zone: string) => bout(seconds, zone, true);
+
+Deno.test("easy run scores NOTHING — the trap that would star every day", () => {
+  // 60 minutes of easy running, no work bouts, not labelled a long run.
+  const { quality_load, quality_kind } = qualityLoadForSession(
+    "easy",
+    [easyBout(3600)],
+    60,
+  );
+  assertEquals(quality_kind, null);
+  assertEquals(quality_load, null);
+});
+
+Deno.test("easy run stays unscored even when it is long in TIME but untyped", () => {
+  // 93 minutes. If the guard leaked, this would score ~93 and sail over the
+  // floor of 25 — the exact shape of the bug.
+  const { quality_load, quality_kind } = qualityLoadForSession(
+    null,
+    [easyBout(5580)],
+    93,
+  );
+  assertEquals(quality_kind, null);
+  assertEquals(quality_load, null);
+});
+
+Deno.test("long run IS scored over every bout", () => {
+  const { quality_load, quality_kind } = qualityLoadForSession(
+    "long_run",
+    [easyBout(5580)],
+    93,
+  );
+  assertEquals(quality_kind, "long_run");
+  // 5580s easy at weight 1.0 → 93 weighted minutes.
+  assertEquals(quality_load, 93);
+});
+
+Deno.test("lapless long run falls back to duration", () => {
+  const { quality_load, quality_kind } = qualityLoadForSession("long_run", [], 96);
+  assertEquals(quality_kind, "long_run");
+  assertEquals(quality_load, 96);
+});
+
+Deno.test("quality session scores its WORK bouts only, warmup excluded", () => {
+  const { quality_load, quality_kind } = qualityLoadForSession(
+    "intervals",
+    [easyBout(900), workBout(1200, "5k"), easyBout(900)],
+    50,
+  );
+  assertEquals(quality_kind, "quality");
+  // Only the 1200s at 5k weight contributes; the 30 min of warmup/cooldown
+  // must NOT appear. If this number grows, isWork filtering has regressed.
+  assertEquals(quality_load, Math.round((1200 * 5 / 60) * 10) / 10);
+});
+
+Deno.test("a stride set scores real work but stays under the floor", () => {
+  // 6 × 20s strides. Scores something — it IS work — but nowhere near 25.
+  const { quality_load, quality_kind } = qualityLoadForSession(
+    "easy",
+    [easyBout(2400), workBout(120, "mile")],
+    45,
+  );
+  assertEquals(quality_kind, "quality");
+  if (quality_load === null || quality_load >= 25) {
+    throw new Error(`stride set scored ${quality_load}, expected below the floor of 25`);
+  }
 });
