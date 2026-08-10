@@ -197,6 +197,108 @@ CREATE TRIGGER trg_enqueue_workout_parse
     FOR EACH ROW
     EXECUTE FUNCTION public.enqueue_workout_parse();
 
+-- ── 3b. Retire the trigger that was never able to fire ──────────────────────
+--
+-- `auto_parse_workout_structure` has been on training_logs this whole time,
+-- calling `trigger_parse_workout_structure()`. It is the reason this looked
+-- wired. It reads its credentials like this:
+--
+--     _supabase_url := current_setting('app.settings.supabase_url', true);
+--     IF _supabase_url IS NULL OR ... THEN
+--       RAISE WARNING 'parse-workout-structure trigger: app.settings not configured';
+--       RETURN NEW;
+--
+-- `ALTER DATABASE ... SET app.settings.*` is permission-denied on Supabase, so
+-- those settings have never existed. Every write to training_logs took this
+-- branch: a warning into the Postgres log, where nobody was looking, and a
+-- silent RETURN. It has never once issued an http_post. (Independently, its
+-- body omits `user_id`, which parse-workout-structure requires from
+-- service-role callers — so it would have 400'd even with the settings set.
+-- Two reasons it could not work, and it still read as plumbed-in.)
+--
+-- That is the whole explanation for 47% coverage: the only parses that ever
+-- happened came from the two fire-and-forget client call sites, which is why
+-- the rate tracked app usage rather than training.
+--
+-- Dropped rather than left alongside the queue: two triggers racing to parse
+-- the same row would double every Gemini call, and leaving a decoy that looks
+-- like wiring is how this went unnoticed for months. The vault-secret read in
+-- `dispatch_workout_parse` above is the pattern that actually works here —
+-- the same one rpe_extraction_jobs uses, per the 2026-06-11 dynamic-vault fix.
+DROP TRIGGER IF EXISTS auto_parse_workout_structure ON public.training_logs;
+DROP FUNCTION IF EXISTS public.trigger_parse_workout_structure();
+
+-- ── 3c. The same wire, on the note side ─────────────────────────────────────
+--
+-- `docs/specs/runs-and-notes-split.md` is moving the qualitative columns off
+-- training_logs and into `workout_notes` (Phase 2 landed 2026-08-10; Phase 4
+-- drops `cleaned_notes` / `notes` / `workout_notes` from training_logs). A
+-- trigger watching only those columns would go quiet the moment Phase 3
+-- repoints the writers — silently, which is the exact failure this migration
+-- exists to remove. So the note side gets the same wire now.
+--
+-- `parsed_structure` itself stays on training_logs: structure is a property of
+-- the RUN, derived from its stream and named by the athlete's words. So a note
+-- change enqueues a parse for the run it belongs to.
+--
+-- `run_id` is in the trigger's column list on purpose, and it is the most
+-- interesting one. A memo recorded before its run has synced is a note with
+-- `run_id IS NULL` — nothing to parse yet. When `linkNoteToRun()` later fills
+-- it in, THAT is the moment the athlete's words first have a run to reshape,
+-- and this fires the parse for it. Before the split, that case produced a
+-- GPS-less orphan row instead.
+--
+-- Double-enqueue during dual-write is a non-issue: workout_parse_jobs is keyed
+-- by training_log_id with ON CONFLICT DO UPDATE, so the mirror trigger writing
+-- both tables converges on exactly one job.
+CREATE OR REPLACE FUNCTION public.enqueue_workout_parse_from_note()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $fn$
+BEGIN
+    -- An unlinked note has no run to reshape. Not an error — the spec calls
+    -- this "a valid, complete, displayable journal entry" — just nothing owed.
+    IF NEW.run_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    IF COALESCE(btrim(NEW.cleaned_text), '') = ''
+       AND COALESCE(btrim(NEW.raw_transcript), '') = '' THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.user_id IS NULL OR NEW.user_id = '' THEN
+        RAISE WARNING 'workout_note % has no user_id — structure parse not enqueued', NEW.id;
+        RETURN NEW;
+    END IF;
+
+    -- force = true: these are the athlete's own words, which the parser already
+    -- ranks above the GPS guess. Same rule as the notes branch on training_logs.
+    INSERT INTO public.workout_parse_jobs
+        (training_log_id, user_id, reason, force, priority, created_at)
+    VALUES (NEW.run_id, NEW.user_id, 'notes_edited', true, 0, now())
+    ON CONFLICT (training_log_id) DO UPDATE
+        SET reason          = 'notes_edited',
+            force           = true,
+            attempts        = 0,
+            last_error      = NULL,
+            last_attempt_at = NULL,
+            priority        = 0,
+            created_at      = now();
+
+    RETURN NEW;
+END;
+$fn$;
+
+DROP TRIGGER IF EXISTS trg_enqueue_workout_parse_from_note ON public.workout_notes;
+CREATE TRIGGER trg_enqueue_workout_parse_from_note
+    AFTER INSERT OR UPDATE OF cleaned_text, raw_transcript, run_id
+    ON public.workout_notes
+    FOR EACH ROW
+    EXECUTE FUNCTION public.enqueue_workout_parse_from_note();
+
 -- ── 4. The dispatcher ───────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.dispatch_workout_parse(_batch INT DEFAULT 6)
 RETURNS INT
