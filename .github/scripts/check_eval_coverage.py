@@ -49,6 +49,14 @@ GOLDEN_FAMILIES = {
     # the plan"), so it's golden from day one. Cassettes are stubs as of
     # 2026-07-15 — the next PR touching this prompt must record them.
     "draft-block-rewrite",
+    # Ask narration (2026-08-10): athlete-facing and safety-baitable, and its
+    # own prompt file has declared itself golden since it was written — this
+    # set was simply never updated to match, so the declaration had no teeth.
+    # Cassettes are stubs as of 2026-08-10 (8 of them, all with an empty
+    # `recorded_response`), so the next PR touching this prompt must record
+    # them — once the eval-gate job in ci.yml is re-enabled. It has been
+    # `if: false` since 2026-06-16, so nothing in this set blocks today.
+    "ask-narration",
 }
 
 

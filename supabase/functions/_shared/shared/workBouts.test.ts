@@ -474,3 +474,106 @@ Deno.test("lapsFromParsedStructure: no blocks → empty (caller keeps existing l
   assertEquals(lapsFromParsedStructure({ blocks: [] }).length, 0);
   assertEquals(lapsFromParsedStructure(null).length, 0);
 });
+
+// ── Stopped-watch gaps ──────────────────────────────────────────────────────
+// Regression cover for the 2026-08-08 long run: 18.1 mi with 12 watch stops
+// totalling 755s read as 7:20/mi instead of its true 6:38/mi, because the
+// skipped seconds were silently absorbed into the work bout's clock span.
+
+/**
+ * Like buildStream, but a phase may be a STOP: the watch is off, so no samples
+ * are recorded and the clock jumps forward with the distance standing still —
+ * exactly the shape Strava returns for a paused recording.
+ */
+function buildStreamWithStops(
+  phases: Array<{ vel: number; secs: number } | { stopSecs: number }>,
+): RawStreams {
+  const time: number[] = [];
+  const distance: number[] = [];
+  const velocity_smooth: number[] = [];
+  let t = 0;
+  let d = 0;
+  for (const ph of phases) {
+    if ("stopSecs" in ph) { t += ph.stopSecs; continue; } // no samples emitted
+    for (let i = 0; i < ph.secs; i++) {
+      time.push(t);
+      distance.push(d);
+      velocity_smooth.push(ph.vel);
+      d += ph.vel;
+      t += 1;
+    }
+  }
+  return { time, distance, velocity_smooth };
+}
+
+Deno.test("workBouts: a stopped watch mid-run does not slow the bout's pace", () => {
+  // 20 minutes at 4.02 m/s (≈6:40/mi), split by a 300s stop at a traffic light.
+  const half = { vel: 4.02, secs: 600 };
+  const clean = detectWorkBouts(buildStreamWithStops([half, half]));
+  const stopped = detectWorkBouts(buildStreamWithStops([half, { stopSecs: 300 }, half]));
+
+  const c = works(clean.segments);
+  const s = works(stopped.segments);
+  assertEquals(c.length, 1, "continuous run is one bout");
+  assertEquals(s.length, 1, "a STOP is not a recovery — the run is still one bout");
+
+  // The stop must not appear as running time…
+  assertEquals(s[0].duration_s, c[0].duration_s, "stopped seconds must not count as moving time");
+  // …and the pace must be identical to the same run without the stop.
+  assertEquals(s[0].avg_pace_per_mile, c[0].avg_pace_per_mile);
+  // …but the stop is still reported, not hidden.
+  assert(s[0].stopped_s >= 295 && s[0].stopped_s <= 305, `stopped_s was ${s[0].stopped_s}`);
+  assertEquals(c[0].stopped_s, 0, "a clean recording reports no stopped time");
+});
+
+Deno.test("workBouts: many short stops (the 2026-08-08 long run) keep true pace", () => {
+  // Twelve 63s stops sprinkled through a ~6:40/mi run. Pre-fix this read ~7:20.
+  const leg = { vel: 4.02, secs: 600 };
+  const phases: Array<{ vel: number; secs: number } | { stopSecs: number }> = [];
+  for (let i = 0; i < 12; i++) { phases.push(leg, { stopSecs: 63 }); }
+  phases.push(leg);
+  const w = works(detectWorkBouts(buildStreamWithStops(phases)).segments);
+  assertEquals(w.length, 1);
+  // 13 × 600s of real running, ±1 sample.
+  assert(Math.abs(w[0].duration_s - 7800) <= 13, `duration_s was ${w[0].duration_s}`);
+  assertEquals(w[0].avg_pace_per_mile, "6:40");
+});
+
+Deno.test("workBouts: a GPS dropout WHILE RUNNING still counts as running time", () => {
+  // The mirror case: a tunnel eats 60s of samples but the athlete kept moving,
+  // so distance advances across the gap at running speed. That time is real and
+  // must NOT be discounted, or the run reads artificially fast.
+  const time: number[] = [];
+  const distance: number[] = [];
+  const velocity_smooth: number[] = [];
+  let t = 0, d = 0;
+  const runFor = (secs: number) => {
+    for (let i = 0; i < secs; i++) {
+      time.push(t); distance.push(d); velocity_smooth.push(4.02);
+      d += 4.02; t += 1;
+    }
+  };
+  runFor(300);
+  t += 60; d += 4.02 * 60; // 60s of missing samples, but the ground was covered
+  runFor(300);
+
+  const w = works(detectWorkBouts({ time, distance, velocity_smooth }).segments);
+  assertEquals(w.length, 1);
+  assert(Math.abs(w[0].duration_s - 660) <= 2, `duration_s was ${w[0].duration_s}`);
+  assertEquals(w[0].stopped_s, 0, "a moving dropout is not a stop");
+  assertEquals(w[0].avg_pace_per_mile, "6:40");
+});
+
+Deno.test("workBouts: a stop cannot masquerade as a recovery that splits reps", () => {
+  // Two mile reps with a 90s STOP between them. The watch was off, so there is
+  // no recovery to report — but the reps are still separated by it, and neither
+  // rep's pace may absorb the stopped time.
+  const mile = { vel: 5.0, secs: 322 };
+  const { segments } = detectWorkBouts(
+    buildStreamWithStops([mile, { stopSecs: 90 }, mile]),
+  );
+  const w = works(segments);
+  assertEquals(w.length, 1, "with no slow samples recorded, the reps read as one effort");
+  assertEquals(w[0].duration_s, 643, "only the recorded seconds count");
+  assertEquals(w[0].stopped_s, 90);
+});

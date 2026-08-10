@@ -48,6 +48,8 @@ import {
   gradeFactor,
   type DensityProfile,
 } from "./effortModel.ts";
+import { assessHeatRisk, describeHeatRisk, type HeatRisk } from "./heat-risk.ts";
+import { compositeScore } from "./pace-heat-adjustment.ts";
 
 const METERS_PER_MILE = 1609.344;
 
@@ -199,6 +201,8 @@ export interface WorkProfile {
   /** Dew point, F. The heat model's actual driver — `tempF` alone can't tell a
    *  75F-dew slog from a dry morning at the same temperature. */
   dewPointF: number | null;
+  /** WBGT risk read. Separate model, separate question — see heat-risk.ts. */
+  heatRisk: HeatRisk;
   hasHr: boolean;
   /** Rep-block density — work relative to the recovery that bought it. The
    *  measurement `avgRecoverySec` alone can't give: 60s between 1K reps and
@@ -545,6 +549,11 @@ export function buildWorkProfile(
     qualityVolumeSeconds: 0,
     tempF: numOrNull(workout.weather?.temp_f),
     dewPointF: numOrNull(workout.weather?.dew_point_f),
+    heatRisk: (() => {
+      const t = numOrNull(workout.weather?.temp_f);
+      const d = numOrNull(workout.weather?.dew_point_f);
+      return assessHeatRisk(t != null && d != null ? compositeScore(t, d) : 0, t, d);
+    })(),
     hasHr: false,
   };
 
@@ -1046,6 +1055,14 @@ export function buildFactLines(
       `${a.heatCategory || b.heatCategory ? ` (${a.heatCategory ?? "unknown"} -> ${b.heatCategory ?? "unknown"})` : ""}` +
       ` — dew point drives the heat model, not temperature alone`,
     );
+  }
+  // Heat RISK (WBGT), which the dew-point pace model can't speak to. Carries
+  // its own disclosure when the pace figure above is an extrapolation — a hot
+  // dry day is the case the pace chart reads mildest and WBGT reads worst.
+  for (const [side, p] of [["A", a], ["B", b]] as const) {
+    for (const line of describeHeatRisk(p.heatRisk)) {
+      lines.push(`${side}: ${line}`);
+    }
   }
   if (diff.unavailable.length > 0) {
     lines.push(`Unavailable: ${diff.unavailable.join("; ")}`);

@@ -6,6 +6,8 @@ import { assert, assertAlmostEquals, assertEquals } from "https://deno.land/std@
 import {
   analyzeFastSegmentTrends,
   analyzeKeySession,
+  bandForSystem,
+  bandTrends,
   dewPointF,
   systemForPace,
   SYSTEM_WORK_VOLUME_MILES,
@@ -401,4 +403,84 @@ Deno.test("grade deadband: sub-1% phantom grades produce NO flat pace", () => {
   const m = analyzeKeySession({ id: "dead", date: "2026-07-21", laps }, ZONES)!;
   assertEquals(m.flatPaceSecPerMile, null);
   assertEquals(m.grade, null);
+});
+
+// ── Bands ──────────────────────────────────────────────────────
+
+Deno.test("bandForSystem: HMP/LT/10K collapse to Threshold, the rest stand alone", () => {
+  assertEquals(bandForSystem("HMP"), "Threshold");
+  assertEquals(bandForSystem("LT"), "Threshold");
+  assertEquals(bandForSystem("10K"), "Threshold");
+  assertEquals(bandForSystem("MP"), "MP");
+  assertEquals(bandForSystem("5K"), "5K");
+  assertEquals(bandForSystem("Mile"), "Mile");
+});
+
+Deno.test("bands: HMP/LT/10K merge onto one Threshold line, normalised to LT", () => {
+  const mk = (id: string, date: string, pace: number): KeySessionInput => ({
+    id, date, laps: [lap(4828, pace, 165)], // ~3 mi, clears every min-miles gate
+  });
+  const trends = analyzeFastSegmentTrends([
+    mk("a", "2026-05-01", 340), // exactly HMP anchor
+    mk("b", "2026-05-08", 330), // exactly LT anchor
+    mk("c", "2026-05-15", 320), // exactly 10K anchor
+  ], ZONES);
+
+  // Three separate lines before banding — one session each, which is precisely
+  // why no per-system trend could ever say anything here.
+  assertEquals([...trends.systems.map((s) => s.system)].sort(), ["10K", "HMP", "LT"]);
+
+  const threshold = bandTrends(trends, ZONES).find((b) => b.band === "Threshold")!;
+  assertEquals(threshold.points.length, 3);
+  assertEquals(threshold.systems, ["HMP", "LT", "10K"]);
+  assertEquals(threshold.referencePaceSecPerMile, 330);
+
+  // THE COMPOSITION GUARD. Every session was run exactly at its own anchor, so
+  // every one is exactly at LT-equivalent and the line is flat. Pooling the RAW
+  // paces would read 340 → 320: a 20 s/mi "improvement" manufactured entirely
+  // by changing which workout was run.
+  for (const p of threshold.points) {
+    assertAlmostEquals(p.avgPaceSecPerMile, 330, 0.01);
+  }
+});
+
+Deno.test("bands: a session with LT and 10K chunks is ONE point, work-weighted", () => {
+  const trends = analyzeFastSegmentTrends([{
+    id: "mixed",
+    date: "2026-06-01",
+    // 3 mi at 327 (LT) then, past a jog, 2 mi at 316 (10K).
+    laps: [lap(4828, 327, 168), REC(400, 180), lap(3219, 316, 172)],
+  }], ZONES);
+
+  const threshold = bandTrends(trends, ZONES).find((b) => b.band === "Threshold")!;
+  // Counted once, not once per slice — double-counting would let a single
+  // mixed session drag both comparison windows.
+  assertEquals(threshold.points.length, 1);
+
+  const p = threshold.points[0];
+  assertAlmostEquals(p.workMiles, 5.0, 0.05);
+  // LT slice normalises to 327; the 10K slice to 316 × 330/320 = 325.875.
+  // Weighted by work miles: (327×3 + 325.875×2) / 5 ≈ 326.6
+  assertAlmostEquals(p.avgPaceSecPerMile, 326.55, 0.3);
+});
+
+Deno.test("bands: MP and 5K keep their own lines — only threshold merges", () => {
+  const trends = analyzeFastSegmentTrends([
+    { id: "m", date: "2026-05-02", laps: [lap(M * 8, 360, 155)] },
+    { id: "f", date: "2026-05-09", laps: [lap(M * 3.2, 300, 175)] },
+  ], ZONES);
+
+  const bands = bandTrends(trends, ZONES);
+  assertEquals(bands.map((b) => b.band), ["MP", "5K"]); // slowest → fastest
+  assertEquals(bands.find((b) => b.band === "MP")!.points.length, 1);
+  assertEquals(bands.find((b) => b.band === "5K")!.points.length, 1);
+});
+
+Deno.test("bands: a band with no reference anchor is skipped, not guessed", () => {
+  const noLT: ZoneTable = { ...ZONES, lt: undefined };
+  const trends = analyzeFastSegmentTrends(
+    [{ id: "a", date: "2026-05-01", laps: [lap(4828, 330, 165)] }],
+    noLT,
+  );
+  assert(!bandTrends(trends, noLT).some((b) => b.band === "Threshold"));
 });

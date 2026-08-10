@@ -29,7 +29,11 @@
  *   { question?, analyzer_id?, params?, narrate?, context?: { workout_id? } }
  * Response:
  *   { success, mode, annotated, analyzer_id, facts, series, coverage,
- *     narration, followups, catalog?, disambiguation? }
+ *     narration, followups, conversational, catalog?, disambiguation? }
+ *
+ * `conversational: true` tells the client this answer is incomplete on its own
+ * — it should also ask `coaching-agent` and lead with that reply, rendering
+ * any computed card beneath it. Always false for chips. See UNBOUND_ANSWERS.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -41,7 +45,12 @@ import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { validateLength } from "../_shared/validation.ts";
-import { validateNarration, type Narration } from "../_shared/narration-guard.ts";
+import {
+  describeScope,
+  validateNarration,
+  type AnalysisScope,
+  type Narration,
+} from "../_shared/narration-guard.ts";
 import {
   ANALYZERS,
   analyzerCatalog,
@@ -59,6 +68,35 @@ const supabase = createClient(
 );
 
 const MAX_QUESTION_CHARS = 400;
+
+// ── UNBOUND (beta, 2026-08-10) ───────────────────────────────────
+//
+// Two deliberate relaxations for the first release of chat into the app. Both
+// are single constants so re-binding is a one-line change, not an archaeology
+// exercise. Flip either to `false` to restore the pre-2026-08-10 behaviour.
+//
+//   UNBOUND_ANSWERS — the registry is no longer the ceiling for free text.
+//     Previously a typed question could only be answered if the router matched
+//     one of the ~50 analyzers; anything else came back as an empty `prose`
+//     shell that the client had to re-ask elsewhere. Now every typed question
+//     is answered conversationally, and a matched analyzer rides along as
+//     *evidence under* that answer rather than instead of it.
+//
+//     What this costs: prose is not number-guarded. Layer 2 narration over
+//     analyzer facts still cannot speak a number that isn't in `facts` — that
+//     guard is untouched — but the conversational answer beside it can. The
+//     no-medical-claims and no-diagnosis rails are unaffected; they live in
+//     `coaching-agent`'s prompt, not here.
+//
+//   UNBOUND_USAGE — no per-feature rate limit and no monthly cap on the
+//     `analysis` bucket, so the surface never refuses a question while it's
+//     the thing being lived on. Layer 1 was always free; this makes Layer 2
+//     free too.
+//
+// Chips are untouched by both: they skip Layer 0 entirely and stay computed-
+// only, deterministic, and free.
+const UNBOUND_ANSWERS = true;
+const UNBOUND_USAGE = true;
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -96,12 +134,20 @@ const FAST_ROUTES: Array<[RegExp, string]> = [
   // one swallow the other.
   [/\b(goal pace|race pace|at pace|specific\w*|marathon pace work)\b/i, "race_pace_specificity"],
   [
-    /\b(on track|project\w*|predict\w*|what (will|would|can) i run|race time|goal time|shape for|fit enough)\b/i,
+    // "on pace for 2:20" / "how close am I to 2:20" are the goal-gap question
+    // in an athlete's own words — both fell through to prose in the audit log
+    // (2026-08-08) because neither phrasing was here and the model router
+    // declined them.
+    /\b(on track|on pace|how close|close (am i|to)|project\w*|predict\w*|what (will|would|can) i run|race time|goal time|shape for|fit enough|sub[- ]?\d)\b/i,
     "race_projection",
   ],
   [/\b(compare|similar|stack up|versus|vs\.?|head to head)\b/i, "compare_session"],
   [
-    /\b(ramp\w*|acwr|acute|too (fast|much|hard)|(mileage|volume|miles)\s+jump\w*|jump\w*\s+(my\s+)?(mileage|volume|miles)|overtrain\w*|build\w* too|monotony)\b/i,
+    // Bare "volume" / "mileage" land here too ("how's my volume breakdown
+    // doing?" — audit log 2026-08-08, fell to prose). Load balance is the
+    // card that answers volume questions; zone_trend's patterns below are
+    // pace-shaped, so this does not shadow them.
+    /\b(ramp\w*|acwr|acute|too (fast|much|hard)|volume|mileage|weekly miles|(mileage|volume|miles)\s+jump\w*|jump\w*\s+(my\s+)?(mileage|volume|miles)|overtrain\w*|build\w* too|monotony)\b/i,
     "load_balance",
   ],
   [/\b(lt|threshold|mp|marathon pace|5k|10k|tempo)\b.*\b(pace|improv|trend|faster|progress)/i, "zone_trend"],
@@ -157,7 +203,13 @@ Rules:
 - "analyzer_id" MUST be one of the ids listed above, or null. Never invent one.
 - Only fill "params" with keys declared for that tool. Omit anything you are unsure of.
 - Set "ambiguous" true when the question could reasonably mean two different tools, and list exactly those ids in "candidates" (2 or 3, most likely first). Do not fill "candidates" otherwise.
-- Use null when no tool genuinely answers it — an open-ended or off-topic question, a request for advice, anything about nutrition, gear, or how to feel. Guessing is worse than declining.`;
+- Use null when no tool genuinely answers it — an open-ended or off-topic question, a request for advice, anything about nutrition, gear, or how to feel. Guessing is worse than declining.
+- A paraphrase still counts as a match. Athletes rarely use a tool's exact label:
+  - "Am I on pace for 2:20?" / "How close am I to my goal?" / "Will I break 3?" → race_projection
+  - "How's my volume?" / "Is my mileage where it should be?" → load_balance
+  - "Is my tempo pace coming down?" / "Am I getting faster?" → zone_trend
+  - "How did that workout stack up?" → compare_session
+  Decline only when the question is truly outside every tool's territory, not because the wording is casual.`;
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -225,6 +277,7 @@ interface NarrationOutcome {
 async function narrate(
   question: string,
   result: AnalyzerResult,
+  scope: AnalysisScope,
 ): Promise<NarrationOutcome> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) {
@@ -259,6 +312,7 @@ async function narrate(
     const prompt = loadPrompt("ask-narration.v1", {
       question,
       factLines: factLines.join("\n"),
+      scope: describeScope(scope),
       confidence: result.coverage.confidence,
     });
     const gen = await model.generateContent({
@@ -266,7 +320,7 @@ async function narrate(
     });
 
     const raw = gen.response.text();
-    const validated = validateNarration(raw, factLines);
+    const validated = validateNarration(raw, factLines, {}, scope);
 
     if (!validated.ok) {
       // This log is the early-warning system for prompt drift. A rising rate of
@@ -274,12 +328,16 @@ async function narrate(
       // evidence, which is exactly the failure the guard exists to catch.
       console.error(
         `ask: narration rejected. reason=${validated.reason} offending=${
-          validated.offendingNumber ?? "n/a"
+          validated.offendingNumber ?? validated.offendingScope ?? "n/a"
         } rawLen=${raw.length}`,
       );
       return {
         narration: null,
-        guardTripped: validated.reason === "disallowed_number",
+        // `unlicensed_scope` counts as a tripped guard for the same reason
+        // `disallowed_number` does: both mean the prompt spoke past its
+        // evidence, and a rising rate of either is prompt drift.
+        guardTripped: validated.reason === "disallowed_number" ||
+          validated.reason === "unlicensed_scope",
         modelUsed: modelName,
       };
     }
@@ -406,6 +464,11 @@ Deno.serve(async (req) => {
         coverage: null,
         narration: null,
         followups: [],
+        // Nothing computed fits, so the conversational answer IS the answer.
+        // Under UNBOUND_ANSWERS the client no longer treats this as a dead end
+        // to be reported ("NO ANALYZER") — it asks the agent and renders the
+        // reply as a first-class answer.
+        conversational: UNBOUND_ANSWERS && source === "text",
         // Disambiguation offers the 2-3 readings the router was actually torn
         // between. Returning the FULL catalog here — which is what this did
         // when the registry was three analyzers — is not disambiguation, it is
@@ -446,13 +509,34 @@ Deno.serve(async (req) => {
     let modelUsed: string | null = null;
 
     if (wantsNarration) {
-      const rlBlocked = await enforceFeatureRateLimit(userId, "analysis", corsHeaders);
-      const capped = rlBlocked ? null : await enforceMonthlyCap(userId, "analysis", corsHeaders);
+      // UNBOUND_USAGE: skip the meter entirely rather than calling it and
+      // ignoring the verdict — the buckets stay unspent, so re-binding later
+      // doesn't inherit a beta's worth of phantom consumption.
+      const rlBlocked = UNBOUND_USAGE
+        ? false
+        : await enforceFeatureRateLimit(userId, "analysis", corsHeaders);
+      const capped = rlBlocked || UNBOUND_USAGE
+        ? null
+        : await enforceMonthlyCap(userId, "analysis", corsHeaders);
       if (rlBlocked || capped) {
         // Out of narration budget is NOT out of answer. Serve the facts.
         console.log(`ask: narration budget exhausted for ${userId} — serving bare facts`);
       } else {
-        const outcome = await narrate(question || analyzer.label, result);
+        // `result.title` before `analyzer.label`: the standing label is a fixed
+        // string ("Is my LT pace improving?") while the run may have resolved
+        // to another band. Seeding the narrator with the label made it write
+        // "your LT pace is improving" over facts that all said 10K — the guard
+        // never caught it because it checks numbers, not zone names. The
+        // resolved title is the only phrasing guaranteed to match the facts.
+        const outcome = await narrate(
+          question || result.title || analyzer.label,
+          result,
+          {
+            sessionsUsed: result.coverage.sessionsUsed,
+            windowDays: result.coverage.windowDays,
+            params,
+          },
+        );
         narration = outcome.narration;
         guardTripped = outcome.guardTripped;
         modelUsed = outcome.modelUsed;
@@ -495,8 +579,17 @@ Deno.serve(async (req) => {
       series: result.series ?? null,
       coverage: result.coverage,
       empty: result.empty ?? null,
+      // Other parameterizations of THIS analyzer, for the on-card switcher.
+      // Re-run by posting {analyzer_id, params} from the chosen variant.
+      variants: result.variants ?? null,
       narration,
       followups,
+      // UNBOUND_ANSWERS: a matched analyzer no longer ENDS a typed question.
+      // The athlete asked in prose and gets prose; this card renders beneath it
+      // as the receipts. Chips stay computed-only — they asked for the card,
+      // so handing them a paragraph would be answering a question they didn't
+      // ask (and paying for a model call they didn't need).
+      conversational: UNBOUND_ANSWERS && source === "text",
     });
   } catch (error) {
     console.error("ask error:", error);

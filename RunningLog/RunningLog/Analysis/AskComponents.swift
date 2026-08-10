@@ -33,6 +33,32 @@ struct AskChip: View {
         case standard
         /// A follow-up the previous answer emitted.
         case followup
+        /// The variant currently on screen, in a switcher. Solid ink rather
+        /// than coral: the COMPUTED badge and the follow-up rail already spend
+        /// the cluster's one coral element, and "you are here" needs to read as
+        /// state, not as an alert.
+        case selected
+    }
+
+    private var fill: Color {
+        switch emphasis {
+        case .standard: return Color.drip.cardBackground
+        case .followup: return Color.drip.coralWash
+        case .selected: return Color.drip.textPrimary
+        }
+    }
+
+    private var stroke: Color {
+        switch emphasis {
+        case .standard: return Color.drip.divider
+        case .followup: return Color.drip.coral.opacity(0.35)
+        case .selected: return Color.drip.textPrimary
+        }
+    }
+
+    private var foreground: Color {
+        if emphasis == .selected { return Color.drip.cardBackground }
+        return isDisabled ? Color.drip.textTertiary : Color.drip.textPrimary
     }
 
     var body: some View {
@@ -41,26 +67,16 @@ struct AskChip: View {
                 .font(.dripEyebrow(10))
                 .tracking(0.5)
                 .multilineTextAlignment(.leading)
-                .foregroundStyle(isDisabled ? Color.drip.textTertiary : Color.drip.textPrimary)
+                .foregroundStyle(foreground)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
-                .background(
-                    Capsule().fill(
-                        emphasis == .followup ? Color.drip.coralWash : Color.drip.cardBackground
-                    )
-                )
-                .overlay(
-                    Capsule().stroke(
-                        emphasis == .followup
-                            ? Color.drip.coral.opacity(0.35)
-                            : Color.drip.divider,
-                        lineWidth: 1
-                    )
-                )
+                .background(Capsule().fill(fill))
+                .overlay(Capsule().stroke(stroke, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(emphasis == .selected ? [.isSelected] : [])
     }
 }
 

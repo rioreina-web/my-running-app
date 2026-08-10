@@ -79,9 +79,28 @@ final class AskService {
 
     /// Run a named analyzer — the chip path. No router, no ambiguity, and
     /// with `narrate: false` no model call at all.
+    ///
+    /// `params` is how the card's variant switcher re-asks the same question of
+    /// a different band. Passing nothing keeps the previous behaviour, which is
+    /// the analyzer's own auto-pick.
     @MainActor
-    func resolve(analyzerId: String, narrate: Bool = true) async throws -> AskResponse {
-        try await post(body: ["analyzer_id": analyzerId, "narrate": narrate])
+    func resolve(
+        analyzerId: String,
+        params: [String: Any]? = nil,
+        narrate: Bool = true
+    ) async throws -> AskResponse {
+        var body: [String: Any] = ["analyzer_id": analyzerId, "narrate": narrate]
+        if let params, !params.isEmpty { body["params"] = params }
+        return try await post(body: body)
+    }
+
+    /// Re-run the analyzer that produced `response` against one of its variants.
+    @MainActor
+    func resolve(variant: AskVariant, of response: AskResponse) async throws -> AskResponse {
+        guard let analyzerId = response.analyzerId else {
+            throw AskServiceError.noAnalyzerToSwitch
+        }
+        return try await resolve(analyzerId: analyzerId, params: variant.jsonParams)
     }
 
     /// Free text — routed server-side against the registry's closed enum.
@@ -104,9 +123,19 @@ final class AskService {
 
     // MARK: - Errors
 
+    enum AskServiceError: Error {
+        /// A variant was tapped on a response that names no analyzer — only
+        /// reachable if the server sends variants on a prose/ambiguous answer,
+        /// which it does not. Explicit rather than a silent no-op.
+        case noAnalyzerToSwitch
+    }
+
     /// Athlete-facing message for a failed run. Kept here so the sheet and
     /// any future caller phrase the same failure the same way.
     static func message(for error: Error) -> String {
+        if error is AskServiceError {
+            return "That answer can't be switched to another band."
+        }
         if let edge = error as? EdgeFunctionError {
             switch edge {
             case let .httpError(statusCode, _, message):
@@ -136,28 +165,27 @@ final class AskService {
 enum AskFeature {
     static let isEnabled = true
 
-    /// Free text routes through Layer 0 (question -> analyzer id) and can fall
-    /// through to `ask-narration`, which has no recorded eval cassettes yet
-    /// (hard rule #3). Keep this OFF for anything athletes touch. It is on in
-    /// DEBUG only so the composer can be exercised in the simulator.
+    /// Typed questions. **On in all builds as of 2026-08-10** — this is the
+    /// flag that had been keeping chat out of release builds entirely, and
+    /// turning it on is what "add chat to the app" means in practice.
     ///
-    /// Three specifics to close before this becomes an unconditional `true`
-    /// (audited 2026-08-05):
+    /// SHIPPED DELIBERATELY AHEAD OF ITS EVAL COVERAGE. This is the "unbound
+    /// at first" call, not an oversight. What is still open, re-audited
+    /// 2026-08-10 — close these before the surface is considered launched:
     ///
-    ///   1. `ask-narration` has no cassette DIRECTORY at all, and is missing
+    ///   1. `ask-narration` now HAS a cassette directory
+    ///      (`_evals/cassettes/ask-narration.v1/`, 8 files) but all 8 are
+    ///      stubs with an empty `recorded_response`, and it is still missing
     ///      from `GOLDEN_FAMILIES` in `.github/scripts/check_eval_coverage.py`
-    ///      even though its own prompt file declares itself golden — so CI
-    ///      would not block a regression in it today.
+    ///      even though its own prompt declares itself golden. CI would not
+    ///      block a regression in it today. One `record.ts` run closes this.
     ///   2. The Layer-0 router (`ask/index.ts:routeWithModel`) uses an inline
-    ///      prompt and has no test file. Exercising it is exactly what this
-    ///      DEBUG flag is for.
-    ///   3. A question the router matches to NOTHING falls through to
-    ///      `coaching-agent` (`ask/index.ts` prose branch). That family is
-    ///      golden, but all three of its cassettes are stubs with an empty
-    ///      `recorded_response`, so the fallthrough is unguarded too.
-    #if DEBUG
+    ///      prompt and has no test file.
+    ///   3. Under `UNBOUND_ANSWERS` every typed question now reaches
+    ///      `coaching-agent` — no longer just the ones the router declines.
+    ///      That family is golden and its cassettes are stubs too, so the
+    ///      conversational path is unguarded on the way in AND is not
+    ///      number-guarded on the way out (only Layer-2 narration over
+    ///      analyzer facts is). This is the widest exposure of the three.
     static let freeTextEnabled = true
-    #else
-    static let freeTextEnabled = false
-    #endif
 }

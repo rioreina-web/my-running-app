@@ -147,6 +147,12 @@ struct AskFollowup: Decodable, Identifiable, Equatable {
 ///                   existing coaching-agent path. No facts, no chart.
 ///   • `ambiguous` — the router offered disambiguation instead of guessing.
 ///   • `catalog`   — the chip-rail bootstrap response.
+///
+/// `conversational` cuts across `mode` and is the one to branch on for typed
+/// questions (2026-08-10). True means this envelope is not the whole answer:
+/// ask `coaching-agent` too, lead with that reply, and render whatever card
+/// arrived here beneath it. It is always false for chips, and false for every
+/// mode when the server has re-bound `UNBOUND_ANSWERS`.
 struct AskResponse: Decodable {
     let success: Bool
     let mode: Mode
@@ -161,10 +167,17 @@ struct AskResponse: Decodable {
     let series: AskSeries?
     let coverage: AskCoverage?
     let empty: AskEmptyState?
+    /// Other parameterizations of the same analyzer, for the on-card switcher.
+    /// Empty when the answer has nothing to switch between.
+    let variants: [AskVariant]
     let narration: AskNarration?
     let followups: [AskFollowup]
     let disambiguation: [AskAnalyzer]?
     let catalog: [AskAnalyzer]?
+    /// Fetch a conversational reply and lead with it. See the type comment.
+    /// Defaults false so an older server (or a re-bound one) keeps the
+    /// pre-2026-08-10 behaviour without a client release.
+    let conversational: Bool
 
     enum Mode: String, Decodable {
         case analyzed, prose, ambiguous, catalog
@@ -175,8 +188,8 @@ struct AskResponse: Decodable {
         case analyzerId = "analyzer_id"
         case analyzerLabel = "analyzer_label"
         case resolvedTitle = "resolved_title"
-        case facts, series, coverage, empty, narration, followups
-        case disambiguation, catalog
+        case facts, series, coverage, empty, variants, narration, followups
+        case disambiguation, catalog, conversational
     }
 
     init(from decoder: Decoder) throws {
@@ -193,10 +206,65 @@ struct AskResponse: Decodable {
         series = try c.decodeIfPresent(AskSeries.self, forKey: .series)
         coverage = try c.decodeIfPresent(AskCoverage.self, forKey: .coverage)
         empty = try c.decodeIfPresent(AskEmptyState.self, forKey: .empty)
+        variants = try c.decodeIfPresent([AskVariant].self, forKey: .variants) ?? []
         narration = try c.decodeIfPresent(AskNarration.self, forKey: .narration)
         followups = try c.decodeIfPresent([AskFollowup].self, forKey: .followups) ?? []
         disambiguation = try c.decodeIfPresent([AskAnalyzer].self, forKey: .disambiguation)
         catalog = try c.decodeIfPresent([AskAnalyzer].self, forKey: .catalog)
+        conversational = try c.decodeIfPresent(Bool.self, forKey: .conversational) ?? false
+    }
+}
+
+// MARK: - Variants
+
+/// A JSON scalar, so `params` can round-trip back to the server untouched.
+///
+/// The server owns the param schema; the client's only job is to hand the same
+/// values back on tap. Decoding into concrete types here would mean teaching
+/// the app every analyzer's schema — and getting it wrong the first time a
+/// numeric param ships.
+enum AskParamValue: Decodable, Equatable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let v = try? c.decode(String.self) { self = .string(v); return }
+        if let v = try? c.decode(Bool.self) { self = .bool(v); return }
+        if let v = try? c.decode(Double.self) { self = .number(v); return }
+        throw DecodingError.dataCorruptedError(
+            in: c, debugDescription: "Unsupported param value"
+        )
+    }
+
+    /// The value as `callEdgeFunction` wants it — `[String: Any]` JSON.
+    var jsonValue: Any {
+        switch self {
+        case let .string(v): return v
+        case let .number(v): return v == v.rounded() ? Int(v) : v
+        case let .bool(v): return v
+        }
+    }
+}
+
+/// Another way to ask the same question — the on-card zone switcher.
+///
+/// `zone_trend` auto-picks the band the athlete ran most, which is a guess at
+/// intent and is often not the one they meant. Rather than widen the chip rail,
+/// the card offers the alternatives the server says have data behind them.
+struct AskVariant: Decodable, Equatable, Identifiable {
+    let label: String
+    let params: [String: AskParamValue]
+    let active: Bool
+    /// Sessions behind this variant — thin options can be de-emphasised.
+    let sessions: Int
+
+    var id: String { label }
+
+    /// Params shaped for re-posting.
+    var jsonParams: [String: Any] {
+        params.mapValues(\.jsonValue)
     }
 }
 

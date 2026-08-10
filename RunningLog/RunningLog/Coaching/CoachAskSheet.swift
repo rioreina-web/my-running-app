@@ -6,28 +6,34 @@
 //  from any surface that stages a question via `CoachAskContext` (e.g. a
 //  chart scrub pre-seeding "the week of May 26").
 //
-//  TWO ANSWER PATHS, tried in that order:
+//  TWO ANSWER PATHS. Which one leads depends on how the question was asked:
 //
-//    1. COMPUTED (`ask` edge function). The question routes to one analyzer
-//       in `_shared/analyzers/`, which runs real math over the athlete's own
-//       rows and returns fact lines, a chart spec and a coverage statement.
-//       A model then writes two sentences over those facts and is
-//       mechanically forbidden from speaking a number that isn't in them.
-//       Chips take this path with no router involved at all.
+//    • A CHIP is a request for a specific computed answer, so it takes the
+//      COMPUTED path only (`ask` edge function → one analyzer in
+//      `_shared/analyzers/` → real math over the athlete's own rows → fact
+//      lines, chart spec, coverage). A model then writes two sentences over
+//      those facts and is mechanically forbidden from speaking a number that
+//      isn't in them. No router, no cost, no paragraph.
 //
-//    2. PROSE (`coaching-agent`, via `DailyReadService.ask`). When the
-//       registry has no analyzer for the question — "what should I eat before
-//       a long run" — the endpoint says so (`mode: "prose"`) and we hand the
-//       question to the editorial agent instead. This is the pre-existing
-//       behaviour, now reached deliberately rather than by default.
+//    • TYPED TEXT leads with PROSE (`coaching-agent`, via
+//      `DailyReadService.ask`) and hangs the computed card underneath as
+//      receipts when an analyzer also matched.
 //
-//  The fallthrough is what makes free text safe to ship: the worst case for
-//  an unroutable question is today's product, never a wrong number.
+//  THAT ORDER INVERTED ON 2026-08-10 (server flag `UNBOUND_ANSWERS`). It used
+//  to be computed-first with prose as the fallthrough, which had two costs:
+//  a question the router matched could never get a conversational answer, and
+//  one it didn't match rendered "NO ANALYZER" at the athlete — the registry's
+//  coverage gap dressed up as a verdict on their question. The registry is no
+//  longer the ceiling for what can be asked.
 //
-//  `CoachAskFeature.isEnabled` still gates the prose path (it depends on the
-//  editorial Read's eval coverage). The computed path has its own gate,
-//  `AskFeature.isEnabled`, because its prompt is guarded differently — every
-//  numeric token is checked against the facts before the sentence renders.
+//  What that trades away: prose is not number-guarded. The Layer-2 guard over
+//  analyzer facts is untouched and still absolute, but the paragraph beside it
+//  can speak a number the math didn't print. `AskFeature.freeTextEnabled`
+//  carries the full ledger of what's still open.
+//
+//  Both paths keep their own gate — `AskFeature.isEnabled` for computed,
+//  `CoachAskFeature.isEnabled` for prose — because their prompts are guarded
+//  differently and one should be able to go dark without the other.
 //
 //  LAYOUT NOTE (2026-08-06 rebuild). The composer used to be a bare
 //  `TextEditor` on a full-height sheet: a white box with a caret in it and
@@ -50,6 +56,7 @@
 //
 
 import SwiftUI
+import os
 
 struct CoachAskSheet: View {
     let focus: String?
@@ -63,6 +70,10 @@ struct CoachAskSheet: View {
     @State private var phase: Phase = .compose
     @State private var detent: PresentationDetent
     @State private var showAllSuggestions = false
+    /// Label of the variant being fetched. Held here rather than going through
+    /// `.loading` so switching bands doesn't blank the answer you're reading —
+    /// the card stays put and the tapped chip dims.
+    @State private var pendingVariant: String?
     @FocusState private var fieldFocused: Bool
 
     /// How many analyzers the rail shows before the "all questions" door.
@@ -75,8 +86,11 @@ struct CoachAskSheet: View {
         /// A computed answer. Carries the question that produced it so the
         /// card can title itself after a follow-up replaces the content.
         case analyzed(question: String, response: AskResponse)
-        /// The prose fallthrough — no analyzer fit.
-        case reply(CoachRead)
+        /// A conversational answer to a typed question (2026-08-10). `card`
+        /// carries the computed answer when one ALSO matched, rendered beneath
+        /// the prose as its receipts — nil when nothing in the registry fit,
+        /// which is now an ordinary outcome rather than a failure.
+        case answered(question: String, read: CoachRead, card: AskResponse?)
         case failed(String)
     }
 
@@ -123,11 +137,35 @@ struct CoachAskSheet: View {
                     case .loading:
                         loadingView
                     case let .analyzed(question, response):
-                        AskAnswerCard(question: question, response: response) { followup in
-                            Task { await run(analyzerId: followup.id, question: followup.label) }
+                        AskAnswerCard(
+                            question: question,
+                            response: response,
+                            onFollowup: { followup in
+                                Task { await run(analyzerId: followup.id, question: followup.label) }
+                            },
+                            onVariant: { variant in
+                                Task { await switchTo(variant, of: response, question: question) }
+                            },
+                            pendingVariant: pendingVariant
+                        )
+                    case let .answered(question, read, card):
+                        VStack(alignment: .leading, spacing: 22) {
+                            replyView(read)
+                            if let card {
+                                receiptsHeader
+                                AskAnswerCard(
+                                    question: question,
+                                    response: card,
+                                    onFollowup: { followup in
+                                        Task { await run(analyzerId: followup.id, question: followup.label) }
+                                    },
+                                    onVariant: { variant in
+                                        Task { await switchTo(variant, of: card, question: question) }
+                                    },
+                                    pendingVariant: pendingVariant
+                                )
+                            }
                         }
-                    case let .reply(read):
-                        replyView(read)
                     case let .failed(message):
                         failureView(message)
                     }
@@ -397,6 +435,19 @@ struct CoachAskSheet: View {
         )
     }
 
+    /// Names the computed card as evidence for the paragraph above it rather
+    /// than a second, competing answer. The eyebrow is ink, not coral — the
+    /// header already spent this cluster's one coral (design-system/README.md).
+    private var receiptsHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            EditorialRule()
+            Text("THE NUMBERS BEHIND IT")
+                .font(.dripEyebrow(10))
+                .tracking(1.3)
+                .foregroundStyle(Color.drip.textSecondary)
+        }
+    }
+
     /// The prose answer, unchanged from the editorial Read's shape.
     private func replyView(_ read: CoachRead) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -438,25 +489,70 @@ struct CoachAskSheet: View {
         }
     }
 
-    /// Free text. Tries the registry first, falls through to the coaching
-    /// agent when nothing fits.
+    /// Re-run the current analyzer against another of its variants — the zone
+    /// switcher on the answer card.
+    ///
+    /// Deliberately does NOT pass through `.loading`: the athlete is comparing
+    /// bands, and blanking the card between taps makes that comparison harder
+    /// than it needs to be. A failure leaves the existing answer up and only
+    /// clears the pending mark, because losing a good answer to a failed
+    /// switch would be the worse outcome.
+    private func switchTo(
+        _ variant: AskVariant,
+        of response: AskResponse,
+        question: String
+    ) async {
+        guard !variant.active, pendingVariant == nil else { return }
+        pendingVariant = variant.label
+        defer { pendingVariant = nil }
+        do {
+            let next = try await AskService.shared.resolve(variant: variant, of: response)
+            phase = .analyzed(question: next.resolvedTitle ?? question, response: next)
+        } catch {
+            phase = .failed(AskService.message(for: error))
+        }
+    }
+
+    /// Free text.
+    ///
+    /// INVERTED 2026-08-10 (`UNBOUND_ANSWERS`). This used to try the registry
+    /// first and only speak to the coach when nothing fit — so a question the
+    /// router happened to match could never get a conversational answer, and
+    /// one it didn't match reported "NO ANALYZER" at the athlete. Now the
+    /// conversational answer leads for every typed question, and a matched
+    /// analyzer rides underneath it as receipts.
+    ///
+    /// The two halves fail independently and on purpose: the computed card is
+    /// worth nothing if it costs the athlete their answer, and the answer is
+    /// still an answer with no card under it.
     private func ask() async {
         let question = trimmed
         guard !question.isEmpty else { return }
+        fieldFocused = false
         phase = .loading
         detent = .large
+
+        var card: AskResponse?
 
         if AskFeature.isEnabled {
             do {
                 let response = try await AskService.shared.resolve(question: question)
-                if response.mode != .prose {
+                // A server that has re-bound `UNBOUND_ANSWERS` answers the old
+                // way, and this client honours it: the card IS the answer.
+                guard response.conversational else {
                     phase = .analyzed(question: question, response: response)
                     return
                 }
-                // No analyzer fit — fall through to prose below.
+                // Keep it as evidence only if it actually computed something —
+                // a prose/ambiguous envelope carries no facts to show.
+                if response.mode == .analyzed, !response.facts.isEmpty {
+                    card = response
+                }
             } catch {
-                phase = .failed(AskService.message(for: error))
-                return
+                // Swallowed by design. Under the old order this was fatal
+                // because the card was the only answer; now it just means the
+                // paragraph arrives without receipts.
+                Log.coach.error("ask: computed half failed, continuing to prose — \(error.localizedDescription)")
             }
         }
 
@@ -467,9 +563,15 @@ struct CoachAskSheet: View {
 
         do {
             let read = try await DailyReadService.shared.ask(question)
-            phase = .reply(read)
+            phase = .answered(question: question, read: read, card: card)
         } catch {
-            phase = .failed("Couldn't reach the coach just now. Try again in a moment.")
+            // Losing the coach doesn't have to mean losing a computed answer
+            // we already hold.
+            if let card {
+                phase = .analyzed(question: question, response: card)
+            } else {
+                phase = .failed("Couldn't reach the coach just now. Try again in a moment.")
+            }
         }
     }
 

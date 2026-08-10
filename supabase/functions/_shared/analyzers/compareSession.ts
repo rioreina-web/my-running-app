@@ -76,6 +76,24 @@ function emptyResult(
   };
 }
 
+/**
+ * "Aug 3 tempo · 7.2 mi" — enough identity for the athlete to know exactly
+ * which run a fact line is talking about. The card was shipping deltas
+ * against a ghost: "pace vs. the match" with no way to tell which session
+ * was read or what it was matched against, which makes the whole comparison
+ * unreadable from the chip rail (where no workout context exists).
+ */
+function fmtSession(log: LogRow): string {
+  const d = new Date(log.workout_date);
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const type = typeof log.workout_type === "string" && log.workout_type.length > 0 &&
+      log.workout_type.length <= 12
+    ? ` ${log.workout_type.toLowerCase()}`
+    : "";
+  const mi = Number(log.workout_distance_miles ?? 0);
+  return mi > 0 ? `${date}${type} · ${Math.round(mi * 10) / 10} mi` : `${date}${type}`;
+}
+
 /** The most recent log that has laps — the chip-rail default target. */
 async function resolveDefaultTarget(ctx: AnalyzerCtx): Promise<LogRow | null> {
   const logs = await fetchLogsSince(
@@ -309,6 +327,26 @@ export const compareSession: Analyzer = {
       });
     }
 
+    // Name both sides of the comparison, first, so every delta below has a
+    // referent. Without these two lines the card is deltas against a ghost.
+    facts.unshift(
+      {
+        key: "target_session",
+        label: "This session",
+        value: fmtSession(target),
+        tone: "neutral",
+      },
+      {
+        key: "match_session",
+        label: "Compared against",
+        value: fmtSession(other),
+        delta: comparability.daysApart != null
+          ? `${comparability.daysApart} day${comparability.daysApart === 1 ? "" : "s"} earlier`
+          : undefined,
+        tone: "neutral",
+      },
+    );
+
     const missing = [...diff.unavailable];
     if (comparability.daysApart != null && comparability.daysApart > 120) {
       missing.push(`${comparability.daysApart} days apart`);
@@ -317,6 +355,7 @@ export const compareSession: Analyzer = {
 
     return {
       facts,
+      title: `How does ${fmtSession(target)} stack up?`,
       series: seriesPoints.length > 1
         ? {
           kind: "line",

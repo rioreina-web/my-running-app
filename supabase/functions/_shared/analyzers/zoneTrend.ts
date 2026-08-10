@@ -18,9 +18,13 @@
 
 import {
   analyzeFastSegmentTrends,
+  bandForSystem,
+  bandTrends,
+  BANDS,
+  type BandTrend,
   type KeySessionInput,
+  type PaceBand,
   type PaceSystem,
-  type SystemTrend,
   type SystemTrendPoint,
 } from "../fast-segment-trends.ts";
 import {
@@ -54,6 +58,27 @@ const WINDOW_N = 3;
 
 const SYSTEMS: PaceSystem[] = ["MP", "HMP", "LT", "10K", "5K", "3K", "Mile"];
 
+/**
+ * How each band reads in a sentence. Lowercase where the word is prose
+ * ("threshold pace"), uppercase where it is a name ("MP pace", "5K pace").
+ */
+const BAND_PROSE: Record<PaceBand, string> = {
+  MP: "MP",
+  Threshold: "threshold",
+  "5K": "5K",
+  "3K": "3K",
+  Mile: "mile",
+};
+
+/** Chip text for the on-card switcher — always title-case. */
+const BAND_CHIP: Record<PaceBand, string> = {
+  MP: "MP",
+  Threshold: "Threshold",
+  "5K": "5K",
+  "3K": "3K",
+  Mile: "Mile",
+};
+
 /** Mean of a numeric field over a slice, ignoring nulls. */
 function meanOf(
   points: SystemTrendPoint[],
@@ -65,18 +90,48 @@ function meanOf(
 }
 
 /**
- * Which system to trend when the athlete didn't name one: the system with the
- * most sessions, breaking ties toward the faster (more specific) one, because
- * a runner with equal LT and MP volume is more likely asking about the sharper
- * end. Deterministic — no model input.
+ * Which band to trend when the athlete didn't name one: the band with the most
+ * sessions, breaking ties toward the faster (more specific) one, because a
+ * runner with equal threshold and MP volume is more likely asking about the
+ * sharper end. Deterministic — no model input.
+ *
+ * The auto-pick is a guess about intent, so whatever it lands on, `variants`
+ * offers the others on the card. That is the fix for the failure this analyzer
+ * used to have: it answered about the band you ran most while the chip promised
+ * the one you asked about, with no way to switch.
  */
-function pickSystem(systems: SystemTrend[]): SystemTrend | null {
-  if (systems.length === 0) return null;
-  const ranked = [...systems].sort((a, b) => {
+function pickBand(bands: BandTrend[]): BandTrend | null {
+  if (bands.length === 0) return null;
+  const ranked = [...bands].sort((a, b) => {
     if (b.points.length !== a.points.length) return b.points.length - a.points.length;
-    return SYSTEMS.indexOf(b.system) - SYSTEMS.indexOf(a.system);
+    return BANDS.indexOf(b.band) - BANDS.indexOf(a.band);
   });
   return ranked[0];
+}
+
+/**
+ * Normalize whatever the caller asked for onto a band.
+ *
+ * The Layer-0 router and older clients still speak in systems ("LT", "10K"),
+ * and an athlete typing "is my LT improving" means the threshold band. Mapping
+ * rather than rejecting keeps every one of those callers working.
+ */
+function bandFromParam(raw: unknown): PaceBand | null {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  const match = BANDS.find((b) => b.toLowerCase() === raw.toLowerCase());
+  if (match) return match;
+  const system = SYSTEMS.find((s) => s.toLowerCase() === raw.toLowerCase());
+  return system ? bandForSystem(system) : null;
+}
+
+/** The switcher rail: every band with work on file, active one flagged. */
+function buildVariants(bands: BandTrend[], active: PaceBand) {
+  return bands.map((b) => ({
+    label: BAND_CHIP[b.band],
+    params: { system: b.band },
+    active: b.band === active,
+    sessions: b.points.length,
+  }));
 }
 
 function buildInputs(
@@ -131,11 +186,14 @@ export const zoneTrend: Analyzer = {
   group: "adaptation",
   params: {
     system: {
+      // Bands first; the individual systems stay accepted so the Layer-0
+      // router and older clients that say "LT" keep resolving (onto Threshold).
       type: "string",
-      enum: SYSTEMS,
+      enum: Array.from(new Set<string>([...BANDS, ...SYSTEMS])),
       optional: true,
       describe:
-        "Which pace system to trend. Omit to use the one the athlete has run most.",
+        "Which pace band to trend — MP, Threshold, 5K, 3K or Mile. HMP/LT/10K " +
+        "all resolve to Threshold. Omit to use the band the athlete has run most.",
     },
     window_days: {
       type: "number",
@@ -148,9 +206,7 @@ export const zoneTrend: Analyzer = {
 
   async run(params: AnalyzerParams, ctx: AnalyzerCtx): Promise<AnalyzerResult> {
     const windowDays = Number(params.window_days ?? DEFAULT_WINDOW_DAYS);
-    const requested = typeof params.system === "string"
-      ? (params.system as PaceSystem)
-      : null;
+    const requested = bandFromParam(params.system);
 
     if (!ctx.zoneTable.mp) {
       return emptyResult(
@@ -189,30 +245,43 @@ export const zoneTrend: Analyzer = {
       buildInputs(logs, lapsByWorkout, labels),
       ctx.zoneTable,
     );
+    const bands = bandTrends(trends, ctx.zoneTable);
 
     const trend = requested
-      ? trends.systems.find((s) => s.system === requested) ?? null
-      : pickSystem(trends.systems);
+      ? bands.find((b) => b.band === requested) ?? null
+      : pickBand(bands);
 
     if (!trend) {
-      return emptyResult(
-        windowDays,
-        trends.sessions.length,
-        requested ? `No ${requested} work on file` : "No fast work on file yet",
-        requested
-          ? `Nothing in the last ${windowDays} days registered as a real ${requested} session. The trend needs sessions that actually hit that band.`
-          : "The trend reads sessions with sustained work at marathon pace or faster. Once a couple land, this fills in.",
-      );
+      const name = requested ? BAND_PROSE[requested] : null;
+      return {
+        ...emptyResult(
+          windowDays,
+          trends.sessions.length,
+          name ? `No ${name} work on file` : "No fast work on file yet",
+          name
+            ? `Nothing in the last ${windowDays} days registered as a real ${name} session. The trend needs sessions that actually hit that band.`
+            : "The trend reads sessions with sustained work at marathon pace or faster. Once a couple land, this fills in.",
+        ),
+        // Still offer the rail — asking for a band you haven't run should show
+        // you the ones you have, not strand you on a dead end.
+        variants: requested && bands.length > 0
+          ? buildVariants(bands, requested)
+          : null,
+      };
     }
 
+    const name = BAND_PROSE[trend.band];
     const points = trend.points;
     if (points.length < MIN_POINTS) {
-      return emptyResult(
-        windowDays,
-        points.length,
-        `${points.length} ${trend.system} ${points.length === 1 ? "session" : "sessions"} on file`,
-        `The trend gets honest at ${MIN_POINTS}. Two more ${trend.system} sessions and this starts saying something.`,
-      );
+      return {
+        ...emptyResult(
+          windowDays,
+          points.length,
+          `${points.length} ${name} ${points.length === 1 ? "session" : "sessions"} on file`,
+          `The trend gets honest at ${MIN_POINTS}. Two more ${name} sessions and this starts saying something.`,
+        ),
+        variants: buildVariants(bands, trend.band),
+      };
     }
 
     const n = Math.min(WINDOW_N, Math.floor(points.length / 2));
@@ -233,7 +302,7 @@ export const zoneTrend: Analyzer = {
     const facts: FactLine[] = [
       {
         key: "recent_pace",
-        label: `${trend.system} pace · last ${n} sessions`,
+        label: `${name} pace · last ${n} sessions`,
         value: fmtPaceSec(lateRaw),
         unit: "/mi",
         delta: fmtSecDelta(rawDelta),
@@ -241,7 +310,7 @@ export const zoneTrend: Analyzer = {
       },
       {
         key: "early_pace",
-        label: `${trend.system} pace · first ${n} sessions`,
+        label: `${name} pace · first ${n} sessions`,
         value: fmtPaceSec(earlyRaw),
         unit: "/mi",
         tone: "neutral",
@@ -264,7 +333,7 @@ export const zoneTrend: Analyzer = {
     const inRange = avgWorkMiles >= lo && avgWorkMiles <= hi;
     facts.push({
       key: "work_volume",
-      label: `${trend.system} volume · recent average`,
+      label: `${name} volume · recent average`,
       value: (Math.round(avgWorkMiles * 10) / 10).toFixed(1),
       unit: " mi",
       delta: inRange ? "in range" : avgWorkMiles < lo ? "below range" : "above range",
@@ -289,9 +358,10 @@ export const zoneTrend: Analyzer = {
     }));
 
     return {
-      // The chip says "LT" because that is the question most athletes mean.
-      // The answer says whichever system the athlete actually ran.
-      title: `Is my ${trend.system} pace improving?`,
+      // The chip asks the question most athletes mean; the answer names the
+      // band actually trended. `variants` below is how you get to the others.
+      title: `Is my ${name} pace improving?`,
+      variants: buildVariants(bands, trend.band),
       facts,
       series: {
         kind: "line",

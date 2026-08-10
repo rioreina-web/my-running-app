@@ -120,6 +120,41 @@ export const raceProjection: Analyzer = {
     const prediction = state?.fitness_prediction;
     const ranges = prediction?.ranges ?? null;
 
+    // The goal, from wherever it actually lives — same tiering as
+    // race_pace_specificity. `athlete_state.goal_race`/`goal_time_seconds`
+    // are only populated from an active *training plan*, so an athlete with a
+    // goal but no plan (the common case) would never see the goal-gap fact —
+    // the line that answers the question this card exists for. Read the
+    // structured columns `interpret-goal` maintains on `user_goals` first,
+    // and keep the plan-derived state fields as the fallback.
+    let goalRaceKey: string | null = null;
+    let goalSeconds = 0;
+    const { data: goalRows } = await ctx.supabase
+      .from("user_goals")
+      .select("target_race_distance, target_time_seconds, status")
+      .eq("user_id", ctx.userId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false });
+    for (
+      const g of (goalRows ?? []) as Array<
+        { target_race_distance: string | null; target_time_seconds: number | null }
+      >
+    ) {
+      const secs = Number(g.target_time_seconds ?? 0);
+      if (secs > 0 && g.target_race_distance) {
+        goalRaceKey = g.target_race_distance;
+        goalSeconds = secs;
+        break;
+      }
+    }
+    if (!(goalSeconds > 0)) {
+      const stateSecs = Number(state?.goal_time_seconds ?? 0);
+      if (stateSecs > 0 && state?.goal_race) {
+        goalRaceKey = state.goal_race;
+        goalSeconds = stateSecs;
+      }
+    }
+
     if (!ranges || Object.keys(ranges).length === 0) {
       return {
         facts: [],
@@ -135,7 +170,7 @@ export const raceProjection: Analyzer = {
     }
 
     const requested = typeof params.race === "string" ? params.race : null;
-    const key = pickRace(ranges, requested, state?.goal_race ?? null);
+    const key = pickRace(ranges, requested, goalRaceKey ?? state?.goal_race ?? null);
     const point = key ? Number(ranges[key]?.point) : NaN;
 
     if (!key || !isFinite(point) || point <= 0) {
@@ -187,15 +222,18 @@ export const raceProjection: Analyzer = {
     }
 
     // The gap the athlete actually asked about — stated, not forecast.
-    const goalSec = Number(state?.goal_time_seconds ?? 0);
-    const goalMatchesRace = state?.goal_race
-      ? state.goal_race.toLowerCase().replace(/[\s-]/g, "_").includes(key.toLowerCase())
-      : false;
-    if (goalSec > 0 && goalMatchesRace) {
-      const gap = point - goalSec;
+    // Substring matching alone would let a "half_marathon" goal match a
+    // "marathon" projection (it contains the word); require the half-ness of
+    // the two to agree as well.
+    const gk = goalRaceKey ? goalRaceKey.toLowerCase().replace(/[\s-]/g, "_") : "";
+    const goalMatchesRace = gk.length > 0 &&
+      gk.includes(key.toLowerCase()) &&
+      gk.includes("half") === key.toLowerCase().includes("half");
+    if (goalSeconds > 0 && goalMatchesRace) {
+      const gap = point - goalSeconds;
       facts.push({
         key: "goal_gap",
-        label: `Goal · ${fmtRaceTime(goalSec, roundMin)}`,
+        label: `Goal · ${fmtRaceTime(goalSeconds, roundMin)}`,
         value: fmtRaceTime(Math.abs(gap), roundMin),
         delta: gap > 0 ? "outside" : "inside",
         tone: gap > 0 ? "watch" : "good",

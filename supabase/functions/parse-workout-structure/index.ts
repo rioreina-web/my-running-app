@@ -44,6 +44,32 @@ interface Body {
   force?: boolean;
 }
 
+/**
+ * Record WHY a parse failed onto its queue row.
+ *
+ * The dispatcher fires `net.http_post`, which is fire-and-forget — it cannot
+ * see this function's response, so without this the only trace of a failure is
+ * `attempts` climbing to 3 and the job sitting there mute. That is better than
+ * today (where a failure leaves nothing at all) but still makes you guess.
+ *
+ * Best-effort by construction: a failure to write the bookkeeping must never
+ * replace or mask the failure being reported.
+ */
+async function recordParseFailure(trainingLogId: string, message: string): Promise<void> {
+  try {
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    await admin
+      .from("workout_parse_jobs")
+      .update({ last_error: message.slice(0, 500) })
+      .eq("training_log_id", trainingLogId);
+  } catch {
+    // Swallowed deliberately — see above.
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -95,6 +121,16 @@ Deno.serve(async (req) => {
     // this parser must leave the correction intact. Only an explicit `force`
     // (the "restore auto-detected" path) re-derives from the stream.
     if (!body.force && isUserEdited(row.parsed_structure)) {
+      // Stamp before returning. Declining to re-parse IS a completed outcome,
+      // so `dispatch_workout_parse` has to be able to retire this job — without
+      // the stamp the row would be re-dispatched every 10 minutes until it
+      // exhausted its three attempts, on every future stream write, forever.
+      // Nothing about the athlete's structure changes here; only the "we have
+      // considered this row as of now" marker moves.
+      await supabase
+        .from("training_logs")
+        .update({ structure_parsed_at: new Date().toISOString() })
+        .eq("id", row.id);
       return json({ ok: true, skipped: "user_edited", parsed: row.parsed_structure }, 200);
     }
 
@@ -131,6 +167,7 @@ Deno.serve(async (req) => {
     const haveAthleteIntent = haveTranscript || (haveNotes && athleteAuthoredSource);
 
     if (!haveStreams && !haveNotes && !haveTranscript) {
+      await recordParseFailure(row.id as string, "no source data — no streams, notes, or transcript");
       return json({ error: "no source data — workout has no streams, notes, or transcript" }, 422);
     }
 
@@ -176,7 +213,10 @@ Deno.serve(async (req) => {
 
     // 3) Prompt Gemini Flash
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!geminiKey) return json({ error: "GEMINI_API_KEY not set" }, 500);
+    if (!geminiKey) {
+      await recordParseFailure(row.id as string, "GEMINI_API_KEY not set");
+      return json({ error: "GEMINI_API_KEY not set" }, 500);
+    }
 
     const genAI = new GoogleGenerativeAI(geminiKey);
     const model = genAI.getGenerativeModel({
@@ -210,11 +250,13 @@ Deno.serve(async (req) => {
     try {
       parsed = JSON.parse(text);
     } catch {
+      await recordParseFailure(row.id as string, "model returned invalid JSON");
       return json({ error: "model returned invalid JSON", raw: text }, 502);
     }
 
     // 4) Validate minimum shape
     if (typeof parsed !== "object" || !parsed.type || !Array.isArray(parsed.blocks)) {
+      await recordParseFailure(row.id as string, "parsed output missing required fields");
       return json({ error: "parsed output missing required fields", parsed }, 502);
     }
 
@@ -280,12 +322,28 @@ Deno.serve(async (req) => {
     ].filter(Boolean);
 
     // 5) Write back
+    //
+    // `structure_parsed_at` is the queue's completion signal (see
+    // 20260810170000_wire_workout_structure_parse.sql). It is stamped on every
+    // successful write INCLUDING the ones that correctly find no structure —
+    // an easy 6-miler has none, and that is an answer, not a failure. Keeping
+    // "parsed, nothing there" distinct from "never parsed" is what stops the
+    // chat's fallback to average pace from being silent.
+    //
+    // It must be a real column and not read back out of `parsed_structure`:
+    // `dispatch_workout_parse` retires jobs by comparing it to the job's
+    // `created_at`, and that predicate has to be an index scan that cannot
+    // fault on a malformed JSON timestamp.
     const { error: updateErr } = await supabase
       .from("training_logs")
-      .update({ parsed_structure: parsed })
+      .update({
+        parsed_structure: parsed,
+        structure_parsed_at: parsed.parsed_at,
+      })
       .eq("id", row.id);
 
     if (updateErr) {
+      await recordParseFailure(row.id as string, `update failed: ${updateErr.message}`);
       return json({ error: `update failed: ${updateErr.message}`, parsed }, 500);
     }
 
@@ -293,6 +351,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[parse-workout-structure]", msg);
+    if (body?.training_log_id) await recordParseFailure(body.training_log_id, msg);
     return json({ error: msg }, 500);
   }
 });

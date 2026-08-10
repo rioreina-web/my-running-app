@@ -30,7 +30,10 @@ export interface WorkBout {
   index: number;            // 1-based work-bout number
   start_s: number;
   end_s: number;
+  /** MOVING seconds — watch-stopped gaps inside the bout are excluded. */
   duration_s: number;
+  /** Seconds the recording was stopped inside this bout (0 when it ran clean). */
+  stopped_s: number;
   start_m: number;
   end_m: number;
   distance_m: number;
@@ -42,7 +45,10 @@ export interface WorkBout {
 export interface Recovery {
   kind: "recovery";
   after_bout: number;       // the work-bout index this recovery follows
+  /** MOVING seconds — watch-stopped gaps are excluded, standing rests are not. */
   duration_s: number;
+  /** Seconds the recording was stopped inside this recovery. */
+  stopped_s: number;
   distance_m: number;
   avg_vel_ms: number;
   style: "standing" | "jog"; // standing rest vs. moving recovery
@@ -74,6 +80,27 @@ const DEFAULTS: Required<DetectOptions> = {
   minRecoverySec: 20,
   minWorkSec: 15,
 };
+
+// ── Stopped-watch gaps ──────────────────────────────────────────────────────
+// When the athlete stops the watch (or auto-pause fires), the recording simply
+// SKIPS those seconds: `time` jumps 3000 → 3400 between two adjacent samples
+// while `distance` barely moves. That gap is one sample-to-sample step, so its
+// measured span (`time[hi] − time[lo]` over a single index) is 0 — it slips
+// under `minRecoverySec`, gets reclassed as running, and its minutes are then
+// swallowed by the enclosing bout's `end_s − start_s`. An 18-miler with 12 such
+// stops read 7:20/mi instead of its true 6:38/mi (2026-08-08).
+//
+// So bout duration is the SUM of per-sample steps with stop-gaps discounted,
+// never the raw clock span. Two guards keep this honest:
+
+/** A step longer than this isn't a slow second of running — it's a break in
+ *  the recording. (Streams are ~1 Hz; Strava thins to a few seconds at most.) */
+export const MAX_SAMPLE_STEP_SEC = 5;
+
+/** …but a break only counts as STOPPED when almost no ground was covered
+ *  across it. A tunnel/canyon dropout while running still advances distance at
+ *  running speed, and that time is real — it must keep counting. */
+export const STOPPED_GAP_VEL_MS = 0.5;
 
 // A lap that is short in BOTH distance and duration is a GPS artifact — an
 // auto-lap tick at the end of a run, or an accidental lap press — not a rep or a
@@ -412,6 +439,31 @@ export function detectWorkBouts(
   );
   if (!isFinite(n) || n < 2) return { segments: [], workVelMs: 0 };
 
+  // ── Active seconds per sample (stop-gaps discounted) ──
+  // step[i] is the time the interval (i−1, i] contributes to a bout's duration.
+  // A stopped-watch gap contributes only the stream's nominal sample step; the
+  // rest of it never happened as running and must not dilute the pace.
+  const rawSteps: number[] = [];
+  for (let i = 1; i < n; i++) {
+    const dt = time[i] - time[i - 1];
+    if (dt > 0) rawSteps.push(dt);
+  }
+  const nominalStep = rawSteps.length ? median(rawSteps) : 1;
+  const step = new Array<number>(n).fill(0);
+  for (let i = 1; i < n; i++) {
+    const dt = time[i] - time[i - 1];
+    if (!(dt > 0)) { step[i] = 0; continue; }
+    const gapVel = (dist[i] - dist[i - 1]) / dt;
+    const stopped = dt > MAX_SAMPLE_STEP_SEC && gapVel < STOPPED_GAP_VEL_MS;
+    step[i] = stopped ? Math.min(dt, nominalStep) : dt;
+  }
+  /** Moving seconds between two sample indices (stop-gaps excluded). */
+  const activeBetween = (lo: number, hi: number): number => {
+    let s = 0;
+    for (let i = lo + 1; i <= hi; i++) s += step[i];
+    return s;
+  };
+
   // Derive velocity from distance/time if the stream is absent or all-zero.
   if (vel.length < n || vel.slice(0, n).every((v) => !v)) {
     vel = new Array(n).fill(0);
@@ -450,7 +502,9 @@ export function detectWorkBouts(
     else runs.push({ seg: cls[i], lo: i, hi: i });
   }
 
-  const durOf = (r: Run) => time[r.hi] - time[r.lo];
+  // Moving duration, not clock span — a run whose only "length" is a stopped
+  // watch must read as 0s here so it can't survive the minRecoverySec filter.
+  const durOf = (r: Run) => activeBetween(r.lo, r.hi);
 
   // 3) Drop sub-threshold recoveries (GPS noise / one slow tick) by reclassing
   //    them to work, then drop sub-threshold work blips into recovery. Re-merge
@@ -481,7 +535,10 @@ export function detectWorkBouts(
   for (const r of runs) {
     const start_s = time[r.lo];
     const end_s = time[r.hi];
-    const duration_s = Math.max(0, end_s - start_s);
+    // Pace is distance over MOVING time. `end_s − start_s` is the wall clock,
+    // which includes every second the watch spent stopped inside this run.
+    const duration_s = Math.max(0, activeBetween(r.lo, r.hi));
+    const stopped_s = Math.max(0, Math.round((end_s - start_s) - duration_s));
     const start_m = dist[r.lo];
     const end_m = dist[r.hi];
     const distance_m = Math.max(0, end_m - start_m);
@@ -494,7 +551,7 @@ export function detectWorkBouts(
       segments.push({
         kind: "work",
         index: boutIdx,
-        start_s, end_s, duration_s,
+        start_s, end_s, duration_s, stopped_s,
         start_m: Math.round(start_m), end_m: Math.round(end_m),
         distance_m: Math.round(distance_m),
         avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
@@ -507,7 +564,7 @@ export function detectWorkBouts(
       segments.push({
         kind: "recovery",
         after_bout: boutIdx,
-        duration_s,
+        duration_s, stopped_s,
         distance_m: Math.round(distance_m),
         avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
         style: avg_vel_ms < o.standingVelMs ? "standing" : "jog",
@@ -575,9 +632,11 @@ export function boutsFromLaps(
     .map((l) => {
       const dist_m = Number(l.distance ?? 0);
       const dur_s = Number(l.moving_time ?? l.elapsed_time ?? 0);
+      // The watch already tells us how long it sat stopped in this lap.
+      const stop_s = Math.max(0, Number(l.elapsed_time ?? dur_s) - dur_s);
       const declaredVel = Number(l.average_speed ?? 0);
       const vel = declaredVel > 0 ? declaredVel : dur_s > 0 ? dist_m / dur_s : 0;
-      return { dist_m, dur_s, vel, start_index: l.start_index, end_index: l.end_index };
+      return { dist_m, dur_s, stop_s, vel, start_index: l.start_index, end_index: l.end_index };
     })
     .filter((l) =>
       l.dist_m > 0 && l.dur_s > 0 && isFinite(l.vel) &&
@@ -628,6 +687,7 @@ export function boutsFromLaps(
   for (const g of groups) {
     const dist_m = g.laps.reduce((a, b) => a + b.dist_m, 0);
     const dur_s = g.laps.reduce((a, b) => a + b.dur_s, 0);
+    const stopped_s = Math.round(g.laps.reduce((a, b) => a + b.stop_s, 0));
     const avg_vel_ms = dur_s > 0 ? dist_m / dur_s : 0;
     const start_m = cumDist;
     const end_m = cumDist + dist_m;
@@ -643,7 +703,7 @@ export function boutsFromLaps(
       segments.push({
         kind: "work",
         index: boutIdx,
-        start_s, end_s, duration_s: dur_s,
+        start_s, end_s, duration_s: dur_s, stopped_s,
         start_m: Math.round(start_m), end_m: Math.round(end_m),
         distance_m: Math.round(dist_m),
         avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
@@ -656,7 +716,7 @@ export function boutsFromLaps(
       segments.push({
         kind: "recovery",
         after_bout: boutIdx,
-        duration_s: dur_s,
+        duration_s: dur_s, stopped_s,
         distance_m: Math.round(dist_m),
         avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
         style: avg_vel_ms < o.standingVelMs ? "standing" : "jog",
@@ -839,7 +899,7 @@ export function derivedLapsFromStream(
         lap_index: lapIndex++,
         distance: s.distance_m,
         moving_time: Math.round(s.duration_s),
-        elapsed_time: Math.round(s.duration_s),
+        elapsed_time: Math.round(s.duration_s + s.stopped_s),
         average_speed: s.avg_vel_ms,
         average_heartrate: avg,
         max_heartrate: max,
@@ -860,7 +920,7 @@ export function derivedLapsFromStream(
         lap_index: lapIndex++,
         distance: s.distance_m,
         moving_time: Math.round(s.duration_s),
-        elapsed_time: Math.round(s.duration_s),
+        elapsed_time: Math.round(s.duration_s + s.stopped_s),
         average_speed: s.avg_vel_ms,
         average_heartrate: avg,
         max_heartrate: max,

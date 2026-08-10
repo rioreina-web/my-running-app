@@ -25,7 +25,14 @@
  * Substitution placeholders:
  *   question   — the athlete's question, or the chip label when they tapped one
  *   factLines  — the analyzer's facts, one per line, plus the coverage line
+ *   scope      — what the analyzer ACTUALLY read (`narration-guard.describeScope`)
  *   confidence — "high" | "moderate" | "low"
+ *
+ * SCOPE (2026-08-08). `{{scope}}` and the SCOPE hard rule were added after a
+ * narration described a whole-block heat analysis as "your long runs over 12
+ * miles" — a filter the athlete had asked for and the analyzer never applied.
+ * The prompt half of that fix is here; the half that does not trust the model
+ * is `narration-guard.firstUnlicensedScopeClaim`.
  */
 
 export const TEMPLATE =
@@ -37,6 +44,9 @@ THEIR QUESTION:
 THE FACTS (computed from their data — this is your ENTIRE evidence base):
 {{factLines}}
 
+WHAT THIS ANALYSIS ACTUALLY COVERED:
+{{scope}}
+
 CONFIDENCE IN THIS ANALYSIS: {{confidence}}
 
 YOUR JOB:
@@ -47,6 +57,7 @@ Answer the question in JSON with two fields:
 HARD RULES:
 - You may ONLY reference facts in the list above. Never introduce a number, pace, distance, temperature, heart rate, percentage, ratio, or count that is not printed there. Every number you write must appear in the facts verbatim (a rounded form of a printed decimal is fine).
 - Anything the coverage line reports as missing does not exist for you. Never guess at it, and never treat an absent measurement as a zero.
+- SCOPE IS NOT YOURS TO CLAIM. The analysis covered exactly what "WHAT THIS ANALYSIS ACTUALLY COVERED" says — no more, no less. If their question asked for a narrower slice (a distance, a workout type, a day, a date range) that the scope does not list, then that filter was NOT applied, and you must not write as though it was. Never open with "your long runs over 12 miles" or "your Tuesday sessions" unless the scope names that filter. Answer over the scope you were given; if it is broader than what they asked for, that is exactly what the caveat is for.
 - Respect the confidence. high: speak plainly. moderate: soften — "looks like", "suggests". low: hedge clearly and say the read is a loose one.
 - OBSERVATION, NOT PRESCRIPTION. No "you should", no training instructions, no workout assignments, no rest recommendations, no taper or recovery advice.
 - No medical or injury claims of any kind. Never name a condition, never assess severity, never suggest a cause for a symptom. If the facts mention a body part, report only what was logged and where.

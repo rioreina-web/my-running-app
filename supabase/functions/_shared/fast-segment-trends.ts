@@ -704,6 +704,206 @@ export function analyzeFastSegmentTrends(
   return { sessions, systems };
 }
 
+// ── Bands ──────────────────────────────────────────────────────
+
+/**
+ * A trendable BAND — one or more systems close enough together to be a single
+ * physiological question.
+ *
+ * WHY BANDS EXIST. `systemForPace` bins each rep to its nearest anchor, which
+ * is right for labelling one rep and wrong for trending. For a runner whose
+ * HMP / LT / 10K anchors sit at 5:23 / 5:19 / 5:09, the HMP↔LT decision
+ * boundary is 5:21 and LT↔10K is 5:14 — two seconds of pacing noise moves a rep
+ * between systems. A per-system trend therefore splits one band of work across
+ * three bins, reports whichever bin won the count, and quotes deltas (±3s)
+ * smaller than the gaps between the bins being compared. Merging puts every
+ * threshold rep on one line, which is both more stable and the question the
+ * athlete actually asked.
+ *
+ * MP, 5K, 3K and Mile stay alone: they are far enough apart to mean distinct
+ * things, and merging them would hide real differences.
+ */
+export type PaceBand = "MP" | "Threshold" | "5K" | "3K" | "Mile";
+
+/** Slowest → fastest, mirroring SYSTEM_ANCHORS. */
+export const BANDS: PaceBand[] = ["MP", "Threshold", "5K", "3K", "Mile"];
+
+export const BAND_SYSTEMS: Record<PaceBand, PaceSystem[]> = {
+  MP: ["MP"],
+  Threshold: ["HMP", "LT", "10K"],
+  "5K": ["5K"],
+  "3K": ["3K"],
+  Mile: ["Mile"],
+};
+
+/**
+ * The anchor a band's paces are reported against. For a merged band this is the
+ * middle system — LT is the canonical threshold reference, and it is what an
+ * athlete means when they ask whether their threshold is moving.
+ */
+const BAND_REFERENCE: Record<PaceBand, keyof ZoneTable> = {
+  MP: "mp",
+  Threshold: "lt",
+  "5K": "fiveK",
+  "3K": "threeK",
+  Mile: "mile",
+};
+
+export function bandForSystem(system: PaceSystem): PaceBand {
+  for (const band of BANDS) {
+    if (BAND_SYSTEMS[band].includes(system)) return band;
+  }
+  return "MP";
+}
+
+/** Union of the member systems' expected work ranges. */
+function bandExpectedMiles(band: PaceBand): [number, number] {
+  const ranges = BAND_SYSTEMS[band].map((s) => SYSTEM_WORK_VOLUME_MILES[s]);
+  return [
+    Math.min(...ranges.map(([lo]) => lo)),
+    Math.max(...ranges.map(([, hi]) => hi)),
+  ];
+}
+
+function anchorFor(system: PaceSystem, zones: ZoneTable): number | null {
+  const key = SYSTEM_ANCHORS.find((a) => a.system === system)?.key;
+  const anchor = key ? zones[key] : null;
+  return typeof anchor === "number" && anchor > 0 ? anchor : null;
+}
+
+/**
+ * Express a pace run at `system` as its equivalent at the band's reference
+ * anchor, proportionally.
+ *
+ * Without this, merging is worse than not merging. Pooling raw HMP (5:23) and
+ * 10K (5:09) paces means a session's COMPOSITION moves the average: a week of
+ * 10K reps followed by a week of HMP reps reads as 14 s/mi of "decline" with no
+ * change in fitness whatsoever. Normalising first makes a rep at its own anchor
+ * land exactly on the reference anchor, and a rep 3s better than its anchor
+ * land ~3s better than the reference — so the line tracks fitness, not the
+ * workout menu.
+ */
+function toReferencePace(
+  pace: number | null,
+  system: PaceSystem,
+  refAnchor: number,
+  zones: ZoneTable,
+): number | null {
+  if (pace == null || !(pace > 0)) return null;
+  const anchor = anchorFor(system, zones);
+  if (anchor == null) return null;
+  return pace * (refAnchor / anchor);
+}
+
+export interface BandTrend {
+  band: PaceBand;
+  /** Which systems actually contributed points, slowest → fastest. */
+  systems: PaceSystem[];
+  expectedMiles: [number, number];
+  /** Reference anchor (sec/mi) the points are expressed against. */
+  referencePaceSecPerMile: number;
+  points: SystemTrendPoint[]; // chronological, one per session
+}
+
+/**
+ * Regroup per-system trends into bands, normalising every pace to the band's
+ * reference anchor and merging a session's slices into ONE point.
+ *
+ * A mixed session appears in several `SystemTrend`s (an LT chunk and a 10K
+ * chunk are separate slices). Left alone that session would be counted twice on
+ * the merged line and would drag the window means toward whichever slice it
+ * split into, so slices are combined work-mile-weighted into a single point.
+ */
+export function bandTrends(
+  trends: FastSegmentTrends,
+  zones: ZoneTable,
+): BandTrend[] {
+  const out: BandTrend[] = [];
+
+  for (const band of BANDS) {
+    const refKey = BAND_REFERENCE[band];
+    const refAnchor = zones[refKey];
+    if (typeof refAnchor !== "number" || !(refAnchor > 0)) continue;
+
+    // sessionId → accumulator. Weighted by work miles, so a 4 mi LT chunk
+    // outweighs a 0.5 mi 10K bite in the same run.
+    const merged = new Map<string, {
+      point: SystemTrendPoint;
+      wPace: number;
+      wNeutral: number; nNeutral: number;
+      wFlat: number; nFlat: number;
+      wConditions: number; nConditions: number;
+      wHR: number; nHR: number;
+    }>();
+    const contributing = new Set<PaceSystem>();
+
+    for (const system of BAND_SYSTEMS[band]) {
+      const trend = trends.systems.find((s) => s.system === system);
+      if (!trend) continue;
+
+      for (const p of trend.points) {
+        const pace = toReferencePace(p.avgPaceSecPerMile, system, refAnchor, zones);
+        if (pace == null) continue;
+        contributing.add(system);
+
+        const w = p.workMiles > 0 ? p.workMiles : 0.01;
+        const neutral = toReferencePace(p.neutralPaceSecPerMile, system, refAnchor, zones);
+        const flat = toReferencePace(p.flatPaceSecPerMile, system, refAnchor, zones);
+        const conditions = toReferencePace(p.conditionsPaceSecPerMile, system, refAnchor, zones);
+
+        const existing = merged.get(p.sessionId);
+        if (!existing) {
+          merged.set(p.sessionId, {
+            point: { ...p, avgPaceSecPerMile: pace },
+            wPace: pace * w,
+            wNeutral: neutral != null ? neutral * w : 0, nNeutral: neutral != null ? w : 0,
+            wFlat: flat != null ? flat * w : 0, nFlat: flat != null ? w : 0,
+            wConditions: conditions != null ? conditions * w : 0,
+            nConditions: conditions != null ? w : 0,
+            wHR: p.avgHeartRate != null ? p.avgHeartRate * w : 0,
+            nHR: p.avgHeartRate != null ? w : 0,
+          });
+          continue;
+        }
+
+        existing.point.reps += p.reps;
+        existing.point.workMiles += p.workMiles;
+        existing.wPace += pace * w;
+        if (neutral != null) { existing.wNeutral += neutral * w; existing.nNeutral += w; }
+        if (flat != null) { existing.wFlat += flat * w; existing.nFlat += w; }
+        if (conditions != null) { existing.wConditions += conditions * w; existing.nConditions += w; }
+        if (p.avgHeartRate != null) { existing.wHR += p.avgHeartRate * w; existing.nHR += w; }
+      }
+    }
+
+    if (merged.size === 0) continue;
+
+    const points: SystemTrendPoint[] = [];
+    for (const acc of merged.values()) {
+      const w = acc.point.workMiles > 0 ? acc.point.workMiles : 0.01;
+      const p = acc.point;
+      p.avgPaceSecPerMile = acc.wPace / w;
+      p.neutralPaceSecPerMile = acc.nNeutral > 0 ? acc.wNeutral / acc.nNeutral : null;
+      p.flatPaceSecPerMile = acc.nFlat > 0 ? acc.wFlat / acc.nFlat : null;
+      p.conditionsPaceSecPerMile = acc.nConditions > 0 ? acc.wConditions / acc.nConditions : null;
+      p.avgHeartRate = acc.nHR > 0 ? acc.wHR / acc.nHR : null;
+      p.volumeStatus = volumeStatus(p.workMiles, bandExpectedMiles(band));
+      points.push(p);
+    }
+    points.sort((a, b) => a.date.localeCompare(b.date));
+
+    out.push({
+      band,
+      systems: BAND_SYSTEMS[band].filter((s) => contributing.has(s)),
+      expectedMiles: bandExpectedMiles(band),
+      referencePaceSecPerMile: refAnchor,
+      points,
+    });
+  }
+
+  return out;
+}
+
 // ── Helpers ────────────────────────────────────────────────────
 
 function timeWeightedHR(laps: WorkoutLap[]): number | null {

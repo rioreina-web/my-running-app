@@ -67,7 +67,8 @@ import {
   type SegmentationResult,
   type Zone,
 } from "./workoutSegmentation.ts";
-import { adjustPace } from "./pace-heat-adjustment.ts";
+import { adjustPace, compositeScore } from "./pace-heat-adjustment.ts";
+import { assessHeatRisk, type HeatRisk } from "./heat-risk.ts";
 
 const METERS_PER_MILE = 1609.344;
 
@@ -480,6 +481,10 @@ export interface EffortProfile {
   gradeApplied: boolean;
   tempF: number | null;
   dewPointF: number | null;
+  /** How RISKY the day was, on WBGT — a separate question from how much
+   *  slower it made you, and one the dew-point pace chart cannot answer.
+   *  See heat-risk.ts. Null flag when no weather was recorded. */
+  heatRisk: HeatRisk;
   totalElevationGainM: number;
   // ── Volume ──
   totalDistanceMeters: number;
@@ -548,6 +553,11 @@ export function buildEffortProfile(
     gradeApplied,
     tempF,
     dewPointF,
+    heatRisk: assessHeatRisk(
+      tempF != null && dewPointF != null ? compositeScore(tempF, dewPointF) : 0,
+      tempF,
+      dewPointF,
+    ),
     totalElevationGainM: Math.round(elevationGainM),
     totalDistanceMeters: Math.round(segmentation.totalMeters),
     totalDurationSec: Math.round(segmentation.totalSeconds),

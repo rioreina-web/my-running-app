@@ -109,10 +109,17 @@ struct AskAnswerCard: View {
     let question: String
     let response: AskResponse
     let onFollowup: (AskFollowup) -> Void
+    /// Nil hides the switcher — callers that can't re-run (previews, history)
+    /// shouldn't show a control that does nothing.
+    var onVariant: ((AskVariant) -> Void)?
+    /// The variant being fetched, so the tapped chip can show it's working
+    /// without blanking the answer already on screen.
+    var pendingVariant: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            if onVariant != nil, response.variants.count > 1 { variantRail }
             switch response.mode {
             case .ambiguous:
                 ambiguousBody
@@ -125,10 +132,15 @@ struct AskAnswerCard: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.drip.divider, lineWidth: 1))
     }
 
+    /// `prose` used to badge itself "NO ANALYZER" — the registry reporting its
+    /// own coverage gap to someone who never asked about the registry. Since
+    /// 2026-08-10 that outcome renders as an ordinary conversational answer in
+    /// `CoachAskSheet` and this card isn't built for it at all; the label is
+    /// kept honest for the DEBUG/preview paths that can still construct one.
     private var badge: (text: String, color: Color) {
         switch response.mode {
         case .analyzed:  return ("COMPUTED", Color.drip.coral)
-        case .prose:     return ("NO ANALYZER", Color.drip.textSecondary)
+        case .prose:     return ("FROM THE COACH", Color.drip.textSecondary)
         case .ambiguous: return ("WHICH ONE?", Color.drip.tired)
         case .catalog:   return ("CATALOG", Color.drip.textSecondary)
         }
@@ -236,6 +248,26 @@ struct AskAnswerCard: View {
         .padding(.horizontal, 15)
         .padding(.top, 12)
         .padding(.bottom, 14)
+    }
+
+    /// The zone switcher. Only drawn when there is a genuine choice — a single
+    /// band on file is a fact about the training, not a control.
+    private var variantRail: some View {
+        FlowRow(spacing: 6) {
+            ForEach(response.variants) { variant in
+                AskChip(
+                    label: variant.label,
+                    emphasis: variant.active ? .selected : .standard,
+                    isDisabled: pendingVariant != nil
+                ) {
+                    onVariant?(variant)
+                }
+                .opacity(pendingVariant == variant.label ? 0.55 : 1)
+            }
+        }
+        .padding(.horizontal, 15)
+        .padding(.top, 11)
+        .accessibilityLabel("Pace band")
     }
 
     private var followupRail: some View {

@@ -453,6 +453,21 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 
 const MODEL_TIMEOUT_MS = 20_000; // 20 seconds per model call
 
+// UNBOUND_USAGE (beta, 2026-08-10) — mirrors the constant of the same name in
+// `ask/index.ts`; flip both together or neither.
+//
+// This function stopped being a fallthrough on 2026-08-10. Under the Ask
+// surface's `UNBOUND_ANSWERS`, every typed question now reaches it, not just
+// the ones the analyzer registry declined. The `coaching` bucket is the
+// tightest in the app — 5/day on free tier, 50/month — because it was sized
+// for a surface an athlete touched occasionally. At one call per typed
+// question it becomes a five-question-a-day ceiling on chat, which is the
+// thing "unbound" was meant to remove.
+//
+// Unbinding the meter is NOT unbinding the guardrails: the no-medical-claims
+// and no-diagnosis rails live in this function's prompts and are untouched.
+const UNBOUND_USAGE = true;
+
 /**
  * Call Groq API (OpenAI-compatible) with timeout protection
  */
@@ -616,7 +631,7 @@ Deno.serve(async (req: Request) => {
     // H1 fix (2026-07-15): shouldEnforceRateLimits replaces isRateLimitEnabled
     // — in production a missing Upstash env no longer bypasses the gate
     // (checkFeatureRateLimit fails closed); local dev without Redis still skips.
-    if (userId && shouldEnforceRateLimits() && !proactive) {
+    if (userId && shouldEnforceRateLimits() && !proactive && !UNBOUND_USAGE) {
       const { data: tierData } = await supabase
         .from("user_tiers")
         .select("tier")

@@ -129,6 +129,34 @@ export interface AnalyzerResult {
   related: string[];
   /** When set, the client renders this instead of facts/series. */
   empty?: EmptyState | null;
+  /**
+   * Other parameterizations of the SAME analyzer that the client can offer as
+   * toggles on the card — e.g. `zone_trend` resolving to Threshold advertises
+   * MP / 5K / 3K / Mile alongside it.
+   *
+   * Exists because an auto-picked answer is a guess about intent: the analyzer
+   * chooses the band the athlete ran most, which is frequently not the one they
+   * had in mind. Rather than make the chip rail carry every combination, the
+   * card shows what else this question can be asked of and re-runs with
+   * `params` on tap.
+   *
+   * Deterministic and server-built, so the client can never offer a variant
+   * that returns nothing. Display + params only — licenses no numbers.
+   */
+  variants?: ResultVariant[] | null;
+}
+
+/** One switchable parameterization of the analyzer that produced it. */
+export interface ResultVariant {
+  /** Short chip text — "Threshold", "5K". */
+  label: string;
+  /** Params to re-run the SAME analyzer id with. Must satisfy its schema. */
+  params: Record<string, unknown>;
+  /** True for the variant this result represents. Exactly one is active. */
+  active: boolean;
+  /** Sessions behind this variant, so the client can rank or grey out thin
+   *  options without a second round trip. */
+  sessions: number;
 }
 
 // ── Params ───────────────────────────────────────────────────────

@@ -2163,15 +2163,25 @@ export function stateToPromptContext(
     if (state.longest_run_14d) lines.push(`Longest run (14d): ${state.longest_run_14d} mi`);
   });
 
-  // Fitness + Predicted Race Times — ranges + confidence, never a single
-  // time (hard rule #7).
+  // Fitness + Predicted Race Times — ONE number + confidence (hard rule #7,
+  // revised 2026-07-18: the range read as too wide and inaccurate; a single
+  // honest estimate with a confidence tier is the contract everywhere —
+  // raceProjection.ts made this move on 2026-07-18, this section caught up
+  // 2026-08-07).
   section("predicted", 2, (lines) => {
     const fp = state.fitness_prediction;
     if (fp && fp.ranges) {
-      lines.push(`\nPredicted race times (quote the RANGE, never a single time):`);
+      lines.push(`\nPredicted race times (single estimate — quote ONE time, never a range):`);
       const emit = (label: string, key: string) => {
         const r = fp.ranges[key];
-        if (r) lines.push(`  ${label}: ${formatTime(r.low)}–${formatTime(r.high)}`);
+        if (r) {
+          // Prefer the stored point; older snapshots may carry bands only, so
+          // fall back to the midpoint rather than dropping the line.
+          const pt = Number.isFinite(r.point) && r.point > 0
+            ? r.point
+            : Math.round((r.low + r.high) / 2);
+          lines.push(`  ${label}: ${formatTime(pt)}`);
+        }
       };
       emit("5K", "5K");
       emit("10K", "10K");
