@@ -392,10 +392,36 @@ BEGIN
         NULL;
     END;
 
+    -- Both guards come from 20260807210000, the follow-up to the 2026-08-07
+    -- 20:23 UTC stall — where per-tick crons that did real work on every tick
+    -- filled the background-worker slots, and Postgres started logging
+    -- `job startup timeout` for EVERY cron job. GoTrue lost the database and
+    -- the whole app wedged behind a session refresh that never returned.
+    -- Adding an unconditional per-minute job to this database without the same
+    -- guards would be re-creating the cause three days after the incident.
+    --
+    --   1. EXISTS gate. `SELECT f() WHERE <cond>` does not evaluate the target
+    --      list when the qualification is false, so an idle tick costs one
+    --      index probe and never enters the function — no DELETE join, no
+    --      claim query. After the backfill drains, that is ~1,440 ticks a day
+    --      doing nothing, which is the steady state this should have.
+    --      `workout_parse_jobs_claimable_idx` is partial on `attempts < 3`, so
+    --      it stays small and the probe stays cheap however the table grows.
+    --      Rows at attempts = 3 deliberately do NOT hold the cron open: they
+    --      are the permanent record of a failure, not outstanding work.
+    --
+    --   2. pg_try_advisory_xact_lock. If the previous tick is still running —
+    --      which is what "the database is slow" looks like from here — this
+    --      tick takes no lock and exits rather than stacking on top of it.
+    --      That is the piece that stops a pile-up from compounding.
     SELECT cron.schedule(
         'dispatch-workout-parse',
         '* * * * *',
-        $cron$ SELECT public.dispatch_workout_parse(6); $cron$
+        $cron$
+        SELECT public.dispatch_workout_parse(6)
+         WHERE EXISTS (SELECT 1 FROM public.workout_parse_jobs WHERE attempts < 3)
+           AND pg_try_advisory_xact_lock(hashtext('dispatch-workout-parse')::bigint);
+        $cron$
     ) INTO _job_id;
 
     RAISE NOTICE 'scheduled dispatch-workout-parse as cron job %', _job_id;
