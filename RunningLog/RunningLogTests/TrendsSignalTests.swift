@@ -205,7 +205,10 @@ struct TrendsWindowTests {
     func degradationIsStated() {
         let set = TrendsSignalBuilder.build(days: fourMonths, keySessions: [], window: .oneYear)
         #expect(set.degradationNote.contains("weekly columns"))
-        #expect(set.degradationNote.contains("30-day"))
+        // "1-month", not "30-day": the window pills were unified on months so
+        // the row stopped reading as three options and one oddity. The window
+        // is still 30 days — only the word changed.
+        #expect(set.degradationNote.contains("1-month"))
     }
 
     @Test("30 days is the default window")
@@ -218,7 +221,7 @@ struct TrendsWindowTests {
 // MARK: - The read
 
 @Suite("TrendsSignalRead")
-struct TrendsReadTests {
+struct TrendsSignalReadTests {
 
     /// The most important line on the surface: the difference between a tool
     /// that observes and one that manufactures signal.
