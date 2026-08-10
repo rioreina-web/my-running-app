@@ -45,6 +45,32 @@ interface Body {
 }
 
 /**
+ * True when the token is a Supabase service-role JWT (by claim). Signature is
+ * NOT checked here — the gateway already did that (verify_jwt = true, set for
+ * this function in config.toml on 2026-08-10 precisely so this is safe).
+ * Mirrors the helper in extract-rpe / drain-coach-insight-jobs /
+ * drain-coachable-moment-jobs.
+ *
+ * DO NOT reuse this in a function whose verify_jwt is false — there the claim
+ * would be unverified and anyone could mint `role: service_role` and parse any
+ * athlete's workouts.
+ */
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Record WHY a parse failed onto its queue row.
  *
  * The dispatcher fires `net.http_post`, which is fire-and-forget — it cannot
@@ -84,9 +110,34 @@ Deno.serve(async (req) => {
   }
 
   // Accept a user JWT OR the service-role key (service callers must name user_id).
-  const auth = await requireAuthOrServiceRole(req, body.user_id, corsHeaders);
-  if ("response" in auth) return auth.response;
-  const { userId, isServiceRole } = auth;
+  //
+  // Service-role path decodes the role CLAIM rather than exact-matching
+  // SUPABASE_SERVICE_ROLE_KEY. The Vault copy of the key — the one
+  // dispatch_workout_parse sends — no longer string-equals this function's env
+  // copy, even though both are validly signed, so the exact-match path in
+  // requireAuthOrServiceRole 401s every dispatched job. Measured 2026-08-10:
+  // 30 of 30 dispatches came back {"error":"Authentication required"} while the
+  // cron itself reported success, because net.http_post cannot see the reply.
+  // Same drift, and the same fix, as drain-* (2026-06-11) and extract-rpe
+  // (2026-08-07).
+  let userId: string;
+  let isServiceRole: boolean;
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const bearer = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+  if (bearer && isServiceRoleJWT(bearer)) {
+    if (!body.user_id) {
+      return json({ error: "Service-role caller must specify user_id in body" }, 400);
+    }
+    userId = body.user_id;
+    isServiceRole = true;
+  } else {
+    // User-JWT path (and its ownership check) unchanged.
+    const auth = await requireAuthOrServiceRole(req, body.user_id, corsHeaders);
+    if ("response" in auth) return auth.response;
+    ({ userId, isServiceRole } = auth);
+  }
 
   const rlBlocked = await enforceFeatureRateLimit(userId, "parse", corsHeaders, { isServiceRole });
   if (rlBlocked) return rlBlocked;

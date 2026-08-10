@@ -513,8 +513,21 @@ verify_jwt = false
 [functions.parse-training-week]
 verify_jwt = false
 
+# verify_jwt = true (2026-08-10, was false). The gateway now validates the JWT
+# signature, which is the precondition for reading the role claim inside the
+# function instead of string-comparing SUPABASE_SERVICE_ROLE_KEY. The Vault copy
+# of the service key no longer string-equals the function-env copy — the same
+# drift that 401'd the drains on 2026-06-11 and every dispatch_rpe_extraction
+# call on 2026-08-07 — so the exact-match path rejects the workout-parse
+# dispatcher outright. Same fix drain-*, extract-rpe, rebuild-athlete-state and
+# compute-fitness-snapshot already carry.
+#
+# Safe for every caller: iOS sends a user JWT, and strava-sync /
+# process-training-memo / vital-webhook / correct-workout-structure / the
+# dispatch_workout_parse cron all send the service key, which is itself a
+# validly signed JWT. Nothing calls this anonymously.
 [functions.parse-workout-structure]
-verify_jwt = false
+verify_jwt = true
 
 [functions.process-training-memo]
 verify_jwt = false
