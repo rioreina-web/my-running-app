@@ -196,6 +196,16 @@ struct MainTabView: View {
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
+                // Tab 8 — Charts ("The Instruments"). The expandable
+                // data-viz card prototype, added 2026-08-08. Mock data
+                // only (`InstrumentsMockData`) — no fetch, no service —
+                // so rendering it eagerly in this ZStack costs nothing.
+                // Remove this branch and `DripTab.instruments` together
+                // when the cards graduate into Trends/Train proper.
+                NavigationStack { InstrumentsTabView() }
+                    .opacity(selectedTab == 8 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 8)
+
                 // Tab 2 — COACH (The Read) removed 2026-07-28. The tab bar
                 // is Log · Trends · Train. `CoachReadView` stays in the repo,
                 // unlinked, so the surface can be restored as a tab or as a
@@ -222,6 +232,10 @@ struct MainTabView: View {
                 async let paceProfile: Void = { try? await AthletePaceProfileService.shared.refresh() }()
                 async let paceZones: Void = { try? await PaceZonesService.shared.refresh() }()
                 async let dailyRead: Void = { try? await DailyReadService.shared.refresh() }()
+                // The athlete's key-session declarations. One small query; the
+                // calendar, journal and day sheet all read the same store, so
+                // it has to be warm before any of them draws a star.
+                async let keySessions: Void = KeySessionStore.shared.loadOverrides()
                 async let maxHRSync: Void = AthleteSettingsService.syncMaxHRFromServer()
                 // Beta-audit #10: keep athlete_settings.timezone current so
                 // the Daily Read cron fires at the athlete's LOCAL morning.
@@ -243,7 +257,7 @@ struct MainTabView: View {
                     // had no producer since Vital went quiet on 2026-04-03.
                     await HealthBiometricsSync.shared.sync()
                 }()
-                _ = await (profile, paceProfile, paceZones, dailyRead, maxHRSync, tzSync, healthKitSync)
+                _ = await (profile, paceProfile, paceZones, dailyRead, maxHRSync, tzSync, healthKitSync, keySessions)
             }
             .onChange(of: scenePhase) { _, newPhase in
                 // Re-fire the daily Coach Read fetch every time the

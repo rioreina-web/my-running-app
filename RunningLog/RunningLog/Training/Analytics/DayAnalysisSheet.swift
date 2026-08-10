@@ -30,11 +30,16 @@ struct DayAnalysisSheet: View {
     @State private var splitsBySession: [UUID: [DaySplit]] = [:]
     @State private var analysisTarget: WorkoutAnalysisTarget?
 
+    /// Key sessions. Shared store, so a tap here moves the star in the
+    /// calendar and the journal at the same time.
+    @State private var keySessions = KeySessionStore.shared
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     summaryHeader
+                    keySessionRow
                     zoneBreakdown
                     EditorialRule().padding(.vertical, 22)
                     ForEach(Array(sessions.enumerated()), id: \.element.id) { idx, s in
@@ -58,6 +63,11 @@ struct DayAnalysisSheet: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } }
             }
             .task {
+                // Late sign-in safety net: the launch refresh runs before auth
+                // settles for a first-run athlete, leaving the store empty and
+                // every day reading AUTO. Cheap, and only when it didn't load.
+                if !keySessions.hasLoaded { await keySessions.loadOverrides() }
+
                 var map: [UUID: [DaySplit]] = [:]
                 for s in sessions { map[s.id] = await vm.splits(forSessionId: s.id) }
                 splitsBySession = map
@@ -107,6 +117,81 @@ struct DayAnalysisSheet: View {
             parts.append("\(TrainingAnalyticsViewModel.formatPaceMMSS(p)) /MI AVG")
         }
         return parts.joined(separator: " · ")
+    }
+
+    // MARK: Key session — the athlete's declaration
+    //
+    // The one place a key session gets ASSIGNED. Everything else in the app
+    // only displays the result (KEY-SESSION-APPLY.md §8A).
+    //
+    // Tapping cycles: AUTO → YOURS ★ → YOURS (not key) → AUTO. Three taps
+    // and you're back where you started, so it's safe to explore.
+    //
+    // "MARKS FRI AUG 7" is not decoration. The override is keyed by DAY, not
+    // by run — on a doubles day this sheet lists two sessions, and without
+    // that line the row reads as marking the one run you happened to open.
+
+    private var keySessionRow: some View {
+        Button {
+            Task { await keySessions.cycle(on: day) }
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text("KEY SESSION")
+                        .font(.dripEyebrow(10.5)).tracking(1.3)
+                        .foregroundStyle(Color.drip.textSecondary)
+                    Spacer(minLength: 12)
+                    Text(keyStateLabel)
+                        .font(.dripEyebrow(9.5)).tracking(1.1)
+                        .foregroundStyle(keyIsSet ? Color.drip.textPrimary
+                                                  : Color.drip.textTertiary)
+                    KeySessionStar(provenance: keyProvenance, isKey: keyIsSet)
+                        .frame(width: 11, height: 11)
+                }
+                Text(marksLine)
+                    .font(.dripEyebrow(8.5)).tracking(0.9)
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 14)
+    }
+
+    /// The athlete's stored answer for this day. nil = they've said nothing.
+    private var keyOverride: Bool? { keySessions.override(on: day) }
+
+    /// Phase-1 derived rule: the calendar's existing one, passed in rather than
+    /// reinvented, so this sheet and the calendar cannot disagree. Becomes
+    /// `keySessions.isKey(on: day)` once quality_load is persisted.
+    private var keyIsSet: Bool {
+        keySessions.isKey(on: day, derived: summary.zone.threshold > 0)
+    }
+
+    private var keyProvenance: KeySessionMark.Provenance { keySessions.provenance(on: day) }
+
+    /// Never an em-dash placeholder: a day with nothing set reads AUTO, which
+    /// is a real value, not an empty one.
+    private var keyStateLabel: String {
+        switch keyOverride {
+        case .some(true):  return "YOURS"
+        case .some(false): return "YOURS · NOT KEY"
+        case nil:          return "AUTO"
+        }
+    }
+
+    /// "MARKS FRI AUG 7" — says out loud that this marks the day.
+    private var marksLine: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE MMM d"
+        let d = f.string(from: day).uppercased()
+        switch keyOverride {
+        case .some(true):  return "MARKS \(d) · TAP TO SAY NOT KEY"
+        case .some(false): return "MARKS \(d) · TAP TO GO BACK TO AUTO"
+        case nil:          return "MARKS \(d) · TAP TO MARK IT KEY"
+        }
     }
 
     // MARK: Zone breakdown (pace-zone / effort + volume)

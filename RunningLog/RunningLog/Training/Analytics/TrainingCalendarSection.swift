@@ -27,6 +27,12 @@ struct TrainingCalendarSection: View {
     /// Host presents the day detail (e.g. `route = .day($0)`).
     var onTapDay: (Date) -> Void
 
+    /// Key sessions. Read-only here — this section is a PURE DISPLAY of
+    /// resolved state, and the mark is set from the day sheet
+    /// (KEY-SESSION-APPLY.md §7). Shared store, so closing that sheet moves
+    /// this star with no refetch.
+    @State private var keySessions = KeySessionStore.shared
+
     /// Distance/pace units — reads the app-wide Settings preference so this
     /// section re-renders the instant the athlete flips Miles ↔ Kilometers.
     @AppStorage("distanceUnit") private var distanceUnitRaw = DistanceUnit.miles.rawValue
@@ -296,7 +302,7 @@ struct TrainingCalendarSection: View {
             .clipShape(RoundedRectangle(cornerRadius: 7))
             .overlay(alignment: .topLeading) {
                 if isKey(c) {
-                    FiveStar().fill(Color.drip.textPrimary)
+                    KeySessionStar(provenance: keyProvenance(c), isKey: true)
                         .frame(width: 9, height: 9).padding(4)
                 }
             }
@@ -508,7 +514,30 @@ struct TrainingCalendarSection: View {
         return Color.drip.textPrimary
     }
 
-    private func isKey(_ c: DayCell) -> Bool { !c.isFuture && c.split.threshold > 0 }
+    // MARK: Key session
+    //
+    // The derived rule here is UNCHANGED for now — `split.threshold > 0`, the
+    // same one this file has always used. What is new is that the athlete can
+    // overrule it: mark a day the rule missed, or un-mark a day it starred for
+    // a single downhill mile.
+    //
+    // That rule is still wrong, and knowingly so. `split.threshold` is any
+    // mileage faster than 1.07 x MP with NO MINIMUM, so a stray fast stretch
+    // stars the whole day, and it has no concept of a long run at all — which
+    // is why this surface and the journal disagree. Replacing it needs
+    // persisted `quality_load`, which is the next change. Doing it here would
+    // mean every existing star disappearing until that backfill ran.
+    //
+    // When it lands: pass nothing, call `keySessions.isKey(on:)`, delete the
+    // argument below. Nothing else on this line changes.
+
+    private func isKey(_ c: DayCell) -> Bool {
+        keySessions.isKey(on: c.date, derived: !c.isFuture && c.split.threshold > 0)
+    }
+
+    private func keyProvenance(_ c: DayCell) -> KeySessionMark.Provenance {
+        keySessions.provenance(on: c.date)
+    }
 
     private func sessionTitle(_ c: DayCell, _ ss: [SessionDetail]) -> String {
         if c.isRest { return "Rest" }
@@ -559,7 +588,7 @@ struct TrainingCalendarSection: View {
 // stays faithful to the design system (SF Symbols are flagged as an
 // emoji-rule violation — see `MoodBadge` in DesignSystem.swift).
 
-private struct FiveStar: Shape {
+struct FiveStar: Shape {
     func path(in rect: CGRect) -> Path {
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let outer = min(rect.width, rect.height) / 2
@@ -574,5 +603,39 @@ private struct FiveStar: Shape {
         }
         path.closeSubpath()
         return path
+    }
+}
+
+// MARK: - Provenance-styled star
+//
+// Three states, one glyph of difference each. These are 9pt marks, so
+// restraint matters — the difference has to be legible at a glance without
+// turning the calendar into a key.
+//
+//   outline  — derived. The app's guess.
+//   tinted   — plan intent. Somebody meant this.
+//   filled   — athlete override. You said so.
+//
+// A day explicitly un-keyed draws nothing at all, but its sheet still reads
+// YOURS — so a deliberate "not key" never looks like the app forgot.
+
+struct KeySessionStar: View {
+    let provenance: KeySessionMark.Provenance
+    var isKey: Bool = true
+
+    var body: some View {
+        Group {
+            if !isKey {
+                // Not a key session. Drawn only in the day sheet, where the row
+                // needs a target to tap; the calendar draws nothing at all.
+                FiveStar().stroke(Color.drip.textTertiary, lineWidth: 0.9)
+            } else {
+                switch provenance {
+                case .auto:    FiveStar().stroke(Color.drip.textPrimary, lineWidth: 1.1)
+                case .planned: FiveStar().fill(Color.drip.textPrimary.opacity(0.45))
+                case .athlete: FiveStar().fill(Color.drip.coral)
+                }
+            }
+        }
     }
 }

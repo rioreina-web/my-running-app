@@ -26,6 +26,11 @@ import SwiftUI
 
 struct JournalLogRow: View {
     let entry: TrainingLog
+
+    /// Key sessions. Shared with the calendar and the day sheet, so the star
+    /// here can no longer disagree with the one there — which it did,
+    /// constantly (KEY-SESSION-APPLY.md §"Rule 2").
+    @State private var keySessions = KeySessionStore.shared
     /// Body-part mentions on this entry — the athlete's own words, shown as
     /// quiet chips. Detection, never diagnosis.
     var niggles: [JournalNiggle] = []
@@ -55,9 +60,25 @@ struct JournalLogRow: View {
         WorkoutLabel.display(entry.workoutType).uppercased()
     }
 
-    /// Key (quality) session — earns a star marker. Easy/recovery/rest/cross
-    /// are not key; the race-pace zones + long run + intervals/progression are.
+    /// Key (quality) session — earns a star marker. The athlete's declaration
+    /// wins; the workout_type set below is only the fallback for days they
+    /// have said nothing about.
+    ///
+    /// That set is knowingly wrong and knowingly temporary. It has no concept
+    /// of how much work was actually done, so it stars a 3-mile shakeout
+    /// labelled "tempo"; and because the calendar's rule has no concept of a
+    /// long run, the two surfaces give opposite answers on almost every
+    /// interesting day. It survives only until `quality_load` is persisted —
+    /// deleting it now would leave the journal with no stars at all.
     private var isKeySession: Bool {
+        keySessions.isKey(on: entry.displayDate, derived: derivedKeyByType)
+    }
+
+    private var keyProvenance: KeySessionMark.Provenance {
+        keySessions.provenance(on: entry.displayDate)
+    }
+
+    private var derivedKeyByType: Bool {
         let key: Set<String> = [
             "intervals", "interval", "tempo", "threshold", "fartlek", "progression",
             "race", "long_run", "long", "longrun", "long_wo",
@@ -159,9 +180,10 @@ struct JournalLogRow: View {
                         .foregroundStyle(Color.drip.textPrimary)
                         .lineLimit(1)
                     if isKeySession {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color.drip.textSecondary)
+                        // The same star the calendar draws, styled by the same
+                        // provenance. Two surfaces, one glyph, one meaning.
+                        KeySessionStar(provenance: keyProvenance, isKey: true)
+                            .frame(width: 10, height: 10)
                     }
                     Spacer(minLength: 12)
                     indicator
