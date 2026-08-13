@@ -34,7 +34,11 @@
 -- Reversible: re-run 20260810170000 and 20260807130000 for the prior bodies.
 
 -- ── parse-workout-structure ─────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.dispatch_workout_parse(_batch integer)
+-- `DEFAULT 6` is NOT decoration: the live function carries it (added by
+-- 20260810170000), and Postgres rejects a CREATE OR REPLACE that drops an
+-- existing parameter default outright — "cannot remove parameter defaults from
+-- existing function", SQLSTATE 42P13. Omitting it here failed the push.
+CREATE OR REPLACE FUNCTION public.dispatch_workout_parse(_batch integer DEFAULT 6)
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -125,7 +129,8 @@ END;
 $$;
 
 -- ── extract-rpe ─────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.dispatch_rpe_extraction(_batch integer)
+-- `DEFAULT 8` for the same reason as above (set by 20260807130000).
+CREATE OR REPLACE FUNCTION public.dispatch_rpe_extraction(_batch integer DEFAULT 8)
 RETURNS integer
 LANGUAGE plpgsql
 SECURITY DEFINER
