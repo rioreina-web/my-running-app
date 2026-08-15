@@ -2,12 +2,12 @@
  * Quality load — the per-session effort score behind the Key Sessions grid.
  *
  * A session's effort is the SUM over its WORK bouts of
- * `seconds × ZONE_WEIGHTS[zone]`, expressed in weighted minutes.
+ * `seconds × bout.weight`, expressed in weighted minutes.
  *
  * WHY A SUM, NOT AN AVERAGE
  * -------------------------
  * `segmentFromLaps` already computes exactly this quantity — it accumulates
- * `weightedSum += b.seconds * ZONE_WEIGHTS[b.zone]` — and then divides it by
+ * `weightedSum += b.seconds * b.weight` — and then divides it by
  * `totalSeconds` to produce `intensityScore`, discarding the numerator. That
  * ratio is the retired whole-workout metric `_shared/quality-volume.ts`
  * documents as broken: it booked a rep session's warmup, floats, standing
@@ -15,8 +15,33 @@
  * scored zero because the easy miles dragged the average under the cutoff.
  *
  * Integrating instead of averaging, and restricting to `isWork` bouts, is
- * the whole fix. No new weights, no new classifier — `ZONE_WEIGHTS` is the
- * canonical 1–5 scale from the 2026-06-12 decision, used unchanged.
+ * the whole fix. No new weights, no new classifier — the weight is the same
+ * scale from the 2026-06-12 decision, read off the curve those anchors
+ * describe rather than off the ten-step table directly.
+ *
+ * (2026-08-14) `ZONE_WEIGHTS[b.zone]` → `b.weight`. THE STEP WAS THE BUG.
+ * ----------------------------------------------------------------------
+ * The discrete table is ten steps and `paceToZone` cuts at the MIDPOINT
+ * between two anchors — so a bout landing one second per mile either side of
+ * a boundary jumped a whole step. For the calibration athlete a 6-mile tempo
+ * scored 83.3 at 5:33/mi and 71.8 at 5:34/mi: 14% of the score on a
+ * difference well inside GPS drift. The worst boundary (steady→moderate) was
+ * a 35% cliff. Since the client floor decides which sessions appear in the
+ * Key Sessions grid at all, that step could add or remove a session from the
+ * athlete's history on sensor noise.
+ *
+ * `Bout.weight` is `paceWeight()` — the monotone cubic through the SAME
+ * anchors, shipped 2026-08-13. So this recalibrates nothing: a bout sitting
+ * on an anchor pace scores bit-identically, and only bouts BETWEEN anchors
+ * move. It also inherits the curve's cold-start fallback — with no zone
+ * anchors `weight` IS `ZONE_WEIGHTS[zone]`, so an athlete with no anchor
+ * scores exactly as before.
+ *
+ * ⚠️  BACKFILL OWED. Every `quality_load` already on `workout_features` was
+ * written with the stepped weight. Until `compute-workout-features` is re-run
+ * across history, a stored score and a freshly computed one are on different
+ * scales and must not be compared. The 23-session calibration set below
+ * predates this change for the same reason.
  *
  * NO GATE HERE, DELIBERATELY
  * --------------------------
@@ -38,23 +63,50 @@
  * is how four disagreeing key-session rules happened in the first place.
  */
 
-import { ZONE_WEIGHTS, type Bout } from "./workoutSegmentation.ts";
+import { type Bout } from "./workoutSegmentation.ts";
+import {
+  densityMultiplier,
+  fatigueMultiplier,
+  type LoadContext,
+} from "./loadTerms.ts";
 
 /**
  * Weighted minutes of work in one session. Rest, warmup and cooldown fall
  * out via `isWork`, which `segmentFromLaps` has already decided.
  *
+ * `ctx` (from `buildLoadContext(zones)`) switches on two shading terms — rep
+ * length against the pace ceiling (per work bout) and time on feet (per
+ * session). It is OPTIONAL on purpose: without a usable zone table there is no
+ * honest ceiling, so the score falls back to exactly what it was before rather
+ * than guessing.
+ *
+ * There is NO rest term here. Rest is owned by `effortModel`'s habit-relative
+ * density, which shades `effort_load` — the CTL/ATL/TSB unit. This score is the
+ * key-session marker and does not need it. One mechanism per axis; see the
+ * header of `effortModel.effortLoadFromBouts`.
+ *
  * Returns 0 for a session with no work bouts — a real zero, and the caller
  * is free to emit it. Rounded to one decimal: the score drives a dot radius,
  * so further precision is noise.
  */
-export function qualityLoadForBouts(bouts: readonly Bout[]): number {
+export function qualityLoadForBouts(
+  bouts: readonly Bout[],
+  ctx?: LoadContext | null,
+): number {
   let weighted = 0;
   for (const b of bouts) {
     if (!b.isWork || b.seconds <= 0) continue;
-    weighted += b.seconds * (ZONE_WEIGHTS[b.zone] ?? 1);
+    const density = ctx
+      ? densityMultiplier(b.seconds, ctx.ceilingSeconds(b.paceSecPerMile))
+      : 1;
+    weighted += b.seconds * (b.weight > 0 ? b.weight : 1) * density;
   }
-  return Math.round((weighted / 60) * 10) / 10;
+  const base = weighted / 60;
+  // No rest term here on purpose. Rest is owned by `effortModel`'s
+  // habit-relative density on the LOAD score (effort_load); quality_load is the
+  // key-session marker and does not need it. One mechanism per axis.
+  const shaded = base * (ctx ? fatigueMultiplier(bouts) : 1);
+  return Math.round(shaded * 10) / 10;
 }
 
 /**
@@ -64,21 +116,29 @@ export function qualityLoadForBouts(bouts: readonly Bout[]): number {
  * That difference is the point, not an inconsistency. In a rep session the
  * warmup, floats and cooldown are scaffolding around the stimulus, so they
  * are excluded. In a long run the whole run IS the stimulus, so all of it
- * counts — and because `ZONE_WEIGHTS` already grades easy (1.0) below steady
- * (2.0) below MP (2.5), a long run finished strong outscores the same
- * distance plodded, with no second scale needed.
+ * counts — and because the weight curve already grades easy (1.0) below
+ * steady (2.15) below MP (2.5), a long run finished strong outscores the
+ * same distance plodded, with no second scale needed.
  *
  * A 93-minute easy long run scores ~93, landing just under this athlete's
  * biggest threshold session (103.5). That ordering is about right: both are
  * the anchor session of their week.
  */
-export function aerobicLoadForBouts(bouts: readonly Bout[]): number {
+export function aerobicLoadForBouts(
+  bouts: readonly Bout[],
+  ctx?: LoadContext | null,
+): number {
   let weighted = 0;
   for (const b of bouts) {
     if (b.seconds <= 0) continue;
-    weighted += b.seconds * (ZONE_WEIGHTS[b.zone] ?? 1);
+    weighted += b.seconds * (b.weight > 0 ? b.weight : 1);
   }
-  return Math.round((weighted / 60) * 10) / 10;
+  // No density or lactic here — by definition this branch only runs when there
+  // are no work bouts, so there is no rep structure to measure and nothing
+  // crosses critical speed. The DURATION term is the whole point for a long
+  // run, and it is the only one that applies.
+  const shaded = (weighted / 60) * (ctx ? fatigueMultiplier(bouts) : 1);
+  return Math.round(shaded * 10) / 10;
 }
 
 /**
@@ -120,15 +180,16 @@ export function qualityLoadForSession(
   workoutKind: string | null | undefined,
   bouts: readonly Bout[],
   durationMinutes: number | null | undefined,
+  ctx?: LoadContext | null,
 ): { quality_load: number | null; quality_kind: string | null } {
   const hasWork = bouts.some((b) => b.isWork && b.seconds > 0);
 
   if (hasWork) {
-    return { quality_load: qualityLoadForBouts(bouts), quality_kind: "quality" };
+    return { quality_load: qualityLoadForBouts(bouts, ctx), quality_kind: "quality" };
   }
 
   if (workoutKind === "long_run") {
-    const load = aerobicLoadForBouts(bouts);
+    const load = aerobicLoadForBouts(bouts, ctx);
     return {
       quality_load: load > 0 ? load : longRunLoadFromMinutes(durationMinutes),
       quality_kind: "long_run",

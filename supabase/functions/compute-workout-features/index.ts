@@ -15,6 +15,7 @@ import {
 } from "../_shared/workoutSegmentation.ts";
 import { deriveWorkoutNotes } from "../_shared/workout-notes.ts";
 import { qualityLoadForSession } from "../_shared/qualityLoad.ts";
+import { buildLoadContext, type LoadContext } from "../_shared/loadTerms.ts";
 import {
   buildEffortProfile,
   densityBaselineFromSamples,
@@ -22,6 +23,15 @@ import {
   type EffortLap,
   type RestSample,
 } from "../_shared/effortModel.ts";
+import {
+  classifyHrSource,
+  REP_MIN_S,
+  repSeriesFromStream,
+  repWindowsFromLaps,
+  scoreRepSession,
+  SLOPES_MIN_REPS,
+  type RepWindow,
+} from "../_shared/repSignal.ts";
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -162,6 +172,7 @@ function computeFeatures(
   seg: SegmentationResult,
   prevWorkout: TrainingLog | null,
   prevHardWorkout: TrainingLog | null,
+  loadCtx: LoadContext | null,
 ) {
   // --- Volume signals (from the logged totals, not the lap sum) ---
   const totalDistanceMiles = log.workout_distance_miles || 0;
@@ -267,7 +278,12 @@ function computeFeatures(
     workout_structure: seg.structure,
     // The stimulus score every client surface reads to decide "key session".
     // The long_run branch inside is load-bearing — see _shared/qualityLoad.ts.
-    ...qualityLoadForSession(seg.workoutKind, seg.bouts, log.workout_duration_minutes),
+    ...qualityLoadForSession(
+      seg.workoutKind,
+      seg.bouts,
+      log.workout_duration_minutes,
+      loadCtx,
+    ),
   };
 }
 
@@ -473,6 +489,12 @@ Deno.serve(async (req) => {
 
     // --- WS1: pull pace zones + laps ---
     const zones = await fetchPaceZones(user_id);
+    // Density / lactic / duration shading for the quality-load score. Built
+    // once per athlete — the ceiling curve and the critical-speed fit are
+    // properties of the zone table, not of any one session. Null when the
+    // table has no race anchor, in which case qualityLoad falls back to the
+    // unshaded base formula rather than inventing one.
+    const loadCtx = buildLoadContext(zones);
     const lapsByWorkout = await fetchLapsByWorkout(user_id, allLogs.map(l => l.id));
 
     // Segment every log once (chronological), so recovery context can see the
@@ -487,6 +509,12 @@ Deno.serve(async (req) => {
     const notesBackfill: Array<{ id: string; workout_notes: string }> = [];
     const stressBackfill: Array<{ id: string; stress_load: number; stress_source: string }> = [];
     const effortBackfill: Array<{ id: string } & Record<string, unknown>> = [];
+    // Rep-signal candidates (2026-08-15, CURRENT-FITNESS-APPLY.md §6.2).
+    // hrr60 needs the per-second HR stream, and external_streams is the #1
+    // cost in the app — so the expensive fetch is gated by a CHEAP lap check:
+    // only sessions whose laps already show >= SLOPES_MIN_REPS rep candidates
+    // of >= REP_MIN_S even get their stream read (~2-3 sessions/week).
+    const repCandidates: Array<{ id: string; windows: RepWindow[] }> = [];
     // The athlete's rest habit, accumulated as the chronological loop advances.
     // Strictly backward-looking: a session's density is measured against how
     // this athlete rested BEFORE it, never against sessions it hasn't run yet.
@@ -505,7 +533,7 @@ Deno.serve(async (req) => {
         if (isQualitySession(segById.get(allLogs[j].id)!)) { prevHardWorkout = allLogs[j]; break; }
       }
 
-      const feat = computeFeatures(log, seg, prevWorkout, prevHardWorkout);
+      const feat = computeFeatures(log, seg, prevWorkout, prevHardWorkout, loadCtx);
 
       // Effort profile — density + conditions. Needs rep-level laps: without
       // them there is no rest to measure, and we don't guess one. Built for
@@ -516,6 +544,7 @@ Deno.serve(async (req) => {
         ? buildEffortProfile(effortLaps, zones, {
           conditions: log.weather_actual ?? null,
           baseline: densityBaselineFromSamples(restSamples),
+          loadCtx,
         })
         : null;
 
@@ -538,6 +567,16 @@ Deno.serve(async (req) => {
           feat.total_duration_seconds ?? 0,
         );
         stressBackfill.push({ id: log.id, ...stress });
+        // Rep-signal gate — laps only, no stream cost. The ceiling is the
+        // athlete's steady pace: the same "faster than steady" line the
+        // segmenter draws for isWork.
+        if (effortLaps && effortLaps.length > 0 && typeof zones.steady === "number") {
+          const windows = repWindowsFromLaps(effortLaps, zones.steady);
+          const longEnough = windows.filter((w) => w.durationS >= REP_MIN_S);
+          if (longEnough.length >= SLOPES_MIN_REPS) {
+            repCandidates.push({ id: log.id, windows });
+          }
+        }
         if (effort) {
           effortBackfill.push({
             id: log.id,
@@ -573,6 +612,54 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Rep signal — one batched stream read for the few sessions that passed
+    // the lap gate, then attach onto the pending feature rows. Failure here
+    // must never sink the upsert: rep_signal is additive.
+    if (repCandidates.length > 0) {
+      try {
+        // ONLY the two paths — selecting the column itself would pull GPS,
+        // cadence, altitude and the lap array along with it. Same select, and
+        // the same ragged-length tolerance, as run-hr-trace.
+        const { data: streamRows } = await supabase
+          .from("training_logs")
+          .select(
+            "id, hr:external_streams->streams->heartrate, t:external_streams->streams->time, " +
+            "device:external_streams->meta->>device_name, model:external_streams->meta->>device_model",
+          )
+          .eq("user_id", user_id)
+          .in("id", repCandidates.map((c) => c.id));
+        // Cast: supabase-js can't type aliased JSON-path selects, so the rows
+        // come back as an opaque shape. The runtime guards below do the work.
+        type StreamRow = { id: string; hr: unknown; t: unknown; device?: unknown; model?: unknown };
+        const typedRows = (streamRows ?? []) as unknown as StreamRow[];
+        const byId = new Map(typedRows.map((r) => [r.id, r]));
+        for (const cand of repCandidates) {
+          const row = byId.get(cand.id);
+          const hrRaw = Array.isArray(row?.hr) ? (row.hr as (number | null)[]) : null;
+          const tRaw = Array.isArray(row?.t) ? (row.t as number[]) : null;
+          if (!hrRaw || !tRaw || hrRaw.length === 0) continue;
+          // Parallel by construction; if a provider ships them ragged, trust
+          // the shorter one rather than reading past its end.
+          const n = Math.min(hrRaw.length, tRaw.length);
+          const reps = repSeriesFromStream(cand.windows, {
+            time: tRaw.slice(0, n),
+            hr: hrRaw.slice(0, n),
+          });
+          // Device-aware confidence: the blob's meta names the recording
+          // device. classifyHrSource errs toward "unknown", which changes
+          // nothing — see repSignal.ts HrSource header.
+          const deviceName = [row?.model, row?.device]
+            .find((v): v is string => typeof v === "string" && v.length > 0) ?? null;
+          const score = scoreRepSession(reps, { hrSource: classifyHrSource(deviceName) });
+          const feat = features.find((f) => f.training_log_id === cand.id);
+          if (feat) feat.rep_signal = { v: 1, reps, score };
+        }
+      } catch (e) {
+        // Additive signal: log and move on, the rest of the row still lands.
+        captureException(e, { fn: "compute-workout-features/rep_signal", userId: user_id });
+      }
+    }
+
     // Upsert. workout_type/workout_structure require migration 20260613200000;
     // quality_load/quality_kind require 20260810190100. Deploy order is
     // migration-first, but guard against the function landing first (this repo
@@ -588,6 +675,7 @@ Deno.serve(async (req) => {
           workout_structure: _ws,
           quality_load: _ql,
           quality_kind: _qk,
+          rep_signal: _rs,
           ...rest
         }) => rest);
         ({ error: upsertError } = await supabase

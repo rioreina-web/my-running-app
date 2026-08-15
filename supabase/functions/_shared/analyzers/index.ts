@@ -32,6 +32,7 @@
 
 import type { Analyzer } from "./types.ts";
 import { compareSession } from "./compareSession.ts";
+import { currentFitness } from "./currentFitness.ts";
 import { loadBalance } from "./loadBalance.ts";
 import { zoneTrend } from "./zoneTrend.ts";
 import { decoupling, efficiency } from "./efficiency.ts";
@@ -44,6 +45,7 @@ import { raceProjection } from "./raceProjection.ts";
 export * from "./types.ts";
 export {
   compareSession,
+  currentFitness,
   decoupling,
   efficiency,
   heatEffect,
@@ -59,6 +61,7 @@ export const ANALYZERS: Record<string, Analyzer> = {
   // Load
   [loadBalance.id]: loadBalance,
   // Adaptation
+  [currentFitness.id]: currentFitness,
   [zoneTrend.id]: zoneTrend,
   [efficiency.id]: efficiency,
   [raceProjection.id]: raceProjection,

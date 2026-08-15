@@ -52,9 +52,17 @@ const DECOUPLE_DIR_PCT = 1.0; // decoupling-% change to call a direction
 
 // Minimum qualifying aerobic distance for an easy session to count (miles).
 const MIN_EASY_MILES = 3;
+// Minimum rep length for a rep to feed EF (seconds). Below ~90s HR never
+// plateaus, so speed-per-beat under-reads the cost (measured 2026-08-14 —
+// the 200s session: 0/8 reps settled). Matches repSignal.REP_MIN_S.
+const EF_REP_MIN_S = 90;
 // Minimum sustained running time for a long-run decoupling read (seconds).
 const MIN_DECOUPLE_SECONDS = 40 * 60;
 
+/** "interval" remains in the type because persisted `athlete_state` rows and
+ *  the Ask `efficiency` analyzer's enum still carry it — but as of 2026-08-15
+ *  this module NO LONGER PRODUCES interval trends (see accumulateEfficiency).
+ *  Consumers must treat it as historical. */
 export type EffortBucket = "easy" | "threshold" | "interval";
 
 export interface SessionInput {
@@ -168,14 +176,24 @@ function accumulateEfficiency(
   const within = (b: Bout) => b.paceSecPerMile > 0 && validHr(b.avgHr);
 
   // Quality session: pool the WORK reps (comparable hard efforts).
+  //
+  // (2026-08-15) TWO AMENDMENTS, both measured — CURRENT-FITNESS-APPLY.md §2.1:
+  //  • The INTERVAL bucket no longer feeds EF. Reps in 5k/3k/mile zones are
+  //    short, and HR lags effort by 30–60s: on the 200s calibration session
+  //    0 of 8 reps reached a plateau and the average HR under-read the true
+  //    cost in a way that VARIES with rep length. Speed-per-beat on such reps
+  //    is systematically flattering and not comparable across sessions.
+  //    Threshold and easy carry the EF read; short reps are load, not cost.
+  //    (`repSignal.ts` owns the short-rep story via hrr60, gated ≥90s.)
+  //  • Within a threshold session, only reps ≥ EF_REP_MIN_S pool — the same
+  //    plateau physics, applied per rep. A 3×2mi session is unaffected; a
+  //    mixed set's 45s bursts fall out.
   if (seg.reps.length >= 2) {
     const dz = dominantRepZone(seg.reps);
     const bucket: EffortBucket | null =
-      dz && QUALITY_THRESHOLD_ZONES.has(dz) ? "threshold"
-      : dz && QUALITY_INTERVAL_ZONES.has(dz) ? "interval"
-      : null;
+      dz && QUALITY_THRESHOLD_ZONES.has(dz) ? "threshold" : null;
     if (bucket) {
-      const reps = seg.reps.filter(within);
+      const reps = seg.reps.filter((b) => within(b) && b.seconds >= EF_REP_MIN_S);
       if (reps.length >= 2) {
         const target = ageDays <= RECENT_WINDOW_DAYS ? "recent" : "baseline";
         addBouts(pools[bucket][target], reps, ageDays);
@@ -267,7 +285,7 @@ function confFromSamples(recent: number, baseline: number): "high" | "medium" | 
   return "low";
 }
 
-const BUCKET_PRIORITY: EffortBucket[] = ["threshold", "interval", "easy"];
+const BUCKET_PRIORITY: EffortBucket[] = ["threshold", "easy"]; // interval retired 2026-08-15
 const BUCKET_LABEL: Record<EffortBucket, string> = {
   easy: "easy runs",
   threshold: "threshold (LT) work",

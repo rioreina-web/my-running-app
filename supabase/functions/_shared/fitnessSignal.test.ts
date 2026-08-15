@@ -104,14 +104,18 @@ Deno.test("easy efficiency confidence reaches HIGH with enough samples", () => {
 
 // ── 2. Bucketing: interval vs threshold vs long-run ──
 
-Deno.test("quality sessions bucket by dominant rep zone", () => {
+Deno.test("threshold sessions bucket; interval sessions no longer feed EF (2026-08-15)", () => {
   const sessions: SessionInput[] = [
-    // Interval: 5×1K @ ~5K pace (305) — recent + baseline, HR falling.
+    // 5K-pace rep sessions — would have bucketed "interval" before the
+    // amendment. HR lags effort on short/hard reps (measured: the 200s
+    // calibration session never plateaued), so speed-per-beat here is
+    // systematically flattering. These must now contribute NOTHING.
     { date: dateDaysAgo(60), laps: repSession(5, 305, 168) },
     { date: dateDaysAgo(46), laps: repSession(5, 305, 168) },
     { date: dateDaysAgo(12), laps: repSession(5, 305, 164) },
     { date: dateDaysAgo(5), laps: repSession(5, 305, 163) },
-    // Threshold: reps at HMP (330) — recent + baseline, HR falling.
+    // Threshold: reps at HMP (330) — recent + baseline, HR falling. 1K reps
+    // run ~200s, comfortably over the 90s EF rep floor, so these still pool.
     { date: dateDaysAgo(58), laps: repSession(4, 330, 162) },
     { date: dateDaysAgo(44), laps: repSession(4, 330, 162) },
     { date: dateDaysAgo(15), laps: repSession(4, 330, 158) },
@@ -119,12 +123,9 @@ Deno.test("quality sessions bucket by dominant rep zone", () => {
   ];
   const sig = computeFitnessSignal(sessions, ZONES, NOW);
   const buckets = sig.efficiency.map((e) => e.bucket).sort();
-  assertEquals(buckets, ["interval", "threshold"]);
-  const interval = sig.efficiency.find((e) => e.bucket === "interval")!;
+  assertEquals(buckets, ["threshold"]);
   const threshold = sig.efficiency.find((e) => e.bucket === "threshold")!;
-  assertEquals(interval.direction, "improving");
   assertEquals(threshold.direction, "improving");
-  // Sharpest bucket leads the verdict (threshold before interval before easy).
   assert(sig.verdict && /threshold/i.test(sig.verdict), `verdict=${sig.verdict}`);
 });
 
