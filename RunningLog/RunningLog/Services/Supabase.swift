@@ -141,6 +141,113 @@ private func parseErrorMessage(from data: Data) -> String {
     return String(data: data, encoding: .utf8) ?? "Unknown error"
 }
 
+/// `nonisolated` because `AuthAvailability` below is an actor, and under the
+/// module's main-actor-by-default isolation a bare file-scope `let` belongs to
+/// the main actor — which an actor's methods may not touch. Matches `Log`,
+/// which is `nonisolated` for the same reason. `Logger` is `Sendable`, so
+/// there is nothing to make unsafe.
+private nonisolated let authLogger = Logger(subsystem: "com.postrundrip.app", category: "AuthAvailability")
+
+/// Circuit breaker around a stalled auth service.
+///
+/// The SDK funnels every caller through one in-flight refresh task
+/// (`SessionManager.inFlightRefreshTask`), and PostgREST reads fetch their
+/// access token down that same path. So when `/auth/v1/token` hangs — as it
+/// did on 2026-08-07, 504-ing once the database stalled — every request in the
+/// app queues behind a single doomed refresh and dies at URLSession's 60 s
+/// timeout. That produced twelve independent-looking `-1001`s from one cause,
+/// and left the app unusable for minutes after the backend had recovered.
+///
+/// This does not make auth work. It makes the failure cheap: the first caller
+/// pays the timeout, the rest fail immediately for a short cooldown instead of
+/// joining the queue behind it.
+actor AuthAvailability {
+    static let shared = AuthAvailability()
+
+    private var openedAt: Date?
+    private let cooldown: TimeInterval = 30
+
+    /// True while auth is known-bad and callers should not wait on it.
+    func isTripped() -> Bool {
+        guard let opened = openedAt else { return false }
+        guard Date().timeIntervalSince(opened) < cooldown else {
+            openedAt = nil
+            return false
+        }
+        return true
+    }
+
+    func recordFailure() {
+        guard openedAt == nil else { return }
+        openedAt = Date()
+        authLogger.warning("Auth unavailable — failing fast for \(Int(self.cooldown), privacy: .public)s")
+    }
+
+    func recordSuccess() {
+        if openedAt != nil {
+            authLogger.info("Auth recovered")
+        }
+        openedAt = nil
+    }
+}
+
+/// Bearer token for an authenticated edge-function call.
+///
+/// Returns `nil` when the user has a session that we cannot currently refresh
+/// — deliberately WITHOUT falling back to the anon key. Every caller of
+/// `callEdgeFunction` is an authenticated user action, so an anon-key request
+/// is a guaranteed 401 that costs a full round-trip and then triggers a
+/// *second* refresh against the same stalled service. That doubling is what
+/// turned a backend blip into a multi-minute client outage.
+///
+/// A genuinely signed-out user (no stored session at all) still gets the anon
+/// key, preserving the previous behaviour for that case.
+private func edgeFunctionBearerToken() async -> String? {
+    guard supabase.auth.currentSession != nil else {
+        return supabaseAnonKey
+    }
+    if await AuthAvailability.shared.isTripped() {
+        return nil
+    }
+    do {
+        let session = try await supabase.auth.session
+        await AuthAvailability.shared.recordSuccess()
+        return session.accessToken
+    } catch {
+        await AuthAvailability.shared.recordFailure()
+        return nil
+    }
+}
+
+/// Bounds an async operation in WALL-CLOCK time, cancelling it if it overruns.
+///
+/// `URLRequest.timeoutInterval` does not cover this on its own: it governs the
+/// gap between packets rather than the whole call, it is re-armed by
+/// `callEdgeFunction`'s retry (so a 25s bound becomes a 50s wait), and it does
+/// not cover the auth round-trip that happens BEFORE the request is built. A
+/// caller that says twenty seconds means twenty seconds, and on 2026-08-11 the
+/// gateway answered `trends-timeline` with a 401 after thirty-eight of them
+/// while the Train tab sat on "Loading" for the duration.
+///
+/// The losing side of the race is cancelled. Two private copies of this shape
+/// already exist (`AuthManager`, `VoiceLogViewModel`); new callers should take
+/// this one, and those two should fold into it when they are next touched.
+func withNetworkTimeout<T: Sendable>(
+    seconds: TimeInterval,
+    _ operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw URLError(.timedOut)
+        }
+        guard let result = try await group.next() else { throw URLError(.timedOut) }
+        group.cancelAll()
+        return result
+    }
+}
+
 /// Makes an authenticated request to a Supabase Edge Function using the user's JWT.
 /// Automatically retries once on transient network errors and 5xx server errors.
 func callEdgeFunction(name: String, body: [String: Any]) async throws -> Data {
@@ -148,12 +255,13 @@ func callEdgeFunction(name: String, body: [String: Any]) async throws -> Data {
         throw URLError(.badURL)
     }
 
-    // Use JWT if authenticated, fall back to anon key
-    let bearerToken: String
-    if let session = try? await supabase.auth.session {
-        bearerToken = session.accessToken
-    } else {
-        bearerToken = supabaseAnonKey
+    guard let bearerToken = await edgeFunctionBearerToken() else {
+        edgeFunctionLogger.warning("Edge function '\(name)' skipped — auth unavailable")
+        throw EdgeFunctionError.httpError(
+            statusCode: 401,
+            function: name,
+            message: "Session could not be refreshed"
+        )
     }
 
     var request = URLRequest(url: url)
@@ -186,6 +294,26 @@ func callEdgeFunction(name: String, body: [String: Any]) async throws -> Data {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     continue
                 }
+            } else if statusCode == 401, attempt == 0 {
+                // A mid-session 401 almost always means the access token
+                // expired (and the anon-key fallback above kicked in, which
+                // the server rightly refuses). Force a session refresh and
+                // retry once with a fresh token instead of failing the
+                // feature — this is what left Ask spinning on "Reading…"
+                // while the server logged a 401.
+                edgeFunctionLogger.warning("Edge function '\(name)' returned 401 — refreshing session and retrying")
+                lastError = EdgeFunctionError.httpError(statusCode: statusCode, function: name, message: message)
+                if let refreshed = try? await supabase.auth.refreshSession() {
+                    await AuthAvailability.shared.recordSuccess()
+                    request.setValue("Bearer \(refreshed.accessToken)", forHTTPHeaderField: "Authorization")
+                    continue
+                }
+                // Refresh failed against a stalled auth service. Trip the
+                // breaker so the other surfaces loading concurrently fail
+                // immediately instead of each queueing behind their own
+                // doomed refresh.
+                await AuthAvailability.shared.recordFailure()
+                throw EdgeFunctionError.httpError(statusCode: statusCode, function: name, message: message)
             } else {
                 // 4xx — client error, not retryable
                 edgeFunctionLogger.warning("Edge function '\(name)' returned \(statusCode): \(message)")
@@ -329,24 +457,41 @@ enum AthleteSettingsService {
     /// Upserts the device timezone identifier (e.g. "America/Chicago");
     /// a per-user cache skips the write when it hasn't changed. Only the
     /// timezone column is sent, so max_heart_rate etc. survive on conflict.
+    /// (2026-08-11) Now yields to an explicit choice. The athlete can set their
+    /// timezone in Settings, and this runs at every launch — without the guard,
+    /// a picked zone was reverted to the device's on the next cold start, which
+    /// looks exactly like the setting not saving. `AthleteTimeZone.set` writes
+    /// the account value in that case, so the server still gets told.
     static func syncDeviceTimezone() async {
+        guard !AthleteTimeZone.isOverridden else { return }
         let userId = AuthManager.shared.userId
         guard !userId.isEmpty else { return }
         let tz = TimeZone.current.identifier
         let cacheKey = "athleteSettings.lastSyncedTimezone.\(userId.lowercased())"
         guard UserDefaults.standard.string(forKey: cacheKey) != tz else { return }
+        await saveTimezone(tz)
+    }
+
+    /// Upsert a timezone to the account. Only the timezone column is sent, so
+    /// max_heart_rate etc. survive on conflict. Shared by the launch sync and
+    /// by the Settings picker so there is one writer, not two.
+    static func saveTimezone(_ identifier: String) async {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty, TimeZone(identifier: identifier) != nil else { return }
+        let cacheKey = "athleteSettings.lastSyncedTimezone.\(userId.lowercased())"
         struct Upsert: Encodable { let user_id: String; let timezone: String }
         do {
             try await supabase
                 .from("athlete_settings")
-                .upsert(Upsert(user_id: userId.lowercased(), timezone: tz), onConflict: "user_id")
+                .upsert(Upsert(user_id: userId.lowercased(), timezone: identifier),
+                        onConflict: "user_id")
                 .execute()
-            await MainActor.run { UserDefaults.standard.set(tz, forKey: cacheKey) }
+            await MainActor.run { UserDefaults.standard.set(identifier, forKey: cacheKey) }
         } catch {
             // Non-fatal: the table doesn't exist until the 20260615
             // migrations are pushed. Cache stays unset, so we retry on the
             // next launch instead of silently giving up forever.
-            Log.app.error("AthleteSettingsService.syncDeviceTimezone failed: \(error.localizedDescription)")
+            Log.app.error("AthleteSettingsService.saveTimezone failed: \(error.localizedDescription)")
         }
     }
 

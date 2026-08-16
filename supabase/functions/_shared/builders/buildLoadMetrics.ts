@@ -101,7 +101,13 @@ export function buildLoadMetrics(input: LoadMetricsInput): LoadMetrics {
 
   // Tempo, intervals, race, progression are always hard.
   // Long runs are hard only if 18+ miles OR run at 80%+ of MP (faster pace = lower number).
-  const alwaysHardTypes = new Set(["tempo", "intervals", "interval", "race", "progression"]);
+  // 2026-08-10: `threshold` and `fartlek` became first-class picker options
+  // (`tempo` now folds INTO `threshold` on write), and `long_wo` is offerable.
+  // Without them here a threshold session logged today would not count as hard.
+  const alwaysHardTypes = new Set([
+    "threshold", "tempo", "intervals", "interval", "fartlek",
+    "progression", "race", "long_wo",
+  ]);
   const easyTypes = new Set(["easy", "recovery"]);
 
   const mpPace = earlyMpPace;

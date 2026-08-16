@@ -44,6 +44,7 @@ struct StreamMeta {
 struct WorkoutLap {
     let distanceMiles: Double
     let paceSeconds: Double      // sec/mi
+    let elapsedSeconds: Double   // wall-clock length of the lap
     let avgHeartRate: Int?
 }
 
@@ -118,8 +119,18 @@ enum ExternalStreamAdapter {
                 }
                 guard distMeters > 0, paceSec > 0 else { return nil }
                 let hr = asDouble(lap["average_heartrate"]).map { Int($0.rounded()) }
+                // Lap duration is its own field on the payload. Read it rather
+                // than inferring distance x pace: on a 0.03mi recovery jog the
+                // rounded distance and the averaged speed each carry enough
+                // error that the derived clock can be seconds off. Prefer
+                // elapsed (what the watch showed the athlete), fall back to
+                // moving_time, and only then derive.
+                let derivedSeconds = paceSec * (distMeters / 1609.34)
+                let elapsed = asDouble(lap["elapsed_time"])
+                    ?? (movingTime > 0 ? movingTime : derivedSeconds)
                 return WorkoutLap(distanceMiles: distMeters / 1609.34,
                                   paceSeconds: paceSec,
+                                  elapsedSeconds: elapsed,
                                   avgHeartRate: hr)
             }
             return out.isEmpty ? nil : out

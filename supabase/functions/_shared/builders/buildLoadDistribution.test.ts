@@ -77,3 +77,42 @@ Deno.test("recovery_read: hard-day spacing + count over 28d", () => {
   assertEquals(ld!.recovery_read!.hard_sessions_28d, 2);
   assertEquals(ld!.recovery_read!.avg_days_between_hard, 4); // daysAgo(6)→daysAgo(2) = 4 days apart
 });
+
+Deno.test("recovery_read: a typed rep session counts even under the zone floor", () => {
+  // The real miss (2026-08-13): a threshold session run as 6-min steady /
+  // 2-min easy logged 121s above threshold across 7 work bouts. Zone time
+  // alone scored it easy; the type plus the bouts say otherwise.
+  const rows: FeatureRow[] = [
+    feat({ workout_date: daysAgo(2), workout_type: "threshold", hard_segment_count: 7, threshold_seconds: 121, easy_seconds: 2700, intensity_score: 1.9, total_duration_seconds: 2880 }),
+    feat({ workout_date: daysAgo(8), threshold_seconds: 600, easy_seconds: 1200, intensity_score: 6, total_duration_seconds: 1800 }),
+  ];
+  const { loadDistribution: ld } = buildLoadDistribution({ featureRows: rows, ...WIN });
+  assertEquals(ld!.recovery_read!.hard_sessions_28d, 2);
+  assertEquals(ld!.recovery_read!.avg_days_between_hard, 6);
+});
+
+Deno.test("recovery_read: a quality label with no work bouts is not promoted", () => {
+  // The label is a claim; hard_segment_count is the evidence. A mistyped
+  // easy run must not become a hard session on the label alone.
+  const rows: FeatureRow[] = [
+    feat({ workout_date: daysAgo(2), workout_type: "threshold", hard_segment_count: 0, easy_seconds: 2700, intensity_score: 1, total_duration_seconds: 2700 }),
+    feat({ workout_date: daysAgo(8), threshold_seconds: 600, easy_seconds: 1200, intensity_score: 6, total_duration_seconds: 1800 }),
+  ];
+  const { loadDistribution: ld } = buildLoadDistribution({ featureRows: rows, ...WIN });
+  assertEquals(ld!.recovery_read!.hard_sessions_28d, 1);
+  assertEquals(ld!.recovery_read!.avg_days_between_hard, null); // needs ≥2 days
+});
+
+Deno.test("recovery_read: two rows on one date are one hard day, not a 0-day gap", () => {
+  // A run imported from Strava AND logged by voice is two training_logs rows
+  // for one run, and both carry features. Counting rows produced a 0-day gap
+  // that dragged the spacing average toward zero.
+  const rows: FeatureRow[] = [
+    feat({ workout_date: daysAgo(2), threshold_seconds: 600, easy_seconds: 600, intensity_score: 6, total_duration_seconds: 1200 }),
+    feat({ workout_date: daysAgo(2), threshold_seconds: 600, easy_seconds: 600, intensity_score: 6, total_duration_seconds: 1200 }),
+    feat({ workout_date: daysAgo(8), threshold_seconds: 600, easy_seconds: 600, intensity_score: 6, total_duration_seconds: 1200 }),
+  ];
+  const { loadDistribution: ld } = buildLoadDistribution({ featureRows: rows, ...WIN });
+  assertEquals(ld!.recovery_read!.hard_sessions_28d, 2); // not 3
+  assertEquals(ld!.recovery_read!.avg_days_between_hard, 6); // not 3
+});

@@ -53,13 +53,16 @@ import Foundation
 /// CONTINUOUS pace curve (`paceWeight`) that interpolates between these anchors
 /// and extrapolates past mile; this grid keeps the discrete anchor lookup
 /// (it has no per-bout pace), so it's a bounded approximation of the canonical
-/// intensity_score. A minute at mile pace ≈ 6 easy minutes of mechanical load.
+/// intensity_score. A minute at mile pace ≈ 8 easy minutes of mechanical load.
+///
+/// (2026-08-11) `steady` 1.5 → 2.15, `moderate` 1.25 → 1.40, mirroring the
+/// backend reweight that removed the 9x slope cliff between steady and MP.
 enum TrendsZoneWeight {
     static let table: [String: Double] = [
         "recovery": 1.0,
         "easy": 1.0,
-        "moderate": 1.25,
-        "steady": 1.5,
+        "moderate": 1.4,
+        "steady": 2.15,
         "mp": 2.5,
         "hmp": 3.25,  // half-marathon / threshold / LT band
         "10k": 4.0,

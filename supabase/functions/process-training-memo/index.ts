@@ -4,6 +4,12 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
+import { llmBudgetAllows, llmBudgetBlockedResponse } from "../_shared/llm-budget.ts";
+import {
+  isProviderExhausted,
+  PROVIDER_EXHAUSTED_MARKER,
+  PROVIDER_EXHAUSTED_STATUS,
+} from "../_shared/provider-errors.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { writeNiggleMentions, writeNiggleResolutions } from "../_shared/niggleWriter.ts";
 import { writeMemoryCandidates } from "../_shared/memoryWriter.ts";
@@ -456,6 +462,17 @@ Deno.serve(async (req) => {
     // Hard monthly ceiling: ≤200 voice-memo uploads processed per user/month.
     const capped = await enforceMonthlyCap(authUserId, "voice_memo", corsHeaders, { isServiceRole });
     if (capped) return capped;
+
+    // App-wide budget guard (2026-08-13). Keyed on the training_log row so a
+    // single memo stuck in a retry/dispatch cycle trips the per-subject 24h
+    // ceiling within minutes instead of burning all day (the Aug-11 runaway
+    // shape). Does NOT bypass for service-role — the drain worker is exactly
+    // the path a runaway rides in on. Sits after all the no-op/in-flight
+    // short-circuits above, so only a call that starts real transcription +
+    // analysis work consumes budget (see migration 20260813180100).
+    if (!(await llmBudgetAllows("voice_memo", { subjectId: recordId, userId: authUserId }))) {
+      return llmBudgetBlockedResponse("voice_memo", corsHeaders);
+    }
 
     // Mark as processing
     await updateProcessingStatus(record.id, "processing");
@@ -1226,13 +1243,57 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+
+    // ── Provider out of credit ≠ this memo is broken (2026-08-13). ──
+    // Collapsing an upstream billing 429 into the generic 500 below is what
+    // permanently stranded memos during the credit outage: the drain could
+    // not tell "our code failed" from "Gemini is unfunded", so it spent all
+    // three retries in three minutes and gave up for good. Answer 503 with
+    // Retry-After instead, and tag processing_error so both the drain and
+    // the iOS failure classifier can say something true to the athlete
+    // rather than "we couldn't transcribe it. Tap to try again" — which is
+    // both wrong and unactionable while the provider is down.
+    //
+    // Still Sentry-captured: a billing lapse has no other alarm on it (there
+    // is no billing alert anywhere yet), so this path is the only signal.
+    // Tagged `provider_exhausted` so it groups separately from real faults.
+    if (isProviderExhausted(error)) {
+      console.error(`[process-training-memo] provider exhausted: ${rawMessage}`);
+      captureException(error, {
+        fn: "process-training-memo",
+        recordId,
+        reason: "provider_exhausted",
+      });
+      await flushSentry();
+
+      if (recordId) {
+        await updateProcessingStatus(
+          recordId,
+          "failed",
+          `${PROVIDER_EXHAUSTED_MARKER}: ${rawMessage}`,
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          error: "Analysis provider unavailable.",
+          reason: PROVIDER_EXHAUSTED_MARKER,
+        }),
+        {
+          status: PROVIDER_EXHAUSTED_STATUS,
+          headers: { "Content-Type": "application/json", "Retry-After": "900" },
+        }
+      );
+    }
+
     console.error("Error processing training memo:", error);
     captureException(error, { fn: "process-training-memo", recordId });
     await flushSentry();
 
     // Mark as failed with error message
     if (recordId) {
-      await updateProcessingStatus(recordId, "failed", error instanceof Error ? error.message : String(error));
+      await updateProcessingStatus(recordId, "failed", rawMessage);
     }
 
     return new Response(

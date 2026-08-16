@@ -243,6 +243,68 @@ function median(xs: number[]): number {
 }
 
 /**
+ * Options shared by the two boundary finders. `durations` lets the alternation
+ * gate reason in SECONDS (per-sample steps for the stream path, lap moving-time
+ * for the lap path) instead of counting array slots.
+ */
+export interface BoundaryOptions {
+  durations?: number[];
+  minWorkSec?: number;
+  minRecoverySec?: number;
+}
+
+/**
+ * Does a candidate work/recovery boundary describe a WORKOUT — or is it just a
+ * line drawn through a run that never actually alternated?
+ *
+ * This is the gate that stops the parser inventing structure. A boundary is only
+ * believable when the run crosses it back and forth the way a session does:
+ * at least TWO efforts long enough to be reps, with a real recovery between
+ * them. A steady run, a progression, and a long climb all have a velocity
+ * distribution you *can* cut in two — but cutting them yields one work stretch
+ * with easy running on one side, never an alternation, so every candidate fails
+ * and the caller keeps its conservative fallback.
+ *
+ * Runs on the ORDERED velocities (time order), which is exactly what the
+ * distribution-only view throws away.
+ */
+function alternatesLikeAWorkout(
+  vels: number[],
+  durations: number[],
+  boundary: number,
+  minWorkSec: number,
+  minRecoverySec: number,
+): boolean {
+  type Run = { work: boolean; secs: number };
+  const runs: Run[] = [];
+  for (let i = 0; i < vels.length; i++) {
+    const work = vels[i] >= boundary;
+    const secs = durations[i] ?? 0;
+    const last = runs[runs.length - 1];
+    if (last && last.work === work) last.secs += secs;
+    else runs.push({ work, secs });
+  }
+
+  let reps = 0;
+  let separators = 0;
+  let restSinceLastRep = 0;
+  for (const r of runs) {
+    if (r.work) {
+      if (r.secs < minWorkSec) continue; // a blip, not a rep
+      if (reps === 0) reps = 1;
+      else if (restSinceLastRep >= minRecoverySec) {
+        reps += 1;
+        separators += 1;
+      }
+      restSinceLastRep = 0;
+    } else if (r.secs >= minRecoverySec) {
+      restSinceLastRep += r.secs;
+    }
+  }
+  return reps >= 2 && separators >= 1;
+}
+
+/**
  * Adaptive work/recovery velocity boundary for a set of laps.
  *
  * The fixed "recovery = below `recoveryFrac` (0.7) of work pace" rule assumes an
@@ -255,71 +317,86 @@ function median(xs: number[]): number {
  * by ratio alone. The *gap* is the signal, not the ratio.
  *
  * So find the natural split between the fast (rep) laps and the slower (recovery)
- * laps with Otsu's method — the threshold that best separates the velocities into
- * two groups — and only trust it when the laps are genuinely BIMODAL: the two
- * groups must be separated by a clear empty band (much wider than the spacing
- * *within* either group) and the fast group must be meaningfully faster. A steady
+ * laps by looking for a clear empty band in the lap velocities, and only trust it
+ * when the two groups are genuinely separated: the band must be much wider than
+ * the spacing *within* either group, the fast group must be meaningfully faster,
+ * AND the run must actually alternate across the band like a workout. A steady
  * run (one cluster) or a smooth progression (evenly spaced, no band) fails those
  * guards and returns null, so the caller keeps the fixed-fraction fallback and
  * those sessions behave exactly as before.
  *
+ * WHY EVERY BAND IS TRIED, not just the widest one (fixed 2026-08-14):
+ * this used to pick the single split that best separated the laps (Otsu). On a
+ * real session that split is almost never rep-vs-recovery — it is
+ * WARMUP/COOLDOWN vs THE WORKOUT, because an 8:00/mi warmup is further from a
+ * 5:30 rep than the 6:15 jog recovery is. The boundary landed below the jog
+ * recoveries, so every rep and every recovery classed as "work" and merged into
+ * one fabricated split ("7.24 mi @ 5:38/mi" — a pace the athlete never ran at
+ * for a step). Scanning every band and keeping only those that produce a real
+ * alternation kills that: the warmup band leaves the reps and recoveries in one
+ * unbroken work stretch, which is not a workout shape, so it is rejected and
+ * the rep/recovery band wins.
+ *
  * Returns the boundary velocity (m/s) — laps below it are recovery — or null when
- * the laps aren't clearly bimodal.
+ * the laps aren't clearly two-clustered.
  */
 export function bimodalWorkRecoveryBoundary(
   vels: number[],
   standingVelMs: number,
+  opts: BoundaryOptions = {},
 ): number | null {
+  const durations = opts.durations ?? vels.map(() => 60);
+  const minWorkSec = opts.minWorkSec ?? DEFAULTS.minWorkSec;
+  const minRecoverySec = opts.minRecoverySec ?? DEFAULTS.minRecoverySec;
+
   // Ignore near-standing points so a lone stop/cooldown fragment can't hijack
   // the split — the two clusters we're separating are the running laps.
   const v = vels.filter((x) => x > standingVelMs).sort((a, b) => a - b);
   if (v.length < 4) return null;
 
-  const total = v.reduce((a, b) => a + b, 0);
-
-  // Otsu: choose split index k (low = v[0..k], high = v[k+1..]) that maximizes
-  // between-group separation w0·w1·(μ_high − μ_low)².
-  let bestK = -1;
+  let best: number | null = null;
   let bestScore = -1;
-  let cumN = 0;
-  let cumSum = 0;
+
   for (let k = 0; k < v.length - 1; k++) {
-    cumN += 1;
-    cumSum += v[k];
-    const w0 = cumN / v.length;
-    const w1 = 1 - w0;
-    const mu0 = cumSum / cumN;
-    const mu1 = (total - cumSum) / (v.length - cumN);
-    const score = w0 * w1 * (mu1 - mu0) ** 2;
+    const band = v[k + 1] - v[k];
+    if (band <= 0) continue; // identical laps — no band to split on
+
+    const low = v.slice(0, k + 1);
+    const high = v.slice(k + 1);
+    const muLow = low.reduce((a, b) => a + b, 0) / low.length;
+    const muHigh = high.reduce((a, b) => a + b, 0) / high.length;
+
+    // Guard 1: the fast group must be meaningfully faster than the slow group.
+    // Rejects a steady run (one cluster split down the middle → ratio ≈ 1).
+    if (muLow <= 0 || muHigh / muLow < 1.1) continue;
+
+    // Guard 2: a real empty band between the groups. The gap that separates them
+    // must dwarf the typical spacing WITHIN the groups — otherwise the data is a
+    // smooth continuum (a progression), not two distinct efforts.
+    const innerGaps: number[] = [];
+    for (let i = 1; i < low.length; i++) innerGaps.push(low[i] - low[i - 1]);
+    for (let i = 1; i < high.length; i++) innerGaps.push(high[i] - high[i - 1]);
+    const meanInner = innerGaps.length
+      ? innerGaps.reduce((a, b) => a + b, 0) / innerGaps.length
+      : 0;
+    if (meanInner > 0 && band < 2.5 * meanInner) continue;
+
+    const boundary = (v[k] + v[k + 1]) / 2;
+
+    // Guard 3: the session must actually cross this boundary like a workout.
+    if (!alternatesLikeAWorkout(vels, durations, boundary, minWorkSec, minRecoverySec)) {
+      continue;
+    }
+
+    // Among the believable bands, keep the cleanest separation.
+    const score = meanInner > 0 ? band / meanInner : band;
     if (score > bestScore) {
       bestScore = score;
-      bestK = k;
+      best = boundary;
     }
   }
-  if (bestK < 0) return null;
 
-  const low = v.slice(0, bestK + 1);
-  const high = v.slice(bestK + 1);
-  const muLow = low.reduce((a, b) => a + b, 0) / low.length;
-  const muHigh = high.reduce((a, b) => a + b, 0) / high.length;
-
-  // Guard 1: the fast group must be meaningfully faster than the slow group.
-  // Rejects a steady run (one cluster split down the middle → ratio ≈ 1).
-  if (muLow <= 0 || muHigh / muLow < 1.1) return null;
-
-  // Guard 2: a real empty band between the groups. The gap that separates them
-  // must dwarf the typical spacing WITHIN the groups — otherwise the data is a
-  // smooth continuum (a progression), not two distinct efforts.
-  const band = high[0] - low[low.length - 1];
-  const innerGaps: number[] = [];
-  for (let i = 1; i < low.length; i++) innerGaps.push(low[i] - low[i - 1]);
-  for (let i = 1; i < high.length; i++) innerGaps.push(high[i] - high[i - 1]);
-  const meanInner = innerGaps.length
-    ? innerGaps.reduce((a, b) => a + b, 0) / innerGaps.length
-    : 0;
-  if (meanInner > 0 && band < 2.5 * meanInner) return null;
-
-  return (low[low.length - 1] + high[0]) / 2;
+  return best;
 }
 
 /**
@@ -331,18 +408,37 @@ export function bimodalWorkRecoveryBoundary(
  * there are two clear modes (a rep-pace peak and a recovery-pace peak) separated
  * by a real valley, return the valley velocity as the work/recovery boundary.
  *
- * Deliberately conservative — it only fires on a genuinely two-peaked
- * distribution. A steady run (one peak), a smooth progression (a broad plateau,
- * no valley), and a standing-rest interval session (the rests are below
- * `standingVelMs` and never enter the histogram, leaving one moving peak) all
- * return null, so the caller keeps the exact fixed-fraction fallback and their
- * behavior is unchanged. Only fast-moving-recovery intervals — the case the 0.7
- * cutoff mislabels — produce two moving peaks and get the corrected boundary.
+ * Deliberately conservative — a steady run (one peak), a smooth progression, and
+ * a standing-rest interval session (the rests are below `standingVelMs` and never
+ * enter the histogram) all return null, so the caller keeps the exact
+ * fixed-fraction fallback and their behavior is unchanged. Only sessions that
+ * genuinely alternate between two speeds get a corrected boundary.
+ *
+ * TWO BUGS FIXED HERE (2026-08-14) — both made this return null on real data,
+ * which sent every session to the 0.7×median fallback that merges reps and jog
+ * recoveries into one invented split:
+ *
+ *  1. The old "reject a multi-modal continuum" guard compared the two MODE BINS
+ *     against the tallest bin outside them. But a real cluster has width: the
+ *     rep peak's own shoulder bins sit outside [mode1, mode2] and are nearly as
+ *     tall as the peak itself, so the guard fired on essentially every noisy
+ *     (i.e. every real) stream. Clusters are now walked out to their edges, so
+ *     a peak's own shoulders can no longer masquerade as a third cluster.
+ *  2. Only the two TALLEST modes were considered. A full session is usually
+ *     three-clustered — warmup/cooldown, jog recoveries, reps — and the two
+ *     tallest are often warmup and reps, with the recovery cluster sitting in
+ *     the middle filling the valley. The valleys are now tried from the FASTEST
+ *     cluster downwards, so the rep/recovery boundary is found first, and each
+ *     candidate must pass the alternation gate before it's accepted.
  */
 export function bimodalBoundaryFromDensity(
   vels: number[],
   standingVelMs: number,
+  opts: BoundaryOptions = {},
 ): number | null {
+  const durations = opts.durations ?? vels.map(() => 1);
+  const minWorkSec = opts.minWorkSec ?? DEFAULTS.minWorkSec;
+  const minRecoverySec = opts.minRecoverySec ?? DEFAULTS.minRecoverySec;
   const v = vels.filter((x) => x > standingVelMs);
   if (v.length < 60) return null; // too few samples to trust a distribution
 
@@ -373,47 +469,63 @@ export function bimodalBoundaryFromDensity(
     sm[i] = s / cnt;
   }
 
-  // Mode 1 = tallest bin. Mode 2 = tallest bin at a genuinely different speed
-  // (≥ ~15% of the velocity range away from mode 1).
-  let m1 = 0;
-  for (let i = 1; i < BINS; i++) if (sm[i] > sm[m1]) m1 = i;
+  // ── Find every speed cluster, not just the two tallest ──
+  // A candidate mode is a local maximum carrying real mass. Two candidates are
+  // the SAME cluster unless a genuine trough separates them (the peak's own
+  // shoulders are part of it), in which case only the taller survives.
+  let globalMax = 0;
+  for (let i = 0; i < BINS; i++) if (sm[i] > globalMax) globalMax = sm[i];
+  if (globalMax <= 0) return null;
+
+  const candidates: number[] = [];
+  for (let i = 0; i < BINS; i++) {
+    const left = i > 0 ? sm[i - 1] : -1;
+    const right = i < BINS - 1 ? sm[i + 1] : -1;
+    if (sm[i] >= left && sm[i] >= right && sm[i] >= 0.15 * globalMax) candidates.push(i);
+  }
+
+  const modes: number[] = [];
+  for (const p of candidates) {
+    const prev = modes[modes.length - 1];
+    if (prev === undefined) {
+      modes.push(p);
+      continue;
+    }
+    let trough = Infinity;
+    for (let i = prev + 1; i < p; i++) if (sm[i] < trough) trough = sm[i];
+    const smallerPeak = Math.min(sm[prev], sm[p]);
+    const separated = p - prev >= 2 && trough < 0.5 * smallerPeak;
+    if (separated) modes.push(p);
+    else if (sm[p] > sm[prev]) modes[modes.length - 1] = p; // same cluster
+  }
+  if (modes.length < 2) return null;
+
+  // ── Try the valley below the FASTEST cluster first, then work downwards ──
+  // On a full session the fastest cluster is the reps; the one below it is the
+  // jog recoveries; below that, the warmup/cooldown. The rep/recovery line is
+  // the one we want, and it is always the topmost valley that alternates.
   const SEP = Math.max(2, Math.round(BINS * 0.15));
-  let m2 = -1;
-  for (let i = 0; i < BINS; i++) {
-    if (Math.abs(i - m1) < SEP) continue;
-    if (m2 < 0 || sm[i] > sm[m2]) m2 = i;
+  for (let k = modes.length - 1; k > 0; k--) {
+    const hiMode = modes[k];
+    const loMode = modes[k - 1];
+    if (hiMode - loMode < SEP) continue; // modes too close → not two efforts
+
+    let minC = Infinity;
+    for (let i = loMode + 1; i < hiMode; i++) if (sm[i] < minC) minC = sm[i];
+    const valleyBins: number[] = [];
+    for (let i = loMode + 1; i < hiMode; i++) if (sm[i] === minC) valleyBins.push(i);
+    if (valleyBins.length === 0) continue;
+    const valley = valleyBins[Math.floor(valleyBins.length / 2)];
+    const boundary = lo + (valley + 0.5) * width;
+
+    // The run must actually cross this line like a workout — repeatedly, with
+    // real recoveries. A progression can be cut anywhere and never passes.
+    if (alternatesLikeAWorkout(vels, durations, boundary, minWorkSec, minRecoverySec)) {
+      return boundary;
+    }
   }
-  if (m2 < 0) return null;
 
-  const a = Math.min(m1, m2);
-  const b = Math.max(m1, m2);
-  if (b - a < 2) return null; // modes adjacent → no room for a valley
-
-  const peakHi = Math.max(sm[m1], sm[m2]);
-  const peakLo = Math.min(sm[m1], sm[m2]);
-  // The second mode must carry real mass, not be a noise bump.
-  if (peakLo < 0.15 * peakHi) return null;
-
-  // Reject a multi-modal continuum (e.g. a stepped progression): if a peak
-  // comparable to the smaller of our two modes sits OUTSIDE them, this isn't a
-  // clean two-cluster (rep/recovery) distribution and we must not split it.
-  let outsideMax = 0;
-  for (let i = 0; i < BINS; i++) {
-    if (i >= a && i <= b) continue;
-    if (sm[i] > outsideMax) outsideMax = sm[i];
-  }
-  if (outsideMax > 0.5 * peakLo) return null;
-
-  // Valley = the lowest smoothed count strictly between the two modes; require
-  // a real trough (well below the smaller peak), else it's one broad cluster.
-  let minC = Infinity;
-  for (let i = a + 1; i < b; i++) if (sm[i] < minC) minC = sm[i];
-  if (minC > 0.5 * peakLo) return null;
-  const valleyBins: number[] = [];
-  for (let i = a + 1; i < b; i++) if (sm[i] === minC) valleyBins.push(i);
-  const valley = valleyBins[Math.floor(valleyBins.length / 2)];
-
-  return lo + (valley + 0.5) * width;
+  return null;
 }
 
 /**
@@ -484,7 +596,11 @@ export function detectWorkBouts(
   // the same blind spot the lap path had. Fall back to the fixed fraction for
   // single-cluster runs (steady, progression, standing-rest intervals), leaving
   // them unchanged.
-  const densityBoundary = bimodalBoundaryFromDensity(vel.slice(0, n), o.standingVelMs);
+  const densityBoundary = bimodalBoundaryFromDensity(vel.slice(0, n), o.standingVelMs, {
+    durations: step.slice(0, n),
+    minWorkSec: o.minWorkSec,
+    minRecoverySec: o.minRecoverySec,
+  });
   const recoveryThreshold = densityBoundary ?? o.recoveryFrac * workVel;
 
   // 1) Per-point classification.
@@ -663,6 +779,11 @@ export function boutsFromLaps(
   const adaptiveBoundary = bimodalWorkRecoveryBoundary(
     norm.map((l) => l.vel),
     o.standingVelMs,
+    {
+      durations: norm.map((l) => l.dur_s),
+      minWorkSec: o.minWorkSec,
+      minRecoverySec: o.minRecoverySec,
+    },
   );
   const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
 
@@ -736,6 +857,57 @@ export function boutsFromLaps(
 /** Count the work bouts in a segment list (caller's reliability gate). */
 export function workBoutCount(segments: BoutOrRecovery[]): number {
   return segments.reduce((n, s) => (s.kind === "work" ? n + 1 : n), 0);
+}
+
+/**
+ * Does this segmentation describe a session with FAST and EASY running in it —
+ * or just one steady pace, interrupted?
+ *
+ * THE TRAFFIC-LIGHT CASE (2026-08-14). Waiting at a light on an easy run leaves
+ * a minute of near-zero velocity in the stream — which looks exactly like a
+ * standing rest between two reps. The GPS pass duly split an easy 8-miler into
+ * "4 reps @ 8:00/mi", and because that beat the athlete's own steady mile laps
+ * on bout COUNT, it overrode them. The run was never a workout and the laps
+ * always said so.
+ *
+ * (Only when the watch is left RUNNING at the light. Actually stopping the
+ * watch leaves a time gap, which the stop-gap logic above already discounts —
+ * those runs were never affected.)
+ *
+ * The test: a real session has speed contrast. Either the reps are meaningfully
+ * faster than the moving recoveries between them, or they are meaningfully
+ * faster than the run's own average pace. A blurred workout — the case this
+ * override exists for, where the watch auto-lapped by distance and averaged the
+ * reps and recoveries into flat splits — always clears one of those, because
+ * there were genuinely two speeds in the run. A steady run with stops clears
+ * neither: every "rep" is the same pace as the run as a whole.
+ *
+ * `activityAvgVelMs` is the whole run's average moving velocity (m/s) — pass 0
+ * when it isn't known and only the recovery-contrast test applies.
+ */
+export function structureHasSpeedContrast(
+  segments: BoutOrRecovery[],
+  activityAvgVelMs = 0,
+  minRatio = 1.15,
+): boolean {
+  const work = segments.filter((s): s is WorkBout => s.kind === "work");
+  if (work.length < 2) return false;
+  const workVel = median(work.map((s) => s.avg_vel_ms).filter((v) => v > 0));
+  if (!(workVel > 0)) return false;
+
+  // Reps meaningfully faster than the jog recoveries they alternate with.
+  const jogs = segments.filter(
+    (s): s is Recovery => s.kind === "recovery" && s.style === "jog" && s.avg_vel_ms > 0,
+  );
+  if (jogs.length > 0 && workVel / median(jogs.map((s) => s.avg_vel_ms)) >= minRatio) {
+    return true;
+  }
+
+  // …or meaningfully faster than the run's own average. This is what catches a
+  // genuine session whose rests were STANDING (a track workout the watch
+  // auto-lapped by mile): its reps still tower over the run average, because
+  // the warmup, the rests and the cooldown all drag that average down.
+  return activityAvgVelMs > 0 && workVel / activityAvgVelMs >= minRatio;
 }
 
 /** Parse "M:SS" → sec/mile, or null. */
@@ -879,6 +1051,38 @@ export function derivedLapsFromStream(
   const { segments } = detectWorkBouts(streams, opts);
   if (segments.length === 0) return [];
 
+  // No speed contrast → this is one continuous effort that happened to be
+  // interrupted (a traffic light, a road crossing), not a set of reps. Writing
+  // the "reps" out as laps would put a fabricated workout into every
+  // lap-driven surface — key sessions, the pace ladder, quality volume.
+  const totalM = segments.reduce((a, s) => a + s.distance_m, 0);
+  const totalS = segments.reduce((a, s) => a + s.duration_s, 0);
+  const activityAvgVel = totalS > 0 ? totalM / totalS : 0;
+  const workBouts = segments.filter((s): s is WorkBout => s.kind === "work");
+  if (workBouts.length >= 2 && !structureHasSpeedContrast(segments, activityAvgVel)) {
+    const work = workBouts;
+    const first = work[0];
+    const last = work[work.length - 1];
+    const dist = segments.reduce((a, s) => a + s.distance_m, 0);
+    const moving = segments.reduce((a, s) => a + s.duration_s, 0);
+    const stopped = segments.reduce((a, s) => a + s.stopped_s, 0);
+    const i0 = indexAtTime(streams.time ?? [], first.start_s);
+    const i1 = indexAtTime(streams.time ?? [], last.end_s);
+    const { avg, max } = hrOverWindow(streams.heartrate ?? [], i0, i1);
+    return [{
+      lap_index: 0,
+      distance: Math.round(dist),
+      moving_time: Math.round(moving),
+      elapsed_time: Math.round(moving + stopped),
+      average_speed: moving > 0 ? Math.round((dist / moving) * 100) / 100 : 0,
+      average_heartrate: avg,
+      max_heartrate: max,
+      start_index: i0,
+      end_index: i1,
+      is_rest: false,
+    }];
+  }
+
   const time = streams.time ?? [];
   const hr = streams.heartrate ?? [];
 
@@ -960,12 +1164,13 @@ export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: Lap
     // A lap short in BOTH distance and duration is a GPS artifact, not a rep.
     const isFragment = dist_m < FRAGMENT_MAX_METERS && dur_s < FRAGMENT_MAX_SECONDS;
     const valid = dist_m > 0 && dur_s > 0 && isFinite(vel);
-    return { lap_index, vel, valid, isFragment };
+    return { lap_index, vel, dur_s, valid, isFragment };
   });
 
   // Work-velocity boundary from the non-fragment laps — the SAME basis as
   // boutsFromLaps, so the labels agree with the detected structure.
-  const normVels = rows.filter((r) => r.valid && !r.isFragment).map((r) => r.vel);
+  const normRows = rows.filter((r) => r.valid && !r.isFragment);
+  const normVels = normRows.map((r) => r.vel);
   if (normVels.length < 2) {
     // Too little to separate reps from rest — don't guess; call each valid lap a
     // rep (the list still shows every lap regardless of label).
@@ -976,7 +1181,11 @@ export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: Lap
   const anchor = sortedVel[Math.min(sortedVel.length - 1, Math.floor(sortedVel.length * 0.9))];
   const fastCluster = normVels.filter((v) => v >= 0.7 * anchor);
   const workVel = median(fastCluster.length ? fastCluster : moving);
-  const adaptiveBoundary = bimodalWorkRecoveryBoundary(normVels, o.standingVelMs);
+  const adaptiveBoundary = bimodalWorkRecoveryBoundary(normVels, o.standingVelMs, {
+    durations: normRows.map((r) => r.dur_s),
+    minWorkSec: o.minWorkSec,
+    minRecoverySec: o.minRecoverySec,
+  });
   const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
 
   const isWork = rows.map((r) => r.valid && !r.isFragment && r.vel >= recoveryThreshold);

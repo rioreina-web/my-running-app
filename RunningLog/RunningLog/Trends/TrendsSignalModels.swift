@@ -646,6 +646,49 @@ struct TrendsRecoveryLedger {
         /// missing data. Drives the coverage line.
         var hasData: Bool = true
 
+        /// Set when the factor DID score, but on a fallback path because part
+        /// of its input channel is missing.
+        ///
+        /// This is distinct from `hasData`, and the distinction is the whole
+        /// point: a degraded factor has data and a number, so it looks
+        /// identical to a full one on the receipt. Only the factor that took
+        /// the branch knows it was a fallback, so it is recorded there rather
+        /// than re-derived from the evidence string in the view.
+        var gap: Gap? = nil
+
+        /// The clause the coverage line prints for a degraded factor, or nil
+        /// when the factor read its full input.
+        var degraded: String? { gap?.note }
+
+        /// Which half of an input channel is missing. Typed rather than a bare
+        /// string so a surface can offer the fix for a specific gap without
+        /// pattern-matching prose.
+        enum Gap: Equatable {
+            /// No nightly rating, so Sleep scored off duration alone — the
+            /// Tier-3 fallback, range +2/−3 instead of Tier-1's +4/−6.
+            case sleepRating
+            /// No HRV, so Overnight scored off resting HR alone. Loses the
+            /// 3×3 cross-check, and with it the only cell that subtracts.
+            case hrv
+
+            var note: String {
+                switch self {
+                case .sleepRating: "sleep from duration, not your rating"
+                case .hrv: "resting HR only, no HRV"
+                }
+            }
+        }
+
+        /// The most this factor could contribute today, given which of its
+        /// input channels are actually live. Feeds `TrendsRecoveryLedger
+        /// .ceiling`; see that property for why the number matters.
+        ///
+        /// Factors that can only ever subtract (body mentions, the session
+        /// spike) carry 0 — in the best case they are silent, not positive.
+        /// A new factor that forgets to set this under-reports the ceiling
+        /// rather than over-reporting it, which is the safe direction.
+        var bestCase: Int = 0
+
         enum Source { case words, runs, nights }
     }
 
@@ -661,16 +704,36 @@ struct TrendsRecoveryLedger {
     // table, one home. The label is the input; the score is derived and
     // disclosed. Mood itself is never stored numerically.
 
-    enum Band: String {
+    enum Band: String, CaseIterable {
         case flat = "Flat", worn = "Worn", steady = "Steady", clear = "Clear"
 
-        static func of(_ score: Int) -> Band {
-            switch score {
-            case ..<45: .flat
-            case ..<60: .worn
-            case ..<75: .steady
-            default: .clear
+        /// The band's bounds on the real 8…96 scale, declared once.
+        ///
+        /// These used to live inline in `of(_:)` and again in the gauge's own
+        /// band table, and the ceiling cap added 2026-08-07 would have made a
+        /// third copy. A gauge that draws `Clear` starting at one number while
+        /// the score classifies it at another is the kind of disagreement
+        /// nobody notices until a band looks wrong on screen.
+        var lowerBound: Int {
+            switch self {
+            case .flat: 8
+            case .worn: 45
+            case .steady: 60
+            case .clear: 75
             }
+        }
+
+        var upperBound: Int {
+            switch self {
+            case .flat: 45
+            case .worn: 60
+            case .steady: 75
+            case .clear: 96
+            }
+        }
+
+        static func of(_ score: Int) -> Band {
+            allCases.last { score >= $0.lowerBound } ?? .flat
         }
     }
 
@@ -723,6 +786,37 @@ struct TrendsRecoveryLedger {
     /// the minor corroborator, which is already encoded in their point weights.
     var supply: Supply {
         factors.contains { $0.source == .words && $0.points < 0 } ? .dragging : .holding
+    }
+
+    /// The channels that scored on a fallback path today, in factor order.
+    /// Empty when every factor read its full input.
+    var degradations: [String] { factors.compactMap(\.degraded) }
+
+    /// The same list, typed — so a surface can offer the fix for one specific
+    /// gap (the nightly rating is one tap; HRV is a permission grant).
+    var gaps: [Factor.Gap] { factors.compactMap(\.gap) }
+
+    /// The highest total today's LIVE channels can produce — base plus every
+    /// factor's `bestCase`, under the same 8…96 clamp as `total`.
+    ///
+    /// This exists because a missing channel does not just cost points on the
+    /// day, it lowers the roof. With no HRV and no nightly sleep rating the
+    /// ceiling is **74** against a `Clear` band that starts at 75, so the best
+    /// band on the gauge is not merely unreached — it is arithmetically
+    /// unreachable, and a gauge that draws it as open territory is inviting
+    /// the athlete to chase something the data cannot give them. Rule 3 of
+    /// this file's header applies: say which detail was dropped.
+    ///
+    /// `TrendsRecoveryFactors.theoreticalRange` answers a different question —
+    /// what the model can do when every channel is present. This answers what
+    /// it can do today.
+    var ceiling: Int {
+        min(96, max(8, Self.base + factors.reduce(0) { $0 + $1.bestCase }))
+    }
+
+    /// Bands the current ceiling puts out of reach. Drives the gauge's cap.
+    var unreachableBands: [Band] {
+        Band.allCases.filter { $0.lowerBound > ceiling }
     }
 
     /// The arithmetic line: "Starts at 50 + 6 − 3 + 0 + 4 + 0 =".

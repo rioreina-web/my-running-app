@@ -63,6 +63,19 @@ final class TrendsService {
     /// True once a successful (or seeded) load has populated `weeks`.
     private var loaded = false
 
+    /// The load failed and there is nothing behind it to fall back on.
+    ///
+    /// Views should branch on THIS rather than on `lastError != nil`: a failed
+    /// background refresh sitting on top of data that is already drawn is not
+    /// an error the athlete needs to be shown. An empty screen is.
+    var failedWithNothingToShow: Bool { lastError != nil && !loaded }
+
+    /// Wall-clock bound on the whole fetch. The timeline normally lands in
+    /// under ten seconds. The number exists for the day the backend is unwell:
+    /// on 2026-08-11 the gateway took 38-54 seconds to return a 401, and every
+    /// surface that waits on this one sat on a spinner for the duration.
+    private static let loadTimeout: TimeInterval = 20
+
     private init() {}
 
     /// Preview / test seam — inject a fixed window without hitting the network.
@@ -88,10 +101,17 @@ final class TrendsService {
     @MainActor
     func refresh(force: Bool = false) async {
         if loaded && !force { return }
+        // Two surfaces now call this (Trends, and the Train tab's week strip),
+        // so a second entrance while a fetch is in flight is normal. Joining
+        // the fetch already running beats firing a duplicate at a backend that
+        // is, by hypothesis, the slow part.
+        if isLoading { return }
         isLoading = true
         defer { isLoading = false }
         do {
-            let data = try await callEdgeFunction(name: "trends-timeline", body: ["weeks": 26])
+            let data = try await withNetworkTimeout(seconds: Self.loadTimeout) {
+                try await callEdgeFunction(name: "trends-timeline", body: ["weeks": 26])
+            }
             let payload = try JSONDecoder().decode(TrendsTimelinePayload.self, from: data)
             weeks = payload.weeks.map { $0.toModel() }
             days = (payload.days ?? []).map { $0.toModel() }
@@ -120,7 +140,7 @@ final class TrendsService {
         do {
             let entries: [TrainingLog] = try await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("user_id", value: AuthManager.shared.userId)
                 .gte("workout_date", value: dayISO)
                 .lt("workout_date", value: next)
@@ -261,15 +281,31 @@ private struct TrendsDayDTO: Decodable {
     /// omits them, and the demand term then degrades to miles x intensity.
     let durationMin: Int?
     let stressLoad: Double?
+    /// Per-zone breakdown of the day (additive, 2026-08-10). Keyed by the raw
+    /// zone token from `workoutSegmentation.ts` (easy | moderate | steady | mp
+    /// | hmp | 10k | 5k | 3k | mile | recovery). Optional and nil-when-absent:
+    /// a deploy predating the field omits them, and so does a day whose runs
+    /// carried no laps. Nil means "we cannot say", which is NOT the same as a
+    /// rest day — see `TrendsDay.hasZoneBreakdown`.
+    let zoneMinutes: [String: Double]?
+    let zoneMiles: [String: Double]?
+    let zoneLoad: [String: Double]?
+    /// The day unrolled (additive, 2026-08-11). Optional and nil-when-absent
+    /// for the usual reason — a deploy predating the field omits it — and the
+    /// week stress strip degrades to "cannot say" rather than to "rest day".
+    let runs: [TrendsRunDTO]?
 
     enum CodingKeys: String, CodingKey {
-        case date, miles, type, mood, niggles
+        case date, miles, type, mood, niggles, runs
         case hrvRmssd = "hrv_rmssd"
         case restingHr = "resting_hr"
         case sleepTotalMin = "sleep_total_min"
         case sleepQuality = "sleep_quality"
         case durationMin = "duration_min"
         case stressLoad = "stress_load"
+        case zoneMinutes = "zone_minutes"
+        case zoneMiles = "zone_miles"
+        case zoneLoad = "zone_load"
     }
 
     struct DayNiggleDTO: Decodable {
@@ -295,9 +331,128 @@ private struct TrendsDayDTO: Decodable {
             sleepTotalMin: sleepTotalMin,
             sleepQuality: sleepQuality,
             durationMin: durationMin,
-            stressLoad: stressLoad
+            stressLoad: stressLoad,
+            zoneMinutes: zoneMinutes,
+            zoneMiles: zoneMiles,
+            zoneLoad: zoneLoad,
+            runs: (runs ?? []).compactMap { $0.toModel() }
         )
     }
+}
+
+/// One `days[].runs[]` entry. Exists so a surface can place a run at the time
+/// of day it started; the day rollup above cannot express that, and cannot
+/// express a double at all.
+private struct TrendsRunDTO: Decodable {
+    let id: String
+    let startedAt: String
+    let durationMin: Double
+    /// Added 2026-08-11 alongside the exact-duration display. Optional so a
+    /// payload predating it still decodes — it then degrades to whole minutes,
+    /// which reads as `:00` seconds rather than as a wrong number.
+    let durationSec: Double?
+    let miles: Double
+    let zoneMinutes: [String: Double]?
+    let zoneMiles: [String: Double]?
+    let zoneLoad: [String: Double]?
+
+    enum CodingKeys: String, CodingKey {
+        case id, miles
+        case startedAt = "started_at"
+        case durationMin = "duration_min"
+        case durationSec = "duration_sec"
+        case zoneMinutes = "zone_minutes"
+        case zoneMiles = "zone_miles"
+        case zoneLoad = "zone_load"
+    }
+
+    /// Nil when the row cannot be placed in time — an unparseable `started_at`
+    /// or a non-UUID id. A run we cannot position is DROPPED, not defaulted to
+    /// midnight: a bar sitting at the far left of Tuesday is a claim about when
+    /// the athlete ran, and a wrong one is worse than a missing one.
+    func toModel() -> TrendsDay.Run? {
+        guard let uuid = UUID(uuidString: id),
+              let parsed = Self.parse(startedAt) else { return nil }
+        return TrendsDay.Run(
+            id: uuid,
+            startedAt: parsed.date,
+            statedOffsetSeconds: parsed.statedOffset,
+            durationSec: durationSec ?? (durationMin * 60),
+            miles: miles,
+            zoneMinutes: zoneMinutes,
+            zoneMiles: zoneMiles,
+            zoneLoad: zoneLoad
+        )
+    }
+
+    /// Parse an ISO8601 timestamp and decide which timezone its time-of-day
+    /// should be read in.
+    ///
+    /// THE PROBLEM. `training_logs.workout_date` is `TIMESTAMPTZ`. Postgres
+    /// normalizes that to UTC on write and PostgREST returns it with a `+00:00`
+    /// offset, so **the offset the run was actually recorded at is gone by the
+    /// time it reaches us.** Reading the hour straight off the string puts a
+    /// 6:29am Chicago run at 11:29am — which is exactly what shipped on the
+    /// first pass of the week stress strip.
+    ///
+    /// THE RULE. A non-zero offset in the string is a real local offset that
+    /// some writer went to the trouble of preserving, so it is returned and
+    /// trusted. A `Z` / `+00:00` / absent offset is treated as Postgres
+    /// normalization rather than a genuine UTC athlete, and returns **nil** —
+    /// `TrendsDay.Run.minuteOfDay` then resolves it through `AthleteTimeZone`
+    /// at read time, so the Settings choice applies immediately instead of at
+    /// the next fetch.
+    ///
+    /// WHAT IT STILL COSTS. An athlete who has not set a zone and travels will
+    /// see past runs slide, because the device zone moved under them. That is
+    /// what the Settings row is for. The complete fix is a per-run offset
+    /// column written at ingest — Strava sends `utc_offset` and `timezone` on
+    /// the activity, Garmin/Vital send the local start — which would make the
+    /// stated branch hit every time and retire the guessing entirely.
+    private static func parse(_ s: String) -> (date: Date, statedOffset: Int?)? {
+        guard let date = isoWithFraction.date(from: s) ?? iso.date(from: s)
+                ?? dateOnly.date(from: s) else { return nil }
+        let stated = offsetSeconds(in: s)
+        return (date, (stated ?? 0) != 0 ? stated : nil)
+    }
+
+    /// "…+02:00" → 7200, "…-0500" → -18000, "…Z" → 0, no suffix → nil.
+    private static func offsetSeconds(in s: String) -> Int? {
+        guard let tIndex = s.firstIndex(of: "T") else { return nil }
+        let time = s[s.index(after: tIndex)...]
+        if time.hasSuffix("Z") || time.hasSuffix("z") { return 0 }
+        // Scan from the end so the date's own hyphens are never mistaken for
+        // a negative offset sign.
+        guard let signIndex = time.lastIndex(where: { $0 == "+" || $0 == "-" })
+        else { return nil }
+        let sign = time[signIndex] == "-" ? -1 : 1
+        let digits = time[time.index(after: signIndex)...]
+            .filter { $0.isNumber }
+        guard digits.count == 4,
+              let h = Int(digits.prefix(2)), let m = Int(digits.suffix(2))
+        else { return nil }
+        return sign * (h * 3600 + m * 60)
+    }
+
+    private static let isoWithFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    private static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    private static let dateOnly: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+        return f
+    }()
 }
 
 /// One `quality_volume[]` entry from `trends-timeline`. `zone_seconds` is a

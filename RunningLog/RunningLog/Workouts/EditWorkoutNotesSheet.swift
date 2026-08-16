@@ -18,10 +18,16 @@
 //  by construction the row the caller is rendering. One field, one tap, one
 //  write, no mode.
 //
+//  `mirrorIds` (2026-08-10) closes the other half. A caller that holds BOTH
+//  ids — the journal sheet renders against the stream row while owning the
+//  journal row — passes the other one here, and the save writes them together
+//  in one call site. Mirroring used to live in `HistoryDetailViewModel`, which
+//  meant it applied to edits made from the journal and not to edits made from
+//  the receipt; now it applies to every edit, because there is only one editor.
+//
 //  This is a patch, not the fix. The fix is a `session_id` that makes the two
-//  rows one session — see WORKOUT-EDITABILITY-EVAL.md. Until then, callers
-//  that hold BOTH ids should mirror the value (see
-//  `HistoryDetailViewModel.mirrorWorkoutNotes`).
+//  rows one session — see WORKOUT-EDITABILITY-EVAL.md. When it lands, delete
+//  `mirrorIds` and nothing else changes.
 //
 //  "AI advises, never acts": whatever the import or the parser guessed, what
 //  the athlete types here wins.
@@ -35,10 +41,15 @@ struct EditWorkoutNotesSheet: View {
     /// The `training_logs` row to write. MUST be the row the caller reads its
     /// prescription from — passing the journal row here recreates the bug.
     let workoutId: UUID
+    /// Rows carrying the same session that must not drift out of step with
+    /// `workoutId`. Written best-effort after the primary row succeeds.
+    var mirrorIds: [UUID] = []
     let dateLabel: String
     let initialText: String
-    /// Called after a successful save so the caller can refresh.
-    var onSaved: () -> Void
+    /// Called after a successful save with the value that was written — nil
+    /// when the athlete cleared the field. The caller can render it straight
+    /// away instead of waiting on its own re-read.
+    var onSaved: (String?) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focused: Bool
@@ -109,7 +120,7 @@ struct EditWorkoutNotesSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Text("Saved to this run only. Clearing the field removes the description.")
+                    Text("Saved to this run everywhere it appears. Clearing the field removes the description.")
                         .font(.dripCaption(12))
                         .foregroundStyle(Color.drip.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -168,8 +179,9 @@ struct EditWorkoutNotesSheet: View {
         // Empty clears the field rather than writing "" — a blank string would
         // read as "described, with nothing in it" everywhere downstream and
         // suppress the ADD affordance that gets the athlete back in here.
+        let saved: String? = trimmed.isEmpty ? nil : trimmed
         let updateData: [String: AnyJSON] = [
-            "workout_notes": trimmed.isEmpty ? .null : .string(trimmed),
+            "workout_notes": saved.map { AnyJSON.string($0) } ?? .null,
         ]
         do {
             try await supabase
@@ -177,6 +189,21 @@ struct EditWorkoutNotesSheet: View {
                 .update(updateData)
                 .eq("id", value: workoutId.uuidString)
                 .execute()
+
+            // Keep the run's other row in step. Best-effort by design: the row
+            // the caller renders from is already written, so a mirror failure
+            // must never surface as a failed save. It logs and moves on.
+            for mirrorId in mirrorIds where mirrorId != workoutId {
+                do {
+                    try await supabase
+                        .from("training_logs")
+                        .update(updateData)
+                        .eq("id", value: mirrorId.uuidString)
+                        .execute()
+                } catch {
+                    Log.database.error("mirror workout_notes to \(mirrorId) failed: \(error)")
+                }
+            }
 
             // Re-derive the rep structure from what the athlete just typed.
             // The parser treats typed `workout_notes` as the TOP source for
@@ -197,11 +224,11 @@ struct EditWorkoutNotesSheet: View {
                     name: "parse-workout-structure",
                     body: ["training_log_id": reparseId, "user_id": reparseUserId]
                 )
-                await MainActor.run { refresh() }
+                await MainActor.run { refresh(saved) }
             }
 
             saving = false
-            onSaved()
+            onSaved(saved)
             dismiss()
         } catch {
             Log.database.error("save workout_notes failed: \(error)")

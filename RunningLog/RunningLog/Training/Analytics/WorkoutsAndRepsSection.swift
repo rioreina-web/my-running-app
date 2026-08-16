@@ -13,6 +13,15 @@
 //  Self-contained (own fetch, own sheet) so it drops into TrainingTabView
 //  or the Key Sessions detail with a single line.
 //
+//  SHOWS FOUR, GOES DEEPER ON REQUEST (2026-08-11). The card opens at four
+//  receipts — enough to read the recent shape without turning a section into a
+//  scroll — and a footer button walks back through the block a page at a time.
+//  Paging is two-stage on purpose: the first taps reveal rows already fetched
+//  (instant, one enrichment round trip for the newly shown ids), and only when
+//  those run out does it go back to the server for older sessions. Enrichment
+//  stays lazy either way — laps are one query PER ROW, so eagerly fetching a
+//  year of sessions to show four of them is the thing this avoids.
+//
 //  Data: training_logs (quality types — detection only, never displayed as
 //  labels) + workout_features.workout_structure + running_workout_laps for
 //  the visible rows. All RLS user-scoped. Degrades row by row: no structure
@@ -42,7 +51,12 @@ struct WorkoutsAndRepsSection: View {
     /// Detection filter only — these tokens select which logs are quality;
     /// they are never rendered as labels (the taxonomy dropped them).
     private static let qualityTypes = ["intervals", "interval", "threshold", "tempo", "fartlek", "progression", "race"]
-    private static let shownCount = 4
+    /// How many receipts the card opens at, and how many each "Show more"
+    /// adds. One number for both so the rhythm of the reveal is even.
+    private static let pageSize = 4
+    /// How many rows one server page holds. Deliberately a multiple of
+    /// `pageSize` so a fetch never leaves a partial page dangling.
+    private static let fetchPage = 12
 
     @State private var items: [QualityWorkout] = []
     @State private var structures: [UUID: String] = [:]
@@ -50,15 +64,27 @@ struct WorkoutsAndRepsSection: View {
     @State private var loaded = false
     @State private var sheet: SheetID?
     @State private var errorText: String?
+    /// How many receipts are on screen. Grows by `pageSize` per tap.
+    @State private var shown = Self.pageSize
+    /// True once the server has returned a short page — there are no older
+    /// quality sessions, so the footer stops offering to look for them.
+    @State private var reachedEnd = false
+    @State private var isLoadingMore = false
+    /// Rows whose structure + laps have been asked for. Tracked explicitly
+    /// rather than inferred from `lapsById`/`structures`, because a session
+    /// with neither — no features computed, no laps uploaded — is a real
+    /// answer, and inferring would re-query it on every reveal.
+    @State private var enriched: Set<UUID> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionLabel
             if !items.isEmpty {
-                ForEach(Array(items.prefix(Self.shownCount))) { w in
+                ForEach(Array(items.prefix(shown))) { w in
                     Button { sheet = SheetID(id: w.id) } label: { receipt(w) }
                         .buttonStyle(.plain)
                 }
+                footer
             } else if !loaded {
                 Text("Loading workouts…")
                     .font(.dripStat(11)).foregroundStyle(Color.drip.textTertiary)
@@ -91,6 +117,71 @@ struct WorkoutsAndRepsSection: View {
             Rectangle().fill(Color.drip.divider).frame(height: 1)
         }
         .padding(.bottom, 6)
+    }
+
+    // MARK: more
+
+    /// The card's one control. "Show more" while there is more — whether it's
+    /// already in memory or still on the server — and "Show fewer" once the
+    /// whole history is on screen, so an expanded card is never a one-way door.
+    ///
+    /// Reports what it's doing rather than guessing: it never claims there are
+    /// older sessions it hasn't checked for, and once the server comes back
+    /// short it stops offering.
+    @ViewBuilder
+    private var footer: some View {
+        let hasMore = shown < items.count || !reachedEnd
+        if hasMore || shown > Self.pageSize {
+            Button {
+                if hasMore { Task { await showMore() } } else { collapse() }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(hasMore ? "SHOW MORE" : "SHOW FEWER")
+                        .font(.dripStat(10)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textSecondary)
+                    if isLoadingMore {
+                        ProgressView().controlSize(.mini).tint(Color.drip.textTertiary)
+                    } else {
+                        Image(systemName: hasMore ? "chevron.down" : "chevron.up")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    Spacer()
+                    // The count, so the athlete knows what "more" is worth
+                    // before spending a tap on it.
+                    Text("\(min(shown, items.count)) of \(items.count)\(reachedEnd ? "" : "+")")
+                        .font(.dripStat(10))
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoadingMore)
+        }
+    }
+
+    /// Reveal the next page. Rows already fetched appear immediately and are
+    /// enriched behind them; only when the fetched list runs dry does this go
+    /// back to the server for older sessions.
+    private func showMore() async {
+        guard !isLoadingMore else { return }
+        if shown >= items.count, !reachedEnd {
+            isLoadingMore = true
+            await fetchOlder()
+            isLoadingMore = false
+        }
+        let next = min(shown + Self.pageSize, items.count)
+        guard next > shown else { return }
+        let revealed = Array(items[shown..<next])
+        shown = next
+        await enrich(revealed)
+    }
+
+    /// Back to the opening four. Fetched rows and their enrichments stay in
+    /// memory, so re-expanding is instant and costs no network.
+    private func collapse() {
+        shown = Self.pageSize
     }
 
     // MARK: receipt row
@@ -143,44 +234,76 @@ struct WorkoutsAndRepsSection: View {
     // MARK: data
 
     private func load() async {
+        guard items.isEmpty else { return }   // re-entrant `.task`; keep the page state
         do {
-            items = try await supabase
-                .from("training_logs")
-                .select("id,workout_date,workout_type,workout_distance_miles")
-                .in("workout_type", values: Self.qualityTypes)
-                .order("workout_date", ascending: false)
-                .limit(12)
-                .execute().value
+            items = try await fetchPage(offset: 0)
         } catch {
             errorText = "Couldn't load workouts: \(error.localizedDescription)"
             Log.coach.error("WorkoutsAndRepsSection load failed: \(error)")
             loaded = true
             return
         }
-        let shown = Array(items.prefix(Self.shownCount))
-        // Structures + laps are enrichments — the list renders without them.
-        if !shown.isEmpty {
-            let ids = shown.map(\.id.uuidString)
-            if let feats: [FeatureRow] = try? await supabase
-                .from("workout_features")
-                .select("training_log_id,workout_structure")
-                .in("training_log_id", values: ids)
-                .execute().value {
-                structures = Dictionary(
-                    feats.compactMap { f in f.workout_structure.map { (f.training_log_id, $0) } },
-                    uniquingKeysWith: { first, _ in first }
-                )
-            }
-            await withTaskGroup(of: (UUID, [WorkoutLapRow]).self) { group in
-                for id in shown.map(\.id) {
-                    group.addTask { (id, await WorkoutLapsService.fetchLaps(workoutId: id)) }
-                }
-                for await (id, laps) in group where !laps.isEmpty {
-                    lapsById[id] = laps
+        if items.count < Self.fetchPage { reachedEnd = true }
+        await enrich(Array(items.prefix(shown)))
+        loaded = true
+    }
+
+    /// One server page of quality sessions, newest first.
+    private func fetchPage(offset: Int) async throws -> [QualityWorkout] {
+        try await supabase
+            .from("training_logs")
+            .select("id,workout_date,workout_type,workout_distance_miles")
+            .in("workout_type", values: Self.qualityTypes)
+            .order("workout_date", ascending: false)
+            // `range` is inclusive at both ends, so a page of n spans n-1.
+            .range(from: offset, to: offset + Self.fetchPage - 1)
+            .execute().value
+    }
+
+    /// Append the next server page. A short page — or a failure — sets
+    /// `reachedEnd`, so the footer stops offering to look again rather than
+    /// retrying silently on every tap.
+    private func fetchOlder() async {
+        do {
+            let older = try await fetchPage(offset: items.count)
+            // Guard against a duplicate row arriving across page boundaries
+            // (two sessions sharing a date can reorder between requests).
+            let known = Set(items.map(\.id))
+            items.append(contentsOf: older.filter { !known.contains($0.id) })
+            if older.count < Self.fetchPage { reachedEnd = true }
+        } catch {
+            Log.coach.error("WorkoutsAndRepsSection page fetch failed: \(error)")
+            reachedEnd = true
+        }
+    }
+
+    /// Structures + laps for a set of rows. Enrichments — every row renders
+    /// without them, so this never gates the list appearing, and it is called
+    /// per revealed page rather than over the whole fetched list.
+    private func enrich(_ rows: [QualityWorkout]) async {
+        let pending = rows.filter { !enriched.contains($0.id) }
+        guard !pending.isEmpty else { return }
+        pending.forEach { enriched.insert($0.id) }
+        let ids = pending.map(\.id.uuidString)
+        if let feats: [FeatureRow] = try? await supabase
+            .from("workout_features")
+            .select("training_log_id,workout_structure")
+            .in("training_log_id", values: ids)
+            .execute().value {
+            for f in feats {
+                if let structure = f.workout_structure, structures[f.training_log_id] == nil {
+                    structures[f.training_log_id] = structure
                 }
             }
         }
-        loaded = true
+        await withTaskGroup(of: (UUID, [WorkoutLapRow]).self) { group in
+            for id in pending.map(\.id) {
+                group.addTask { (id, await WorkoutLapsService.fetchLaps(workoutId: id)) }
+            }
+            for await (id, laps) in group where !laps.isEmpty {
+                lapsById[id] = laps
+            }
+        }
     }
 
     // MARK: derived — rep pace (mirrors the strip's work-rep definition)

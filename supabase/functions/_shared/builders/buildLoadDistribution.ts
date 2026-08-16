@@ -115,12 +115,65 @@ export function buildLoadDistribution(input: {
     else loadTrend = "holding";
   }
   // Recovery read: hard-day spacing over 28d + whether this is a down week.
+  //
+  // What counts as a hard session (revised 2026-08-13)
+  // ──────────────────────────────────────────────────
+  // The rule used to be a single absolute floor: ≥240s of threshold+hard zone
+  // time. That is a pace-zone test, and it disagreed with the athlete on real
+  // sessions in both directions:
+  //
+  //   • A 48-min threshold session built as "6 min steady / 2 min easy" logged
+  //     121s above threshold across SEVEN work bouts and did not count. The
+  //     reps are short and the recoveries are float, so most of the work sits
+  //     in `moderate` — but nobody would call that an easy day.
+  //   • Conversely the floor alone would count any run that happened to spend
+  //     four minutes above threshold, structure or not.
+  //
+  // So the test is now "zone time OR declared structure": a session is hard if
+  // it cleared the zone floor, or if the row is typed as a quality session AND
+  // carries real interval structure to back the label up. Requiring the
+  // segments keeps a mistyped row from promoting an easy run on the label
+  // alone — the label is a claim, `hard_segment_count` is the evidence.
+  //
+  // Still missed, and NOT fixable here: quality run *inside* an aerobic run —
+  // e.g. a 17-mile long run with 4×1mi @ 6:00 in the middle, typed `long_run`,
+  // whose reps land in `moderate` and so score zero on every signal this
+  // function can see. Reading it needs `parsed_structure` from the Observer,
+  // which this builder is not passed. Tracked separately; it means the count
+  // is a floor, not a census.
   const QUALITY_FLOOR_SEC = 240;
-  const hardDates = rows28
-    .filter((r) => Number(r.threshold_seconds ?? 0) + Number(r.hard_seconds ?? 0) >= QUALITY_FLOOR_SEC)
-    .map((r) => String(r.workout_date ?? "").slice(0, 10))
-    .filter(Boolean)
-    .sort();
+  const QUALITY_TYPES = new Set([
+    "threshold",
+    "interval",
+    "intervals",
+    "tempo",
+    "fartlek",
+    "race",
+    "track",
+    "speed",
+  ]);
+  const MIN_WORK_BOUTS = 3;
+  const isHard = (r: FeatureRow): boolean => {
+    const zoneSec = Number(r.threshold_seconds ?? 0) + Number(r.hard_seconds ?? 0);
+    if (zoneSec >= QUALITY_FLOOR_SEC) return true;
+    const type = String(r.workout_type ?? "").trim().toLowerCase();
+    if (!QUALITY_TYPES.has(type)) return false;
+    // The label alone is not enough — it has to have been run as reps.
+    return Number(r.hard_segment_count ?? 0) >= MIN_WORK_BOUTS;
+  };
+
+  // Deduped to distinct DAYS. Two rows on one date used to yield a 0-day gap
+  // that dragged the average toward zero, and a date lands twice more often
+  // than a genuine double session does: a run imported from Strava and logged
+  // by voice is two `training_logs` rows for one run, and both carry features.
+  // Counting days also makes `hard_sessions_28d` agree with the spacing figure
+  // sitting next to it — "5 sessions, 5.3 days apart" has to be the same five.
+  const hardDates = [...new Set(
+    rows28
+      .filter(isHard)
+      .map((r) => String(r.workout_date ?? "").slice(0, 10))
+      .filter(Boolean),
+  )].sort();
   let avgDaysBetweenHard: number | null = null;
   if (hardDates.length >= 2) {
     let gapSum = 0;

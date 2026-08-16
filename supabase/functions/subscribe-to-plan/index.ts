@@ -1039,7 +1039,7 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
       const rawDow = dayWorkout.dayOfWeek ?? 0;
       const candidate = looksOneIndexed ? rawDow : rawDow + 1;
       const normalizedDow = Math.min(7, Math.max(1, candidate));
-      const isQuality = ["tempo", "intervals", "long_run", "race", "progression"].includes(workoutType);
+      const isQuality = ["threshold", "tempo", "intervals", "interval", "fartlek", "long_run", "long_wo", "race", "progression"].includes(workoutType);
       out.push({
         plan_id: ctx.planId,
         date: formatDate(workoutDate),
@@ -1293,7 +1293,7 @@ function materializeWeek(week: PlanTemplateWeek, ctx: MaterializeContext): Sched
     const workoutDate = new Date(ctx.planStart);
     workoutDate.setDate(workoutDate.getDate() + dayOffset);
     const type = pm.workoutType ?? "easy";
-    const isQuality = ["tempo", "intervals", "long_run", "race", "progression"].includes(type);
+    const isQuality = ["threshold", "tempo", "intervals", "interval", "fartlek", "long_run", "long_wo", "race", "progression"].includes(type);
     out.push({
       plan_id: ctx.planId,
       date: formatDate(workoutDate),
@@ -1411,7 +1411,7 @@ function buildQualityTemplates(weeks: PlanTemplateWeek[], ctx: MaterializeContex
     for (const tw of templateWorkouts) {
       const type = tw.workoutType;
       if (!type || type === "rest" ||
-          !["tempo", "intervals", "long_run", "race", "progression"].includes(type)) continue;
+          !["threshold", "tempo", "intervals", "interval", "fartlek", "long_run", "long_wo", "race", "progression"].includes(type)) continue;
       rank++;
       const miles = workoutMiles(tw);
       out.push({

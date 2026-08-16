@@ -83,11 +83,21 @@ export interface EfficiencyTrend {
   ef_baseline: number;
   /** + = more efficient now (fitter). */
   ef_delta_pct: number;
-  /** Pooled work/aerobic pace (sec/mi) and HR for each window — for "4:43 @ 158" prose. */
+  /** Pooled work/aerobic pace (sec/mi) and HR for each window — for "4:43 @ 158" prose.
+   *  These stay the paces ACTUALLY RUN; the EF above is computed on the neutral
+   *  pair below. Prose must never present a neutral pace as a pace she ran. */
   pace_recent_sec: number;
   hr_recent: number;
   pace_baseline_sec: number;
   hr_baseline: number;
+  /** The same two windows priced in neutral air — what EF actually divided by.
+   *  Equal to the raw pace when no weather was on file. */
+  pace_recent_neutral_sec: number;
+  pace_baseline_neutral_sec: number;
+  /** Share of pooled distance carrying a weather stamp (0–100), per window.
+   *  Low coverage means the EF above is only partly de-weathered. */
+  heat_coverage_recent_pct: number;
+  heat_coverage_baseline_pct: number;
   direction: "improving" | "flat" | "declining";
   confidence: "high" | "medium" | "low";
 }
@@ -117,6 +127,17 @@ export interface FitnessSignal {
 interface Pool {
   meters: number;
   seconds: number;
+  /**
+   * Σ neutral-day-equivalent seconds — each bout's distance priced at the pace
+   * it would have cost in neutral air. Bouts with no weather stamp contribute
+   * their real seconds, so a partly-decorated pool degrades bout by bout.
+   *
+   * This is what EF divides by (2026-08-15). Raw `seconds` still drives every
+   * reported pace; only the efficiency RATIO is de-weathered.
+   */
+  neutralSeconds: number;
+  /** Σ meters that actually carried an adjustment — the coverage denominator. */
+  neutralMeters: number;
   hrWeighted: number; // Σ hr × seconds
   hrSeconds: number; // Σ seconds with valid hr
   sessions: number;
@@ -124,7 +145,10 @@ interface Pool {
 }
 
 function emptyPool(): Pool {
-  return { meters: 0, seconds: 0, hrWeighted: 0, hrSeconds: 0, sessions: 0, earliestAgeDays: 0 };
+  return {
+    meters: 0, seconds: 0, neutralSeconds: 0, neutralMeters: 0,
+    hrWeighted: 0, hrSeconds: 0, sessions: 0, earliestAgeDays: 0,
+  };
 }
 
 /** Pooled pace (sec/mi) from a pool, or null if no distance/time. */
@@ -137,11 +161,38 @@ function poolHr(p: Pool): number | null {
   if (p.hrSeconds <= 0) return null;
   return p.hrWeighted / p.hrSeconds;
 }
-/** Efficiency factor = speed (m/min) / HR. Higher = fitter. null if incomplete. */
+/** Neutral-day pooled pace (sec/mi) — what the pool would have run in neutral
+ *  air. Reported alongside the raw pace so a surface can show its work. */
+function poolNeutralPace(p: Pool): number | null {
+  if (p.meters <= 0 || p.neutralSeconds <= 0) return null;
+  return (p.neutralSeconds / p.meters) * METERS_PER_MILE;
+}
+/** Share of pooled distance that carried a weather stamp (0–100). A trend
+ *  built on thin coverage is barely corrected, and the caller should be able
+ *  to see that rather than infer it. */
+function poolHeatCoverage(p: Pool): number {
+  if (p.meters <= 0) return 0;
+  return (p.neutralMeters / p.meters) * 100;
+}
+/**
+ * Efficiency factor = speed (m/min) / HR. Higher = fitter. null if incomplete.
+ *
+ * HEAT (2026-08-15). Speed is the NEUTRAL-day speed, not the observed one.
+ * Raw-pace EF silently reads summer as detraining: the same effort at the same
+ * heart rate is simply slower in heat, so speed-per-beat falls with the dew
+ * point. On the calibration athlete the recent window averaged 13.0 s/mi of
+ * heat cost against the baseline's 11.6 — roughly a third of an apparent
+ * 5 s/mi threshold slowdown was weather, and the bucket read "flat" at +1.40%
+ * against a 1.5% direction gate it should have cleared.
+ *
+ * HR stays measured. Only the distance side is normalized, so this asks the
+ * one question that matters: for the beats you actually spent, how much
+ * neutral-air speed did you get?
+ */
 function poolEf(p: Pool): number | null {
   const hr = poolHr(p);
-  if (hr == null || hr <= 0 || p.seconds <= 0) return null;
-  const speedMPerMin = p.meters / (p.seconds / 60);
+  if (hr == null || hr <= 0 || p.neutralSeconds <= 0) return null;
+  const speedMPerMin = p.meters / (p.neutralSeconds / 60);
   return speedMPerMin / hr;
 }
 
@@ -172,7 +223,14 @@ function accumulateEfficiency(
   ageDays: number,
   pools: Record<EffortBucket, { recent: Pool; baseline: Pool }>,
 ): EffortBucket | null {
-  const seg = segmentFromLaps(laps, zones);
+  // Classify on the heat-adjusted pace too, not just divide by it. Otherwise a
+  // hot easy run is evicted from the pool before EF ever sees it: at the test
+  // athlete's easy anchor (429 s/mi) the recovery cutoff is 467.6, so a 470
+  // s/mi August mile that is worth 450 in neutral air books as `recovery`,
+  // falls outside AEROBIC_ZONES, and the session contributes nothing. Summer
+  // then thins the recent window at exactly the moment it also slows it —
+  // two heat biases stacking in the same direction.
+  const seg = segmentFromLaps(laps, zones, { useHeatAdjustedPace: true });
   const within = (b: Bout) => b.paceSecPerMile > 0 && validHr(b.avgHr);
 
   // Quality session: pool the WORK reps (comparable hard efforts).
@@ -224,7 +282,23 @@ function addBouts(pool: Pool, bouts: Bout[], ageDays: number): void {
   for (const b of bouts) {
     pool.meters += b.distanceMeters;
     pool.seconds += b.seconds;
+
+    // Neutral-equivalent time for this bout. No stamp on file → the bout pays
+    // its real seconds, which makes the correction a no-op for undecorated
+    // data rather than an invention.
+    const miles = b.distanceMeters / METERS_PER_MILE;
+    const neutral = b.neutralPaceSecPerMile;
+    if (neutral != null && neutral > 0 && miles > 0) {
+      pool.neutralSeconds += neutral * miles;
+      pool.neutralMeters += b.distanceMeters;
+    } else {
+      pool.neutralSeconds += b.seconds;
+    }
+
     if (validHr(b.avgHr)) {
+      // HR is weighted by REAL seconds, never neutral ones: the heartbeats
+      // happened over the time they happened over. Only the distance side of
+      // the ratio is counterfactual.
       pool.hrWeighted += b.avgHr * b.seconds;
       pool.hrSeconds += b.seconds;
     }
@@ -239,7 +313,11 @@ function addBouts(pool: Pool, bouts: Bout[], ageDays: number): void {
  *  EF_firstHalf × 100, split by cumulative time. Positive = HR drifted up
  *  relative to pace (less durable). null when not a long-enough sustained run. */
 export function sessionDecouplingPct(laps: LapInput[], zones: PaceZones): number | null {
-  const seg = segmentFromLaps(laps, zones);
+  // Same heat-aware classification as the EF pool, so the two fitness reads
+  // can never disagree about what kind of session a hot day was. The drift
+  // RATIO itself is heat-neutral — both halves ran in the same weather — so
+  // this only affects which sessions qualify as long runs at all.
+  const seg = segmentFromLaps(laps, zones, { useHeatAdjustedPace: true });
   // Only read durability on long runs — a continuous aerobic effort, no rep
   // structure. (Quality sessions have rest laps and rep dynamics; their drift
   // is `hr_drift_pct`, a different lens.)
@@ -348,6 +426,10 @@ export function computeFitnessSignal(
       hr_recent: Math.round(hrR),
       pace_baseline_sec: Math.round(paceB),
       hr_baseline: Math.round(hrB),
+      pace_recent_neutral_sec: Math.round(poolNeutralPace(r) ?? paceR),
+      pace_baseline_neutral_sec: Math.round(poolNeutralPace(b) ?? paceB),
+      heat_coverage_recent_pct: round1(poolHeatCoverage(r)),
+      heat_coverage_baseline_pct: round1(poolHeatCoverage(b)),
       direction,
       confidence: confFromSamples(r.sessions, b.sessions),
     });

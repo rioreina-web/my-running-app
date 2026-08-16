@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week stress · two full charts — Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --paper-deep:#E8E4DF; --rule:#E8E4E0; --card:#FFFFFF;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420;
+  --energized:#2D8A4E; --positive:#4A9E6B; --neutral:#9B9590;
+  --tired:#C4873A; --struggling:#C45A3A; --injured:#B83A4A;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;font-family:var(--fb);color:var(--ink);-webkit-font-smoothing:antialiased;
+  padding:var(--s7) var(--s5) 48px}
+
+.study{max-width:1200px;margin:0 auto var(--s6)}
+.study h1{font-family:var(--fd);font-weight:700;font-size:26px;margin:0 0 var(--s2)}
+.study p{margin:0 0 var(--s2);font-size:13.5px;line-height:1.6;color:#4A4540;max-width:80ch}
+.study p b{font-weight:400;color:var(--ink)}
+
+.sheet{max-width:1200px;margin:0 auto;background:var(--paper);border-radius:22px;
+  box-shadow:0 8px 30px rgba(0,0,0,.16);border:1px solid rgba(0,0,0,.05);
+  padding:var(--s6) var(--s7) var(--s7);display:flex;gap:var(--s7);align-items:flex-start}
+.main{flex:1;min-width:0}
+.side{width:286px;flex:none;padding-top:2px}
+
+/* ---- type ---- */
+.eyebrow{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-2)}
+.eyebrow--coral{color:var(--coral)}
+.micro{font-family:var(--fm);font-size:9px;font-weight:500;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3)}
+.mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+
+/* ---- head ---- */
+.hd{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);margin-bottom:var(--s5)}
+.wknav{display:flex;align-items:center;gap:var(--s2)}
+.wknav .chev{font-size:15px;color:var(--ink-3);cursor:pointer;line-height:1}
+.wknav .lab{font-family:var(--fm);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink)}
+.close{font-family:var(--fm);font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--coral);cursor:pointer}
+
+.statrow{display:flex;align-items:baseline;gap:var(--s5);flex-wrap:wrap;margin-bottom:var(--s6)}
+.total{font-family:var(--fm);font-size:38px;font-weight:600;letter-spacing:-.015em;line-height:1}
+.total .u{font-size:13px;font-weight:400;color:var(--ink-2);letter-spacing:0;margin-left:3px}
+.toggle{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);background:none;border:0;padding:5px 0;cursor:pointer;border-bottom:1px solid transparent}
+.toggle.on{color:var(--ink);border-bottom-color:var(--ink)}
+.cmp{display:flex;align-items:center;gap:var(--s2);background:var(--paper-deep);
+  border-radius:999px;padding:6px 12px}
+.cmp span{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.cmp .x{color:var(--ink-3);cursor:pointer;font-size:12px}
+.meta{font-family:var(--fm);font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+
+/* ---- chart block ---- */
+.block{margin-bottom:var(--s3)}
+.blockhd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:var(--s3)}
+.blockhd .r{font-family:var(--fm);font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.blockhd .r b{font-weight:500;color:var(--ink-2)}
+
+.plotwrap{position:relative}
+.plot{position:relative;margin-left:38px}
+.grid{position:absolute;left:0;right:0;height:1px;background:var(--rule)}
+.grid.base{background:var(--ink-3)}
+.glab{position:absolute;left:-38px;width:30px;text-align:right;font-family:var(--fm);font-size:9px;
+  color:var(--ink-3);font-variant-numeric:tabular-nums;transform:translateY(-6px)}
+.avg{position:absolute;left:0;right:0;height:1px;background:var(--ink-2);opacity:.5}
+.avglab{position:absolute;right:0;font-family:var(--fm);font-size:8px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-2);transform:translateY(-13px)}
+.divider{position:absolute;top:0;bottom:0;width:1px;background:var(--rule)}
+.divider.future{background:none;border-left:1px dashed var(--rule)}
+.dayband{position:absolute;top:0;bottom:0;background:rgba(26,24,21,.045);pointer-events:none}
+
+.run{position:absolute;bottom:0;display:flex;flex-direction:column-reverse;background:none;border:0;
+  padding:0;cursor:pointer;font:inherit;border-radius:2px 2px 0 0;overflow:hidden;
+  transition:filter 150ms ease}
+.run .seg{width:100%;flex:none}
+.run:hover{filter:brightness(1.09)}
+.run:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.run.is-open{box-shadow:0 0 0 1.5px var(--ink)}
+.run.nolap{background:repeating-linear-gradient(135deg,var(--paper-deep) 0 3px,transparent 3px 6px);
+  border:1px dashed var(--ink-3);border-bottom:0}
+.nig{position:absolute;width:0;height:0;border-left:4.5px solid transparent;
+  border-right:4.5px solid transparent;border-top:6px solid var(--coral);
+  transform:translateX(-50%);pointer-events:none}
+.rhrline{position:absolute;left:0;right:0;top:0;bottom:0;pointer-events:none;overflow:visible}
+
+/* ---- day rail with distribution ---- */
+.rail{display:flex;margin-left:38px;border-top:1px solid var(--ink-3);padding-top:var(--s3)}
+.dcell{flex:1;display:flex;flex-direction:column;align-items:center;gap:var(--s2);
+  cursor:pointer;padding-bottom:var(--s2);border-radius:0 0 4px 4px}
+.dcell:hover{background:rgba(26,24,21,.035)}
+.dcell.sel{background:rgba(26,24,21,.055)}
+.dlab{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);line-height:1}
+.dcell.ran .dlab{color:var(--ink-2)}
+.dcell.today .dlab{color:var(--ink)}
+.dtls{font-family:var(--fm);font-size:15px;font-weight:600;color:var(--ink);
+  font-variant-numeric:tabular-nums;line-height:1}
+.dtls.zero{color:var(--ink-3);font-weight:400}
+.dtls.none{visibility:hidden}
+.dpct{font-family:var(--fm);font-size:9.5px;letter-spacing:.07em;color:var(--ink-3);
+  font-variant-numeric:tabular-nums;line-height:1}
+.dpct.hi{color:var(--ink-2)}
+.dshare{width:78%;height:3px;border-radius:2px;background:var(--paper-deep);overflow:hidden}
+.dshare i{display:block;height:100%;background:var(--ink-3);opacity:.75;border-radius:2px}
+.moodtick{width:14px;height:2.5px;border-radius:2px;background:transparent}
+
+/* ---- editorial rule ---- */
+.erule{display:flex;align-items:center;gap:var(--s2);margin:var(--s6) 0 var(--s5)}
+.erule::before,.erule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.erule .dot{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+
+.axisnote{font-family:var(--fb);font-style:italic;font-size:12.5px;line-height:1.55;color:var(--ink-3);
+  margin:var(--s4) 0 0}
+.axisnote b{font-style:normal;font-weight:400;color:var(--ink-2)}
+
+/* ---- legend ---- */
+.legend{margin-top:var(--s6);border-top:1px solid var(--rule);padding-top:var(--s4)}
+.lgbars{display:flex;gap:2px;height:11px;margin-top:var(--s2)}
+.lgbars .b{flex:1;border-radius:1px}
+.lgends{display:flex;justify-content:space-between;margin-top:var(--s2)}
+
+/* ---- side panel ---- */
+.side .ptitle{font-family:var(--fm);font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-2);padding-bottom:var(--s3);border-bottom:1px solid var(--rule)}
+.p-empty{font-family:var(--fb);font-size:14.5px;line-height:1.6;color:var(--ink-2);margin-top:var(--s4)}
+.p-when{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-2);margin-top:var(--s4)}
+.p-line{font-family:var(--fm);font-size:17px;color:var(--ink);font-variant-numeric:tabular-nums;
+  margin-top:var(--s2)}
+.p-line .sep{color:var(--ink-3);padding:0 5px}
+.p-line .u{font-size:11px;color:var(--ink-2)}
+.p-share{font-family:var(--fm);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);margin-top:var(--s2)}
+.p-open{font-family:var(--fm);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--coral);margin-top:var(--s3);display:inline-block}
+table.zones{width:100%;border-collapse:collapse;margin-top:var(--s5)}
+table.zones td{font-family:var(--fm);font-size:11.5px;text-align:right;padding:7px 0;
+  border-top:1px solid var(--rule);font-variant-numeric:tabular-nums}
+table.zones td:first-child{text-align:left}
+table.zones tr.tot td{border-top:1px solid var(--ink-3);color:var(--ink)}
+table.zones tr.tot td:first-child{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2)}
+.zc{display:flex;align-items:center;gap:7px}
+.zsw{width:7px;height:13px;border-radius:1px;flex:none}
+.zname{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+.zx{color:var(--ink-3)}
+.p-note{font-family:var(--fb);font-style:italic;font-size:12.5px;line-height:1.55;color:var(--ink-3);
+  margin-top:var(--s4)}
+.p-nig{margin-top:var(--s4);display:flex;gap:var(--s2);align-items:flex-start}
+.p-nig .caret{width:0;height:0;border-left:4.5px solid transparent;border-right:4.5px solid transparent;
+  border-bottom:6px solid var(--coral);margin-top:6px;flex:none}
+.p-nig .cap{font-family:var(--fm);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--coral-deep)}
+.p-nig .q{font-size:13px;line-height:1.5}
+.p-vs{margin-top:var(--s5);padding-top:var(--s4);border-top:1px solid var(--rule)}
+.p-vs .row{display:flex;justify-content:space-between;font-family:var(--fm);font-size:11.5px;
+  font-variant-numeric:tabular-nums;padding:5px 0;color:var(--ink-2)}
+.p-vs .row b{font-weight:600;color:var(--ink)}
+
+.sig{max-width:1200px;margin:var(--s6) auto 0;text-align:center;font-family:var(--fb);
+  font-style:italic;font-size:12px;color:rgba(26,24,21,.35)}
+</style>
+</head>
+<body>
+
+<div class="study">
+  <h1>Week stress · both weeks at full height.</h1>
+  <p>Two charts, same vertical budget each, <b>same y-scale</b>, each with its own axis and its own
+  average rule. Every bar in both weeks is a target — the compared week is no longer a silhouette you
+  can only look at. Under each chart the day rail carries the <b>load score and that day's share of its
+  own week</b>. Tapping a day highlights the same weekday in both charts.</p>
+</div>
+
+<div class="sheet">
+  <div class="main">
+
+    <div class="hd">
+      <div class="wknav">
+        <span class="chev">‹</span>
+        <span class="lab">This week</span>
+        <span class="chev">›</span>
+      </div>
+      <span class="close">Close</span>
+    </div>
+
+    <div class="statrow">
+      <span class="total mono" id="tot"></span>
+      <button class="toggle" id="rhrBtn">Resting HR</button>
+      <span class="cmp">
+        <span class="chev" style="color:var(--ink-3);cursor:pointer">‹</span>
+        <span id="cmpLab"></span>
+        <span class="chev" style="color:var(--ink-3);cursor:pointer">›</span>
+        <span class="x">✕</span>
+      </span>
+      <span class="meta" id="meta"></span>
+    </div>
+
+    <div id="charts"></div>
+
+    <p class="axisnote">Each slot is one day, <b>midnight to midnight</b>. A bar sits where the run
+    happened in it — left is early, right is late. Warm-up, session and cool-down count as one run.</p>
+
+    <div class="legend">
+      <span class="micro">The pace spectrum</span>
+      <div class="lgbars" id="lg"></div>
+      <div class="lgends"><span class="micro">Easy</span><span class="micro">Mile</span></div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="ptitle" id="pt">Tap a run</div>
+    <div id="panel"></div>
+  </div>
+</div>
+
+<div class="sig">— restraint as foundation, intensity as accent.</div>
+
+<script>
+/* ============================================================
+   CANONICAL — PaceSpectrum colours, TrendsZoneWeight weights.
+   Mirrored from week-stress-horizontal-prototype.html.
+   ⚠ The repo still holds two weight tables (see that file's note);
+   the shipped view must read TrendsZoneWeight.table, not a copy.
+   ============================================================ */
+const ZONES=[
+ {key:'easy',label:'Easy',color:'#93B9D6',w:1.00},
+ {key:'moderate',label:'Moderate',color:'#74A8CC',w:1.25},
+ {key:'steady',label:'Steady',color:'#578FC0',w:1.50},
+ {key:'mp',label:'MP',color:'#3F7CB5',w:2.50},
+ {key:'hmp',label:'HMP',color:'#2F66A8',w:3.25},
+ {key:'lt',label:'LT',color:'#27549B',w:3.25},
+ {key:'10k',label:'10K',color:'#20448B',w:4.00},
+ {key:'5k',label:'5K',color:'#1A3679',w:5.50},
+ {key:'3k',label:'3K',color:'#142964',w:6.75},
+ {key:'mile',label:'Mile',color:'#0E1D4E',w:8.00},
+];
+const Z=Object.fromEntries(ZONES.map(z=>[z.key,z]));
+const ZI=Object.fromEntries(ZONES.map((z,i)=>[z.key,i]));
+const MOODS={energized:'#2D8A4E',positive:'#4A9E6B',neutral:'#9B9590',
+             tired:'#C4873A',struggling:'#C45A3A',injured:'#B83A4A'};
+
+/* ---- data · `at` is start time, `up` is when the file arrived ---- */
+const THIS_WEEK={ label:'AUG 10 — 16', short:'This week', todayIdx:2, days:[
+ {d:'MON',date:'Aug 10',mood:'positive',rhr:43,runs:[
+   {at:'06:15',up:'07:02',segs:[{z:'easy',mi:8.2,sec:498}]},
+   {at:'17:50',up:'18:20',segs:[{z:'easy',mi:3.0,sec:520}]}]},
+ {d:'TUE',date:'Aug 11',mood:'neutral',rhr:47,runs:[
+   {at:'06:02',up:'13:55',segs:[{z:'easy',mi:2.5,sec:505},{z:'hmp',mi:3.6,sec:321},
+                                {z:'10k',mi:1.4,sec:313},{z:'easy',mi:1.8,sec:540}]}]},
+ {d:'WED',date:'Aug 12',mood:'tired',rhr:50,
+  niggle:{area:'achilles',side:'right',quote:'right achilles grumbled the first mile, fine after'},
+  runs:[{at:'06:20',up:'07:04',segs:[{z:'easy',mi:5.1,sec:500},{z:'moderate',mi:2.0,sec:420}]}]},
+ {d:'THU',date:'Aug 13',future:true,runs:[]},
+ {d:'FRI',date:'Aug 14',future:true,runs:[]},
+ {d:'SAT',date:'Aug 15',future:true,runs:[]},
+ {d:'SUN',date:'Aug 16',future:true,runs:[]},
+]};
+
+const CMP_WEEK={ label:'AUG 3 — 9', short:'Aug 3 — 9', todayIdx:null, days:[
+ {d:'MON',date:'Aug 3',rhr:51,runs:[]},
+ {d:'TUE',date:'Aug 4',mood:'positive',rhr:47,runs:[
+   {at:'06:05',up:'20:41',segs:[{z:'easy',mi:3.0,sec:508},{z:'moderate',mi:2.0,sec:438},
+                                {z:'5k',mi:3.0,sec:322},{z:'3k',mi:1.2,sec:304},{z:'easy',mi:1.5,sec:545}]},
+   {at:'17:40',up:'18:12',segs:[{z:'easy',mi:4.0,sec:520}]}]},
+ {d:'WED',date:'Aug 5',rhr:50,runs:[{at:'06:20',up:'06:58',noLap:true,mi:6.0,min:50}]},
+ {d:'THU',date:'Aug 6',mood:'tired',rhr:52,runs:[
+   {at:'05:52',up:'21:03',segs:[{z:'easy',mi:2.0,sec:498},{z:'mp',mi:5.0,sec:382},{z:'easy',mi:4.0,sec:512}]}]},
+ {d:'FRI',date:'Aug 7',mood:'neutral',rhr:54,runs:[
+   {at:'12:15',up:'12:49',segs:[{z:'easy',mi:6.0,sec:514}]}]},
+ {d:'SAT',date:'Aug 8',mood:'positive',rhr:55,runs:[
+   {at:'07:30',up:'19:26',segs:[{z:'easy',mi:9.0,sec:492},{z:'moderate',mi:3.0,sec:420},
+                                {z:'mp',mi:5.0,sec:378},{z:'easy',mi:3.0,sec:530}]}]},
+ {d:'SUN',date:'Aug 9',mood:'energized',rhr:49,runs:[
+   {at:'20:35',up:'21:10',segs:[{z:'easy',mi:6.0,sec:495}]}]},
+]};
+
+/* ---- helpers ---- */
+const toMin=t=>{const[h,m]=t.split(':').map(Number);return h*60+m};
+const clock=t=>{const[h,m]=t.split(':').map(Number);const ap=h<12?'am':'pm';
+  const hh=h%12===0?12:h%12;return `${hh}:${String(m).padStart(2,'0')}${ap}`};
+const partOfDay=m=>m<5*60?'Night':m<11*60?'Morning':m<14*60?'Midday':m<18*60?'Afternoon':m<20*60?'Evening':'Night';
+const mi1=n=>n.toFixed(1);
+const hm=m=>`${Math.floor(m/60)}:${String(Math.round(m%60)).padStart(2,'0')}`;
+const pace=(mn,mi)=>{const s=Math.round(mn*60/mi);return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`};
+const x1=n=>n.toFixed(2).replace(/\.?0+$/,'');
+
+function build(week){
+  const days=week.days.map(day=>{
+    const runs=day.runs.map(r=>{
+      if(r.noLap) return {...r,startMin:toMin(r.at),minutes:r.min,miles:r.mi,load:0,segs:[]};
+      const merged={};
+      r.segs.forEach(s=>{
+        const minutes=s.mi*s.sec/60;
+        const m=merged[s.z]||(merged[s.z]={z:s.z,zone:Z[s.z],miles:0,minutes:0});
+        m.miles+=s.mi; m.minutes+=minutes;
+      });
+      const segs=Object.values(merged).map(s=>({...s,load:s.minutes*s.zone.w}))
+        .sort((a,b)=>ZI[a.z]-ZI[b.z]);
+      return {...r,segs,startMin:toMin(r.at),
+        minutes:segs.reduce((a,s)=>a+s.minutes,0),
+        miles:segs.reduce((a,s)=>a+s.miles,0),
+        load:segs.reduce((a,s)=>a+s.load,0)};
+    }).sort((a,b)=>a.startMin-b.startMin);
+    return {...day,runs,
+      miles:runs.reduce((a,r)=>a+r.miles,0),
+      minutes:runs.reduce((a,r)=>a+r.minutes,0),
+      load:runs.reduce((a,r)=>a+r.load,0),
+      ran:runs.length>0};
+  });
+  const load=days.reduce((a,d)=>a+d.load,0);
+  return {...week,days,load,
+    miles:days.reduce((a,d)=>a+d.miles,0),
+    minutes:days.reduce((a,d)=>a+d.minutes,0),
+    runs:days.reduce((a,d)=>a+d.runs.length,0),
+    runDays:days.filter(d=>d.ran).length,
+    maxDay:Math.max(...days.map(d=>d.load),1),
+    avgDay:load/Math.max(days.filter(d=>d.ran).length,1)};
+}
+
+const A=build(THIS_WEEK), B=build(CMP_WEEK);
+
+/* SHARED SCALE — the whole reason two charts beat one squeezed pair.
+   Ceiling from the tallest RUN in either week, rounded up to a clean step. */
+const allRuns=[...A.days,...B.days].flatMap(d=>d.runs);
+const maxRun=Math.max(...allRuns.map(r=>r.load),1);
+const step=maxRun>400?100:maxRun>150?50:25;
+const CEIL=Math.ceil(maxRun/step)*step;
+const TICKS=CEIL/step;
+
+const PLOT_H=208, BAR_W=17, HEAD=12;
+const state={open:null, day:null, rhr:false};
+
+/* ---- chart ---- */
+function chart(W,tag,isCompare){
+  const slot=100/7, usable=PLOT_H-HEAD;
+  const y=v=>PLOT_H-(v/CEIL)*usable;
+
+  let grids='';
+  for(let i=0;i<=TICKS;i++){
+    const v=CEIL*i/TICKS, py=y(v);
+    grids+=`<div class="grid ${i===0?'base':''}" style="top:${py}px"></div>
+            <div class="glab" style="top:${py}px">${Math.round(v)}</div>`;
+  }
+  const avgY=y(W.avgDay);
+  const avg=`<div class="avg" style="top:${avgY}px"></div>
+             <div class="avglab" style="top:${avgY}px">Avg day ${Math.round(W.avgDay)}</div>`;
+
+  const divs=W.days.map((d,i)=>i===0?'':
+    `<div class="divider ${d.future?'future':''}" style="left:${i*slot}%"></div>`).join('');
+
+  const bands=state.day===null?'':
+    `<div class="dayband" style="left:${state.day*slot}%;width:${slot}%"></div>`;
+
+  let bars='',carets='';
+  W.days.forEach((d,di)=>{
+    d.runs.forEach((r,ri)=>{
+      const key=`${tag}-${di}-${ri}`;
+      const open=state.open===key;
+      const leftPct=di*slot+(r.startMin/1440)*(slot-(BAR_W/700*100));
+      if(r.noLap){
+        bars+=`<button class="run nolap ${open?'is-open':''}" data-k="${key}"
+          style="left:${leftPct}%;width:${BAR_W}px;height:12px"
+          aria-label="${d.d} ${partOfDay(r.startMin)}, ${mi1(r.mi)} miles, no lap data"></button>`;
+        return;
+      }
+      const h=Math.max(3,(r.load/CEIL)*usable);
+      const segs=r.segs.map(s=>`<span class="seg" style="height:${s.load/r.load*100}%;
+        background:${s.zone.color}"></span>`).join('');
+      bars+=`<button class="run ${open?'is-open':''}" data-k="${key}"
+        style="left:${leftPct}%;width:${BAR_W}px;height:${h}px"
+        aria-label="${d.d} ${partOfDay(r.startMin)}, ${mi1(r.miles)} miles, ${Math.round(r.load)} T L S"
+        >${segs}</button>`;
+    });
+    if(d.niggle&&d.runs.length){
+      const r=d.runs[0];
+      const h=r.noLap?12:Math.max(3,(r.load/CEIL)*usable);
+      const l=di*slot+(r.startMin/1440)*(slot-(BAR_W/700*100))+(BAR_W/700*100)/2;
+      carets+=`<div class="nig" style="left:${l}%;bottom:${h+5}px"></div>`;
+    }
+  });
+
+  /* resting HR — its own scale, drawn only when asked for */
+  let rhr='';
+  if(state.rhr){
+    const vals=W.days.map(d=>d.rhr).filter(v=>v!=null);
+    const lo=Math.min(...vals)-3, hi=Math.max(...vals)+3;
+    const pts=W.days.map((d,i)=>d.rhr==null?null:
+      [ (i+0.5)*slot, PLOT_H-((d.rhr-lo)/(hi-lo))*(usable*0.55)-8 ])
+      .filter(Boolean);
+    const poly=pts.map(p=>`${p[0]},${p[1]}`).join(' ');
+    const dots=pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="0.45" fill="#1A1815"
+      vector-effect="non-scaling-stroke"/>`).join('');
+    rhr=`<svg class="rhrline" viewBox="0 0 100 ${PLOT_H}" preserveAspectRatio="none">
+      <polyline points="${poly}" fill="none" stroke="#1A1815" stroke-opacity=".55"
+        stroke-width="0.35" vector-effect="non-scaling-stroke"/>${dots}</svg>`;
+  }
+
+  const cells=W.days.map((d,di)=>{
+    /* Bar width IS the percentage — same number the label states, so the
+       two encodings can never disagree. Share-of-max was tried and read as
+       a second, contradicting figure (a 34% day drawing a full-width bar). */
+    const pct=W.load>0?d.load/W.load*100:0;
+    const share=pct;
+    return `<div class="dcell ${d.ran?'ran':''} ${di===W.todayIdx?'today':''} ${state.day===di?'sel':''}"
+        data-day="${di}">
+      <span class="dlab">${d.d}</span>
+      <span class="dtls ${d.future?'none':d.load>0?'':'zero'}">${d.load>0?Math.round(d.load):'0'}</span>
+      <span class="dpct ${pct>=25?'hi':''}">${d.future?'':d.load>0?pct.toFixed(0)+'%':'—'}</span>
+      <span class="dshare"><i style="width:${d.future?0:share}%"></i></span>
+      <span class="moodtick" style="background:${d.mood?MOODS[d.mood]:'transparent'}"></span>
+    </div>`;
+  }).join('');
+
+  const delta=isCompare?A.load-W.load:null;
+  const right=isCompare
+    ? `<b>${Math.round(W.load)} TLS</b> · this week ${delta>=0?'+':'−'}${Math.abs(Math.round(delta))}`
+    : `<b>${mi1(W.miles)} mi</b> · ${hm(W.minutes)} · ${W.runs} runs`;
+
+  return `<div class="block">
+    <div class="blockhd">
+      <span class="eyebrow ${isCompare?'':'eyebrow--coral'}">${W.label}${isCompare?'':' · this week'}</span>
+      <span class="r">${right}</span>
+    </div>
+    <div class="plotwrap">
+      <div class="plot" style="height:${PLOT_H}px">
+        ${grids}${avg}${bands}${divs}${bars}${carets}${rhr}
+      </div>
+      <div class="rail">${cells}</div>
+    </div>
+  </div>`;
+}
+
+/* ---- panel ---- */
+function panel(){
+  if(!state.open) return {t:'Tap a run',b:`<div class="p-empty">Its pace breakdown opens here — what
+    each zone cost, what share of the week the day came to, and the same day in the other week.</div>`};
+  const [tag,di,ri]=state.open.split('-');
+  const W=tag==='a'?A:B, other=tag==='a'?B:A;
+  const d=W.days[+di], r=d&&d.runs[+ri];
+  if(!r) return {t:'Tap a run',b:''};
+
+  const dayPct=W.load>0?d.load/W.load*100:0;
+  const head=`<div class="p-when">${d.d} ${d.date} · ${partOfDay(r.startMin)}, ${clock(r.at)}</div>`;
+
+  if(r.noLap) return {t:W.label,b:`${head}
+    <div class="p-line">${mi1(r.mi)}<span class="u">mi</span><span class="sep">·</span>${hm(r.min)}</div>
+    <div class="p-share">Uploaded ${clock(r.up)}</div>
+    <div class="p-empty" style="font-size:13.5px">This run arrived without splits, so there is no pace
+    breakdown and no load score for it. The ${mi1(r.mi)} miles still count toward the week.</div>`};
+
+  const rows=r.segs.map(s=>`<tr>
+    <td><span class="zc"><span class="zsw" style="background:${s.zone.color}"></span>
+      <span class="zname">${s.zone.label}</span></span></td>
+    <td>${Math.round(s.minutes)} min</td>
+    <td>${pace(s.minutes,s.miles)}/mi</td>
+    <td class="zx">×${x1(s.zone.w)}</td>
+    <td>${Math.round(s.load)}</td></tr>`).join('');
+
+  const od=other.days[+di];
+  const oPct=other.load>0?od.load/other.load*100:0;
+  const vs=`<div class="p-vs">
+    <div class="row"><span>${W.label}</span><span><b>${Math.round(d.load)}</b> · ${dayPct.toFixed(0)}%</span></div>
+    <div class="row"><span>${other.label}</span><span>${Math.round(od.load)} · ${od.load>0?oPct.toFixed(0)+'%':'—'}</span></div>
+  </div>`;
+
+  return {t:W.label,b:`${head}
+    <div class="p-line">${mi1(r.miles)}<span class="u">mi</span><span class="sep">·</span>${hm(r.minutes)}<span class="sep">·</span>${Math.round(r.load)}<span class="u">TLS</span></div>
+    <div class="p-share">${Math.round(r.load/W.load*100)}% of the week · uploaded ${clock(r.up)}</div>
+    <span class="p-open">Open run ↗</span>
+    <table class="zones"><tbody>${rows}
+      <tr class="tot"><td>Total</td><td>${hm(r.minutes)}</td><td></td><td></td><td>${Math.round(r.load)}</td></tr>
+    </tbody></table>
+    <div class="p-note">Each row is minutes × what a minute at that pace costs. The bar you tapped is
+    that total, stacked in the same order.</div>
+    ${d.niggle?`<div class="p-nig"><span class="caret"></span><span class="q">
+      <span class="cap">${d.niggle.side} ${d.niggle.area}</span><br>
+      <em>“${d.niggle.quote}”</em></span></div>`:''}
+    ${vs}`};
+}
+
+/* ---- draw ---- */
+function draw(){
+  document.getElementById('tot').innerHTML=`${Math.round(A.load)}<span class="u">TLS</span>`;
+  document.getElementById('cmpLab').textContent=`vs ${B.short}`;
+  document.getElementById('meta').textContent=
+    `${A.runDays} days · ${A.runs} runs · ${hm(A.minutes)}`;
+  document.getElementById('rhrBtn').classList.toggle('on',state.rhr);
+  document.getElementById('lg').innerHTML=
+    ZONES.map(z=>`<span class="b" style="background:${z.color}"></span>`).join('');
+
+  document.getElementById('charts').innerHTML=
+    chart(A,'a',false)+`<div class="erule"><span class="dot"></span></div>`+chart(B,'b',true);
+
+  const p=panel();
+  document.getElementById('pt').textContent=p.t;
+  document.getElementById('panel').innerHTML=p.b;
+
+  document.querySelectorAll('.run').forEach(b=>b.onclick=()=>{
+    state.open=state.open===b.dataset.k?null:b.dataset.k;
+    if(state.open) state.day=+state.open.split('-')[1];
+    draw();
+  });
+  document.querySelectorAll('.dcell').forEach(c=>c.onclick=()=>{
+    const di=+c.dataset.day;
+    state.day=state.day===di?null:di;
+    draw();
+  });
+}
+document.getElementById('rhrBtn').onclick=()=>{state.rhr=!state.rhr;draw()};
+draw();
+</script>
+</body>
+</html>

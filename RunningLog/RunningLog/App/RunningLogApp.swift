@@ -206,6 +206,18 @@ struct MainTabView: View {
                     .opacity(selectedTab == 8 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 8)
 
+                // Tab 9 — The Sheet. The dense session table: one row per
+                // SESSION (see SessionRollup.swift), week-grouped, with tag
+                // chips and search. Reads TrainingLogStore.shared, the same
+                // store tab 0 and Train use, so it never doubles the fetch:
+                // the store always fetches its own 400-day window and
+                // `refresh(days:)` only slices the result client-side, so
+                // asking for 400 here costs nothing and changes nothing for
+                // the 180-day callers.
+                NavigationStack { SheetTabView() }
+                    .opacity(selectedTab == 9 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 9)
+
                 // Tab 2 — COACH (The Read) removed 2026-07-28. The tab bar
                 // is Log · Trends · Train. `CoachReadView` stays in the repo,
                 // unlinked, so the surface can be restored as a tab or as a
@@ -249,13 +261,26 @@ struct MainTabView: View {
                     // stay unrequested and silently empty. One-time top-up.
                     await HealthKitManager.shared.ensureAuthorizationCoversCurrentTypes()
                     let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
+                    // Publish for the Log tab's workout picker — this is the
+                    // one HealthKit fetch at launch. VoiceLogView reads this
+                    // instead of re-requesting auth + refetching on appear
+                    // (the duplicate cost ~2 concurrent auth prompts + a
+                    // second query on the launch critical path).
+                    await MainActor.run {
+                        HealthKitManager.shared.recentWorkouts = hkWorkouts
+                    }
                     if !hkWorkouts.isEmpty {
                         await WorkoutSyncService().syncUnloggedWorkouts(workouts: hkWorkouts)
                     }
                     // Sleep / resting HR / HRV → daily_biometrics. Feeds the
                     // recovery ledger's Overnight + Sleep factors, which have
                     // had no producer since Vital went quiet on 2026-04-03.
-                    await HealthBiometricsSync.shared.sync()
+                    // Detached at background priority: it only writes to the
+                    // DB — nothing on screen waits for it, so it shouldn't
+                    // compete with first-paint fetches for the network.
+                    Task.detached(priority: .background) {
+                        await HealthBiometricsSync.shared.sync()
+                    }
                 }()
                 _ = await (profile, paceProfile, paceZones, dailyRead, maxHRSync, tzSync, healthKitSync, keySessions)
             }
@@ -266,6 +291,9 @@ struct MainTabView: View {
                 // queries); generates a fresh Read on first foreground
                 // of a new day.
                 if newPhase == .active {
+                    // SELECT-only (default): hydrates today's Read if one
+                    // exists; never triggers a paid LLM generation. See
+                    // DailyReadService.refresh(generateIfMissing:).
                     Task { try? await DailyReadService.shared.refresh() }
                 }
             }

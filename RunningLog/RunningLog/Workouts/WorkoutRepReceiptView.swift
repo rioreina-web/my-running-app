@@ -31,25 +31,38 @@ import Supabase
 import os
 
 struct WorkoutRepReceiptView: View {
+
+    /// Where this receipt is being rendered — which decides what it may
+    /// assume is already on screen.
+    ///
+    /// `.standalone` — `WorkoutRepDetailSheet`. The receipt IS the page, so it
+    /// carries the run's identity: the datestamp header and THE WORKOUT.
+    ///
+    /// `.embedded` — inside a journal entry, which already states the date in
+    /// its plate strip and its own headline, and hosts THE WORKOUT above the
+    /// fold against the same row. The receipt renders neither, so one scroll
+    /// never shows two page titles or two editors for one column. (2026-08-10)
+    enum Placement { case standalone, embedded }
+
     let workoutId: UUID?
+    let placement: Placement
     private let injectedLaps: [WorkoutLapRow]?
     private let injectedZones: RepChartZones?
 
-    init(workoutId: UUID) {
-        self.workoutId = workoutId; self.injectedLaps = nil; self.injectedZones = nil
+    init(workoutId: UUID, placement: Placement = .standalone) {
+        self.workoutId = workoutId; self.placement = placement
+        self.injectedLaps = nil; self.injectedZones = nil
     }
     /// Preview / test seam (lap-only; stream sections stay hidden).
     init(laps: [WorkoutLapRow], zones: RepChartZones) {
-        self.workoutId = nil; self.injectedLaps = laps; self.injectedZones = zones
+        self.workoutId = nil; self.placement = .standalone
+        self.injectedLaps = laps; self.injectedZones = zones
     }
 
     // lap data
     @State private var laps: [WorkoutLapRow] = []
     @State private var zones: RepChartZones = .none
     @State private var showStructureEditor = false
-    /// "THE WORKOUT" free-text editor — writes `workout_notes` to `workoutId`,
-    /// the same row `fetchPrescription` reads it from.
-    @State private var showNotesEditor = false
     @State private var prescription: WorkoutPrescription?
     @State private var parsedIntent: String?
     @State private var workoutType: String?
@@ -349,21 +362,6 @@ struct WorkoutRepReceiptView: View {
                 )
             }
         }
-        .sheet(isPresented: $showNotesEditor) {
-            if let workoutId {
-                // Seeded from `notes` ONLY, never from `pattern`. When the
-                // section is rendering the parser's headline (notes nil,
-                // pattern set) the editor opens empty on purpose: `pattern` is
-                // a machine guess, and pre-filling it would launder that guess
-                // into the athlete's own words the moment they hit Save.
-                EditWorkoutNotesSheet(
-                    workoutId: workoutId,
-                    dateLabel: displayTitle,
-                    initialText: prescription?.notes ?? "",
-                    onSaved: { Task { await load() } }
-                )
-            }
-        }
         .sheet(isPresented: $showMemoRecorder) {
             if let workoutId {
                 // The pipeline (transcribe → mood → niggles) runs server-side
@@ -416,10 +414,21 @@ struct WorkoutRepReceiptView: View {
                 Button("Cancel", role: .cancel) {}
             }
 
-            // The one coral mark in this cluster: the period. (The other is
-            // THE READ eyebrow, a cluster away — see the three-palette rule.)
-            Text("\(Text(displayTitle).foregroundStyle(Color.drip.textPrimary))\(Text(".").foregroundStyle(Color.drip.coral))")
-                .font(.dripDisplay(34))
+            // A date is a stamp, not a title.
+            //
+            // This was `Text(displayTitle).font(.dripDisplay(34))` — the same
+            // display serif the journal entry uses for its own headline. In the
+            // standalone sheet that read as a title; inline in a journal entry
+            // it read as a SECOND title, three inches under "Long run", and the
+            // page had two things claiming to name it. (2026-08-10)
+            //
+            // Mono, small, tracked, with a hairline carrying it to the edge:
+            // the same voice as the JOURNAL · ENTRY DETAIL plate strip, which
+            // is what this is — a section marker. Suppressed entirely when
+            // embedded, where the entry has already said the date twice.
+            if placement == .standalone {
+                datestampRule
+            }
 
             if let line = sourceLine {
                 Text(line)
@@ -431,7 +440,56 @@ struct WorkoutRepReceiptView: View {
 
             ConditionsPlate(tempF: condTempF, dewF: condDewF,
                             heatAdjSec: heatAdjustSec, climb: climb, km: km)
+
+            // What the athlete set out to run, immediately under what they
+            // actually ran. Was the second item of Act 2, below SIGNALS —
+            // the machine's read of the session came before the athlete's own
+            // statement of it. Embedded, the journal entry hosts this same
+            // block above the fold against the same row, so the receipt
+            // stands down rather than showing a second copy.
+            if placement == .standalone {
+                TheWorkoutBlock(
+                    workoutId: workoutId,
+                    dateLabel: displayTitle,
+                    repHeadline: repHeadline,
+                    notes: prescription?.notes,
+                    loadsOwnNotes: false,
+                    onSaved: { Task { await load() } }
+                )
+            }
         }
+    }
+
+    /// "AUGUST 8 · 2026 ────────────" — the run's date as a rule.
+    ///
+    /// The one coral mark in this cluster moved from the headline's period to
+    /// the leading tick, so the accent survives the type change. (The other is
+    /// THE READ eyebrow, a cluster away — see the three-palette rule.)
+    private var datestampRule: some View {
+        HStack(alignment: .center, spacing: 9) {
+            Rectangle()
+                .fill(Color.drip.coral)
+                .frame(width: 5, height: 5)
+            Text(datestampText)
+                // Plate-meta tracking per the design system: size × 0.14.
+                .font(.dripStat(11)).tracking(1.54)
+                .foregroundStyle(Color.drip.textPrimary)
+                .fixedSize(horizontal: true, vertical: false)
+            Rectangle()
+                .fill(Color.drip.divider)
+                .frame(height: 1)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// "AUGUST 8 · 2026" when we know the date. With no date there is no
+    /// stamp to make, so the session's own structure stands in — never a
+    /// placeholder, never an invented day.
+    private var datestampText: String {
+        guard let d = summary.date else { return repHeadline.uppercased() }
+        let df = DateFormatter()
+        df.dateFormat = "MMMM d · yyyy"
+        return df.string(from: d).uppercased()
     }
 
     /// "TUESDAY · QUALITY" — the day it happened and what it was. Drops the
@@ -508,8 +566,15 @@ struct WorkoutRepReceiptView: View {
     /// Conditions are run-level facts carried on the laps. Temp and dew show
     /// whenever they were recorded — no dew-point floor here, unlike the
     /// heat-adjust maths, because 50°F and dry is still worth stating.
-    private var condTempF: Double? { laps.compactMap { $0.temp_f }.max() }
-    private var condDewF: Double? { laps.compactMap { $0.dew_point_f }.max() }
+    ///
+    /// Falls back to the run-level `training_logs.weather_actual` (via the
+    /// summary) when no lap carries weather. A run with NO lap rows at all —
+    /// 14 of this athlete's last 166 — has nothing for the carry-over in
+    /// `load()` to write onto, so reading conditions only from `laps` left the
+    /// plate blank and HEAT-ADJ greyed on runs whose weather was on the row the
+    /// whole time.
+    private var condTempF: Double? { laps.compactMap { $0.temp_f }.max() ?? summary.weatherTempF }
+    private var condDewF: Double? { laps.compactMap { $0.dew_point_f }.max() ?? summary.weatherDewF }
 
     /// Mean heat penalty across the work laps (raw pace minus its neutral-air
     /// equivalent), in sec per display unit. Nil below 3 s/mi — the same bar
@@ -544,13 +609,14 @@ struct WorkoutRepReceiptView: View {
 
     // MARK: Act 2 — the story
 
-    /// SIGNALS → the workout recipe → the memo → niggles → the hero.
+    /// SIGNALS → the memo → niggles → the hero. (THE WORKOUT moved up into
+    /// Act 1 on 2026-08-10 — the session's stated intent belongs with its
+    /// identity and its numbers, not after the machine's read of it.)
     /// Everything above the hairline is signal: a chip, a row of the note, one
     /// line of the athlete's own words. Nothing is a paragraph.
     private var actTwo: some View {
         VStack(alignment: .leading, spacing: 24) {
             signalsSection
-            workoutRecipeSection
             qualitativeRow
             heroWorkoutsAndReps
         }
@@ -686,74 +752,12 @@ struct WorkoutRepReceiptView: View {
         return km ? perMile * 1.60934 : perMile
     }
 
-    // MARK: Act 2 — the workout, as a recipe
-
-    /// The prescribed session, one row per segment. Falls back to the note as a
-    /// single line whenever the structure can't be read — the note is never
-    /// hidden, and a recipe is never guessed.
-    ///
-    /// Editable in place (2026-08-06). The section writes to the SAME
-    /// `training_logs` row it reads from (`workoutId`), which is the point: the
-    /// journal sheet's edit mode saves `workout_notes` to the voice-log row,
-    /// while a Strava-linked run renders this receipt from the *import* row —
-    /// so editing there saved cleanly and changed nothing here. Tapping the
-    /// section edits the row on screen.
-    @ViewBuilder private var workoutRecipeSection: some View {
-        let source = prescription?.notes ?? prescription?.pattern
-        let text = source?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !text.isEmpty {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("THE WORKOUT")
-                        .font(.dripEyebrow(11)).tracking(1.3)
-                        .foregroundStyle(Color.drip.textSecondary)
-                    Spacer(minLength: 8)
-                    Text(repHeadline.uppercased())
-                        .font(.dripStat(9)).tracking(1.0)
-                        .foregroundStyle(Color.drip.textTertiary)
-                        .lineLimit(1)
-                    // The affordance sits next to the thing it edits. No global
-                    // edit mode — one field, one tap, one write.
-                    if workoutId != nil {
-                        Text("EDIT")
-                            .font(.dripStat(9)).tracking(1.2)
-                            .foregroundStyle(Color.drip.coral)
-                    }
-                }
-                if let steps = WorkoutRecipeParser.parse(text) {
-                    WorkoutRecipeView(steps: steps)
-                } else {
-                    Text(text)
-                        .font(.dripBody(13))
-                        .foregroundStyle(Color.drip.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { if workoutId != nil { showNotesEditor = true } }
-        } else if workoutId != nil {
-            // Was: nothing at all. An imported run with no description had no
-            // way to acquire one — the section simply didn't render, so there
-            // was nothing to tap.
-            Button { showNotesEditor = true } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus").font(.system(size: 10, weight: .semibold))
-                    Text("ADD THE WORKOUT")
-                        .font(.dripStat(9)).tracking(1.2)
-                }
-                .foregroundStyle(Color.drip.textTertiary)
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .foregroundStyle(Color.drip.divider)
-                )
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-    }
+    // THE WORKOUT — `workoutRecipeSection` used to live here, ~70 lines of
+    // eyebrow + recipe + ADD affordance duplicating the journal entry's own
+    // "WORKOUT NOTES" composer against a different row. Both are gone; the
+    // one implementation is `TheWorkoutBlock`, rendered from Act 1 above and
+    // by the journal entry, always against the same row with the same editor.
+    // (2026-08-10)
 
     // MARK: Act 2 — the athlete's own words, and what their body said
 
@@ -1205,7 +1209,15 @@ struct WorkoutRepReceiptView: View {
         case .comparison:
             comparisonContent
         case .route:
-            RouteMapView(route: routeLocations, repMarkers: routeRepMarkers)
+            // hrTimes/hrValues feed the expanded map's TRACE scrubber, so the
+            // readout can show heart rate at any point on the line. Pace is
+            // derived from the route's own timestamps and needs nothing here.
+            RouteMapView(
+                route: routeLocations,
+                repMarkers: routeRepMarkers,
+                hrTimes: sTimes,
+                hrValues: sHR
+            )
         }
     }
 
@@ -1263,9 +1275,16 @@ struct WorkoutRepReceiptView: View {
 
     // MARK: Copy helpers
 
+    /// The run's conditions, or nil when the air wasn't warm enough to model.
+    ///
+    /// Sourced from `laps` (via condTempF/condDewF), NOT from `reps`. `reps` is
+    /// empty by design on a continuous run (see its `isContinuous` guard), so
+    /// reading weather from it left HEAT-ADJ greyed out on exactly the runs the
+    /// mile-split path already knows how to adjust — `mileHeatAdjusted` reads
+    /// the same two values and fills `adjPaceSec` on every split. The dew-point
+    /// floor still gates a cool run inert.
     private var heatConds: (Double, Double)? {
-        guard let t = reps.compactMap({ $0.temp_f }).max(),
-              let d = reps.compactMap({ $0.dew_point_f }).max(),
+        guard let t = condTempF, let d = condDewF,
               d >= PaceCalculator.heatDewPointFloorF else { return nil }
         return (t, d)
     }
@@ -1579,8 +1598,25 @@ struct WorkoutRepReceiptView: View {
         // 20260805210000_heat_intensity_scaling.sql.
         let isIntervalGeometry = laps.contains { $0.is_rest == true }
 
-        if let runTempF = lapRows.compactMap({ $0.temp_f }).max() ?? sumVal.weatherTempF,
-           let runDewF = lapRows.compactMap({ $0.dew_point_f }).max() ?? sumVal.weatherDewF {
+        var condTemp = lapRows.compactMap({ $0.temp_f }).max() ?? sumVal.weatherTempF
+        var condDew = lapRows.compactMap({ $0.dew_point_f }).max() ?? sumVal.weatherDewF
+
+        // Nothing on the row knows the air this run happened in. `strava-sync`
+        // fires the weather fetch exactly once at ingest and never retries, and
+        // Open-Meteo's ARCHIVE lags a few hours — so a run synced the same
+        // morning it happened lands before its own hour is published and keeps
+        // `weather_actual = null` permanently. Nothing else ever revisits it:
+        // there is no backfill cron. Ask once, here, when the screen that needs
+        // it is open; a failure is silent and the toggle just stays greyed.
+        if condTemp == nil || condDew == nil,
+           let fetched = await WorkoutLapsService.fetchRunWeather(workoutId: workoutId) {
+            condTemp = fetched.tempF
+            condDew = fetched.dewF
+            summary.weatherTempF = fetched.tempF
+            summary.weatherDewF = fetched.dewF
+        }
+
+        if let runTempF = condTemp, let runDewF = condDew {
             laps = laps.map { rep in
                 var r = rep
                 if r.temp_f == nil { r.temp_f = runTempF }

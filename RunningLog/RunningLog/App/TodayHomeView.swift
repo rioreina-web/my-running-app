@@ -207,7 +207,10 @@ struct TodayHomeView: View {
         // the network is down — every other section would render empty —
         // so we surface one Retry instead of a silently blank screen.
         // Secondary fetches already fall back to safe defaults on error.
-        async let logsTask = TodayLogRow.fetchRecentThrowing(days: 90)
+        // Via the shared store: if Log or Train is refreshing at the same
+        // moment (e.g. at launch), this coalesces onto that request instead
+        // of firing its own 90-day fetch.
+        async let logsTask = TrainingLogStore.shared.refresh(days: 90)
         async let goalTask = TodayGoal.fetchActive()
         async let tomorrowTask = TodayTomorrowWorkout.fetchTomorrow()
         async let trendTask = TodayFitnessTrend.fetch()
@@ -422,7 +425,9 @@ struct TodayGoal {
 
 /// Trim of training_logs used by the home view's analytics. Bigger than
 /// `TodayLastLog` because we need the whole window for mileage + mood.
-struct TodayLogRow: Decodable {
+// Codable (not just Decodable): TrainingLogStore snapshots these rows to
+// disk for the instant-render fast path, so they must encode too.
+struct TodayLogRow: Codable {
     let id: UUID
     let date: Date
     let miles: Double?
@@ -465,8 +470,8 @@ struct TodayLogRow: Decodable {
     let parsed: ParsedLite?
     var structureBlocks: [StructureBlockLite]? { parsed?.blocks }
 
-    struct ParsedLite: Decodable { let blocks: [StructureBlockLite]? }
-    struct StructureBlockLite: Decodable {
+    struct ParsedLite: Codable { let blocks: [StructureBlockLite]? }
+    struct StructureBlockLite: Codable {
         let role: String?
         let distanceMiles: Double?
         let avgPace: String?   // "M:SS"

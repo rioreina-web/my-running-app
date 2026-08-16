@@ -302,6 +302,9 @@ struct TrendsRecoveryLedgerView: View {
     /// Scrolls back up to the signal lanes, where this score has a trend line.
     /// The number and its history sit two sections apart; this is the link.
     var onSeeTrend: (() -> Void)?
+    /// Refetches the timeline after an inline sleep rating lands, so the score
+    /// re-reads with the Tier-1 branch instead of waiting for the next visit.
+    var onSleepLogged: (() -> Void)?
 
     /// The receipt — factor rows, arithmetic, coverage, method note — folded
     /// away by default. The card's job at a glance is the number, the band and
@@ -357,6 +360,30 @@ struct TrendsRecoveryLedgerView: View {
                     .padding(.top, 12)
             } else {
                 gauge.padding(.top, 12)
+            }
+
+            // Sits above the fold on purpose. A ceiling the athlete can't see
+            // is the one thing on this card that would quietly change how they
+            // read every number on it, so it does not wait behind a tap.
+            if let ceilingNote {
+                Text(ceilingNote)
+                    .font(.dripEyebrow(microType))
+                    .tracking(0.5)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+            }
+
+            // The one gap on this card the athlete can close from the card. A
+            // note that says the rating is missing, on a surface with no way to
+            // give one, is a complaint rather than a disclosure — and the rating
+            // is the single highest-leverage input the ledger has (Tier 1, +4/−6,
+            // against duration's +2/−3). HRV is deliberately not offered here:
+            // it is a permission grant with an ordering trap, not one tap.
+            if ledger.gaps.contains(.sleepRating) {
+                SleepCheckInPrompt(style: .compact, onSaved: onSleepLogged)
+                    .padding(.top, 10)
             }
 
             // The fold. Above it the card is a glance; below it, a receipt.
@@ -439,7 +466,7 @@ struct TrendsRecoveryLedgerView: View {
                     Text("·")
                         .font(.dripEyebrow(microType))
                         .foregroundStyle(Color.drip.textTertiary)
-                    Text(coverage)
+                    Text(coverageShort)
                         .font(.dripEyebrow(microType))
                         .tracking(0.5)
                         .textCase(.uppercase)
@@ -478,21 +505,48 @@ struct TrendsRecoveryLedgerView: View {
     /// "5 of 7 inputs had data · full read". Counts factors whose input
     /// channel actually spoke today — zero-with-data ("none in 14 days")
     /// still counts as data; "not logged" / "not enough history" do not.
+    ///
+    /// A factor that scored on a fallback path is counted as having data,
+    /// because it did — so the count alone cannot distinguish a full read
+    /// from a degraded one. Until 2026-08-07 the scope word didn't either:
+    /// it said "full read" whenever ANY nights factor existed, which meant a
+    /// ledger running on resting HR with no HRV at all, and on sleep duration
+    /// with no nightly rating, still announced itself as full. `degradations`
+    /// is what closes that gap.
+    private var scopeWord: String {
+        let hasNights = ledger.factors.contains { $0.source == .nights }
+        if !hasNights { return "words-and-runs read" }
+        return ledger.degradations.isEmpty ? "full read" : "partial read"
+    }
+
     private var coverage: String {
         let m = ledger.factors.count
         let n = ledger.factors.filter(\.hasData).count
-        let hasNights = ledger.factors.contains { $0.source == .nights }
-        let scope = hasNights ? "full read" : "words-and-runs read"
-        return "\(n) of \(m) inputs had data · \(scope)"
+        let head = "\(n) of \(m) inputs had data · \(scopeWord)"
+        guard !ledger.degradations.isEmpty else { return head }
+        return head + " · " + ledger.degradations.joined(separator: " · ")
     }
 
-    /// The four bands of the real 8…96 scale.
-    private static let gaugeBands: [(label: String, lo: Double, hi: Double, colour: Color)] = [
-        ("Flat", 8, 45, Color.drip.struggling),
-        ("Worn", 45, 60, Color.drip.tired),
-        ("Steady", 60, 75, Color.drip.neutral),
-        ("Clear", 75, 96, Color.drip.positive),
-    ]
+    /// The collapsed toggle's version — same claim, no room for the clauses.
+    /// The full list is one tap away and the scope word already carries the
+    /// warning, so this shortens rather than lies.
+    private var coverageShort: String {
+        let m = ledger.factors.count
+        let n = ledger.factors.filter(\.hasData).count
+        return "\(n) of \(m) · \(scopeWord)"
+    }
+
+    /// The gauge's colour per band. The BOUNDS are not repeated here — they
+    /// come from `Band.lowerBound` / `.upperBound`, so the strip cannot draw a
+    /// band starting somewhere the score doesn't classify it.
+    private static func gaugeColour(_ band: TrendsRecoveryLedger.Band) -> Color {
+        switch band {
+        case .flat: Color.drip.struggling
+        case .worn: Color.drip.tired
+        case .steady: Color.drip.neutral
+        case .clear: Color.drip.positive
+        }
+    }
 
     /// The band gauge — proportional to the real scale, with a marker at the
     /// score. The previous strip was four equal quarters and no marker: it
@@ -503,22 +557,40 @@ struct TrendsRecoveryLedgerView: View {
     private var gauge: some View {
         let span = 96.0 - 8.0
         let score = Double(ledger.total)
+        // Bands today's live channels cannot reach. With no HRV and no nightly
+        // sleep rating the roof is 74 and `Clear` starts at 75 — so the band is
+        // drawn as territory that is open when it is arithmetically closed.
+        // Hatching it and capping the strip is the same discipline as the
+        // chart's `degradationNote`: state what was dropped, don't hide it.
+        let unreachable = Set(ledger.unreachableBands)
+        let ceiling = Double(ledger.ceiling)
 
         return GeometryReader { geo in
             let w = geo.size.width
             VStack(alignment: .leading, spacing: 5) {
                 ZStack(alignment: .topLeading) {
                     HStack(spacing: 0) {
-                        ForEach(Self.gaugeBands, id: \.label) { band in
+                        ForEach(TrendsRecoveryLedger.Band.allCases, id: \.rawValue) { band in
                             Rectangle()
-                                .fill(band.colour.opacity(
-                                    ledger.band.rawValue == band.label ? 0.9 : 0.16))
-                                .frame(width: max(0, w * (band.hi - band.lo) / span))
+                                .fill(Self.gaugeColour(band).opacity(
+                                    unreachable.contains(band) ? 0.05
+                                        : ledger.band == band ? 0.9 : 0.16))
+                                .frame(width: max(0, w * Double(band.upperBound - band.lowerBound) / span))
                         }
                     }
                     .frame(height: 6)
                     .clipShape(RoundedRectangle(cornerRadius: 3))
                     .padding(.top, 4)
+
+                    // The cap: where today's inputs top out. Ink-2 hairline, so
+                    // it reads as a limit of the instrument rather than an alert
+                    // about the athlete — coral stays reserved for Flat.
+                    if !unreachable.isEmpty {
+                        Rectangle()
+                            .fill(Color.drip.textTertiary)
+                            .frame(width: 1, height: 10)
+                            .offset(x: min(max(0, w * (ceiling - 8) / span), w - 1), y: 2)
+                    }
 
                     RoundedRectangle(cornerRadius: 1)
                         .fill(ledger.band == .flat ? Color.drip.coral : Color.drip.textPrimary)
@@ -526,20 +598,35 @@ struct TrendsRecoveryLedgerView: View {
                         .offset(x: min(max(0, w * (score - 8) / span - 1), w - 2))
                 }
                 HStack(spacing: 0) {
-                    ForEach(Self.gaugeBands, id: \.label) { band in
-                        Text(band.label.uppercased())
+                    ForEach(TrendsRecoveryLedger.Band.allCases, id: \.rawValue) { band in
+                        Text(band.rawValue.uppercased())
                             .font(.dripEyebrow(microType))
                             .tracking(0.6)
-                            .foregroundStyle(Color.drip.textTertiary)
+                            .foregroundStyle(unreachable.contains(band)
+                                             ? Color.drip.textTertiary.opacity(0.4)
+                                             : Color.drip.textTertiary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
-                            .frame(width: max(0, w * (band.hi - band.lo) / span),
+                            .frame(width: max(0, w * Double(band.upperBound - band.lowerBound) / span),
                                    alignment: .leading)
                     }
                 }
             }
         }
         .frame(height: 28)
+    }
+
+    /// Names the cap in words when the gauge draws one. Observation only —
+    /// it states the arithmetic and what would lift it, and never tells the
+    /// athlete to do anything.
+    private var ceilingNote: String? {
+        guard let lowest = ledger.unreachableBands.first else { return nil }
+        let needs = lowest.lowerBound
+        let why = ledger.degradations.isEmpty
+            ? nil
+            : ledger.degradations.joined(separator: " · ")
+        let head = "\(lowest.rawValue) needs \(needs) · today's inputs top out at \(ledger.ceiling)"
+        return why.map { head + " · " + $0 } ?? head
     }
 
     private func factorRow(_ factor: TrendsRecoveryLedger.Factor) -> some View {

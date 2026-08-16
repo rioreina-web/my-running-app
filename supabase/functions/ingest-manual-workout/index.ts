@@ -46,9 +46,12 @@ const genAI = new GoogleGenerativeAI(geminiApiKey);
 
 const VALID_MOODS = ["energized", "positive", "neutral", "tired", "struggling", "injured"] as const;
 const VALID_ACTIVITIES = ["run", "cross_training", "strength"] as const;
+// Mirrors `WorkoutLabel.offered` (iOS). `tempo` is kept as an accepted INPUT
+// spelling only — it folds to `threshold` on write. (2026-08-10)
 const VALID_TYPES = [
-  "easy", "recovery", "long_run", "tempo", "intervals",
-  "progression", "race", "cross_training", "strength", "other",
+  "easy", "moderate", "steady", "long_run", "long_wo",
+  "threshold", "intervals", "fartlek", "recovery", "progression", "race",
+  "tempo", "cross_training", "strength", "other",
 ] as const;
 
 type Activity = typeof VALID_ACTIVITIES[number];

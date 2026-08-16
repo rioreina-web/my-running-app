@@ -594,7 +594,7 @@ struct TrendsPaceBandsView: View {
     }
 
     private var footer: some View {
-        Text("Membership on heat-adjusted pace · weekly median anchor · restraint as foundation, intensity as accent")
+        Text("Membership on heat-adjusted pace · weekly median anchor")
             .font(.dripEyebrow(8)).tracking(8 * 0.10)
             .textCase(.uppercase)
             .lineSpacing(4)

@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to keep CI cost predictable.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  edge-functions:
+    name: Edge functions (Deno)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check (typecheck all)
+        run: |
+          set -e
+          # Typecheck every function entry + shared modules.
+          for f in $(find . -name "index.ts" -not -path "*/node_modules/*"); do
+            echo "::group::deno check $f"
+            deno check "$f"
+            echo "::endgroup::"
+          done
+          for f in $(find _shared -name "*.ts" -not -name "*.test.ts"); do
+            echo "::group::deno check $f"
+            deno check "$f"
+            echo "::endgroup::"
+          done
+      - name: deno test
+        run: deno test --allow-all
+
+  web:
+    name: Web (Next.js)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Node 22: `node --test` glob patterns need 21+, and the test:smoke
+          # script's --experimental-strip-types needs 22.6+. Node 20 fails both.
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Tests
+        run: npm test
+
+  ml-service:
+    name: ML service (Python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ml-service/requirements.txt
+      - run: pip install -r requirements.txt
+      # httpx powers FastAPI's TestClient. pytest-asyncio reserved for future
+      # tests that exercise async paths beyond what TestClient covers.
+      - run: pip install pytest httpx
+      - name: pytest (smoke tests for /health + JWT middleware)
+        run: pytest tests/ -v
+
+  ios:
+    name: iOS (Xcode)
+    runs-on: macos-15
+    # iOS runners are ~10× more expensive than ubuntu. Only run when iOS files
+    # change, plus all pushes to main. Override with workflow_dispatch.
+    if: |
+      github.event_name == 'push' ||
+      contains(toJSON(github.event.pull_request.labels.*.name), 'ios') ||
+      github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: RunningLog
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      # The RunningLog project ships a single app target with no test bundle,
+      # so `xcodebuild test` fails with "no test bundles available to test".
+      # Validate that the app compiles instead. Switch back to `test` if/when
+      # a unit-test target is added.
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project RunningLog.xcodeproj \
+            -scheme RunningLog \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee xcodebuild.log
+        shell: bash
+
+  db-lint:
+    name: DB lint (Supabase)
+    runs-on: ubuntu-latest
+    # Job-level env so the step `if` below can gate on the secret being present.
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # Lint the linked remote database directly. Booting a local stack and
+      # applying the full migration set doesn't work in CI (some migrations only
+      # ever run against real Supabase), so we lint the deployed schema instead.
+      # `db lint` is read-only. Requires the SUPABASE_DB_URL repo secret: the
+      # project's Postgres connection string (percent-encoded password). Until
+      # that secret is added, this step is skipped (the job passes as a no-op).
+      - name: supabase db lint (remote)
+        if: ${{ env.SUPABASE_DB_URL != '' }}
+        run: supabase db lint --db-url "$SUPABASE_DB_URL" --schema public --fail-on error
+
+  eval-gate:
+    name: Eval coverage gate (prompts)
+    # DISABLED 2026-06-16: the eval harness isn't built out yet, so requiring a
+    # cassette for every prompt edit was blocking real work more than it was
+    # protecting anything. Re-enable (flip `if` back to the pull_request guard)
+    # once the harness + cassette recording flow are actually in use. The gate
+    # script (.github/scripts/check_eval_coverage.py) and the record-evals
+    # workflow are left intact for that day.
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need base ref for the diff
+      - name: Check prompt changes have cassette coverage
+        run: python3 .github/scripts/check_eval_coverage.py "origin/${{ github.base_ref }}"
+
+  design-tokens:
+    name: Design-token gate (Post Run Drip)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need base ref for the diff
+      # Ratcheting gate: fails only on token violations a PR *introduces*
+      # (deprecated `Color.drip.electric`, hardcoded hex in iOS views, web
+      # arbitrary `tracking-[]`/`text-[Npx]`). Existing debt is paid down
+      # surface-by-surface per outputs/design-remediation-plan-2026-06-16.md.
+      - name: Check for new design-token violations
+        run: python3 .github/scripts/check_design_tokens.py "origin/${{ github.base_ref }}"
+
+  llm-cost-gate:
+    name: LLM cost guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Ratcheting gate, born from the 2026-08-11 cost runaway (see
+      # COST-AUDIT-2026-08-13.md and migration 20260813180000). Two rules:
+      # (1) any NEW edge function that calls an LLM must consult
+      #     llm_budget_allows — pre-guard files are grandfathered as warnings
+      #     in the script's BASELINE_UNGUARDED list; wiring one up removes it.
+      # (2) any NEW migration adding an UPDATE trigger that enqueues work
+      #     must include an OLD-vs-NEW value-change guard (IS DISTINCT FROM) —
+      #     Postgres fires `UPDATE OF col` on assignment, not on change.
+      # Full-scan, no diff needed, so it runs on push and PR alike.
+      - name: Check LLM budget-guard coverage and trigger hygiene
+        run: python3 .github/scripts/check_llm_guardrails.py

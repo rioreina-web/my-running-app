@@ -17,11 +17,16 @@ import SwiftUI
 
 struct LogView: View {
     @State private var rows: [TodayLogRow] = []
+    /// Week-grouped rows, computed ONCE per load. This must stay a stored
+    /// `@State`, not a computed property: a computed var read from `body`
+    /// re-runs on every body evaluation, and the grouping does a full
+    /// Dictionary(grouping:) + sort + one ISO8601DateFormatter allocation
+    /// per week — per frame, while scrolling. (Same lesson as the
+    /// @ObservationIgnored memo caches in TrainingAnalyticsViewModel.)
+    @State private var weekGroups: [LogWeek] = []
     @State private var loaded = false
     @State private var loadFailed = false
     @State private var showVoiceSheet = false
-
-    private let cal = Calendar.current
 
     var body: some View {
         ScrollView {
@@ -74,17 +79,29 @@ struct LogView: View {
 
     private func load() async {
         loadFailed = false
+
+        // Stale-while-revalidate: render the last-known snapshot instantly
+        // (disk-backed via TrainingLogStore), then refresh over the network
+        // below. Second launches never show "Loading…".
+        if rows.isEmpty {
+            let cached = TrainingLogStore.shared.cachedRows(days: 180)
+            if !cached.isEmpty {
+                rows = cached
+                weekGroups = Self.groupIntoWeeks(cached)
+                loaded = true
+            }
+        }
+
         do {
-            let fetched = try await TodayLogRow.fetchRecentThrowing(days: 180)
-            await MainActor.run {
-                rows = fetched
-                loaded = true
-            }
+            let fetched = try await TrainingLogStore.shared.refresh(days: 180)
+            rows = fetched
+            weekGroups = Self.groupIntoWeeks(fetched)
+            loaded = true
         } catch {
-            await MainActor.run {
-                loadFailed = true
-                loaded = true
-            }
+            // A failed refresh only surfaces as an error when there was
+            // nothing cached to show — stale rows beat an error screen.
+            if rows.isEmpty { loadFailed = true }
+            loaded = true
         }
     }
 
@@ -138,7 +155,7 @@ struct LogView: View {
 
     /// Monday 00:00 of the week containing `d` (weeks are Monday-start, matching
     /// the dashboard / Trends convention).
-    private func weekStartMonday(_ d: Date) -> Date {
+    private static func weekStartMonday(_ d: Date, cal: Calendar) -> Date {
         let startOfDay = cal.startOfDay(for: d)
         let weekday = cal.component(.weekday, from: startOfDay) // 1=Sun … 7=Sat
         let daysFromMonday = (weekday + 5) % 7                  // Mon=0 … Sun=6
@@ -148,9 +165,12 @@ struct LogView: View {
     /// Rows grouped into Monday-start weeks, newest first, each with a label
     /// (This week / Last week / Week of Jun 30) + mileage subtotal + run count.
     /// A check-in carries no distance, so it's an entry but not a run.
-    private var weekGroups: [LogWeek] {
-        let thisWeek = weekStartMonday(Date())
-        let grouped = Dictionary(grouping: rows) { weekStartMonday($0.date) }
+    /// Called once per load — the result is cached in `weekGroups`.
+    private static func groupIntoWeeks(_ rows: [TodayLogRow]) -> [LogWeek] {
+        let cal = Calendar.current
+        let iso = ISO8601DateFormatter()   // one formatter for all weeks
+        let thisWeek = weekStartMonday(Date(), cal: cal)
+        let grouped = Dictionary(grouping: rows) { weekStartMonday($0.date, cal: cal) }
         return grouped.keys.sorted(by: >).map { ws in
             let weekRows = grouped[ws] ?? []
             let weeksAgo = Int((thisWeek.timeIntervalSince(ws) / (7 * 86400)).rounded())
@@ -162,7 +182,7 @@ struct LogView: View {
             }
             let miles = weekRows.reduce(0) { $0 + ($1.miles ?? 0) }
             let runs = weekRows.filter { $0.source != "check_in" }.count
-            return LogWeek(id: ISO8601DateFormatter().string(from: ws),
+            return LogWeek(id: iso.string(from: ws),
                            label: label, miles: miles, runs: runs, rows: weekRows)
         }
     }

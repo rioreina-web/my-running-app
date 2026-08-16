@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week Training Load — simplification study</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Post Run Drip — Foundations (mirrored from colors_and_type.css)
+   ============================================================ */
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF;
+  --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420;
+  --coral-wash:rgba(212,89,42,.12);
+
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px;
+  --space-6:24px; --space-7:32px; --space-8:40px; --space-9:56px;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:#DEDAD4; color:var(--ink); font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  padding:28px 20px 24px;
+}
+
+/* ---- Study chrome (not part of the app) ---- */
+.study-hd{max-width:1700px;margin:0 auto 22px}
+.study-hd h1{font-family:var(--font-display);font-weight:700;font-size:26px;margin:0 0 6px}
+.study-hd p{margin:0;font-size:14px;color:#4A4540;line-height:1.55;max-width:70ch}
+.rail{display:flex;gap:20px;align-items:flex-start;overflow-x:auto;padding-bottom:20px;
+  max-width:1700px;margin:0 auto}
+.col{flex:0 0 auto;width:392px}
+.col-hd{margin-bottom:10px;padding:0 2px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:#6B6560;display:block;margin-bottom:4px}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 5px}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540}
+.col-hd .cut{margin-top:7px;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.06em;
+  color:#8A5A3A;line-height:1.65}
+
+/* ---- Phone frame ---- */
+.phone{width:392px;background:var(--paper);border-radius:22px;padding:20px 20px 26px;
+  box-shadow:0 6px 22px rgba(0,0,0,.13);border:1px solid rgba(0,0,0,.05)}
+
+/* ---- Shared app type ---- */
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;
+  letter-spacing:.12em;color:var(--ink-2);text-transform:uppercase}
+.micro{font-family:var(--font-mono);font-size:9.5px;font-weight:500;
+  letter-spacing:.11em;color:var(--ink-3);text-transform:uppercase}
+.rule{height:1px;background:var(--rule);border:0;margin:0}
+.serif-note{font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--ink-3);line-height:1.5}
+
+/* ---- Week nav + stat row (shared by all variants) ---- */
+.nav{display:flex;align-items:baseline;gap:12px;margin-bottom:10px}
+.nav .chev{font-size:13px;color:var(--ink-2);user-select:none}
+.nav .rangelab{font-family:var(--font-mono);font-size:12px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink)}
+.nav .spacer{flex:1}
+.stats{display:flex;align-items:baseline;gap:0;margin-bottom:18px}
+.stat{padding-right:14px}
+.stat + .stat{border-left:1px solid var(--rule);padding-left:14px}
+.stat .v{font-family:var(--font-mono);font-size:20px;font-weight:600;color:var(--ink);
+  letter-spacing:-.01em}
+.stat .u{font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+.stat .l{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:3px}
+
+/* ---- Marimekko chart (current + variant A) ---- */
+.mek{display:flex;align-items:flex-end;gap:2px}
+.mekday{display:flex;flex-direction:column;align-items:center}
+.daylab{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-2)}
+.pct{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.09em;color:var(--ink-3);margin-top:2px}
+.pieslot{height:82px;display:flex;align-items:center;justify-content:center}
+.band{height:28px;width:100%;border-radius:2px;display:flex;overflow:hidden}
+.band.rest{background:none;border:1px dashed var(--rule)}
+.band.nolap{background:var(--paper-deep)}
+.foot{font-family:var(--font-mono);font-size:11px;color:var(--ink);height:14px;margin-top:6px}
+
+/* ---- Mood lane ---- */
+.lanehd{display:flex;justify-content:space-between;align-items:baseline;
+  padding-top:16px;padding-bottom:8px}
+.moodline{display:flex;height:7px;border-radius:4px;overflow:hidden}
+.moodlabs{display:flex;margin-top:6px}
+.moodlab{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-2);text-align:center;overflow:hidden;white-space:nowrap}
+
+/* ---- Niggle lane ---- */
+.nigcells{display:flex;align-items:flex-start}
+.nigcell{display:flex;flex-direction:column;align-items:center;min-height:34px;gap:4px}
+.caret{width:9px;height:7px;background:var(--coral);
+  clip-path:polygon(50% 0,100% 100%,0 100%)}
+.niglab{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--coral-deep);white-space:nowrap;
+  border-bottom:1px dotted rgba(184,68,32,.55);padding-bottom:2px}
+
+/* ---- Foot rule ---- */
+.footrule{display:flex;justify-content:space-between;padding-top:12px}
+
+/* ---- Spectrum ---- */
+.specbar{display:flex;height:44px;border-radius:3px;overflow:hidden;margin-top:10px}
+.speclabs{display:flex;margin-top:8px}
+.speclab{overflow:hidden;padding-right:6px}
+.speclab .z{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.speclab .m{font-family:var(--font-mono);font-size:13px;color:var(--ink);margin-top:2px}
+.speclab .p{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);margin-top:1px}
+
+/* ---- Variant B: column chart ---- */
+.colchart{display:flex;align-items:flex-end;gap:6px;height:150px;margin-top:6px}
+.cc{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
+.ccstack{width:100%;border-radius:3px 3px 0 0;overflow:hidden;display:flex;flex-direction:column-reverse}
+.ccstack.nolap{background:var(--paper-deep);border-radius:3px 3px 0 0}
+.ccrest{width:100%;height:2px;background:var(--rule);border-radius:2px}
+.ccnig{width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
+  border-bottom:7px solid var(--coral);margin-bottom:5px}
+.ccfoot{display:flex;gap:6px;margin-top:7px}
+.ccf{flex:1;text-align:center}
+.ccf .d{font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;color:var(--ink-2)}
+.ccf .mi{font-family:var(--font-mono);font-size:12px;color:var(--ink);margin-top:3px}
+.ccf .mood{width:16px;height:3px;border-radius:2px;margin:5px auto 0}
+
+/* ---- Variant C ---- */
+.bigline{font-family:var(--font-display);font-weight:700;font-size:34px;letter-spacing:-.015em;
+  line-height:1.05}
+.bigsub{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);margin-top:7px}
+.sentence{font-family:var(--font-body);font-size:15px;line-height:1.55;color:var(--ink);margin-top:16px}
+.sentence em{font-style:italic}
+.slim{display:flex;align-items:flex-end;gap:3px;height:56px;margin-top:22px}
+.slimday{flex:1;display:flex;flex-direction:column-reverse;border-radius:2px;overflow:hidden}
+.slimlabs{display:flex;gap:3px;margin-top:7px}
+.slimlab{flex:1;text-align:center;font-family:var(--font-mono);font-size:9.5px;
+  letter-spacing:.09em;color:var(--ink-3)}
+.bodyline{margin-top:20px;padding-top:14px;border-top:1px solid var(--rule);
+  font-family:var(--font-body);font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.bodyline b{color:var(--coral-deep);font-weight:400;
+  border-bottom:1px dotted rgba(184,68,32,.55)}
+
+/* ---- annotation callouts on the current version ---- */
+.flag{position:relative}
+.flag::after{content:attr(data-flag);position:absolute;right:-6px;top:-2px;
+  font-family:var(--font-mono);font-size:8px;letter-spacing:.08em;text-transform:uppercase;
+  color:#B84420;background:rgba(212,89,42,.10);border:1px solid rgba(212,89,42,.3);
+  padding:2px 5px;border-radius:3px;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<div class="study-hd">
+  <h1>Week Training Load — how much can come out</h1>
+  <p>Same week, same data, four densities. The current build draws each day three times (a percentage,
+  a pie, a band) and then repeats the header totals in a footer. Each variant to the right removes one
+  more layer. Scroll sideways to compare; nothing here is wired to real data yet.</p>
+</div>
+
+<div class="rail" id="rail"></div>
+
+<script>
+/* ============================================================
+   CANONICAL CONSTANTS — mirrored from the app
+   ============================================================ */
+const ZONES = [
+  { key:'easy',     label:'Easy',     color:'#93B9D6', weight:1.00 },
+  { key:'moderate', label:'Moderate', color:'#74A8CC', weight:1.25 },
+  { key:'steady',   label:'Steady',   color:'#578FC0', weight:1.50 },
+  { key:'mp',       label:'MP',       color:'#3F7CB5', weight:2.50 },
+  { key:'hmp',      label:'HMP',      color:'#2F66A8', weight:3.25 },
+  { key:'lt',       label:'LT',       color:'#27549B', weight:3.25 },
+  { key:'10k',      label:'10K',      color:'#20448B', weight:4.00 },
+  { key:'5k',       label:'5K',       color:'#1A3679', weight:5.50 },
+  { key:'3k',       label:'3K',       color:'#142964', weight:6.75 },
+  { key:'mile',     label:'Mile',     color:'#0E1D4E', weight:8.00 },
+];
+const Z = Object.fromEntries(ZONES.map(z => [z.key, z]));
+const MOODS = {
+  energized:{ label:'Energized', color:'#2D8A4E' },
+  positive: { label:'Good',      color:'#4A9E6B' },
+  neutral:  { label:'Neutral',   color:'#9B9590' },
+  tired:    { label:'Tired',     color:'#C4873A' },
+  struggling:{label:'Struggling',color:'#C45A3A' },
+};
+
+/* ============================================================
+   THE WEEK — Aug 3–9, matching the screenshot's shape
+   Wednesday deliberately ran WITHOUT lap data: it is the case
+   that currently renders as a blank grey band and 0%, which
+   reads as a rest day the athlete did not take.
+   ============================================================ */
+const WEEK = {
+  label:'AUG 3 — 9',
+  days:[
+    { d:'MON', mood:'tired', segments:[ {z:'easy', mi:10.0, sec:8*60+12} ] },
+    { d:'TUE', segments:[ {z:'easy',mi:4.0,sec:8*60+20},{z:'moderate',mi:2.0,sec:7*60+18},
+                          {z:'5k',mi:3.0,sec:5*60+22},{z:'3k',mi:1.2,sec:5*60+4} ] },
+    { d:'WED', noLap:true, miles:6.0, minutes:50 },
+    { d:'THU', mood:'positive',
+               niggle:{ area:'achilles', side:'right', severity:'grumbling',
+                        quote:'right achilles grumbled on the first mile, fine after' },
+               segments:[ {z:'easy',mi:6.0,sec:8*60+5},{z:'mp',mi:5.0,sec:6*60+22} ] },
+    { d:'FRI', segments:[ {z:'easy',mi:6.0,sec:8*60+34} ] },
+    { d:'SAT', mood:'positive',
+               segments:[ {z:'easy',mi:12.0,sec:8*60+2},{z:'moderate',mi:3.0,sec:7*60+0},
+                          {z:'mp',mi:5.0,sec:6*60+18} ] },
+    { d:'SUN', segments:[ {z:'easy',mi:8.0,sec:8*60+15} ] },
+  ]
+};
+
+/* ---- Roll the week up. Every number on every variant comes from here,
+        so the four columns can never disagree with each other. ---- */
+function build(w){
+  const days = w.days.map(d=>{
+    const segs = (d.segments||[]).map(s=>({
+      ...s, zone:Z[s.z], minutes:s.mi*s.sec/60, load:(s.mi*s.sec/60)*Z[s.z].weight
+    }));
+    const miles = d.noLap ? d.miles : segs.reduce((a,s)=>a+s.mi,0);
+    const minutes = d.noLap ? d.minutes : segs.reduce((a,s)=>a+s.minutes,0);
+    const load = segs.reduce((a,s)=>a+s.load,0);
+    return { ...d, segs, miles, minutes, load, ran:miles>0 };
+  });
+  const miles = days.reduce((a,d)=>a+d.miles,0);
+  const minutes = days.reduce((a,d)=>a+d.minutes,0);
+  const load = days.reduce((a,d)=>a+d.load,0);
+  const maxMiles = Math.max(...days.map(d=>d.miles));
+  const runDays = days.filter(d=>d.ran).length;
+  const totals = ZONES.map(z=>{
+    const hit = days.flatMap(d=>d.segs).filter(s=>s.z===z.key);
+    const mi = hit.reduce((a,s)=>a+s.mi,0);
+    const mn = hit.reduce((a,s)=>a+s.minutes,0);
+    return { z, mi, mn };
+  }).filter(t=>t.mi>0);
+  const heaviest = days.reduce((a,d)=>d.load>a.load?d:a, days[0]);
+  return { ...w, days, miles, minutes, load, maxMiles, runDays, totals, heaviest };
+}
+const W = build(WEEK);
+
+/* ---- formatters ---- */
+const mi1 = n => n.toFixed(1);
+const hm  = m => `${Math.floor(m/60)}:${String(Math.round(m%60)).padStart(2,'0')}`;
+const pace = (mn,mi) => { const s=Math.round(mn*60/mi); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+const pct = d => W.load>0 ? Math.round(d.load/W.load*100) : 0;
+
+/* ---- marimekko column widths: share of load, with a floor ---- */
+function mekWidths(total, gutter){
+  const n = W.days.length, avail = total - gutter*(n-1), floor = 34;
+  let ws = W.days.map(d=> W.load>0 ? avail*d.load/W.load : avail/n);
+  // lift anything under the floor, take it back from the widest
+  for(let pass=0; pass<4; pass++){
+    const short = ws.map((w,i)=>w<floor?floor-w:0);
+    const debt = short.reduce((a,b)=>a+b,0);
+    if(debt<=0.01) break;
+    const spare = ws.map(w=>Math.max(0,w-floor));
+    const pool = spare.reduce((a,b)=>a+b,0) || 1;
+    ws = ws.map((w,i)=> Math.max(w,floor) - (spare[i]/pool)*debt );
+  }
+  return ws;
+}
+
+/* ============================================================
+   SHARED PIECES
+   ============================================================ */
+const PANEL_W = 352;   // 392 frame - 20px padding each side
+
+function navRow(){
+  return `<div class="nav">
+    <span class="chev">‹</span>
+    <span class="rangelab">${W.label}</span>
+    <span class="chev">›</span>
+    <span class="spacer"></span>
+    <span class="micro">${Math.round(W.load)} TLS</span>
+  </div>`;
+}
+function statRow(){
+  return `<div class="stats">
+    <div class="stat"><span class="v">${mi1(W.miles)}</span><span class="u">mi</span>
+      <div class="l">Volume</div></div>
+    <div class="stat"><span class="v">${W.runDays}</span><span class="u">/7</span>
+      <div class="l">Days run</div></div>
+    <div class="stat"><span class="v">${hm(W.minutes)}</span>
+      <div class="l">Time</div></div>
+  </div>`;
+}
+function bandSegs(d){
+  if(!d.ran) return '';
+  if(d.noLap) return '';
+  return d.segs.map(s=>`<span style="width:${s.load/d.load*100}%;background:${s.zone.color}"></span>`).join('');
+}
+function spectrum(compact){
+  const bar = W.totals.map(t=>
+    `<span style="width:${t.mi/W.miles*100}%;background:${t.z.color}"></span>`).join('');
+  if(compact){
+    const top = W.totals.slice().sort((a,b)=>b.mi-a.mi).slice(0,2);
+    return `<div style="padding-top:20px">
+      <div class="lanehd" style="padding-top:0;padding-bottom:0">
+        <span class="eyebrow">Pace spectrum</span>
+        <span class="micro">${pace(W.minutes,W.miles)}/mi average</span>
+      </div>
+      <div class="specbar" style="height:14px;margin-top:9px">${bar}</div>
+      <div class="micro" style="margin-top:8px;color:var(--ink-2)">
+        ${top.map(t=>`${t.z.label} ${mi1(t.mi)} mi`).join(' &nbsp;·&nbsp; ')}
+      </div></div>`;
+  }
+  return `<div style="padding-top:22px">
+    <div class="lanehd" style="padding-top:0;padding-bottom:0">
+      <span class="eyebrow">Week on the pace spectrum</span>
+      <span class="micro">${pace(W.minutes,W.miles)}/mi average</span>
+    </div>
+    <div class="specbar">${bar}</div>
+    <div class="speclabs">
+      ${W.totals.map(t=>{
+        const share = t.mi/W.miles;
+        // A sliver of 3K is real mileage but it cannot carry a word. Below
+        // ~9% of the bar the label is dropped rather than overlapped into
+        // its neighbour — the colour still says the zone was run, and the
+        // exact figure is a tap away.
+        return `<div class="speclab" style="width:${share*100}%">
+          ${share>=0.09?`<div class="z">${t.z.label}</div>`:''}
+          ${share>=0.15?`<div class="m">${mi1(t.mi)} mi</div>
+          <div class="p">${pace(t.mn,t.mi)}/mi</div>`:''}
+        </div>`;}).join('')}
+    </div>
+    <div class="micro" style="margin-top:9px;color:var(--ink-3)">
+      ${W.totals.filter(t=>t.mi/W.miles<0.09).length
+        ? W.totals.filter(t=>t.mi/W.miles<0.09).map(t=>`${t.z.label} ${mi1(t.mi)}`).join(' · ') + ' mi'
+        : ''}
+    </div></div>`;
+}
+
+/* ============================================================
+   COLUMN 0 — CURRENT
+   ============================================================ */
+function current(){
+  const ws = mekWidths(PANEL_W, 2);
+  const chart = `<div class="mek">${W.days.map((d,i)=>{
+    const w = ws[i];
+    const dia = d.ran && !d.noLap ? Math.min(72, Math.max(0,w-4)) * Math.sqrt(d.miles/W.maxMiles) : 0;
+    const pie = dia>0 ? pieSvg(d, dia) : '';
+    return `<div class="mekday" style="width:${w}px">
+      <span class="daylab">${d.d}</span>
+      <span class="pct">${d.ran&&!d.noLap?pct(d)+'%':(d.noLap?'0%':'REST')}</span>
+      <div class="pieslot">${pie}</div>
+      <div class="band ${d.noLap?'nolap':(d.ran?'':'rest')}">${bandSegs(d)}</div>
+      <div class="foot"></div>
+    </div>`;
+  }).join('')}</div>`;
+
+  const moodLane = `<div>
+    <div class="lanehd"><span class="eyebrow">Mood</span>
+      <span class="micro">${W.days.filter(d=>d.mood).length} of 7 days logged</span></div>
+    <div class="moodline">${W.days.map((d,i)=>
+      `<span style="width:${ws[i]/PANEL_W*100}%;background:${d.mood?MOODS[d.mood].color:'var(--paper-deep)'}"></span>`).join('')}</div>
+    <div class="moodlabs">${W.days.map((d,i)=>
+      `<span class="moodlab" style="width:${ws[i]/PANEL_W*100}%">${d.mood?MOODS[d.mood].label:''}</span>`).join('')}</div>
+  </div>`;
+
+  const nigLane = `<div>
+    <hr class="rule" style="margin-top:14px">
+    <div class="lanehd"><span class="eyebrow">Niggles</span>
+      <span class="micro">Verbatim, never interpreted</span></div>
+    <div class="nigcells">${W.days.map((d,i)=>
+      `<div class="nigcell" style="width:${ws[i]}px">${d.niggle?
+        `<span class="caret"></span><span class="niglab">${d.niggle.area} · ${d.niggle.severity}</span>`:''}</div>`).join('')}</div>
+  </div>`;
+
+  const footRule = `<div><hr class="rule" style="margin-top:12px">
+    <div class="footrule">
+      <span class="micro" style="color:var(--ink-2)">${W.runDays} running days</span>
+      <span class="micro" style="color:var(--ink-2)">${Math.round(W.load)} TLS · ${mi1(W.miles)} mi</span>
+    </div></div>`;
+
+  return navRow()+statRow()+chart+moodLane+nigLane+footRule+spectrum(false);
+}
+
+/* pie: area ∝ miles, wedges ∝ miles per zone */
+function pieSvg(d, dia){
+  const r = dia/2; let a0 = -Math.PI/2; const parts=[];
+  d.segs.forEach(s=>{
+    const a1 = a0 + 2*Math.PI*(s.mi/d.miles);
+    const x0=r+r*Math.cos(a0), y0=r+r*Math.sin(a0);
+    const x1=r+r*Math.cos(a1), y1=r+r*Math.sin(a1);
+    const big = (a1-a0)>Math.PI?1:0;
+    parts.push(d.segs.length===1
+      ? `<circle cx="${r}" cy="${r}" r="${r}" fill="${s.zone.color}"/>`
+      : `<path d="M${r},${r} L${x0},${y0} A${r},${r} 0 ${big},1 ${x1},${y1} Z"
+           fill="${s.zone.color}" stroke="var(--paper)" stroke-width="1"/>`);
+    a0=a1;
+  });
+  return `<svg width="${dia}" height="${dia}" viewBox="0 0 ${dia} ${dia}">${parts.join('')}</svg>`;
+}
+
+/* ============================================================
+   COLUMN 1 — VARIANT A · TRIM
+   Same chart, drawn once. Percentages and pies out; the band
+   grows and carries the day's miles beneath it. Footer out.
+   ============================================================ */
+function variantA(){
+  const ws = mekWidths(PANEL_W, 2);
+  const chart = `<div class="mek">${W.days.map((d,i)=>`
+    <div class="mekday" style="width:${ws[i]}px">
+      <span class="daylab">${d.d}</span>
+      <div class="band ${d.noLap?'nolap':(d.ran?'':'rest')}"
+           style="height:64px;margin-top:8px">${bandSegs(d)}</div>
+      <div class="foot" style="font-size:12px;margin-top:7px">${d.ran?mi1(d.miles):'—'}</div>
+    </div>`).join('')}</div>
+    <div class="micro" style="margin-top:2px;color:var(--ink-3)">Width = share of the week's load · miles below</div>`;
+
+  const moodLane = `<div>
+    <div class="lanehd"><span class="eyebrow">Mood</span>
+      <span class="micro">${W.days.filter(d=>d.mood).length} of 7 days logged</span></div>
+    <div class="moodline">${W.days.map((d,i)=>
+      `<span style="width:${ws[i]/PANEL_W*100}%;background:${d.mood?MOODS[d.mood].color:'var(--paper-deep)'}"></span>`).join('')}</div>
+    <div class="moodlabs">${W.days.map((d,i)=>
+      `<span class="moodlab" style="width:${ws[i]/PANEL_W*100}%">${d.mood?MOODS[d.mood].label:''}</span>`).join('')}</div>
+  </div>`;
+
+  const nigLane = `<div>
+    <hr class="rule" style="margin-top:16px">
+    <div class="lanehd"><span class="eyebrow">Niggles</span></div>
+    <div class="nigcells">${W.days.map((d,i)=>
+      `<div class="nigcell" style="width:${ws[i]}px">${d.niggle?
+        `<span class="caret"></span><span class="niglab">${d.niggle.severity}</span>`:''}</div>`).join('')}</div>
+  </div>`;
+
+  return navRow()+statRow()+chart+moodLane+nigLane+spectrum(false);
+}
+
+/* ============================================================
+   COLUMN 2 — VARIANT B · ONE PICTURE
+   Everything about a day lives in that day's column: bar height
+   is miles, colour is pace, the tick under it is mood, the caret
+   above it is a niggle. No separate lanes at all.
+   ============================================================ */
+function variantB(){
+  const chart = `<div class="colchart">${W.days.map(d=>{
+    const h = d.ran ? Math.max(6, 132*d.miles/W.maxMiles) : 0;
+    const stack = d.noLap
+      ? `<div class="ccstack nolap" style="height:${h}px"></div>`
+      : `<div class="ccstack" style="height:${h}px">${d.segs.map(s=>
+          `<span style="height:${s.mi/d.miles*100}%;background:${s.zone.color}"></span>`).join('')}</div>`;
+    return `<div class="cc">
+      ${d.niggle?'<div class="ccnig"></div>':''}
+      ${d.ran?stack:'<div class="ccrest"></div>'}
+    </div>`;
+  }).join('')}</div>
+  <div class="ccfoot">${W.days.map(d=>`
+    <div class="ccf">
+      <div class="d">${d.d}</div>
+      <div class="mi">${d.ran?mi1(d.miles):'—'}</div>
+      <div class="mood" style="background:${d.mood?MOODS[d.mood].color:'transparent'}"></div>
+    </div>`).join('')}</div>`;
+
+  const nig = W.days.filter(d=>d.niggle);
+  const key = `<div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--rule)">
+    <div class="serif-note" style="color:var(--ink-2)">
+      Bar height is miles, colour is pace, the tick beneath is how the day felt.
+    </div>
+    ${nig.length?nig.map(d=>`<div style="margin-top:12px;display:flex;gap:9px;align-items:flex-start">
+        <span class="caret" style="margin-top:5px;flex:none"></span>
+        <span style="font-size:13.5px;line-height:1.5">
+          <span class="micro" style="color:var(--coral-deep)">${d.d} · ${d.niggle.side} ${d.niggle.area}</span><br>
+          <em style="font-style:italic;color:var(--ink)">“${d.niggle.quote}”</em>
+        </span></div>`).join('')
+      :`<div class="serif-note" style="margin-top:10px">Nothing mentioned this week.</div>`}
+  </div>`;
+
+  return navRow()+statRow()+chart+key+spectrum(true);
+}
+
+/* ============================================================
+   COLUMN 3 — VARIANT C · THE WEEK IN A LINE
+   One headline, one sentence, one strip, one bar. Everything
+   else is behind a tap.
+   ============================================================ */
+function variantC(){
+  const h = W.heaviest;
+  const nig = W.days.filter(d=>d.niggle);
+  const moods = W.days.filter(d=>d.mood);
+
+  const head = `<div class="nav" style="margin-bottom:20px">
+    <span class="chev">‹</span><span class="rangelab">${W.label}</span><span class="chev">›</span>
+  </div>
+  <div class="bigline">${mi1(W.miles)} <span style="font-size:20px;font-weight:400">mi</span></div>
+  <div class="bigsub">${W.runDays} of 7 days · ${hm(W.minutes)} · ${Math.round(W.load)} TLS</div>
+  <div class="sentence">${h.d==='SAT'?'Saturday':h.d} carried <em>${pct(h)}%</em> of the week's load —
+    ${mi1(h.miles)} miles of it. Wednesday came in without splits, so its ${mi1(W.days[2].miles)} miles
+    count toward the total but not the pace picture.</div>`;
+
+  const strip = `<div class="slim">${W.days.map(d=>{
+    const ht = d.ran ? Math.max(4, 56*d.load/Math.max(...W.days.map(x=>x.load))) : 3;
+    if(!d.ran) return `<div class="slimday" style="height:3px;background:var(--rule)"></div>`;
+    if(d.noLap) return `<div class="slimday" style="height:${Math.max(6,56*d.miles/W.maxMiles*0.5)}px;background:var(--paper-deep)"></div>`;
+    return `<div class="slimday" style="height:${ht}px">${d.segs.map(s=>
+      `<span style="height:${s.load/d.load*100}%;background:${s.zone.color}"></span>`).join('')}</div>`;
+  }).join('')}</div>
+  <div class="slimlabs">${W.days.map(d=>`<div class="slimlab">${d.d[0]}</div>`).join('')}</div>
+  <div class="micro" style="margin-top:10px;color:var(--ink-3)">Height = load · tap a day for its splits</div>`;
+
+  const line = `<div class="bodyline">
+    ${moods.length?`Logged ${moods.map(d=>`${MOODS[d.mood].label.toLowerCase()} ${d.d[0]+d.d.slice(1).toLowerCase()}`).join(', ')}. `:''}
+    ${nig.length?nig.map(d=>`Mentioned your <b>${d.niggle.side} ${d.niggle.area}</b> ${d.d[0]+d.d.slice(1).toLowerCase()}.`).join(' ')
+      :'Nothing mentioned about the body this week.'}
+  </div>`;
+
+  return head+strip+spectrum(true)+line;
+}
+
+/* ============================================================
+   RENDER THE RAIL
+   ============================================================ */
+const COLUMNS = [
+  { tag:'Column 0 · shipping today', name:'Current',
+    blurb:'Every day is drawn three times — a percentage, a pie, a coloured band — and the footer repeats the header. Nine separate things stacked between the week nav and the bottom of the screen.',
+    cut:'', html:current },
+  { tag:'Column 1 · light', name:'A · Trim',
+    blurb:'The chart keeps its argument — column width is load, colour is pace — but each day is drawn once. The band grows into the space the pies leave and the day\'s miles sit under it as a number.',
+    cut:'OUT: % row · pie row · footer row\nKEPT: mood lane · niggle lane · full spectrum', html:variantA },
+  { tag:'Column 2 · medium', name:'B · One picture',
+    blurb:'Equal columns, bar height is miles, and everything about a day lives in that day\'s column: mood is the tick underneath, a niggle is the caret above. The lanes disappear; the niggle becomes the sentence you actually wrote.',
+    cut:'OUT: % row · pie row · footer · mood lane · niggle lane · spectrum labels\nTRADE: load as proportion-of-week is gone', html:variantB },
+  { tag:'Column 3 · stripped', name:'C · The week in a line',
+    blurb:'One headline number, one sentence that says the thing the chart was trying to say, one strip of days, one spectrum bar. Detail moves behind a tap.',
+    cut:'OUT: everything above, plus the stat row and per-day numbers\nTRADE: nothing is comparable at a glance without tapping', html:variantC },
+];
+
+document.getElementById('rail').innerHTML = COLUMNS.map(c=>`
+  <div class="col">
+    <div class="col-hd">
+      <span class="tag">${c.tag}</span>
+      <h2>${c.name}</h2>
+      <p>${c.blurb}</p>
+      ${c.cut?`<div class="cut">${c.cut.replace(/\n/g,'<br>')}</div>`:''}
+    </div>
+    <div class="phone">${c.html()}</div>
+  </div>`).join('');
+</script>
+</body>
+</html>

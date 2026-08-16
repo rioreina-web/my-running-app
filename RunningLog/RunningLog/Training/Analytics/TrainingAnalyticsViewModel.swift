@@ -248,6 +248,10 @@ struct DaySplit: Identifiable {
     let index: Int
     let distanceMiles: Double
     let paceSeconds: Double
+    /// How long the split took. The splits table reads as a rep-by-rep clock,
+    /// so duration is the headline number; pace is still carried because the
+    /// intensity colouring is bucketed off it.
+    let elapsedSeconds: Double
     let hr: Int?
     let color: Color
 }
@@ -439,42 +443,66 @@ final class TrainingAnalyticsViewModel {
         isLoading = true
         defer { isLoading = false }
 
+        // Stale-while-revalidate fast path: if a last-known snapshot exists
+        // (memory or disk via TrainingLogStore), build the charts from it
+        // NOW so the tab renders instantly; the network pass below replaces
+        // it seconds later. Enrichments (snapshot, goals, RPE, weather)
+        // arrive with the network pass — charts first, garnish after.
+        if !hasLoaded {
+            let cached = TrainingLogStore.shared.cachedRows(days: 400)
+            if !cached.isEmpty {
+                logs = cached.dedupedByPhysicalWorkout().sorted { $0.date < $1.date }
+                rebuildLogIndex()
+                hasLoaded = true
+            }
+        }
+
         // Logs (400d covers any block) — deduped before any aggregation.
-        // Use the throwing fetch so a real failure surfaces a Retry state
-        // rather than a misleadingly empty analytics screen.
+        // Through the shared store: coalesces with any launch-time refresh
+        // from Log/Today, and persists the snapshot for next launch. The
+        // throwing path is kept so a real failure surfaces a Retry state —
+        // but only when there's no cached data on screen; stale charts beat
+        // an error screen.
         let fetched: [TodayLogRow]
         do {
-            fetched = try await TodayLogRow.fetchRecentThrowing(days: 400)
+            fetched = try await TrainingLogStore.shared.refresh(days: 400)
         } catch {
             log.error("Training analytics load failed: \(error.localizedDescription)")
-            loadFailed = true
+            if !hasLoaded { loadFailed = true }
             return
         }
         loadFailed = false
         logs = fetched.dedupedByPhysicalWorkout().sorted { $0.date < $1.date }
         rebuildLogIndex()         // refresh day index + invalidate memo caches
 
-        // Feed the key-session store the DEDUPED set. It sums quality_load per
-        // day off these ids; handing it raw rows would double-count a run that
-        // arrived from both Strava and HealthKit, pushing an easy day over the
-        // floor. LogDedup is the canonical picker — the store must not
-        // reimplement it.
-        await KeySessionStore.shared.ingestLoads(forDedupedLogs: logs)
         splitsCache.removeAll()   // logs changed — drop stale per-session splits
 
-        // Current-fitness snapshot (cheap — reads the history table).
+        // The steps below are two independent chains, so run them
+        // concurrently instead of serially — previously each `await` blocked
+        // the next and the tab's load time was the SUM of ~6 round trips
+        // (see PERF-AUDIT-2026-08-10.md, finding #3). Only the plan/goals
+        // step has a real dependency (it reads `snapshot`, so it must follow
+        // fetchHistory); everything else just needs `logs`, already in hand.
+        //
+        // Key-session ingest: feed the store the DEDUPED set. It sums
+        // quality_load per day off these ids; raw rows would double-count a
+        // run that arrived from both Strava and HealthKit. LogDedup is the
+        // canonical picker — the store must not reimplement it.
+        async let keySessionIngest: Void = KeySessionStore.shared.ingestLoads(forDedupedLogs: logs)
+        // RPE columns (resilient — empty if the migration hasn't run).
+        async let rpeFetch = RPERow.fetchRecent(days: 120)
+        // Weather on this week's runs (CURRENT-mode conditions readouts).
+        async let conditionsFetch: Void = loadCurrentWeekConditions()
+
+        // Current-fitness snapshot (cheap — reads the history table), then
+        // goals + plan block bounds, which read the snapshot.
         let predictor = FitnessPredictorService()
         await predictor.fetchHistory()
         snapshot = predictor.snapshotHistory.max(by: { $0.createdAt < $1.createdAt })
-
-        // RPE columns (resilient — empty if the migration hasn't run).
-        rpeByLog = await RPERow.fetchRecent(days: 120)
-
-        // Goals + plan block bounds.
         await loadPlanAndGoals(predictor: predictor)
 
-        // Weather on this week's runs (CURRENT-mode conditions readouts).
-        await loadCurrentWeekConditions()
+        rpeByLog = await rpeFetch
+        _ = await (keySessionIngest, conditionsFetch)
 
         hasLoaded = true
     }
@@ -1049,6 +1077,7 @@ final class TrainingAnalyticsViewModel {
                 DaySplit(index: i + 1,
                          distanceMiles: lap.distanceMiles,
                          paceSeconds: lap.paceSeconds,
+                         elapsedSeconds: lap.elapsedSeconds,
                          hr: lap.avgHeartRate,
                          color: bucket(forPaceSeconds: lap.paceSeconds).color)
             }
@@ -1058,9 +1087,12 @@ final class TrainingAnalyticsViewModel {
         return segs.enumerated().compactMap { (i, seg) in
             let p = paceSeconds(seg.pacePerMile)
             guard p > 0 else { return nil }
+            // The per-mile fallback path carries no clock of its own, so the
+            // duration here is derived rather than measured.
             return DaySplit(index: i + 1,
                             distanceMiles: seg.distanceMiles,
                             paceSeconds: p,
+                            elapsedSeconds: p * seg.distanceMiles,
                             hr: seg.avgHeartRate,
                             color: bucket(forPaceSeconds: p).color)
         }
@@ -1613,7 +1645,7 @@ final class TrainingAnalyticsViewModel {
         }
     }
 
-    private static func formatClock(_ seconds: Double) -> String {
+    static func formatClock(_ seconds: Double) -> String {
         let t = Int(seconds.rounded())
         let h = t / 3600, m = (t % 3600) / 60, s = t % 60
         return h > 0
@@ -1636,16 +1668,41 @@ final class TrainingAnalyticsViewModel {
         return t.contains("interval") || t.contains("tempo") || t.contains("threshold") || t.contains("race")
     }
 
+    /// The day chip's text. Routed through `WorkoutLabel` — the documented
+    /// source of truth for this vocabulary — rather than the substring ladder
+    /// that used to live here.
+    ///
+    /// That ladder was a SECOND taxonomy and it had drifted: it knew six
+    /// keys and sent everything else to "EASY". So `steady`, `moderate`,
+    /// `fartlek` and `progression` all rendered as EASY — an 11-miler stored
+    /// as `steady` was labelled EASY on the Train tab, and re-typing it to
+    /// Moderate would have changed nothing on screen, because this function
+    /// could not say the word. It also still said TEMPO, which was folded
+    /// into `threshold` on 2026-08-10.
+    ///
+    /// An absent type still reads EASY, unchanged — that is a separate call
+    /// about what to claim for an untyped run, not part of this mapping.
+    ///
+    /// The chip's COLOUR is unaffected: it comes from
+    /// `bucket(forPaceSeconds:)`, i.e. how fast the run actually was, which
+    /// is deliberately independent of what it was called.
     static func typeLabel(_ typeKey: String?) -> String {
-        switch (typeKey ?? "").lowercased() {
-        case let t where t.contains("interval"): return "INTERVALS"
-        case let t where t.contains("tempo"):    return "TEMPO"
-        case let t where t.contains("threshold"): return "THRESHOLD"
-        case let t where t.contains("long"):     return "LONG RUN"
-        case let t where t.contains("recovery"): return "RECOVERY"
-        case let t where t.contains("race"):     return "RACE"
-        default: return "EASY"
-        }
+        let raw = (typeKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return "EASY" }
+        return WorkoutLabel.display(WorkoutLabel.normalize(raw) ?? raw).uppercased()
+    }
+
+    /// "AUG 3 – 9" / "JUL 28 – AUG 3". Lives here beside `weekdayLabel` and
+    /// `monthDayLabel` so the Train tab's week nav and any other week-paging
+    /// surface read the same string from one place.
+    static func weekRangeLabel(_ start: Date) -> String {
+        var cal = Calendar(identifier: .iso8601)
+        cal.firstWeekday = 2
+        let end = cal.date(byAdding: .day, value: 6, to: start) ?? start
+        let startFmt = DateFormatter(); startFmt.dateFormat = "MMM d"
+        let sameMonth = cal.isDate(start, equalTo: end, toGranularity: .month)
+        let endFmt = DateFormatter(); endFmt.dateFormat = sameMonth ? "d" : "MMM d"
+        return "\(startFmt.string(from: start)) – \(endFmt.string(from: end))".uppercased()
     }
 
     static func weekdayLabel(_ date: Date) -> String {

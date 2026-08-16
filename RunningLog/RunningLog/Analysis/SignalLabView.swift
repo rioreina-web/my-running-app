@@ -194,7 +194,7 @@ struct SignalLabView: View {
         Task {
             let rows: [TrainingLog] = (try? await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("id", value: id)
                 .limit(1)
                 .execute()

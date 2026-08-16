@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week Training Load — Post Run Drip prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Post Run Drip — Foundations (mirrored from colors_and_type.css)
+   ============================================================ */
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF;
+  --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420;
+  --coral-wash:rgba(212,89,42,.12);
+
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+
+  --t-display-xl:40px; --t-display-l:32px; --t-display-m:24px; --t-display-s:20px;
+  --t-body:15px; --t-body-sm:13px; --t-meta:11px; --t-meta-sm:10px;
+  --tracking-label:.12em; --tracking-caption:.10em; --tracking-meta:.14em;
+
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px; --space-5:20px;
+  --space-6:24px; --space-7:32px; --space-8:40px; --space-9:56px;
+
+  --r-pill:999px; --r-card:12px; --r-tight:4px;
+  --shadow-card:0 2px 8px rgba(0,0,0,.06);
+  --ease-out:cubic-bezier(.2,.7,.2,1); --dur-base:300ms;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  padding:var(--space-8) var(--space-5) var(--space-9);
+}
+.wrap{max-width:1020px;margin:0 auto}
+
+/* ---- Type helpers ---- */
+.eyebrow{font-family:var(--font-mono);font-size:var(--t-meta);font-weight:500;
+  letter-spacing:var(--tracking-label);color:var(--ink-2);text-transform:uppercase}
+.eyebrow--coral{color:var(--coral)}
+.plate-strip{font-family:var(--font-mono);font-size:var(--t-meta);font-weight:500;
+  letter-spacing:var(--tracking-meta);color:var(--ink-2);text-transform:uppercase}
+.display{font-family:var(--font-display);font-weight:700;letter-spacing:-.01em;line-height:1.05}
+.display-xl{font-size:var(--t-display-xl)} .display-l{font-size:var(--t-display-l)}
+.display-m{font-size:var(--t-display-m)}
+.caption{font-family:var(--font-mono);font-size:var(--t-meta-sm);font-weight:500;
+  color:var(--ink-2);letter-spacing:var(--tracking-caption);text-transform:uppercase}
+.body-sm{font-size:var(--t-body-sm);color:var(--ink-2);line-height:1.5}
+.quote{font-style:italic;font-size:var(--t-body-sm);color:var(--ink);line-height:1.5}
+
+/* ---- Page header ---- */
+header{margin-bottom:var(--space-7)}
+.hd-top{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:1px solid var(--rule);padding-bottom:var(--space-2);margin-bottom:var(--space-5)}
+h1{margin:0}
+.global-toggle{display:flex;justify-content:flex-end;margin-bottom:var(--space-5)}
+.toggle{display:flex;border:1px solid var(--rule);border-radius:var(--r-pill);overflow:hidden;
+  background:var(--card)}
+.toggle button{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  border:none;background:transparent;color:var(--ink-2);padding:6px 12px;cursor:pointer;
+  transition:all var(--dur-base) var(--ease-out)}
+.toggle button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+
+/* ---- A week block ---- */
+.weekblock{margin-bottom:var(--space-9)}
+.wb-hd{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:var(--space-4)}
+
+/* ---- Summary rail ---- */
+.summary{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--space-4);margin-bottom:var(--space-5)}
+.sum-cell{border-left:1px solid var(--rule);padding-left:var(--space-3)}
+.sum-cell:first-child{border-left:none;padding-left:0}
+.sum-val{font-family:var(--font-mono);font-weight:600;font-size:var(--t-display-s);
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.sum-val .u{font-size:12px;font-weight:500;color:var(--ink-2);margin-left:2px}
+.sum-lab{margin-top:var(--space-1)}
+.delta-up{color:var(--coral)} .delta-flat{color:var(--ink-2)}
+
+/* ---- Card ---- */
+.card{background:var(--card);border:1px solid var(--rule);border-radius:var(--r-card);
+  box-shadow:var(--shadow-card);padding:var(--space-6) var(--space-5) var(--space-5)}
+
+/* ============================================================
+   THE WEEK — a marimekko across the full width.
+   Each day's COLUMN WIDTH is its share of the week's training
+   load. The seven bands butt together into one continuous bar.
+   Pie area = volume. Colour = pace zone.
+   ============================================================ */
+.across{display:flex;align-items:stretch;width:100%;margin-top:var(--space-5);gap:2px}
+.acol{cursor:pointer;min-width:0;display:flex;flex-direction:column;
+  transition:opacity var(--dur-base) var(--ease-out)}
+.across:hover .acol{opacity:.5}
+.across:hover .acol:hover{opacity:1}
+.acol.sel{opacity:1}
+
+.a-hd{text-align:center;margin-bottom:2px;white-space:nowrap;overflow:hidden}
+.a-pct{font-family:var(--font-mono);font-size:9px;color:var(--ink-3);letter-spacing:.05em;
+  text-align:center;margin-bottom:var(--space-2);white-space:nowrap;overflow:hidden}
+.a-pieslot{height:82px;display:flex;align-items:center;justify-content:center}
+
+.a-band{height:28px;display:flex;overflow:hidden;background:var(--ink);opacity:.8;
+  transition:all var(--dur-base) var(--ease-out);border-radius:2px}
+.a-band.zoned{background:none;opacity:1}
+.a-band .seg{height:100%}
+.acol.sel .a-band{box-shadow:inset 0 0 0 2px var(--coral)}
+.acol.rest .a-band{background:repeating-linear-gradient(45deg,var(--paper-deep) 0 3px,transparent 3px 6px);
+  border:1px solid var(--rule);opacity:1}
+
+/* Numbers are POINT-AND-SHOW: the columns stay quiet until you point at
+   one. Seven days x two numerals is 14 numerals competing with the shapes
+   that already encode them. Reserved height, so nothing reflows on hover. */
+.a-foot{text-align:center;margin-top:6px;white-space:nowrap;overflow:hidden;height:14px;
+  font-family:var(--font-mono);font-size:10px;font-variant-numeric:tabular-nums;
+  opacity:0;transition:opacity var(--dur-base) var(--ease-out)}
+.acol:hover .a-foot,.acol.sel .a-foot{opacity:1}
+.a-foot .load{font-weight:600;color:var(--ink)}
+.a-foot .dist{color:var(--ink-2)}
+
+.mood-dot{width:8px;height:8px;border-radius:var(--r-pill);flex:none}
+
+/* ---- Mood: one continuous line across the whole week ----------------
+   Not seven dots. Mood is the thing that runs THROUGH a week — a line
+   makes Thu-good / Fri-tired / Sat-good read as a shape, where separate
+   dots read as seven unrelated readings. Segments butt together with no
+   gutter so it is literally one line. */
+.lane{display:flex;width:100%;gap:0}
+.lane-hd{display:flex;justify-content:space-between;align-items:baseline;
+  margin:var(--space-4) 0 var(--space-2)}
+.mood-strip{height:7px;border-radius:4px;overflow:hidden}
+.mood-seg{height:100%;transition:opacity var(--dur-base) var(--ease-out)}
+.mood-seg.none{background:var(--paper-deep)}
+.across:hover ~ .lane .mood-seg{opacity:.45}
+.mood-labs{margin-top:6px}
+.mood-lab{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;text-align:center;padding:0 2px}
+.mood-lab.tight{visibility:hidden}
+
+/* ---- Niggles: their own lane under the mood line ------------------- */
+.niggle-lane{border-top:1px solid var(--rule);padding-top:var(--space-3);
+  margin-top:var(--space-3);min-height:34px}
+.nig-cell{text-align:center;padding:0 2px;overflow:hidden}
+.niggle{display:block;width:0;height:0;margin:0 auto;border-left:5px solid transparent;
+  border-right:5px solid transparent;border-bottom:7px solid var(--coral)}
+.nig-text{display:block;margin-top:4px;font-family:var(--font-mono);font-size:9px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--coral-deep);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nig-cell.tight .nig-area{display:none}
+.nig-cell.vtight .nig-text{display:none}
+.nig-quiet{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3)}
+.dow{font-family:var(--font-mono);font-size:var(--t-meta);letter-spacing:var(--tracking-label);
+  color:var(--ink-2);text-transform:uppercase}
+.acol.sel .dow{color:var(--ink)}
+.acol.rest .dow{color:var(--ink-3)}
+.pie{display:block;transition:transform var(--dur-base) var(--ease-out)}
+.acol.sel .pie{transform:scale(1.05)}
+
+.a-scale{display:flex;justify-content:space-between;align-items:baseline;
+  margin-top:var(--space-4);padding-top:var(--space-3);border-top:1px solid var(--rule)}
+
+/* ============================================================
+   WEEKLY PACE SPECTRUM — replaces the flat legend.
+   One bar, ten possible stops, ordered Easy → Mile.
+   Segment width ∝ MILES run in that zone across the week.
+   Under each segment: the zone, the miles, and the week's
+   actual average pace in that zone.
+   ============================================================ */
+.spectrum{margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--rule)}
+.sp-hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:var(--space-3)}
+.sp-bar{display:flex;width:100%;height:30px;border-radius:3px;overflow:hidden;gap:1px}
+.sp-seg{min-width:2px;transition:filter var(--dur-base) var(--ease-out)}
+.sp-bar:hover .sp-seg{filter:saturate(.35) opacity(.55)}
+.sp-bar .sp-seg:hover{filter:none}
+.sp-labs{display:flex;width:100%;gap:1px;margin-top:var(--space-2)}
+.sp-lab{min-width:2px;overflow:hidden;white-space:nowrap;text-align:left;padding-right:4px;
+  border-top:1px solid var(--rule);padding-top:5px;margin-top:-5px}
+.sp-lab>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-zone{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-2);display:block}
+.sp-mi{font-family:var(--font-mono);font-size:var(--t-body-sm);font-weight:600;
+  font-variant-numeric:tabular-nums;display:block;line-height:1.25}
+.sp-mi .u{font-size:9px;font-weight:400;color:var(--ink-3);margin-left:1px}
+.sp-pace{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);
+  font-variant-numeric:tabular-nums;display:block}
+.sp-lab.tight .sp-mi,.sp-lab.tight .sp-pace{display:none}
+.sp-lab.hidden{visibility:hidden}
+.sp-avg{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);
+  font-variant-numeric:tabular-nums}
+
+/* ---- Detail panel ---- */
+.detail{margin-top:var(--space-4);background:var(--paper-elevated);
+  border:1px solid var(--rule);border-radius:var(--r-card);padding:var(--space-5)}
+.detail-hd{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:1px solid var(--rule);padding-bottom:var(--space-3);margin-bottom:var(--space-4)}
+.detail-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-4);margin-bottom:var(--space-4)}
+.ds-val{font-family:var(--font-mono);font-weight:600;font-size:var(--t-display-s);
+  font-variant-numeric:tabular-nums;line-height:1.1}
+.ds-val .u{font-size:11px;font-weight:500;color:var(--ink-2);margin-left:2px}
+.seg-table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:11px;
+  font-variant-numeric:tabular-nums}
+.seg-table th{text-align:right;font-weight:500;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-3);padding:0 0 6px;border-bottom:1px solid var(--rule)}
+.seg-table th:first-child{text-align:left}
+.seg-table td{padding:6px 0;border-bottom:1px solid var(--rule);text-align:right;color:var(--ink)}
+.seg-table td:first-child{text-align:left}
+.seg-table tr:last-child td{border-bottom:none}
+.zone-cell{display:flex;align-items:center;gap:7px}
+.zone-sw{width:8px;height:16px;border-radius:2px;flex:none}
+.zone-name{letter-spacing:.06em;text-transform:uppercase;font-size:10px}
+.share-track{display:inline-block;width:52px;height:5px;background:var(--paper-deep);
+  border-radius:2px;overflow:hidden;vertical-align:middle;margin-left:6px}
+.share-fill{height:100%;border-radius:2px}
+.mood-line{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;
+  margin-top:var(--space-4);padding-top:var(--space-3);border-top:1px solid var(--rule)}
+.mood-pill{display:inline-flex;align-items:center;gap:5px;border-radius:var(--r-pill);
+  padding:3px 9px;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase}
+.niggle-pill{background:var(--coral-wash);color:var(--coral-deep);border-radius:var(--r-pill);
+  padding:3px 9px;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase}
+/* empty state — hard rule #8, never an em-dash */
+.empty{padding:var(--space-2) 0}
+.empty p{margin:6px 0 0;font-size:var(--t-body-sm);color:var(--ink-2);line-height:1.5}
+
+.note{margin-top:var(--space-6);color:var(--ink-3);font-size:12px;line-height:1.6}
+.note code{font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="hd-top">
+    <span class="plate-strip">Post Run Drip · Prototype</span>
+    <span class="plate-strip">Week training load</span>
+  </div>
+  <h1 class="display display-xl">The week, by load.</h1>
+  <p class="body-sm" style="margin:6px 0 0;max-width:62ch">
+    Each day's <em>width</em> is its share of the week's training load. Pie area is volume,
+    colour is pace zone, and the dots below carry mood and niggles. Two weeks, same block:
+    one with seven running days, one with five.
+  </p>
+</header>
+
+<div class="global-toggle">
+  <div class="toggle" role="group" aria-label="Band colouring">
+    <button id="btnSolid" aria-pressed="true">Load</button>
+    <button id="btnZoned" aria-pressed="false">Load by zone</button>
+  </div>
+</div>
+
+<div id="weeks"></div>
+
+<p class="note">
+  Load model mirrors <code>TrendsQualityLoad.swift</code> / <code>_shared/workoutSegmentation.ts</code>:
+  load = Σ (minutes in zone × zone weight), weights easy&nbsp;1.0 → mile&nbsp;8.0. Colours are the ten
+  <code>PaceSpectrum</code> stops. Pie radius scales as √volume so ink is proportional to miles.
+  Widths are a share of <em>that week's</em> load, so read the wmin totals to compare the two weeks.
+</p>
+
+</div>
+
+<script>
+/* ============================================================
+   1. CANONICAL CONSTANTS — kept in sync with the app
+   ============================================================ */
+const ZONES = [
+  { key:'easy',     label:'Easy',     color:'#93B9D6', weight:1.00, paceSec:480 },
+  { key:'moderate', label:'Moderate', color:'#74A8CC', weight:1.25, paceSec:440 },
+  { key:'steady',   label:'Steady',   color:'#578FC0', weight:1.50, paceSec:415 },
+  { key:'mp',       label:'MP',       color:'#3F7CB5', weight:2.50, paceSec:380 },
+  { key:'hmp',      label:'HMP',      color:'#2F66A8', weight:3.25, paceSec:362 },
+  { key:'lt',       label:'LT',       color:'#27549B', weight:3.25, paceSec:350 },
+  { key:'10k',      label:'10K',      color:'#20448B', weight:4.00, paceSec:335 },
+  { key:'5k',       label:'5K',       color:'#1A3679', weight:5.50, paceSec:320 },
+  { key:'3k',       label:'3K',       color:'#142964', weight:6.75, paceSec:305 },
+  { key:'mile',     label:'Mile',     color:'#0E1D4E', weight:8.00, paceSec:290 },
+];
+const Z = Object.fromEntries(ZONES.map(z => [z.key, z]));
+
+const MOODS = {
+  energized:{ label:'Energized', color:'#2D8A4E' },
+  positive: { label:'Good',      color:'#4A9E6B' },
+  neutral:  { label:'Neutral',   color:'#9B9590' },
+  tired:    { label:'Tired',     color:'#C4873A' },
+  struggling:{label:'Struggling',color:'#C45A3A' },
+};
+
+/* ============================================================
+   2. TWO SAMPLE WEEKS — replace with real training_logs
+   ============================================================ */
+const WEEKS = [
+{
+  id:'w32', label:'Week 32 · Seven running days', sub:'Mon 3 — Sun 9 August',
+  priorLoad: 648,
+  days:[
+    { dow:'Mon', date:'3', title:'Easy shakeout', mood:'positive',
+      segments:[ {zone:'easy',miles:6.0,pace:'8:12'} ] },
+    { dow:'Tue', date:'4', title:'12 × 400m @ 3K/5K', mood:'energized',
+      segments:[ {zone:'easy',miles:3.4,pace:'8:20'},{zone:'moderate',miles:1.3,pace:'7:18'},
+                 {zone:'5k',miles:1.9,pace:'5:22'},{zone:'3k',miles:0.9,pace:'5:04'} ] },
+    { dow:'Wed', date:'5', title:'Easy + 6 strides', mood:'neutral',
+      niggle:{area:'Left achilles',word:'tight',quote:'left achilles a bit tight on the first mile, eased off'},
+      segments:[ {zone:'easy',miles:7.0,pace:'8:05'},{zone:'mile',miles:0.3,pace:'4:48'} ] },
+    { dow:'Thu', date:'6', title:'4 mi @ marathon pace', mood:'positive',
+      segments:[ {zone:'easy',miles:4.0,pace:'8:08'},{zone:'mp',miles:4.0,pace:'6:22'} ] },
+    { dow:'Fri', date:'7', title:'Recovery', mood:'tired',
+      niggle:{area:'Left achilles',word:'sore',quote:'achilles still there, sore rather than tight today'},
+      segments:[ {zone:'easy',miles:5.0,pace:'8:34'} ] },
+    { dow:'Sat', date:'8', title:'5 × 1 mi @ threshold', mood:'positive',
+      segments:[ {zone:'easy',miles:3.4,pace:'8:15'},{zone:'moderate',miles:1.1,pace:'7:22'},{zone:'lt',miles:5.0,pace:'5:48'} ] },
+    { dow:'Sun', date:'9', title:'Long run, last 5 @ MP', mood:'tired', open:true,
+      segments:[ {zone:'easy',miles:12.0,pace:'8:02'},{zone:'steady',miles:1.0,pace:'6:58'},{zone:'mp',miles:5.0,pace:'6:18'} ] },
+  ]
+},
+{
+  id:'w33', label:'Week 33 · Five running days, two rest', sub:'Mon 10 — Sun 16 August',
+  priorLoad: 694,
+  days:[
+    { dow:'Mon', date:'10', title:'Rest', mood:'tired', rest:true,
+      niggle:{area:'Left achilles',word:'sore',quote:'took the day off, achilles was sore walking down stairs'},
+      segments:[] },
+    { dow:'Tue', date:'11', title:'6 × 800m @ 5K', mood:'positive', open:true,
+      segments:[ {zone:'easy',miles:3.2,pace:'8:18'},{zone:'moderate',miles:1.4,pace:'7:20'},{zone:'5k',miles:3.0,pace:'5:19'} ] },
+    { dow:'Wed', date:'12', title:'Easy', mood:'neutral',
+      segments:[ {zone:'easy',miles:8.0,pace:'8:10'} ] },
+    { dow:'Thu', date:'13', title:'6 mi @ marathon pace', mood:'energized',
+      segments:[ {zone:'easy',miles:3.5,pace:'8:14'},{zone:'mp',miles:6.0,pace:'6:19'},{zone:'easy',miles:1.5,pace:'8:40'} ] },
+    { dow:'Fri', date:'14', title:'Rest', mood:'neutral', rest:true, segments:[] },
+    { dow:'Sat', date:'15', title:'4 × 1.5 mi @ threshold', mood:'positive',
+      segments:[ {zone:'easy',miles:3.0,pace:'8:12'},{zone:'moderate',miles:1.0,pace:'7:25'},{zone:'lt',miles:6.0,pace:'5:51'} ] },
+    { dow:'Sun', date:'16', title:'Long run, last 8 @ MP/steady', mood:'tired',
+      segments:[ {zone:'easy',miles:12.0,pace:'8:06'},{zone:'steady',miles:3.0,pace:'6:55'},{zone:'mp',miles:5.0,pace:'6:21'} ] },
+  ]
+},
+];
+
+/* ============================================================
+   3. DERIVE
+   ============================================================ */
+function parsePace(str){                 // "8:12" -> 492 sec/mi
+  if (!str) return null;
+  const [m,sec] = str.split(':').map(Number);
+  return m*60 + sec;
+}
+function fmtPace(sec){
+  if (!isFinite(sec)) return '';
+  const s = Math.round(sec);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+function enrichDay(day){
+  const segs = (day.segments||[]).map(s => {
+    const z = Z[s.zone];
+    const paceSec = parsePace(s.pace) || z.paceSec;   // actual pace when logged
+    const minutes = s.miles * paceSec / 60;
+    return { ...s, z, paceSec, minutes, load: minutes * z.weight };
+  });
+  const miles   = segs.reduce((a,s)=>a+s.miles,0);
+  const minutes = segs.reduce((a,s)=>a+s.minutes,0);
+  const load    = segs.reduce((a,s)=>a+s.load,0);
+  const qi = ZONES.findIndex(z=>z.key==='mp');
+  const qLoad = segs.filter(s=>ZONES.indexOf(s.z)>=qi).reduce((a,s)=>a+s.load,0);
+  return { ...day, segs, miles, minutes, load, qLoad };
+}
+function enrichWeek(w){
+  const days = w.days.map(enrichDay);
+  const miles = days.reduce((a,d)=>a+d.miles,0);
+  const load  = days.reduce((a,d)=>a+d.load,0);
+  const qLoad = days.reduce((a,d)=>a+d.qLoad,0);
+  const runDays = days.filter(d=>d.miles>0).length;
+  // Weekly pace spectrum: roll every segment up by zone, in taxonomy order.
+  const zoneTotals = ZONES.map(z=>{
+    const ss = days.flatMap(d=>d.segs).filter(s=>s.z===z);
+    const mi  = ss.reduce((a,s)=>a+s.miles,0);
+    const min = ss.reduce((a,s)=>a+s.minutes,0);
+    const ld  = ss.reduce((a,s)=>a+s.load,0);
+    return { z, miles:mi, minutes:min, load:ld, avgPaceSec: mi ? min*60/mi : null };
+  }).filter(o=>o.miles>0);
+  const maxMiles = Math.max(...days.map(d=>d.miles), 0.0001);
+  return { ...w, days, miles, load, qLoad, runDays, maxMiles, zoneTotals,
+           selected: Math.max(0, days.findIndex(d=>d.open)) };
+}
+const MODEL = WEEKS.map(enrichWeek);
+
+/* ============================================================
+   4. RENDER
+   ============================================================ */
+const HEAD_MAX = 72;   // px diameter for a week's biggest volume
+const MIN_COL  = 46;   // px floor so a rest / tiny-load day stays legible
+let zoned = false;
+
+function fmtMin(m){
+  const s = Math.round(m*60);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+function pieSvg(day, week){
+  if (!day.miles) return '';
+  const d = HEAD_MAX * Math.sqrt(day.miles / week.maxMiles);
+  const r = d/2, c = r, pad = 5;
+  let a0 = -Math.PI/2;
+  const paths = day.segs.map(s=>{
+    const a1 = a0 + (s.miles/day.miles) * Math.PI*2;
+    const x0 = c + r*Math.cos(a0), y0 = c + r*Math.sin(a0);
+    const x1 = c + r*Math.cos(a1), y1 = c + r*Math.sin(a1);
+    const large = (a1-a0) > Math.PI ? 1 : 0;
+    a0 = a1;
+    if (s.miles/day.miles > 0.999)
+      return `<circle cx="${c}" cy="${c}" r="${r}" fill="${s.z.color}"/>`;
+    return `<path d="M${c} ${c} L${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1} Z"
+             fill="${s.z.color}" stroke="#FFFFFF" stroke-width=".75"/>`;
+  }).join('');
+  const ring = day.niggle
+    ? `<circle cx="${c}" cy="${c}" r="${r+3}" fill="none" stroke="#D4592A" stroke-width="1.25"
+        stroke-dasharray="2.5 3" opacity=".85"/>` : '';
+  return `<svg class="pie" width="${d+pad*2}" height="${d+pad*2}"
+            viewBox="${-pad} ${-pad} ${d+pad*2} ${d+pad*2}">${paths}${ring}</svg>`;
+}
+
+// A rest day still gets a mark: a small hollow coral-or-grey ring so the
+// column reads as "nothing here on purpose", not as a rendering gap.
+function restMark(day){
+  const s = 26;
+  return `<svg class="pie" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}">
+    <circle cx="${s/2}" cy="${s/2}" r="${s/2-2}" fill="none"
+      stroke="${day.niggle ? '#D4592A' : '#9B9590'}" stroke-width="1.25"
+      stroke-dasharray="2.5 3" opacity=".8"/></svg>`;
+}
+
+function bandSegs(day){
+  if (!zoned || !day.load) return '';
+  return day.segs.slice().sort((a,b)=>ZONES.indexOf(a.z)-ZONES.indexOf(b.z))
+    .map(s=>`<div class="seg" style="width:${s.load/day.load*100}%;background:${s.z.color}"></div>`).join('');
+}
+
+function summaryHtml(w){
+  const delta = (w.load - w.priorLoad) / w.priorLoad * 100;
+  return [
+    { v:w.miles.toFixed(1), u:'mi', l:'Volume' },
+    { v:Math.round(w.load), u:'wmin', l:'Training load' },
+    { v:(delta>=0?'+':'')+delta.toFixed(0), u:'%', l:'vs last week',
+      cls: Math.abs(delta)>10 ? 'delta-up' : 'delta-flat' },
+    { v:Math.round(w.qLoad/w.load*100), u:'%', l:'Load at MP or faster' },
+    { v:w.runDays, u:`/7`, l:'Running days' },
+  ].map(s=>`<div class="sum-cell">
+      <div class="sum-val ${s.cls||''}">${s.v}<span class="u">${s.u}</span></div>
+      <div class="sum-lab caption">${s.l}</div></div>`).join('');
+}
+
+function acrossHtml(w, wi){
+  return w.days.map((d,i)=>{
+    const pct = w.load ? d.load / w.load * 100 : 0;
+    const isRest = !d.miles;
+    return `<div class="acol ${i===w.selected?'sel':''} ${isRest?'rest':''}"
+       data-w="${wi}" data-i="${i}" style="flex:${Math.max(d.load, 0.001)} 1 0;min-width:${MIN_COL}px"
+       title="${d.dow} ${d.date} · ${d.title}">
+      <div class="a-hd"><span class="dow">${d.dow}</span></div>
+      <div class="a-pct">${isRest ? 'REST' : pct.toFixed(0)+'%'}</div>
+      <div class="a-pieslot">${isRest ? restMark(d) : pieSvg(d,w)}</div>
+      <div class="a-band ${zoned?'zoned':''}">${bandSegs(d)}</div>
+      <div class="a-foot">${ isRest
+        ? `<span class="dist">0</span>`
+        : `<span class="load">${Math.round(d.load)}</span><span class="dist"> · ${d.miles.toFixed(1)}mi</span>` }</div>
+    </div>`;
+  }).join('');
+}
+
+/* ---- Mood + niggle lanes -------------------------------------------
+   Both share the marimekko's flex values, so a day is the same width in
+   all three rows and the eye can drop straight down a column.
+
+   Mood is drawn as ONE continuous line rather than a dot per day. The
+   question an athlete asks of a week is "how did it go", which is a
+   shape over time, not seven independent readings. A day with no logged
+   feeling is a paper-deep gap in the line — visibly absent, never
+   interpolated across, and never fabricated.
+
+   Niggles get their own lane beneath rather than sharing the mood row.
+   They are a different kind of fact (a body report, not a feeling) and
+   they are the only coral on the surface. */
+function lanesHtml(w, wi){
+  const flex = (d) => `flex:${Math.max(d.load, 0.001)} 1 0;min-width:${MIN_COL}px`;
+
+  const moodSegs = w.days.map(d => {
+    const m = d.mood ? MOODS[d.mood] : null;
+    return `<div class="mood-seg ${m ? '' : 'none'}"
+      style="${flex(d)};${m ? `background:${m.color}` : ''}"
+      title="${d.dow} · ${m ? m.label : 'no feeling logged'}"></div>`;
+  }).join('');
+
+  const moodLabs = w.days.map(d => {
+    const m = d.mood ? MOODS[d.mood] : null;
+    return `<div class="mood-lab" style="${flex(d)}">${m ? m.label : ''}</div>`;
+  }).join('');
+
+  const anyNiggle = w.days.some(d => d.niggle);
+  const nigCells = w.days.map(d => `
+    <div class="nig-cell" style="${flex(d)}">
+      ${d.niggle ? `<span class="niggle"></span>
+        <span class="nig-text" title="${d.niggle.area} — ${d.niggle.word}"><span class="nig-area">${d.niggle.area.replace(/^left |^right /i,'')} · </span>${d.niggle.word}</span>` : ''}
+    </div>`).join('');
+
+  return `
+    <div class="lane-hd">
+      <span class="eyebrow">Mood</span>
+      <span class="caption">${w.days.filter(d=>d.mood).length} of 7 days logged</span>
+    </div>
+    <div class="lane mood-strip">${moodSegs}</div>
+    <div class="lane mood-labs">${moodLabs}</div>
+
+    <div class="niggle-lane">
+      <div class="lane-hd" style="margin-top:0">
+        <span class="eyebrow">Niggles</span>
+        <span class="caption">${anyNiggle ? 'verbatim, never interpreted' : ''}</span>
+      </div>
+      ${anyNiggle
+        ? `<div class="lane">${nigCells}</div>`
+        : `<div class="nig-quiet">Nothing mentioned this week.</div>`}
+    </div>`;
+}
+
+function detailHtml(w){
+  const d = w.days[w.selected];
+  const m = MOODS[d.mood] || MOODS.neutral;
+  const head = `
+    <div class="detail-hd">
+      <div>
+        <div class="eyebrow">${d.dow} ${d.date} August</div>
+        <div class="display display-m" style="margin-top:4px">${d.title}</div>
+      </div>
+      <div class="caption">${d.load ? Math.round(d.load/w.load*100)+'% of week load' : 'No load'}</div>
+    </div>`;
+
+  if (!d.miles){
+    return head + `<div class="empty">
+      <div class="eyebrow">Rest day</div>
+      <p>Nothing logged, and nothing missing. ${d.niggle
+        ? `You mentioned your ${d.niggle.area.toLowerCase()} — it is carried into the niggle timeline.`
+        : `The week's load is carried by the other days.`}</p>
+    </div>` + moodLine(d, m);
+  }
+
+  const rows = d.segs.slice().sort((a,b)=>ZONES.indexOf(a.z)-ZONES.indexOf(b.z)).map(s=>`
+    <tr>
+      <td><span class="zone-cell"><span class="zone-sw" style="background:${s.z.color}"></span>
+        <span class="zone-name">${s.z.label}</span></span></td>
+      <td>${s.miles.toFixed(1)}</td>
+      <td>${fmtMin(s.minutes)}</td>
+      <td>×${s.z.weight.toFixed(2).replace(/0$/,'')}</td>
+      <td>${Math.round(s.load)}
+        <span class="share-track"><span class="share-fill"
+          style="width:${s.load/d.load*100}%;background:${s.z.color}"></span></span></td>
+    </tr>`).join('');
+
+  return head + `
+    <div class="detail-stats">
+      <div><div class="ds-val">${d.miles.toFixed(1)}<span class="u">mi</span></div>
+           <div class="caption" style="margin-top:4px">Volume</div></div>
+      <div><div class="ds-val">${Math.round(d.load)}<span class="u">wmin</span></div>
+           <div class="caption" style="margin-top:4px">Training load</div></div>
+      <div><div class="ds-val">${fmtMin(d.minutes)}</div>
+           <div class="caption" style="margin-top:4px">Time</div></div>
+    </div>
+    <table class="seg-table">
+      <thead><tr><th>Zone</th><th>Miles</th><th>Time</th><th>Weight</th><th>Load</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>` + moodLine(d, m);
+}
+
+function moodLine(d, m){
+  return `<div class="mood-line">
+    <span class="mood-pill" style="background:${m.color}1f;color:${m.color}">
+      <span class="mood-dot" style="background:${m.color}"></span>${m.label}</span>
+    ${d.niggle ? `<span class="niggle-pill">${d.niggle.area} · ${d.niggle.word}</span>
+                  <span class="quote">“${d.niggle.quote}”</span>` : ''}
+  </div>`;
+}
+
+/* ---- Weekly pace spectrum ------------------------------------
+   One bar. Segment width ∝ MILES in that zone across the week.
+   Beneath each segment: zone, miles, and the week's real average
+   pace in that zone (total time ÷ total distance, not a mean of
+   means). Zones with no miles are simply absent.               */
+function spectrumHtml(w){
+  const segs = w.zoneTotals;
+  const avgAll = w.miles ? fmtPace(w.days.reduce((a,d)=>a+d.minutes,0)*60/w.miles) : '';
+  return `<div class="spectrum">
+    <div class="sp-hd">
+      <span class="eyebrow">Week on the pace spectrum</span>
+      <span class="sp-avg">${w.miles.toFixed(1)} mi · ${avgAll}/mi average</span>
+    </div>
+    <div class="sp-bar">
+      ${segs.map(o=>`<div class="sp-seg" style="flex:${o.miles} 1 0;background:${o.z.color}"
+          title="${o.z.label} · ${o.miles.toFixed(1)} mi · ${fmtPace(o.avgPaceSec)}/mi"></div>`).join('')}
+    </div>
+    <div class="sp-labs">
+      ${segs.map(o=>`<div class="sp-lab" style="flex:${o.miles} 1 0">
+          <span class="sp-zone">${o.z.label}</span>
+          <span class="sp-mi">${o.miles.toFixed(1)}<span class="u">mi</span></span>
+          <span class="sp-pace">${fmtPace(o.avgPaceSec)}/mi</span>
+        </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+/* Drop label text that cannot fit its (volume-sized) slot. */
+function fitLabels(){
+  document.querySelectorAll('.sp-lab').forEach(el=>{
+    const w = el.clientWidth;
+    el.classList.toggle('tight',  w < 56);
+    el.classList.toggle('hidden', w < 24);
+  });
+}
+window.addEventListener('resize', fitLabels);
+
+function render(){
+  document.getElementById('weeks').innerHTML = MODEL.map((w,wi)=>`
+    <section class="weekblock">
+      <div class="wb-hd">
+        <div>
+          <div class="eyebrow">${w.sub}</div>
+          <h2 class="display display-l" style="margin:4px 0 0">${w.label}</h2>
+        </div>
+      </div>
+      <div class="summary">${summaryHtml(w)}</div>
+      <div class="card">
+        <span class="eyebrow">Width = training load · pie = volume · colour = pace</span>
+        <div class="across">${acrossHtml(w, wi)}</div>
+        ${lanesHtml(w, wi)}
+        <div class="a-scale">
+          <span class="caption">${w.runDays} running days</span>
+          <span class="caption">${Math.round(w.load)} wmin · ${w.miles.toFixed(1)} mi</span>
+        </div>
+        ${spectrumHtml(w)}
+      </div>
+      <div class="detail">${detailHtml(w)}</div>
+    </section>`).join('');
+
+  document.querySelectorAll('.acol').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      MODEL[+el.dataset.w].selected = +el.dataset.i;
+      render();
+    });
+  });
+  fitPies(); fitLabels(); fitLanes();
+}
+
+/* Shrink any pie that would overflow its (load-sized) column. */
+function fitLanes(){
+  document.querySelectorAll('.mood-lab').forEach(el=>{
+    el.classList.toggle('tight', el.clientWidth < 40);
+  });
+  document.querySelectorAll('.nig-cell').forEach(el=>{
+    el.classList.toggle('tight',  el.clientWidth < 110);  // drop the body part
+    el.classList.toggle('vtight', el.clientWidth < 52);   // caret only
+  });
+}
+window.addEventListener('resize', fitLanes);
+
+function fitPies(){
+  document.querySelectorAll('.acol').forEach(col=>{
+    const svg = col.querySelector('.a-pieslot svg');
+    if (!svg) return;
+    const avail = col.clientWidth - 4;
+    const w = +svg.getAttribute('width');
+    const k = Math.min(1, avail / w);
+    svg.style.transformOrigin = 'center';
+    svg.style.transform = k < 1 ? `scale(${k.toFixed(3)})` : '';
+  });
+}
+window.addEventListener('resize', fitPies);
+
+const bS = document.getElementById('btnSolid'), bZ = document.getElementById('btnZoned');
+bS.onclick = ()=>{ zoned=false; bS.ariaPressed='true';  bZ.ariaPressed='false'; render(); };
+bZ.onclick = ()=>{ zoned=true;  bS.ariaPressed='false'; bZ.ariaPressed='true';  render(); };
+
+render();
+</script>
+</body>
+</html>

@@ -25,6 +25,7 @@ import {
   raceLabel,
   roundsToMinute,
   type PredictionRange,
+  type RaceRangeKey,
 } from "./athleteState.ts";
 import {
   confidenceFromSamples,
@@ -49,11 +50,16 @@ function tierToConfidence(tier: string | null | undefined): Confidence {
 }
 
 function pickRace(
-  ranges: Record<string, PredictionRange>,
+  ranges: Partial<Record<RaceRangeKey, PredictionRange | null>>,
   requested: string | null,
   goalRace: string | null,
-): string | null {
-  const keys = Object.keys(ranges);
+): RaceRangeKey | null {
+  // Matching stays case-INSENSITIVE, and that is why this analyzer kept
+  // working while `current_fitness` (an exact `ranges["10k"]` lookup against
+  // stored `"10K"`) silently rendered nothing. Callers pass free text here —
+  // a chip param, a goal_race column — so the tolerance is deliberate; the
+  // narrowed key type just stops a typo reaching the indexer.
+  const keys = Object.keys(ranges) as RaceRangeKey[];
   const match = (want: string) =>
     keys.find((k) => k.toLowerCase() === want.toLowerCase()) ?? null;
   if (requested) return match(requested);

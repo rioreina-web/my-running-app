@@ -44,6 +44,16 @@
 // athlete with no rep history — and is documented as such, not as a norm we
 // think anyone should train to.
 //
+// (2026-08-13) ONE MECHANISM PER AXIS. `loadTerms.ts` adds two axes this module
+// cannot see, and the split is deliberate so nothing is counted twice:
+//   work:rest RATIO   → here (habit-relative, and strong enough to outweigh the
+//                       fact that more rest means more elapsed jogging)
+//   absolute REP LEN  → loadTerms.densityMultiplier (10×1K w/60s and 5×2K
+//                       w/120s share a ratio; they are not the same session)
+//   TIME ON FEET      → loadTerms.fatigueMultiplier
+// `loadTerms.lacticStress` is deliberately NOT wired in — see
+// `effortLoadFromBouts` for why it cannot own the rest axis.
+//
 // WHAT THIS MODULE WILL NOT DO
 // ----------------------------
 // It does not rank sessions and it does not say "better" or "harder". It
@@ -67,6 +77,11 @@ import {
   type SegmentationResult,
   type Zone,
 } from "./workoutSegmentation.ts";
+import {
+  densityMultiplier,
+  fatigueMultiplier,
+  type LoadContext,
+} from "./loadTerms.ts";
 import { adjustPace, compositeScore } from "./pace-heat-adjustment.ts";
 import { assessHeatRisk, type HeatRisk } from "./heat-risk.ts";
 
@@ -436,14 +451,47 @@ export function restSampleFrom(density: DensityProfile): RestSample | null {
  * scale nobody can reconcile.
  *
  * Each bout contributes `paceWeight(pace) × minutes` — the same continuous
- * easy→mile curve the rest of the load math uses. Rep bouts are then scaled by
- * the density multiplier. Recovery is NOT scaled: shortening the rest makes the
- * work harder, it doesn't make the jogging harder.
+ * easy→mile curve the rest of the load math uses. Three physiological terms
+ * from `loadTerms.ts` then shade it: rep length against the pace ceiling
+ * (per work bout), anaerobic depletion (per session), and time on feet (per
+ * session).
+ *
+ * (2026-08-13) ONE MECHANISM PER AXIS. Two density models had grown up side by
+ * side; this is the reconciliation, and the rule is that each axis has exactly
+ * one owner so nothing is counted twice:
+ *
+ *   WORK:REST RATIO  → `density.multiplier` (this module). Ratio-based and
+ *                      habit-relative, so it ranks 60s recovery above 90s
+ *                      regardless of which one the athlete habitually takes.
+ *                      Strong (up to 1.35 on reps) — and it has to be, because
+ *                      it must outweigh the fact that MORE rest means more
+ *                      elapsed jogging and therefore more raw weighted minutes.
+ *                      That inversion is the bug this whole module exists for.
+ *
+ *   ABSOLUTE REP LEN → `loadTerms.densityMultiplier`. Rest ratio cannot see
+ *                      this: `10 × 1K w/60s` and `5 × 2K w/120s` have the SAME
+ *                      ratio (3.23:1) and are indistinguishable to the term
+ *                      above, yet the 2K reps are twice the continuous effort.
+ *                      Measured as rep length over the ceiling at that pace.
+ *
+ *   TIME ON FEET     → `loadTerms.fatigueMultiplier`. Cumulative/glycogen cost
+ *                      of long sessions. Neither of the others sees duration.
+ *
+ * WHY NOT `loadTerms.lacticStress` HERE. It was built for the same rest axis
+ * and measured absolutely (tank emptiness) rather than against habit. Tested on
+ * this module's own fixture it is simply too weak to own that axis: at 5K pace
+ * `10 × 1K` off 60s scores only +2.2% of lactic over the 90s version, while the
+ * extra 4.5 minutes of recovery jogging hands the 90s session +2.5% of base —
+ * so the easier session wins and `effortModel.test.ts` fails. The tank barely
+ * drains at 5K pace, which is correct physiology and exactly why it cannot
+ * carry this. Habit-relative density can. Lactic stays available in
+ * loadTerms.ts and is documented as parked in LOAD-MODEL-OPEN-APPLY.md.
  */
 export function effortLoadFromBouts(
   bouts: Bout[],
   zones: PaceZones,
   density: DensityProfile,
+  ctx?: LoadContext | null,
 ): { load: number; baseLoad: number; densityDelta: number } {
   const anchors = buildZoneAnchors(zones);
   let base = 0;
@@ -455,8 +503,19 @@ export function effortLoadFromBouts(
       : 1;
     const wm = (w * b.seconds) / 60;
     base += wm;
-    scaled += b.isRep ? wm * density.multiplier : wm;
+    // Recovery is NOT scaled: shortening the rest makes the work harder, it
+    // doesn't make the jogging harder.
+    // Axis 1 — work:rest ratio, habit-relative, on reps.
+    let boutLoad = b.isRep ? wm * density.multiplier : wm;
+    // Axis 2 — absolute rep length against the ceiling at that pace. Null ctx
+    // (thin zone table) simply skips it rather than inventing a ceiling.
+    if (ctx && b.isWork) {
+      boutLoad *= densityMultiplier(b.seconds, ctx.ceilingSeconds(b.paceSecPerMile));
+    }
+    scaled += boutLoad;
   }
+  // Axis 3 — time on feet, session-level.
+  if (ctx) scaled *= fatigueMultiplier(bouts);
   return {
     load: round1(scaled),
     baseLoad: round1(base),
@@ -511,6 +570,8 @@ export function buildEffortProfile(
   opts?: {
     conditions?: EffortConditions | null;
     baseline?: DensityBaseline | null;
+    /** Density/lactic/duration context — see loadTerms.buildLoadContext. */
+    loadCtx?: LoadContext | null;
   },
 ): EffortProfile {
   const rawSegmentation = segmentFromLaps(laps, zones);
@@ -528,6 +589,7 @@ export function buildEffortProfile(
     segmentation.bouts,
     zones,
     density,
+    opts?.loadCtx ?? null,
   );
 
   let elevationGainM = 0;

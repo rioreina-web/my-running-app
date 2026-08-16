@@ -543,3 +543,12 @@ verify_jwt = false
 # auth handled in-function by requireAuthOrServiceRole, so the gateway does not
 # pre-verify — matches the weekly-coaching-report / coaching-daily-read pattern.
 verify_jwt = false
+
+[functions.run-hr-trace]
+# Per-minute heart-rate traces for the runs currently on screen. Athlete-only:
+# there is no service-role caller and no cross-user path, so the gateway
+# verifies the JWT and the function scopes every read to that user's own rows.
+# Left at the default rather than copying trends-timeline's dual-mode opt-out —
+# an endpoint that reads raw sensor streams should not skip a check it does not
+# need to skip.
+verify_jwt = true

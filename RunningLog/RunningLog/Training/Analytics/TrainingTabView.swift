@@ -17,7 +17,12 @@
 //    5. Mileage · By Day — calendar grid, tap a day to expand its sessions
 //    6. Easy / Hard   — split bar with an 80/20 target tick
 //    7. Volume × Pace — 18-bin histogram, ramp-coloured, current-fitness markers
-//    8. Effort · Felt vs Planned — hard sessions only, only when felt exists
+//    8. Week · Training Load (CURRENT mode, under This Week) — marimekko:
+//                       column width = that day's share of the week's load,
+//                       pie area = volume, colour = pace zone; a continuous
+//                       mood line and a niggle lane beneath. Pages back through
+//                       weeks on its own. Replaced Effort · Felt vs Planned
+//                       2026-08-10 (see WeekTrainingLoadSection).
 //    9. Goals & Targets — collapsed; the only place goal paces appear
 //
 //  All values are real and current-fitness-anchored — see
@@ -28,6 +33,16 @@ import Foundation
 import SwiftUI
 
 struct TrainingTabView: View {
+    /// Which tab is frontmost. Every tab view is constructed at launch and
+    /// merely hidden with `.opacity` (see MainTabView), so a plain `.task`
+    /// here fires its whole load chain at app launch for a tab the athlete
+    /// may never open. Gate on this instead — same pattern as TrendsTabView.
+    @Environment(\.selectedTab) private var selectedTab
+
+    /// The Train tab's index in `DripTabBar` (tag 1; non-contiguous tags are
+    /// historical — see DripTab).
+    private static let tabIndex = 1
+
     @State private var vm = TrainingAnalyticsViewModel()
 
     // Goal editing. The analytics VM is read-only; goal mutations go
@@ -98,7 +113,22 @@ struct TrainingTabView: View {
                         summary
                         todaySection
                         currentWeekSection
-                        feltVsPlanned
+                        // Directly under the day-by-day week list: the same
+                        // seven days, one level up — what the week cost, how
+                        // hard, and WHEN. Shares `weekOffset` with the list
+                        // above, so both week navs move together.
+                        //
+                        // Replaced `WeekTrainingLoadSection` (seven circles)
+                        // 2026-08-11. Both answer "what did this week cost";
+                        // stacking them would be two week charts competing for
+                        // the same question, and the strip adds the time-of-day
+                        // axis the circles could not carry. The circles file
+                        // stays in the repo unmounted — `ZoneTaxonomy`,
+                        // `LoadDay` and `TrainingLoadExplainer` still live off
+                        // it — so swapping back is this one line.
+                        WeekStressStripSection(vm: vm, weekOffset: $weekOffset) {
+                            route = .day($0)
+                        }
                     case .calendar:
                         scopeToggle
                         // The editorial day-by-day calendar replaces the old
@@ -130,7 +160,10 @@ struct TrainingTabView: View {
             .padding(.bottom, 40)
         }
         .background(Color.drip.background.ignoresSafeArea())
-        .task {
+        // Load when the tab becomes active, not at launch. `hasLoaded`
+        // makes re-entry a no-op, so switching back to Train is free.
+        .task(id: selectedTab.wrappedValue) {
+            guard selectedTab.wrappedValue == Self.tabIndex else { return }
             if !vm.hasLoaded { await vm.load() }
             // Load the plan so EditGoalSheet opens against the current
             // goal and the recompute soft-ask can find the active plan.
@@ -552,34 +585,6 @@ struct TrainingTabView: View {
         return LinearGradient(gradient: Gradient(stops: stops), startPoint: .leading, endPoint: .trailing)
     }()
 
-    // MARK: 8 · Felt vs Planned
-
-    @ViewBuilder
-    private var feltVsPlanned: some View {
-        let rows = vm.feltVsPlanned()
-        if !rows.isEmpty {
-            section {
-                sectionHead("EFFORT · FELT VS PLANNED", trailing: "HARD SESSIONS")
-                ForEach(rows) { r in
-                    VStack(alignment: .leading, spacing: 9) {
-                        HStack {
-                            Text("\(TrainingAnalyticsViewModel.monthDayLabel(r.date)) · \(r.typeLabel)")
-                                .font(.dripEyebrow(10)).tracking(1.0)
-                                .foregroundStyle(Color.drip.textPrimary)
-                            Spacer()
-                            Text("FELT \(r.felt) · PLANNED \(r.planned)")
-                                .font(.dripEyebrow(10)).tracking(1.0)
-                                .foregroundStyle(r.matched ? Color.drip.positive : Color.drip.coral)
-                        }
-                        FeltScale(felt: r.felt, planned: r.planned, matched: r.matched)
-                    }
-                    .padding(.vertical, 13)
-                    Hairline()
-                }
-            }
-        }
-    }
-
     // MARK: 9 · Goals (collapsed)
 
     @ViewBuilder
@@ -818,14 +823,11 @@ struct TrainingTabView: View {
     }
 
     /// "MAY 12 – 18" (or "MAY 30 – JUN 5" across a month boundary) for a week.
+    /// Moved to `TrainingAnalyticsViewModel` so the week-load section's own
+    /// nav reads the identical string. Kept as a thin forwarder rather than
+    /// updating every callsite in this file.
     private static func weekRangeLabel(_ start: Date) -> String {
-        var cal = Calendar(identifier: .iso8601)
-        cal.firstWeekday = 2
-        let end = cal.date(byAdding: .day, value: 6, to: start) ?? start
-        let startFmt = DateFormatter(); startFmt.dateFormat = "MMM d"
-        let sameMonth = cal.isDate(start, equalTo: end, toGranularity: .month)
-        let endFmt = DateFormatter(); endFmt.dateFormat = sameMonth ? "d" : "MMM d"
-        return "\(startFmt.string(from: start)) – \(endFmt.string(from: end))".uppercased()
+        TrainingAnalyticsViewModel.weekRangeLabel(start)
     }
 
     @ViewBuilder private func dayRow(_ d: DayVolume) -> some View {
@@ -1494,26 +1496,3 @@ private struct PaceHistogram: View {
     }
 }
 
-// MARK: - Felt scale
-
-private struct FeltScale: View {
-    let felt: Int
-    let planned: Int
-    let matched: Bool
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.drip.divider).frame(height: 4)
-                Rectangle().fill(Color.drip.textTertiary)
-                    .frame(width: 2, height: 12)
-                    .offset(x: geo.size.width * CGFloat(planned) / 10 - 1, y: 0)
-                Circle().fill(matched ? Color.drip.positive : Color.drip.coral)
-                    .frame(width: 12, height: 12)
-                    .offset(x: geo.size.width * CGFloat(felt) / 10 - 6, y: 0)
-            }
-            .frame(height: 12)
-        }
-        .frame(height: 12)
-    }
-}

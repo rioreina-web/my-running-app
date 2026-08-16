@@ -11,6 +11,7 @@ import {
   nearestRepDistance,
   nearestTimeRep,
   RawStreams,
+  structureHasSpeedContrast,
   WorkBout,
   workBoutCount,
 } from "./workBouts.ts";
@@ -576,4 +577,194 @@ Deno.test("workBouts: a stop cannot masquerade as a recovery that splits reps", 
   assertEquals(w.length, 1, "with no slow samples recorded, the reps read as one effort");
   assertEquals(w[0].duration_s, 643, "only the recorded seconds count");
   assertEquals(w[0].stopped_s, 90);
+});
+
+// ── The fabricated blended split (fixed 2026-08-14) ─────────────────────────
+//
+// THE RULE THESE PROTECT: every split the app shows must be something the
+// athlete actually ran. The parser is never allowed to average a rep and its
+// jog recovery together and print the blend as one split.
+//
+// What went wrong: both boundary finders were shown the WHOLE activity —
+// warmup and cooldown included. An 8:00/mi warmup is much further from a
+// 5:30/mi rep than a 6:15/mi jog recovery is, so the biggest gap in the data is
+// warmup-vs-workout, not rep-vs-recovery. The boundary landed below the jog
+// recoveries, every rep and recovery classed as "work", and the session came
+// back as ONE bout: "7.24 mi @ 5:38/mi" — a distance and a pace that exist
+// nowhere in the run. Same session with the warmup and cooldown laps removed
+// parsed correctly, which is why it only showed up on real activities.
+
+/** Per-second phase at a M:SS-per-mile pace. */
+const atPace = (paceMiles: string, meters: number) => {
+  const [m, s] = paceMiles.split(":").map(Number);
+  const vel = 1609.34 / (m * 60 + s);
+  return { vel, secs: Math.round(meters / vel) };
+};
+
+Deno.test("workBouts (GPS): a FULL session — warmup + 6×1mi w/ jog recoveries + cooldown — is not blended into one split", () => {
+  const phases = [atPace("7:40", 3218)];
+  for (let i = 0; i < 6; i++) {
+    phases.push(atPace("5:30", 1609));
+    if (i < 5) phases.push(atPace("6:15", 400)); // jog recovery, only ~12% slower
+  }
+  phases.push(atPace("8:00", 1609));
+
+  const { segments } = detectWorkBouts(buildStream(phases));
+  const w = works(segments);
+  assertEquals(w.length, 6, "six mile reps — the warmup must not swallow the boundary");
+  for (const b of w) {
+    assert(
+      b.distance_m > 1500 && b.distance_m < 1750,
+      `rep ${b.index} = ${b.distance_m}m — a rep+recovery blend would read ~2000m+`,
+    );
+  }
+});
+
+Deno.test("workBouts (GPS): three speed clusters (warmup/cooldown, jog recovery, rep) split at the REP line", () => {
+  // Warmup/cooldown ~7:40-8:00, recoveries 7:30, reps 5:30. The two TALLEST
+  // clusters here are the easy running and the reps, with the recoveries in
+  // between — the old two-tallest-modes rule found no clean valley and gave up,
+  // returning the whole 10.24 miles as one "6:25/mi" bout.
+  const phases = [atPace("7:40", 3218)];
+  for (let i = 0; i < 6; i++) {
+    phases.push(atPace("5:30", 1609));
+    if (i < 5) phases.push(atPace("7:30", 400));
+  }
+  phases.push(atPace("8:00", 1609));
+
+  const { segments } = detectWorkBouts(buildStream(phases));
+  assertEquals(works(segments).length, 6);
+});
+
+Deno.test("workBouts (GPS): a progression WITH a warmup still fabricates no recovery", () => {
+  const phases = [
+    atPace("8:00", 1609),
+    atPace("7:30", 1609),
+    atPace("7:00", 1609),
+    atPace("6:30", 1609),
+    atPace("6:00", 1609),
+  ];
+  const { segments } = detectWorkBouts(buildStream(phases));
+  assertEquals(
+    segments.filter((s) => s.kind === "recovery").length,
+    0,
+    "a run that never alternates must never be cut into reps",
+  );
+});
+
+// The same real session as MILE_REPEATS_FAST_RECOVERIES, but as the watch
+// actually recorded it — with the warmup and cooldown laps that the test
+// fixture above omits. Those two laps alone flipped the result.
+// An easy warmup and a very easy cooldown are the only difference — and they
+// are further from the reps than the jog recoveries are, which is exactly what
+// pulled the boundary to the wrong place: the whole session came back as ONE
+// bout, "7.49 mi @ 5:44/mi", with 12 of the 15 laps labelled "rep".
+const MILE_REPEATS_WITH_WARMUP: LapInput[] = [
+  { distance: 3218.68, moving_time: 1140 }, // 2mi warmup (~9:30/mi)
+  ...MILE_REPEATS_FAST_RECOVERIES,
+  { distance: 1609.34, moving_time: 600 },  // 1mi cooldown (~10:00/mi)
+];
+
+Deno.test("boutsFromLaps: warmup + cooldown laps must not blend the reps into one split", () => {
+  const { segments } = boutsFromLaps(MILE_REPEATS_WITH_WARMUP);
+  const w = lapWorks(segments);
+  assertEquals(w.length, 6, "six mile reps, exactly as without the warmup/cooldown laps");
+  for (const b of w) {
+    assert(b.distance_m > 1500 && b.distance_m < 1700, `rep ${b.index} = ${b.distance_m}m`);
+  }
+  // The tell-tale symptom: a single multi-mile bout at a pace between rep pace
+  // and jog pace.
+  assert(
+    !w.some((b) => b.distance_m > 3000),
+    "no bout may span more than one rep — that would be an invented split",
+  );
+});
+
+Deno.test("lapRoles: warmup and cooldown are labelled as such, not as reps", () => {
+  const roles = lapRoles(
+    MILE_REPEATS_WITH_WARMUP.map((l, i) => ({ ...l, lap_index: i })),
+  );
+  assertEquals(roles.length, MILE_REPEATS_WITH_WARMUP.length);
+  assertEquals(roles[0].role, "warmup");
+  assertEquals(roles[roles.length - 1].role, "cooldown");
+  assertEquals(
+    roles.filter((r) => r.role === "rep").length,
+    6,
+    "exactly the six mile reps — the recoveries are recoveries",
+  );
+  assertEquals(roles.filter((r) => r.role === "recovery").length, 5);
+});
+
+Deno.test("boutsFromLaps: a hilly steady run is never cut into reps", () => {
+  // Eight auto-lapped miles, uphill ones a minute slower. Real spread, no
+  // alternation — must stay one continuous effort.
+  const paces = ["8:00", "8:45", "9:10", "8:20", "7:50", "8:30", "8:55", "8:05"];
+  const hilly: LapInput[] = paces.map((p, i) => {
+    const [m, s] = p.split(":").map(Number);
+    const vel = 1609.34 / (m * 60 + s);
+    return { lap_index: i, distance: 1609, moving_time: Math.round(1609 / vel), average_speed: vel };
+  });
+  assert(workBoutCount(boutsFromLaps(hilly).segments) < 2, "no fabricated rep structure");
+  assertEquals(lapRoles(hilly).filter((r) => r.role === "recovery").length, 0);
+});
+
+// ── The traffic-light case (fixed 2026-08-14) ──────────────────────────────
+//
+// Waiting at a light with the watch RUNNING leaves a minute of near-zero
+// velocity in the stream, which is indistinguishable from a standing rest
+// between two reps. An easy 8-miler came back as "4 reps @ 8:00/mi" — and
+// because 4 bouts beat the athlete's own steady mile laps on count, the GPS
+// version REPLACED the laps. The laps were right the whole time.
+//
+// (Actually stopping the watch was never affected: that leaves a time gap, and
+// the stop-gap logic discounts it. See the stopped-watch tests above.)
+
+Deno.test("structureHasSpeedContrast: an easy run cut up by standing stops is NOT a workout", () => {
+  // Four stretches of the SAME easy pace, separated by standing rests.
+  const easy = { vel: 3.35, secs: 600 };
+  const light = { vel: 0.05, secs: 60 };
+  const { segments } = detectWorkBouts(
+    buildStream([easy, light, easy, light, easy, light, easy]),
+  );
+  assert(workBoutCount(segments) >= 2, "the stream really does segment — that's the trap");
+  assertEquals(
+    structureHasSpeedContrast(segments, 3.35),
+    false,
+    "every bout is the run's own pace — there is no workout here",
+  );
+});
+
+Deno.test("structureHasSpeedContrast: reps with jog recoveries ARE a workout", () => {
+  const rep = { vel: 4.85, secs: 330 };
+  const jog = { vel: 3.8, secs: 100 };
+  const { segments } = detectWorkBouts(
+    buildStream([rep, jog, rep, jog, rep, jog, rep]),
+  );
+  assert(structureHasSpeedContrast(segments, 4.4));
+});
+
+Deno.test("structureHasSpeedContrast: standing rests still count when the reps are genuinely fast", () => {
+  // A track session the watch auto-lapped by mile: rests are standing, but the
+  // reps tower over the run average, so the structure is real.
+  const rep = { vel: 5.6, secs: 130 };
+  const rest = { vel: 0.1, secs: 90 };
+  const warm = { vel: 3.2, secs: 900 };
+  const { segments } = detectWorkBouts(
+    buildStream([warm, rep, rest, rep, rest, rep, rest, rep, warm]),
+  );
+  assert(
+    structureHasSpeedContrast(segments, 3.6),
+    "fast reps against a slow run average — a real session",
+  );
+});
+
+Deno.test("derivedLapsFromStream: a traffic-light run is one lap, not four fabricated reps", () => {
+  const easy = { vel: 3.35, secs: 600, hr: 148 };
+  const light = { vel: 0.05, secs: 60, hr: 120 };
+  const laps = derivedLapsFromStream(
+    buildStreamHR([easy, light, easy, light, easy, light, easy]),
+  );
+  assertEquals(laps.length, 1, "one continuous run");
+  assertEquals(laps[0].is_rest, false);
+  assert(laps[0].distance > 7000, "spans the whole run");
 });

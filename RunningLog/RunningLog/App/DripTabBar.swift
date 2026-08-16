@@ -33,14 +33,18 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The three canonical tabs — **Log · Trends · Train** — input →
-/// overview → detail.
+/// The canonical tabs — **Log · Train · Trends · Charts** — input → what it
+/// did → overview → instruments. (Charts is the data-viz card prototype
+/// surface added 2026-08-08; the settled IA before it was the three-tab
+/// Log · Train · Trends.)
 ///
 /// Raw values match the integer tags `MainTabView` uses for `selectedTab`
 /// (the bar binds to `Binding<Int>`, so tags stay stable across IA
 /// changes — `CoachReadView` jumps to tag 1 (Train) and still works).
-/// Trends keeps its historical non-contiguous tag 4 but is *declared*
-/// second so `allCases` (declaration order) renders it in the second slot.
+/// ORDER COMES FROM DECLARATION ORDER, NOT FROM THE RAW VALUES: `allCases`
+/// walks the cases as written, which is why Trends keeps its historical
+/// non-contiguous tag 4 while sitting third. Reordering the bar means
+/// moving a `case` line, never renumbering one.
 ///
 /// Retired in Phase A: `training2` (6, evaluation calendar — its
 /// treatments were absorbed into Train's CALENDAR mode), `signal`
@@ -53,6 +57,13 @@ import UIKit
 /// a pushed screen without rebuilding it.
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
+    /// Declared second as of 2026-08-11, so `allCases` renders Train in the
+    /// slot beside Log. Log is where a run goes in and Train is where it
+    /// lands — putting Trends and Read between them meant the two halves of
+    /// one action sat at opposite ends of the bar. Tag 1 is unchanged, so
+    /// every existing jump-to-tab call site (e.g. `CoachReadView` → tag 1)
+    /// still arrives here.
+    case training = 1
     case trends = 4
     #if DEBUG
     /// The Read (`TrendsReadView`) — the story-and-month surface, run
@@ -64,7 +75,32 @@ enum DripTab: Int, CaseIterable, Identifiable {
     /// reusing one would make old jump-to-tab call sites land here.
     case read = 7
     #endif
-    case training = 1
+    /// The Instruments (`InstrumentsTabView`) — the expandable data-viz
+    /// card prototype (volume · threshold · efficiency · mood · heat ·
+    /// sessions · reps · head-to-head · mood × load · race predictions),
+    /// added 2026-08-08 as a fourth tab while the beta's viz language is
+    /// being decided. Mock data only; nothing here fetches.
+    ///
+    /// Tag 8 is fresh — 2, 3, 5 and 6 are retired tags (see above) and 7
+    /// belongs to the DEBUG-only Read.
+    case instruments = 8
+    /// The Sheet (`SheetTabView`) — the dense session table, added 2026-08-11.
+    /// One row per SESSION (not per day and not per upload — see
+    /// `SessionRollup.swift`), week-grouped, with tag chips and search.
+    ///
+    /// Declared last so the four established tabs keep their slots and their
+    /// muscle memory. Moving it beside Log is a one-line change: move this
+    /// `case` up, never renumber it.
+    ///
+    /// Tag 9 is fresh — 2, 3, 5 and 6 are retired tags (see above), 7 belongs
+    /// to the DEBUG-only Read and 8 to Charts.
+    ///
+    /// IA COST: this makes the release bar five tabs, six in DEBUG. At 393pt
+    /// that is ~78pt per item (~65pt in DEBUG) against a 44pt minimum touch
+    /// target — it fits, but the bar is now full. The next tab should replace
+    /// one, not widen the bar again; `instruments` is the stated candidate
+    /// (its own comment says to remove it when the cards graduate).
+    case sheet = 9
 
     var id: Int { rawValue }
 
@@ -82,6 +118,8 @@ enum DripTab: Int, CaseIterable, Identifiable {
         case .read: "Read"
         #endif
         case .training: "Train"
+        case .instruments: "Charts"
+        case .sheet: "Sheet"
         }
     }
 

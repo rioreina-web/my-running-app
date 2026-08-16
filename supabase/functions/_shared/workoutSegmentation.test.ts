@@ -26,17 +26,68 @@ Deno.test("paceWeight: exact anchor paces return their knot weight", () => {
   assertEquals(paceWeight(272, a), 8.0); // mile
   assertEquals(paceWeight(302, a), 5.5); // 5k
   assertEquals(paceWeight(343, a), 2.5); // mp
-  assertEquals(paceWeight(362, a), 1.5); // steady — an explicit knot again
+  assertEquals(paceWeight(362, a), 2.15); // steady — an explicit knot again
+  assertEquals(paceWeight(405, a), 1.4); // moderate
   assertEquals(paceWeight(429, a), 1.0); // easy
+});
+
+Deno.test("paceWeight: no slope cliff at steady (2026-08-11 reweight)", () => {
+  const a = buildZoneAnchors(ZONES);
+  // Weight per sec/mi across each segment of the low end. Before the reweight
+  // steady→mp was 0.0562 against 0.0060 for moderate→steady — a 9x jump that
+  // made the score hypersensitive to small pace changes near MP. The curve must
+  // now steepen MONOTONICALLY as pace gets faster, with no segment more than 2x
+  // its slower neighbour.
+  const slope = (slow: number, fast: number) =>
+    (paceWeight(fast, a) - paceWeight(slow, a)) / (slow - fast);
+  const easyMod = slope(429, 405);
+  const modSteady = slope(405, 362);
+  const steadyMp = slope(362, 343);
+  assert(easyMod < modSteady, `easy→mod ${easyMod} should be < mod→steady ${modSteady}`);
+  assert(modSteady < steadyMp, `mod→steady ${modSteady} should be < steady→mp ${steadyMp}`);
+  assert(steadyMp / modSteady < 2, `steady→mp ${steadyMp} is a cliff vs ${modSteady}`);
 });
 
 Deno.test("paceWeight: interpolates continuously between zones", () => {
   const a = buildZoneAnchors(ZONES);
   const near = (x: number, want: number) => assert(Math.abs(x - want) < 0.02, `${x} vs ${want}`);
-  // 308 sits midway between 5k(302→5.5) and 10k(314→4.0): 4.75.
-  near(paceWeight(308, a), 4.75);
-  // 353 sits between mp(343→2.5) and steady(362→1.5): ~1.97.
-  near(paceWeight(353, a), 1.97);
+  // (2026-08-13) Values moved slightly when straight-line interpolation became a
+  // monotone cubic. The knots are unchanged; only the path BETWEEN them curves,
+  // so a midpoint no longer lands on the arithmetic mean of its two anchors.
+  // 308 sits midway between 5k(302→5.5) and 10k(314→4.0). Linear said 4.75.
+  near(paceWeight(308, a), 4.71);
+  // 353 sits between mp(343→2.5) and steady(362→2.15). Linear said 2.32.
+  near(paceWeight(353, a), 2.29);
+});
+
+Deno.test("paceWeight: the curve has no corners — slope is continuous at every knot", () => {
+  const a = buildZoneAnchors(ZONES);
+  // The reason for the monotone cubic. Linear interpolation is continuous in
+  // VALUE but breaks in SLOPE at each anchor — worst at MP, where the rate of
+  // change leapt 64%. Sample the derivative either side of every interior knot;
+  // no knot may break it by more than 5%.
+  // Sample the one-sided derivatives CLOSE to the knot — far enough out and the
+  // curve's own (intended) curvature dominates and the measurement is
+  // meaningless. 0.05 sec/mi either side isolates the break itself.
+  const deriv = (p: number) => (paceWeight(p + 0.005, a) - paceWeight(p - 0.005, a)) / 0.01;
+  for (const knot of [302, 314, 328, 343, 362, 405]) {
+    const before = Math.abs(deriv(knot - 0.05));
+    const after = Math.abs(deriv(knot + 0.05));
+    const brk = Math.abs(before - after) / Math.max(before, after);
+    assert(brk < 0.05, `slope breaks ${(brk * 100).toFixed(0)}% at knot ${knot}`);
+  }
+});
+
+Deno.test("paceWeight: monotone — a slower pace never scores higher", () => {
+  const a = buildZoneAnchors(ZONES);
+  // Fritsch–Carlson guarantees no overshoot. A natural cubic spline would bulge
+  // on the sharp 10K→5K transition and could invert the ordering here.
+  let prev = Infinity;
+  for (let p = 260; p <= 440; p += 0.25) {
+    const w = paceWeight(p, a);
+    assert(w <= prev + 1e-9, `weight rose at ${p} sec/mi (${w} > ${prev})`);
+    prev = w;
+  }
 });
 
 Deno.test("paceWeight: reps faster than mile extrapolate ABOVE the mile weight", () => {

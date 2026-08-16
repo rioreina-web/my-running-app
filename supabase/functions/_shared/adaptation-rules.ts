@@ -147,7 +147,7 @@ export function rule_paceConsistentlyUnder(ctx: RuleContext): AdaptationProposal
 
 /** ≥2 quality sessions skipped in last 7 days → pause quality next 7 days. */
 export function rule_missedSessions(ctx: RuleContext): AdaptationProposal[] {
-  const QUALITY = new Set(["tempo", "intervals", "long_run", "race", "progression"]);
+  const QUALITY = new Set(["threshold", "tempo", "intervals", "interval", "fartlek", "long_run", "long_wo", "race", "progression"]);
   const missed = ctx.currentPlanWorkouts.filter(
     (w) => QUALITY.has(w.workout_type) && w.status === "skipped" && inSevenDays(w.date)
   );
@@ -229,7 +229,7 @@ export function rule_volumeRampRisk(ctx: RuleContext): AdaptationProposal[] {
 
 /** Forecast shows dew point > 68°F on 3+ scheduled quality sessions → propose swap. */
 export function rule_heatForecast(ctx: RuleContext): AdaptationProposal[] {
-  const QUALITY = new Set(["tempo", "intervals", "long_run", "race", "progression"]);
+  const QUALITY = new Set(["threshold", "tempo", "intervals", "interval", "fartlek", "long_run", "long_wo", "race", "progression"]);
   const hotDays = new Set(ctx.forecast14d.filter((f) => f.dew_point_f > 68).map((f) => f.date));
   const affected = ctx.currentPlanWorkouts.filter(
     (w) => QUALITY.has(w.workout_type) && hotDays.has(w.date)

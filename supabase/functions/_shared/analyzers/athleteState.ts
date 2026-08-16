@@ -27,8 +27,19 @@ export interface PredictionRange {
   point?: number | null;
 }
 
+/**
+ * The exact keys `athlete-state.ts` writes into `fitness_prediction.ranges`.
+ *
+ * Spelled out rather than `Record<string, …>` because an open index cannot
+ * catch a typo: `currentFitness` read `ranges["10k"]` against stored `"10K"`
+ * for its whole first day in production and silently rendered no capacity at
+ * all — a lowercase miss that compiled fine. Keep this union in lockstep with
+ * the writer (athlete-state.ts, the `fitnessPrediction` literal).
+ */
+export type RaceRangeKey = "mile" | "5K" | "10K" | "half" | "marathon";
+
 export interface FitnessPrediction {
-  ranges?: Record<string, PredictionRange> | null;
+  ranges?: Partial<Record<RaceRangeKey, PredictionRange | null>> | null;
   workout_count?: number | null;
   confidence_tier?: string | null;
 }

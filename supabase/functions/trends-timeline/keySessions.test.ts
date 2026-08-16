@@ -132,10 +132,10 @@ Deno.test("quality_load: weighted work-minutes, rest + easy excluded", () => {
     easy(6),      // excluded from load
   ];
   const s = deriveKeySession(LOG, laps, undefined, ZONES)!;
-  // Same three 5k work bouts the pace test asserts (zone = 5k → weight 4.0).
-  // Load = Σ(bout sec × 4.0) / 60, over work bouts only.
+  // Same three 5k work bouts the pace test asserts (zone = 5k → weight 5.5).
+  // Load = Σ(bout sec × 5.5) / 60, over work bouts only.
   const workSec = movSecs(1000, 358) + movSecs(1000, 360) + movSecs(1000, 365);
-  const expected = Math.round((workSec * 4.0 / 60) * 10) / 10;
+  const expected = Math.round((workSec * 5.5 / 60) * 10) / 10;
   assertEquals(s.quality_load, expected);
   assert(s.quality_load > 0, "a real rep session carries load");
 });

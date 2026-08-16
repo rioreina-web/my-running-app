@@ -56,11 +56,12 @@ Deno.test("hard-session classification: always-hard types, parsed type, long_run
   ];
   const m = run(logs);
   assertEquals(m.hardSessions7d, 3);
-  // easySessions counts by RAW workout_type only (independent of hard
-  // classification): id2 is workout_type "easy" so it counts here too, even
-  // though it's parsed as an interval and counted as hard above. Preserved
-  // quirk from the original inline logic.
-  assertEquals(m.easySessions7d, 3); // id2 (easy) + id4 (easy) + id5 (recovery)
+  // A run can't be both. `isEasySession` short-circuits on `isHardSession`,
+  // so id2 — workout_type "easy" but parsed as an interval — counts HARD and
+  // is excluded here. (This assertion said 3 and had been failing on main
+  // since the "Easy counting mirrors isHardSession" rewrite; corrected
+  // 2026-08-10.)
+  assertEquals(m.easySessions7d, 2); // id4 (easy) + id5 (recovery)
 });
 
 Deno.test("long_run counts as hard when run faster than 80% MP effort (pace ≤ MP×1.25)", () => {

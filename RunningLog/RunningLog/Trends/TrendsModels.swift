@@ -136,6 +136,211 @@ struct TrendsDay: Identifiable {
     /// unmeasured day are different facts.
     var stressLoad: Double? = nil
 
+    // Per-zone breakdown of the day (additive, 2026-08-10). Source:
+    // `trends-timeline` → `days[].zone_minutes` / `zone_miles`, built from
+    // every `Bout` that `segmentFromLaps` returns.
+    //
+    // This is the only surface carrying the FULL ten-zone taxonomy per day.
+    // `keyVolume` (`quality_volume`) is weekly and filters to work zones, so
+    // it reports nothing at all for a 12-mile easy day; `type` above is one
+    // coarse channel for the calendar. Neither answers "where did this day's
+    // volume actually sit on the pace spectrum".
+    //
+    // Keyed by the raw zone token, so the vocabulary stays owned by
+    // `workoutSegmentation.ts` and this model never has to be edited when a
+    // zone is added. Zones with no volume are absent, not zero — `.keys` is
+    // the list of zones actually run.
+
+    /// Minutes per pace zone, or nil when the day carries no breakdown.
+    var zoneMinutes: [String: Double]? = nil
+    /// Miles per pace zone, paired with `zoneMinutes` so a caller can derive a
+    /// real average pace per zone (Σ time ÷ Σ distance) instead of averaging
+    /// per-run averages.
+    var zoneMiles: [String: Double]? = nil
+    /// Weighted minutes (TLS) per zone, summed per BOUT off the backend's
+    /// continuous `paceWeight` curve. Prefer this over multiplying `zoneMinutes`
+    /// by `TrendsZoneWeight` — the table is ten steps, the curve is what those
+    /// steps sample, and it keeps climbing past the mile anchor. nil against a
+    /// payload predating the field; callers fall back to the table.
+    var zoneLoad: [String: Double]? = nil
+
+    /// True when this day has a per-zone breakdown to render.
+    ///
+    /// The three states a caller must tell apart, because they read very
+    /// differently to an athlete:
+    ///   • `miles == 0`                        → a rest day. Nothing to show.
+    ///   • `miles > 0 && !hasZoneBreakdown`    → ran, but the run arrived with
+    ///     no laps (manual entry, or an import without splits). We cannot say
+    ///     how it was distributed, and must not guess.
+    ///   • `miles > 0 && hasZoneBreakdown`     → the real thing.
+    var hasZoneBreakdown: Bool { !(zoneMinutes?.isEmpty ?? true) }
+
+    // The same day, unrolled (additive, 2026-08-11). Source:
+    // `trends-timeline` → `days[].runs`. Everything above is this day summed;
+    // this is what it was summed from. Empty on a rest day, AND on any payload
+    // from a deploy predating the field — so a caller must treat "no runs" as
+    // "cannot say", never as "did not run", and fall back to `miles`.
+
+    /// This day's runs, chronological by start time. These are UPLOADS, one per
+    /// watch activity — a track session logged as warm-up / reps / cool-down is
+    /// three of them. Most display surfaces want `sessions(from:)` instead.
+    var runs: [Run] = []
+
+    /// Fold uploads into the runs a person would say they did.
+    ///
+    /// An athlete who stops their watch between the warm-up, the session and
+    /// the cool-down has done ONE run and uploaded three. Drawn literally that
+    /// is three bars a few minutes apart, which is both visually crowded and
+    /// factually misleading — the 6:29am "run" was 40 minutes, not the 12 the
+    /// middle upload claims.
+    ///
+    /// The gap threshold is `SessionRollup.sessionGapMinutes`, NOT a new
+    /// constant: The Sheet already had to answer "what is one session", and two
+    /// surfaces disagreeing about it is worse than either answer being slightly
+    /// off. It is measured from the END of the previous piece, so a long warm-up
+    /// does not eat the allowance, and at 90 minutes a genuine double (a
+    /// morning and an evening run, hours apart) still splits.
+    static func sessions(from runs: [Run]) -> [Run] {
+        let ordered = runs.sorted { $0.startedAt < $1.startedAt }
+        var out: [Run] = []
+        for run in ordered {
+            guard var last = out.last else { out.append(run); continue }
+            let prevEnd = last.startedAt.addingTimeInterval(last.durationSec)
+            let gapMin = run.startedAt.timeIntervalSince(prevEnd) / 60
+            guard gapMin <= SessionRollup.sessionGapMinutes else {
+                out.append(run); continue
+            }
+            // Merge into the piece already there. The session keeps the FIRST
+            // piece's id and start — the id so selection survives a refetch
+            // (same convention as `TrainingSession`), the start because that is
+            // when the athlete began running.
+            last.durationSec += run.durationSec   // running time, so the gaps
+            last.miles += run.miles               // are excluded, as they should be
+            last.pieceCount += run.pieceCount
+            last.zoneMinutes = Self.merge(last.zoneMinutes, run.zoneMinutes)
+            last.zoneMiles = Self.merge(last.zoneMiles, run.zoneMiles)
+            last.zoneLoad = Self.merge(last.zoneLoad, run.zoneLoad)
+            out[out.count - 1] = last
+        }
+        return out
+    }
+
+    /// Sum two optional zone maps. Nil + nil stays nil — "no breakdown" must
+    /// not become "an empty breakdown", which the client renders differently.
+    private static func merge(_ a: [String: Double]?,
+                              _ b: [String: Double]?) -> [String: Double]? {
+        guard a != nil || b != nil else { return nil }
+        var out = a ?? [:]
+        for (k, v) in b ?? [:] { out[k, default: 0] += v }
+        return out
+    }
+
+    /// One run inside a day. Carries the two things the day rollup destroys:
+    /// **when it started**, and **which zones belong to which run**.
+    struct Run: Identifiable {
+        /// `training_logs.id`. Stable across fetches, so it is also the
+        /// selection key for a view that opens one run at a time.
+        let id: UUID
+        /// The run's start time as an instant. Time-of-day must be read from
+        /// this with `minuteOfDay`, never with a shared `Calendar.current` —
+        /// see that property.
+        let startedAt: Date
+        /// The offset the payload actually stated, in seconds — and **nil when
+        /// it stated nothing usable**, which is the common case: `TIMESTAMPTZ`
+        /// flattens everything to `+00:00` on write, so a zero offset is
+        /// Postgres, not a fact about the athlete.
+        ///
+        /// Deliberately NOT pre-resolved to "the offset to use". Baking the
+        /// fallback in at decode time meant changing the Settings timezone left
+        /// every already-decoded run at its old position until the next fetch —
+        /// the setting appeared not to work. Storing only what was stated, and
+        /// resolving in `minuteOfDay`, makes the whole app follow the setting
+        /// the instant it changes.
+        let statedOffsetSeconds: Int?
+        // `var` from here down because `sessions(from:)` accumulates a session
+        // into its first piece. `id`, `startedAt` and the offset stay `let`:
+        // those are the session's identity and are taken from the first upload,
+        // never summed.
+        /// Wall-clock SECONDS. Seconds rather than minutes because a run is
+        /// 42:13 and an athlete checks that against their watch — rounding to
+        /// the minute throws away the only digits they would verify.
+        var durationSec: Double
+        var miles: Double
+        var zoneMinutes: [String: Double]? = nil
+        var zoneMiles: [String: Double]? = nil
+        /// See `TrendsDay.zoneLoad`.
+        var zoneLoad: [String: Double]? = nil
+        /// How many uploads were folded into this one. 1 for a plain run; 3 for
+        /// the everyday warm-up / session / cool-down trio. See
+        /// `TrendsDay.sessions(from:)`.
+        var pieceCount: Int = 1
+
+        var hasZoneBreakdown: Bool { !(zoneMinutes?.isEmpty ?? true) }
+
+        /// Minutes past local midnight, 0...1439 — the run's position on a
+        /// 24-hour day.
+        ///
+        /// A stated offset wins; otherwise the athlete's Settings timezone,
+        /// falling back to the device. `AthleteTimeZone` owns that ladder — do
+        /// not reach for `TimeZone.current` at a call site, or the Settings
+        /// choice silently stops applying to whatever you are building.
+        ///
+        /// Where no offset was stated this is a resolved best guess, not a
+        /// recorded fact. Prefer `partOfDay` over `clockLabel` anywhere the app
+        /// would be asserting something it cannot stand behind.
+        var minuteOfDay: Int {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = statedOffsetSeconds.flatMap { TimeZone(secondsFromGMT: $0) }
+                ?? AthleteTimeZone.resolved
+            let c = cal.dateComponents([.hour, .minute], from: startedAt)
+            return min(1439, max(0, (c.hour ?? 0) * 60 + (c.minute ?? 0)))
+        }
+
+        /// The calendar day this run belongs to, in the athlete's own timezone.
+        /// Resolved through the SAME ladder as `minuteOfDay`, so the day a run
+        /// is filed under and the position it takes inside that day can never
+        /// disagree.
+        ///
+        /// The payload's `days[].date` key is a UTC date (`dayUTC` in
+        /// `trends-timeline/timeline.ts`), which is a different question from
+        /// the one the strip asks. A run started 7:26pm in Chicago is 00:26Z
+        /// the NEXT day: it arrived filed under tomorrow while `minuteOfDay`
+        /// correctly read 19:26, so it drew late in the evening of the wrong
+        /// slot — and the day totals disagreed with the list above the chart,
+        /// which buckets locally via `TrainingAnalyticsViewModel.split(forDay:)`.
+        /// Anything that files a run under a DAY must use this, not the key it
+        /// arrived under.
+        var localDay: Date {
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = statedOffsetSeconds.flatMap { TimeZone(secondsFromGMT: $0) }
+                ?? AthleteTimeZone.resolved
+            return cal.startOfDay(for: startedAt)
+        }
+
+        /// What the strip's x-position actually claims. The chart has no hour
+        /// axis, so anywhere the app says *when* in words, it says this and
+        /// not a clock reading estimated off the picture.
+        var partOfDay: String {
+            switch minuteOfDay {
+            case ..<(5 * 60):   return "Night"
+            case ..<(11 * 60):  return "Morning"
+            case ..<(14 * 60):  return "Midday"
+            case ..<(18 * 60):  return "Afternoon"
+            case ..<(20 * 60):  return "Evening"
+            default:            return "Night"
+            }
+        }
+
+        /// "6:05am". The exact time, for the panel — where it is read rather
+        /// than measured.
+        var clockLabel: String {
+            let m = minuteOfDay
+            let h24 = m / 60
+            let h = h24 % 12 == 0 ? 12 : h24 % 12
+            return "\(h):" + String(format: "%02d", m % 60) + (h24 < 12 ? "am" : "pm")
+        }
+    }
+
     /// The session channel the calendar colours by — **not** a pace zone. Per
     /// the calendar encoding: `key` gets the coral accent, `long` its own dark-
     /// grey channel (precedence over key), `easy` light grey, `rest` no run.

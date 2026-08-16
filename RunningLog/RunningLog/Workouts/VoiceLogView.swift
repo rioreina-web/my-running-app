@@ -169,9 +169,16 @@ struct VoiceLogView: View {
         .onAppear {
             setupAudioSession()
             Task {
-                _ = await healthKitManager.requestAuthorization()
-                let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-                await MainActor.run { healthKitManager.recentWorkouts = workouts }
+                // HealthKit auth + the recent-workouts fetch happen ONCE, in
+                // the launch task (RunningLogApp), which publishes into
+                // `healthKitManager.recentWorkouts`. Re-requesting here raced
+                // the launch task's auth call and doubled the query. Only
+                // fetch if the launch task hasn't populated the list yet
+                // (e.g. auth was granted after launch).
+                if healthKitManager.recentWorkouts.isEmpty {
+                    let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
+                    await MainActor.run { healthKitManager.recentWorkouts = workouts }
+                }
                 await viewModel.loadHistory()
             }
         }
@@ -1062,37 +1069,51 @@ struct ProcessingLogCard: View {
         )
     }
 
-    /// Failed state: plain headline + reassuring detail + a clear
-    /// tap-to-retry control, with copy matched to the failure kind.
+    /// Failed state: plain headline + reassuring detail, with copy matched to
+    /// the failure kind. Interactive only when a manual retry can actually
+    /// help — during a provider outage the queue is already retrying, so the
+    /// same copy renders as a passive status line rather than a button that
+    /// cannot succeed.
+    @ViewBuilder
     private var failedContent: some View {
-        Button(action: onRetry) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(log.failureHeadline)
-                    .font(.dripCaption(12))
-                    .foregroundStyle(Color.drip.tired)
-
-                Text(log.failureDetail)
-                    .font(.dripBody(13))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.leading)
-
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(log.retryActionLabel)
-                        .font(.dripCaption(11))
-                }
-                .foregroundStyle(Color.drip.tired)
-                .padding(.top, 2)
+        if log.offersManualRetry {
+            Button(action: onRetry) {
+                failedBody
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(log.failureHeadline). \(log.failureDetail)")
+            .accessibilityHint("Double tap to retry")
+        } else {
+            failedBody
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(log.failureHeadline). \(log.failureDetail)")
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(log.failureHeadline). \(log.failureDetail)")
-        .accessibilityHint("Double tap to retry")
+    }
+
+    private var failedBody: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(log.failureHeadline)
+                .font(.dripCaption(12))
+                .foregroundStyle(Color.drip.tired)
+
+            Text(log.failureDetail)
+                .font(.dripBody(13))
+                .foregroundStyle(Color.drip.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+
+            HStack(spacing: 6) {
+                Image(systemName: log.offersManualRetry ? "arrow.clockwise" : "clock")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(log.retryActionLabel)
+                    .font(.dripCaption(11))
+            }
+            .foregroundStyle(log.offersManualRetry ? Color.drip.tired : Color.drip.textSecondary)
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 

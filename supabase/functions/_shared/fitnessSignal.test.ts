@@ -188,3 +188,113 @@ Deno.test("sessions outside the 84-day scan window are ignored", () => {
   const easy = sig.efficiency.find((e) => e.bucket === "easy");
   assertEquals(easy, undefined);
 });
+
+// ── Heat normalization (2026-08-15) ──────────────────────────────────────
+//
+// The bug these pin: EF divided by RAW pace, so a hot recent window read as
+// lost fitness. On the calibration athlete the recent 28d averaged 13.0 s/mi
+// of heat cost against the baseline's 11.6, and threshold landed at +1.40%
+// against a 1.5% direction gate.
+
+/** An easy mile that also carries a neutral-day equivalent pace. */
+const easyMileHeat = (
+  pace: number, neutral: number, hr: number, i: number,
+): LapInput => ({
+  lap_index: i, is_rest: false, distance_meters: 1609.344,
+  avg_pace_sec_per_mile: pace, moving_time_seconds: pace, avg_heart_rate: hr,
+  heat_adjusted_pace_sec_per_mile: neutral,
+});
+
+const easySessionHeat = (
+  miles: number, pace: number, neutral: number, hr: number,
+): LapInput[] =>
+  Array.from({ length: miles }, (_, k) => easyMileHeat(pace, neutral, hr, k + 1));
+
+Deno.test("heat: an equally-fit athlete running hotter no longer reads as declining", () => {
+  // Same HR, same neutral-air capability (450 s/mi) in both windows. The only
+  // difference is that recent runs cost 20 s/mi of heat and baseline cost 5.
+  const sessions: SessionInput[] = [
+    { date: dateDaysAgo(70), laps: easySessionHeat(6, 455, 450, 148) },
+    { date: dateDaysAgo(60), laps: easySessionHeat(6, 455, 450, 148) },
+    { date: dateDaysAgo(10), laps: easySessionHeat(6, 470, 450, 148) },
+    { date: dateDaysAgo(4), laps: easySessionHeat(6, 470, 450, 148) },
+  ];
+  const easy = computeFitnessSignal(sessions, ZONES, NOW)
+    .efficiency.find((e) => e.bucket === "easy");
+  assert(easy, "expected an easy bucket");
+  // Corrected, the two windows are identical → flat, ~0% delta.
+  assertEquals(easy.direction, "flat");
+  assert(
+    Math.abs(easy.ef_delta_pct) < 0.5,
+    `heat-corrected EF should be ~0%, got ${easy.ef_delta_pct}%`,
+  );
+  // The reported paces stay the ones actually run — never the neutral pair.
+  assertEquals(easy.pace_recent_sec, 470);
+  assertEquals(easy.pace_baseline_sec, 455);
+  assertEquals(easy.pace_recent_neutral_sec, 450);
+  assertEquals(easy.pace_baseline_neutral_sec, 450);
+  assertEquals(easy.heat_coverage_recent_pct, 100);
+});
+
+Deno.test("heat: real improvement still reads as improving once corrected", () => {
+  // Recent is hotter AND genuinely faster in neutral air (450 → 430) at the
+  // same HR. Raw pace would show only 455 → 465 (slower); EF must see the gain.
+  const sessions: SessionInput[] = [
+    { date: dateDaysAgo(70), laps: easySessionHeat(6, 455, 450, 148) },
+    { date: dateDaysAgo(60), laps: easySessionHeat(6, 455, 450, 148) },
+    { date: dateDaysAgo(10), laps: easySessionHeat(6, 465, 430, 148) },
+    { date: dateDaysAgo(4), laps: easySessionHeat(6, 465, 430, 148) },
+  ];
+  const easy = computeFitnessSignal(sessions, ZONES, NOW)
+    .efficiency.find((e) => e.bucket === "easy");
+  assert(easy, "expected an easy bucket");
+  assertEquals(easy.direction, "improving");
+  assert(easy.ef_delta_pct > 4, `expected a clear gain, got ${easy.ef_delta_pct}%`);
+});
+
+Deno.test("heat: undecorated laps are unchanged — the correction is a no-op, not a guess", () => {
+  // No heat_adjusted_pace on any lap: EF must equal the raw-pace answer, and
+  // coverage must report 0 so a surface can see the trend is un-corrected.
+  const sessions: SessionInput[] = [
+    { date: dateDaysAgo(70), laps: easySession(6, 450, 150) },
+    { date: dateDaysAgo(60), laps: easySession(6, 450, 150) },
+    { date: dateDaysAgo(10), laps: easySession(6, 450, 144) },
+    { date: dateDaysAgo(4), laps: easySession(6, 450, 144) },
+  ];
+  const easy = computeFitnessSignal(sessions, ZONES, NOW)
+    .efficiency.find((e) => e.bucket === "easy");
+  assert(easy, "expected an easy bucket");
+  // Same pace, lower HR → more efficient, exactly as before the change.
+  assertEquals(easy.direction, "improving");
+  assertEquals(easy.heat_coverage_recent_pct, 0);
+  assertEquals(easy.heat_coverage_baseline_pct, 0);
+  assertEquals(easy.pace_recent_neutral_sec, easy.pace_recent_sec);
+});
+
+Deno.test("heat: partial coverage degrades lap by lap and is reported", () => {
+  // Half the recent miles carry a stamp, half don't. The undecorated half runs
+  // at 460 — deliberately inside the easy zone (the recovery cutoff is 429 ×
+  // 1.09 = 467.6), because an undecorated 470 would classify as recovery and
+  // drop out of the pool entirely, which is correct behaviour but a different
+  // test. Here we want both halves pooled so coverage is genuinely partial.
+  const mixed = [
+    ...easySessionHeat(3, 470, 450, 148),
+    ...easySession(3, 460, 148).map((l, k) => ({ ...l, lap_index: k + 4 })),
+  ];
+  const sessions: SessionInput[] = [
+    { date: dateDaysAgo(70), laps: easySessionHeat(6, 455, 450, 148) },
+    { date: dateDaysAgo(60), laps: easySessionHeat(6, 455, 450, 148) },
+    { date: dateDaysAgo(10), laps: mixed },
+    { date: dateDaysAgo(4), laps: mixed },
+  ];
+  const easy = computeFitnessSignal(sessions, ZONES, NOW)
+    .efficiency.find((e) => e.bucket === "easy");
+  assert(easy, "expected an easy bucket");
+  assertEquals(easy.heat_coverage_recent_pct, 50);
+  assertEquals(easy.heat_coverage_baseline_pct, 100);
+  // Neutral pace lands between the credited 450 and the uncredited 470.
+  assert(
+    easy.pace_recent_neutral_sec > 450 && easy.pace_recent_neutral_sec < 470,
+    `expected a blended neutral pace, got ${easy.pace_recent_neutral_sec}`,
+  );
+});

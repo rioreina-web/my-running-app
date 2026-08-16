@@ -308,7 +308,7 @@ struct ThresholdBandTests {
 /// these, and a control that names a range the chart beneath it is not drawing
 /// is the exact confusion the single-time-control rule exists to prevent.
 @Suite("Trends window")
-struct TrendsWindowTests {
+struct TrendsWindowPresetTests {
 
     /// Every preset reads in months or years. "30 D" sat in a row with
     /// "3 MO / 6 MO / 1 YR" as the only member in a different unit.

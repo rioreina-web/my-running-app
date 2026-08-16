@@ -319,7 +319,8 @@ struct TrendsV2View: View {
                     TrendsRecoveryLedgerView(
                         ledger: ledger,
                         previous: previousScore(for: set),
-                        onSeeTrend: { jump(proxy, to: "signals") }
+                        onSeeTrend: { jump(proxy, to: "signals") },
+                        onSleepLogged: { Task { await service.refresh(force: true) } }
                     )
                 } else {
                     EmptyStateView(

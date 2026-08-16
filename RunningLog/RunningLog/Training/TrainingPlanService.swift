@@ -300,7 +300,10 @@ final class TrainingPlanService {
             // it. Done here rather than fetched by the store, because the plan
             // is already loaded and a second fetch is how two versions of the
             // truth start.
-            await KeySessionStore.shared.ingestPlanIntent(
+            // No `await`: ingestPlanIntent is @MainActor but synchronous, and
+            // this function is already @MainActor — so there is no hop to
+            // suspend for, and the keyword only reads as if there were.
+            KeySessionStore.shared.ingestPlanIntent(
                 workouts.map { (date: $0.date, isKey: $0.isKeySession) }
             )
 
@@ -325,7 +328,7 @@ final class TrainingPlanService {
             let iso = ISO8601DateFormatter()
             return (try? await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("user_id", value: logUserId)
                 .not("workout_date", operator: .is, value: "null")
                 .gte("workout_date", value: iso.string(from: bufferStart))
@@ -390,7 +393,7 @@ final class TrainingPlanService {
             let userId = AuthManager.shared.userId
             let entries: [TrainingLog] = try await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("user_id", value: userId)
                 .gte("workout_date", value: iso.string(from: dayStart))
                 .lt("workout_date", value: iso.string(from: dayEnd))

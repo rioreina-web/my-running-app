@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mood — last 30 days</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-line:rgba(212,89,42,.30);
+  /* mood — the only place green is allowed */
+  --m-energized:#2F7F52; --m-positive:#4A9E6B; --m-neutral:#9B9590;
+  --m-tired:#C4873A; --m-struggling:#C45A3A; --m-injured:#B83A4A;
+  --m-none:#DDD8D2;
+  /* load — achromatic graphite. Blue stays reserved for pace. */
+  --vol:#8C857C; --vol-soft:#BDB6AD; --tls:#57504A; --wvol:#A39B92;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#DEDAD4;color:var(--ink);font-family:var(--fb);
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 24px 72px}
+.eyebrow{font-family:var(--fm);font-size:11px;letter-spacing:.12em;color:var(--ink-2);
+  text-transform:uppercase}
+.display{font-family:var(--fd);font-weight:700;letter-spacing:-.01em;line-height:1.06;margin:0}
+.micro{font-family:var(--fm);font-size:9px;letter-spacing:.12em;color:var(--ink-3);
+  text-transform:uppercase}
+
+header.top{border-bottom:2px solid var(--ink);padding-bottom:18px;margin-bottom:28px}
+header.top h1{font-size:34px;margin-top:9px}
+header.top p{font-size:15px;line-height:1.6;max-width:64ch;margin:12px 0 0;color:#3D3934}
+
+.stage{display:flex;gap:36px;align-items:flex-start;flex-wrap:wrap}
+
+/* ---------- phone ---------- */
+.phone{width:390px;height:800px;background:var(--paper);border-radius:34px;border:1px solid #DAD5CF;
+  box-shadow:0 8px 30px rgba(0,0,0,.12);overflow:hidden;display:flex;flex-direction:column;flex:0 0 auto}
+.status{height:34px;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 22px 4px;font-family:var(--fm);font-size:11px;flex:0 0 auto}
+.screen{flex:1;overflow-y:auto;padding:0 20px 24px;scrollbar-width:thin}
+.screen::-webkit-scrollbar{width:5px}
+.screen::-webkit-scrollbar-thumb{background:#DAD5CF;border-radius:3px}
+.tabbar{flex:0 0 auto;height:54px;border-top:1px solid var(--rule);background:#FAFAF8;
+  display:flex;align-items:center;justify-content:space-around;padding-bottom:6px}
+.tabbar div{text-align:center;font-family:var(--fm);font-size:8.5px;letter-spacing:.10em;
+  color:var(--ink-3);text-transform:uppercase}
+.tabbar div .dot{width:5px;height:5px;border-radius:99px;background:#D5D0CA;margin:0 auto 5px}
+.tabbar div.on{color:var(--coral)} .tabbar div.on .dot{background:var(--coral)}
+
+/* ---------- head ---------- */
+.tabhead{padding:14px 0 0}
+.tabhead h2{font-size:30px;margin:7px 0 0}
+.win{display:flex;align-items:center;justify-content:space-between;margin-top:14px;
+  border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:9px 0}
+.win .lab{font-family:var(--fm);font-size:10.5px;letter-spacing:.06em;color:var(--ink-2)}
+.win .lab s{display:block;text-decoration:none;font-size:8.5px;color:var(--ink-3);
+  letter-spacing:.11em;text-transform:uppercase;margin-top:3px}
+.nav{display:flex;gap:6px}
+.nav button{width:32px;height:32px;border-radius:8px;border:1px solid var(--rule);
+  background:var(--card);color:var(--ink);font-family:var(--fm);font-size:14px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.nav button:disabled{color:#CFC9C2;cursor:default}
+.nav button:not(:disabled):active{background:var(--deep)}
+
+/* ---------- score summary ---------- */
+.sum{display:flex;align-items:flex-end;gap:15px;margin-top:20px}
+.sum .n{font-family:var(--fm);font-size:52px;font-weight:600;line-height:.86;
+  font-variant-numeric:tabular-nums;letter-spacing:-.025em}
+.sum .side{padding-bottom:7px}
+.sum .side .d{font-family:var(--fm);font-size:12.5px;font-variant-numeric:tabular-nums;
+  color:var(--ink-3)}
+.sum .side .d.up{color:var(--m-positive)} .sum .side .d.dn{color:var(--coral)}
+.sum .side .u{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;color:var(--ink-3);
+  text-transform:uppercase;display:block;margin-top:6px}
+.sumlab{font-family:var(--fm);font-size:9px;letter-spacing:.13em;color:var(--ink-3);
+  text-transform:uppercase;margin-top:10px}
+
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:10px;overflow:hidden;margin-top:16px}
+.facts div{background:var(--card);padding:10px 6px 9px;text-align:center}
+.facts .v{font-family:var(--fm);font-size:17px;font-weight:600;line-height:1;
+  font-variant-numeric:tabular-nums}
+.facts .v.alert{color:var(--coral)}
+.facts .k{font-family:var(--fm);font-size:7.5px;letter-spacing:.08em;color:var(--ink-3);
+  text-transform:uppercase;margin-top:6px;line-height:1.3}
+
+.said{font-size:13.5px;line-height:1.5;color:var(--ink-2);margin:14px 0 0;
+  border-left:2px solid var(--coral);padding-left:12px}
+.said b{color:var(--ink);font-weight:400}
+
+/* ---------- toggles ---------- */
+.toggles{display:flex;flex-wrap:wrap;gap:6px;margin-top:18px}
+.tg{font-family:var(--fm);font-size:9px;letter-spacing:.1em;text-transform:uppercase;
+  padding:7px 10px 6px;border-radius:99px;border:1px solid var(--rule);background:var(--card);
+  color:var(--ink-3);cursor:pointer;display:flex;align-items:center;gap:6px;line-height:1}
+.tg i{width:8px;height:8px;border-radius:2px;background:#D5D0CA;display:block}
+.tg.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* ---------- chart ---------- */
+.chart{background:var(--card);border:1px solid var(--rule);border-radius:12px;
+  padding:12px 12px 10px;margin-top:12px}
+.chart canvas{display:block;width:100%;touch-action:none;cursor:crosshair}
+.read{font-family:var(--fm);font-size:9.5px;letter-spacing:.03em;color:var(--ink-3);
+  min-height:28px;margin-bottom:6px;line-height:1.4}
+.read b{color:var(--ink);font-weight:600}
+.read em{color:var(--coral);font-style:normal;font-weight:600}
+.leg{display:flex;gap:11px;flex-wrap:wrap;margin-top:9px;padding-top:8px;border-top:1px solid var(--rule)}
+.leg span{font-family:var(--fm);font-size:8.5px;color:var(--ink-2);letter-spacing:.03em;
+  display:flex;align-items:center;gap:5px}
+.leg i{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+/* ---------- ladder ---------- */
+.ladder{margin-top:22px;border-top:1px solid var(--rule);padding-top:16px}
+.lrow{display:flex;align-items:center;gap:9px;padding:3px 0}
+.lname{font-family:var(--fm);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink-2);width:70px;flex:none}
+.ltrack{display:block;flex:1;height:11px;background:var(--deep);border-radius:2px;overflow:hidden}
+.lfill{display:block;height:100%;border-radius:2px}
+.lval{font-family:var(--fm);font-size:10px;color:var(--ink-3);width:30px;text-align:right;flex:none}
+.lcnt{font-family:var(--fm);font-size:10px;color:var(--ink);width:32px;text-align:right;flex:none}
+.foot{font-size:12.5px;line-height:1.6;color:var(--ink-2);margin-top:14px}
+.foot b{font-weight:400;color:var(--ink)}
+
+/* ---------- notes column ---------- */
+.notes{width:404px;flex:0 0 auto}
+.ncard{background:var(--paper);border:1px solid #DAD5CF;border-radius:14px;padding:18px 20px 20px;
+  margin-bottom:14px}
+.ncard h4{font-family:var(--fd);font-size:19px;font-weight:700;margin:6px 0 10px}
+.ncard p{font-size:13.5px;line-height:1.6;margin:0 0 10px;color:#3D3934}
+.ncard ul{margin:0;padding-left:17px}
+.ncard li{font-size:13px;line-height:1.55;margin-bottom:7px;color:#3D3934}
+.ncard code{font-family:var(--fm);font-size:11.5px;background:var(--deep);padding:1px 5px;
+  border-radius:3px}
+.q{border-left:2px solid var(--coral);padding-left:12px;margin-top:12px}
+.q p{font-size:13px;margin-bottom:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Prototype · Trends</div>
+  <h1 class="display">Mood, last thirty days.</h1>
+  <p>The score and the counts behind it at the top, then thirty days of mood, mileage, niggles and
+  key sessions on one shared date axis — reading a day means reading straight down. TLS and weekly
+  volume are extra lanes if you want them. The arrows step back a block at a time.</p>
+</header>
+
+<div class="stage">
+
+  <div class="phone">
+    <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+    <div class="screen">
+
+      <div class="tabhead">
+        <div class="eyebrow">Trends</div>
+        <h2 class="display">Mood</h2>
+      </div>
+
+      <div class="win">
+        <div class="lab"><span id="winLabel">—</span><s id="winRel">—</s></div>
+        <div class="nav">
+          <button id="prev" aria-label="Previous 30 days">‹</button>
+          <button id="next" aria-label="Next 30 days">›</button>
+        </div>
+      </div>
+
+      <!-- summary of the score -->
+      <div class="sum">
+        <div class="n" id="score">—</div>
+        <div class="side">
+          <div class="d" id="delta">—</div>
+          <span class="u">vs prev 30</span>
+        </div>
+      </div>
+      <div class="sumlab">Mood score · 30-day average</div>
+
+      <div class="facts">
+        <div><div class="v" id="fLogs">—</div><div class="k">Logs</div></div>
+        <div><div class="v" id="fMi">—</div><div class="k">Miles</div></div>
+        <div><div class="v" id="fLow">—</div><div class="k">Low days</div></div>
+        <div><div class="v" id="fNig">—</div><div class="k">Niggle days</div></div>
+      </div>
+
+      <p class="said" id="said">—</p>
+
+      <div class="toggles" id="toggles"></div>
+
+      <div class="chart">
+        <div class="read" id="readout">—</div>
+        <canvas id="cv"></canvas>
+        <div class="leg" id="legend"></div>
+      </div>
+
+      <div class="ladder">
+        <div class="micro">How the score is built</div>
+        <div id="ladder" style="margin-top:10px"></div>
+        <p class="foot">Each logged day scores its mood label; the number at the top is the mean
+        of the days you logged, ×100. Days with no log are left out, not counted as zero. It
+        compares one block against another — <b>it is not a grade</b>.</p>
+      </div>
+
+    </div>
+    <div class="tabbar">
+      <div><span class="dot"></span>Today</div>
+      <div><span class="dot"></span>Log</div>
+      <div><span class="dot"></span>Train</div>
+      <div class="on"><span class="dot"></span>Trends</div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="ncard">
+      <div class="eyebrow">The screen</div>
+      <h4>One number, four lanes</h4>
+      <ul>
+        <li><b>Score summary at the top</b> — the 30-day average, the change against the previous
+          thirty, and the four counts that made it: logs, miles, low days, niggle days. Low days
+          and niggle days turn coral past five, so a bad block is visible without reading.</li>
+        <li><b>Four lanes on by default</b> — mood, mileage, niggles, key sessions. TLS and weekly
+          volume are toggles that start off, so the screen opens quiet.</li>
+        <li><b>One shared date axis.</b> Every lane draws against the same thirty columns, so a
+          bad Tuesday lines up with the Tuesday that caused it. Toggling a lane off shrinks the
+          chart; nothing shifts sideways.</li>
+        <li><b>The mood lane carries both</b> — day cells for what you actually said, and the
+          7-day rolling score as the line above them, so the number at the top has a shape.</li>
+        <li><b>Rolling thirty, stepping thirty.</b> No calendar-month edge cases and no window
+          that varies between 28 and 31 days, which would quietly move the average.</li>
+        <li><b>Drag across the chart</b> to resolve one day into plain facts — date, mood word,
+          miles, TLS, key session, niggle. Release and it returns to the block summary.</li>
+      </ul>
+    </div>
+
+    <div class="ncard">
+      <div class="eyebrow">On the score</div>
+      <h4>Where it's weak, so you know</h4>
+      <p>The ladder at the bottom of the screen is the entire definition, on purpose — the number
+      should never be a black box. Two things about it are worth keeping in view:</p>
+      <ul>
+        <li><b>A mean hides clustering.</b> Thirty neutral days and a month of half energized,
+          half injured both average 50. That's why the day cells and the low-day count sit beside
+          the number rather than behind a tap — they are what the average throws away.</li>
+        <li><b>The labels are ordinal.</b> The gap from <i>energized</i> to <i>positive</i> isn't
+          the same size as <i>tired</i> to <i>struggling</i>, so the weights are a judgment, not a
+          measurement. <code>tired</code> at 0.30 is the one I'd argue with first — a tired day
+          after a hard session is training working.</li>
+        <li><b>Low days counts struggling and injured only</b>, for that same reason. Tired still
+          pulls the average down, it just isn't counted as a bad day.</li>
+      </ul>
+    </div>
+
+    <div class="ncard">
+      <div class="eyebrow">Data notes</div>
+      <h4>What's real, what's placeholder</h4>
+      <ul>
+        <li>Mood uses the shipped closed vocabulary:
+          <code>energized · positive · neutral · tired · struggling · injured</code>, stored as
+          text. The 0–100 is a view-layer derivation.</li>
+        <li>Niggles are body-part mentions from the closed vocabulary — a dot is a mention, not an
+          injury. <code>injured</code> is only ever emitted alongside one.</li>
+        <li>Days, miles, TLS and sessions are seeded synthetic. Volume generates first (a
+          3-up-1-down build on a rising ramp, with one stretch where the down week gets skipped)
+          and mood generates <i>from</i> it, off acute and chronic strain. So mood tracks load
+          here for a reason rather than sitting beside it as noise — step back a few blocks and
+          the low patches land under the heavy weeks.</li>
+      </ul>
+      <div class="q">
+        <p><b>Open question.</b> A block with four logs produces a score as confidently as a block
+          with twenty-eight. Worth a confidence treatment, the way the fitness range already
+          handles thin data.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+/* ============================================================
+   MOOD · LAST 30 DAYS
+   Standalone prototype. Seeded synthetic data — deterministic,
+   so the screen looks the same every reload.
+   ============================================================ */
+
+const C = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+/* ---- mood vocabulary + score weights (the whole definition) ---- */
+const MOODS = [
+  { key:'energized',  label:'Energized',  v:1.00, c:'--m-energized'  },
+  { key:'positive',   label:'Positive',   v:0.80, c:'--m-positive'   },
+  { key:'neutral',    label:'Neutral',    v:0.50, c:'--m-neutral'    },
+  { key:'tired',      label:'Tired',      v:0.30, c:'--m-tired'      },
+  { key:'struggling', label:'Struggling', v:0.15, c:'--m-struggling' },
+  { key:'injured',    label:'Injured',    v:0.00, c:'--m-injured'    },
+];
+const M = Object.fromEntries(MOODS.map(m => [m.key, m]));
+const LOW = new Set(['struggling','injured']);      // what "low day" counts
+const BODY = ['knee','calf','achilles','hamstring','hip','foot','shin','glute'];
+
+/* ---- seeded RNG so the prototype is stable ---- */
+function mulberry32(a){ return function(){
+  a |= 0; a = a + 0x6D2B79F5 | 0;
+  let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+};}
+const rnd = mulberry32(20260814);
+
+/* ---- build ~11 months of days ending today ----------------------------
+   Volume generates first, then mood generates FROM it, so the shapes on
+   this screen line up for a reason rather than by accident.            */
+const TODAY = new Date(2026, 7, 14);           // 14 Aug 2026
+const NDAYS = 336;
+const DAYS  = [];
+
+(function build(){
+  const totalWk = NDAYS / 7;
+
+  // ── pass 1: load
+  for (let i = NDAYS - 1; i >= 0; i--) {
+    const d = new Date(TODAY); d.setDate(TODAY.getDate() - i);
+    const idx = NDAYS - 1 - i;                  // 0 = oldest
+    const dow = d.getDay();                     // 0 Sun
+    const wk  = Math.floor(idx / 7);
+
+    const macro  = 3.7 + (wk / totalWk) * 5.4;  // the long ramp
+    const greedy = wk >= 42 && wk <= 46;        // the down week nobody takes
+    const cycle  = (wk % 4 === 3 && !greedy) ? 0.70 : 1;
+    const taper  = idx > NDAYS - 5 ? 0.74 : 1;
+    const base   = macro * cycle * taper;
+
+    let mi = dow === 1 ? 0 : base * (0.64 + rnd() * 0.68);   // Monday off
+    if (dow === 0) mi *= 2.3;                                // Sunday long
+    mi = Math.round(mi * 10) / 10;
+
+    let key = null;
+    if (mi > 0 && dow === 2) key = { name:['6 × 1K','5 × mile','8 × 800','3 × 2K'][Math.floor(rnd()*4)], type:'Interval' };
+    if (mi > 0 && dow === 5) key = { name:['4 mi tempo','20 min threshold','6 mi progression'][Math.floor(rnd()*3)], type:'Threshold' };
+    if (mi > 0 && dow === 0 && mi > 13) key = { name:Math.round(mi)+' mi long', type:'Long' };
+
+    const minPerMi = 7.6 + rnd() * 0.9;
+    const w = key ? (key.type === 'Interval' ? 2.9 : key.type === 'Threshold' ? 2.4 : 1.25) : 1.06;
+    const tls = mi > 0 ? Math.round(mi * minPerMi * w) : 0;
+
+    DAYS.push({ d, mi, tls, mood:null, key, nig:[] });
+  }
+
+  // ── pass 2: mood + niggles, drawn against strain
+  const win  = (i, n) => DAYS.slice(Math.max(0, i - n + 1), i + 1);
+  const mean = a => a.length ? a.reduce((p,q)=>p+q,0) / a.length : 0;
+  let sore = 0, sorePart = null;
+
+  DAYS.forEach((x, i) => {
+    const d7  = mean(win(i, 7).map(y=>y.tls)),
+          d28 = mean(win(i,28).map(y=>y.tls)),
+          d84 = mean(win(i,84).map(y=>y.tls));
+    // acute = this week vs the month. chronic = the month vs the season.
+    // Chronic weighs heavier — people cope with one hard week and get
+    // ground down by three good months.
+    const acute   = d28 ? d7  / d28 : 1;
+    const chronic = d84 ? d28 / d84 : 1;
+
+    const latent = 0.66 - (acute - 1) * 0.95 - (chronic - 1) * 2.10
+                 - sore * 0.075 + (rnd() - 0.5) * 0.40;
+
+    if (x.mi > 0 || rnd() < 0.5) {
+      x.mood = latent > 0.86 ? 'energized'
+             : latent > 0.60 ? 'positive'
+             : latent > 0.44 ? 'neutral'
+             : latent > 0.27 ? 'tired'
+             : (latent > 0.10 || !sore) ? 'struggling'
+             : 'injured';                       // only ever with a body mention
+    }
+
+    if (sore > 0) {
+      sore--;
+      if (rnd() < 0.72) x.nig.push(sorePart);
+    } else if (rnd() < 0.012 + Math.max(0, acute - 1.03) * 0.42
+                             + Math.max(0, chronic - 1.05) * 0.60) {
+      sorePart = BODY[Math.floor(rnd() * BODY.length)];
+      sore = 2 + Math.floor(rnd() * 7);
+      x.nig.push(sorePart);
+    }
+  });
+})();
+
+/* ---- window state ---- */
+const WIN = 30;
+let back = 0;                                   // 0 = most recent block
+/* -2 so the block behind the oldest reachable one is still whole — the
+   "vs prev 30" comparison would otherwise compare against a stub. */
+const maxBack = Math.max(0, Math.floor(DAYS.length / WIN) - 2);
+function slice(b){
+  const end = DAYS.length - b * WIN;
+  return end < WIN ? null : DAYS.slice(end - WIN, end);
+}
+
+/* ---- lanes ---- */
+const LANES = [
+  { key:'mood', label:'MOOD',    h:58, on:true  },
+  { key:'vol',  label:'MILES',   h:46, on:true  },
+  { key:'nig',  label:'NIGGLE',  h:20, on:true  },
+  { key:'key',  label:'KEY',     h:20, on:true  },
+  { key:'tls',  label:'TLS',     h:42, on:false },
+  { key:'wvol', label:'WK VOL',  h:44, on:false },
+];
+const LNAME = { mood:'Mood', vol:'Mileage', nig:'Niggles', key:'Key sessions',
+                tls:'TLS', wvol:'Weekly volume' };
+/* chip dots sit on an ink pill when on, so each has to read light */
+const LDOT  = { mood:'--m-positive', vol:'--vol-soft', nig:'--coral',
+                key:'--m-none', tls:'--vol', wvol:'--wvol' };
+
+/* ---- helpers ---- */
+const FMT = new Intl.DateTimeFormat('en-GB', { day:'numeric', month:'short' });
+const fmt = d => FMT.format(d);
+const sum = (ws,k) => ws.reduce((a,x)=>a+x[k], 0);
+const logged   = ws => ws.filter(x => x.mood).length;
+const lowCount = ws => ws.filter(x => x.mood && LOW.has(x.mood)).length;
+const score = ws => {
+  const s = ws.filter(x => x.mood).map(x => M[x.mood].v);
+  return s.length ? s.reduce((a,b)=>a+b,0) / s.length : null;
+};
+function weeks(ws){
+  const out = [];
+  ws.forEach((x,i) => {
+    const dow = (x.d.getDay() + 6) % 7;         // 0 = Monday
+    if (i === 0 || dow === 0) out.push({ from:i, to:i, mi:0, days:0 });
+    const w = out[out.length-1];
+    w.to = i; w.mi += x.mi; w.days++;
+  });
+  out.forEach(w => w.partial = w.days < 7);     // clipped at the window edges
+  return out;
+}
+
+/* =========================================================
+   CHROME
+   ========================================================= */
+function renderToggles(){
+  document.getElementById('toggles').innerHTML = LANES.map(l =>
+    `<button class="tg ${l.on?'on':''}" data-k="${l.key}">
+       <i style="background:${l.on ? C(LDOT[l.key]) : '#D5D0CA'}"></i>${LNAME[l.key]}
+     </button>`).join('');
+  document.querySelectorAll('.tg').forEach(b => b.onclick = () => {
+    const l = LANES.find(x => x.key === b.dataset.k);
+    if (l.on && LANES.filter(x=>x.on).length === 1) return;   // never empty
+    l.on = !l.on; renderToggles(); renderLegend(); draw();
+  });
+}
+
+function renderLegend(){
+  const on = LANES.filter(l => l.on).map(l => l.key);
+  let items = [];
+  if (on.includes('mood')) {
+    items = items.concat(MOODS.map(m => `<span><i style="background:${C(m.c)}"></i>${m.label}</span>`));
+    items.push(`<span><i style="background:${C('--m-positive')};height:2px;width:14px;border-radius:0"></i>7-day score</span>`);
+  }
+  if (on.includes('nig'))  items.push(`<span><i style="background:${C('--coral')};border-radius:99px"></i>Niggle mention</span>`);
+  if (on.includes('key'))  items.push(`<span><i style="background:${C('--ink')};transform:rotate(45deg)"></i>Key session</span>`);
+  if (on.includes('wvol')) items.push(`<span><i style="background:transparent;border:1px dashed ${C('--wvol')}"></i>Part week *</span>`);
+  document.getElementById('legend').innerHTML = items.join('');
+}
+
+function renderLadder(ws){
+  const counts = {}; ws.forEach(x => { if (x.mood) counts[x.mood] = (counts[x.mood]||0)+1; });
+  document.getElementById('ladder').innerHTML = MOODS.map(m => `
+    <div class="lrow">
+      <span class="lname">${m.label}</span>
+      <span class="ltrack"><span class="lfill"
+        style="width:${m.v*100}%;background:${C(m.c)}"></span></span>
+      <span class="lval">${m.v.toFixed(2).replace(/^0/,'.')}</span>
+      <span class="lcnt">${counts[m.key] ? counts[m.key]+'d' : '—'}</span>
+    </div>`).join('');
+}
+
+function renderHead(){
+  const ws = slice(back), prev = slice(back+1);
+  const s = score(ws), p = prev ? score(prev) : null;
+
+  document.getElementById('winLabel').textContent = `${fmt(ws[0].d)} – ${fmt(ws[ws.length-1].d)}`;
+  document.getElementById('winRel').textContent =
+    back === 0 ? 'Last 30 days' : `${back*30} – ${back*30+30} days ago`;
+  document.getElementById('prev').disabled = back >= maxBack;
+  document.getElementById('next').disabled = back === 0;
+
+  // --- the score
+  document.getElementById('score').textContent = s === null ? '—' : Math.round(s*100);
+  const dEl = document.getElementById('delta');
+  if (s === null || p === null) { dEl.textContent = '—'; dEl.className = 'd'; }
+  else {
+    const d = Math.round(s*100) - Math.round(p*100);
+    dEl.textContent = (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d);
+    dEl.className = 'd ' + (d >= 3 ? 'up' : d <= -3 ? 'dn' : '');
+  }
+
+  // --- the four counts behind it
+  const low = lowCount(ws);
+  const nigDays = ws.filter(x => x.nig.length).length;
+  document.getElementById('fLogs').textContent = logged(ws);
+  document.getElementById('fMi').textContent   = sum(ws,'mi').toFixed(0);
+  document.getElementById('fLow').textContent  = low;
+  document.getElementById('fLow').className    = 'v' + (low >= 5 ? ' alert' : '');
+  document.getElementById('fNig').textContent  = nigDays;
+  document.getElementById('fNig').className    = 'v' + (nigDays >= 5 ? ' alert' : '');
+
+  // --- one line
+  const parts = {}; ws.forEach(x => x.nig.forEach(n => parts[n] = (parts[n]||0)+1));
+  const top = Object.entries(parts).sort((a,b)=>b[1]-a[1])[0];
+  const keyN = ws.filter(x => x.key).length;
+  let said = low
+    ? `<b>${low}</b> ${low===1?'day':'days'} struggling or worse`
+    : 'No struggling or injured days';
+  said += nigDays ? `, niggles on <b>${nigDays}</b> ${nigDays===1?'day':'days'}${top?` — mostly <b>${top[0]}</b>`:''}.`
+                  : ', no niggles mentioned.';
+  said += ` <b>${keyN}</b> key sessions across the block.`;
+  document.getElementById('said').innerHTML = said;
+
+  renderLadder(ws);
+  summary(ws);
+}
+
+function summary(ws){
+  const s = score(ws);
+  document.getElementById('readout').innerHTML = s === null
+    ? 'No logs in this block.'
+    : `Thirty days to <b>${fmt(ws[ws.length-1].d)}</b> · score <b>${Math.round(s*100)}</b> ` +
+      `from <b>${logged(ws)}</b> logs<br>Drag across the chart to read a single day.`;
+}
+
+/* =========================================================
+   CANVAS
+   ========================================================= */
+const cv = document.getElementById('cv');
+const PAD = { l:34, r:6, t:6, b:18 };
+const GAP = 14;
+let geom = null;
+
+function draw(hover){
+  const ws = slice(back);
+  const on = LANES.filter(l => l.on);
+  const H = PAD.t + on.reduce((a,l)=>a+l.h+GAP, 0) - GAP + PAD.b;
+  const W = cv.parentNode.clientWidth - 24;
+
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  const g = cv.getContext('2d');
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,W,H);
+  g.textBaseline = 'middle';
+
+  const colW = (W - PAD.l - PAD.r) / WIN;
+  const colX = i => PAD.l + i * colW;
+  const bw   = Math.max(4, colW * 0.66);
+  const bx   = i => colX(i) + (colW - bw) / 2;
+  geom = { colW, colX, W, H };
+
+  // week separators, behind everything
+  g.strokeStyle = '#F0ECE7'; g.lineWidth = 1;
+  ws.forEach((x,i) => {
+    if ((x.d.getDay() + 6) % 7 === 0) {
+      g.beginPath(); g.moveTo(Math.round(colX(i))+.5, PAD.t);
+      g.lineTo(Math.round(colX(i))+.5, H - PAD.b); g.stroke();
+    }
+  });
+
+  let y = PAD.t;
+  on.forEach(l => {
+    g.fillStyle = C('--ink-3');
+    g.font = '600 7.5px ui-monospace, SF Mono, Menlo, monospace';
+    g.textAlign = 'right';
+    g.fillText(l.label, PAD.l - 6, y + l.h/2);
+    g.textAlign = 'left';
+
+    if (l.key === 'mood') drawMood(g, ws, y, l.h, bx, bw, colX, colW, W);
+    if (l.key === 'vol')  drawBars(g, ws, y, l.h, bx, bw, 'mi',  C('--vol'));
+    if (l.key === 'nig')  drawNig (g, ws, y, l.h, bx, bw);
+    if (l.key === 'key')  drawKey (g, ws, y, l.h, colX, colW);
+    if (l.key === 'tls')  drawBars(g, ws, y, l.h, bx, bw, 'tls', C('--tls'));
+    if (l.key === 'wvol') drawWvol(g, ws, y, l.h, colX, colW);
+
+    y += l.h + GAP;
+  });
+
+  // date axis
+  g.fillStyle = C('--ink-3');
+  g.font = '7.5px ui-monospace, SF Mono, Menlo, monospace';
+  g.textAlign = 'center';
+  ws.forEach((x,i) => {
+    if (i % 7 === 0) g.fillText(FMT.format(x.d), colX(i) + colW/2, H - PAD.b/2 + 1);
+  });
+  g.textAlign = 'left';
+
+  // hover spine
+  if (hover != null) {
+    const x = Math.round(colX(hover) + colW/2) + .5;
+    g.strokeStyle = C('--coral-line'); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, PAD.t); g.lineTo(x, H - PAD.b); g.stroke();
+  }
+}
+
+function drawMood(g, ws, y, h, bx, bw, colX, colW, W){
+  const cellH = 13, lineH = h - cellH - 6;
+
+  // 7-day rolling score — gives the number at the top a shape
+  const roll = ws.map((_,i) => {
+    const w = ws.slice(Math.max(0,i-6), i+1).filter(x=>x.mood).map(x=>M[x.mood].v);
+    return w.length ? w.reduce((a,b)=>a+b,0)/w.length : null;
+  });
+  const yv = v => y + lineH - v * lineH;
+
+  // neutral reference at .50
+  g.strokeStyle = '#EFEBE6'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(PAD.l, Math.round(yv(.5))+.5); g.lineTo(W - PAD.r, Math.round(yv(.5))+.5); g.stroke();
+
+  const pts = [];
+  roll.forEach((v,i) => { if (v != null) pts.push([colX(i) + colW/2, yv(v)]); });
+
+  // wash to the neutral line — green above, warm below. Amplitude is small
+  // on a 40px lane, so the fill is what makes the direction legible.
+  if (pts.length > 1) {
+    const base = yv(.5);
+    [['above', C('--m-positive')], ['below', C('--m-tired')]].forEach(([side, col]) => {
+      g.save(); g.beginPath();
+      g.rect(PAD.l, side === 'above' ? y : base, W - PAD.l - PAD.r,
+             side === 'above' ? base - y : (y + lineH) - base);
+      g.clip();
+      g.beginPath(); g.moveTo(pts[0][0], base);
+      pts.forEach(p => g.lineTo(p[0], p[1]));
+      g.lineTo(pts[pts.length-1][0], base); g.closePath();
+      g.globalAlpha = .13; g.fillStyle = col; g.fill();
+      g.restore();
+    });
+  }
+
+  g.beginPath();
+  pts.forEach((p,i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]));
+  g.strokeStyle = C('--m-positive'); g.lineWidth = 1.6; g.lineJoin = 'round'; g.stroke();
+
+  // day cells — what you actually said
+  ws.forEach((x,i) => {
+    g.fillStyle = x.mood ? C(M[x.mood].c) : C('--m-none');
+    const py = y + h - cellH;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(bx(i), py, Math.max(4,bw), cellH, 2);
+    else g.rect(bx(i), py, Math.max(4,bw), cellH);
+    g.fill();
+  });
+}
+
+function drawNig(g, ws, y, h, bx, bw){
+  const cy = y + h/2;
+  ws.forEach((x,i) => {
+    if (!x.nig.length) {
+      g.fillStyle = '#EDE9E4';
+      g.beginPath(); g.arc(bx(i)+bw/2, cy, 1.2, 0, 7); g.fill();
+      return;
+    }
+    g.fillStyle = C('--coral');
+    g.beginPath(); g.arc(bx(i)+bw/2, cy, Math.min(4.6, 3 + x.nig.length*0.9), 0, 7); g.fill();
+  });
+}
+
+function drawBars(g, ws, y, h, bx, bw, field, color){
+  const max = Math.max(...ws.map(x => x[field])) * 1.08 || 1;
+  g.strokeStyle = '#EFEBE6'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(PAD.l, Math.round(y+h)+.5); g.lineTo(geom.W - PAD.r, Math.round(y+h)+.5); g.stroke();
+  ws.forEach((x,i) => {
+    if (!x[field]) return;
+    const bh = Math.max(1.5, x[field] / max * h);
+    g.fillStyle = color;
+    g.beginPath();
+    if (g.roundRect) g.roundRect(bx(i), y + h - bh, bw, bh, [2,2,0,0]);
+    else g.rect(bx(i), y + h - bh, bw, bh);
+    g.fill();
+  });
+  const pk = ws.reduce((a,x)=> x[field] > a[field] ? x : a, ws[0]);
+  if (pk[field]) {
+    g.fillStyle = C('--ink-3');
+    g.font = '7.5px ui-monospace, SF Mono, Menlo, monospace';
+    g.textAlign = 'left';
+    g.fillText(field === 'mi' ? pk.mi.toFixed(1) : String(pk.tls), PAD.l + 1, y + 4);
+  }
+}
+
+function drawKey(g, ws, y, h, colX, colW){
+  const cy = y + h/2;
+  g.strokeStyle = '#EDE9E4'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(PAD.l, Math.round(cy)+.5); g.lineTo(geom.W - PAD.r, Math.round(cy)+.5); g.stroke();
+  ws.forEach((x,i) => {
+    if (!x.key) return;
+    const px = colX(i) + colW/2, s = x.key.type === 'Long' ? 4.6 : 3.8;
+    g.fillStyle = x.key.type === 'Long' ? C('--ink-2') : C('--ink');
+    g.save(); g.translate(px, cy); g.rotate(Math.PI/4);
+    g.fillRect(-s/2, -s/2, s, s); g.restore();
+  });
+}
+
+function drawWvol(g, ws, y, h, colX, colW){
+  const wk = weeks(ws);
+  const max = Math.max(...wk.map(w => w.mi)) * 1.08 || 1;
+  g.strokeStyle = '#EFEBE6'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(PAD.l, Math.round(y+h)+.5); g.lineTo(geom.W - PAD.r, Math.round(y+h)+.5); g.stroke();
+  wk.forEach(w => {
+    const x0 = colX(w.from) + 1, x1 = colX(w.to) + colW - 1;
+    const bh = Math.max(2, w.mi / max * h), ty = Math.round(y + h - bh) + .5;
+    // A clipped week is not a light week — hollow + dashed cap so the eye
+    // doesn't read the window edge as a down week.
+    g.fillStyle = w.partial ? 'rgba(163,155,146,.11)' : 'rgba(163,155,146,.30)';
+    g.fillRect(x0, y + h - bh, x1 - x0, bh);
+    g.strokeStyle = C('--wvol'); g.lineWidth = 1.4;
+    g.setLineDash(w.partial ? [3,3] : []);
+    g.beginPath(); g.moveTo(x0, ty); g.lineTo(x1, ty); g.stroke();
+    g.setLineDash([]);
+    if (x1 - x0 > 26) {
+      g.fillStyle = w.partial ? C('--ink-3') : C('--ink-2');
+      g.font = '600 7.5px ui-monospace, SF Mono, Menlo, monospace';
+      g.textAlign = 'center';
+      g.fillText(w.mi.toFixed(0) + (w.partial ? '*' : ''), (x0+x1)/2, y + h - bh - 5);
+      g.textAlign = 'left';
+    }
+  });
+}
+
+/* =========================================================
+   SCRUB
+   ========================================================= */
+function dayLine(x){
+  const bits = [`<b>${fmt(x.d)}</b>`];
+  bits.push(x.mood ? `<b>${M[x.mood].label.toLowerCase()}</b>` : 'no log');
+  bits.push(x.mi ? `${x.mi.toFixed(1)} mi` : 'rest');
+  if (x.tls) bits.push(`${x.tls} TLS`);
+  let s = bits.join(' · ');
+  if (x.key) s += `<br><b>${x.key.name}</b> — ${x.key.type.toLowerCase()}`;
+  if (x.nig.length) s += `${x.key ? ' · ' : '<br>'}<em>${x.nig.join(', ')}</em>`;
+  return s;
+}
+function idxFrom(ev){
+  const r = cv.getBoundingClientRect();
+  const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+  return Math.max(0, Math.min(WIN - 1, Math.floor((px - PAD.l) / geom.colW)));
+}
+let scrubbing = false;
+function startScrub(e){ scrubbing = true; moveScrub(e); e.preventDefault(); }
+function moveScrub(e){
+  if (!scrubbing) return;
+  const i = idxFrom(e);
+  document.getElementById('readout').innerHTML = dayLine(slice(back)[i]);
+  draw(i); e.preventDefault();
+}
+function endScrub(){ if (!scrubbing) return; scrubbing = false; summary(slice(back)); draw(); }
+cv.addEventListener('pointerdown', startScrub);
+window.addEventListener('pointermove', moveScrub);
+window.addEventListener('pointerup', endScrub);
+window.addEventListener('pointercancel', endScrub);
+
+/* =========================================================
+   WIRE UP
+   ========================================================= */
+document.getElementById('prev').onclick = () => { if (back < maxBack) { back++; renderHead(); draw(); } };
+document.getElementById('next').onclick = () => { if (back > 0)       { back--; renderHead(); draw(); } };
+window.addEventListener('resize', () => draw());
+
+renderToggles(); renderLegend(); renderHead(); draw();
+document.fonts && document.fonts.ready.then(() => draw());
+</script>
+</body>
+</html>

@@ -89,7 +89,7 @@ final class HistoryDetailViewModel {
                 processingAttempts: currentEntry.processingAttempts,
                 transcriptUrl: currentEntry.transcriptUrl,
                 coachInsight: coachInsight,
-                workoutNotes: workoutNotesText.isEmpty ? nil : workoutNotesText,
+                workoutNotes: currentEntry.workoutNotes,
                 workoutPacePerMile: currentEntry.workoutPacePerMile,
                 workoutType: currentEntry.workoutType,
                 source: currentEntry.source,
@@ -138,8 +138,7 @@ final class HistoryDetailViewModel {
         workoutType: String,
         distanceText: String,
         durationText: String,
-        notesText: String,
-        workoutNotesText: String
+        notesText: String
     ) async -> Bool {
         isSavingEdits = true
 
@@ -173,15 +172,21 @@ final class HistoryDetailViewModel {
             updateData["workout_duration_minutes"] = newDuration.map { .double($0) } ?? .null
         }
 
-        let newNotes = notesText.isEmpty ? nil : notesText
-        if newNotes != (currentEntry.cleanedNotes ?? currentEntry.notes) {
+        // Trimmed before the comparison so a stray trailing newline off the
+        // TextField doesn't read as an edit and write a row back over itself.
+        let trimmedNotes = notesText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newNotes = trimmedNotes.isEmpty ? nil : trimmedNotes
+        let notesChanged = newNotes != (currentEntry.cleanedNotes ?? currentEntry.notes)
+        if notesChanged {
             updateData["cleaned_notes"] = newNotes.map { .string($0) } ?? .null
         }
 
-        let newWorkoutNotes = workoutNotesText.isEmpty ? nil : workoutNotesText
-        if newWorkoutNotes != currentEntry.workoutNotes {
-            updateData["workout_notes"] = newWorkoutNotes.map { .string($0) } ?? .null
-        }
+        // `workout_notes` deliberately absent (2026-08-10). Global edit mode
+        // used to write it from a field seeded when the sheet opened, so
+        // entering Edit and hitting Save would push a stale description back
+        // over one just written in `TheWorkoutBlock` — the same silent
+        // last-writer-wins this whole thread of work exists to remove. That
+        // column has exactly one editor now.
 
         guard !updateData.isEmpty else {
             isSavingEdits = false
@@ -216,7 +221,17 @@ final class HistoryDetailViewModel {
                 createdAt: currentEntry.createdAt,
                 audioUrl: currentEntry.audioUrl,
                 notes: currentEntry.notes,
-                cleanedNotes: notesText.isEmpty ? currentEntry.cleanedNotes : notesText,
+                // Mirror what was WRITTEN, not what was typed. The old form —
+                // `notesText.isEmpty ? currentEntry.cleanedNotes : notesText`
+                // — special-cased empty to mean "keep the old value", but
+                // empty is exactly how the athlete CLEARS the field: the
+                // update above sends `.null`, and then this line put the old
+                // text straight back on screen. The clear saved and looked
+                // like it hadn't, until a refetch replaced it with the raw
+                // transcript (`cleaned_notes` null → the reader falls through
+                // to `notes`). Two different wrong answers for one edit, which
+                // is what "sometimes my notes don't save" was.
+                cleanedNotes: notesChanged ? newNotes : currentEntry.cleanedNotes,
                 mood: newMood,
                 workoutDate: currentEntry.workoutDate,
                 workoutDistanceMiles: newDistance ?? currentEntry.workoutDistanceMiles,
@@ -226,7 +241,7 @@ final class HistoryDetailViewModel {
                 processingAttempts: currentEntry.processingAttempts,
                 transcriptUrl: currentEntry.transcriptUrl,
                 coachInsight: coachInsight,
-                workoutNotes: workoutNotesText.isEmpty ? nil : workoutNotesText,
+                workoutNotes: currentEntry.workoutNotes,
                 workoutPacePerMile: currentEntry.workoutPacePerMile,
                 workoutType: newType,
                 source: currentEntry.source,
@@ -242,6 +257,89 @@ final class HistoryDetailViewModel {
             ErrorReporter.shared.report(error, context: "save edits")
             isSavingEdits = false
             return false
+        }
+    }
+
+    // MARK: - Inline single-field edits (tap-to-edit on the header)
+    //
+    // The header's title and mood are editable by tapping them, without
+    // entering the sheet's Cancel/Save mode. Each of these writes exactly ONE
+    // column, which is the whole point: routing a one-word title fix through
+    // `saveEdits` would carry five other fields along with it, seeded from
+    // whatever the sheet held when it opened — the same stale-write shape the
+    // `workout_notes` comment above exists to warn about.
+    //
+    // Neither field is in `streamRowMirroredFields`, so neither mirrors onto a
+    // linked Strava row: `title` is the journal entry's own name, and `mood`
+    // belongs to the note, not the run (see the mirroring note above).
+
+    /// What an inline save actually did.
+    ///
+    /// Three states, not a `Bool`, because "nothing changed" and "saved" have
+    /// different consequences at the call site: only a real write should
+    /// refresh the journal feed behind the sheet, and only a real failure
+    /// should tell the athlete something went wrong. Collapsing the first two
+    /// into `true` made every stray tap on the headline refetch the feed.
+    enum InlineSaveResult {
+        case saved
+        case unchanged
+        case failed
+    }
+
+    /// Save the athlete's own entry title. Empty clears it, which drops the
+    /// header back to the workout name and then the day-of-week.
+    @MainActor
+    func saveTitleInline(_ text: String) async -> InlineSaveResult {
+        // Newlines flattened, not trimmed: the field wraps to three lines, so
+        // Return inserts a break mid-title. Trimming only cleans the ends and
+        // would leave "Bridge\nrepeats" to print as two lines in the journal
+        // header and in every list that shows a title.
+        let flattened = text.replacingOccurrences(of: "\n", with: " ")
+        let trimmed = flattened.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newTitle = trimmed.isEmpty ? nil : trimmed
+        guard newTitle != currentEntry.displayTitle else { return .unchanged }
+
+        do {
+            let updateData: [String: AnyJSON] = [
+                "title": newTitle.map { AnyJSON.string($0) } ?? .null,
+            ]
+            try await supabase
+                .from("training_logs")
+                .update(updateData)
+                .eq("id", value: entryId.uuidString)
+                .execute()
+            // `title` is the one `var` on the model, so this needs no rebuild.
+            currentEntry.title = newTitle
+            return .saved
+        } catch {
+            Log.database.error("Failed to save inline title: \(error)")
+            ErrorReporter.shared.report(error, context: "save inline title")
+            return .failed
+        }
+    }
+
+    /// Save how the session felt. Empty clears the mood.
+    @MainActor
+    func saveMoodInline(_ mood: String) async -> InlineSaveResult {
+        let trimmed = mood.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newMood = trimmed.isEmpty ? nil : trimmed
+        guard newMood != currentEntry.mood else { return .unchanged }
+
+        do {
+            let updateData: [String: AnyJSON] = [
+                "mood": newMood.map { AnyJSON.string($0) } ?? .null,
+            ]
+            try await supabase
+                .from("training_logs")
+                .update(updateData)
+                .eq("id", value: entryId.uuidString)
+                .execute()
+            currentEntry = currentEntry.replacingMood(newMood)
+            return .saved
+        } catch {
+            Log.database.error("Failed to save inline mood: \(error)")
+            ErrorReporter.shared.report(error, context: "save inline mood")
+            return .failed
         }
     }
 
@@ -382,7 +480,7 @@ final class HistoryDetailViewModel {
                 )
                 let refreshed: [TrainingLog]? = try? await supabase
                     .from("training_logs")
-                    .select()
+                    .select(TrainingLog.columns)
                     .eq("id", value: reparseId)
                     .limit(1)
                     .execute()
@@ -830,5 +928,43 @@ final class HistoryDetailViewModel {
                 self.coachInsight = "Couldn't get coach feedback: \(error.localizedDescription)"
             }
         }
+    }
+}
+
+// MARK: - TrainingLog copy helpers
+
+private extension TrainingLog {
+    /// Copy of this row carrying a new mood.
+    ///
+    /// `mood` is a `let` on the model — deliberately, so nothing mutates a
+    /// journal row in place — which means the inline mood save has to rebuild
+    /// rather than assign. Every other field is carried through unchanged, so
+    /// this can never quietly drop one the way a hand-written rebuild at the
+    /// call site can.
+    func replacingMood(_ newMood: String?) -> TrainingLog {
+        TrainingLog(
+            id: id,
+            createdAt: createdAt,
+            audioUrl: audioUrl,
+            notes: notes,
+            cleanedNotes: cleanedNotes,
+            mood: newMood,
+            workoutDate: workoutDate,
+            workoutDistanceMiles: workoutDistanceMiles,
+            workoutDurationMinutes: workoutDurationMinutes,
+            processingStatus: processingStatus,
+            processingError: processingError,
+            processingAttempts: processingAttempts,
+            transcriptUrl: transcriptUrl,
+            coachInsight: coachInsight,
+            workoutNotes: workoutNotes,
+            workoutPacePerMile: workoutPacePerMile,
+            workoutType: workoutType,
+            source: source,
+            vitalWorkoutId: vitalWorkoutId,
+            paceSegments: paceSegments,
+            parsedStructure: parsedStructure,
+            title: title
+        )
     }
 }

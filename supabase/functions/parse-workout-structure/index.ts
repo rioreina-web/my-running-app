@@ -19,8 +19,9 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0"
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { detectWorkBouts, boutsFromLaps, workBoutCount, formatWorkBouts, lapRoles, type WorkBout, type BoutOrRecovery, type LapInput } from "../_shared/shared/workBouts.ts";
+import { detectWorkBouts, boutsFromLaps, workBoutCount, formatWorkBouts, lapRoles, structureHasSpeedContrast, type WorkBout, type BoutOrRecovery, type LapInput } from "../_shared/shared/workBouts.ts";
 import { isUserEdited } from "../_shared/structureOverride.ts";
+import { isProviderExhaustedText } from "../_shared/provider-errors.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 interface Body {
@@ -87,9 +88,38 @@ async function recordParseFailure(trainingLogId: string, message: string): Promi
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    const update: Record<string, unknown> = { last_error: message.slice(0, 500) };
+
+    // ── Hand the attempt back when the provider is out of credit. ──
+    // The dispatcher increments `attempts` at dispatch time and never sees
+    // this response, so an outage silently ratchets every queued parse to
+    // `attempts = 3` — the permanent-strand state, since the claim predicate
+    // is `attempts < 3`. That is exactly what happened on 2026-08-13: five
+    // parses died on a billing lapse and needed a manual reset. Giving the
+    // attempt back leaves the job claimable, so it drains itself when the
+    // provider is funded again. The 10-minute `last_attempt_at` floor in the
+    // claim predicate is what keeps this from becoming a hot loop.
+    //
+    // Read-then-write is safe here for that same reason: a given row can only
+    // be dispatched once per 10 minutes, so there is no concurrent writer.
+    if (isProviderExhaustedText(message)) {
+      const { data } = await admin
+        .from("workout_parse_jobs")
+        .select("attempts")
+        .eq("training_log_id", trainingLogId)
+        .single();
+      const current = (data?.attempts as number | undefined) ?? 0;
+      update.attempts = Math.max(0, current - 1);
+      console.warn(
+        `[parse-workout-structure] provider unavailable for ${trainingLogId}; ` +
+          `attempt not counted (attempts ${current} -> ${update.attempts})`,
+      );
+    }
+
     await admin
       .from("workout_parse_jobs")
-      .update({ last_error: message.slice(0, 500) })
+      .update(update)
       .eq("training_log_id", trainingLogId);
   } catch {
     // Swallowed deliberately — see above.
@@ -256,9 +286,24 @@ Deno.serve(async (req) => {
     //     averages reps+recoveries into flat splits (collapsing to a single bout),
     //     while the GPS pass can still recover the real reps (>= 2 bouts). Then,
     //     and only then, GPS wins.
-    const lapsBlurStructure = lapWork <= 1 && gpsWork >= 2;
+    //
+    // …and even then, the GPS pass only gets to override the athlete's laps when
+    // its structure shows REAL SPEED CONTRAST. Standing at a traffic light on an
+    // easy run leaves a minute of near-zero velocity that reads exactly like a
+    // rest between reps, so the GPS pass carved an easy 8-miler into "4 reps @
+    // 8:00/mi" and — having found more bouts than the athlete's own steady mile
+    // laps — won on count and replaced them. A blurred workout always has two
+    // genuine speeds in it; a steady run with stops has one. See
+    // structureHasSpeedContrast.
+    const activityAvgVel = lapAverageVelocity(rawLaps, row);
+    const lapsBlurStructure = lapWork <= 1 && gpsWork >= 2 &&
+      structureHasSpeedContrast(gpsBouts, activityAvgVel);
+    // With no usable laps the GPS pass is all there is — but it still has to
+    // clear the same bar before we call a run a workout. Below it, the run is
+    // reported as the single continuous effort it was.
+    const gpsIsAWorkout = lapWork >= 1 || structureHasSpeedContrast(gpsBouts, activityAvgVel);
     const useLaps = lapWork >= 1 && !lapsBlurStructure;
-    const workBouts = useLaps ? lapBouts : gpsBouts;
+    const workBouts = useLaps ? lapBouts : gpsIsAWorkout ? gpsBouts : mergeToSingleBout(gpsBouts);
     const geometrySource = useLaps ? "watch_laps" : gpsBouts.length ? "detectWorkBouts" : "model";
     const workBoutsBlock = formatWorkBouts(workBouts);
 
@@ -496,6 +541,51 @@ function buildPrompt(input: {
     workBoutsBlock: input.workBoutsBlock || "(no stream to segment)",
     timelineStr,
   });
+}
+
+/**
+ * The run's own average moving velocity (m/s) — the yardstick a "rep" has to
+ * beat before we believe it is one. Taken from the athlete's laps when they
+ * exist (their watch's numbers), otherwise from the logged distance/duration.
+ */
+function lapAverageVelocity(
+  laps: LapInput[],
+  row: { workout_distance_miles?: number | null; workout_duration_minutes?: number | null },
+): number {
+  const meters = laps.reduce((a, l) => a + Number(l.distance ?? 0), 0);
+  const seconds = laps.reduce((a, l) => a + Number(l.moving_time ?? l.elapsed_time ?? 0), 0);
+  if (meters > 0 && seconds > 0) return meters / seconds;
+  const mi = Number(row.workout_distance_miles ?? 0);
+  const min = Number(row.workout_duration_minutes ?? 0);
+  return mi > 0 && min > 0 ? (mi * 1609.34) / (min * 60) : 0;
+}
+
+/**
+ * Collapse a segmentation into the one continuous effort it actually was. Used
+ * when the stream "structure" turned out to be a steady run interrupted by
+ * stops: we still report the running, just not as reps.
+ */
+function mergeToSingleBout(segments: BoutOrRecovery[]): BoutOrRecovery[] {
+  const work = segments.filter((s): s is WorkBout => s.kind === "work");
+  if (work.length < 2) return segments;
+  const distance_m = segments.reduce((a, s) => a + s.distance_m, 0);
+  const duration_s = segments.reduce((a, s) => a + s.duration_s, 0);
+  const stopped_s = segments.reduce((a, s) => a + s.stopped_s, 0);
+  const avg_vel_ms = duration_s > 0 ? distance_m / duration_s : 0;
+  return [{
+    kind: "work",
+    index: 1,
+    start_s: work[0].start_s,
+    end_s: work[work.length - 1].end_s,
+    duration_s,
+    stopped_s,
+    start_m: work[0].start_m,
+    end_m: work[work.length - 1].end_m,
+    distance_m: Math.round(distance_m),
+    avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
+    avg_pace_per_mile: formatPace(avg_vel_ms > 0 ? Math.round(1609.34 / avg_vel_ms) : 0),
+    avg_pace_per_km: formatPace(avg_vel_ms > 0 ? Math.round(1000 / avg_vel_ms) : 0),
+  }];
 }
 
 function formatPace(secPerMile: number): string {

@@ -113,7 +113,8 @@ struct CoachReadView: View {
                         eyebrow: "THE DAILY READ",
                         title: "No read yet. The coach writes one from your training — log a run or a voice memo first, then generate your first read.",
                         cta: .init(label: "GENERATE TODAY'S READ") {
-                            Task { try? await service.refresh() }
+                            // Explicit user intent → allowed to spend an LLM call.
+                            Task { try? await service.refresh(generateIfMissing: true) }
                         }
                     )
                     .padding(.top, 48)
@@ -125,7 +126,9 @@ struct CoachReadView: View {
         }
         .background(Color.drip.background.ignoresSafeArea())
         .refreshable {
-            try? await service.refresh()
+            // Pull-to-refresh on the mounted Read surface is explicit user
+            // intent → allowed to generate (paid call) when today's is missing.
+            try? await service.refresh(generateIfMissing: true)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             askBar

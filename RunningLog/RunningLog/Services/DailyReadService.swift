@@ -17,11 +17,13 @@
 //
 //  Lifecycle:
 //    - `refresh()` is called once at app launch from `RunningLogApp`
-//      and again on every foreground transition.
-//    - `refresh()` first SELECTs the completed `daily_coaching_reads`
-//      row for today (cheap, RLS-scoped to the user via the Supabase
-//      Swift client). On a miss it POSTs to `coaching-daily-read` with
-//      `triggered_by = "manual"` to generate one.
+//      and again on every foreground transition. Those calls are
+//      SELECT-only (cheap): they hydrate an existing completed row and
+//      NEVER trigger a paid LLM generation.
+//    - `refresh(generateIfMissing: true)` additionally POSTs to
+//      `coaching-daily-read` with `triggered_by = "manual"` when no
+//      completed row exists. Only a mounted, user-visible Read surface
+//      should pass this flag — generation is a real Gemini call.
 //    - After the Read lands, the service issues two parallel
 //      `IN (…)` queries to hydrate every cited workout and doc into
 //      `workoutsById` / `docsById`, so the SwiftUI chip components
@@ -71,14 +73,19 @@ final class DailyReadService {
 
     // MARK: - Public API
 
-    /// Fetch today's Read from the database; generate one via the edge
-    /// function if no completed row exists for today. Then hydrate the
-    /// referenced workouts and docs into the in-memory caches.
+    /// Fetch today's Read from the database. By default this is a cheap
+    /// SELECT-only refresh; pass `generateIfMissing: true` to POST to the
+    /// edge function (a paid LLM call) when no completed row exists.
     ///
-    /// Safe to call repeatedly — re-runs are cheap when a completed
-    /// row exists for today (one SELECT, two `IN` queries).
+    /// COST (2026-08-13): the default flipped from generate-always to
+    /// SELECT-only. This method runs on every app launch and every
+    /// foreground transition, and the Read surface (CoachReadView) is
+    /// currently unmounted — so the old behavior generated a paid
+    /// frontier-model Read on a dark surface, dozens of times a day
+    /// during development ($7/day Gemini bills). Only a surface the user
+    /// is actually looking at should pass `generateIfMissing: true`.
     @MainActor
-    func refresh() async throws {
+    func refresh(generateIfMissing: Bool = false) async throws {
         guard let userId = AuthManager.shared.currentUserId else {
             Log.coachRead.info("refresh() skipped — no signed-in user")
             return
@@ -87,7 +94,15 @@ final class DailyReadService {
         defer { isLoading = false }
 
         do {
-            let read = try await fetchOrGenerateTodayRead(userId: userId)
+            guard let read = try await fetchOrGenerateTodayRead(
+                userId: userId,
+                generateIfMissing: generateIfMissing
+            ) else {
+                // No completed Read for today and generation not requested.
+                // Keep whatever we had; this is the normal launch path.
+                lastError = nil
+                return
+            }
             todayRead = read
             try await hydrate(read: read)
             lastError = nil
@@ -161,7 +176,10 @@ final class DailyReadService {
     // MARK: - Fetch / generate
 
     @MainActor
-    private func fetchOrGenerateTodayRead(userId: String) async throws -> CoachRead {
+    private func fetchOrGenerateTodayRead(
+        userId: String,
+        generateIfMissing: Bool
+    ) async throws -> CoachRead? {
         let today = Self.deviceLocalDateString()
 
         // 1. Cheap path: SELECT the completed row for today via the
@@ -194,13 +212,16 @@ final class DailyReadService {
                 return read
             }
         } catch {
-            // Don't bail on a SELECT failure — fall through to the
-            // generate path. The edge function call is the canonical
-            // recovery: it'll write the row server-side and return it.
+            // SELECT failure: only fall through to the generate path when the
+            // caller explicitly asked for generation. The old behavior
+            // ("SELECT failed → generate") turned transient network/decoding
+            // errors into paid LLM calls on every foreground.
             Log.coachRead.warning(
-                "SELECT failed (\(error.localizedDescription)) — falling back to generate"
+                "SELECT failed (\(error.localizedDescription))"
             )
         }
+
+        guard generateIfMissing else { return nil }
 
         // 2. Generate path: POST to the edge function. It short-
         //    circuits on completed rows internally — so even if our

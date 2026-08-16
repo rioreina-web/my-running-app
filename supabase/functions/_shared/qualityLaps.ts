@@ -26,6 +26,13 @@ type Db = { from: (table: string) => any };
 const LAP_COLS =
   "workout_id, lap_index, is_rest, distance_meters, avg_pace_sec_per_mile, moving_time_seconds, elapsed_time_seconds, avg_heart_rate, max_heart_rate, total_elevation_gain, stream_start_index, stream_end_index, heat_adjusted_pace_sec_per_mile, heat_category";
 
+/** Workouts per IN list. Independent of the row cap now that pages are read. */
+const CHUNK = 200;
+
+/** Rows per page. Deliberately under any plausible `max-rows` so a project
+ *  configured lower than 1000 still paginates rather than silently truncating. */
+const PAGE = 500;
+
 /**
  * Laps by workout id for the given workouts, native/derived then corrected.
  * Chunked to keep the IN list sane. Additive: any query failure just yields
@@ -39,20 +46,45 @@ export async function fetchQualityLaps(
   const byId = new Map<string, KeySessionLap[]>();
   if (workoutIds.length === 0) return byId;
 
-  for (let i = 0; i < workoutIds.length; i += 200) {
-    const chunk = workoutIds.slice(i, i + 200);
-    const { data, error } = await db
-      .from("running_workout_laps")
-      .select(LAP_COLS)
-      .eq("user_id", userId)
-      .in("workout_id", chunk)
-      .order("lap_index", { ascending: true });
-    if (error) continue;
-    for (const lap of (data ?? []) as Array<Record<string, unknown>>) {
-      const wid = String(lap.workout_id);
-      const arr = byId.get(wid) ?? [];
-      arr.push(lap as unknown as KeySessionLap);
-      byId.set(wid, arr);
+  for (let i = 0; i < workoutIds.length; i += CHUNK) {
+    const chunk = workoutIds.slice(i, i + CHUNK);
+
+    // PAGINATE. PostgREST caps a response at `max-rows` (1000 on this project)
+    // and says nothing when it truncates — you get 1000 rows and a 200. Two
+    // hundred workouts is routinely more than that: on 2026-08-11 the first
+    // chunk of a 26-week window was 1044 laps, so 44 went missing on every
+    // single request. Because the old ORDER BY was `lap_index` alone, the rows
+    // that fell off the end were the HIGHEST indices — the tail of interval
+    // sessions. Sessions quietly lost their last reps, which is both the
+    // hardest work of the week and the work that carries the most load.
+    //
+    // Ordering is now (workout_id, lap_index): `lap_index` alone is not a
+    // total order — every workout has a lap 1 — so page boundaries could
+    // repeat or skip rows even once ranges were added. Callers still receive
+    // each workout's laps in lap order, which is the contract they rely on.
+    let from = 0;
+    for (;;) {
+      const { data, error } = await db
+        .from("running_workout_laps")
+        .select(LAP_COLS)
+        .eq("user_id", userId)
+        .in("workout_id", chunk)
+        .order("workout_id", { ascending: true })
+        .order("lap_index", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) break;
+      const rows = (data ?? []) as Array<Record<string, unknown>>;
+      for (const lap of rows) {
+        const wid = String(lap.workout_id);
+        const arr = byId.get(wid) ?? [];
+        arr.push(lap as unknown as KeySessionLap);
+        byId.set(wid, arr);
+      }
+      // A short page is the last page. Equality means there may be more, so
+      // ask again — one wasted round-trip on an exact multiple beats
+      // truncating, which is the bug this replaces.
+      if (rows.length < PAGE) break;
+      from += PAGE;
     }
   }
 

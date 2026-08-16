@@ -9,15 +9,22 @@
 //  own switch, so the same run showed up as "Easy run" one place and
 //  "Easy" another. This is the fix for that drift (Wave 2 · H1).
 //
-//  Label taxonomy (per CLAUDE.md "Pace zones" + "Workout labels"):
-//    Effort:      Easy · Moderate · Steady · Recovery
-//    Race-pace:   MP · HMP · LT · 10K · 5K · 3K · Mile
-//    Structural:  Long run · Long wo · Cross-train · Strength · Rest · Race
+//  Label taxonomy (2026-08-10 — supersedes the pace-zone-as-label rule):
+//    Effort:      Easy · Moderate · Steady · Recovery run
+//    Session:     Threshold · Intervals · Fartlek · Progression
+//    Structural:  Long run · Long run workout · Cross-train · Strength ·
+//                 Rest · Race
 //
-//  "Tempo" and "Threshold" are retired as ambiguous — the pace zone IS
-//  the label. Threshold maps to LT (unambiguous). "Tempo" is kept ONLY
-//  as a legacy display for rows already stored that way; it is no longer
-//  offered when logging a new workout (see ManualWorkoutView).
+//  A PACE ZONE IS NOT A WORKOUT TYPE. MP/HMP/LT/10K/5K/3K/Mile describe
+//  the pace of a segment, not the intent of a session — a workout carries
+//  its zone as a separate, auto-derived label. They are therefore no
+//  longer offered here; rows already stored under them still render via
+//  `display(_:)` and survive an edit via `options(including:)`.
+//
+//  "Tempo" is retired — it folds to "Threshold" on write (see `normalize`).
+//  The reverse fold (threshold → lt) that this file used to do is GONE:
+//  Threshold is a session type, LT is a pace zone, and collapsing one into
+//  the other is the ambiguity that made both unreadable.
 //
 
 import Foundation
@@ -38,7 +45,7 @@ enum WorkoutLabel {
         case "easy":                        return "Easy"
         case "moderate":                    return "Moderate"
         case "steady":                      return "Steady"
-        case "recovery":                    return "Recovery"
+        case "recovery":                    return "Recovery run"
 
         // ── Race-pace zones (the 10-zone taxonomy) ───────────────────
         case "mp":                          return "MP"
@@ -51,19 +58,21 @@ enum WorkoutLabel {
 
         // ── Structural ───────────────────────────────────────────────
         case "long_run", "longrun", "long": return "Long run"
-        case "long_wo", "longwo":           return "Long wo"
+        case "long_wo", "longwo":           return "Long run workout"
         case "cross_train", "cross_training", "crosstraining", "crosstrain":
             return "Cross-train"
         case "strength":                    return "Strength"
         case "rest":                        return "Rest"
         case "race":                        return "Race"
 
-        // ── Legacy (existing rows only; not offered for new entries) ──
-        case "threshold":                   return "LT"       // Threshold IS LT
-        case "tempo":                       return "Tempo"    // kept for legacy data
+        // ── Session types ────────────────────────────────────────────
+        case "threshold":                   return "Threshold"
         case "intervals", "interval":       return "Intervals"
-        case "progression":                 return "Progression"
         case "fartlek":                     return "Fartlek"
+        case "progression":                 return "Progression"
+
+        // ── Legacy (existing rows only; not offered for new entries) ──
+        case "tempo":                       return "Threshold"  // folded 2026-08-10
         case "hills":                       return "Hills"
         case "strides":                     return "Strides"
 
@@ -95,17 +104,20 @@ enum WorkoutLabel {
     //
     // So: one list, here, next to the mapper that renders it.
 
-    /// Run types offered when logging or re-typing a run — the pace-zone
-    /// taxonomy from CLAUDE.md. "Tempo" and "Threshold" are deliberately absent
-    /// (retired as ambiguous — the pace zone IS the label; Threshold is LT).
-    /// Legacy values already stored are preserved on edit via
-    /// `options(including:)`.
+    /// Run types offered when logging or re-typing a run (2026-08-10).
+    ///
+    /// Ordered by how a week actually reads: the aerobic efforts first, then
+    /// the long runs, then the quality sessions, then Race. Pace zones are
+    /// deliberately ABSENT — a zone describes a segment's pace, not a
+    /// session's intent, and a workout gets its zone label automatically.
+    /// Legacy values already stored (incl. `mp`, `lt`, `5k`, `tempo`) are
+    /// preserved on edit via `options(including:)`.
     static let offered: [(String, String)] = [
         ("easy", "Easy"), ("moderate", "Moderate"), ("steady", "Steady"),
-        ("mp", "MP"), ("hmp", "HMP"), ("lt", "LT"),
-        ("10k", "10K"), ("5k", "5K"), ("3k", "3K"), ("mile", "Mile"),
-        ("long_run", "Long run"), ("recovery", "Recovery"),
-        ("race", "Race"), ("other", "Other"),
+        ("long_run", "Long run"), ("long_wo", "Long run workout"),
+        ("threshold", "Threshold"), ("intervals", "Intervals"),
+        ("fartlek", "Fartlek"), ("recovery", "Recovery run"),
+        ("progression", "Progression"), ("race", "Race"),
     ]
 
     /// The offer list, plus `current` when it's a legacy value that isn't in
@@ -145,7 +157,7 @@ enum WorkoutLabel {
         case "longwo":                            return "long_wo"
         case "cross_training", "crosstraining", "crosstrain":
             return "cross_train"
-        case "threshold":                         return "lt"
+        case "tempo":                             return "threshold"
         default:                                  return raw
         }
     }

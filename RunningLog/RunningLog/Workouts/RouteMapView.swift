@@ -52,6 +52,7 @@ struct RouteMapView: View {
     private let region: MKCoordinateRegion
     private let bbox: RouteBBox
     private let hasPaceColor: Bool
+    private let scrubTrack: RouteScrubTrack
 
     private let height: CGFloat
 
@@ -62,11 +63,17 @@ struct RouteMapView: View {
     ///   - repMarkers: optional numbered interval pins.
     ///   - showMileMarkers: place a tick every whole mile.
     ///   - height: inline map height.
+    ///   - hrTimes: heart-rate stream sample times, seconds from workout start.
+    ///     Optional — without it the expanded map still scrubs, just with pace
+    ///     only. Pace comes from the route's own timestamps.
+    ///   - hrValues: heart-rate values in BPM, parallel to `hrTimes`.
     init(
         route: [CLLocation],
         repMarkers: [RouteMarker] = [],
         showMileMarkers: Bool = true,
-        height: CGFloat = 240
+        height: CGFloat = 240,
+        hrTimes: [Double] = [],
+        hrValues: [Double] = []
     ) {
         let cleaned = RouteSanitizer.clean(route)
         self.clean = cleaned
@@ -87,6 +94,11 @@ struct RouteMapView: View {
         self.mileMarkers = showMileMarkers ? RouteMapView.buildMileMarkers(cleaned) : []
         self.region = RouteMapView.boundingRegion(cleaned)
         self.bbox = RouteMapView.boundingBox(cleaned)
+
+        // Scrub data is built off the FULL cleaned track (not the 240-point
+        // render downsample) so the readout is as precise as the GPS allows,
+        // then capped at 600 points for a fast hit test.
+        self.scrubTrack = RouteScrubTrack(route: cleaned, hrTimes: hrTimes, hrValues: hrValues)
     }
 
     var body: some View {
@@ -123,7 +135,8 @@ struct RouteMapView: View {
                 downsampledCoords: downsampledCoords,
                 clean: clean,
                 repMarkers: repMarkers,
-                mileMarkers: mileMarkers
+                mileMarkers: mileMarkers,
+                track: scrubTrack
             )
         }
     }
@@ -308,8 +321,16 @@ private struct RouteMapFullscreen: View {
     let clean: [CLLocation]
     let repMarkers: [RouteMarker]
     let mileMarkers: [RouteMarker]
+    var track: RouteScrubTrack = RouteScrubTrack(route: [])
 
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("unit_use_km") private var km = false
+
+    /// MOVE = normal map. TRACE = drag along the route to read pace/HR.
+    @State private var scrubbing = false
+    @State private var scrubIndex: Int?
+
+    private var canScrub: Bool { !track.isEmpty }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -321,7 +342,10 @@ private struct RouteMapFullscreen: View {
                 downsampledCoords: downsampledCoords,
                 clean: clean,
                 repMarkers: repMarkers,
-                mileMarkers: mileMarkers
+                mileMarkers: mileMarkers,
+                track: track,
+                scrubEnabled: scrubbing,
+                scrubIndex: $scrubIndex
             )
             .ignoresSafeArea()
 
@@ -333,7 +357,154 @@ private struct RouteMapFullscreen: View {
                     .background(.regularMaterial, in: Circle())
             }
             .padding(16)
+
+            if canScrub {
+                modeToggle
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+            }
+
+            if canScrub {
+                VStack {
+                    Spacer()
+                    RouteScrubReadout(
+                        point: scrubIndex.flatMap { track.point(at: $0) },
+                        hasHR: track.hasHR,
+                        armed: scrubbing,
+                        km: km
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+            }
         }
+    }
+
+    /// Two words, one tap. Scrub has to be an explicit mode because a drag on
+    /// a map already means "pan" — there's no way to have both on one finger
+    /// without one of them feeling broken.
+    private var modeToggle: some View {
+        HStack(spacing: 0) {
+            modeButton(title: "MOVE", active: !scrubbing) {
+                scrubbing = false
+                scrubIndex = nil
+            }
+            modeButton(title: "TRACE", active: scrubbing) {
+                scrubbing = true
+            }
+        }
+        .background(Color.drip.cardBackground.opacity(0.94), in: Capsule())
+        .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+        .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+    }
+
+    private func modeButton(title: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.dripStat(10))
+                .foregroundStyle(active ? Color.drip.cardBackground : Color.drip.textSecondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule().fill(active ? Color.drip.textPrimary : Color.clear)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Scrub readout
+
+/// The pace / HR card under the expanded map. Three states, in order of how
+/// often the athlete will see them:
+///   • scrubbing on a point  → the numbers at that moment
+///   • TRACE on, nothing yet → a one-line prompt
+///   • MOVE mode             → hidden entirely
+private struct RouteScrubReadout: View {
+    let point: RouteScrubPoint?
+    let hasHR: Bool
+    let armed: Bool
+    let km: Bool
+
+    var body: some View {
+        Group {
+            if let p = point {
+                filled(p)
+            } else if armed {
+                prompt
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: point?.elapsed)
+    }
+
+    private var prompt: some View {
+        Text("DRAG ALONG THE ROUTE")
+            .font(.dripStat(10))
+            .foregroundStyle(Color.drip.textSecondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.drip.cardBackground.opacity(0.94), in: Capsule())
+            .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+    }
+
+    private func filled(_ p: RouteScrubPoint) -> some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 0) {
+                cell(
+                    label: "PACE",
+                    value: p.paceSec.map { rr_pace($0, km: km) } ?? "—",
+                    unit: km ? "/km" : "/mi",
+                    tint: Color.drip.paceFast
+                )
+                if hasHR {
+                    divider
+                    cell(
+                        label: "HR",
+                        value: p.hr.map { "\(Int($0.rounded()))" } ?? "—",
+                        unit: "bpm",
+                        tint: Color.drip.coral
+                    )
+                }
+            }
+            // Where you are on the run. Without this the numbers float free —
+            // a pace with no position doesn't tell you anything.
+            Text("\(rr_dist(p.distanceMeters / 1609.344, km: km)) IN · \(rr_clock(p.elapsed)) ELAPSED")
+                .font(.dripStat(9))
+                .foregroundStyle(Color.drip.textTertiary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .background(Color.drip.cardBackground.opacity(0.96))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.drip.divider, lineWidth: 1))
+        .shadow(color: .black.opacity(0.14), radius: 10, y: 3)
+    }
+
+    private func cell(label: String, value: String, unit: String, tint: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(label)
+                .font(.dripStat(9))
+                .foregroundStyle(Color.drip.textTertiary)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.dripStat(26))
+                    .foregroundStyle(tint)
+                    .monospacedDigit()
+                Text(unit)
+                    .font(.dripStat(10))
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.drip.divider)
+            .frame(width: 1, height: 34)
     }
 }
 

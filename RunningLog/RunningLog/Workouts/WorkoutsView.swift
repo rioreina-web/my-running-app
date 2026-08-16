@@ -875,7 +875,7 @@ struct TrainingEffortChart: View {
             let cutoff = Calendar.current.date(byAdding: .month, value: -3, to: Date()) ?? Date()
             let logs: [TrainingLog] = try await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .gte("workout_date", value: ISO8601DateFormatter().string(from: cutoff))
                 .not("pace_segments", operator: .is, value: "null")
                 .execute()

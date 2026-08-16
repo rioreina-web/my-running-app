@@ -484,20 +484,27 @@ struct AddGoalSheet: View {
     /// No keyword gate: the model decides whether there's a race. This replaces
     /// the old whitelist that skipped goals like "Run sub 2:20 at CIM" because
     /// "CIM" wasn't in a hardcoded list.
-    private static func interpretGoal(goalText: String, raceDate: Date) async {
+    /// Internal (not private) so GoalDetailSheet can re-run interpretation
+    /// after an edit — a goal whose wording changed needs its structured
+    /// distance/time re-derived, or the Ask cards read a stale goal.
+    static func interpretGoal(goalText: String, raceDate: Date, goalId: String? = nil) async {
         let userId = AuthManager.shared.userId
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
         let dateStr = formatter.string(from: raceDate)
 
         do {
+            var body: [String: Any] = [
+                "goal_text": goalText,
+                "target_date": dateStr,
+                "user_id": userId,
+            ]
+            // Editing passes the goal's own id: the edge function's fallback
+            // ("most recent active goal") is only right at creation time.
+            if let goalId { body["goal_id"] = goalId }
             _ = try await callEdgeFunction(
                 name: "interpret-goal",
-                body: [
-                    "goal_text": goalText,
-                    "target_date": dateStr,
-                    "user_id": userId,
-                ]
+                body: body
             )
             Log.goals.info("Goal interpreted: \(goalText)")
         } catch {
@@ -710,6 +717,18 @@ struct GoalDetailSheet: View {
                 isUpdating = false
                 onUpdate()
                 dismiss()
+            }
+
+            // Re-run interpretation in the background: the wording (or date)
+            // just changed, so the structured distance/time derived from the
+            // old wording may now be stale — and a goal created before the
+            // interpreter shipped gets its first interpretation here, which
+            // makes editing a goal the self-serve fix for older goals.
+            let title = trimmedTitle
+            let date = editedDate
+            let goalId = goal.id.uuidString
+            Task.detached {
+                await AddGoalSheet.interpretGoal(goalText: title, raceDate: date, goalId: goalId)
             }
         } catch {
             Log.goals.error("Failed to update goal: \(error)")

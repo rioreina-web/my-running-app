@@ -24,6 +24,11 @@
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  isProviderExhausted,
+  PROVIDER_EXHAUSTED_MARKER,
+  PROVIDER_EXHAUSTED_STATUS,
+} from "../_shared/provider-errors.ts";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
@@ -40,6 +45,26 @@ interface ExtractResult {
   felt_rpe: number | null;
   pull_quote: string | null;
   tags: string[];
+}
+
+/**
+ * True when the token is a Supabase service-role JWT (by claim). Signature is
+ * NOT checked here — the gateway already did that (verify_jwt = true). Mirrors
+ * the helper in drain-coach-insight-jobs / drain-coachable-moment-jobs.
+ */
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -105,9 +130,33 @@ Deno.serve(async (req) => {
 
   if (!logId) return jsonResponse({ error: "log_id is required" }, 400);
 
-  const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
-  if ("response" in auth) return auth.response;
-  const { userId, isServiceRole } = auth;
+  // ── Service-role path: decode the role claim instead of exact-matching
+  // SUPABASE_SERVICE_ROLE_KEY. The gateway has already verified the JWT
+  // signature (verify_jwt = true), so reading the claim is safe here — and it
+  // is robust to service-key / Vault drift, which is exactly what 401'd every
+  // dispatch_rpe_extraction call on 2026-08-07: the Vault copy of the key (the
+  // one the cron sends) no longer string-equals the function-env copy, even
+  // though both are validly signed. Same fix the drain-* functions adopted on
+  // 2026-06-11 for the same drift. Do NOT copy this pattern into a function
+  // with verify_jwt = false — there the claim would be unverified.
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const bearer = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+  let userId: string;
+  let isServiceRole: boolean;
+  if (bearer && isServiceRoleJWT(bearer)) {
+    if (!bodyUserId) {
+      return jsonResponse({ error: "Service-role caller must specify user_id in body" }, 400);
+    }
+    userId = bodyUserId;
+    isServiceRole = true;
+  } else {
+    // User-JWT path (and its user_id-mismatch check) unchanged.
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    ({ userId, isServiceRole } = auth);
+  }
 
   // Per-user rate limit before the LLM call. Service-role callers (DB webhook,
   // trigger, backfill) bypass via isServiceRole; the user-JWT path pays it.
@@ -134,6 +183,31 @@ Deno.serve(async (req) => {
     return jsonResponse({ skipped: "no transcript", felt_rpe: null });
   }
 
+  /** Give back the attempt the dispatcher spent, leaving the row claimable.
+   *  Best-effort: failing to do the bookkeeping must not mask the outage.
+   *  Read-then-write is safe — the claim predicate's 10-minute
+   *  `last_attempt_at` floor means no concurrent writer for this row. */
+  async function releaseRpeAttempt(trainingLogId: string): Promise<void> {
+    try {
+      const { data } = await supabase
+        .from("rpe_extraction_jobs")
+        .select("attempts")
+        .eq("training_log_id", trainingLogId)
+        .single();
+      const current = (data?.attempts as number | undefined) ?? 0;
+      await supabase
+        .from("rpe_extraction_jobs")
+        .update({ attempts: Math.max(0, current - 1) })
+        .eq("training_log_id", trainingLogId);
+      console.warn(
+        `[extract-rpe] provider unavailable for ${trainingLogId}; ` +
+          `attempt not counted (attempts ${current} -> ${Math.max(0, current - 1)})`,
+      );
+    } catch {
+      // Swallowed deliberately — see above.
+    }
+  }
+
   let extracted: ExtractResult | null = null;
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -142,6 +216,19 @@ Deno.serve(async (req) => {
     ]);
     extracted = parseModelJson(result.response.text());
   } catch (e) {
+    // A provider billing/quota outage must not spend this job's retry budget.
+    // The dispatcher increments `attempts` at dispatch time and never sees this
+    // response, so an outage silently ratchets every queued row to attempts = 3
+    // — permanently unclaimable, since the claim predicate is `attempts < 3`.
+    // Hand the attempt back so the queue drains itself once the provider is
+    // funded. Same fix as parse-workout-structure; see _shared/provider-errors.ts.
+    if (isProviderExhausted(e)) {
+      await releaseRpeAttempt(logId);
+      return jsonResponse(
+        { error: "extraction provider unavailable", reason: PROVIDER_EXHAUSTED_MARKER },
+        PROVIDER_EXHAUSTED_STATUS,
+      );
+    }
     return jsonResponse({ error: `extraction failed: ${e}` }, 502);
   }
 

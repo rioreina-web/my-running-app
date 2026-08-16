@@ -213,6 +213,11 @@ final class AuthManager {
 
     func signOut() async throws {
         try await supabase.auth.signOut()
+        // Wipe every last-known-good snapshot (journal, training-log store).
+        // Cached rows are account-scoped and validated on read, but a
+        // sign-out means this device should hold NO training data at rest —
+        // belt and suspenders.
+        DiskCache.clearAll()
     }
 
     // MARK: - Nonce Helpers

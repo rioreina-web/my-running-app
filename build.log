@@ -1,0 +1,4 @@
+=== BUILD START Fri Aug 14 03:07:18 UTC 2026 ===
+./build.command: line 9: xcodebuild: command not found
+=== EXIT 127 ===
+=== BUILD END Fri Aug 14 03:07:18 UTC 2026 ===

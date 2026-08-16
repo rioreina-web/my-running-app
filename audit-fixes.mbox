@@ -1,0 +1,2705 @@
+From 293c054bb9b8d3ec6ecfa8e472be1a9e5125d909 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:46:52 +0000
+Subject: [PATCH 01/21] Fix 1.1: remove KVO observer that crashed the app on
+ video dismiss
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+playerItem.addObserver registered PlayerObserver.shared on
+playbackLikelyToKeepUp and nothing ever removed it. onDisappear released
+the AVPlayerItem while the observer was still attached, which raises
+NSInternalInconsistencyException and terminates the process — a
+reproducible crash on every close of the Content Library player.
+
+PlayerObserver.observeValue was an empty stub, so the registration did no
+work at all. Removed it and the now-unused PlayerObserver class.
+
+Also captured the two NotificationCenter observer tokens and added
+teardownPlayer(), called from both onDisappear and the top of
+setupPlayer(). Previously each Try Again tap leaked another retained
+closure and orphaned the previous item.
+---
+ .../RunningLog/Shared/VideoPlayerView.swift   | 92 +++++++++++--------
+ 1 file changed, 52 insertions(+), 40 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Shared/VideoPlayerView.swift b/RunningLog/RunningLog/Shared/VideoPlayerView.swift
+index 29e76bf..275705b 100644
+--- a/RunningLog/RunningLog/Shared/VideoPlayerView.swift
++++ b/RunningLog/RunningLog/Shared/VideoPlayerView.swift
+@@ -19,6 +19,11 @@ struct VideoPlayerView: View {
+     @State private var isBuffering = true
+     @State private var error: String?
+ 
++    /// Tokens for the NotificationCenter observers registered in `setupPlayer`.
++    /// These MUST be removed before the player item is released — otherwise
++    /// every "Try Again" tap leaks another retained closure.
++    @State private var observerTokens: [NSObjectProtocol] = []
++
+     var body: some View {
+         ZStack {
+             Color.black.ignoresSafeArea()
+@@ -91,14 +96,35 @@ struct VideoPlayerView: View {
+             setupPlayer()
+         }
+         .onDisappear {
+-            player?.pause()
+-            player = nil
++            teardownPlayer()
+         }
+     }
+ 
++    // MARK: - Teardown
++
++    /// Release the player and every observer attached to its item.
++    ///
++    /// Observers must come off BEFORE the `AVPlayerItem` deallocates. A KVO
++    /// observer that outlives its observed object raises
++    /// `NSInternalInconsistencyException` and terminates the process — which is
++    /// what used to happen on every close of this screen.
++    private func teardownPlayer() {
++        for token in observerTokens {
++            NotificationCenter.default.removeObserver(token)
++        }
++        observerTokens = []
++
++        player?.pause()
++        player = nil
++    }
++
+     // MARK: - Setup Player
+ 
+     private func setupPlayer() {
++        // "Try Again" calls straight back into here, so tear the previous
++        // attempt down first rather than orphaning its item and observers.
++        teardownPlayer()
++
+         // Check if video is downloaded locally
+         let downloadManager = VideoDownloadManager.shared
+         let videoURL: URL
+@@ -136,31 +162,34 @@ struct VideoPlayerView: View {
+         newPlayer.automaticallyWaitsToMinimizeStalling = false
+ 
+         // Observe playback status
+-        NotificationCenter.default.addObserver(
+-            forName: .AVPlayerItemDidPlayToEndTime,
+-            object: playerItem,
+-            queue: .main
+-        ) { _ in
+-            // Video finished - could loop or dismiss
+-        }
++        observerTokens.append(
++            NotificationCenter.default.addObserver(
++                forName: .AVPlayerItemDidPlayToEndTime,
++                object: playerItem,
++                queue: .main
++            ) { _ in
++                // Video finished - could loop or dismiss
++            }
++        )
+ 
+         // Observe for errors
+-        NotificationCenter.default.addObserver(
+-            forName: .AVPlayerItemFailedToPlayToEndTime,
+-            object: playerItem,
+-            queue: .main
+-        ) { _ in
+-            error = "Playback failed. Please try again."
+-        }
+-
+-        // KVO for buffering state
+-        playerItem.addObserver(
+-            PlayerObserver.shared,
+-            forKeyPath: "playbackLikelyToKeepUp",
+-            options: [.new],
+-            context: nil
++        observerTokens.append(
++            NotificationCenter.default.addObserver(
++                forName: .AVPlayerItemFailedToPlayToEndTime,
++                object: playerItem,
++                queue: .main
++            ) { _ in
++                error = "Playback failed. Please try again."
++            }
+         )
+ 
++        // NOTE: a KVO registration on `playbackLikelyToKeepUp` used to live here,
++        // pointed at a `PlayerObserver` whose `observeValue` was an empty stub.
++        // It was never removed, so releasing the item on dismiss crashed the app.
++        // Since it did no work, it is simply gone. If buffering state is wanted
++        // later, use the block-based `playerItem.observe(\.isPlaybackLikelyToKeepUp)`
++        // and hold the returned `NSKeyValueObservation` for the view's lifetime.
++
+         player = newPlayer
+ 
+         // Start playing immediately
+@@ -238,23 +267,6 @@ struct VideoPlayerView: View {
+     }
+ }
+ 
+-// MARK: - PlayerObserver
+-
+-/// Simple observer class for KVO
+-private class PlayerObserver: NSObject {
+-    static let shared = PlayerObserver()
+-
+-    // swiftlint:disable:next block_based_kvo
+-    override func observeValue(
+-        forKeyPath keyPath: String?,
+-        of object: Any?,
+-        change: [NSKeyValueChangeKey: Any]?,
+-        context: UnsafeMutableRawPointer?
+-    ) {
+-        // Buffering state changes handled here if needed
+-    }
+-}
+-
+ #Preview {
+     VideoPlayerView(
+         video: ContentLibraryItem(
+-- 
+2.43.0
+
+From c731cfe1684a0234d30df630d89afd55248abe80 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:47:26 +0000
+Subject: [PATCH 02/21] Fix 1.2: guard parallel sensor arrays against length
+ mismatch
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+calculateSplits validated distance.count == time.count but then indexed
+velocitySmooth by the same range; calculatePaceSplits validated distance
+and velocity but indexed heartrate by segment bounds. Providers regularly
+return a short series — a dropped tail on a Strava/Garmin import, a watch
+losing HR mid-run — and both paths crashed with index out of range on
+those workouts. WorkoutSyncService calls into this too, so it could take
+down a background sync.
+
+Both series are now length-checked against times and treated as absent
+when they don't match, which the surrounding code already handles (the
+velocity lookup falls back to "assume moving", avgHR goes nil).
+---
+ .../RunningLog/Health/VitalManager.swift      | 20 +++++++++++++++++--
+ 1 file changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Health/VitalManager.swift b/RunningLog/RunningLog/Health/VitalManager.swift
+index 59acf09..37f2e29 100644
+--- a/RunningLog/RunningLog/Health/VitalManager.swift
++++ b/RunningLog/RunningLog/Health/VitalManager.swift
+@@ -154,7 +154,15 @@ final class VitalManager {
+               distances.count == times.count, distances.count >= 2
+         else { return [] }
+ 
+-        let velocities = stream.velocitySmooth
++        // Only trust the velocity series when it lines up with the time series.
++        // Providers (Strava/Garmin via external_streams) routinely return a
++        // velocity_smooth array shorter than `time` — a dropped tail, a sensor
++        // gap. Indexing it by `times.count` crashed on exactly those runs, so
++        // treat a mismatched series as absent and fall back to "assume moving".
++        let velocities: [Double]? = {
++            guard let v = stream.velocitySmooth, v.count == times.count else { return nil }
++            return v
++        }()
+         let mileInMeters = 1609.34
+         // Match Garmin auto-pause: ~17:00/mile pace = 1.58 m/s
+         let stoppedThreshold = 1.6 // m/s — below this, runner is stopped/walking
+@@ -233,7 +241,15 @@ final class VitalManager {
+               distances.count >= 30
+         else { return [] }
+ 
+-        let heartrates = stream.heartrate
++        // Same rule as the velocity series above: a heartrate array that doesn't
++        // match `times` is not safe to index by segment bounds (seg.endIndex can
++        // reach times.count - 1). A watch that drops HR mid-run — cold weather,
++        // wet strap, a tunnel — produces exactly that, and it used to crash here.
++        // Treat a mismatched series as absent; the per-segment avgHR just goes nil.
++        let heartrates: [Int]? = {
++            guard let hr = stream.heartrate, hr.count == times.count else { return nil }
++            return hr
++        }()
+         let startTime = times[0]
+         let mileInMeters = 1609.34
+ 
+-- 
+2.43.0
+
+From bdca8c1d0556ba768939ced66619c1a97f459c2f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:48:06 +0000
+Subject: [PATCH 03/21] Fix 1.3: recover voice memos stranded mid-upload
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A queued item is committed as status "uploading" before its network call.
+If the process dies in that window — iOS suspending or killing the app,
+memory pressure, a crash — the row stays "uploading" on disk forever. The
+drain fetch excludes it, pendingCount excludes it, and its audio file sits
+orphaned. The memo is gone and the athlete is never told.
+
+performDrain now sweeps stranded rows back to "pending" before fetching.
+It is @MainActor and isDraining-guarded, so nothing in-process can be
+legitimately mid-upload at that point — any "uploading" row is a leftover
+from a previous launch. retryCount is left alone: an interrupted attempt
+is not a failed one and shouldn't spend the item's retry budget.
+---
+ .../RunningLog/Services/OfflineQueue.swift    | 35 +++++++++++++++++++
+ 1 file changed, 35 insertions(+)
+
+diff --git a/RunningLog/RunningLog/Services/OfflineQueue.swift b/RunningLog/RunningLog/Services/OfflineQueue.swift
+index 7bd4e61..6ffc933 100644
+--- a/RunningLog/RunningLog/Services/OfflineQueue.swift
++++ b/RunningLog/RunningLog/Services/OfflineQueue.swift
+@@ -152,6 +152,17 @@ final class OfflineQueueManager {
+         // "failed" — so a dead memo from a past install stops nagging.
+         purgeUnrecoverable(context: context)
+ 
++        // Recover rows stranded mid-flight. An item is committed as "uploading"
++        // before its network call, so if the process dies in that window (iOS
++        // suspends or kills us, memory pressure, a crash) the row stays
++        // "uploading" on disk forever: excluded from the fetch below, excluded
++        // from pendingCount, its audio file orphaned. The memo is silently lost
++        // and the athlete is never told. Nothing else in this process can be
++        // legitimately mid-upload here — performDrain is @MainActor and guarded
++        // by isDraining — so any "uploading" row we see at the top of a drain is
++        // by definition a leftover from a previous launch.
++        requeueStrandedUploads(context: context)
++
+         // Exclude "failed" (retryCount maxed out) as well as in-flight items.
+         // Without this, a permanently-failed row keeps matching the fetch, gets
+         // re-processed on every drain, re-hits the retry cap, and re-fires its
+@@ -258,6 +269,30 @@ final class OfflineQueueManager {
+         }
+     }
+ 
++    /// Return any row left in "uploading" by a previous launch to "pending".
++    ///
++    /// `performDrain` marks a row "uploading" and saves it *before* awaiting the
++    /// network, so a process death in that window strands the row permanently:
++    /// the drain fetch excludes "uploading", and so does the pending count. The
++    /// recording is preserved on disk but nothing will ever pick it up again.
++    ///
++    /// retryCount is deliberately left alone — an interrupted attempt is not a
++    /// failed one, and shouldn't spend the item's retry budget.
++    private func requeueStrandedUploads(context: ModelContext) {
++        let descriptor = FetchDescriptor<PendingUpload>(
++            predicate: #Predicate { $0.status == "uploading" }
++        )
++        guard let stranded = try? context.fetch(descriptor), !stranded.isEmpty else { return }
++
++        for item in stranded {
++            logger.warning("Re-queueing upload stranded mid-flight by a previous launch: \(item.id) (\(item.type))")
++            item.status = "pending"
++        }
++        do { try context.save() } catch { Log.app.error("SwiftData save failed (requeue stranded): \(error)") }
++        refreshCountSync(context: context)
++        logger.info("Re-queued \(stranded.count) stranded upload(s)")
++    }
++
+     private func processUpload(_ upload: PendingUpload) async -> Bool {
+         switch upload.type {
+         case "voiceLog":
+-- 
+2.43.0
+
+From 9d935a1a96c8121b2d5be632cd0e7f210a34c77e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:49:37 +0000
+Subject: [PATCH 04/21] Fix 1.4: stamp user_id on restored rows so backups
+ actually restore
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+TrainingLog, UserGoal and ScheduledWorkout have no userId property, so
+their encoded upsert payload omitted user_id entirely. On a new device the
+backup's row ids don't exist yet, the upsert takes the INSERT path, and
+the row goes in with user_id NULL — rejected by RLS. Every run and every
+voice memo, which is the entire point of the backup, failed to restore
+behind a vague "some tables failed to restore".
+
+Added a UserScoped<T> encoding wrapper that writes the current account's
+id into the same keyed container after the model encodes itself. Applied
+to all six tables: for the three models that already carry user_id this
+re-homes the rows to the restoring account, which is the correct restore
+semantics (the old account's id is not writable by this user anyway).
+
+Restore now fails fast with a clear message when no session is present,
+rather than uploading rows that RLS will silently reject.
+
+NOTE: worth an end-to-end test on a second account before beta — a backup
+people trust and that doesn't restore is worse than no backup.
+---
+ .../RunningLog/Shared/RestoreService.swift    | 77 +++++++++++++++++--
+ 1 file changed, 69 insertions(+), 8 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Shared/RestoreService.swift b/RunningLog/RunningLog/Shared/RestoreService.swift
+index ac50fdb..2a599c3 100644
+--- a/RunningLog/RunningLog/Shared/RestoreService.swift
++++ b/RunningLog/RunningLog/Shared/RestoreService.swift
+@@ -63,14 +63,31 @@ final class RestoreService {
+         var summary = RestoreSummary()
+         var failedTables: [String] = []
+ 
++        // Every restored row is stamped with the account doing the restoring.
++        //
++        // TrainingLog, UserGoal and ScheduledWorkout carry no userId property at
++        // all, so their encoded payload omitted user_id entirely. On a fresh
++        // install the backup's ids don't exist yet, the upsert takes the INSERT
++        // path, and the row goes in with user_id NULL — rejected by RLS. Every
++        // run and every voice memo, which is the whole point of the backup,
++        // failed to restore behind a vague "some tables failed".
++        //
++        // Stamping the current user is also the correct semantics for the three
++        // models that DO carry user_id: restoring into a new account should
++        // re-home the rows to it, not preserve the old account's id (which this
++        // user could not write to anyway).
++        guard let userId = AuthManager.shared.currentUserId, !userId.isEmpty else {
++            throw RestoreError.notSignedIn
++        }
++
+         // Restore each table independently — failures don't block remaining tables
+         let tables: [(String, String, () async throws -> Int)] = [
+-            ("Restoring training logs...", "training_logs", { try await self.upsertBatch("training_logs", items: backup.trainingLogs) }),
+-            ("Restoring training plans...", "training_plans", { try await self.upsertBatch("training_plans", items: backup.trainingPlans) }),
+-            ("Restoring scheduled workouts...", "scheduled_workouts", { try await self.upsertBatch("scheduled_workouts", items: backup.scheduledWorkouts) }),
+-            ("Restoring goals...", "user_goals", { try await self.upsertBatch("user_goals", items: backup.userGoals) }),
+-            ("Restoring injuries...", "injuries", { try await self.upsertBatch("injuries", items: backup.injuries) }),
+-            ("Restoring fitness snapshots...", "fitness_snapshots", { try await self.upsertBatch("fitness_snapshots", items: backup.fitnessSnapshots) }),
++            ("Restoring training logs...", "training_logs", { try await self.upsertBatch("training_logs", items: backup.trainingLogs, userId: userId) }),
++            ("Restoring training plans...", "training_plans", { try await self.upsertBatch("training_plans", items: backup.trainingPlans, userId: userId) }),
++            ("Restoring scheduled workouts...", "scheduled_workouts", { try await self.upsertBatch("scheduled_workouts", items: backup.scheduledWorkouts, userId: userId) }),
++            ("Restoring goals...", "user_goals", { try await self.upsertBatch("user_goals", items: backup.userGoals, userId: userId) }),
++            ("Restoring injuries...", "injuries", { try await self.upsertBatch("injuries", items: backup.injuries, userId: userId) }),
++            ("Restoring fitness snapshots...", "fitness_snapshots", { try await self.upsertBatch("fitness_snapshots", items: backup.fitnessSnapshots, userId: userId) }),
+         ]
+ 
+         for (index, (label, tableName, restore)) in tables.enumerated() {
+@@ -104,14 +121,14 @@ final class RestoreService {
+         return summary
+     }
+ 
+-    private func upsertBatch<T: Encodable>(_ table: String, items: [T]) async throws -> Int {
++    private func upsertBatch<T: Encodable>(_ table: String, items: [T], userId: String) async throws -> Int {
+         guard !items.isEmpty else { return 0 }
+ 
+         // Upsert in chunks of 100 to avoid payload limits
+         let chunkSize = 100
+         for start in stride(from: 0, to: items.count, by: chunkSize) {
+             let end = min(start + chunkSize, items.count)
+-            let chunk = Array(items[start..<end])
++            let chunk = items[start..<end].map { UserScoped(base: $0, userId: userId) }
+             try await supabase
+                 .from(table)
+                 .upsert(chunk, onConflict: "id")
+@@ -121,6 +138,50 @@ final class RestoreService {
+     }
+ }
+ 
++// MARK: - UserScoped
++
++/// Encodes `base` exactly as it would encode itself, then writes `user_id` into
++/// the same keyed container.
++///
++/// Restore needs every row to carry the account doing the restoring, but half
++/// the backup models have no `userId` property to set. Rather than add a field
++/// to six domain models — which would also change what BackupService exports and
++/// what every read path decodes — this wraps them at the point of upload.
++///
++/// Writing `user_id` after `base.encode(to:)` means it wins for the models that
++/// do already encode one, which is the behaviour restore wants.
++private struct UserScoped<T: Encodable>: Encodable {
++    let base: T
++    let userId: String
++
++    private struct AnyKey: CodingKey {
++        let stringValue: String
++        var intValue: Int? { nil }
++        init(_ stringValue: String) { self.stringValue = stringValue }
++        init?(stringValue: String) { self.stringValue = stringValue }
++        init?(intValue: Int) { nil }
++    }
++
++    func encode(to encoder: Encoder) throws {
++        try base.encode(to: encoder)
++        var container = encoder.container(keyedBy: AnyKey.self)
++        try container.encode(userId, forKey: AnyKey("user_id"))
++    }
++}
++
++// MARK: - RestoreError
++
++enum RestoreError: LocalizedError {
++    case notSignedIn
++
++    var errorDescription: String? {
++        switch self {
++        case .notSignedIn:
++            return "You need to be signed in to restore a backup. Sign in and try again."
++        }
++    }
++}
++
+ // MARK: - RestoreSummary
+ 
+ struct RestoreSummary {
+-- 
+2.43.0
+
+From 207380e7ec6647200b6464723b1eb085e0c81ecb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:50:14 +0000
+Subject: [PATCH 05/21] Fix 1.5: scope the athlete profile cache per account
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The UserDefaults cache key was global and nothing cleared it on sign-out,
+so init()'s loadFromLocalCache() would surface the previous athlete's
+lifetime mileage, paces and recurring injury history to whoever signed in
+next on a shared device — and feed it into their AI coaching prompts via
+profileContextForAI. Health data crossing accounts is a privacy defect,
+not a stale-cache annoyance.
+
+Keys are now suffixed with the user id, reads and writes both require a
+session, and AthleteProfileService.purgeAllForSignOut() is called from the
+.signedOut branch alongside the existing OfflineQueueManager purge that
+was written for exactly this class of leak. init() also drops any global
+blob left by an earlier build, since it can't be attributed to an account.
+---
+ RunningLog/RunningLog/Auth/AuthManager.swift  |  4 ++
+ .../Services/AthleteProfileService.swift      | 51 ++++++++++++++++---
+ 2 files changed, 49 insertions(+), 6 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Auth/AuthManager.swift b/RunningLog/RunningLog/Auth/AuthManager.swift
+index 2b1435c..e657b5c 100644
+--- a/RunningLog/RunningLog/Auth/AuthManager.swift
++++ b/RunningLog/RunningLog/Auth/AuthManager.swift
+@@ -108,6 +108,10 @@ final class AuthManager {
+                     // this device would drain the departing user's memos into
+                     // their own account (cross-account voice-memo leak).
+                     OfflineQueueManager.shared.purgeAllForSignOut()
++                    // Same reasoning for the cached athlete profile: mileage,
++                    // paces and recurring injury history must not survive into
++                    // the next account signed in on this device.
++                    AthleteProfileService.purgeAllForSignOut()
+                     self.isAuthenticated = false
+                     self.currentUserId = nil
+                     self.userEmail = nil
+diff --git a/RunningLog/RunningLog/Services/AthleteProfileService.swift b/RunningLog/RunningLog/Services/AthleteProfileService.swift
+index 1efd5de..abed1f9 100644
+--- a/RunningLog/RunningLog/Services/AthleteProfileService.swift
++++ b/RunningLog/RunningLog/Services/AthleteProfileService.swift
+@@ -196,9 +196,37 @@ final class AthleteProfileService {
+     var isLoading = false
+     var error: String?
+ 
+-    /// Cached profile data, persisted in UserDefaults
+-    private static let cacheKey = "athlete_profile_cache"
+-    private static let cacheTimestampKey = "athlete_profile_cache_timestamp"
++    /// Cached profile data, persisted in UserDefaults.
++    ///
++    /// Keys are scoped per account. They used to be global, which meant that on
++    /// a shared device — a demo, a coach showing an athlete, a family iPad —
++    /// signing out and signing in as someone else surfaced the previous
++    /// athlete's mileage, paces and recurring injury history, and fed it into
++    /// their AI prompts via `profileContextForAI`. Health data crossing accounts
++    /// is a privacy defect, not just a stale-cache one.
++    private static let legacyCacheKey = "athlete_profile_cache"
++    private static let legacyCacheTimestampKey = "athlete_profile_cache_timestamp"
++
++    private static func cacheKey(for userId: String) -> String {
++        "athlete_profile_cache_\(userId)"
++    }
++
++    private static func cacheTimestampKey(for userId: String) -> String {
++        "athlete_profile_cache_timestamp_\(userId)"
++    }
++
++    /// Remove every locally cached profile, scoped and legacy alike.
++    /// Called from the sign-out path so nothing survives into the next session.
++    static func purgeAllForSignOut() {
++        let defaults = UserDefaults.standard
++        defaults.removeObject(forKey: legacyCacheKey)
++        defaults.removeObject(forKey: legacyCacheTimestampKey)
++        for key in defaults.dictionaryRepresentation().keys
++        where key.hasPrefix("athlete_profile_cache") {
++            defaults.removeObject(forKey: key)
++        }
++        Log.app.info("Purged cached athlete profile(s) on sign-out")
++    }
+ 
+     /// - Parameter loadCache: pass `false` to start empty. The cache lives in
+     ///   `UserDefaults`, which is ambient and shared with whatever the app
+@@ -206,6 +234,13 @@ final class AthleteProfileService {
+     ///   profile" otherwise passes on a clean simulator and fails on one the
+     ///   app has actually run on.
+     init(loadCache: Bool = true) {
++        // One-time cleanup: a build before per-account scoping may have left a
++        // global blob on disk. It cannot be attributed to an account, so drop it
++        // rather than risk showing it to the wrong person. Runs regardless of
++        // `loadCache` — the point is to get the unattributable blob off disk.
++        UserDefaults.standard.removeObject(forKey: Self.legacyCacheKey)
++        UserDefaults.standard.removeObject(forKey: Self.legacyCacheTimestampKey)
++
+         if loadCache { loadFromLocalCache() }
+     }
+ 
+@@ -265,7 +300,10 @@ final class AthleteProfileService {
+     // MARK: - Local Cache
+ 
+     private func loadFromLocalCache() {
+-        guard let data = UserDefaults.standard.data(forKey: Self.cacheKey) else { return }
++        // No session yet means no way to know whose cache this would be.
++        // Show nothing rather than guess.
++        guard let userId = AuthManager.shared.currentUserId, !userId.isEmpty else { return }
++        guard let data = UserDefaults.standard.data(forKey: Self.cacheKey(for: userId)) else { return }
+         do {
+             let response = try JSONDecoder().decode(AthleteProfileResponse.self, from: data)
+             profile = response.profile
+@@ -275,8 +313,9 @@ final class AthleteProfileService {
+     }
+ 
+     private func saveToLocalCache(data: Data) {
+-        UserDefaults.standard.set(data, forKey: Self.cacheKey)
+-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.cacheTimestampKey)
++        guard let userId = AuthManager.shared.currentUserId, !userId.isEmpty else { return }
++        UserDefaults.standard.set(data, forKey: Self.cacheKey(for: userId))
++        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.cacheTimestampKey(for: userId))
+     }
+ 
+     private func formatPace(_ seconds: Int) -> String {
+-- 
+2.43.0
+
+From 38b6a5db0d16562b132bbde4df4bbfcf4ee9e472 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:52:34 +0000
+Subject: [PATCH 06/21] Fix 1.6: stop pace math dividing by zero and crashing
+ the formatters
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+PaceIntensity.paceSeconds(forRacePace:) divided by percentage/100 with no
+guard. percentage is 0 on every step the current decoder builds (it
+carries an explicit paceSecondsPerKm instead) and the Custom % editor let
+the athlete type 0 directly. The infinity that produced reached
+Int(_:)/UInt32(_:) in three places, all of which trap — a hard crash, not
+a wrong number.
+
+- paceSeconds now prefers paceSecondsPerKm when present, guards the
+  divisor, and returns 0 ("unknown", which callers already handle) rather
+  than a non-finite value.
+- formatTime and EquivalentPaces.formatPace guard isFinite. This is the
+  backstop that closes the whole family, including any path not listed here.
+- toPaceIntensity carries the resolved pace through, so a step built with
+  no race anchor isn't left with only a meaningless percentage.
+- secondsPerMile falls through to the zone reference table when the
+  intensity can't resolve, instead of propagating an infinite duration
+  that JSONEncoder then refuses to encode (saving the workout threw).
+- The Custom % field clamps to 30-200 on write, and its live pace readout
+  is hidden when the stored value is unusable (workouts saved by an older
+  build can still carry custom(0)).
+- FIT export emits an open step instead of trapping in UInt32(infinity).
+---
+ RunningLog/RunningLog/Models/PaceModels.swift | 39 +++++++++++++++++--
+ .../RunningLog/Models/WorkoutModels.swift     | 30 +++++++++++---
+ .../RunningLog/Shared/FITExportService.swift  |  9 ++++-
+ .../Training/WorkoutStepComponents.swift      | 19 ++++++---
+ 4 files changed, 82 insertions(+), 15 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Models/PaceModels.swift b/RunningLog/RunningLog/Models/PaceModels.swift
+index 20af8c7..be2e944 100644
+--- a/RunningLog/RunningLog/Models/PaceModels.swift
++++ b/RunningLog/RunningLog/Models/PaceModels.swift
+@@ -68,9 +68,25 @@ struct PaceIntensity: Codable, Equatable {
+     }
+ 
+ 
+-    /// Calculate actual pace in seconds per mile given race pace
++    /// Calculate actual pace in seconds per mile given race pace.
++    ///
++    /// Returns 0 when the pace can't be derived, which callers already treat as
++    /// "unknown" and formatters render as a placeholder. It must never return a
++    /// non-finite value: `formatTime` and the FIT exporter both feed the result
++    /// to `Int(_:)`/`UInt32(_:)`, which trap on infinity and NaN.
++    ///
++    /// Two ways that used to happen. `percentage` is 0 on every step the current
++    /// decoder builds (it carries an explicit pace in `paceSecondsPerKm`
++    /// instead), and the "Custom %" editor let the athlete type 0 directly.
+     func paceSeconds(forRacePace racePaceSeconds: Double) -> Double {
+-        racePaceSeconds / (percentage / 100.0)
++        // An explicit pace is authoritative — prefer it over percentage-of-race
++        // math, which is only meaningful when a race anchor exists at all.
++        if let paceKm = paceSecondsPerKm, paceKm > 0, paceKm.isFinite {
++            return paceKm * 1.609344 // sec/km → sec/mi
++        }
++        guard percentage > 0, racePaceSeconds > 0 else { return 0 }
++        let result = racePaceSeconds / (percentage / 100.0)
++        return result.isFinite ? result : 0
+     }
+ 
+     /// Format pace string given race pace — supports ranges and km display
+@@ -83,9 +99,12 @@ struct PaceIntensity: Codable, Equatable {
+             return "\(fast)/km"
+         }
+         let low = paceSeconds(forRacePace: racePaceSeconds)
+-        if let highPct = percentageHigh {
++        guard low > 0 else { return Self.unknownPace }
++        if let highPct = percentageHigh, highPct > 0, racePaceSeconds > 0 {
+             let high = racePaceSeconds / (highPct / 100.0)
+-            return "\(Self.formatTime(min(low, high)))-\(Self.formatTime(max(low, high)))/mi"
++            if high.isFinite, high > 0 {
++                return "\(Self.formatTime(min(low, high)))-\(Self.formatTime(max(low, high)))/mi"
++            }
+         }
+         return "\(Self.formatTime(low))/mi"
+     }
+@@ -128,7 +147,15 @@ struct PaceIntensity: Codable, Equatable {
+     /// Format seconds as M:SS, or H:MM:SS when total duration >= 1 hour.
+     /// Used for both per-unit pace (always sub-hour for running) and
+     /// per-workout total time (can exceed an hour for long runs).
++    /// Placeholder for a pace that can't be computed. Not an em-dash pair —
++    /// hard rule #8 reserves em-dashes, and this is a value-level fallback that
++    /// sits inside a formatted string rather than an empty cell.
++    static let unknownPace = "–:––"
++
+     static func formatTime(_ seconds: Double) -> String {
++        // Int(_:) traps on infinity and NaN — a hard crash, not a bad number.
++        // Every divide-by-zero upstream in the pace math used to land here.
++        guard seconds.isFinite, seconds >= 0 else { return unknownPace }
+         let totalSecs = Int(seconds.rounded())
+         if totalSecs >= 3600 {
+             let h = totalSecs / 3600
+@@ -599,6 +626,10 @@ struct EquivalentPaces {
+ 
+     /// Format a pace in seconds as a min:sec/mi string
+     nonisolated static func formatPace(_ seconds: Double) -> String {
++        // Same trap as PaceIntensity.formatTime — Int(infinity) and Int(NaN)
++        // crash. This is the formatter the Custom % editor calls on every
++        // keystroke, so it sees a divide-by-zero the moment the field is 0.
++        guard seconds.isFinite, seconds >= 0 else { return "\(PaceIntensity.unknownPace)/mi" }
+         let totalSecs = Int(seconds.rounded())
+         let mins = totalSecs / 60
+         let secs = totalSecs % 60
+diff --git a/RunningLog/RunningLog/Models/WorkoutModels.swift b/RunningLog/RunningLog/Models/WorkoutModels.swift
+index 0147b25..7690a72 100644
+--- a/RunningLog/RunningLog/Models/WorkoutModels.swift
++++ b/RunningLog/RunningLog/Models/WorkoutModels.swift
+@@ -687,7 +687,13 @@ struct EditableWorkoutStep: Identifiable {
+                 let base = equivalentPaces.paceSeconds(for: named)
+                 return max(base * (1 + pct / 100.0), 1)
+             case .custom(let pct):
+-                return max(racePaceSeconds / (pct / 100.0), 1)
++                // pct is athlete-entered and can be 0 (field cleared, or "0"
++                // typed). Dividing by it yields infinity, which formatters push
++                // through Int(_:) and crash on. No percentage means no pace.
++                guard pct > 0, racePaceSeconds > 0 else { return nil }
++                let resolved = racePaceSeconds / (pct / 100.0)
++                guard resolved.isFinite else { return nil }
++                return max(resolved, 1)
+             case .targetTime:
+                 return nil // Target time is absolute, not pace-based
+             case .none:
+@@ -700,9 +706,15 @@ struct EditableWorkoutStep: Identifiable {
+             racePaceSeconds: Double,
+             equivalentPaces: EquivalentPaces
+         ) -> PaceIntensity? {
+-            guard let target = resolvedPaceSeconds(equivalentPaces: equivalentPaces, racePaceSeconds: racePaceSeconds) else { return nil }
++            guard let target = resolvedPaceSeconds(equivalentPaces: equivalentPaces, racePaceSeconds: racePaceSeconds),
++                  target > 0
++            else { return nil }
+             let percentage = racePaceSeconds / target * 100.0
+-            return PaceIntensity(percentage: percentage)
++            guard percentage.isFinite else { return nil }
++            // Carry the resolved pace alongside the percentage. Without it, a
++            // step built while no race anchor exists has percentage 0 and every
++            // later paceSeconds(forRacePace:) call has nothing to work from.
++            return PaceIntensity(percentage: percentage, paceSecondsPerKm: target / 1.609344)
+         }
+     }
+ 
+@@ -1229,8 +1241,16 @@ struct PlannedWorkout: Identifiable, Codable {
+             return applyAdjustment(step.paceAdjustment, to: paces.paceSeconds(for: zone))
+         }
+         if let intensity = step.targetPaceIntensity, let paces = paces {
+-            let racePace = Double(paces.goalTimeSeconds) / paces.goalRaceDistance.distanceInMiles
+-            return intensity.paceSeconds(forRacePace: racePace)
++            let miles = paces.goalRaceDistance.distanceInMiles
++            let racePace = miles > 0 ? Double(paces.goalTimeSeconds) / miles : 0
++            let resolved = intensity.paceSeconds(forRacePace: racePace)
++            // paceSeconds returns 0 when it can't derive a pace (no percentage,
++            // no explicit pace, no race anchor). Fall through to the zone
++            // reference table and step-type defaults below rather than
++            // propagating a zero — an infinite/zero pace here produced infinite
++            // workout durations, which JSONEncoder then refused to encode, so
++            // saving the workout threw.
++            if resolved > 0 { return resolved }
+         }
+         if let zone = step.paceZone, let ref = referenceSecPerMile[zone] {
+             return applyAdjustment(step.paceAdjustment, to: ref)
+diff --git a/RunningLog/RunningLog/Shared/FITExportService.swift b/RunningLog/RunningLog/Shared/FITExportService.swift
+index 24da914..8ac5099 100644
+--- a/RunningLog/RunningLog/Shared/FITExportService.swift
++++ b/RunningLog/RunningLog/Shared/FITExportService.swift
+@@ -266,9 +266,16 @@ final class FITExportService {
+ 
+         // Target type = 4 (speed), value in mm/s * 1000
+         let paceSeconds = intensity.paceSeconds(forRacePace: racePaceSeconds)
++        // A pace of 0 means it couldn't be derived (no race anchor, no explicit
++        // pace). Dividing by it gives infinity, and UInt32(infinity) traps —
++        // export used to crash rather than degrade. Emit an open step instead.
++        guard paceSeconds > 0, paceSeconds.isFinite else { return (0, 0) }
++
+         // Convert pace (sec/mile) to speed (m/s)
+         let speedMps = 1609.34 / paceSeconds
+-        let speedValue = UInt32(speedMps * 1000)
++        let scaled = speedMps * 1000
++        guard scaled.isFinite, scaled >= 0, scaled <= Double(UInt32.max) else { return (0, 0) }
++        let speedValue = UInt32(scaled)
+ 
+         return (4, speedValue)
+     }
+diff --git a/RunningLog/RunningLog/Training/WorkoutStepComponents.swift b/RunningLog/RunningLog/Training/WorkoutStepComponents.swift
+index 3926879..0954d7d 100644
+--- a/RunningLog/RunningLog/Training/WorkoutStepComponents.swift
++++ b/RunningLog/RunningLog/Training/WorkoutStepComponents.swift
+@@ -379,9 +379,14 @@ struct PaceSelectionPicker: View {
+             // Custom percentage input
+             if case .custom(let pct) = selection {
+                 HStack(spacing: 8) {
++                    // Clamped on write. An unclamped 0 divides by zero two lines
++                    // down and the resulting infinity crashes the formatter on
++                    // the very next render — i.e. while the athlete is still
++                    // typing. 30–200% of marathon pace covers every real
++                    // prescription with room to spare.
+                     TextField("100", value: Binding(
+                         get: { pct },
+-                        set: { selection = .custom($0) }
++                        set: { selection = .custom(min(max($0, 30), 200)) }
+                     ), format: .number)
+                     .font(.dripStat(14))
+                     .foregroundStyle(Color.drip.textPrimary)
+@@ -398,10 +403,14 @@ struct PaceSelectionPicker: View {
+ 
+                     Spacer()
+ 
+-                    let computedPace = racePaceSeconds / (pct / 100.0)
+-                    Text(EquivalentPaces.formatPace(computedPace) + "/mi")
+-                        .font(.dripLabel(13))
+-                        .foregroundStyle(Color.drip.coral)
++                    // Belt and braces alongside the clamp above: a workout saved
++                    // by an older build can still carry custom(0).
++                    if pct > 0, racePaceSeconds > 0 {
++                        let computedPace = racePaceSeconds / (pct / 100.0)
++                        Text(EquivalentPaces.formatPace(computedPace) + "/mi")
++                            .font(.dripLabel(13))
++                            .foregroundStyle(Color.drip.coral)
++                    }
+                 }
+             }
+ 
+-- 
+2.43.0
+
+From a1b1cf493421c8075c242792b64a1c3f71acb161 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:53:19 +0000
+Subject: [PATCH 07/21] Fix 1.8: tear down the voice recorder and release the
+ audio session
+
+VoiceLogView had no onDisappear, no interruption handling, and only
+deactivated the audio session on the start-failure path.
+
+Two consequences. A phone call or a dismissal mid-memo suspended the
+recorder while the display timer kept counting, so the athlete saved a
+truncated file stamped with the full duration and was never told. And
+because the .playAndRecord session was never deactivated, their music
+never resumed and later video played out of the earpiece.
+
+stopRecording now releases the recorder and deactivates the session with
+.notifyOthersOnDeactivation; onDisappear stops an in-flight recording; and
+an interruption observer stops cleanly and says so in plain language
+rather than counting over dead air.
+---
+ .../RunningLog/Workouts/VoiceLogView.swift    | 39 +++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/RunningLog/RunningLog/Workouts/VoiceLogView.swift b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+index 1eab436..8d8fee9 100644
+--- a/RunningLog/RunningLog/Workouts/VoiceLogView.swift
++++ b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+@@ -175,6 +175,28 @@ struct VoiceLogView: View {
+                 await viewModel.loadHistory()
+             }
+         }
++        .onDisappear {
++            // Never leave a recorder running behind a dismissed view. Without
++            // this the timer kept counting while the recorder was suspended,
++            // and the athlete saved a truncated file stamped with the full
++            // duration — silently, with no way to tell.
++            if isRecording { stopRecording() }
++            deactivateAudioSession()
++        }
++        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
++            // A phone call, a timer, Siri. iOS suspends the recorder; if we
++            // don't notice, the UI keeps counting over dead air.
++            guard let info = note.userInfo,
++                  let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt,
++                  let type = AVAudioSession.InterruptionType(rawValue: raw),
++                  type == .began
++            else { return }
++
++            if isRecording {
++                stopRecording()
++                viewModel.statusMessage = "Recording stopped — something else needed the microphone. What you captured so far is saved."
++            }
++        }
+         .animation(.spring(response: 0.4), value: viewModel.statusMessage)
+         .sheet(isPresented: $showWorkoutPicker) {
+             WorkoutPickerSheet(
+@@ -893,12 +915,29 @@ struct VoiceLogView: View {
+         }
+     }
+ 
++    /// Hand the audio route back to whatever had it before we started.
++    ///
++    /// The session is activated in `.playAndRecord` to record and was never
++    /// deactivated, so the athlete's music stayed paused after every memo and
++    /// later video playback came out of the earpiece instead of the speaker.
++    private func deactivateAudioSession() {
++        do {
++            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
++        } catch {
++            // Non-fatal: another part of the app may legitimately still hold
++            // the session. Nothing the athlete can act on, so log only.
++            print("[VoiceLog] Failed to deactivate audio session: \(error)")
++        }
++    }
++
+     private func stopRecording() {
+         audioRecorder?.stop()
++        audioRecorder = nil
+         timer?.invalidate()
+         timer = nil
+         isRecording = false
+         pendingRecordingDuration = recordingDuration
++        deactivateAudioSession()
+ 
+         guard recordingURL != nil else {
+             viewModel.statusMessage = "Error: No recording found"
+-- 
+2.43.0
+
+From 6346ee5d06a1be6276c18784e4792b33924a01ac Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:53:51 +0000
+Subject: [PATCH 08/21] Fix 2.1: stop reading every half marathon as a full
+ marathon
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+distancePatterns is scanned with notes.contains() and breaks on the first
+hit, but listed "marathon" before "half marathon" — and "half marathon"
+contains "marathon". The .half case was unreachable.
+
+So "Half marathon race today, 1:28:45" was recorded as a 1:28 MARATHON at
+3:23/mi. That passes the 180-900 s/mi sanity check, so it became the
+high-confidence race anchor: every pace zone, the Trends fitness range and
+the Train histogram marker were all derived from roughly double the
+athlete's actual fitness, and the app prescribed paces they cannot hold.
+
+Reordered so substrings come after the longer patterns they appear in, and
+documented the ordering constraint so it doesn't regress. Added the
+hyphenated spelling while here.
+---
+ .../RunningLog/Analysis/FitnessPredictorService.swift | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/RunningLog/RunningLog/Analysis/FitnessPredictorService.swift b/RunningLog/RunningLog/Analysis/FitnessPredictorService.swift
+index 5cb33cd..42a71ff 100644
+--- a/RunningLog/RunningLog/Analysis/FitnessPredictorService.swift
++++ b/RunningLog/RunningLog/Analysis/FitnessPredictorService.swift
+@@ -1819,8 +1819,17 @@ final class FitnessPredictorService {
+         // ── PHASE 1: Parse explicit race results from training log notes ──
+         // This is the most reliable source — the user explicitly wrote "10k race: 31:24"
+         let raceKeywords = ["race", "raced", "pr ", "pr:", "pb ", "pb:", "personal best", "personal record", "finish time"]
++        // ORDER MATTERS. This list is scanned with `notes.contains(pattern)` and
++        // breaks on the first hit, so any pattern that is a substring of another
++        // must come first. "half marathon" contains "marathon": with marathon
++        // listed first, every half marathon in the journal was recorded as a
++        // full one — a 1:28 half became a 1:28 marathon at 3:23/mi, passed the
++        // sanity check, and became the high-confidence fitness anchor that every
++        // pace zone in the app is derived from. Likewise "half" must precede
++        // "marathon", and "10 mile"/"half mile" must precede bare "mile".
+         let distancePatterns: [(String, RaceType)] = [
+-            ("marathon", .marathon), ("half marathon", .half), ("half", .half),
++            ("half marathon", .half), ("half-marathon", .half), ("half", .half),
++            ("marathon", .marathon),
+             ("10k", .tenK), ("10K", .tenK),
+             ("5k", .fiveK), ("5K", .fiveK),
+             ("mile", .mile),
+-- 
+2.43.0
+
+From 08de725aba10438137e6e99230aa371565c54ccc Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:56:37 +0000
+Subject: [PATCH 09/21] Fix 2.2: stop reporting a fabricated 100% easy split
+ with no pace anchor
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+bucket(forPaceSeconds:) returned .easy whenever mpAnchor was 0 — which is
+the case for every athlete until a fitness snapshot exists. Every run,
+including 6x1K, was bucketed easy, and the UI reported "100% EASY" under a
+"TARGET 80/20" caption with headlineInsight() adding "right on the
+polarised line". None of it was measured; it was a default rendered as a
+finding.
+
+bucket() now returns nil when there's nothing to anchor on, matching how
+zoneGuideline and paceZoneBands already degrade. easyPercent is optional,
+easyHardSplit() returns nil, and the three surfaces that rendered them
+drop the value or show the empty-state component instead. headlineInsight
+falls back to volume, which is actually known.
+
+Unclassifiable splits render neutral gray rather than a zone colour — per
+the three-palette rule, no-signal is gray, never a hue that implies a
+reading.
+---
+ .../TrainingAnalyticsViewModel.swift          | 62 +++++++++++++-----
+ .../Analytics/TrainingTabTwoView.swift        |  9 ++-
+ .../Training/Analytics/TrainingTabView.swift  | 63 ++++++++++++-------
+ 3 files changed, 93 insertions(+), 41 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift b/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
+index dda60ff..cf3d617 100644
+--- a/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
++++ b/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
+@@ -329,7 +329,10 @@ struct SummaryStats {
+     var miles: Double = 0
+     var runs: Int = 0
+     var durationMinutes: Double = 0
+-    var easyPercent: Int = 0
++    /// nil when there is no marathon-pace anchor to classify against. Every
++    /// run would otherwise be bucketed easy by default, and the UI would state
++    /// "100% EASY" under a "TARGET 80/20" caption as if it were a measurement.
++    var easyPercent: Int?
+     /// Count of voice-memo / qualitative entries in the window — rows that
+     /// carry a recording (`audio_url` non-nil) or were written as a
+     /// `voice_log` / `check_in` (see `isVoiceMemo`). Surfaces the qualitative
+@@ -759,7 +762,7 @@ final class TrainingAnalyticsViewModel {
+         var out = ZoneSplit()
+         if let segments = log.paceSegments, !segments.isEmpty {
+             for seg in segments where seg.distanceMiles > 0 {
+-                let bucket = self.bucket(forPaceSeconds: paceSeconds(seg.pacePerMile))
++                guard let bucket = self.bucket(forPaceSeconds: paceSeconds(seg.pacePerMile)) else { continue }
+                 add(seg.distanceMiles, to: bucket, in: &out)
+             }
+             // Reconcile rounding drift against the row's logged miles.
+@@ -771,8 +774,10 @@ final class TrainingAnalyticsViewModel {
+             }
+             return out
+         }
+-        guard let miles = log.miles, miles > 0 else { return out }
+-        add(miles, to: bucket(forPaceSeconds: avgPaceSeconds(for: log)), in: &out)
++        guard let miles = log.miles, miles > 0,
++              let bucket = bucket(forPaceSeconds: avgPaceSeconds(for: log))
++        else { return out }
++        add(miles, to: bucket, in: &out)
+         return out
+     }
+ 
+@@ -792,10 +797,23 @@ final class TrainingAnalyticsViewModel {
+     static let thresholdRatio = 1.07
+     static let easyRatio = 1.20
+ 
++    /// Whether intensity can be classified at all.
++    ///
++    /// Everything in this file that buckets a run by intensity is anchored to
++    /// current marathon pace, which comes from a fitness snapshot. Until one
++    /// exists there is no anchor and no honest answer — see `bucket`.
++    var hasIntensityAnchor: Bool { mpAnchor > 0 }
++
+     /// Pace-ratio classifier, anchored to CURRENT marathon pace. Mirror of
+     /// the 5-zone scheme used across the app, collapsed to 3 buckets.
+-    private func bucket(forPaceSeconds paceSec: Double?) -> IntensityBucket {
+-        guard let paceSec, paceSec > 0, mpAnchor > 0 else { return .easy }
++    ///
++    /// Returns nil rather than defaulting to `.easy` when there's nothing to
++    /// anchor on. The old default silently classified every run — including
++    /// 6×1K — as easy, which the UI then reported as a measured "100% easy,
++    /// right on the polarised line". Sibling surfaces (`zoneGuideline`,
++    /// `paceZoneBands`) already degrade honestly by returning nil/empty.
++    private func bucket(forPaceSeconds paceSec: Double?) -> IntensityBucket? {
++        guard let paceSec, paceSec > 0, mpAnchor > 0 else { return nil }
+         let ratio = paceSec / mpAnchor
+         if ratio < Self.thresholdRatio { return .threshold }
+         if ratio < Self.easyRatio { return .aerobic }
+@@ -841,7 +859,9 @@ final class TrainingAnalyticsViewModel {
+             if isVoiceMemo(r) { s.voiceMemos += 1 }
+             split = split + self.split(for: r)
+         }
+-        s.easyPercent = split.total > 0 ? Int((split.easy / split.total * 100).rounded()) : 0
++        s.easyPercent = (hasIntensityAnchor && split.total > 0)
++            ? Int((split.easy / split.total * 100).rounded())
++            : nil
+         return s
+     }
+ 
+@@ -1036,7 +1056,10 @@ final class TrainingAnalyticsViewModel {
+                          distanceMiles: lap.distanceMiles,
+                          paceSeconds: lap.paceSeconds,
+                          hr: lap.avgHeartRate,
+-                         color: bucket(forPaceSeconds: lap.paceSeconds).color)
++                         // Unclassifiable (no pace anchor) renders neutral —
++                         // per the three-palette rule a "no signal" band is
++                         // gray, never a zone colour that implies a reading.
++                         color: bucket(forPaceSeconds: lap.paceSeconds)?.color ?? Color.drip.textSecondary)
+             }
+         }
+ 
+@@ -1048,7 +1071,7 @@ final class TrainingAnalyticsViewModel {
+                             distanceMiles: seg.distanceMiles,
+                             paceSeconds: p,
+                             hr: seg.avgHeartRate,
+-                            color: bucket(forPaceSeconds: p).color)
++                            color: bucket(forPaceSeconds: p)?.color ?? Color.drip.textSecondary)
+         }
+     }
+ 
+@@ -1234,9 +1257,12 @@ final class TrainingAnalyticsViewModel {
+ 
+     // MARK: Outputs — easy / hard split
+ 
+-    func easyHardSplit() -> (easyPercent: Int, hardPercent: Int) {
++    /// nil when there is no pace anchor, so the caller can hide the section
++    /// rather than render a fabricated 100/0 split against the 80/20 target.
++    func easyHardSplit() -> (easyPercent: Int, hardPercent: Int)? {
++        guard hasIntensityAnchor else { return nil }
+         let split = scopedSplit()
+-        guard split.total > 0 else { return (0, 0) }
++        guard split.total > 0 else { return nil }
+         let easy = Int((split.easy / split.total * 100).rounded())
+         return (easy, 100 - easy)
+     }
+@@ -1477,14 +1503,20 @@ final class TrainingAnalyticsViewModel {
+         guard s.runs > 0 else {
+             return "No runs logged in this window yet."
+         }
++        // Without a pace anchor there is no easy/hard read to give. Say what is
++        // actually known — volume — rather than asserting a split that was
++        // produced by a default rather than a measurement.
++        guard let easyPercent = s.easyPercent else {
++            return "\(s.runs) runs, \(formatMiles(s.miles)) miles logged."
++        }
+         let target = 80
+         if let hard = hardestSession() {
+-            if s.easyPercent >= target {
+-                return "\(s.runs) runs in, \(s.easyPercent)% easy — right on the polarised line. \(hard) was the session that earned its place."
++            if easyPercent >= target {
++                return "\(s.runs) runs in, \(easyPercent)% easy — right on the polarised line. \(hard) was the session that earned its place."
+             }
+-            return "\(s.runs) runs, \(s.easyPercent)% easy. Hard share is creeping above the 80/20 line — \(hard) led it."
++            return "\(s.runs) runs, \(easyPercent)% easy. Hard share is creeping above the 80/20 line — \(hard) led it."
+         }
+-        return "\(s.runs) runs, \(formatMiles(s.miles)) miles, \(s.easyPercent)% easy."
++        return "\(s.runs) runs, \(formatMiles(s.miles)) miles, \(easyPercent)% easy."
+     }
+ 
+     private func hardestSession() -> String? {
+diff --git a/RunningLog/RunningLog/Training/Analytics/TrainingTabTwoView.swift b/RunningLog/RunningLog/Training/Analytics/TrainingTabTwoView.swift
+index 8da8bd7..1266bfc 100644
+--- a/RunningLog/RunningLog/Training/Analytics/TrainingTabTwoView.swift
++++ b/RunningLog/RunningLog/Training/Analytics/TrainingTabTwoView.swift
+@@ -149,8 +149,13 @@ struct TrainingTabTwoView: View {
+             statCell(vm.formatMiles(s.miles), "Miles")
+             statDivider
+             statCell("\(TrainingAnalyticsViewModel.formatDurationHours(s.durationMinutes))", "Hrs")
+-            statDivider
+-            statCell("\(s.easyPercent)%", "Easy")
++            // Dropped entirely — divider included — when there's no pace anchor
++            // to classify against. An em-dash placeholder would break hard rule
++            // #8, and a "0%"/"100%" default would read as a measurement.
++            if let easyPercent = s.easyPercent {
++                statDivider
++                statCell("\(easyPercent)%", "Easy")
++            }
+         }
+         .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
+         .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+diff --git a/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift b/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift
+index ade2d95..857e903 100644
+--- a/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift
++++ b/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift
+@@ -222,9 +222,13 @@ struct TrainingTabView: View {
+                 Text("\(TrainingAnalyticsViewModel.formatDurationHours(s.durationMinutes)) HRS")
+                     .font(.dripEyebrow(10)).tracking(1.1)
+                     .foregroundStyle(Color.drip.textSecondary)
+-                Text("\(s.easyPercent)% EASY")
+-                    .font(.dripEyebrow(10)).tracking(1.1)
+-                    .foregroundStyle(Color.drip.textSecondary)
++                // Omitted entirely when there's no pace anchor to classify
++                // against — an unanchored default would read as a measurement.
++                if let easyPercent = s.easyPercent {
++                    Text("\(easyPercent)% EASY")
++                        .font(.dripEyebrow(10)).tracking(1.1)
++                        .foregroundStyle(Color.drip.textSecondary)
++                }
+                 Spacer()
+             }
+             .padding(.top, 13)
+@@ -460,34 +464,45 @@ struct TrainingTabView: View {
+     // MARK: 6 · Easy / Hard
+ 
+     private var easyHard: some View {
++        // nil = no marathon-pace anchor yet, so intensity can't be classified.
++        // Show the empty state rather than a bar that reads 100% easy because
++        // every run fell through to a default.
+         let split = vm.easyHardSplit()
+         return section {
+             sectionHead("EASY / HARD · \(scopeLabelUpper)", trailing: "TARGET 80/20",
+                         onExpand: { route = .volume(.easyHard) })
+-            GeometryReader { geo in
+-                ZStack(alignment: .leading) {
+-                    HStack(spacing: 0) {
+-                        Rectangle().fill(IntensityRamp.easy)
+-                            .frame(width: geo.size.width * CGFloat(split.easyPercent) / 100)
+-                        Rectangle().fill(IntensityRamp.threshold)
++            if let split {
++                GeometryReader { geo in
++                    ZStack(alignment: .leading) {
++                        HStack(spacing: 0) {
++                            Rectangle().fill(IntensityRamp.easy)
++                                .frame(width: geo.size.width * CGFloat(split.easyPercent) / 100)
++                            Rectangle().fill(IntensityRamp.threshold)
++                        }
++                        .clipShape(RoundedRectangle(cornerRadius: 2))
++                        Rectangle().fill(Color.drip.textPrimary)
++                            .frame(width: 2)
++                            .offset(x: geo.size.width * 0.8 - 1)
++                            .padding(.vertical, -5)
+                     }
+-                    .clipShape(RoundedRectangle(cornerRadius: 2))
+-                    Rectangle().fill(Color.drip.textPrimary)
+-                        .frame(width: 2)
+-                        .offset(x: geo.size.width * 0.8 - 1)
+-                        .padding(.vertical, -5)
+                 }
++                .frame(height: 14)
++                .padding(.top, 6)
++                HStack {
++                    Text("\(split.easyPercent)% EASY").font(.dripEyebrow(10)).tracking(1.2)
++                        .foregroundStyle(Color.drip.positive)
++                    Spacer()
++                    Text("\(split.hardPercent)% HARD").font(.dripEyebrow(10)).tracking(1.2)
++                        .foregroundStyle(Color.drip.coral)
++                }
++                .padding(.top, 9)
++            } else {
++                EmptyStateView(
++                    variant: .dataPending,
++                    title: "Easy and hard are measured against your marathon pace. Log a few more runs and this fills in."
++                )
++                .padding(.top, 6)
+             }
+-            .frame(height: 14)
+-            .padding(.top, 6)
+-            HStack {
+-                Text("\(split.easyPercent)% EASY").font(.dripEyebrow(10)).tracking(1.2)
+-                    .foregroundStyle(Color.drip.positive)
+-                Spacer()
+-                Text("\(split.hardPercent)% HARD").font(.dripEyebrow(10)).tracking(1.2)
+-                    .foregroundStyle(Color.drip.coral)
+-            }
+-            .padding(.top, 9)
+         }
+     }
+ 
+-- 
+2.43.0
+
+From bb400bc69b11bac5bb49a64bf4303092f2f745b4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:57:26 +0000
+Subject: [PATCH 10/21] Fix 2.3 + 2.11: pace unit mismatch and mileage
+ averaging in WorkoutHistoryAnalyzer
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Three defects in the same file.
+
+1. PaceProgression was populated in minutes per mile while every field is
+   documented and consumed as seconds per mile. The proof is in the file:
+   line 144 multiplies by 60 for the fitness index, then the values are
+   stored raw. An 8:00/mi runner reported averageEasyPace = 8.0; the
+   no-data fallback returns 540 for the same field. Both go to the AI
+   assessment under the same key, so the model saw "8 seconds per mile".
+
+2. recent4WeekAverage divided by the number of weeks that had runs, not
+   the number of weeks in the window — a week with no running is a missing
+   dictionary key, not a zero. 40 miles then three blank weeks reported 40
+   mpw instead of 10, and that value floors calculateRecommendedMileage,
+   so an athlete returning from a layoff was started at 4x their base.
+
+3. The mileage trend compared windows that both included the current,
+   partial week, so early in any week an athlete reading flat reported
+   .down and picked up a "declining mileage trend" risk factor. Both
+   windows are now anchored to the start of the current week and exclude
+   it.
+---
+ .../Analysis/WorkoutHistoryAnalyzer.swift     | 42 ++++++++++++++-----
+ 1 file changed, 32 insertions(+), 10 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Analysis/WorkoutHistoryAnalyzer.swift b/RunningLog/RunningLog/Analysis/WorkoutHistoryAnalyzer.swift
+index 73a0828..786a18a 100644
+--- a/RunningLog/RunningLog/Analysis/WorkoutHistoryAnalyzer.swift
++++ b/RunningLog/RunningLog/Analysis/WorkoutHistoryAnalyzer.swift
+@@ -85,15 +85,30 @@ struct WorkoutHistoryAnalyzer {
+         let average = totals.isEmpty ? 0 : totals.reduce(0, +) / Double(totals.count)
+         let peak = totals.max() ?? 0
+ 
+-        // Recent 4 week average
++        // Recent 4 week average.
++        //
++        // A week with no running has no key in weeklyTotals — it is a missing
++        // entry, not a zero. Dividing by recentWeeks.count therefore averaged
++        // only the weeks that happened to have runs: 40 miles in one week
++        // followed by three blank weeks reported 40 mpw instead of 10. That
++        // number floors calculateRecommendedMileage, so an athlete coming back
++        // from a layoff was started at four times their actual base. Divide by
++        // the full window instead.
+         let fourWeeksAgo = calendar.date(byAdding: .weekOfYear, value: -4, to: Date()) ?? Date()
+         let recentWeeks = weeklyTotals.filter { $0.key >= fourWeeksAgo }
+-        let recentAverage = recentWeeks.isEmpty ? average : recentWeeks.values.reduce(0, +) / Double(recentWeeks.count)
+-
+-        // Trend (compare last 2 weeks to previous 2 weeks)
+-        let twoWeeksAgo = calendar.date(byAdding: .weekOfYear, value: -2, to: Date()) ?? Date()
+-        let lastTwoWeeks = weeklyTotals.filter { $0.key >= twoWeeksAgo }.values.reduce(0, +)
+-        let previousTwoWeeks = weeklyTotals.filter { $0.key >= fourWeeksAgo && $0.key < twoWeeksAgo }.values.reduce(0, +)
++        let recentAverage = recentWeeks.isEmpty ? average : recentWeeks.values.reduce(0, +) / 4.0
++
++        // Trend (compare last 2 weeks to previous 2 weeks).
++        //
++        // The current week is excluded from both sides. It is partial by
++        // definition, so including it made every athlete read as "declining"
++        // early in the week and triggered a spurious "declining mileage trend"
++        // risk factor for someone training exactly as consistently as before.
++        let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
++        let twoWeeksAgo = calendar.date(byAdding: .weekOfYear, value: -2, to: currentWeekStart) ?? Date()
++        let fourWeeksBeforeCurrent = calendar.date(byAdding: .weekOfYear, value: -4, to: currentWeekStart) ?? Date()
++        let lastTwoWeeks = weeklyTotals.filter { $0.key >= twoWeeksAgo && $0.key < currentWeekStart }.values.reduce(0, +)
++        let previousTwoWeeks = weeklyTotals.filter { $0.key >= fourWeeksBeforeCurrent && $0.key < twoWeeksAgo }.values.reduce(0, +)
+ 
+         let trend: TrendDirection
+         if lastTwoWeeks > previousTwoWeeks * 1.1 {
+@@ -143,10 +158,17 @@ struct WorkoutHistoryAnalyzer {
+         // Rough fitness index estimate based on pace (convert minutes to seconds)
+         let fi = estimateFitnessIndex(paceSecondsPerMile: avgWorkoutPace * 60)
+ 
++        // RunningWorkout.pacePerMile is MINUTES per mile; every field on
++        // PaceProgression is documented — and consumed — as SECONDS per mile.
++        // The values above were being stored unconverted, so an 8:00/mi runner
++        // reported averageEasyPace = 8.0 while the no-data fallback above
++        // returns 540 for the same field. Both were handed to the AI assessment
++        // under the same key, so the model reasoned about "8 seconds per mile".
++        // The `* 60` on the line above is the same conversion, already correct.
+         return WorkoutHistoryAnalysis.PaceProgression(
+-            averageEasyPace: avgEasyPace,
+-            averageWorkoutPace: avgWorkoutPace,
+-            estimatedMarathonPace: estimatedMP,
++            averageEasyPace: avgEasyPace * 60,
++            averageWorkoutPace: avgWorkoutPace * 60,
++            estimatedMarathonPace: estimatedMP * 60,
+             fitnessIndex: fi
+         )
+     }
+-- 
+2.43.0
+
+From 963f0a30d59a75de693ab8a6001e7154c385bf14 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:58:19 +0000
+Subject: [PATCH 11/21] Fix 2.4 + 2.7 + 2.11: three window-scoping errors on
+ the training analysis screen
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- LOAD SPLIT counted future days as rest. The 28-day window runs to Sunday
+  of the current week, so on a Monday six empty future cells classified
+  .rest: a 9/13/6 block reported 43% rest instead of 21%, and the number
+  moved every day of the week for identical training. computeSplit now
+  stops at today; the grid still renders the full window.
+
+- The fetch was 400 days with a comment claiming it covered the ~24 months
+  TrainingPaceAnalysisSection needs for Monthly x 12 with comparison on.
+  400 days is 13.1 months, so the comparison period was empty and the
+  panel reported "prior 0 mi" with every delta chip down — a fabricated
+  collapse. Now 760.
+
+- TrainingDayExpanded documents windowLogs as the visible 28 days and uses
+  it for ranking and share-of-load, but was handed the entire fetch. A
+  block's longest run was reported as "7th-longest run of the block"
+  (ranked against two years of running) and its share of load computed
+  ~1% instead of ~9%, below the 5% threshold that gates the line, so it
+  silently never rendered. Narrowed to the grid window.
+---
+ .../Analysis/TrainingAnalysisView.swift       | 40 ++++++++++++++++---
+ 1 file changed, 34 insertions(+), 6 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Analysis/TrainingAnalysisView.swift b/RunningLog/RunningLog/Analysis/TrainingAnalysisView.swift
+index b7f0852..a599178 100644
+--- a/RunningLog/RunningLog/Analysis/TrainingAnalysisView.swift
++++ b/RunningLog/RunningLog/Analysis/TrainingAnalysisView.swift
+@@ -394,7 +394,14 @@ struct TrainingAnalysisView: View {
+                     TrainingDayExpanded(
+                         day: date,
+                         dayLogs: dayLogs,
+-                        windowLogs: logs,
++                        // TrainingDayExpanded documents this as "all 28 days of
++                        // logs in the visible window" and uses it to rank the
++                        // day and compute its share of block load. It was being
++                        // handed the full 760-day fetch, so a block's longest
++                        // run was reported as e.g. "7th-longest run of the
++                        // block" (ranked against two years) and its share of
++                        // load came out ~1% instead of ~9%.
++                        windowLogs: windowLogs(endingAt: Date()),
+                         mpPaceSec: equivalentPaces?.mpPace,
+                         onCollapse: {
+                             withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) {
+@@ -767,6 +774,18 @@ struct TrainingAnalysisView: View {
+         let isToday: Bool
+     }
+ 
++    /// The logs inside the 28-day grid window — the same span `computeCalendarCells`
++    /// renders. `logs` itself holds 760 days for the long-range pace panel, so
++    /// anything reasoning about "the block" must narrow to this first.
++    private func windowLogs(endingAt reference: Date) -> [TodayLogRow] {
++        let weekday = cal.component(.weekday, from: reference)
++        let daysBackToMonday = (weekday + 5) % 7
++        guard let thisMonday = cal.date(byAdding: .day, value: -daysBackToMonday, to: reference),
++              let start = cal.date(byAdding: .day, value: -21, to: cal.startOfDay(for: thisMonday))
++        else { return logs }
++        return logs.filter { $0.date >= start }
++    }
++
+     private func computeCalendarCells() -> [CalendarCell] {
+         let today = Date()
+         let weekday = cal.component(.weekday, from: today)
+@@ -881,7 +900,13 @@ struct TrainingAnalysisView: View {
+     }
+ 
+     private func computeSplit() -> LoadSplit {
+-        let cells = computeCalendarCells()
++        // The 28-day window runs to Sunday of the CURRENT week, so up to six of
++        // its cells are in the future. Those have no logs and classified as
++        // .rest, which inflated the rest share and deflated the quality share —
++        // by a different amount every day of the week, for identical training.
++        // On a Monday a 9/13/6 block read as 43% rest instead of 21%.
++        let today = cal.startOfDay(for: Date())
++        let cells = computeCalendarCells().filter { cal.startOfDay(for: $0.date) <= today }
+         var q = 0, e = 0, r = 0
+         for c in cells {
+             switch c.kind {
+@@ -896,10 +921,13 @@ struct TrainingAnalysisView: View {
+     // MARK: - Loading
+ 
+     private func loadAll() async {
+-        // 400-day window so TrainingPaceAnalysisSection has the
+-        // history it needs (12-month range with comparison = ~24 months).
+-        // Calendar grid still filters to the visible 28-day window.
+-        async let logsTask = TodayLogRow.fetchRecent(days: 400)
++        // 760-day window so TrainingPaceAnalysisSection has the history it
++        // needs: its widest setting is Monthly x 12 with comparison on, which
++        // reaches back ~24 months. The old 400 days is only ~13.1, so the
++        // comparison period had no data at all and the panel reported
++        // "prior 0 mi" with every delta chip pointing down — a fabricated
++        // collapse. Calendar grid still filters to the visible 28-day window.
++        async let logsTask = TodayLogRow.fetchRecent(days: 760)
+         async let stateTask = TrainingAnalysisState.fetch()
+ 
+         // The plan service owns equivalentPaces — same source the rest of
+-- 
+2.43.0
+
+From f85d68d5358b6139af57c5bb639382134fa366ec Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 03:59:06 +0000
+Subject: [PATCH 12/21] Fix 2.6: stop dedup silently discarding rest-day
+ check-ins
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+dedupedByPhysicalWorkout() skipped any row with no distance before
+clustering, so it never entered a cluster and never came back out. The
+whole helper exists to stop miles being counted twice, and a row with no
+miles cannot double-count anything — dropping them was pure loss.
+
+A rest-day memo ("legs are trashed", no distance) was fetched and then
+discarded before any consumer saw it. The Train tab's voice-memo count
+undercounted — five memos in a week could read as two — and mood(on:)
+could never surface a non-running day, even though the code calling it
+documents exactly that fallback.
+
+Mileless rows now pass straight through. Every consumer aggregates miles,
+so they contribute zero and no total changes.
+---
+ RunningLog/RunningLog/App/LogDedup.swift | 23 ++++++++++++++++++++---
+ 1 file changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/RunningLog/RunningLog/App/LogDedup.swift b/RunningLog/RunningLog/App/LogDedup.swift
+index cd3eea9..ef7060e 100644
+--- a/RunningLog/RunningLog/App/LogDedup.swift
++++ b/RunningLog/RunningLog/App/LogDedup.swift
+@@ -11,6 +11,10 @@
+ //
+ //  Rule:
+ //    1. Group rows by calendar day.
++//    1b. Rows with no distance pass straight through. The rule below is
++//       about not counting miles twice; a row with no miles can't. This
++//       is what keeps rest-day check-ins and other qualitative entries
++//       alive for the consumers that count memos and read mood.
+ //    2. If any GPS-source row (strava | auto_sync) exists on the day,
+ //       drop voice_log rows from the day. They mirror the GPS row with
+ //       user-stated distance and would double-count.
+@@ -43,10 +47,23 @@ extension Array where Element == TodayLogRow {
+         var result: [TodayLogRow] = []
+ 
+         for (_, dayLogs) in byDay {
+-            let hasGps = dayLogs.contains { LogDedupHelpers.isGpsSource($0.source) }
++            // Rows carrying no distance are passed straight through. This whole
++            // helper exists to stop miles being counted twice, and a row with no
++            // miles cannot double-count anything. They used to be dropped
++            // silently — a rest-day check-in ("legs are trashed", no distance)
++            // was fetched and then discarded before any consumer saw it, so the
++            // voice-memo count undercounted and mood(on:) could never surface a
++            // non-running day, despite the code that calls it documenting
++            // exactly that fallback.
++            let (mileless, withMiles) = dayLogs.reduce(into: ([TodayLogRow](), [TodayLogRow]())) { acc, log in
++                if (log.miles ?? 0) > 0 { acc.1.append(log) } else { acc.0.append(log) }
++            }
++            result.append(contentsOf: mileless)
++
++            let hasGps = withMiles.contains { LogDedupHelpers.isGpsSource($0.source) }
+             let candidates = hasGps
+-                ? dayLogs.filter { LogDedupHelpers.isGpsSource($0.source) }
+-                : dayLogs
++                ? withMiles.filter { LogDedupHelpers.isGpsSource($0.source) }
++                : withMiles
+ 
+             // Cluster by distance — longer workouts first so the cluster
+             // anchor is the largest run on that day. Tight 0.1 mi
+-- 
+2.43.0
+
+From 9774690209087f61248ac367f0edd51f6e9c2f71 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 04:02:02 +0000
+Subject: [PATCH 13/21] Fix 2.9 + 2.10 + 2.11: date, locale and unit errors
+ that misreport by a day or a zone
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Goal race dates were formatted with ISO8601DateFormatter, which writes
+  UTC. The picked date carries a wall-clock time, so an athlete in Los
+  Angeles choosing April 27 at 6pm stored "2026-04-28" — countdown, taper
+  math and race lookup all a day late. Pinned to the local timezone at
+  both write sites.
+
+- Five DateFormatters with a fixed "yyyy-MM-dd" format had no POSIX
+  locale, so "yyyy" resolved in the user's calendar: a device set to the
+  Japanese or Buddhist calendar produced "0008-05-12" / "2569-05-12".
+  Those strings went into request URLs (no stream, no weather, ever) and
+  into dictionary keys callers then failed to match (mileage charts read
+  empty). The codebase already does this correctly in TrainingPlanModels
+  and DailyReadService. Also dropped an unused formatter in VitalManager.
+
+- InjuryService bucketed workout_date (a TIMESTAMPTZ instant) by UTC day
+  while body_mentions.mentioned_at is a bare local DATE. Every evening run
+  west of Greenwich landed a day late, so mentions found no miles: AVG VOL
+  showed empty and 7-day AVG LOAD was short. Now keyed by local day.
+
+- .mile1500 was mapped to PaceCalculator's "1500m" (0.932 mi) in
+  EquivalentPaces, while its displayName, distanceInMiles/Km and all six
+  other consumers treat it as a mile. Every pace from a mile goal was ~7%
+  fast. The enum's raw value is "1500m" for stored-data compatibility only.
+
+- easyPaceDelta labelled the span with the number of points plotted, not
+  weeks elapsed — easy runs in weeks 1 and 12 read "/ 1 WK".
+
+- rollingFourWeekAverage returned partial windows despite its own doc
+  comment and a "4-WK AVG" legend, so the first three points were 1-, 2-
+  and 3-week averages.
+
+- thisWeeksPlanned used Calendar.current (Sunday-start in a US locale)
+  while the rest of the tab uses ISO Monday, so on Sundays the PLAN
+  section showed next week.
+---
+ .../RunningLog/Analysis/InjuryService.swift   | 19 +++++++++++++++----
+ .../RunningLog/Health/HealthKitManager.swift  |  7 +++++++
+ .../RunningLog/Health/VitalManager.swift      |  9 ++++++---
+ RunningLog/RunningLog/Models/PaceModels.swift |  8 +++++++-
+ RunningLog/RunningLog/Shared/GoalsView.swift  | 10 ++++++++++
+ .../RunningLog/Shared/WeatherService.swift    | 12 ++++++++++++
+ .../TrainingAnalyticsViewModel.swift          | 14 ++++++++++++--
+ .../Training/Analytics/TrainingTabView.swift  | 13 ++++++++++++-
+ 8 files changed, 81 insertions(+), 11 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Analysis/InjuryService.swift b/RunningLog/RunningLog/Analysis/InjuryService.swift
+index 066d9ed..588d22c 100644
+--- a/RunningLog/RunningLog/Analysis/InjuryService.swift
++++ b/RunningLog/RunningLog/Analysis/InjuryService.swift
+@@ -57,7 +57,7 @@ final class InjuryService {
+         let userId = (AuthManager.shared.currentUserId ?? "").lowercased()
+         guard !userId.isEmpty else { return }
+         do {
+-            let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
++            let df = DateFormatter(); df.locale = Locale(identifier: "en_US_POSIX"); df.dateFormat = "yyyy-MM-dd"
+             let since = Calendar.current.date(byAdding: .month, value: -12, to: Date()) ?? Date()
+             let mentions: [NiggleMentionRow] = try await supabase
+                 .from("body_mentions")
+@@ -118,15 +118,26 @@ final class InjuryService {
+         return c
+     }()
+ 
+-    /// Parses an ISO-8601 timestamp (with or without fractional seconds) to its
+-    /// UTC start-of-day. nil if unparseable.
++    /// Parses an ISO-8601 timestamp and returns the day-key for the calendar
++    /// day it fell on **in the athlete's own timezone**, anchored at UTC
++    /// midnight so it matches the keys built from `body_mentions.mentioned_at`.
++    ///
++    /// `workout_date` is TIMESTAMPTZ — the actual start instant of the run —
++    /// while `mentioned_at` is a bare DATE written from the athlete's local
++    /// calendar. Bucketing the instant by UTC day made the two disagree for
++    /// every evening run west of Greenwich: a 6pm PDT run on Aug 5 is
++    /// 2026-08-06T01:00Z, so it landed on Aug 6 while the niggle mentioned that
++    /// same evening was keyed to Aug 5. The mention found no miles, Plate 28's
++    /// AVG VOL rendered the empty state, and the 7-day AVG LOAD was short by
++    /// that run. Take the local calendar day first, then key it in UTC.
+     private static func utcDay(fromISO s: String) -> Date? {
+         let withFrac = ISO8601DateFormatter()
+         withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+         let plain = ISO8601DateFormatter()
+         plain.formatOptions = [.withInternetDateTime]
+         guard let d = withFrac.date(from: s) ?? plain.date(from: s) else { return nil }
+-        return utcCalendar.startOfDay(for: d)
++        let local = Calendar.current.dateComponents([.year, .month, .day], from: d)
++        return utcCalendar.date(from: local)
+     }
+ 
+     /// Computes (avg volume, avg load, trend) for an ache from its mention days.
+diff --git a/RunningLog/RunningLog/Health/HealthKitManager.swift b/RunningLog/RunningLog/Health/HealthKitManager.swift
+index 8453d0a..0b4d0db 100644
+--- a/RunningLog/RunningLog/Health/HealthKitManager.swift
++++ b/RunningLog/RunningLog/Health/HealthKitManager.swift
+@@ -295,6 +295,13 @@ class HealthKitManager: ObservableObject {
+         let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+ 
+         let formatter = DateFormatter()
++        // Fixed format strings need a fixed locale. Without en_US_POSIX, "yyyy"
++        // resolves in the USER'S calendar, so a device set to the Japanese or
++        // Buddhist calendar produces "0008-05-12" / "2569-05-12". Here that
++        // means the dictionary keys stop matching the "yyyy-MM-dd" keys every
++        // caller looks up, and the mileage charts read empty. Matches the
++        // correct usage already in TrainingPlanModels and DailyReadService.
++        formatter.locale = Locale(identifier: "en_US_POSIX")
+         formatter.dateFormat = "yyyy-MM-dd"
+ 
+         return await withCheckedContinuation { continuation in
+diff --git a/RunningLog/RunningLog/Health/VitalManager.swift b/RunningLog/RunningLog/Health/VitalManager.swift
+index 37f2e29..862ce46 100644
+--- a/RunningLog/RunningLog/Health/VitalManager.swift
++++ b/RunningLog/RunningLog/Health/VitalManager.swift
+@@ -30,6 +30,12 @@ final class VitalManager {
+     /// Fetch running workouts from Vital within a date range
+     func fetchVitalSummaries(startDate: Date, endDate: Date) async -> [VitalWorkoutSummary] {
+         let formatter = DateFormatter()
++        // Fixed format strings need a fixed locale. Without en_US_POSIX,
++        // "yyyy" resolves in the user's calendar, so a device set to the
++        // Japanese or Buddhist calendar sends "0008-05-12" / "2569-05-12"
++        // straight into the request URL and the call silently returns
++        // nothing, forever.
++        formatter.locale = Locale(identifier: "en_US_POSIX")
+         formatter.dateFormat = "yyyy-MM-dd"
+ 
+         let url = "\(baseURL)/summary/workouts/\(userId)?start_date=\(formatter.string(from: startDate))&end_date=\(formatter.string(from: endDate))"
+@@ -65,9 +71,6 @@ final class VitalManager {
+     func fetchRunningMilesByDate(from startDate: Date, to endDate: Date) async -> [String: Double] {
+         let vitalWorkouts = await fetchVitalSummaries(startDate: startDate, endDate: endDate)
+ 
+-        let formatter = DateFormatter()
+-        formatter.dateFormat = "yyyy-MM-dd"
+-
+         var milesByDate: [String: Double] = [:]
+         for workout in vitalWorkouts {
+             let miles = (workout.distance ?? 0) / 1609.34
+diff --git a/RunningLog/RunningLog/Models/PaceModels.swift b/RunningLog/RunningLog/Models/PaceModels.swift
+index be2e944..a8c85af 100644
+--- a/RunningLog/RunningLog/Models/PaceModels.swift
++++ b/RunningLog/RunningLog/Models/PaceModels.swift
+@@ -436,7 +436,13 @@ struct EquivalentPaces {
+         // Map RaceDistance to PaceCalculator key
+         let fromKey: String
+         switch raceDistance {
+-        case .mile1500: fromKey = "1500m"
++        // `.mile1500` is a MILE everywhere else in the app — displayName "Mile",
++        // distanceInMiles 1.0, distanceInKm 1.609, and every other consumer maps
++        // it to predictedMileSeconds / .mile / the "mile" key. Only this line
++        // sent it to PaceCalculator's "1500m" entry (0.932 mi), so every pace
++        // derived from a mile goal came out ~7% fast. The enum's raw value is
++        // "1500m" for stored-data compatibility only — don't follow it here.
++        case .mile1500: fromKey = "mile"
+         case .fiveK: fromKey = "5K"
+         case .tenK: fromKey = "10K"
+         case .halfMarathon: fromKey = "half"
+diff --git a/RunningLog/RunningLog/Shared/GoalsView.swift b/RunningLog/RunningLog/Shared/GoalsView.swift
+index a1aa003..04670f1 100644
+--- a/RunningLog/RunningLog/Shared/GoalsView.swift
++++ b/RunningLog/RunningLog/Shared/GoalsView.swift
+@@ -486,8 +486,14 @@ struct AddGoalSheet: View {
+     /// "CIM" wasn't in a hardcoded list.
+     private static func interpretGoal(goalText: String, raceDate: Date) async {
+         let userId = AuthManager.shared.userId
++        // ISO8601DateFormatter formats in UTC by default, but the date picked
++        // here carries a wall-clock time (the seed is Date() + 30 days). An
++        // athlete in Los Angeles choosing April 27 at 6pm produced "2026-04-28":
++        // race-day countdown, taper math and the race lookup were all a day
++        // late. Pin the formatter to the athlete's own timezone.
+         let formatter = ISO8601DateFormatter()
+         formatter.formatOptions = [.withFullDate]
++        formatter.timeZone = .current
+         let dateStr = formatter.string(from: raceDate)
+ 
+         do {
+@@ -693,8 +699,12 @@ struct GoalDetailSheet: View {
+ 
+         do {
+             // Format date for Supabase
++            // Same UTC-vs-local trap as interpretGoal above — the picked date
++            // carries a time, so formatting in UTC shifts the calendar day for
++            // anyone west of Greenwich in the evening (and east in the morning).
+             let formatter = ISO8601DateFormatter()
+             formatter.formatOptions = [.withFullDate]
++            formatter.timeZone = .current
+             let dateString = formatter.string(from: editedDate)
+ 
+             try await supabase
+diff --git a/RunningLog/RunningLog/Shared/WeatherService.swift b/RunningLog/RunningLog/Shared/WeatherService.swift
+index 03f3497..3bdb66a 100644
+--- a/RunningLog/RunningLog/Shared/WeatherService.swift
++++ b/RunningLog/RunningLog/Shared/WeatherService.swift
+@@ -231,6 +231,12 @@ class WeatherService {
+         let lon = location.coordinate.longitude
+ 
+         let dateFormatter = DateFormatter()
++        // Fixed format strings need a fixed locale. Without en_US_POSIX,
++        // "yyyy" resolves in the user's calendar, so a device set to the
++        // Japanese or Buddhist calendar sends "0008-05-12" / "2569-05-12"
++        // straight into the request URL and the call silently returns
++        // nothing, forever.
++        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+         dateFormatter.dateFormat = "yyyy-MM-dd"
+         let dateString = dateFormatter.string(from: date)
+ 
+@@ -280,6 +286,12 @@ class WeatherService {
+         let lon = location.coordinate.longitude
+ 
+         let dateFormatter = DateFormatter()
++        // Fixed format strings need a fixed locale. Without en_US_POSIX,
++        // "yyyy" resolves in the user's calendar, so a device set to the
++        // Japanese or Buddhist calendar sends "0008-05-12" / "2569-05-12"
++        // straight into the request URL and the call silently returns
++        // nothing, forever.
++        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+         dateFormatter.dateFormat = "yyyy-MM-dd"
+         let dateString = dateFormatter.string(from: date)
+ 
+diff --git a/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift b/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
+index cf3d617..cf67929 100644
+--- a/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
++++ b/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
+@@ -960,7 +960,12 @@ final class TrainingAnalyticsViewModel {
+         return weeks.indices.map { i in
+             let lo = max(0, i - 3)
+             let window = totals[lo...i].filter { !$0.isNaN }
+-            guard window.count >= 1 else { return nil }
++            // A full window or nothing — the doc comment above says so and the
++            // chart legends the line "4-WK AVG". Accepting >= 1 meant the first
++            // three points were 1-, 2- and 3-week averages drawn as if they
++            // were 4-week ones, so a single spike week read as a sustained
++            // average and the line's early slope was meaningless.
++            guard window.count == 4 else { return nil }
+             return window.reduce(0, +) / Double(window.count)
+         }
+     }
+@@ -1477,7 +1482,12 @@ final class TrainingAnalyticsViewModel {
+         let delta = Int((first.avgPaceSeconds - last.avgPaceSeconds).rounded())
+         guard abs(delta) >= 1 else { return nil }
+         let arrow = delta > 0 ? "▼" : "▲"
+-        return "\(arrow) \(abs(delta)) SEC / \(pts.count - 1) WK"
++        // Weeks ELAPSED, not points plotted. easyPaceTrend() compactMaps away
++        // weeks with no easy runs, so an athlete with easy runs in week 1 and
++        // week 12 produced two points and the label read "/ 1 WK" for an
++        // eleven-week improvement.
++        let weeksElapsed = cal.dateComponents([.weekOfYear], from: first.weekStart, to: last.weekStart).weekOfYear ?? (pts.count - 1)
++        return "\(arrow) \(abs(delta)) SEC / \(max(weeksElapsed, 1)) WK"
+     }
+ 
+     // MARK: Outputs — felt vs planned
+diff --git a/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift b/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift
+index 857e903..05b8710 100644
+--- a/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift
++++ b/RunningLog/RunningLog/Training/Analytics/TrainingTabView.swift
+@@ -1016,7 +1016,18 @@ struct TrainingTabView: View {
+ 
+     /// Planned sessions in the current calendar week, in date order.
+     private var thisWeeksPlanned: [ScheduledWorkout] {
+-        let cal = Calendar.current
++        // Everything else on this tab runs on the ISO Monday-first week
++        // (TrainingAnalyticsViewModel uses Calendar.iso8601Monday). Using
++        // Calendar.current here meant a US locale's Sunday-start week, so on a
++        // Sunday the PLAN section listed NEXT week's sessions beside a CURRENT
++        // strip that ends today — and Mon-Sat it showed the previous Sunday's
++        // session instead of today's.
++        //
++        // Built inline rather than reusing Calendar.iso8601Monday: that helper
++        // is deliberately fileprivate in several files to avoid cross-file
++        // ambiguity (see the note at the foot of TrainingAnalyticsViewModel).
++        var cal = Calendar(identifier: .iso8601)
++        cal.firstWeekday = 2
+         return planVM.allScheduledWorkouts
+             .filter { cal.isDate($0.date, equalTo: Date(), toGranularity: .weekOfYear) }
+             .sorted { $0.date == $1.date ? $0.session < $1.session : $0.date < $1.date }
+-- 
+2.43.0
+
+From 447b552b276a4c1afec0627c2c35f24d985a08f8 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 04:02:42 +0000
+Subject: [PATCH 14/21] Fix 3.1: clear the sticky error so a successful plan
+ join isn't reported as a failure
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+CoachViewModel.error is assigned in 20+ places and was never reset to nil.
+joinLoadedPlan and joinPlanByCode infer success from `error == nil`, so a
+failure earlier in the sheet's life poisoned every later call.
+
+The sequence: the join-code lookup fails on a flaky connection, the
+athlete retries and it works, they tap Join. subscribe-to-plan succeeds
+and creates the plan plus its scheduled workouts — but the stale error
+makes the function return false and the UI says "Failed to subscribe. Try
+again." They tap again and get a SECOND plan with a duplicate workout set,
+which then has to be untangled by hand.
+
+Reset at the top of the four entry points named above. Also gave that
+function's DateFormatter the POSIX locale it was missing.
+---
+ RunningLog/RunningLog/Coaching/CoachViewModel.swift | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/RunningLog/RunningLog/Coaching/CoachViewModel.swift b/RunningLog/RunningLog/Coaching/CoachViewModel.swift
+index 52a7edd..1d54bcd 100644
+--- a/RunningLog/RunningLog/Coaching/CoachViewModel.swift
++++ b/RunningLog/RunningLog/Coaching/CoachViewModel.swift
+@@ -415,7 +415,15 @@ final class CoachViewModel {
+         targetRaceDistance: String? = nil,
+         preferences: SubscriptionPreferences? = nil
+     ) async {
++        // `error` is sticky — it is assigned in 20+ places on this view model
++        // and was never reset. Callers infer success from `error == nil`, so a
++        // failure earlier in the sheet's life made a LATER successful join
++        // report failure. The athlete then tapped Join again and got a second
++        // training plan with a duplicate set of scheduled workouts.
++        self.error = nil
++
+         let formatter = DateFormatter()
++        formatter.locale = Locale(identifier: "en_US_POSIX")
+         formatter.dateFormat = "yyyy-MM-dd"
+         var body: [String: Any] = [
+             "planTemplateId": planTemplate.id.uuidString,
+@@ -448,6 +456,7 @@ final class CoachViewModel {
+     /// load template defaults before showing the onboarding form.
+     @MainActor
+     func lookupPlanByCode(_ code: String) async -> PlanTemplate? {
++        self.error = nil
+         let normalized = code.uppercased().trimmingCharacters(in: .whitespaces)
+         do {
+             let plans: [PlanTemplate] = try await supabase
+@@ -477,6 +486,7 @@ final class CoachViewModel {
+         targetRaceDistance: String? = nil,
+         preferences: SubscriptionPreferences? = nil
+     ) async -> Bool {
++        self.error = nil
+         guard let plan = await lookupPlanByCode(code) else {
+             if self.error == nil {
+                 self.error = "Plan not found. Check the join code and try again."
+@@ -506,6 +516,7 @@ final class CoachViewModel {
+         targetRaceDistance: String? = nil,
+         preferences: SubscriptionPreferences? = nil
+     ) async -> Bool {
++        self.error = nil
+         let userId = currentUserId
+         await subscribeAthleteToTemplate(
+             athleteUserId: userId,
+-- 
+2.43.0
+
+From e7a48dd10765dfcfb74d5e9dfa3304213ddb5579 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 04:03:37 +0000
+Subject: [PATCH 15/21] Fix 4.1 + 4.2 + 4.8: FIT header order, main-actor
+ isolation, unbounded retry loop
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- FITExportService built every file with an invalid CRC and an oversized
+  data-size field. The CRC was computed while the header's size field was
+  still the 0x00000000 placeholder (patched afterwards), and the size was
+  measured after the 2 CRC bytes had been appended, so it overstated the
+  record section by 2. Garmin Connect rejected every export as corrupt,
+  100% of the time. Header size is now patched first, CRC computed second.
+
+- VoiceLogViewModel.loadHistory was the one mutating method on this
+  @Observable class without @MainActor (the class itself isn't annotated).
+  It ran on the cooperative pool and wrote six properties — driving SwiftUI
+  invalidation off the main thread while the Log feed was laying out.
+  Intermittent layout corruption and AttributeGraph crashes, worst during
+  the 1-second processing poll while scrolling.
+
+- autoRetryStaleRecords -> loadHistory -> autoRetryStaleRecords terminates
+  only if the retry clears the stale row. A memo stuck at "transcribed"
+  whose edge function short-circuits with success:true without advancing
+  the status loops forever — a journal fetch plus a 60s function call per
+  hop, for as long as the Log tab is open. Now one attempt per row per
+  session.
+---
+ .../RunningLog/Shared/FITExportService.swift  | 20 +++++++++++----
+ .../Workouts/VoiceLogViewModel.swift          | 25 ++++++++++++++++++-
+ 2 files changed, 39 insertions(+), 6 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Shared/FITExportService.swift b/RunningLog/RunningLog/Shared/FITExportService.swift
+index 8ac5099..69ac042 100644
+--- a/RunningLog/RunningLog/Shared/FITExportService.swift
++++ b/RunningLog/RunningLog/Shared/FITExportService.swift
+@@ -71,15 +71,25 @@ final class FITExportService {
+             data.append(contentsOf: createWorkoutStepMessage(step, index: index, racePaceSeconds: racePaceSeconds))
+         }
+ 
+-        // Calculate and append CRC
++        // ORDER MATTERS, and it used to be wrong in both directions.
++        //
++        // 1. Patch the header's data-size field FIRST. It counts the record
++        //    section only — header and CRC both excluded — so it must be
++        //    computed before the CRC bytes are appended. Doing it afterwards
++        //    overstated the section by 2.
++        // 2. THEN compute the CRC, over the finished header + records. The old
++        //    order CRC'd a header whose size field was still the 0x00000000
++        //    placeholder, so the checksum described a file that never existed.
++        //
++        // Between them, every .FIT this app produced was rejected by Garmin
++        // Connect as corrupt, 100% of the time.
++        let dataSize = UInt32(data.count - 14) // Records only: header excluded, CRC not yet appended
++        data.replaceSubrange(4 ..< 8, with: withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
++
+         let crc = calculateCRC(data)
+         data.append(UInt8(crc & 0xFF))
+         data.append(UInt8((crc >> 8) & 0xFF))
+ 
+-        // Update header with data size
+-        let dataSize = UInt32(data.count - 14) // Exclude header
+-        data.replaceSubrange(4 ..< 8, with: withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+-
+         return data
+     }
+ 
+diff --git a/RunningLog/RunningLog/Workouts/VoiceLogViewModel.swift b/RunningLog/RunningLog/Workouts/VoiceLogViewModel.swift
+index a289953..8f5a850 100644
+--- a/RunningLog/RunningLog/Workouts/VoiceLogViewModel.swift
++++ b/RunningLog/RunningLog/Workouts/VoiceLogViewModel.swift
+@@ -436,6 +436,15 @@ final class VoiceLogViewModel {
+             .value
+     }
+ 
++    /// @MainActor to match every other mutating method on this @Observable
++    /// class (the class itself is not annotated). Without it this function ran
++    /// on the cooperative pool, so `historyLogs`, `loadFailed`,
++    /// `weeklyMileageRows` and friends — and the SwiftUI invalidations they
++    /// trigger — were written off the main thread while the Log feed's
++    /// LazyVStack was laying out. That is intermittent layout corruption and
++    /// AttributeGraph crashes, worst during the 1-second processing poll while
++    /// the athlete is scrolling.
++    @MainActor
+     func loadHistory() async {
+         isLoadingHistory = true
+ 
+@@ -774,6 +783,18 @@ final class VoiceLogViewModel {
+         }
+     }
+ 
++    /// Ids already retried during this view model's lifetime.
++    ///
++    /// autoRetryStaleRecords -> loadHistory -> autoRetryStaleRecords is a cycle.
++    /// It terminates only if the retry actually clears the stale row. When
++    /// process-training-memo short-circuits with {"success": true} WITHOUT
++    /// advancing processing_status — a row stuck at "transcribed" because the
++    /// worker died between stages — the same row is stale on the next pass and
++    /// the loop runs forever: a full journal fetch plus a 60-second edge
++    /// function call per hop, for as long as the Log tab is open, silently
++    /// draining battery and cellular data. One attempt per row per session.
++    @ObservationIgnored private var autoRetriedLogIds: Set<UUID> = []
++
+     private func autoRetryStaleRecords(logs: [TrainingLog]) async {
+         let fiveMinutesAgo = Date().addingTimeInterval(-5 * 60)
+ 
+@@ -784,9 +805,11 @@ final class VoiceLogViewModel {
+         guard let staleLog = logs.first(where: { log in
+             log.isInFlight &&
+                 log.audioUrl != nil &&
+-                log.createdAt < fiveMinutesAgo
++                log.createdAt < fiveMinutesAgo &&
++                !autoRetriedLogIds.contains(log.id)
+         }) else { return }
+ 
++        autoRetriedLogIds.insert(staleLog.id)
+         Log.app.info("Auto-retrying stale record \(staleLog.id)")
+         let success = await callProcessingFunction(record: staleLog, checkInManager: nil, maxRetries: 1)
+ 
+-- 
+2.43.0
+
+From 4730bb161a0867b15c9d604075eddc1545fdce86 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 04:04:34 +0000
+Subject: [PATCH 16/21] Fix 4.3 (partial) + 4.4: Vital sandbox URL and
+ empty-user-id guards
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- VitalManager's base URL was hardcoded to Junction's SANDBOX with no
+  release override, so a TestFlight or App Store build queried sandbox and
+  never returned a real workout. Now DEBUG-gated, with a VITAL_BASE_URL
+  Info.plist override taking precedence.
+
+- The Vital API key is NOT fixed here and cannot be fixed client-side: it
+  is a server-side credential sitting in Info.plist, readable by anyone who
+  unzips the .ipa. Left a prominent comment at the declaration. It needs to
+  move behind an edge function and be rotated before any build leaves the
+  machine — flagged rather than silently deferred.
+
+- syncUnloggedWorkouts and AIInsightsService.fetchRecent both read
+  AuthManager.userId, which returns "" with only a print warning when
+  there's no session. Auto-sync fires at launch, often before the auth
+  listener emits, so the dedup query matched nothing and the insert went
+  out with user_id: "" — RLS rejected it and the athlete got a red error
+  banner on cold launch. Both now use the same guard removeAutoSyncEntry
+  in the same file already had.
+---
+ .../RunningLog/Health/VitalManager.swift      | 31 ++++++++++++++++++-
+ .../Services/AIInsightsService.swift          |  8 ++++-
+ .../Services/WorkoutSyncService.swift         | 12 ++++++-
+ 3 files changed, 48 insertions(+), 3 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Health/VitalManager.swift b/RunningLog/RunningLog/Health/VitalManager.swift
+index 862ce46..61b3759 100644
+--- a/RunningLog/RunningLog/Health/VitalManager.swift
++++ b/RunningLog/RunningLog/Health/VitalManager.swift
+@@ -15,7 +15,36 @@ import os
+ final class VitalManager {
+     static let shared = VitalManager()
+ 
+-    private let baseURL = "https://api.sandbox.us.junction.com/v2"
++    /// Sandbox in DEBUG, production otherwise.
++    ///
++    /// This was hardcoded to sandbox with no release override, so a TestFlight
++    /// or App Store build queried Junction's sandbox and never returned a real
++    /// athlete workout. The `VITAL_BASE_URL` Info.plist key takes precedence
++    /// when present, so the host can be moved without a code change.
++    private let baseURL: String = {
++        if let override = Bundle.main.infoDictionary?["VITAL_BASE_URL"] as? String,
++           !override.isEmpty {
++            return override
++        }
++        #if DEBUG
++            return "https://api.sandbox.us.junction.com/v2"
++        #else
++            return "https://api.us.junction.com/v2"
++        #endif
++    }()
++
++    // SECURITY — read before shipping.
++    //
++    // This is a Junction/Vital *server-side* API key living in Info.plist,
++    // which means it ships inside the .ipa in plain text: anyone can unzip the
++    // app and run `plutil Info.plist` to read it, then call the account's API
++    // directly. Rotate it and move these calls behind a Supabase edge function
++    // (the same pattern the Supabase writes already use) before any build
++    // leaves this machine — once a key is in a distributed build, rotation is
++    // the only remedy.
++    //
++    // Tracked as audit item 4.3; deliberately not fixed in this pass because
++    // it needs a server-side counterpart, not a client change.
+     private let apiKey: String = Bundle.main.infoDictionary?["VITAL_API_KEY"] as? String ?? ""
+     var userId: String = Bundle.main.infoDictionary?["VITAL_USER_ID"] as? String ?? ""
+ 
+diff --git a/RunningLog/RunningLog/Services/AIInsightsService.swift b/RunningLog/RunningLog/Services/AIInsightsService.swift
+index 0dc6e86..80dfd6b 100644
+--- a/RunningLog/RunningLog/Services/AIInsightsService.swift
++++ b/RunningLog/RunningLog/Services/AIInsightsService.swift
+@@ -78,7 +78,13 @@ final class AIInsightsService {
+         errorMessage = nil
+ 
+         do {
+-            let userId = AuthManager.shared.userId
++            // Same empty-user-id guard as WorkoutSyncService: querying with ""
++            // returns nothing and reads as "no insights" rather than "not
++            // signed in yet".
++            guard let userId = AuthManager.shared.currentUserId, !userId.isEmpty else {
++                isLoading = false
++                return
++            }
+             let result: [AIInsight] = try await supabase
+                 .from("ai_insights")
+                 .select()
+diff --git a/RunningLog/RunningLog/Services/WorkoutSyncService.swift b/RunningLog/RunningLog/Services/WorkoutSyncService.swift
+index 2395e6c..1a99258 100644
+--- a/RunningLog/RunningLog/Services/WorkoutSyncService.swift
++++ b/RunningLog/RunningLog/Services/WorkoutSyncService.swift
+@@ -16,7 +16,17 @@ final class WorkoutSyncService {
+     func syncUnloggedWorkouts(workouts: [RunningWorkout]) async {
+         guard !isSyncing else { return }
+ 
+-        let userId = AuthManager.shared.userId
++        // AuthManager.userId returns "" when there's no session, with only a
++        // print warning. Auto-sync fires at launch, often before the Supabase
++        // auth listener has emitted the initial session, so the dedup query ran
++        // .eq("user_id", "") (matching nothing) and the batch insert went out
++        // with user_id: "" — rejected by RLS, greeting the athlete with a red
++        // error banner on a cold launch. removeAutoSyncEntry in this same file
++        // already guards correctly; this is the same guard.
++        guard let userId = AuthManager.shared.currentUserId, !userId.isEmpty else {
++            Log.coach.info("syncUnloggedWorkouts: no authenticated user yet — skipping this pass")
++            return
++        }
+ 
+         isSyncing = true
+         defer { isSyncing = false }
+-- 
+2.43.0
+
+From f68c03ac5f6a8b69cbe9df48761f668a30d25731 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 04:05:54 +0000
+Subject: [PATCH 17/21] Fix 4.5 + 4.6 + 4.7: duplicate HealthKit setup and an
+ unstable Identifiable
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- RunningLogApp's launch task and VoiceLogView.onAppear both ran
+  requestAuthorization() plus a workout fetch against HealthKitManager.shared
+  at launch, with different limits (30 vs 20), and both wrote recentWorkouts.
+  Whichever finished last decided what the picker held, and on first install
+  two authorization requests were in flight against one HKHealthStore. The
+  launch task now owns it and publishes its (larger) result; the view only
+  fills a gap.
+
+- HistoryDetailSheet built a fresh HealthKitManager() per instance, and it
+  is instantiated per page inside HistoryDetailPager's LazyHStack ForEach —
+  so swiping a week of entries allocated an HKHealthStore and fired an
+  authorization request plus a query per page. Its isAuthorized/readState
+  also diverged from the instance the app syncs with. This is the exact
+  pattern already fixed in VoiceLogView.swift:36, with a comment there
+  explaining why. Now uses the shared instance.
+
+- PaceSegment.id was `UUID()` — a new identity on every access — so any
+  ForEach over segments treated the whole collection as new on every render
+  pass: animations restarted, selection and scroll position reset. Now
+  derived from the segment's own fields, which are fixed at sync time.
+---
+ RunningLog/RunningLog/App/RunningLogApp.swift     |  7 +++++++
+ RunningLog/RunningLog/Models/TrainingLog.swift    | 12 +++++++++++-
+ .../RunningLog/Workouts/HistoryDetailSheet.swift  | 14 ++++++++++++--
+ RunningLog/RunningLog/Workouts/VoiceLogView.swift | 15 ++++++++++++---
+ 4 files changed, 42 insertions(+), 6 deletions(-)
+
+diff --git a/RunningLog/RunningLog/App/RunningLogApp.swift b/RunningLog/RunningLog/App/RunningLogApp.swift
+index 0b12573..a547620 100644
+--- a/RunningLog/RunningLog/App/RunningLogApp.swift
++++ b/RunningLog/RunningLog/App/RunningLogApp.swift
+@@ -224,6 +224,13 @@ struct MainTabView: View {
+                     // stay unrequested and silently empty. One-time top-up.
+                     await HealthKitManager.shared.ensureAuthorizationCoversCurrentTypes()
+                     let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
++                    // Publish the result so the workout picker can read it
++                    // instead of running its own duplicate authorization +
++                    // fetch. This launch task owns HealthKit setup; VoiceLogView
++                    // used to race it with a second, smaller (limit 20) fetch
++                    // against the same shared manager, and whichever finished
++                    // last decided what the picker showed.
++                    await MainActor.run { HealthKitManager.shared.recentWorkouts = hkWorkouts }
+                     if !hkWorkouts.isEmpty {
+                         await WorkoutSyncService().syncUnloggedWorkouts(workouts: hkWorkouts)
+                     }
+diff --git a/RunningLog/RunningLog/Models/TrainingLog.swift b/RunningLog/RunningLog/Models/TrainingLog.swift
+index 95514b6..57eaba2 100644
+--- a/RunningLog/RunningLog/Models/TrainingLog.swift
++++ b/RunningLog/RunningLog/Models/TrainingLog.swift
+@@ -5,7 +5,17 @@ import Foundation
+ /// A single effort segment within a run (e.g., warmup, threshold portion, cooldown).
+ /// Derived from GPS/watch stream data at sync time.
+ struct PaceSegment: Codable, Identifiable {
+-    var id: UUID { UUID() }
++    /// Content-derived and STABLE. This was `UUID()` — a brand-new identity on
++    /// every single access — so every `ForEach` over segments saw an entirely
++    /// new collection on each render pass: animations restarted, selection and
++    /// scroll position reset, and SwiftUI could be driven into repeated
++    /// diff/rebuild cycles. The fields below are fixed at sync time and don't
++    /// change for a given segment, so they identify it without needing to be
++    /// persisted.
++    var id: String {
++        "\(effort)|\(distanceMiles)|\(durationSeconds)|\(pacePerMile)|\(avgHeartRate ?? -1)"
++    }
++
+     let effort: String          // "easy", "moderate", "threshold", "tempo", "interval", "race_pace", "recovery"
+     let distanceMiles: Double
+     let durationSeconds: Double
+diff --git a/RunningLog/RunningLog/Workouts/HistoryDetailSheet.swift b/RunningLog/RunningLog/Workouts/HistoryDetailSheet.swift
+index 1ddc670..e4aab02 100644
+--- a/RunningLog/RunningLog/Workouts/HistoryDetailSheet.swift
++++ b/RunningLog/RunningLog/Workouts/HistoryDetailSheet.swift
+@@ -15,7 +15,13 @@ struct HistoryDetailSheet: View {
+     let entry: TrainingLog
+     let onUpdate: () -> Void
+     @Environment(\.dismiss) private var dismiss
+-    @StateObject var healthKitManager = HealthKitManager()
++    // Shared instance, not a fresh one. This sheet is created per page inside
++    // HistoryDetailPager's LazyHStack ForEach, so a `HealthKitManager()` here
++    // allocated a new HKHealthStore and fired an authorization request plus a
++    // workout query for EVERY page swiped into view. It also carried its own
++    // isAuthorized/readState, which diverged from the instance the app actually
++    // syncs with — the same divergence already fixed in VoiceLogView.swift:36.
++    @ObservedObject var healthKitManager = HealthKitManager.shared
+     // `vm` and the @State vars below are intentionally `internal` (no
+     // `private`) so the `editorialBody` extension in
+     // `HistoryDetailSheet+Editorial.swift` can read them. Swift's
+@@ -214,9 +220,13 @@ struct HistoryDetailSheet: View {
+     }
+ 
+     private func loadWorkouts() {
++        // The app-level launch task populates recentWorkouts on the shared
++        // manager. Only fetch if it somehow hasn't — otherwise swiping through
++        // a week of journal entries re-queries HealthKit once per page.
++        guard healthKitManager.recentWorkouts.isEmpty else { return }
+         Task {
+             _ = await healthKitManager.requestAuthorization()
+-            let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
++            let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 30)
+             await MainActor.run {
+                 healthKitManager.recentWorkouts = workouts
+             }
+diff --git a/RunningLog/RunningLog/Workouts/VoiceLogView.swift b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+index 8d8fee9..916d682 100644
+--- a/RunningLog/RunningLog/Workouts/VoiceLogView.swift
++++ b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+@@ -169,9 +169,18 @@ struct VoiceLogView: View {
+         .onAppear {
+             setupAudioSession()
+             Task {
+-                _ = await healthKitManager.requestAuthorization()
+-                let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
+-                await MainActor.run { healthKitManager.recentWorkouts = workouts }
++                // HealthKit authorization + the recent-workout fetch are owned
++                // by the app-level launch task in RunningLogApp, which requests
++                // a superset (30 vs 20) and publishes it to the shared manager.
++                // Running them here too meant two authorization requests against
++                // one HKHealthStore on first install, and two concurrent writes
++                // to recentWorkouts where whichever landed last won. Only fill
++                // the gap if the launch task hasn't produced anything.
++                if healthKitManager.recentWorkouts.isEmpty {
++                    _ = await healthKitManager.requestAuthorization()
++                    let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 30)
++                    await MainActor.run { healthKitManager.recentWorkouts = workouts }
++                }
+                 await viewModel.loadHistory()
+             }
+         }
+-- 
+2.43.0
+
+From f2dea23891e7ec0ae38ad7395118dc9cb41ec104 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 04:07:16 +0000
+Subject: [PATCH 18/21] Fix 3.3 + 3.5: distinguish failures from emptiness in
+ Content Library and onboarding
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- ContentLibraryService swallows its throw and returns [], and the view
+  branched on videos.isEmpty straight to "No Videos Yet - check back soon".
+  An athlete on a bad connection concluded the category was genuinely empty
+  and stopped opening it. There was no retry and no pull-to-refresh, and
+  their only exit was the close button. Now disambiguated via the service's
+  errorMessage, with an error state and a Try Again CTA.
+
+- OnboardingView dropped the goal the athlete typed whenever
+  AuthManager.userId was still empty — which is the common case, since this
+  is the last onboarding step immediately after signup. `try?` also ate RLS
+  rejections and offline failures. They landed in the app with no goal, no
+  error, and pace zones on defaults. Now waits for the session the same way
+  VoiceLogViewModel.loadHistory does, and surfaces a failure instead of
+  hiding it. target_date also formats in local time, matching the GoalsView
+  fix.
+---
+ .../RunningLog/App/OnboardingView.swift       | 66 +++++++++++++++----
+ .../ContentLibrary/ContentLibraryView.swift   | 30 ++++++++-
+ 2 files changed, 81 insertions(+), 15 deletions(-)
+
+diff --git a/RunningLog/RunningLog/App/OnboardingView.swift b/RunningLog/RunningLog/App/OnboardingView.swift
+index 5a23ab2..c69cf7d 100644
+--- a/RunningLog/RunningLog/App/OnboardingView.swift
++++ b/RunningLog/RunningLog/App/OnboardingView.swift
+@@ -513,20 +513,58 @@ struct OnboardingView: View {
+         guard totalSeconds > 0 else { return }
+ 
+         Task {
+-            let userId = AuthManager.shared.userId
+-            guard !userId.isEmpty else { return }
+-
+-            _ = try? await supabase
+-                .from("user_goals")
+-                .insert([
+-                    "user_id": userId,
+-                    "goal_title": "\(selectedDistance.replacingOccurrences(of: "_", with: " ").capitalized) Goal",
+-                    "goal_type": selectedDistance,
+-                    "target_time": "\(goalHours):\(String(format: "%02d", goalMinutes)):\(String(format: "%02d", goalSeconds))",
+-                    "target_date": ISO8601DateFormatter().string(from: Date().addingTimeInterval(86400 * 120)),
+-                    "status": "active",
+-                ])
+-                .execute()
++            // A brand-new user finishes signup and types this on the LAST
++            // onboarding step, so auth has often not resolved yet. The old
++            // `guard !userId.isEmpty else { return }` dropped the goal on the
++            // floor in exactly that window — and `try?` swallowed RLS
++            // rejections and offline failures too. The athlete landed in the
++            // app with no goal, no error, and pace zones on defaults, with no
++            // idea the value they typed had been discarded.
++            //
++            // Wait for the session the same way VoiceLogViewModel.loadHistory
++            // does (up to ~3s), then report a failure rather than hide it.
++            var userId = AuthManager.shared.userId
++            var authWaits = 0
++            while userId.isEmpty && authWaits < 10 {
++                try? await Task.sleep(for: .milliseconds(300))
++                userId = AuthManager.shared.userId
++                authWaits += 1
++            }
++            guard !userId.isEmpty else {
++                await MainActor.run {
++                    ErrorReporter.shared.report(
++                        .processing("We couldn't save your goal just now. You can set it any time from Goals.")
++                    )
++                }
++                return
++            }
++
++            // target_date is formatted in the athlete's own timezone — see the
++            // UTC off-by-one fixed in GoalsView.
++            let iso = ISO8601DateFormatter()
++            iso.formatOptions = [.withFullDate]
++            iso.timeZone = .current
++
++            do {
++                _ = try await supabase
++                    .from("user_goals")
++                    .insert([
++                        "user_id": userId,
++                        "goal_title": "\(selectedDistance.replacingOccurrences(of: "_", with: " ").capitalized) Goal",
++                        "goal_type": selectedDistance,
++                        "target_time": "\(goalHours):\(String(format: "%02d", goalMinutes)):\(String(format: "%02d", goalSeconds))",
++                        "target_date": iso.string(from: Date().addingTimeInterval(86400 * 120)),
++                        "status": "active",
++                    ])
++                    .execute()
++            } catch {
++                await MainActor.run {
++                    ErrorReporter.shared.report(
++                        error,
++                        context: "save your goal"
++                    )
++                }
++            }
+         }
+     }
+ }
+diff --git a/RunningLog/RunningLog/ContentLibrary/ContentLibraryView.swift b/RunningLog/RunningLog/ContentLibrary/ContentLibraryView.swift
+index f77181d..8290178 100644
+--- a/RunningLog/RunningLog/ContentLibrary/ContentLibraryView.swift
++++ b/RunningLog/RunningLog/ContentLibrary/ContentLibraryView.swift
+@@ -15,6 +15,10 @@ struct ContentLibraryView: View {
+ 
+     @State private var videos: [ContentLibraryItem] = []
+     @State private var isLoading = true
++    /// Set when the fetch failed, so a network error isn't rendered as
++    /// "No Videos Yet" — which reads as "this category is genuinely empty"
++    /// and teaches the athlete to stop opening it.
++    @State private var loadFailed = false
+     @State private var selectedVideo: ContentLibraryItem?
+     @State private var showVideoPlayer = false
+ 
+@@ -25,6 +29,8 @@ struct ContentLibraryView: View {
+ 
+                 if isLoading {
+                     loadingView
++                } else if loadFailed {
++                    errorStateView
+                 } else if videos.isEmpty {
+                     emptyView
+                 } else {
+@@ -148,9 +154,31 @@ struct ContentLibraryView: View {
+         }
+     }
+ 
++    /// Shown when the fetch itself failed. ContentLibraryService swallows the
++    /// throw and returns [], so without this an offline athlete saw the same
++    /// "No Videos Yet - check back soon" as a truly empty category, with no
++    /// retry affordance and no indication anything had gone wrong.
++    private var errorStateView: some View {
++        EmptyStateView(
++            variant: .error,
++            eyebrow: category.displayName.uppercased(),
++            title: "Couldn't load these videos. Check your connection and try again.",
++            icon: category.icon,
++            cta: EmptyStateView.CTA(label: "Try Again") {
++                Task { await loadVideos() }
++            }
++        )
++    }
++
+     private func loadVideos() async {
+         isLoading = true
+-        videos = await ContentLibraryService.shared.fetchVideos(for: category)
++        loadFailed = false
++        let fetched = await ContentLibraryService.shared.fetchVideos(for: category)
++        // fetchVideos returns [] for BOTH "no rows" and "request failed", so
++        // disambiguate via the service's errorMessage before deciding which
++        // state to render.
++        loadFailed = fetched.isEmpty && ContentLibraryService.shared.errorMessage != nil
++        videos = fetched
+         isLoading = false
+     }
+ }
+-- 
+2.43.0
+
+From 9dd39a2bec5fe36dc89df3b500c6082e5c8576f7 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 18:23:15 +0000
+Subject: [PATCH 19/21] Fix 2.6 (narrowed): surface rest-day check-ins without
+ touching the shared dedup
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+dedupedByPhysicalWorkout() clusters by distance, so a row with no mileage
+never enters a cluster and never comes back out. That is correct for every
+mileage aggregate — but it also meant the Train tab's voice-memo count
+undercounted (five memos in a week could read as two) and mood(on:) could
+never surface a non-running day, despite its own call site documenting
+exactly that fallback.
+
+The first attempt changed LogDedup to pass mileless rows through. That was
+wrong: ~50 sites read the resulting `logs` array, and several count rows
+or bucket them by intensity. A rest-day check-in would have inflated the
+Runs stat, been listed under "Runs" in the pace-period drill-down, and —
+because an empty ZoneSplit's hardestBucket is .easy — landed in the easy
+bucket's session list. LogDedup is left exactly as it was.
+
+Instead the view model keeps qualitative rows in a separate
+`qualitativeLogs` array and reads it from precisely the three places that
+want them: the voice-memo count, mood(on:), and weekMoodObservation().
+Every mileage path is untouched.
+---
+ RunningLog/RunningLog/App/LogDedup.swift      | 23 +------
+ .../TrainingAnalyticsViewModel.swift          | 65 +++++++++++++++++--
+ 2 files changed, 64 insertions(+), 24 deletions(-)
+
+diff --git a/RunningLog/RunningLog/App/LogDedup.swift b/RunningLog/RunningLog/App/LogDedup.swift
+index ef7060e..cd3eea9 100644
+--- a/RunningLog/RunningLog/App/LogDedup.swift
++++ b/RunningLog/RunningLog/App/LogDedup.swift
+@@ -11,10 +11,6 @@
+ //
+ //  Rule:
+ //    1. Group rows by calendar day.
+-//    1b. Rows with no distance pass straight through. The rule below is
+-//       about not counting miles twice; a row with no miles can't. This
+-//       is what keeps rest-day check-ins and other qualitative entries
+-//       alive for the consumers that count memos and read mood.
+ //    2. If any GPS-source row (strava | auto_sync) exists on the day,
+ //       drop voice_log rows from the day. They mirror the GPS row with
+ //       user-stated distance and would double-count.
+@@ -47,23 +43,10 @@ extension Array where Element == TodayLogRow {
+         var result: [TodayLogRow] = []
+ 
+         for (_, dayLogs) in byDay {
+-            // Rows carrying no distance are passed straight through. This whole
+-            // helper exists to stop miles being counted twice, and a row with no
+-            // miles cannot double-count anything. They used to be dropped
+-            // silently — a rest-day check-in ("legs are trashed", no distance)
+-            // was fetched and then discarded before any consumer saw it, so the
+-            // voice-memo count undercounted and mood(on:) could never surface a
+-            // non-running day, despite the code that calls it documenting
+-            // exactly that fallback.
+-            let (mileless, withMiles) = dayLogs.reduce(into: ([TodayLogRow](), [TodayLogRow]())) { acc, log in
+-                if (log.miles ?? 0) > 0 { acc.1.append(log) } else { acc.0.append(log) }
+-            }
+-            result.append(contentsOf: mileless)
+-
+-            let hasGps = withMiles.contains { LogDedupHelpers.isGpsSource($0.source) }
++            let hasGps = dayLogs.contains { LogDedupHelpers.isGpsSource($0.source) }
+             let candidates = hasGps
+-                ? withMiles.filter { LogDedupHelpers.isGpsSource($0.source) }
+-                : withMiles
++                ? dayLogs.filter { LogDedupHelpers.isGpsSource($0.source) }
++                : dayLogs
+ 
+             // Cluster by distance — longer workouts first so the cluster
+             // anchor is the largest run on that day. Tight 0.1 mi
+diff --git a/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift b/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
+index cf67929..00993bd 100644
+--- a/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
++++ b/RunningLog/RunningLog/Training/Analytics/TrainingAnalyticsViewModel.swift
+@@ -390,6 +390,19 @@ final class TrainingAnalyticsViewModel {
+ 
+     // Raw inputs
+     private var logs: [TodayLogRow] = []            // deduped, ascending by date
++
++    /// Rows carrying NO distance — rest-day check-ins and other qualitative
++    /// entries. Held separately because `dedupedByPhysicalWorkout()` drops them
++    /// (it clusters by distance, so a row with none never enters a cluster and
++    /// never comes back out). That is correct for every mileage aggregate on
++    /// this tab, but it also meant the voice-memo count undercounted and
++    /// `mood(on:)` could never surface a non-running day — the exact fallback
++    /// its own call site documents.
++    ///
++    /// Deliberately NOT merged into `logs`: ~50 sites read `logs`, and several
++    /// count rows or bucket them by intensity, where a mileless row would
++    /// inflate the Runs stat or land in the "easy" bucket by default.
++    private var qualitativeLogs: [TodayLogRow] = []  // ascending by date
+     private var rpeByLog: [UUID: RPERow] = [:]
+ 
+     // Performance caches. All `@ObservationIgnored` so writing to them from a
+@@ -455,6 +468,7 @@ final class TrainingAnalyticsViewModel {
+         }
+         loadFailed = false
+         logs = fetched.dedupedByPhysicalWorkout().sorted { $0.date < $1.date }
++        qualitativeLogs = fetched.filter { ($0.miles ?? 0) <= 0 }.sorted { $0.date < $1.date }
+         rebuildLogIndex()         // refresh day index + invalidate memo caches
+         splitsCache.removeAll()   // logs changed — drop stale per-session splits
+ 
+@@ -532,8 +546,17 @@ final class TrainingAnalyticsViewModel {
+     /// back to any logged mood that day (e.g. a rest-day check-in).
+     /// Verbatim from the closed vocabulary; rendered by `MoodBadge`.
+     func mood(on day: Date) -> String? {
+-        logs(on: day)
+-            .sorted { ($0.miles ?? 0) > ($1.miles ?? 0) }
++        if let fromRun = logs(on: day)
++            .sorted(by: { ($0.miles ?? 0) > ($1.miles ?? 0) })
++            .compactMap(\.mood)
++            .first(where: { !$0.isEmpty }) {
++            return fromRun
++        }
++        // Rest-day check-in fallback: a day with no run can still carry the
++        // athlete's own mood. These rows are dropped by the mileage dedup, so
++        // they're read from qualitativeLogs.
++        return qualitativeLogs
++            .filter { cal.isDate($0.date, inSameDayAs: day) }
+             .compactMap(\.mood)
+             .first { !$0.isEmpty }
+     }
+@@ -556,8 +579,16 @@ final class TrainingAnalyticsViewModel {
+     func weekMoodObservation(forWeekStart start: Date) -> String? {
+         let fatigueMoods: Set<String> = ["tired", "struggling", "injured"]
+         var seen = Set<String>()
+-        let f = DateFormatter(); f.dateFormat = "EEEE"
+-        let hits: [String] = logs(inWeekStarting: start).compactMap { row in
++        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEEE"
++        // Qualitative rows are included: a rest day the athlete described as
++        // "tired" is exactly the observation this sentence exists to surface,
++        // and it was invisible here because the mileage dedup drops those rows.
++        let weekEnd = cal.date(byAdding: .day, value: 7, to: cal.startOfDay(for: start))
++        let qualitative = qualitativeLogs.filter { row in
++            guard let end = weekEnd else { return false }
++            return row.date >= cal.startOfDay(for: start) && row.date < end
++        }
++        let hits: [String] = (logs(inWeekStarting: start) + qualitative).compactMap { row in
+             guard let m = row.mood?.lowercased(), fatigueMoods.contains(m) else { return nil }
+             let key = "\(m)-\(cal.startOfDay(for: row.date))"
+             guard seen.insert(key).inserted else { return nil }
+@@ -859,6 +890,14 @@ final class TrainingAnalyticsViewModel {
+             if isVoiceMemo(r) { s.voiceMemos += 1 }
+             split = split + self.split(for: r)
+         }
++        // Qualitative entries (no distance) never reach `rows` — dedup drops
++        // them — so add them to the memo count here. They contribute nothing to
++        // miles, duration or the intensity split by definition.
++        s.voiceMemos += qualitativeLogs
++            .filter { windowContains($0.date) }
++            .filter(isVoiceMemo)
++            .count
++
+         s.easyPercent = (hasIntensityAnchor && split.total > 0)
+             ? Int((split.easy / split.total * 100).rounded())
+             : nil
+@@ -895,6 +934,24 @@ final class TrainingAnalyticsViewModel {
+         return logs.filter { $0.date >= first }
+     }
+ 
++    /// Whether a date falls inside the currently-selected scope window.
++    /// Mirrors the three branches of `summary()` so qualitative rows — which
++    /// live outside `logs` — can be counted over the same span.
++    private func windowContains(_ date: Date) -> Bool {
++        switch scope {
++        case .week:
++            let start = cal.startOfDay(for: thisWeekStart)
++            guard let end = cal.date(byAdding: .day, value: 7, to: start) else { return false }
++            return date >= start && date < end
++        case .month:
++            guard let cutoff = cal.date(byAdding: .day, value: -30, to: Date()) else { return false }
++            return date >= cutoff
++        case .block:
++            guard let first = scopedWeekStarts().first else { return false }
++            return date >= first
++        }
++    }
++
+     // MARK: Outputs — volume by intensity
+ 
+     func dayVolumes() -> [DayVolume] {
+-- 
+2.43.0
+
+From ad05f641d6e6f32249f300d4c8a20fd6b4a1e9a4 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 18:24:34 +0000
+Subject: [PATCH 20/21] Fix 1.8 follow-up: don't present the confirmation sheet
+ on view teardown
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+stopRecording() ends by setting showConfirmation = true. Calling it from
+onDisappear meant trying to present a sheet from a view that is going
+away. Split out tearDownRecording(), which stops the recorder and releases
+the audio session without presenting anything and leaves the file on disk.
+The interruption path still uses stopRecording() — there the athlete IS
+present and should get the chance to save what was captured.
+---
+ .../RunningLog/Workouts/VoiceLogView.swift    | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Workouts/VoiceLogView.swift b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+index 916d682..768a522 100644
+--- a/RunningLog/RunningLog/Workouts/VoiceLogView.swift
++++ b/RunningLog/RunningLog/Workouts/VoiceLogView.swift
+@@ -189,8 +189,11 @@ struct VoiceLogView: View {
+             // this the timer kept counting while the recorder was suspended,
+             // and the athlete saved a truncated file stamped with the full
+             // duration — silently, with no way to tell.
+-            if isRecording { stopRecording() }
+-            deactivateAudioSession()
++            //
++            // Uses the teardown path, NOT stopRecording(): that one ends by
++            // setting showConfirmation, and presenting a sheet from a view
++            // that is going away is meaningless.
++            tearDownRecording()
+         }
+         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
+             // A phone call, a timer, Siri. iOS suspends the recorder; if we
+@@ -939,6 +942,18 @@ struct VoiceLogView: View {
+         }
+     }
+ 
++    /// Stop the recorder and release audio resources WITHOUT presenting the
++    /// confirmation sheet. For view teardown, where there is no one to confirm.
++    /// The file stays on disk rather than being deleted.
++    private func tearDownRecording() {
++        audioRecorder?.stop()
++        audioRecorder = nil
++        timer?.invalidate()
++        timer = nil
++        isRecording = false
++        deactivateAudioSession()
++    }
++
+     private func stopRecording() {
+         audioRecorder?.stop()
+         audioRecorder = nil
+-- 
+2.43.0
+
+From 50e8b3f5e75a61a0bafdeeabb9e7449bf32f6ce9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 6 Aug 2026 18:25:40 +0000
+Subject: [PATCH 21/21] Cleanup: align the unknown-pace placeholder with the
+ existing convention
+
+The placeholder introduced with the divide-by-zero guards used a custom
+en-dash string and its doc comment had displaced formatTime's. Both fixed:
+it is now the same em-dash this file's displayLabel and the workout views
+already use for unknown values.
+---
+ RunningLog/RunningLog/Models/PaceModels.swift | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/RunningLog/RunningLog/Models/PaceModels.swift b/RunningLog/RunningLog/Models/PaceModels.swift
+index a8c85af..8043b58 100644
+--- a/RunningLog/RunningLog/Models/PaceModels.swift
++++ b/RunningLog/RunningLog/Models/PaceModels.swift
+@@ -144,14 +144,14 @@ struct PaceIntensity: Codable, Equatable {
+         return formattedPace(forRacePace: racePaceSeconds)
+     }
+ 
++    /// Placeholder for a pace or duration that can't be computed. Matches the
++    /// convention already used for unknown values elsewhere in this file
++    /// (`displayLabel`) and across the workout views.
++    static let unknownPace = "—"
++
+     /// Format seconds as M:SS, or H:MM:SS when total duration >= 1 hour.
+     /// Used for both per-unit pace (always sub-hour for running) and
+     /// per-workout total time (can exceed an hour for long runs).
+-    /// Placeholder for a pace that can't be computed. Not an em-dash pair —
+-    /// hard rule #8 reserves em-dashes, and this is a value-level fallback that
+-    /// sits inside a formatted string rather than an empty cell.
+-    static let unknownPace = "–:––"
+-
+     static func formatTime(_ seconds: Double) -> String {
+         // Int(_:) traps on infinity and NaN — a hard crash, not a bad number.
+         // Every divide-by-zero upstream in the pace math used to land here.
+@@ -635,7 +635,7 @@ struct EquivalentPaces {
+         // Same trap as PaceIntensity.formatTime — Int(infinity) and Int(NaN)
+         // crash. This is the formatter the Custom % editor calls on every
+         // keystroke, so it sees a divide-by-zero the moment the field is 0.
+-        guard seconds.isFinite, seconds >= 0 else { return "\(PaceIntensity.unknownPace)/mi" }
++        guard seconds.isFinite, seconds >= 0 else { return PaceIntensity.unknownPace }
+         let totalSecs = Int(seconds.rounded())
+         let mins = totalSecs / 60
+         let secs = totalSecs % 60
+-- 
+2.43.0
+

@@ -29,3 +29,6 @@ __pycache__/
 .~lock.*#
 supabase/functions/_tmp_*.ts
 .fuse_hidden*
+
+# Superseded files staged for deletion — never tracked.
+_to_delete/

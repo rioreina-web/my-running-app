@@ -261,15 +261,42 @@ zones on her real fitness, not on her 3:16 aspiration. Goal time is
 direction; race anchor is reality. Phase 2 of Maya's roadmap wires
 this through. See `outputs/race-performances-feature-plan.md`.
 
-**Workout labels are pace-zone labels.** "Tempo" and "Threshold" are
-dropped as ambiguous — the zone IS the workout label. A workout
-formerly called "Tempo" is now `MP 7 mi` or `HMP 7 mi` depending on
-the actual pace. "Threshold" is `LT 6 mi`. "Intervals" is `5K 5×1km`
-or `3K 4×800` etc. Structural labels survive for `Long` (long run,
-typically Easy/Moderate/Steady pace) and `Long wo` (long run with
-embedded quality references — those references don't carry the
-precision of a pace-zone workout). Non-running labels: `Cross-train`,
-`Strength`, `Rest`, `Race`.
+**Workout labels are session-intent labels; pace zones are NOT workout
+types (revised 2026-08-10 — reverses the 2026-05-28 call).** A pace zone
+describes the pace of a *segment*; a workout type describes the *intent* of
+a session. Collapsing the two made "MP" a workout label, which meant an
+easy long run and a marathon-pace session competed for the same vocabulary.
+
+The offered taxonomy is 11 keys, source of truth `WorkoutLabel.offered` in
+`RunningLog/App/WorkoutLabel.swift`:
+
+| Group | Keys |
+|---|---|
+| Effort | `easy` · `moderate` · `steady` · `recovery` ("Recovery run") |
+| Structural | `long_run` ("Long run") · `long_wo` ("Long run workout") |
+| Session | `threshold` · `intervals` · `fartlek` · `progression` |
+| — | `race` |
+
+- **`tempo` is retired and folds to `threshold` on write** (`WorkoutLabel.normalize`).
+  Only one of the two survives; "Tempo" no longer renders anywhere.
+- **The old `threshold` → `lt` fold is GONE.** Threshold is a session type,
+  LT is a pace zone. They are different things and no longer share a key.
+- `mp` / `hmp` / `lt` / `10k` / `5k` / `3k` / `mile` are no longer offered as
+  workout types. Rows already stored under them still render via
+  `WorkoutLabel.display` and are preserved on edit via
+  `WorkoutLabel.options(including:)` — no migration was run.
+- **Pending:** the per-workout pace-zone label (auto-derived from the
+  session's paces, athlete-overridable after the fact) is designed but NOT
+  built. Until it ships, a workout has no zone label of its own.
+- Non-running labels are unchanged: `Cross-train`, `Strength`, `Rest`.
+
+Every consumer that buckets by `workout_type` must include `threshold`,
+`fartlek` and `long_wo` alongside `tempo`. Updated on 2026-08-10:
+`buildLoadMetrics.ts` (hard sessions), `post-run-reconciliation`,
+`subscribe-to-plan` (×3), `adaptation-rules` (×2), `coaching-daily-read`,
+`ingest-manual-workout` (allowlist). **Not yet updated** — `weekly-coaching-report`,
+`workoutComparison.ts`, `quality-volume.ts`, and several iOS sets in
+`FitnessPredictorService.swift` / `TrainingAnalysisView.swift`.
 
 ## The Ask surface (analysis)
 

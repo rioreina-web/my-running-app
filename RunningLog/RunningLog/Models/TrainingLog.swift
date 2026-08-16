@@ -129,6 +129,21 @@ struct TrainingLog: Codable, Identifiable {
         case title
     }
 
+    /// Every column this struct decodes — and nothing else. ALWAYS pass this
+    /// to `.select(...)` when fetching `training_logs`; never use a bare
+    /// `.select()`. A bare select is `SELECT *`, which drags the
+    /// `external_streams` JSONB blob (per-second GPS/HR/cadence streams, up
+    /// to ~2 MB per run) across the wire on every fetch — the app never
+    /// decodes it, so it's pure wasted transfer and was the single largest
+    /// source of screen-load lag (see PERF-AUDIT-2026-08-10.md, finding #1).
+    static let columns = """
+        id, created_at, audio_url, notes, cleaned_notes, mood, workout_date, \
+        workout_distance_miles, workout_duration_minutes, processing_status, \
+        processing_error, processing_attempts, transcript_url, coach_insight, \
+        workout_notes, workout_pace_per_mile, workout_type, source, \
+        vital_workout_id, pace_segments, parsed_structure, title
+        """
+
     /// Trimmed title if the athlete set a non-empty one, else nil. Views use
     /// this to decide whether to show a custom header or fall back to the date.
     var displayTitle: String? {
@@ -194,12 +209,30 @@ struct TrainingLog: Codable, Identifiable {
     enum FailureKind {
         case network
         case transcription
+        /// Our AI provider is unfunded / over quota. Nothing is wrong with the
+        /// memo and nothing the athlete does helps — the queue retries on its
+        /// own until the provider is back. Distinct from `.network`, which is
+        /// about *their* connection and is worth a manual retry.
+        case serviceOutage
         case unknown
     }
+
+    /// Written by process-training-memo when the model provider is exhausted.
+    /// Must stay in sync with `PROVIDER_EXHAUSTED_MARKER` in
+    /// `supabase/functions/_shared/provider-errors.ts`.
+    private static let providerOutageMarker = "provider_unavailable"
 
     var failureKind: FailureKind {
         guard isFailed else { return .unknown }
         let error = (processingError ?? "").lowercased()
+
+        // Checked FIRST and on an exact marker, not prose: the provider's own
+        // error text is long, changes without notice, and trips several of the
+        // heuristics below (it names a URL, carries a status code). The marker
+        // is ours, so this branch stays correct when their wording moves.
+        if error.contains(Self.providerOutageMarker) {
+            return .serviceOutage
+        }
 
         let networkSignals = [
             "network", "timeout", "timed out", "connection", "offline",
@@ -230,6 +263,8 @@ struct TrainingLog: Codable, Identifiable {
             return "Couldn't reach the server"
         case .transcription:
             return "Couldn't process this memo"
+        case .serviceOutage:
+            return "Analysis is running behind"
         case .unknown:
             return "Processing failed"
         }
@@ -242,6 +277,8 @@ struct TrainingLog: Codable, Identifiable {
             return "Your recording is saved. Check your connection, then tap to retry."
         case .transcription:
             return "The audio uploaded but we couldn't transcribe it. Tap to try again."
+        case .serviceOutage:
+            return "Your recording is safe. We'll finish this on our end — nothing for you to do."
         case .unknown:
             return "Your recording is saved. Tap to retry."
         }
@@ -254,7 +291,18 @@ struct TrainingLog: Codable, Identifiable {
             return "Retry upload"
         case .transcription, .unknown:
             return "Retry transcription"
+        case .serviceOutage:
+            return "Waiting on analysis"
         }
+    }
+
+    /// Whether to offer a manual retry at all. False during a provider outage:
+    /// the queue is already retrying on a timer, and a tap the athlete makes
+    /// cannot succeed any sooner. Offering one there is the bug this fixes —
+    /// a memo sat dead for seven hours behind a "Tap to try again" that was
+    /// never going to work until billing was topped up (2026-08-13).
+    var offersManualRetry: Bool {
+        failureKind != .serviceOutage
     }
 
     // MARK: - Workout Info

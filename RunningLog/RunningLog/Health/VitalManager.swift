@@ -149,12 +149,41 @@ final class VitalManager {
 
     /// Calculate mile splits from stream distance/time data.
     /// Excludes stopped time (velocity < 0.5 m/s) so splits reflect moving time only.
+    ///
+    /// HR and cadence are averaged over each mile's own slice of the stream.
+    /// Leaving them nil is what made the HR column read empty on every
+    /// continuous run: these splits are the ONLY rows a run without recorded
+    /// laps has, so an unfilled `avgHeartRate` is the difference between a
+    /// per-mile heart rate and no heart rate at all — on a run whose summary
+    /// header shows an average HR the whole time.
     func calculateSplits(from stream: VitalWorkoutStream) -> [MileSplit] {
         guard let distances = stream.distance, let times = stream.time,
               distances.count == times.count, distances.count >= 2
         else { return [] }
 
         let velocities = stream.velocitySmooth
+        let heartrates = stream.heartrate?.map(Double.init)
+        let cadences = stream.cadence
+        // Strava reports run cadence per leg. Decide once, from the whole
+        // stream, whether these samples need doubling — a per-split test would
+        // double some miles and not others on the same run.
+        let cadenceMean = (cadences?.isEmpty == false)
+            ? cadences!.reduce(0, +) / Double(cadences!.count) : 0
+        let cadenceScale: Double = (cadenceMean > 0 && cadenceMean < 120) ? 2 : 1
+
+        /// Mean of one stream over the sample window [from, to), rounded.
+        /// Nil when the stream is absent or holds nothing usable there, so the
+        /// split's cell stays empty rather than reading a fabricated zero.
+        func windowMean(_ samples: [Double]?, from: Int, to: Int, scale: Double = 1) -> Int? {
+            guard let samples, from < to else { return nil }
+            let hi = min(to, samples.count)
+            guard from < hi else { return nil }
+            let window = samples[from..<hi].filter { $0 > 0 }
+            guard !window.isEmpty else { return nil }
+            let mean = window.reduce(0, +) / Double(window.count)
+            return Int((mean * scale).rounded())
+        }
+
         let mileInMeters = 1609.34
         // Match Garmin auto-pause: ~17:00/mile pace = 1.58 m/s
         let stoppedThreshold = 1.6 // m/s — below this, runner is stopped/walking
@@ -170,6 +199,10 @@ final class VitalManager {
         var splits: [MileSplit] = []
         var currentMile = 1
         var mileStartMovingTime = 0.0
+        // First sample of the mile being accumulated — the window HR and
+        // cadence are averaged over. Mile crossings only ever move forward,
+        // so carrying the previous crossing's index is enough.
+        var mileStartIdx = 0
 
         for mile in 1...100 {
             let targetDistance = Double(mile) * mileInMeters
@@ -189,10 +222,14 @@ final class VitalManager {
                     splits.append(MileSplit(
                         mile: currentMile,
                         paceMinutes: paceMinutes,
-                        elapsedTime: mileEndMovingTime
+                        elapsedTime: mileEndMovingTime,
+                        avgHeartRate: windowMean(heartrates, from: mileStartIdx, to: i + 1),
+                        avgCadence: windowMean(cadences, from: mileStartIdx, to: i + 1,
+                                               scale: cadenceScale)
                     ))
 
                     mileStartMovingTime = mileEndMovingTime
+                    mileStartIdx = i
                     currentMile += 1
                     break
                 }
@@ -214,7 +251,10 @@ final class VitalManager {
                     paceMinutes: paceMinutes,
                     elapsedTime: totalMovingTime,
                     isPartial: true,
-                    partialDistance: partialMiles
+                    partialDistance: partialMiles,
+                    avgHeartRate: windowMean(heartrates, from: mileStartIdx, to: distances.count),
+                    avgCadence: windowMean(cadences, from: mileStartIdx, to: distances.count,
+                                           scale: cadenceScale)
                 ))
             }
         }

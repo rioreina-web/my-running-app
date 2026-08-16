@@ -226,3 +226,95 @@ Deno.test("week mood stays modal — the rank rule is a day-level rule", () => {
   const week = weeks.find((w) => w.week_start === "2026-06-08")!;
   assertEquals(week.mood, "positive");
 });
+
+// ─── Per-day zone breakdown (2026-08-10) ───────────────────────────────
+// The week-load surface needs day x 10-zone minutes AND miles. These guard
+// the two things that make it trustworthy: easy volume is INCLUDED (unlike
+// quality_volume.zone_seconds, which filters to WORK_ZONES), and the split
+// reconciles to the day's totals rather than drifting from them.
+
+const ZONES = {
+  easy: 480, moderate: 440, steady: 415, mp: 380, hm: 360,
+  tenK: 335, fiveK: 320, threeK: 305, mile: 290,
+};
+const MILE_M = 1609.344;
+/** n laps of one mile at `pace` sec/mi. */
+const miles = (n: number, pace: number) =>
+  Array.from({ length: n }, () => ({
+    distance_meters: MILE_M,
+    avg_pace_sec_per_mile: pace,
+    moving_time_seconds: pace,
+  }));
+
+Deno.test("zone breakdown: a long run with an MP block splits, and easy is counted", () => {
+  const input: TimelineInput = {
+    logs: [{
+      id: "L", workout_date: "2026-06-14", workout_distance_miles: 10,
+      workout_duration_minutes: 73, workout_type: "long",
+      workout_pace_per_mile: "7:20", mood: "tired",
+    }],
+    features: [],
+    mentions: [],
+    zones: ZONES,
+    lapsByWorkout: new Map([["L", [...miles(6, 480), ...miles(4, 380)]]]),
+  };
+  const day = buildDailyTimeline(input, 2, REF).find((d) => d.date === "2026-06-14")!;
+
+  // Easy is present. This is the whole point — the existing weekly
+  // quality_volume surface would report NOTHING for the 6 easy miles.
+  assert(day.zone_minutes !== undefined, "expected a breakdown");
+  assertEquals(day.zone_miles!.easy, 6);
+  assertEquals(day.zone_miles!.mp, 4);
+  assertEquals(day.zone_minutes!.easy, 48);          // 6 x 480s
+  assertEquals(day.zone_minutes!.mp, 25.33);         // 4 x 380s
+
+  // Zones with no time are omitted, not zero-filled.
+  assertEquals(Object.keys(day.zone_miles!).sort(), ["easy", "mp"]);
+
+  // Reconciliation: the split must equal the day, or the surface is lying.
+  const totMi = Object.values(day.zone_miles!).reduce((a, b) => a + b, 0);
+  const totMin = Object.values(day.zone_minutes!).reduce((a, b) => a + b, 0);
+  assert(Math.abs(totMi - day.miles) < 0.05, `miles drift: ${totMi} vs ${day.miles}`);
+  assert(Math.abs(totMin - day.duration_min!) < 1, `minutes drift: ${totMin} vs ${day.duration_min}`);
+});
+
+Deno.test("zone breakdown is ABSENT, not empty, when a day's runs carry no laps", () => {
+  const input: TimelineInput = {
+    logs: [{
+      id: "M", workout_date: "2026-06-14", workout_distance_miles: 5,
+      workout_duration_minutes: 40, workout_type: "easy",
+      workout_pace_per_mile: "8:00", mood: null,
+    }],
+    features: [],
+    mentions: [],
+    zones: ZONES,
+    lapsByWorkout: new Map(),
+  };
+  const days = buildDailyTimeline(input, 2, REF);
+  const ran = days.find((d) => d.date === "2026-06-14")!;
+  const rest = days.find((d) => d.date === "2026-06-12")!;
+
+  // Ran, but we cannot say how it was distributed.
+  assertEquals(ran.miles, 5);
+  assertEquals(ran.zone_minutes, undefined);
+  // A genuine rest day is also absent — the client tells them apart by miles,
+  // which is the honest discriminator.
+  assertEquals(rest.miles, 0);
+  assertEquals(rest.zone_minutes, undefined);
+});
+
+Deno.test("zone breakdown degrades to absent when no zone table exists", () => {
+  const input: TimelineInput = {
+    logs: [{
+      id: "N", workout_date: "2026-06-14", workout_distance_miles: 10,
+      workout_duration_minutes: 73, workout_type: "long",
+      workout_pace_per_mile: "7:20", mood: null,
+    }],
+    features: [],
+    mentions: [],
+    lapsByWorkout: new Map([["N", miles(10, 440)]]),
+    // zones deliberately omitted — a new athlete with no zone table
+  };
+  const day = buildDailyTimeline(input, 2, REF).find((d) => d.date === "2026-06-14")!;
+  assertEquals(day.zone_minutes, undefined, "must not guess zones without a table");
+});

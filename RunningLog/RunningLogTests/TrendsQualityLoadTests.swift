@@ -17,9 +17,12 @@ struct TrendsQualityLoadTests {
 
     // MARK: weights
 
-    @Test("Zone weights mirror the canonical 1–6 scale")
+    @Test("Zone weights mirror the canonical 1–8 scale")
     func zoneWeightsMatchBackend() {
         // These must equal ZONE_WEIGHTS in _shared/workoutSegmentation.ts.
+        // moderate/steady reweighted 2026-08-11 to remove the steady→MP cliff.
+        #expect(TrendsZoneWeight.weight("moderate") == 1.4)
+        #expect(TrendsZoneWeight.weight("steady") == 2.15)
         #expect(TrendsZoneWeight.weight("mp") == 2.5)
         #expect(TrendsZoneWeight.weight("hmp") == 3.25)
         #expect(TrendsZoneWeight.weight("10k") == 4.0)

@@ -31,6 +31,10 @@ struct SettingsView: View {
     @State private var showBackup = false
     @State private var showRestore = false
     @State private var showAthleteProfile = false
+    @State private var showTimeZonePicker = false
+    /// Observed so the row's "FOLLOWING DEVICE" / "SET MANUALLY" caption updates
+    /// the moment the picker writes, without a manual refresh.
+    @AppStorage(AthleteTimeZone.overrideKey) private var timezoneOverride: String = ""
     @State private var showDeleteAccount = false
     @State private var syncService = WorkoutSyncService()
     @State private var backfillResultMessage: String?
@@ -387,10 +391,50 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
+
+                Divider().overlay(Color.drip.divider).padding(.leading, 16)
+
+                // Time zone — decides what hour a run is drawn at on the week
+                // training-stress strip, and what "Morning" means anywhere the
+                // app says it. Follows the device unless set explicitly; the
+                // explicit case is travel, where the device zone would slide
+                // every past run sideways the moment you land.
+                Button { showTimeZonePicker = true } label: {
+                    HStack {
+                        Image(systemName: "clock")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.drip.coral)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Time Zone")
+                                .font(.dripBody(14))
+                                .foregroundStyle(Color.drip.textPrimary)
+                            Text("When your runs are placed on the training clock")
+                                .font(.dripCaption(12))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(AthleteTimeZone.displayName(AthleteTimeZone.identifier))
+                                .font(.dripCaption(12))
+                                .foregroundStyle(Color.drip.textPrimary)
+                            Text(timezoneOverride.isEmpty ? "FOLLOWING DEVICE" : "SET MANUALLY")
+                                .font(.dripCaption(10)).tracking(0.8)
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
             .background(Color.drip.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+        .sheet(isPresented: $showTimeZonePicker) { AthleteTimeZonePicker() }
         .onAppear { maxHRText = "\(userMaxHR)" }
         .task {
             // Pull the account value (set on any device) into the local cache.

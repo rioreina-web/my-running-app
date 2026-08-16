@@ -289,14 +289,16 @@ struct DayAnalysisSheet: View {
     // MARK: Splits table
 
     private func splitsTable(_ splits: [DaySplit]) -> some View {
-        let fast = splits.map(\.paceSeconds).min() ?? 0
-        let slow = splits.map(\.paceSeconds).max() ?? 1
-        let span = max(1, slow - fast)
+        // Bars are sized off the clock, not the pace, so the bar agrees with
+        // the number printed beside it: a rep draws a long bar, the jog
+        // between reps a short one, and the table reads as a timeline of the
+        // session. Intensity has not been dropped - it is still in the colour.
+        let longest = splits.map(\.elapsedSeconds).max() ?? 1
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Text("#").frame(width: 22, alignment: .leading)
                 Text("DIST").frame(width: 52, alignment: .leading)
-                Text("PACE").frame(maxWidth: .infinity, alignment: .leading)
+                Text("TIME").frame(maxWidth: .infinity, alignment: .leading)
                 Text("HR").frame(width: 44, alignment: .trailing)
             }
             .font(.dripEyebrow(8.5)).tracking(1.0)
@@ -312,13 +314,13 @@ struct DayAnalysisSheet: View {
                     Text(String(format: "%.2f", sp.distanceMiles))
                         .font(.dripStat(11)).foregroundStyle(Color.drip.textSecondary)
                         .frame(width: 52, alignment: .leading)
-                    // Pace + bar: faster splits draw a longer bar.
+                    // Time + bar: longer splits draw a longer bar.
                     HStack(spacing: 8) {
-                        Text(TrainingAnalyticsViewModel.formatPaceMMSS(sp.paceSeconds))
+                        Text(TrainingAnalyticsViewModel.formatClock(sp.elapsedSeconds))
                             .font(.dripStat(12)).foregroundStyle(Color.drip.textPrimary)
-                            .frame(width: 44, alignment: .leading)
+                            .frame(width: 48, alignment: .leading)
                         GeometryReader { geo in
-                            let frac = 0.25 + 0.75 * (1 - (sp.paceSeconds - fast) / span)
+                            let frac = 0.06 + 0.94 * (sp.elapsedSeconds / max(1, longest))
                             RoundedRectangle(cornerRadius: 1)
                                 .fill(sp.color)
                                 .frame(width: max(3, geo.size.width * CGFloat(frac)), height: 7)

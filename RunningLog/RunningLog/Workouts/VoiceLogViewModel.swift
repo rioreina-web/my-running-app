@@ -7,7 +7,9 @@ import SwiftUI
 
 /// Lightweight run row for the journal's per-week mileage subtotal — ALL runs
 /// (not just authored entries), so the header reflects true weekly volume.
-struct JournalMileageRow: Decodable {
+// Codable: cached to disk with the journal snapshot for instant re-launch
+// rendering (see JournalCachePayload / DiskCache).
+struct JournalMileageRow: Codable {
     let workoutDate: Date?
     let createdAt: Date
     let miles: Double?
@@ -23,7 +25,10 @@ struct JournalMileageRow: Decodable {
 /// A body-part mention linked to a training_log. Detection, not diagnosis: we
 /// carry the athlete's area + their own words, never a severity number or an
 /// interpretation. Backs the journal row's niggle chips.
-struct JournalNiggle: Decodable, Identifiable {
+// Codable: cached to disk with the journal snapshot (niggle chips render
+// from the snapshot too — a chip that vanished for a beat on every launch
+// would read as data loss).
+struct JournalNiggle: Codable, Identifiable {
     let id: UUID
     let trainingLogId: UUID?
     let bodyArea: String
@@ -113,7 +118,7 @@ final class VoiceLogViewModel {
                         .from("training_logs")
                         .update(attachData)
                         .eq("id", value: rowId.uuidString)
-                        .select()
+                        .select(TrainingLog.columns)
                         .execute()
                         .value) ?? []
                 }
@@ -138,7 +143,7 @@ final class VoiceLogViewModel {
                 response = try await supabase
                     .from("training_logs")
                     .insert(insertData)
-                    .select()
+                    .select(TrainingLog.columns)
                     .execute()
                     .value
             }
@@ -246,7 +251,7 @@ final class VoiceLogViewModel {
             let response: [TrainingLog] = try await supabase
                 .from("training_logs")
                 .insert(insertData)
-                .select()
+                .select(TrainingLog.columns)
                 .execute()
                 .value
 
@@ -436,8 +441,44 @@ final class VoiceLogViewModel {
             .value
     }
 
+    /// Disk name for the journal snapshot (see JournalCachePayload below).
+    private static let journalCacheName = "journal_feed"
+
+    /// Snapshot of the journal surface — entries, weekly mileage, niggle
+    /// chips — for instant re-launch rendering via DiskCache.
+    private struct JournalCachePayload: Codable {
+        let userId: String
+        let savedAt: Date
+        let logs: [TrainingLog]
+        let mileage: [JournalMileageRow]
+        let niggles: [JournalNiggle]
+    }
+
     func loadHistory() async {
         isLoadingHistory = true
+
+        // Stale-while-revalidate: publish the last-known journal from disk
+        // BEFORE the auth wait below (which can spin for up to ~3s on a cold
+        // launch). The athlete sees their entries the moment the tab draws;
+        // the network pass replaces them seconds later. Account-guarded: a
+        // known, different userId skips the snapshot (an empty userId means
+        // auth hasn't resolved yet — launch-restore — and the network pass
+        // overwrites moments later either way; sign-out clears the cache).
+        if historyLogs.isEmpty,
+           let cached = DiskCache.load(JournalCachePayload.self, name: Self.journalCacheName) {
+            let current = AuthManager.shared.userId
+            if current.isEmpty || current == cached.userId {
+                historyLogs = cached.logs
+                weeklyMileageRows = cached.mileage
+                var byLog: [String: [JournalNiggle]] = [:]
+                for n in cached.niggles {
+                    guard let key = n.trainingLogId?.uuidString else { continue }
+                    byLog[key, default: []].append(n)
+                }
+                niggleByLog = byLog
+                isLoadingHistory = false
+            }
+        }
 
         // Auth may not have resolved yet on a cold launch. Querying with an
         // empty userId returns zero rows and would silently blank an existing
@@ -451,7 +492,9 @@ final class VoiceLogViewModel {
             authWaits += 1
         }
         guard !userId.isEmpty else {
-            loadFailed = true
+            // Same stale-beats-error rule as the catch below: if the disk
+            // snapshot already rendered, don't slap an error over it.
+            loadFailed = historyLogs.isEmpty
             isLoadingHistory = false
             return
         }
@@ -464,7 +507,7 @@ final class VoiceLogViewModel {
             // journal and surfaced as "could not load history".
             let rows: [Failable<TrainingLog>] = try await supabase
                 .from("training_logs")
-                .select()
+                .select(TrainingLog.columns)
                 .eq("user_id", value: userId)
                 .or("audio_url.not.is.null,source.eq.voice_log,source.eq.manual,source.eq.check_in")
                 .order("workout_date", ascending: false, nullsFirst: false)
@@ -491,10 +534,25 @@ final class VoiceLogViewModel {
             niggleByLog = byLog
             isLoadingHistory = false
 
+            // Persist the fresh snapshot for the next launch's fast path.
+            DiskCache.save(
+                JournalCachePayload(
+                    userId: userId,
+                    savedAt: Date(),
+                    logs: historyLogs,
+                    mileage: weeklyMileageRows,
+                    niggles: niggles
+                ),
+                name: Self.journalCacheName
+            )
+
             await autoRetryStaleRecords(logs: logs)
         } catch {
             Log.app.error("Failed to load history: \(error)")
-            loadFailed = true
+            // Only surface the error state when there's nothing on screen —
+            // if the disk snapshot rendered above, stale entries beat a
+            // "couldn't load" banner over a journal the athlete can read.
+            loadFailed = historyLogs.isEmpty
             isLoadingHistory = false
             ErrorReporter.shared.report(error, context: "load voice log history")
         }
@@ -712,7 +770,7 @@ final class VoiceLogViewModel {
             do {
                 let logs: [TrainingLog] = try await supabase
                     .from("training_logs")
-                    .select()
+                    .select(TrainingLog.columns)
                     .eq("id", value: recordId.uuidString)
                     .limit(1)
                     .execute()

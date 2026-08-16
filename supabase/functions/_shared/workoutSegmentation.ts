@@ -15,15 +15,27 @@
 // zones. Pace is the source of truth; `is_rest` is a hint, not the verdict.
 // ============================================================================
 
-// ── Canonical intensity weights (1–5 scale, decision 2026-06-12) ──
+// ── Canonical intensity weights (1–8 scale, decision 2026-06-12) ──
 // ONE scale used everywhere — the load math, athlete_state.volume_x_intensity,
 // and the training-load chart all read these numbers. Recovery folds into
-// easy (1.0). A minute at mile pace ≈ 5 easy minutes of mechanical load.
+// easy (1.0). A minute at mile pace ≈ 8 easy minutes of mechanical load.
+//
+// (2026-08-11) `steady` 1.5 → 2.15 and `moderate` 1.25 → 1.40. `paceWeight`
+// interpolates LINEARLY ON PACE between knots, so a knot's weight sets the
+// SLOPE of the two segments it joins — not just its own value. steady sits at
+// 95% MP speed, i.e. only ~18 sec/mi off MP, so a weight of 1.5 crammed a full
+// unit of climb into that gap: the steady→mp slope was 0.0562 weight per sec/mi
+// against 0.0060 for moderate→steady, a 9× discontinuity. Ten sec/mi near MP
+// moved the weight more than the entire easy→steady range. Now the low end runs
+// 0.0132 → 0.0179 → 0.0197 into MP: monotone, convex, no cliff. Measured on 126h
+// of this athlete's laps the change is +3.4% total weighted load, because almost
+// nothing currently sits in the steady–MP corridor (0.8% of lap time) — which is
+// exactly why it was cheap to fix now and expensive after a marathon block.
 export const ZONE_WEIGHTS: Record<Zone, number> = {
   recovery: 1.0,
   easy: 1.0,
-  moderate: 1.25,
-  steady: 1.5,
+  moderate: 1.4,
+  steady: 2.15,
   mp: 2.5, // marathon pace
   hmp: 3.25, // half-marathon / threshold / LT band
   "10k": 4.0,
@@ -35,7 +47,7 @@ export const ZONE_WEIGHTS: Record<Zone, number> = {
 // Continuous intensity curve, anchored at these zones' athlete paces. `recovery`
 // is the only non-knot — anything slower than easy floors to 1.0. Every zone
 // from easy through mile is a knot, and a bout between two knots is weighted by
-// linear interpolation on its actual pace (reps faster than mile extrapolate).
+// a monotone cubic through its actual pace (reps faster than mile extrapolate).
 const WEIGHT_KNOT_ZONES: ReadonlySet<Zone> = new Set<Zone>([
   "easy", "moderate", "steady", "mp", "hmp", "10k", "5k", "3k", "mile",
 ]);
@@ -158,17 +170,60 @@ export function paceToZone(paceSecPerMile: number, anchors: ZoneAnchor[]): Zone 
 }
 
 /**
+ * Fritsch–Carlson tangents for a monotone cubic (PCHIP) through `knots`,
+ * ascending by pace. Returns one tangent per knot, in the same order.
+ *
+ * The Fritsch–Carlson rule is what makes this SHAPE-PRESERVING: where the data
+ * changes direction it sets the tangent to 0, and the harmonic-mean form
+ * otherwise keeps every tangent inside the range that guarantees no overshoot.
+ * That matters here — a plain cubic spline would bulge on the sharp 10K→5K
+ * transition and could make a slightly-slower pace score HIGHER, which the
+ * whole model must never do.
+ */
+function pchipTangents(knots: ReadonlyArray<{ pace: number; w: number }>): number[] {
+  const n = knots.length;
+  const h: number[] = [], d: number[] = [], m: number[] = new Array(n);
+  for (let i = 0; i < n - 1; i++) {
+    h[i] = knots[i + 1].pace - knots[i].pace;
+    d[i] = (knots[i + 1].w - knots[i].w) / h[i];
+  }
+  m[0] = d[0];
+  m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    if (d[i - 1] * d[i] <= 0) {
+      m[i] = 0; // local extremum — flatten so the curve cannot overshoot
+    } else {
+      const w1 = 2 * h[i] + h[i - 1];
+      const w2 = h[i] + 2 * h[i - 1];
+      m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]); // weighted harmonic mean
+    }
+  }
+  return m;
+}
+
+/**
  * Continuous intensity weight for an actual pace — the "easy → mile trajectory"
  * as one curve rather than a step-table. We take the athlete's zone anchors as
  * (pace, weight) knots (moderate…mile, from `ZONE_WEIGHTS`) and:
- *   • interpolate linearly between the two bracketing knots, so a bout between
- *     zones (a progression, a cruise between steady and MP) gets a weight that
- *     reflects exactly where it fell;
+ *   • interpolate with a MONOTONE CUBIC between the two bracketing knots, so a
+ *     bout between zones (a progression, a cruise between steady and MP) gets a
+ *     weight that reflects exactly where it fell;
  *   • extrapolate ABOVE the mile knot for reps faster than mile pace, using the
- *     slope of the top segment — so a 300m at true mile-crushing pace can score
- *     past 6.0, on the same continuous scale;
+ *     curve's tangent at that knot — so a 300m at true mile-crushing pace can
+ *     score past 8.0, on the same continuous scale;
  *   • floor at the easy weight (1.0) for anything slower than easy (jogs, float
  *     recoveries, warmups).
+ *
+ * (2026-08-13) Straight-line interpolation → monotone cubic. Linear segments
+ * are continuous in VALUE but not in SLOPE: the rate of change jumped at every
+ * knot, worst of all crossing MP (0.567 → 0.205 per 10 sec/mi, a 64% break) and
+ * moderate (58%). That made the weight's sensitivity to pace depend on which
+ * side of an anchor a bout landed, which is exactly the artefact the 2026-08-11
+ * steady reweight was fighting. A monotone cubic removes every corner while
+ * passing through ALL the same anchors — so no weight is recalibrated, scores
+ * at anchor paces are bit-identical, and the largest change anywhere between
+ * anchors is under 2%. Fritsch–Carlson is chosen over a natural spline because
+ * it is guaranteed not to overshoot (see `pchipTangents`).
  *
  * `paceToZone` still owns the discrete LABEL + time-in-zone buckets; this owns
  * the intensity number. Returns 1.0 when anchors are unavailable — never lie.
@@ -187,18 +242,26 @@ export function paceWeight(paceSecPerMile: number, anchors: ZoneAnchor[]): numbe
   const fastest = knots[0];
   const slowest = knots[knots.length - 1];
   if (paceSecPerMile >= slowest.pace) return slowest.w; // slower than easy → floor
+
+  const m = pchipTangents(knots);
+
   if (paceSecPerMile <= fastest.pace) {
-    // Faster than mile — extrapolate along the top segment (never below the
-    // mile weight, so a small timing wobble can't dip a mile rep).
-    const a = knots[0], b = knots[1];
-    const slope = (a.w - b.w) / (a.pace - b.pace); // Δweight per sec/mi
-    return Math.max(fastest.w, fastest.w + slope * (paceSecPerMile - fastest.pace));
+    // Faster than mile — extrapolate along the curve's tangent at the mile knot
+    // (never below the mile weight, so a small timing wobble can't dip a mile
+    // rep). With two knots this is identical to the old top-segment slope.
+    return Math.max(fastest.w, fastest.w + m[0] * (paceSecPerMile - fastest.pace));
   }
   for (let i = 0; i < knots.length - 1; i++) {
     const a = knots[i], b = knots[i + 1];
     if (paceSecPerMile >= a.pace && paceSecPerMile <= b.pace) {
-      const t = (paceSecPerMile - a.pace) / (b.pace - a.pace);
-      return a.w + t * (b.w - a.w);
+      const h = b.pace - a.pace;
+      const t = (paceSecPerMile - a.pace) / h;
+      const t2 = t * t, t3 = t2 * t;
+      // Cubic Hermite basis.
+      return (2 * t3 - 3 * t2 + 1) * a.w
+        + (t3 - 2 * t2 + t) * h * m[i]
+        + (-2 * t3 + 3 * t2) * b.w
+        + (t3 - t2) * h * m[i + 1];
     }
   }
   return slowest.w;
@@ -214,6 +277,32 @@ export interface LapInput {
   moving_time_seconds?: number | null;
   elapsed_time_seconds?: number | null;
   avg_heart_rate?: number | null;
+  /** Pace corrected for heat + dew point by `fetch-workout-weather`. Null on
+   *  laps predating that decoration, and on days with no weather on file. Only
+   *  read when `segmentFromLaps` is asked for it — see its `opts`. */
+  heat_adjusted_pace_sec_per_mile?: number | null;
+}
+
+/** Options for `segmentFromLaps`. */
+export interface SegmentOptions {
+  /**
+   * Classify each lap by its HEAT-ADJUSTED pace instead of its raw pace.
+   *
+   * 6:20/mi at 78°F with a 75°F dew point is not the same effort as 6:20/mi in
+   * the cold — it is threshold work wearing an easy pace. Classifying on raw
+   * pace books that lap as easy and the day's training load comes out low
+   * exactly when the athlete is working hardest, which is the opposite of what
+   * a stress score is for.
+   *
+   * Only CLASSIFICATION moves. `Bout.paceSecPerMile` stays the raw pace the
+   * watch recorded, so every pace this app displays is still the pace that was
+   * actually run — the adjustment decides which bucket a lap lands in, never
+   * what number the athlete is shown. Same split Pace Bands already makes.
+   *
+   * Falls back to raw pace per-lap when no adjusted pace is on file, so a
+   * partially-decorated workout degrades lap by lap rather than all at once.
+   */
+  useHeatAdjustedPace?: boolean;
 }
 
 export interface Bout {
@@ -221,10 +310,38 @@ export interface Bout {
   seconds: number;
   distanceMeters: number;
   paceSecPerMile: number;
+  /**
+   * Neutral-day equivalent pace (sec/mi) — what this bout would have cost in
+   * neutral air — or null when no adjustment is on file.
+   *
+   * Carried SEPARATELY from `paceSecPerMile` and populated regardless of
+   * `SegmentOptions.useHeatAdjustedPace`, because the flag answers a different
+   * question. The flag decides which ZONE a lap lands in; this field lets a
+   * consumer that is measuring physiological cost (efficiency factor: speed
+   * per heartbeat) divide by a pace the weather hasn't moved. An August
+   * threshold rep in Texas is 13–20 s/mi slower for the same effort, and an
+   * EF computed on raw pace books that as lost fitness.
+   *
+   * `paceSecPerMile` remains the pace the watch recorded and is still what
+   * every display path reads — this field is never shown as "your pace".
+   */
+  neutralPaceSecPerMile: number | null;
   avgHr: number | null;
   isWork: boolean; // pace faster than steady
   isRest: boolean; // flagged or detected recovery between efforts
   isRep: boolean; // a work bout that passes the rep guards (counts in structure)
+  /**
+   * This bout's intensity multiplier from the CONTINUOUS `paceWeight` curve,
+   * evaluated on the same pace the zone was decided by.
+   *
+   * Not the same number as `ZONE_WEIGHTS[zone]`, and that is the point. The
+   * discrete table is ten steps; the curve is what the table's anchors
+   * describe, and it keeps climbing past mile — a 200 at 4:20/mi is harder per
+   * second than a mile rep at 4:50 and now scores like it, where bucketing them
+   * both into `mile` capped them at 8.0. Between anchors it also stops a lap
+   * one second the slow side of a boundary from losing a whole step.
+   */
+  weight: number;
 }
 
 export interface SegmentationResult {
@@ -268,7 +385,11 @@ const secondsOf = (lap: LapInput): number => {
  * require a work lap to clear the pace+duration guards before it counts as a
  * rep (a non-rest float at 9:54/mi is not a 5K rep).
  */
-export function segmentFromLaps(laps: LapInput[], zones: PaceZones): SegmentationResult {
+export function segmentFromLaps(
+  laps: LapInput[],
+  zones: PaceZones,
+  opts: SegmentOptions = {},
+): SegmentationResult {
   const anchors = buildZoneAnchors(zones);
   const bouts: Bout[] = [];
 
@@ -278,8 +399,15 @@ export function segmentFromLaps(laps: LapInput[], zones: PaceZones): Segmentatio
     const paceSecPerMile = Number(lap.avg_pace_sec_per_mile ?? 0);
     if (seconds <= 0) continue;
 
+    // The pace the ZONE is decided by. Deliberately separate from
+    // `paceSecPerMile`, which is what gets reported — see `SegmentOptions`.
+    const adjusted = Number(lap.heat_adjusted_pace_sec_per_mile ?? 0);
+    const classifyPace = opts.useHeatAdjustedPace && adjusted > 0
+      ? adjusted
+      : paceSecPerMile;
+
     const flaggedRest = lap.is_rest === true;
-    const zone = paceToZone(paceSecPerMile, anchors);
+    const zone = paceToZone(classifyPace, anchors);
     const isWork = !flaggedRest && WORK_ZONES.has(zone);
     // Recovery: explicitly flagged, OR a slow bout sandwiched between efforts.
     const isRest = flaggedRest || (!isWork && (zone === "recovery"));
@@ -291,6 +419,14 @@ export function segmentFromLaps(laps: LapInput[], zones: PaceZones): Segmentatio
       seconds,
       distanceMeters,
       paceSecPerMile,
+      // Populated whether or not the caller asked to CLASSIFY on it — see the
+      // field doc. `adjusted` is fetch-workout-weather's neutralEquivalent-
+      // PaceSeconds, already the faster (credited) pace.
+      neutralPaceSecPerMile: adjusted > 0 ? adjusted : null,
+      // Rest is scored at the floor regardless of how quick the float was: a
+      // recovery jog is recovery, and letting a brisk one earn 1.4 would make
+      // the athlete's rest count against them.
+      weight: isRest ? 1.0 : paceWeight(classifyPace, anchors),
       avgHr: lap.avg_heart_rate != null && Number(lap.avg_heart_rate) > 0
         ? Number(lap.avg_heart_rate)
         : null,
@@ -328,16 +464,23 @@ export function segmentFromPaceSegments(
     const paceSecPerMile = parsePace(seg.pace_per_mile);
     const zone = paceToZone(paceSecPerMile, anchors);
     const isWork = WORK_ZONES.has(zone);
+    const isRest = !isWork && zone === "recovery";
     bouts.push({
       zone,
       seconds,
       distanceMeters,
       paceSecPerMile,
+      // pace_segments carry no weather stamp — only laps are decorated by
+      // fetch-workout-weather. Null rather than a guess.
+      neutralPaceSecPerMile: null,
+      // Same rule as the lap path: rest floors at 1.0, everything else takes
+      // the continuous curve.
+      weight: isRest ? 1.0 : paceWeight(paceSecPerMile, anchors),
       avgHr: seg.avg_heart_rate != null && Number(seg.avg_heart_rate) > 0
         ? Number(seg.avg_heart_rate)
         : null,
       isWork,
-      isRest: !isWork && zone === "recovery",
+      isRest,
       isRep: isWork && seconds >= MIN_REP_SECONDS && distanceMeters >= MIN_REP_METERS,
     });
   }
@@ -358,6 +501,13 @@ export function segmentFromOverall(
       paceSecPerMile: totalDistanceMiles > 0
         ? totalDurationSeconds / totalDistanceMiles
         : 0,
+      // Whole-workout fallback: no per-lap weather to normalize against.
+      neutralPaceSecPerMile: null,
+      // 1.0 by construction, not by lookup: this path has no anchors to build
+      // a curve from, and the block is declared `easy`, whose weight is 1.0.
+      // `paceWeight` would return 1.0 here anyway — it floors when anchors are
+      // absent rather than guessing.
+      weight: 1.0,
       avgHr: null,
       isWork: false,
       isRest: false,
@@ -486,12 +636,37 @@ function mergeRun(run: Bout[], anchors: ZoneAnchor[]): Bout {
   for (const b of run) {
     if (b.avgHr != null && b.avgHr > 0) { hrW += b.avgHr * b.seconds; hrSec += b.seconds; }
   }
+  // Neutral pace merges the same way the raw pace does — distance-weighted,
+  // i.e. summing each piece's neutral TIME and dividing by total distance.
+  // A piece with no adjustment on file contributes its raw pace, so a
+  // partially-decorated rep degrades piece by piece rather than all at once
+  // (the same per-lap fallback `SegmentOptions` documents). Null only when no
+  // piece carried an adjustment at all — never a silent raw-pace substitute.
+  let neutralSecondsAcc = 0;
+  let anyNeutral = false;
+  for (const b of run) {
+    const miles = b.distanceMeters / METERS_PER_MILE;
+    if (b.neutralPaceSecPerMile != null && b.neutralPaceSecPerMile > 0) anyNeutral = true;
+    neutralSecondsAcc += (b.neutralPaceSecPerMile ?? b.paceSecPerMile) * miles;
+  }
+  const totalMiles = distanceMeters / METERS_PER_MILE;
   const zone = anchors.length > 0 ? paceToZone(paceSecPerMile, anchors) : run[0].zone;
   return {
     zone,
     seconds,
     distanceMeters,
     paceSecPerMile,
+    neutralPaceSecPerMile: anyNeutral && totalMiles > 0
+      ? neutralSecondsAcc / totalMiles
+      : null,
+    // Recomputed from the COALESCED pace, not averaged from the pieces. The
+    // merged rep is one effort and its weight should describe the pace it was
+    // actually run at — which is the whole argument for a continuous curve.
+    // Falls back to the discrete anchor when there are no zone anchors, which
+    // is the same fallback `finalize` uses.
+    weight: anchors.length > 0
+      ? paceWeight(paceSecPerMile, anchors)
+      : ZONE_WEIGHTS[zone],
     avgHr: hrSec > 0 ? hrW / hrSec : null,
     isWork: true,
     isRest: false,

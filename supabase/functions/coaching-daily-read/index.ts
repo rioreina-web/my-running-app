@@ -37,6 +37,7 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
+import { llmBudgetAllows, llmBudgetBlockedResponse, reportLlmUsage } from "../_shared/llm-budget.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v5.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
@@ -119,12 +120,14 @@ const DAILY_READ_MAX_OUTPUT_TOKENS = 8000;
 // prompt itself decides confidence; this list is only used to surface
 // "quality session" tags in the context block for the model).
 const QUALITY_WORKOUT_TYPES = new Set([
-  "tempo",
+  "tempo",        // legacy spelling; folds to "threshold" on write
   "threshold",
   "interval",
   "intervals",
+  "fartlek",      // 2026-08-10 — newly offerable
   "long",
   "long_run",
+  "long_wo",      // 2026-08-10 — newly offerable
   "progression",
   "race",
 ]);
@@ -210,6 +213,17 @@ Deno.serve(async (req) => {
       return jsonResponse(200, { read: existing, cached: true });
     }
 
+    // ── 1b. App-wide budget guard (2026-08-13). Sits AFTER the cached
+    // short-circuit (a cache hit must not consume budget) and BEFORE the
+    // pending-row upsert and the model call. Unlike the per-user gates
+    // above, this does NOT bypass for service-role callers — the cron and
+    // workout_trigger paths are exactly the machine-invoked paths a
+    // runaway rides in on. One RPC, one ledger row, hard stop at the
+    // daily ceiling (see migration 20260813180100).
+    if (!(await llmBudgetAllows("daily_read", { userId }))) {
+      return llmBudgetBlockedResponse("daily_read", corsHeaders);
+    }
+
     // ── 2. Insert (or reuse) the pending row. Unique constraint on
     //      (user_id, read_date) means concurrent generations collapse
     //      to one row — we just update whatever's there.
@@ -224,15 +238,19 @@ Deno.serve(async (req) => {
     const context = await buildDailyReadContext(supabase, userId);
 
     // ── 4. Call Gemini ───────────────────────────────────────────────
-    // The Read runs its OWN frontier model, deliberately decoupled from the
-    // shared cost-optimization router (_shared/router.ts). The router's job is
-    // "cheapest model that works"; The Read is the flagship synthesis surface
-    // and runs on a WEEKLY cadence, so per-call cost is small and reasoning
-    // quality matters most. Gemini 3 Pro (gemini-3.1-pro-preview) for
-    // coach-grade synthesis over the full quant + qualitative context bundle.
-    // Same GEMINI_API_KEY / generativelanguage endpoint already used here.
+    // COST (2026-08-13): downgraded gemini-3.1-pro-preview → gemini-2.5-flash.
+    // The frontier-model justification ("runs on a WEEKLY cadence, so
+    // per-call cost is small") never matched reality: the iOS app calls this
+    // function on every launch AND every foreground transition, and each
+    // invocation could burn up to 3 full pro-preview attempts ($2/$12 per 1M
+    // tokens, thinking tokens billed as output). That is what drove the
+    // $7-in-one-day Gemini bill on a single-user beta. Flash is ~20× cheaper
+    // and handles this structured-JSON synthesis well.
+    // Re-upgrading to a Pro-tier model is allowed ONLY once BOTH are true:
+    //   (a) the client no longer auto-generates (generateIfMissing gate), and
+    //   (b) the weekly cadence is verified in daily_read_dispatch_log.
     const modelConfig = {
-      model: "gemini-3.1-pro-preview",
+      model: "gemini-2.5-flash",
       provider: "gemini" as const,
       baseUrl: "https://generativelanguage.googleapis.com/v1beta",
       apiKeyEnv: "GEMINI_API_KEY",
@@ -255,11 +273,13 @@ Deno.serve(async (req) => {
 
     // Generate one Read candidate. Schema-constrained when requested; the
     // schema-less path is the fallback for models that reject `anyOf`.
-    const generateRaw = async (useSchema: boolean): Promise<string> => {
+    const generateRaw = async (
+      useSchema: boolean,
+    ): Promise<{ text: string; inputTokens: number; outputTokens: number }> => {
       const model = genAI.getGenerativeModel({
         model: modelConfig.model,
         generationConfig: {
-          // Generous, NAMED output budget. Gemini-3 Pro spends "thinking"
+          // Generous, NAMED output budget. Gemini spends "thinking"
           // tokens out of this same budget; a tight cap consumed it and the
           // JSON truncated mid-string ("Unterminated string in JSON") →
           // repeated 502s. The v4 spine also produces a longer structured
@@ -273,7 +293,18 @@ Deno.serve(async (req) => {
         },
       });
       const result = await model.generateContent(fullPrompt);
-      return result.response.text();
+      // deno-lint-ignore no-explicit-any
+      const usage = (result.response as any)?.usageMetadata ?? {};
+      return {
+        text: result.response.text(),
+        inputTokens: Number(usage.promptTokenCount ?? 0),
+        // candidatesTokenCount + thoughtsTokenCount are both billed as
+        // output; totalTokenCount - promptTokenCount captures both.
+        outputTokens: Math.max(
+          0,
+          Number(usage.totalTokenCount ?? 0) - Number(usage.promptTokenCount ?? 0),
+        ),
+      };
     };
 
     // ── 4b/5. Generate + parse with bounded retries ──────────────────
@@ -281,21 +312,68 @@ Deno.serve(async (req) => {
     // quote in a pace) that breaks JSON.parse. A re-roll at temperature
     // 0.6 almost always clears it, so we try up to MAX_ATTEMPTS times —
     // schema first, then schema-less re-rolls — before giving up.
+    //
+    // COST (2026-08-13): retries are for PARSE failures only. An API-level
+    // failure (quota 429, network, 5xx) aborts immediately — re-sending the
+    // full prompt into a failing API multiplied the bill by 3 for zero
+    // successful reads, and Google 429s only clear on their own schedule.
     const MAX_ATTEMPTS = 3;
     let parsed: DailyReadPayload | null = null;
     let lastErr = "";
     let lastRaw = "";
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
     for (let attempt = 0; attempt < MAX_ATTEMPTS && parsed === null; attempt++) {
+      let raw: string | null = null;
       try {
-        const raw = await generateRaw(attempt === 0);
+        const gen = await generateRaw(attempt === 0);
+        raw = gen.text;
+        totalInputTokens += gen.inputTokens;
+        totalOutputTokens += gen.outputTokens;
+      } catch (err) {
+        // API call itself failed — retrying won't help and costs real money.
+        lastErr = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `daily-read: Gemini API call failed on attempt ${attempt + 1} — aborting (no retry): ${lastErr}`,
+        );
+        break;
+      }
+      try {
         lastRaw = raw;
         parsed = parseModelResponse(raw);
       } catch (err) {
         lastErr = err instanceof Error ? err.message : String(err);
         console.warn(
-          `daily-read: generate/parse attempt ${attempt + 1}/${MAX_ATTEMPTS} failed: ${lastErr}`,
+          `daily-read: parse attempt ${attempt + 1}/${MAX_ATTEMPTS} failed: ${lastErr}`,
         );
       }
+    }
+
+    // Record real token spend regardless of outcome, so the daily spend
+    // alert reflects this function's actual cost. Best-effort: the insert
+    // must never break Read generation (and will no-op until the
+    // usage_tracking feature CHECK is widened by migration).
+    if (totalInputTokens > 0 || totalOutputTokens > 0) {
+      try {
+        await supabase.from("usage_tracking").insert({
+          user_id: userId,
+          feature: "daily_read",
+          model_used: modelConfig.model,
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens,
+          cached: false,
+        });
+      } catch (err) {
+        console.warn("daily-read: usage_tracking insert failed:", err);
+      }
+      // Also fill in the llm_call_ledger row the budget guard wrote, so
+      // llm_spend_today shows real cost, not just call counts.
+      await reportLlmUsage("daily_read", {
+        userId,
+        model: modelConfig.model,
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+      });
     }
     if (parsed === null) {
       // DIAGNOSTIC: capture the raw model output so we can see exactly

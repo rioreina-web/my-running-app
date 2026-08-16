@@ -24,11 +24,10 @@ struct HistoryDetailSheet: View {
     @State var showDeleteConfirmation = false
     @State var showWorkoutPicker = false
     @State var selectedWorkout: RunningWorkout?
+    /// Seed for `linkWorkout`, which carries the description onto a newly
+    /// linked run. No longer an editor: `workout_notes` is edited in exactly
+    /// one place, `TheWorkoutBlock`. (2026-08-10)
     @State var workoutNotesText: String = ""
-    /// Drives the notes composer: false + empty text collapses it to a single
-    /// "＋ ADD A NOTE" row instead of an empty labelled section. (Declared long
-    /// ago and unused until the composer was collapsed.)
-    @State var isEditingWorkoutNotes = false
     /// "READ THE WORDS ↓" — reveals the verbatim transcript under the memo.
     /// Per-sheet, so paging to another entry starts collapsed again.
     @State var showTranscript = false
@@ -44,6 +43,47 @@ struct HistoryDetailSheet: View {
     @State var editDistanceText: String = ""
     @State var editDurationText: String = ""
     @State var editNotesText: String = ""
+
+    // ── Tap-to-edit state (title + mood) ─────────────────────────────────
+    //
+    // Deliberately separate from `isEditing` above. That is the sheet's
+    // whole-entry mode: it swaps the page for a form and holds six fields
+    // hostage behind one Save. Fixing a title should not cost that, so the
+    // headline and the mood pill each edit themselves in place and save
+    // themselves — one column per write (see `saveTitleInline` /
+    // `saveMoodInline`).
+
+    /// The headline is a text field right now.
+    @State var isEditingTitleInline = false
+    /// Draft title while the field is open. Committed on keyboard "done" and
+    /// on focus loss, so tapping away saves rather than discards.
+    @State var inlineTitleText: String = ""
+    /// What the field was seeded with. A tap that changes nothing must not
+    /// write: the seed is `resolvedTitle`, which falls back to the DERIVED
+    /// workout label ("Intervals"), and writing that back would freeze a
+    /// generated name into the athlete-authored `title` column — after which
+    /// changing the workout type would no longer change the header, ever.
+    @State var inlineTitleSeed: String = ""
+    @FocusState var titleFieldFocused: Bool
+    /// True once the field has actually held focus. SwiftUI can reset a focus
+    /// value that no view has claimed yet, and without this the reset reads as
+    /// "the athlete tapped away" and closes the editor before they've typed.
+    @State var titleFieldDidFocus = false
+    /// The mood pills are expanded under the headline.
+    @State var isPickingMoodInline = false
+    /// Mood shown optimistically while its save is in flight. The picker
+    /// collapses on tap, so without this the old pill sits there for the
+    /// length of the round trip and the tap looks ignored.
+    @State var pendingMood: String?
+    /// The last inline save failed. Surfaced under the headline: the field has
+    /// already closed by then, so a silent failure looks exactly like an edit
+    /// that evaporated.
+    @State var inlineSaveFailed = false
+
+    /// The voice memo player is revealed. Off by default: the recording sits
+    /// behind the "▶ MEMO" corner affordance on the summary rather than
+    /// printing a waveform in the middle of the athlete's own words.
+    @State var showMemoPlayer = false
 
     // Vital workout detail
     @State var showVitalDetail = false
@@ -107,8 +147,7 @@ struct HistoryDetailSheet: View {
                                 workoutType: editWorkoutType,
                                 distanceText: editDistanceText,
                                 durationText: editDurationText,
-                                notesText: editNotesText,
-                                workoutNotesText: workoutNotesText
+                                notesText: editNotesText
                             )
                             if saved {
                                 isEditing = false
@@ -236,16 +275,123 @@ struct HistoryDetailSheet: View {
     // extension in HistoryDetailSheet+Editorial.swift can trigger edit mode
     // from the inline "EDIT" affordance on the VOICE SUMMARY section.
     func enterEditMode() {
+        // COMMIT the inline field before closing it — don't just clear the
+        // flag. Tapping a button doesn't resign first responder on its own, so
+        // "type a title, then tap EDIT" arrives here with an uncommitted
+        // draft; clearing first would drop it AND then seed `editTitle` from
+        // the stale stored title, so Save would write the old name back over
+        // the new one.
+        // Flattened on capture: `saveEdits` trims but doesn't flatten, so a
+        // draft carrying a line break would store one from the form path.
+        let draft = isEditingTitleInline ? Self.normalizedTitle(inlineTitleText) : nil
+        if isEditingTitleInline { commitInlineTitle() }
+        isPickingMoodInline = false
+
         // Start editing from the current header — the athlete's own title if set,
         // otherwise the workout title — so a tap-to-edit refines the workout name
-        // rather than opening a blank field.
-        editTitle = vm.currentEntry.resolvedTitle ?? ""
+        // rather than opening a blank field. `commitInlineTitle` saves
+        // asynchronously, so prefer the draft over `vm.currentEntry`, which
+        // hasn't caught up yet.
+        editTitle = draft ?? vm.currentEntry.resolvedTitle ?? ""
         editMood = vm.currentEntry.mood ?? ""
         editWorkoutType = vm.currentEntry.workoutType ?? ""
         editDistanceText = vm.currentEntry.workoutDistanceMiles.map { String(format: "%.2f", $0) } ?? ""
         editDurationText = vm.currentEntry.workoutDurationMinutes.map { vm.formatMinutesForEdit($0) } ?? ""
         editNotesText = vm.currentEntry.cleanedNotes ?? vm.currentEntry.notes ?? ""
         isEditing = true
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // MARK: - Tap-to-edit: title
+    // ────────────────────────────────────────────────────────────────────
+
+    /// Tap the headline → edit it where it sits.
+    ///
+    /// Seeded from `resolvedTitle` (the athlete's own title, else the workout
+    /// name) so the tap refines what is printed rather than opening a blank
+    /// field — same seed `enterEditMode` uses, so the two editors can't
+    /// disagree about what the current title is.
+    /// One definition of "the same title", shared by the tap-away guard here
+    /// and `saveTitleInline`. Two spellings of this rule is how a stray space
+    /// becomes a write.
+    static func normalizedTitle(_ text: String) -> String {
+        text.replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func beginInlineTitleEdit() {
+        guard !isEditing else { return }
+        inlineTitleSeed = vm.currentEntry.resolvedTitle ?? ""
+        inlineTitleText = inlineTitleSeed
+        inlineSaveFailed = false
+        titleFieldDidFocus = false
+        isEditingTitleInline = true
+        // Next runloop, not this one: `.focused($titleFieldFocused)` isn't in
+        // the hierarchy until the field has been rendered, and a focus value
+        // no view has claimed gets reset — which would open the editor with no
+        // keyboard, or bounce it straight back shut.
+        DispatchQueue.main.async { titleFieldFocused = true }
+    }
+
+    /// Save the inline title and close the field.
+    ///
+    /// Called from the keyboard's Done button AND from focus loss, so there is
+    /// no gesture that types a title and loses it. Idempotent: the guard makes
+    /// the second call (focus loss following an explicit commit) a no-op, and
+    /// `saveTitleInline` itself skips the write when nothing changed.
+    func commitInlineTitle() {
+        guard isEditingTitleInline else { return }
+        let text = inlineTitleText
+        isEditingTitleInline = false
+        titleFieldFocused = false
+
+        // Untouched seed → close, write nothing. Without this, opening the
+        // headline and tapping away would persist the derived workout label
+        // as an athlete-authored title (see `inlineTitleSeed`).
+        //
+        // Compared through the same normalization the save applies, or a
+        // stray space or Return — the field wraps, so Return is reachable —
+        // reads as an edit and writes the derived label after all.
+        guard Self.normalizedTitle(text) != Self.normalizedTitle(inlineTitleSeed) else { return }
+
+        Task {
+            switch await vm.saveTitleInline(text) {
+            case .saved:
+                inlineSaveFailed = false
+                onUpdate()
+            case .unchanged:
+                inlineSaveFailed = false
+            case .failed:
+                inlineSaveFailed = true
+            }
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // MARK: - Tap-to-edit: mood
+    // ────────────────────────────────────────────────────────────────────
+
+    /// Tapping a mood pill IS the save. No Save button, no mode — the write is
+    /// one column and reversible by tapping again, so confirmation would cost
+    /// more than the mistake.
+    func commitInlineMood(_ mood: String) {
+        // Show it immediately; the round trip catches up. `pendingMood` is the
+        // pill the athlete just tapped, so the badge changes under their
+        // finger rather than after the network.
+        pendingMood = mood
+        inlineSaveFailed = false
+        Task {
+            let result = await vm.saveMoodInline(mood)
+            // Only clear MY optimistic value. Two quick taps put two saves in
+            // flight, and clearing unconditionally would flash the first
+            // tap's mood back over the second one's.
+            if pendingMood == mood { pendingMood = nil }
+            switch result {
+            case .saved: onUpdate()
+            case .unchanged: break
+            case .failed: inlineSaveFailed = true
+            }
+        }
     }
 }
 

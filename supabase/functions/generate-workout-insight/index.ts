@@ -32,6 +32,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
+import { llmBudgetAllows, llmBudgetBlockedResponse } from "../_shared/llm-budget.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import {
   loadCoachContext,
@@ -67,9 +68,16 @@ const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
 const adminClient = createClient(supabaseUrl, supabaseServiceKey);
 const genAI = new GoogleGenerativeAI(geminiApiKey);
 
-// Button-triggered, low-volume, context-aware read → worth the stronger model.
-// One constant so swapping back to flash (cost) is a one-line change.
-const INSIGHT_MODEL = "gemini-2.5-pro";
+// COST (2026-08-13): downgraded gemini-2.5-pro → gemini-2.5-flash. The
+// "button-triggered, low-volume" premise above was no longer true: the
+// coach_insight_jobs outbox auto-enqueues an insight on workout ingestion,
+// so this ran on a Pro model ($1.25/$10 per 1M tokens) for every synced run.
+// Flash ($0.30/$2.50) handles this structured, context-grounded read fine.
+// A side benefit: the daily spend alert's coach_insight proxy row already
+// assumes flash pricing, so the estimate is now accurate.
+// If quality visibly drops on key-session insights, re-upgrade ONLY the
+// button-triggered path, never the outbox path.
+const INSIGHT_MODEL = "gemini-2.5-flash";
 
 // Runtime safety guard (CLAUDE.md hard rule #2). Shared + unit-tested in
 // _shared/insight-safety.ts so every AI surface enforces the same rule.
@@ -346,8 +354,9 @@ Deno.serve(async (req: Request) => {
       return jsonResponse({ error: "training_log_id must be a UUID" }, 400);
     }
 
-    // Cost protection lives outside this code (W1.1) — Google Cloud billing
-    // budget hard-caps the Gemini key at the provider level. No in-code gate.
+    // Cost protection: the app-wide budget guard runs below, AFTER the
+    // cached-insight short-circuit, so a cache hit never consumes budget.
+    // The Google Cloud billing cap (W1.1) remains the outermost backstop.
 
     // --- Load row ---
     const { data: row, error: loadErr } = await adminClient
@@ -405,6 +414,19 @@ Deno.serve(async (req: Request) => {
     if (callerUserId) {
       const capped = await enforceMonthlyCap(callerUserId, "workout_insight", corsHeaders, { isServiceRole });
       if (capped) return capped;
+    }
+
+    // App-wide budget guard (2026-08-13). Keyed on the training_log row so
+    // the per-subject 24h ceiling catches a single log stuck in a
+    // re-insight loop within minutes (the Aug-11 runaway shape). Does NOT
+    // bypass for service-role — the outbox drain is exactly the path a
+    // runaway rides in on. Sits after the cached return so only a real
+    // generation consumes budget (see migration 20260813180100).
+    if (!(await llmBudgetAllows("coach_insight", {
+      subjectId: trainingLogId,
+      userId: callerUserId ?? row.user_id,
+    }))) {
+      return llmBudgetBlockedResponse("coach_insight", corsHeaders);
     }
 
     // --- Pull context ---

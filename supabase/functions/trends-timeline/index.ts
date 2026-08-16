@@ -195,6 +195,11 @@ Deno.serve(async (req: Request) => {
       mpSecPerMile: zones.mp ?? null,
       lapsByWorkout,
       keyWorkPaceByLog,
+      // Full zone table, so `buildDailyTimeline` can classify every bout into
+      // the ten-zone taxonomy for the daily breakdown. `mpSecPerMile` above
+      // stays — it answers the narrower "is this quality" question the weekly
+      // rollup asks, and the two callers want different things.
+      zones,
     };
     const timeline = buildTrendsTimeline(timelineInput, weeks);
     // Daily substrate for the v2 calendar (Month/Block scales). Same dedup +

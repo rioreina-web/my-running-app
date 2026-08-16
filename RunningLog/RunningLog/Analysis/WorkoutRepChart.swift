@@ -408,9 +408,12 @@ enum WorkoutLapsService {
         var weatherTempF: Double?
         var weatherDewF: Double?
         /// True when a voice memo is actually attached to this run — the audio
-        /// is on the row, or the memo pipeline wrote `cleaned_notes`. An
-        /// auto-import note ("Morning Run · Avg pace: 6:47/mi") is neither, so
-        /// an imported run reads as memo-less and gets the record affordance.
+        /// is on the row, or the memo pipeline wrote real `cleaned_notes`.
+        /// A Strava auto-title ("Evening Run") is neither, so an imported run
+        /// reads as memo-less and gets the record affordance. That last
+        /// sentence described the intent long before it described the code:
+        /// the placeholder test lived only in Postgres until `PlaceholderNote`
+        /// gave the client the same answer.
         var hasMemo: Bool = false
         /// True when the memo has audio (vs a typed note) — the row's eyebrow.
         var hasAudio: Bool = false
@@ -454,12 +457,20 @@ enum WorkoutLapsService {
                 .eq("id", value: workoutId.uuidString).limit(1).execute().value
             guard let r = rows.first else { return WorkoutSummary() }
             // Cleaned notes win over the raw transcript, but both are the
-            // athlete's own words — we never paraphrase them.
+            // athlete's own words — we never paraphrase them, and we never
+            // promote Strava's to theirs. A synced run arrives with
+            // `cleaned_notes = "Evening Run"`, which is a non-empty string and
+            // so used to satisfy both tests below: the memo slot rendered
+            // `NOTE — "Evening Run"` (a sentence the athlete never said), and
+            // because the slot was occupied `showRecord` stayed false, so the
+            // RECORD VOICE MEMO affordance never appeared. 152 of the runs in
+            // the database were in exactly that state — the fake note was
+            // locking the athlete out of leaving a real one.
             let quote = [r.cleaned_notes, r.notes]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .compactMap { PlaceholderNote.athleteWords($0) }
                 .first { !$0.isEmpty }
             let hasAudio = !(r.audio_url?.isEmpty ?? true)
-            let hasCleaned = !(r.cleaned_notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            let hasCleaned = !PlaceholderNote.isPlaceholder(r.cleaned_notes)
             return WorkoutSummary(
                 date: parseWorkoutDate(r.workout_date),
                 source: r.source,
@@ -492,6 +503,35 @@ enum WorkoutLapsService {
         df.timeZone = TimeZone(identifier: "UTC")
         df.dateFormat = "yyyy-MM-dd"
         return df.date(from: String(raw.prefix(10)))
+    }
+
+    /// Ask the backend for this run's actual conditions, for a run whose row
+    /// carries none. Repairs the one gap the ingest path can't: `strava-sync`
+    /// fires `fetch-workout-weather` once, fire-and-forget, and Open-Meteo's
+    /// archive doesn't publish the current hour yet — so a run synced the
+    /// morning it happened misses, and no cron ever comes back for it. The
+    /// function writes `weather_actual` and stamps the lap heat columns, so
+    /// this heals the row for every other surface too, not just this screen.
+    ///
+    /// Returns nil on any failure — no location on the run, Open-Meteo down,
+    /// dew point unavailable. The caller carries on weather-less.
+    static func fetchRunWeather(workoutId: UUID) async -> (tempF: Double, dewF: Double)? {
+        struct Weather: Decodable { var temp_f: Double?; var dew_point_f: Double? }
+        struct Response: Decodable { var weather: Weather? }
+        do {
+            let data = try await callEdgeFunction(
+                name: "fetch-workout-weather",
+                body: ["training_log_id": workoutId.uuidString]
+            )
+            let decoded = try JSONDecoder().decode(Response.self, from: data)
+            guard let t = decoded.weather?.temp_f, let d = decoded.weather?.dew_point_f else {
+                return nil
+            }
+            return (t, d)
+        } catch {
+            Log.coach.error("WorkoutLapsService.fetchRunWeather failed: \(error)")
+            return nil
+        }
     }
 
     static func fetchInsight(workoutId: UUID) async -> String? {
@@ -656,7 +696,12 @@ struct WorkoutRepChart: View {
     @State private var showStructureEditor = false
 
     private let metersPerMile = 1609.344
-    static let typeOptions = ["intervals", "threshold", "tempo", "fartlek", "progression", "easy", "long_run", "recovery", "race"]
+    /// Was a private 9-key list of its own — it offered "tempo", which is now
+    /// folded into "threshold" on write, and omitted "moderate"/"steady"
+    /// entirely. Single source of truth: `WorkoutLabel.offered`. (2026-08-10)
+    private var typeOptions: [(String, String)] {
+        WorkoutLabel.options(including: workoutType)
+    }
 
     // Work reps = non-rest laps faster than ~steady and long enough to be a rep.
     private var reps: [WorkoutLapRow] {
@@ -755,8 +800,8 @@ struct WorkoutRepChart: View {
             }
             .buttonStyle(.plain)
             .confirmationDialog("Change workout type", isPresented: $showTypePicker, titleVisibility: .visible) {
-                ForEach(Self.typeOptions, id: \.self) { t in
-                    Button(prettyType(t)) { updateType(t) }
+                ForEach(typeOptions, id: \.0) { opt in
+                    Button(opt.1) { updateType(opt.0) }
                 }
                 Button("Cancel", role: .cancel) {}
             }
@@ -773,19 +818,20 @@ struct WorkoutRepChart: View {
     }
 
     /// Manual workout-type override — updates immediately on screen and persists.
-    private func updateType(_ t: String) {
+    private func updateType(_ raw: String) {
+        // Normalize before writing so the picker can never re-introduce a
+        // duplicate spelling (`interval`/`intervals`, `tempo`/`threshold`).
+        let t = WorkoutLabel.normalize(raw) ?? raw
         workoutType = t
         guard let workoutId else { return }
         Task { await WorkoutLapsService.setType(workoutId: workoutId, type: t) }
     }
 
-    private func prettyType(_ t: String) -> String {
-        switch t {
-        case "long_run": return "Long run"
-        case "intervals", "interval": return "Intervals"
-        default: return t.prefix(1).uppercased() + t.dropFirst()
-        }
-    }
+    /// Delegates to the single mapper so a legacy `tempo` row reads
+    /// "Threshold" here exactly as it does everywhere else. This was a
+    /// third private switch; it disagreed with `WorkoutLabel.display` on
+    /// every folded key. (2026-08-10)
+    private func prettyType(_ t: String) -> String { WorkoutLabel.display(t) }
 
     private func stat(_ k: String, _ v: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {

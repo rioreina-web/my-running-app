@@ -125,9 +125,14 @@ Deno.serve(async (req) => {
   // ── Best-effort persist onto the goal row (forward-compat with Phase 1) ────
   // If the structured columns don't exist yet, this update errors and we skip
   // it — the interpretation is still returned and race-intel still fires.
+  let persisted = false;
   if (goalId) {
     try {
-      await supabase
+      // supabase-js does not throw on failure — it returns { error }. The old
+      // try/catch alone meant a failed write (missing column, constraint, RLS)
+      // was invisible: the function reported ok while the goal row stayed
+      // unstructured, and every analyzer downstream saw an empty goal.
+      const { error: persistError } = await supabase
         .from("user_goals")
         .update({
           interpretation: interp,
@@ -136,8 +141,15 @@ Deno.serve(async (req) => {
         })
         .eq("id", goalId)
         .eq("user_id", userId);
-    } catch (_e) {
-      // columns not migrated yet — non-fatal.
+      if (persistError) {
+        console.error(
+          `interpret-goal: persist failed for goal ${goalId}: ${persistError.message}`,
+        );
+      } else {
+        persisted = true;
+      }
+    } catch (e) {
+      console.error(`interpret-goal: persist threw for goal ${goalId}`, e);
     }
   }
 
@@ -170,6 +182,7 @@ Deno.serve(async (req) => {
     ok: true,
     interpretation: interp,
     goal_id: goalId ?? null,
+    persisted,
     race_intel_triggered: raceIntelTriggered,
   });
 });

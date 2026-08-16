@@ -2,119 +2,63 @@
 //  TrendsTabView.swift
 //  RunningLog · Trends
 //
-//  The Trends tab. Since 2026-08-03 this is a thin host around
-//  `TrendsV2View` — the five-signal surface (mileage · key work · recovery ·
-//  mood · niggles on one 30-day axis). See
-//  `outputs/trends-audit-2026-08-03.md` for why the swap was made.
+//  The Trends tab. Since 2026-08-11 this is a thin host around
+//  `TrendsLegacyTabView` — the v1 surface, restored as the tab (Rio).
 //
-//  The previous tab is intact in `TrendsLegacyTabView` and is one tap away in
-//  DEBUG builds via the `v1 ›` capsule in the v2 header. Nothing was deleted:
-//  the pace spectrum and race prediction live there until they get a screen
-//  that suits them — they answer "how fast am I", which is a different question
-//  from "how am I trending", and mixing the two is what made the old tab an
-//  eleven-block scroll.
+//  Why the swap back: v2 answered "how am I trending" with five signals on one
+//  axis and little else. v1 answers the same question with the sections the
+//  athlete actually opens the tab for — load and the ramp, where the miles
+//  fell, the key-session grid, recovery, where the block points. Two things v1
+//  did not have came back with it from v2, and only those two:
 //
-//  Threshold pace is the one exception, promoted onto the tab as section 04:
-//  it is the only pace surface drawn against a band the athlete sets herself,
-//  which makes it a trend she moves rather than a number she reads. The Lab
-//  keeps its copy — both render `TrendsThresholdView` off the shared
-//  `BandSettingsStore`, so there is one renderer and one band.
+//    • THE RECOVERY SCORE — the ledger card, closing section 04.
+//    • ASK — the chip rail at the foot of the scroll.
+//
+//  `TrendsV2View` is unlinked, not deleted. No door leads to it from the tab
+//  in either build configuration; the file stays in the target and is still
+//  reachable in DEBUG via the `-trendsV2Preview` launch argument in
+//  `RunningLogApp`. See `outputs/trends-audit-2026-08-03.md` for the swap it
+//  was made in, which this reverses.
+//
+//  The Signal Lab kept its door. It was reachable from v2's header and nowhere
+//  else, so dropping v2 from the tab would have orphaned it; the `lab ›` chip
+//  moved to v1's header unchanged.
 //
 //  This host exists for one reason beyond the swap: the tab must not fetch
 //  until the athlete actually opens it. Every tab in `RunningLogApp` is
 //  constructed at launch and merely hidden with `.opacity`, so a plain
 //  `.task` on the content view would fire a timeline request for a tab that
-//  was never visited. The gate lives here and `TrendsV2View` takes
-//  `autoLoad: false`.
+//  was never visited. `TrendsLegacyTabView` carries that gate itself — it
+//  checks the selected tab index before refreshing — so there is exactly one
+//  fetch owner and this host does not add a second.
 //
 
 import SwiftUI
 
 struct TrendsTabView: View {
-    @Environment(\.selectedTab) private var selectedTab
-
     @State private var service = TrendsService.shared
 
-    /// Visits to the Trends page, ever. Read by `TrendsV2View` to retire the
-    /// section explainers once the page has stopped being new.
-    @AppStorage("trendsV2Visits") private var visitCount: Int = 0
-
-    #if DEBUG
-    @State private var showLegacy = false
-    #endif
     /// The Signal Lab, opened as a sheet from the Trends header. A sheet and
     /// not a tab, deliberately: the tab bar is the app's daily destinations,
     /// and the Lab is where you go when you want to look hard at one thing.
     @State private var showLab = false
 
-    /// The Trends tab's index in `DripTabBar`.
-    private static let tabIndex = 4
-
     var body: some View {
-        content
+        TrendsLegacyTabView(service: service, onOpenLab: { showLab = true })
             .background(Color.drip.background)
             .toolbar(.hidden, for: .navigationBar)
-            // Load when the tab becomes active. `refresh()` is a no-op once
-            // loaded, so re-entry is cheap and no fetch fires for a tab the
-            // athlete never opens.
-            .task(id: selectedTab.wrappedValue) {
-                if selectedTab.wrappedValue == Self.tabIndex {
-                    // A visit is counted here rather than in `TrendsV2View`'s
-                    // `onAppear`, because every tab is constructed at launch
-                    // and merely hidden with `.opacity` — `onAppear` fires
-                    // once, for a page nobody has opened. This is the same
-                    // signal the fetch gate uses, and it's what decides
-                    // whether the section explainers still show.
-                    visitCount += 1
-                    await service.refresh()
-                }
-            }
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        #if DEBUG
-        TrendsV2View(
-            service: service,
-            autoLoad: false,
-            onOpenLegacy: { showLegacy = true },
-            onOpenLab: { showLab = true }
-        )
-        .sheet(isPresented: $showLab) { SignalLabView(service: service) }
-        // A sheet, not a fullScreenCover: a sheet can always be swiped away,
-        // so a missing toolbar can never trap the athlete on this screen again.
-        .sheet(isPresented: $showLegacy) {
-            NavigationStack {
-                TrendsLegacyTabView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Close") { showLegacy = false }
-                        }
-                        ToolbarItem(placement: .principal) {
-                            Text("TRENDS · V1")
-                                .font(.dripEyebrow(11)).tracking(1.3)
-                                .foregroundStyle(Color.drip.textSecondary)
-                        }
-                    }
-                    .toolbarBackground(Color.drip.background, for: .navigationBar)
-            }
-        }
-        #else
-        TrendsV2View(
-            service: service,
-            autoLoad: false,
-            onOpenLab: { showLab = true }
-        )
-        .sheet(isPresented: $showLab) { SignalLabView(service: service) }
-        #endif
+            // A sheet, not a fullScreenCover: a sheet can always be swiped
+            // away, so a missing toolbar can never trap the athlete on this
+            // screen again.
+            .sheet(isPresented: $showLab) { SignalLabView(service: service) }
     }
 }
 
 #Preview("Trends tab") {
     NavigationStack {
-        TrendsV2View(
+        TrendsLegacyTabView(
             service: TrendsService(
-                preview: [],
+                preview: TrendsSampleData.weeks,
                 days: TrendsDay.previewMonthRich,
                 keySessions: KeySession.previewLadder
             )

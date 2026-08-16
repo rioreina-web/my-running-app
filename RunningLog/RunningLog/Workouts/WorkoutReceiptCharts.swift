@@ -249,7 +249,19 @@ struct RRRepBars: View {
                 // a cluttered 30-min ladder. Slow laps still draw (clamped to a
                 // nub at the base) — they just don't drive the scale. Frames the
                 // fast cluster the way Strava does, with ~4 clean gridlines.
-                let allPaces = reps.map(pace)
+                //
+                // The axis spans BOTH the raw and the heat-adjusted pace of
+                // every rep, so it is the SAME axis whether HEAT-ADJ is on or
+                // off. Deriving it from the toggled pace is what made the
+                // toggle look inert: on a continuous run every split earns the
+                // same percentage credit, so the axis rescaled by exactly as
+                // much as the bars moved and the chart came out pixel-identical
+                // — only the tick labels changed. Held still, the bars visibly
+                // rise when the toggle goes on.
+                let allPaces = reps.flatMap { r -> [Double] in
+                    guard let adj = r.adjPaceSec, adj > 0 else { return [r.paceSec] }
+                    return [r.paceSec, adj]
+                }
                 let fastest = allPaces.min() ?? 240
                 let work = allPaces.filter { $0 <= fastest * 1.6 }
                 let paces = work.count >= 2 ? work : allPaces
@@ -432,26 +444,42 @@ struct RRRepBars: View {
         let dec = decoupling(index)
         let adj = adjPace(r)
         // Six cells (SPLIT PACE ADJ HR ELEV REC/DRIFT) is the widest this row
-        // ever gets; tighten the gutter rather than let it clip on a small
-        // phone. The cells themselves hold one line and shrink a touch.
-        return HStack(spacing: adj == nil ? 12 : 9) {
-            Text("REP \(r.id)").font(.dripStat(11)).tracking(1).foregroundStyle(Color.drip.coral)
-            HStack(spacing: adj == nil ? 11 : 8) {
-                readoutCell("SPLIT", clockMS(splitSec(r)))
-                // PACE is always the pace that was actually run. ADJ is the
-                // heat credit alongside it, tinted to match the HEAT-ADJ chip.
-                readoutCell("PACE", rr_pace(r.paceSec, km: km))
-                if let adj {
-                    readoutCell("ADJ", rr_pace(adj, km: km), tone: Color.drip.tired)
-                }
-                readoutCell("HR", r.hr.map(String.init) ?? "—")
-                readoutCell("ELEV", r.elevFt.map { "\($0 > 0 ? "+" : "")\($0)" } ?? "—")
-                if let recov { readoutCell("REC", "−\(recov)") }
-                if let dec { readoutCell("DRIFT", "\(dec > 0 ? "+" : "")\(dec)%") }
+        // ever gets. Each cell must size to its own NUMBER, so the strip is
+        // measured at its ideal width and scrolls only if it still overflows.
+        //
+        // Without the fixedSize the outer HStack split the row evenly between
+        // the strip and the trailing Spacer, proposed the strip far less than
+        // its ideal, and every cell collapsed to its LABEL width — which
+        // truncated the values ("2:31" → "2…", "4:54" → "…"). The numbers were
+        // the whole point of the readout, so they take width first now.
+        let cells = HStack(spacing: adj == nil ? 11 : 8) {
+            readoutCell("SPLIT", clockMS(splitSec(r)))
+            // PACE is always the pace that was actually run. ADJ is the
+            // heat credit alongside it, tinted to match the HEAT-ADJ chip.
+            readoutCell("PACE", rr_pace(r.paceSec, km: km))
+            if let adj {
+                readoutCell("ADJ", rr_pace(adj, km: km), tone: Color.drip.tired)
             }
-            Spacer(minLength: 0)
+            readoutCell("HR", r.hr.map(String.init) ?? "—")
+            readoutCell("ELEV", r.elevFt.map { "\($0 > 0 ? "+" : "")\($0)" } ?? "—")
+            if let recov { readoutCell("REC", "−\(recov)") }
+            if let dec { readoutCell("DRIFT", "\(dec > 0 ? "+" : "")\(dec)%") }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+
+        return HStack(spacing: adj == nil ? 12 : 9) {
+            Text("REP \(r.id)").font(.dripStat(11)).tracking(1)
+                .foregroundStyle(Color.drip.coral)
+                .fixedSize()
+            // Scrolls only when the cells genuinely don't fit (seven cells on
+            // a small phone); at every normal width it sits flush left and
+            // stays put, so this is a safety net, not a scrolling stat row.
+            ScrollView(.horizontal, showsIndicators: false) { cells }
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Color.drip.textTertiary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
                 .onTapGesture { selected = nil }
         }
         .padding(.vertical, 2)
@@ -464,9 +492,12 @@ struct RRRepBars: View {
             Text(label).font(.dripStat(8)).tracking(0.6)
                 .foregroundStyle(tone ?? Color.drip.textTertiary)
                 .lineLimit(1).fixedSize()
+            // fixedSize, not minimumScaleFactor: a split time that shrinks
+            // to 85% and then truncates anyway is worse than one that simply
+            // asks for the width it needs.
             Text(value).font(.dripStat(13))
                 .foregroundStyle(tone ?? Color.drip.textPrimary)
-                .lineLimit(1).minimumScaleFactor(0.85)
+                .lineLimit(1).fixedSize()
         }
     }
 

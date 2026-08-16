@@ -26,6 +26,12 @@ import {
   type QualityLap,
   type QualitySegment,
 } from "../_shared/quality-volume.ts";
+import {
+  segmentFromLaps,
+  ZONE_WEIGHTS,
+  type PaceZones,
+  type Zone,
+} from "../_shared/workoutSegmentation.ts";
 
 // ─── Input types (subset of the DB rows we actually read) ──────────────
 
@@ -78,6 +84,11 @@ export interface TimelineInput {
    *  `workout_pace_per_mile` (which blends the reps with the recovery jogs: a
    *  6×mile @ 5:10 averages to ~6:20 over the whole workout). */
   keyWorkPaceByLog?: Map<string, number>;
+  /** The athlete's full zone table. Needed by `segmentFromLaps` to classify
+   *  every bout for the daily zone breakdown — `mpSecPerMile` alone only
+   *  answers "is this quality", which is a different question. Absent zones
+   *  means no daily breakdown is emitted (never a guessed one). */
+  zones?: PaceZones;
 }
 
 // ─── Output type (mirrors the iOS TrendsWeek decode shape) ─────────────
@@ -142,6 +153,84 @@ export interface TrendsDayOut {
   // `TrendsRecoveryDemand.sessionLoad` necessary rather than defensive.
   duration_min?: number | null;
   stress_load?: number | null;
+  // Per-zone breakdown of the day (additive, 2026-08-10). The `type` field
+  // above is one coarse channel for the calendar; THESE are the real pace
+  // distribution, across all ten zones of the canonical taxonomy — including
+  // easy, which `quality_volume.zone_seconds` deliberately excludes because
+  // it only ever cared about work. A week-load surface cares about easy most
+  // of all: it is 65% of the miles.
+  //
+  // Built from every `Bout` returned by `segmentFromLaps`, so a long run with
+  // an embedded MP block splits correctly instead of averaging itself down to
+  // all-easy (the failure `_shared/quality-volume.ts` documents at length).
+  //
+  // BOTH fields are ABSENT (not `{}`) when no run that day carried laps —
+  // a manual entry or a lapless import. Absent means "we cannot say"; `{}`
+  // would mean "we looked and there was nothing", and the client renders
+  // those two states differently. Zones with no time are omitted, not
+  // zero-filled, so `Object.keys()` is the list of zones actually run.
+  zone_minutes?: Record<string, number>;
+  /** Paired with `zone_minutes` so the client can compute a real average pace
+   *  per zone (Σ time ÷ Σ distance) rather than a mean of per-run means. */
+  zone_miles?: Record<string, number>;
+  /** Weighted minutes (TLS) per zone, summed PER BOUT off the continuous
+   *  `paceWeight` curve before the zone rollup.
+   *
+   *  Clients should use this rather than multiplying `zone_minutes` by the
+   *  discrete `ZONE_WEIGHTS` table. The table is ten steps; the curve is what
+   *  those steps are sampled from, and it keeps climbing past mile — so a 200
+   *  at 4:20/mi scores above 8.0 instead of being capped at the `mile` anchor
+   *  alongside a 4:50 mile rep. Divide by `zone_minutes` for the effective
+   *  multiplier a zone actually earned. */
+  zone_load?: Record<string, number>;
+  // The same day, UNROLLED (additive, 2026-08-11). Everything above this line
+  // is the day summed; this is the runs it was summed from.
+  //
+  // Added for the week stress strip, which places each run at the time of day
+  // it started. A day-grained payload cannot render a double — a morning
+  // session and an evening easy four collapse into one number with one
+  // notional time — and splitting the day's zones back across its runs by
+  // duration would be a fabricated split sitting next to measured ones.
+  //
+  // ABSENT (not `[]`) on a rest day. Present with one entry on the ordinary
+  // single-run day, which is most of them.
+  runs?: TrendsRunOut[];
+}
+
+/** One run inside a day. See `TrendsDayOut.runs`. */
+export interface TrendsRunOut {
+  /** `training_logs.id` — the client routes to the run detail with this. */
+  id: string;
+  /** The run's START time, verbatim from `training_logs.workout_date`, WITH
+   *  whatever offset that column carried. Deliberately NOT normalized to a UTC
+   *  instant or split to a date here: this field exists to be read as a LOCAL
+   *  time of day, and normalizing is exactly what destroys that. A 6:05am
+   *  Chicago run rendered from a UTC-normalized timestamp shows up at 11am.
+   *
+   *  Note the column is TIMESTAMPTZ, so Postgres has already resolved it to an
+   *  instant; the offset survives only because we never re-slice it. The
+   *  client's own guard is in `TrendsDay.Run.minuteOfDay`. */
+  started_at: string;
+  /** Wall-clock minutes, paused-watch artifact already re-imputed by
+   *  `cleanDuration` — the same treatment `duration_min` gets, so the runs
+   *  sum to the day. Whole minutes, for parity with the day field. */
+  duration_min: number;
+  /** The same duration in SECONDS, unrounded until this point.
+   *
+   *  `duration_min` is whole minutes everywhere else in this payload, which is
+   *  fine for a week total and useless for a run: an athlete reads 42:13, not
+   *  "about 42 minutes", and rounding to the minute throws away the only part
+   *  of it they would check against their watch. Clients should prefer this. */
+  duration_sec: number;
+  miles: number;
+  /** This RUN's zone breakdown, same construction and same omit-never-zero-fill
+   *  contract as the day-level `zone_minutes`. ABSENT when this particular run
+   *  carried no laps — which can happen on a day where the OTHER run did, so
+   *  the day has a breakdown and this run still does not. */
+  zone_minutes?: Record<string, number>;
+  zone_miles?: Record<string, number>;
+  /** See `TrendsDayOut.zone_load`. */
+  zone_load?: Record<string, number>;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────
@@ -200,6 +289,12 @@ const MONTH_ABBR = [
 ];
 
 // ─── Small helpers ─────────────────────────────────────────────────────
+
+const METERS_PER_MILE = 1609.344;
+
+/** Two decimal places. Zone minutes/miles are summed on device, so more
+ *  precision than this is noise and less loses a 0.3 mi stride set. */
+const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /** Parse "M:SS" → seconds. Returns null on anything malformed. */
 export function parsePaceToSec(raw: string | null): number | null {
@@ -594,6 +689,67 @@ export function buildDailyTimeline(
     return min / mi > 2 * medianPace ? mi * medianPace : min;
   };
 
+  // ── Per-log zone breakdown, computed once ──
+  // Same laps and the same `segmentFromLaps` call the quality surfaces use,
+  // but WITHOUT the `WORK_ZONES` filter — easy and steady volume is the bulk
+  // of this surface, not noise to be excluded.
+  //
+  // (2026-08-11) Rest bouts used to be DROPPED here, on the reasoning that a
+  // recovery jog between reps is not volume at the rep's zone and counting it
+  // would inflate the fast end. The first half of that is right; the
+  // conclusion was not. Dropping them meant a 40-minute session scored as 33
+  // — the day's zone minutes did not add up to the day's duration, and the
+  // athlete was told a float between reps cost them nothing.
+  //
+  // They are now booked to `recovery`, which weighs 1.0. That answers the
+  // original objection exactly — the minutes are counted, but at the SLOWEST
+  // weight in the table, never at the rep's — and it makes a run's minutes
+  // reconcile with its duration. iOS folds `recovery` into `easy` for display
+  // (`ZoneTaxonomy.normalise`), so it reads as easy volume, which is what it
+  // is.
+  const zoneTotalsByLog = new Map<
+    string,
+    Map<Zone, { seconds: number; meters: number; loadMin: number }>
+  >();
+  if (input.zones && input.lapsByWorkout && input.lapsByWorkout.size > 0) {
+    for (const l of deduped) {
+      const laps = input.lapsByWorkout.get(l.id);
+      if (!laps || laps.length === 0) continue;
+      let seg;
+      try {
+        // Heat-adjusted classification. A 78°F / 75°F-dew-point tempo runs
+        // slow on the clock and is not easy work; scoring it off raw pace made
+        // the load score lowest in exactly the conditions that cost the most.
+        // Scoped to THIS breakdown — key sessions, quality volume and the rep
+        // surfaces still classify on raw pace, and moving those is a separate
+        // decision with its own before/after check.
+        seg = segmentFromLaps(laps, input.zones, { useHeatAdjustedPace: true });
+      } catch (e) {
+        // One malformed workout must not take the whole timeline down. The
+        // day degrades to "no breakdown", which the client already handles.
+        console.error("[timeline] zone breakdown skipped for log", l.id, e);
+        continue;
+      }
+      const byZone = new Map<Zone, { seconds: number; meters: number; loadMin: number }>();
+      for (const b of seg.bouts) {
+        if (b.seconds <= 0) continue;
+        // Rest bouts book to `recovery` (weight 1.0) rather than to the rep's
+        // zone — counted, but never at the fast end.
+        const z: Zone = b.isRest ? "recovery" : b.zone;
+        const cur = byZone.get(z) ?? { seconds: 0, meters: 0, loadMin: 0 };
+        cur.seconds += b.seconds;
+        cur.meters += b.distanceMeters;
+        // The CONTINUOUS curve, per bout, summed before the zone rollup — so a
+        // sub-mile rep keeps its >8 weight instead of being averaged into the
+        // `mile` bucket's flat 8.0.
+        cur.loadMin += (b.seconds / 60) *
+          (b.weight ?? (z === "recovery" ? 1.0 : ZONE_WEIGHTS[z]));
+        byZone.set(z, cur);
+      }
+      if (byZone.size > 0) zoneTotalsByLog.set(l.id, byZone);
+    }
+  }
+
   const out: TrendsDayOut[] = [];
   for (
     const d = new Date(firstStart);
@@ -626,10 +782,84 @@ export function buildDailyTimeline(
       quote: m.verbatim_quote,
     }));
 
+    // Roll this day's runs up by zone. Undefined — not {} — when none of the
+    // day's runs carried laps, so the client can tell "no breakdown available"
+    // apart from "a real rest day".
+    let zoneMinutes: Record<string, number> | undefined;
+    let zoneMiles: Record<string, number> | undefined;
+    let zoneLoad: Record<string, number> | undefined;
+    const dayZoned = dayRuns.filter((l) => zoneTotalsByLog.has(l.id));
+    if (dayZoned.length > 0) {
+      const acc = new Map<Zone, { seconds: number; meters: number; loadMin: number }>();
+      for (const l of dayZoned) {
+        for (const [z, v] of zoneTotalsByLog.get(l.id)!) {
+          const cur = acc.get(z) ?? { seconds: 0, meters: 0, loadMin: 0 };
+          cur.seconds += v.seconds;
+          cur.meters += v.meters;
+          cur.loadMin += v.loadMin;
+          acc.set(z, cur);
+        }
+      }
+      zoneMinutes = {};
+      zoneMiles = {};
+      zoneLoad = {};
+      for (const [z, v] of acc) {
+        const min = round2(v.seconds / 60);
+        const mi = round2(v.meters / METERS_PER_MILE);
+        if (min <= 0) continue; // omit, never zero-fill
+        zoneMinutes[z] = min;
+        zoneMiles[z] = mi;
+        zoneLoad[z] = round2(v.loadMin);
+      }
+    }
+
+    // The day unrolled. Chronological, because a strip that draws them in
+    // fetch order draws the evening run first on half the days.
+    const runs: TrendsRunOut[] = dayRuns
+      .slice()
+      .sort((a, b) =>
+        String(a.workout_date).localeCompare(String(b.workout_date))
+      )
+      .map((l) => {
+        const byZone = zoneTotalsByLog.get(l.id);
+        let zMin: Record<string, number> | undefined;
+        let zMi: Record<string, number> | undefined;
+        let zLoad: Record<string, number> | undefined;
+        if (byZone && byZone.size > 0) {
+          zMin = {};
+          zMi = {};
+          zLoad = {};
+          for (const [z, v] of byZone) {
+            const min = round2(v.seconds / 60);
+            if (min <= 0) continue; // omit, never zero-fill
+            zMin[z] = min;
+            zMi[z] = round2(v.meters / METERS_PER_MILE);
+            zLoad[z] = round2(v.loadMin);
+          }
+          if (Object.keys(zMin).length === 0) {
+            zMin = undefined;
+            zMi = undefined;
+            zLoad = undefined;
+          }
+        }
+        return {
+          id: l.id,
+          started_at: String(l.workout_date),
+          duration_min: Math.round(cleanDuration(l)),
+          duration_sec: Math.round(cleanDuration(l) * 60),
+          miles: Math.round((l.workout_distance_miles ?? 0) * 10) / 10,
+          ...(zMin ? { zone_minutes: zMin, zone_miles: zMi, zone_load: zLoad } : {}),
+        };
+      });
+
     out.push({
       date: key,
       miles: Math.round(miles * 10) / 10,
       type,
+      ...(zoneMinutes
+        ? { zone_minutes: zoneMinutes, zone_miles: zoneMiles, zone_load: zoneLoad }
+        : {}),
+      ...(runs.length > 0 ? { runs } : {}),
       // The DAY's mood is the hardest session's mood, not the modal one.
       // See `hardestSessionMood`. The week keeps `dominantMood` — that is a
       // distribution over separate days, a different question.

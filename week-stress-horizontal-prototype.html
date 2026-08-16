@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week training stress · the strip — Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Post Run Drip — Foundations (mirrored from colors_and_type.css)
+   ============================================================ */
+:root{
+  --paper:#F5F3F0; --paper-deep:#E8E4DF; --rule:#E8E4E0; --card:#FFFFFF;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420;
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+
+  /* 8pt spacing scale — the ONLY vertical gaps allowed on this surface.
+     Every margin below is one of these. No 7s, no 13s, no 26s. */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s7:32px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;padding:var(--s7) var(--s5) 40px}
+
+/* ---- study chrome (not part of the app) ---- */
+.study-hd{max-width:1240px;margin:0 auto var(--s6)}
+.study-hd h1{font-family:var(--font-display);font-weight:700;font-size:27px;margin:0 0 var(--s2)}
+.study-hd p{margin:0 0 var(--s2);font-size:14px;color:#4A4540;line-height:1.55;max-width:76ch}
+.study-hd .k{font-family:var(--font-mono);font-size:11.5px;color:#4A4540}
+.rail{display:flex;gap:var(--s6);align-items:flex-start;max-width:1240px;margin:0 auto;flex-wrap:wrap}
+.col-hd{margin-bottom:var(--s3);padding:0 2px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:#6B6560;display:block;margin-bottom:var(--s1)}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 var(--s1)}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540;max-width:52ch}
+.frame{background:var(--paper);border-radius:22px;box-shadow:0 6px 22px rgba(0,0,0,.13);
+  border:1px solid rgba(0,0,0,.05);padding:var(--s5) var(--s5) var(--s6)}
+.col--phone{width:392px} .col--phone .frame{width:392px}
+.col--wide{width:720px}  .col--wide .frame{width:720px;padding:var(--s6) var(--s6) var(--s6)}
+
+/* ---- shared type ---- */
+.micro{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.11em;
+  color:var(--ink-3);text-transform:uppercase}
+
+/* ============================================================
+   1 · HEAD
+   nav → 16 → number → 8 → context line
+   ============================================================ */
+.nav{display:flex;align-items:baseline;gap:var(--s2);margin-bottom:var(--s4)}
+.nav .chev{font-size:13px;color:var(--ink-3)}
+.nav .rangelab{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink)}
+.big{font-family:var(--font-mono);font-size:31px;font-weight:600;letter-spacing:-.01em;line-height:1}
+.big .u{font-size:13px;font-weight:400;color:var(--ink-2);letter-spacing:0}
+.sub{margin-top:var(--s2)}
+
+/* ============================================================
+   2 · THE STRIP
+   head → 32 → plot · plot → rail is a shared baseline, no gap
+   ============================================================ */
+.strip{margin-top:var(--s7)}
+.plot{position:relative;width:100%;border-bottom:1px solid var(--ink-3)}
+
+/* day boundaries — interior only, so the strip has no cage around it */
+.divider{position:absolute;top:0;bottom:0;width:1px;background:var(--rule)}
+.divider.future{background:none;border-left:1px dashed var(--rule)}
+
+/* a run: a stacked column, height = the run's load */
+.run{position:absolute;bottom:0;display:flex;flex-direction:column-reverse;
+  background:none;border:0;padding:0;cursor:pointer;font:inherit;
+  border-radius:2px 2px 0 0;overflow:hidden;transition:filter 150ms ease}
+.run .seg{width:100%;flex:none}
+.run:hover{filter:brightness(1.07)}
+.run:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.run.is-open{box-shadow:0 0 0 1.5px var(--ink)}
+.run.nolap{background:repeating-linear-gradient(135deg,
+    var(--paper-deep) 0 3px, transparent 3px 6px);
+  border:1px dashed var(--ink-3);border-bottom:0;border-radius:2px 2px 0 0}
+
+/* the niggle caret — the only coral on the surface, hung over its run */
+.nig{position:absolute;width:0;height:0;
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid var(--coral);transform:translateX(-50%)}
+
+/* ---- the day rail, sharing the plot's baseline ---- */
+.days{display:flex}
+.dcell{flex:1;padding-top:var(--s3);display:flex;flex-direction:column;align-items:center}
+.dlab{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);line-height:1}
+.dcell.ran .dlab{color:var(--ink-2)}
+.dcell.today .dlab{color:var(--ink)}
+.dtls{font-family:var(--font-mono);font-size:12px;color:var(--ink);margin-top:var(--s2);
+  font-variant-numeric:tabular-nums;line-height:1}
+.dtls.zero{color:var(--ink-3)}
+.dtls.none{visibility:hidden}
+.moodtick{width:13px;height:2.5px;border-radius:2px;margin-top:var(--s2);background:transparent}
+
+/* one quiet line instead of an hour axis */
+.axisnote{font-family:var(--font-body);font-style:italic;font-size:12.5px;line-height:1.5;
+  color:var(--ink-3);margin-top:var(--s4)}
+.axisnote b{font-style:normal;font-weight:400;color:var(--ink-2)}
+
+/* ============================================================
+   3 · THE PANEL
+   ============================================================ */
+.panel{margin-top:var(--s6);border-top:1px solid var(--rule);padding-top:var(--s5)}
+.p-hd{display:flex;align-items:baseline;justify-content:space-between;
+  margin-bottom:var(--s3);gap:var(--s3)}
+.p-hd .when{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2)}
+.p-hd .open{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--coral);flex:none}
+.p-line{font-family:var(--font-mono);font-size:15px;color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.p-line .sep{color:var(--ink-3);padding:0 var(--s1)}
+.p-line .u{font-size:11px;color:var(--ink-2)}
+.p-upload{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-top:var(--s1);margin-bottom:var(--s5)}
+table.zones{width:100%;border-collapse:collapse}
+table.zones td{font-family:var(--font-mono);font-size:12.5px;text-align:right;
+  padding:var(--s2) 0;border-top:1px solid var(--rule);font-variant-numeric:tabular-nums}
+table.zones td:first-child{text-align:left}
+table.zones tr.tot td{border-top:1px solid var(--ink-3);color:var(--ink)}
+table.zones tr.tot td:first-child{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2)}
+.zc{display:flex;align-items:center;gap:var(--s2)}
+.zsw{width:8px;height:14px;border-radius:1px;flex:none}
+.zname{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+.zx{color:var(--ink-3)}
+.tls-note{font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--ink-3);
+  line-height:1.5;margin-top:var(--s4)}
+.p-nig{margin-top:var(--s4);display:flex;gap:var(--s2);align-items:flex-start}
+.p-nig .caret{width:0;height:0;border-left:4.5px solid transparent;
+  border-right:4.5px solid transparent;border-bottom:6px solid var(--coral);
+  margin-top:6px;flex:none}
+.p-nig .cap{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--coral-deep)}
+.p-nig .q{font-size:13.5px;line-height:1.5}
+.p-empty{font-family:var(--font-body);font-size:13.5px;color:var(--ink-2);line-height:1.55}
+.p-empty .eb{display:block;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:var(--s1)}
+
+/* ============================================================
+   4 · THE LEGEND — ends labelled only. Ten 8.5px labels under a
+   phone-width strip was a picket fence; the panel names the zones
+   in full whenever a bar is open.
+   ============================================================ */
+.legend{margin-top:var(--s6);border-top:1px solid var(--rule);padding-top:var(--s5)}
+.lg-bars{display:flex;gap:2px;height:12px;margin-top:var(--s3)}
+.lg-bars .b{flex:1;border-radius:1px}
+.lg-ends{display:flex;justify-content:space-between;margin-top:var(--s2)}
+.lg-ends span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3)}
+.lg-note{font-family:var(--font-body);font-size:12.5px;line-height:1.55;color:var(--ink-2);
+  margin-top:var(--s3)}
+.lg-note b{font-weight:400;color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="study-hd">
+  <h1>Week training stress · the strip</h1>
+  <p>Direction A, resolved. One horizontal axis. Each day owns a full <b>24 hours</b> of width, so a
+  bar sits roughly where the run happened inside its day — early on the left, late on the right.
+  <b>Height is the training load</b>, stacked by pace zone. There is no hour axis and nothing to read
+  off precisely, which is the point.</p>
+  <p class="k">Both frames are live · click any bar to open it, click again to close</p>
+</div>
+
+<div class="rail" id="rail"></div>
+
+<script>
+/* ============================================================
+   CANONICAL CONSTANTS — mirrored from the app.
+
+   Colours are PaceSpectrum (pace-spectrum-mockup.html).
+   Weights are TrendsZoneWeight as mirrored in
+   week-load-simple-prototype.html, the most recently edited copy.
+
+   ⚠️ STILL UNRESOLVED — the repo holds TWO weight tables:
+      week-load-simple-prototype.html   moderate 1.25  steady 1.50
+      tls-explainer-prototype.html      moderate 1.40  steady 2.15  (no LT)
+   They cannot both be right. The shipped view must read
+   TrendsZoneWeight.table rather than carry a third copy.
+   ============================================================ */
+const ZONES = [
+  { key:'easy',     label:'Easy',     color:'#93B9D6', weight:1.00 },
+  { key:'moderate', label:'Moderate', color:'#74A8CC', weight:1.25 },
+  { key:'steady',   label:'Steady',   color:'#578FC0', weight:1.50 },
+  { key:'mp',       label:'MP',       color:'#3F7CB5', weight:2.50 },
+  { key:'hmp',      label:'HMP',      color:'#2F66A8', weight:3.25 },
+  { key:'lt',       label:'LT',       color:'#27549B', weight:3.25 },
+  { key:'10k',      label:'10K',      color:'#20448B', weight:4.00 },
+  { key:'5k',       label:'5K',       color:'#1A3679', weight:5.50 },
+  { key:'3k',       label:'3K',       color:'#142964', weight:6.75 },
+  { key:'mile',     label:'Mile',     color:'#0E1D4E', weight:8.00 },
+];
+const Z  = Object.fromEntries(ZONES.map(z=>[z.key,z]));
+const ZI = Object.fromEntries(ZONES.map((z,i)=>[z.key,i]));
+
+const MOODS = {
+  energized:{color:'#2D8A4E'}, positive:{color:'#4A9E6B'}, neutral:{color:'#9B9590'},
+  tired:{color:'#C4873A'},     struggling:{color:'#C45A3A'}, injured:{color:'#B83A4A'},
+};
+
+/* ============================================================
+   DATA — `at` is the run's START time, `up` is when the file
+   arrived. Position uses `at`; `up` appears in the panel only.
+   ============================================================ */
+const WEEK_DONE = {
+  label:'AUG 3 — 9', todayIdx:null, days:[
+  { d:'MON', date:'Aug 3',  runs:[] },
+  { d:'TUE', date:'Aug 4',  mood:'positive', runs:[
+      { at:'06:05', up:'20:41', segs:[ {z:'easy',mi:3.0,sec:508},{z:'moderate',mi:2.0,sec:438},
+                                       {z:'5k',mi:3.0,sec:322},{z:'3k',mi:1.2,sec:304},
+                                       {z:'easy',mi:1.5,sec:545} ] },
+      { at:'17:40', up:'18:12', segs:[ {z:'easy',mi:4.0,sec:520} ] },
+  ]},
+  { d:'WED', date:'Aug 5',  runs:[
+      { at:'06:20', up:'06:58', noLap:true, mi:6.0, min:50 },
+  ]},
+  { d:'THU', date:'Aug 6',  mood:'tired',
+    niggle:{area:'achilles',side:'right',
+            quote:'right achilles grumbled the first mile, fine after'},
+    runs:[
+      { at:'05:52', up:'21:03', segs:[ {z:'easy',mi:2.0,sec:498},{z:'mp',mi:5.0,sec:382},
+                                       {z:'easy',mi:4.0,sec:512} ] },
+  ]},
+  { d:'FRI', date:'Aug 7',  mood:'neutral', runs:[
+      { at:'12:15', up:'12:49', segs:[ {z:'easy',mi:6.0,sec:514} ] },
+  ]},
+  { d:'SAT', date:'Aug 8',  mood:'positive', runs:[
+      { at:'07:30', up:'19:26', segs:[ {z:'easy',mi:9.0,sec:492},{z:'moderate',mi:3.0,sec:420},
+                                       {z:'mp',mi:5.0,sec:378},{z:'easy',mi:3.0,sec:530} ] },
+  ]},
+  { d:'SUN', date:'Aug 9',  mood:'energized', runs:[
+      { at:'20:35', up:'21:10', segs:[ {z:'easy',mi:8.0,sec:495} ] },
+  ]},
+]};
+
+const WEEK_NOW = {
+  label:'AUG 10 — 16', todayIdx:1, days:[
+  { d:'MON', date:'Aug 10', mood:'positive', runs:[
+      { at:'06:15', up:'07:02', segs:[ {z:'easy',mi:8.0,sec:498} ] },
+  ]},
+  { d:'TUE', date:'Aug 11', runs:[
+      { at:'06:02', up:'13:55', segs:[ {z:'easy',mi:2.5,sec:505},{z:'hmp',mi:4.3,sec:321},
+                                       {z:'10k',mi:1.9,sec:313},{z:'easy',mi:1.8,sec:540} ] },
+  ]},
+  { d:'WED', date:'Aug 12', future:true, runs:[] },
+  { d:'THU', date:'Aug 13', future:true, runs:[] },
+  { d:'FRI', date:'Aug 14', future:true, runs:[] },
+  { d:'SAT', date:'Aug 15', future:true, runs:[] },
+  { d:'SUN', date:'Aug 16', future:true, runs:[] },
+]};
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const toMin = t => { const [h,m]=t.split(':').map(Number); return h*60+m; };
+const clock = t => { const [h,m]=t.split(':').map(Number);
+  const ap = h<12?'am':'pm'; const hh = h%12===0?12:h%12;
+  return `${hh}:${String(m).padStart(2,'0')}${ap}`; };
+/* The words the position is actually claiming — nothing finer. */
+const partOfDay = m => m<5*60 ? 'Night' : m<11*60 ? 'Morning' : m<14*60 ? 'Midday'
+                     : m<18*60 ? 'Afternoon' : m<20*60 ? 'Evening' : 'Night';
+const mi1  = n => n.toFixed(1);
+const hm   = m => `${Math.floor(m/60)}:${String(Math.round(m%60)).padStart(2,'0')}`;
+const pace = (mn,mi) => { const s=Math.round(mn*60/mi);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+const x1   = n => n.toFixed(2).replace(/\.?0+$/,'');
+
+function build(week){
+  const days = week.days.map(day=>{
+    const runs = day.runs.map(r=>{
+      if(r.noLap) return { ...r, startMin:toMin(r.at), minutes:r.min, miles:r.mi, load:0, segs:[] };
+      /* Merge repeated zones — a warm-up and a cool-down are the same zone. */
+      const merged = {};
+      r.segs.forEach(s=>{
+        const minutes = s.mi*s.sec/60;
+        const m = merged[s.z] ||= { z:s.z, zone:Z[s.z], miles:0, minutes:0 };
+        m.miles += s.mi; m.minutes += minutes;
+      });
+      const segs = Object.values(merged)
+        .map(s=>({ ...s, load:s.minutes*s.zone.weight }))
+        .sort((a,b)=>ZI[a.z]-ZI[b.z]);
+      return { ...r, segs, startMin:toMin(r.at),
+               minutes:segs.reduce((a,s)=>a+s.minutes,0),
+               miles:segs.reduce((a,s)=>a+s.miles,0),
+               load:segs.reduce((a,s)=>a+s.load,0) };
+    }).sort((a,b)=>a.startMin-b.startMin);
+    return { ...day, runs,
+             miles:runs.reduce((a,r)=>a+r.miles,0),
+             minutes:runs.reduce((a,r)=>a+r.minutes,0),
+             load:runs.reduce((a,r)=>a+r.load,0),
+             ran:runs.length>0 };
+  });
+  const allRuns = days.flatMap(d=>d.runs);
+  return { ...week, days,
+           miles:days.reduce((a,d)=>a+d.miles,0),
+           minutes:days.reduce((a,d)=>a+d.minutes,0),
+           load:days.reduce((a,d)=>a+d.load,0),
+           maxRunLoad:Math.max(...allRuns.map(r=>r.load), 1),
+           runDays:days.filter(d=>d.ran).length };
+}
+
+/* ============================================================
+   THE STRIP
+
+   Each day is a flat 1/7 of the track and represents 24 hours.
+   A bar's LEFT EDGE sits at (startMin / 1440) of its slot, inset
+   by the bar's own width so a late-evening run cannot spill into
+   the next day.
+
+   Bar width is FIXED, not proportional to duration: at seven days
+   across a phone a slot is ~48pt, so a true-to-scale 76-minute run
+   would be 2.5pt. Duration lives in the panel instead. That is the
+   trade the 24-hour week makes, taken deliberately.
+
+   HEAD_ROOM keeps the tallest bar off the top edge and leaves room
+   for the niggle caret to sit above a bar without clipping.
+   ============================================================ */
+const HEAD_ROOM = 14;
+
+function runBar(W, d, di, r, ri, cfg, openKey){
+  const slot   = 100/7;
+  const barPct = cfg.barW/cfg.trackW*100;
+  const left   = di*slot + (r.startMin/1440)*(slot-barPct);
+  const key    = `${di}-${ri}`;
+  const open   = key===openKey;
+  const usable = cfg.plotH - HEAD_ROOM;
+
+  if(r.noLap){
+    return `<button class="run nolap ${open?'is-open':''}" data-k="${key}"
+      style="left:${left}%;width:${cfg.barW}px;height:12px"
+      aria-label="${d.d} ${partOfDay(r.startMin)}, ${mi1(r.mi)} miles, no lap data"></button>`;
+  }
+  const h = Math.max(3, r.load/W.maxRunLoad*usable);
+  /* column-reverse, so the first child sits at the BOTTOM:
+     easy at the base, the sharp end on top. */
+  const segs = r.segs.map(s=>`<span class="seg"
+      style="height:${s.load/r.load*100}%;background:${s.zone.color}"></span>`).join('');
+  return `<button class="run ${open?'is-open':''}" data-k="${key}"
+    style="left:${left}%;width:${cfg.barW}px;height:${h}px"
+    aria-label="${d.d} ${partOfDay(r.startMin)}, ${mi1(r.miles)} miles, ${Math.round(r.load)} T L S"
+    >${segs}</button>`;
+}
+
+function strip(W, cfg, openKey){
+  const slot   = 100/7;
+  const barPct = cfg.barW/cfg.trackW*100;
+  const usable = cfg.plotH - HEAD_ROOM;
+
+  const dividers = W.days.map((d,i)=> i===0 ? ''
+    : `<span class="divider ${d.future?'future':''}" style="left:${i*slot}%"></span>`).join('');
+
+  const bars = W.days.flatMap((d,di)=>
+    d.runs.map((r,ri)=>runBar(W,d,di,r,ri,cfg,openKey))).join('');
+
+  /* the niggle caret, centred over the run it refers to */
+  const carets = W.days.map((d,di)=>{
+    if(!d.niggle || !d.runs.length) return '';
+    const r = d.runs[0];
+    const h = r.noLap ? 12 : Math.max(3, r.load/W.maxRunLoad*usable);
+    const left = di*slot + (r.startMin/1440)*(slot-barPct) + barPct/2;
+    return `<span class="nig" style="left:${left}%;bottom:${h+4}px"></span>`;
+  }).join('');
+
+  const cells = W.days.map((d,di)=>`
+    <span class="dcell ${d.ran?'ran':''} ${di===W.todayIdx?'today':''}">
+      <span class="dlab">${d.d}</span>
+      <span class="dtls ${d.future?'none':d.load>0?'':'zero'}">${d.load>0?Math.round(d.load):'0'}</span>
+      <span class="moodtick" style="background:${d.mood?MOODS[d.mood].color:'transparent'}"></span>
+    </span>`).join('');
+
+  return `<div class="strip">
+    <div class="plot" style="height:${cfg.plotH}px">${dividers}${bars}${carets}</div>
+    <div class="days">${cells}</div>
+    <p class="axisnote">Each slot is one day, <b>midnight to midnight</b>. A bar sits where the run
+    happened in it — left is early, right is late.</p>
+  </div>`;
+}
+
+/* ---- the panel ------------------------------------------------ */
+function panel(W, openKey){
+  if(!openKey) return '';
+  const [di,ri] = openKey.split('-').map(Number);
+  const d = W.days[di], r = d && d.runs[ri];
+  if(!r) return '';
+
+  const head = `<div class="p-hd">
+      <span class="when">${d.d} ${d.date} · ${partOfDay(r.startMin)}, ${clock(r.at)}</span>
+      <span class="open">Open run ↗</span>
+    </div>`;
+
+  if(r.noLap) return `<div class="panel">${head}
+    <div class="p-line">${mi1(r.mi)}<span class="u">mi</span><span class="sep">·</span>${hm(r.min)}</div>
+    <div class="p-upload">Uploaded ${clock(r.up)}</div>
+    <div class="p-empty"><span class="eb">No lap data</span>
+    This run arrived without splits, so there is no pace breakdown and no load score for it.
+    The ${mi1(r.mi)} miles still count toward the week.</div></div>`;
+
+  const rows = r.segs.map(s=>`<tr>
+      <td><span class="zc"><span class="zsw" style="background:${s.zone.color}"></span>
+        <span class="zname">${s.zone.label}</span></span></td>
+      <td>${Math.round(s.minutes)} min</td>
+      <td>${pace(s.minutes,s.miles)}/mi</td>
+      <td class="zx">×${x1(s.zone.weight)}</td>
+      <td>${Math.round(s.load)}</td>
+    </tr>`).join('');
+
+  const lag = toMin(r.up)-toMin(r.at);
+  return `<div class="panel">${head}
+    <div class="p-line">${mi1(r.miles)}<span class="u">mi</span><span class="sep">·</span>${hm(r.minutes)}<span class="sep">·</span>${Math.round(r.load)}<span class="u">TLS</span></div>
+    <div class="p-upload">Uploaded ${clock(r.up)}${lag>240?` — ${Math.round(lag/60)}h after the run`:''}</div>
+    <table class="zones"><tbody>${rows}
+      <tr class="tot"><td>Total</td><td>${hm(r.minutes)}</td><td></td><td></td>
+        <td>${Math.round(r.load)}</td></tr>
+    </tbody></table>
+    <div class="tls-note">Each row is minutes × what a minute at that pace costs. The bar you tapped
+    is that total, stacked in the same order.</div>
+    ${d.niggle?`<div class="p-nig"><span class="caret"></span>
+      <span class="q"><span class="cap">${d.niggle.side} ${d.niggle.area}</span><br>
+      <em>“${d.niggle.quote}”</em></span></div>`:''}
+  </div>`;
+}
+
+/* ---- the legend ----------------------------------------------- */
+function legend(){
+  const bars = ZONES.map(z=>`<span class="b" style="background:${z.color}"></span>`).join('');
+  return `<div class="legend">
+    <span class="micro">The pace spectrum</span>
+    <div class="lg-bars">${bars}</div>
+    <div class="lg-ends"><span>Easy</span><span>Mile</span></div>
+    <div class="lg-note">Colour is the pace. <b>Height is the load</b> — minutes weighted by what a
+    minute at that pace costs, so ten minutes at 5K stands 5.5× taller than ten minutes easy.</div>
+  </div>`;
+}
+
+/* ============================================================
+   FRAMES
+   ============================================================ */
+const FRAMES = [
+  { id:'phone', cls:'col--phone', W:build(WEEK_DONE),
+    cfg:{ plotH:112, barW:10, trackW:352 },
+    tag:'iPhone · a finished week', name:'The week as one strip',
+    blurb:'Tuesday carries two bars — the morning session and the evening easy four. Sunday ran late, so its bar sits at the right of its slot. Wednesday came in without laps: a dashed stub, no height, because there is no load to claim. Monday was off.' },
+  { id:'wide', cls:'col--wide', W:build(WEEK_NOW),
+    cfg:{ plotH:132, barW:14, trackW:672 },
+    tag:'Landscape · the week in progress', name:'Room to breathe',
+    blurb:'Today is Tuesday; Wednesday onward are dashed slots waiting to be filled. At this width the zone stack is legible without opening a bar — the HMP and 10K blocks sitting on the easy warm-up.' },
+];
+const state = { phone:'1-0', wide:'1-0' };
+
+function draw(){
+  document.getElementById('rail').innerHTML = FRAMES.map(f=>{
+    const W = f.W;
+    return `<div class="col ${f.cls}">
+      <div class="col-hd"><span class="tag">${f.tag}</span><h2>${f.name}</h2><p>${f.blurb}</p></div>
+      <div class="frame" data-f="${f.id}">
+        <div class="nav"><span class="chev">‹</span>
+          <span class="rangelab">${W.label}</span><span class="chev">›</span></div>
+        <div class="big">${Math.round(W.load)}<span class="u"> TLS</span></div>
+        <div class="sub micro">${W.runDays} running days · ${mi1(W.miles)} mi · ${hm(W.minutes)}</div>
+        ${strip(W, f.cfg, state[f.id])}
+        ${panel(W, state[f.id])}
+        ${legend()}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('.run').forEach(b=>{
+    b.onclick = () => {
+      const f = b.closest('.frame').dataset.f;
+      state[f] = state[f]===b.dataset.k ? null : b.dataset.k;
+      draw();
+    };
+  });
+}
+draw();
+</script>
+</body>
+</html>

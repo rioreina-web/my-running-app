@@ -650,7 +650,11 @@ export async function rebuildAthleteState(
     // workout_type × duration in computeWeightedLoadForLog().
     supabase
       .from("workout_features")
-      .select("training_log_id, intensity_score, total_duration_seconds, workout_date, easy_seconds, moderate_seconds, threshold_seconds, hard_seconds, effort_distribution, monotony_7d, strain_7d, hr_pace_efficiency")
+      // `workout_type` + `hard_segment_count` feed the recovery read's
+      // hard-session test (buildLoadDistribution). Without them the test falls
+      // back to zone time alone, which under-counts rep sessions built from
+      // short bouts with float recoveries. Added 2026-08-13.
+      .select("training_log_id, intensity_score, total_duration_seconds, workout_date, easy_seconds, moderate_seconds, threshold_seconds, hard_seconds, effort_distribution, monotony_7d, strain_7d, hr_pace_efficiency, workout_type, hard_segment_count")
       .eq("user_id", userId)
       // WS3: 12 weeks so the load trend has a chronic baseline. The 7d/28d
       // aggregates below slice this set down to their own windows.

@@ -27,6 +27,12 @@
 import { equivalentRaceTimeSeconds, type RaceKey } from "./paces.ts";
 import { heatAdjustmentPct, repLengthFactor } from "./pace-heat-adjustment.ts";
 import { adjustPaceForGrade } from "./pace-grade-adjustment.ts";
+import { normalizeRaceTime, type RaceConditions } from "./raceNormalization.ts";
+import { mostRecentPrior, smoothFitnessPace } from "./fitnessCurve.ts";
+
+/** Arithmetic mean; 0 for an empty list (callers guard emptiness first). */
+const mean = (xs: number[]): number =>
+  xs.length === 0 ? 0 : xs.reduce((s, x) => s + x, 0) / xs.length;
 
 // ---------------------------------------------------------------------------
 // Inputs — the edge function reconstructs these from training_logs.
@@ -501,6 +507,50 @@ export interface DetectedRace {
  * the raw pace. Coverage guard: laps must sum to within 15% of the race
  * distance, otherwise fall back to the raw pace (partial/duplicate laps).
  */
+/**
+ * Race-hour conditions for `normalizeRaceTime`, or null when nothing is on
+ * file (caller then falls back to the lap read).
+ *
+ * Weather comes from the log-level stamp first — one reading for the whole
+ * race, which is what a continuous effort actually experienced — falling back
+ * to the race laps' own temp/dew. Elevation is summed over the race's WORK
+ * laps only, so a warm-up logged on the same row can't inflate the climb.
+ *
+ * Returns null unless at least one term is present: normalizing with nothing
+ * to normalize by would just re-report the raw time while implying it had
+ * been corrected.
+ */
+function raceConditionsFor(
+  race: DetectedRace,
+  laps: LapInput[],
+  weatherByDate: Map<string, WeatherInput>,
+): RaceConditions | null {
+  const own = race.sourceWorkoutId
+    ? laps.filter((l) => l.workoutId === race.sourceWorkoutId && l.isRest === false)
+    : [];
+
+  let tempF: number | null = null;
+  let dewPointF: number | null = null;
+  const wx = weatherByDate.get(race.date);
+  if (wx && isFinite(wx.tempF) && isFinite(wx.dewPointF)) {
+    tempF = wx.tempF;
+    dewPointF = wx.dewPointF;
+  } else {
+    const withWx = own.filter((l) => l.tempF != null && l.dewPointF != null);
+    if (withWx.length > 0) {
+      tempF = mean(withWx.map((l) => l.tempF as number));
+      dewPointF = mean(withWx.map((l) => l.dewPointF as number));
+    }
+  }
+
+  let elevationGainM: number | null = null;
+  const gains = own.map((l) => l.totalElevationGain ?? 0).filter((g) => g > 0);
+  if (gains.length > 0) elevationGainM = gains.reduce((s, g) => s + g, 0);
+
+  if (tempF == null && elevationGainM == null) return null;
+  return { tempF, dewPointF, elevationGainM };
+}
+
 export function raceEffectivePace(
   race: DetectedRace,
   laps: LapInput[],
@@ -1196,17 +1246,41 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
       if (!d) return null;
       const weeks = daysBetween(d, now) / 7.0;
       if (weeks > raceTrustedWindowWeeks) return null;
-      // FLAT-COOL EQUIVALENT (2026-07-17): when the race's own laps exist,
-      // read the performance in context — per-lap grade (Minetti) + heat
-      // (dew-point) adjusted, distance-weighted. 33:02 on a hilly humid course
-      // is a different fitness statement than 33:02 flat and cool. Without
-      // laps, fall back to log-level heat normalization only (Part 2A). The
-      // stored totalTimeSeconds (summary display) stays actual.
-      const eff = raceEffectivePace(race, laps);
-      let pace = eff.pace;
-      if (!eff.lapAdjusted) {
-        const wx = weatherByDate.get(race.date);
-        if (wx) pace = heatNeutralPace(pace, wx.tempF, wx.dewPointF, RACE_TYPE_MILES[race.raceType]);
+      // FLAT-COOL EQUIVALENT. 33:02 on a hilly humid course is a different
+      // fitness statement than 33:02 flat and cool.
+      //
+      // (2026-08-16) `normalizeRaceTime` is now the primary path, replacing
+      // `raceEffectivePace` as the anchor source. Measured on the Apr 12 Cap10K
+      // (33:02, 69.3°F / 67.6° dew, 100 m gain over 10K):
+      //
+      //   raceEffectivePace   31:23   — pinned ON its own ±5% clamp
+      //   normalizeRaceTime   31:53   — heat 39 s + elevation 30 s
+      //
+      // raceEffectivePace strains past its guard rail because laps store only
+      // elevation GAIN, so `(gain/meters)` reads every lap as pure climb and
+      // over-credits a rolling loop (its own comment says so). The clamp then
+      // silently decides the anchor — a bound is not a measurement.
+      // `normalizeRaceTime` models the loop honestly (gain ≈ loss, uphill costs
+      // more than downhill returns) and lands 30 s more conservative without
+      // touching a clamp. It also returns the per-term breakdown, so a surface
+      // can say WHY rather than assert a number.
+      //
+      // Fallback order: normalized (conditions on file) → raceEffectivePace's
+      // lap read → log-level heat only → raw. `totalTimeSeconds` stays actual
+      // everywhere; this only feeds the anchor. A normalized time must never
+      // be shown as a time she ran, and never mints a PR.
+      const conditions = raceConditionsFor(race, laps, weatherByDate);
+      let pace: number;
+      if (conditions !== null) {
+        const norm = normalizeRaceTime(race.totalTimeSeconds, race.raceType, conditions);
+        pace = norm.neutralSeconds / RACE_TYPE_MILES[race.raceType];
+      } else {
+        const eff = raceEffectivePace(race, laps);
+        pace = eff.pace;
+        if (!eff.lapAdjusted) {
+          const wx = weatherByDate.get(race.date);
+          if (wx) pace = heatNeutralPace(pace, wx.tempF, wx.dewPointF, RACE_TYPE_MILES[race.raceType]);
+        }
       }
       const tenK = convertPace(pace, race.raceType, "tenK");
       return { race, weeksAgo: weeks, tenKPace: tenK };
@@ -1593,6 +1667,28 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   }
 
   if (!(estimated10KPace > 0)) return null; // no usable signal → no fabricated row
+
+  // ── Damp the curve (2026-08-16) ────────────────────────────────────────
+  // Everything above re-derives from a rolling 14-day window, so the raw
+  // estimate moves as sessions age in and out — 32:00 and 33:44 landed hours
+  // apart on 2026-08-15. Fitness is an accumulation: a session is evidence,
+  // not a measurement. Move a fraction of the way toward it instead of
+  // jumping. A DECLARED race resets outright; that is a measurement.
+  //
+  // This is the honest version of "build on the last snapshot". The ratchet
+  // the anti-ratchet comment warns about compounds the OUTPUT; this
+  // accumulates EVIDENCE with exponential decay, so a flattering day is
+  // outvoted by the fortnight around it and then forgotten.
+  const rawEstimate10KPace = estimated10KPace;
+  const prior = mostRecentPrior(priorSnapshots, now);
+  const curve = smoothFitnessPace({
+    rawPace: estimated10KPace,
+    priorPace: prior?.pace ?? null,
+    deltaDays: prior?.deltaDays ?? 0,
+    // A race inside the recent window is a fresh measurement — let it land.
+    hardReset: chosenRace !== null && anchorWeeksAgo <= 2.0,
+  });
+  estimated10KPace = curve.pace;
 
   // ── Derive race times from estimated 10K pace ──
   // ROUND, don't truncate (2026-07-16, mirrors Swift) — Math.trunc floored

@@ -214,15 +214,21 @@ struct TrendsReadView: View {
     /// Concatenated so the callout numerals sit as superscripts inside the
     /// paragraph rather than breaking it into separate blocks.
     private func storyText(_ read: TrendsRead) -> Text {
+        // Built by interpolating `Text` into `Text` rather than with `+`, which
+        // is deprecated from iOS 26. Interpolation keeps what `+` was here for:
+        // each fragment carries its OWN styling into the same paragraph, which
+        // is what puts the callout numeral inline as a superscript instead of
+        // breaking the story into separate blocks.
         read.beats.reduce(Text(verbatim: "")) { acc, beat in
-            var next = acc + Text(beat.text)
-            if let callout = beat.callout {
-                next = next + Text(verbatim: "\(callout)")
-                    .font(.dripCaption(9))
-                    .baselineOffset(6)
-                    .foregroundStyle(Color.drip.textSecondary)
+            let body = Text(beat.text)
+            guard let callout = beat.callout else {
+                return Text("\(acc)\(body) ")
             }
-            return next + Text(verbatim: " ")
+            let mark = Text(verbatim: "\(callout)")
+                .font(.dripCaption(9))
+                .baselineOffset(6)
+                .foregroundStyle(Color.drip.textSecondary)
+            return Text("\(acc)\(body)\(mark) ")
         }
     }
 

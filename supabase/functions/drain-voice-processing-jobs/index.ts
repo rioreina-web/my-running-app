@@ -34,6 +34,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { isProviderExhaustedText } from "../_shared/provider-errors.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -45,6 +46,10 @@ const MAX_BATCH = 50;
 const PARALLELISM = 3;
 const BACKOFF_BASE_SECONDS = 30;
 const BACKOFF_MAX_SECONDS = 30 * 60;
+/** Flat wait while the model provider is unfunded/over quota. Matches the
+ *  Retry-After that process-training-memo sends on 503. Provider outages run
+ *  minutes-to-hours, so the normal 30s exponential ramp is far too eager. */
+const PROVIDER_OUTAGE_BACKOFF_SECONDS = 15 * 60;
 
 interface ClaimedJob {
   id: number;
@@ -138,6 +143,9 @@ Deno.serve(async (req: Request) => {
 interface CallResult {
   kind: "ok" | "err";
   retryable: boolean;
+  /** The upstream model provider is out of credit/quota. Retryable, but the
+   *  attempt must NOT be counted — see processJob. */
+  providerExhausted?: boolean;
   error?: string;
 }
 
@@ -156,6 +164,38 @@ async function processJob(job: ClaimedJob, counters: Counters): Promise<void> {
       .update({ status: "completed", completed_at: new Date().toISOString() })
       .eq("id", job.id);
     counters.completed++;
+    return;
+  }
+
+  // ── An upstream billing outage must not spend this job's retry budget. ──
+  // (2026-08-13) Gemini's prepay credits ran dry and every memo recorded in
+  // that window died: three attempts at 30s/60s backoff burned in three
+  // minutes, then `failed` forever, with a "tap to try again" the athlete
+  // could not act on. The outage lasted ~7 hours. Nothing about that is the
+  // job's fault, so we hand the attempt back (the claim RPC already
+  // incremented it) and wait out the outage on a flat 15-minute backoff
+  // instead of an exponential one that starts far too fast.
+  //
+  // This retries indefinitely while the provider is down — deliberately. The
+  // failure mode being fixed is silent permanent data loss; an outage that
+  // never ends is an ops problem a queue cannot solve, and the cost is
+  // bounded (one fail-fast call per job per 15 min, under the LLM budget
+  // guard). The row stays visible in the queue the whole time.
+  if (result.providerExhausted) {
+    await admin
+      .from("voice_processing_jobs")
+      .update({
+        status: "queued",
+        attempts: Math.max(0, job.attempts - 1),
+        next_retry_at: new Date(Date.now() + PROVIDER_OUTAGE_BACKOFF_SECONDS * 1000).toISOString(),
+        last_error: (result.error ?? "").slice(0, 500),
+      })
+      .eq("id", job.id);
+    console.warn(
+      `[drain-voice] job ${job.id}: provider unavailable, attempt not counted ` +
+        `(attempts stays ${Math.max(0, job.attempts - 1)}/${job.max_attempts})`,
+    );
+    counters.retrying++;
     return;
   }
 
@@ -223,6 +263,22 @@ async function callProcessor(job: ClaimedJob): Promise<CallResult> {
     }
 
     const text = await res.text().catch(() => "");
+
+    // 503 + a provider-exhaustion body = the model provider is out of
+    // credit. Retryable, but uncounted (see processJob). The text check is
+    // the belt-and-braces half: it still fires if an older, not-yet-
+    // redeployed process-training-memo answers 500 with the raw provider
+    // error in the body — which is exactly the shape that stranded memos on
+    // 2026-08-13, and a real risk given this repo's deploy-drift history.
+    if (isProviderExhaustedText(text)) {
+      return {
+        kind: "err",
+        retryable: true,
+        providerExhausted: true,
+        error: `${fn} HTTP ${res.status}: ${text.slice(0, 200)}`,
+      };
+    }
+
     // 409 = "already processing": with the client now direct-invoking
     // process-training-memo on insert (2026-08-04), the drain routinely races
     // an in-flight run. That's a healthy state, not a failure — retry with

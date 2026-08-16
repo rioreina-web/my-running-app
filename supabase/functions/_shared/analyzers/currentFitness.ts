@@ -123,7 +123,10 @@ export const currentFitness: Analyzer = {
     const missing: string[] = [];
 
     // ── Capacity — a time + a tier, never blended with the rest ──
-    const tenK = prediction?.ranges?.["10k"]?.point ?? null;
+    // "10K", not "10k" — the stored key is uppercase (athlete-state.ts writes
+    // mile / 5K / 10K / half / marathon). `RaceRangeKey` now makes a typo a
+    // compile error rather than a silently blank capacity line.
+    const tenK = prediction?.ranges?.["10K"]?.point ?? null;
     const tier = prediction?.confidence_tier ?? null;
     if (tenK != null && tenK > 0) {
       facts.push({

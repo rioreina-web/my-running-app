@@ -26,6 +26,30 @@ import Supabase
 import os
 
 struct SleepCheckInPrompt: View {
+
+    /// How much of the prompt to draw.
+    ///
+    /// `.compact` exists because of where the check-in ended up: the full card
+    /// only ever rendered inside `TodayHomeView`, which is itself only reachable
+    /// through the "TODAY ↗" toolbar link on the Log tab — four levels down. In
+    /// the two days after it shipped, `daily_checkins` took **zero** rows, and
+    /// the write path turns out to be fine (RLS, primary key and vocabulary all
+    /// check out). It was simply never in front of anyone, so the recovery
+    /// ledger's strongest factor never once ran its Tier-1 branch. The compact
+    /// form is small enough to sit on the recovery card itself, next to the line
+    /// that reports the rating missing.
+    enum Style { case full, compact }
+
+    let style: Style
+    /// Called after a rating successfully reaches `daily_checkins`, so the
+    /// surface that hosts the prompt can refetch and re-score.
+    var onSaved: (() -> Void)?
+
+    init(style: Style = .full, onSaved: (() -> Void)? = nil) {
+        self.style = style
+        self.onSaved = onSaved
+    }
+
     /// Local echo of today's rating, "YYYY-MM-DD:good". Render-fast cache
     /// only — the `daily_checkins` row is the source of truth.
     @AppStorage("todaySleepCheckIn") private var todaySleepKey: String = ""
@@ -38,6 +62,13 @@ struct SleepCheckInPrompt: View {
     ]
 
     var body: some View {
+        switch style {
+        case .full:  fullBody
+        case .compact: compactBody
+        }
+    }
+
+    private var fullBody: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("LAST NIGHT")
@@ -57,31 +88,48 @@ struct SleepCheckInPrompt: View {
                 .font(.dripDisplay(20))
                 .foregroundStyle(Color.drip.textPrimary)
 
-            HStack(spacing: 8) {
-                ForEach(choices, id: \.key) { choice in
-                    let isSelected = currentSelection == choice.key
-                    Button {
-                        select(choice.key)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(isSelected ? .white : choice.color)
-                                .frame(width: 5, height: 5)
-                            Text(choice.label)
-                                .font(.dripEyebrow(11))
-                                .tracking(1.1)
-                        }
-                        .foregroundStyle(isSelected ? .white : choice.color)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(isSelected ? choice.color : choice.color.opacity(0.12))
-                        .clipShape(Capsule())
+            capsules
+        }
+    }
+
+    /// One line: the question as an eyebrow, then the same three capsules.
+    /// No display type, no "LOGGED" badge — the host surface already carries
+    /// the context, and this has to sit inside a card without taking it over.
+    private var compactBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("RATE LAST NIGHT")
+                .font(.dripEyebrow(10))
+                .tracking(1.0)
+                .foregroundStyle(Color.drip.textSecondary)
+            capsules
+        }
+    }
+
+    private var capsules: some View {
+        HStack(spacing: 8) {
+            ForEach(choices, id: \.key) { choice in
+                let isSelected = currentSelection == choice.key
+                Button {
+                    select(choice.key)
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(isSelected ? .white : choice.color)
+                            .frame(width: 5, height: 5)
+                        Text(choice.label)
+                            .font(.dripEyebrow(11))
+                            .tracking(1.1)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(saving)
+                    .foregroundStyle(isSelected ? .white : choice.color)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(isSelected ? choice.color : choice.color.opacity(0.12))
+                    .clipShape(Capsule())
                 }
-                Spacer(minLength: 0)
+                .buttonStyle(.plain)
+                .disabled(saving)
             }
+            Spacer(minLength: 0)
         }
     }
 
@@ -133,6 +181,7 @@ struct SleepCheckInPrompt: View {
                     .from("daily_checkins")
                     .upsert(row, onConflict: "user_id,date")
                     .execute()
+                onSaved?()
             } catch {
                 Log.app.error("sleep check-in failed: \(error.localizedDescription)")
                 todaySleepKey = previous   // roll back the optimistic tap

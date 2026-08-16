@@ -70,6 +70,12 @@ final class KeySessionStore {
 
     private(set) var hasLoaded = false
 
+    /// True once `loadByDay` has been filled from somewhere — the Train tab's
+    /// analytics load, or `hydrateLoadsIfNeeded()` below. A flag rather than
+    /// `loadByDay.isEmpty`, because an athlete with no scored days is a real
+    /// answer and must not re-fetch on every tab entry.
+    private(set) var hasIngestedLoads = false
+
     private init() {}
 
     // MARK: - Day keys
@@ -241,11 +247,44 @@ final class KeySessionStore {
                 start += 200
             }
             loadByDay = out
+            hasIngestedLoads = true
         } catch {
             // Pre-migration, or features not computed yet. No derived stars,
             // which is the honest outcome.
             log.error("quality_load fetch failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Fill `loadByDay` for a surface that needs the derived rule but does not
+    /// own a log fetch of its own.
+    ///
+    /// WHY THIS EXISTS. `ingestLoads` was called from exactly one place —
+    /// `TrainingAnalyticsViewModel`, i.e. the Train tab — so `loadByDay` was
+    /// empty for anyone who opened Trends without visiting Train first. With no
+    /// load, `derived(_:)` returns nil, `isKey` falls through to false, and the
+    /// session grid drew every mark as an open "below floor" ring: a grid of
+    /// hollow circles on an athlete with a block full of quality work. The
+    /// store is shared; its hydration was not. (Rio, 2026-08-11.)
+    ///
+    /// It fetches nothing new in the common case: `TrainingLogStore` holds one
+    /// 400-day window for the whole app, serves it from memory or disk, and
+    /// coalesces concurrent refreshes — so on a launch where Log or Today has
+    /// already asked, this is a cache read plus one `workout_features` query.
+    ///
+    /// Dedupe goes through `dedupedByPhysicalWorkout()`, the canonical picker,
+    /// for the same reason the analytics VM uses it: raw rows double-count a
+    /// run that arrived from both Strava and HealthKit, and a doubled day sails
+    /// straight over the floor.
+    @MainActor
+    func hydrateLoadsIfNeeded() async {
+        guard !hasIngestedLoads else { return }
+        let store = TrainingLogStore.shared
+        var rows = store.cachedRows(days: TrainingLogStore.windowDays)
+        if rows.isEmpty {
+            rows = (try? await store.refresh(days: TrainingLogStore.windowDays)) ?? []
+        }
+        guard !rows.isEmpty else { return }   // nothing logged yet; try again next visit
+        await ingestLoads(forDedupedLogs: rows.dedupedByPhysicalWorkout())
     }
 
     /// Fold the plan's intent in. Called by `TrainingPlanService` once the

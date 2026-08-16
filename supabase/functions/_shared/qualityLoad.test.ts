@@ -29,6 +29,8 @@ function bout(seconds: number, zone: string, isWork = true, paceSecPerMile = 0):
     seconds,
     distanceMeters: 0,
     paceSecPerMile,
+    // quality_load never reads the neutral pace — that field exists for EF.
+    neutralPaceSecPerMile: null,
     avgHr: null,
     isWork,
     isRest: !isWork,
@@ -372,6 +374,7 @@ function curvedBout(seconds: number, paceSecPerMile: number, isWork = true): Bou
     seconds,
     distanceMeters: (seconds / paceSecPerMile) * 1609.344,
     paceSecPerMile,
+    neutralPaceSecPerMile: null,
     avgHr: null,
     isWork,
     isRest: !isWork,

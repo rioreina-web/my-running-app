@@ -574,19 +574,21 @@ struct PlateFooter: View {
         self.caption = caption
     }
 
+    // The standing tagline that used to print under every caption
+    // ("restraint as foundation, intensity as accent") was removed 2026-08-09.
+    // It appeared on five unrelated surfaces, said nothing about the data on
+    // any of them, and read as generated filler rather than as the plate's
+    // own voice. A footer now prints the caller's caption or nothing at all —
+    // an empty `PlateFooter()` renders nothing, which is the correct amount to
+    // say when there is nothing to say.
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let caption {
-                Text(caption)
-                    .font(.system(size: 12, design: .serif).italic())
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .lineSpacing(2)
-            }
-            Text("— restraint as foundation, intensity as accent")
-                .font(.system(size: 11, design: .serif).italic())
+        if let caption {
+            Text(caption)
+                .font(.system(size: 12, design: .serif).italic())
                 .foregroundStyle(Color.drip.textTertiary)
+                .lineSpacing(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

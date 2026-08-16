@@ -41,6 +41,16 @@ private extension Date {
         f.dateFormat = "HH:mm"
         return f.string(from: self)
     }
+
+    /// "August 8" — the headline `EditWorkoutNotesSheet` shows above the
+    /// field, so the athlete can see which run they're describing. Matches
+    /// `WorkoutRepReceiptView.displayTitle` so the editor reads identically
+    /// whichever surface opened it.
+    var workoutBlockDateLabel: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d"
+        return f.string(from: self)
+    }
 }
 
 extension HistoryDetailSheet {
@@ -54,7 +64,10 @@ extension HistoryDetailSheet {
             VStack(spacing: 0) {
                 // ── Plate strip ──────────────────────────────────────────
                 DripPlateStrip(
-                    leadingBottom: "JOURNAL · ENTRY DETAIL",
+                    // "WORKOUT", not "JOURNAL · ENTRY DETAIL": this sheet is
+                    // reached from the Runs list and reads as one session's
+                    // record. The plate names the thing, not the container.
+                    leadingBottom: "WORKOUT",
                     trailingTop: vm.currentEntry.displayDate.editorialDateString,
                     trailingBottom: vm.currentEntry.displayDate.editorialTimeString
                 )
@@ -83,23 +96,41 @@ extension HistoryDetailSheet {
                         // set); the day-of-week is the fallback only when there's
                         // no workout to name.
                         let headerTitle = vm.currentEntry.resolvedTitle
-                        Text(headerTitle ?? vm.currentEntry.displayDate.dayOfWeekString)
-                            .font(.dripDisplay(44))
-                            .foregroundStyle(Color.drip.textPrimary)
 
+                        // Eyebrow ABOVE the headline now, per the handoff — the
+                        // date sets up the name rather than trailing after it.
+                        // Still only when there IS a name: with no title the
+                        // headline is already the day of week, and "SATURDAY ·
+                        // AUG 8" over "Saturday" prints the day twice.
                         if headerTitle != nil {
                             Text(headerDateEyebrow)
-                                .font(.dripEyebrow(11)).tracking(1.2)
-                                .foregroundStyle(Color.drip.textTertiary)
+                                .font(.dripEyebrow(10)).tracking(1.2)
+                                .foregroundStyle(Color.drip.textSecondary)
                         }
 
-                        if let mood = vm.currentEntry.mood, !mood.isEmpty {
-                            MoodBadge(mood: mood)
-                        } else if headerTitle == nil {
+                        // Tap the headline to rename the entry, in place. The
+                        // field that replaces it is set in the same face and
+                        // size, so the edit reads as writing on the page
+                        // rather than as opening a form. `contentShape` makes
+                        // the whole line tappable, not just the glyphs.
+                        if isEditingTitleInline {
+                            inlineTitleField
+                        } else {
+                            editorialHeadline(headerTitle ?? vm.currentEntry.displayDate.dayOfWeekString)
+                                .contentShape(Rectangle())
+                                .onTapGesture { beginInlineTitleEdit() }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityHint("Double tap to rename this entry")
+                        }
+
+                        if headerTitle == nil,
+                           vm.currentEntry.mood?.isEmpty ?? true {
                             Text("— " + vm.currentEntry.displayDate.fullDateString + " —")
                                 .font(.dripBody(13).italic())
                                 .foregroundStyle(Color.drip.textTertiary)
                         }
+
+                        statusRow
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,10 +166,45 @@ extension HistoryDetailSheet {
                 }
 
                 // ── Linked source row ────────────────────────────────────
+                // The source name now rides in `statusRow` above ("STRAVA"),
+                // so this row only earns its hairline when it offers an action.
+                // A passive "LINKED · STRAVA" here would say the same word twice.
                 if vm.currentEntry.hasLinkedWorkout {
-                    linkedSourceRow
+                    if showsViewDetailLink { linkedSourceRow }
                 } else if !isEditing {
                     linkWorkoutRow
+                }
+
+                // ── THE WORKOUT — what the session was meant to be ───────
+                //
+                // Above the summary on purpose: what the athlete set out to do
+                // is the frame the rest of the entry is read through. "I felt
+                // comfortable" means one thing under an easy 6 and another
+                // under 2 × 20 at threshold, and until today the entry made
+                // you scroll past the memo, past the compare row, past the
+                // insight and into the receipt to find out which.
+                //
+                // Renders against `workoutDetailId` — the row the receipt
+                // below reads from — and mirrors onto the journal row, so the
+                // two rows a Strava-linked run occupies can't disagree about
+                // what the workout was. This is the ONLY editor for
+                // `workout_notes` now: the receipt's copy stands down when
+                // embedded, and `editorialNotesComposer` is deleted.
+                if !isEditing {
+                    // `line · dot · line` — the canonical section break, in
+                    // place of the plain full-width hairlines this sheet used.
+                    EditorialRule()
+                        .padding(.horizontal, 24)
+                        .padding(.top, 20)
+
+                    editorialSection(eyebrow: nil) {
+                        TheWorkoutBlock(
+                            workoutId: workoutDetailId,
+                            mirrorIds: [entry.id],
+                            dateLabel: vm.currentEntry.displayDate.workoutBlockDateLabel,
+                            onSaved: { onUpdate() }
+                        )
+                    }
                 }
 
                 // ── AI Summary / editable notes ──────────────────────────
@@ -158,6 +224,10 @@ extension HistoryDetailSheet {
                     }
                 } else if hasMemoBlock {
                     // Read mode: summary + play row + the words behind a tap.
+                    EditorialRule()
+                        .padding(.horizontal, 24)
+                        .padding(.top, 22)
+
                     memoBlock
                 }
 
@@ -178,7 +248,12 @@ extension HistoryDetailSheet {
                 // noise inside the journal.
                 if !isEditing, vm.linkedStreamLogId != nil {
                     editorialSection(eyebrow: "WORKOUT") {
-                        WorkoutRepReceiptView(workoutId: workoutDetailId)
+                        // `.embedded`: this entry already carries the date (in
+                        // the plate strip AND the header eyebrow) and hosts THE
+                        // WORKOUT above, so the receipt drops its own datestamp
+                        // header and its own copy of the description. One page,
+                        // one title, one editor per column.
+                        WorkoutRepReceiptView(workoutId: workoutDetailId, placement: .embedded)
                     }
                 }
 
@@ -216,26 +291,6 @@ extension HistoryDetailSheet {
                 // is thrown away — it just waits to be asked for.
                 if !isEditing {
                     insightBlock
-                }
-
-                // ── Workout notes (inline composer, no white card) ───────
-                // Writes `workout_notes` — the SAME column the receipt's
-                // "THE WORKOUT" section edits. While `linkedStreamLogId` was
-                // permanently nil the receipt never rendered here, so this was
-                // the only editor and the duplication was invisible. Now that
-                // both can appear in one scroll (S0, 2026-08-07), showing two
-                // editors for one column under two different labels — "WORKOUT
-                // NOTES" and "THE WORKOUT" — is exactly the "two places" this
-                // work is meant to remove.
-                //
-                // The receipt's is the better home: it sits beside the reps the
-                // description describes, and `EditWorkoutNotesSheet` re-fires
-                // the structure parser on save. So this composer stands down
-                // when the receipt is present, and remains the only way to add
-                // a description to a stream-less entry (a voice log with no run
-                // that day), where the receipt never appears.
-                if !isEditing, vm.linkedStreamLogId == nil {
-                    editorialNotesComposer
                 }
 
                 // ── Footer: quiet delete + manual-log italic ─────────────
@@ -280,6 +335,195 @@ extension HistoryDetailSheet {
         vm.currentEntry.displayDate.dayOfWeekString.uppercased()
             + "  ·  "
             + vm.currentEntry.displayDate.editorialDateString
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Headline — the title, with the period in coral
+    // ────────────────────────────────────────────────────────────────────
+    //
+    // "Moderate" becomes "Moderate." with the full stop set in coral: the
+    // single editorial mark that tells you this is a printed record and not
+    // a form field. Built by concatenating two `Text`s rather than laying
+    // them out in an HStack so a long athlete-written title still wraps as
+    // one paragraph.
+    //
+    // Titles that already end in punctuation ("Easy 6?", "Done!") keep it —
+    // adding a period would print "Done!." — and the coral hit is skipped
+    // rather than doubled.
+    private func editorialHeadline(_ title: String) -> some View {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let alreadyTerminated = trimmed.last.map { ".!?…".contains($0) } ?? true
+
+        // `verbatim:` on the title — it is athlete-written, so a "%" or a brace
+        // must not be read as a format specifier by LocalizedStringKey.
+        let body = Text(verbatim: trimmed).foregroundStyle(Color.drip.textPrimary)
+        let stop = Text(verbatim: alreadyTerminated ? "" : ".")
+            .foregroundStyle(Color.drip.coral)
+
+        return Text("\(body)\(stop)")
+            .font(.dripDisplay(44))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // The headline, editable in place
+    // ────────────────────────────────────────────────────────────────────
+    //
+    // Same 44pt display face as the printed headline so the swap is the
+    // cursor appearing, not the layout changing. No Save button by design:
+    // the field commits on the keyboard's Done AND on focus loss, so tapping
+    // anywhere else on the entry saves. `commitInlineTitle` is idempotent, so
+    // the two paths firing in sequence writes once.
+    //
+    // The coral full stop is dropped while editing — it's a typographic mark
+    // on a finished line, and printing it after a live cursor would read as a
+    // character the athlete has to delete.
+    @ViewBuilder
+    private var inlineTitleField: some View {
+        TextField("Name this run", text: $inlineTitleText, axis: .vertical)
+            .font(.dripDisplay(44))
+            .foregroundStyle(Color.drip.textPrimary)
+            .lineLimit(1 ... 3)
+            .fixedSize(horizontal: false, vertical: true)
+            .focused($titleFieldFocused)
+            .onChange(of: titleFieldFocused) { _, focused in
+                // Only a focus loss that FOLLOWS a real focus is the athlete
+                // tapping away. A `false` before the field has ever held focus
+                // is SwiftUI resetting an unclaimed value, and committing on
+                // that would shut the editor the instant it opened.
+                if focused {
+                    titleFieldDidFocus = true
+                } else if titleFieldDidFocus {
+                    commitInlineTitle()
+                }
+            }
+            // Hard floor: if focus is never granted, the gate above never
+            // opens and the field would have no way out. Paging away or
+            // closing the sheet commits whatever is in it.
+            .onDisappear { commitInlineTitle() }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { titleFieldFocused = false }
+                        .font(.dripLabel(15))
+                        .foregroundStyle(Color.drip.coral)
+                }
+            }
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // Status row — how it felt, what hurt, where it came from
+    // ────────────────────────────────────────────────────────────────────
+    //
+    // One line under the headline carrying the two facts an athlete scans for
+    // first: how it felt, and where the run came from. The source name is
+    // shortened to "STRAVA" (from the old "LINKED · STRAVA" row); the row it
+    // came from now only renders when it has an action to offer.
+    //
+    // Both elements are conditional. A manual entry with no mood and no linked
+    // run renders an empty HStack — zero height, no gap.
+    //
+    // The handoff also puts a `NIGGLE · KNEE` pill here, between the mood pill
+    // and the source. It is deliberately not built yet: the pill is cheap, but
+    // it needs this sheet to read `body_mentions` (the durable niggle store),
+    // which is a data change, not a typographic one. Slot it in after the
+    // mood pill when that lands.
+    @ViewBuilder
+    private var statusRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                // Tap the pill to change how it felt — the six moods expand
+                // underneath and a tap on one saves. With no mood recorded yet
+                // the same target asks the question instead of printing an
+                // empty cell (hard rule #8: no em-dash placeholders).
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { isPickingMoodInline.toggle() }
+                } label: {
+                    if let mood = displayedMood {
+                        MoodBadge(mood: mood)
+                    } else {
+                        addMoodChip
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(displayedMood.map { "Mood: \($0)" } ?? "No mood recorded")
+                .accessibilityHint("Double tap to change how this run felt")
+
+                if vm.currentEntry.hasLinkedWorkout {
+                    Text(sourceName)
+                        .font(.dripEyebrow(9.5))
+                        .tracking(0.95)          // 9.5 × 0.10em
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+            }
+
+            if isPickingMoodInline {
+                EditableMoodPicker(selectedMood: inlineMoodBinding)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            if inlineSaveFailed {
+                // Coral is right — it is the alert palette. The FACE is
+                // `dripCaption`, not a tracked eyebrow: eyebrows label
+                // sections, and a failure the athlete has to act on should be
+                // said in plain sentence case rather than shouted.
+                Text("Couldn't save. Try again.")
+                    .font(.dripCaption(12))
+                    .foregroundStyle(Color.drip.coral)
+            }
+        }
+        .padding(.top, 6)
+    }
+
+    /// The mood on screen: the one being saved if a save is in flight, else
+    /// the stored one. Without the `pendingMood` arm the pill doesn't move
+    /// until the network answers, and the tap reads as ignored.
+    private var displayedMood: String? {
+        if let pending = pendingMood {
+            return pending.isEmpty ? nil : pending
+        }
+        guard let mood = vm.currentEntry.mood, !mood.isEmpty else { return nil }
+        return mood
+    }
+
+    /// Reads the displayed mood; writing straight through to the row IS the
+    /// save.
+    ///
+    /// `EditableMoodPicker` toggles its own selection, so tapping the selected
+    /// pill again sends "" and clears the mood — which is the undo, and why
+    /// this needs no confirmation step.
+    private var inlineMoodBinding: Binding<String> {
+        Binding(
+            get: { displayedMood ?? "" },
+            set: { newMood in
+                commitInlineMood(newMood)
+                withAnimation(.easeOut(duration: 0.18)) { isPickingMoodInline = false }
+            }
+        )
+    }
+
+    /// The no-mood-yet tap target. An outlined capsule rather than a filled
+    /// pill: it is an invitation, not a recorded value, and must not read as
+    /// one more mood in the vocabulary.
+    private var addMoodChip: some View {
+        Text("HOW DID IT FEEL?")
+            .font(.dripEyebrow(10))
+            .tracking(1.0)
+            .foregroundStyle(Color.drip.textTertiary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .overlay {
+                // `divider`, not `paperDeep`: paperDeep is a fill token (wells,
+                // chart tracks). This is a rule line, and MemoPlayerRow strokes
+                // its capsule the same way.
+                Capsule().strokeBorder(Color.drip.divider, lineWidth: 1)
+            }
+    }
+
+    /// "STRAVA" / "GARMIN" / "HEALTHKIT" — same resolution the linked-source
+    /// row uses, so the two can never name the run's origin differently.
+    private var sourceName: String {
+        vm.matchedVitalWorkout?.sourceApp.uppercased() ?? "HEALTHKIT"
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -332,17 +576,51 @@ extension HistoryDetailSheet {
     @ViewBuilder
     var memoBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            // 14pt between the two corner labels — at 9.5pt tracked caps,
+            // default spacing reads as one run-on word ("MEMOEDIT").
+            HStack(spacing: 14) {
                 // "SUMMARY" when there's a written summary to edit; "THE MEMO"
                 // when all we have is the recording, so the label never
                 // promises text that isn't there.
                 DripEyebrow(text: summaryText != nil ? "SUMMARY" : "THE MEMO")
                 Spacer()
+
+                // ── The recording, as a corner affordance ────────────────
+                //
+                // The waveform row used to sit in the reading flow, between
+                // the summary and the words — a piece of playback furniture
+                // interrupting the athlete's own account of the run. The
+                // entry is the writing; the audio is the source. Source
+                // material belongs within reach, not in the middle of the
+                // page.
+                //
+                // Only when there IS a summary: with nothing but a recording
+                // the section would be a label and two buttons over empty
+                // space, so the player stays inline (see below) and this
+                // toggle would be hiding the only content there is.
+                //
+                // Ink-3 → ink-1 when open, deliberately NOT coral: this
+                // cluster's one coral hit belongs to THE READ below.
+                if memoAudioUrl != nil, summaryText != nil {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { showMemoPlayer.toggle() }
+                    } label: {
+                        Text(showMemoPlayer ? "HIDE MEMO ↑" : "▶ MEMO")
+                            .font(.dripEyebrow(9.5)).tracking(1.14)
+                            .foregroundStyle(showMemoPlayer ? Color.drip.textPrimary : Color.drip.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 if summaryText != nil {
                     Button { enterEditMode() } label: {
+                        // Ink-3, not coral. Coral discipline: one coral hit per
+                        // visual cluster, and this cluster's belongs to THE READ
+                        // directly below. THE WORKOUT's own EDIT stays coral —
+                        // it heads a different cluster.
                         Text("EDIT")
-                            .font(.dripCaption(10)).tracking(1.4)
-                            .foregroundStyle(Color.drip.coral)
+                            .font(.dripEyebrow(9.5)).tracking(1.14)
+                            .foregroundStyle(Color.drip.textTertiary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -358,9 +636,14 @@ extension HistoryDetailSheet {
                 )
             }
 
-            if let audio = memoAudioUrl {
+            // Revealed by the corner "▶ MEMO" above. The `summaryText == nil`
+            // arm is the fallback: an entry that is *only* a recording has
+            // nothing to hide the player behind, so it stays inline there and
+            // the corner toggle doesn't render.
+            if let audio = memoAudioUrl, showMemoPlayer || summaryText == nil {
                 MemoPlayerRow(url: audio)
                     .padding(.top, summaryText == nil ? 0 : 5)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             if let transcript = memoTranscriptUrl {
@@ -496,14 +779,36 @@ extension HistoryDetailSheet {
         .padding(.top, 20)
     }
 
+    // The open panel, retypeset to the handoff (2026-08-10).
+    //
+    // Two deliberate choices, both about marking machine voice as machine
+    // voice rather than dressing it up as the coach:
+    //
+    //  • THE BODY IS MONO. JetBrains Mono in the design file, SF Mono here.
+    //    The athlete's own summary directly above is PT Serif; setting the
+    //    generated read in the same serif let the two blur into one voice.
+    //  • NO CARD. The elevated fill and 8pt corner radius are gone, replaced
+    //    by a 2pt coral rule at 50% and 13pt of indent. This colored left
+    //    border is the canonical AI treatment and THE ONLY PLACE in the
+    //    system it appears — do not generalize it to other sections.
+    //
+    // The ✕ stays: the panel is opened by a tap in this build (see
+    // `insightBlock`), so it needs a way back to closed. The handoff draws it
+    // always-open, which would leave the ✕ with nothing to do.
     @ViewBuilder
     private func openInsightPanel(_ insight: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("✦ THE READ")
-                    .font(.dripEyebrow(9.5)).tracking(1.14)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("THE READ")
+                    .font(.dripEyebrow(9.5))
+                    .fontWeight(.semibold)
+                    .tracking(1.14)          // 9.5 × 0.12em
                     .foregroundStyle(Color.drip.coral)
-                Spacer()
+                Spacer(minLength: 8)
+                Text("GENERATED")
+                    .font(.dripEyebrow(8.5))
+                    .tracking(0.85)          // 8.5 × 0.10em
+                    .foregroundStyle(Color.drip.textTertiary)
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { showInsight = false }
                 } label: {
@@ -517,35 +822,40 @@ extension HistoryDetailSheet {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Hide the insight")
             }
+
             Text(insight)
-                .font(.dripBody(14))
+                .font(.system(size: 12.5, weight: .regular, design: .monospaced))
                 .foregroundStyle(Color.drip.textPrimary)
-                .lineSpacing(3)
+                .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 17)
-        .padding(.top, 14)
-        .padding(.bottom, 15)
+        .padding(.leading, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.drip.cardBackgroundElevated)
         .overlay(alignment: .leading) {
-            Rectangle().fill(Color.drip.coral).frame(width: 2)
+            Rectangle()
+                .fill(Color.drip.coral.opacity(0.5))
+                .frame(width: 2)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8))
         .padding(.horizontal, 24)
-        .padding(.top, 20)
+        .padding(.top, 18)
     }
 
     // ────────────────────────────────────────────────────────────────────
     // Editorial section — eyebrow + body, no card chrome
     // ────────────────────────────────────────────────────────────────────
     @ViewBuilder
+    /// A titled section. `eyebrow: nil` for content that carries its own
+    /// heading — THE WORKOUT block labels itself, and stacking a section
+    /// eyebrow above its eyebrow would print the name twice.
     private func editorialSection<Content: View>(
-        eyebrow: String,
+        eyebrow: String?,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            DripEyebrow(text: eyebrow)
+            if let eyebrow {
+                DripEyebrow(text: eyebrow)
+            }
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -659,101 +969,12 @@ extension HistoryDetailSheet {
         .disabled(vm.isLinkingWorkout)
     }
 
-    // ────────────────────────────────────────────────────────────────────
-    // Inline notes composer — no card, no gray pill
-    // ────────────────────────────────────────────────────────────────────
-    private var editorialNotesComposer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Collapsed by default. An empty section labelled "WORKOUT NOTES /
-            // OPTIONAL" was pure chrome on the great majority of entries —
-            // a heading, a subheading, and an empty box saying nothing. It now
-            // opens on demand, and stays open whenever there's a note to show.
-            if !isEditingWorkoutNotes, workoutNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { isEditingWorkoutNotes = true }
-                } label: {
-                    HStack(spacing: 8) {
-                        Text("＋")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.drip.coral)
-                        Text("ADD A NOTE")
-                            .font(.dripEyebrow(9.5)).tracking(1.14)
-                            .foregroundStyle(Color.drip.textTertiary)
-                        Spacer()
-                    }
-                    .padding(.vertical, 2)
-                }
-                .buttonStyle(.plain)
-            } else {
-                notesEditor
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 24)
-        .padding(.top, 22)
-        .overlay(alignment: .top) {
-            DripHairline().padding(.horizontal, 24)
-        }
-    }
-
-    @ViewBuilder
-    private var notesEditor: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                DripEyebrow(text: "WORKOUT NOTES")
-                Spacer()
-                // Collapse back down if the athlete opened the composer and
-                // typed nothing — otherwise the row is a one-way door.
-                if workoutNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { isEditingWorkoutNotes = false }
-                    } label: {
-                        Text("CLOSE")
-                            .font(.dripCaption(10))
-                            .tracking(1.4)
-                            .foregroundStyle(Color.drip.textTertiary)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text("OPTIONAL")
-                        .font(.dripCaption(10))
-                        .tracking(1.4)
-                        .foregroundStyle(Color.drip.textTertiary)
-                }
-            }
-            TextEditor(text: $workoutNotesText)
-                .font(.dripBody(15).italic())
-                .foregroundStyle(Color.drip.textPrimary)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 64)
-
-            if !workoutNotesText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                HStack {
-                    Spacer()
-                    Button {
-                        Task {
-                            let saved = await vm.saveWorkoutNotes(workoutNotesText)
-                            if saved { onUpdate() }
-                        }
-                    } label: {
-                        Text(vm.isSavingWorkoutNotes ? "SAVING…" : "SAVE")
-                            .font(.dripCaption(10))
-                            .tracking(1.4)
-                            .foregroundStyle(Color.drip.coral)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        // Padding and the top hairline are applied by `editorialNotesComposer`,
-        // which wraps this — don't reapply them here.
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Sticky once shown. An entry that arrives WITH a note renders this
-        // editor while the flag is still false, so select-all-delete (to rewrite
-        // the note) would flip the branch back to "＋ ADD A NOTE" mid-edit —
-        // tearing down the focused TextEditor and dismissing the keyboard.
-        .onAppear { isEditingWorkoutNotes = true }
-    }
+    // The inline notes composer ("WORKOUT NOTES" / "＋ ADD A NOTE", ~110 lines
+    // with `notesEditor`) lived here. It was the second editor for
+    // `workout_notes` — same column as the receipt's "THE WORKOUT", different
+    // label, different row, its own save button and its own collapse state.
+    // Both are replaced by `TheWorkoutBlock`, hosted above the summary.
+    // (2026-08-10)
 }
 
 // ────────────────────────────────────────────────────────────────────────
