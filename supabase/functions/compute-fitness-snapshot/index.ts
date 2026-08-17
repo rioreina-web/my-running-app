@@ -30,6 +30,7 @@ import {
   RACE_TYPE_LABEL,
   RACE_TYPE_TOLERANCE,
   type DetectedRace,
+  type EfficiencyBucketInput,
   type LapInput,
   type PredictionInput,
   type RaceType,
@@ -289,6 +290,29 @@ async function computeAndUpsert(
     if (rt) plan = { status: "active", raceDistanceKey: rt, targetTimeSeconds: num(planRow.target_time_seconds), raceDistanceMiles: RACE_TYPE_MILES[rt] };
   }
 
+  // EF buckets from the athlete-state fitness signal (heat-aware speed-per-
+  // beat, 84d window). Corroborates the training signal's slow direction —
+  // see the EF gate in fitnessPrediction. Nightly ordering makes this read a
+  // day stale (snapshot 03:30, rebuild 04:00); immaterial for an 11-week
+  // trend. Missing row / null signal degrades to pre-gate behavior.
+  const { data: stateRow } = await db
+    .from("athlete_state")
+    .select("fitness_signal")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const rawEff = (stateRow?.fitness_signal as { efficiency?: Array<Record<string, unknown>> } | null)
+    ?.efficiency;
+  const efficiencySignal: EfficiencyBucketInput[] | null = Array.isArray(rawEff)
+    ? rawEff.map((b) => ({
+      bucket: String(b.bucket ?? ""),
+      direction: String(b.direction ?? ""),
+      confidence: String(b.confidence ?? ""),
+      efDeltaPct: numOrNull(b.ef_delta_pct),
+      recentSamples: num(b.recent_samples),
+      baselineSamples: num(b.baseline_samples),
+    }))
+    : null;
+
   const prediction = generateFitnessPrediction({
     workouts,
     voiceLogs,
@@ -298,6 +322,7 @@ async function computeAndUpsert(
     plan,
     seededRaces,
     laps,
+    efficiencySignal,
     now,
   });
 

@@ -140,6 +140,54 @@ export interface PlanGoalInput {
   raceDistanceMiles: number;
 }
 
+/**
+ * One EF bucket from the athlete-state fitness signal (heat-aware speed-per-
+ * beat, `fitnessSignal.ts`). Field names are camelCase — the caller maps the
+ * stored snake_case payload; the model never reads athlete_state itself.
+ */
+export interface EfficiencyBucketInput {
+  bucket: string; // "threshold" | "easy" | ...
+  direction: string; // "improving" | "flat" | "declining"
+  confidence: string; // "high" | "medium" | "low"
+  efDeltaPct: number | null;
+  recentSamples: number;
+  baselineSamples: number;
+}
+
+/**
+ * Arbitrate the EF buckets into one verdict about the aerobic engine.
+ *
+ *  - "held"      — the strongest-evidence bucket says flat or improving.
+ *  - "declining" — that bucket says declining.
+ *  - null        — no bucket has enough evidence to say anything.
+ *
+ * Strongest evidence, not worst case: buckets are ranked by sample count
+ * (ties → higher confidence), and only buckets with ≥4 samples in BOTH
+ * windows at medium+ confidence are eligible. A 3-sample threshold read does
+ * not outvote a 20-sample easy-running read — thin quality weeks are exactly
+ * when the model most needs the aerobic evidence it does have.
+ *
+ * Scope guard: EF is used here ONLY as an 8–12-week longitudinal trend over
+ * heat-neutral pools. EF as a day-to-day readiness signal was tested and
+ * retired (2026-08-07, behavioural masking); this is deliberately not that.
+ */
+export function efficiencyVerdict(
+  buckets: EfficiencyBucketInput[] | null | undefined,
+): "held" | "declining" | null {
+  if (!buckets || buckets.length === 0) return null;
+  const confRank = (c: string): number => (c === "high" ? 2 : c === "medium" ? 1 : 0);
+  const eligible = buckets.filter((b) =>
+    confRank(b.confidence) >= 1 &&
+    b.recentSamples >= 4 && b.baselineSamples >= 4 &&
+    (b.direction === "improving" || b.direction === "flat" || b.direction === "declining")
+  );
+  if (eligible.length === 0) return null;
+  eligible.sort((a, b) =>
+    (b.recentSamples - a.recentSamples) || (confRank(b.confidence) - confRank(a.confidence))
+  );
+  return eligible[0].direction === "declining" ? "declining" : "held";
+}
+
 export interface PredictionInput {
   workouts: WorkoutInput[]; // last ~30d
   voiceLogs: VoiceLogInput[]; // last ~30d
@@ -160,6 +208,13 @@ export interface PredictionInput {
    * Optional — the model works identically without them.
    */
   laps?: LapInput[];
+  /**
+   * EF buckets from athlete_state.fitness_signal (heat-aware, 84d window).
+   * Optional; null degrades to pre-EF behavior. Consumed only by the
+   * corroboration gate on the training signal's slow direction — see the
+   * blend block. A day-stale read is fine (11-week trend).
+   */
+  efficiencySignal?: EfficiencyBucketInput[] | null;
   now?: Date; // injectable for tests; defaults to new Date()
 }
 
@@ -1603,6 +1658,7 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
 
     const zoneSignal = combineZoneEstimates(zoneEstimates, now);
     let paceSegmentSignal: number | null = null;
+    let efHeldClamped = false;
     if (zoneSignal !== null) {
       zoneSignalUsed = zoneSignal.used;
       paceSegmentSignal = zoneSignal.tenKPace;
@@ -1627,10 +1683,33 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
         const capPct = anchorWeeksAgo <= 2
           ? 0.015 // a race this fresh is the better measurement, full stop
           : Math.min(0.06, 0.015 + (anchorWeeksAgo - 2) * 0.0045);
-        estimated10KPace = Math.min(
+
+        // EF CORROBORATION GATE (2026-08-17). The two directions of this cap
+        // are not symmetric claims. FASTER-than-anchor is backed by measured
+        // work the athlete demonstrably ran — the cap only rations how fast
+        // the estimate may move. SLOWER-than-anchor is an inference from
+        // training paces, and training paces slow down for reasons that are
+        // not fitness (August dew points, a down week, prescribed-easy
+        // blocks). Losing fitness shows up in the aerobic engine: pace per
+        // heartbeat, heat-neutral, over weeks — exactly what the EF signal
+        // measures. So the slow direction now needs that second witness:
+        //   EF "held"      → slow displacement stays capped at 1.5% (the
+        //                    fresh-race cap) no matter the anchor's age;
+        //   EF "declining" → the age-scaled cap applies unchanged;
+        //   EF null        → age-scaled cap (status quo — athletes without
+        //                    HR evidence keep pre-gate behavior).
+        // Live case this encodes: 31:20 10K + held 66 mpw + flat easy-bucket
+        // EF (20 samples) must not read as a 33:39 10K because six hot
+        // threshold sessions priced slow. (2:36:55 marathon, 2026-08-17.)
+        const efVerdict = efficiencyVerdict(input.efficiencySignal);
+        const slowCapPct = diff > 0 && efVerdict === "held" ? 0.015 : capPct;
+        const clamped = Math.min(
           Math.max(blended, estimated10KPace * (1 - capPct)),
-          estimated10KPace * (1 + capPct),
+          estimated10KPace * (1 + slowCapPct),
         );
+        efHeldClamped = diff > 0 && efVerdict === "held" &&
+          blended > estimated10KPace * (1 + slowCapPct);
+        estimated10KPace = clamped;
       }
     }
 
@@ -1642,6 +1721,11 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     // the "· v2" marker, not this text, so renaming it is safe.
     if (paceSegmentSignal !== null) {
       dataSource += ` + training (${zoneSignalUsed.length} session${zoneSignalUsed.length === 1 ? "" : "s"})`;
+    }
+    // Surface the gate only when it actually bound — "efficiency held" on a
+    // row where nothing was clamped would claim credit for a no-op.
+    if (efHeldClamped) {
+      dataSource += " + efficiency held";
     }
   }
 

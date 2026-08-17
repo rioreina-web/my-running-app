@@ -1,6 +1,8 @@
 import { assertAlmostEquals, assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   generateFitnessPrediction,
+  efficiencyVerdict,
+  type EfficiencyBucketInput,
   enduranceFactor,
   longRunReadiness,
   dedupeRaces,
@@ -1034,4 +1036,98 @@ Deno.test("v3 threshold: work older than the 6-week window is ignored", () => {
   assertEquals(thresholdCapacity([old], NOW), null);
   const fresh = log(daysAgo(10), "Threshold", { paceSegments: [seg("fast", "5:30", 2), seg("fast", "5:35", 2)] });
   assert(thresholdCapacity([fresh], NOW) !== null);
+});
+
+// ── EF corroboration gate (2026-08-17) ──────────────────────────────────────
+//
+// The training signal's SLOW direction is an inference (hot reps, down weeks,
+// prescribed-easy blocks all price slow without fitness loss); losing fitness
+// shows in heat-neutral pace-per-beat over weeks. So slow displacement of a
+// raced anchor now needs the EF signal to corroborate. Live regression this
+// encodes: 31:20 10K + held volume + flat easy-bucket EF read as a 33:39 10K
+// (2:36:55 marathon) because six August threshold sessions priced slow.
+
+// Mirrors the live athlete_state.fitness_signal payload of 2026-08-17: a thin
+// declining threshold read (3 samples — ineligible) beside a strong flat easy
+// read (20/37, high). The strong bucket must arbitrate.
+const EF_LIVE_HELD: EfficiencyBucketInput[] = [
+  { bucket: "threshold", direction: "declining", confidence: "medium", efDeltaPct: -3.9, recentSamples: 3, baselineSamples: 3 },
+  { bucket: "easy", direction: "flat", confidence: "high", efDeltaPct: -0.3, recentSamples: 20, baselineSamples: 37 },
+];
+const EF_DECLINING: EfficiencyBucketInput[] = [
+  { bucket: "easy", direction: "declining", confidence: "high", efDeltaPct: -4.2, recentSamples: 12, baselineSamples: 20 },
+];
+
+Deno.test("efficiencyVerdict: strongest evidence arbitrates, thin buckets don't", () => {
+  assertEquals(efficiencyVerdict(null), null);
+  assertEquals(efficiencyVerdict([]), null);
+  assertEquals(efficiencyVerdict(EF_LIVE_HELD), "held", "20-sample flat easy outvotes 3-sample declining threshold");
+  assertEquals(efficiencyVerdict(EF_DECLINING), "declining");
+  assertEquals(
+    efficiencyVerdict([{ bucket: "easy", direction: "declining", confidence: "low", efDeltaPct: -5, recentSamples: 30, baselineSamples: 30 }]),
+    null,
+    "low confidence is never eligible, whatever the sample count",
+  );
+  assertEquals(
+    efficiencyVerdict([{ bucket: "easy", direction: "flat", confidence: "high", efDeltaPct: 0, recentSamples: 3, baselineSamples: 30 }]),
+    null,
+    "a thin recent window is not evidence the engine held",
+  );
+});
+
+/**
+ * The gated harness: an aging race + HELD volume + a fortnight of slow-pricing
+ * reps. Volume matters: with an empty log the detraining path opens and decay
+ * (not the blend) moves the estimate — the live case this encodes held 66 mpw,
+ * which is what keeps the continuous-training decay cap (≤2%) engaged.
+ */
+function slowDragPrediction(efficiencySignal: EfficiencyBucketInput[] | null) {
+  const raceLog = log(daysAgo(189), "Raced the 10k, finish time 40:00."); // ~27 wk old
+  const volume: WorkoutInput[] = [];
+  for (let d = 1; d <= 28; d += 1) {
+    volume.push({ date: daysAgo(d), distanceMiles: 8, durationMinutes: 64, paceSecondsPerMile: 480 });
+  }
+  return generateFitnessPrediction({
+    workouts: volume,
+    voiceLogs: [raceLog, repSession(daysAgo(3), 6, 1.0, "7:10", 60), repSession(daysAgo(7), 5, 1.0, "7:12", 60)],
+    efficiencySignal,
+    now: NOW,
+  })!;
+}
+
+Deno.test("EF gate: held engine caps slow displacement at the fresh-race 1.5%", () => {
+  const held = slowDragPrediction(EF_LIVE_HELD);
+  const declining = slowDragPrediction(EF_DECLINING);
+  const absent = slowDragPrediction(null);
+
+  // All three read the same slow training signal; only the cap differs.
+  assert(held.estimated10kPaceSeconds < declining.estimated10kPaceSeconds,
+    `held (${held.estimated10kPaceSeconds}) must sit under declining (${declining.estimated10kPaceSeconds})`);
+  assertEquals(declining.estimated10kPaceSeconds, absent.estimated10kPaceSeconds,
+    "declining EF changes nothing vs no EF — the gate only ever TIGHTENS");
+
+  // The held cap is the fresh-race cap: ≤1.5% over the decayed anchor. The
+  // decayed anchor is itself ≤2% over the raced 6:26/mi (continuous-training
+  // cap), so end to end the estimate stays within ~3.6% of the race.
+  const racedPace = (40 * 60) / 6.21371;
+  assert(held.estimated10kPaceSeconds <= racedPace * 1.02 * 1.015 + 0.5,
+    `held estimate ${held.estimated10kPaceSeconds} exceeds race ${racedPace} × decay cap × slow cap`);
+
+  // The gate names itself only where it bound.
+  assert(held.dataSource.includes("efficiency held"), held.dataSource);
+  assert(!declining.dataSource.includes("efficiency held"), declining.dataSource);
+  assert(!absent.dataSource.includes("efficiency held"), absent.dataSource);
+});
+
+Deno.test("EF gate: fast direction is untouched by a held engine", () => {
+  const raceLog = log(daysAgo(189), "Raced the 10k, finish time 40:00.");
+  const fast = (efficiencySignal: EfficiencyBucketInput[] | null) =>
+    generateFitnessPrediction({
+      workouts: [],
+      voiceLogs: [raceLog, repSession(daysAgo(3), 6, 1.0, "5:50", 60), repSession(daysAgo(7), 5, 1.0, "5:52", 60)],
+      efficiencySignal,
+      now: NOW,
+    })!;
+  assertEquals(fast(EF_LIVE_HELD).estimated10kPaceSeconds, fast(null).estimated10kPaceSeconds,
+    "speed evidence needs no corroboration — the gate must not touch it");
 });
