@@ -16,6 +16,7 @@ import {
   raceEffectivePace,
   paceStringToSeconds,
   type LapInput,
+  type ParsedStructureInput,
   type PredictionInput,
   type VoiceLogInput,
   type WorkoutInput,
@@ -365,44 +366,110 @@ Deno.test("unproven improvement is capped at 0.5% total (13-week-old anchor)", (
   );
 });
 
-// ── New test 3 (Part 1 fix #5): segment signal speed-up capped at 2% ────────
+// ── Training-signal displacement cap (rewritten 2026-08-17) ────────────────
+//
+// Was "segment signal speed-up capped at 2%", built on `paceSegments`. Both
+// halves of that are gone: the signal now reads `parsed_structure.blocks`
+// (pace_segments labels are not trustworthy as a fitness signal), and the flat
+// ±2% band became a cap that scales with anchor age. The CLAIM is unchanged —
+// a fortnight of training cannot overturn a recent race.
 
-Deno.test("segment signal cannot speed the estimate up more than 2%", () => {
-  const raceLog = log(daysAgo(21), "Raced the 10k, finish time 40:00.");
-  const fastSegments = Array.from({ length: 6 }, () => ({
-    effort: "interval",
-    durationSeconds: 300,
-    distanceMiles: 1.0,
-    pacePerMile: "5:00",
-  }));
-  // Control: identical durations (same stimulus/decay) but distances too small
-  // to enter the hard-effort pool → pure decayed anchor.
-  const tinySegments = fastSegments.map((s) => ({ ...s, distanceMiles: 0.05 }));
+/** A parsed interval session: `count` × `miles` at `pace`, off `restS` jog. */
+function repSession(
+  date: string,
+  count: number,
+  miles: number,
+  pace: string,
+  restS: number,
+  extra: Partial<ParsedStructureInput> = {},
+): VoiceLogInput {
+  const [m, s] = pace.split(":").map(Number);
+  const dur = Math.round((m * 60 + s) * miles);
+  const blocks = [];
+  for (let i = 0; i < count; i++) {
+    blocks.push({
+      role: "work_rep",
+      durationS: dur,
+      distanceMiles: miles,
+      avgPacePerMile: pace,
+      avgHr: 165,
+    });
+    if (i < count - 1) {
+      blocks.push({
+        role: "recovery",
+        durationS: restS,
+        distanceMiles: 0.05,
+        avgPacePerMile: "—",
+        avgHr: 145,
+      });
+    }
+  }
+  return log(date, "track session", {
+    parsedStructure: { confidence: 1, type: "interval", blocks, ...extra },
+  });
+}
 
+/** Displacement the training signal achieved, as a fraction of the anchor. */
+function displacement(raceAgeDays: number, pace: string): number {
+  const raceLog = log(daysAgo(raceAgeDays), "Raced the 10k, finish time 40:00.");
   const withSignal = generateFitnessPrediction({
     workouts: [],
-    voiceLogs: [raceLog, log(daysAgo(3), "track", { paceSegments: fastSegments })],
+    voiceLogs: [raceLog, repSession(daysAgo(3), 6, 1.0, pace, 60)],
     now: NOW,
   })!;
+  // Control: identical session, reps too short to price a 10K → no signal.
   const noSignal = generateFitnessPrediction({
     workouts: [],
-    voiceLogs: [raceLog, log(daysAgo(3), "track", { paceSegments: tinySegments })],
+    voiceLogs: [raceLog, repSession(daysAgo(3), 6, 0.1, pace, 60)],
     now: NOW,
   })!;
+  return 1 - withSignal.estimated10kPaceSeconds / noSignal.estimated10kPaceSeconds;
+}
 
-  // The 5:00 reps convert (per-distance Riegel, fix #4) to a 10K-equivalent
-  // FAR faster than the anchor; the uncapped blend would land well below the
-  // 2% cap.
-  const signal = 300 * Math.pow(6.21371 / 1.0, 0.06);
-  const rawBlend = noSignal.estimated10kPaceSeconds * 0.6 + signal * 0.4;
-  assert(withSignal.estimated10kPaceSeconds < noSignal.estimated10kPaceSeconds, "signal should speed the estimate");
+Deno.test("training signal cannot overturn a recent race", () => {
+  // 6 × 1 mile at 6:00 for a 40:00 10K athlete (~6:12/mi): genuinely strong
+  // work, and inside what the curve calls possible. 5:00 reps would be
+  // rejected outright as a mis-parse, which is a different test.
+  const moved = displacement(10, "6:00");
+  assert(moved > 0, "strong reps should speed the estimate at all");
+  assert(moved <= 0.015 + 1e-9, `a 10-day-old race caps displacement at 1.5%; got ${(moved * 100).toFixed(2)}%`);
+});
+
+Deno.test("the cap loosens as the anchor ages — training eventually speaks", () => {
+  // Same race time, same session; only the race's age differs. Compared as
+  // displacement from each anchor's own no-signal control, so the decay model
+  // (which also moves an old anchor) cannot be mistaken for the cap.
+  const fresh = displacement(10, "6:00");
+  const stale = displacement(120, "6:00");
   assert(
-    withSignal.estimated10kPaceSeconds >= noSignal.estimated10kPaceSeconds * 0.98 - 1e-6,
-    `capped at 2%: got ${withSignal.estimated10kPaceSeconds} vs floor ${noSignal.estimated10kPaceSeconds * 0.98}`,
+    stale > fresh,
+    `a 4-month-old race should yield more ground: stale ${(stale * 100).toFixed(2)}% vs fresh ${
+      (fresh * 100).toFixed(2)
+    }%`,
   );
+});
+
+Deno.test("the prediction shows its workings", () => {
+  const p = generateFitnessPrediction({
+    workouts: [],
+    voiceLogs: [
+      log(daysAgo(10), "Raced the 10k, finish time 40:00."),
+      repSession(daysAgo(3), 6, 1.0, "6:20", 60),
+      log(daysAgo(5), "easy shakeout", {
+        parsedStructure: {
+          confidence: 1,
+          type: "easy",
+          blocks: [{ role: "work_rep", durationS: 2400, distanceMiles: 5, avgPacePerMile: "8:00", avgHr: 130 }],
+        },
+      }),
+    ],
+    now: NOW,
+  })!;
+  assertEquals(p.supportingTraining.used.length, 1, "the rep session should be the evidence");
+  assert(p.supportingTraining.workMinutes > 0);
   assert(
-    withSignal.estimated10kPaceSeconds > rawBlend + 1,
-    `cap must actually bind (raw blend ${rawBlend})`,
+    p.supportingTraining.readButNotUsed.some((r) => r.date === daysAgo(5)),
+    "the easy run should be reported as read-but-not-used, not silently dropped",
   );
 });
 
@@ -548,23 +615,45 @@ Deno.test("heat: the same interval session in 95°F/70°F dew reads FITTER than 
   // tolerance is what a coach would call nothing: under a tenth of a second.
   assertAlmostEquals(coolEfforts[0].paceSeconds, 320, 0.1);
 
-  // End-to-end: anchored on a 36:30 10K (~352 s/mi) the rep signals land
-  // NEAR the estimate — cool reps (10K-equiv ≈ 367) slow it a few seconds
-  // inside the ±2% validation band, hot reps normalize to ≈ 356 (within the
-  // 5 s/mi blend trigger → estimate untouched). The hot session therefore
-  // reads strictly fitter. (With a much faster anchor both sides pin to the
-  // +2% slow cap and read identical — the band working as intended.)
+  // End-to-end (rewritten 2026-08-17): the signal now reads
+  // `parsed_structure.blocks`, so the end-to-end leg is driven from a parsed
+  // session rather than raw laps. The claim is unchanged and is the one that
+  // matters: identical paces run in hot air imply MORE fitness than the same
+  // paces in cool air, because the heat made them cost more.
   const raceLog = log(daysAgo(14), "Raced the 10k, finish time 36:30.");
+  const session = (tempF: number, dewPointF: number) => {
+    const blocks = [];
+    for (let i = 0; i < 6; i++) {
+      blocks.push({
+        role: "work_rep",
+        durationS: 355,
+        distanceMiles: 1.0,
+        avgPacePerMile: "5:55",
+        avgHr: 165,
+      });
+      if (i < 5) {
+        blocks.push({
+          role: "recovery",
+          durationS: 60,
+          distanceMiles: 0.05,
+          avgPacePerMile: "\u2014",
+          avgHr: 145,
+        });
+      }
+    }
+    return log(daysAgo(3), "track", {
+      parsedStructure: { confidence: 1, type: "interval", blocks },
+      weather: { tempF, dewPointF },
+    });
+  };
   const hot = generateFitnessPrediction({
     workouts: [],
-    voiceLogs: [raceLog],
-    laps: intervalLaps({ tempF: 95, dewPointF: 70, restSecondsEach: 30 }),
+    voiceLogs: [raceLog, session(95, 70)],
     now: NOW,
   })!;
   const cool = generateFitnessPrediction({
     workouts: [],
-    voiceLogs: [raceLog],
-    laps: intervalLaps({ tempF: 55, dewPointF: 45, restSecondsEach: 30 }),
+    voiceLogs: [raceLog, session(55, 45)],
     now: NOW,
   })!;
   assert(
@@ -600,19 +689,16 @@ Deno.test("rest-aware: reps with rest ratio 2.0 grade slower than with ratio 0.4
 // dragged live run #2 ~5% slow. Sustained efforts convert LT→10K (×0.975) and
 // the validation band caps any slow-down at 2%.
 
-Deno.test("sustained tempo cannot drag a race-anchored estimate more than 2%", () => {
-  // 4-week-old 33:00 10K race → anchor ≈ 318.6 s/mi (est ≈ 320 after decay).
-  // Six 2 mi tempo segments @ 350 s/mi: Riegel-by-distance would call each a
-  // maximal 2-mile race (10K-equiv ≈ 375, −17%); LT→10K gives 341.
+Deno.test("held-back tempo work cannot drag a race-anchored estimate", () => {
+  // Rewritten 2026-08-17 off `paceSegments` (which no longer feeds the signal)
+  // onto parsed blocks, so it exercises a live path instead of passing on an
+  // ignored input.
+  //
+  // A 33:00 10K athlete runs ~5:19/mi. Three sessions of 2 × 2 mi at 5:50 is
+  // real work but deliberately sub-threshold — it is evidence of training, not
+  // of a slower ceiling. The estimate must not follow it down.
   const raceLog = log(daysAgo(28), "Raced the 10k, finish time 33:00.");
-  const tempoLogs = [3, 6, 10].map((d) =>
-    log(daysAgo(d), "tempo work", {
-      paceSegments: [
-        { effort: "tempo", durationSeconds: 700, distanceMiles: 2.0, pacePerMile: "5:50" },
-        { effort: "tempo", durationSeconds: 700, distanceMiles: 2.0, pacePerMile: "5:50" },
-      ],
-    })
-  );
+  const tempoLogs = [3, 6, 10].map((d) => repSession(daysAgo(d), 2, 2.0, "5:50", 30, { type: "tempo" }));
   const r = generateFitnessPrediction({
     workouts: [],
     voiceLogs: [raceLog, ...tempoLogs],
@@ -620,12 +706,13 @@ Deno.test("sustained tempo cannot drag a race-anchored estimate more than 2%", (
     now: NOW,
   })!;
   const anchorPace = 1980 / 6.214;
-  // Whatever the blend does, the estimate may not sit more than 2% + decay
-  // slower than the anchor-supported value.
   assert(
     r.estimated10kPaceSeconds <= anchorPace * 1.02 * 1.02,
     `estimate ${r.estimated10kPaceSeconds} dragged too far past anchor ${anchorPace}`,
   );
+  // And specifically: these sessions must be read and set aside, not banked.
+  assertEquals(r.supportingTraining.used.length, 0, "sub-threshold tempo must not become fitness evidence");
+  assert(r.supportingTraining.readButNotUsed.length >= 3);
 });
 
 // ── Race gathering: lifetime PRs + race-history speed evidence (2026-07-17) ─

@@ -499,6 +499,22 @@ function mapParsedStructure(raw: any): VoiceLogInput["parsedStructure"] {
   const eq = raw.equivalent_race_pace;
   const work = raw.work ?? raw.work_summary;
   const workDist = num(work?.total_work_distance_mi ?? work?.total_distance_mi ?? work?.totalDistanceMi);
+  // The per-rep geometry — what the training signal actually reads.
+  // `blocks` is snake_case in the column and camelCase in the model, so the
+  // mapping is explicit rather than a spread.
+  const blocks = Array.isArray(raw.blocks)
+    ? (raw.blocks as Array<Record<string, unknown>>)
+      .filter((b) => b && typeof b === "object" && b.role)
+      .map((b) => ({
+        role: String(b.role),
+        durationS: numOrNull(b.duration_s),
+        distanceMiles: numOrNull(b.distance_miles),
+        avgPacePerMile: b.avg_pace_per_mile == null ? null : String(b.avg_pace_per_mile),
+        avgHr: numOrNull(b.avg_hr),
+        elevationGainM: numOrNull(b.elevation_gain_m ?? b.total_elevation_gain),
+      }))
+    : null;
+
   return {
     confidence: num(raw.confidence),
     type: String(raw.type ?? ""),
@@ -506,6 +522,8 @@ function mapParsedStructure(raw: any): VoiceLogInput["parsedStructure"] {
       ? { pacePerMile: String(eq.pace_per_mile), distanceKey: String(eq.distance_key) }
       : null,
     workSummary: workDist > 0 ? { totalDistanceMi: workDist } : null,
+    blocks: blocks && blocks.length > 0 ? blocks : null,
+    intentPattern: raw.intent_pattern == null ? null : String(raw.intent_pattern),
   };
 }
 

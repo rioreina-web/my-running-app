@@ -25,10 +25,17 @@
 // ============================================================================
 
 import { equivalentRaceTimeSeconds, type RaceKey } from "./paces.ts";
-import { heatAdjustmentPct, repLengthFactor } from "./pace-heat-adjustment.ts";
+import { heatNeutralPace } from "./pace-heat-adjustment.ts";
 import { adjustPaceForGrade } from "./pace-grade-adjustment.ts";
 import { normalizeRaceTime, type RaceConditions } from "./raceNormalization.ts";
 import { mostRecentPrior, smoothFitnessPace } from "./fitnessCurve.ts";
+import {
+  combineZoneEstimates,
+  estimateFromSessions,
+  type ParsedBlock,
+  type ParsedSession,
+  type ZoneEstimate,
+} from "./trainingZoneSignal.ts";
 
 /** Arithmetic mean; 0 for an empty list (callers guard emptiness first). */
 const mean = (xs: number[]): number =>
@@ -93,6 +100,15 @@ export interface ParsedStructureInput {
   type: string; // "interval" | "tempo" | "race" | "race_pace" | "progression" | "long_run" | "easy" | ...
   equivalentRacePace?: { pacePerMile: string; distanceKey: string } | null;
   workSummary?: { totalDistanceMi: number } | null;
+  /**
+   * `parsed_structure.blocks` — the per-rep geometry the parser isolated.
+   * This is what the training signal actually reads (2026-08-17); the rest of
+   * this interface predates it. `equivalent_race_pace` is null on every row in
+   * prod, so `detectTrainingAnchors` has never fired on real data.
+   */
+  blocks?: ParsedBlock[] | null;
+  /** `parsed_structure.intent_pattern`, e.g. "10x1K @ 3:15-3:23 w/ 60s". */
+  intentPattern?: string | null;
 }
 
 /** A voice log / check-in row (the qualitative + parsed side of training_logs). */
@@ -175,6 +191,19 @@ export interface FitnessPredictionResult {
    *  per distance. Display/context only; never anchors current fitness.
    *  (2026-07-17, race-gathering.) */
   lifetimePRs: Partial<Record<RaceType, { timeSeconds: number; date: string }>>;
+  /**
+   * The sessions behind the number (2026-08-17). A projection with a confidence
+   * tier and nothing else asks to be taken on faith; this is the workings.
+   * `used` are the sessions the estimate actually rests on, newest first.
+   * `readButNotUsed` is the honest other half — what was looked at and passed
+   * over, with the reason, so "we only had two sessions" is visible rather than
+   * inferred.
+   */
+  supportingTraining: {
+    used: ZoneEstimate[];
+    readButNotUsed: Array<{ date: string; reason: string }>;
+    workMinutes: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -273,26 +302,13 @@ export const HALF_MAX_ENDURANCE_PENALTY = 0.06; // halves need less durability t
 // Heat normalization (Part 2A — server-only multi-signal).
 // ---------------------------------------------------------------------------
 
-/** Never credit heat for more than 12% — beyond that the table extrapolates. */
-const MAX_HEAT_NORMALIZATION = 0.12;
-
 /**
- * Normalize an observed pace to neutral conditions:
- *   neutralPace = observed / (1 + adjustmentPct × repLengthFactor(distance))
- * using Emy's Calculator table (pace-heat-adjustment.ts). The result is FASTER
- * than observed — the heat made the effort cost more, so the same effort is
- * worth a quicker pace on a neutral day. Capped at 12% total.
+ * Neutral-day normalization now lives in pace-heat-adjustment.ts (2026-08-17)
+ * so trainingZoneSignal.ts can use it without importing this file — that would
+ * be a cycle, since this file consumes the signal. Re-exported here because
+ * callers and tests already reach for it at this path.
  */
-export function heatNeutralPace(
-  paceSeconds: number,
-  tempF: number,
-  dewPointF: number,
-  distanceMiles?: number | null,
-): number {
-  if (!Number.isFinite(tempF) || !Number.isFinite(dewPointF) || !(paceSeconds > 0)) return paceSeconds;
-  const pct = Math.min(heatAdjustmentPct(tempF, dewPointF) * repLengthFactor(distanceMiles), MAX_HEAT_NORMALIZATION);
-  return pct > 0 ? paceSeconds / (1 + pct) : paceSeconds;
-}
+export { heatNeutralPace };
 
 // ---------------------------------------------------------------------------
 // Lap-level interval analysis (Part 2B — rest-aware, server-only).
@@ -1470,9 +1486,19 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
 
   let estimated10KPace = 0;
   let dataSource = "default";
-  // Hard efforts seen in the last 14 days — populated inside the anchor
+  // Hard efforts seen in the training window — populated inside the anchor
   // block, consumed by the mile speed-evidence shading at assembly.
   let speedEvidenceHardEfforts: Array<{ paceSeconds: number; distanceMiles: number }> = [];
+  // What the training signal read, and what it declined to read. Surfaced on
+  // the prediction so the athlete can see which sessions are behind the number
+  // rather than being handed a bare estimate.
+  let zoneEstimates: ZoneEstimate[] = [];
+  let zoneRejections: Array<{ date: string; reason: string }> = [];
+  /** The subset combineZoneEstimates actually selected — the number's workings. */
+  let zoneSignalUsed: ZoneEstimate[] = [];
+  // Dates already spoken for by a detected race. A race is the anchor; letting
+  // it back in as training evidence would count one performance twice.
+  const racesInWindow = new Set(detected.map((r) => r.date));
 
   if (anchorPace !== null) {
     const anchor = anchorPace;
@@ -1526,121 +1552,97 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     }
     estimated10KPace = anchor * decayFactor;
 
-    // ── Pace-segment validation (last 14 days of hard efforts) ──
+    // ── Training-evidence validation (parser-driven, last 28 days) ──
     //
-    // EFFORT-AWARE EQUIVALENCE (2026-07-16 hotfix #2): each effort's kind
-    // decides its 10K conversion.
-    //   • "rep"       — near-maximal reps/races → per-distance Riegel:
-    //                   10K-equiv = p · (10Kmi / d)^0.06. Right for a raced
-    //                   distance or hard reps; a 0.25 mi rep → ×1.21.
-    //   • "sustained" — controlled tempo/threshold ≈ LT effort, NOT an all-out
-    //                   race at that segment's length. Riegel-by-distance read
-    //                   a relaxed 2 mi tempo as a maximal 2-mile race and
-    //                   inferred slow 10K fitness (live run #2 dragged the
-    //                   estimate 5% slow this way). LT → 10K: ×0.975.
-    const recentHardEfforts: Array<{ paceSeconds: number; distanceMiles: number; kind: "rep" | "sustained" }> = [];
-    const SUSTAINED_EFFORTS = new Set(["tempo", "threshold"]);
+    // REPLACED RIEGEL (2026-08-17). This block used to convert each hard effort
+    // to a 10K equivalent by its own distance:
+    //
+    //     rep       → p · (10Kmi / d)^0.06      ← ×1.147 at 0.63 mi
+    //     sustained → p · 0.975                  (LT → 10K)
+    //
+    // Riegel is a maximal-effort curve, so the "rep" branch asserted that every
+    // interval was a time trial at its own length. On this athlete a 10×1K at
+    // 5:18 came out as a 36:45 10K against a demonstrated ~31:50. A rep is not
+    // a race: reps are run AT a prescribed pace — mile pace, 10K, LT — and only
+    // a DECLARED race or time trial is near-maximal at its distance.
+    //
+    // The replacement reads what the parser already stored (`parsed_structure.
+    // blocks`) and asks one question of the athlete's own pace/duration curve:
+    // for the continuous work you actually did, how did your pace compare to
+    // what your current fitness predicts for that duration? See
+    // trainingZoneSignal.ts for the model and why the anchor cancels out of it.
+    const zoneSessions: ParsedSession[] = [];
     for (const log of extendedVoiceLogs) {
-      const d = parseDay(log.date) ?? now;
-      if (d < twoWeeksAgo) continue;
-      // Laps are richer for this date — skip the coarser segments (Part 2B),
-      // but only when the laps actually produced a qualifying hard effort.
-      if (qualifyingLapDates.has(log.date)) continue;
-      const segments = log.paceSegments;
-      if (!segments) continue;
-      for (const seg of segments) {
-        if (!hardEffortTypes.has(seg.effort)) continue;
-        if (seg.distanceMiles <= 0.1) continue;
-        const parts = seg.pacePerMile.split(":").map(Number).filter((n) => Number.isFinite(n));
-        if (parts.length === 2) {
-          let paceSeconds = parts[0] * 60 + parts[1];
-          // Heat-normalize before use (Part 2A): the segment's neutral-day
-          // worth, rep-length scaled, capped at 12%.
-          const wx = log.weather;
-          if (wx) paceSeconds = heatNeutralPace(paceSeconds, wx.tempF, wx.dewPointF, seg.distanceMiles);
-          if (paceSeconds >= 210 && paceSeconds <= 540) {
-            recentHardEfforts.push({
-              paceSeconds,
-              distanceMiles: seg.distanceMiles,
-              kind: SUSTAINED_EFFORTS.has(seg.effort) ? "sustained" : "rep",
-            });
-          }
-        }
-      }
+      const d = parseDay(log.date);
+      // 28 days, not 14: the signal takes the BEST sessions in the window, so
+      // it needs enough of them to choose from. The 21-day recency half-life
+      // inside combineZoneEstimates is what keeps the number current.
+      if (!d || d < fourWeeksAgo || d > now) continue;
+      const p = log.parsedStructure;
+      if (!p || !p.blocks || p.blocks.length === 0) continue;
+      zoneSessions.push({
+        date: log.date,
+        type: p.type,
+        confidence: p.confidence,
+        intentPattern: p.intentPattern ?? null,
+        tempF: log.weather?.tempF ?? null,
+        dewPointF: log.weather?.dewPointF ?? null,
+        blocks: p.blocks,
+        // A race in the window is already the anchor; counting it again here
+        // would let one performance vote twice.
+        declaredRace: racesInWindow.has(log.date),
+      });
     }
-    // Lap-derived work reps (already neutral-normalized + rest-penalized).
-    // RELATIVE HARDNESS GATE (2026-07-16 hotfix): only laps at MP-or-faster
-    // for THIS athlete qualify — see the quality-density gate above. Without
-    // this, unlabeled easy-run laps polluted the signal pool.
-    // Kind: laps from workouts WITH rest structure are reps; qualifying laps
-    // from continuous running are sustained quality.
-    for (const e of lapEfforts) {
-      if (lapHardnessCap !== null && e.paceSeconds > lapHardnessCap) continue;
-      const d = parseDay(e.date);
-      if (d && d >= twoWeeksAgo) {
-        recentHardEfforts.push({
-          paceSeconds: e.paceSeconds,
-          distanceMiles: e.distanceMiles,
-          kind: e.hasRestStructure ? "rep" : "sustained",
-        });
-      }
-    }
-    for (const ip of intervalPaces) {
-      if (ip.pace >= 210 && ip.pace <= 540) {
-        recentHardEfforts.push({
-          paceSeconds: ip.pace,
-          distanceMiles: ip.type === "interval" ? 0.5 : 2.0,
-          kind: ip.type === "interval" ? "rep" : "sustained",
-        });
-      }
-    }
-    const totalHardMiles = recentHardEfforts.reduce((s, e) => s + e.distanceMiles, 0);
-    speedEvidenceHardEfforts = recentHardEfforts;
+    const zoneRead = estimateFromSessions(zoneSessions, estimated10KPace);
+    zoneEstimates = zoneRead.estimates;
+    zoneRejections = zoneRead.rejected;
+    // Feed the mile prediction's speed-evidence test from the same reps.
+    speedEvidenceHardEfforts = zoneEstimates.flatMap((e) =>
+      e.reps.map((r) => ({ paceSeconds: r.paceSeconds, distanceMiles: r.distanceMiles }))
+    );
+
+    const zoneSignal = combineZoneEstimates(zoneEstimates, now);
     let paceSegmentSignal: number | null = null;
-    if (totalHardMiles >= 4.0 && recentHardEfforts.length >= 3) {
-      const LT_TO_10K = 0.975;
-      // TOP-WEIGHTED SIGNAL (2026-07-16): fitness lives in the BEST sustained
-      // work, not the average of every quality mile. A session's fastest reps
-      // are the fitness statement; the slower quality laps around them are
-      // fatigue, floats, and warm-down — averaging them all understates the
-      // athlete ("look at the faster reps", not the blended mean). Use the
-      // fastest half of quality mileage (min 2 mi) by 10K-equivalent.
-      const withEquiv = recentHardEfforts.map((e) => {
-        const d = Math.max(e.distanceMiles, 0.15); // guard tiny reps
-        const tenKEquiv = e.kind === "sustained"
-          ? e.paceSeconds * LT_TO_10K
-          : e.paceSeconds * Math.pow(TEN_K_MILES / d, 0.06);
-        return { tenKEquiv, distanceMiles: e.distanceMiles };
-      }).sort((a, b) => a.tenKEquiv - b.tenKEquiv); // fastest first
-      const targetMiles = Math.max(totalHardMiles * 0.5, 2.0);
-      let usedMiles = 0;
-      let topSum = 0;
-      for (const e of withEquiv) {
-        if (usedMiles >= targetMiles) break;
-        const take = Math.min(e.distanceMiles, targetMiles - usedMiles);
-        topSum += e.tenKEquiv * take;
-        usedMiles += take;
-      }
-      paceSegmentSignal = topSum / usedMiles;
+    if (zoneSignal !== null) {
+      zoneSignalUsed = zoneSignal.used;
+      paceSegmentSignal = zoneSignal.tenKPace;
       const diff = paceSegmentSignal - estimated10KPace;
-      if (Math.abs(diff) > 5) {
-        const signalWeight = Math.min(0.3 + (totalHardMiles - 4.0) * 0.05, 0.5);
-        let blended = estimated10KPace * (1.0 - signalWeight) + paceSegmentSignal * signalWeight;
-        // VALIDATION BAND (2026-07-16, mirrors Swift): training paces VALIDATE
-        // a race-demonstrated anchor, they don't re-measure it. Speed-up capped
-        // at 2% (rep math is noisy; a breakthrough shows up as a race) and
-        // slow-down capped at 2% (sub-max training paces can't prove unfitness
-        // — genuine decline arrives through the decay/detraining model).
-        blended = Math.max(blended, estimated10KPace * 0.98);
-        blended = Math.min(blended, estimated10KPace * 1.02);
-        estimated10KPace = blended;
+      if (Math.abs(diff) > 3) {
+        // WEIGHT: how much work stands behind the signal. 25% floor so a thin
+        // week still registers, 60% ceiling so training never fully overwrites
+        // a raced anchor in a single night.
+        let signalWeight = Math.min(0.6, Math.max(0.25, zoneSignal.workMinutes / 240));
+        // An ageing anchor earns training more say. A race from last month is
+        // still the better measurement; a race from last spring is history.
+        if (anchorWeeksAgo > 8) signalWeight = Math.min(0.75, signalWeight * 1.25);
+        const blended = estimated10KPace * (1.0 - signalWeight) + paceSegmentSignal * signalWeight;
+
+        // DISPLACEMENT CAP, scaled by anchor age — the honest successor to the
+        // old flat ±2% band. That band was set when the training signal was
+        // Riegel-inflated and could not be trusted at all, so it clamped every
+        // session to invisibility: flat, flat, flat, then a jump when the
+        // anchor moved. Now the signal is sound, so the cap does one narrower
+        // job — stop a fortnight of workouts from overturning a RECENT race,
+        // while letting training speak as that race recedes.
+        const capPct = anchorWeeksAgo <= 2
+          ? 0.015 // a race this fresh is the better measurement, full stop
+          : Math.min(0.06, 0.015 + (anchorWeeksAgo - 2) * 0.0045);
+        estimated10KPace = Math.min(
+          Math.max(blended, estimated10KPace * (1 - capPct)),
+          estimated10KPace * (1 + capPct),
+        );
       }
     }
 
     if (effectiveDecayPerWeek < 0) dataSource = anchorSource + " (improving)";
     else if (effectiveDecayPerWeek < 0.001) dataSource = anchorSource + " (maintaining)";
     else dataSource = anchorSource;
-    if (paceSegmentSignal !== null) dataSource += " + pace segments";
+    // Named for what it now is. The old " + pace segments" label outlived the
+    // pace_segments input by a release; `fitnessCurve.isOwnSnapshot` keys off
+    // the "· v2" marker, not this text, so renaming it is safe.
+    if (paceSegmentSignal !== null) {
+      dataSource += ` + training (${zoneSignalUsed.length} session${zoneSignalUsed.length === 1 ? "" : "s"})`;
+    }
   }
 
   // ── Fallback when no anchor: structured/voice/fastest-workout ──
@@ -1682,7 +1684,6 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   // the anti-ratchet comment warns about compounds the OUTPUT; this
   // accumulates EVIDENCE with exponential decay, so a flattering day is
   // outvoted by the fortnight around it and then forgotten.
-  const rawEstimate10KPace = estimated10KPace;
   const prior = mostRecentPrior(priorSnapshots, now);
   const curve = smoothFitnessPace({
     rawPace: estimated10KPace,
@@ -1855,5 +1856,10 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     rangeMarathonSeconds: Math.round(marathonSeconds * rangeFraction(RANGE_ITEM_MILES.marathon, marathonExtra)),
     summary,
     lifetimePRs,
+    supportingTraining: {
+      used: zoneSignalUsed,
+      readButNotUsed: zoneRejections,
+      workMinutes: Math.round(zoneSignalUsed.reduce((s, e) => s + e.workSeconds, 0) / 60),
+    },
   };
 }

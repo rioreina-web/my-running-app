@@ -458,3 +458,37 @@ export function buildWeatherJson(
     fetched_at: fetchedAt,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Neutral-day normalization (the inverse of the prescription above).
+// ---------------------------------------------------------------------------
+
+/** Never credit heat for more than 12% — beyond that the table extrapolates. */
+export const MAX_HEAT_NORMALIZATION = 0.12;
+
+/**
+ * Normalize an OBSERVED pace to neutral conditions:
+ *   neutralPace = observed / (1 + adjustmentPct × repLengthFactor(distance))
+ *
+ * The inverse of the prescription direction: prescribing asks "how much slower
+ * should I run today?", normalizing asks "what was this effort worth on a
+ * neutral day?". The result is FASTER than observed — the heat made the effort
+ * cost more, so the same effort buys a quicker pace in neutral air.
+ *
+ * Lives here rather than in fitnessPrediction.ts (where it was defined until
+ * 2026-08-17) so that trainingZoneSignal.ts can normalize without importing the
+ * predictor — that would be a cycle, since the predictor consumes the signal.
+ */
+export function heatNeutralPace(
+  paceSeconds: number,
+  tempF: number,
+  dewPointF: number,
+  distanceMiles?: number | null,
+): number {
+  if (!Number.isFinite(tempF) || !Number.isFinite(dewPointF) || !(paceSeconds > 0)) return paceSeconds;
+  const pct = Math.min(
+    heatAdjustmentPct(tempF, dewPointF) * repLengthFactor(distanceMiles),
+    MAX_HEAT_NORMALIZATION,
+  );
+  return pct > 0 ? paceSeconds / (1 + pct) : paceSeconds;
+}
