@@ -7,10 +7,21 @@
 //  midpoint sparkline; tapping opens the detail with a 5K/10K/HM/Marathon
 //  selector and the full trend.
 //
-//  Data:
-//    • trend (midpoint over time)  → `fitness_snapshots.predicted_*_seconds`
-//    • today's range + confidence  → `athlete_state.fitness_prediction`
-//      (reused via ModelOfYouState so the range math has one home)
+//  Data: ONE source — `fitness_snapshots`. The trend line and today's
+//  headline/range/confidence both come from the same table, and today's
+//  values come from the newest row in the very series being plotted.
+//
+//  This used to read the line from `fitness_snapshots` and today's range from
+//  `athlete_state.fitness_prediction`. `athlete_state` is a COPY of the
+//  snapshot, refreshed by a separate 04:00 cron half an hour after the 03:30
+//  snapshot job — so between those two runs, or any time the rebuild failed,
+//  the screen showed a stale number while the chart underneath it showed the
+//  current one. On 2026-08-17 that gap put 2:37 on screen against a snapshot
+//  of 2:29:13, sourced from a poisoned row that had already been deleted.
+//
+//  The old code hid exactly this by SNAPPING the line's final point onto the
+//  athlete_state midpoint, so the two sources could never be seen disagreeing.
+//  Reading one source removes both the drift and the need to paper over it.
 //
 //  Hard rule #7: predictions ship as a RANGE + CONFIDENCE, never a single
 //  point. The headline is always the range; the line is explicitly the
@@ -57,11 +68,22 @@ struct FitnessSnapshotPoint: Decodable, Identifiable {
     let predicted_10k_seconds: Double?
     let predicted_half_seconds: Double?
     let predicted_marathon_seconds: Double?
+    // Half-window in seconds, and the tier/among-how-many that go with it.
+    // Present on every row, so today's headline is just the newest point.
+    let range_5k_seconds: Double?
+    let range_10k_seconds: Double?
+    let range_half_seconds: Double?
+    let range_marathon_seconds: Double?
+    let confidence_tier: String?
+    let workout_count: Int?
 
     enum CodingKeys: String, CodingKey {
         case created_at
         case predicted_5k_seconds, predicted_10k_seconds
         case predicted_half_seconds, predicted_marathon_seconds
+        case range_5k_seconds, range_10k_seconds
+        case range_half_seconds, range_marathon_seconds
+        case confidence_tier, workout_count
     }
 
     func seconds(_ d: RaceDistanceSel) -> Double? {
@@ -71,6 +93,25 @@ struct FitnessSnapshotPoint: Decodable, Identifiable {
         case .half: predicted_half_seconds
         case .marathon: predicted_marathon_seconds
         }
+    }
+
+    /// The stored half-window for this distance.
+    func halfWindow(_ d: RaceDistanceSel) -> Double? {
+        switch d {
+        case .fiveK: range_5k_seconds
+        case .tenK: range_10k_seconds
+        case .half: range_half_seconds
+        case .marathon: range_marathon_seconds
+        }
+    }
+
+    /// This row's prediction for `d` as a range. `point` is the stored
+    /// prediction itself, so the band is always centred on the plotted line —
+    /// they are the same number, not two derivations of it.
+    func range(_ d: RaceDistanceSel) -> ModelOfYouState.RaceRange? {
+        guard let point = seconds(d), point > 0 else { return nil }
+        let half = max(halfWindow(d) ?? 0, 0)
+        return ModelOfYouState.RaceRange(low: point - half, high: point + half, point: point)
     }
 
     /// "Jun 12" from the leading yyyy-MM-dd of the timestamp.
@@ -106,10 +147,19 @@ final class RacePredictionService {
         if loaded && !force { return }
         isLoading = true
         defer { isLoading = false }
-        async let snaps = fetchSnapshots()
-        async let state = ModelOfYouState.fetch()
-        points = (await snaps).sorted { $0.created_at < $1.created_at }
-        current = (await state)?.fitness_prediction
+        points = (await fetchSnapshots()).sorted { $0.created_at < $1.created_at }
+        // Today's headline IS the newest plotted point — no second fetch, so
+        // no second opinion. `athlete_state.fitness_prediction` used to supply
+        // this; it is a copy on a later cron and could be hours stale.
+        current = points.last.map { newest in
+            ModelOfYouState.FitnessPrediction(
+                ranges: Dictionary(uniqueKeysWithValues: RaceDistanceSel.allCases.compactMap { d in
+                    newest.range(d).map { (d.rangeKey, $0) }
+                }),
+                confidence_tier: newest.confidence_tier,
+                workout_count: newest.workout_count
+            )
+        }
         loaded = true
     }
 
@@ -117,7 +167,16 @@ final class RacePredictionService {
         do {
             return try await supabase
                 .from("fitness_snapshots")
-                .select("created_at,predicted_5k_seconds,predicted_10k_seconds,predicted_half_seconds,predicted_marathon_seconds")
+                .select(
+                    """
+                    created_at,\
+                    predicted_5k_seconds,predicted_10k_seconds,\
+                    predicted_half_seconds,predicted_marathon_seconds,\
+                    range_5k_seconds,range_10k_seconds,\
+                    range_half_seconds,range_marathon_seconds,\
+                    confidence_tier,workout_count
+                    """
+                )
                 .order("created_at", ascending: true)
                 .limit(60)
                 .execute().value
@@ -127,7 +186,7 @@ final class RacePredictionService {
         }
     }
 
-    // Range + confidence for a distance (today's race-anchored prediction).
+    // Range + confidence for a distance, from the newest snapshot.
     func range(_ d: RaceDistanceSel) -> ModelOfYouState.RaceRange? { current?.ranges?[d.rangeKey] }
     var confidenceTier: String? { current?.confidence_tier }
 }
@@ -449,21 +508,18 @@ private struct RacePredictionChart: View {
         }
 
         // Drop outlier snapshots (a single bad prediction otherwise crushes
-        // the scale). Keep points within ±20% of the median.
+        // the scale). Keep points within ±20% of the median — but ALWAYS keep
+        // the newest, because it is the number in the headline and the centre
+        // of the band. Exempting it is what lets the snap-to-midpoint hack go:
+        // the endpoint lands in the band because it IS the band's centre, not
+        // because it was moved there.
         let sortedV = raw.map(\.1).sorted()
         let median = sortedV[sortedV.count / 2]
-        let kept = raw.filter { $0.1 >= median * 0.80 && $0.1 <= median * 1.20 }
-        var plot = kept.count >= 2 ? kept : raw
-
-        // Snap the most-recent ("today") point onto today's official midpoint,
-        // so the endpoint dot lands inside the coral band instead of wherever
-        // the last raw snapshot happened to fall.
-        let todayIndex = raw.last!.0
-        if let mid = todayMidpoint {
-            plot.removeAll { $0.0 == todayIndex }
-            plot.append((todayIndex, mid))
-            plot.sort { $0.0 < $1.0 }
+        let newestIndex = raw.last!.0
+        let kept = raw.filter {
+            $0.0 == newestIndex || ($0.1 >= median * 0.80 && $0.1 <= median * 1.20)
         }
+        let plot = kept.count >= 2 ? kept : raw
 
         // y domain from plotted points + today's range, padded
         var vals = plot.map(\.1)
@@ -481,8 +537,8 @@ private struct RacePredictionChart: View {
         let plotted: [Geo.Plotted] = plot.map { (i, v) in
             Geo.Plotted(
                 x: x(i), y: yc(v), seconds: v,
-                dateLabel: i == todayIndex ? "TODAY" : points[i].shortDate.uppercased(),
-                isToday: i == todayIndex
+                dateLabel: i == newestIndex ? "TODAY" : points[i].shortDate.uppercased(),
+                isToday: i == newestIndex
             )
         }
 
@@ -504,16 +560,6 @@ private struct RacePredictionChart: View {
 
         return Geo(w: w, h: h, padL: padL, padR: padR, top: top, bot: bot,
                    plotted: plotted, band: band, yTicks: yTicks, xLabels: xLabels, empty: false)
-    }
-
-    /// Today's official midpoint (seconds) from the race-anchored range —
-    /// `point` when present, else the low/high mean, else the single bound.
-    private var todayMidpoint: Double? {
-        guard let r = range else { return nil }
-        if let p = r.point, p > 0 { return p }
-        if let lo = r.low, let hi = r.high, lo > 0, hi > 0 { return (lo + hi) / 2 }
-        if let lo = r.low, lo > 0 { return lo }
-        return nil
     }
 
     // MARK: - Draw
