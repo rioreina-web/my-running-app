@@ -123,13 +123,23 @@ Deno.serve(async (req: Request) => {
     // canonical zone math (CLAUDE.md — Easy = MP/0.765 etc.). Deriving from
     // computePaceProfile instead would silently swap in its `mp + 90` easy
     // pace, a third formula.
-    const anchorNeutralSeconds = Number(snapshot?.anchor_neutral_seconds);
-    const anchorDistanceKey = snapshot?.anchor_distance_key as string | null | undefined;
-    const raceAnchor = Number.isFinite(anchorNeutralSeconds) && anchorNeutralSeconds > 0 &&
-        typeof anchorDistanceKey === "string" && anchorDistanceKey.length > 0
+    // WHICH number drives the ladder: the CURRENT estimate, not the anchor.
+    // These differ and the difference is the whole model — the anchor is what
+    // fitness rests on (Feb 7, 31:20), the estimate is where that has been
+    // carried to today (32:00: decayed forward, corroborated by training,
+    // damped). Zones are prescriptions for tomorrow's run, so they follow the
+    // estimate. Deriving from the raw anchor instead published zones 6 s/mi
+    // faster than the athlete's own current fitness — a 27-week-old race
+    // prescribing today's easy pace.
+    //
+    // The anchor columns still matter: they are the PROVENANCE this profile
+    // can cite ("rests on your Feb 10K"), and reading them is what proves
+    // this function and the predictor now agree about the underlying race.
+    const predicted10k = Number(snapshot?.predicted_10k_seconds);
+    const raceAnchor = Number.isFinite(predicted10k) && predicted10k > 0
       ? {
-        distanceKey: anchorDistanceKey,
-        finishTimeSeconds: anchorNeutralSeconds,
+        distanceKey: "tenK",
+        finishTimeSeconds: predicted10k,
         date: (snapshot?.anchor_date as string | null) ?? (snapshot?.created_at as string),
       }
       : null;
