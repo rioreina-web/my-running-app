@@ -1416,13 +1416,41 @@ final class FitnessPredictorService {
 
     // MARK: - Snapshot Persistence
 
-    /// Save (or update) today's fitness snapshot. Rate-limited to 1 snapshot
-    /// per calendar day, but the row always reflects the *latest* prediction —
-    /// the previous "skip if today exists" behavior left stale rows in the DB
-    /// when the prediction changed intra-day (e.g. after a code update or after
-    /// the user logged a workout that shifted the read).
+    /// DISABLED 2026-08-17 — the device no longer writes `fitness_snapshots`.
+    ///
+    /// WHY. There were two writers with different models. The server
+    /// (`compute-fitness-snapshot`, nightly) reads per-lap data this device
+    /// never sees: heat- and grade-normalized rep paces, conditions-normalized
+    /// race anchors, HR-derived efficiency, and since 2026-08-16 a damped
+    /// fitness curve. The on-device predictor has none of that, so it produced
+    /// a materially different answer and persisted it to the same table.
+    ///
+    /// That was cosmetic while every night overwrote the last. It stopped being
+    /// cosmetic when the server curve landed: a smoother trusts its own history
+    /// by design, so a device-written row becomes the prior the server damps
+    /// away FROM. Two such rows (2026-08-15 15:03 and 2026-08-16 20:46, both
+    /// 33:44 against the server's 32:00) dragged the athlete's estimate off by
+    /// ~100 s, and at a 21-day time constant it would have taken six weeks to
+    /// crawl back.
+    ///
+    /// The local prediction is still computed and still drives this screen —
+    /// only the PERSIST is gone. `fitness_snapshots` now has exactly one
+    /// writer. Read the server's answer from `athlete_state.fitness_prediction`
+    /// when this screen should agree with Trends.
+    /// Single switch rather than deleted code: the write path is still correct
+    /// and still the only reference for what a snapshot row looks like. If the
+    /// device ever becomes the writer again, this flips — it does not get
+    /// rewritten from memory.
+    private static let deviceWritesSnapshots = false
+
     @MainActor
     private func saveSnapshot(prediction: FitnessPrediction) async {
+        guard Self.deviceWritesSnapshots else {
+            Log.coach.info(
+                "saveSnapshot skipped — fitness_snapshots is server-owned (compute-fitness-snapshot)")
+            return
+        }
+
         let userId = AuthManager.shared.userId
 
         // Never write a snapshot with an empty user_id. AuthManager.userId

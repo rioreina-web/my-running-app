@@ -259,10 +259,12 @@ async function computeAndUpsert(
     });
   }
 
-  // Prior snapshots (last 16 weeks) for the decay-gated baseline fallback.
+  // Prior snapshots (last 16 weeks) for the decay-gated baseline fallback AND
+  // the curve's prior. `data_source` is required, not decorative: the curve
+  // damps only against rows this model wrote (see fitnessCurve.isOwnSnapshot).
   const { data: snapRows } = await db
     .from("fitness_snapshots")
-    .select("created_at, estimated_10k_pace_seconds, confidence")
+    .select("created_at, estimated_10k_pace_seconds, confidence, data_source")
     .eq("user_id", userId)
     .gte("created_at", cutoff112)
     .order("created_at", { ascending: false })
@@ -271,6 +273,7 @@ async function computeAndUpsert(
     createdAt: s.created_at as string,
     estimated10kPaceSeconds: num(s.estimated_10k_pace_seconds),
     confidence: (s.confidence as string) ?? "Low",
+    dataSource: (s.data_source as string | null) ?? null,
   }));
 
   // Active training plan goal (optional Medium anchor).

@@ -135,14 +135,42 @@ export function smoothFitnessPace(input: CurveInput): CurveResult {
 }
 
 /**
+ * Marker this model appends to every `data_source` it writes. A row without it
+ * was produced by some other program against some other model.
+ *
+ * Kept in lockstep with fitnessPrediction.ts's `dataSource = \`${x} · v2\``.
+ */
+export const SERVER_SOURCE_MARKER = "· v2";
+
+/** True when this snapshot row was written by THIS model. */
+export function isOwnSnapshot(dataSource: string | null | undefined): boolean {
+  return typeof dataSource === "string" && dataSource.includes(SERVER_SOURCE_MARKER);
+}
+
+/**
  * Pick the most recent prior smoothed value from snapshot history.
  *
  * Deliberately MOST RECENT, never fastest. "Fastest in N weeks" is the
  * ratchet — it lets one flattering reading set a floor that outlives the
  * fitness that produced it. The curve's own decay is what protects against
  * noise; the selection rule must not add a second, one-directional memory.
+ *
+ * FOREIGN ROWS ARE SKIPPED (2026-08-17). `fitness_snapshots` had two writers:
+ * this model, and the iOS on-device predictor, which sees no laps, no weather
+ * and no curve. Damping is only sound against your OWN previous output —
+ * smoothing toward another model's answer doesn't average two opinions, it
+ * inherits one and then slowly leaves it. Two device rows (both 33:44 against
+ * this model's 32:00) pulled the athlete ~100 s off and would have taken six
+ * weeks to unwind at τ=21d.
+ *
+ * The device writer is now disabled, so this guard is belt-and-braces — which
+ * is the point: the curve must not be re-poisonable by the next thing that
+ * writes to this table. A row with no `dataSource` at all is treated as
+ * foreign; unknown provenance is not own provenance.
  */
-export function mostRecentPrior<T extends { createdAt: string; estimated10kPaceSeconds: number }>(
+export function mostRecentPrior<
+  T extends { createdAt: string; estimated10kPaceSeconds: number; dataSource?: string | null },
+>(
   snapshots: readonly T[],
   before: Date,
 ): { pace: number; deltaDays: number } | null {
@@ -154,6 +182,7 @@ export function mostRecentPrior<T extends { createdAt: string; estimated10kPaceS
     const ms = new Date(s.createdAt).getTime();
     if (!isFinite(ms) || ms > beforeMs) continue;
     if (!(s.estimated10kPaceSeconds > 0)) continue;
+    if (!isOwnSnapshot(s.dataSource)) continue;
     if (ms > bestMs) { bestMs = ms; best = s; }
   }
   if (best == null) return null;

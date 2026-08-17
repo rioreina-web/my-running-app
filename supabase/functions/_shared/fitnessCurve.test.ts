@@ -11,11 +11,15 @@
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   DEFAULT_TAU_DAYS,
+  isOwnSnapshot,
   MAX_DAILY_MOVE_PCT,
   mostRecentPrior,
   smoothFitnessPace,
   STALE_PRIOR_DAYS,
 } from "./fitnessCurve.ts";
+
+const OWN = "race (10K) + pace segments · v2";
+const DEVICE = "race (10K)"; // iOS on-device predictor — no "· v2"
 
 const MI = 6.21371;
 const paceOf = (raceSeconds: number) => raceSeconds / MI;
@@ -132,9 +136,9 @@ Deno.test("alpha matches the stated time constant", () => {
 
 Deno.test("mostRecentPrior takes the newest, never the fastest", () => {
   const snaps = [
-    { createdAt: "2026-08-10T03:30:00Z", estimated10kPaceSeconds: 290 }, // fastest
-    { createdAt: "2026-08-15T03:30:00Z", estimated10kPaceSeconds: 309 }, // newest
-    { createdAt: "2026-08-01T03:30:00Z", estimated10kPaceSeconds: 320 },
+    { createdAt: "2026-08-10T03:30:00Z", estimated10kPaceSeconds: 290, dataSource: OWN }, // fastest
+    { createdAt: "2026-08-15T03:30:00Z", estimated10kPaceSeconds: 309, dataSource: OWN }, // newest
+    { createdAt: "2026-08-01T03:30:00Z", estimated10kPaceSeconds: 320, dataSource: OWN },
   ];
   const p = mostRecentPrior(snaps, new Date("2026-08-16T03:30:00Z"));
   assert(p);
@@ -144,10 +148,10 @@ Deno.test("mostRecentPrior takes the newest, never the fastest", () => {
 
 Deno.test("mostRecentPrior ignores snapshots from the future and junk rows", () => {
   const snaps = [
-    { createdAt: "2026-09-01T03:30:00Z", estimated10kPaceSeconds: 250 }, // future
-    { createdAt: "not-a-date", estimated10kPaceSeconds: 300 },
-    { createdAt: "2026-08-14T03:30:00Z", estimated10kPaceSeconds: 0 }, // no value
-    { createdAt: "2026-08-13T03:30:00Z", estimated10kPaceSeconds: 311 },
+    { createdAt: "2026-09-01T03:30:00Z", estimated10kPaceSeconds: 250, dataSource: OWN }, // future
+    { createdAt: "not-a-date", estimated10kPaceSeconds: 300, dataSource: OWN },
+    { createdAt: "2026-08-14T03:30:00Z", estimated10kPaceSeconds: 0, dataSource: OWN }, // no value
+    { createdAt: "2026-08-13T03:30:00Z", estimated10kPaceSeconds: 311, dataSource: OWN },
   ];
   const p = mostRecentPrior(snaps, new Date("2026-08-16T03:30:00Z"));
   assert(p);
@@ -156,4 +160,45 @@ Deno.test("mostRecentPrior ignores snapshots from the future and junk rows", () 
 
 Deno.test("empty history yields no prior", () => {
   assertEquals(mostRecentPrior([], new Date("2026-08-16T00:00:00Z")), null);
+});
+
+// ── Foreign-writer guard (2026-08-17) ────────────────────────────────────
+//
+// `fitness_snapshots` had two writers. The iOS on-device predictor sees no
+// laps, no weather and no curve; it wrote 33:44 against this model's 32:00 on
+// 2026-08-15 and 2026-08-16, and the curve then damped away FROM those rows —
+// ~100 s off, six weeks to unwind at tau=21d.
+
+Deno.test("isOwnSnapshot: only rows this model marked", () => {
+  assert(isOwnSnapshot("race (10K) + pace segments · v2"));
+  assert(isOwnSnapshot("training (intervalSession) + race (10K) · v2"));
+  assert(!isOwnSnapshot("race (10K)"), "the device's exact string must not pass");
+  assert(!isOwnSnapshot(null), "unknown provenance is not own provenance");
+  assert(!isOwnSnapshot(undefined));
+  assert(!isOwnSnapshot(""));
+});
+
+Deno.test("the real poisoning: a device row is not used as the prior", () => {
+  // Exactly what prod held at the 2026-08-16 20:46 device write.
+  const snaps = [
+    { createdAt: "2026-08-16T20:46:00Z", estimated10kPaceSeconds: 325.7, dataSource: DEVICE },
+    { createdAt: "2026-08-16T03:30:05Z", estimated10kPaceSeconds: 309.1, dataSource: OWN },
+    { createdAt: "2026-08-15T15:03:00Z", estimated10kPaceSeconds: 325.7, dataSource: DEVICE },
+    { createdAt: "2026-08-15T03:30:00Z", estimated10kPaceSeconds: 309.1, dataSource: OWN },
+  ];
+  const p = mostRecentPrior(snaps, new Date("2026-08-17T03:30:00Z"));
+  assert(p);
+  assertEquals(p.pace, 309.1, "damped against the device row instead of our own");
+  // …and the resulting estimate stays near 32:00 rather than crawling from 33:44.
+  const r = smoothFitnessPace({ rawPace: 309.5, priorPace: p.pace, deltaDays: p.deltaDays });
+  const race = Math.round(r.pace * 6.21371);
+  assert(race > 1915 && race < 1935, `expected ~32:00, got ${race}s`);
+});
+
+Deno.test("all-foreign history yields no prior — seed fresh, don't inherit", () => {
+  const snaps = [
+    { createdAt: "2026-08-16T20:46:00Z", estimated10kPaceSeconds: 325.7, dataSource: DEVICE },
+    { createdAt: "2026-08-15T15:03:00Z", estimated10kPaceSeconds: 325.7, dataSource: null },
+  ];
+  assertEquals(mostRecentPrior(snaps, new Date("2026-08-17T03:30:00Z")), null);
 });

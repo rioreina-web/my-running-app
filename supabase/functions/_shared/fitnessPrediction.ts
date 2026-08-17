@@ -111,6 +111,9 @@ export interface PriorSnapshotInput {
   createdAt: string; // ISO timestamp
   estimated10kPaceSeconds: number;
   confidence: string; // "High" | "Medium" | "Low"
+  /** The row's `data_source`. The curve damps only against rows THIS model
+   *  wrote (marked `· v2`); anything else is another program's opinion. */
+  dataSource?: string | null;
 }
 
 /** Optional active training-plan goal. */
