@@ -34,7 +34,32 @@ import {
   RACE_DISTANCE_MI,
 } from "../_shared/paces.ts";
 import { getConfirmedRaces } from "../_shared/resolve-pace.ts";
+import { normalizeRaceTime } from "../_shared/raceNormalization.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+
+/**
+ * Service-role check by JWT CLAIM, not by string equality with this
+ * function's env copy of the key. The shared helper's compare breaks
+ * whenever the vault's key and the function env drift (2026-08-17: every
+ * pg_net-dispatched call 401'd) — the claim can't drift. Safe ONLY because
+ * config.toml sets verify_jwt = true for this function, so the gateway has
+ * already validated the token's SIGNATURE before we decode it; do not copy
+ * this into a verify_jwt = false function. Keep in lockstep with
+ * compute-fitness-snapshot's copy.
+ */
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -52,9 +77,17 @@ Deno.serve(async (req: Request) => {
     // or a service-role caller that names the subject user (cross-calls).
     // Previously fell back to body.user_id whenever the JWT path returned
     // null, letting an anon-key caller build/read any user's pace profile.
-    const auth = await requireAuthOrServiceRole(req, payloadUserId, corsHeaders);
-    if ("response" in auth) return auth.response;
-    const userId = auth.userId;
+    // Service callers are recognized by claim first (see isServiceRoleJWT);
+    // everything else goes through the shared helper unchanged.
+    const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    let userId: string;
+    if (bearer && isServiceRoleJWT(bearer) && typeof payloadUserId === "string" && payloadUserId.length > 0) {
+      userId = payloadUserId;
+    } else {
+      const auth = await requireAuthOrServiceRole(req, payloadUserId, corsHeaders);
+      if ("response" in auth) return auth.response;
+      userId = auth.userId;
+    }
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
@@ -106,8 +139,44 @@ Deno.serve(async (req: Request) => {
       const key = raceKeyForInput(raceAnchor.distanceKey);
       const miles = RACE_DISTANCE_MI[key];
       if (miles > 0) {
+        // Anchor at the race's FLAT-COOL EQUIVALENT, not its raw time
+        // (2026-08-17). This ladder is pace-truth for every training zone,
+        // and a race run into a 67°F dew point is slower than the fitness it
+        // demonstrates — anchoring raw priced the athlete's entire summer of
+        // zones off one hot morning (April 10K: 33:02 raw vs 32:23 neutral,
+        // ~6 s/mi slow on every zone). Credit-only, same posture as the heat
+        // model everywhere else: no weather on file, or a "neutral" time
+        // that isn't faster, leaves the raw time — the correction can never
+        // penalize. The prediction pipeline already reads races this way
+        // (fitnessPrediction's normalized anchor); this closes the gap for
+        // the zones. Displayed race TIMES stay raw everywhere — a neutral
+        // time is never a time she ran.
+        let anchorSeconds = raceAnchor.finishTimeSeconds;
+        const day = String(raceAnchor.date).slice(0, 10);
+        if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+          const nextDay = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000)
+            .toISOString().slice(0, 10);
+          const { data: raceRow } = await supabase
+            .from("training_logs")
+            .select("weather_actual")
+            .eq("user_id", userId)
+            .not("race_result", "is", null)
+            .gte("workout_date", `${day}T00:00:00Z`)
+            .lt("workout_date", `${nextDay}T00:00:00Z`)
+            .limit(1)
+            .maybeSingle();
+          const wx = raceRow?.weather_actual as { temp_f?: unknown; dew_point_f?: unknown } | null;
+          const tempF = Number(wx?.temp_f);
+          const dewPointF = Number(wx?.dew_point_f);
+          if (Number.isFinite(tempF) && Number.isFinite(dewPointF)) {
+            const norm = normalizeRaceTime(anchorSeconds, key, { tempF, dewPointF });
+            if (norm.neutralSeconds > 0 && norm.neutralSeconds < anchorSeconds) {
+              anchorSeconds = norm.neutralSeconds;
+            }
+          }
+        }
         const table = derivePaceTableFromGoal(
-          raceAnchor.finishTimeSeconds / miles,
+          anchorSeconds / miles,
           raceAnchor.distanceKey,
         );
         const asPace = (sec: number | undefined): ResolvedPace | undefined =>
