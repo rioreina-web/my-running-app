@@ -103,39 +103,22 @@ final class FitnessPredictorService {
             await fetchHistory()
         }
 
-        // Fetch extended history (180 days) for race detection — races happen infrequently
-        Log.coach.info("Fetching extended history for race detection...")
-        let extendedSourceWorkouts = await fetchFromAllSources(days: 180)
-        let extendedVoiceLogs = await fetchTrainingLogs(days: 180)
-
-        let extendedLinkedWorkouts = extractLinkedWorkouts(from: extendedVoiceLogs)
-        let extendedWorkouts = mergeWorkouts(extendedLinkedWorkouts, extendedSourceWorkouts)
-        Log.coach.info("Extended history: \(extendedWorkouts.count) workouts, \(extendedVoiceLogs.count) voice logs")
-
-        // The local estimate now supplies CONTEXT ONLY — weekly volume, log
-        // counts, the summary line. The numbers on screen come from the
-        // server's canonical row when there is one (2026-08-17): the device
-        // sees no laps, no weather, no HR efficiency and no damped curve, so
-        // its own projection was a second, quieter model disagreeing with
-        // Trends. Local remains the fallback for a brand-new athlete or an
-        // athlete the nightly job hasn't reached yet — better an honest
-        // device estimate than an empty screen.
-        let localPrediction = generateLocalPrediction(
-            workouts: allWorkouts,
-            voiceLogs: voiceLogs,
-            plan: plan,
-            extendedWorkouts: extendedWorkouts,
-            extendedVoiceLogs: extendedVoiceLogs
-        )
-
-        var prediction = localPrediction
-        if let row = await fetchCanonicalFitness(),
-           let canonical = canonicalPrediction(from: row, local: localPrediction) {
-            prediction = canonical
-            Log.coach.info("Fitness read from canonical snapshot: \(canonical.dataSource)")
-        } else {
-            Log.coach.warning("No canonical fitness row — falling back to the on-device estimate")
-        }
+        // ONE PREDICTOR (2026-08-17). There is no on-device model any more.
+        //
+        // The app used to run `generateLocalPrediction` — an 851-line Swift
+        // twin of the server's predictor — and render whichever answer was
+        // handy. The device sees no laps, no weather, no HR efficiency and no
+        // damped curve, so it was never the same answer: on 2026-08-17 it put
+        // a 2:37 marathon on screen against the server's 2:29:13. Keeping a
+        // second model "as a fallback" meant the app could silently show a
+        // number no other surface agreed with.
+        //
+        // So: the server's row or nothing. When the nightly job hasn't reached
+        // an athlete yet, an honest empty state beats a rival estimate — the
+        // whole point of one source is that there is no second opinion to fall
+        // back to.
+        let prediction: FitnessPrediction? = await fetchCanonicalFitness()
+            .flatMap { canonicalPrediction(from: $0) }
 
         predictions = prediction
         lastUpdated = Date()
@@ -143,9 +126,10 @@ final class FitnessPredictorService {
 
         guard let prediction else {
             errorMessage = "Not enough quality training data to project race times yet. Log a hard effort, race, or structured workout."
-            Log.coach.info("Predictor produced no result — refusing to fabricate.")
+            Log.coach.info("No canonical fitness row — refusing to fabricate a second estimate.")
             return
         }
+        Log.coach.info("Fitness read from canonical snapshot: \(prediction.dataSource)")
 
         Log.coach.info("Fitness prediction completed with \(prediction.races.count) races")
 
@@ -308,859 +292,24 @@ final class FitnessPredictorService {
         return paces
     }
 
-    // MARK: - Local Prediction
-
-    private func generateLocalPrediction(
-        workouts: [WorkoutData],
-        voiceLogs: [VoiceLogData],
-        plan: TrainingPlan?,
-        extendedWorkouts: [WorkoutData] = [],
-        extendedVoiceLogs: [VoiceLogData] = []
-    ) -> FitnessPrediction? {
-        // PRIORITY 1: Detect RACE efforts from extended history (180 days)
-        // Race = standard distance + faster than typical training
-        // Use extended data so races from months ago are still found
-        let raceWorkouts = extendedWorkouts.isEmpty ? workouts : extendedWorkouts
-        let raceVoiceLogs = extendedVoiceLogs.isEmpty ? voiceLogs : extendedVoiceLogs
-        let detectedRaces = detectRaces(workouts: raceWorkouts, voiceLogs: raceVoiceLogs)
-
-        // Find hard efforts using RELATIVE thresholds (not absolute pace numbers)
-        // A "hard effort" is a workout significantly faster than the runner's average
-        let hardEfforts: [WorkoutData]
-        if workouts.count >= 2 {
-            let avgPace = workouts.map { $0.paceSecondsPerMile }.reduce(0, +) / Double(workouts.count)
-            // Hard effort = 8%+ faster than average (accounts for individual fitness)
-            hardEfforts = workouts.filter { $0.paceSecondsPerMile < avgPace * 0.92 }
-        } else {
-            hardEfforts = []
-        }
-
-        // Extract paces from voice logs
-        var voicePaces: [Double] = []
-        for log in voiceLogs {
-            for paceStr in log.pacesMentioned {
-                if let pace = parsePaceString(paceStr) {
-                    voicePaces.append(pace)
-                }
-            }
-        }
-
-        // Extract structured interval data from voice logs
-        var intervalPaces: [(pace: Double, type: String)] = []
-        for log in voiceLogs {
-            guard let extracted = log.extractedWorkout, extracted.hasStructuredData else { continue }
-
-            // Calculate paces from interval sets
-            for interval in extracted.intervalSets {
-                if let targetTime = interval.targetTime {
-                    // Convert rep time to pace per mile
-                    // e.g., 67s for 400m → (67 / 400m) * 1609m = 269s/mi = 4:29/mi
-                    let pacePerMile = (targetTime.seconds / interval.distance.meters) * 1609.34
-                    // Only include reasonable paces (3:30-15:00/mi)
-                    if pacePerMile >= 210 && pacePerMile <= 900 {
-                        intervalPaces.append((pacePerMile, "interval"))
-                        Log.coach.info("Extracted interval pace: \(self.formatPaceLocal(pacePerMile)) from \(interval.description)")
-                    }
-                }
-                if let targetPace = interval.targetPace {
-                    intervalPaces.append((targetPace.secondsPerMile, "interval"))
-                }
-            }
-
-            // Extract tempo/threshold paces
-            for effort in extracted.continuousEfforts {
-                if let pace = effort.targetPace {
-                    intervalPaces.append((pace.secondsPerMile, effort.effortType.rawValue))
-                    Log.coach.info("Extracted \(effort.effortType.rawValue) pace: \(self.formatPaceLocal(pace.secondsPerMile))")
-                }
-            }
-        }
-
-        // --- Fitness baseline from previous snapshot history ---
-        //
-        // The snapshot history is a running ledger of demonstrated fitness. Fitness
-        // doesn't vanish from a single slow week — it vanishes when training
-        // stops. So decay only fires when there's actual detraining evidence (low
-        // volume, no quality work, or layoff). Otherwise the baseline holds flat
-        // at the FASTEST snapshot in the last 16 weeks — not the most recent,
-        // which could be a post-race-recovery or taper-week dip.
-        var baselinePace: Double? = nil
-        let sixteenWeeksAgo = Calendar.current.date(byAdding: .day, value: -112, to: Date()) ?? Date()
-        let inWindowSnapshots = snapshotHistory.filter {
-            $0.createdAt >= sixteenWeeksAgo && ($0.confidence == "High" || $0.confidence == "Medium")
-        }
-        // ANTI-RATCHET (2026-07-16): "fastest snapshot in 16 weeks" let one
-        // transient fast estimate persist for ~4 months (snapshots feed
-        // snapshots). Prefer the fastest of the last 4 weeks — recent enough to
-        // still be demonstrated — falling back to the most recent trusted one.
-        let fourWeeksAgoForSnap = Calendar.current.date(byAdding: .day, value: -28, to: Date()) ?? Date()
-        let recentSnapshots = inWindowSnapshots.filter { $0.createdAt >= fourWeeksAgoForSnap }
-        let chosenSnapshot = recentSnapshots.min(by: { $0.estimated10kPaceSeconds < $1.estimated10kPaceSeconds })
-            ?? inWindowSnapshots.max(by: { $0.createdAt < $1.createdAt })
-        if let bestSnapshot = chosenSnapshot {
-            let weeksAgo = Calendar.current.dateComponents([.day], from: bestSnapshot.createdAt, to: Date()).day.map { Double($0) / 7.0 } ?? 0
-
-            // Decay only fires when detraining evidence is present. A runner who
-            // keeps training is not detraining; the snapshot holds at full value.
-            let detraining = detectDetraining(workouts: workouts, voiceLogs: voiceLogs)
-            let decayPerWeek = detraining.map { 0.003 * $0.severity } ?? 0.0
-            let decayFactor = 1.0 + (weeksAgo * decayPerWeek)
-            baselinePace = bestSnapshot.estimated10kPaceSeconds * decayFactor
-
-            if let dt = detraining {
-                Log.coach.info("Fitness baseline from \(Int(weeksAgo))w ago: \(self.formatPaceLocal(bestSnapshot.estimated10kPaceSeconds)) → decayed \(self.formatPaceLocal(baselinePace!)) (detraining severity \(String(format: "%.2f", dt.severity)): \(dt.reasons.joined(separator: ", ")))")
-            } else {
-                Log.coach.info("Fitness baseline from \(Int(weeksAgo))w ago: \(self.formatPaceLocal(bestSnapshot.estimated10kPaceSeconds)) — held flat (training continues, no decay)")
-            }
-        }
-
-        // --- Estimate 10K pace: anchor + training adjustment ---
-        // Step 1: Find the best anchor (race, plan goal, or snapshot baseline)
-        // Step 2: Find the best current training signal (intervals, tempo, hard efforts)
-        // Step 3: Blend — training signal nudges the anchor up or down
-        var estimated10KPace: Double = 0
-        var dataSource = "default"
-        // Hard efforts seen in the last 14 days — populated inside the anchor
-        // block, consumed by the speed-evidence shading at prediction assembly.
-        var speedEvidenceHardEfforts: [(paceSeconds: Double, distanceMiles: Double)] = []
-
-        // ── Step 1: Anchor — the foundation of our fitness estimate ──
-        //
-        // A race is PROOF of fitness. Training anchors are INDICATORS. Proof outlives
-        // indicators. Races are typically months apart for serious runners, so the
-        // old 6-week staleness cliff was throwing away every race after a normal
-        // offseason. New rules:
-        //
-        //   - Pick the FASTEST race-equivalent pace in the trusted window (≤36 weeks).
-        //     The demonstrated ceiling is the fastest verified race, not the most
-        //     recent one. A hot/hilly recent race shouldn't displace a clean older one.
-        //
-        //   - Race anchor wins outright when ≤16 weeks old. From 16–24 weeks it can
-        //     be displaced by a fresh training anchor (≤4 weeks). Beyond 24 weeks
-        //     a fresh training anchor is preferred when available.
-        //
-        //   - Multiple agreeing races increase confidence (logged here, used downstream).
-        //
-        //   - The maintenance-factor decay model below adjusts the anchor pace toward
-        //     "today" based on training stimulus since the race date.
-        var anchorPace: Double? = nil
-        var anchorSource = ""
-        var anchorWeeksAgo: Double = 0
-        var chosenRace: DetectedRace? = nil
-
-        let trainingAnchors = detectTrainingAnchors(voiceLogs: voiceLogs)
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let recentTrainingAnchor = trainingAnchors.first { a in
-            guard let d = dateFormatter.date(from: a.date) else { return false }
-            let weeksAgo = Calendar.current.dateComponents([.day], from: d, to: Date()).day.map { Double($0) / 7.0 } ?? 999
-            return weeksAgo <= 4.0  // only trust training anchors from the last 4 weeks
-        }
-
-        // Score every race in the trusted window: (race, weeksAgo, equivalent 10K pace)
-        let racePrimaryWindowWeeks = 16.0       // race wins outright when ≤ this old
-        let raceTrustedWindowWeeks = 36.0       // beyond this, race is no longer used
-        let scoredRaces: [(race: DetectedRace, weeksAgo: Double, tenKPace: Double)] =
-            detectedRaces.compactMap { race in
-                guard let d = dateFormatter.date(from: race.date) else { return nil }
-                let weeks = Calendar.current.dateComponents([.day], from: d, to: Date()).day.map { Double($0) / 7.0 } ?? 999
-                guard weeks <= raceTrustedWindowWeeks else { return nil }
-                let tenK = convert(racePace: race.paceSecondsPerMile, from: race.raceType, to: .tenK)
-                return (race, weeks, tenK)
-            }
-
-        // Pick the best race by AGE-WEIGHTED 10K-equivalent pace (2026-07-16).
-        // Pure fastest-in-36-weeks was a max-filter over 9 months of noise: one
-        // GPS-flattered or misparsed old "race" permanently anchored fast. A
-        // 0.2%/week selection penalty (~decay rate) means an older race must be
-        // genuinely faster than a recent one to win — a 20-week-old race needs a
-        // >4% pace edge over last month's.
-        let bestRaceMatch = scoredRaces.min(by: {
-            $0.tenKPace * (1.0 + $0.weeksAgo * 0.002) < $1.tenKPace * (1.0 + $1.weeksAgo * 0.002)
-        })
-
-        if let best = bestRaceMatch {
-            // Race anchor wins unless it's well past the primary window AND a fresh
-            // training anchor exists THAT IS ACTUALLY FASTER than the race. This
-            // treats races as durable proof of fitness: a modest recent tempo
-            // (e.g. a 6:59 10K-equivalent) must not override a 31:24 10K race just
-            // because the race aged past 16 weeks. When the recent anchor is
-            // slower/weaker, the race stays and is decayed forward below.
-            let raceIsPrimary = best.weeksAgo <= racePrimaryWindowWeeks
-                || recentTrainingAnchor == nil
-                || (recentTrainingAnchor?.equivalentTenKPace ?? .infinity) >= best.tenKPace
-
-            if raceIsPrimary {
-                anchorPace = best.tenKPace
-                anchorSource = "race (\(best.race.raceType.rawValue))"
-                anchorWeeksAgo = best.weeksAgo
-                chosenRace = best.race
-                if scoredRaces.count > 1 {
-                    Log.coach.info("Anchor: \(best.race.raceType.rawValue) race \(self.formatPaceLocal(best.tenKPace)) (\(Int(best.weeksAgo))w ago) — fastest of \(scoredRaces.count) races in window")
-                } else {
-                    Log.coach.info("Anchor: \(best.race.raceType.rawValue) race \(self.formatPaceLocal(best.tenKPace)) (\(Int(best.weeksAgo))w ago)")
-                }
-            } else if let t = recentTrainingAnchor {
-                // DISPLACEMENT CAP (2026-07-16): a single parsed workout may
-                // refine a stale race anchor, never replace it wholesale. The old
-                // code swapped the anchor outright — one hot fartlek's rep paces
-                // moved the whole fitness estimate 9% in a day. A training
-                // anchor is an INDICATOR; the race stays the floor of proof. We
-                // blend 50/50 and cap the net result at 3% faster than the
-                // race-demonstrated pace.
-                let raceFloor = best.tenKPace * 0.97
-                let blendedAnchor = max((best.tenKPace + t.equivalentTenKPace) / 2.0, raceFloor)
-                anchorPace = blendedAnchor
-                anchorSource = "training (\(t.kind.rawValue)) + race (\(best.race.raceType.rawValue))"
-                if let d = dateFormatter.date(from: t.date) {
-                    anchorWeeksAgo = Calendar.current.dateComponents([.day], from: d, to: Date()).day.map { Double($0) / 7.0 } ?? 0
-                }
-                Log.coach.info("Anchor: training \(t.kind.rawValue) \(self.formatPaceLocal(t.equivalentTenKPace)) blended with race \(self.formatPaceLocal(best.tenKPace)) (stale at \(Int(best.weeksAgo))w) → \(self.formatPaceLocal(blendedAnchor)) (capped ≥ race−3%)")
-            }
-        }
-        // No usable race: training anchor takes priority over plan/snapshot —
-        // but a single session must not swing the estimate wholesale. If a
-        // snapshot baseline exists, the training anchor may pull it at most 3%
-        // faster (2026-07-16, evidence-first).
-        else if let t = recentTrainingAnchor {
-            if let baseline = baselinePace {
-                let floor = baseline * 0.97
-                anchorPace = max((baseline + t.equivalentTenKPace) / 2.0, floor)
-                anchorSource = "training (\(t.kind.rawValue)) + fitness profile"
-            } else {
-                anchorPace = t.equivalentTenKPace
-                anchorSource = "training (\(t.kind.rawValue))"
-            }
-            if let d = dateFormatter.date(from: t.date) {
-                anchorWeeksAgo = Calendar.current.dateComponents([.day], from: d, to: Date()).day.map { Double($0) / 7.0 } ?? 0
-            }
-            Log.coach.info("Anchor: training \(t.kind.rawValue) \(self.formatPaceLocal(anchorPace!)) (\(Int(anchorWeeksAgo))w ago)")
-        }
-        // Next: training plan goal
-        else if let plan = plan, plan.status == .active, plan.targetTimeSeconds > 0 {
-            let goalPace = Double(plan.targetTimeSeconds) / plan.raceDistance.distanceInMiles
-            anchorPace = convert(racePace: goalPace, from: planRaceType(plan.raceDistance), to: .tenK)
-            anchorSource = "training plan (\(plan.raceDistance.displayName) goal)"
-            Log.coach.info("Anchor: training plan goal → 10K \(self.formatPaceLocal(anchorPace!))")
-        }
-        // Fallback: previous snapshot baseline (now decay-gated; see L341-369)
-        else if let baseline = baselinePace {
-            anchorPace = baseline
-            anchorSource = "fitness profile"
-            if let snap = chosenSnapshot {
-                anchorWeeksAgo = Calendar.current.dateComponents([.day], from: snap.createdAt, to: Date()).day.map { Double($0) / 7.0 } ?? 0
-            }
-            Log.coach.info("Anchor: fitness profile \(self.formatPaceLocal(baseline)) (\(Int(anchorWeeksAgo))w ago)")
-        }
-
-        // ── Step 2: Measure actual training stimulus ──
-        //
-        // Grounded in what a competitive runner actually does:
-        //   - 31:21 10K runner (~5:03/mi) typically runs 40-60 mi/week, 5-7 days
-        //   - Quality: 2-3 sessions/week → 40-70 min of hard work
-        //     e.g. Tue: 6x1K @ 3:40 (~22min), Thu: 5mi tempo @ 5:20 (~27min)
-        //   - One quality session/week (~25 min) = enough to maintain fitness
-        //   - Two sessions/week (~50 min) = standard training, fitness holds or improves
-        //   - Zero quality + dropping volume = detraining
-        //
-        // We measure:
-        //   1. Time at hard paces (from GPS pace segments in training_logs)
-        //   2. Structured sessions (workouts with intervals/tempo from voice logs)
-        //   3. Volume and quality trends (recent 2 weeks vs prior 2 weeks)
-        //
-        // Only count training AFTER the race anchor — pre-race training is
-        // already reflected in the race result.
-
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "yyyy-MM-dd"
-        let now = Date()
-        let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: now)!
-        let fourWeeksAgo = Calendar.current.date(byAdding: .day, value: -28, to: now)!
-
-        // Determine the anchor date — only count stimulus after this point.
-        // Use the chosen race (set above by the anchor-selection block), not
-        // `detectedRaces.first`. Otherwise stimulus counting starts from the
-        // wrong race when an older race was selected as the best anchor.
-        var anchorDate: Date = fourWeeksAgo  // default: 4 weeks back
-        if let chosen = chosenRace, let d = dateFmt.date(from: chosen.date) {
-            anchorDate = d
-        }
-
-        // ── Count miles and runs from ALL workout sources (not just voice logs) ──
-        var recentMiles: Double = 0
-        var priorMiles: Double = 0
-        var recentRuns = 0
-        var priorRuns = 0
-
-        // Use the 30-day workouts from HealthKit/Vital (already merged, deduplicated)
-        for workout in workouts {
-            guard let workoutDate = dateFmt.date(from: workout.date),
-                  workoutDate > anchorDate else { continue }
-            let isRecent = workoutDate >= twoWeeksAgo
-            let isPrior = workoutDate >= fourWeeksAgo && workoutDate < twoWeeksAgo
-            if isRecent { recentMiles += workout.distanceMiles; recentRuns += 1 }
-            else if isPrior { priorMiles += workout.distanceMiles; priorRuns += 1 }
-        }
-
-        // ── Count hard stimulus from ALL sources ──
-        // Priority: pace segments (most accurate) > voice log structured data > workout classification
-        var postRaceStimulusSeconds: Double = 0
-        var recentStimulusSeconds: Double = 0
-        var priorStimulusSeconds: Double = 0
-        var structuredSessionCount = 0
-        var datesWithDetailedStimulus: Set<String> = []  // Don't double-count
-
-        let allVoiceLogs = extendedVoiceLogs.isEmpty ? voiceLogs : extendedVoiceLogs
-        let hardEffortTypes: Set<String> = ["tempo", "threshold", "interval", "race_pace"]
-
-        // Pass 1: Pace segments from training_logs (most accurate — actual GPS-derived effort)
-        for log in allVoiceLogs {
-            let logDate = dateFmt.date(from: log.date) ?? now
-            guard logDate > anchorDate else { continue }
-
-            let isRecent = logDate >= twoWeeksAgo
-            let isPrior = logDate >= fourWeeksAgo && logDate < twoWeeksAgo
-
-            if let segments = log.paceSegments, !segments.isEmpty {
-                var sessionHasStimulus = false
-                for segment in segments {
-                    if hardEffortTypes.contains(segment.effort) {
-                        postRaceStimulusSeconds += segment.durationSeconds
-                        if isRecent { recentStimulusSeconds += segment.durationSeconds }
-                        else if isPrior { priorStimulusSeconds += segment.durationSeconds }
-                        sessionHasStimulus = true
-                    }
-                }
-                if sessionHasStimulus {
-                    structuredSessionCount += 1
-                    datesWithDetailedStimulus.insert(log.date)
-                }
-                continue
-            }
-
-            // Pass 2: Voice log structured data (intervals/tempo from notes)
-            guard let extracted = log.extractedWorkout, extracted.hasStructuredData else { continue }
-            var sessionHasStimulus = false
-
-            for interval in extracted.intervalSets {
-                if let targetTime = interval.targetTime {
-                    let repSeconds = targetTime.seconds * Double(interval.repetitions)
-                    postRaceStimulusSeconds += repSeconds
-                    if isRecent { recentStimulusSeconds += repSeconds }
-                    else if isPrior { priorStimulusSeconds += repSeconds }
-                    sessionHasStimulus = true
-                }
-            }
-            for effort in extracted.continuousEfforts {
-                if let duration = effort.duration {
-                    postRaceStimulusSeconds += duration.seconds
-                    if isRecent { recentStimulusSeconds += duration.seconds }
-                    else if isPrior { priorStimulusSeconds += duration.seconds }
-                    sessionHasStimulus = true
-                }
-            }
-            if sessionHasStimulus {
-                structuredSessionCount += 1
-                datesWithDetailedStimulus.insert(log.date)
-            }
-        }
-
-        // No Pass 3: workouts without pace segments or structured voice log data
-        // get no stimulus credit. We never guess from average pace classification
-        // because average pace includes warmup/cooldown/recovery and is misleading.
-        // Ensure pace segments are extracted at sync time (WorkoutsView.extractAndSavePaceSegments)
-        // so they're available here via training_logs.
-
-        // ── Compute weekly averages ──
-        // Use the actual weeks since the race for weekly stimulus (not a fixed 4-week window)
-        let weeksSinceAnchor = max(anchorWeeksAgo, 1.0)
-        let weeklyStimulusMinutes = (postRaceStimulusSeconds / 60.0) / weeksSinceAnchor
-        let stimulusMinutes = postRaceStimulusSeconds / 60.0
-        let weeklyMiles = (recentMiles + priorMiles) / min(weeksSinceAnchor, 4.0)
-        let runsPerWeek = Double(recentRuns + priorRuns) / min(weeksSinceAnchor, 4.0)
-
-        // Trends: >1 = increasing, <1 = decreasing (recent 2wk vs prior 2wk).
-        // EVIDENCE-FIRST (2026-07-16): when the prior window is empty we have NO
-        // evidence of building — default to neutral 1.0, never 2.0. The old 2.0
-        // default trivially satisfied the build gate (>1.15) and granted
-        // improvement credit off missing data.
-        let volumeTrend = priorMiles > 0 ? recentMiles / priorMiles : (recentMiles > 0 ? 1.0 : 0.0)
-        let stimulusTrend = priorStimulusSeconds > 0 ? recentStimulusSeconds / priorStimulusSeconds : (recentStimulusSeconds > 0 ? 1.0 : 0.0)
-
-        Log.coach.info("Training stimulus: \(String(format: "%.0f", weeklyStimulusMinutes))min/wk hard (\(String(format: "%.0f", stimulusMinutes))min total), \(structuredSessionCount) quality sessions, \(String(format: "%.0f", weeklyMiles))mi/wk, vol trend \(String(format: "%.2f", volumeTrend)), stim trend \(String(format: "%.2f", stimulusTrend))")
-
-        if let anchor = anchorPace {
-            // ── Decay model ──
-            //
-            // Real-world calibration for a ~31:20 10K runner:
-            //   Scenario A: Training well (2 quality sessions/wk, 50+ mi/wk)
-            //     → weeklyStimulusMin ~50, volumeTrend ~1.0
-            //     → effectiveDecay ≈ 0 → predicted 10K stays ~31:20  ✓
-            //   Scenario B: Maintaining (1 quality session/wk, 35 mi/wk)
-            //     → weeklyStimulusMin ~25, volumeTrend ~0.9
-            //     → effectiveDecay ≈ 0.05%/wk → 5 weeks = +5 sec → 31:26  ✓
-            //   Scenario C: Easy running only (0 quality, 30 mi/wk)
-            //     → weeklyStimulusMin 0, volumeTrend ~1.0
-            //     → effectiveDecay ≈ 0.15%/wk → 5 weeks = +14 sec → 31:35  ✓
-            //   Scenario D: Not running at all
-            //     → weeklyStimulusMin 0, volumeTrend 0
-            //     → effectiveDecay ≈ 0.35%/wk → 5 weeks = +33 sec → 31:54  ✓
-            //   Scenario E: Increasing quality + volume (peaking)
-            //     → weeklyStimulusMin ~60, volumeTrend 1.3, stimulusTrend 1.4
-            //     → slight improvement → 5 weeks = -5 to -10 sec → 31:11–31:16  ✓
-
-            // Base detraining: 0.3%/week with zero running (VO2max literature)
-            let baseDecayPerWeek = 0.003
-
-            // Quality work offsets decay. One session/week (~25 min) = half maintenance.
-            // Two sessions/week (~50 min) = full maintenance. Scale linearly up to 50 min.
-            let stimulusOffset = min(weeklyStimulusMinutes / 50.0, 1.0) // 0..1
-
-            // Volume also matters — you can't maintain with quality alone on 15 mi/week.
-            // Running volume preserves the aerobic base that supports the hard stuff.
-            // At 40+ mi/wk: full volume credit. Below that: partial. Below 10: minimal.
-            let volumeCredit = min(weeklyMiles / 40.0, 1.0) // 0..1
-
-            // Combined: stimulus and volume both contribute. Stimulus matters more
-            // (you can maintain on 30 mi/wk with 2 quality sessions, but not on
-            // 60 mi/wk of easy running with no quality for months).
-            let maintenanceFactor = stimulusOffset * 0.65 + volumeCredit * 0.35
-            // 0 = no training at all, 1 = full training
-
-            // Effective decay: full training = ~0.03%/wk (residual). No training = 0.3%/wk.
-            var effectiveDecayPerWeek = baseDecayPerWeek * (1.0 - maintenanceFactor * 0.9)
-
-            // Progressive overload: if both volume and quality are trending up,
-            // the runner is getting fitter, not just maintaining.
-            // EVIDENCE-FIRST: the build gate requires REAL prior-window data —
-            // an empty prior window is absence of evidence, not a building block.
-            if volumeTrend > 1.15 && stimulusTrend > 1.0 && weeklyStimulusMinutes >= 30
-                && priorMiles > 0 && priorStimulusSeconds > 0 {
-                // Building phase — slight improvement possible
-                let buildRate = min((volumeTrend - 1.0) * 0.003, 0.002) // cap at 0.2%/wk improvement
-                effectiveDecayPerWeek -= buildRate
-            }
-
-            // Sharp volume drop = faster decay (injury, life, etc.)
-            if volumeTrend < 0.5 && volumeTrend > 0 {
-                effectiveDecayPerWeek += 0.001
-            }
-
-            // Cap: can't improve faster than 0.2%/week, can't decay faster than 0.4%/week
-            effectiveDecayPerWeek = max(min(effectiveDecayPerWeek, 0.004), -0.002)
-
-            var decayFactor = 1.0 + (anchorWeeksAgo * effectiveDecayPerWeek)
-            // EVIDENCE-FIRST CAP (2026-07-16): improvement inferred from volume
-            // trends alone — with no faster race or faster measured hard paces —
-            // is capped at 0.5% TOTAL, no matter how old the anchor is. The old
-            // model compounded −0.2%/wk since the anchor date (a 13-week-old
-            // anchor earned an unproven −2.6%), which is most of why predictions
-            // skewed fast. Proven improvement still comes in below, through the
-            // pace-segment validation grounded in actual measured hard paces.
-            decayFactor = max(decayFactor, 0.995)
-            // CONTINUOUS-TRAINING DECAY CAP (2026-07-16): VO2 decay applies to
-            // STOPPED training. With zero detraining evidence (volume held, no
-            // layoff), a demonstrated race decays at most 2% total no matter
-            // its age — sparse effort labels on old logs must not read as
-            // "no quality since the race". Genuine decline still arrives
-            // through the detraining triggers.
-            if detectDetraining(workouts: workouts, voiceLogs: voiceLogs) == nil {
-                decayFactor = min(decayFactor, 1.02)
-            }
-            estimated10KPace = anchor * decayFactor
-
-            // ── Step 2b: Validate anchor with actual workout paces ──
-            // If we have recent interval/tempo paces from GPS pace segments,
-            // use them to validate and adjust the anchor-based estimate.
-            // Interval pace ≈ 5K-10K fitness. Tempo pace ≈ half marathon fitness.
-            var paceSegmentSignal: Double?
-
-            // Collect hard segment paces + distances from recent workouts (last 14 days)
-            // We need VOLUME at hard paces, not just a few 200m reps
-            // EFFORT-AWARE (2026-07-16): reps are near-maximal (Riegel by
-            // distance applies); tempo/threshold are CONTROLLED efforts — not
-            // all-out races at the segment's length. Track which is which.
-            struct HardEffort {
-                let paceSeconds: Double
-                let distanceMiles: Double
-                let isSustained: Bool   // tempo/threshold vs rep/race_pace
-            }
-            var recentHardEfforts: [HardEffort] = []
-            let sustainedEffortTypes: Set<String> = ["tempo", "threshold"]
-
-            for log in allVoiceLogs {
-                let logDate = dateFmt.date(from: log.date) ?? now
-                guard logDate >= twoWeeksAgo else { continue }
-                guard let segments = log.paceSegments else { continue }
-                for seg in segments {
-                    guard hardEffortTypes.contains(seg.effort) else { continue }
-                    guard seg.distanceMiles > 0.1 else { continue } // skip tiny segments
-                    let parts = seg.pacePerMile.split(separator: ":").compactMap { Double($0) }
-                    if parts.count == 2 {
-                        let paceSeconds = parts[0] * 60 + parts[1]
-                        if paceSeconds >= 210 && paceSeconds <= 540 {
-                            recentHardEfforts.append(HardEffort(
-                                paceSeconds: paceSeconds,
-                                distanceMiles: seg.distanceMiles,
-                                isSustained: sustainedEffortTypes.contains(seg.effort)
-                            ))
-                        }
-                    }
-                }
-            }
-
-            // Also include voice-log extracted interval paces with estimated distance
-            for ip in intervalPaces {
-                if ip.pace >= 210 && ip.pace <= 540 {
-                    // Estimate distance from pace type — intervals ~0.5mi each, tempo ~2mi
-                    let isInterval = ip.type == "interval"
-                    recentHardEfforts.append(HardEffort(
-                        paceSeconds: ip.pace,
-                        distanceMiles: isInterval ? 0.5 : 2.0,
-                        isSustained: !isInterval
-                    ))
-                }
-            }
-
-            // Only use pace signal if there's meaningful volume at hard paces
-            // Minimum: 4 miles of hard running in the last 14 days
-            // This prevents 2x200m strides from skewing the prediction
-            let totalHardMiles = recentHardEfforts.reduce(0.0) { $0 + $1.distanceMiles }
-
-            // Expose for speed-evidence shading at prediction assembly.
-            speedEvidenceHardEfforts = recentHardEfforts.map { ($0.paceSeconds, $0.distanceMiles) }
-
-            if totalHardMiles >= 4.0 && recentHardEfforts.count >= 3 {
-                // Convert EACH hard effort to its 10K-equivalent by its OWN
-                // distance, then distance-weight. The old code used a flat
-                // ×1.06, which is only right for a ~2mi effort — applied to a
-                // 400m rep it barely slowed a rep pace that's really mile/3K
-                // effort, so a 4:50/mi 400 read as a ~5:07/mi 10K. Riegel by
-                // distance gives 10K-pace = p · (10Kmi / d)^0.06, which slows
-                // short reps far more (a 0.25mi rep → ×1.21) and leaves ~2mi
-                // tempo efforts near the old ×1.07. This is the deterministic
-                // half of the "rep pace ≠ race pace" fix.
-                let tenKMi = RaceDistanceConstants.tenKMiles
-                let ltTo10K = 0.975   // LT (sustained tempo/threshold) → 10K pace
-                // TOP-WEIGHTED SIGNAL (2026-07-16): fitness lives in the BEST
-                // sustained work, not the average of every quality mile. The
-                // fastest reps are the fitness statement; slower quality laps
-                // are fatigue, floats, warm-down. Use the fastest half of
-                // quality mileage (min 2 mi) by 10K-equivalent.
-                // Sustained tempo ≈ LT effort — NOT an all-out race at the
-                // segment's length (Riegel-by-distance read a relaxed 2mi
-                // tempo as a maximal 2-mile race and inferred slow fitness).
-                let withEquiv = recentHardEfforts.map { e -> (tenKEquiv: Double, distanceMiles: Double) in
-                    let d = max(e.distanceMiles, 0.15)   // guard tiny reps
-                    let tenKEquiv = e.isSustained
-                        ? e.paceSeconds * ltTo10K
-                        : e.paceSeconds * pow(tenKMi / d, 0.06)
-                    return (tenKEquiv, e.distanceMiles)
-                }.sorted { $0.tenKEquiv < $1.tenKEquiv }   // fastest first
-                let targetMiles = max(totalHardMiles * 0.5, 2.0)
-                var usedMiles = 0.0
-                var topSum = 0.0
-                for e in withEquiv {
-                    if usedMiles >= targetMiles { break }
-                    let take = min(e.distanceMiles, targetMiles - usedMiles)
-                    topSum += e.tenKEquiv * take
-                    usedMiles += take
-                }
-                paceSegmentSignal = topSum / usedMiles
-
-                let diff = paceSegmentSignal! - estimated10KPace
-                if abs(diff) > 5 { // More than 5 sec/mi discrepancy
-                    // Blend weight scales with volume: 4mi = 30% signal, 8mi+ = 50% signal
-                    let signalWeight = min(0.3 + (totalHardMiles - 4.0) * 0.05, 0.5)
-                    let anchorWeight = 1.0 - signalWeight
-                    var blended = estimated10KPace * anchorWeight + paceSegmentSignal! * signalWeight
-                    // VALIDATION BAND (2026-07-16): training paces VALIDATE a
-                    // race-demonstrated anchor, they don't re-measure it.
-                    // Speed-up capped at 2% (rep math is noisy — reps run faster
-                    // than race pace, GPS flatters short segments, summer reps
-                    // carry heat cost; a breakthrough shows up as a race) and
-                    // slow-down capped at 2% (sub-max training paces can't prove
-                    // unfitness — decline arrives via the decay/detraining model).
-                    blended = max(blended, estimated10KPace * 0.98)
-                    blended = min(blended, estimated10KPace * 1.02)
-                    Log.coach.info("Pace segment signal: \(self.formatPaceLocal(paceSegmentSignal!)) vs anchor \(self.formatPaceLocal(estimated10KPace)) → blended \(self.formatPaceLocal(blended)) (weight: \(String(format: "%.0f", signalWeight * 100))%, \(String(format: "%.1f", totalHardMiles))mi hard)")
-                    estimated10KPace = blended
-                }
-            } else if totalHardMiles > 0 {
-                Log.coach.info("Pace segments found (\(String(format: "%.1f", totalHardMiles))mi) but below 4mi threshold — not enough volume to adjust")
-            }
-
-            if effectiveDecayPerWeek < 0 {
-                dataSource = anchorSource + " (improving)"
-            } else if effectiveDecayPerWeek < 0.001 {
-                dataSource = anchorSource + " (maintaining)"
-            } else {
-                dataSource = anchorSource
-            }
-
-            if paceSegmentSignal != nil {
-                dataSource += " + pace segments"
-            }
-
-            Log.coach.info("Anchor \(self.formatPaceLocal(anchor)) → \(self.formatPaceLocal(estimated10KPace)) (\(Int(anchorWeeksAgo))w, decay \(String(format: "%.3f", effectiveDecayPerWeek * 100))%/wk, stim \(String(format: "%.0f", weeklyStimulusMinutes))min/wk, vol \(String(format: "%.0f", weeklyMiles))mi/wk, maint \(String(format: "%.0f", maintenanceFactor * 100))%, hard vol: \(String(format: "%.1f", totalHardMiles))mi)")
-        }
-
-        // ── Fallback: structured workout data from voice logs (only when no anchor) ──
-        // Only use explicitly logged interval/tempo paces from voice logs — these are
-        // the actual work portions, not contaminated by warmup/cooldown.
-        if estimated10KPace == 0 {
-            let intervals = intervalPaces.filter { $0.type == "interval" }
-            let tempos = intervalPaces.filter { $0.type == "tempo" || $0.type == "threshold" }
-            var trainingSignal: Double? = nil
-            var trainingSource = ""
-
-            if !intervals.isEmpty {
-                let avgIntervalPace = intervals.map { $0.pace }.reduce(0, +) / Double(intervals.count)
-                trainingSignal = avgIntervalPace * 1.04
-                trainingSource = "intervals (\(intervals.count) sets)"
-            } else if !tempos.isEmpty {
-                let avgTempoPace = tempos.map { $0.pace }.reduce(0, +) / Double(tempos.count)
-                trainingSignal = avgTempoPace * 0.97
-                trainingSource = "tempo (\(tempos.count) efforts)"
-            } else if !voicePaces.isEmpty {
-                let avgVoicePace = voicePaces.reduce(0, +) / Double(voicePaces.count)
-                trainingSignal = avgVoicePace * 0.97
-                trainingSource = "voice log paces"
-            }
-
-            if let signal = trainingSignal {
-                estimated10KPace = signal
-                dataSource = trainingSource
-                Log.coach.info("Training signal only: \(self.formatPaceLocal(signal))")
-            } else if !workouts.isEmpty {
-                // No structured data — last resort, use fastest workout as rough estimate
-                let fastestWorkout = workouts.min(by: { $0.paceSecondsPerMile < $1.paceSecondsPerMile })!
-                estimated10KPace = fastestWorkout.paceSecondsPerMile * 0.95
-                dataSource = "fastest workout"
-            }
-            // No fallback default. If we reach here with no signal at all, the
-            // caller treats estimated10KPace == 0 as "no prediction" and bails
-            // before constructing a fake fitness profile.
-        }
-
-        // No usable anchor → return nil rather than fabricate.
-        guard estimated10KPace > 0 else {
-            Log.coach.warning("No usable fitness signal — skipping prediction (would have been a fabricated default)")
-            return nil
-        }
-
-        Log.coach.info("Estimated 10K pace: \(self.formatPaceLocal(estimated10KPace)) (source: \(dataSource))")
-
-        // Use PaceCalculator equivalence tables (same system as the pace chart)
-        // to derive all race predictions from the estimated 10K pace.
-        // ROUND, don't truncate — Int() floored every prediction fast twice.
-        let tenKSeconds = Int((estimated10KPace * RaceDistanceConstants.tenKMiles).rounded())
-
-        func raceTime(_ toDistance: String) -> Int {
-            PaceCalculator.getEquivalentTime(fromDistance: "10K", fromSeconds: tenKSeconds, toDistance: toDistance)
-        }
-        func racePace(_ toDistance: String) -> Double {
-            let time = raceTime(toDistance)
-            let miles = PaceCalculator.distances[toDistance] ?? 1.0
-            return Double(time) / miles
-        }
-
-        // ── Speed evidence & endurance shading (2026-07-16) ──
-        //
-        // The single-scalar model structurally over-predicts distances FAR from
-        // the anchor. Two corrections:
-        //
-        // 1. MILE: the VDOT-steep mile ratio (0.139583) assumes trained speed.
-        //    Without recent evidence of running anywhere near 5K pace or faster,
-        //    shade the mile toward Riegel-1.06 (0.14428 of the 10K time — ~3.3%
-        //    slower). Evidence = ≥1.5 mi of hard segments at ≤ 5K-equivalent
-        //    pace in the last 14 days.
-        // 2. MARATHON: equivalence tables assume marathon-ready volume. Below
-        //    40 mi/wk the marathon degrades beyond the curve — scale up to +6%
-        //    at zero volume. (Riegel/VDOT both document this failure mode.)
-        let fiveKEquivalentPace = estimated10KPace * 0.966  // 5K pace ≈ 96.6% of 10K pace (ratio table)
-        let speedEvidenceMiles = speedEvidenceHardEfforts
-            .filter { $0.paceSeconds <= fiveKEquivalentPace }
-            .reduce(0.0) { $0 + $1.distanceMiles }
-        let hasSpeedEvidence = speedEvidenceMiles >= 1.5
-
-        let mileVDOT = Double(raceTime("mile"))
-        let mileRiegel = Double(tenKSeconds) * 0.14434   // Riegel-1.06: (1 / 6.21371)^1.06
-        let mileSeconds = hasSpeedEvidence ? Int(mileVDOT.rounded())
-                                           : Int(((mileVDOT + mileRiegel) / 2.0).rounded())
-
-        var marathonSecondsD = Double(raceTime("marathon"))
-        let marathonVolumeFactor = weeklyMiles >= 40.0 ? 1.0 : 1.0 + ((40.0 - max(weeklyMiles, 0)) / 40.0) * 0.06
-        if chosenRace?.raceType != .marathon {
-            marathonSecondsD *= marathonVolumeFactor
-        }
-        let marathonSeconds = Int(marathonSecondsD.rounded())
-
-        // Count structured interval sets for summary
-        let structuredIntervalCount = intervalPaces.filter { $0.type == "interval" }.count
-        let structuredTempoCount = intervalPaces.filter { $0.type == "tempo" || $0.type == "threshold" }.count
-
-        // Tier first — same signal hierarchy as the legacy `confidence` string,
-        // but typed. Range half-windows below attach to every prediction item.
-        let predictedTier: ConfidenceTier
-        let confidence: String
-        let summary: String
-
-        if let race = chosenRace {
-            // AGE-AWARE (2026-07-16): a race is high-confidence proof for ~16
-            // weeks. Past that it's still the best anchor we have, but the
-            // certainty is gone — medium tier, wider ranges.
-            predictedTier = anchorWeeksAgo <= racePrimaryWindowWeeks ? .high : .medium
-            confidence = predictedTier == .high ? "High" : "Medium"
-            let raceTime = formatTime(seconds: race.totalTimeSeconds)
-            summary = anchorWeeksAgo <= racePrimaryWindowWeeks
-                ? "Based on your \(race.raceType.rawValue) race (\(raceTime))."
-                : "Based on your \(race.raceType.rawValue) race (\(raceTime)) — \(Int(anchorWeeksAgo)) weeks ago, so ranges are wider."
-        } else if anchorPace != nil {
-            predictedTier = .medium
-            confidence = "Medium"
-            summary = "Based on your \(anchorSource)."
-        } else if structuredIntervalCount > 0 || structuredTempoCount > 0 {
-            predictedTier = .medium
-            confidence = "Medium"
-            summary = "Based on structured workout data from your training logs."
-        } else if dataSource.contains("training plan") {
-            predictedTier = .medium
-            confidence = "Medium"
-            let goalTime = plan.map { formatTime(seconds: $0.targetTimeSeconds) } ?? ""
-            let raceName = plan?.raceDistance.displayName ?? ""
-            summary = "Based on your \(raceName) goal of \(goalTime). Log workouts and voice notes for more precise predictions."
-        } else if dataSource.contains("fitness profile") {
-            predictedTier = .medium
-            confidence = "Medium"
-            summary = "Based on your previous fitness profile. Log a hard workout or race for a fresh assessment."
-        } else if workouts.isEmpty && voiceLogs.isEmpty {
-            predictedTier = .low
-            confidence = "Low"
-            summary = "Sample predictions shown. Log runs via HealthKit or voice notes to get personalized race times."
-        } else {
-            predictedTier = .low
-            confidence = "Low"
-            summary = "Based on \(workouts.count) workouts from the last 30 days. Log a hard effort or race for better accuracy."
-        }
-
-        // ── Distance-aware ranges (2026-07-16) ──
-        // A flat ±% per tier claimed the same certainty for a mile predicted
-        // off a half marathon as for the half itself. Ranges now widen with:
-        //   • distance from the anchor race (0.8% per doubling/halving),
-        //   • anchor age (up to +1%),
-        //   • missing speed evidence (mile only, +1%),
-        //   • thin volume (marathon only, +1% below 30 mi/wk).
-        let anchorMiles: Double = chosenRace?.raceType.distanceMiles ?? RaceDistanceConstants.tenKMiles
-        let ageWidening = min(anchorWeeksAgo * 0.0004, 0.01)
-
-        func rangeFraction(forMiles distMiles: Double, extra: Double = 0) -> Double {
-            let distanceGap = abs(log2(distMiles / anchorMiles)) * 0.008
-            return min(predictedTier.rangeFraction + distanceGap + ageWidening + extra, 0.07)
-        }
-
-        func makeItem(_ distance: String, seconds: Int, pace: Double, distMiles: Double, extraRange: Double = 0) -> RacePredictionItem {
-            RacePredictionItem(
-                distance: distance,
-                time: formatTime(seconds: seconds),
-                pace: formatPaceLocal(pace),
-                pointSeconds: seconds,
-                rangeSeconds: Int((Double(seconds) * rangeFraction(forMiles: distMiles, extra: extraRange)).rounded())
-            )
-        }
-
-        let mileMiles = 1.0
-        let fiveKMiles = RaceDistanceConstants.fiveKMiles
-        let halfMiles = RaceDistanceConstants.halfMarathonMiles
-        let marathonMiles = RaceDistanceConstants.marathonMiles
-
-        let races = [
-            makeItem("MILE",     seconds: mileSeconds,          pace: Double(mileSeconds) / mileMiles,
-                     distMiles: mileMiles, extraRange: hasSpeedEvidence ? 0 : 0.01),
-            makeItem("5K",       seconds: raceTime("5K"),       pace: racePace("5K"),
-                     distMiles: fiveKMiles),
-            makeItem("10K",      seconds: tenKSeconds,          pace: estimated10KPace,
-                     distMiles: RaceDistanceConstants.tenKMiles),
-            makeItem("HALF",     seconds: raceTime("half"),     pace: racePace("half"),
-                     distMiles: halfMiles),
-            makeItem("MARATHON", seconds: marathonSeconds,      pace: Double(marathonSeconds) / marathonMiles,
-                     distMiles: marathonMiles, extraRange: weeklyMiles < 30.0 ? 0.01 : 0),
-        ]
-
-        // Build training paces from the estimated 10K pace
-        let eqPaces = EquivalentPaces(raceDistance: .tenK, goalTimeSeconds: tenKSeconds)
-
-        // Aerobic zones (Easy/Moderate/Steady) ship as ranges — they're
-        // physiologically a band, not a single number. Uses the same
-        // MP-derived model as WorkoutStepComponents and the cross-language
-        // pace engine (`NamedPace.displayPaceRange`), falling back to the
-        // single value if the range can't be computed.
-        func aerobicRange(_ zone: NamedPace, single: Double) -> String {
-            if let r = zone.displayPaceRange(base: single, marathonPace: eqPaces.mpPace) {
-                return formatPaceRange(low: r.low, high: r.high)
-            }
-            return formatPaceLocal(single)
-        }
-
-        let trainingPaces = TrainingPacesSummary(
-            easyPace: aerobicRange(.easy, single: eqPaces.easyPace),
-            moderatePace: aerobicRange(.moderate, single: eqPaces.moderatePace),
-            steadyPace: aerobicRange(.steady, single: eqPaces.steadyPace),
-            marathonPace: formatPaceLocal(eqPaces.mpPace),
-            hmpPace: formatPaceLocal(eqPaces.hmPace),
-            tenKPace: formatPaceLocal(eqPaces.tenKPace),
-            fiveKPace: formatPaceLocal(eqPaces.fiveKPace),
-            thresholdPace: formatPaceLocal(eqPaces.thresholdPace),
-            intervalPace: formatPaceLocal(racePace("5K")),
-            longRunPace: formatPaceLocal(eqPaces.longRunPace)
-        )
-
-        // Build race anchor info — show the race that was actually selected as the
-        // anchor, not just the most recent race. If no race was chosen (training
-        // anchor or other source displaced it), don't show a race anchor.
-        var raceAnchor: RaceAnchorInfo? = nil
-        if let race = chosenRace {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "yyyy-MM-dd"
-            var weeksAgo = 0
-            if let raceDate = dateFormatter.date(from: race.date) {
-                weeksAgo = (Calendar.current.dateComponents([.day], from: raceDate, to: Date()).day ?? 0) / 7
-            }
-            let displayFmt = DateFormatter()
-            displayFmt.dateFormat = "MMM d, yyyy"
-            let displayDate = dateFormatter.date(from: race.date).map { displayFmt.string(from: $0) } ?? race.date
-            raceAnchor = RaceAnchorInfo(
-                raceType: race.raceType.rawValue.uppercased(),
-                time: formatTime(seconds: race.totalTimeSeconds),
-                date: displayDate,
-                weeksAgo: weeksAgo
-            )
-        }
-
-        return FitnessPrediction(
-            races: races,
-            fitnessSummary: summary,
-            dataSources: DataSources(
-                workoutCount: workouts.count,
-                voiceLogCount: voiceLogs.count,
-                hardEffortCount: hardEfforts.count,
-                confidence: confidence,
-                confidenceTier: predictedTier
-            ),
-            estimated10kPaceSeconds: estimated10KPace,
-            dataSource: dataSource,
-            trainingPaces: trainingPaces,
-            raceAnchor: raceAnchor,
-            trainingStimulus: TrainingStimulusInfo(
-                weeklyMiles: weeklyMiles,
-                runsPerWeek: runsPerWeek,
-                stimulusMinutes: stimulusMinutes,
-                structuredSessions: structuredSessionCount,
-                volumeTrend: volumeTrend,
-                stimulusTrend: stimulusTrend
-            )
-        )
-    }
+    // MARK: - Local Prediction (DELETED 2026-08-17)
+    //
+    // `generateLocalPrediction` lived here: 853 lines that re-derived race
+    // predictions on-device from HealthKit workouts and training logs — a
+    // Swift twin of _shared/fitnessPrediction.ts that drifted from it.
+    //
+    // It could not agree with the server and never will: the device has no
+    // laps, so no per-rep heat or grade normalization; no weather, so no
+    // conditions-normalized race anchor; no HR efficiency signal; and no
+    // damped fitness curve. It picked its anchor race by a different rule.
+    // On 2026-08-17 it showed a 2:37 marathon while the server held 2:29:13.
+    //
+    // It survived this long as a 'fallback' supplying three context fields
+    // the canonical row didn't carry. `summary` and `supporting_training`
+    // (migration 20260817220000) carry them now, so there is nothing left
+    // for it to do. When no canonical row exists the screen shows its empty
+    // state — one predictor means there is no second opinion to fall back
+    // to, and that is the point.
 
     // MARK: - Canonical Fitness (server-owned)
 
@@ -1180,7 +329,7 @@ final class FitnessPredictorService {
                     + "workout_count, range_mile_seconds, range_5k_seconds, range_10k_seconds,"
                     + "range_half_seconds, range_marathon_seconds,"
                     + "anchor_distance_key, anchor_raw_seconds, anchor_neutral_seconds,"
-                    + "anchor_date, anchor_weeks_ago"
+                    + "anchor_date, anchor_weeks_ago, summary, supporting_training"
                 )
                 .eq("user_id", value: userId)
                 .order("created_at", ascending: false)
@@ -1194,16 +343,15 @@ final class FitnessPredictorService {
         }
     }
 
-    /// Build the screen's model from the canonical row.
+    /// Build the screen's model from the canonical row — every field of it.
     ///
-    /// Predictive fields (times, ranges, pace, confidence, anchor) come from
-    /// the server. Descriptive context the server doesn't carry — weekly
-    /// volume, log counts — is carried over from `local` so the screen keeps
-    /// its "what's behind this" section. Nothing here re-derives a prediction.
-    private func canonicalPrediction(
-        from row: CanonicalFitnessRow,
-        local: FitnessPrediction?
-    ) -> FitnessPrediction? {
+    /// This used to take a `local:` estimate alongside the row, because the
+    /// server carried the numbers but not the summary line or the log counts.
+    /// Producing those three values was the last job of the on-device model,
+    /// and it cost 851 lines plus a 180-day workout fetch on every launch.
+    /// `summary` and `supporting_training` (migration 20260817220000) carry
+    /// them now, so there is exactly one predictor and this reads it.
+    private func canonicalPrediction(from row: CanonicalFitnessRow) -> FitnessPrediction? {
         guard let tenK = row.predicted10kSeconds, tenK > 0,
               let paceSec = row.estimated10kPaceSeconds, paceSec > 0 else { return nil }
 
@@ -1276,11 +424,14 @@ final class FitnessPredictorService {
         let tier = ConfidenceTier(rawValue: (row.confidenceTier ?? "").lowercased()) ?? .medium
         return FitnessPrediction(
             races: races,
-            fitnessSummary: local?.fitnessSummary,
+            fitnessSummary: row.summary,
             dataSources: DataSources(
-                workoutCount: row.workoutCount ?? local?.dataSources.workoutCount ?? 0,
-                voiceLogCount: local?.dataSources.voiceLogCount ?? 0,
-                hardEffortCount: local?.dataSources.hardEffortCount ?? 0,
+                workoutCount: row.workoutCount ?? 0,
+                // The sessions the estimate actually rests on, and the ones it
+                // read and set aside — the server's own accounting, not a
+                // second model's guess at it.
+                voiceLogCount: row.supportingTraining?.readButNotUsed?.count ?? 0,
+                hardEffortCount: row.supportingTraining?.used?.count ?? 0,
                 confidence: row.confidence ?? tier.rawValue.capitalized,
                 confidenceTier: tier
             ),
@@ -1288,7 +439,13 @@ final class FitnessPredictorService {
             dataSource: row.dataSource ?? "server",
             trainingPaces: trainingPaces,
             raceAnchor: raceAnchor,
-            trainingStimulus: local?.trainingStimulus
+            // The server does not compute a training-stimulus block, so this is
+            // nil rather than a device-derived one. The views already guard on
+            // it (`trainingPaces != nil || trainingStimulus != nil`), so the
+            // paces section still renders. If this is wanted back, it belongs
+            // on the snapshot alongside `supporting_training` — not in a second
+            // model on the phone.
+            trainingStimulus: nil
         )
     }
 

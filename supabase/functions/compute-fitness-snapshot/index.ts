@@ -357,6 +357,11 @@ async function computeAndUpsert(
     anchor_weeks_ago: prediction.anchor?.weeksAgo ?? null,
     anchor_conditions: prediction.anchor?.conditions ?? null,
     lifetime_prs: prediction.lifetimePRs ?? null,
+    // The last two things the device still computed for itself (migration
+    // 20260817220000). Persisting them lets iOS delete its duplicate model
+    // rather than run 851 lines to produce a summary line and two counts.
+    summary: prediction.summary ?? null,
+    supporting_training: prediction.supportingTraining ?? null,
   };
 
   // Upsert today's row (one per calendar day), matching the iOS behavior.

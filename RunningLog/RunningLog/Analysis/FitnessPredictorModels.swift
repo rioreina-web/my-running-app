@@ -190,6 +190,30 @@ struct CanonicalFitnessRow: Codable {
     let anchorNeutralSeconds: Int?
     let anchorDate: String?
     let anchorWeeksAgo: Double?
+    // Context the device used to compute for itself (migration 20260817220000).
+    let summary: String?
+    let supportingTraining: SupportingTraining?
+
+    /// The workings behind the estimate — which sessions it rests on, and
+    /// which were read and set aside. Mirrors
+    /// `FitnessPredictionResult.supportingTraining` on the server.
+    struct SupportingTraining: Codable {
+        let workMinutes: Int?
+        let used: [Session]?
+        let readButNotUsed: [Skipped]?
+
+        struct Session: Codable {
+            let date: String?
+            let workMiles: Double?
+            let repCount: Int?
+            let meanHr: Int?
+            let why: String?
+        }
+        struct Skipped: Codable {
+            let date: String?
+            let reason: String?
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case predictedMileSeconds = "predicted_mile_seconds"
@@ -212,6 +236,8 @@ struct CanonicalFitnessRow: Codable {
         case anchorNeutralSeconds = "anchor_neutral_seconds"
         case anchorDate = "anchor_date"
         case anchorWeeksAgo = "anchor_weeks_ago"
+        case summary
+        case supportingTraining = "supporting_training"
     }
 }
 
