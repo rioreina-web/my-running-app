@@ -177,7 +177,13 @@ final class RacePredictionService {
                     confidence_tier,workout_count
                     """
                 )
-                .order("created_at", ascending: true)
+                // NEWEST 60, then re-sorted ascending by the caller. Ordering
+                // ascending here takes the OLDEST 60 instead — harmless while
+                // the headline came from athlete_state, but once today's
+                // numbers are read off `points.last` it silently publishes a
+                // months-old snapshot (2:26 / high conf off a Jul 26 row
+                // against a live 2:29 / medium, 2026-08-17).
+                .order("created_at", ascending: false)
                 .limit(60)
                 .execute().value
         } catch {
