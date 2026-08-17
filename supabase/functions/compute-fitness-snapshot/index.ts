@@ -345,6 +345,18 @@ async function computeAndUpsert(
     range_10k_seconds: prediction.range10kSeconds,
     range_half_seconds: prediction.rangeHalfSeconds,
     range_marathon_seconds: prediction.rangeMarathonSeconds,
+    // The anchor, persisted (migration 20260817210000). This is the whole
+    // point of the canonical row: consumers read what the estimate rests on
+    // instead of re-picking and re-normalizing a race themselves. Raw is
+    // what she ran; neutral is what it proves — never swap them.
+    anchor_race_log_id: prediction.anchor?.sourceWorkoutId ?? null,
+    anchor_distance_key: prediction.anchor?.distanceKey ?? null,
+    anchor_raw_seconds: prediction.anchor?.rawSeconds ?? null,
+    anchor_neutral_seconds: prediction.anchor?.neutralSeconds ?? null,
+    anchor_date: prediction.anchor?.date ?? null,
+    anchor_weeks_ago: prediction.anchor?.weeksAgo ?? null,
+    anchor_conditions: prediction.anchor?.conditions ?? null,
+    lifetime_prs: prediction.lifetimePRs ?? null,
   };
 
   // Upsert today's row (one per calendar day), matching the iOS behavior.

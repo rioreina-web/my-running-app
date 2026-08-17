@@ -246,6 +246,8 @@ export interface FitnessPredictionResult {
    *  per distance. Display/context only; never anchors current fitness.
    *  (2026-07-17, race-gathering.) */
   lifetimePRs: Partial<Record<RaceType, { timeSeconds: number; date: string }>>;
+  /** What the estimate rests on. null when no race anchored it. */
+  anchor: FitnessAnchor | null;
   /**
    * The sessions behind the number (2026-08-17). A projection with a confidence
    * tier and nothing else asks to be taken on faith; this is the workings.
@@ -565,6 +567,44 @@ export interface DetectedRace {
    *  — a mislabeled training run, or a duplicate of another race. When true it
    *  is removed from anchor selection and confidence entirely. */
   userExcluded?: boolean;
+}
+
+/** A race scored for anchor selection: its flat-cool pace + the conditions
+ *  that produced it. Kept whole so the WINNER can be persisted verbatim. */
+interface ScoredRace {
+  race: DetectedRace;
+  weeksAgo: number;
+  /** Flat-cool pace converted to a 10K-equivalent — the selection metric. */
+  tenKPace: number;
+  /** Flat-cool pace at the race's OWN distance (sec/mile). */
+  neutralPace: number;
+  conditions: RaceConditions | null;
+}
+
+/**
+ * The anchor the estimate rests on, as a persistable fact (2026-08-17).
+ *
+ * The model has always computed this and always thrown it away, returning
+ * only predicted times plus a prose `summary`. That omission is why seven
+ * call sites independently re-picked and re-normalized the anchor race, each
+ * with its own rules — and why the same athlete could hold five different
+ * "current fitness" values at once. Returning it lets `fitness_snapshots`
+ * carry the whole answer, so consumers READ instead of re-deriving.
+ *
+ * `rawSeconds` is what the athlete ran (display, PR eligibility).
+ * `neutralSeconds` is what it proves (math). Never swap them: a normalized
+ * time must never be shown as a time she ran.
+ */
+export interface FitnessAnchor {
+  /** training_logs id, when the anchor came from a confirmed race row. */
+  sourceWorkoutId: string | null;
+  distanceKey: RaceType;
+  rawSeconds: number;
+  /** Flat-cool equivalent. Equals rawSeconds when nothing was normalizable. */
+  neutralSeconds: number;
+  date: string;
+  weeksAgo: number;
+  conditions: RaceConditions | null;
 }
 
 /**
@@ -1304,6 +1344,8 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   let anchorSource = "";
   let anchorWeeksAgo = 0;
   let chosenRace: DetectedRace | null = null;
+  /** The winning race's flat-cool pace + conditions, kept for persistence. */
+  let chosenRaceScored: ScoredRace | null = null;
 
   const trainingAnchors = detectTrainingAnchors(voiceLogs);
   const recentTrainingAnchor = trainingAnchors.find((a) => {
@@ -1357,15 +1399,19 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
         }
       }
       const tenK = convertPace(pace, race.raceType, "tenK");
-      return { race, weeksAgo: weeks, tenKPace: tenK };
+      // `neutralPace` is the flat-cool pace AT THE RACE'S OWN DISTANCE (not
+      // converted). Carried so the winning anchor can be PERSISTED rather
+      // than re-derived: seven call sites used to re-pick and re-normalize
+      // the anchor race, each with its own rules (2026-08-17).
+      return { race, weeksAgo: weeks, tenKPace: tenK, neutralPace: pace, conditions };
     })
-    .filter((x): x is { race: DetectedRace; weeksAgo: number; tenKPace: number } => x !== null);
+    .filter((x): x is ScoredRace => x !== null);
 
   // AGE-WEIGHTED selection (2026-07-16, mirrors Swift): pure fastest-in-36-
   // weeks was a max-filter over 9 months of noise — one GPS-flattered old
   // "race" permanently anchored fast. A 0.2%/week selection penalty means an
   // older race must be genuinely faster than a recent one to win.
-  const bestRaceMatch = scoredRaces.reduce<{ race: DetectedRace; weeksAgo: number; tenKPace: number } | null>(
+  const bestRaceMatch = scoredRaces.reduce<ScoredRace | null>(
     (best, r) =>
       best === null ||
         r.tenKPace * (1.0 + r.weeksAgo * 0.002) < best.tenKPace * (1.0 + best.weeksAgo * 0.002)
@@ -1390,6 +1436,7 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
       anchorSource = `race (${RACE_TYPE_LABEL[bestRaceMatch.race.raceType]})`;
       anchorWeeksAgo = bestRaceMatch.weeksAgo;
       chosenRace = bestRaceMatch.race;
+      chosenRaceScored = bestRaceMatch;
     } else if (recentTrainingAnchor) {
       // DISPLACEMENT CAP (2026-07-16, mirrors Swift): a single parsed workout
       // may refine a stale race anchor, never replace it wholesale. Blend
@@ -1940,6 +1987,22 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     rangeMarathonSeconds: Math.round(marathonSeconds * rangeFraction(RANGE_ITEM_MILES.marathon, marathonExtra)),
     summary,
     lifetimePRs,
+    // The anchor as a fact, not prose. `neutralSeconds` falls back to the raw
+    // time when nothing was normalizable — a missing correction leaves the
+    // number the athlete ran, never a guess.
+    anchor: chosenRace && chosenRaceScored
+      ? {
+        sourceWorkoutId: chosenRace.sourceWorkoutId ?? null,
+        distanceKey: chosenRace.raceType,
+        rawSeconds: Math.round(chosenRace.totalTimeSeconds),
+        neutralSeconds: Math.round(
+          chosenRaceScored.neutralPace * RACE_TYPE_MILES[chosenRace.raceType],
+        ),
+        date: chosenRace.date,
+        weeksAgo: Math.round(anchorWeeksAgo * 10) / 10,
+        conditions: chosenRaceScored.conditions,
+      }
+      : null,
     supportingTraining: {
       used: zoneSignalUsed,
       readButNotUsed: zoneRejections,

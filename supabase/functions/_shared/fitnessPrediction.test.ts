@@ -1038,6 +1038,57 @@ Deno.test("v3 threshold: work older than the 6-week window is ignored", () => {
   assert(thresholdCapacity([fresh], NOW) !== null);
 });
 
+// ── The persisted anchor (2026-08-17) ───────────────────────────────────────
+//
+// The model always computed its anchor and always discarded it, which is why
+// seven call sites re-picked and re-normalized a race themselves and the same
+// athlete could hold five different "current fitness" values at once. These
+// pin the contract the canonical row depends on.
+
+Deno.test("anchor: returned as a fact, raw and neutral both present", () => {
+  const raceLog = log(daysAgo(30), "Raced the 10k, finish time 40:00.");
+  const p = generateFitnessPrediction({ workouts: [], voiceLogs: [raceLog], now: NOW })!;
+  assert(p.anchor !== null, "a raced estimate must name its anchor");
+  assertEquals(p.anchor!.distanceKey, "tenK");
+  assertEquals(p.anchor!.rawSeconds, 2400, "raw is what she ran — never normalized");
+  assert(p.anchor!.neutralSeconds > 0);
+  assertAlmostEquals(p.anchor!.weeksAgo, 30 / 7, 0.2);
+});
+
+Deno.test("anchor: neutral falls back to raw, never to a guess", () => {
+  // No weather on the row → nothing normalizable → the two must agree, so a
+  // consumer reading neutral can never be handed an invented number.
+  const raceLog = log(daysAgo(30), "Raced the 10k, finish time 40:00.");
+  const p = generateFitnessPrediction({ workouts: [], voiceLogs: [raceLog], now: NOW })!;
+  assertEquals(p.anchor!.neutralSeconds, p.anchor!.rawSeconds);
+  assertEquals(p.anchor!.conditions, null);
+});
+
+Deno.test("anchor: heat makes neutral FASTER than raw, and only faster", () => {
+  const hot = log(daysAgo(30), "Raced the 10k, finish time 40:00.", {
+    weather: { tempF: 82, dewPointF: 74 },
+  });
+  const p = generateFitnessPrediction({
+    workouts: [],
+    voiceLogs: [hot],
+    extendedVoiceLogs: [hot],
+    now: NOW,
+  })!;
+  assertEquals(p.anchor!.rawSeconds, 2400, "the raw time is untouched by weather");
+  assert(p.anchor!.neutralSeconds < p.anchor!.rawSeconds,
+    `neutral ${p.anchor!.neutralSeconds} should beat raw on a 74°F dew point`);
+  assert(p.anchor!.conditions !== null, "the evidence behind the correction travels with it");
+});
+
+Deno.test("anchor: null when no race anchors the estimate", () => {
+  const p = generateFitnessPrediction({
+    workouts: [{ date: daysAgo(3), distanceMiles: 6, durationMinutes: 48, paceSecondsPerMile: 480 }],
+    voiceLogs: [],
+    now: NOW,
+  });
+  if (p) assertEquals(p.anchor, null, "a training-only estimate must not claim a race anchor");
+});
+
 // ── EF corroboration gate (2026-08-17) ──────────────────────────────────────
 //
 // The training signal's SLOW direction is an inference (hot reps, down weeks,
