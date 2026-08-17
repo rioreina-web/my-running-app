@@ -29,12 +29,9 @@ import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { computePaceProfile, type ResolvedPace } from "../_shared/pace-zones.ts";
 import {
   derivePaceTableFromGoal,
-  pickAnchorRace,
   raceKeyForInput,
   RACE_DISTANCE_MI,
 } from "../_shared/paces.ts";
-import { getConfirmedRaces } from "../_shared/resolve-pace.ts";
-import { normalizeRaceTime } from "../_shared/raceNormalization.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
 /**
@@ -105,14 +102,37 @@ Deno.serve(async (req: Request) => {
       return errorResponse(500, "Failed to read fitness data");
     }
 
-    // 1b. Confirmed race anchor (Phase 2 sub-task C). A real race result in
-    // athlete_state.confirmed_races outranks snapshot predictions: the
-    // profile this function writes is what the pace engine (and therefore
-    // get-pace-zones, plan materialization, the pace chart) treats as
-    // athlete-truth, so anchoring it on the race is what flips the product
-    // from goal-aspiration zones to actual-fitness zones.
-    const confirmedRaces = await getConfirmedRaces(supabase, userId);
-    const raceAnchor = pickAnchorRace(confirmedRaces);
+    // 1b. THE ANCHOR IS READ, NOT RE-PICKED (2026-08-17).
+    //
+    // This function used to select its own anchor race
+    // (getConfirmedRaces + pickAnchorRace = most RECENT qualifying race) and
+    // derive the whole ladder from it. The predictor selects by a different
+    // rule (age-weighted fastest 10K-equivalent), so the two disagreed about
+    // which race the athlete's fitness rests on: on 2026-08-17 the snapshot
+    // anchored Feb 7 (31:20) while this function anchored Apr 12 (33:02) —
+    // same athlete, same day, two ladders. That is the "five values for
+    // current fitness" problem in miniature.
+    //
+    // Now the model's chosen anchor travels ON the snapshot row
+    // (migration 20260817210000), so the profile reads it. One selection
+    // rule, one normalization, one answer. `anchor_neutral_seconds` is the
+    // flat-cool equivalent — the same number the estimate itself rests on,
+    // which is why the ladder and the projection can no longer disagree.
+    //
+    // The ladder still goes through derivePaceTableFromGoal: that is the
+    // canonical zone math (CLAUDE.md — Easy = MP/0.765 etc.). Deriving from
+    // computePaceProfile instead would silently swap in its `mp + 90` easy
+    // pace, a third formula.
+    const anchorNeutralSeconds = Number(snapshot?.anchor_neutral_seconds);
+    const anchorDistanceKey = snapshot?.anchor_distance_key as string | null | undefined;
+    const raceAnchor = Number.isFinite(anchorNeutralSeconds) && anchorNeutralSeconds > 0 &&
+        typeof anchorDistanceKey === "string" && anchorDistanceKey.length > 0
+      ? {
+        distanceKey: anchorDistanceKey,
+        finishTimeSeconds: anchorNeutralSeconds,
+        date: (snapshot?.anchor_date as string | null) ?? (snapshot?.created_at as string),
+      }
+      : null;
 
     if (!snapshot && !raceAnchor) {
       return errorResponse(
@@ -139,44 +159,13 @@ Deno.serve(async (req: Request) => {
       const key = raceKeyForInput(raceAnchor.distanceKey);
       const miles = RACE_DISTANCE_MI[key];
       if (miles > 0) {
-        // Anchor at the race's FLAT-COOL EQUIVALENT, not its raw time
-        // (2026-08-17). This ladder is pace-truth for every training zone,
-        // and a race run into a 67°F dew point is slower than the fitness it
-        // demonstrates — anchoring raw priced the athlete's entire summer of
-        // zones off one hot morning (April 10K: 33:02 raw vs 32:23 neutral,
-        // ~6 s/mi slow on every zone). Credit-only, same posture as the heat
-        // model everywhere else: no weather on file, or a "neutral" time
-        // that isn't faster, leaves the raw time — the correction can never
-        // penalize. The prediction pipeline already reads races this way
-        // (fitnessPrediction's normalized anchor); this closes the gap for
-        // the zones. Displayed race TIMES stay raw everywhere — a neutral
-        // time is never a time she ran.
-        let anchorSeconds = raceAnchor.finishTimeSeconds;
-        const day = String(raceAnchor.date).slice(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(day)) {
-          const nextDay = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000)
-            .toISOString().slice(0, 10);
-          const { data: raceRow } = await supabase
-            .from("training_logs")
-            .select("weather_actual")
-            .eq("user_id", userId)
-            .not("race_result", "is", null)
-            .gte("workout_date", `${day}T00:00:00Z`)
-            .lt("workout_date", `${nextDay}T00:00:00Z`)
-            .limit(1)
-            .maybeSingle();
-          const wx = raceRow?.weather_actual as { temp_f?: unknown; dew_point_f?: unknown } | null;
-          const tempF = Number(wx?.temp_f);
-          const dewPointF = Number(wx?.dew_point_f);
-          if (Number.isFinite(tempF) && Number.isFinite(dewPointF)) {
-            const norm = normalizeRaceTime(anchorSeconds, key, { tempF, dewPointF });
-            if (norm.neutralSeconds > 0 && norm.neutralSeconds < anchorSeconds) {
-              anchorSeconds = norm.neutralSeconds;
-            }
-          }
-        }
+        // No normalization here: `finishTimeSeconds` is already the model's
+        // flat-cool equivalent, read off the snapshot. This function briefly
+        // ran its own heat correction (f270c5c, same day) — a second
+        // implementation of a correction the predictor had already made,
+        // against a race the predictor hadn't chosen. Both are gone.
         const table = derivePaceTableFromGoal(
-          anchorSeconds / miles,
+          raceAnchor.finishTimeSeconds / miles,
           raceAnchor.distanceKey,
         );
         const asPace = (sec: number | undefined): ResolvedPace | undefined =>
