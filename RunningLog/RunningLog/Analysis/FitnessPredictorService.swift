@@ -112,14 +112,30 @@ final class FitnessPredictorService {
         let extendedWorkouts = mergeWorkouts(extendedLinkedWorkouts, extendedSourceWorkouts)
         Log.coach.info("Extended history: \(extendedWorkouts.count) workouts, \(extendedVoiceLogs.count) voice logs")
 
-        // Generate prediction (always use local for now - fast and free)
-        let prediction = generateLocalPrediction(
+        // The local estimate now supplies CONTEXT ONLY — weekly volume, log
+        // counts, the summary line. The numbers on screen come from the
+        // server's canonical row when there is one (2026-08-17): the device
+        // sees no laps, no weather, no HR efficiency and no damped curve, so
+        // its own projection was a second, quieter model disagreeing with
+        // Trends. Local remains the fallback for a brand-new athlete or an
+        // athlete the nightly job hasn't reached yet — better an honest
+        // device estimate than an empty screen.
+        let localPrediction = generateLocalPrediction(
             workouts: allWorkouts,
             voiceLogs: voiceLogs,
             plan: plan,
             extendedWorkouts: extendedWorkouts,
             extendedVoiceLogs: extendedVoiceLogs
         )
+
+        var prediction = localPrediction
+        if let row = await fetchCanonicalFitness(),
+           let canonical = canonicalPrediction(from: row, local: localPrediction) {
+            prediction = canonical
+            Log.coach.info("Fitness read from canonical snapshot: \(canonical.dataSource)")
+        } else {
+            Log.coach.warning("No canonical fitness row — falling back to the on-device estimate")
+        }
 
         predictions = prediction
         lastUpdated = Date()
@@ -1143,6 +1159,136 @@ final class FitnessPredictorService {
                 volumeTrend: volumeTrend,
                 stimulusTrend: stimulusTrend
             )
+        )
+    }
+
+    // MARK: - Canonical Fitness (server-owned)
+
+    /// Read the server's canonical answer. Returns nil when there is no row
+    /// yet (new athlete, or the nightly job hasn't run) — the caller then
+    /// falls back to the on-device estimate rather than showing nothing.
+    private func fetchCanonicalFitness() async -> CanonicalFitnessRow? {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else { return nil }
+        do {
+            let rows: [CanonicalFitnessRow] = try await supabase
+                .from("fitness_snapshots")
+                .select(
+                    "predicted_mile_seconds, predicted_5k_seconds, predicted_10k_seconds,"
+                    + "predicted_half_seconds, predicted_marathon_seconds,"
+                    + "estimated_10k_pace_seconds, confidence, confidence_tier, data_source,"
+                    + "workout_count, range_mile_seconds, range_5k_seconds, range_10k_seconds,"
+                    + "range_half_seconds, range_marathon_seconds,"
+                    + "anchor_distance_key, anchor_raw_seconds, anchor_neutral_seconds,"
+                    + "anchor_date, anchor_weeks_ago"
+                )
+                .eq("user_id", value: userId)
+                .order("created_at", ascending: false)
+                .limit(1)
+                .execute()
+                .value
+            return rows.first
+        } catch {
+            Log.coach.error("canonical fitness read failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Build the screen's model from the canonical row.
+    ///
+    /// Predictive fields (times, ranges, pace, confidence, anchor) come from
+    /// the server. Descriptive context the server doesn't carry — weekly
+    /// volume, log counts — is carried over from `local` so the screen keeps
+    /// its "what's behind this" section. Nothing here re-derives a prediction.
+    private func canonicalPrediction(
+        from row: CanonicalFitnessRow,
+        local: FitnessPrediction?
+    ) -> FitnessPrediction? {
+        guard let tenK = row.predicted10kSeconds, tenK > 0,
+              let paceSec = row.estimated10kPaceSeconds, paceSec > 0 else { return nil }
+
+        func item(_ label: String, _ seconds: Int?, _ miles: Double, _ range: Int?) -> RacePredictionItem? {
+            guard let seconds, seconds > 0 else { return nil }
+            return RacePredictionItem(
+                distance: label,
+                time: formatTime(seconds: seconds),
+                pace: formatPaceLocal(Double(seconds) / miles),
+                pointSeconds: seconds,
+                // The server computes the honest band (hard rule #7). A missing
+                // one is left at 0 rather than invented here.
+                rangeSeconds: range ?? 0
+            )
+        }
+
+        let races = [
+            item("MILE", row.predictedMileSeconds, 1.0, row.rangeMileSeconds),
+            item("5K", row.predicted5kSeconds, RaceDistanceConstants.fiveKMiles, row.range5kSeconds),
+            item("10K", row.predicted10kSeconds, RaceDistanceConstants.tenKMiles, row.range10kSeconds),
+            item("HALF", row.predictedHalfSeconds, RaceDistanceConstants.halfMarathonMiles, row.rangeHalfSeconds),
+            item("MARATHON", row.predictedMarathonSeconds, RaceDistanceConstants.marathonMiles, row.rangeMarathonSeconds),
+        ].compactMap { $0 }
+        guard !races.isEmpty else { return nil }
+
+        // Zones from the canonical 10K — the Swift twin of the server's
+        // derivePaceTableFromGoal, so app and backend share one ladder.
+        let eqPaces = EquivalentPaces(raceDistance: .tenK, goalTimeSeconds: tenK)
+        func aerobicRange(_ zone: NamedPace, single: Double) -> String {
+            if let r = zone.displayPaceRange(base: single, marathonPace: eqPaces.mpPace) {
+                return formatPaceRange(low: r.low, high: r.high)
+            }
+            return formatPaceLocal(single)
+        }
+        let trainingPaces = TrainingPacesSummary(
+            easyPace: aerobicRange(.easy, single: eqPaces.easyPace),
+            moderatePace: aerobicRange(.moderate, single: eqPaces.moderatePace),
+            steadyPace: aerobicRange(.steady, single: eqPaces.steadyPace),
+            marathonPace: formatPaceLocal(eqPaces.mpPace),
+            hmpPace: formatPaceLocal(eqPaces.hmPace),
+            tenKPace: formatPaceLocal(eqPaces.tenKPace),
+            fiveKPace: formatPaceLocal(eqPaces.fiveKPace),
+            thresholdPace: formatPaceLocal(eqPaces.thresholdPace),
+            intervalPace: formatPaceLocal(eqPaces.fiveKPace),
+            longRunPace: formatPaceLocal(eqPaces.longRunPace)
+        )
+
+        // The anchor as the server chose it. RAW is displayed — a normalized
+        // time is never shown as a time she ran — even though the estimate
+        // itself rests on the neutral equivalent.
+        var raceAnchor: RaceAnchorInfo? = nil
+        if let key = row.anchorDistanceKey, let raw = row.anchorRawSeconds, raw > 0 {
+            let inFmt = DateFormatter()
+            inFmt.dateFormat = "yyyy-MM-dd"
+            inFmt.timeZone = TimeZone(identifier: "UTC")
+            let outFmt = DateFormatter()
+            outFmt.dateFormat = "MMM d, yyyy"
+            let displayDate = row.anchorDate.flatMap { inFmt.date(from: $0) }.map { outFmt.string(from: $0) }
+                ?? (row.anchorDate ?? "")
+            raceAnchor = RaceAnchorInfo(
+                raceType: key.uppercased() == "TENK" ? "10K"
+                    : key.uppercased() == "FIVEK" ? "5K"
+                    : key.uppercased(),
+                time: formatTime(seconds: raw),
+                date: displayDate,
+                weeksAgo: Int((row.anchorWeeksAgo ?? 0).rounded())
+            )
+        }
+
+        let tier = ConfidenceTier(rawValue: (row.confidenceTier ?? "").lowercased()) ?? .medium
+        return FitnessPrediction(
+            races: races,
+            fitnessSummary: local?.fitnessSummary,
+            dataSources: DataSources(
+                workoutCount: row.workoutCount ?? local?.dataSources.workoutCount ?? 0,
+                voiceLogCount: local?.dataSources.voiceLogCount ?? 0,
+                hardEffortCount: local?.dataSources.hardEffortCount ?? 0,
+                confidence: row.confidence ?? tier.rawValue.capitalized,
+                confidenceTier: tier
+            ),
+            estimated10kPaceSeconds: paceSec,
+            dataSource: row.dataSource ?? "server",
+            trainingPaces: trainingPaces,
+            raceAnchor: raceAnchor,
+            trainingStimulus: local?.trainingStimulus
         )
     }
 

@@ -150,6 +150,71 @@ struct FitnessSnapshot: Codable, Identifiable {
     }
 }
 
+// MARK: - CanonicalFitnessRow
+
+/// The server's canonical fitness answer, read from `fitness_snapshots`.
+///
+/// ONE SOURCE OF TRUTH (2026-08-17). The device used to compute its own
+/// prediction from HealthKit + logs and render that. It sees none of what the
+/// server sees — per-lap heat/grade normalization, conditions-normalized race
+/// anchors, HR efficiency, the damped curve — so it produced a materially
+/// different answer: on 2026-08-17 this screen showed a 33:44 10K / 2:36
+/// marathon while the server held 32:00 / 2:29:13, off a race it had picked
+/// by a different rule (Apr 14 33:04 vs the confirmed Feb 7 31:20).
+/// The device stopped WRITING this table on 2026-08-17; this is the other
+/// half — it stops computing a rival answer and renders the canonical one.
+///
+/// `anchorDate` is deliberately `String`, not `Date`: the column is a Postgres
+/// DATE and the Supabase Swift SDK's `.value` decoder only parses full
+/// ISO-8601 timestamps — decoding it as `Date` throws and takes the whole row
+/// with it.
+struct CanonicalFitnessRow: Codable {
+    let predictedMileSeconds: Int?
+    let predicted5kSeconds: Int?
+    let predicted10kSeconds: Int?
+    let predictedHalfSeconds: Int?
+    let predictedMarathonSeconds: Int?
+    let estimated10kPaceSeconds: Double?
+    let confidence: String?
+    let confidenceTier: String?
+    let dataSource: String?
+    let workoutCount: Int?
+    let rangeMileSeconds: Int?
+    let range5kSeconds: Int?
+    let range10kSeconds: Int?
+    let rangeHalfSeconds: Int?
+    let rangeMarathonSeconds: Int?
+    // Anchor — what the estimate rests on (migration 20260817210000).
+    let anchorDistanceKey: String?
+    let anchorRawSeconds: Int?
+    let anchorNeutralSeconds: Int?
+    let anchorDate: String?
+    let anchorWeeksAgo: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case predictedMileSeconds = "predicted_mile_seconds"
+        case predicted5kSeconds = "predicted_5k_seconds"
+        case predicted10kSeconds = "predicted_10k_seconds"
+        case predictedHalfSeconds = "predicted_half_seconds"
+        case predictedMarathonSeconds = "predicted_marathon_seconds"
+        case estimated10kPaceSeconds = "estimated_10k_pace_seconds"
+        case confidence
+        case confidenceTier = "confidence_tier"
+        case dataSource = "data_source"
+        case workoutCount = "workout_count"
+        case rangeMileSeconds = "range_mile_seconds"
+        case range5kSeconds = "range_5k_seconds"
+        case range10kSeconds = "range_10k_seconds"
+        case rangeHalfSeconds = "range_half_seconds"
+        case rangeMarathonSeconds = "range_marathon_seconds"
+        case anchorDistanceKey = "anchor_distance_key"
+        case anchorRawSeconds = "anchor_raw_seconds"
+        case anchorNeutralSeconds = "anchor_neutral_seconds"
+        case anchorDate = "anchor_date"
+        case anchorWeeksAgo = "anchor_weeks_ago"
+    }
+}
+
 // MARK: - FitnessSnapshotInsert
 
 /// Insert payload (no id or created_at — server generates those)
