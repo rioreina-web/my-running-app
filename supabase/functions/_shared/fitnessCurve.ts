@@ -147,6 +147,11 @@ export function isOwnSnapshot(dataSource: string | null | undefined): boolean {
   return typeof dataSource === "string" && dataSource.includes(SERVER_SOURCE_MARKER);
 }
 
+/** UTC calendar day as YYYY-MM-DD — the grain `fitness_snapshots` upserts on. */
+function utcDay(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
 /**
  * Pick the most recent prior smoothed value from snapshot history.
  *
@@ -178,11 +183,29 @@ export function mostRecentPrior<
   let bestMs = -Infinity;
   const beforeMs = before.getTime();
 
+  // SKIP TODAY'S OWN ROW (2026-08-17). `fitness_snapshots` holds at most one
+  // row per UTC day and the writer UPDATES it in place, so a row sharing
+  // `before`'s UTC day is the row this run is about to overwrite. Damping
+  // toward it is damping toward yourself: a rerun two hours after the last
+  // one gets deltaDays 0.086 -> alpha 0.004, and moves 0.4% of the gap.
+  //
+  // That made every same-day rerun a near no-op, which is the worst possible
+  // property while calibrating — deploy a model change, re-run, see the old
+  // number, conclude the change did nothing. It is also what hid the
+  // 2:37 -> 2:29 correction until the marker was stripped by hand.
+  //
+  // Excluding the day being written makes the prior YESTERDAY's answer, which
+  // is what "move a fraction of the way toward tonight's estimate" always
+  // meant. The nightly cron is unaffected: it is the first write of its day,
+  // so there is no same-day row to skip.
+  const beforeDay = utcDay(before.getTime());
+
   for (const s of snapshots) {
     const ms = new Date(s.createdAt).getTime();
     if (!isFinite(ms) || ms > beforeMs) continue;
     if (!(s.estimated10kPaceSeconds > 0)) continue;
     if (!isOwnSnapshot(s.dataSource)) continue;
+    if (utcDay(ms) === beforeDay) continue;
     if (ms > bestMs) { bestMs = ms; best = s; }
   }
   if (best == null) return null;

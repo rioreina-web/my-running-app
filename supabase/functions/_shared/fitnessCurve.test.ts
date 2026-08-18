@@ -202,3 +202,45 @@ Deno.test("all-foreign history yields no prior — seed fresh, don't inherit", (
   ];
   assertEquals(mostRecentPrior(snaps, new Date("2026-08-17T03:30:00Z")), null);
 });
+
+// ── Same-day rerun (2026-08-17) ─────────────────────────────────────────────
+//
+// The table holds one row per UTC day and the writer UPDATES it in place, so
+// the same-day row is the row the current run is about to overwrite. Damping
+// toward it is damping toward yourself — the live case: a rerun 2h after the
+// previous write got deltaDays 0.086 -> alpha 0.004 and moved 0.4% of the gap,
+// making every post-deploy re-run look like the model change did nothing.
+
+Deno.test("mostRecentPrior skips the row this run will overwrite", () => {
+  const snaps = [
+    { createdAt: "2026-08-17T01:12:00Z", estimated10kPaceSeconds: 309.0, dataSource: OWN },
+    { createdAt: "2026-08-16T03:30:00Z", estimated10kPaceSeconds: 320.0, dataSource: OWN },
+  ];
+  // A rerun later the SAME UTC day must reach past today's row to yesterday's.
+  const p = mostRecentPrior(snaps, new Date("2026-08-17T03:16:00Z"));
+  assertEquals(p?.pace, 320.0, "prior must be yesterday's row, not today's");
+  assert(p!.deltaDays > 0.9, `expected ~1 day of travel, got ${p!.deltaDays}`);
+});
+
+Deno.test("same-day rerun can actually move the estimate", () => {
+  // Before the fix this alpha was 0.0041 — a 0.4% step. With yesterday as the
+  // prior the run gets a real day of travel.
+  const snaps = [
+    { createdAt: "2026-08-17T01:12:00Z", estimated10kPaceSeconds: 309.0, dataSource: OWN },
+    { createdAt: "2026-08-16T03:30:00Z", estimated10kPaceSeconds: 309.0, dataSource: OWN },
+  ];
+  const prior = mostRecentPrior(snaps, new Date("2026-08-17T03:16:00Z"))!;
+  const r = smoothFitnessPace({ rawPace: 300.0, priorPace: prior.pace, deltaDays: prior.deltaDays });
+  assert(r.alpha > 0.04, `alpha ${r.alpha} should reflect a full day, not two hours`);
+  assert(r.pace < 308.7, `estimate should visibly move toward 300, got ${r.pace}`);
+});
+
+Deno.test("nightly cron is unaffected — first write of its day", () => {
+  const snaps = [
+    { createdAt: "2026-08-16T03:30:00Z", estimated10kPaceSeconds: 320.0, dataSource: OWN },
+    { createdAt: "2026-08-15T03:30:00Z", estimated10kPaceSeconds: 330.0, dataSource: OWN },
+  ];
+  const p = mostRecentPrior(snaps, new Date("2026-08-17T03:30:00Z"));
+  assertEquals(p?.pace, 320.0, "no same-day row exists, so nothing is skipped");
+  assert(p!.deltaDays > 0.9);
+});
