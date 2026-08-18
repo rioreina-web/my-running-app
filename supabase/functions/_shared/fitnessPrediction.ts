@@ -1738,7 +1738,19 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
       zoneSignalUsed = zoneSignal.used;
       paceSegmentSignal = zoneSignal.tenKPace;
       const diff = paceSegmentSignal - estimated10KPace;
-      if (Math.abs(diff) > 3) {
+      // NO DEADBAND (2026-08-17). This used to require |diff| > 3 s/mi before
+      // the training signal was allowed to count at all. On the calibration
+      // athlete that meant the signal — 310.72 against a decayed anchor of
+      // 308.59 — was discarded outright, and the published number was 100%
+      // decay off a 27-week-old race. Every workout read, priced, and thrown
+      // away for agreeing too closely.
+      //
+      // The deadband existed to stop the number churning on trivial
+      // differences, but the EWMA curve below already does that job, and does
+      // it on elapsed time rather than on an arbitrary gap. Two brakes for one
+      // problem, and this one had the side effect of silently zeroing the
+      // whole training contribution whenever it was working well.
+      {
         // WEIGHT: how much work stands behind the signal. 25% floor so a thin
         // week still registers, 60% ceiling so training never fully overwrites
         // a raced anchor in a single night.
@@ -1793,10 +1805,6 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
         diag.ef_verdict = efVerdict;
         diag.cap_bound = Math.abs(clamped - blended) > 1e-9;
         estimated10KPace = clamped;
-      } else {
-        diag.training_signal_pace = paceSegmentSignal;
-        diag.training_work_minutes = zoneSignal.workMinutes;
-        diag.blend_skipped = `signal within 3 s/mi of the anchor (${diff.toFixed(2)})`;
       }
       diag.after_blend_pace = estimated10KPace;
     } else {

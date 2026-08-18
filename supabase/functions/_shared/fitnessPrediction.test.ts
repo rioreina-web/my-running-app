@@ -1182,3 +1182,37 @@ Deno.test("EF gate: fast direction is untouched by a held engine", () => {
   assertEquals(fast(EF_LIVE_HELD).estimated10kPaceSeconds, fast(null).estimated10kPaceSeconds,
     "speed evidence needs no corroboration — the gate must not touch it");
 });
+
+// ── the training signal must always count (2026-08-17) ─────────────────────
+
+Deno.test("training contributes even when it nearly agrees with the anchor", () => {
+  // The bug this pins: a 3 s/mi deadband meant a signal CLOSE to the decayed
+  // anchor was discarded entirely, so the published number was 100% decay off
+  // a months-old race while every workout was read and thrown away. Verified
+  // in prod diagnostics: signal 310.72, anchor path 308.59, "blend_skipped".
+  const raceLog = log(daysAgo(120), "Raced the 10k, finish time 34:00.");
+  const near = generateFitnessPrediction({
+    workouts: [],
+    voiceLogs: [raceLog, repSession(daysAgo(3), 6, 1.0, "5:29", 60)],
+    extendedVoiceLogs: [raceLog, repSession(daysAgo(3), 6, 1.0, "5:29", 60)],
+    now: NOW,
+  })!;
+  const control = generateFitnessPrediction({
+    workouts: [],
+    voiceLogs: [raceLog, repSession(daysAgo(3), 6, 0.1, "5:29", 60)], // too short to price
+    extendedVoiceLogs: [raceLog, repSession(daysAgo(3), 6, 0.1, "5:29", 60)],
+    now: NOW,
+  })!;
+  assert(
+    near.supportingTraining.used.length > 0,
+    "the session should be read as evidence at all",
+  );
+  assert(
+    Math.abs(near.estimated10kPaceSeconds - control.estimated10kPaceSeconds) > 1e-9,
+    "a session that nearly agrees with the anchor must still move the estimate, not be discarded",
+  );
+  assert(
+    (near.diagnostics.training_signal_pace as number) > 0,
+    "the signal's own value must be recorded whether or not it moved things",
+  );
+});
