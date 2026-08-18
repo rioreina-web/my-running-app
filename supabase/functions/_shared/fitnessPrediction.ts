@@ -32,6 +32,7 @@ import { mostRecentPrior, smoothFitnessPace } from "./fitnessCurve.ts";
 import {
   combineZoneEstimates,
   estimateFromSessions,
+  parsePaceMSS,
   type ParsedBlock,
   type ParsedSession,
   type ZoneEstimate,
@@ -1620,6 +1621,31 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   // Dates already spoken for by a detected race. A race is the anchor; letting
   // it back in as training evidence would count one performance twice.
   const racesInWindow = new Set(detected.map((r) => r.date));
+  // Parsed sessions in the training window. Built OUT here rather than inside
+  // the anchor block: an athlete with no race needs these most, and they used
+  // to be unreachable without one (see the cold start below).
+  const zoneSessions: ParsedSession[] = [];
+  for (const log of extendedVoiceLogs) {
+    const d = parseDay(log.date);
+    // 28 days, not 14: the signal takes the BEST sessions in the window, so it
+    // needs enough of them to choose from. The 21-day recency half-life inside
+    // combineZoneEstimates is what keeps the number current.
+    if (!d || d < fourWeeksAgo || d > now) continue;
+    const p = log.parsedStructure;
+    if (!p || !p.blocks || p.blocks.length === 0) continue;
+    zoneSessions.push({
+      date: log.date,
+      type: p.type,
+      confidence: p.confidence,
+      intentPattern: p.intentPattern ?? null,
+      tempF: log.weather?.tempF ?? null,
+      dewPointF: log.weather?.dewPointF ?? null,
+      blocks: p.blocks,
+      // A race in the window is already the anchor; counting it again here
+      // would let one performance vote twice.
+      declaredRace: racesInWindow.has(log.date),
+    });
+  }
 
   if (anchorPace !== null) {
     const anchor = anchorPace;
@@ -1701,28 +1727,6 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     // for the continuous work you actually did, how did your pace compare to
     // what your current fitness predicts for that duration? See
     // trainingZoneSignal.ts for the model and why the anchor cancels out of it.
-    const zoneSessions: ParsedSession[] = [];
-    for (const log of extendedVoiceLogs) {
-      const d = parseDay(log.date);
-      // 28 days, not 14: the signal takes the BEST sessions in the window, so
-      // it needs enough of them to choose from. The 21-day recency half-life
-      // inside combineZoneEstimates is what keeps the number current.
-      if (!d || d < fourWeeksAgo || d > now) continue;
-      const p = log.parsedStructure;
-      if (!p || !p.blocks || p.blocks.length === 0) continue;
-      zoneSessions.push({
-        date: log.date,
-        type: p.type,
-        confidence: p.confidence,
-        intentPattern: p.intentPattern ?? null,
-        tempF: log.weather?.tempF ?? null,
-        dewPointF: log.weather?.dewPointF ?? null,
-        blocks: p.blocks,
-        // A race in the window is already the anchor; counting it again here
-        // would let one performance vote twice.
-        declaredRace: racesInWindow.has(log.date),
-      });
-    }
     const zoneRead = estimateFromSessions(zoneSessions, estimated10KPace);
     zoneEstimates = zoneRead.estimates;
     zoneRejections = zoneRead.rejected;
@@ -1830,7 +1834,73 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     }
   }
 
-  // ── Fallback when no anchor: structured/voice/fastest-workout ──
+  // ── No anchor: read the training directly (2026-08-17) ──
+  //
+  // THE COLD START. Everything above lives inside `if (anchorPace !== null)`,
+  // so an athlete who has not raced never reached the training signal at all
+  // and fell through to the guesses below. Measured on a synthetic 45-minute
+  // 10K runner doing 8×800 at their own 10K pace:
+  //
+  //     predicted 56:05, source "fastest workout"   — eleven minutes out
+  //
+  // Their quality sessions were ignored and the estimate came off their EASY
+  // runs. That is the exact position every beta user is in on day one, and it
+  // is the case where reading the training matters most, because there is
+  // nothing else to read.
+  //
+  // The zone signal needs a current estimate to price sessions against, which
+  // is why it was only ever run after an anchor existed. But the anchor
+  // cancels out of it — see trainingZoneSignal.ts — so it can bootstrap from
+  // any starting guess and iterate to its own fixed point. Seeding from the
+  // fastest workout and iterating converges in a handful of passes.
+  if (estimated10KPace === 0 && zoneSessions.length > 0 && workouts.length > 0) {
+    // SEED FROM THE WORK, not from the easy runs. Seeding off the fastest
+    // logged workout puts the first guess near easy pace, and the plausibility
+    // gate then rejects the athlete's real quality reps as impossibly fast —
+    // the iteration dies on pass one and the cold start never fires. The
+    // median work-rep pace is already in the right neighbourhood, so the
+    // fixed point is reached from inside the window rather than outside it.
+    const repPaces = zoneSessions
+      .flatMap((z) => z.blocks)
+      .filter((b) => String(b.role ?? "").toLowerCase() === "work_rep")
+      .map((b) => parsePaceMSS(b.avgPacePerMile))
+      .filter((x): x is number => x !== null && x > 0)
+      .sort((a, b) => a - b);
+    const fastestWorkout = workouts.reduce(
+      (f, w) => (w.paceSecondsPerMile < f.paceSecondsPerMile ? w : f),
+      workouts[0],
+    );
+    let seed = repPaces.length > 0
+      ? repPaces[Math.floor(repPaces.length / 2)]
+      : fastestWorkout.paceSecondsPerMile * 0.95;
+    const seedPace = seed;
+    let converged: number | null = null;
+    let used = 0;
+    for (let i = 0; i < 8; i++) {
+      const read = estimateFromSessions(zoneSessions, seed);
+      const combined = combineZoneEstimates(read.estimates, now);
+      if (combined === null) break;
+      const next = combined.tenKPace;
+      used = combined.used.length;
+      zoneEstimates = read.estimates;
+      zoneRejections = read.rejected;
+      zoneSignalUsed = combined.used;
+      const settled = Math.abs(next - seed) < 0.05;
+      seed = next;
+      converged = next;
+      if (settled) break;
+    }
+    if (converged !== null && converged > 0) {
+      estimated10KPace = converged;
+      dataSource = `training (${used} session${used === 1 ? "" : "s"})`;
+      speedEvidenceHardEfforts = zoneEstimates.flatMap((e) =>
+        e.reps.map((r) => ({ paceSeconds: r.paceSeconds, distanceMiles: r.distanceMiles }))
+      );
+      diag.cold_start = { seed_pace: seedPace, converged_pace: converged, sessions: used };
+    }
+  }
+
+  // ── Fallback when no anchor and no readable training ──
   if (estimated10KPace === 0) {
     const intervals = intervalPaces.filter((i) => i.type === "interval");
     const tempos = intervalPaces.filter((i) => i.type === "tempo" || i.type === "threshold");
