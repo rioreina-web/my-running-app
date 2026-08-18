@@ -47,6 +47,7 @@ import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V2 } from "./prompts/generate-work
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V3 } from "./prompts/generate-workout-insight.v3.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V4 } from "./prompts/generate-workout-insight.v4.ts";
 import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V5 } from "./prompts/generate-workout-insight.v5.ts";
+import { TEMPLATE as GENERATE_WORKOUT_INSIGHT_V6 } from "./prompts/generate-workout-insight.v6.ts";
 import { TEMPLATE as INJURY_ANALYSIS_V1 } from "./prompts/injury-analysis.v1.ts";
 import { TEMPLATE as INJURY_EARLY_WARNING_V1 } from "./prompts/injury-early-warning.v1.ts";
 import { TEMPLATE as PARSE_GOAL_V1 } from "./prompts/parse-goal.v1.ts";
@@ -93,6 +94,7 @@ const REGISTRY: Record<string, string> = {
   "generate-workout-insight.v3": GENERATE_WORKOUT_INSIGHT_V3,
   "generate-workout-insight.v4": GENERATE_WORKOUT_INSIGHT_V4,
   "generate-workout-insight.v5": GENERATE_WORKOUT_INSIGHT_V5,
+  "generate-workout-insight.v6": GENERATE_WORKOUT_INSIGHT_V6,
   "injury-analysis.v1": INJURY_ANALYSIS_V1,
   "injury-early-warning.v1": INJURY_EARLY_WARNING_V1,
   "parse-goal.v1": PARSE_GOAL_V1,

@@ -34,6 +34,7 @@ import { GoogleGenerativeAI } from "npm:@google/generative-ai@0.21.0";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { llmBudgetAllows, llmBudgetBlockedResponse } from "../_shared/llm-budget.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
+import { firstAthleteNote } from "../_shared/athleteNoteText.ts";
 import {
   loadCoachContext,
   formatPacesBlock,
@@ -283,13 +284,75 @@ interface ScheduledLite {
   workout_type: string | null;
   workout_data: Record<string, unknown> | null;
   notes: string | null;
+  /** The plan's intent. Optional so this stays structurally compatible with
+   *  `CoachScheduledLite`, which comparePrescribedToExecuted consumes. */
+  is_key_session?: boolean | null;
 }
 
+/**
+ * One line telling the read whether this run was a declared key session.
+ *
+ * Two sources, and the athlete's beats the plan's: `day_overrides` holds the
+ * athlete's own assignment (field 'is_key_session'), and a row exists ONLY
+ * when they have expressed a preference — clearing it deletes the row, so
+ * absence means "no opinion", never false. Falls back to the plan's
+ * `scheduled_workouts.is_key_session`.
+ *
+ * Returns "" when neither source says anything, which is the common case and
+ * a correct one — a plan is optional, and an unflagged day is just a day. An
+ * empty string leaves no trace in the prompt rather than asserting "not a key
+ * session", which would be a claim we cannot support.
+ */
+async function resolveKeySessionLine(
+  userId: string,
+  workoutDay: string,
+  plannedKeySession: boolean | null,
+): Promise<string> {
+  let athleteSaid: boolean | null = null;
+  try {
+    const { data } = await adminClient
+      .from("day_overrides")
+      .select("value")
+      .eq("user_id", userId)
+      .eq("date", workoutDay)
+      .eq("field", "is_key_session")
+      .maybeSingle<{ value: unknown }>();
+    if (typeof data?.value === "boolean") athleteSaid = data.value;
+  } catch (err) {
+    // Never let the override lookup break the insight.
+    console.warn("resolveKeySessionLine: override lookup failed:", err);
+  }
+
+  const isKey = athleteSaid ?? plannedKeySession;
+  if (isKey !== true) return "";
+  return athleteSaid === true
+    ? "- Key session: yes (athlete flagged this day as a key session)"
+    : "- Key session: yes (the plan marks this a key session)";
+}
+
+/**
+ * A row of recent training history.
+ *
+ * v6 (2026-08-18) widened this from {date, distance, type, mood}. The old
+ * shape is why the insight could never notice anything longitudinal: it read
+ * the CURRENT run's notes but every prior run arrived as bare numbers, so
+ * "third week you've mentioned that knee" was unsayable except via the
+ * pre-aggregated niggle counter. The notes fields are what the read is for;
+ * duration is here because `workout_pace_per_mile` is populated on only a
+ * handful of rows (6 of 49 over 28d on the primary athlete), so pace has to be
+ * derived from distance + duration.
+ */
 interface RecentRow {
   workout_date: string;
   workout_distance_miles: number | null;
+  workout_duration_minutes: number | null;
+  workout_pace_per_mile: string | null;
   workout_type: string | null;
   mood: string | null;
+  felt_rpe: number | null;
+  cleaned_notes: string | null;
+  workout_notes: string | null;
+  notes: string | null;
 }
 
 /** A row from running_workout_laps — the actual lap presses (true rep
@@ -430,18 +493,82 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Pull context ---
+    // ── Find the planned session for this run (v6). ──
+    // This lookup used to be guarded on `row.scheduled_workout_id`, a column
+    // that does not exist on training_logs — the comment on the select above
+    // says so outright. So `scheduled` was ALWAYS null and the plan's intent
+    // never once reached the prompt. The link exists in the other direction:
+    // `scheduled_workouts.completed_workout_id` → training_logs.id. Try that
+    // first (exact), then fall back to same-user-same-date, which is how an
+    // unreconciled import lines up with its planned day.
+    //
+    // A training plan is optional and `activePlan == nil` is first-class, so
+    // both misses are normal, not an error: a self-coached athlete has no
+    // scheduled_workouts rows at all and this correctly stays null.
     let scheduled: ScheduledLite | null = null;
-    if (row.scheduled_workout_id) {
-      const { data } = await adminClient
+    {
+      const { data: byLink } = await adminClient
         .from("scheduled_workouts")
-        .select("id, workout_type, workout_data, notes")
-        .eq("id", row.scheduled_workout_id)
+        .select("id, workout_type, workout_data, notes, is_key_session")
+        .eq("completed_workout_id", row.id)
         .maybeSingle<ScheduledLite>();
-      scheduled = data ?? null;
+      scheduled = byLink ?? null;
+
+      if (!scheduled) {
+        const workoutDay = row.workout_date.slice(0, 10);
+        // Fetch TWO so we can detect ambiguity rather than silently taking the
+        // first. A date match is only trustworthy when the day holds exactly
+        // one planned session AND exactly one logged run: this athlete runs
+        // doubles routinely (three separate runs on 2026-08-18), and attaching
+        // the day's threshold prescription to a 2-mile shakeout would tell the
+        // read the athlete missed a workout they actually nailed in the other
+        // session. A wrong prescription is worse than none, so on any ambiguity
+        // we leave `scheduled` null and the prescribed block simply stays out.
+        const [{ data: sameDayPlans }, { count: sameDayRuns }] = await Promise.all([
+          adminClient
+            .from("scheduled_workouts")
+            .select("id, workout_type, workout_data, notes, is_key_session")
+            .eq("user_id", row.user_id)
+            .eq("date", workoutDay)
+            .order("session", { ascending: true })
+            .limit(2),
+          adminClient
+            .from("training_logs")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", row.user_id)
+            .gte("workout_date", `${workoutDay}T00:00:00Z`)
+            .lt("workout_date", `${workoutDay}T23:59:59.999Z`),
+        ]);
+
+        const plans = (sameDayPlans ?? []) as ScheduledLite[];
+        if (plans.length === 1 && (sameDayRuns ?? 0) <= 1) {
+          scheduled = plans[0];
+        } else if (plans.length > 0) {
+          console.log(
+            `[insight] ${row.id}: skipping date-matched plan — ` +
+              `${plans.length} planned / ${sameDayRuns ?? 0} logged on ${workoutDay}`,
+          );
+        }
+      }
     }
+
+    // Key session — the plan's intent, or the athlete's own assignment via
+    // `day_overrides` (field 'is_key_session'), which wins when present
+    // because the athlete's call outranks the plan's.
+    const keySessionLine = await resolveKeySessionLine(
+      row.user_id,
+      row.workout_date.slice(0, 10),
+      scheduled?.is_key_session ?? null,
+    );
 
     const sevenDaysAgo = new Date(
       new Date(row.workout_date).getTime() - 7 * 86400000
+    );
+    // v6: the log block reads 28 days; `recentSummary` still reports 7, so the
+    // prompt's "Last 7 days:" line stays literally true. One fetch serves both
+    // — the 7-day set is a filter over it, not a second query.
+    const twentyEightDaysAgo = new Date(
+      new Date(row.workout_date).getTime() - 28 * 86400000
     );
     // Compute current run's pace once — needed for both classification
     // and the similar-prior matcher.
@@ -460,14 +587,21 @@ Deno.serve(async (req: Request) => {
       : Promise.resolve(null);
 
     const [recentRes, coachCtx, prior, athleteStateBlock, lapsRes] = await Promise.all([
+      // 28 days, WITH the athlete's own words (v6). The window is a training
+      // block, which is the shortest span that can show a recurring niggle or a
+      // drifting mood; 7 days could only ever show within-week noise. Notes are
+      // truncated per-row when the block is formatted, not here, so the
+      // truncation rule lives in one place.
       adminClient
         .from("training_logs")
-        .select("workout_date, workout_distance_miles, workout_type, mood")
+        .select(
+          "workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, felt_rpe, cleaned_notes, workout_notes, notes",
+        )
         .eq("user_id", row.user_id)
-        .gte("workout_date", sevenDaysAgo.toISOString())
+        .gte("workout_date", twentyEightDaysAgo.toISOString())
         .lt("workout_date", row.workout_date)
         .order("workout_date", { ascending: false })
-        .limit(14),
+        .limit(40),
       loadCoachContext(adminClient, row.user_id),
       priorPromise,
       loadAthleteStateBlock(row.user_id),
@@ -558,6 +692,7 @@ Deno.serve(async (req: Request) => {
       progressionBlock,
       athleteContextBlock,
       laps,
+      keySessionLine,
     );
 
     if (insight === null) {
@@ -580,6 +715,7 @@ Deno.serve(async (req: Request) => {
         progressionBlock,
         athleteContextBlock,
         laps,
+        keySessionLine,
         INSIGHT_STRICT_SUFFIX,
       );
       violations = retry ? insightSafetyViolations(retry) : ["empty-retry"];
@@ -639,9 +775,22 @@ async function generateInsight(
   progressionBlock: string,
   athleteStateBlock: string,
   laps: TrainingLap[],
+  keySessionLine: string,
   extraConstraint = "",
 ): Promise<string | null> {
-  const recentSummary = summarizeRecent(recent);
+  // `recent` spans 28 days (v6). The prompt's "Last 7 days:" line must keep
+  // meaning 7 days, so summarizeRecent gets a filtered view while the log
+  // block below gets the full window.
+  const sevenDayCutoff = new Date(
+    new Date(log.workout_date).getTime() - 7 * 86400000,
+  ).getTime();
+  const recentSummary = summarizeRecent(
+    recent.filter((r) => {
+      const t = new Date(r.workout_date).getTime();
+      return Number.isFinite(t) && t >= sevenDayCutoff;
+    }),
+  );
+  const recentLogsBlock = formatRecentLogsBlock(recent);
 
   // Pace anchoring + deterministic zone classification.
   const pacesBlock = formatPacesBlock(coachCtx);
@@ -726,7 +875,7 @@ async function generateInsight(
     (log.cleaned_notes ?? log.notes ?? "").trim(),
   ].filter((s) => s.length > 0).join("\n") || "—";
 
-  const userPrompt = loadPrompt("generate-workout-insight.v5", {
+  const userPrompt = loadPrompt("generate-workout-insight.v6", {
     workoutType: log.workout_type ?? "run",
     distance: log.workout_distance_miles ?? "?",
     pace: log.workout_pace_per_mile ?? "?",
@@ -739,6 +888,8 @@ async function generateInsight(
     prescribedBlock,
     progressionBlock,
     athleteState: athleteStateBlock,
+    recentLogs: recentLogsBlock,
+    keySessionLine,
     recentSummary,
   });
 
@@ -817,6 +968,70 @@ function parsePaceSec(s: string | null | undefined): number | null {
 function deriveAveragePace(distanceMi: number | null, durationMin: number | null): number | null {
   if (!distanceMi || !durationMin || distanceMi <= 0 || durationMin <= 0) return null;
   return Math.round((durationMin * 60) / distanceMi);
+}
+
+/** Per-note ceiling in the recent-log block. Matches the 200-char memo excerpt
+ *  used by the memory writer — enough to carry a complaint and its severity
+ *  wording, short enough that 40 rows stay affordable. */
+const RECENT_NOTE_MAX_CHARS = 200;
+
+// The athlete-voice filter lives in _shared/athleteNoteText.ts (with tests
+// pinned to verbatim real rows) — see the import at the top of this file.
+
+/**
+ * "## Recent training log" — the athlete's own words over the fetched window,
+ * newest first, one line per run.
+ *
+ * This block is the point of v6. Everything else the insight sees about the
+ * past is pre-aggregated (counters, trends, summaries); this is the raw
+ * language, dated, so the read can quote it and say when it was said.
+ *
+ * Notes precedence mirrors the current-run enrichment: `cleaned_notes` (the
+ * transcribed/cleaned memo) is the athlete's voice, `workout_notes` is the
+ * parsed workout description, and raw `notes` is last because on imported rows
+ * it is the provider's boilerplate ("Morning Run\nDistance: ...") rather than
+ * anything the athlete said. Rows with nothing to quote still contribute their
+ * numbers — an unremarked easy day is real signal about the shape of a block.
+ */
+function formatRecentLogsBlock(rows: RecentRow[]): string {
+  if (rows.length === 0) return "";
+
+  const lines: string[] = [];
+  for (const r of rows) {
+    const day = (r.workout_date ?? "").slice(0, 10);
+    if (!day) continue;
+
+    const facts: string[] = [];
+    if (r.workout_type) facts.push(r.workout_type);
+    if (typeof r.workout_distance_miles === "number") {
+      facts.push(`${r.workout_distance_miles.toFixed(1)} mi`);
+    }
+    // Prefer the stored pace string; derive it when absent (usual case).
+    const paceSec = parsePaceSec(r.workout_pace_per_mile)
+      ?? deriveAveragePace(r.workout_distance_miles, r.workout_duration_minutes);
+    if (paceSec != null) {
+      const m = Math.floor(paceSec / 60);
+      const s = Math.round(paceSec % 60);
+      facts.push(`${m}:${String(s).padStart(2, "0")}/mi`);
+    }
+    if (r.mood) facts.push(`mood ${r.mood}`);
+    if (typeof r.felt_rpe === "number") facts.push(`RPE ${r.felt_rpe}`);
+
+    const note = firstAthleteNote(r.cleaned_notes, r.workout_notes, r.notes);
+
+    const head = `- ${day}${facts.length ? ` — ${facts.join(", ")}` : ""}`;
+    if (note) {
+      const clipped = note.length > RECENT_NOTE_MAX_CHARS
+        ? `${note.slice(0, RECENT_NOTE_MAX_CHARS).trimEnd()}…`
+        : note;
+      lines.push(`${head}: "${clipped}"`);
+    } else {
+      lines.push(head);
+    }
+  }
+
+  if (lines.length === 0) return "";
+  return `## Recent training log (athlete's own words, newest first)\n${lines.join("\n")}`;
 }
 
 function summarizeRecent(rows: RecentRow[]): string {
