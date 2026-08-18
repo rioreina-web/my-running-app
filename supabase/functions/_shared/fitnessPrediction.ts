@@ -261,6 +261,12 @@ export interface FitnessPredictionResult {
     readButNotUsed: Array<{ date: string; reason: string }>;
     workMinutes: number;
   };
+  /**
+   * Every intermediate the estimate passed through — anchor, decay factor,
+   * training signal before blending, blend weight, caps, curve damping. Kept
+   * so the number can be audited from a query instead of re-derived by hand.
+   */
+  diagnostics: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1598,6 +1604,19 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   let zoneRejections: Array<{ date: string; reason: string }> = [];
   /** The subset combineZoneEstimates actually selected — the number's workings. */
   let zoneSignalUsed: ZoneEstimate[] = [];
+  /**
+   * Every intermediate the estimate passes through, kept rather than discarded.
+   *
+   * WHY (2026-08-17): asked "how much of the gap between the 31:20 anchor and
+   * the published 32:00 was decay versus training?", the honest answer was
+   * that nothing recorded it. The inputs were queryable and the output was
+   * queryable and every stage in between was computed and thrown away, so the
+   * question could only be answered by re-deriving it by hand — and the
+   * re-derivation disagreed with the stored value, which is exactly when you
+   * most want the record. Constants get tuned against this; they cannot be
+   * tuned against an argument.
+   */
+  const diag: Record<string, unknown> = {};
   // Dates already spoken for by a detected race. A race is the anchor; letting
   // it back in as training evidence would count one performance twice.
   const racesInWindow = new Set(detected.map((r) => r.date));
@@ -1653,6 +1672,15 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
       decayFactor = Math.min(decayFactor, 1.02);
     }
     estimated10KPace = anchor * decayFactor;
+    diag.anchor_pace = anchor;
+    diag.anchor_weeks_ago = anchorWeeksAgo;
+    diag.weekly_miles = weeklyMiles;
+    diag.weekly_stimulus_minutes = weeklyStimulusMinutes;
+    diag.quality_density = qualityDensity;
+    diag.maintenance_factor = maintenanceFactor;
+    diag.effective_decay_per_week = effectiveDecayPerWeek;
+    diag.decay_factor = decayFactor;
+    diag.after_decay_pace = estimated10KPace;
 
     // ── Training-evidence validation (parser-driven, last 28 days) ──
     //
@@ -1756,8 +1784,26 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
         );
         efHeldClamped = diff > 0 && efVerdict === "held" &&
           blended > estimated10KPace * (1 + slowCapPct);
+        diag.training_signal_pace = paceSegmentSignal;
+        diag.training_work_minutes = zoneSignal.workMinutes;
+        diag.signal_weight = signalWeight;
+        diag.blended_pace = blended;
+        diag.cap_pct = capPct;
+        diag.slow_cap_pct = slowCapPct;
+        diag.ef_verdict = efVerdict;
+        diag.cap_bound = Math.abs(clamped - blended) > 1e-9;
         estimated10KPace = clamped;
+      } else {
+        diag.training_signal_pace = paceSegmentSignal;
+        diag.training_work_minutes = zoneSignal.workMinutes;
+        diag.blend_skipped = `signal within 3 s/mi of the anchor (${diff.toFixed(2)})`;
       }
+      diag.after_blend_pace = estimated10KPace;
+    } else {
+      diag.training_signal_pace = null;
+      diag.no_training_signal = `${zoneEstimates.length} usable of ${
+        zoneEstimates.length + zoneRejections.length
+      } sessions read`;
     }
 
     if (effectiveDecayPerWeek < 0) dataSource = anchorSource + " (improving)";
@@ -1823,7 +1869,14 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     // A race inside the recent window is a fresh measurement — let it land.
     hardReset: chosenRace !== null && anchorWeeksAgo <= 2.0,
   });
+  diag.pre_curve_pace = estimated10KPace;
+  diag.curve_prior_pace = prior?.pace ?? null;
+  diag.curve_delta_days = prior?.deltaDays ?? null;
+  diag.curve_alpha = curve.alpha;
+  diag.curve_capped = curve.capped;
+  diag.curve_reason = curve.reason;
   estimated10KPace = curve.pace;
+  diag.final_pace = estimated10KPace;
 
   // ── Derive race times from estimated 10K pace ──
   // ROUND, don't truncate (2026-07-16, mirrors Swift) — Math.trunc floored
@@ -2003,6 +2056,7 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
         conditions: chosenRaceScored.conditions,
       }
       : null,
+    diagnostics: diag,
     supportingTraining: {
       used: zoneSignalUsed,
       readButNotUsed: zoneRejections,

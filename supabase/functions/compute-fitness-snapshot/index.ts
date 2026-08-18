@@ -362,6 +362,9 @@ async function computeAndUpsert(
     // rather than run 851 lines to produce a summary line and two counts.
     summary: prediction.summary ?? null,
     supporting_training: prediction.supportingTraining ?? null,
+    // The workings (migration 20260817230000) — every stage between the anchor
+    // and the published number, so tuning arguments can be settled by query.
+    diagnostics: prediction.diagnostics ?? null,
   };
 
   // Upsert today's row (one per calendar day), matching the iOS behavior.
