@@ -133,9 +133,21 @@ export const MIN_WORK_SECONDS = 480;
 export const PLAUSIBLE_RATIO_MIN = 0.86; // ~14% faster than predicted
 export const PLAUSIBLE_RATIO_MAX = 1.10; // ~10% slower — below this is aerobic work
 
-/** Rep pace bounds — outside this a "rep" is a warm-up, a walk, or bad GPS. */
-const MIN_REP_PACE = 210;
-const MAX_REP_PACE = 540;
+/**
+ * Absolute rep-pace bounds. These catch GPS garbage and stopped clocks and
+ * NOTHING else — whether a rep was quality for this athlete is decided
+ * relative to their own curve by the plausibility window above.
+ *
+ * They were 210–540 s/mi, which is 3:30 to 9:00. A 58:00 10K runner races at
+ * 9:20/mi, so every work rep they ever ran fell outside the window and the
+ * training signal returned "no usable work reps" — silently, for a large share
+ * of real runners. Caught by athleteProfiles.test.ts on its first run.
+ *
+ * 150 s/mi is faster than a world-record mile; 1200 is a 20-minute mile. If a
+ * rep is outside that it is not a rep.
+ */
+const MIN_REP_PACE = 150;
+const MAX_REP_PACE = 1200;
 
 /** A rep shorter than this is a stride or a GPS artifact, not work. */
 const MIN_REP_SECONDS = 45;
