@@ -101,9 +101,14 @@ export function parsePace(text: string): PaceSpec | null {
 /** Parse a distance phrase → meters. "800m", "1k", "1mi", "3 mile", "mile". */
 export function parseDistanceMeters(text: string): number | null {
   const t = text.toLowerCase();
-  const km = t.match(/(\d+(?:\.\d+)?)\s*(?:k|km)\b/);
+  // A leading decimal point must not be dropped: athletes write ".25 mile
+  // recoveries", and `(\d+(\.\d+)?)` cannot match ".25" so the regex fell
+  // through to the bare digits and read TWENTY-FIVE MILES. Seen in prod on a
+  // real note — "six miles, starting at marathon pace ... with .25 mile
+  // recoveries" was parsed as a 40 km block, at high confidence.
+  const km = t.match(/(\d+(?:\.\d+)?|\.\d+)\s*(?:k|km)\b/);
   if (km) return Number(km[1]) * 1000;
-  const mi = t.match(/(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/);
+  const mi = t.match(/(\d+(?:\.\d+)?|\.\d+)\s*(?:mi|mile|miles)\b/);
   if (mi) return Number(mi[1]) * METERS_PER_MILE;
   const m = t.match(/(\d{2,5})\s*m\b/);
   if (m) return Number(m[1]);
@@ -267,7 +272,27 @@ function matchContinuous(text: string): DeclaredWorkout | null {
 }
 
 /** Simple aerobic: "easy 6 miles", "16 mile long run", "recovery 4 miles". */
+/**
+ * Words that mean the session HAS work structure, so it cannot be an easy or
+ * recovery run however its rest is described.
+ *
+ * Without this, `matchSimple` claimed any text containing "recovery" or "easy"
+ * — including when those words describe the REST. Real notes it got wrong, all
+ * at high confidence:
+ *
+ *   "1 mile at a 6-minute pace … with 400m recovery"  → a recovery run
+ *   "a threshold session with 5x4 min, jog recovery"  → a recovery run
+ *   "2 × ~2mi tempo/threshold, standing recovery"     → a recovery run
+ *   "4 x 3mi @ MP-5 w/800m easy"                      → an easy run
+ *
+ * Judging those sessions against recovery pace would have been worse than not
+ * parsing them at all.
+ */
+const HAS_WORK_STRUCTURE =
+  /\b(\d+\s*[x×]|sets?|reps?|intervals?|repeats?|tempo|threshold|fartlek|progression|alternation|marathon\s*pace|half\s*marathon|mp|hmp|lt|cruise|at\s+\d+:\d{2}|@\s*\d+:\d{2})\b/;
+
 function matchSimple(text: string): DeclaredWorkout | null {
+  if (HAS_WORK_STRUCTURE.test(text)) return null;
   const dist = parseDistanceMeters(text);
   const miles = dist ? dist / METERS_PER_MILE : null;
   if (/\blong\s*run\b/.test(text) || (miles != null && miles >= 11 && /\beasy|long\b/.test(text))) {

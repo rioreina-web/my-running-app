@@ -381,6 +381,28 @@ Deno.serve(async (req) => {
       if (parsed.work.execution_quality) parsed.work.execution_quality = null;
     }
 
+    // 4b-ii) DETERMINISTIC GEOMETRY GUARD (2026-08-17).
+    //
+    // The override above only fires when there ARE work bouts. With no laps and
+    // no usable GPS, `geometrySource === "model"` and whatever blocks Gemini
+    // wrote survive untouched — invented splits presented as measurements.
+    //
+    // Three rows in prod were built this way. The worst: a 12 × 400m session
+    // whose note read "Splits: 68s to 73-74s" came back as twelve identical
+    // reps at exactly 4:34 over exactly 0.2485 mi with no duration recorded —
+    // the fast end of a stated range, stamped on every rep. Another, a 2 × 3
+    // mile whose note plainly said "5:20 pace for both reps", was written as
+    // 5:40. Neither number was ever run.
+    //
+    // The watch measures geometry; the notes declare intent. That direction is
+    // one-way. With nothing measured there are no blocks — the session's shape
+    // still survives in `intent_pattern`, where it belongs, and the detail
+    // sheet can say "no splits recorded" instead of showing fiction.
+    if (geometrySource === "model" && Array.isArray(parsed.blocks) && parsed.blocks.length) {
+      parsed.blocks = [];
+      parsed.geometry_stripped = true;
+    }
+
     // 4c) DETERMINISTIC PRESCRIPTION GUARD.
     // The prompt forbids inventing a prescription, but the model still does it
     // when auto-sync notes restate the splits. Enforce in code: with no

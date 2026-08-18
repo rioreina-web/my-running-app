@@ -6,6 +6,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 import {
   formatDeclared,
   parseDeclaredWorkout,
+  parseDistanceMeters,
   type PaceSpec,
 } from "./workout-structure-parser.ts";
 
@@ -76,4 +77,51 @@ Deno.test("long run", () => {
 Deno.test("unrecognized text degrades to unknown (never throws)", () => {
   const w = parseDeclaredWorkout("felt sluggish, legs heavy");
   assertEquals(w.kind, "unknown");
+});
+
+// ── regressions from real athlete notes (2026-08-17) ───────────────────────
+//
+// These strings are verbatim from prod. Every one of them parsed WRONG, and
+// most reported high confidence while doing it — which is worse than not
+// parsing, because a confident wrong prescription would have had the fitness
+// model judge threshold sessions against recovery pace.
+
+Deno.test("a leading decimal is not dropped — '.25 mile' is not 25 miles", () => {
+  assert(near(parseDistanceMeters(".25 mile recoveries")!, 0.25 * MILE, 2));
+  assert(near(parseDistanceMeters(".5k float")!, 500, 2));
+  // The real note that exposed it read as a 40 km block.
+  const w = parseDeclaredWorkout(
+    "six miles, starting at marathon pace and dropping to half marathon pace, with .25 mile recoveries",
+  );
+  assert(
+    (w.totalDistanceMeters ?? 0) < 20000,
+    `parsed ${Math.round((w.totalDistanceMeters ?? 0) / 1000)}km from a six-mile session`,
+  );
+});
+
+Deno.test("the REST being easy does not make the SESSION easy", () => {
+  const w = parseDeclaredWorkout("4 x 3mi @ MP-5 w/800m easy");
+  assertEquals(w.kind, "threshold");
+  assertEquals(w.reps, 4);
+  assert(near(w.block[0].distanceMeters!, 3 * MILE, 3));
+});
+
+Deno.test("the REST being recovery does not make the SESSION a recovery run", () => {
+  for (const s of [
+    "four repeated sets of 1 mile at a 6-minute pace followed by 2 miles at a 6:25 pace, with 400m recovery after each segment",
+    "a threshold session today with 5x4 minute efforts and jog recovery",
+    "2 × ~2mi tempo/threshold efforts with standing recovery",
+  ]) {
+    const w = parseDeclaredWorkout(s);
+    assert(w.kind !== "recovery", `"${s.slice(0, 40)}…" read as a recovery run`);
+    assert(
+      w.block.every((b) => !(b.pace?.kind === "zone" && b.pace.zone === "recovery")),
+      `"${s.slice(0, 40)}…" assigned recovery pace to the WORK`,
+    );
+  }
+});
+
+Deno.test("a genuine recovery run still parses as one", () => {
+  const w = parseDeclaredWorkout("easy 5 mile recovery run");
+  assertEquals(w.kind, "recovery");
 });
