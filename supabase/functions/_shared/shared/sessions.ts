@@ -7,6 +7,27 @@
  * to-start (or within 1.5h end-to-start using the prior duration) are the same
  * session. Total mileage is still summed per session by callers, but the
  * session COUNT reflects reality. Extracted verbatim from `athlete-state.ts`.
+ *
+ * ---------------------------------------------------------------------------
+ * NAME COLLISION — READ BEFORE IMPORTING
+ *
+ * This is NOT the same module as `_shared/sessions.ts`. Two files named
+ * `sessions.ts` now sit two directories apart and implement DIFFERENT session
+ * rules:
+ *
+ *   _shared/shared/sessions.ts  (this file)  groupIntoSessions()
+ *       UTC calendar day; 3h start-to-start OR 1.5h end-to-start.
+ *       One consumer: `builders/buildLoadMetrics.ts` (sessions7d).
+ *
+ *   _shared/sessions.ts                      buildSessions()
+ *       LOCAL calendar day; 90min end-to-start; returns typed sessions with
+ *       miles/type/mood, not bare row arrays. Port of SessionRollup.swift.
+ *       This is the definition new consumers should use — see SESSIONS-APPLY.md.
+ *
+ * They disagree. On this athlete's history the UTC-day rule alone misfiles 10
+ * rows / 45.2 mi onto the wrong date. Do not `import { ... } from "sessions.ts"`
+ * without checking which path you resolved.
+ * ---------------------------------------------------------------------------
  */
 
 export type WorkoutRow = Record<string, unknown>;

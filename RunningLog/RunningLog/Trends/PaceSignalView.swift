@@ -82,9 +82,13 @@ private struct PaceScale {
     let slow: Double
     let fast: Double
     let anchors: [AnchorMark]
-    /// label, pace, and whether it was pinned to the fast edge because it sits
-    /// beyond the fitted range.
+    /// label, pace, and whether it sits beyond the fitted range. Marks flagged
+    /// `true` carry their REAL pace, not the edge pace — nothing draws them on
+    /// the ramp, so there is no reason to distort them.
     let axisMarks: [(String, Double, Bool)]
+    /// Zone anchors faster than the fast end of this scale, slow → fast, with
+    /// their true paces. Rendered as a caption past the end of the ramp.
+    let beyondFast: [(String, Double)]
 
     /// Built from the histogram's FITTED bounds (the same slow/fast the bars
     /// are bucketed with), so labels can never drift from the bars. Fast-end
@@ -114,13 +118,22 @@ private struct PaceScale {
         // The full ladder, slow → fast. `beyond` flags an anchor that sits off
         // the fast end of the fitted range: the athlete has a mile pace even in
         // a month where they ran nothing at it, and hiding it makes the legend
-        // look like the spectrum stops at 5K. Those get pinned to the edge and
-        // drawn in tertiary ink so the position reads as "past here", not "here".
+        // look like the spectrum stops at 5K. Those are kept, but named off the
+        // end of the ramp rather than placed on it.
+        //
+        // 2026-08-20: `beyond` marks used to be appended AT `fast` — the edge
+        // pace, not their own — and drawn as a tick there in tertiary ink. Two
+        // things went wrong. A mile anchor of 4:28 was drawn on the 4:51–5:02
+        // bucket and read as that bucket's label, which is what the athlete
+        // noticed. And because the pinned mark sat hard against the right edge,
+        // it overflowed the label spacer, whose global shift then dragged every
+        // OTHER label ~21 sec/mi slow. They now keep their real pace and are
+        // rendered off the end of the ramp instead.
         var m: [(String, Double, Bool)] = []
         func add(_ label: String, _ pace: Double?) {
             guard let p = pace else { return }
             if inRange(p) { m.append((label, p, false)) }
-            else if p < fast { m.append((label, fast, true)) }   // faster than the axis
+            else if p < fast { m.append((label, p, true)) }   // faster than the axis
         }
         add("EASY", easyMid)
         add("STEADY", z.steadyMidpoint)
@@ -129,6 +142,7 @@ private struct PaceScale {
         add("5K", z.fiveK?.pace)
         add("MILE", z.mile?.pace)
         self.axisMarks = m
+        self.beyondFast = m.filter { $0.2 }.map { ($0.0, $0.1) }
     }
 }
 
@@ -504,19 +518,50 @@ private struct SpectrumDistribution: View {
         let b = scale.slow - Double(si + 1) * step
         let lo = min(a, b), hi = max(a, b)
         let mi = buckets[si]
-        let pct = Int((mi / bucketTotal * 100).rounded())
         return ("\(paceString(lo))–\(paceString(hi)) /mi",
-                "\(String(format: "%.1f", mi)) mi · \(pct)%")
+                "\(String(format: "%.1f", mi)) mi · \(shareString(mi / bucketTotal * 100))")
     }
 
-    /// Nudge label x-positions apart so close paces don't overlap (fast end).
+    /// Share of the window's miles, as text. A bucket holding 1.1 of 254 mi is
+    /// 0.4%, and `Int(rounded())` printed that as "0%" — a bar the athlete can
+    /// see, next to a number saying it isn't there. Small shares are the whole
+    /// point of the fast end of this chart, so they keep a decimal; only a
+    /// genuinely empty bucket reads "0%". (Rio, 2026-08-20.)
+    private func shareString(_ pct: Double) -> String {
+        if pct <= 0 { return "0%" }
+        if pct < 0.1 { return "<0.1%" }
+        if pct < 10 { return String(format: "%.1f%%", pct) }
+        return "\(Int(pct.rounded()))%"
+    }
+
+    /// Nudge LABEL x-positions apart so close paces don't overlap. Tick lines
+    /// are never moved by this — see the axis body for why.
     /// `xs` must be ascending.
     private func spread(_ xs: [CGFloat], minGap: CGFloat, minX: CGFloat, maxX: CGFloat) -> [CGFloat] {
-        var out = xs
+        var out = xs.map { min(max($0, minX), maxX) }
         guard out.count > 1 else { return out }
+        // Forward pass: open the minimum gap by pushing right.
         for i in 1..<out.count where out[i] - out[i - 1] < minGap { out[i] = out[i - 1] + minGap }
-        if let last = out.last, last > maxX { let s = last - maxX; for i in out.indices { out[i] -= s } }
-        if let first = out.first, first < minX { let s = minX - first; for i in out.indices { out[i] += s } }
+        // Backward pass: if that ran the tail past the edge, pin the last label
+        // and push LEFT from it.
+        //
+        // This replaces a global translation — `for i in out.indices { out[i] -= s }`
+        // — that shifted EVERY label by the overflow. With MILE pinned to the
+        // fast edge (see PaceScale) the overflow was ~39pt on a 361pt axis, so
+        // all six labels were drawn about 21 sec/mi slow: LT (5:23) sat where
+        // 5:41 was, 5K (4:57) where 5:18 was. The bars were right the whole
+        // time; the ruler under them was the thing that moved. (Rio, 2026-08-20.)
+        if let last = out.last, last > maxX {
+            out[out.count - 1] = maxX
+            for i in stride(from: out.count - 2, through: 0, by: -1)
+            where out[i + 1] - out[i] < minGap {
+                out[i] = out[i + 1] - minGap
+            }
+        }
+        if let first = out.first, first < minX {
+            out[0] = minX
+            for i in 1..<out.count where out[i] - out[i - 1] < minGap { out[i] = out[i - 1] + minGap }
+        }
         return out
     }
 
@@ -587,24 +632,51 @@ private struct SpectrumDistribution: View {
             VStack(spacing: 0) {
                 RoundedRectangle(cornerRadius: 6).fill(PaceSpectrum.gradient).frame(height: 10)
                 GeometryReader { geo in
-                    let base = scale.axisMarks.map { fraction($0.1) * geo.size.width }
-                    let xs = spread(base, minGap: 34, minX: 16, maxX: geo.size.width - 16)
-                    ForEach(Array(scale.axisMarks.enumerated()), id: \.offset) { idx, m in
-                        // EASY carries a taller tick — it anchors the slow end
-                        // and it's where most of the volume lives.
-                        let tall = (m.0 == "EASY")
-                        VStack(spacing: 2) {
+                    let w = geo.size.width
+                    // Only marks that genuinely sit on this scale get a tick.
+                    // A tick is a claim about position; anything drawn at a
+                    // pace the axis does not cover is a false one.
+                    let onScale = scale.axisMarks.filter { !$0.2 }
+                    let tickX = onScale.map { min(max(fraction($0.1) * w, 0.5), w - 0.5) }
+                    // Labels may shift to stay legible; ticks never do.
+                    let labelX = spread(tickX, minGap: 34, minX: 16, maxX: w - 16)
+                    ZStack(alignment: .topLeading) {
+                        ForEach(Array(onScale.enumerated()), id: \.offset) { idx, m in
+                            // EASY carries a taller tick — it anchors the slow
+                            // end and it's where most of the volume lives.
+                            let tall = (m.0 == "EASY")
                             Rectangle()
-                                .fill(m.2 ? Color.drip.textTertiary : Color.drip.textSecondary)
+                                .fill(Color.drip.textSecondary)
                                 .frame(width: tall ? 1.4 : 1, height: tall ? 8 : 5)
-                            Text(m.0).font(.dripEyebrow(tall ? 9.5 : 8.5))
-                                .foregroundStyle(m.2 ? Color.drip.textTertiary : Color.drip.textSecondary)
+                                .position(x: tickX[idx], y: tall ? 4 : 2.5)
+                            Text(m.0)
+                                .font(.dripEyebrow(tall ? 9.5 : 8.5))
+                                .foregroundStyle(Color.drip.textSecondary)
                                 .fixedSize()
+                                .position(x: labelX[idx], y: 14)
                         }
-                        .position(x: xs[idx], y: 10)
                     }
                 }
                 .frame(height: 22)
+
+                // Zones faster than anything in this window. They are NOT drawn
+                // on the ramp: pinning them to the fast edge put MILE (4:28)
+                // on the 4:51 bucket and read as a label for it. Named with
+                // their real pace instead, past the end of the scale, which is
+                // where they actually are. (Rio, 2026-08-20.)
+                if !scale.beyondFast.isEmpty {
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        Text("›").font(.dripEyebrow(8.5))
+                        Text(scale.beyondFast.map { "\($0.0) \(paceString($0.1))" }
+                                .joined(separator: " · "))
+                            .font(.dripEyebrow(8.5)).tracking(0.6)
+                            .fixedSize()
+                    }
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .padding(.trailing, 2)
+                    .padding(.top, 1)
+                }
             }
         }
     }

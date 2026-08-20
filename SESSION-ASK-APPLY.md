@@ -461,6 +461,59 @@ the answer; `.dripCaption(10)`, `tracking(1.2)`, `textTertiary` for
 
 ---
 
+### 5.5 The memo is the other half — `_shared/context.ts`
+
+**Added 2026-08-20 after the first build.** `buildSessionBlock` shipped
+selecting `cleaned_notes`, so the transcript does reach the model — but two
+things were missed, and one of them is a straight gap.
+
+**The gap.** The recent-logs query selects `felt_rpe` (`:1438`). The
+*this-session* query does not (`:1400`), and nothing anywhere selects
+`rpe_pull_quote` — the column your own migration describes as *"short verbatim
+line from the transcript shown italicised"*
+(`20260611180000_add_rpe_to_training_logs.sql:15`).
+
+So the model can see what they rated last Tuesday but not the run they're
+actually asking about. *"How hard was this, really?"* is one of the fifteen
+questions, and it would answer from pace and heart rate with their own effort
+rating sitting unread in the row.
+
+Add both to the select.
+
+**The framing.** The memo renders as `- Athlete notes: …` in the metadata
+bullet list, between Mood and Duration (`:1557`). Structurally it is a field
+alongside pace and duration. It should be its own block — `## What they said
+about it`, carrying the note, the RPE and the pull quote — the way splits,
+conditions and prescription each get one.
+
+This isn't tidying. CLAUDE.md's opening paragraph defines the product as
+fusing quantitative data with *"qualitative voice-log signal"*. A prompt
+handed columns of numbers and one bullet of prose narrates the numbers and
+quotes the prose as garnish, because that's what the shape of the input tells
+it to do.
+
+**What this unlocks.** `session-ask.v1.ts` gains a `WEIGH WHAT THEY SAID AS
+EVIDENCE, NOT COLOUR` instruction whose real payload is the disagreement case:
+
+> Where the two halves agree, say so once and move on; agreement is
+> confirmation, not a finding. **Where they disagree, that is usually the most
+> useful thing in the session** — an easy-feeling run at a heart rate that says
+> otherwise, a session they called terrible that produced their fastest reps,
+> an RPE well above or below what the pace would predict. Name the gap
+> plainly, give both sides, and do not resolve it by deciding the numbers are
+> right. They were there; the numbers weren't.
+
+Neither half alone contains that observation, and it's the thing a pace chart
+can never tell them. Everything else on this surface is table stakes; this is
+the part that's yours.
+
+**Caller change:** build `memoBlock` from `cleaned_notes`, `felt_rpe` and
+`rpe_pull_quote`; stop passing `athleteNotes` to `session-ask.v1`.
+`generate-workout-insight.v6` keeps `athleteNotes` and is not touched — see
+§0.5 on why its prompt stays frozen for now.
+
+---
+
 ## 6 · The prompt — `_shared/prompts/session-ask.v1.ts`
 
 Written and ready to drop in. Register it in `prompt-library.ts` (one import,

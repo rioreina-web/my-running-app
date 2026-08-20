@@ -1072,6 +1072,15 @@ export interface TrainingLogRow {
   mood: string | null;
   cleaned_notes: string | null;
   notes: string | null;
+  /** 1–10 perceived effort, extracted from the voice memo
+   *  (`20260611180000_add_rpe_to_training_logs.sql`). OPTIONAL because only
+   *  `buildSessionBlock`'s select pulls it — `generate-workout-insight` casts
+   *  its own row to this type and does not select it, so a required field here
+   *  would be a type that lies about that row. */
+  felt_rpe?: number | null;
+  /** Short verbatim line from the transcript, shown italicised. Same
+   *  optionality rule as `felt_rpe`. */
+  rpe_pull_quote?: string | null;
   /** Parsed/structured workout description ("6×800m @ 2:35 w/ 90s rec") — from
    *  the voice memo, or derived from laps when the memo didn't describe it.
    *  This is how the insight knows WHAT the session was. */
@@ -1356,7 +1365,13 @@ export interface SessionContext {
     pace: string;
     duration: string;
     mood: string;
+    /** The memo as a metadata bullet. Retained for callers that still render
+     *  the athlete's words inline; `session-ask` uses `memoBlock` instead. */
     athleteNotes: string;
+    /** "## What they said about it" — the note, the reported RPE and the
+     *  verbatim pull quote as their own block rather than one bullet in the
+     *  metadata list (§5.5). Empty string when they said nothing. */
+    memoBlock: string;
     pacesBlock: string;
     classificationLine: string;
     splitsBlock: string;
@@ -1392,13 +1407,20 @@ export async function buildSessionBlock(
   userId: string,
   logId: string,
 ): Promise<SessionContext | null> {
-  // Same select as generate-workout-insight, including the deliberate omission
-  // of `scheduled_workout_id` (no such column on training_logs — selecting it
+  // Same select as generate-workout-insight PLUS `felt_rpe` and
+  // `rpe_pull_quote` (§5.5), and including the deliberate omission of
+  // `scheduled_workout_id` (no such column on training_logs — selecting it
   // makes PostgREST reject the whole query).
+  //
+  // The RPE gap was real: the recent-logs query below already selects
+  // `felt_rpe`, so the model could see what they rated LAST Tuesday but not
+  // the run they are actually asking about. "How hard was this, really?" is
+  // one of the fifteen questions, and it was answering from pace and heart
+  // rate with their own effort rating sitting unread in the row.
   const { data, error } = await supabase
     .from("training_logs")
     .select(
-      "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, cleaned_notes, notes, workout_notes, parsed_structure, coach_insight, pace_segments, extracted_data, weather_actual, stream_meta:external_streams->meta",
+      "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, felt_rpe, rpe_pull_quote, cleaned_notes, notes, workout_notes, parsed_structure, coach_insight, pace_segments, extracted_data, weather_actual, stream_meta:external_streams->meta",
     )
     .eq("id", logId)
     .eq("user_id", userId)
@@ -1525,6 +1547,38 @@ export async function buildSessionBlock(
     (log.cleaned_notes ?? log.notes ?? "").trim(),
   ].filter((s) => s.length > 0).join("\n") || "—";
 
+  // ── What they said about it (§5.5) ──────────────────────────────────────
+  //
+  // The memo used to render as `- Athlete notes: …`, one bullet in the
+  // metadata list between Mood and Duration — structurally a field alongside
+  // pace and duration. It is now its own block, the way splits, conditions and
+  // prescription each get one.
+  //
+  // That is not tidying. CLAUDE.md defines the product as fusing quantitative
+  // data with qualitative voice-log signal; a prompt handed columns of numbers
+  // and one bullet of prose narrates the numbers and quotes the prose as
+  // garnish, because that is what the shape of the input tells it to do.
+  //
+  // Empty when the athlete said nothing at all — an empty "## What they said
+  // about it" heading reads as a claim that they were silent, which is
+  // different from us not having asked.
+  const spokenNote = (log.cleaned_notes ?? log.notes ?? "").trim();
+  const rpeValue = typeof log.felt_rpe === "number" ? log.felt_rpe : null;
+  const pullQuote = (log.rpe_pull_quote ?? "").trim();
+
+  const memoBlock = (spokenNote || rpeValue !== null || pullQuote)
+    ? [
+        "## What they said about it",
+        workoutDescription ? `- Session as described: ${workoutDescription}` : "",
+        spokenNote ? `- In their words: ${spokenNote}` : "",
+        rpeValue !== null ? `- Effort they reported: RPE ${rpeValue}/10` : "",
+        // Verbatim, and labelled as verbatim — the prompt is told to quote
+        // their words or not characterise them at all, and it can only honour
+        // that if it knows which line is actually theirs.
+        pullQuote ? `- Verbatim: "${pullQuote}"` : "",
+      ].filter((s) => s.trim().length > 0).join("\n")
+    : "";
+
   const parts = {
     workoutType: log.workout_type ?? "run",
     distance: log.workout_distance_miles != null ? String(log.workout_distance_miles) : "?",
@@ -1532,6 +1586,7 @@ export async function buildSessionBlock(
     duration: log.workout_duration_minutes != null ? String(log.workout_duration_minutes) : "?",
     mood: log.mood ?? "—",
     athleteNotes,
+    memoBlock,
     pacesBlock,
     classificationLine,
     splitsBlock,
@@ -1554,7 +1609,6 @@ export async function buildSessionBlock(
     `- Pace: ${parts.pace}/mi`,
     `- Duration: ${parts.duration} min`,
     `- Mood: ${parts.mood}`,
-    `- Athlete notes: ${parts.athleteNotes}`,
     keySessionLine,
     pacesBlock,
     classificationLine,
@@ -1562,6 +1616,11 @@ export async function buildSessionBlock(
     prescribedBlock,
     progressionBlock,
     conditionsBlock,
+    // Last, and as a block rather than a bullet (§5.5). It sits after the
+    // numbers deliberately: the disagreement between the two halves is the
+    // useful observation, and it reads as a rebuttal to what precedes it
+    // rather than as a caption on the metadata.
+    memoBlock,
   ].filter((s) => s && s.trim().length > 0).join("\n\n");
 
   const hasHeartRate = laps.some((l) => typeof l.avg_heart_rate === "number" && l.avg_heart_rate > 0)

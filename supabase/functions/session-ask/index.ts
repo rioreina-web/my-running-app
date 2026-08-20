@@ -239,7 +239,11 @@ Deno.serve(async (req: Request) => {
       pace: session.parts.pace,
       duration: session.parts.duration,
       mood: session.parts.mood,
-      athleteNotes: session.parts.athleteNotes,
+      // The memo is a BLOCK here, not the `- Athlete notes:` bullet v6 still
+      // takes (§5.5). It carries the note, the reported RPE and the verbatim
+      // pull quote, so "how hard was this, really?" can read their own effort
+      // rating instead of inferring one from pace and heart rate.
+      memoBlock: blank(session.parts.memoBlock, sessionPresent),
       pacesBlock: blank(session.parts.pacesBlock, sessionPresent),
       classificationLine: blank(session.parts.classificationLine, sessionPresent),
       splitsBlock: blank(session.parts.splitsBlock, sessionPresent),
