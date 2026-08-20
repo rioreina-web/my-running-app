@@ -817,3 +817,173 @@ Deno.test(
     assert(prompt.includes("flared again"), "prompt should note the niggle flared again after clearing");
   },
 );
+
+// ── Goal parsing: distance resolution + H:MM vs M:SS ─────
+//
+// Three bugs shipped together in the active_goals mapper, all found on
+// 2026-08-20 against a real goal ("Run sub 2:20 at CIM"):
+//
+//   1. /\bmarathon\b/ was tested BEFORE the half pattern, and it matches
+//      inside "half marathon" — so every half-marathon goal was filed as a
+//      marathon and its pace gap computed over 26.2 miles.
+//   2. A two-part time with no seconds group was always read as M:SS, so
+//      "sub 2:20" on a marathon parsed as 140 seconds.
+//   3. Named races never resolved to a distance, so a title that doesn't
+//      literally say "marathon" had distMi = 0 and no gap at all.
+
+const GOAL_FUTURE = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+
+async function goalFor(title: string, snapshot?: Row) {
+  const db: DB = {
+    user_goals: [
+      { user_id: REAL_USER, goal_title: title, target_date: GOAL_FUTURE, status: "active" },
+    ],
+    ...(snapshot ? { fitness_snapshots: [{ user_id: REAL_USER, ...snapshot }] } : {}),
+  };
+  const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+  return state.active_goals[0];
+}
+
+Deno.test("goal parse: 'sub 2:20 at CIM' is 2h20m for the marathon, not 140 seconds", async () => {
+  const g = await goalFor("Run sub 2:20 at CIM");
+  assertEquals(g.target_distance_key, "marathon", "CIM must resolve to the marathon distance");
+  assertEquals(g.target_time_seconds, 8400, "2:20 on a marathon is hours:minutes");
+  // 8400s / 26.2188mi = 320.4 s/mi — inside the 3:00-15:00 sanity window, so
+  // the target pace now renders instead of being dropped as implausible.
+  assertEquals(g.target_pace_per_mile, "5:20");
+});
+
+Deno.test("goal parse: half marathon is not swallowed by the marathon pattern", async () => {
+  const g = await goalFor("break 1:30 half marathon");
+  assertEquals(g.target_distance_key, "half", "'half marathon' must match half, not marathon");
+  assertEquals(g.target_time_seconds, 5400, "1:30 on a half is hours:minutes");
+  assertEquals(g.target_pace_per_mile, "6:52");
+});
+
+Deno.test("goal parse: short races keep MINUTES:SECONDS", async () => {
+  const fiveK = await goalFor("sub 15:30 5k");
+  assertEquals(fiveK.target_distance_key, "5K");
+  assertEquals(fiveK.target_time_seconds, 930, "15:30 on a 5K is minutes:seconds");
+
+  const mile = await goalFor("4:50 mile");
+  assertEquals(mile.target_distance_key, "mile");
+  assertEquals(mile.target_time_seconds, 290);
+});
+
+Deno.test("goal parse: an explicit H:MM:SS still wins over the distance heuristic", async () => {
+  const g = await goalFor("sub 2:20:30 marathon");
+  assertEquals(g.target_time_seconds, 8430);
+});
+
+Deno.test("goal parse: a named-race half beats the marathon alias", async () => {
+  const g = await goalFor("Boston half in 1:12");
+  assertEquals(g.target_distance_key, "half", "'Boston half' is a half, not the Boston Marathon");
+});
+
+// ── LT / threshold pace anchor ───────────────────────────
+//
+// The pace ladder ran Steady → HMP → 10K with no threshold entry, so a
+// prescribed threshold session had no pace to quote and the prompt reached
+// for HMP under the wrong name. LT is the 1-hour race pace from the shared
+// `oneHourPaceSecPerMile`, and per CLAUDE.md race-pace zones are exact
+// single targets — so it lands in pace_zones, not pace_zone_ranges.
+
+Deno.test("LT pace is derived and sits between 10K and HM", async () => {
+  const db: DB = {
+    fitness_snapshots: [{
+      user_id: REAL_USER,
+      predicted_5k_seconds: 924,
+      predicted_10k_seconds: 1920,
+      predicted_half_seconds: 4232,
+      predicted_marathon_seconds: 8953,
+      created_at: new Date().toISOString(),
+    }],
+  };
+  const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+  const z = state.pace_zones;
+
+  assert(z.lt, `expected an lt pace zone, got keys: ${Object.keys(z).join(", ")}`);
+  assert(
+    z.lt > z.tenK && z.lt < z.hm,
+    `LT (${z.lt}) must sit between 10K (${z.tenK}) and HM (${z.hm}) pace`,
+  );
+
+  // This athlete's half is ~1:10, so LT (5:21) falls INSIDE the HMP band
+  // (5:18-5:28). The ladder must merge them rather than offering the model
+  // two near-identical threshold targets.
+  const prompt = stateToPromptContext(state);
+  assert(
+    prompt.includes("HMP / LT (same effort):"),
+    `overlapping HMP and LT must collapse to one line. Got:\n${prompt}`,
+  );
+  assert(
+    !prompt.includes("  LT / Threshold:"),
+    "a separate LT line must NOT also render when it is inside the HMP band",
+  );
+});
+
+Deno.test("LT renders as its own line when it is genuinely distinct from HMP", async () => {
+  // A slower athlete: the half takes well over an hour, so 1-hour pace is
+  // meaningfully faster than half pace and the two do NOT converge. This is
+  // the case the legacy LT=HM collapse got wrong.
+  const db: DB = {
+    fitness_snapshots: [{
+      user_id: REAL_USER,
+      predicted_5k_seconds: 1500,
+      predicted_10k_seconds: 3120,
+      predicted_half_seconds: 6900,
+      predicted_marathon_seconds: 14400,
+      created_at: new Date().toISOString(),
+    }],
+  };
+  const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+  const z = state.pace_zones;
+  const r = state.pace_zone_ranges;
+
+  assert(z.lt, "lt should still be derived");
+  assert(
+    !(r.hmp && z.lt >= r.hmp.paceFast && z.lt <= r.hmp.paceSlow),
+    `for a slower athlete LT (${z.lt}) should fall OUTSIDE the HMP band`,
+  );
+
+  const prompt = stateToPromptContext(state);
+  assert(prompt.includes("  LT / Threshold:"), `expected a distinct LT line. Got:\n${prompt}`);
+  assert(prompt.includes("  HMP:"), "HMP keeps its own plain line when the two are distinct");
+  assert(!prompt.includes("same effort"), "must not claim convergence when they are distinct");
+});
+
+// ── fitness_vs_6mo_ago deadband ──────────────────────────
+//
+// The band was a flat ±15s on the 10K prediction. At a 32:00 10K that is
+// 0.8% — inside prediction noise — so a 16-second drift was narrated as
+// "slower". The flat number also meant very different things across ability
+// levels (0.4% for an hour 10K). Now scaled to the athlete's own 10K.
+
+async function labelFor(current: number, prior: number) {
+  const db: DB = {
+    fitness_snapshots: [
+      { user_id: REAL_USER, predicted_10k_seconds: current, created_at: new Date().toISOString() },
+      {
+        user_id: REAL_USER,
+        predicted_10k_seconds: prior,
+        created_at: new Date(Date.now() - 182 * 86400000).toISOString(),
+      },
+    ],
+  };
+  const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+  return state.fitness_vs_6mo_ago_label;
+}
+
+Deno.test("fitness vs 6mo: 16s on a 32:00 10K reads as similar, not slower", async () => {
+  assertEquals(await labelFor(1936, 1920), "similar");
+});
+
+Deno.test("fitness vs 6mo: a move past 1.5% still reads as a direction", async () => {
+  assertEquals(await labelFor(1980, 1920), "slower", "+60s = 3.1%, past the deadband");
+  assertEquals(await labelFor(1860, 1920), "faster", "-60s = 3.1%, past the deadband");
+});
+
+Deno.test("fitness vs 6mo: beyond 4% reads as a strong move", async () => {
+  assertEquals(await labelFor(2020, 1920), "much slower", "+100s = 5.2%");
+  assertEquals(await labelFor(1820, 1920), "much faster", "-100s = 5.2%");
+});

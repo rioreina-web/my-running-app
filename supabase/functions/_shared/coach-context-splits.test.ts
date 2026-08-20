@@ -176,3 +176,54 @@ Deno.test("parsed blocks map roles to warmup/work/cooldown with Rep labels", () 
   assertEquals(out.map((s) => s.label), ["warmup", "Rep 1", "recovery", "Rep 2", "cooldown"]);
   assertEquals(out.map((s) => s.effortKind), ["warmup", "work", "unknown", "work", "cooldown"]);
 });
+
+// ── laps-based pace_segments (2026-08-20) ────────────────────────────────
+// Once `pace_segments` is built from the watch's laps rather than per-mile
+// splits, recoveries arrive as their own rows. Two things must hold: they are
+// never counted as reps, and their presence proves the work bouts really are
+// reps, so the mile guard must stand down.
+
+Deno.test("recovery segments are labeled Recovery, never Rep N", () => {
+  const segments = [
+    { effort: "fast", distance_miles: 1.01, pace_per_mile: "5:23", avg_heart_rate: 164 },
+    { effort: "recovery", distance_miles: 0.1, pace_per_mile: "23:31", avg_heart_rate: 158 },
+    { effort: "steady", distance_miles: 1.01, pace_per_mile: "5:31", avg_heart_rate: 171 },
+  ];
+  const out = splitsFromPaceSegments(segments);
+  assertEquals(out.map((s) => s.label), ["Rep 1", "Recovery", "Rep 2"]);
+  assertEquals(out.filter((s) => s.effortKind === "work").length, 2);
+});
+
+Deno.test("explicit recoveries stand the mile guard down for real mile reps", () => {
+  // 2026-08-18: 6×1mi off the laps. Uniform ~1 mi, but with rests between —
+  // which the mile guard must read as rep structure, not as mile splits.
+  const segments = [
+    { effort: "fast", distance_miles: 1.01, pace_per_mile: "5:23" },
+    { effort: "steady", distance_miles: 1.02, pace_per_mile: "5:31" },
+    { effort: "recovery", distance_miles: 0.1, pace_per_mile: "23:31" },
+    { effort: "fast", distance_miles: 1.01, pace_per_mile: "5:18" },
+    { effort: "steady", distance_miles: 1.01, pace_per_mile: "5:35" },
+    { effort: "recovery", distance_miles: 0.08, pace_per_mile: "31:55" },
+    { effort: "steady", distance_miles: 1.01, pace_per_mile: "5:27" },
+    { effort: "steady", distance_miles: 1.01, pace_per_mile: "5:36" },
+  ];
+  const out = splitsFromPaceSegments(segments);
+  const work = out.filter((s) => s.effortKind === "work");
+  assertEquals(work.map((s) => s.label), ["Rep 1", "Rep 2", "Rep 3", "Rep 4", "Rep 5", "Rep 6"]);
+  assert(!out.some((s) => s.label.startsWith("Mile")), "no mile relabel when rests are present");
+});
+
+Deno.test("the mile guard still fires on split-derived segments with no rests", () => {
+  // Same session as it used to arrive: mile splits, no recovery rows. The
+  // 2026-08-06 guard must keep working for anything still on that path.
+  const segments = [
+    { effort: "fast", distance_miles: 1.0, pace_per_mile: "5:24" },
+    { effort: "steady", distance_miles: 1.0, pace_per_mile: "5:29" },
+    { effort: "easy", distance_miles: 1.0, pace_per_mile: "6:54" },
+    { effort: "steady", distance_miles: 1.0, pace_per_mile: "5:34" },
+    { effort: "easy", distance_miles: 0.22, pace_per_mile: "5:51" },
+  ];
+  const out = splitsFromPaceSegments(segments);
+  assert(out.every((s) => !s.label.startsWith("Rep")), "mile splits are never reps");
+  assertEquals(out[0].label, "Mile 1");
+});

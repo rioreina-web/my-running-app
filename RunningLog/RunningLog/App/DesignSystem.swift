@@ -651,3 +651,123 @@ struct EditorialRule: View {
         }
     }
 }
+
+// MARK: - Status bar scrim
+
+/// The band behind the iOS status bar — the clock, the location arrow,
+/// signal, wifi and battery.
+///
+/// WHY THIS EXISTS. A `ScrollView` draws its content *through* the top safe
+/// area. That is correct iOS behaviour: in a stock app an opaque navigation
+/// bar sits in that band and hides whatever slides under it. This app has no
+/// opaque bar anywhere — some surfaces hide the navigation bar outright, the
+/// rest carry a title-less transparent one — so the band was empty on every
+/// tab and scrolled type ran straight into the system clock and battery
+/// (Rio, 2026-08-18: *"the time and battery can run into fonts on the app"*,
+/// *"in every page of the app it needs this"*).
+///
+/// WHAT IT LOOKS LIKE. Strava's treatment, which Rio asked for by example:
+/// a frosted band rather than a hard cut. Type does not vanish at a line —
+/// it blurs, washes toward paper, and dissolves. Three layers, top to
+/// bottom of the stack:
+///
+///   1. `.ultraThinMaterial` — the actual blur of whatever is behind.
+///   2. A paper wash over it, because bare material renders cool grey and
+///      this app is warm off-white. Without it the band reads as a stripe.
+///   3. A gradient MASK: fully opaque across the status bar itself, so the
+///      clock is always clean, then falling to nothing over `fade` points
+///      below it. The mask is what makes it a dissolve instead of an edge.
+///
+/// HOW THE HEIGHT IS DERIVED. From the active window's top safe-area inset,
+/// read out of UIKit — the status bar on an older phone, the Dynamic Island
+/// on a newer one. No hardcoded 20 / 44 / 47 / 59pt to keep in sync with the
+/// next iPhone.
+///
+/// The first version of this asked for a ZERO-height view and let
+/// `ignoresSafeArea` stretch it over the band. Cleaner to read, and it drew
+/// nothing: a view with no height is free to be skipped, and this band has
+/// to draw. Measure the height, then bleed.
+///
+/// It never takes touches, so a chip or button scrolling under it is hidden,
+/// never intercepted.
+///
+/// APPLIED ONCE, AT THE ROOT — `MainTabView` in `RunningLogApp.swift`, on the
+/// tab container. Do not also apply it per-tab: two scrims are invisible
+/// today, but they are two things to keep in sync tomorrow.
+struct DripStatusBarScrim: View {
+    /// The surface colour washed over the blur. Defaults to the app's paper.
+    var color: Color = Color.drip.background
+
+    /// How far below the status bar the dissolve runs. Keep this short — it
+    /// covers whatever sits at the top of the scroll at rest, not just what
+    /// scrolls past it.
+    var fade: CGFloat = 14
+
+    /// How much paper is washed over the blur. 0 = raw material (cool grey),
+    /// 1 = flat colour with the blur invisible underneath.
+    var wash: Double = 0.55
+
+    private var inset: CGFloat { Self.statusBarHeight }
+    private var total: CGFloat { inset + fade }
+
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .overlay { color.opacity(wash) }
+            .frame(maxWidth: .infinity)
+            .frame(height: total)
+            .mask(alignment: .top) {
+                LinearGradient(
+                    stops: [
+                        // Solid across the status bar — the clock never sits
+                        // on a half-faded background.
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: max(0.001, inset / total)),
+                        .init(color: .clear, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            // Bleed up out of the safe area so the band lands ON the status
+            // bar rather than below it. Same move the offline banner in
+            // `RunningLogApp` makes, and it is known to work there.
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+    }
+
+    /// The active window's top safe-area inset.
+    ///
+    /// Falls back to 47pt — the Dynamic Island inset — rather than 0. If the
+    /// window can't be found, painting a slightly wrong band beats painting
+    /// none: the failure that brought us here was an EMPTY band.
+    static var statusBarHeight: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .safeAreaInsets.top ?? 47
+    }
+}
+
+extension View {
+    /// Paint the status bar band so scrolling content dissolves *behind* the
+    /// clock and battery instead of colliding with them.
+    ///
+    /// Applied at the root of the tab container, so every tab inherits it.
+    /// A surface presented OUTSIDE that container — a `fullScreenCover` with
+    /// no navigation bar of its own — is the one case that needs its own
+    /// call. Sheets do not: they present as an inset card that never reaches
+    /// the status bar.
+    ///
+    /// Pass `color` when the surface underneath is not paper, or the wash
+    /// will read as a stripe.
+    func dripStatusBarScrim(
+        color: Color = Color.drip.background,
+        fade: CGFloat = 14
+    ) -> some View {
+        overlay(alignment: .top) {
+            DripStatusBarScrim(color: color, fade: fade)
+        }
+    }
+}

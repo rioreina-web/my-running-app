@@ -14,8 +14,13 @@ import SwiftUI
 //  six lanes is past the point where a reader can hold the order in their head.
 //
 //  PALETTE. Mood owns the warm/green ramp. Coral is the niggle alert and the
-//  scrub marker, never a fill. Load bars are deliberately achromatic graphite:
-//  blue belongs to pace, and a blue bar here would read as a pace signal.
+//  scrub marker, never a fill. The miles and TLS bars stack by pace zone on
+//  the blue ramp (`PaceSpectrum`) — blue belongs to pace, and these bars ARE
+//  pace signals now, so the rule is earned rather than dodged. (They were
+//  graphite until 2026-08-18 precisely because a blue bar would have read as
+//  a pace signal it wasn't.) A day with distance but no lap breakdown still
+//  draws flat graphite: we cannot say how it was distributed, and must not
+//  guess.
 
 // MARK: - Lanes
 
@@ -48,26 +53,32 @@ enum TrendsMoodLane: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The stacked lanes (miles, TLS) run taller than the flat bars did —
+    /// a 46pt bar divided into three or four zone segments left the thin
+    /// ones a couple of points high, unreadable at arm's length. Height is
+    /// what makes a stack legible, so those two get the room. (Rio, 2026-08-18.)
     var height: CGFloat {
         switch self {
         case .mood: 30
-        case .miles: 46
+        case .miles: 68
         case .niggles: 20
         case .key: 20
-        case .load: 42
+        case .load: 54
         case .weekly: 44
         }
     }
 
     /// The chip dot. These sit on an ink pill when the lane is on, so every one
-    /// of them has to read light against near-black.
+    /// of them has to read light against near-black. Miles and TLS carry pace
+    /// stops from the pale half of the ramp — a hint of what the lane is
+    /// coloured by, light enough to survive the ink pill.
     var chipColour: Color {
         switch self {
         case .mood: Color.drip.positive
-        case .miles: Color.drip.textTertiary
+        case .miles: PaceSpectrum.easy
         case .niggles: Color.drip.coral
         case .key: Color.drip.divider
-        case .load: Color.drip.textTertiary
+        case .load: PaceSpectrum.steady
         case .weekly: Color.drip.textTertiary
         }
     }
@@ -217,17 +228,19 @@ struct TrendsMoodLanes: View {
             case .mood:
                 drawMood(ctx, layout: layout, lane: i)
             case .miles:
-                drawBars(ctx, layout: layout, lane: i,
-                         values: block.buckets.map(\.miles),
-                         colour: Color.drip.textTertiary)
+                drawStackedBars(ctx, layout: layout, lane: i,
+                                totals: block.buckets.map(\.miles),
+                                zones: block.zoneMilesPerDay,
+                                flatColour: Color.drip.textTertiary)
             case .niggles:
                 drawNiggles(ctx, layout: layout, lane: i)
             case .key:
                 drawKey(ctx, layout: layout, lane: i)
             case .load:
-                drawBars(ctx, layout: layout, lane: i,
-                         values: block.load,
-                         colour: Color.drip.textSecondary)
+                drawStackedBars(ctx, layout: layout, lane: i,
+                                totals: block.load,
+                                zones: block.zoneLoadPerDay,
+                                flatColour: Color.drip.textSecondary)
             case .weekly:
                 drawWeekly(ctx, layout: layout, lane: i)
             }
@@ -311,15 +324,46 @@ struct TrendsMoodLanes: View {
         }
     }
 
-    /// One scale across the whole lane, never per-column relative fill — that
-    /// would make the same 8-mile day look different in a light month than in
-    /// a heavy one.
-    private func drawBars(
+    /// The ten-zone taxonomy in stacking order (slow → fast), each with its
+    /// `PaceSpectrum` stop. `recovery` folds to the easy stop and the backend
+    /// classifier folds LT into `hmp` (the `lt` row is belt-and-braces against
+    /// an older payload). Owned here rather than shared with
+    /// `TrendsReadView.zoneColor`, which maps *work* zones only and defaults
+    /// everything else to steady — wrong for a lane that is mostly easy miles.
+    private static let zoneStack: [(token: String, colour: Color)] = [
+        ("recovery", PaceSpectrum.easy),
+        ("easy", PaceSpectrum.easy),
+        ("moderate", PaceSpectrum.moderate),
+        ("steady", PaceSpectrum.steady),
+        ("mp", PaceSpectrum.mp),
+        ("hmp", PaceSpectrum.hmp),
+        ("lt", PaceSpectrum.lt),
+        ("10k", PaceSpectrum.tenK),
+        ("5k", PaceSpectrum.fiveK),
+        ("3k", PaceSpectrum.threeK),
+        ("mile", PaceSpectrum.mile),
+    ]
+
+    /// The stacked variant of the old flat `drawBars`. One scale across the
+    /// whole lane, never per-column relative fill — that would make the same
+    /// 8-mile day look different in a light month than in a heavy one. The
+    /// bar's HEIGHT still comes from `totals` (the same numbers the flat bars
+    /// drew), so stacking changes what a bar is made of, never how tall it is;
+    /// `zones` only divides it, slow at the base, the sharp end on top.
+    ///
+    /// Three states, three looks (the `TrendsDay.hasZoneBreakdown` contract):
+    ///   • total == 0                → rest day, nothing drawn.
+    ///   • total > 0, zones[i] nil   → ran without laps. Flat graphite at
+    ///     reduced opacity with a dashed cap — visibly "we don't know", never
+    ///     a guessed distribution.
+    ///   • total > 0, zones present  → the real thing, on the pace ramp.
+    private func drawStackedBars(
         _ ctx: GraphicsContext,
         layout: Layout,
         lane: Int,
-        values: [Double],
-        colour: Color
+        totals: [Double],
+        zones: [[String: Double]?],
+        flatColour: Color
     ) {
         let base = layout.bottom(lane)
         let height = layout.heights[lane]
@@ -329,18 +373,57 @@ struct TrendsMoodLanes: View {
         rule.addLine(to: CGPoint(x: layout.width, y: base))
         ctx.stroke(rule, with: .color(Color.drip.divider.opacity(0.8)), lineWidth: 1)
 
-        let peak = values.max() ?? 0
+        let peak = totals.max() ?? 0
         guard peak > 0 else { return }
-        for (i, value) in values.enumerated() where value > 0 {
+        for (i, total) in totals.enumerated() where total > 0 {
             guard i < layout.count else { break }
-            let barHeight = max(1.5, CGFloat(value / peak) * height)
+            let barHeight = max(1.5, CGFloat(total / peak) * height)
             let rect = CGRect(
                 x: layout.centreX(i) - layout.barWidth / 2,
                 y: base - barHeight,
                 width: layout.barWidth,
                 height: barHeight
             )
-            ctx.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(colour))
+            let outline = Path(roundedRect: rect, cornerRadius: 1.5)
+
+            // Ran, but the run arrived with no laps — the fallback bar.
+            let dayZones = i < zones.count ? zones[i] : nil
+            let zoneSum = dayZones?.values.reduce(0, +) ?? 0
+            guard let dayZones, zoneSum > 0 else {
+                ctx.fill(outline, with: .color(flatColour.opacity(0.55)))
+                var cap = Path()
+                cap.move(to: CGPoint(x: rect.minX, y: rect.minY - 2.5))
+                cap.addLine(to: CGPoint(x: rect.maxX, y: rect.minY - 2.5))
+                ctx.stroke(cap, with: .color(flatColour),
+                           style: StrokeStyle(lineWidth: 1.2, dash: [2, 2]))
+                continue
+            }
+
+            // Segment heights are shares of the day's own zone sum, so the
+            // stack always fills the bar even when lap miles don't add up to
+            // the day's deduped total exactly. A token the table doesn't know
+            // is left as a graphite remainder on top rather than silently
+            // vanishing — a new backend zone must show as *something*.
+            var inner = ctx
+            inner.clip(to: outline)
+            var y = rect.maxY
+            for entry in Self.zoneStack {
+                guard let value = dayZones[entry.token], value > 0 else { continue }
+                let segment = CGFloat(value / zoneSum) * barHeight
+                y -= segment
+                inner.fill(
+                    Path(CGRect(x: rect.minX, y: y,
+                                width: rect.width, height: segment + 0.5)),
+                    with: .color(entry.colour)
+                )
+            }
+            if y - rect.minY > 0.5 {
+                inner.fill(
+                    Path(CGRect(x: rect.minX, y: rect.minY,
+                                width: rect.width, height: y - rect.minY)),
+                    with: .color(flatColour.opacity(0.8))
+                )
+            }
         }
     }
 

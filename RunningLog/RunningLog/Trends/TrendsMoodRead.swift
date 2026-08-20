@@ -146,6 +146,30 @@ struct TrendsMoodBlock {
         }
     }
 
+    /// Per-day miles by pace zone, aligned with `buckets` the same way `load`
+    /// is (day grain — one day per column). `nil` where the day carries no
+    /// lap-level breakdown: a manual entry or an import without splits ran,
+    /// but we cannot say how it was distributed, and the chart must draw the
+    /// flat fallback rather than a guess. The three states a caller reads —
+    /// rest day, ran-without-laps, the real thing — are `TrendsDay`'s own.
+    var zoneMilesPerDay: [[String: Double]?] {
+        days.map { day in
+            guard let zones = day.zoneMiles, !zones.isEmpty else { return nil }
+            return zones
+        }
+    }
+
+    /// Per-day TLS by pace zone, same alignment and same `nil` contract.
+    /// `zoneLoad` is the backend's weighted minutes off the continuous pace
+    /// curve — the same values `load` sums, so a stacked bar and the flat bar
+    /// it replaces are always the same height.
+    var zoneLoadPerDay: [[String: Double]?] {
+        days.map { day in
+            guard let zones = day.zoneLoad, !zones.isEmpty else { return nil }
+            return zones
+        }
+    }
+
     /// The body part mentioned on the most days.
     var topNiggleArea: String? {
         var tally: [String: Int] = [:]

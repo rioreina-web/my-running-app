@@ -187,9 +187,24 @@ final class SignalService {
             }
             let day = cal.startOfDay(for: log.workoutDate ?? log.createdAt)
 
-            func add(_ zone: Int, _ mi: Double, _ paceSec: Double) {
+            // `isRest` splits what a segment counts toward. Standing/walking
+            // recoveries between reps still count as VOLUME — they are miles
+            // the athlete covered, and `comp` feeds daily miles and ACWR — but
+            // they are not a PACE, so they stay out of the spectrum histogram.
+            //
+            // Since 2026-08-20 `pace_segments` comes from the watch's laps
+            // rather than per-mile splits, so those recoveries now arrive as
+            // their own rows tagged "recovery" instead of being averaged into
+            // a mile. Over a real 4-week window that is 3.3 mi across 41 laps
+            // at 17:00–75:00/mi. Bucketed, all of it clamps into the leftmost
+            // bar and reads as easy running that never happened — and, worse,
+            // it sits just under the 2% tail that `fittedBounds` trims, so one
+            // extra interval week would drag the slow end of the axis out to
+            // walking pace and squash every real bar into the left third.
+            func add(_ zone: Int, _ mi: Double, _ paceSec: Double, isRest: Bool) {
                 guard mi > 0, paceSec > 0 else { return }
                 dayComp[day, default: [:]][zone, default: 0] += mi
+                guard !isRest else { return }
                 daySamples[day, default: []].append((paceSec, mi))
                 allSamples.append((paceSec, mi))
             }
@@ -201,11 +216,13 @@ final class SignalService {
                     guard sd > 0 else { continue }
                     let paceSec = s.durationSeconds > 0 ? (s.durationSeconds / sd) : (paceSecFromString(s.pacePerMile) ?? 0)
                     guard paceSec > 0 else { continue }
-                    add(classify(paceSec, anchors), sd, paceSec)
+                    add(classify(paceSec, anchors), sd, paceSec, isRest: isRestSegment(s))
                 }
             } else {
+                // No segments: the whole run at its average pace. Never a rest —
+                // a logged run is running.
                 let paceSec = (durMin * 60) / dist
-                add(classify(paceSec, anchors), dist, paceSec)
+                add(classify(paceSec, anchors), dist, paceSec, isRest: false)
             }
 
             if dayMood[day] == nil, let m = log.mood, !m.isEmpty { dayMood[day] = m }
@@ -290,6 +307,15 @@ final class SignalService {
     }
 
     // MARK: - Pace helpers
+
+    /// Recovery between reps, as tagged by the sync (`_shared/paceSegments.ts`,
+    /// which mirrors `running_workout_laps.is_rest`). Matched on the effort tag
+    /// rather than re-deriving a distance/speed threshold here: one rest rule,
+    /// defined once, at the point the segment is written.
+    static func isRestSegment(_ s: PaceSegment) -> Bool {
+        s.effort.lowercased() == "recovery"
+    }
+
 
     static func paceBounds(_ z: PaceZonesEngine) -> (slow: Double, fast: Double)? {
         guard let easyMid = z.easyMidpoint else { return nil }

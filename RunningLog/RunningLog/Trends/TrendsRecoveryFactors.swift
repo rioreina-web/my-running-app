@@ -176,7 +176,17 @@ enum TrendsRecoveryFactors {
         case ..<70:    (-9, "\(pct)% over your usual load")
         default:       (-12, "\(pct)% over your usual load")
         }
-        return Factor(name: "Recovery need", evidence: reading, points: points, bestCase: 11)
+        // Disclose the load unit when it isn't TLS. The ladder is pinned per
+        // window (see TrendsRecoveryDemand.LoadUnit), so ONE run day with a
+        // null stress_load quietly re-denominates this whole factor — the
+        // athlete deserves to see that on the receipt, and the clause
+        // disappears on its own once the repair sweep fills the gap.
+        let gap: Factor.Gap? = switch TrendsRecoveryDemand.loadUnit(for: days) {
+        case .stressLoad: nil
+        case .durationIntensity: .loadUnitDuration
+        case .milesIntensity: .loadUnitMiles
+        }
+        return Factor(name: "Recovery need", evidence: reading, points: points, gap: gap, bestCase: 11)
     }
 
     // MARK: - 2c · The session spike, as its own contributor

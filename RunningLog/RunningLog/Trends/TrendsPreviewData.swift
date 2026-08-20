@@ -58,7 +58,28 @@ extension TrendsDay {
                 ? [DayNiggle(area: "achilles", side: "right", severity: "grumbling",
                              quote: "same right achilles — noticeable on the stairs after")]
                 : []
-            return TrendsDay(date: fmt.string(from: d), miles: miles, type: type, mood: mood, niggles: niggles)
+            // Per-zone breakdown so the stacked miles/TLS lanes preview as the
+            // real thing. Wednesdays are left breakdown-less on purpose — the
+            // ran-without-laps fallback (flat graphite, dashed cap) needs to be
+            // visible in previews too, or the state never gets design-reviewed.
+            var zoneMiles: [String: Double]? = nil
+            var zoneLoad: [String: Double]? = nil
+            if miles > 0, dow != 2 {
+                let zm: [String: Double]
+                switch type {
+                case .key:  zm = ["easy": miles * 0.45, "hmp": miles * 0.40, "5k": miles * 0.15]
+                case .long: zm = ["easy": miles * 0.70, "steady": miles * 0.20, "mp": miles * 0.10]
+                default:    zm = ["easy": miles * 0.85, "moderate": miles * 0.15]
+                }
+                zoneMiles = zm
+                // Weighted minutes off the discrete anchors — preview-grade TLS
+                // (~9.5 min/mi), shaped like the backend's `zone_load`.
+                zoneLoad = zm.reduce(into: [:]) { out, kv in
+                    out[kv.key] = kv.value * 9.5 * TrendsZoneWeight.weight(kv.key)
+                }
+            }
+            return TrendsDay(date: fmt.string(from: d), miles: miles, type: type, mood: mood,
+                             niggles: niggles, zoneMiles: zoneMiles, zoneLoad: zoneLoad)
         }
     }
 }

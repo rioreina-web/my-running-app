@@ -992,6 +992,80 @@ final class TrainingAnalyticsViewModel {
         return s
     }
 
+    // MARK: Outputs — the week in progress
+
+    // These mirror `VolumeDetailView` (Trends › Load) definition for
+    // definition, deliberately: one week must not read "on pace ~32" here and
+    // "~34" there. Change one, change both.
+    //
+    //   • miles so far — logged this ISO week; honest and partial
+    //   • projection   — flat per-day rate × 7, rounded, labelled "~"
+    //   • 4-week avg   — the last four COMPLETED weeks that have miles. The
+    //                    in-progress week is excluded, or a Tuesday glance
+    //                    would be measured against a baseline it just dragged
+    //                    down and every mid-week would read as a shortfall.
+    //
+    // The average is taken from the four weeks before this one DIRECTLY, not
+    // from `weekVolumes()` — that array follows the scope segmenter, and on
+    // WEEK scope it holds a single week, which would collapse the average to
+    // zero without anything on screen saying why.
+
+    /// Monday = 1 … Sunday = 7. How far into the current week we are.
+    var daysIntoWeek: Int {
+        var c = Calendar(identifier: .iso8601)
+        c.firstWeekday = 2
+        let weekday = c.component(.weekday, from: Date())   // 1=Sun…7=Sat
+        return ((weekday + 5) % 7) + 1
+    }
+
+    var isWeekComplete: Bool { daysIntoWeek >= 7 }
+
+    /// Miles logged so far in the current week.
+    func thisWeekMiles() -> Double { weekTotalMiles(forWeekStart: thisWeekStart) }
+
+    /// Where the week lands if the rest of it runs like the days so far.
+    /// An estimate, never a promise — the UI marks it "~". Once the week is
+    /// complete this is simply the total.
+    func projectedWeekMiles() -> Double {
+        let soFar = thisWeekMiles()
+        guard !isWeekComplete, daysIntoWeek > 0 else { return soFar }
+        return soFar / Double(daysIntoWeek) * 7
+    }
+
+    /// Average weekly miles over the last four completed weeks. 0 when there
+    /// is nothing to average — callers show a dash rather than a fake zero.
+    func fourWeekAvgMiles() -> Double {
+        let totals = (1...4)
+            .compactMap { cal.date(byAdding: .weekOfYear, value: -$0, to: thisWeekStart) }
+            .map { weekTotalMiles(forWeekStart: $0) }
+            .filter { $0 > 0 }
+        guard !totals.isEmpty else { return 0 }
+        return totals.reduce(0, +) / Double(totals.count)
+    }
+
+    /// The projected week against that average, as a whole percent. nil when
+    /// there is no baseline — no baseline means no comparison, not "+0%".
+    func percentVsFourWeekAvg() -> Int? {
+        let avg = fourWeekAvgMiles()
+        guard avg > 0 else { return nil }
+        return Int(((projectedWeekMiles() - avg) / avg * 100).rounded())
+    }
+
+    /// The longest single run in the last 30 days. Rows are deduped by
+    /// physical workout upstream, so an AM/PM day can't sum into a fake
+    /// long run.
+    func longestRunLast30Days() -> Double {
+        logsInLast(days: 30).compactMap { $0.miles }.max() ?? 0
+    }
+
+    /// Easy share over the same 30 days, so the sub-line's two numbers are
+    /// measured over one window and can be labelled once.
+    func easyPercentLast30Days() -> Int {
+        let split = logsInLast(days: 30).map(self.split(for:)).reduce(ZoneSplit(), +)
+        guard split.total > 0 else { return 0 }
+        return Int((split.easy / split.total * 100).rounded())
+    }
+
     private func longestRunMiles(inScopedWeeks: Bool) -> Double {
         let rows = inScopedWeeks ? logsInScopedWeeks() : logs
         return rows.compactMap { $0.miles }.max() ?? 0

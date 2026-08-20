@@ -24,6 +24,11 @@ import {
   type RestSample,
 } from "../_shared/effortModel.ts";
 import {
+  hrEffortMultiplier,
+  readSession,
+  type CostSample,
+} from "../_shared/recoveryRead.ts";
+import {
   classifyHrSource,
   REP_MIN_S,
   repSeriesFromStream,
@@ -412,6 +417,40 @@ async function fetchLapsByWorkout(
   return byId;
 }
 
+/**
+ * A session's cardiac-cost sample for the HR adjustment. Null when there is
+ * no HR or no pace — a session that cannot be costed simply never enters a
+ * baseline and never gets an adjustment, it does not get a guessed one.
+ */
+function costSampleFor(
+  log: TrainingLog,
+  feat: Record<string, unknown>,
+  laps: EffortLap[] | undefined,
+  prevHardWorkout: TrainingLog | null,
+): CostSample | null {
+  const pace = Number(feat.avg_pace_seconds ?? 0);
+  const hr = Number(feat.avg_heart_rate ?? 0);
+  if (!(pace > 0) || !(hr > 0)) return null;
+  const mi = Number(feat.total_distance_miles ?? 0);
+  const elevM = laps?.reduce(
+    (acc, l) => acc + Math.max(0, Number(l.total_elevation_gain ?? 0)),
+    0,
+  );
+  const w = (log.weather_actual ?? null) as { temp_f?: number | null; dew_point_f?: number | null } | null;
+  return {
+    startedAt: log.workout_date,
+    paceSecPerMile: pace,
+    avgHr: hr,
+    minutes: Number(feat.total_duration_seconds ?? 0) / 60,
+    hoursSinceHard: prevHardWorkout
+      ? (new Date(log.workout_date).getTime() - new Date(prevHardWorkout.workout_date).getTime()) / 3_600_000
+      : null,
+    elevationGainMetersPerMile: mi > 0 && elevM != null && laps && laps.length > 0 ? elevM / mi : null,
+    tempF: w?.temp_f ?? null,
+    dewPointF: w?.dew_point_f ?? null,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -521,6 +560,10 @@ Deno.serve(async (req) => {
     // (Feeding the whole history in would let a future block redefine the past
     // and make a backfill disagree with what the athlete saw on the day.)
     const restSamples: RestSample[] = [];
+    // Cardiac-cost history for the HR adjustment — same backward-looking
+    // discipline as restSamples: a session is measured against what came
+    // BEFORE it, then folded in.
+    const costHistory: CostSample[] = [];
     const featuresSoFar: Array<{ workout_date: string; total_distance_miles: number | null; hard_effort_minutes: number | null }> = [];
 
     for (let i = 0; i < allLogs.length; i++) {
@@ -566,6 +609,21 @@ Deno.serve(async (req) => {
           feat.intensity_score ?? 0,
           feat.total_duration_seconds ?? 0,
         );
+        // HR adjustment (2026-08-19, cardiac-cost-read spec). The pace model
+        // prices the work; heart rate gets a bounded vote on what it COST.
+        // ×[0.94, 1.06] at most, 1.0 whenever the read declines (no HR, thin
+        // baseline, cooldown, out-of-range heat) — so a session that cannot
+        // be costed scores exactly what it scored before this existed. Over
+        // the 4-month backtest this touched 22/145 sessions and moved the
+        // aggregate 0.01%.
+        const costSample = costSampleFor(log, feat, effortLaps, prevHardWorkout);
+        const easyAnchor = Number(zones.easy ?? 0);
+        const hrAdj = costSample && easyAnchor > 0
+          ? hrEffortMultiplier(readSession(costSample, costHistory, easyAnchor))
+          : 1;
+        if (hrAdj !== 1 && stress.stress_load > 0) {
+          stress.stress_load = Math.round(stress.stress_load * hrAdj * 10) / 10;
+        }
         stressBackfill.push({ id: log.id, ...stress });
         // Rep-signal gate — laps only, no stream cost. The ceiling is the
         // athlete's steady pace: the same "faster than steady" line the
@@ -584,7 +642,7 @@ Deno.serve(async (req) => {
             // Written alongside rather than over stress_load: flipping the
             // canonical load changes every athlete's CTL/ATL/TSB curve and is a
             // deliberate call with a backfill, not a side effect of this change.
-            effort_load: round1(effort.effortLoad),
+            effort_load: round1(effort.effortLoad * hrAdj),
             density_pct: effort.density.densityPct,
             rest_ratio: effort.density.restRatio,
             density_multiplier: effort.density.multiplier,
@@ -610,6 +668,10 @@ Deno.serve(async (req) => {
         const sample = restSampleFrom(effort.density);
         if (sample) restSamples.push(sample);
       }
+      // Same for the cardiac-cost history — every log with HR joins the
+      // baseline, whether or not it was a target this run.
+      const histSample = costSampleFor(log, feat, effortLaps, prevHardWorkout);
+      if (histSample) costHistory.push(histSample);
     }
 
     // Rep signal — one batched stream read for the few sessions that passed

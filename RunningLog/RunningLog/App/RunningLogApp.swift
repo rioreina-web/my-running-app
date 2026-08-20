@@ -102,6 +102,10 @@ struct MainTabView: View {
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedTab = 0
+    /// Latches the first time Ask (tag 10) is opened. See the tab-10
+    /// branch below — `CoachView` acts on appear, so it must not be
+    /// mounted until the athlete actually asks for it.
+    @State private var askEverOpened = false
     @State private var checkInManager = CoachCheckInManager()
     @State private var athleteProfileService = AthleteProfileService()
     @State private var activeDestination: AppDestination?
@@ -143,6 +147,11 @@ struct MainTabView: View {
             // folded into Train's CALENDAR mode. See
             // outputs/beta-design-overhaul-plan-2026-07-13.md.
             // 2026-07-28: Coach (The Read) retired → 3 tabs.
+            // 2026-08-19: Week added (tag 11) — Log · Train · Trends · Week ·
+            // Ask · Sheet. See WEEK-TAB-APPLY.md.
+            // 2026-08-19: Charts → Ask in the same slot, and the DEBUG-only
+            // Read tab dropped. The bar is Log · Train · Trends · Ask ·
+            // Sheet in DEBUG and release alike.
             ZStack {
                 // Tab 0 — Log (front door)
                 NavigationStack {
@@ -172,16 +181,11 @@ struct MainTabView: View {
                     .opacity(selectedTab == 4 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 4)
 
-                #if DEBUG
-                // Tab 7 — The Read (DEBUG only). The story-and-month
-                // surface, running beside Trends so the two reads can be
-                // compared on device. Shares `TrendsService.shared` with
-                // tag 4, so it never doubles the fetch. Remove this branch
-                // and the `DripTab.read` case together.
-                NavigationStack { TrendsReadTabView() }
-                    .opacity(selectedTab == 7 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 7)
-                #endif
+                // Tab 7 — The Read retired 2026-08-19. It ran
+                // `TrendsReadTabView` beside Trends in DEBUG so the two
+                // reads could be compared on device; Trends won, so DEBUG
+                // and release now show the same tabs. The view stays in the
+                // repo, unlinked.
 
                 // Tab 5 — Trends 2 removed 2026-07-27. Trends is one tab now;
                 // `TrendsInsightsTabView` stays in the repo, unlinked, and the
@@ -196,15 +200,41 @@ struct MainTabView: View {
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 8 — Charts ("The Instruments"). The expandable
-                // data-viz card prototype, added 2026-08-08. Mock data
-                // only (`InstrumentsMockData`) — no fetch, no service —
-                // so rendering it eagerly in this ZStack costs nothing.
-                // Remove this branch and `DripTab.instruments` together
-                // when the cards graduate into Trends/Train proper.
-                NavigationStack { InstrumentsTabView() }
-                    .opacity(selectedTab == 8 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 8)
+                // Tab 10 — ASK. The free-text chat (`CoachView`), in the
+                // slot Charts held until 2026-08-19. Not the analyzer chip
+                // rail: a fixed catalog answering in cards is narrower than
+                // the questions athletes actually ask, and those cards were
+                // under-developed. `AskBar`/`AskAnswerCard`/`CoachAskSheet`
+                // stay in the repo, unlinked.
+                //
+                // MOUNTED LAZILY, unlike every other tab here. The others
+                // are free to render hidden because none of them act on
+                // appear. `CoachView`'s `.task` requests HealthKit
+                // authorization, loads the active plan and runs a fitness
+                // prediction — eager mounting would throw the HealthKit
+                // permission prompt at launch, at someone who never opened
+                // Ask. `askEverOpened` latches on first visit and never
+                // resets, so the thread survives tab switches from then on.
+                //
+                // Charts ("The Instruments") retired here. Mock data only,
+                // no fetch, no service; `InstrumentsTabView` stays in the
+                // repo, unlinked.
+                if askEverOpened {
+                    NavigationStack { AskTabView() }
+                        .opacity(selectedTab == 10 ? 1 : 0)
+                        .allowsHitTesting(selectedTab == 10)
+                }
+
+                // Tab 11 — WEEK. The weekly decision surface: three
+                // questions, then three glass-box proposals that only change
+                // the week when tapped. Mounted eagerly like every tab except
+                // Ask: it renders from a fixture and does nothing on appear,
+                // so hiding it with `.opacity` costs a view tree and no work.
+                // When it is wired to real services, check whether its `.task`
+                // needs the same lazy treatment `AskTabView` gets.
+                NavigationStack { WeekTabView() }
+                    .opacity(selectedTab == 11 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 11)
 
                 // Tab 9 — The Sheet. The dense session table: one row per
                 // SESSION (see SessionRollup.swift), week-grouped, with tag
@@ -228,6 +258,24 @@ struct MainTabView: View {
             .safeAreaInset(edge: .bottom) {
                 DripTabBar(selected: $selectedTab)
             }
+            .onChange(of: selectedTab) { _, tab in
+                if tab == DripTab.ask.rawValue { askEverOpened = true }
+            }
+            // THE STATUS BAR BAND. Every tab is a ScrollView, and a
+            // ScrollView draws its content through the top safe area. No
+            // surface in this app has an opaque navigation bar to hide that
+            // content — some hide the bar outright, the rest carry a
+            // title-less transparent one — so headline type scrolled straight
+            // into the clock and battery on all of them (Rio, 2026-08-18).
+            //
+            // One scrim here covers every tab, present and future, because
+            // this is the container they all live in. Applying it per-tab
+            // instead is the version of this fix that goes stale the next
+            // time a tab is added. Sidebar and error banners are SIBLINGS of
+            // this container in the outer ZStack, so they still draw above
+            // the scrim — the offline bar keeps its deliberate bleed into
+            // the notch. See `DripStatusBarScrim` in DesignSystem.swift.
+            .dripStatusBarScrim()
 
             .environment(checkInManager)
             .environment(athleteProfileService)

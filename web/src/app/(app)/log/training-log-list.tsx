@@ -6,7 +6,7 @@ import {
   formatDuration,
   formatDate,
   MOOD_CONFIG,
-  WORKOUT_TYPE_CONFIG,
+  workoutTypeConfig,
 } from "@/lib/utils";
 import type { TrainingLog } from "@/lib/types";
 
@@ -99,7 +99,7 @@ function LogCard({
 
   const dateStr = formatDate(log.workout_date || log.created_at);
   const type = (editing ? draft.workout_type : log.workout_type) || "other";
-  const typeConfig = WORKOUT_TYPE_CONFIG[type] || WORKOUT_TYPE_CONFIG.other;
+  const typeConfig = workoutTypeConfig(type);
   const moodKey = editing ? draft.mood : log.mood;
   const mood = moodKey ? MOOD_CONFIG[moodKey] : null;
   const display = editing ? draft : log;
@@ -135,7 +135,7 @@ function LogCard({
           >
             {WORKOUT_TYPES.map((t) => (
               <option key={t} value={t}>
-                {(WORKOUT_TYPE_CONFIG[t] || WORKOUT_TYPE_CONFIG.other).label}
+                {workoutTypeConfig(t).label}
               </option>
             ))}
           </select>

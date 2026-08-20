@@ -576,18 +576,27 @@ export interface WorkoutSplit {
   paceSecPerMile: number;
   /** Optional. From watch data. */
   avgHeartRate?: number;
-  /** "warmup" / "cooldown" / "work" / unknown. Used for pattern detection. */
-  effortKind: "warmup" | "cooldown" | "work" | "unknown";
+  /** "warmup" / "cooldown" / "work" / "rest" / unknown. Used for pattern detection. */
+  effortKind: "warmup" | "cooldown" | "work" | "rest" | "unknown";
 }
 
 const WARMUP_LABELS = new Set(["warmup", "warm-up", "warm up", "wu"]);
 const COOLDOWN_LABELS = new Set(["cooldown", "cool-down", "cool down", "cd"]);
+/**
+ * The float/jog/standing rest BETWEEN reps. Added 2026-08-20 alongside the
+ * laps-based `pace_segments` (see `_shared/paceSegments.ts`): once segments
+ * come from the watch's laps, the recoveries arrive as their own rows instead
+ * of being averaged into a mile. They must not be counted as reps — a 6×1mi
+ * session would otherwise narrate as twelve reps, half of them at 23:00/mi.
+ */
+const REST_LABELS = new Set(["recovery", "rest", "jog", "float", "recovery_jog"]);
 
 function classifyEffortKind(rawEffort: string | undefined | null): WorkoutSplit["effortKind"] {
   if (!rawEffort) return "unknown";
   const e = rawEffort.toLowerCase().trim();
   if (WARMUP_LABELS.has(e)) return "warmup";
   if (COOLDOWN_LABELS.has(e)) return "cooldown";
+  if (REST_LABELS.has(e)) return "rest";
   // Anything else (interval, tempo, race_pace, threshold, hard, etc.) is "work".
   return "work";
 }
@@ -627,6 +636,7 @@ export function splitsFromPaceSegments(
     const label = (() => {
       if (effortKind === "warmup") return "Warmup";
       if (effortKind === "cooldown") return "Cooldown";
+      if (effortKind === "rest") return "Recovery";
       if (effortKind === "work") {
         workIndex++;
         return `Rep ${workIndex}`;
@@ -647,7 +657,13 @@ export function splitsFromPaceSegments(
   // splits, not reps. Deliberately DISTANCE-based, never pace-based, so it
   // behaves identically for a 5:00/mi runner and a 12:00/mi runner.
   const work = out.filter((s) => s.effortKind === "work");
-  if (work.length >= 2) {
+  // ...unless the segments carry explicit recoveries between the work bouts.
+  // That only happens when the source was the watch's own laps, and it is
+  // positive evidence of rep structure: the athlete stopped, so these are reps
+  // that happen to be a mile, not mile splits of a continuous run. Guarding on
+  // this rather than on pace keeps the rule distance-and-structure based.
+  const hasExplicitRest = out.some((s) => s.effortKind === "rest");
+  if (work.length >= 2 && !hasExplicitRest) {
     const KM_MI = 0.6214;
     const near = (d: number, unit: number) => Math.abs(d - unit) <= unit * 0.06;
     const last = work[work.length - 1];

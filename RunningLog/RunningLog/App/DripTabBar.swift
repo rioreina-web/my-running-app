@@ -33,9 +33,9 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The canonical tabs — **Log · Train · Trends · Charts** — input → what it
-/// did → overview → instruments. (Charts is the data-viz card prototype
-/// surface added 2026-08-08; the settled IA before it was the three-tab
+/// The canonical tabs — **Log · Train · Trends · Ask** — input → what it
+/// did → overview → why. (Ask took the fourth slot from Charts on
+/// 2026-08-19; the settled IA before either was the three-tab
 /// Log · Train · Trends.)
 ///
 /// Raw values match the integer tags `MainTabView` uses for `selectedTab`
@@ -55,6 +55,17 @@ import UIKit
 /// Retired 2026-07-28: `coach` (2, The Read). `CoachReadView` stays in
 /// the repo, unlinked, so the surface can come back as its own tab or as
 /// a pushed screen without rebuilding it.
+///
+/// Retired 2026-08-19: `instruments` (8, Charts) — replaced in its own
+/// slot by `ask`, per the IA-cost note on `sheet` below. It was the
+/// stated candidate: mock data only, no fetch, no service.
+/// `InstrumentsTabView` stays in the repo, unlinked.
+///
+/// Retired 2026-08-19: `read` (7, The Read) — the DEBUG-only comparison
+/// tab. It existed to run `TrendsReadTabView` beside Trends until one of
+/// them won; Trends did. DEBUG and release are now the same four tabs,
+/// which is the first time they have matched since Phase A.
+/// `TrendsReadTabView` stays in the repo, unlinked.
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
     /// Declared second as of 2026-08-11, so `allCases` renders Train in the
@@ -65,25 +76,33 @@ enum DripTab: Int, CaseIterable, Identifiable {
     /// still arrives here.
     case training = 1
     case trends = 4
-    #if DEBUG
-    /// The Read (`TrendsReadView`) — the story-and-month surface, run
-    /// beside Trends so the two can be compared on device before either
-    /// becomes the tab. DEBUG only: the release IA is three tabs, and
-    /// this case must not widen it.
+    /// Week (`WeekTabView`) — the weekly decision surface. Added
+    /// 2026-08-19. Three questions (faster / absorbing / the marathon), each
+    /// answered by its own signal cluster, ending in glass-box proposals that
+    /// change the week only when tapped.
     ///
-    /// Tag 7 is fresh. 2, 3, 5 and 6 are *retired* tags (see above), so
-    /// reusing one would make old jump-to-tab call sites land here.
-    case read = 7
-    #endif
-    /// The Instruments (`InstrumentsTabView`) — the expandable data-viz
-    /// card prototype (volume · threshold · efficiency · mood · heat ·
-    /// sessions · reps · head-to-head · mood × load · race predictions),
-    /// added 2026-08-08 as a fourth tab while the beta's viz language is
-    /// being decided. Mock data only; nothing here fetches.
+    /// Declared here so the bar reads Log · Train · Trends · Week · Ask ·
+    /// Sheet: Week sits between the surface that observes (Trends) and the
+    /// surface that holds the plan (Train's calendar), because it reads the
+    /// first and writes the second.
     ///
-    /// Tag 8 is fresh — 2, 3, 5 and 6 are retired tags (see above) and 7
-    /// belongs to the DEBUG-only Read.
-    case instruments = 8
+    /// Tag 11 is fresh. 2, 3, 5, 6, 7 and 8 are retired tags, 9 is the Sheet
+    /// and 10 is Ask — reusing any of them would land old jump-to-tab call
+    /// sites here.
+    case week = 11
+    /// Ask (`AskTabView`) — the analysis surface: pick a question, get it
+    /// answered from your own runs. Added 2026-08-19 in the slot Charts
+    /// held, so the bar stays five wide.
+    ///
+    /// The `AskBar` at the foot of Trends is unchanged and still works —
+    /// this tab is a second door to the same surface, not a move. Both
+    /// share `AskService.shared`, whose `loadCatalog` guards on
+    /// `catalogLoaded`, so two mounted bars never double-fetch.
+    ///
+    /// Tag 10 is fresh — 2, 3, 5, 6, 7 and 8 are all retired tags (see
+    /// above) and 9 is the Sheet. Reusing 7 or 8 would land old
+    /// jump-to-tab call sites here.
+    case ask = 10
     /// The Sheet (`SheetTabView`) — the dense session table, added 2026-08-11.
     /// One row per SESSION (not per day and not per upload — see
     /// `SessionRollup.swift`), week-grouped, with tag chips and search.
@@ -92,14 +111,15 @@ enum DripTab: Int, CaseIterable, Identifiable {
     /// muscle memory. Moving it beside Log is a one-line change: move this
     /// `case` up, never renumber it.
     ///
-    /// Tag 9 is fresh — 2, 3, 5 and 6 are retired tags (see above), 7 belongs
-    /// to the DEBUG-only Read and 8 to Charts.
+    /// Tag 9 is fresh — 2, 3, 5, 6, 7 (Read) and 8 (Charts) are all retired
+    /// tags; see above.
     ///
-    /// IA COST: this makes the release bar five tabs, six in DEBUG. At 393pt
-    /// that is ~78pt per item (~65pt in DEBUG) against a 44pt minimum touch
-    /// target — it fits, but the bar is now full. The next tab should replace
-    /// one, not widen the bar again; `instruments` is the stated candidate
-    /// (its own comment says to remove it when the cards graduate).
+    /// IA COST: the bar is five tabs as of 2026-08-19 — Log · Train ·
+    /// Trends · Ask — plus this one, in DEBUG and release alike. At 393pt
+    /// five items is ~78pt each against a 44pt minimum touch target, which
+    /// fits with room to spare now that Charts and the DEBUG Read are gone.
+    /// Adding a sixth is possible but should still be argued for: the last
+    /// two additions were both eventually spent replacing something.
     case sheet = 9
 
     var id: Int { rawValue }
@@ -114,11 +134,9 @@ enum DripTab: Int, CaseIterable, Identifiable {
         switch self {
         case .log: "Log"
         case .trends: "Trends"
-        #if DEBUG
-        case .read: "Read"
-        #endif
         case .training: "Train"
-        case .instruments: "Charts"
+        case .ask: "Ask"
+        case .week: "Week"
         case .sheet: "Sheet"
         }
     }

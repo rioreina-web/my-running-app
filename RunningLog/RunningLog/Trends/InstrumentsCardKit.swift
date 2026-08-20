@@ -414,6 +414,12 @@ enum InstrumentsData {
         return 1609.344 / beats
     }
 
+    /// **Superseded 2026-08-18 — do not build on this.** Card 03 no longer
+    /// reads it: one raw m/beat series across mixed zones measures the
+    /// training schedule, not fitness. `EfficiencyIndexBuilder.build`
+    /// (`EfficiencyIndexModels.swift`) scores each session against the
+    /// athlete's own speed-and-heat curve instead. Delete once nothing calls it.
+    @available(*, deprecated, message: "Use EfficiencyIndexBuilder.build — see EfficiencyIndexModels.swift")
     static func efficiency(_ sessions: [KeySession]) -> [(label: String, value: Double)] {
         sessions.compactMap { session in
             guard let hr = session.workHrAvg,

@@ -670,11 +670,22 @@ struct TrendsRecoveryLedger {
             /// No HRV, so Overnight scored off resting HR alone. Loses the
             /// 3×3 cross-check, and with it the only cell that subtracts.
             case hrv
+            /// The load unit ladder dropped off the `stressLoad` (TLS) rung —
+            /// at least one run day in the window carries no `stress_load`,
+            /// so Recovery need is measuring duration × channel intensity
+            /// instead of the real per-workout TLS. TrendsService's repair
+            /// sweep exists to close this gap; the clause discloses it while
+            /// it's open.
+            case loadUnitDuration
+            /// Bottom rung: no durations either, so load is miles × intensity.
+            case loadUnitMiles
 
             var note: String {
                 switch self {
                 case .sleepRating: "sleep from duration, not your rating"
                 case .hrv: "resting HR only, no HRV"
+                case .loadUnitDuration: "load from duration, not TLS"
+                case .loadUnitMiles: "load from miles, not TLS"
                 }
             }
         }

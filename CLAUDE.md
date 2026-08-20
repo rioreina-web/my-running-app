@@ -57,10 +57,20 @@ surface in v1.5. Strength + mobility are deferred future products.
 
 ## Information architecture (athlete-facing)
 
-**Shipping IA (as of 2026-08-05): three-tab bottom nav — Log · Trends ·
-Train.** Mental flow: input → overview → detail. Synthesis (Coach) was
-retired as a tab on 2026-07-28; the analysis half of it came back on
-2026-08-05 as **Ask**, a sheet opened from the foot of Trends.
+**Shipping IA (as of 2026-08-19): six-tab bottom nav — Log · Train ·
+Trends · Week · Ask · Sheet.** Mental flow: input → plan → overview →
+decision → interrogate → records. Synthesis (Coach) was retired as a tab on
+2026-07-28; the analysis half of it came back on 2026-08-05 as **Ask**,
+first as a sheet from the foot of Trends and then (2026-08-19) as its own
+tab in the slot Charts held.
+
+> ⚠️ **This section said "three tabs" until 2026-08-19 and was wrong from
+> 2026-08-11 onward.** The Sheet landed 08-11 and Ask + Week on 08-19, and
+> none of them updated this doc. `DripTab` in
+> `RunningLog/App/DripTabBar.swift` is the only source of truth for what
+> ships — read the enum, not this paragraph. Anyone reasoning about IA cost
+> from a stale count here will argue for the wrong thing; that exact mistake
+> was made on 2026-08-19.
 
 - **Log** — voice-first front door at top (record button + voice/manual
   toggle) and the 6-month training journal scrolling below. Last 6
@@ -84,6 +94,16 @@ retired as a tab on 2026-07-28; the analysis half of it came back on
   screen the pace spectrum / threshold / race-prediction content was waiting
   for when it was parked in Trends v1 — they answer "how fast am I", which
   Trends deliberately doesn't. See "The Ask surface" below.
+- **Week** *(2026-08-19)* — the weekly decision surface, and the only tab
+  that proposes. Three questions, each answered by its own signal cluster:
+  *am I getting faster* (threshold band + HR efficiency), *am I absorbing the
+  work* (load vs own baseline, niggles, mood, overnight), *what moves the
+  marathon* (long runs, spectrum, long threshold, volume). It ends in
+  glass-box proposals — a diff, the evidence as tappable chips that jump to
+  the source card, and Apply / Adjust / Keep. Nothing writes without a tap.
+  Trends observes and stops; Week reads the same signals and asks what to do.
+  That boundary is the whole reason they are two tabs. See
+  `WEEK-TAB-APPLY.md`. **Fixture-driven as of 2026-08-19 — no live data.**
 
 - **Coach** — the AI Daily Read as observation, on demand. Maya taps
   generate; AI produces a minimal-format paragraph (eyebrow date +
@@ -93,9 +113,9 @@ retired as a tab on 2026-07-28; the analysis half of it came back on
   anchors and goals silently. Maya can ask Coach to read her journey
   through specific lenses ("how does fitness compare to last cycle?").
 
-**Code as of 2026-08-05 ships 3 tabs** — `DripTab` in
-`RunningLog/App/DripTabBar.swift` declares exactly `log` · `trends` ·
-`training` (the raw values are non-contiguous for historical reasons;
+**Code as of 2026-08-19 ships 6 tabs** — `DripTab` in
+`RunningLog/App/DripTabBar.swift` declares `log` · `training` · `trends` ·
+`week` · `ask` · `sheet` (the raw values are non-contiguous for historical reasons;
 declaration order is display order). Plan folded into Train's CALENDAR
 mode (2026-07-13); Trends 2 was removed 2026-07-27; Coach (The Read) was
 removed 2026-07-28.

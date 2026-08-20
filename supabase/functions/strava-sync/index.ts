@@ -29,6 +29,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 import { type OrphanCandidate, pickBestOrphan } from "../_shared/voiceOrphanMatch.ts";
+import {
+  buildPaceSegments,
+  paceStringFromSpeedMps,
+  type StravaLapLike,
+} from "../_shared/paceSegments.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -188,7 +193,46 @@ function fireParseStructure(trainingLogId: string, userId: string): void {
     .then((r) => {
       if (!r.ok) console.warn(`[strava-sync] parse-structure ${r.status} for ${trainingLogId}`);
     })
-    .catch((e) => console.warn(`[strava-sync] parse-structure fetch failed: ${e}`));
+    .catch((e) => console.warn(`[strava-sync] parse-structure fetch failed: ${e}`))
+    // Features AFTER parse settles (success or not): compute-workout-features
+    // reads the parsed laps when they exist and falls back to pace_segments
+    // when they don't, so sequencing beats racing it against the parser.
+    // Without this, a Strava-ingested run's `stress_load` (TLS) stayed NULL
+    // until something else happened to invoke the batch compute — and one
+    // NULL run day drops the recovery model's whole load unit off the
+    // stressLoad rung (see the LoadUnit ladder in TrendsRecoveryDemand.swift).
+    .then(() => fireComputeFeatures(trainingLogId, userId));
+  try {
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+      EdgeRuntime.waitUntil(p);
+      return;
+    }
+  } catch { /* fall through */ }
+  void p;
+}
+
+/**
+ * Fire compute-workout-features for one freshly-ingested run — per-log mode,
+ * which recomputes even when a features row already exists (the twin-promote
+ * path deletes the stale row first anyway). This is what persists
+ * `training_logs.stress_load` (TLS, weighted training-minutes), the recovery
+ * model's preferred load unit. Fire-and-forget like its siblings.
+ */
+function fireComputeFeatures(trainingLogId: string, userId: string): void {
+  if (!supabaseUrl || !supabaseServiceKey) return;
+  const p = fetch(`${supabaseUrl}/functions/v1/compute-workout-features`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${supabaseServiceKey}`,
+      apikey: supabaseServiceKey,
+    },
+    body: JSON.stringify({ training_log_id: trainingLogId, user_id: userId }),
+  })
+    .then((r) => {
+      if (!r.ok) console.warn(`[strava-sync] compute-features ${r.status} for ${trainingLogId}`);
+    })
+    .catch((e) => console.warn(`[strava-sync] compute-features fetch failed: ${e}`));
   try {
     if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
       EdgeRuntime.waitUntil(p);
@@ -379,37 +423,13 @@ async function stravaFetch(
   return res;
 }
 
-// ── Pace-segment helpers (identical to strava-test-pull) ───────────
-
-function paceStringFromSpeedMps(speedMps: number): string {
-  if (!speedMps || speedMps <= 0) return "";
-  const secPerMile = 1609.34 / speedMps;
-  const m = Math.floor(secPerMile / 60);
-  const s = Math.round(secPerMile % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function classifyEffort(paceSec: number, avgPaceSec: number): string {
-  if (!avgPaceSec) return "steady";
-  const ratio = paceSec / avgPaceSec;
-  if (ratio < 0.92) return "fast";
-  if (ratio > 1.08) return "easy";
-  return "steady";
-}
-
-function splitsToPaceSegments(splits: StravaSplit[], avgSpeedMps: number) {
-  const avgPaceSec = avgSpeedMps > 0 ? 1609.34 / avgSpeedMps : 0;
-  return splits.map((s) => {
-    const paceSec = s.average_speed > 0 ? 1609.34 / s.average_speed : 0;
-    return {
-      effort: classifyEffort(paceSec, avgPaceSec),
-      distance_miles: Number((s.distance / 1609.34).toFixed(2)),
-      duration_seconds: Number(s.moving_time),
-      pace_per_mile: paceStringFromSpeedMps(s.average_speed),
-      avg_heart_rate: s.average_heartrate ? Math.round(s.average_heartrate) : null,
-    };
-  });
-}
+// ── Pace-segment helpers ───────────────────────────────────────────
+//
+// The segment builders moved to `_shared/paceSegments.ts` on 2026-08-20, when
+// `pace_segments` stopped being built from per-mile splits and started being
+// built from the watch's own laps. See that file's header for why. They are
+// shared rather than copied so this function and `strava-test-pull` can never
+// again disagree about what a segment is.
 
 // ── Per-user sync ──────────────────────────────────────────────────
 
@@ -509,9 +529,14 @@ async function syncUser(row: CredRow, lookbackDays: number, perUserLimit: number
         average_temp?: number;
       };
       const splits = detail.splits_standard ?? [];
-      const paceSegments = splits.length > 0
-        ? splitsToPaceSegments(splits, detail.average_speed ?? 0)
-        : null;
+      // Laps first, mile splits as the fallback. A mile of an interval session
+      // is work + recovery averaged together; the laps are the reps.
+      const paceSegments = buildPaceSegments({
+        laps: Array.isArray(detail.laps) ? detail.laps as StravaLapLike[] : null,
+        splits_standard: splits,
+        average_speed: detail.average_speed ?? 0,
+        distance: a.distance,
+      });
 
       // 3) Per-second streams
       const streamKeys = [

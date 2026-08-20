@@ -341,11 +341,11 @@ struct TrendsV2View: View {
 
             thresholdSection(threshold)
 
-            // The door to Ask. Trends shows the shape; Ask explains it. Kept
-            // at the foot rather than in the header because it is the next
-            // thing to read, not a control competing with the signals.
-            EditorialRule().padding(.vertical, 24)
-            AskBar()
+            thresholdCheckSection()
+
+            // The Ask door used to live here (`AskBar`, the analyzer chip
+            // rail). Removed 2026-08-19 with the one in `TrendsLegacyTabView`:
+            // Ask is its own tab now, and it is a chat, not a card rail.
 
         } else if service.isLoading {
             loadingState
@@ -396,6 +396,43 @@ struct TrendsV2View: View {
                 // the whole story, and a full screen of it is chrome.
                 onExpand: bandIsAdjustable ? { thresholdDetail = .init(block: nil) } : nil) {
             thresholdBody(read).padding(.top, 14)
+        }
+    }
+
+    // MARK: Section 05 · the threshold check
+
+    /// Section 04 draws the band; 05 asks whether it is still right, and
+    /// answers from evidence — never by moving it. There is no control here:
+    /// the band's controls live in 04 above, where the athlete owns them.
+    /// Substrate and validation: `ThresholdCheckModels.swift`,
+    /// `THRESHOLD-CHECK-APPLY.md`.
+    private var thresholdCheckRead: ThresholdCheckRead {
+        ThresholdCheckBuilder.build(
+            fastSessions: service.fastSegments.sessions,
+            keySessions: service.keySessions,
+            bandLaps: service.bandLaps,
+            settings: bandSettings.settings,
+            window: window
+        )
+    }
+
+    /// Carries its own rule, for the same reason section 04 does: the
+    /// populated branch of `content(_:)` is near the ten-child ViewBuilder
+    /// limit, and one child is cheaper than two.
+    @ViewBuilder
+    private func thresholdCheckSection() -> some View {
+        EditorialRule().padding(.vertical, 24)
+
+        section(eyebrow: "Threshold check", number: "05",
+                sub: "Whether the band above still matches the runner. Reads continuous efforts that ran at band pace and how far their heart rate drifted. It reports; you move the band.",
+                anchor: "thresholdcheck") {
+            ThresholdCheckView(
+                read: thresholdCheckRead,
+                // The same door every other chart on this page uses, so one
+                // day cannot open on two different sessions.
+                onOpen: { openDay($0.date, focusLogId: $0.id) }
+            )
+            .padding(.top, 14)
         }
     }
 

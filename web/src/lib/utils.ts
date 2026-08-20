@@ -1,3 +1,5 @@
+import { displayWorkoutType, normalizeWorkoutType } from "@/lib/workout-label";
+
 /** Format seconds into mm:ss or h:mm:ss */
 export function formatDuration(minutes: number): string {
   const totalSeconds = Math.round(minutes * 60);
@@ -36,21 +38,56 @@ export const MOOD_CONFIG: Record<
  * PaceSpectrum.swift), warm gray is neutral, coral is reserved for alerts. No
  * mood hues (amber/green) leak into pace here.
  */
-export const WORKOUT_TYPE_CONFIG: Record<
-  string,
-  { label: string; colorClass: string }
-> = {
-  easy: { label: "Easy", colorClass: "bg-pace-easy/15 text-pace-easy-text" },
-  steady: { label: "Steady", colorClass: "bg-pace-steady/15 text-pace-steady" },
-  tempo: { label: "Tempo", colorClass: "bg-pace-lt/12 text-pace-lt" },
-  interval: { label: "Interval", colorClass: "bg-pace-5k/12 text-pace-5k" },
-  fartlek: { label: "Fartlek", colorClass: "bg-pace-moderate/12 text-pace-moderate" },
-  long_run: { label: "Long", colorClass: "bg-pace-steady/15 text-pace-steady" },
-  long_wo: { label: "Long WO", colorClass: "bg-pace-hmp/12 text-pace-hmp" },
-  recovery: { label: "Recovery", colorClass: "bg-text-tertiary/12 text-text-secondary" },
-  race: { label: "Race", colorClass: "bg-pace-mile/12 text-pace-mile" },
-  other: { label: "Run", colorClass: "bg-bg-elevated text-text-secondary" },
+// Colour only. LABELS LIVE IN lib/workout-label.ts — this map used to carry
+// its own `label` field, which is how the web ended up rendering "Tempo" and
+// "Interval" months after the taxonomy retired them. Use workoutTypeConfig()
+// to get both halves; the label always comes from the canonical mapper.
+//
+// Three-palette rule: intensity reads as the blue pace ramp, rest/recovery as
+// neutral ink. Coral is alert-only and never a workout fill.
+const WORKOUT_TYPE_COLOR: Record<string, string> = {
+  // Effort
+  easy: "bg-pace-easy/15 text-pace-easy-text",
+  moderate: "bg-pace-moderate/12 text-pace-moderate",
+  steady: "bg-pace-steady/15 text-pace-steady",
+  recovery: "bg-text-tertiary/12 text-text-secondary",
+  // Structural
+  long_run: "bg-pace-steady/15 text-pace-steady",
+  long_wo: "bg-pace-hmp/12 text-pace-hmp",
+  cross_train: "bg-text-tertiary/12 text-text-secondary",
+  strength: "bg-text-tertiary/12 text-text-secondary",
+  rest: "bg-text-tertiary/12 text-text-secondary",
+  race: "bg-pace-mile/12 text-pace-mile",
+  // Session
+  threshold: "bg-pace-lt/12 text-pace-lt",
+  intervals: "bg-pace-5k/12 text-pace-5k",
+  fartlek: "bg-pace-moderate/12 text-pace-moderate",
+  progression: "bg-pace-hmp/12 text-pace-hmp",
+  // Legacy race-pace zones still stored as types on old rows.
+  mp: "bg-pace-mp/12 text-pace-mp",
+  hmp: "bg-pace-hmp/12 text-pace-hmp",
+  lt: "bg-pace-lt/12 text-pace-lt",
+  "10k": "bg-pace-10k/12 text-pace-10k",
+  "5k": "bg-pace-5k/12 text-pace-5k",
+  "3k": "bg-pace-3k/12 text-pace-3k",
+  mile: "bg-pace-mile/12 text-pace-mile",
+  hills: "bg-pace-hmp/12 text-pace-hmp",
+  strides: "bg-pace-5k/12 text-pace-5k",
+  other: "bg-bg-elevated text-text-secondary",
 };
+
+/** Label + colour for a stored `workout_type`. The label is always the
+ *  canonical one; legacy spellings (`tempo`, `interval`) fold first so they
+ *  pick up the right colour too. */
+export function workoutTypeConfig(
+  workoutType: string | null | undefined,
+): { label: string; colorClass: string } {
+  const key = normalizeWorkoutType(workoutType);
+  return {
+    label: displayWorkoutType(workoutType),
+    colorClass: (key && WORKOUT_TYPE_COLOR[key]) || WORKOUT_TYPE_COLOR.other,
+  };
+}
 
 /** Namespace prefix for coach-defined custom workout types. A workout whose
  *  `workout_type` is `custom:<slug>` renders from the coach's saved label
@@ -81,9 +118,10 @@ export function prettyCustomWorkoutType(workoutType: string): string | null {
     .join(" ");
 }
 
-/** Resolve a workout_type to a badge {label, colorClass}. Handles built-ins
- *  via WORKOUT_TYPE_CONFIG and degrades `custom:<slug>` to a readable label
- *  with a neutral chip, so a raw "custom:" prefix never leaks into the UI. */
+/** Resolve a workout_type to a badge {label, colorClass}. Built-ins go through
+ *  workoutTypeConfig (canonical label + colour); `custom:<slug>` degrades to a
+ *  readable label with a neutral chip, so a raw "custom:" prefix never leaks
+ *  into the UI. */
 export function workoutTypeBadge(
   workoutType: string
 ): { label: string; colorClass: string } {
@@ -91,7 +129,7 @@ export function workoutTypeBadge(
   if (custom) {
     return { label: custom, colorClass: "bg-bg-elevated text-text-secondary" };
   }
-  return WORKOUT_TYPE_CONFIG[workoutType] ?? WORKOUT_TYPE_CONFIG.other;
+  return workoutTypeConfig(workoutType);
 }
 
 /** Parse a YYYY-MM-DD string as local midnight. Using `new Date(str)` parses

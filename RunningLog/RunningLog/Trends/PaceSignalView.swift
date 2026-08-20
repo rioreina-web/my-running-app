@@ -789,9 +789,25 @@ private let fullDateFormatter: DateFormatter = {
 
 private struct SignalDaySheet: View {
     let day: SignalDay
+    /// The day's actual rows — the workout and the log. The chart holds only
+    /// the shape of the day (miles per zone, mood, niggle count); the session
+    /// itself and the athlete's words are fetched here (SignalDayDetail.swift).
+    @State private var detail = SignalDayDetailModel()
     private func fmt(_ x: Double) -> String { String(format: "%.1f", x) }
 
     var body: some View {
+        // Scrolls now: the sheet carries the workout receipt and the memo
+        // below the fold, which a fixed VStack clipped at the .medium detent.
+        ScrollView {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+        }
+        .background(Color.drip.background)
+        .task { await detail.load(day: day.date) }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(fullDateFormatter.string(from: day.date).uppercased())
                 .font(.dripEyebrow(11)).tracking(1.2).foregroundStyle(Color.drip.coral)
@@ -840,11 +856,9 @@ private struct SignalDaySheet: View {
                 }
             }
 
-            Spacer(minLength: 0)
+            // The workout sheet and the training log for this day.
+            SignalDayDetailSections(date: day.date, model: detail)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
-        .background(Color.drip.background)
     }
 }
 

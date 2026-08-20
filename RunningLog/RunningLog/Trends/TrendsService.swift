@@ -125,9 +125,79 @@ final class TrendsService {
             loaded = true
             lastError = nil
             Log.coach.info("Trends timeline loaded (\(self.weeks.count) weeks)")
+            // Kick the TLS repair sweep once per session, off the load path —
+            // see `sweepMissingStressLoads` for why a single null row matters.
+            Task { await self.sweepMissingStressLoads() }
         } catch {
             lastError = error
             Log.coach.error("Trends timeline load failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - TLS repair sweep
+
+    /// Once per app session; the sweep is repair, not a hot path.
+    private var sweepAttempted = false
+    /// More than this many broken rows means something systemic is wrong and
+    /// a client loop is the wrong tool — sweep the first batch, log the rest.
+    private static let sweepCap = 20
+
+    /// Backfills `training_logs.stress_load` — TLS, weighted training-minutes
+    /// — so the recovery model can measure load in it.
+    ///
+    /// `TrendsRecoveryDemand.loadUnit` only picks the `stressLoad` rung when
+    /// EVERY run day in the window carries one (mixing units inside one EWMA
+    /// is the documented artifact — see the LoadUnit doc). So a single null
+    /// row silently drops the whole recovery score down the ladder to
+    /// duration × channel intensity. Nulls happen two ways in practice:
+    /// rows whose features were computed before the `20260731120000` column
+    /// existed (batch mode skips any log that already has a features row, so
+    /// they stay null forever), and Strava-ingested rows that nothing ever
+    /// triggered (`strava-sync` does not call compute-workout-features).
+    ///
+    /// The repair: query this athlete's run logs where `stress_load` is null
+    /// and invoke compute-workout-features once per log — per-log mode
+    /// processes the log even when a features row already exists. When
+    /// anything was repaired, reload the timeline so the recovery score
+    /// recomputes in TLS on this visit rather than the next one.
+    @MainActor
+    private func sweepMissingStressLoads() async {
+        guard !sweepAttempted else { return }
+        sweepAttempted = true
+        // Only bother when the loaded timeline shows a run day with no
+        // stress_load — the exact condition that drops the load unit.
+        guard days.contains(where: { $0.miles > 0 && $0.stressLoad == nil }) else { return }
+        struct Row: Decodable { let id: UUID }
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("id")
+                .eq("user_id", value: AuthManager.shared.userId)
+                .is("stress_load", value: nil)
+                .gt("workout_distance_miles", value: 0)
+                .limit(Self.sweepCap)
+                .execute()
+                .value
+            guard !rows.isEmpty else { return }
+            var repaired = 0
+            for row in rows {
+                do {
+                    _ = try await callEdgeFunction(
+                        name: "compute-workout-features",
+                        body: [
+                            "user_id": AuthManager.shared.userId,
+                            "training_log_id": row.id.uuidString.lowercased(),
+                        ]
+                    )
+                    repaired += 1
+                } catch {
+                    Log.coach.error("TLS sweep: \(row.id) failed: \(error.localizedDescription)")
+                }
+            }
+            Log.coach.info("TLS sweep repaired \(repaired)/\(rows.count) logs")
+            if repaired > 0 { await refresh(force: true) }
+        } catch {
+            Log.coach.error("TLS sweep query failed: \(error.localizedDescription)")
         }
     }
 

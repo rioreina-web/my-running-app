@@ -6,6 +6,12 @@
  *   - fire fetch-workout-weather (conditions from the run's GPS) once stream lands
  *   - reconcileVoiceOrphan (fold in a voice memo recorded before the run)
  *
+ * It is also the recovery-data ingest: sleep summaries and HRV land in
+ * daily_biometrics. Those arrive on TWO independent Junction resources —
+ * `sleep` (which may carry average_hrv) and the standalone `hrv` timeseries
+ * (which is where Garmin actually puts it). Both write the same night's row and
+ * are written to merge, not overwrite, each other.
+ *
  * SECURITY: Svix signature (svix-id/svix-timestamp/svix-signature) vs
  * VITAL_WEBHOOK_SECRET (whsec_...). Junction sends no Supabase JWT -> deploy
  * with `--no-verify-jwt`. 5-minute replay window.
@@ -13,6 +19,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { pickBestOrphan, type OrphanCandidate } from "../_shared/voiceOrphanMatch.ts";
 import { derivedLapsFromStream } from "../_shared/shared/workBouts.ts";
+import { nightlyHrv } from "../_shared/hrvNights.ts";
 
 const WEBHOOK_SECRET = Deno.env.get("VITAL_WEBHOOK_SECRET") ?? "";
 const VITAL_BASE = Deno.env.get("VITAL_BASE_URL") ?? "https://api.sandbox.us.junction.com/v2";
@@ -51,6 +58,25 @@ function mean(a: unknown): number | null {
   if (!Array.isArray(a) || !a.length) return null;
   const n = a.filter((x) => typeof x === "number");
   return n.length ? (n as number[]).reduce((s, x) => s + x, 0) / n.length : null;
+}
+
+/**
+ * Write nightly HRV WITHOUT touching any other biometric column. PostgREST
+ * builds the ON CONFLICT update list from the payload keys, so a row carrying
+ * only hrv_rmssd merges into an existing sleep row rather than nulling out its
+ * resting HR / sleep duration. Source is hardcoded "garmin" to match the sleep
+ * branch — a provider-derived slug would split one night across two PKs.
+ * The Map keys the batch, so no date can collide with itself inside one upsert.
+ */
+async function upsertNightlyHrv(db: any, userId: string, byDate: Map<string, number>): Promise<number> {
+  if (!byDate.size) return 0;
+  const now = new Date().toISOString();
+  const rows = [...byDate].map(([date, hrv_rmssd]) => ({
+    user_id: userId, date, source: "garmin", hrv_rmssd, updated_at: now,
+  }));
+  const { error } = await db.from("daily_biometrics").upsert(rows, { onConflict: "user_id,date,source" });
+  if (error) { console.error(`[vital-webhook] hrv upsert (${rows.length} nights): ${error.message}`); return 0; }
+  return rows.length;
 }
 function toExternalStreams(w: Record<string, any>, s: Record<string, any> | null) {
   const src = w.source ?? {};
@@ -176,7 +202,42 @@ Deno.serve(async (req) => {
     return res(200, { streamed: items.length });
   }
 
-  // Sleep + HRV -> daily_biometrics. Garmin delivers these on daily.data.sleep.*
+  // Standalone HRV (`hrv` resource) -> daily_biometrics.hrv_rmssd. This is the
+  // channel Garmin actually uses: Garmin's Health API ships HRV as its own
+  // summary, NOT inside the sleep summary, so `sleep.average_hrv` can stay null
+  // forever while the real readings arrive here. Before this branch existed the
+  // event fell through to the final guard and was dropped as `{ ignored }`.
+  //
+  // Payload nests one level deeper than sleep: `data` is a GroupedHRV
+  // { source, data: [ { timestamp, value, unit: "rmssd", timezone_offset } ] }.
+  if (eventType.endsWith("data.hrv.created") || eventType.endsWith("data.hrv.updated")) {
+    if (!userId) return res(200, { ignored: "no user mapping", vitalUserId: payload.user_id });
+
+    // `historical.data.hrv.created` carries NO samples — it is a pull-completed
+    // marker { user_id, start_date, end_date, is_final, provider }. The backfill
+    // has to be fetched over the window it reports.
+    if (eventType.startsWith("historical.")) {
+      const h = (payload.data ?? {}) as Record<string, any>;
+      const vitalUserId = payload.user_id;
+      if (!vitalUserId || !h.start_date) return res(200, { ignored: "historical hrv without window" });
+      const qs = new URLSearchParams({ start_date: String(h.start_date) });
+      if (h.end_date) qs.set("end_date", String(h.end_date));
+      if (h.provider) qs.set("provider", String(h.provider));
+      const pulled = await vitalGet(`/timeseries/${vitalUserId}/hrv?${qs.toString()}`);
+      const samples = Array.isArray(pulled) ? pulled : Array.isArray((pulled as any)?.data) ? (pulled as any).data : [];
+      const nights = nightlyHrv(samples);
+      const wrote = await upsertNightlyHrv(db, userId, nights);
+      console.log(`[vital-webhook] hrv backfill ${h.start_date}..${h.end_date ?? "now"}: ${samples.length} samples -> ${wrote} nights`);
+      return res(200, { hrv_rows: wrote, samples: samples.length });
+    }
+
+    const g = (payload.data ?? {}) as Record<string, any>;
+    const samples = Array.isArray(g.data) ? g.data : Array.isArray(payload.data) ? payload.data : [];
+    const wrote = await upsertNightlyHrv(db, userId, nightlyHrv(samples));
+    return res(200, { hrv_rows: wrote, samples: samples.length });
+  }
+
+  // Sleep summaries -> daily_biometrics. Garmin delivers these on daily.data.sleep.*
   // (backfill included; Garmin uses `daily.`, not `historical.`). Junction restates
   // tentative -> confirmed for the same night, so upsert on the PK and let the
   // confirmed row overwrite the tentative one.
@@ -188,22 +249,29 @@ Deno.serve(async (req) => {
     for (const s of sleeps) {
       if (!s?.calendar_date) continue;
       const src = s.source ?? {};
-      const row = {
+      const row: Record<string, unknown> = {
         user_id: userId,
         date: s.calendar_date,
         source: "garmin",
         vital_sleep_id: s.id != null ? String(s.id) : null,
-        sleep_state: s.state ?? null,                 // 'tentative' | 'confirmed' — confirm on live payload
-        hrv_rmssd: typeof s.average_hrv === "number" ? s.average_hrv : null,
+        sleep_state: s.state ?? null,                 // 'tentative' | 'confirmed' (SleepSummaryState)
         resting_hr: typeof s.hr_resting === "number" ? s.hr_resting : null,
         hr_lowest: typeof s.hr_lowest === "number" ? s.hr_lowest : null,
         sleep_total_min: typeof s.total === "number" ? Math.round(s.total / 60) : null,
         respiratory_rate: typeof s.respiratory_rate === "number" ? s.respiratory_rate : null,
-        device_model: src.app_id ?? "Garmin",
-        firmware_version: src.firmware_version ?? null,   // confirm field path on live payload
-        app_version: src.app_version ?? null,
+        // ClientFacingSource carries provider / type / device_id only. It has no
+        // firmware_version or app_version at all, and app_id is documented as
+        // multi-source-only (Apple Health, Health Connect) so it is always null
+        // for Garmin — the old mapping could only ever write the "Garmin" literal
+        // and two permanent nulls. Record what the payload actually has.
+        device_model: typeof src.type === "string" && src.type !== "unknown" ? src.type : "Garmin",
         updated_at: new Date().toISOString(),
       };
+      // Only write HRV when the sleep summary genuinely carries it. Garmin
+      // usually does not (its HRV comes through the `hrv` branch above), and an
+      // explicit null here would wipe the value that branch already wrote for
+      // the same night — PostgREST updates exactly the columns present in the payload.
+      if (typeof s.average_hrv === "number") row.hrv_rmssd = s.average_hrv;
       const { error } = await db
         .from("daily_biometrics")
         .upsert(row, { onConflict: "user_id,date,source" });

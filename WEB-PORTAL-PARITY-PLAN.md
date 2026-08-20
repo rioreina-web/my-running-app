@@ -286,11 +286,20 @@ From the design system §7 and standing project principles:
   `src/components/coach/workout-helpers.ts`. Do **not** reintroduce the
   legacy seconds-offset ladder — it was a bug, already fixed once, and it
   still exists in stale `.claude/worktrees/*`. Never source from those.
-- **Workout labels are pace-zone labels.** `MP 7 mi`, `LT 6 mi`,
-  `5K 5×1km`. Structural labels survive only for `Long` / `Long wo`.
-  ⚠️ The coach detail page's `TYPE_LABEL` map still emits `Tempo` and
-  `Intervals` (`athletes/[id]/workouts/[logId]/page.tsx:83-93`) — fix when
-  Slice 1 lands the shared version.
+- **Workout labels are session-intent labels — NOT pace zones.** Reversed
+  2026-08-10; an earlier version of this doc recorded the old rule and it is
+  wrong. A pace zone describes a *segment's pace*; a workout type describes a
+  *session's intent*. Collapsing them made an easy long run and a
+  marathon-pace session compete for one vocabulary.
+  - Canonical source: `RunningLog/App/WorkoutLabel.swift`. Web port:
+    `web/src/lib/workout-label.ts` — **all four drifted web lists now delegate
+    to it** (done 2026-08-18).
+  - `tempo` folds to `threshold` on write. The old `threshold` → `lt` fold is
+    GONE. `mp`/`hmp`/`lt`/`10k`/`5k`/`3k`/`mile` are no longer offered as
+    workout types but still render on legacy rows.
+  - The per-workout pace-zone label (auto-derived, athlete-overridable) is
+    designed but **NOT built**. Until it ships nothing may derive one — the
+    first version of `workout-detail.ts` did exactly that and had to be undone.
 - **Empty states use `<EmptyState />`** (eyebrow + plain-prose nudge +
   optional CTA). Never an em-dash placeholder — hard rule #8.
 - **Mood vocabulary is closed:**

@@ -1,0 +1,116 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Trend options</title><style>
+:root{--paper:#F5F3F0;--card:#fff;--rule:#E8E4E0;--ink:#1A1815;--ink-2:#6B6560;--ink-3:#9B9590;
+--coral:#D4592A;--band:rgba(107,101,96,.13)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:"PT Serif",Georgia,serif;
+padding:34px 20px 60px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:900px;margin:0 auto}
+h1{font-family:"Crimson Pro",Georgia,serif;font-size:28px;font-weight:600;letter-spacing:-.01em}
+.lede{color:var(--ink-2);font-size:15px;line-height:1.6;max-width:64ch;margin-top:9px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:30px;margin-top:32px}
+.tag{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.12em;
+text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}.tag b{color:var(--coral)}
+.card{background:var(--card);border-radius:16px;padding:23px;box-shadow:0 2px 14px rgba(0,0,0,.07)}
+.eyebrow{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.13em;
+text-transform:uppercase;color:var(--ink-2)}
+.headline{font-family:"Crimson Pro",Georgia,serif;font-size:24px;line-height:1.24;font-weight:500;
+margin-top:10px;letter-spacing:-.006em}
+.sub{font-size:13px;font-style:italic;color:var(--ink-3);line-height:1.55;margin-top:8px}
+.rule{height:1px;background:var(--rule);margin:18px 0}
+svg{display:block;width:100%;overflow:visible}
+.ax{font-family:ui-monospace,Menlo,monospace;font-size:8.5px;fill:var(--ink-3);letter-spacing:.06em}
+.lbl{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.07em}
+.key{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+color:var(--ink-3);margin-top:14px;display:flex;gap:15px;flex-wrap:wrap;align-items:center}
+.key i{display:inline-block;width:14px;height:2px;margin-right:5px;vertical-align:middle}
+.note{border-left:2px solid rgba(212,89,42,.5);padding-left:13px;margin-top:18px}
+.note div:first-child{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.09em;
+text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.note div:last-child{font-size:13.5px;line-height:1.56}
+.why{font-size:13.5px;line-height:1.62;color:var(--ink-2);margin-top:15px}.why b{color:var(--ink)}
+.box{background:#fff;border:1px solid var(--rule);border-radius:12px;padding:20px 22px;margin-top:30px}
+.box h2{font-family:"Crimson Pro",Georgia,serif;font-size:18px;font-weight:600;margin-bottom:11px}
+.box p{font-size:14px;line-height:1.7;color:var(--ink-2)}.box p+p{margin-top:9px}.box b{color:var(--ink)}
+</style></head><body><div class="wrap">
+<h1>Yes — two trends that survive the scrutiny</h1>
+<p class="lede">Both drawn from your real sessions. The difference from what I built before is that
+neither hides how sure it is.</p>
+
+<div class="two">
+
+  <div>
+    <div class="tag"><b>Option 1</b> · the trend, with its confidence band</div>
+    <div class="card">
+      <div class="eyebrow">Threshold work · heat-neutral</div>
+      <div class="headline">Not enough yet to call a direction.</div>
+      <div class="sub">Seven quality sessions, cool-weather equivalents.</div>
+      <div class="rule"></div>
+      <svg viewBox="0 0 330 168">
+        <path d="M18,96 L300,42 L300,120 L18,104 Z" fill="var(--band)"/>
+        <line x1="18" y1="100" x2="300" y2="81" stroke="#6B6560" stroke-width="1.8" stroke-dasharray="5 3"/>
+        <circle cx="18"  cy="72"  r="4" fill="#1A1815"/>
+        <circle cx="73"  cy="106" r="4" fill="#1A1815"/>
+        <circle cx="176" cy="95"  r="4" fill="#1A1815"/>
+        <circle cx="198" cy="114" r="4" fill="#1A1815"/>
+        <circle cx="253" cy="95"  r="4" fill="#1A1815"/>
+        <circle cx="275" cy="148" r="4" fill="#1A1815"/>
+        <circle cx="300" cy="52"  r="4.6" fill="#D4592A"/>
+        <text class="ax" x="18" y="166">MAY 5</text><text class="ax" x="268" y="166">JUL 21</text>
+        <text class="ax" x="0" y="46">5:12</text><text class="ax" x="0" y="152">4:46</text>
+      </svg>
+      <div class="key"><span><i style="background:#6B6560"></i>trend</span>
+        <span><i style="background:var(--band);height:9px"></i>where it could really be</span>
+        <span><i style="background:#D4592A"></i>latest</span></div>
+      <div class="note"><div>What the data says</div>
+        <div>The middle line drifts a second a mile faster per month. The shaded range is where the
+        truth could sit — it still includes “no change”, so the card won’t claim one. The band
+        narrows every time you log a session.</div></div>
+    </div>
+    <p class="why"><b>Why this works.</b> A bare line through seven noisy points looks like a finding.
+    The same line with its band drawn looks like what it is. And it improves itself: nothing in the
+    code changes, the band just tightens until the answer is real.</p>
+  </div>
+
+  <div>
+    <div class="tag"><b>Option 2</b> · three lines, no score at all</div>
+    <div class="card">
+      <div class="eyebrow">Your summer, three ways</div>
+      <div class="headline">Paces held, heart rate eased, the air got worse.</div>
+      <div class="sub">Same seven sessions. No index, no verdict.</div>
+      <div class="rule"></div>
+      <svg viewBox="0 0 330 176">
+        <polyline fill="none" stroke="#1A1815" stroke-width="2" stroke-linejoin="round"
+          points="18,48 73,32 176,44 198,36 253,46 275,22 300,66"/>
+        <text class="lbl" x="18" y="20" fill="#1A1815">WORK PACE</text>
+        <polyline fill="none" stroke="#6B6560" stroke-width="2" stroke-dasharray="4 3" stroke-linejoin="round"
+          points="18,92 73,102 176,96 198,110 253,106 275,96 300,106"/>
+        <text class="lbl" x="18" y="86" fill="#6B6560">HEART RATE</text>
+        <polyline fill="none" stroke="#D4592A" stroke-width="2" stroke-linejoin="round"
+          points="18,158 73,158 176,140 198,140 253,132 275,132 300,132"/>
+        <text class="lbl" x="18" y="174" fill="#D4592A">DEW POINT</text>
+        <text class="ax" x="252" y="16">JUL 21</text>
+      </svg>
+      <div class="note"><div>What the data says</div>
+        <div>Your heart rate fell about 1 beat a month while the dew point climbed 4°F. Some of that
+        easing is fitness and some is your body adapting to the heat — this chart doesn’t pretend to
+        separate them.</div></div>
+    </div>
+    <p class="why"><b>Why this works.</b> It answers the question by showing the ingredients instead of
+    a score. Crucially it makes the heat confound <em>visible</em> rather than burying it inside an
+    index — which is the failure that sank the first card.</p>
+  </div>
+</div>
+
+<div class="box">
+  <h2>What I got wrong, and what actually changed</h2>
+  <p><b>I was wrong to say “don’t ship a trend.”</b> The problem was never the line. It was a line with
+  no band, drawn under a headline that claimed more than seven sessions can support.</p>
+  <p><b>The heat model is the strong part of your stack.</b> Fit on your long runs it explains 96% of the
+  variance — 0.18% of pace per degree of dew point. That means heat-neutral pace is a trustworthy
+  input; Option 1 leans on it and never touches heart rate, so the acclimation confound can’t reach it.</p>
+  <p><b>Sample size is the only thing standing in the way, and it fixes itself.</b> Seven quality sessions
+  give a band of roughly ±8 s/mi. Around twenty-five brings it near ±3, which is a real answer.
+  You are three months of training from this card being worth reading — and it gets there on its own.</p>
+</div>
+</div></body></html>

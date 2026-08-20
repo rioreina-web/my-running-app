@@ -5,7 +5,7 @@ import {
   formatDate,
   daysUntil,
   MOOD_CONFIG,
-  WORKOUT_TYPE_CONFIG,
+  workoutTypeConfig,
 } from "@/lib/utils";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card } from "@/components/ui/card";
@@ -607,7 +607,7 @@ function LogRow({
 }) {
   const dateStr = formatDate(log.workout_date || log.created_at);
   const type = log.workout_type || "other";
-  const typeConfig = WORKOUT_TYPE_CONFIG[type] || WORKOUT_TYPE_CONFIG.other;
+  const typeConfig = workoutTypeConfig(type);
   const distance = log.workout_distance_miles;
   const pace = log.workout_pace_per_mile;
   const duration = log.workout_duration_minutes;

@@ -1019,17 +1019,23 @@ private struct SectionCChart: View {
 
 // MARK: - Recovery
 
-/// The recovery headline for the Trends "Recovery" section: how well the
-/// athlete is resting and what the body is saying, read off `athlete_state`
-/// (readiness + the load/recovery balance from `recovery_read`), with the mood
-/// ribbon and niggle swimlanes rendered below it in the tab.
+/// The load half of the Trends "Recovery" section: how often the hard days
+/// land, read off `athlete_state.load_distribution.recovery_read`, with the
+/// down-week / body-signal chips underneath. Renders BELOW the recovery-score
+/// ledger, which owns the section's number.
+///
+/// This used to open with three stat tiles, led by "Readiness N/100" off
+/// `athlete_state.last_readiness_score` — a second 0–100 on the same screen
+/// as today's score, computed by an older server model the ledger replaced
+/// (see `TrendsRecoveryDemand.swift`). Two scales, one screen; the tiles
+/// also broke their own numbers ("4.2" wrapped mid-digit) whenever all three
+/// rendered. One quiet line now, and no second score. (Rio, 2026-08-17.)
 ///
 /// Surface, never prescribe. Hard rule #2 forbids the AI telling the athlete to
 /// rest or push, and the niggles rule forbids interpreting body signals — so
-/// every line here is descriptive (a readiness number, a hard-session count, a
+/// every line here is descriptive (a hard-session count, a cadence, a
 /// count of active mentions), never advice or diagnosis.
 struct RecoveryReadView: View {
-    var readiness: Int?
     var hardSessions28d: Int?
     var avgDaysBetweenHard: Double?
     var downWeek: Bool?
@@ -1054,7 +1060,7 @@ struct RecoveryReadView: View {
     }
 
     private var hasData: Bool {
-        readiness != nil || hardSessions28d != nil || avgDaysBetweenHard != nil || downWeek == true
+        hardSessions28d != nil || avgDaysBetweenHard != nil || downWeek == true
     }
 
     @ViewBuilder private var detailContent: some View {
@@ -1066,34 +1072,46 @@ struct RecoveryReadView: View {
             )
         } else {
             VStack(alignment: .leading, spacing: 0) {
-                // Only tiles with data render, so a thin state never shows an
-                // em-dash placeholder (hard rule #8). At least one is present
-                // whenever `hasData`.
-                HStack(spacing: 8) {
-                    if let r = readiness {
-                        DripStatTile(
-                            label: "Readiness",
-                            value: "\(r)",
-                            unit: "/100",
-                            delta: readinessCaption,
-                            deltaTone: readinessTone
-                        )
-                    }
-                    if let h = hardSessions28d {
-                        DripStatTile(label: "Hard · 28d", value: "\(h)", unit: h == 1 ? "session" : "sessions")
-                    }
-                    if let a = avgDaysBetweenHard {
-                        DripStatTile(label: "Between hard", value: String(format: "%.1f", a), unit: "days avg")
-                    }
-                }
-
+                // Only parts with data render, so a thin state never shows an
+                // em-dash placeholder (hard rule #8).
+                cadenceLine
                 statusRow.padding(.top, 12)
-                // `recoveryRead` used to print here — "Readiness sits at 72 out
-                // of 100. You've run 9 hard sessions in the last 28 days, about
-                // one every 3.1 days." Three tiles above say exactly that, in
-                // the numbers themselves. (Rio, 2026-08-03.)
+                // `recoveryRead` prose printed here once, then three stat
+                // tiles said the same thing in three boxes of three different
+                // heights. One baseline-aligned line now — the numbers carry
+                // it, and nothing can wrap. (Rio, 2026-08-17.)
             }
         }
+    }
+
+    /// One line, numbers first: "6 hard sessions in 28 days · one every 4.2
+    /// days". `lineLimit(1)` + scale factor so a number can never break
+    /// across lines the way the old tiles did.
+    @ViewBuilder private var cadenceLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            if let h = hardSessions28d {
+                Text("\(h)")
+                    .font(.dripStat(28)).monospacedDigit()
+                    .foregroundStyle(Color.drip.textPrimary)
+                Text(h == 1 ? "hard session in 28 days" : "hard sessions in 28 days")
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textSecondary)
+                if let a = avgDaysBetweenHard {
+                    Text("· one every \(String(format: "%.1f", a)) days")
+                        .font(.dripCaption(11))
+                        .foregroundStyle(Color.drip.textSecondary)
+                }
+            } else if let a = avgDaysBetweenHard {
+                Text(String(format: "%.1f", a))
+                    .font(.dripStat(28)).monospacedDigit()
+                    .foregroundStyle(Color.drip.textPrimary)
+                Text("days between hard sessions · avg")
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
     }
 
     // A quiet fact row: down-week (neutral chip) + body signals. Coral is the
@@ -1120,20 +1138,6 @@ struct RecoveryReadView: View {
             .padding(.horizontal, 9).padding(.vertical, 5)
             .background(color.opacity(0.12))
             .clipShape(Capsule())
-    }
-
-    private var readinessTone: DripDeltaTone {
-        guard let r = readiness else { return .neutral }
-        return r < 50 ? .negative : .neutral
-    }
-
-    private var readinessCaption: String? {
-        guard let r = readiness else { return nil }
-        switch r {
-        case ..<50: return "RUNNING LOW"
-        case 50..<75: return "STEADY"
-        default: return "WELL RESTED"
-        }
     }
 
     // Descriptive read, numbers only, no prescription. Prose em-dash is fine

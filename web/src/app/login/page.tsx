@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DripButton } from "@/components/ui/drip-button";
+import { RecoveryHashRedirect } from "@/components/recovery-hash-redirect";
+import { authCallbackUrl, RECOVERY_NEXT, SIGNUP_NEXT } from "@/lib/auth-redirects";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -19,6 +21,12 @@ export default function LoginPage() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
+
+  // /auth/callback redirects failures here with Supabase's own wording.
+  useEffect(() => {
+    const desc = new URLSearchParams(window.location.search).get("error_description");
+    if (desc) setError(desc);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,6 +47,10 @@ export default function LoginPage() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          // Without this the confirmation link falls back to the project's
+          // Site URL, where no code handler exists — which is why signup
+          // confirmation has never worked.
+          options: { emailRedirectTo: authCallbackUrl(SIGNUP_NEXT) },
         });
         if (error) throw error;
         setMessage("Check your email for a confirmation link.");
@@ -50,8 +62,35 @@ export default function LoginPage() {
     }
   }
 
+  // Password recovery. Supabase answers 200 whether or not the address has an
+  // account (deliberate — it stops the form being used to enumerate users), so
+  // the copy below promises only that a mail was *sent if* the account exists.
+  async function handleRecover() {
+    if (!email) {
+      setError("Enter your email first, then tap Forgot password.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: authCallbackUrl(RECOVERY_NEXT),
+      });
+      if (error) throw error;
+      setMessage(
+        "If that email has an account, a reset link is on its way. The link opens a page where you set a new password."
+      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Could not send the reset email.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg-base px-6">
+      <RecoveryHashRedirect />
       <div className="w-full max-w-sm">
         <div className="text-center">
           <Link href="/">
@@ -110,6 +149,19 @@ export default function LoginPage() {
             {mode === "signin" ? "Sign In" : "Sign Up"}
           </DripButton>
         </form>
+
+        {mode === "signin" && (
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={handleRecover}
+              disabled={loading}
+              className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary transition-colors hover:text-coral disabled:opacity-50"
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
 
         <div className="mt-6 text-center">
           <button

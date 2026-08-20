@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post Run Drip — Section 02 chart, redesigned</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  /* pace = blue (three-palette rule). LT is the band this section is about. */
+  --pace-lt:#27549B; --pace-lt-soft:rgba(39,84,155,.42); --pace-wash:rgba(39,84,155,.10);
+  /* volume = warm neutral, deliberately recessive, 3.1:1 on white */
+  --vol:#8C867F; --vol-soft:#C9C3BB;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DCD6CE;font-family:var(--fb);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:36px 20px 90px}
+
+/* ---------- page chrome ---------- */
+.pagehead{max-width:1180px;margin:0 auto 26px}
+.pagehead .kick{font-family:var(--fm);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-2)}
+.pagehead h1{font-family:var(--fd);font-weight:700;font-size:34px;letter-spacing:-.02em;
+  line-height:1.05;margin-top:8px}
+.pagehead p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:62ch;margin-top:10px}
+.pagehead p b{color:var(--ink);font-weight:700}
+
+.controls{max-width:1180px;margin:0 auto 30px;display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;background:var(--paper-deep);border-radius:10px;padding:3px;gap:2px}
+.seg button{font-family:var(--fm);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  border:0;background:transparent;color:var(--ink-2);padding:8px 14px;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.ctlab{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-right:2px}
+
+/* ---------- grid of phones ---------- */
+.grid{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(390px,1fr));
+  gap:34px 28px;justify-items:center}
+.col{width:100%;max-width:420px}
+.optlab{display:flex;align-items:baseline;gap:9px;margin-bottom:12px}
+.optlab .tag{font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:#fff;background:var(--ink);border-radius:4px;padding:4px 7px}
+.optlab .tag.old{background:var(--ink-3)}
+.optlab h3{font-family:var(--fd);font-weight:700;font-size:20px;letter-spacing:-.01em}
+.optlab .sub{font-family:var(--fb);font-size:13px;color:var(--ink-2);font-style:italic}
+
+.frame{width:390px;max-width:100%;background:var(--paper);border-radius:34px;overflow:hidden;
+  box-shadow:0 20px 46px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.07);margin:0 auto}
+.statusbar{display:flex;justify-content:space-between;align-items:center;
+  padding:13px 24px 4px;font-family:var(--fm);font-size:12.5px;font-weight:600;color:var(--ink)}
+.statusbar .right{display:flex;gap:6px;align-items:center;font-size:10.5px;color:var(--ink-2)}
+.batt{background:#34C759;color:#fff;border-radius:4px;padding:1px 5px;font-size:9.5px;font-weight:700}
+.screen{padding:14px 24px 26px}
+
+.shead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.snum{font-family:var(--fm);font-size:11px;font-weight:600;color:var(--coral);letter-spacing:.08em}
+.shead h2{font-family:var(--fd);font-weight:700;font-size:21px;letter-spacing:-.01em}
+.verdict{font-family:var(--fb);font-size:15px;line-height:1.5;color:var(--ink);margin:8px 0 14px}
+.verdict b{font-weight:700}
+.verdict em{font-style:italic;color:var(--ink-2)}
+
+.chartwrap{position:relative;background:var(--card);border:1px solid var(--rule);
+  border-radius:12px;padding:12px 10px 8px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+
+.footstats{display:flex;margin-top:12px;border-top:1px solid var(--rule);padding-top:10px}
+.footstats div{flex:1;font-family:var(--fm);font-size:9.5px;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+.footstats div b{display:block;font-size:15px;letter-spacing:0;color:var(--ink);font-weight:600;margin-top:4px;text-transform:none}
+.footstats div.on b{color:var(--coral)}
+.footstats div.blue b{color:var(--pace-lt)}
+
+/* tooltip */
+.tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .12s;
+  background:var(--ink);color:#fff;border-radius:8px;padding:8px 10px;z-index:9;
+  font-family:var(--fm);font-size:10.5px;line-height:1.5;letter-spacing:.02em;white-space:nowrap;
+  box-shadow:0 4px 14px rgba(0,0,0,.25);transform:translate(-50%,-118%)}
+.tip .d{color:#C9C3BB;letter-spacing:.1em;text-transform:uppercase;font-size:9px;display:block;margin-bottom:3px}
+.tip .b{color:#8FB4E8}
+
+/* option A specific */
+.cmp{display:flex;flex-direction:column;gap:0}
+.cmprow{padding:12px 2px}
+.cmprow + .cmprow{border-top:1px solid var(--rule)}
+.cmphead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+.cmphead .k{font-family:var(--fm);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.cmphead .k b{color:var(--ink-2);font-weight:600}
+.cmphead .dates{font-family:var(--fm);font-size:9.5px;letter-spacing:.06em;color:var(--ink-3)}
+.cmpbody{display:flex;align-items:center;gap:12px}
+.cmpbar{flex:1;height:26px;position:relative;background:var(--paper-deep);border-radius:3px;overflow:hidden}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--vol-soft)}
+.cmprow.now .cmpbar i{background:var(--vol)}
+.cmpbar span{position:absolute;left:9px;top:50%;transform:translateY(-50%);
+  font-family:var(--fm);font-size:12px;font-weight:600;color:var(--ink)}
+.cmpbar span small{font-size:9px;color:var(--ink-2);letter-spacing:.08em;margin-left:3px}
+.cmppace{width:86px;text-align:right}
+.cmppace b{font-family:var(--fm);font-size:16px;font-weight:600;color:var(--pace-lt);display:block}
+.cmppace small{font-family:var(--fm);font-size:9px;letter-spacing:.1em;color:var(--ink-3);text-transform:uppercase}
+.cmpdelta{margin-top:12px;padding-top:11px;border-top:1px solid var(--rule);
+  display:flex;gap:8px;align-items:center;font-family:var(--fm);font-size:10px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+.cmpdelta b{font-size:13px;letter-spacing:0;text-transform:none;font-weight:600}
+.cmpdelta .pill{display:inline-flex;align-items:center;gap:6px;background:var(--paper-deep);
+  border-radius:999px;padding:5px 11px}
+.cmpdelta .pill.flat{color:var(--ink-2)}
+
+/* notes under each frame */
+.note{margin-top:16px;background:var(--paper-elevated);border:1px solid var(--rule);
+  border-radius:12px;padding:15px 17px}
+.note .h{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:8px}
+.note ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+.note li{font-size:13.5px;line-height:1.45;color:var(--ink-2);padding-left:16px;position:relative}
+.note li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;
+  border-radius:99px;background:var(--coral)}
+.note li.bad::before{background:var(--ink-3)}
+.note li b{color:var(--ink);font-weight:700}
+
+/* table */
+.tablewrap{max-width:1180px;margin:44px auto 0;background:var(--paper-elevated);
+  border:1px solid var(--rule);border-radius:14px;padding:22px 24px}
+.tablewrap h4{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);margin-bottom:4px}
+.tablewrap p{font-size:13.5px;color:var(--ink-3);margin-bottom:14px}
+table{border-collapse:collapse;width:100%;font-family:var(--fm);font-size:12px}
+th{text-align:left;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:500;padding:0 12px 8px 0;border-bottom:1px solid var(--rule)}
+td{padding:7px 12px 7px 0;border-bottom:1px solid var(--rule);color:var(--ink-2);font-variant-numeric:tabular-nums}
+td.n{color:var(--ink);font-weight:600}
+tr.grpA td{background:rgba(39,84,155,.05)}
+tr.grpB td{background:var(--coral-wash)}
+
+.foot{max-width:1180px;margin:34px auto 0;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.foot b{color:var(--ink)}
+.foot code{font-family:var(--fm);font-size:11.5px;background:var(--paper-deep);padding:2px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<div class="pagehead">
+  <div class="kick">Post Run Drip · Trends · Section 02</div>
+  <h1>“What’s actually changed” — three ways to read it</h1>
+  <p>The current chart plots band pace on an axis labelled only <b>FAST / SLOW</b>, with no dates and no pace values, so a 3-second wobble fills the whole panel and looks like a collapse. Below: the same data, three ways. Flip the block to see how each one behaves when the numbers are flat versus when they’re actually improving.</p>
+</div>
+
+<div class="controls">
+  <span class="ctlab">Block</span>
+  <div class="seg" id="segData">
+    <button data-k="flat" class="on">Your block · flat</button>
+    <button data-k="build">A block that improved</button>
+  </div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="tablewrap">
+  <h4>The numbers</h4>
+  <p>Every chart above draws from exactly this table — the accessible twin.</p>
+  <table id="dataTable"></table>
+</div>
+
+<div class="foot">
+  <p><b>One colour change runs through all three.</b> The current chart draws band pace in coral. The design system’s three-palette rule says <code>blue = pace, warm = mood, coral = alert</code> — coral is never a pace fill. So pace moves to <code>--pace-lt #27549B</code> (the LT stop on the pace spectrum, which is literally the band this section measures), volume stays warm grey, and coral is spent only on <em>“this is the latest session”</em>. That also solves a legibility problem for free: the two series no longer differ by position alone.</p>
+</div>
+
+<script>
+/* ============================================================
+   Sample data — 12-week window, Mon 25 May → Sat 15 Aug 2026
+   flat  = the block in the screenshot (−6% minutes, +2 s/mi)
+   build = a block that actually moved (+65% minutes, −11 s/mi)
+   ============================================================ */
+const T0 = Date.UTC(2026,4,25), T1 = Date.UTC(2026,7,16);
+
+const DATA = {
+  flat: {
+    anchor:'LT',
+    s:[['2026-05-27',11,319],['2026-05-30',26,320],['2026-06-04',25,318],
+       ['2026-06-09',18,322],['2026-06-13',20,323],['2026-06-18',14,325],
+       ['2026-06-24',16,326],['2026-07-02',24,324],['2026-07-16',27,323],
+       ['2026-07-22',24,320],['2026-07-30',22,318],['2026-08-04', 8,322],
+       ['2026-08-13',28,321]]
+  },
+  build: {
+    anchor:'LT',
+    s:[['2026-05-27',18,327],['2026-06-01',20,326],['2026-06-05',19,325],
+       ['2026-06-11',22,324],['2026-06-18',21,323],['2026-06-25',24,323],
+       ['2026-07-02',23,322],['2026-07-09',26,321],['2026-07-16',28,320],
+       ['2026-07-23',25,320],['2026-07-30',30,318],['2026-08-06',33,317],
+       ['2026-08-13',31,316]]
+  }
+};
+
+const NS='http://www.w3.org/2000/svg';
+const pace = s => Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+const md   = iso => { const d=new Date(iso+'T00:00:00Z');
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()]+' '+d.getUTCDate(); };
+
+function model(key){
+  const raw = DATA[key];
+  const s = raw.s.map(([iso,min,sec])=>({iso,min,sec,t:Date.parse(iso+'T00:00:00Z')}));
+  const f3 = s.slice(0,3), l3 = s.slice(-3);
+  const sum = a => a.reduce((x,y)=>x+y.min,0);
+  const avg = a => sum(a)/a.length;
+  const minutesPct = Math.round(((sum(l3)-sum(f3))/sum(f3))*100);
+  const paceDelta  = s[s.length-1].sec - s[0].sec;
+  // least-squares slope on (days, sec) → s/mi per month
+  const n=s.length, mx=s.reduce((a,b)=>a+b.t,0)/n, my=s.reduce((a,b)=>a+b.sec,0)/n;
+  let num=0, den=0; s.forEach(p=>{num+=(p.t-mx)*(p.sec-my); den+=(p.t-mx)**2;});
+  const slopePerMs = den ? num/den : 0;
+  const slopeMonth = slopePerMs * 86400000 * 30.44;
+  return {key,s,f3,l3,minutesPct,paceDelta,slopeMonth,anchor:raw.anchor,
+          avgF3:avg(f3),avgL3:avg(l3),
+          paceF3:Math.round(f3.reduce((a,b)=>a+b.sec,0)/3),
+          paceL3:Math.round(l3.reduce((a,b)=>a+b.sec,0)/3),
+          fit:t=>my+slopePerMs*(t-mx)};
+}
+
+/* ---- shared scales ---------------------------------------- */
+// Pace window never narrower than 15 s/mi, gridlines on 5s marks.
+function paceScale(s){
+  const lo0=Math.min(...s.map(p=>p.sec)), hi0=Math.max(...s.map(p=>p.sec));
+  const mid=(lo0+hi0)/2, span=Math.max(hi0-lo0+4, 15);
+  let lo=mid-span/2, hi=mid+span/2;
+  const ticks=[]; for(let v=Math.ceil(lo/5)*5; v<=hi; v+=5) ticks.push(v);
+  return {lo,hi,ticks};
+}
+const el=(n,a={})=>{const e=document.createElementNS(NS,n);
+  for(const k in a) e.setAttribute(k,a[k]); return e;};
+function txt(t,x,y,o={}){
+  const e=el('text',{x,y,'font-family':o.f||'ui-monospace, SF Mono, Menlo, monospace',
+    'font-size':o.s||9,'fill':o.c||'#9B9590','letter-spacing':o.ls??0.8,
+    'text-anchor':o.a||'start','font-weight':o.w||400});
+  e.textContent=t; return e;}
+
+/* ============================================================
+   CURRENT — faithful recreation of what ships today
+   ============================================================ */
+function chartCurrent(m){
+  const W=342,H=196,padL=34,padR=10;
+  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`});
+  const s=m.s, n=s.length;
+  const x=i=>padL+(i+.5)*((W-padL-padR)/n);
+  // lane A — auto-fit pace, no numbers (this is the bug)
+  const aTop=16,aH=52;
+  const lo=Math.min(...s.map(p=>p.sec))-3, hi=Math.max(...s.map(p=>p.sec))+3;
+  const yp=v=>aTop+((v-lo)/(hi-lo))*aH;
+  [aTop-4,aTop+aH+4].forEach(y=>svg.appendChild(el('line',
+    {x1:padL,x2:W-padR,y1:y,y2:y,stroke:'#E8E4E0'})));
+  svg.appendChild(txt('FAST',padL-7,aTop+3,{a:'end',s:7.5}));
+  svg.appendChild(txt('SLOW',padL-7,aTop+aH+3,{a:'end',s:7.5}));
+  svg.appendChild(txt('BAND PACE, HEAT-ADJUSTED',padL,aTop-9,{s:7.5,ls:1}));
+  let d=''; s.forEach((p,i)=>d+=(i?'L':'M')+x(i)+' '+yp(p.sec));
+  svg.appendChild(el('path',{d,fill:'none',stroke:'#D4592A','stroke-width':1.6,
+    'stroke-linejoin':'round','stroke-linecap':'round'}));
+  s.forEach((p,i)=>svg.appendChild(el('circle',{cx:x(i),cy:yp(p.sec),r:2.6,
+    fill:'#fff',stroke:'#D4592A','stroke-width':1.6})));
+  svg.appendChild(txt(pace(s[0].sec),x(0)+7,yp(s[0].sec)+13,{s:9,c:'#D4592A',w:600}));
+  svg.appendChild(txt(pace(s[n-1].sec),x(n-1),yp(s[n-1].sec)-7,{s:9,c:'#D4592A',w:600,a:'middle'}));
+  // lane B — minutes
+  const bTop=aTop+aH+27,bH=62,mx=Math.max(...s.map(p=>p.min))*1.15;
+  const ym=v=>bTop+bH-(v/mx)*bH;
+  [Math.round(mx/2/10)*10,Math.round(mx*.9/10)*10].forEach(v=>{
+    if(v<=0)return;
+    svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:ym(v),y2:ym(v),stroke:'#E8E4E0'}));
+    svg.appendChild(txt(v,padL-7,ym(v)+3,{a:'end',s:8}));});
+  const bw=(W-padL-padR)/n*0.42;
+  s.forEach((p,i)=>svg.appendChild(el('rect',{x:x(i)-bw/2,y:ym(p.min),width:bw,
+    height:bTop+bH-ym(p.min),rx:2,fill:'#9B9590','fill-opacity':.45})));
+  svg.appendChild(txt('MINUTES IN BAND',padL,bTop-6,{s:7.5,ls:1}));
+  return svg;
+}
+
+/* ============================================================
+   A — Then vs now (comparison-led, HTML not SVG)
+   ============================================================ */
+function chartA(m){
+  const wrap=document.createElement('div');
+  const maxAvg=Math.max(m.avgF3,m.avgL3);
+  const row=(k,ds,avg,pc,now)=>`
+    <div class="cmprow ${now?'now':''}">
+      <div class="cmphead"><div class="k"><b>${k}</b></div><div class="dates">${ds}</div></div>
+      <div class="cmpbody">
+        <div class="cmpbar"><i style="width:${Math.round(avg/maxAvg*100)}%"></i>
+          <span>${avg.toFixed(0)}<small>MIN AVG</small></span></div>
+        <div class="cmppace"><b>${pace(pc)}</b><small>PER MILE</small></div>
+      </div>
+    </div>`;
+  const dF=`${md(m.f3[0].iso)} – ${md(m.f3[2].iso)}`;
+  const dL=`${md(m.l3[0].iso)} – ${md(m.l3[2].iso)}`;
+  const mp=m.minutesPct, pd=m.paceDelta;
+  const flat = Math.abs(mp)<10 && Math.abs(pd)<5;
+  wrap.innerHTML=`<div class="cmp">
+    ${row('First 3 sessions',dF,m.avgF3,m.paceF3,false)}
+    ${row('Last 3 sessions',dL,m.avgL3,m.paceL3,true)}
+  </div>
+  <div class="cmpdelta">
+    <span class="pill ${flat?'flat':''}">Time in band <b style="color:${flat?'var(--ink)':'var(--coral)'}">${mp>0?'+':''}${mp}%</b></span>
+    <span class="pill ${flat?'flat':''}">Pace <b style="color:${flat?'var(--ink)':'var(--pace-lt)'}">${pd>0?'+':''}${pd} s/mi</b></span>
+  </div>`;
+  // every-session strip so nothing is hidden
+  const W=342,H=64,padL=4,padR=4;
+  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`,style:'margin-top:14px'});
+  const s=m.s,n=s.length,step=(W-padL-padR)/n,bw=Math.min(step*.56,13);
+  const mx=Math.max(...s.map(p=>p.min))*1.12, base=H-16;
+  s.forEach((p,i)=>{
+    const cx=padL+(i+.5)*step, h=(p.min/mx)*(base-6);
+    const grp = i<3?'A':(i>=n-3?'B':null);
+    svg.appendChild(el('rect',{x:cx-bw/2,y:base-h,width:bw,height:h,rx:2,
+      fill:grp==='B'?'#8C867F':(grp==='A'?'#B4ADA4':'#DCD6CE')}));
+  });
+  svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:base,y2:base,stroke:'#E8E4E0'}));
+  svg.appendChild(txt('EVERY SESSION · '+md(s[0].iso).toUpperCase(),padL,H-4,{s:7.5,ls:1}));
+  svg.appendChild(txt(md(s[n-1].iso).toUpperCase(),W-padR,H-4,{s:7.5,ls:1,a:'end'}));
+  wrap.appendChild(svg);
+  return wrap;
+}
+
+/* ============================================================
+   B — One honest chart (two panels, one time axis, real numbers)
+   ============================================================ */
+function chartB(m,host){
+  const W=342,H=248,padL=38,padR=12;
+  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`});
+  const s=m.s;
+  const X=t=>padL+((t-T0)/(T1-T0))*(W-padL-padR);
+  const ps=paceScale(s);
+  const aTop=30,aH=86, yp=v=>aTop+((v-ps.lo)/(ps.hi-ps.lo))*aH;
+  const bTop=162,bH=60;
+  const mTop=Math.ceil(Math.max(...s.map(p=>p.min))/10)*10;
+  const ym=v=>bTop+bH-(v/mTop)*bH;
+
+  /* ---- month gridlines FIRST, inside each panel only ---- */
+  const months=[[Date.UTC(2026,5,1),'JUN'],[Date.UTC(2026,6,1),'JUL'],[Date.UTC(2026,7,1),'AUG']];
+  months.forEach(([t])=>{
+    svg.appendChild(el('line',{x1:X(t),x2:X(t),y1:aTop-6,y2:aTop+aH+6,stroke:'#F1EDE9'}));
+    svg.appendChild(el('line',{x1:X(t),x2:X(t),y1:bTop-6,y2:bTop+bH,stroke:'#F1EDE9'}));
+  });
+
+  /* ---- panel 1 · pace ---- */
+  svg.appendChild(txt('BAND PACE · HEAT-ADJUSTED',padL,13,{s:7.5,ls:1,c:'#6B6560'}));
+  svg.appendChild(txt('13 SESSIONS · 12 WEEKS',W-padR,13,{s:7.5,ls:1,a:'end'}));
+  ps.ticks.forEach(v=>{
+    svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:yp(v),y2:yp(v),stroke:'#EFEBE7'}));
+    svg.appendChild(txt(pace(v),padL-6,yp(v)+3,{a:'end',s:9,c:'#9B9590'}));
+  });
+  svg.appendChild(txt('FASTER',padL-6,aTop-5,{s:6.5,ls:.6,a:'end',c:'#B4ADA4'}));
+  svg.appendChild(txt('SLOWER',padL-6,aTop+aH+3,{s:6.5,ls:.6,a:'end',c:'#B4ADA4'}));
+  // trend line — the claim the section makes, drawn
+  const tA=s[0].t,tB=s[s.length-1].t;
+  svg.appendChild(el('line',{x1:X(tA),x2:X(tB),y1:yp(m.fit(tA)),y2:yp(m.fit(tB)),
+    stroke:'#27549B','stroke-width':2,'stroke-linecap':'round','stroke-opacity':.9}));
+  s.forEach((p,i)=>{
+    const last=i===s.length-1;
+    svg.appendChild(el('circle',{cx:X(p.t),cy:yp(p.sec),r:last?5:3.6,
+      fill:last?'#D4592A':'#fff',stroke:last?'#fff':'#27549B',
+      'stroke-width':last?2:1.8,'stroke-opacity':last?1:.65}));
+  });
+  // one direct label: the latest session
+  const L=s[s.length-1];
+  svg.appendChild(txt(pace(L.sec),X(L.t)-9,yp(L.sec)-10,{s:11,c:'#1A1815',w:600,a:'end'}));
+  // trend readout, in the clean gap between the two panels
+  const slopeTxt = Math.abs(m.slopeMonth)<1 ? '\u2014 TREND · FLAT ACROSS THE BLOCK'
+    : '\u2014 TREND · '+Math.abs(m.slopeMonth).toFixed(0)+' s/mi PER MONTH '+(m.slopeMonth<0?'FASTER':'SLOWER');
+  svg.appendChild(txt(slopeTxt,padL,aTop+aH+22,{s:8.5,ls:.9,c:'#27549B',w:600}));
+
+  /* ---- panel 2 · minutes ---- */
+  svg.appendChild(txt('MINUTES IN BAND',padL,bTop-10,{s:7.5,ls:1,c:'#6B6560'}));
+  [0,mTop/2,mTop].forEach(v=>{
+    svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:ym(v),y2:ym(v),
+      stroke:v===0?'#DDD8D2':'#EFEBE7'}));
+    svg.appendChild(txt(v,padL-6,ym(v)+3,{a:'end',s:9,c:'#9B9590'}));
+  });
+  const bw=11;
+  s.forEach((p,i)=>{
+    const last=i===s.length-1;
+    svg.appendChild(el('rect',{x:X(p.t)-bw/2,y:ym(p.min),width:bw,height:bTop+bH-ym(p.min),
+      rx:2,fill:last?'#D4592A':'#8C867F'}));
+    if(last) svg.appendChild(txt(p.min,X(p.t),ym(p.min)-6,{s:10.5,c:'#1A1815',w:600,a:'middle'}));
+  });
+
+  /* ---- one shared time axis ---- */
+  months.forEach(([t,l])=>svg.appendChild(txt(l,X(t)+3,bTop+bH+16,{s:8,ls:1,c:'#9B9590'})));
+
+  /* ---- hover: crosshair + tooltip across both panels ---- */
+  const hair=el('line',{y1:aTop-6,y2:bTop+bH,stroke:'#1A1815','stroke-width':1,
+    'stroke-opacity':0,'pointer-events':'none'});
+  svg.appendChild(hair);
+  const hitG=el('g'); svg.appendChild(hitG);
+  const tip=host.querySelector('.tip');
+  s.forEach(p=>{
+    const r=el('rect',{x:X(p.t)-13,y:aTop-8,width:26,height:bTop+bH+8-aTop,
+      fill:'transparent',style:'cursor:pointer'});
+    r.addEventListener('mouseenter',()=>{
+      hair.setAttribute('x1',X(p.t)); hair.setAttribute('x2',X(p.t));
+      hair.setAttribute('stroke-opacity',.16);
+      tip.innerHTML=`<span class="d">${md(p.iso)}</span>${p.min} min in band<br><span class="b">${pace(p.sec)}/mi</span>`;
+      const box=host.querySelector('svg').getBoundingClientRect();
+      tip.style.left=(box.width*(X(p.t)/W))+'px';
+      tip.style.top =(box.height*(yp(p.sec)/H))+'px';
+      tip.style.opacity=1;});
+    r.addEventListener('mouseleave',()=>{hair.setAttribute('stroke-opacity',0);tip.style.opacity=0;});
+    hitG.appendChild(r);
+  });
+  return svg;
+}
+
+/* ============================================================
+   C — Every session as one dot: minutes × pace
+   ============================================================ */
+function chartC(m,host){
+  const W=342,H=232,padL=40,padR=16,padT=26,padB=42;
+  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`});
+  const s=m.s, ps=paceScale(s);
+  const mxm=Math.ceil(Math.max(...s.map(p=>p.min))/10)*10+5;
+  const X=v=>padL+(v/mxm)*(W-padL-padR);
+  const Y=v=>padT+((v-ps.lo)/(ps.hi-ps.lo))*(H-padT-padB);
+
+  for(let v=0;v<=mxm;v+=10){
+    svg.appendChild(el('line',{x1:X(v),x2:X(v),y1:padT,y2:H-padB,stroke:'#F4F1ED'}));
+    svg.appendChild(txt(v,X(v),H-padB+15,{a:'middle',s:9}));
+  }
+  ps.ticks.forEach(v=>{
+    svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:Y(v),y2:Y(v),stroke:'#EFEBE7'}));
+    svg.appendChild(txt(pace(v),padL-6,Y(v)+3,{a:'end',s:9}));
+  });
+  svg.appendChild(txt('BAND PACE · FASTER UP',padL,13,{s:7.5,ls:1,c:'#6B6560'}));
+  svg.appendChild(txt('MINUTES IN BAND \u2192',W-padR,13,{s:7.5,ls:1,a:'end',c:'#6B6560'}));
+
+  // the movement: first-3 centroid → last-3 centroid
+  const cen=a=>({x:a.reduce((q,p)=>q+p.min,0)/a.length, y:a.reduce((q,p)=>q+p.sec,0)/a.length});
+  const cA=cen(m.f3), cB=cen(m.l3);
+  const ax=X(cA.x),ay=Y(cA.y),bx=X(cB.x),by=Y(cB.y);
+  const dist=Math.hypot(bx-ax,by-ay);
+  if(dist>26){
+    const ux=(bx-ax)/dist, uy=(by-ay)/dist;
+    svg.appendChild(el('line',{x1:ax+ux*12,y1:ay+uy*12,x2:bx-ux*14,y2:by-uy*14,
+      stroke:'#1A1815','stroke-width':1.4,'stroke-opacity':.3}));
+    const hx=bx-ux*12, hy=by-uy*12, k=5.5;
+    svg.appendChild(el('path',{d:`M${hx} ${hy}L${hx-ux*k-uy*k*.6} ${hy-uy*k+ux*k*.6}L${hx-ux*k+uy*k*.6} ${hy-uy*k-ux*k*.6}Z`,
+      fill:'#1A1815','fill-opacity':.3}));
+  }
+
+  // sessions
+  s.forEach((p,i)=>{
+    const grp = i<3?'A':(i>=s.length-3?'B':null);
+    svg.appendChild(el('circle',{cx:X(p.min),cy:Y(p.sec),r:4.5,
+      fill:grp==='B'?'#D4592A':'#27549B','fill-opacity':grp?0.85:0.26,
+      stroke:'#fff','stroke-width':1.6}));
+  });
+
+  // centroid badges — labels pushed apart when the two groups nearly coincide
+  const close = dist<=26;
+  const labA = close ? {dx:0,dy:-17,a:'middle'} : {dx:0,dy:-18,a:'middle'};
+  const labB = close ? {dx:0,dy: 24,a:'middle'} : {dx:0,dy:-18,a:'middle'};
+  const badge=(x,y,label,fill,L)=>{
+    svg.appendChild(el('circle',{cx:x,cy:y,r:9.5,fill:'#fff','fill-opacity':.9}));
+    svg.appendChild(el('circle',{cx:x,cy:y,r:9.5,fill:'none',stroke:fill,'stroke-width':2}));
+    svg.appendChild(el('circle',{cx:x,cy:y,r:3.2,fill}));
+    svg.appendChild(txt(label,Math.min(Math.max(x+L.dx,padL+22),W-padR-22),y+L.dy,
+      {a:L.a,s:8,ls:1,c:fill,w:600}));
+  };
+  badge(ax,ay,'FIRST 3','#27549B',labA);
+  badge(bx,by,'LAST 3','#D4592A',labB);
+
+  // legend — identity is never colour-alone
+  const lg=[['#27549B','FIRST 3',.85],['#D4592A','LAST 3',.85],['#27549B','IN BETWEEN',.26]];
+  let lx=padL;
+  lg.forEach(([c,t,o])=>{
+    svg.appendChild(el('circle',{cx:lx+3,cy:H-9,r:3.4,fill:c,'fill-opacity':o}));
+    svg.appendChild(txt(t,lx+10,H-6,{s:7.5,ls:.9,c:'#9B9590'}));
+    lx += 10 + t.length*5.2 + 12;
+  });
+
+  const tip=host.querySelector('.tip');
+  s.forEach(p=>{
+    const r=el('circle',{cx:X(p.min),cy:Y(p.sec),r:13,fill:'transparent',style:'cursor:pointer'});
+    r.addEventListener('mouseenter',()=>{
+      tip.innerHTML=`<span class="d">${md(p.iso)}</span>${p.min} min in band<br><span class="b">${pace(p.sec)}/mi</span>`;
+      const box=host.querySelector('svg').getBoundingClientRect();
+      tip.style.left=(box.width*(X(p.min)/W))+'px';
+      tip.style.top =(box.height*(Y(p.sec)/H))+'px';
+      tip.style.opacity=1;});
+    r.addEventListener('mouseleave',()=>{tip.style.opacity=0;});
+    svg.appendChild(r);
+  });
+  return svg;
+}
+
+/* ============================================================
+   Assembly
+   ============================================================ */
+const OPTIONS=[
+  {tag:'Now', old:true, title:'What ships today', sub:'for comparison',
+   verdict:m=>`<b>Last session: ${m.s[m.s.length-1].min} minutes in band at ${pace(m.s[m.s.length-1].sec)}/mi.</b> First in this window: ${m.s[0].min} at ${pace(m.s[0].sec)}/mi.`,
+   build:(m,h)=>chartCurrent(m),
+   notes:[['bad','<b>No pace values.</b> The axis says FAST / SLOW. You cannot read a single pace off the chart.'],
+          ['bad','<b>The axis auto-fits to the data,</b> so an 8-second spread fills the panel. Flat blocks look dramatic.'],
+          ['bad','<b>No dates anywhere.</b> Thirteen sessions across three months, no x-axis.'],
+          ['bad','<b>The end label sits on the line</b> — “5:21” collides with the polyline it belongs to.'],
+          ['bad','<b>Coral for pace</b> breaks the three-palette rule and fights the grey bars for attention.']]},
+
+  {tag:'A', title:'Then vs now', sub:'lead with the answer',
+   verdict:m=>{const f=Math.abs(m.minutesPct)<10&&Math.abs(m.paceDelta)<5;
+     return f?`<b>Not much has changed.</b> Three months on, you’re holding about the same time in the band at about the same pace. <em>That’s a plateau, not a problem — but it’s the honest read.</em>`
+             :`<b>You’re holding the band ${m.minutesPct}% longer, ${Math.abs(m.paceDelta)}s/mi faster.</b> More time and more speed together. <em>That’s fitness, not a good day.</em>`;},
+   build:(m,h)=>chartA(m),
+   notes:[['','<b>The comparison IS the chart.</b> The headline asks “what changed” — this answers it in one glance instead of making you infer it from a wiggle.'],
+          ['','<b>Two numbers per group, not thirteen.</b> Three-session averages instead of noisy single sessions.'],
+          ['','<b>Real dates on both groups,</b> so “then” and “now” are anchored in time.'],
+          ['','<b>Full history still shown</b> in the strip underneath — nothing is hidden, it’s just demoted.'],
+          ['','Trade-off: <b>you lose the shape of the middle.</b> A block that got worse then recovered reads the same as one that never moved.']]},
+
+  {tag:'B', title:'One honest chart', sub:'the current idea, done properly',
+   verdict:m=>{const f=Math.abs(m.slopeMonth)<1;
+     return f?`<b>Band pace is flat across the block</b> — about ${pace(m.paceF3)} then, about ${pace(m.paceL3)} now. <em>Thirteen sessions, no trend either way.</em>`
+             :`<b>Band pace is trending ${Math.abs(m.slopeMonth).toFixed(0)}s/mi per month ${m.slopeMonth<0?'faster':'slower'}</b> across all thirteen sessions, while time in the band rose ${m.minutesPct}%.`;},
+   build:(m,h)=>chartB(m,h), tip:true,
+   notes:[['','<b>A real pace axis</b> — 5:15, 5:20, 5:25. Every dot is now readable against a number.'],
+          ['','<b>The window never narrows below 15 s/mi,</b> so a flat block looks flat instead of looking like a crash.'],
+          ['','<b>One straight trend line replaces the wiggle.</b> The scatter is still there; the claim is drawn on top of it.'],
+          ['','<b>One shared time axis</b> under both panels, with month gridlines running through them, so a pace dot and its minutes bar are the same column.'],
+          ['','<b>One direct label, not two</b> — the latest session, in ink, clear of the line. Everything else is on hover.']]},
+
+  {tag:'C', title:'One dot per session', sub:'minutes × pace',
+   verdict:m=>{const up=m.minutesPct>0,fast=m.paceDelta<0;
+     return (up&&fast)?`<b>The cloud moved up and to the right</b> — longer in the band, and faster while you’re there. <em>Both at once is the thing you want.</em>`
+       :`<b>The cloud barely moved.</b> Your last three sessions sit almost on top of your first three. <em>Up-and-right is the direction; you’ve gone sideways.</em>`;},
+   build:(m,h)=>chartC(m,h), tip:true,
+   notes:[['','<b>Both measures on one plot</b> without a second y-axis — minutes across, pace up.'],
+          ['','<b>The story is a direction.</b> Up-and-right is “more time, faster.” The arrow between the two centroids is the whole finding.'],
+          ['','<b>Both axes carry real numbers,</b> and every session is still an individual dot you can hover.'],
+          ['','Trade-off: <b>time disappears.</b> You can’t see when anything happened, or whether the gain was steady or a late jump.']]}
+];
+
+function render(key){
+  const m=model(key);
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  OPTIONS.forEach(o=>{
+    const col=document.createElement('div'); col.className='col';
+    col.innerHTML=`
+      <div class="optlab">
+        <span class="tag ${o.old?'old':''}">${o.tag}</span>
+        <h3>${o.title}</h3><span class="sub">${o.sub}</span>
+      </div>
+      <div class="frame">
+        <div class="statusbar"><span>3:56</span>
+          <span class="right">PRD <span class="batt">59</span></span></div>
+        <div class="screen">
+          <div class="shead"><span class="snum">02</span><h2>What’s actually changed</h2></div>
+          <p class="verdict">${o.verdict(m)}</p>
+          <div class="chartwrap"><div class="tip"></div></div>
+          <div class="footstats">
+            <div>Minutes in band<b>${m.minutesPct>0?'+':''}${m.minutesPct}%</b></div>
+            <div class="blue">Band pace<b>${m.paceDelta>0?'+':''}${m.paceDelta} s/mi</b></div>
+            <div>Anchor<b>${m.anchor}</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="note"><div class="h">${o.old?'Why it’s hard to read':'What changed'}</div>
+        <ul>${o.notes.map(([c,t])=>`<li class="${c}">${t}</li>`).join('')}</ul></div>`;
+    grid.appendChild(col);
+    const host=col.querySelector('.chartwrap');
+    host.appendChild(o.build(m,host));
+  });
+  // table
+  const t=document.getElementById('dataTable');
+  t.innerHTML=`<thead><tr><th>#</th><th>Date</th><th>Minutes in band</th>
+    <th>Band pace (heat-adj.)</th><th>Group</th></tr></thead><tbody>${
+    m.s.map((p,i)=>{const g=i<3?'First 3':(i>=m.s.length-3?'Last 3':'');
+      return `<tr class="${i<3?'grpA':(i>=m.s.length-3?'grpB':'')}"><td>${i+1}</td><td>${md(p.iso)}</td>
+        <td class="n">${p.min}</td><td class="n">${pace(p.sec)}/mi</td><td>${g}</td></tr>`;}).join('')}</tbody>`;
+}
+
+document.querySelectorAll('#segData button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('#segData button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); render(b.dataset.k);});
+});
+render('flat');
+</script>
+</body>
+</html>

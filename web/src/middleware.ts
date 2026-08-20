@@ -2,12 +2,21 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import "@/lib/env.server"; // validates required env vars at startup
 
-const PUBLIC_PATHS = ["/", "/blog", "/login", "/studio"];
+// /reset-password must be public: a recovery link arrives with no session, so
+// gating it would bounce the user to /login and strand the token they came to
+// spend. The page is safe unauthenticated — it can do nothing without a valid
+// recovery session, which only Supabase can mint.
+const PUBLIC_PATHS = ["/", "/blog", "/login", "/reset-password", "/studio"];
+
+// /auth/callback must be reachable with no session — it is the thing that
+// CREATES the session. Gating it would bounce every confirmation and recovery
+// link to /login with the code unspent.
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
   if (pathname.startsWith("/blog/")) return true;
   if (pathname.startsWith("/studio/")) return true;
+  if (pathname.startsWith("/auth/")) return true;
   return false;
 }
 

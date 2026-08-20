@@ -34,6 +34,7 @@ import {
   type FitnessSignal,
   type SessionInput as FitnessSessionInput,
 } from "./fitnessSignal.ts";
+import { oneHourPaceSecPerMile } from "./paces.ts";
 import { formatPace, formatTime, formatTimeDelta } from "./shared/format.ts";
 import { buildMoodTrend, type MoodLogRow } from "./builders/buildMoodTrend.ts";
 import { buildLifeContext, type LifeContext, type LifeContextLogRow } from "./builders/buildLifeContext.ts";
@@ -139,8 +140,10 @@ export interface AthleteState {
   }>;
 
   // Pace Zones
-  // `pace_zones` keeps single-number values for race anchors (mp, hm, tenK,
-  // fiveK, mile) and for surfaces that need a single target (workoutSelection).
+  // `pace_zones` keeps single-number values for race anchors (mp, hm, lt,
+  // tenK, fiveK, mile) and for surfaces that need a single target
+  // (workoutSelection). `lt` is the 1-hour race pace from `paces.ts` —
+  // a single target, per the race-pace-zone convention in CLAUDE.md.
   // `pace_zone_ranges` carries the engine's range output for Easy / Moderate /
   // Steady / Threshold — used by the prompt path so AI sees coach-style bands,
   // not midpoint approximations.
@@ -840,6 +843,17 @@ export async function rebuildAthleteState(
   if (enginePaceZones.fiveK)        paceZones.fiveK = enginePaceZones.fiveK.pace;
   if (enginePaceZones.mile)         paceZones.mile = enginePaceZones.mile.pace;
 
+  // LT — the canonical 10th zone (CLAUDE.md "Pace zones"). The athlete's
+  // 1-hour race pace, interpolated between 10K and HM. Without it the ladder
+  // jumps Steady → HMP → 10K, so a prescribed threshold session had no pace
+  // to quote and the prompt reached for HMP under the wrong name. Race-pace
+  // zones ship as exact single targets, so this belongs in `pace_zones`, not
+  // `pace_zone_ranges`. Uses the shared `oneHourPaceSecPerMile` so iOS, web
+  // and this file cannot drift.
+  if (paceZones.tenK && paceZones.hm) {
+    paceZones.lt = Math.round(oneHourPaceSecPerMile(paceZones.tenK, paceZones.hm));
+  }
+
   // Range form for the prompt path. AI sees Easy / Moderate / Steady as
   // bands with effort %, not midpoint approximations.
   const paceZoneRanges: AthleteState["pace_zone_ranges"] = {};
@@ -1277,11 +1291,18 @@ export async function rebuildAthleteState(
   let fitnessVs6moLabel: string | null = null;
   if (currentPred10k > 0 && prior10k > 0) {
     fitnessVs6moSec = currentPred10k - prior10k;
+    // Scale the bands to the athlete's own 10K rather than using flat
+    // 15s/60s cutoffs. At 32:00 the old ±15s deadband was 0.8% — well inside
+    // prediction noise — so a 16-second drift got narrated as "slower". The
+    // same 15s is 0.4% for an hour 10K, so the flat number also meant very
+    // different things at different ability levels.
+    const SIMILAR_PCT = 0.015;  // inside this, call it flat
+    const STRONG_PCT = 0.04;    // beyond this, it's a real move
     const absSec = Math.abs(fitnessVs6moSec);
-    if (absSec < 15) fitnessVs6moLabel = "similar";
-    else if (fitnessVs6moSec < -60) fitnessVs6moLabel = "much faster";
+    if (absSec < prior10k * SIMILAR_PCT) fitnessVs6moLabel = "similar";
+    else if (fitnessVs6moSec < -prior10k * STRONG_PCT) fitnessVs6moLabel = "much faster";
     else if (fitnessVs6moSec < 0) fitnessVs6moLabel = "faster";
-    else if (fitnessVs6moSec > 60) fitnessVs6moLabel = "much slower";
+    else if (fitnessVs6moSec > prior10k * STRONG_PCT) fitnessVs6moLabel = "much slower";
     else fitnessVs6moLabel = "slower";
   }
 
@@ -1857,9 +1878,20 @@ export async function rebuildAthleteState(
         // Parse distance + target time from goal title
         // Examples: "sub 15 5k", "sub-3 marathon", "break 1:30 half", "4:50 mile"
         const titleLower = g.goal_title.toLowerCase();
+        // HALF IS TESTED FIRST — /\bmarathon\b/ matches inside "half marathon",
+        // so the old marathon-first order silently filed every half-marathon
+        // goal as a marathon and computed the gap against the wrong distance.
+        //
+        // Named races resolve to their distance so a title that never says
+        // "marathon" ("Run sub 2:20 at CIM") still anchors. A "<race> half"
+        // title lands on `half` above before the alias can claim it.
         const distancePatterns: Array<[RegExp, string, number]> = [
-          [/\bmarathon\b/i, "marathon", 26.2188],
           [/\bhalf\s*marathon\b|\bhalf\b|\bhm\b/i, "half", 13.1094],
+          [
+            /\bmarathon\b|\bcim\b|\bboston\b|\bnyc\b|\bnew\s*york\b|\bchicago\b|\bberlin\b|\blondon\b|\btokyo\b|\bgrandma'?s\b/i,
+            "marathon",
+            26.2188,
+          ],
           [/\b10\s*k\b/i, "10K", 6.2137],
           [/\b5\s*k\b/i, "5K", 3.1069],
           [/\bmile\b/i, "mile", 1.0],
@@ -1875,10 +1907,19 @@ export async function rebuildAthleteState(
         const timeMatch = g.goal_title.match(/(?:sub[-\s]*|break[-\s]*|under[-\s]*)?(\d{1,2}):(\d{2})(?::(\d{2}))?|sub[-\s]*(\d{1,3})(?:\s*min)?/i);
         if (timeMatch) {
           if (timeMatch[1] && timeMatch[2]) {
-            const h = timeMatch[3] ? parseInt(timeMatch[1]) : 0;
-            const m = timeMatch[3] ? parseInt(timeMatch[2]) : parseInt(timeMatch[1]);
-            const s = timeMatch[3] ? parseInt(timeMatch[3]) : parseInt(timeMatch[2]);
-            targetSec = h * 3600 + m * 60 + s;
+            if (timeMatch[3]) {
+              targetSec = parseInt(timeMatch[1]) * 3600 +
+                parseInt(timeMatch[2]) * 60 + parseInt(timeMatch[3]);
+            } else if (distMi > 10) {
+              // Two parts on a half or marathon are HOURS:MINUTES. Reading
+              // "sub 2:20 at CIM" as 2m20s produced a 140-second marathon
+              // goal, which failed the pace sanity check below and left the
+              // athlete's only goal contributing nothing to any prompt.
+              targetSec = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60;
+            } else {
+              // Short races are MINUTES:SECONDS — "15:30 5K", "4:50 mile".
+              targetSec = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2]);
+            }
           } else if (timeMatch[4]) {
             // "sub 15" bare number — interpret as minutes if distance is 5K/mile, as hours otherwise
             const n = parseInt(timeMatch[4]);
@@ -2268,10 +2309,40 @@ export function stateToPromptContext(
       if (r.steady) {
         lines.push(`  Steady: ${formatPace(r.steady.paceFast)}–${formatPace(r.steady.paceSlow)}/mi (${r.steady.effortPercent})`);
       }
-      if (r.hmp) {
+      // HMP and LT COLLAPSE WHEN THEY OVERLAP.
+      //
+      // LT is 1-hour race pace; HMP is a ±5s band around half pace. The
+      // faster the athlete, the closer their half is to an hour, so for an
+      // elite the two converge — at a 1:10 half, LT lands at 5:21 and HMP
+      // spans 5:18–5:28, i.e. LT sits INSIDE the HMP band. Printing them as
+      // two ladder entries hands the model two near-identical targets and
+      // invites it to treat "threshold" and "half pace" as different
+      // prescriptions, or to split the difference. One merged line says the
+      // true thing: for this athlete they are the same effort.
+      //
+      // For a slower athlete whose half takes well over an hour they are
+      // genuinely distinct, and both lines render — which is the whole
+      // reason the legacy LT=HM collapse was wrong (see paces.ts).
+      const ltHr = (state.fitness_signal?.efficiency ?? [])
+        .find((e) => e.bucket === "threshold")?.hr_recent;
+      const hrNote = ltHr ? ` — observed at ~${ltHr} bpm in recent threshold work` : "";
+      const ltInsideHmp = !!(z.lt && r.hmp &&
+        z.lt >= r.hmp.paceFast && z.lt <= r.hmp.paceSlow);
+
+      if (r.hmp && ltInsideHmp) {
+        lines.push(
+          `  HMP / LT (same effort): ${formatPace(r.hmp.paceFast)}–${formatPace(r.hmp.paceSlow)}/mi` +
+          ` — half pace and 1-hour threshold pace converge for this athlete (LT ${formatPace(z.lt)}/mi).` +
+          ` Quote ONE band for threshold work, not two targets${hrNote}`,
+        );
+      } else if (r.hmp) {
         lines.push(`  HMP: ${formatPace(r.hmp.paceFast)}–${formatPace(r.hmp.paceSlow)}/mi (${r.hmp.effortPercent})`);
       }
       if (z.mp) lines.push(`  Marathon Pace: ${formatPace(z.mp)}/mi`);
+      // Separate LT line only when it is genuinely distinct from HMP.
+      if (z.lt && !ltInsideHmp) {
+        lines.push(`  LT / Threshold: ${formatPace(z.lt)}/mi (1-hour race pace)${hrNote}`);
+      }
       if (z.tenK) lines.push(`  10K Pace: ${formatPace(z.tenK)}/mi`);
       if (z.fiveK) lines.push(`  5K Pace / Intervals: ${formatPace(z.fiveK)}/mi`);
       if (z.mile) lines.push(`  Mile Pace / VO2 Max: ${formatPace(z.mile)}/mi`);

@@ -400,18 +400,32 @@ struct WorkoutRepReceiptView: View {
     /// it's the eyebrow's second half, tap to change.
     private var actOne: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button { showTypePicker = true } label: {
-                HStack(spacing: 5) {
-                    Text(actOneEyebrow).font(.dripEyebrow(11)).tracking(1.3)
-                    Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
+            // The whole identity cluster — type eyebrow, datestamp, source
+            // line, four stats — is standalone-only. Embedded, the journal
+            // entry has ALREADY printed every one of them above the fold:
+            // "TUESDAY · AUG 18" as its eyebrow, "Intervals." as its
+            // headline, "STRAVA" in its status row, and DIST/TIME/PACE in
+            // its stat strip. Reprinting them three inches lower was the
+            // crowding — two headers, two stat blocks, one run. (2026-08-20)
+            //
+            // Nothing is lost: the type stays editable through the entry's
+            // own Edit mode (`EditableWorkoutTypeSection`), and AVG HR — the
+            // one stat the entry's three-cell strip doesn't carry — moves
+            // into the conditions plate below rather than being dropped.
+            if placement == .standalone {
+                Button { showTypePicker = true } label: {
+                    HStack(spacing: 5) {
+                        Text(actOneEyebrow).font(.dripEyebrow(11)).tracking(1.3)
+                        Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
+                    }
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(Color.drip.textTertiary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .confirmationDialog("Change workout type", isPresented: $showTypePicker, titleVisibility: .visible) {
-                ForEach(typeOptions, id: \.0) { opt in Button(opt.1) { updateType(opt.0) } }
-                Button("Cancel", role: .cancel) {}
+                .buttonStyle(.plain)
+                .confirmationDialog("Change workout type", isPresented: $showTypePicker, titleVisibility: .visible) {
+                    ForEach(typeOptions, id: \.0) { opt in Button(opt.1) { updateType(opt.0) } }
+                    Button("Cancel", role: .cancel) {}
+                }
             }
 
             // A date is a stamp, not a title.
@@ -430,16 +444,24 @@ struct WorkoutRepReceiptView: View {
                 datestampRule
             }
 
-            if let line = sourceLine {
-                Text(line)
-                    .font(.dripBody(13)).italic()
-                    .foregroundStyle(Color.drip.textSecondary)
+            if placement == .standalone {
+                if let line = sourceLine {
+                    Text(line)
+                        .font(.dripBody(13)).italic()
+                        .foregroundStyle(Color.drip.textSecondary)
+                }
+
+                statStrip4
             }
 
-            statStrip4
-
             ConditionsPlate(tempF: condTempF, dewF: condDewF,
-                            heatAdjSec: heatAdjustSec, climb: climb, km: km)
+                            heatAdjSec: heatAdjustSec, climb: climb,
+                            // Only embedded: standalone already prints HR as
+                            // the fourth cell of `statStrip4` directly above,
+                            // and one number twice in adjacent rows is exactly
+                            // what this pass is removing.
+                            avgHR: placement == .embedded ? wrAvgHR : nil,
+                            km: km)
 
             // What the athlete set out to run, immediately under what they
             // actually ran. Was the second item of Act 2, below SIGNALS —
@@ -771,15 +793,22 @@ struct WorkoutRepReceiptView: View {
         // collapsed row, without one it's the record affordance (§6). An
         // auto-imported run has notes but no memo, so `hasMemo` — not the
         // presence of text — is what decides.
-        let showMemo = summary.hasMemo && !quote.isEmpty
-        let showRecord = !summary.hasMemo && workoutId != nil
-        if showMemo || showRecord || !mood.isEmpty || !niggles.isEmpty {
+        // Embedded, the journal entry owns the athlete's voice entirely: its
+        // SUMMARY block prints the same `cleaned_notes`, offers the same
+        // player, and hides the same transcript, and its status row carries
+        // the mood pill. The receipt's collapsed copy printed the opening of
+        // a paragraph the reader had already read two sections earlier — so
+        // here it renders niggles only. (2026-08-20)
+        let ownsVoice = placement == .standalone
+        let showMemo = ownsVoice && summary.hasMemo && !quote.isEmpty
+        let showRecord = ownsVoice && !summary.hasMemo && workoutId != nil
+        if showMemo || showRecord || (ownsVoice && !mood.isEmpty) || !niggles.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 if showMemo {
                     VoiceMemoRow(mood: mood.isEmpty ? nil : mood, quote: quote,
                                  kind: summary.hasAudio ? "VOICE MEMO" : "NOTE",
                                  expanded: $memoExpanded)
-                } else {
+                } else if ownsVoice {
                     if !mood.isEmpty { MoodBadge(mood: mood) }
                     if showRecord {
                         RecordMemoCard { showMemoRecorder = true }
@@ -1702,6 +1731,11 @@ struct ConditionsPlate: View {
     /// Already thresholded at ≥3 s/mi by the caller — nil means "not meaningful".
     let heatAdjSec: Int?
     let climb: Int?
+    /// Average heart rate, and the one non-conditions cell here. It rides in
+    /// the plate only when the surface above ISN'T already showing it — i.e.
+    /// embedded in a journal entry, whose stat strip carries DIST/TIME/PACE
+    /// and no HR. Standalone passes nil and keeps HR in `statStrip4`.
+    var avgHR: Int? = nil
     let km: Bool
 
     private struct Cell: Identifiable {
@@ -1724,6 +1758,7 @@ struct ConditionsPlate: View {
             out.append(Cell(value: "+\(h)s/\(km ? "km" : "mi")", label: "Heat Cost"))
         }
         if let c = climb { out.append(Cell(value: "+\(c) \(km ? "m" : "ft")", label: "Climb")) }
+        if let hr = avgHR { out.append(Cell(value: "\(hr)", label: "Avg HR")) }
         return out
     }
 

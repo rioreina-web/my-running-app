@@ -233,39 +233,94 @@ struct TrainingTabView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: 2 · Summary stats
+    // MARK: 2 · The week, and what it is on pace to be
 
-    // Three input streams as plain counts — workouts, voice memos, volume —
-    // with hours + easy% as a quiet sub-strip. No narration; the counts are
-    // the summary. Voice memos surface the qualitative stream we log.
+    // Was three counts — RUNS · VOICE MEMOS · MILES — over an HRS / % EASY
+    // sub-line. (Rio, 2026-08-19: none of those are numbers anyone acts on.
+    // A count of runs and a count of memos say how busy the log is, not how
+    // the training is going, and 34:47 hours over 30 days answers nothing.)
+    //
+    // The strip now asks one question — is this week bigger or smaller than
+    // the last four? — in the order you'd ask it: what I have run, where it
+    // lands, what normal is. The two facts the strip can't hold, the longest
+    // run and the easy share, moved into a ledger line beneath it, over one
+    // stated window so both numbers can be read against the same 30 days.
     private var summary: some View {
-        let s = vm.summary()
+        let weekMiles = vm.thisWeekMiles()
+        let projected = vm.projectedWeekMiles()
+        let avg = vm.fourWeekAvgMiles()
+        let delta = vm.percentVsFourWeekAvg()
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 0) {
-                statCell("\(s.runs)", "Runs")
-                statDivider
-                statCell("\(s.voiceMemos)", "Voice memos")
-                statDivider
-                statCell(vm.formatMiles(s.miles), "Miles")
+                statCell(vm.formatMiles(weekMiles),
+                         "This week",
+                         sub: vm.isWeekComplete ? "COMPLETE" : "DAY \(vm.daysIntoWeek)/7")
+                summaryDivider
+                // "~" says estimate out loud. Once the week is done there is
+                // nothing to project and the tilde comes off.
+                statCell(vm.isWeekComplete ? vm.formatMiles(projected)
+                                           : "~\(vm.formatMiles(projected))",
+                         "On pace",
+                         sub: deltaLabel(delta),
+                         subColor: deltaColor(delta))
+                summaryDivider
+                statCell(avg > 0 ? vm.formatMiles(avg) : "—",
+                         "4-wk avg",
+                         sub: "MILES / WK")
             }
             .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
             .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
 
-            HStack(spacing: 16) {
-                Text("\(TrainingAnalyticsViewModel.formatDurationHours(s.durationMinutes)) HRS")
-                    .font(.dripEyebrow(10)).tracking(1.1)
-                    .foregroundStyle(Color.drip.textSecondary)
-                Text("\(s.easyPercent)% EASY")
-                    .font(.dripEyebrow(10)).tracking(1.1)
-                    .foregroundStyle(Color.drip.textSecondary)
-                Spacer()
-            }
-            .padding(.top, 13)
+            ledgerLine
+                .padding(.top, 12)
         }
         .padding(.top, 22)
     }
 
-    private func statCell(_ value: String, _ label: String) -> some View {
+    /// "+12% VS AVG" / "ON AVERAGE" / nil-safe. Never "+0%" with no baseline —
+    /// four weeks of nothing is not a week on average, it is no comparison.
+    private func deltaLabel(_ d: Int?) -> String {
+        guard let d else { return "NO BASELINE YET" }
+        if d == 0 { return "ON AVERAGE" }
+        return "\(d > 0 ? "+" : "")\(d)% VS AVG"
+    }
+
+    /// Coral only past +30%, where the ramp is the story rather than the week.
+    /// Everything inside the normal band stays quiet — this strip states the
+    /// week, it doesn't grade it.
+    private func deltaColor(_ d: Int?) -> Color {
+        guard let d, d >= 30 else { return Color.drip.textTertiary }
+        return Color.drip.coral
+    }
+
+    /// The two facts the strip can't hold, as a hairline ledger: label left,
+    /// value right, window named once at the end so neither number has to
+    /// carry it.
+    private var ledgerLine: some View {
+        HStack(spacing: 0) {
+            ledgerItem("LONGEST RUN", vm.formatMiles(vm.longestRunLast30Days()) + " mi")
+            Rectangle().fill(Color.drip.divider).frame(width: 1, height: 16)
+            ledgerItem("EASY", "\(vm.easyPercentLast30Days())%")
+            Rectangle().fill(Color.drip.divider).frame(width: 1, height: 16)
+            ledgerItem("WINDOW", "30 DAYS")
+        }
+    }
+
+    private func ledgerItem(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 7) {
+            Text(label)
+                .font(.dripEyebrow(9)).tracking(1.35)
+                .foregroundStyle(Color.drip.textTertiary)
+            Text(value)
+                .font(.dripStat(11.5))
+                .foregroundStyle(Color.drip.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func statCell(_ value: String, _ label: String,
+                          sub: String? = nil,
+                          subColor: Color = Color.drip.textTertiary) -> some View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.dripStat(21))
@@ -273,13 +328,25 @@ struct TrainingTabView: View {
             Text(label.uppercased())
                 .font(.dripEyebrow(9)).tracking(1.35)
                 .foregroundStyle(Color.drip.textTertiary)
+            if let sub {
+                Text(sub)
+                    .font(.dripEyebrow(8.5)).tracking(1.0)
+                    .foregroundStyle(subColor)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 13)
     }
 
+    /// Shared with `blockVolumeSection`, whose cells are two lines tall — so
+    /// it stays at 34. The summary strip's cells carry a third (sub) line and
+    /// use `summaryDivider` instead.
     private var statDivider: some View {
         Rectangle().fill(Color.drip.divider).frame(width: 1, height: 34)
+    }
+
+    private var summaryDivider: some View {
+        Rectangle().fill(Color.drip.divider).frame(width: 1, height: 46)
     }
 
     // MARK: 3 · Scope toggle

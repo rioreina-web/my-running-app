@@ -23,11 +23,13 @@ import "server-only";
 import { createClient, getUserId } from "@/lib/supabase/server";
 import {
   derivePaceTableFromGoal,
-  nearestZoneKey,
-  zoneLabelShort,
   type AthletePaceTable,
   type WorkoutStep,
 } from "@/components/coach/workout-helpers";
+import {
+  displayWorkoutType,
+  isQualityWorkoutType,
+} from "@/lib/workout-label";
 import {
   buildChart,
   buildConditions,
@@ -62,7 +64,8 @@ export interface AthleteWorkoutDetail {
   date: string;
   /** "TUESDAY · QUALITY" — the Act 1 eyebrow. */
   eyebrow: string;
-  /** Pace-zone label ("LT 6 mi"), never "Tempo"/"Threshold". */
+  /** Session label through the canonical mapper ("Threshold", "Long run"),
+   *  or the prescription's own label. Never a derived pace zone. */
   title: string;
   /** Where the row came from: voice_log, strava, manual… */
   source: string | null;
@@ -109,48 +112,17 @@ const LAP_COLUMNS =
 
 // ── Labels ─────────────────────────────────────────────────────────────────
 
-// Structural labels only. Pace-zone labels ("MP 7 mi", "LT 6 mi") come from
-// the prescription when there is one — "Tempo" and "Threshold" are retired as
-// ambiguous and must never be emitted here.
-const STRUCTURAL_LABEL: Record<string, string> = {
-  easy: "Easy",
-  recovery: "Recovery",
-  long_run: "Long",
-  long: "Long",
-  race: "Race",
-  progression: "Progression",
-  strides: "Strides",
-  rest: "Rest",
-  cross_training: "Cross-train",
-  strength: "Strength",
-};
-
-// Retired labels. Rows still carry them (Strava-sourced runs are full of
-// `threshold`), but they must never reach the screen — the zone IS the label,
-// so these fall through to pace-derived naming instead.
-const RETIRED_LABEL = new Set(["tempo", "threshold", "interval", "intervals", "speed"]);
-
-function structuralLabel(workoutType: string | null): string | null {
-  if (!workoutType) return null;
-  const key = workoutType.toLowerCase();
-  if (RETIRED_LABEL.has(key)) return null;
-  return STRUCTURAL_LABEL[key] ?? null;
-}
-
-// Name the run by the zone it was ACTUALLY run at — "LT 4.2 mi", not
-// "Threshold". Needs the athlete's ladder; without it there's no honest zone
-// to name and the caller falls back to a plain distance label.
-function paceDerivedLabel(
-  paceSec: number | null,
-  miles: number,
-  paceTable: AthletePaceTable | undefined,
-): string | null {
-  if (paceSec == null || paceSec <= 0 || !paceTable) return null;
-  const zone = nearestZoneKey(paceSec, paceTable);
-  if (!zone) return null;
-  const dist = miles > 0 ? ` ${miles % 1 === 0 ? miles : miles.toFixed(1)} mi` : "";
-  return `${zoneLabelShort(zone)}${dist}`;
-}
+// All label rendering delegates to lib/workout-label.ts, the web port of
+// WorkoutLabel.swift.
+//
+// This file used to do the opposite: it treated `threshold`/`intervals` as
+// retired and named a run by the pace zone it was actually run at ("LT 4.2
+// mi"). That followed the 2026-05-28 "workout labels are pace-zone labels"
+// rule, which was REVERSED on 2026-08-10 — a pace zone describes a segment's
+// pace, a workout type describes a session's intent, and collapsing them made
+// an easy long run and a marathon-pace session compete for one vocabulary.
+// The per-workout zone label is designed but not built, so nothing here may
+// derive one.
 
 // "TUESDAY · QUALITY" — weekday plus a coarse register. Quality is anything
 // with a prescription band or a race; everything else reads as the run it was.
@@ -345,27 +317,22 @@ function assemble(args: {
     ranMi: totalMiles,
   });
 
-  // Quality = a prescribed band, a race, or a row still tagged with one of the
-  // retired quality labels (Strava rows are full of `threshold`).
-  const typeKey = (log.workout_type ?? "").toLowerCase();
-  const isQuality = band != null || typeKey === "race" || RETIRED_LABEL.has(typeKey);
+  // Quality = a prescribed band, or a session type the taxonomy calls quality.
+  const isQuality = band != null || isQualityWorkoutType(log.workout_type);
   const iso = (log.workout_date ?? log.created_at).slice(0, 10);
   const date = parseLocalDate(iso);
 
   // Title precedence, most-authoritative first:
-  //   1. the prescription's zone label ("LT 6 mi")
-  //   2. a structural label the taxonomy still honours ("Long", "Race")
-  //   3. the zone the run was actually run at, derived from pace
-  //   4. plain distance — no invented zone when there's no ladder to place it
+  //   1. the prescription's own label ("Threshold 6 mi")
+  //   2. the workout type through the canonical mapper ("Long run", "Easy")
+  //   3. plain distance — never an invented zone
   // verdictTitle overrides all of them when the run was cut short.
   const roundedMi = Math.round(totalMiles * 10) / 10;
-  const actualPaceSec = weightedLapPace(laps) ?? parsePaceLabel(log.workout_pace_per_mile);
   const baseTitle =
     (prescribed?.label
       ? `${prescribed.label}${prescribed.distance ? ` ${prescribed.distance} mi` : ""}`
       : null) ??
-    structuralLabel(log.workout_type) ??
-    paceDerivedLabel(actualPaceSec, roundedMi, paceTable) ??
+    (log.workout_type ? displayWorkoutType(log.workout_type) : null) ??
     (roundedMi > 0 ? `${roundedMi} mi` : "Run");
 
   return {
@@ -385,14 +352,6 @@ function assemble(args: {
     niggles,
     hasLaps: laps.length > 0,
   };
-}
-
-// "7:29" or "7:29/mi" → 449 seconds. Null on anything that isn't a pace.
-function parsePaceLabel(s: string | null): number | null {
-  if (!s) return null;
-  const m = s.match(/(\d+):(\d{2})/);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
 }
 
 // Distance-weighted average pace across the laps that carry both.

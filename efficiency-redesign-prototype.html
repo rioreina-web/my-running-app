@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Efficiency card — redesign options</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.12);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);
+  font-family:"PT Serif",Georgia,serif;padding:32px 20px 64px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-family:"Crimson Pro",Georgia,serif;font-size:30px;font-weight:600;letter-spacing:-.01em}
+.lede{color:var(--ink-2);font-size:15px;line-height:1.6;max-width:60ch;margin-top:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:28px;margin-top:36px}
+.col{min-width:0}
+.tag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
+.tag b{color:var(--coral);font-weight:700}
+.phone{background:var(--card);border-radius:16px;padding:22px;
+  box-shadow:0 2px 14px rgba(0,0,0,.07)}
+.eyebrow{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-2)}
+.headline{font-family:"Crimson Pro",Georgia,serif;font-size:25px;line-height:1.24;
+  font-weight:500;margin-top:10px;letter-spacing:-.005em}
+.headline em{font-style:normal;color:var(--coral)}
+.sub{font-size:13px;font-style:italic;color:var(--ink-3);line-height:1.55;margin-top:9px}
+.rule{height:1px;background:var(--rule);margin:18px 0}
+svg{display:block;width:100%;overflow:visible}
+.axis{font-family:ui-monospace,Menlo,monospace;font-size:9px;fill:var(--ink-3);letter-spacing:.06em}
+.foot{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.07em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:16px;line-height:1.7}
+.more{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2);margin-top:18px;padding-top:13px;
+  border-top:1px solid var(--rule);display:flex;justify-content:space-between}
+.why{font-size:13.5px;line-height:1.62;color:var(--ink-2);margin-top:16px}
+.why b{color:var(--ink);font-weight:700}
+.big{font-family:"Crimson Pro",Georgia,serif;font-size:52px;font-weight:600;line-height:1;
+  letter-spacing:-.02em}
+.big span{font-size:21px;color:var(--ink-2)}
+.pill{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:9.5px;
+  letter-spacing:.1em;text-transform:uppercase;background:var(--coral-wash);color:var(--coral);
+  padding:4px 9px;border-radius:20px;margin-top:12px}
+.note{border-left:2px solid rgba(212,89,42,.5);padding-left:12px;margin-top:18px}
+.note div:first-child{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.note div:last-child{font-size:14px;line-height:1.55}
+.kill{background:#fff;border:1px solid var(--rule);border-radius:12px;padding:20px 22px;margin-top:34px}
+.kill h2{font-family:"Crimson Pro",Georgia,serif;font-size:19px;font-weight:600;margin-bottom:12px}
+.kill ul{margin:0;padding-left:19px;font-size:14px;line-height:1.75;color:var(--ink-2)}
+.kill li b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Efficiency card — three ways to make it readable</h1>
+  <p class="lede">Same underlying maths. The question each one has to answer in under three seconds is
+  <em>“is my engine getting better?”</em> Numbers below are illustrative, in the shape your real data takes.</p>
+
+  <div class="grid">
+
+    <!-- A -->
+    <div class="col">
+      <div class="tag"><b>Option A</b> · pace at a fixed heart rate</div>
+      <div class="phone">
+        <div class="eyebrow">Efficiency</div>
+        <div class="headline">At <em>160&nbsp;bpm</em> you’re running <em>6:02</em> a mile.<br>In April it was 6:11.</div>
+        <div class="sub">Same heartbeat, nine seconds a mile faster.</div>
+        <div class="rule"></div>
+        <svg viewBox="0 0 320 130" aria-label="Pace at 160 bpm, April to August">
+          <line x1="8" y1="112" x2="312" y2="112" stroke="#E8E4E0"/>
+          <text class="axis" x="8" y="126">APR</text>
+          <text class="axis" x="288" y="126">AUG</text>
+          <text class="axis" x="8" y="20">6:11</text>
+          <text class="axis" x="270" y="96">6:02</text>
+          <polyline fill="none" stroke="#1A1815" stroke-width="2.2" stroke-linejoin="round"
+            points="18,30 92,44 166,40 240,62 296,76"/>
+          <circle cx="296" cy="76" r="5.5" fill="#D4592A"/>
+        </svg>
+        <div class="foot">One dot a month · faster is lower</div>
+        <div class="more"><span>What this means</span><span>›</span></div>
+      </div>
+      <p class="why"><b>Why this one.</b> No new vocabulary. Runners already think in pace and heart rate,
+      so the sentence needs no explanation — and “nine seconds a mile faster at the same effort” is the
+      actual finding, stated in the units you feel. The index still runs underneath; it just never
+      shows its face.</p>
+    </div>
+
+    <!-- B -->
+    <div class="col">
+      <div class="tag"><b>Option B</b> · one number, one direction</div>
+      <div class="phone">
+        <div class="eyebrow">Efficiency · last 28 days</div>
+        <div class="big" style="margin-top:14px">+3<span>%</span></div>
+        <div class="pill">More ground per heartbeat</div>
+        <div class="headline" style="font-size:20px;margin-top:16px">Your heart is buying more
+        distance than it did in the spring.</div>
+        <div class="rule"></div>
+        <svg viewBox="0 0 320 96" aria-label="Efficiency against spring baseline">
+          <line x1="8" y1="62" x2="312" y2="62" stroke="#C9C4BE" stroke-dasharray="3 3"/>
+          <text class="axis" x="8" y="56">SPRING</text>
+          <polyline fill="none" stroke="#1A1815" stroke-width="2.2" stroke-linejoin="round"
+            points="18,66 92,60 166,52 240,44 296,34"/>
+          <circle cx="296" cy="34" r="5.5" fill="#D4592A"/>
+        </svg>
+        <div class="note">
+          <div>What the data says</div>
+          <div>Six sessions in the last four weeks, all measured against cool-weather equivalents.</div>
+        </div>
+        <div class="more"><span>The sessions behind this</span><span>›</span></div>
+      </div>
+      <p class="why"><b>Why this one.</b> The percentage is a real change against your <em>past</em> self,
+      not a score that sits at 100 forever. One number, one arrow, one sentence — and the dotted line is
+      simply “spring”, not a curve that needs defining.</p>
+    </div>
+
+    <!-- C -->
+    <div class="col">
+      <div class="tag"><b>Option C</b> · the sentence alone</div>
+      <div class="phone">
+        <div class="eyebrow">Efficiency</div>
+        <div class="headline" style="font-size:27px;margin-top:12px">Holding steady.</div>
+        <div class="sub">Through an Austin summer, at 60–70 miles a week — which is its own kind of
+        progress.</div>
+        <div class="rule"></div>
+        <svg viewBox="0 0 320 74" aria-label="Efficiency sparkline, holding flat">
+          <polyline fill="none" stroke="#1A1815" stroke-width="2" stroke-linejoin="round"
+            points="14,40 76,34 138,44 200,36 262,40 300,38"/>
+          <circle cx="300" cy="38" r="5" fill="#D4592A"/>
+        </svg>
+        <div class="foot">Apr → Aug · nothing lost to the heat</div>
+        <div class="more"><span>Show me the numbers</span><span>›</span></div>
+      </div>
+      <p class="why"><b>Why this one.</b> The most ruthless version: a verdict in two words, a line whose
+      only job is to show it isn’t falling, and every figure — zones, heat cost, metres per beat, what got
+      excluded — behind one tap. Fits the “observation, never prescription” rule exactly.</p>
+    </div>
+
+  </div>
+
+  <div class="kill">
+    <h2>What all three delete from the card you saw</h2>
+    <ul>
+      <li><b>The word “index”</b>, and “180-day speed-and-heat curve”. Internal machinery, not reader-facing language.</li>
+      <li><b>The 28-dot scatter.</b> It was showing per-session noise around a flat line. A monthly line answers the question; the cloud never did.</li>
+      <li><b>“1.81 m/beat”, “−0.6% heat cost per step”, the four-zone number row.</b> Real figures, wrong surface — they belong behind the tap, for the day you want them.</li>
+      <li><b>“22 not counted.”</b> Nearly half your sessions have no heart rate. That deserves its own honest line somewhere, not a footnote that reads like the card is broken.</li>
+      <li><b>The number that couldn’t move.</b> Scoring the last 28 days against a baseline containing those same days pins the headline near 100 forever. Fixed by baselining on the prior window — a real 5% gain then reads as 5%, not 4.2%.</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

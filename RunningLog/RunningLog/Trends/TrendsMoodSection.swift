@@ -65,7 +65,7 @@ struct TrendsMoodSection: View {
             if let block {
                 loaded(block)
             } else if days.count < TrendsMoodRead.windowDays {
-                Text("A fortnight of logs will fill this in.")
+                Text("Log 14 days and this fills in.")
                     .font(.dripBody(14))
                     .foregroundStyle(Color.drip.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -89,7 +89,6 @@ struct TrendsMoodSection: View {
         VStack(alignment: .leading, spacing: 0) {
             stepper(block)
             headline(block)
-            facts(block)
             said(block)
             chips
             chart(block)
@@ -119,10 +118,10 @@ struct TrendsMoodSection: View {
             }
             Spacer(minLength: 12)
             HStack(spacing: 10) {
-                stepButton("chevron.left", label: "Previous fortnight", enabled: blocksBack < maxBack) {
+                stepButton("chevron.left", label: "Previous 14 days", enabled: blocksBack < maxBack) {
                     blocksBack += 1
                 }
-                stepButton("chevron.right", label: "Next fortnight", enabled: blocksBack > 0) {
+                stepButton("chevron.right", label: "Next 14 days", enabled: blocksBack > 0) {
                     blocksBack = max(0, blocksBack - 1)
                 }
             }
@@ -170,10 +169,6 @@ struct TrendsMoodSection: View {
                 .font(.dripEyebrow(eyebrowSmall - 1)).tracking(1.3)
                 .foregroundStyle(block.isThin ? Color.drip.tired : Color.drip.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            Text(moveLabel(block))
-                .font(.dripEyebrow(eyebrowSmall - 1)).tracking(1.2)
-                .foregroundStyle(moveColour(block))
         }
         .padding(.top, 18)
         .accessibilityElement(children: .ignore)
@@ -193,78 +188,17 @@ struct TrendsMoodSection: View {
         return .of(now: block.lowDays, then: previous.lowDays)
     }
 
-    private func moveLabel(_ block: TrendsMoodBlock) -> String {
-        guard let previous, let move else { return "NO EARLIER FORTNIGHT TO COMPARE" }
-        switch move {
-        case .worse: return "▲ UP FROM \(previous.lowDays) IN THE FORTNIGHT BEFORE"
-        case .better: return "▼ DOWN FROM \(previous.lowDays) IN THE FORTNIGHT BEFORE"
-        case .flat: return "AGAINST \(previous.lowDays) IN THE FORTNIGHT BEFORE"
-        }
-    }
-
-    /// More low days is coral because it is the thing to look at, not because
-    /// it is a failure. Fewer is the mood palette's green. Flat stays quiet.
-    private func moveColour(_ block: TrendsMoodBlock) -> Color {
-        switch move {
-        case .worse: Color.drip.coral
-        case .better: Color.drip.positive
-        default: Color.drip.textTertiary
-        }
-    }
-
     private func spokenHeadline(_ block: TrendsMoodBlock) -> String {
         var line = "\(block.lowDays) of the last \(block.dayCount) days struggling or worse"
         if block.isThin { line += ", from only \(block.loggedDays) logged days" }
         if let previous, let move {
             switch move {
-            case .worse: line += ". Up from \(previous.lowDays) in the fortnight before."
-            case .better: line += ". Down from \(previous.lowDays) in the fortnight before."
-            case .flat: line += ". Against \(previous.lowDays) in the fortnight before."
+            case .worse: line += ". Up from \(previous.lowDays) in the 14 days before."
+            case .better: line += ". Down from \(previous.lowDays) in the 14 days before."
+            case .flat: line += ". Against \(previous.lowDays) in the 14 days before."
             }
         }
         return line
-    }
-
-    // MARK: The fortnight behind it
-
-    private func facts(_ block: TrendsMoodBlock) -> some View {
-        HStack(spacing: 0) {
-            fact("\(block.loggedDays)", "Logs")
-            factRule
-            fact("\(Int(block.miles.rounded()))", "Miles")
-            factRule
-            fact("\(block.keySessionCount)", "Key")
-            factRule
-            fact("\(block.niggleDays)", "Niggle days")
-        }
-        .padding(.vertical, 11)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(Color.drip.divider, lineWidth: 1)
-        )
-        .padding(.top, 18)
-    }
-
-    private var factRule: some View {
-        Rectangle().fill(Color.drip.divider).frame(width: 1, height: 30)
-    }
-
-    /// None of these colour. The headline is the only thing on this surface
-    /// making a claim; these are the context it was drawn from.
-    private func fact(_ value: String, _ key: String) -> some View {
-        VStack(spacing: 6) {
-            Text(value)
-                .font(.dripStat(17))
-                .foregroundStyle(Color.drip.textPrimary)
-            Text(key.uppercased())
-                .font(.dripEyebrow(eyebrowSmall - 2)).tracking(0.9)
-                .foregroundStyle(Color.drip.textTertiary)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(value) \(key)")
     }
 
     private func said(_ block: TrendsMoodBlock) -> some View {
@@ -276,7 +210,7 @@ struct TrendsMoodSection: View {
             .overlay(alignment: .leading) {
                 Rectangle().fill(Color.drip.coral).frame(width: 2)
             }
-            .padding(.top, 14)
+            .padding(.top, 18)
     }
 
     /// Clustering is what a count still can't show, so the longest run is said
@@ -437,7 +371,7 @@ struct TrendsMoodSection: View {
         }
     }
 
-    // MARK: The fortnight, counted
+    // MARK: Mood by day
 
     /// No weights, no arithmetic to explain — the bar IS the list, and the list
     /// is the days. Tapping a row points at those days in the chart above.
@@ -445,7 +379,7 @@ struct TrendsMoodSection: View {
         let counts = block.counts
         let unlogged = block.dayCount - block.loggedDays
         return VStack(alignment: .leading, spacing: 0) {
-            Text("THE FORTNIGHT, COUNTED")
+            Text("MOOD BY DAY")
                 .font(.dripEyebrow(eyebrowSmall - 1)).tracking(1.2)
                 .foregroundStyle(Color.drip.textTertiary)
                 .padding(.bottom, 10)
@@ -462,7 +396,7 @@ struct TrendsMoodSection: View {
             countRow("No log", key: "nolog", count: unlogged, of: block.dayCount,
                      colour: Color.drip.paperDeep)
 
-            Text("Every day you logged, sorted by what you said. Nothing is averaged and nothing is scored. A low day is struggling or injured — tired is a hard session working, so it is counted here but never counted against you.")
+            Text("Each day counted once, as you logged it. No averages, no score. Low days are struggling or injured. Tired is not counted as a low day — a hard session should leave you tired.")
                 .font(.dripBody(12.5))
                 .foregroundStyle(Color.drip.textSecondary)
                 .padding(.top, 14)

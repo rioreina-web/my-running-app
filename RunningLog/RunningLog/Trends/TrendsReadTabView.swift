@@ -18,9 +18,12 @@
 //  time; the host does not window it, so the month stepper has every month
 //  the payload contains to walk back through.
 //
-//  DEBUG only — this is the comparison surface for the Read. It is linked
-//  from `MainTabView` behind `#if DEBUG` and `DripTab.read` is fenced the
-//  same way. The release IA stays three tabs.
+//  UNLINKED as of 2026-08-19. This was the DEBUG-only comparison surface
+//  for the Read, mounted beside Trends at tag 7 so the two could be judged
+//  on device. Trends won, so both the branch in `MainTabView` and the
+//  `DripTab.read` case are gone and tag 7 is retired — do not reuse it.
+//  The view is kept, not deleted, so the surface can be restored as a tab
+//  or pushed from one without rebuilding it.
 //
 
 import SwiftUI

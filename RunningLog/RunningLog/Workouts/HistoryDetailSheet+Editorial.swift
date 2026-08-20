@@ -42,6 +42,12 @@ private extension Date {
         return f.string(from: self)
     }
 
+}
+
+// Deliberately NOT file-private: `SignalDayDetail` renders the same run block
+// and must show the same label, so this one helper is shared rather than
+// re-declared per surface.
+extension Date {
     /// "August 8" — the headline `EditWorkoutNotesSheet` shows above the
     /// field, so the athlete can see which run they're describing. Matches
     /// `WorkoutRepReceiptView.displayTitle` so the editor reads identically
@@ -247,12 +253,24 @@ extension HistoryDetailSheet {
                 // otherwise embed an inline "Logged without GPS" block, which is
                 // noise inside the journal.
                 if !isEditing, vm.linkedStreamLogId != nil {
-                    editorialSection(eyebrow: "WORKOUT") {
+                    // A rule, not a label. "WORKOUT" was printed three times on
+                    // one page — the plate strip's kicker, this eyebrow, and
+                    // the receipt's own "TUESDAY · INTERVALS" header — and the
+                    // third one labelled a block that opens with a conditions
+                    // plate, not a workout. The break is what's wanted here;
+                    // the naming is done above. (2026-08-20)
+                    EditorialRule()
+                        .padding(.horizontal, 24)
+                        .padding(.top, 26)
+
+                    editorialSection(eyebrow: nil) {
                         // `.embedded`: this entry already carries the date (in
-                        // the plate strip AND the header eyebrow) and hosts THE
-                        // WORKOUT above, so the receipt drops its own datestamp
-                        // header and its own copy of the description. One page,
-                        // one title, one editor per column.
+                        // the plate strip AND the header eyebrow), the title,
+                        // the source, the stat strip, the mood and the memo,
+                        // and it hosts THE WORKOUT above — so the receipt drops
+                        // all of them and renders only what it alone knows:
+                        // conditions, SIGNALS, splits, telemetry, route.
+                        // One page, one title, one editor per column.
                         WorkoutRepReceiptView(workoutId: workoutDetailId, placement: .embedded)
                     }
                 }
@@ -627,13 +645,21 @@ extension HistoryDetailSheet {
             }
 
             if let cleaned = summaryText {
-                // Quieter than the old 14pt textPrimary: the summary supports
-                // the numbers, it doesn't lead the page.
+                // The athlete's own account of the run, set as the entry's lead
+                // paragraph: PT Serif at 16.5 in full ink, with magazine
+                // leading. It was 13.5pt in `textSecondary` — deliberately
+                // subordinate to the stat strip — but a training journal is
+                // the writing, and the numbers are its apparatus. With the
+                // receipt's duplicate header and second stat block gone, this
+                // is the one long-form voice on the page and it should read
+                // like it. (2026-08-20)
                 FormattedSummaryText(
                     text: cleaned,
-                    size: 13.5,
-                    color: Color.drip.textSecondary
+                    size: 16.5,
+                    color: Color.drip.textPrimary,
+                    lineSpacing: 6
                 )
+                .padding(.top, 2)
             }
 
             // Revealed by the corner "▶ MEMO" above. The `summaryText == nil`

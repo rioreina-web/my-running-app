@@ -13,6 +13,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  buildPaceSegments,
+  paceStringFromSpeedMps,
+  type StravaLapLike,
+} from "../_shared/paceSegments.ts";
 
 // Client ID/Secret come from Supabase secrets. Per-user OAuth tokens
 // live in `strava_credentials`. Strava rotates the refresh token on
@@ -169,36 +174,9 @@ async function stravaFetch(
   return res;
 }
 
-function paceStringFromSpeedMps(speedMps: number): string {
-  if (!speedMps || speedMps <= 0) return "";
-  const secPerMile = 1609.34 / speedMps;
-  const m = Math.floor(secPerMile / 60);
-  const s = Math.round(secPerMile % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-function classifyEffort(paceSec: number, avgPaceSec: number): string {
-  // Very rough classifier — good enough for testing context.
-  if (!avgPaceSec) return "steady";
-  const ratio = paceSec / avgPaceSec;
-  if (ratio < 0.92) return "fast";
-  if (ratio > 1.08) return "easy";
-  return "steady";
-}
-
-function splitsToPaceSegments(splits: StravaSplit[], avgSpeedMps: number) {
-  const avgPaceSec = avgSpeedMps > 0 ? 1609.34 / avgSpeedMps : 0;
-  return splits.map((s) => {
-    const paceSec = s.average_speed > 0 ? 1609.34 / s.average_speed : 0;
-    return {
-      effort: classifyEffort(paceSec, avgPaceSec),
-      distance_miles: Number((s.distance / 1609.34).toFixed(2)),
-      duration_seconds: Number(s.moving_time),
-      pace_per_mile: paceStringFromSpeedMps(s.average_speed),
-      avg_heart_rate: s.average_heartrate ? Math.round(s.average_heartrate) : null,
-    };
-  });
-}
+// Pace-segment builders live in `_shared/paceSegments.ts` (2026-08-20) so this
+// harness and `strava-sync` produce byte-identical segments. Laps win over
+// per-mile splits — see that file's header.
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -336,9 +314,12 @@ Deno.serve(async (req) => {
         };
         const splits = detail.splits_standard ?? [];
 
-        const paceSegments = splits.length > 0
-          ? splitsToPaceSegments(splits, detail.average_speed ?? 0)
-          : null;
+        const paceSegments = buildPaceSegments({
+          laps: Array.isArray(detail.laps) ? detail.laps as StravaLapLike[] : null,
+          splits_standard: splits,
+          average_speed: detail.average_speed ?? 0,
+          distance: a.distance,
+        });
 
         // 3) Fetch per-second streams (HR, pace, GPS, altitude, cadence, power, grade, temp)
         const streamKeys = [

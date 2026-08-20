@@ -552,3 +552,28 @@ verify_jwt = false
 # an endpoint that reads raw sensor streams should not skip a check it does not
 # need to skip.
 verify_jwt = true
+
+[functions.vital-webhook]
+# verify_jwt = false — MANDATORY, not a preference. Junction/Vital posts these
+# webhooks server-to-server and sends NO Supabase JWT of any kind, so a gateway
+# that pre-verifies rejects every delivery with 401 before the function runs.
+# The function is not unauthenticated: it verifies the Svix signature
+# (svix-id/svix-timestamp/svix-signature) against VITAL_WEBHOOK_SECRET with a
+# 5-minute replay window, which is the check that actually protects this route.
+#
+# This entry was missing until 2026-08-18, so the deployed function inherited
+# the `true` default and contradicted its own file header. Nothing had noticed
+# because no athlete has ever completed a Junction connection — the first one
+# to try would have silently received zero webhooks.
+verify_jwt = false
+
+[functions.mcp]
+# The MCP connector — the analyzer registry exposed to the athlete's own
+# Claude. verify_jwt = false because the caller is Anthropic's servers, which
+# send neither a Supabase JWT nor a custom Authorization header (Claude's
+# custom-connector UI cannot set one). The credential is instead a path
+# segment the athlete pastes, checked inside the function against
+# `mcp_access_tokens` (sha256, never plaintext). Scope is read-only: every
+# analyzer query is .eq("user_id"), nothing in _shared/analyzers writes, and
+# the only insert is the analysis_queries audit row. See functions/mcp/README.md.
+verify_jwt = false

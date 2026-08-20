@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 import { EditorialDivider } from "@/components/ui/editorial-divider";
 import { MoodBadge } from "@/components/ui/mood-badge";
+import { displayWorkoutType } from "@/lib/workout-label";
 
 // Coach-side single-workout deep-dive. Reached by clicking a row in
 // the athlete's workout log. Currently shows what we have — distance,
@@ -80,18 +81,7 @@ export default async function CoachWorkoutDetailPage({
     null;
   const typeKey =
     scheduled?.workout_type ?? (log as { workout_type: string | null }).workout_type ?? null;
-  const TYPE_LABEL: Record<string, string> = {
-    easy: "Easy",
-    recovery: "Recovery",
-    tempo: "Tempo",
-    intervals: "Intervals",
-    long_run: "Long run",
-    race: "Race",
-    progression: "Progression",
-    strides: "Strides",
-    rest: "Rest",
-  };
-  const typeLabel = typeKey ? TYPE_LABEL[typeKey] ?? typeKey : "Workout";
+  const typeLabel = typeKey ? displayWorkoutType(typeKey) : "Workout";
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 space-y-10">

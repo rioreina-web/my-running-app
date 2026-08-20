@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { TrainingLog } from "@/lib/types";
-import { formatDuration, MOOD_CONFIG, WORKOUT_TYPE_CONFIG } from "@/lib/utils";
+import { formatDuration, MOOD_CONFIG, workoutTypeConfig } from "@/lib/utils";
+import { optionsIncluding } from "@/lib/workout-label";
 import { WorkoutDetail } from "./workout-detail";
 
 // Rail data shapes, sourced server-side in page.tsx.
@@ -314,7 +315,7 @@ function Rail({
     const d = new Date(nextUp.date + "T00:00:00");
     parts.push(d.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase());
     const t = nextUp.workoutType;
-    if (t) parts.push((WORKOUT_TYPE_CONFIG[t]?.label || t).toUpperCase());
+    if (t) parts.push(workoutTypeConfig(t).label.toUpperCase());
     if (nextUp.distanceMiles) parts.push(`${nextUp.distanceMiles} MI`);
     return parts.join(" · ");
   }, [nextUp]);
@@ -507,7 +508,7 @@ function JournalEntry({
   const monthShort = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
   const display = editing ? draft : log;
   const type = display.workout_type || "easy";
-  const typeConfig = WORKOUT_TYPE_CONFIG[type] || WORKOUT_TYPE_CONFIG.other;
+  const typeConfig = workoutTypeConfig(type);
   const moodKey = display.mood;
   const mood = moodKey ? MOOD_CONFIG[moodKey] : null;
   const hue = moodKey && MOOD_HUE[moodKey] ? MOOD_HUE[moodKey] : "var(--color-text-tertiary)";
@@ -615,8 +616,8 @@ function JournalEntry({
               onChange={(e) => setDraft({ ...draft, workout_type: e.target.value })}
               className="rounded-md border border-divider bg-bg-elevated px-2 py-1 text-[11px] text-text-primary outline-none"
             >
-              {["easy", "tempo", "interval", "long_run", "recovery", "race", "progression", "strides"].map((t) => (
-                <option key={t} value={t}>{(WORKOUT_TYPE_CONFIG[t] || WORKOUT_TYPE_CONFIG.other).label}</option>
+              {optionsIncluding(draft.workout_type).map(([t]) => (
+                <option key={t} value={t}>{workoutTypeConfig(t).label}</option>
               ))}
             </select>
             <input

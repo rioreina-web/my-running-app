@@ -35,6 +35,19 @@
 
 import SwiftUI
 
+/// Which Trends surface the tab is showing. Persisted, so the choice survives
+/// a relaunch and Rio can live on one of them for a week without re-picking it
+/// every morning.
+///
+/// `blockSurface` is `TrendsBlockView` (added 2026-08-18, built from
+/// `trends-simplified-prototype.html`); `v1` is `TrendsLegacyTabView`. The
+/// older five-signal `TrendsV2View` is not in this enum — it stays unlinked
+/// and DEBUG-only behind `-trendsV2Preview`, exactly as it was.
+enum TrendsSurface: String {
+    case v1
+    case block
+}
+
 struct TrendsTabView: View {
     @State private var service = TrendsService.shared
 
@@ -43,14 +56,43 @@ struct TrendsTabView: View {
     /// and the Lab is where you go when you want to look hard at one thing.
     @State private var showLab = false
 
+    /// Default is v1 — the surface that has been the tab since 2026-08-11.
+    /// The block surface is opt-in until it has earned the slot.
+    @AppStorage("trendsSurface") private var surfaceRaw: String = TrendsSurface.v1.rawValue
+
+    private var surface: TrendsSurface {
+        TrendsSurface(rawValue: surfaceRaw) ?? .v1
+    }
+
     var body: some View {
-        TrendsLegacyTabView(service: service, onOpenLab: { showLab = true })
-            .background(Color.drip.background)
-            .toolbar(.hidden, for: .navigationBar)
-            // A sheet, not a fullScreenCover: a sheet can always be swiped
-            // away, so a missing toolbar can never trap the athlete on this
-            // screen again.
-            .sheet(isPresented: $showLab) { SignalLabView(service: service) }
+        Group {
+            switch surface {
+            case .v1:
+                // `TrendsLegacyTabView` carries the tab's fetch gate itself —
+                // it checks the selected tab index before refreshing — so this
+                // host must not add a second fetch owner.
+                TrendsLegacyTabView(
+                    service: service,
+                    onOpenLab: { showLab = true },
+                    onOpenBlock: { surfaceRaw = TrendsSurface.block.rawValue }
+                )
+            case .block:
+                // Carries the same tab-index fetch gate as v1, so swapping the
+                // surface never adds a second fetch owner and never fires a
+                // request for a tab the athlete didn't open.
+                TrendsBlockView(
+                    service: service,
+                    onOpenLegacy: { surfaceRaw = TrendsSurface.v1.rawValue },
+                    onOpenLab: { showLab = true }
+                )
+            }
+        }
+        .background(Color.drip.background)
+        .toolbar(.hidden, for: .navigationBar)
+        // A sheet, not a fullScreenCover: a sheet can always be swiped
+        // away, so a missing toolbar can never trap the athlete on this
+        // screen again.
+        .sheet(isPresented: $showLab) { SignalLabView(service: service) }
     }
 }
 

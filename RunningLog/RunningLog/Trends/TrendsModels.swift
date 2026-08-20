@@ -75,9 +75,10 @@ struct TrendsWeek: Identifiable {
     let niggles: [String]
     /// An optional verbatim voice-log line to surface in an insight.
     var voiceQuote: String? = nil
-    /// Monday of this week, "yyyy-MM-dd". `TrendsSessionGrid` uses it to place
-    /// a session in the right column. Empty for monthly rollups, which have no
-    /// single week — the grid hides itself in that case rather than guessing.
+    /// Monday of this week, "yyyy-MM-dd". Used to align a week row with the
+    /// sessions that fall inside it. Empty for monthly rollups, which have no
+    /// single week — callers skip those rather than guessing a Monday.
+    /// (Was the session grid's column key until the grid came out, 2026-08-17.)
     var weekStart: String = ""
 }
 

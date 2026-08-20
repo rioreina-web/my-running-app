@@ -37,7 +37,7 @@ struct InstrumentsTabView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 PlateStrip(surface: "RUNNING LOG — THE INSTRUMENTS")
-                    .padding(.top, 8)
+                    .padding(.top, 16)   // breathing room under the status bar
 
                 if service.isLoading, service.weeks.isEmpty {
                     loading

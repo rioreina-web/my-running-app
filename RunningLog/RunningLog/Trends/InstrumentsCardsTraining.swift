@@ -3,8 +3,9 @@
 //  RunningLog · Trends
 //
 //  Instruments cards 01–05: volume, key pace, efficiency, mood, heat.
-//  Card 02 (key pace) moved to `KeyPaceCard.swift` on 2026-08-09 — see the
-//  tombstone below for why. Its slot in the running order is unchanged.
+//  Card 02 (key pace) moved to `KeyPaceCard.swift` on 2026-08-09, and card 03
+//  (efficiency) to `EfficiencyIndexCard.swift` on 2026-08-18 — see the
+//  tombstones below for why. Their slots in the running order are unchanged.
 //  Every series is derived from `TrendsService` via `InstrumentsData` — see
 //  InstrumentsCardKit.swift. No card here holds a literal training number.
 //
@@ -150,87 +151,17 @@ struct InstrumentVolumeCard: View {
 
 // MARK: - 03 · Efficiency
 
-struct InstrumentEfficiencyCard: View {
-    let service: TrendsService
-
-    private var rows: [(label: String, value: Double)] {
-        InstrumentsData.efficiency(service.keySessions)
-    }
-
-    var body: some View {
-        let rows = self.rows
-        let values = rows.map(\.value)
-        let latest = values.last ?? 0
-
-        InstrumentCard(
-            eyebrow: "EFFICIENCY",
-            title: values.isEmpty ? "Metres per heartbeat." : String(format: "%.2f m per beat.", latest),
-            sub: values.isEmpty ? "" : "Work-bout pace against average work heart rate, \(values.count) session\(values.count == 1 ? "" : "s")."
-        ) {
-            if !values.isEmpty {
-                InstrumentStat(value: String(format: "%.2f", latest), caption: "M / BEAT")
-            }
-        } content: {
-            if values.count < 2 {
-                InstrumentEmpty(title: "This needs quality sessions with heart rate. Two of them and the trend appears.")
-            } else {
-                chart(values: values).frame(height: 90)
-                HStack {
-                    Text(rows.first?.label.uppercased() ?? "").instrumentTick()
-                    Spacer()
-                    Text(rows.last?.label.uppercased() ?? "").instrumentTick()
-                }
-                .padding(.top, 4)
-                InstrumentLegendRow(items: [
-                    (.line(Color.drip.textPrimary), "METRES PER BEAT"),
-                    (.dot(Color.drip.coral), "LATEST"),
-                ])
-                InstrumentStatRow(items: [
-                    .init(value: String(format: "%.2f", values.max() ?? 0), unit: "BEST", detail: "IN RANGE"),
-                    .init(value: String(format: "%.2f", values.reduce(0, +) / Double(values.count)), unit: "MEAN", detail: "\(values.count) SESSIONS"),
-                    .init(
-                        value: String(format: "%+.0f%%", (latest / (values.first ?? latest) - 1) * 100),
-                        unit: "VS FIRST",
-                        detail: "IN RANGE"
-                    ),
-                ])
-                InstrumentNote("Distance covered per heartbeat during work bouts. Higher means the same effort is buying more ground.")
-            }
-        }
-    }
-
-    private func chart(values: [Double]) -> some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let slot = w / CGFloat(max(values.count, 1))
-            let lo = (values.min() ?? 0) * 0.97
-            let hi = (values.max() ?? 1) * 1.03
-            let span = max(hi - lo, 0.0001)
-            let x: (Int) -> CGFloat = { slot * (CGFloat($0) + 0.5) }
-            let y: (Double) -> CGFloat = { h - h * CGFloat(($0 - lo) / span) }
-
-            ZStack(alignment: .topLeading) {
-                Hairline().position(x: w / 2, y: y(values.max() ?? 0))
-                Hairline().position(x: w / 2, y: y(values.min() ?? 0))
-
-                Path { path in
-                    for i in values.indices {
-                        let pt = CGPoint(x: x(i), y: y(values[i]))
-                        if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
-                    }
-                }
-                .stroke(Color.drip.textPrimary, style: StrokeStyle(lineWidth: 1.8, lineJoin: .round))
-
-                Circle()
-                    .fill(Color.drip.coral)
-                    .overlay(Circle().stroke(.white, lineWidth: 1.4))
-                    .frame(width: 8, height: 8)
-                    .position(x: x(values.count - 1), y: y(values.last ?? lo))
-            }
-        }
-    }
-}
+// MOVED 2026-08-18 → `EfficiencyIndexCard.swift`.
+//
+// `InstrumentEfficiencyCard` used to live here and plotted raw metres-per-beat
+// for every session on one line — the same flaw the key-pace card fixed on
+// 2026-08-09: m/beat rises with speed for every runner alive, so a line
+// through mixed zones measures the training schedule, not fitness. The card
+// now scores each session against the athlete's own speed-and-heat curve
+// (100 = your norm, at any pace), corrects HR drift in heat with a term fit
+// from the athlete's history, and gates HR-lag artefacts with a
+// deleted-residual outlier check. Substrate: `EfficiencyIndexModels.swift`.
+// Spec and validation: `HR-EFFICIENCY-INDEX-APPLY.md`.
 
 // MARK: - 04 · Mood
 

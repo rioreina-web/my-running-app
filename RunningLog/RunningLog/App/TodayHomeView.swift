@@ -469,6 +469,19 @@ struct TodayLogRow: Codable {
     /// 4:40 rep counts as 4:40, not as the 6:30 mile it lived inside.
     let parsed: ParsedLite?
     var structureBlocks: [StructureBlockLite]? { parsed?.blocks }
+    /// Effort as the athlete conveyed it, 1-10, extracted from the memo by
+    /// `extract-rpe`. Nil is the honest majority case: the extractor is
+    /// instructed to return null rather than guess when the transcript
+    /// doesn't say how hard it felt, and non-voice rows never get one.
+    var feltRPE: Int? = nil
+    /// Typed workout description — the athlete's own statement of intent, and
+    /// the parser's TOP structure source. Distinct from `notes` (transcript)
+    /// and `cleanedNotes` (LLM-tidied transcript).
+    var workoutNotes: String? = nil
+    /// Server-computed conditions from `fetch-workout-weather`, including the
+    /// heat `adjustment_pct`. Nil on indoor/manual rows with no GPS to
+    /// attribute weather to. Never recompute the penalty on-device.
+    var weather: RunWeather? = nil
 
     struct ParsedLite: Codable { let blocks: [StructureBlockLite]? }
     struct StructureBlockLite: Codable {
@@ -497,6 +510,9 @@ struct TodayLogRow: Codable {
         case audioUrl = "audio_url"
         case paceSegments = "pace_segments"
         case parsed = "parsed_structure"
+        case feltRPE = "felt_rpe"
+        case workoutNotes = "workout_notes"
+        case weather = "weather_actual"
     }
 
     static func fetchRecent(days: Int) async -> [TodayLogRow] {
@@ -516,7 +532,7 @@ struct TodayLogRow: Codable {
         let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
         let rows: [TodayLogRow] = try await supabase
             .from("training_logs")
-            .select("id, workout_date, workout_distance_miles, workout_pace_per_mile, workout_type, mood, coach_insight, notes, cleaned_notes, workout_duration_minutes, source, audio_url, pace_segments, parsed_structure")
+            .select("id, workout_date, workout_distance_miles, workout_pace_per_mile, workout_type, mood, coach_insight, notes, cleaned_notes, workout_duration_minutes, source, audio_url, pace_segments, parsed_structure, felt_rpe, workout_notes, weather_actual")
             .gte("workout_date", value: ISO8601DateFormatter().string(from: cutoff))
             .order("workout_date", ascending: false)
             .limit(1500)

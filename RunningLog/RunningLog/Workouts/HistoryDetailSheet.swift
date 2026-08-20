@@ -533,6 +533,10 @@ struct FormattedSummaryText: View {
     /// Body color. Defaults to the original ink; the journal passes
     /// `textSecondary` for the same reason.
     var color: Color = Color.drip.textPrimary
+    /// Leading between wrapped lines. 3 is tight enough for a supporting
+    /// caption; the journal's SUMMARY passes 6 because at 16.5pt it is the
+    /// entry's lead paragraph and wants magazine leading.
+    var lineSpacing: CGFloat = 3
 
     private var parsedElements: [SummaryElement] {
         parseText(text)
@@ -562,7 +566,7 @@ struct FormattedSummaryText: View {
                     Text(content)
                         .font(.dripBody(size))
                         .foregroundStyle(color)
-                        .lineSpacing(3)
+                        .lineSpacing(lineSpacing)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

@@ -28,8 +28,8 @@
 //    header → range segmenter (the tab's ONLY time control)
 //    1 · Load            (VolumeDetailView — week totals + acute:chronic band)
 //    2 · Pace            (PaceSignalView + the threshold-band row)
-//    3 · Key sessions    (TrendsSessionGrid + week readout + head-to-head)
-//    4 · Recovery        (RecoveryReadView + the recovery score)
+//    3 · Key sessions    (week readout + receipt ledger + head-to-head)
+//    4 · Recovery        (the recovery score, then RecoveryReadView's load line)
 //    5 · Mood            (TrendsMoodSection — 30-day block, own stepper)
 //    6 · Race prediction (RacePredictionTrack)
 //    foot · Ask          (AskBar)
@@ -106,9 +106,20 @@ struct TrendsLegacyTabView: View {
     /// when v2 was unlinked, because the Lab had no other entrance.
     private let onOpenLab: (() -> Void)?
 
-    init(service: TrendsService = .shared, onOpenLab: (() -> Void)? = nil) {
+    /// Opens the block surface (`TrendsBlockView`) — Trends v2, added
+    /// 2026-08-18. Same door shape as `onOpenLab`: somewhere you go, not
+    /// somewhere you land. The host owns which surface is showing and
+    /// persists it, so this is a one-line handoff and no state lives here.
+    private let onOpenBlock: (() -> Void)?
+
+    init(
+        service: TrendsService = .shared,
+        onOpenLab: (() -> Void)? = nil,
+        onOpenBlock: (() -> Void)? = nil
+    ) {
         _service = State(initialValue: service)
         self.onOpenLab = onOpenLab
+        self.onOpenBlock = onOpenBlock
     }
 
     /// The selected window, sliced from the loaded timeline.
@@ -135,7 +146,7 @@ struct TrendsLegacyTabView: View {
                 content
             }
             .padding(.horizontal, 20)
-            .padding(.top, 8)
+            .padding(.top, 16)   // breathing room under the status bar
             // Clear the custom DripTabBar (~47pt bar + home-indicator
             // gutter). Without enough bottom inset the ask bar — the last
             // item in the scroll — sits trapped behind the tab bar and
@@ -159,19 +170,16 @@ struct TrendsLegacyTabView: View {
         // tab the user never opens.
         .task(id: selectedTab.wrappedValue) {
             if selectedTab.wrappedValue == 4 {
-                // The session grid's filled-vs-open mark reads
-                // `KeySessionStore`, whose derived rule needs `loadByDay`.
-                // That map used to be filled only by the Train tab's analytics
-                // load, so opening Trends first drew every session as an open
-                // "below floor" ring. Hydrating here costs a cache read in the
-                // common case — see `hydrateLoadsIfNeeded()`.
-                // Concurrent with the timeline fetch, not before it: it has
-                // no dependency on the payload, and the grid it feeds can't
-                // draw until `service.refresh()` lands anyway.
-                async let keyLoads: Void = KeySessionStore.shared.hydrateLoadsIfNeeded()
+                // `KeySessionStore.hydrateLoadsIfNeeded()` used to run here,
+                // concurrently with the timeline fetch: the session grid's
+                // filled-vs-open mark read `KeySessionStore`, and opening
+                // Trends before Train left `loadByDay` empty, so every mark
+                // drew as an open "below floor" ring. The grid is gone
+                // (2026-08-17) and nothing else on this tab reads that store,
+                // so the hydration went with it — one fewer round trip on tab
+                // open. Restore both together if the grid ever comes back.
                 await service.refresh()
                 athleteState = await TrendsAthleteState.fetch()
-                await keyLoads
             }
         }
         // Head-to-head "Open workout" — presented from the tab, not from the
@@ -279,7 +287,7 @@ struct TrendsLegacyTabView: View {
             EditorialRule().padding(.vertical, 22)
 
             // 01 · LOAD — the three week totals and the acute:chronic band.
-            sectionHead("Load", "Weekly miles, and the ramp")
+            sectionHead("Load", "Weekly miles and how fast they climbed")
             // `window`, not `service.weeks`. These three views were each handed
             // the entire timeline while the segmenter above claimed to scope the
             // tab — so "PEAK 72 mpw" (all time) sat directly under a read that
@@ -305,7 +313,7 @@ struct TrendsLegacyTabView: View {
             // no longer carries a range bar of its own, and its VOLUME /
             // WORKLOAD / MOOD tiles are gone because section 01, the band right
             // here, and section 04 each already own one of those numbers.
-            sectionHead("Pace", "Every mile, sorted by pace")
+            sectionHead("Pace", "How many miles at each pace")
             PaceSignalView(
                 embedded: true,
                 fixedWindowDays: range.days,
@@ -327,28 +335,51 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
-            // 03 · KEY SESSIONS — grid, the week it lands on, then two side by
-            // side. Head-to-head lives here rather than as its own section: it
-            // is what you get when you want two of these sessions compared, not
-            // a separate destination.
-            sectionHead("Key sessions", "One mark per session")
-            TrendsSessionGrid(
-                weeks: window,
-                sessions: service.keySessions,
-                scrubIndex: $scrubIndex
-            )
-            .padding(.top, 10)
-            // The week readout sits under the grid because the grid is what
-            // scrubs it. It used to live at the top of the tab, four screens
-            // up: you dragged a chart down here and a number changed off-screen.
+            // 03 · KEY SESSIONS — the ledger, the week it sits in, then two
+            // side by side. Head-to-head lives here rather than as its own
+            // section: it is what you get when you want two of these sessions
+            // compared, not a separate destination.
+            //
+            // THE DOT GRID CAME OUT, 2026-08-17 (Rio). `TrendsSessionGrid`
+            // opened this section and is now unlinked — the file moved to
+            // `_to_delete/` rather than being deleted outright, so this is one
+            // `git mv` from reversible.
+            //
+            // Two things killed it, and both were the reader's problem rather
+            // than the chart's:
+            //
+            //   • It asked for three encodings at once — dot SIZE is effort,
+            //     COLOUR is pace zone, FILLED vs OPEN is whether the session
+            //     cleared the floor — with a legend that had to be redrawn
+            //     inside the Canvas because there was nowhere else to put it.
+            //   • On real data it was about 10% full. `SESSION-GRID-APPLY.md`
+            //     already recorded this as "legible at 12 weeks, mostly
+            //     whitespace at 26" and recommended shortening the range. The
+            //     honest fix turned out to be a different form, not a shorter
+            //     window: seven day-rows spend most of their height proving a
+            //     negative.
+            //
+            // What replaces it is the receipt ledger that was already sitting
+            // two rows below it — promoted from a four-row card inside
+            // `KeySessionsDetailView` to the section itself. Same sessions,
+            // named and dated, with the measured rep pace and the density
+            // strip per row: nothing to decode, and it reads the same at two
+            // sessions or two hundred.
+            //
+            // Cost, stated plainly: the weekly rhythm — "Tuesday is threshold
+            // day, and here are the weeks that broke it" — is no longer shown
+            // anywhere on Trends. That read belongs to the Train calendar; if
+            // it is wanted back it should go there, not here.
+            sectionHead("Key sessions", "One line per session")
+            // The readout no longer has a scrubber above it — the grid was the
+            // only thing on this tab that set `scrubIndex` — so it states the
+            // latest week with miles and labels itself as such. It moved above
+            // the ledger: it is the "where you are" line, and the ledger under
+            // it is the record.
             readout
-                .padding(.top, 12)
-            KeySessionsDetailView(
-                sessions: service.keySessions,
-                volume: service.keyVolume,
-                embedded: true
-            )
-            .padding(.top, 16)
+                .padding(.top, 10)
+            WorkoutsAndRepsSection(style: .editorial, initialCount: 8)
+                .padding(.top, 8)
             expandableSubHead("Two side by side", isOpen: $showHeadToHead)
                 .padding(.top, 22)
             if showHeadToHead {
@@ -359,8 +390,17 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
-            // 04 · RECOVERY — how well you're resting: readiness and the
-            // load/rest balance off athlete_state, then today's score.
+            // 04 · RECOVERY — today's score first, then the load behind it.
+            //
+            // The score now LEADS. This section used to open with three stat
+            // tiles headed by "Readiness N/100" off
+            // `athlete_state.last_readiness_score` — an older server-side
+            // readiness the ledger below was built to replace (see
+            // `TrendsRecoveryDemand.swift` header). Two 0–100 numbers one
+            // screen apart, usually disagreeing, and the athlete's first
+            // question was which one to believe. The old readiness is no
+            // longer surfaced anywhere; the ledger is the one recovery number
+            // this app keeps. (Rio, 2026-08-17.)
             //
             // Mood and niggles used to live here too, as a week-by-week ribbon
             // and a by-body-part row. Section 05 below now reads both by day,
@@ -370,19 +410,20 @@ struct TrendsLegacyTabView: View {
             // still in `TrendsDetailViews.swift`, now unreferenced — the voice
             // quote was the one thing only they showed.
             sectionHead("Recovery", "Rest and readiness")
+            subHead("Recovery score · today")
+                .padding(.top, 14)
+            recoveryScore
+                .padding(.top, 6)
+            subHead("The load behind it")
+                .padding(.top, 26)
             RecoveryReadView(
-                readiness: athleteState?.last_readiness_score,
                 hardSessions28d: athleteState?.load_distribution?.recovery_read?.hard_sessions_28d,
                 avgDaysBetweenHard: athleteState?.load_distribution?.recovery_read?.avg_days_between_hard,
                 downWeek: athleteState?.load_distribution?.recovery_read?.down_week,
                 bodySignalCount: athleteState?.bodySignalCount ?? 0,
                 embedded: true
             )
-            .padding(.top, 6)
-            subHead("Recovery score · today")
-                .padding(.top, 26)
-            recoveryScore
-                .padding(.top, 6)
+            .padding(.top, 8)
 
             EditorialRule().padding(.vertical, 22)
 
@@ -395,7 +436,7 @@ struct TrendsLegacyTabView: View {
             // day stepper rather than the segmenter's window — a mood block is
             // thirty days by definition, and the whole read is one thirty
             // against the thirty before it. See `TrendsMoodSection`.
-            sectionHead("Mood", "Thirty days, one axis")
+            sectionHead("Mood", "Mood, miles and niggles by day")
             TrendsMoodSection(
                 service: service,
                 days: service.days,
@@ -406,17 +447,17 @@ struct TrendsLegacyTabView: View {
             EditorialRule().padding(.vertical, 22)
 
             // 06 · RACE PREDICTION — where the block points
-            sectionHead("Race prediction", "Where this points")
+            sectionHead("Race prediction", "Estimated times at your current fitness")
             RacePredictionTrack()
                 .padding(.top, 8)
 
-            // The door to Ask. Trends shows the shape; Ask explains it. Kept
-            // at the foot rather than in the header because it is the next
-            // thing to read, not a control competing with the sections. The
-            // 100pt bottom inset on the scroll exists for this bar — without
-            // it the last item sits trapped behind the tab bar.
-            EditorialRule().padding(.vertical, 22)
-            AskBar()
+            // The Ask door used to live here — `AskBar`, the analyzer chip
+            // rail, answering in `AskAnswerCard`s. Removed 2026-08-19: Ask is
+            // its own tab now (free-text chat, tag 10), and the cards the rail
+            // produced were under-developed. `AskBar` stays in the repo,
+            // unlinked. The scroll keeps its 100pt bottom inset — it was sized
+            // for this bar, and without it the last section sits trapped
+            // behind the tab bar either way.
         }
     }
 
@@ -663,6 +704,9 @@ struct TrendsLegacyTabView: View {
                 Spacer(minLength: 8)
                 if let onOpenLab {
                     doorChip("lab ›", action: onOpenLab)
+                }
+                if let onOpenBlock {
+                    doorChip("v2 ›", action: onOpenBlock)
                 }
             }
 
