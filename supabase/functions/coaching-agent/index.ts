@@ -41,10 +41,13 @@ import {
   buildTrainingPeriodDocument,
   buildThisWeekContext,
   assembleWithBudget,
+  buildAthleteStateBlock,
+  buildSessionBlock,
   COMPLEXITY_CONTEXT_BUDGETS,
   type ExtendedTrainingLog,
   type PromptBlock,
 } from "../_shared/context.ts";
+import { pickQuestions, RAIL_SIZE } from "../_shared/session-questions.ts";
 import {
   isComplexQuery,
   getQueryType,
@@ -576,7 +579,7 @@ Deno.serve(async (req: Request) => {
   try {
     // Clone request so we can read body after auth check
     const body = await req.json();
-    const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId, format } = body;
+    const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId, format, training_log_id: trainingLogId } = body;
 
     // Editorial format: the iOS "ask about my training" surfaces (The Read
     // ask bar + the Trends ask bar handoff) POST `format: "editorial"` and
@@ -614,6 +617,11 @@ Deno.serve(async (req: Request) => {
     if (conversationId) {
       const convIdErr = validateUUID(conversationId, "conversationId");
       if (convIdErr) return validationErrorResponse(convIdErr, corsHeaders);
+    }
+
+    if (trainingLogId) {
+      const logIdErr = validateUUID(trainingLogId, "training_log_id");
+      if (logIdErr) return validationErrorResponse(logIdErr, corsHeaders);
     }
 
     // Initialize Supabase client
@@ -659,6 +667,146 @@ Deno.serve(async (req: Request) => {
       // Hard monthly cost ceiling on the highest-cost conversational surface.
       const monthlyCapped = await enforceMonthlyCap(userId, "coaching", corsHeaders);
       if (monthlyCapped) return monthlyCapped;
+    }
+
+    // ========================================================================
+    // LAYER 1.6: Session ask — ONE question about ONE workout
+    //
+    // `training_log_id` in the body means the athlete is looking at a specific
+    // run and asked about it. That path does NOT go through the general sweep
+    // below: it replaces the old "for coach insight requests, skip extra
+    // context — workout details are in the message" shortcut, which is how the
+    // chat agent ended up answering "what's your weekly mileage?" to questions
+    // about runs it had been handed as a prose summary. The context has to
+    // arrive as context (SESSION-ASK-APPLY §5.4).
+    //
+    // Priority table, fed to assembleWithBudget rather than concatenated:
+    //   athlete_state  required   — what makes the answer worth reading
+    //   this session   required   — what she is asking about
+    //   recent logs    preferred  — her own words over 28 days
+    // ========================================================================
+    if (trainingLogId) {
+      // Ownership is enforced inside buildSessionBlock (`.eq("user_id")`), so a
+      // log belonging to someone else is indistinguishable from a missing one.
+      const session = await buildSessionBlock(supabase, userId, trainingLogId);
+      if (!session) {
+        return new Response(
+          JSON.stringify({ error: "Workout not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const athleteStateBlock = await buildAthleteStateBlock(supabase, userId);
+
+      const sessionBlocks: PromptBlock[] = [
+        { name: "athleteState", content: athleteStateBlock,          priority: "required" },
+        { name: "session",      content: session.block,              priority: "required" },
+        { name: "recentLogs",   content: session.parts.recentLogs,   priority: "preferred" },
+      ];
+      const sessionBudget = COMPLEXITY_CONTEXT_BUDGETS.moderate;
+      const assembled = assembleWithBudget(sessionBlocks, sessionBudget);
+      // `included` is whole blocks; `truncated` ones are partially present and
+      // still real provenance, so both count as "was read from".
+      const present = new Set([...assembled.included, ...assembled.truncated]);
+
+      console.log(
+        `[session-ask] log=${trainingLogId} budget=${assembled.budget} used=${assembled.used} ` +
+        `included=[${assembled.included.join(",")}] dropped=[${assembled.dropped.join(",")}] ` +
+        `truncated=[${assembled.truncated.join(",")}]`,
+      );
+
+      // A block the budgeter dropped must not reach the prompt through a
+      // placeholder — that would make `read_from` a lie about what was read.
+      const sessionPresent = present.has("session");
+      const blank = (v: string, ok: boolean) => (ok ? v : "");
+
+      const sessionAskPrompt = loadPrompt("session-ask.v1", {
+        question: message,
+        workoutType: session.parts.workoutType,
+        distance: session.parts.distance,
+        pace: session.parts.pace,
+        duration: session.parts.duration,
+        mood: session.parts.mood,
+        athleteNotes: session.parts.athleteNotes,
+        pacesBlock: blank(session.parts.pacesBlock, sessionPresent),
+        classificationLine: blank(session.parts.classificationLine, sessionPresent),
+        splitsBlock: blank(session.parts.splitsBlock, sessionPresent),
+        prescribedBlock: blank(session.parts.prescribedBlock, sessionPresent),
+        progressionBlock: blank(session.parts.progressionBlock, sessionPresent),
+        keySessionLine: blank(session.parts.keySessionLine, sessionPresent),
+        athleteState: blank(athleteStateBlock, present.has("athleteState")),
+        recentLogs: blank(session.parts.recentLogs, present.has("recentLogs")),
+        recentSummary: session.parts.recentSummary,
+      });
+
+      // The provenance line (§3). Assembled from what the builder actually
+      // loaded — a string, not a model output, so it cannot be wrong.
+      const readFromBits: string[] = [];
+      if (sessionPresent) {
+        readFromBits.push(
+          session.parts.splitsBlock ? "this session's splits" : "this session",
+        );
+        if (session.parts.pacesBlock) readFromBits.push("your pace zones");
+        if (session.parts.conditionsBlock) readFromBits.push("the conditions on the day");
+      }
+      if (present.has("athleteState") && athleteStateBlock) {
+        readFromBits.push("your recent load and training context");
+      }
+      if (present.has("recentLogs") && session.parts.recentLogs) {
+        readFromBits.push("your notes from the last 28 days");
+      }
+      const readFrom = readFromBits.length > 0
+        ? `Read from ${readFromBits.slice(0, -1).join(", ")}${readFromBits.length > 1 ? " and " : ""}${readFromBits[readFromBits.length - 1]}.`
+        : "";
+
+      const { config: sessionConfig } = getBestAvailableModel("moderate");
+      let sessionAnswer: string;
+      try {
+        sessionAnswer = sessionConfig.provider === "gemini"
+          ? await callGemini(sessionAskPrompt, sessionConfig)
+          : await callGroq(sessionAskPrompt, sessionConfig);
+      } catch (err) {
+        console.error("[session-ask] model call failed:", err);
+        return new Response(
+          JSON.stringify({ error: "Upstream model unavailable" }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      sessionAnswer = (sessionAnswer || "").trim();
+
+      // The rail ships in the response, not the binary (§2) — changing what a
+      // long run asks is then a config edit, not an App Store release.
+      const suggested = pickQuestions(session.shape).map((q) => ({ id: q.id, text: q.text }));
+
+      try {
+        await supabase.from("usage_tracking").insert({
+          user_id: userId,
+          feature: "coaching",
+          model_used: getModelIdentifier("moderate"),
+          cached: false,
+        });
+      } catch (_) { /* never block the answer on telemetry */ }
+
+      const sessionBody = {
+        answer: sessionAnswer,
+        // `response` carries the same text so existing chat clients that read
+        // this field keep working against the session path.
+        response: sessionAnswer,
+        read_from: readFrom,
+        suggested,
+        rail_size: RAIL_SIZE,
+        training_log_id: trainingLogId,
+        model: "session-ask.v1",
+        provider: sessionConfig.provider,
+        cached: false,
+        remaining: rateLimit.remaining,
+        processingTime: Date.now() - startTime,
+      };
+
+      return new Response(
+        JSON.stringify(isEditorial ? { ...sessionBody, read: toEditorialRead(sessionAnswer) } : sessionBody),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     // ========================================================================

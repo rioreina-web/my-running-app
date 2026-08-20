@@ -302,13 +302,37 @@ extension HistoryDetailSheet {
                     }
                 }
 
-                // ── The read (AI insight, behind one tap) ────────────────
-                // Was an always-on paragraph that ran ~70 words and competed
-                // with the athlete's own summary for the page. It is now a
-                // single row: coral ✦ + "READ THE INSIGHT". Nothing generated
-                // is thrown away — it just waits to be asked for.
+                // ── Ask this session ─────────────────────────────────────
+                // Was an always-on paragraph (~70 words competing with the
+                // athlete's own summary), then a single "READ THE INSIGHT"
+                // row. It is now a field plus a rail of questions gated to
+                // what THIS session can actually answer: one row asked one
+                // question and the app picked it, so if the paragraph didn't
+                // answer what she actually wondered there was nowhere to go.
+                //
+                // The read is still here — it's the pinned first chip, and
+                // still the safe default when she doesn't know what to ask.
+                // The insight panel below is unchanged and still owned here;
+                // the chip only opens it.
                 if !isEditing {
-                    insightBlock
+                    if hasInsight, showInsight, let insight = vm.coachInsight {
+                        openInsightPanel(insight)
+                    }
+                    SessionAskBlock(
+                        workoutId: vm.currentEntry.id,
+                        dateLabel: vm.currentEntry.displayDate.editorialDateString,
+                        hasInsight: hasInsight,
+                        canGenerateInsight: canGenerateInsight,
+                        isGenerating: vm.isGeneratingInsight,
+                        hasInsightError: vm.insightError != nil,
+                        onReadTapped: {
+                            if hasInsight {
+                                withAnimation(.easeInOut(duration: 0.2)) { showInsight = true }
+                            } else {
+                                Task { await generateThenReveal() }
+                            }
+                        }
+                    )
                 }
 
                 // ── Footer: quiet delete + manual-log italic ─────────────
@@ -726,83 +750,16 @@ extension HistoryDetailSheet {
         summaryText != nil || memoTranscriptUrl != nil || vm.linkedStreamLogId != nil
     }
 
-    @ViewBuilder
-    var insightBlock: some View {
-        if hasInsight, showInsight, let insight = vm.coachInsight {
-            openInsightPanel(insight)
-        } else if hasInsight {
-            insightRow(label: "READ THE INSIGHT", enabled: true) {
-                withAnimation(.easeInOut(duration: 0.2)) { showInsight = true }
-            }
-        } else if vm.isGeneratingInsight {
-            insightRow(label: "WRITING YOUR INSIGHT…", enabled: false, dashed: true, action: nil)
-        } else if vm.insightError != nil {
-            // Retryable, and deliberately NOT typeset as "THE READ" — an error
-            // rendered in the insight panel reads like the coach's actual take.
-            insightRow(label: "COULDN'T GET IT · RETRY", enabled: true) {
-                Task { await generateThenReveal() }
-            }
-        } else if canGenerateInsight {
-            insightRow(label: "READ THE INSIGHT", enabled: true) {
-                Task { await generateThenReveal() }
-            }
-        } else {
-            insightRow(label: "INSIGHT NEEDS A MEMO", enabled: false, dashed: true, action: nil)
-        }
-    }
-
     /// Generate on demand, then open the panel — but only if something actually
     /// came back. Revealing unconditionally would open an empty panel on failure.
+    ///
+    /// Still owned here, not by `SessionAskBlock`: it closes over `vm` and the
+    /// sheet's `showInsight` state, and the read chip reaches it through the
+    /// `onReadTapped` closure.
     private func generateThenReveal() async {
         await vm.generateCoachInsight()
         guard hasInsight else { return }
         withAnimation(.easeInOut(duration: 0.2)) { showInsight = true }
-    }
-
-    @ViewBuilder
-    private func insightRow(
-        label: String,
-        enabled: Bool,
-        dashed: Bool = false,
-        action: (() -> Void)?
-    ) -> some View {
-        Button { action?() } label: {
-            HStack(spacing: 9) {
-                if vm.isGeneratingInsight {
-                    ProgressView()
-                        .tint(Color.drip.coral)
-                        .scaleEffect(0.6)
-                        .frame(width: 12, height: 12)
-                } else {
-                    Text("✦")
-                        .font(.system(size: 12))
-                        .foregroundStyle(enabled ? Color.drip.coral : Color.drip.textTertiary)
-                }
-                Text(label)
-                    .font(.dripEyebrow(10)).tracking(1.2)
-                    .foregroundStyle(enabled ? Color.drip.textPrimary : Color.drip.textTertiary)
-                Spacer()
-                if enabled {
-                    Text("→")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.drip.textTertiary)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
-            .frame(maxWidth: .infinity)
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(
-                        Color.drip.divider,
-                        style: StrokeStyle(lineWidth: 1, dash: dashed ? [4, 3] : [])
-                    )
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(action == nil)
-        .padding(.horizontal, 24)
-        .padding(.top, 20)
     }
 
     // The open panel, retypeset to the handoff (2026-08-10).

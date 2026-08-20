@@ -6,14 +6,17 @@ session with a free-text field plus a short list of questions about the run.*
 *Companions: `ASK-IOS-APPLY.md` (the client), `ASK-REGISTRY.md` (the
 analyzers), `ASK-V2-CONVERSATION.md` (conversation state, §2).*
 
-**4 new files, 3 edits, 2 shared extractions. No new analyzer, no new table,
-no client-side chart.**
+**6 new files, 2 edits, 2 shared extractions. No new analyzer, no new table,
+no client-side chart, and — corrected 2026-08-20 — nothing routed through
+`coaching-agent`. See §0.5.**
 
 | New file | What it is |
 |---|---|
-| `RunningLog/RunningLog/Workouts/SessionAskBlock.swift` | The box (§4) |
+| `supabase/functions/session-ask/index.ts` | The endpoint (§5.3) |
 | `supabase/functions/_shared/session-questions.ts` | The 15 questions + the picker (§2) |
 | `supabase/functions/_shared/prompts/session-ask.v1.ts` | The prompt (§6) |
+| `RunningLog/RunningLog/Workouts/SessionAskBlock.swift` | The box (§4) |
+| `RunningLog/RunningLog/Services/SessionAskService.swift` | The client (§5.2) |
 | `RunningLogTests/SessionAskBlockTests.swift` | (§10) |
 
 Prototype: `session-ask-prototype.html`.
@@ -39,6 +42,61 @@ there is nowhere to put it.
 
 ---
 
+## 0.5 · The AI is not the coach
+
+**A coach in this product is a person.** `coach_id` exists, there's a web
+coach portal, `TodayHomeView` renders *"one unread note from the athlete's
+coach"*, and CLAUDE.md opens by describing coachable moments **"that human
+coaches act on"** with decisions owned by *"the human"*.
+
+So this surface does not get a coach persona, is not called the coach, and
+does not route through `coaching-agent`. It reads the athlete's training and
+reports what's in it. It knows the material; it isn't the person who owns the
+decision or the relationship.
+
+### An earlier draft of this document got this wrong
+
+It routed the box through `coaching-agent` and reused `CoachAskSheet`. That
+was wrong twice over — the boundary above, and a documented engineering
+failure. `HistoryDetailViewModel.swift:795` records what happened last time
+a workout question went to that agent:
+
+> *With almost no quantitative context, that chat agent followed its
+> ask-vs-answer design and kept defaulting to "I need more info — what's your
+> weekly mileage?"*
+
+The fix then was to call the purpose-built `generate-workout-insight` by
+`training_log_id`. **This feature belongs to that lineage**, not the chat
+agent's. §5.3 builds a sibling endpoint beside it.
+
+Dropping the charts is what made this clean rather than costly: prose-only
+removed the only reason to borrow the Coach's answer card, so the answer now
+renders inline (§5.4) and the Coach surface is untouched.
+
+### Two things this contradicts, which are yours to call
+
+**`brand-voice.md:107` says the opposite.** *"The message isn't 'AI + human
+coaching' (**you don't have a human coach in the loop**). It's 'the discipline
+and voice of a great coach, implemented with AI.'"* That document makes
+*Coach* the product's own persona — line 13: *"Coach is the noun — it's what
+the product is. AI is nowhere in the sentence."*
+
+The repo says otherwise. `coach_id` and the coach portal are shipped code.
+`brand-voice.md` appears to be the stale document, but **it's a positioning
+call, not a code question** — don't let a coding agent resolve it by editing
+whichever file it happens to open.
+
+**`generate-workout-insight.v6` opens *"You're an experienced run coach"*.**
+So the currently-shipping insight already speaks as a coach. Bringing it
+inside this boundary is a one-line prompt change plus a re-record of its
+cassettes — but it changes the voice of a feature that's live, so it is a
+deliberate separate change, **not something to fix while wiring this up**.
+
+Scope for this document: the new surface holds the boundary. Existing copy is
+left exactly as it is.
+
+---
+
 ## 1 · One path
 
 Every question on this surface — tapped chip or typed text — takes the same
@@ -47,10 +105,13 @@ route:
 ```
 question + training_log_id
         ↓
-coaching-agent, with this session's context block
+session-ask          ← new endpoint, sibling of generate-workout-insight
+  buildSessionBlock + buildAthleteStateBlock + session-ask.v1
         ↓
-prose + a line naming what it read
+prose + a line naming what it read + the next questions
 ```
+
+Not `coaching-agent`, and not the `ask` analyzer registry. §0.5 has the why.
 
 There is no chip→analyzer binding, no router branch, no second rendering
 mode. A chip is a **prefilled question**, nothing more. One code path.
@@ -278,115 +339,125 @@ call site. It already uppercases; don't add `.uppercased()`.
 nothing references them. `@State var showInsight`
 (`HistoryDetailSheet.swift:36`) stays.
 
-### 5.2 `Services/DailyReadService.swift` — carry the session
+### 5.2 New — `RunningLog/RunningLog/Services/SessionAskService.swift`
 
-`ask(_:)` sends a bare message to `coaching-agent`. On a session sheet that
-means she types *"was I holding back?"* and the coach has no idea which run.
-
-```swift
-func ask(_ question: String, workoutId: UUID? = nil) async throws -> CoachRead
-```
-
-adding `"training_log_id": workoutId.uuidString` to the body when present.
-Defaulted, so `CoachReadView` and `ModelOfYouView` compile unchanged.
-
-**Do not fix this by prepending a text summary to the message.** That is
-exactly what `generateCoachInsight()` used to do — `distance | duration | pace
-+ notes + mood` — and its own header records the result: *"With almost no
-quantitative context, that chat agent followed its ask-vs-answer design and
-kept defaulting to 'I need more info — what's your weekly mileage?'"* The
-context has to arrive as context.
-
-### 5.3 `Coaching/CoachAskSheet.swift` — a prose-only mode
+**Do not extend `DailyReadService.ask(_:)`.** That is the Coach's client and
+it posts to `coaching-agent`; §0.5 is why this doesn't go there. A small
+dedicated service instead:
 
 ```swift
-let workoutId: UUID?
-/// Session sheet: prose only. Suppresses the fact grid, the chart and the
-/// band switcher. Trends is unaffected.
-let proseOnly: Bool
+@Observable
+final class SessionAskService {
+    static let shared = SessionAskService()
 
-init(question: String, focus: String?, analyzer: AskAnalyzer? = nil,
-     workoutId: UUID? = nil, proseOnly: Bool = false) { … }
+    struct Answer: Decodable {
+        let answer: String
+        /// "Read from this session's laps, your zones as of Aug 18, …" (§3)
+        let readFrom: String?
+        let suggested: [Suggestion]
+        struct Suggestion: Decodable, Identifiable { let id: String; let text: String }
+    }
+
+    func ask(_ question: String, workoutId: UUID) async throws -> Answer
+}
 ```
 
-With `proseOnly`, `ask()` skips the `AskService.resolve(question:)` half
-entirely — no analyzer run, no Layer-2 narration, no card to render — and
-calls `DailyReadService.ask(question, workoutId:)` directly. That's the
-"too much computing" cut, and it's a branch removed rather than added.
+One call: `supabase.functions.invoke("session-ask", …)` with
+`{ question, training_log_id }` — the same shape `generateCoachInsight()`
+already uses for `generate-workout-insight`, so error handling and decoding
+follow a pattern that exists.
 
-Pass `focus: "Aug 18 · 6.22 mi"` so the eyebrow reads `ASK · AUG 18 · 6.22 MI`
-and she can see what the answer is about.
+`CoachAskSheet`, `CoachReadView`, `ModelOfYouView` and `DailyReadService` are
+**not touched by this document**.
 
-### 5.4 `supabase/functions/coaching-agent/index.ts` — what the Ask knows
+### 5.3 New — `supabase/functions/session-ask/index.ts`
 
-**This is the part that decides whether the feature is good.** A box that
-answers *"was I holding back?"* without knowing the athlete's volume, phase,
-goal and history will produce something fluent and useless. The failure is
-already on record — `generateCoachInsight()`'s header:
+**This is the part that decides whether the feature is good**, and it is a
+sibling of `generate-workout-insight`, not a branch inside `coaching-agent`.
 
-> *With almost no quantitative context, that chat agent followed its
-> ask-vs-answer design and kept defaulting to "I need more info — what's your
-> weekly mileage?"*
+```
+POST { question, training_log_id }
+  → auth, ownership check on training_logs.id
+  → buildSessionBlock(supabase, userId, logId)      ← required
+  → buildAthleteStateBlock(userId)                  ← required
+  → assembleWithBudget(blocks, budget)
+  → loadPrompt("session-ask.v1", { question, …blocks })
+  → { answer, read_from, suggested }
+```
 
-Three blocks go in, and **the athlete block is not the one to trim**:
+**The athlete block is not the one to trim.** A box that answers *"was I
+holding back?"* without her volume, phase, goal and history produces something
+fluent and useless — the failure already on record in §0.5.
 
-| Block | Priority | Source |
-|---|---|---|
-| `athlete_state` | **required** | `loadAthleteStateBlock` — extract (below) |
-| this session | **required** | `generateInsight`'s assembly — extract (below) |
-| recent memos / what she's been saying | preferred | `coaching-agent`'s existing sweep |
-| plan awareness, feedback learning, profile | optional | ditto |
+| Block | Priority |
+|---|---|
+| this session (`buildSessionBlock`) | **required** |
+| athlete state (`buildAthleteStateBlock`) | **required** |
+| recent logs — her own words, ~28d | preferred |
+| plan awareness, profile | optional |
 
-`_shared/context.ts` already has `assembleWithBudget(blocks, budget)` with
-exactly this `required` / `preferred` / `optional` vocabulary, a per-block
-`maxTokens` cap, and a report of what was dropped or truncated. Use it. Do not
-hand-concatenate — `coaching-agent` used to unconditionally concatenate 22
-blocks and the assembler exists because of it (see the note at index.ts:1430).
-
-**Correction to an earlier draft of this document:** it said the session block
-supersedes the broad sweep and the sweep should be skipped. That's wrong. The
-session is *what she's asking about*; the athlete state is *what makes the
-answer worth reading*. Line 1340's existing shortcut — *"For coach insight
-requests, skip extra context — workout details are in the message"* — is the
-behaviour to replace, not to copy.
+`_shared/context.ts:778` already has `assembleWithBudget(blocks, budget)` with
+exactly this `required`/`preferred`/`optional` vocabulary (`:718`), per-block
+caps, and a report of what was dropped. Use it — don't hand-concatenate. The
+note at `coaching-agent/index.ts:1430` records why that assembler exists: 22
+blocks unconditionally concatenated, and no review-time signal when someone
+added a 23rd.
 
 #### Two extractions into `_shared/context.ts`
 
 **`buildAthleteStateBlock(userId): Promise<string>`** — lift
 `loadAthleteStateBlock` verbatim from `generate-workout-insight/index.ts:93`.
-It is already complete and already well-judged: volume so the coach never asks
-for weekly mileage, fitness as *ranges never point times* (hard rule #7),
-declared races, training phase, goal plus the seconds-per-mile gap to it, load
-trend vs chronic, niggles surfaced but never diagnosed (hard rule #2),
-behavioural patterns, and the recent-training summary. It reads 17 columns of
-`athlete_state` in one query.
+Already complete and already well-judged: volume so it never asks for weekly
+mileage, fitness as *ranges never point times* (hard rule #7), declared races,
+phase, goal plus the seconds-per-mile gap, load vs chronic, niggles surfaced
+but never diagnosed (hard rule #2), behavioural patterns, recent summary. 17
+columns of `athlete_state` in one query.
 
 Nothing needs redesigning — it needs to stop being private to one function.
-Move it, import it in both places, delete the original. Behaviour-preserving
-by construction, which makes it safe to do first and separately.
+Move it, import in both, delete the original. **Behaviour-preserving by
+construction, which is why it ships first and alone.**
 
 **`buildSessionBlock(supabase, userId, logId): Promise<string>`** — the
-per-session assembly inside `generateInsight()` (index.ts:770): laps, parsed
+per-session assembly inside `generateInsight()` (`:770`): laps, parsed
 structure, pace zones, conditions, memo, mood.
+
+#### `read_from` and `suggested`
+
+Build `read_from` from `AssembledContext.included` (`_shared/context.ts:745`)
+— the assembler already reports which blocks made it in, so the provenance
+line is a `map` over a list that exists rather than a second source of truth.
+
+Build `suggested` by calling `pickQuestions(shape)` from
+`_shared/session-questions.ts`, filling `SessionShape` from what
+`buildSessionBlock` already loaded. No extra queries.
 
 #### One caveat that comes with knowing the athlete better
 
-`niggle_recurrence` lands in context on every turn, and a model handed the same
-flashcard forever will raise it forever. That is the exact complaint
-`ASK-V2-CONVERSATION.md §3` diagnoses, and its fix is a `surfaced_at` watermark
-— state, not prompt language. Putting rich athlete state under all fifty
+`niggle_recurrence` lands in context on every call, and a model handed the
+same flashcard forever will raise it forever. That's the complaint
+`ASK-V2-CONVERSATION.md §3` diagnoses, and its fix is a `surfaced_at`
+watermark — state, not prompt language. Rich athlete state under all fifty
 sessions makes this louder, not quieter.
 
-Phase B ships without it. If the knee starts coming up in answers to questions
-that weren't about the knee, §3 of that document is the fix and it's
-server-side only.
+Ship without it. If the knee starts appearing in answers to questions that
+weren't about the knee, §3 of that document is the fix and it's server-side
+only.
 
-#### Response
+### 5.4 The answer renders inline
 
-Return `read_from` and `suggested` alongside the answer (§2, §3). Build
-`read_from` from `AssembledContext.included` — the assembler already reports
-exactly which blocks made it in, so the provenance line is a `map` over a list
-that exists, not a second source of truth to keep in sync.
+No sheet. `SessionAskBlock` holds `@State private var answer: Answer?` and
+renders prose + the `read_from` line beneath the field, with the rail
+becoming the returned `suggested`.
+
+Earlier drafts opened `CoachAskSheet` to avoid duplicating answer rendering.
+That reasoning died with the charts: `AskAnswerCard` exists to lay out a fact
+grid, a chart and a band switcher, and this surface renders none of them. What
+remains is a paragraph and a line of small type. Borrowing the Coach's sheet
+to display that would import the wrong surface (§0.5) for no saved work.
+
+Typography: `.dripBody(15)`, `lineSpacing(4)`, `Color.drip.textPrimary` for
+the answer; `.dripCaption(10)`, `tracking(1.2)`, `textTertiary` for
+`read_from`.
 
 ---
 
@@ -441,9 +512,9 @@ answer). Every other prompt family in this repo has stub cassettes; see §8.
 
 | Phase | Ships | Why here |
 |---|---|---|
-| **A** | The block, the rail, the read chip, `proseOnly`, `training_log_id` plumbed through the client (§4, §5.1–5.3). Server ignores the id at first. | Client-only, one afternoon, nothing can regress. The box is real; the answers are as good as today's coach. |
+| **A** | The block, the rail, the read chip, `SessionAskService` (§4, §5.1–5.2). `session-ask` returns the existing insight and ignores the question at first. | Client-only, one afternoon, nothing can regress. The box is real; the answers are as good as today's insight. |
 | **B1** | `buildAthleteStateBlock` extracted to `_shared/context.ts`, imported by both callers. | Pure move, no behaviour change, reviewable in five minutes. Do it alone so that if anything does shift, you know what shifted. |
-| **B2** | `buildSessionBlock` + `assembleWithBudget` + `training_log_id` honoured + `read_from` + `suggested` (§5.4). | The answers become about *this run, for this athlete*. This is where the feature actually lands. |
+| **B2** | `session-ask` proper: `buildSessionBlock`, `assembleWithBudget`, the question honoured, `read_from`, `suggested` (§5.3). | The answers become about *this run, for this athlete*. This is where the feature actually lands. |
 | **C** | Read a month of `analysis_queries`. Build computation for the top questions. | See §8. |
 
 A and B are the build. C is the product. B1 before B2 — an extraction and a
@@ -486,11 +557,13 @@ with no number guard at all. The box gives the athlete the choice of question
 and stops generating unasked. On numbers, it's the same risk already shipping;
 on cost, it's strictly less.
 
-The rails that matter here are the ones in `coaching-agent`'s prompt —
-no diagnosis, no severity assessment, no prescribing rest — and they are
-unchanged. The prototype's knee answer is written to show what staying inside
-them sounds like when the question invites crossing them; use it as the copy
-reference.
+The rails that matter here — no diagnosis, no severity assessment, no
+prescribing rest — now live in `session-ask.v1.ts` itself rather than being
+inherited from `coaching-agent`'s prompt. That's a consequence of §0.5 worth
+naming: **this endpoint owns its own rails.** They're written into §6's
+"STAY INSIDE THE RAILS" block, and if that block is ever edited, nothing else
+is holding the line. The prototype's knee answer is the copy reference for
+what staying inside them sounds like when a question invites crossing them.
 
 ### Adjacent findings, not caused by this change
 
@@ -533,18 +606,22 @@ None block phase A. (3) is worth closing before phase B touches that file.
 7. `workoutId` reaches `DailyReadService.ask` as `training_log_id`; nil emits
    no key.
 
-**`supabase/functions/coaching-agent/*.test.ts`** — new or extend:
+**`supabase/functions/session-ask/index.test.ts`** — new:
 
-8. A request with `training_log_id` includes **both** the session block and
-   the athlete-state block. The second half is the one that will silently rot.
-9. Under a squeezed token budget, the athlete-state and session blocks survive
-   and the optional blocks are what drop — pins the `required` classification
-   in §5.4 rather than trusting the declaration.
-10. A request without a `training_log_id` behaves exactly as today.
-11. `read_from` names exactly the blocks in `AssembledContext.included` —
-    no block claimed that was dropped for budget.
+8. A request includes **both** the session block and the athlete-state block.
+   The second half is the one that will silently rot.
+9. Under a squeezed token budget, both survive and the optional blocks are
+   what drop — pins the `required` classification in §5.3 rather than
+   trusting the declaration.
+10. A `training_log_id` belonging to another user is rejected. The ownership
+    check is the only thing standing between a valid session id and someone
+    else's training.
+11. `read_from` names exactly the blocks in `AssembledContext.included` — no
+    block claimed that was dropped for budget.
 12. `suggested` varies by `workout_type`, and is empty rather than absent when
     the session has nothing distinctive to ask about.
+13. **`coaching-agent` is never invoked.** A cheap assertion that pins §0.5
+    against a future refactor that "consolidates the chat paths".
 
 **`supabase/functions/_shared/session-questions.test.ts`** — new:
 
@@ -591,9 +668,10 @@ search for that.
 | `AssembledContext.included` for `read_from` | `_shared/context.ts:745` | ✅ |
 | `loadAthleteStateBlock` to extract | `generate-workout-insight/index.ts:93` | ✅ |
 | `generateInsight()` session assembly to extract | same file, `:770` | ✅ |
-| "skip extra context" shortcut to replace | `coaching-agent/index.ts:1340` | ✅ |
-| "22 blocks" note motivating the assembler | `coaching-agent/index.ts:1430` | ✅ |
-| **`coaching-agent` does NOT accept `training_log_id`** | grep returns nothing | ✅ — this is the gap §5.2 and §5.4 exist to close |
+| "22 blocks" note motivating the assembler | `coaching-agent/index.ts:1430` | ✅ — cited as precedent only; this document does not edit that file |
+| **A human coach is real in this product** | `coach_id` in `Models/CoachModels.swift:67`; web coach portal referenced from `RunningLogApp.swift:254` and `SettingsView.swift:63`; *"one unread note from the athlete's coach"* `TodayHomeView.swift:294`; CLAUDE.md:11 *"human coaches act on"* | ✅ — the basis for §0.5 |
+| **`brand-voice.md` contradicts that** | `:107` *"you don't have a human coach in the loop"*; `:13` *"Coach is the noun — it's what the product is"* | ⚠️ **unresolved, and yours to call** — see §0.5 |
+| **The shipping insight speaks as a coach** | `generate-workout-insight.v6.ts` opens *"You're an experienced run coach"* | ⚠️ pre-existing; deliberately out of scope |
 | `context.workout_id` reaches only `compare_session` | `ask/index.ts:436`; it's the sole analyzer declaring a `workout_id` param | ✅ — noted here because it's why this design routes to `coaching-agent` rather than the analyzer registry |
 
 **Not verified — needs Xcode.** Nothing here has been compiled or run. The

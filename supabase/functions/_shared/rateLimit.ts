@@ -254,6 +254,12 @@ const FEATURE_LIMITS: Record<string, Record<string, number>> = {
   workout_progression: { free: 20, pro: 50, unlimited: 200 },
   check_in:        { free: 10, pro: 25, unlimited: 100 },
   daily_read:      { free:  5, pro: 25, unlimited: 100 },
+  // Session Ask — the athlete asks a question about one of their own runs.
+  // Sized per-DAY across all sessions, not per session: the rail offers five
+  // questions with ten more behind the disclosure, so a single interesting
+  // workout can legitimately be worth several calls. Anything tighter turns
+  // the feature's own rail into a wall.
+  session_ask:     { free: 15, pro: 50, unlimited: 200 },
   // Coach-portal WorkoutDrawer "the read" — on-demand AI observation per key
   // session, keyed on the calling coach. Cheap, cached per log; modest caps.
   coach_workout_read: { free: 10, pro: 25, unlimited: 100 },
@@ -420,6 +426,7 @@ export const MONTHLY_LLM_CAPS: Record<string, number> = {
   daily_read:           50,
   coach_workout_read:  100,
   workout_comparison:  200,
+  session_ask:         150,
 };
 
 /** Fallback for features missing from MONTHLY_LLM_CAPS. */

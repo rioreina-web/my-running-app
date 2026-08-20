@@ -555,102 +555,59 @@ struct WorkoutComparisonSheet: View {
     }
 
     // ── Diff table ──────────────────────────────────────────────────────
+    //
+    // Read as a table, not as sentences. A, B and Δ sit in fixed columns so
+    // the eye can run straight down one column, and the rows are grouped by
+    // what they measure — the run, the work, the conditions — instead of
+    // arriving as one undifferentiated list.
+
+    /// Column geometry. Sized for the widest value each column carries
+    /// ("6.6 mi", "10×1K", "+20ft") at the stat font; longer values shrink
+    /// rather than break the grid.
+    private static let diffValueColumn: CGFloat = 58
+    private static let diffDeltaColumn: CGFloat = 54
+    private static let diffColumnGap: CGFloat = 6
+
+    /// One audit row: two measured values and the move between them.
+    private struct DiffRowItem: Identifiable {
+        let label: String
+        let a: String
+        let b: String
+        let delta: String?
+        var coral = false
+        var modelTag = false
+        var id: String { label }
+    }
+
+    /// A band of rows under one subhead. Labels are unique per table, so the
+    /// title carries identity.
+    private struct DiffGroup: Identifiable {
+        let title: String
+        let rows: [DiffRowItem]
+        var id: String { title }
+    }
 
     @ViewBuilder
     private func diffTable(diff: DiffDTO, a: WorkProfileDTO, b: WorkProfileDTO) -> some View {
+        let groups = diffGroups(diff: diff, a: a, b: b)
+
         VStack(spacing: 0) {
-            HStack {
+            // Column caps sit directly over their columns — the A / B / Δ
+            // legend, in the place the eye already needs to look.
+            HStack(alignment: .firstTextBaseline, spacing: Self.diffColumnGap) {
                 DripEyebrow(text: "THE NUMBERS")
-                Spacer()
-                Text("A → B · Δ")
-                    .font(.dripCaption(9))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.drip.textTertiary)
+                Spacer(minLength: 8)
+                diffColumnCap("A", width: Self.diffValueColumn)
+                diffColumnCap("B", width: Self.diffValueColumn)
+                diffColumnCap("Δ", width: Self.diffDeltaColumn)
             }
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
 
-            let isQuality = diff.mode == "quality"
-
-            diffRow("ZONE", zoneLabel(diff.zone.a), zoneLabel(diff.zone.b),
-                    diff.zone.same ? "same" : "differs")
-
-            // ── Whole-run rows (every workout type) ──
-            if let v = diff.totalDistanceMeters {
-                diffRow("DISTANCE",
-                        String(format: "%.1f mi", v.a / 1609.344),
-                        String(format: "%.1f mi", v.b / 1609.344),
-                        v.pctChange.map { signed($0) + "%" })
+            ForEach(Array(groups.enumerated()), id: \.element.id) { index, group in
+                diffGroupHeader(group.title, isFirst: index == 0)
+                ForEach(group.rows) { diffRow($0) }
             }
-            if let d = diff.totalDurationSec {
-                diffRow("DURATION", durationString(d.a), durationString(d.b),
-                        signed(d.delta / 60) + "m")
-            }
-            if let p = diff.avgPaceSec {
-                diffRow("AVG PACE", paceString(p.a), paceString(p.b),
-                        signed(p.delta) + "s")
-            }
-            if let p = diff.conditionsAdjustedPaceSec {
-                diffRow("PACE · HEAT+HILL ADJ", paceString(p.a), paceString(p.b),
-                        signed(p.delta) + "s", modelTag: true)
-            }
-            if let p = diff.fastSegPaceSec {
-                diffRow("FAST SEGMENT", paceString(p.a), paceString(p.b),
-                        signed(p.delta) + "s")
-            }
-            if let h = diff.avgRunHr {
-                diffRow("AVG HR", "\(Int(h.a.rounded()))", "\(Int(h.b.rounded()))",
-                        signed(h.delta))
-            }
-            if let e = diff.elevationGainM, e.a > 0 || e.b > 0 {
-                let ft = { (m: Double) in "\(Int((m * 3.28084).rounded())) ft" }
-                diffRow("ELEVATION", ft(e.a), ft(e.b),
-                        signed(e.delta * 3.28084) + "ft")
-            }
-            // Aerobic decoupling — the headline signal for a steady run (its
-            // coral hit); shown whenever both sides have HR. Lower = held form.
-            if !isQuality, let da = diff.decouplingPct.a, let db = diff.decouplingPct.b {
-                diffRow("DECOUPLING", signed(da, decimals: 1) + "%", signed(db, decimals: 1) + "%",
-                        signed(db - da, decimals: 1) + "%", coral: true)
-            }
-
-            // ── Quality-work rows (rep sessions only) ──
-            if isQuality {
-                diffRow("REPS", repsLabel(a), repsLabel(b),
-                        diff.reps.map { signed($0.delta) })
-
-                if let p = diff.avgRepPaceRawSec {
-                    diffRow("REP PACE · RAW", paceString(p.a), paceString(p.b),
-                            signed(p.delta) + "s")
-                }
-                if let p = diff.avgRepPaceAdjSec {
-                    diffRow("REP PACE · HEAT-ADJ", paceString(p.a), paceString(p.b),
-                            signed(p.delta) + "s", modelTag: true)
-                }
-                if let r = diff.avgRecoverySec {
-                    diffRow("RECOVERY", "\(Int(r.a.rounded()))s", "\(Int(r.b.rounded()))s",
-                            signed(r.delta) + "s")
-                }
-                if let h = diff.recoveryHrDropBpm {
-                    // The headline signal for a quality session — its coral hit.
-                    diffRow("HR DROP IN FLOATS", "\(Int(h.a.rounded()))", "\(Int(h.b.rounded()))",
-                            signed(h.delta), coral: true)
-                }
-                if let h = diff.avgWorkHr {
-                    diffRow("AVG WORK HR", "\(Int(h.a.rounded()))", "\(Int(h.b.rounded()))",
-                            signed(h.delta))
-                }
-                if let v = diff.qualityVolumeMeters {
-                    diffRow("QUALITY VOLUME",
-                            String(format: "%.1f mi", v.a / 1609.344),
-                            String(format: "%.1f mi", v.b / 1609.344),
-                            v.pctChange.map { signed($0) + "%" })
-                }
-            }
-
-            if let t = diff.tempF {
-                diffRow("TEMP", "\(Int(t.a.rounded()))°F", "\(Int(t.b.rounded()))°F",
-                        signed(t.delta) + "°")
-            }
+            DripHairline()
 
             // Honest gaps — stated, never faked as zeros.
             if !diff.unavailable.isEmpty {
@@ -665,53 +622,162 @@ struct WorkoutComparisonSheet: View {
         }
     }
 
-    private func diffRow(
-        _ label: String,
-        _ a: String,
-        _ b: String,
-        _ delta: String?,
-        coral: Bool = false,
-        modelTag: Bool = false
-    ) -> some View {
-        let color = coral ? Color.drip.coral : Color.drip.textPrimary
+    /// The rows, in reading order, banded by what they describe.
+    private func diffGroups(diff: DiffDTO, a: WorkProfileDTO, b: WorkProfileDTO) -> [DiffGroup] {
+        let isQuality = diff.mode == "quality"
+
+        // ── The whole run (every workout type) ──
+        var run: [DiffRowItem] = [
+            DiffRowItem(label: "ZONE", a: zoneLabel(diff.zone.a), b: zoneLabel(diff.zone.b),
+                        delta: diff.zone.same ? "same" : "differs")
+        ]
+        if let v = diff.totalDistanceMeters {
+            run.append(DiffRowItem(label: "DISTANCE",
+                                   a: String(format: "%.1f mi", v.a / 1609.344),
+                                   b: String(format: "%.1f mi", v.b / 1609.344),
+                                   delta: v.pctChange.map { signed($0) + "%" }))
+        }
+        if let d = diff.totalDurationSec {
+            run.append(DiffRowItem(label: "DURATION", a: durationString(d.a), b: durationString(d.b),
+                                   delta: signed(d.delta / 60) + "m"))
+        }
+        if let p = diff.avgPaceSec {
+            run.append(DiffRowItem(label: "AVG PACE", a: paceString(p.a), b: paceString(p.b),
+                                   delta: signed(p.delta) + "s"))
+        }
+        if let p = diff.conditionsAdjustedPaceSec {
+            run.append(DiffRowItem(label: "PACE · HEAT+HILL ADJ", a: paceString(p.a), b: paceString(p.b),
+                                   delta: signed(p.delta) + "s", modelTag: true))
+        }
+        if let p = diff.fastSegPaceSec {
+            run.append(DiffRowItem(label: "FAST SEGMENT", a: paceString(p.a), b: paceString(p.b),
+                                   delta: signed(p.delta) + "s"))
+        }
+        if let h = diff.avgRunHr {
+            run.append(DiffRowItem(label: "AVG HR", a: "\(Int(h.a.rounded()))", b: "\(Int(h.b.rounded()))",
+                                   delta: signed(h.delta)))
+        }
+        if let e = diff.elevationGainM, e.a > 0 || e.b > 0 {
+            let ft = { (m: Double) in "\(Int((m * 3.28084).rounded())) ft" }
+            run.append(DiffRowItem(label: "ELEVATION", a: ft(e.a), b: ft(e.b),
+                                   delta: signed(e.delta * 3.28084) + "ft"))
+        }
+        // Aerobic decoupling — the headline signal for a steady run (its
+        // coral hit); shown whenever both sides have HR. Lower = held form.
+        if !isQuality, let da = diff.decouplingPct.a, let db = diff.decouplingPct.b {
+            run.append(DiffRowItem(label: "DECOUPLING",
+                                   a: signed(da, decimals: 1) + "%", b: signed(db, decimals: 1) + "%",
+                                   delta: signed(db - da, decimals: 1) + "%", coral: true))
+        }
+
+        // ── The work itself (rep sessions only) ──
+        var work: [DiffRowItem] = []
+        if isQuality {
+            work.append(DiffRowItem(label: "REPS", a: repsLabel(a), b: repsLabel(b),
+                                    delta: diff.reps.map { signed($0.delta) }))
+            if let p = diff.avgRepPaceRawSec {
+                work.append(DiffRowItem(label: "REP PACE · RAW", a: paceString(p.a), b: paceString(p.b),
+                                        delta: signed(p.delta) + "s"))
+            }
+            if let p = diff.avgRepPaceAdjSec {
+                work.append(DiffRowItem(label: "REP PACE · HEAT-ADJ", a: paceString(p.a), b: paceString(p.b),
+                                        delta: signed(p.delta) + "s", modelTag: true))
+            }
+            if let r = diff.avgRecoverySec {
+                work.append(DiffRowItem(label: "RECOVERY", a: "\(Int(r.a.rounded()))s", b: "\(Int(r.b.rounded()))s",
+                                        delta: signed(r.delta) + "s"))
+            }
+            if let h = diff.recoveryHrDropBpm {
+                // The headline signal for a quality session — its coral hit.
+                work.append(DiffRowItem(label: "HR DROP IN FLOATS",
+                                        a: "\(Int(h.a.rounded()))", b: "\(Int(h.b.rounded()))",
+                                        delta: signed(h.delta), coral: true))
+            }
+            if let h = diff.avgWorkHr {
+                work.append(DiffRowItem(label: "AVG WORK HR", a: "\(Int(h.a.rounded()))", b: "\(Int(h.b.rounded()))",
+                                        delta: signed(h.delta)))
+            }
+            if let v = diff.qualityVolumeMeters {
+                work.append(DiffRowItem(label: "QUALITY VOLUME",
+                                        a: String(format: "%.1f mi", v.a / 1609.344),
+                                        b: String(format: "%.1f mi", v.b / 1609.344),
+                                        delta: v.pctChange.map { signed($0) + "%" }))
+            }
+        }
+
+        // ── What the day gave you ──
+        var conditions: [DiffRowItem] = []
+        if let t = diff.tempF {
+            conditions.append(DiffRowItem(label: "TEMP", a: "\(Int(t.a.rounded()))°F", b: "\(Int(t.b.rounded()))°F",
+                                          delta: signed(t.delta) + "°"))
+        }
+
+        return [
+            DiffGroup(title: "THE RUN", rows: run),
+            DiffGroup(title: "THE WORK", rows: work),
+            DiffGroup(title: "CONDITIONS", rows: conditions),
+        ].filter { !$0.rows.isEmpty }
+    }
+
+    private func diffColumnCap(_ text: String, width: CGFloat) -> some View {
+        Text(text)
+            .font(.dripCaption(9))
+            .tracking(1.2)
+            .foregroundStyle(Color.drip.textTertiary)
+            .frame(width: width, alignment: .trailing)
+    }
+
+    private func diffGroupHeader(_ title: String, isFirst: Bool) -> some View {
+        Text(title)
+            .font(.dripEyebrow(9))
+            .tracking(1.4)
+            .foregroundStyle(Color.drip.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, isFirst ? 2 : 18)
+            .padding(.bottom, 5)
+    }
+
+    private func diffRow(_ row: DiffRowItem) -> some View {
+        let color = row.coral ? Color.drip.coral : Color.drip.textPrimary
         return VStack(spacing: 0) {
             DripHairline()
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                HStack(spacing: 5) {
-                    Text(label)
+            HStack(alignment: .firstTextBaseline, spacing: Self.diffColumnGap) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(row.label)
                         .font(.dripCaption(9))
                         .tracking(1.0)
-                        .foregroundStyle(coral ? Color.drip.coral : Color.drip.textSecondary)
-                    if modelTag {
+                        .foregroundStyle(row.coral ? Color.drip.coral : Color.drip.textSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if row.modelTag {
                         Text("MODEL")
-                            .font(.dripCaption(7))
-                            .tracking(0.8)
+                            .font(.dripEyebrow(7))
+                            .tracking(0.6)
                             .foregroundStyle(Color.drip.textTertiary)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(Color.drip.divider, lineWidth: 1)
-                            )
                     }
                 }
-                Spacer(minLength: 8)
-                Text(a)
-                    .font(.dripStat(13))
-                    .foregroundStyle(color)
-                Text("→")
-                    .font(.dripCaption(10))
-                    .foregroundStyle(Color.drip.textTertiary)
-                Text(b)
-                    .font(.dripStat(13))
-                    .foregroundStyle(color)
-                Text(delta ?? "·")
+                Spacer(minLength: 6)
+                diffValue(row.a, color: color)
+                diffValue(row.b, color: color)
+                Text(row.delta ?? "·")
                     .font(.dripStat(12))
-                    .foregroundStyle(coral ? Color.drip.coral : Color.drip.textSecondary)
-                    .frame(minWidth: 46, alignment: .trailing)
+                    .foregroundStyle(row.coral ? Color.drip.coral : Color.drip.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .frame(width: Self.diffDeltaColumn, alignment: .trailing)
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 9)
+            .background(row.coral ? Color.drip.coral.opacity(0.05) : Color.clear)
         }
+    }
+
+    private func diffValue(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.dripStat(13))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(width: Self.diffValueColumn, alignment: .trailing)
     }
 
     // ── Manual picker ───────────────────────────────────────────────────

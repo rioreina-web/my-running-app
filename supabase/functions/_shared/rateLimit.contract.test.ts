@@ -63,6 +63,10 @@ const LLM_FUNCTIONS_RATE_LIMITED: Array<{ fn: string; feature: string }> = [
   // 20260416400000 never scheduled). Untested LLM prompt making load
   // decisions + voice mismatch with the Maya observation-first posture.
   { fn: "generate-workout-insight", feature: "workout_insight" },
+  // session-ask — sibling of generate-workout-insight, NOT a branch of
+  // coaching-agent (SESSION-ASK-APPLY §0.5). User-JWT only; there is no
+  // service-role caller, so the limit applies unconditionally.
+  { fn: "session-ask",            feature: "session_ask" },
   // W2.3-follow-up — auth gated via requireAuthOrServiceRole, rate-limit
   // wired in the same PR. Service-role callers bypass the user-keyed
   // limit via isServiceRole=true; user-facing callers (iOS) pay it.
