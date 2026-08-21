@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Log Screen, Four Ways</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Anton&family=Archivo:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Caveat:wght@500;700&family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Martian+Mono:wght@400;600&display=swap">
+
+<style>
+/* ============================================================
+   GALLERY CHROME — tokens (light default, dark override)
+   The four specimens below carry their own committed palettes
+   and deliberately do NOT follow the viewer's theme: they are
+   printed swatches, not UI.
+   ============================================================ */
+:root{
+  --wall:#E7E7EA;
+  --panel:#F4F4F6;
+  --rule:#D2D3D8;
+  --rule-soft:#DEDFE3;
+  --ink:#16181D;
+  --ink-2:#5C616C;
+  --ink-3:#8A8F9A;
+  --wax:#B87516;          /* grease pencil, light ground */
+  --wax-fill:rgba(226,168,58,.18);
+  --shadow:0 1px 2px rgba(18,20,25,.07), 0 12px 32px rgba(18,20,25,.10);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --wall:#15171B;
+    --panel:#1D2026;
+    --rule:#2E323A;
+    --rule-soft:#262A31;
+    --ink:#ECEDF0;
+    --ink-2:#9AA0AB;
+    --ink-3:#6E7480;
+    --wax:#F2C14E;
+    --wax-fill:rgba(242,193,78,.14);
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 18px 44px rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  --wall:#15171B;
+  --panel:#1D2026;
+  --rule:#2E323A;
+  --rule-soft:#262A31;
+  --ink:#ECEDF0;
+  --ink-2:#9AA0AB;
+  --ink-3:#6E7480;
+  --wax:#F2C14E;
+  --wax-fill:rgba(242,193,78,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 18px 44px rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--wall);
+  color:var(--ink);
+  font-family:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1400px;margin:0 auto;padding:0 24px;}
+
+/* ---------- masthead ---------- */
+.masthead{padding:64px 0 40px;border-bottom:1px solid var(--rule);}
+.kicker{
+  font-family:"Martian Mono",ui-monospace,monospace;
+  font-size:10px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--wax);margin:0 0 20px;
+}
+.masthead h1{
+  font-family:"Bricolage Grotesque","Archivo",sans-serif;
+  font-weight:800;font-size:clamp(2.4rem,6vw,4rem);line-height:1.02;
+  letter-spacing:-.03em;margin:0 0 20px;text-wrap:balance;max-width:16ch;
+}
+.standfirst{font-size:1.0625rem;line-height:1.65;color:var(--ink-2);max-width:62ch;margin:0;}
+.standfirst strong{color:var(--ink);font-weight:600;}
+
+.meta-row{
+  display:flex;flex-wrap:wrap;gap:8px 28px;margin-top:28px;
+  font-family:"Martian Mono",ui-monospace,monospace;
+  font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+}
+.meta-row span b{color:var(--ink-2);font-weight:600;}
+
+/* ---------- section headers ---------- */
+.sec{padding:56px 0;border-bottom:1px solid var(--rule);}
+.sec:last-of-type{border-bottom:0;}
+.sec-head{margin-bottom:32px;}
+.sec-head h2{
+  font-family:"Bricolage Grotesque","Archivo",sans-serif;
+  font-weight:600;font-size:1.5rem;letter-spacing:-.02em;margin:0 0 8px;
+}
+.sec-head p{margin:0;color:var(--ink-2);max-width:64ch;font-size:.9375rem;}
+
+/* ---------- board rail ---------- */
+.rail{
+  display:grid;grid-template-columns:repeat(auto-fit,318px);
+  justify-content:center;gap:36px 20px;padding:4px 0 8px;
+}
+figure.spec{margin:0;width:318px;
+  opacity:0;transform:translateY(14px);animation:rise .6s cubic-bezier(.2,.7,.3,1) forwards;}
+figure.spec:nth-child(1){animation-delay:.04s;}
+figure.spec:nth-child(2){animation-delay:.12s;}
+figure.spec:nth-child(3){animation-delay:.20s;}
+figure.spec:nth-child(4){animation-delay:.28s;}
+@keyframes rise{to{opacity:1;transform:none;}}
+@media (prefers-reduced-motion:reduce){
+  figure.spec{animation:none;opacity:1;transform:none;}
+}
+
+.spec-label{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;}
+.spec-idx{
+  font-family:"Martian Mono",ui-monospace,monospace;font-size:10px;font-weight:600;
+  letter-spacing:.1em;color:var(--wax);
+}
+.spec-label h3{
+  font-family:"Bricolage Grotesque","Archivo",sans-serif;
+  font-weight:600;font-size:1.0625rem;letter-spacing:-.015em;margin:0;
+}
+.spec-thesis{font-size:.8438rem;line-height:1.55;color:var(--ink-2);margin:0 0 18px;min-height:6.2em;}
+
+/* device */
+.device{
+  background:#0A0A0C;padding:9px;border-radius:42px;box-shadow:var(--shadow);
+  transition:transform .35s cubic-bezier(.2,.7,.3,1);
+}
+figure.spec:hover .device{transform:translateY(-6px);}
+@media (prefers-reduced-motion:reduce){figure.spec:hover .device{transform:none;}}
+.screen{
+  border-radius:34px;overflow:hidden;height:660px;overflow-y:auto;position:relative;
+  scrollbar-width:none;
+}
+.screen::-webkit-scrollbar{display:none;}
+
+/* token strip under each board */
+.tokens{margin-top:18px;border:1px solid var(--rule);border-radius:10px;background:var(--panel);overflow:hidden;}
+.tokens summary{
+  cursor:pointer;list-style:none;padding:11px 14px;
+  font-family:"Martian Mono",ui-monospace,monospace;font-size:9.5px;font-weight:600;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2);
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+}
+.tokens summary::-webkit-details-marker{display:none;}
+.tokens summary:hover{color:var(--ink);}
+.tokens summary:focus-visible{outline:2px solid var(--wax);outline-offset:-2px;}
+.tokens summary .chev{transition:transform .2s;color:var(--ink-3);}
+.tokens[open] summary .chev{transform:rotate(90deg);}
+.swatches{display:flex;gap:0;height:9px;flex:0 0 84px;width:84px;border-radius:2px;overflow:hidden;}
+.swatches i{flex:1;}
+.tok-table{border-top:1px solid var(--rule);}
+.tok-row{
+  display:grid;grid-template-columns:16px 1fr auto;gap:10px;align-items:center;
+  padding:7px 14px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;
+  border-bottom:1px solid var(--rule-soft);
+}
+.tok-row:last-child{border-bottom:0;}
+.tok-row i{width:14px;height:14px;border-radius:3px;border:1px solid rgba(128,128,128,.35);}
+.tok-row b{font-weight:400;color:var(--ink-2);}
+.tok-row code{color:var(--ink);font-size:11px;}
+.tok-note{padding:10px 14px;font-size:11.5px;line-height:1.5;color:var(--ink-3);border-top:1px solid var(--rule-soft);
+  font-family:"Instrument Sans",sans-serif;}
+.tok-note b{color:var(--ink-2);font-weight:600;}
+
+/* ---------- comparison table ---------- */
+.tbl-scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:12px;background:var(--panel);}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:.875rem;}
+th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--rule-soft);vertical-align:top;}
+thead th{
+  font-family:"Martian Mono",ui-monospace,monospace;font-size:9.5px;font-weight:600;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);
+  border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+tbody th{font-weight:600;color:var(--ink);white-space:nowrap;font-size:.8125rem;}
+td{color:var(--ink-2);}
+tbody tr:last-child th,tbody tr:last-child td{border-bottom:0;}
+.dot{display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:7px;vertical-align:1px;}
+
+/* ---------- next steps ---------- */
+.steps{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;}
+@media(min-width:760px){.steps{grid-template-columns:repeat(3,1fr);}}
+.step{background:var(--panel);padding:22px;}
+.step .n{
+  font-family:"Martian Mono",ui-monospace,monospace;font-size:10px;font-weight:600;
+  letter-spacing:.1em;color:var(--wax);display:block;margin-bottom:10px;
+}
+.step h4{font-family:"Bricolage Grotesque","Archivo",sans-serif;font-weight:600;font-size:1rem;margin:0 0 8px;letter-spacing:-.01em;}
+.step p{margin:0;font-size:.875rem;line-height:1.6;color:var(--ink-2);}
+.step code{font-family:"IBM Plex Mono",monospace;font-size:.8125em;background:var(--wax-fill);padding:1px 5px;border-radius:4px;color:var(--ink);}
+
+.footnote{margin-top:32px;padding:18px 20px;border-left:2px solid var(--wax);background:var(--wax-fill);border-radius:0 8px 8px 0;}
+.footnote p{margin:0;font-size:.875rem;line-height:1.6;color:var(--ink-2);}
+.footnote p+p{margin-top:10px;}
+.footnote b{color:var(--ink);font-weight:600;}
+
+footer{padding:40px 0 72px;color:var(--ink-3);font-size:.8125rem;}
+
+/* ============================================================
+   SPECIMEN 1 — BRUTALIST TRACK POSTER
+   ============================================================ */
+.b1{background:#FFFFFF;color:#0A0A0A;font-family:"Archivo",sans-serif;padding:0 0 0;}
+.b1 .top{padding:20px 18px 0;}
+.b1 .day{font-family:"Anton",sans-serif;font-size:13px;letter-spacing:.22em;text-transform:uppercase;color:#0A0A0A;}
+.b1 .date{font-family:"Anton",sans-serif;font-size:66px;line-height:.82;letter-spacing:-.02em;text-transform:uppercase;margin:6px 0 0;}
+.b1 .date em{font-style:normal;background:#FFE500;padding:0 4px;}
+.b1 .count{font-family:"Archivo",sans-serif;font-weight:700;font-size:11px;letter-spacing:.14em;text-transform:uppercase;margin-top:12px;}
+.b1 .bar{height:6px;background:#0A0A0A;margin:14px 0 0;}
+.b1 .rec{
+  display:block;width:100%;border:0;background:#0A0A0A;color:#FFE500;
+  font-family:"Anton",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;
+  padding:20px 18px;text-align:left;cursor:pointer;
+}
+.b1 .rec small{display:block;font-family:"Archivo",sans-serif;font-weight:600;font-size:10px;letter-spacing:.16em;color:#FFF;margin-top:5px;}
+.b1 .mood{padding:18px;border-bottom:6px solid #0A0A0A;}
+.b1 .mood p{font-family:"Anton",sans-serif;font-size:24px;line-height:1;text-transform:uppercase;margin:0 0 12px;}
+.b1 .chips{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;}
+.b1 .chips b{
+  font-family:"Archivo",sans-serif;font-weight:800;font-size:8.5px;letter-spacing:.06em;
+  text-transform:uppercase;text-align:center;padding:9px 2px;border:2px solid #0A0A0A;
+}
+.b1 .chips b.on{background:#FFE500;}
+.b1 .entry{padding:18px;border-bottom:2px solid #0A0A0A;}
+.b1 .eyebrow{
+  display:flex;justify-content:space-between;font-family:"Archivo",sans-serif;font-weight:700;
+  font-size:9px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:8px;
+}
+.b1 .eyebrow em{font-style:normal;background:#0A0A0A;color:#FFF;padding:2px 6px;}
+.b1 .ttl{font-family:"Anton",sans-serif;font-size:38px;line-height:.9;text-transform:uppercase;margin:0 0 10px;letter-spacing:-.01em;}
+.b1 .stats{display:flex;gap:0;border-top:2px solid #0A0A0A;border-bottom:2px solid #0A0A0A;}
+.b1 .stats div{flex:1;padding:8px 0;border-right:2px solid #0A0A0A;}
+.b1 .stats div:last-child{border-right:0;}
+.b1 .stats s{display:block;text-decoration:none;font-family:"Archivo",sans-serif;font-weight:700;font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:#5A5A5A;}
+.b1 .stats u{display:block;text-decoration:none;font-family:"Anton",sans-serif;font-size:19px;font-variant-numeric:tabular-nums;margin-top:2px;}
+.b1 blockquote{margin:12px 0 0;font-family:"Archivo",sans-serif;font-style:italic;font-size:13px;line-height:1.45;}
+.b1 .niggle{display:inline-block;margin-top:11px;background:#FFE500;font-family:"Archivo",sans-serif;font-weight:800;font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:5px 9px;}
+.b1 .tabs{display:grid;grid-template-columns:repeat(6,1fr);background:#0A0A0A;position:sticky;bottom:0;}
+.b1 .tabs b{font-family:"Archivo",sans-serif;font-weight:700;font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:#8A8A8A;text-align:center;padding:13px 0 18px;}
+.b1 .tabs b.on{color:#FFE500;}
+
+/* ============================================================
+   SPECIMEN 2 — TECHNICAL INSTRUMENT
+   ============================================================ */
+.b2{background:#0B0D10;color:#D3DAE2;font-family:"IBM Plex Mono",monospace;font-size:12px;}
+.b2 .top{padding:18px 16px 14px;border-bottom:1px solid #1E242C;}
+.b2 .sys{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#5B6772;}
+.b2 .sys em{font-style:normal;color:#37C8E8;}
+.b2 .date{font-size:26px;font-weight:300;letter-spacing:-.01em;color:#EAF1F7;margin:12px 0 3px;font-variant-numeric:tabular-nums;}
+.b2 .count{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#5B6772;}
+.b2 .count b{color:#37C8E8;font-weight:500;}
+.b2 .rec{
+  display:flex;align-items:center;gap:10px;width:100%;margin:0;border:1px solid #37C8E8;
+  background:rgba(55,200,232,.07);color:#37C8E8;padding:13px 16px;cursor:pointer;
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;
+}
+.b2 .rec i{width:7px;height:7px;border-radius:99px;background:#37C8E8;box-shadow:0 0 0 4px rgba(55,200,232,.2);}
+.b2 .recwrap{padding:14px 16px;border-bottom:1px solid #1E242C;}
+.b2 .alt{display:block;text-align:center;margin-top:9px;font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:#5B6772;}
+.b2 .mood{padding:15px 16px;border-bottom:1px solid #1E242C;}
+.b2 .mood p{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#5B6772;margin:0 0 10px;}
+.b2 .chips{display:flex;gap:5px;}
+.b2 .chips b{flex:1;text-align:center;font-size:8px;font-weight:400;letter-spacing:.06em;text-transform:uppercase;
+  padding:8px 0;border:1px solid #232A33;color:#7C8794;}
+.b2 .chips b.on{border-color:#37C8E8;color:#0B0D10;background:#37C8E8;font-weight:500;}
+.b2 .entry{padding:15px 16px;border-bottom:1px solid #1E242C;}
+.b2 .eyebrow{display:flex;justify-content:space-between;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:#5B6772;margin-bottom:9px;}
+.b2 .eyebrow em{font-style:normal;color:#9FB0BE;}
+.b2 .ttl{font-size:15px;font-weight:500;color:#EAF1F7;margin:0 0 11px;letter-spacing:-.005em;}
+.b2 .grid{display:grid;grid-template-columns:1fr auto;gap:0 12px;font-variant-numeric:tabular-nums;}
+.b2 .grid s{text-decoration:none;font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:#5B6772;
+  padding:5px 0;border-bottom:1px solid #171D24;}
+.b2 .grid u{text-decoration:none;font-size:12px;color:#D3DAE2;text-align:right;padding:5px 0;border-bottom:1px solid #171D24;}
+.b2 blockquote{margin:12px 0 0;font-size:11.5px;line-height:1.55;color:#8C98A5;padding-left:10px;border-left:1px solid #2A323C;}
+.b2 .niggle{display:flex;justify-content:space-between;margin-top:11px;padding:7px 9px;border:1px solid #4A3520;background:rgba(255,165,31,.07);
+  font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:#FFA51F;}
+.b2 .tabs{display:grid;grid-template-columns:repeat(6,1fr);background:#0D1014;border-top:1px solid #1E242C;position:sticky;bottom:0;}
+.b2 .tabs b{font-size:7.5px;font-weight:400;letter-spacing:.1em;text-transform:uppercase;color:#5F6B78;text-align:center;padding:12px 0 18px;}
+.b2 .tabs b.on{color:#37C8E8;}
+
+/* ============================================================
+   SPECIMEN 3 — RISO ZINE
+   ============================================================ */
+.b3{background:#EFEDE4;color:#17203A;font-family:"Archivo",sans-serif;position:relative;}
+.b3::before{
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
+  background-image:radial-gradient(circle,rgba(23,32,58,.16) .9px,transparent 1px);
+  background-size:4px 4px;opacity:.5;
+}
+.b3 .top{padding:20px 18px 14px;position:relative;}
+.b3 .day{font-family:"Archivo",sans-serif;font-weight:800;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#FF3D8B;}
+.b3 .date{font-family:"Alfa Slab One",serif;font-size:40px;line-height:.95;color:#1B3FA0;margin:6px 0 0;position:relative;}
+.b3 .date::after{content:"August 21.";position:absolute;left:3px;top:2.5px;color:#FF3D8B;mix-blend-mode:multiply;opacity:.85;pointer-events:none;}
+.b3 .count{font-family:"Caveat",cursive;font-weight:700;font-size:19px;color:#17203A;margin-top:7px;transform:rotate(-1.4deg);}
+.b3 .rec{
+  display:block;width:100%;border:2.5px solid #17203A;background:#FF3D8B;color:#FFF;
+  font-family:"Alfa Slab One",serif;font-size:19px;padding:15px 18px;text-align:center;cursor:pointer;
+  box-shadow:4px 4px 0 #1B3FA0;
+}
+.b3 .recwrap{padding:6px 18px 18px;}
+.b3 .alt{display:block;text-align:center;margin-top:13px;font-family:"Caveat",cursive;font-weight:700;font-size:17px;color:#1B3FA0;}
+.b3 .mood{margin:0 18px 18px;padding:15px;background:#FFF;border:2.5px solid #17203A;transform:rotate(-.5deg);}
+.b3 .mood p{font-family:"Alfa Slab One",serif;font-size:17px;color:#1B3FA0;margin:0 0 11px;line-height:1.1;}
+.b3 .chips{display:flex;flex-wrap:wrap;gap:5px;}
+.b3 .chips b{font-family:"Archivo",sans-serif;font-weight:800;font-size:9px;letter-spacing:.05em;text-transform:uppercase;
+  padding:6px 8px;border:2px solid #17203A;background:#EFEDE4;}
+.b3 .chips b.on{background:#FFE500;}
+.b3 .entry{margin:0 18px 16px;padding:15px;background:#FFF;border:2.5px solid #17203A;box-shadow:3px 3px 0 rgba(27,63,160,.85);}
+.b3 .eyebrow{display:flex;justify-content:space-between;font-weight:800;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#5A6480;margin-bottom:7px;}
+.b3 .eyebrow em{font-style:normal;background:#FFE500;color:#17203A;padding:2px 6px;}
+.b3 .ttl{font-family:"Alfa Slab One",serif;font-size:22px;line-height:1.05;color:#1B3FA0;margin:0 0 9px;}
+.b3 .stats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;}
+.b3 .stats span{font-family:"Archivo",sans-serif;font-weight:700;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;
+  background:#1B3FA0;color:#FFF;padding:4px 7px;font-variant-numeric:tabular-nums;}
+.b3 blockquote{margin:0;font-family:"Caveat",cursive;font-weight:500;font-size:19px;line-height:1.3;color:#17203A;}
+.b3 .niggle{display:inline-block;margin-top:10px;background:#FF3D8B;color:#FFF;font-weight:800;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;padding:5px 9px;transform:rotate(-2deg);}
+.b3 .tabs{display:grid;grid-template-columns:repeat(6,1fr);background:#17203A;position:sticky;bottom:0;z-index:3;}
+.b3 .tabs b{font-family:"Archivo",sans-serif;font-weight:800;font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:#8F97AC;text-align:center;padding:13px 0 18px;}
+.b3 .tabs b.on{color:#FFE500;}
+
+/* ============================================================
+   SPECIMEN 4 — SWISS MINIMAL
+   ============================================================ */
+.b4{background:#FFFFFF;color:#111214;font-family:"Instrument Sans",sans-serif;}
+.b4 .top{padding:44px 22px 34px;}
+.b4 .day{font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:#767C86;}
+.b4 .date{font-size:30px;font-weight:400;letter-spacing:-.032em;margin:14px 0 0;line-height:1.05;}
+.b4 .count{font-size:13px;color:#6E747E;margin-top:8px;letter-spacing:-.005em;}
+.b4 .recwrap{padding:0 22px 40px;}
+.b4 .rec{
+  display:block;width:100%;border:0;background:#0025D8;color:#FFF;
+  font-family:"Instrument Sans",sans-serif;font-size:14px;font-weight:500;letter-spacing:-.005em;
+  padding:15px;cursor:pointer;border-radius:2px;
+}
+.b4 .alt{display:block;text-align:center;margin-top:14px;font-size:12px;color:#767C86;}
+.b4 .mood{padding:0 22px 40px;}
+.b4 .mood p{font-size:15px;font-weight:400;margin:0 0 16px;letter-spacing:-.01em;}
+.b4 .chips{display:flex;gap:18px;}
+.b4 .chips b{font-size:11px;font-weight:400;color:#767C86;padding-bottom:5px;border-bottom:1px solid transparent;}
+.b4 .chips b.on{color:#111214;font-weight:500;border-bottom-color:#0025D8;}
+.b4 .lbl{padding:0 22px;font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:#767C86;margin-bottom:22px;}
+.b4 .entry{padding:0 22px 38px;}
+.b4 .eyebrow{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#767C86;margin-bottom:11px;}
+.b4 .eyebrow em{font-style:normal;color:#6E747E;}
+.b4 .ttl{font-size:21px;font-weight:400;letter-spacing:-.028em;margin:0 0 16px;line-height:1.15;}
+.b4 .grid{display:flex;gap:28px;margin-bottom:16px;}
+.b4 .grid div s{display:block;text-decoration:none;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#767C86;margin-bottom:4px;}
+.b4 .grid div u{display:block;text-decoration:none;font-size:15px;font-weight:400;letter-spacing:-.02em;font-variant-numeric:tabular-nums;}
+.b4 blockquote{margin:0;font-size:13.5px;line-height:1.62;color:#4C525C;max-width:34ch;}
+.b4 .niggle{display:block;margin-top:16px;font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:#0025D8;}
+.b4 .tabs{display:grid;grid-template-columns:repeat(6,1fr);background:#FFF;border-top:1px solid #EDEEF0;position:sticky;bottom:0;}
+.b4 .tabs b{font-size:9px;font-weight:400;letter-spacing:.04em;color:#767C86;text-align:center;padding:14px 0 20px;}
+.b4 .tabs b.on{color:#111214;font-weight:500;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="kicker">Post Run Drip · Redesign Exploration · 21 Aug 2026</p>
+  <h1>Four wild directions, one Log screen</h1>
+  <p class="standfirst">Same day, same three runs, same words — rendered four ways. Your current app is an <strong>editorial running magazine</strong>: warm paper, Crimson Pro, one coral. Every direction here breaks that on purpose, so you're choosing between real alternatives rather than tuning what you already have.</p>
+  <div class="meta-row">
+    <span><b>Screen</b> · Log, the front door</span>
+    <span><b>Content</b> · identical across all four</span>
+    <span><b>Ready to code</b> · each ships its DripColors values</span>
+  </div>
+</header>
+
+<section class="sec">
+  <div class="sec-head">
+    <h2>The specimens</h2>
+    <p>Scroll each phone — they're live and full-length, not screenshots. Open the token drawer under any board to see the exact hex values that would go into <code>DripColors.wild</code>.</p>
+  </div>
+
+  <div class="rail">
+
+    <!-- ============ 1 · BRUTALIST ============ -->
+    <figure class="spec">
+      <div class="spec-label"><span class="spec-idx">01</span><h3>Brutalist Track Poster</h3></div>
+      <p class="spec-thesis">Type set enormous and condensed, black rules three times too thick, one screaming yellow. No cards, no shadows, no softness. It reads like a meet program taped to a locker room wall.</p>
+
+      <div class="device"><div class="screen b1">
+        <div class="top">
+          <div class="day">Friday</div>
+          <div class="date">Aug<br><em>21</em></div>
+          <div class="count">Nine weeks to Chicago</div>
+          <div class="bar"></div>
+        </div>
+        <button class="rec" type="button">Record a voice log<small>Or type it instead →</small></button>
+        <div class="mood">
+          <p>How are<br>you feeling?</p>
+          <div class="chips"><b>Energ</b><b class="on">Posit</b><b>Neutr</b><b>Tired</b><b>Strug</b></div>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Thu · Aug 20</span><em>Positive</em></div>
+          <h4 class="ttl">Threshold<br>8.2 mi</h4>
+          <div class="stats">
+            <div><s>Pace</s><u>7:12</u></div><div><s>Time</s><u>59:00</u></div><div><s>Reps</s><u>4×1.5</u></div>
+          </div>
+          <blockquote>"Third rep was the one — settled into it instead of forcing it. Right calf tight on the cooldown, nothing sharp."</blockquote>
+          <span class="niggle">Right calf · 2× / 14d</span>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Wed · Aug 19</span><em>Tired</em></div>
+          <h4 class="ttl">Easy<br>5.0 mi</h4>
+          <div class="stats"><div><s>Pace</s><u>8:47</u></div><div><s>Time</s><u>44:00</u></div></div>
+          <blockquote>"Slept badly. Kept it genuinely easy, which took some discipline."</blockquote>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Tue · Aug 18</span><em>Energized</em></div>
+          <h4 class="ttl">Long run<br>16.0 mi</h4>
+          <div class="stats"><div><s>Pace</s><u>8:21</u></div><div><s>Time</s><u>2:14</u></div><div><s>Finish</s><u>4 @ MP</u></div></div>
+        </div>
+
+        <div class="tabs"><b class="on">Log</b><b>Train</b><b>Trends</b><b>Week</b><b>Ask</b><b>Sheet</b></div>
+      </div></div>
+
+      <details class="tokens">
+        <summary><span>Token values</span><span class="swatches" aria-hidden="true"><i style="background:#FFFFFF"></i><i style="background:#0A0A0A"></i><i style="background:#FFE500"></i><i style="background:#5A5A5A"></i></span><span class="chev">›</span></summary>
+        <div class="tok-table">
+          <div class="tok-row"><i style="background:#FFFFFF"></i><b>background</b><code>#FFFFFF</code></div>
+          <div class="tok-row"><i style="background:#FFFFFF"></i><b>cardBackground</b><code>#FFFFFF</code></div>
+          <div class="tok-row"><i style="background:#FFE500"></i><b>coral (accent)</b><code>#FFE500</code></div>
+          <div class="tok-row"><i style="background:#0A0A0A"></i><b>textPrimary</b><code>#0A0A0A</code></div>
+          <div class="tok-row"><i style="background:#5A5A5A"></i><b>textSecondary</b><code>#5A5A5A</code></div>
+          <div class="tok-row"><i style="background:#0A0A0A"></i><b>divider</b><code>#0A0A0A</code></div>
+        </div>
+        <p class="tok-note"><b>Type:</b> Anton (display) · Archivo 700/800 (labels, body). <b>Watch:</b> yellow can only ever be a fill behind black text — it fails contrast as a text color.</p>
+      </details>
+    </figure>
+
+    <!-- ============ 2 · TECHNICAL ============ -->
+    <figure class="spec">
+      <div class="spec-label"><span class="spec-idx">02</span><h3>Technical Instrument</h3></div>
+      <p class="spec-thesis">A dark cockpit. Monospace throughout, hairline rules, numbers right-aligned in real columns. Prose gets demoted to a quiet aside. Feels like race-team telemetry rather than a diary.</p>
+
+      <div class="device"><div class="screen b2">
+        <div class="top">
+          <div class="sys"><span>Log · Day view</span><em>● Live</em></div>
+          <div class="date">2026-08-21</div>
+          <div class="count">Friday · <b>9 wk</b> to Chicago</div>
+        </div>
+        <div class="recwrap">
+          <button class="rec" type="button"><i></i>Record voice log</button>
+          <span class="alt">or type it instead</span>
+        </div>
+        <div class="mood">
+          <p>Subjective state</p>
+          <div class="chips"><b>Energ</b><b class="on">Posit</b><b>Neutr</b><b>Tired</b><b>Strug</b></div>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Thu 2026-08-20</span><em>Positive</em></div>
+          <h4 class="ttl">Threshold · 8.2 mi</h4>
+          <div class="grid">
+            <s>Avg pace</s><u>7:12 /mi</u>
+            <s>Moving time</s><u>59:00</u>
+            <s>Structure</s><u>4 × 1.5 mi</u>
+            <s>Load</s><u>142 TLS</u>
+          </div>
+          <blockquote>Third rep was the one — settled into it instead of forcing it. Right calf tight on the cooldown, nothing sharp.</blockquote>
+          <div class="niggle"><span>⚠ Right calf</span><span>2× / 14d</span></div>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Wed 2026-08-19</span><em>Tired</em></div>
+          <h4 class="ttl">Easy · 5.0 mi</h4>
+          <div class="grid"><s>Avg pace</s><u>8:47 /mi</u><s>Moving time</s><u>44:00</u><s>Load</s><u>48 TLS</u></div>
+          <blockquote>Slept badly. Kept it genuinely easy, which took some discipline.</blockquote>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Tue 2026-08-18</span><em>Energized</em></div>
+          <h4 class="ttl">Long run · 16.0 mi</h4>
+          <div class="grid"><s>Avg pace</s><u>8:21 /mi</u><s>Moving time</s><u>2:14:00</u><s>Finish</s><u>4 mi @ MP</u></div>
+        </div>
+
+        <div class="tabs"><b class="on">Log</b><b>Train</b><b>Trends</b><b>Week</b><b>Ask</b><b>Sheet</b></div>
+      </div></div>
+
+      <details class="tokens">
+        <summary><span>Token values</span><span class="swatches" aria-hidden="true"><i style="background:#0B0D10"></i><i style="background:#12161B"></i><i style="background:#37C8E8"></i><i style="background:#EAF1F7"></i></span><span class="chev">›</span></summary>
+        <div class="tok-table">
+          <div class="tok-row"><i style="background:#0B0D10"></i><b>background</b><code>#0B0D10</code></div>
+          <div class="tok-row"><i style="background:#12161B"></i><b>cardBackground</b><code>#12161B</code></div>
+          <div class="tok-row"><i style="background:#37C8E8"></i><b>coral (accent)</b><code>#37C8E8</code></div>
+          <div class="tok-row"><i style="background:#EAF1F7"></i><b>textPrimary</b><code>#EAF1F7</code></div>
+          <div class="tok-row"><i style="background:#8C98A5"></i><b>textSecondary</b><code>#8C98A5</code></div>
+          <div class="tok-row"><i style="background:#1E242C"></i><b>divider</b><code>#1E242C</code></div>
+        </div>
+        <p class="tok-note"><b>Type:</b> IBM Plex Mono 300/400/500 throughout. <b>Watch:</b> this is the only direction that inverts to dark — your six mood colors were picked for paper and will all need re-tuning.</p>
+      </details>
+    </figure>
+
+    <!-- ============ 3 · RISO ============ -->
+    <figure class="spec">
+      <div class="spec-label"><span class="spec-idx">03</span><h3>Riso Zine</h3></div>
+      <p class="spec-thesis">Off-register overprint, halftone grain, hard drop shadows and handwriting in the margins. The only direction with a sense of humour — a training diary someone actually made, not a dashboard.</p>
+
+      <div class="device"><div class="screen b3">
+        <div class="top">
+          <div class="day">Friday</div>
+          <div class="date">August 21.</div>
+          <div class="count">nine weeks to Chicago!</div>
+        </div>
+        <div class="recwrap">
+          <button class="rec" type="button">Record a voice log</button>
+          <span class="alt">or type it instead →</span>
+        </div>
+        <div class="mood">
+          <p>How are you feeling?</p>
+          <div class="chips"><b>Energ</b><b class="on">Positive</b><b>Neutral</b><b>Tired</b><b>Strug</b></div>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Thu · Aug 20</span><em>Positive</em></div>
+          <h4 class="ttl">Threshold, 8.2 mi.</h4>
+          <div class="stats"><span>7:12 / mi</span><span>59 min</span><span>4 × 1.5 mi</span></div>
+          <blockquote>"Third rep was the one — settled into it instead of forcing it. Right calf tight on the cooldown, nothing sharp."</blockquote>
+          <span class="niggle">Right calf · 2× / 14d</span>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Wed · Aug 19</span><em>Tired</em></div>
+          <h4 class="ttl">Easy, 5.0 mi.</h4>
+          <div class="stats"><span>8:47 / mi</span><span>44 min</span></div>
+          <blockquote>"Slept badly. Kept it genuinely easy, which took some discipline."</blockquote>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Tue · Aug 18</span><em>Energized</em></div>
+          <h4 class="ttl">Long run, 16.0 mi.</h4>
+          <div class="stats"><span>8:21 / mi</span><span>2:14</span><span>last 4 at MP</span></div>
+        </div>
+
+        <div class="tabs"><b class="on">Log</b><b>Train</b><b>Trends</b><b>Week</b><b>Ask</b><b>Sheet</b></div>
+      </div></div>
+
+      <details class="tokens">
+        <summary><span>Token values</span><span class="swatches" aria-hidden="true"><i style="background:#EFEDE4"></i><i style="background:#1B3FA0"></i><i style="background:#FF3D8B"></i><i style="background:#17203A"></i></span><span class="chev">›</span></summary>
+        <div class="tok-table">
+          <div class="tok-row"><i style="background:#EFEDE4"></i><b>background</b><code>#EFEDE4</code></div>
+          <div class="tok-row"><i style="background:#FFFFFF"></i><b>cardBackground</b><code>#FFFFFF</code></div>
+          <div class="tok-row"><i style="background:#FF3D8B"></i><b>coral (accent)</b><code>#FF3D8B</code></div>
+          <div class="tok-row"><i style="background:#17203A"></i><b>textPrimary</b><code>#17203A</code></div>
+          <div class="tok-row"><i style="background:#5A6480"></i><b>textSecondary</b><code>#5A6480</code></div>
+          <div class="tok-row"><i style="background:#17203A"></i><b>divider</b><code>#17203A</code></div>
+        </div>
+        <p class="tok-note"><b>Type:</b> Alfa Slab One (display) · Archivo 700/800 (labels) · Caveat (voice logs). <b>Watch:</b> a second ink (#1B3FA0) does real work here, so this is the one direction that needs a token your palette doesn't have yet.</p>
+      </details>
+    </figure>
+
+    <!-- ============ 4 · SWISS ============ -->
+    <figure class="spec">
+      <div class="spec-label"><span class="spec-idx">04</span><h3>Swiss Minimal</h3></div>
+      <p class="spec-thesis">Restraint pushed much further than you have now. No borders, no cards, no rules — alignment and whitespace do every job. One blue, used four times in the whole screen.</p>
+
+      <div class="device"><div class="screen b4">
+        <div class="top">
+          <div class="day">Friday</div>
+          <div class="date">August 21</div>
+          <div class="count">Nine weeks to Chicago</div>
+        </div>
+        <div class="recwrap">
+          <button class="rec" type="button">Record a voice log</button>
+          <span class="alt">Or type it instead</span>
+        </div>
+        <div class="mood">
+          <p>How are you feeling?</p>
+          <div class="chips"><b>Energized</b><b class="on">Positive</b><b>Neutral</b><b>Tired</b></div>
+        </div>
+
+        <div class="lbl">This week</div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Thursday, Aug 20</span><em>Positive</em></div>
+          <h4 class="ttl">Threshold, 8.2 mi</h4>
+          <div class="grid">
+            <div><s>Pace</s><u>7:12</u></div><div><s>Time</s><u>59:00</u></div><div><s>Reps</s><u>4 × 1.5</u></div>
+          </div>
+          <blockquote>Third rep was the one — settled into it instead of forcing it. Right calf tight on the cooldown, nothing sharp.</blockquote>
+          <span class="niggle">Right calf · 2× in 14 days</span>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Wednesday, Aug 19</span><em>Tired</em></div>
+          <h4 class="ttl">Easy, 5.0 mi</h4>
+          <div class="grid"><div><s>Pace</s><u>8:47</u></div><div><s>Time</s><u>44:00</u></div></div>
+          <blockquote>Slept badly. Kept it genuinely easy, which took some discipline.</blockquote>
+        </div>
+
+        <div class="entry">
+          <div class="eyebrow"><span>Tuesday, Aug 18</span><em>Energized</em></div>
+          <h4 class="ttl">Long run, 16.0 mi</h4>
+          <div class="grid"><div><s>Pace</s><u>8:21</u></div><div><s>Time</s><u>2:14</u></div><div><s>Finish</s><u>4 @ MP</u></div></div>
+        </div>
+
+        <div class="tabs"><b class="on">Log</b><b>Train</b><b>Trends</b><b>Week</b><b>Ask</b><b>Sheet</b></div>
+      </div></div>
+
+      <details class="tokens">
+        <summary><span>Token values</span><span class="swatches" aria-hidden="true"><i style="background:#FFFFFF"></i><i style="background:#0025D8"></i><i style="background:#111214"></i><i style="background:#EDEEF0"></i></span><span class="chev">›</span></summary>
+        <div class="tok-table">
+          <div class="tok-row"><i style="background:#FFFFFF"></i><b>background</b><code>#FFFFFF</code></div>
+          <div class="tok-row"><i style="background:#FFFFFF"></i><b>cardBackground</b><code>#FFFFFF</code></div>
+          <div class="tok-row"><i style="background:#0025D8"></i><b>coral (accent)</b><code>#0025D8</code></div>
+          <div class="tok-row"><i style="background:#111214"></i><b>textPrimary</b><code>#111214</code></div>
+          <div class="tok-row"><i style="background:#6E747E"></i><b>textSecondary</b><code>#6E747E</code></div>
+          <div class="tok-row"><i style="background:#EDEEF0"></i><b>divider</b><code>#EDEEF0</code></div>
+        </div>
+        <p class="tok-note"><b>Type:</b> Instrument Sans 400/500 only. <b>Watch:</b> the cheapest to build — it mostly <em>removes</em> things. Your 558 divider references and 57 EditorialRule marks would go quiet rather than change.</p>
+      </details>
+    </figure>
+
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <h2>What each one costs you</h2>
+    <p>Same screen, very different bills. The right-hand column is the one to read carefully — it's the work that lands after the palette swap feels good.</p>
+  </div>
+
+  <div class="tbl-scroll">
+    <table>
+      <thead>
+        <tr><th>Direction</th><th>Reads as</th><th>Token swap</th><th>Layout work</th><th>The real cost</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th><span class="dot" style="background:#FFE500;outline:1px solid #0A0A0A"></span>Brutalist</th>
+          <td>Loud, athletic, memorable</td>
+          <td>Easy</td>
+          <td>Heavy</td>
+          <td>Type sizes are hardcoded at 664 call sites. Setting display type this big means revisiting most of them.</td>
+        </tr>
+        <tr>
+          <th><span class="dot" style="background:#37C8E8"></span>Technical</th>
+          <td>Serious, precise, expert</td>
+          <td>Hard</td>
+          <td>Medium</td>
+          <td>The only dark direction. Every mood colour, chart fill and pace ramp was tuned for paper and needs re-deriving.</td>
+        </tr>
+        <tr>
+          <th><span class="dot" style="background:#FF3D8B"></span>Riso zine</th>
+          <td>Human, playful, personal</td>
+          <td>Medium</td>
+          <td>Heavy</td>
+          <td>Grain, off-register and hard shadows aren't tokens — they're per-component work, and SwiftUI fights some of it.</td>
+        </tr>
+        <tr>
+          <th><span class="dot" style="background:#0025D8"></span>Swiss</th>
+          <td>Calm, premium, quiet</td>
+          <td>Easy</td>
+          <td>Light</td>
+          <td>Almost none. The risk isn't cost, it's nerve: with the furniture gone, weak hierarchy has nowhere to hide.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footnote">
+    <p><b>A note on the accent token.</b> Every direction above still routes its accent through the token named <code>coral</code>, even when it's yellow or cyan. That's deliberate — the name describes the <em>role</em>, and renaming it would touch 972 call sites for zero visual gain.</p>
+    <p><b>And on mixing.</b> These are positions, not packages. Swiss layout with the brutalist accent, or technical density on paper instead of black, are both legitimate outcomes — pick the bones from one and the voice from another.</p>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <h2>What happens next</h2>
+    <p>Once you name a favourite — or a hybrid — this is the path from a picture to something running on your phone.</p>
+  </div>
+
+  <div class="steps">
+    <div class="step">
+      <span class="n">Step 1</span>
+      <h4>Build the switch</h4>
+      <p>Ship <code>DripTheme</code> with both themes set to identical values. The app should look completely unchanged — that's how you know the plumbing works before any design is riding on it.</p>
+    </div>
+    <div class="step">
+      <span class="n">Step 2</span>
+      <h4>Pour in the palette</h4>
+      <p>Drop the winning hex values into <code>DripColors.wild</code>, flip the setting in Settings, and the whole app recolours at once. About 60 lines, one file, 5,959 call sites.</p>
+    </div>
+    <div class="step">
+      <span class="n">Step 3</span>
+      <h4>Rebuild the Log screen</h4>
+      <p>Add <code>VoiceLogViewWild.swift</code> beside the original and gate it on the theme. The old screen is never touched, so it can't break while you work.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Rendered on real content from 21 Aug 2026 — three logged runs, one open mood prompt. Specimens use fixed palettes by design and don't follow your system theme; the page around them does.
+</footer>
+
+</div>
+</body>
+</html>
