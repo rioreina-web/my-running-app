@@ -509,8 +509,8 @@ enum TrainingStimulus: String, Codable {
         }
     }
 
-    // Training zones ride the universal blue depth ramp (source of truth:
-    // PaceSpectrum) — deepening blue with intensity, never green/coral
+    // Training zones ride the universal pace depth ramp (source of truth:
+    // PaceSpectrum) — deepening with intensity, never the mood greens
     // (green = mood, coral = alert only). Recovery sits below Easy → gray.
     var color: Color {
         switch self {
@@ -556,8 +556,8 @@ enum IntensityCategory: String, Codable {
         }
     }
 
-    // Effort levels ride the universal blue depth ramp (PaceSpectrum) —
-    // deepening blue with intensity, never green/coral.
+    // Effort levels ride the universal pace depth ramp (PaceSpectrum) —
+    // deepening with intensity, never the mood greens.
     var color: Color {
         switch self {
         case .easy: return PaceSpectrum.easy

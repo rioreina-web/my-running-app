@@ -65,7 +65,7 @@ enum PaceBandKey: String, CaseIterable, Identifiable, Codable {
     }
 
     /// Band colour from the canonical pace ramp — HM deeper than MP, because
-    /// faster reads deeper. Blue is pace and only pace (three-palette rule).
+    /// faster reads deeper. The ramp is pace and only pace (three-palette rule).
     ///
     /// NB: the prototype used two off-ramp hexes (`#12294F` / `#4E80AB`) for a
     /// wider gap between the toggle states. We take the canonical

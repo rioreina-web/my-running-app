@@ -110,6 +110,8 @@ PRD is a **monochromatic warm-paper system with a single coral hit**. Coral is *
 
 **The three-palette rule: blue = pace, warm = mood, coral = alert. The three palettes never share hues** — so on any surface a color's job is unambiguous. Green is mood-only (a "safe zone" band goes neutral gray, never green); coral is alert-only (niggles, out-of-zone workload, brand punctuation — never a pace fill).
 
+> **Hue history.** On 2026-08-21 the ramp was moved onto the coral accent, then onto a wine ramp, then reverted here. Coral was pulled for a reason worth keeping: pace is the largest colored surface in the product, so putting it on the brand hue made orange the dominant color of every chart and left coral nothing to point *with*. An accent that covers half the screen has stopped being an accent. If the hue is ever revisited, the free regions on the wheel are roughly 200–315° — everything warm is taken by coral and the tired/struggling/injured moods, and everything green by energized/positive.
+
 ### Typography — three families, sharply assigned
 - **Crimson Pro** (variable serif) — display headlines, button labels, section actions. Bold, tall, slightly condensed. Used for "May 5th.", "Marathon block.", "Active aches."
 - **PT Serif** — body, paragraph copy, italic quotes. Warm and readable.

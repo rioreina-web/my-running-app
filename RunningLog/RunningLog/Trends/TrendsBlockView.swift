@@ -888,7 +888,7 @@ private struct BlockThresholdChart: View {
     private func draw(_ ctx: GraphicsContext, _ size: CGSize) {
         let pts = band.points
         guard pts.count >= 2, band.weekCount > 0 else { return }
-        let w = size.width, h = size.height
+        let w = size.width
         let count = band.weekCount
 
         func x(_ p: BlockThresholdPoint) -> CGFloat {

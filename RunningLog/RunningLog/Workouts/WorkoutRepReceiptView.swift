@@ -93,7 +93,7 @@ struct WorkoutRepReceiptView: View {
     // switches units everywhere that reads "unit_use_km".
     @AppStorage("unit_use_km") private var km = false
     @State private var colorByZone = false
-    /// Pace-spectrum coloring (pale blue→navy). On by default; the "PACE COLOR"
+    /// Pace-spectrum coloring (pale sky→navy). On by default; the "PACE COLOR"
     /// chip toggles it off to the single coral accent.
     @State private var colorByPace = true
     /// Elevation profile overlay on the pace bars, toggleable. (HR lives in
@@ -245,6 +245,50 @@ struct WorkoutRepReceiptView: View {
     private var hasStream: Bool { sTimes.count > 5 && sHR.count > 5 }
 
     private var windows: [RRWindow] { slots.map { RRWindow(id: $0.rep, start: $0.start, end: $0.end) } }
+
+    // MARK: "The Effort" chart (redesign) — samples + structured segments
+
+    /// The stream flattened into the engine's sample model.
+    private var effortSamples: [EffortSample] {
+        EffortStreamAdapter.samples(
+            times: sTimes, hr: sHR, paceSecPerMile: sPace, cadence: sCad,
+            altitudeFt: sAltFt, distanceMeters: stream?.distance ?? [], metersPerMile: mpm)
+    }
+
+    /// Warmup / rep / float / cooldown segments derived from the real lap model
+    /// (`slots`), never inferred from pace. Empty when the run is unstructured.
+    private var effortSegments: [EffortSegment] {
+        guard let first = slots.first else { return [] }
+        var segs: [EffortSegment] = []
+        if first.start > 1 {
+            segs.append(EffortSegment(kind: .warmup, label: "WU", t0: 0, t1: first.start))
+        }
+        for s in slots {
+            segs.append(EffortSegment(kind: .rep, label: "R\(s.rep)", t0: s.start, t1: s.end))
+            if let rs = s.restStart, let re = s.restEnd, re > rs {
+                segs.append(EffortSegment(kind: .float, label: "FLOAT", t0: rs, t1: re))
+            }
+        }
+        let lastEnd = segs.last?.t1 ?? 0
+        let sessionEnd = sTimes.last ?? lastEnd
+        if sessionEnd > lastEnd + 1 {
+            segs.append(EffortSegment(kind: .cooldown, label: "CD", t0: lastEnd, t1: sessionEnd))
+        }
+        return segs
+    }
+
+    /// Recorded lap boundaries (seconds from start) — cumulative lap durations,
+    /// the interior boundaries only. Powers the optional LAPS overlay.
+    private var effortLapMarks: [TimeInterval] {
+        guard orderedLaps.count > 1 else { return [] }
+        var t = 0.0
+        var marks: [TimeInterval] = []
+        for lap in orderedLaps {
+            t += Double(lap.moving_time_seconds ?? 0)
+            marks.append(t)
+        }
+        return Array(marks.dropLast())
+    }
 
     private var maxHR: Int {
         // Per-user max HR (Settings) drives the zones — so zones are tunable per
@@ -1226,13 +1270,28 @@ struct WorkoutRepReceiptView: View {
         case .hrZones:
             RRZoneBar(seconds: zoneSeconds, zones: hrZones, mainZone: dominantZone)
         case .telemetry:
-            // The unified panel — HR, pace, cadence and elevation on one shared
-            // axis, with rep-window bands, a scrub tooltip and a fullscreen
-            // expand. It replaced the four separate stacked charts, so it stays
-            // whole here rather than being split back into four rows.
-            RRTelemetryPanel(times: sTimes, hr: sHR, paceSec: sPace,
-                             cadence: sCad, altFt: sAltFt,
-                             windows: windows, km: km, zones: hrZones)
+            // "The Effort" redesign — the structure-led pace chart replaces the
+            // unified panel on STRUCTURED (rep-bearing) sessions with a stream.
+            // Unstructured stream runs (steady runs, no reps) keep the legacy
+            // RRTelemetryPanel — the redesign's rep-band read has nothing to show
+            // there, and the panel still carries HR/cadence/elevation for them.
+            if hasStream {
+                EffortDetailCharts(
+                    samples: effortSamples,
+                    segments: effortSegments,
+                    targetPaceSecPerMile: targetSec,
+                    distanceLabel: String(format: "%.1f MI", wrDistanceMi),
+                    durationLabel: EffortFormat.clock(sTimes.last ?? 0),
+                    figure: "FIG. 31",
+                    paceZones: PaceZonesService.shared.zones,
+                    hrZones: hrZones,
+                    lapMarks: effortLapMarks,
+                    elevationGainFt: climb)
+            } else {
+                RRTelemetryPanel(times: sTimes, hr: sHR, paceSec: sPace,
+                                 cadence: sCad, altFt: sAltFt,
+                                 windows: windows, km: km, zones: hrZones)
+            }
         case .recovery:
             RRRecoveryRow(recoveries: recoveries)
         case .comparison:
@@ -1334,7 +1393,10 @@ struct WorkoutRepReceiptView: View {
         }
         var s = "\(reps.count) reps at \(rr_pace(targetSec, km: km))\(unit)"
         if let spread = repSpreadSec { s += ", inside a \(spread)-second spread" }
-        if let (zone, rep) = hrZoneOnset { s += ", HR in \(zone) from rep \(rep) on" }
+        // The zone clause used to live here ("HR in Z4 from rep 2 on") — word
+        // for word what the HR chip two lines above already says. One place
+        // per fact: the chip states the zone, the sentence states the shape.
+        // (2026-08-20)
         return s + "."
     }
 
@@ -1787,7 +1849,7 @@ struct ConditionsPlate: View {
 // MARK: - Reps table (Act 2 hero)
 
 /// The hero table: REP · PACE · HR. The rep index is a chip filled with that
-/// rep's pace-zone colour, so the table reads in the same blue depth ramp as
+/// rep's pace-zone colour, so the table reads in the same pace depth ramp as
 /// every other pace surface in the app.
 ///
 /// There is deliberately no TARGET column: nothing in the data model carries a
@@ -1905,7 +1967,7 @@ struct RepsTable: View {
     }
 
     /// Rep index in its pace-zone colour. The pale end of the ramp needs ink to
-    /// stay legible; the deep navy end needs paper.
+    /// stay legible; the deep brick end needs paper.
     private func zoneChip(_ n: Int, paceSec: Double) -> some View {
         let pos = PaceZoneScale.pos(forPaceSec: paceSec)
         return Text("\(n)")

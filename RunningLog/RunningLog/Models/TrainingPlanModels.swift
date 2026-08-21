@@ -536,8 +536,8 @@ enum ScheduledWorkoutType: String, Codable, CaseIterable {
         }
     }
 
-    // Running workout types ride the universal blue depth ramp (source of
-    // truth: PaceSpectrum) — deepening blue with intensity, never green/coral
+    // Running workout types ride the universal pace depth ramp (source of
+    // truth: PaceSpectrum) — deepening with intensity, never the mood greens
     // (green = mood, coral = alert only). Non-running types keep their own
     // categorical hues; rest/recovery sit below Easy → neutral gray.
     var color: Color {

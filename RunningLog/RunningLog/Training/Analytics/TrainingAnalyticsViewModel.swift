@@ -60,13 +60,13 @@ enum VolumeChartKind: String, Identifiable {
     var isPaceAxis: Bool { self == .pace }
 }
 
-// MARK: - Intensity ramp (10 zones, pale blue → navy)
+// MARK: - Intensity ramp (10 zones, pale sky → navy)
 //
-// The universal pace ramp: one blue hue, ten depths — pale (easy) → navy
-// (mile+). Every colour means a pace. Mirrors `PaceSpectrum.stops` — the
-// ten stops map to the canonical 10-zone taxonomy (Easy · Moderate ·
-// Steady · MP · HMP · LT · 10K · 5K · 3K · Mile). Anything faster than
-// mile clips to the Mile navy.
+// The universal pace ramp: one hue, ten depths — pale sky (easy)
+// through mid-blue to navy (mile+). Every colour means a pace.
+// Mirrors `PaceSpectrum.stops` — the ten stops map to the canonical
+// 10-zone taxonomy (Easy · Moderate · Steady · MP · HMP · LT · 10K · 5K ·
+// 3K · Mile). Anything faster than mile clips to the Mile navy.
 
 enum IntensityRamp {
     /// z1 (Easy) → z10 (Mile). Same hexes as `PaceSpectrum.stops`.
@@ -1435,7 +1435,7 @@ final class TrainingAnalyticsViewModel {
 
     func paceMarkers() -> [PaceMarker] {
         var out: [PaceMarker] = []
-        // Marker colors ride the universal blue pace ramp (PaceSpectrum)
+        // Marker colors ride the universal pace ramp (PaceSpectrum)
         // so the labels match the zone color under them in the histogram.
         // EASY uses the legibility-darkened text variant — the true Easy
         // stop is too pale for 11 pt text on paper.

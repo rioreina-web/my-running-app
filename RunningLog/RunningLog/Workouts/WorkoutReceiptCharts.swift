@@ -61,14 +61,14 @@ struct RRZone: Identifiable { let id: String; let lo: Int; let hi: Int; let colo
 /// Absolute pace → colour anchors. Colour encodes the *pace zone*, not the
 /// rank within a single workout, so the same pace reads the same colour in
 /// every chart. Matches the Volume × Pace chart axis (8:00 easy/pale end →
-/// 4:30 fastest/navy end) and shares the universal blue depth ramp with
+/// 4:30 fastest/burnt end) and shares the universal warm depth ramp with
 /// `PaceSpectrum` / `IntensityRamp`. A later pass can swap these fixed
 /// bounds for the athlete's `EquivalentPaces` zone paces.
 /// Pace → colour scale for the rep charts. Colour encodes the pace zone
 /// (absolute, not within-run rank). The pace axis is *warped*: the broad
 /// easy/moderate range (8:00–6:00) fills the left half, and the fast zones
 /// (6:00–4:30) spread across the right. That (a) gives the pale base more
-/// room, (b) lands MP mid-blue, LT deeper, mile on navy, and (c) lets the
+/// room, (b) lands MP mid-ramp, LT mid-blue, mile on navy, and (c) lets the
 /// legend ruler sit on round, evenly-spaced ticks (8:00·7:00·6:00·5:00·4:30).
 enum PaceZoneScale {
     /// Warp anchors (pace sec/mi → position 0…1). Piecewise-linear between.
@@ -89,7 +89,7 @@ enum PaceZoneScale {
         (0.5625, 47, 102, 168), // HMP
         (0.625,  39,  84, 155), // LT (5:30)
         (0.75,  14,  29,  78),  // navy — mile (5:00)
-        (1.00,  10,  21,  56),  // deepest navy — fastest (4:30)
+        (1.00,  12,  26,  73),  // deepest navy — fastest (4:30)
     ]
 
     /// Warped position 0…1 for an absolute pace.
@@ -137,7 +137,7 @@ enum PaceZoneScale {
         return color(forPaceSec: pace)
     }
 
-    /// Warped legend gradient — pale blue broad on the left, navy at the right.
+    /// Warped legend gradient — pale sky broad on the left, navy at the right.
     static var gradient: LinearGradient {
         LinearGradient(gradient: Gradient(stops: stops.map { s in
             .init(color: Color(red: s.r / 255, green: s.g / 255, blue: s.b / 255), location: s.pos)
@@ -152,7 +152,7 @@ struct RRRepBars: View {
     let reps: [RRRep]
     let targetSec: Double
     let colorByZone: Bool
-    /// When true, each bar is colored by its pace along the blue depth
+    /// When true, each bar is colored by its pace along the warm depth
     /// ramp. When `colorByZone` is on it wins instead; otherwise a single
     /// coral accent. Defaults true.
     var colorByPace: Bool = true
@@ -1237,13 +1237,37 @@ struct RRRecoveryRow: View {
 
 // MARK: - 7 · Time in zone bar
 
+/// One zone that actually carried time, ready to draw.
+private struct RRZoneSlice: Identifiable {
+    let id: String      // "Z3"
+    let color: Color
+    let sec: Double
+}
+
 struct RRZoneBar: View {
     let seconds: [String: Double]   // zone id → seconds
     let zones: [RRZone]
     let mainZone: String
 
-    var body: some View {
+    /// Only the zones the run actually spent time in. A zone it barely
+    /// touched drew a hairline on the bar and a "0:00" column in the legend —
+    /// five columns of id + clock + percent for what is nearly always a one-
+    /// or two-zone story. Both drop out now (hard rule #8: no placeholder
+    /// cells). (2026-08-20)
+    private var slices: [RRZoneSlice] {
         let total = max(seconds.values.reduce(0, +), 1)
+        return zones.compactMap { z in
+            let sec = seconds[z.id] ?? 0
+            guard sec / total >= 0.01 else { return nil }
+            return RRZoneSlice(id: z.id, color: z.color, sec: sec)
+        }
+    }
+
+    var body: some View {
+        // Width is shared across the zones actually drawn, so the bar always
+        // fills its rail — the dropped slivers are under 1% each, and a gap of
+        // background at the right end read as a bug, not as rounding.
+        let total = max(slices.reduce(0) { $0 + $1.sec }, 1)
         return VStack(alignment: .leading, spacing: 10) {
             // Proportional stacked bar. Widths are computed explicitly from the
             // container width — `layoutPriority` in an HStack does NOT split
@@ -1252,31 +1276,36 @@ struct RRZoneBar: View {
             // single dominant zone. GeometryReader gives each zone `width × pct`.
             GeometryReader { geo in
                 HStack(spacing: 0) {
-                    ForEach(zones) { z in
-                        let pct = (seconds[z.id] ?? 0) / total
-                        if pct > 0.004 {
-                            Rectangle().fill(z.color).opacity(z.id == mainZone ? 1 : 0.5)
-                                .frame(width: max(1, geo.size.width * pct))
-                                .overlay(Rectangle().fill(Color.drip.background).frame(width: 1), alignment: .trailing)
-                        }
+                    ForEach(slices) { s in
+                        Rectangle().fill(s.color)
+                            .opacity(s.id == mainZone ? 1 : 0.5)
+                            .frame(width: max(1, geo.size.width * (s.sec / total)))
+                            .overlay(Rectangle().fill(Color.drip.background).frame(width: 1),
+                                     alignment: .trailing)
                     }
                 }
             }
             .frame(height: 20)
             .overlay(Rectangle().stroke(Color.drip.divider, lineWidth: 1))
-            HStack(alignment: .top, spacing: 6) {
-                ForEach(zones) { z in
-                    let sec = seconds[z.id] ?? 0
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Rectangle().fill(z.color).opacity(z.id == mainZone ? 1 : 0.5).frame(width: 6, height: 6)
-                            Text(z.id).font(.dripStat(8)).foregroundStyle(z.id == mainZone ? Color.drip.textPrimary : Color.drip.textTertiary)
-                        }
-                        Text(rr_clock(sec)).font(.dripStat(12)).foregroundStyle(z.id == mainZone ? Color.drip.coral : Color.drip.textSecondary)
-                        Text("\(Int((sec / total * 100).rounded()))%").font(.dripStat(8)).foregroundStyle(Color.drip.textTertiary)
+
+            // One line, not a five-column grid. The bar already states each
+            // zone's share of the run, so the legend carries the clock only —
+            // the percentage printed under it was the same fact twice.
+            HStack(spacing: 16) {
+                ForEach(slices) { s in
+                    let main = s.id == mainZone
+                    HStack(spacing: 5) {
+                        Rectangle().fill(s.color).opacity(main ? 1 : 0.5)
+                            .frame(width: 6, height: 6)
+                        Text(s.id)
+                            .font(.dripStat(9))
+                            .foregroundStyle(main ? Color.drip.textPrimary : Color.drip.textTertiary)
+                        Text(rr_clock(s.sec))
+                            .font(.dripStat(11)).monospacedDigit()
+                            .foregroundStyle(main ? Color.drip.coral : Color.drip.textSecondary)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                Spacer(minLength: 0)
             }
         }
     }

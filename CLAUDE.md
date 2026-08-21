@@ -383,6 +383,55 @@ token was renamed `speed`/`--mood-speed` → `paceFast`/`--pace-fast` to
 move it out of the mood namespace. See `design-system/README.md` and
 `outputs/pace-color-todos-2026-07-03.md`.
 
+> **Hue churn, 2026-08-21.** The ramp was moved to coral, then to wine,
+> then reverted to the blue above — all in one day. Anything in the tree
+> referencing a coral or wine pace ramp is stale. Two findings are worth
+> keeping if it is ever revisited: (1) coral failed because pace is the
+> largest coloured surface in the product, so putting it on the brand hue
+> made orange the dominant colour of every chart and left the accent
+> nothing to point with; (2) a hue sweep of all 360° shows the only free
+> regions are ~200–315° — warm hues are taken by coral and the
+> tired/struggling/injured moods, green by energized/positive, and a
+> neutral gray ramp collides with the `neutral` mood outright.
+
+**The left-rule rule (2026-08-21): the 2pt vertical rule at a block's
+leading edge means MOOD, and nothing else.**
+
+| Rule | Means | Example |
+|---|---|---|
+| Coloured (mood palette) | How the athlete felt | `JournalLogRow`, `TodayPlate18`, `HomeDayPager`, `SheetTabView` |
+| Neutral (`divider` / `paperDeep`) | A block set apart — quote, transcript, nested content. Claims no status. | the transcript inset in `HistoryDetailSheet+Editorial` |
+| Coral | Never. Coral is alert-only, and a left rule is structure. | — |
+
+Written down because it was broken. `WorkoutRecipeView` drew a coral rule
+beside every work rep in THE WORKOUT while the Log feed drew a mood rule at
+the same width and position, so a warm bar meant *"this day went badly"* in
+the feed and *"this is the hard part"* one tap later in the sheet — same
+mark, opposite charge, no announcement. Coral there also broke the
+three-palette rule above: a 2×2mi rep at 5:28 is not an alert.
+
+**Structure gets a shape or an indent, never a coloured bar.** The recipe now
+braces a repeated block on the *right* (`RepeatBrace` in
+`Workouts/WorkoutReceiptSignals.swift`), indents recovery legs, and puts the
+session's totals in a footer. Before adding a marker to a new surface, check
+this table — if the thing you want to say is not mood, the leading edge is
+not where you say it.
+
+**Not yet swept:** three coral blockquote rules predate this and should go
+neutral — `HistoryDetailSheet+Editorial.swift` (memo), `DayDetailSheet.swift`
+(insight callout), `WorkoutStepComponents.swift` (nested recovery editor).
+
+**Slow-end legibility.** The pale zones must read as colour, not as
+unpainted paper: Easy sits at 1.45:1 against `--paper` and Steady at
+2.21:1. This is the constraint that killed the first coral build's Easy
+(`#F4DBC6`, 1.20:1) and it binds any future hue — at the lightness Easy
+needs, every hue is a tint, so check contrast before changing one. Ramp
+copies that must stay in sync: `PaceSpectrum.stops`,
+`IntensityRamp` in `TrainingAnalyticsViewModel.swift` (hexes *and*
+`rgbStops`), the raw stops in `WorkoutReceiptCharts.swift`,
+`design-system/colors_and_type.css`, `web/src/app/globals.css`, and
+`web/src/lib/chart-theme.ts`.
+
 Read `design-system/README.md` first if you're touching any view code.
 It's the source of truth for voice (what we say and how), tokens
 (color/type/spacing/radii/motion), and the editorial primitives

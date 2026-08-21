@@ -619,7 +619,7 @@ private struct RebrandPacesContent: View {
         }
     }
 
-    // Pace markers ride the universal blue depth ramp (PaceSpectrum) —
+    // Pace markers ride the universal pace depth ramp (PaceSpectrum) —
     // never green/coral. Easy legibility-darkened for the small marker.
     private func markerColor(for id: PaceID) -> Color {
         switch id {

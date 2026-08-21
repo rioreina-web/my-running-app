@@ -813,7 +813,7 @@ struct TodayZoneShiftsRow: View {
         }
     }
 
-    /// Zone labels ride the universal blue pace ramp (PaceSpectrum).
+    /// Zone labels ride the universal pace ramp (PaceSpectrum).
     /// These are 9 pt text labels, so EASY/MODERATE step down to darker
     /// stops than their fills would use — the pale ends are illegible
     /// as small text on card white.

@@ -428,7 +428,7 @@ struct KeySessionsDetailView: View {
                     //
                     // Each drew a trend line from four or five points, so a
                     // flat result read as "nothing happened" over a block that
-                    // plainly wasn't flat — and the five-blue stack in B isn't
+                    // plainly wasn't flat — and the five-stop stack in B isn't
                     // legible at phone width. The honest version of this
                     // question lives in the head-to-head comparison, which
                     // sets two real sessions against each other instead of
@@ -661,7 +661,7 @@ private struct InvitationChart: View {
             let slotX = size.width * 0.74
             let r: CGFloat = 4.6
 
-            // The real session — in its zone's pace blue (matches Section A/B).
+            // The real session — in its zone's pace color (matches Section A/B).
             ctx.fill(
                 Path(ellipseIn: CGRect(x: dotX - r, y: y - r, width: r * 2, height: r * 2)),
                 with: .color(SectionBView.color(session.zone, active: nil))
@@ -699,9 +699,9 @@ private struct SectionAChart: View {
 
     private let padL: CGFloat = 8, padR: CGFloat = 8, top: CGFloat = 26
 
-    /// The PaceSpectrum blue for this chart's (single) zone — the same mapping
+    /// The PaceSpectrum color for this chart's (single) zone — the same mapping
     /// the Section-B bars use, so the pace line and the work bars agree on color
-    /// (three-palette rule: pace is blue, never coral).
+    /// (three-palette rule: pace rides the blue ramp as a ramp, never as a lone alert dot).
     private var zoneColor: Color { SectionBView.color(sessions.first?.zone ?? "", active: nil) }
 
     var body: some View {
@@ -793,9 +793,9 @@ private struct SectionAChart: View {
 // MARK: - Key sessions (Section B: the work behind it)
 
 /// Weekly time-at-quality-pace, stacked by work zone. Each zone carries its
-/// own PaceSpectrum blue — faster zones sit deeper toward navy — so the stack
+/// own PaceSpectrum color — faster zones sit deeper toward navy — so the stack
 /// reads in the same "color == pace" language as every other pace surface
-/// (three-palette rule: pace is blue, never coral). When a zone is selected
+/// (three-palette rule: pace rides the blue ramp as a ramp, never as a lone alert dot). When a zone is selected
 /// in Section A, the rest dim so focus reads through value, not hue. Answers
 /// "am I accumulating work at these paces, or was that one hero session?"
 /// Easy/recovery volume is deliberately out — this is the sharp end only.
@@ -814,7 +814,7 @@ private struct SectionBView: View {
         return KeyZone.order.filter { present.contains($0) }
     }
 
-    /// PaceSpectrum blue per work zone (pace == blue; faster == deeper navy).
+    /// PaceSpectrum color per work zone (pace == blue; faster == deeper navy).
     /// When a zone is selected in Section A, the others dim to 40% so the
     /// selection reads through value — coral stays out of pace surfaces.
     static func color(_ zone: String, active: String?) -> Color {

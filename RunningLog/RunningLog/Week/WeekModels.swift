@@ -23,7 +23,7 @@ import SwiftUI
 // MARK: - Zones
 
 /// The pace spectrum, slow to sharp. Mirrors `PaceSpectrum` stops so a bar in
-/// this tab is the same blue as the same zone anywhere else in the app.
+/// this tab is the same color as the same zone anywhere else in the app.
 /// `lt` and `mile` are deliberately absent: the backend classifier folds LT
 /// into HMP, and no week in a marathon block carries mile-pace volume worth a
 /// visible segment.

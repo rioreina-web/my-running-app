@@ -358,7 +358,7 @@ struct TrendsReadView: View {
         return "\(miles) mi · \(key) key"
     }
 
-    /// The ten-stop ramp, Easy → Fast. Without it the blue bars are a
+    /// The ten-stop ramp, Easy → Fast. Without it the ramp-colored bars are a
     /// colour with no key.
     private var paceLegend: some View {
         HStack(spacing: 8) {

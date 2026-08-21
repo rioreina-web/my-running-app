@@ -164,7 +164,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 0) {
             eyebrow("WELCOME")
             displayTitle("A quieter log\nfor serious runners.")
-            italicSub("— half diary, half cockpit. Talk to it after a run; the coach reads the week. —")
+            italicSub("— half training journal, half cockpit. Talk to it after a run; the coach reads the week. —")
 
             VStack(spacing: 0) {
                 featureRow(num: "01", title: "Voice memos.",

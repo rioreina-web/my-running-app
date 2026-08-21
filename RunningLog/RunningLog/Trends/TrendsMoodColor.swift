@@ -5,7 +5,7 @@
 //  Mood → color mapping for the Trends surfaces (mood ribbon + distribution).
 //  Extracted from the retired UnifiedTrainingChart (2026-07-27 Trends cull) so
 //  the live MoodDetailView keeps its palette. Warm mood ramp only — never the
-//  pace blue, never the alert coral (the three-palette rule).
+//  pace color, never the alert coral (the three-palette rule).
 //
 
 import SwiftUI

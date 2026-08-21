@@ -323,7 +323,7 @@ struct TrainingCalendarSection: View {
         return ZStack {
             if c.isPlanned {
                 // Planned/upcoming session: plum, sized by its estimate, so it
-                // reads as distinct from a solid-blue logged run.
+                // reads as distinct from a solid-ramp logged run.
                 RoundedRectangle(cornerRadius: 5).fill(Self.plannedColor)
                     .frame(width: side, height: side)
                 Text(DistanceFormat.value(miles: c.plannedMiles, unit: unit))

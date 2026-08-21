@@ -4,13 +4,25 @@
 //
 //  Single source of truth for the "color == pace" visual language.
 //
-//  One hue, ten depths: pale sky blue (easy) deepening to navy (mile).
-//  Pace reads as *intensity*, not as a rainbow. Decided 2026-07-03 after
-//  the mood-collision review: moods keep the warm traffic-light palette
-//  (green/amber/rose), coral stays the alert color, and pace owns blue —
-//  the three systems share no hues and can never be confused on the same
-//  surface. When the athlete toggles "PACE COLOR" off, workout-detail
-//  surfaces fall back to a single coral accent instead.
+//  One hue, ten depths: pale sky (easy) deepening through mid-blue to
+//  navy (mile). Pace reads as *intensity*, not as a rainbow.
+//
+//  Hue history (all on 2026-08-21, all reverted): the ramp was moved onto
+//  the coral accent — pinning stop 6 to --coral exactly — and then onto a
+//  wine ramp at ~330–348°. Coral was pulled because pace is the largest
+//  coloured surface in the product, so putting it on the brand hue made
+//  orange the dominant colour of every chart and left coral nothing to
+//  point with. Wine was pulled by preference. Blue is the shipped ramp;
+//  if it is ever moved again, the two constraints that bit last time are
+//  (a) Easy must stay visible against --paper — this ramp reads 1.87:1,
+//  the coral build only managed 1.20:1 — and (b) pinning any stop to a
+//  brand token costs even spacing. (Rio, 2026-08-21.)
+//
+//  Collision note: pace, mood and alert occupy three separate hue lanes —
+//  blue, the muted greens/ambers, and coral — so a colour's job is
+//  unambiguous from the colour alone. When the athlete toggles
+//  "PACE COLOR" off, workout-detail surfaces fall back to a single coral
+//  accent instead.
 //
 //  Design note: the ten stops map to the canonical 10-zone pace taxonomy
 //  (Easy · Moderate · Steady · MP · HMP · LT · 10K · 5K · 3K · Mile).
@@ -28,7 +40,7 @@ import UIKit
 
 enum PaceSpectrum {
 
-    /// Ordered green → red stops (slow → fast). One color per canonical zone.
+    /// Ordered slow → fast stops. One color per canonical zone.
     static let stops: [Color] = [
         Color(hex: "93B9D6"), // Easy (pale sky)
         Color(hex: "74A8CC"), // Moderate
@@ -44,7 +56,9 @@ enum PaceSpectrum {
 
     /// Legibility-darkened Easy for *small text* (marker labels, zone
     /// captions). The true Easy stop is too pale to read at 9–11 pt on
-    /// paper; fills should still use `easy`.
+    /// paper; fills should still use `easy`. NOTE: at 2.97:1 on --paper
+    /// (#F5F3F0) this is weak for its stated job — #427498 would hit
+    /// 4.53:1 at the same hue if we ever want to fix it.
     static var easyText: Color { Color(hex: "5E93BE") }
 
     /// Named zone accessors, in taxonomy order — Easy … Mile.

@@ -9,7 +9,7 @@
 //  Draw order, back to front: band → stepped anchor → gridlines → trend →
 //  heat ticks → dots → field marks → crosshair → hit layer.
 //
-//  **Encodings.** Hue is zone, and only zone — the blue `PaceSpectrum` ramp,
+//  **Encodings.** Hue is zone, and only zone — the `PaceSpectrum` ramp,
 //  per the three-palette rule. Grade is carried by *fill* (solid / hollow /
 //  dotted ring) so it survives greyscale and colour-blind rendering. Long runs
 //  are diamonds, not dots, because their pace is a whole-run mean rather than
@@ -347,7 +347,7 @@ struct KeyPaceChart: View {
     /// The anchor as it actually behaves: a weekly step, never a smooth curve.
     ///
     /// **One connected staircase, not a row of floating bars.** Drawn as
-    /// disconnected segments this read as scattered blue dashes at random
+    /// disconnected segments this read as scattered ramp-colored dashes at random
     /// heights — indistinguishable from data, and the first thing anyone
     /// pointed at when asked what was confusing. Each tread now runs to the
     /// next one's start and a riser joins them, so the line is continuous and
@@ -355,7 +355,7 @@ struct KeyPaceChart: View {
     ///
     /// It is also deliberately subordinate: thinner than a data stroke and
     /// well under full opacity, so it sits behind the dots instead of
-    /// competing with them for the same blue.
+    /// competing with them for the same color.
     private func drawAnchorSteps(in context: GraphicsContext, layout: Layout) {
         guard mode == .absolute, density.drawsAnchorSteps else { return }
         let steps = anchorSteps.sorted { $0.startDay < $1.startDay }

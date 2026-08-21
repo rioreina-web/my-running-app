@@ -51,7 +51,24 @@
   /* THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert.
      The three palettes never share hues, so a color's job is always
      unambiguous. Green is mood-only (a "safe zone" band goes neutral
-     gray, never green); coral is alert-only (never a pace fill). */
+     gray, never green); coral is alert-only (never a pace fill).
+
+     THE LEFT-RULE RULE (2026-08-21): the 2px vertical rule at a block's
+     leading edge is a mark with one meaning, and that meaning is MOOD.
+
+       • COLOURED (mood palette)  →  how the athlete felt. Only mood.
+       • NEUTRAL (--rule / --paper-deep)  →  a block set apart: a quote,
+         a transcript, nested content. Says "this text is inset",
+         claims no status.
+       • CORAL  →  never. Coral is alert-only (above), and a left rule
+         is structure, not an alert.
+
+     Written down because it was broken: THE WORKOUT drew a coral rule
+     beside every work rep while the journal feed drew a mood rule in the
+     same width and position, so a warm bar meant "this day went badly"
+     in the feed and "this is the hard part" one tap later in the sheet.
+     Structure now gets a shape or an indent instead — see the brace in
+     RunningLog/Workouts/WorkoutReceiptSignals.swift. */
   --coral:           #D4592A;  /* burnt orange — primary accent / alert */
   --coral-light:     #E8764A;  /* lighter — hover lift on dark */
   --coral-deep:      #B84420;  /* darker — pressed state */

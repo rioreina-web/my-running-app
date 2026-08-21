@@ -204,7 +204,7 @@ struct RouteMapView: View {
             .padding(10)
     }
 
-    /// Pace legend — the universal blue ramp (PaceSpectrum): pale sky (slow)
+    /// Pace legend — the universal pace ramp (PaceSpectrum): pale sky (slow)
     /// deepening to navy (fast). Same color language as the pace charts, and
     /// the direction matches the route line's own coloring. Solid warm surface,
     /// no blur — the design system uses no glass on paper.
@@ -721,7 +721,7 @@ private extension RouteMapView {
         return out
     }
 
-    /// Route trace rides the universal blue pace ramp (PaceSpectrum):
+    /// Route trace rides the universal pace ramp (PaceSpectrum):
     /// slow (high sec/mi) → pale sky, fast (low sec/mi) → navy. Same color
     /// language as the pace charts — and blue holds up well against map
     /// greenery, unlike the old green end.

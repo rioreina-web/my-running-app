@@ -233,7 +233,7 @@ enum NamedPace: String, CaseIterable, Codable {
         }
     }
 
-    /// Zone chip colors ride the universal blue pace ramp
+    /// Zone chip colors ride the universal pace ramp
     /// (`PaceSpectrum`) so a zone is the same color on every surface.
     var color: Color {
         switch self {

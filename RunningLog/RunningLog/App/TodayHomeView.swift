@@ -2,21 +2,32 @@
 //  TodayHomeView.swift
 //  RunningLog
 //
-//  Plate 18 redesign — a "diary + charts" Today tab. Top half is the
-//  athlete's narrative (today's check-in, yesterday's journal entry,
-//  tomorrow's prescribed workout). Bottom half is the cockpit (12-week
-//  fitness trend, this-week-vs-4-week-avg zone shifts, race predictions
-//  across 5 distances).
+//  Plate 18 redesign — the training journal, paged.
 //
-//  Section order top → bottom:
-//    1. Date heading + race countdown               (header)
-//    2. Today · how are you feeling?                (TodayMoodPrompt)
-//    3. Yesterday's journal entry                   (TodayJournalEntry)
-//    4. Tomorrow's prescription                     (TodayTomorrowSection)
-//    5. ── editorial rule ──
-//    6. Fitness · 12-week trend chart               (TodayFitnessTrendChart)
-//    7. Zone shifts · this week vs 4-week avg       (TodayZoneShiftsRow)
-//    8. Race predictions · 5 distances              (TodayRacePredictionsStrip)
+//  This used to be one vertical ScrollView holding every section at once. It
+//  is now a paper you turn. There are TWO paged journals in the repo and
+//  `journalMode` below picks which one runs; both compile either way.
+//
+//  .workoutPages (current, 2026-08-21) — the pages are ONE RUN's detail:
+//    1. The session   — headline, mood, source, the three measures
+//    2. In your words — the athlete's entry (skipped when there are none)
+//    3. The workout   — WorkoutRepReceiptView: conditions, signals, splits,
+//                       telemetry, route (skipped when there is no stream)
+//    4. The read      — the stored coach_insight, a comparison against the
+//                       athlete's own comparable session, and SessionAskBlock
+//  The spine at the foot lists recent runs; tapping one loads its pages.
+//  Lives in JournalPager.swift / JournalPages.swift.
+//
+//  .dayPages (2026-08-21, superseded) — the pages are calendar days: today
+//  (check-ins, coach note, the day's sessions, tomorrow), then the numbers,
+//  then one page per past day with gaps collapsed. Lives in HomePage.swift /
+//  HomeDayPager.swift, and everything below `// MARK: - The pager` serves it.
+//
+//  The check-ins are the casualty of .workoutPages: the mood prompt, the
+//  sleep prompt and the coach note have no page in a journal made of runs.
+//  They are still fetched and still built here — they are simply not on
+//  screen in this mode. THAT IS UNRESOLVED, and it matters: the mood and
+//  sleep prompts feed the recovery ledger.
 //
 //  Data sources are documented in design/PLATE_18_DATA.md. Two known
 //  holes (daily_check_ins table, coach_intent column) use degraded
@@ -29,13 +40,25 @@
 import os
 import Supabase
 import SwiftUI
+import UIKit
 
 struct TodayHomeView: View {
-    // Diary side — yesterday's log only; the rest of the window is fetched
-    // but not retained (we only need the most-recent row right now).
+    // Journal side. The window used to be fetched and thrown away — only the
+    // most-recent row was kept. The paged surface needs the whole window, so
+    // the rows are now rolled into sessions and grouped by local day; see
+    // HomePage.swift.
     @State private var lastLog: TodayLastLog?
     @State private var goal: TodayGoal?
     @State private var coachNote: CoachMemo?
+
+    // Paging state. `pages` and `sessionsByDay` are derived once per load
+    // rather than per render — SessionRollup walks every row, and a LazyHStack
+    // asks its content for a body more often than you would like.
+    @State private var pages: [HomePage] = [.day(SessionRollup.localDay(Date())), .cockpit]
+    @State private var sessionsByDay: [Date: [TrainingSession]] = [:]
+    /// Seeded with today so the first frame — before `loadAll()`
+    /// returns — opens on the front page rather than nowhere.
+    @State private var currentPageID: HomePage.ID? = HomePage.day(SessionRollup.localDay(Date())).id
 
     // Plate 18 additions — tomorrow + cockpit charts.
     @State private var tomorrowWorkout: TodayTomorrowWorkout?
@@ -48,53 +71,240 @@ struct TodayHomeView: View {
     @State private var loaded = false
     @State private var loadFailed = false
 
+    /// The workout detail, opened by tapping a session on any page. Nil when
+    /// closed. `DayWorkouts` is the same payload the Trends day drill-down
+    /// hands to `HistoryDetailPager`. Used by `.dayPages` mode only.
+    @State private var dayWorkouts: DayWorkouts?
+
+    /// The runs the workout-paged journal turns through.
+    @State private var journalEntries: [TrainingLog] = []
+
+    /// WHICH JOURNAL THIS IS. `.workoutPages` — the pages are one run's
+    /// detail (session · words · workout · read) and the spine at the foot
+    /// switches runs. `.dayPages` — the pages are calendar days, which is
+    /// what this surface was between the paged rewrite and 2026-08-21.
+    ///
+    /// Both are built and both work. This line is the whole switch, and
+    /// reversing the decision is changing this one word. The day-page code
+    /// (HomePage.swift, HomeDayPager.swift) stays compiled either way.
+    private let journalMode: JournalMode = .workoutPages
+
+    enum JournalMode { case workoutPages, dayPages }
+
     private let cal = Calendar.current
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                PlateStrip(surface: "LOG  ·  v1 DIARY + CHARTS", fig: "FIG. 18")
-                header
-                if loaded && loadFailed {
-                    EmptyStateView(
-                        variant: .error,
-                        eyebrow: "Couldn't load",
-                        title: "Today didn't load. Check your connection and try again.",
-                        cta: .init(label: "Retry") {
-                            Task { await loadAll() }
-                        }
-                    )
-                    .padding(.top, 20)
-                } else {
-                    if let note = coachNote {
-                        EditorialRule()
-                        coachNoteSection(note: note)
+        VStack(spacing: 0) {
+            // The masthead. Fixed above the pages — it belongs to the
+            // surface, not to any one day.
+            PlateStrip(surface: "TRAINING JOURNAL", fig: "FIG. 18")
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+            if loaded && loadFailed {
+                EmptyStateView(
+                    variant: .error,
+                    eyebrow: "Couldn't load",
+                    title: "Today didn't load. Check your connection and try again.",
+                    cta: .init(label: "Retry") {
+                        Task { await loadAll() }
                     }
-                    TodayMoodPrompt()
-                    // The one-tap sleep check-in rides with the mood prompt —
-                    // one daily ritual, two words. Tier-1 recovery signal;
-                    // writes `daily_checkins`, feeds the ledger's Sleep factor.
-                    SleepCheckInPrompt()
-                    EditorialRule()
-                    yesterdaySection
-                    if let workout = tomorrowWorkout {
-                        TodayTomorrowSection(workout: workout)
-                    }
-                    EditorialRule()
-                    TodayFitnessTrendChart(trend: fitnessTrend)
-                    TodayZoneShiftsRow(shifts: zoneShifts)
-                    TodayRacePredictionsStrip(predictions: racePredictions)
-                    EditorialRule()
-                    PlateFooter("Diary spine on top, cockpit's bottom half on the bottom.")
-                }
+                )
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                Spacer()
+            } else if journalMode == .workoutPages {
+                JournalPagerView(entries: journalEntries)
+            } else {
+                pager
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 16)
-            .padding(.bottom, 40)
         }
         .background(Color.drip.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadAll() }
+    }
+
+    // MARK: - The pager
+
+    /// One local day per page, today first, turning back through the log.
+    ///
+    /// Same mechanic as `HistoryDetailPager` — see the note in
+    /// HomeDayPager.swift about the one place the two deliberately differ
+    /// (direction), which is still unresolved.
+    private var pager: some View {
+        VStack(spacing: 0) {
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 0) {
+                    ForEach(pages) { page in
+                        pageView(for: page)
+                            .containerRelativeFrame(.horizontal)
+                            .frame(maxHeight: .infinity)
+                            .id(page.id)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $currentPageID)
+            .scrollIndicators(.hidden)
+
+            HomeFolioRail(pages: pages, currentID: $currentPageID, index: currentIndex)
+        }
+        .onChange(of: currentPageID) { old, new in
+            guard old != nil, new != nil, old != new else { return }
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        }
+        // Custom actions are only surfaced by VoiceOver when the container is
+        // itself an accessibility element.
+        .accessibilityElement(children: .contain)
+        // Named for time, not for screen direction — matching
+        // HistoryDetailPager's wording.
+        .accessibilityAction(named: "Older day") { step(1) }
+        .accessibilityAction(named: "Newer day") { step(-1) }
+        .sheet(item: $dayWorkouts) { dw in
+            HistoryDetailPager(entries: dw.entries, initial: dw.initial) {
+                // An edit or a delete in the sheet changes the rows the pages
+                // are built from. Rebuild rather than leave a stale page
+                // behind; `loadAll` keeps the reader where they were.
+                Task { await loadAll() }
+            }
+        }
+    }
+
+    /// Fetch the tapped session's real `TrainingLog` rows and open the detail.
+    /// Nothing opens if the fetch fails — see `HomeSessionOpener`.
+    private func open(_ session: TrainingSession, on day: Date) {
+        let onDay = sessionsByDay[day] ?? [session]
+        Task {
+            if let dw = await HomeSessionOpener.resolve(sessionsOnDay: onDay, focus: session) {
+                dayWorkouts = dw
+            }
+        }
+    }
+
+    private var currentIndex: Int {
+        pages.firstIndex { $0.id == currentPageID } ?? 0
+    }
+
+    private func step(_ delta: Int) {
+        let target = currentIndex + delta
+        guard pages.indices.contains(target) else { return }
+        withAnimation(.snappy(duration: 0.28)) {
+            currentPageID = pages[target].id
+        }
+    }
+
+    @ViewBuilder
+    private func pageView(for page: HomePage) -> some View {
+        switch page {
+        case .day(let date):
+            if SessionRollup.localDay(Date()) == date {
+                todayPage
+            } else {
+                HomeDayPageView(
+                    day: date,
+                    sessions: sessionsByDay[date] ?? [],
+                    onOpen: { open($0, on: date) }
+                )
+            }
+        case .cockpit:
+            cockpitPage
+        case .gap(let from, let through, let days):
+            HomeGapPageView(from: from, through: through, days: days)
+        }
+    }
+
+    // MARK: - The pages
+
+    /// Today. The only page carrying the check-ins, the coach note and
+    /// tomorrow's prescription — all four are today-relative, and putting
+    /// them on a past page would either invent data or lie about the date.
+    private var todayPage: some View {
+        HomePageFrame {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+
+                if let note = coachNote {
+                    EditorialRule()
+                    coachNoteSection(note: note)
+                }
+
+                TodayMoodPrompt()
+                // The one-tap sleep check-in rides with the mood prompt —
+                // one daily ritual, two words. Tier-1 recovery signal;
+                // writes `daily_checkins`, feeds the ledger's Sleep factor.
+                SleepCheckInPrompt()
+
+                EditorialRule()
+
+                todaySessions
+
+                if let workout = tomorrowWorkout {
+                    TodayTomorrowSection(workout: workout)
+                }
+            }
+        }
+    }
+
+    /// Today's own runs — which on this account is regularly two or three.
+    ///
+    /// This replaces the old "yesterday's journal entry" block. Yesterday is
+    /// not gone; it is one turn to the right, on its own page, where it can
+    /// say its own date.
+    @ViewBuilder
+    private var todaySessions: some View {
+        let today = SessionRollup.localDay(Date())
+        let sessions = sessionsByDay[today] ?? []
+
+        if !loaded {
+            Text("Loading…")
+                .font(.dripBody(13))
+                .foregroundStyle(Color.drip.textTertiary)
+        } else if sessions.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("TODAY'S SESSION")
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .tracking(1.0)
+                    .foregroundStyle(Color.drip.textSecondary)
+                Text("Nothing logged yet today. When you run, it lands here.")
+                    .font(.system(size: 14, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 22) {
+                ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
+                    HomeSessionEntry(
+                        session: session,
+                        showClockTime: sessions.count > 1,
+                        ordinal: index + 1,
+                        of: sessions.count,
+                        onOpen: { open(session, on: today) }
+                    )
+                }
+            }
+        }
+    }
+
+    /// The numbers. Account-level, belonging to no day, which is why it is
+    /// page two rather than the bottom half of today.
+    ///
+    /// OPEN: this duplicates the Trends tab. If it leaves Today, the page
+    /// model becomes purely days and this whole property goes with it.
+    private var cockpitPage: some View {
+        HomePageFrame {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("THE NUMBERS")
+                    .font(.dripEyebrow(11))
+                    .tracking(1.3)
+                    .foregroundStyle(Color.drip.textSecondary)
+                TodayFitnessTrendChart(trend: fitnessTrend)
+                TodayZoneShiftsRow(shifts: zoneShifts)
+                TodayRacePredictionsStrip(predictions: racePredictions)
+                EditorialRule()
+                PlateFooter("Training journal on the day pages, cockpit on its own.")
+            }
+        }
     }
 
     // MARK: - Sections
@@ -121,29 +331,12 @@ struct TodayHomeView: View {
         }
     }
 
-    /// Yesterday block — the journal entry component when a recent log
-    /// exists, otherwise a quiet placeholder.
-    private var yesterdaySection: some View {
-        Group {
-            if !loaded {
-                Text("Loading…")
-                    .font(.dripBody(13))
-                    .foregroundStyle(Color.drip.textTertiary)
-            } else if let log = lastLog {
-                TodayJournalEntry(log: log)
-            } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("YESTERDAY")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.drip.textSecondary)
-                    Text("No runs logged yet. When you do, your last entry lands here.")
-                        .font(.system(size: 14, design: .serif).italic())
-                        .foregroundStyle(Color.drip.textSecondary)
-                }
-            }
-        }
-    }
+    // The "yesterday" block was removed when this surface became a pager.
+    // Yesterday is not gone — it is one turn to the right, on a page that can
+    // say its own date instead of borrowing today's. `TodayJournalEntry` is
+    // still in TodayPlate18.swift and still used elsewhere; `lastLog` is still
+    // loaded, and is what a "jump to the last run" affordance would use if one
+    // is ever added to the rail.
 
     /// Just the day-of-week ("TUESDAY") — date proper goes in the
     /// display headline below. Day appears in coral as the active-day
@@ -217,6 +410,7 @@ struct TodayHomeView: View {
         async let zonesTask = TodayZoneShifts.fetch()
         async let racesTask = TodayRacePredictions.fetch()
         async let noteTask = CoachMemo.fetchLatestUnread()
+        async let journalTask = JournalEntries.recent()
 
         let logs: [TodayLogRow]
         do {
@@ -233,10 +427,28 @@ struct TodayHomeView: View {
         let (fetchedGoal, tomorrow, trend, zones, races, note) = await (
             goalTask, tomorrowTask, trendTask, zonesTask, racesTask, noteTask
         )
+        let entries = await journalTask
         let mostRecent = logs.first.map { TodayLastLog(from: $0) }
+
+        // Rows → sessions → pages. Done here, off the main actor, because
+        // SessionRollup walks every row in the window and the page run is
+        // stable until the next load.
+        let rolled = SessionRollup.sessions(from: logs)
+        let builtPages = HomePageBuilder.pages(from: rolled)
+        let grouped = Dictionary(grouping: rolled, by: { $0.day })
+            .mapValues { $0.sorted { $0.start < $1.start } }
 
         await MainActor.run {
             self.loadFailed = false
+            self.journalEntries = entries
+            self.pages = builtPages
+            self.sessionsByDay = grouped
+            // Only land on today's page on the first load. A refresh that
+            // rebuilt the run must not yank the athlete back to the front
+            // page from wherever they were reading.
+            if self.currentPageID == nil || !builtPages.contains(where: { $0.id == self.currentPageID }) {
+                self.currentPageID = builtPages.first?.id
+            }
             self.lastLog = mostRecent
             self.goal = fetchedGoal
             self.tomorrowWorkout = tomorrow
@@ -440,7 +652,7 @@ struct TodayLogRow: Codable {
     /// Empty string treated as nil so blank rows fall through to the
     /// iOS heuristic.
     let coachInsight: String?
-    /// Raw transcript / journaled text. Plate 18's diary entry prefers
+    /// Raw transcript / journaled text. Plate 18's journal entry prefers
     /// `cleanedNotes` (LLM-cleaned punctuation + spelling) but falls
     /// back to `notes` so an entry never goes silent.
     let notes: String?

@@ -256,7 +256,7 @@ struct VoiceLogView: View {
             Text(isError ? "——" : "·")
                 .foregroundStyle(Color.drip.textTertiary)
             Text(viewModel.statusMessage)
-                .font(.system(size: 14, design: .serif).italic())
+                .font(.dripBodyItalic(14))
                 .foregroundStyle(isError ? Color.drip.coral : Color.drip.textSecondary)
             Spacer()
         }
@@ -292,7 +292,7 @@ struct VoiceLogView: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Text(label)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.dripEyebrow(11))
                     .tracking(1.2)
                     .foregroundStyle(active ? Color.drip.coral : Color.drip.textSecondary)
                     .padding(.top, 14)
@@ -320,7 +320,7 @@ struct VoiceLogView: View {
                 // tabular-nums` for this; the serif display token
                 // (`dripDisplay`) used elsewhere is wrong here.
                 Text(formatDuration(recordingDuration))
-                    .font(.system(size: 56, weight: .medium, design: .monospaced))
+                    .font(.dripEyebrow(56))
                     .monospacedDigit()
                     .tracking(-1.0)  // -0.02em at 56pt ≈ -1.1pt
                     .foregroundStyle(Color.drip.textPrimary)
@@ -335,7 +335,7 @@ struct VoiceLogView: View {
             Text(isRecording
                  ? (isCheckInMode ? "Speak your status — tap the button to stop." : "Recording — tap the button to stop.")
                  : (isCheckInMode ? "Tap the button to record a quick check-in." : "Tap the button to start your voice memo."))
-                .font(.system(size: 15, design: .serif).italic())
+                .font(.dripBodyItalic(15))
                 .foregroundStyle(Color.drip.textSecondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -358,13 +358,13 @@ struct VoiceLogView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("LINKED TO")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(.dripEyebrow(10))
                             .tracking(1.0)
                             .foregroundStyle(Color.drip.textSecondary)
                         Spacer()
                         HStack(spacing: 4) {
                             Text(selectedWorkout == nil ? "LINK A RUN" : "CHANGE")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.dripEyebrow(10))
                                 .tracking(1.0)
                                 .foregroundStyle(Color.drip.textSecondary)
                             Image(systemName: "arrow.up.right")
@@ -377,11 +377,11 @@ struct VoiceLogView: View {
                             .font(.dripDisplay(20))
                             .foregroundStyle(Color.drip.textPrimary)
                         Text(linkedWorkoutMeta(w))
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.dripEyebrow(10))
                             .foregroundStyle(Color.drip.textTertiary)
                     } else {
                         Text("Optional — attach to a recent run.")
-                            .font(.system(size: 14, design: .serif).italic())
+                            .font(.dripBodyItalic(14))
                             .foregroundStyle(Color.drip.textSecondary)
                     }
                 }
@@ -421,7 +421,7 @@ struct VoiceLogView: View {
                 toggleRecording()
             }
             Text(isRecording ? "TAP TO STOP" : "TAP TO RECORD")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(11))
                 .tracking(1.2)
                 .foregroundStyle(Color.drip.textSecondary)
             Spacer().frame(height: 36)
@@ -448,14 +448,14 @@ struct VoiceLogView: View {
                 ZStack(alignment: .topLeading) {
                     if manualNotes.isEmpty {
                         Text("How did your run feel today?")
-                            .font(.system(size: 15, design: .serif).italic())
+                            .font(.dripBodyItalic(15))
                             .foregroundStyle(Color.drip.textTertiary)
                             .padding(.top, 8)
                             .padding(.leading, 4)
                             .allowsHitTesting(false)
                     }
                     TextEditor(text: $manualNotes)
-                        .font(.system(size: 15, design: .serif))
+                        .font(.dripBody(15))
                         .foregroundStyle(Color.drip.textPrimary)
                         .scrollContentBackground(.hidden)
                         .focused($isTextEditorFocused)
@@ -635,7 +635,7 @@ struct VoiceLogView: View {
             // here: it reads as data loss when the rows are safe on the server.
             VStack(alignment: .leading, spacing: 10) {
                 Text("Couldn't load your journal. Your entries are safe — this is a connection hiccup.")
-                    .font(.system(size: 14, design: .serif).italic())
+                    .font(.dripBodyItalic(14))
                     .foregroundStyle(Color.drip.textSecondary)
                 Button {
                     Task { await viewModel.loadHistory() }
@@ -651,7 +651,7 @@ struct VoiceLogView: View {
             .padding(.vertical, 24)
         } else if viewModel.historyLogs.isEmpty {
             Text("No entries yet — record or type to start your journal.")
-                .font(.system(size: 14, design: .serif).italic())
+                .font(.dripBodyItalic(14))
                 .foregroundStyle(Color.drip.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
@@ -660,7 +660,7 @@ struct VoiceLogView: View {
             Text(journalSearch.isEmpty
                  ? "No \(journalKind.label.lowercased()) entries yet."
                  : "Nothing matches \u{201C}\(journalSearch)\u{201D}.")
-                .font(.system(size: 14, design: .serif).italic())
+                .font(.dripBodyItalic(14))
                 .foregroundStyle(Color.drip.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)

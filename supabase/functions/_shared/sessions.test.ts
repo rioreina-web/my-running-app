@@ -227,17 +227,18 @@ Deno.test("the guard flags the phantom pre-5am cluster, and only the mixed days"
 
 Deno.test("90 minutes sits in a genuinely EMPTY band, not on Jul 21's artifact", () => {
   // Measured over all 80 same-day end-to-start gaps in this athlete's repaired
-  // history: the largest gap inside a session is 73 min and the smallest gap
-  // between sessions is 148 min. Nothing lands between. Any constant in
-  // (73, 148] reproduces the same grouping — 90 is not load-bearing to a minute.
+  // history (authoritative detector, DST-aware repair): the largest gap inside
+  // a session is 73 min and the smallest gap between sessions is 236 min.
+  // Nothing lands between. Any constant in (73, 236] reproduces the same
+  // grouping — 90 is not load-bearing to a minute.
   const rows = (gap: number) => [
     p("a", "2026-08-18T11:00:00Z", 2.0, 16, "easy"),
     p("b", new Date(Date.parse("2026-08-18T11:00:00Z") + (16 + gap) * 60_000).toISOString(), 6.0, 40, "threshold"),
   ];
   assertEquals(buildSessions(rows(73), TZ).length, 1);    // largest observed intra-session gap
-  assertEquals(buildSessions(rows(148), TZ).length, 2);   // smallest observed inter-session gap
+  assertEquals(buildSessions(rows(236), TZ).length, 2);   // smallest observed inter-session gap
   // the whole empty band agrees with itself
-  for (const g of [74, 90, 100, 120, 147]) {
+  for (const g of [74, 90, 100, 120, 147, 200, 235]) {
     assertEquals(buildSessions(rows(g), TZ, 90).length, g <= 90 ? 1 : 2);
   }
 });

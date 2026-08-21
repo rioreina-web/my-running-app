@@ -52,7 +52,7 @@ import SwiftUI
 
 extension KeyZone {
 
-    /// Work-zone token → the shared blue pace ramp. Blue is pace and only pace
+    /// Work-zone token → the shared pace ramp. the ramp is pace and only pace
     /// (three-palette rule); grade is carried by dot *fill*, never by hue.
     ///
     /// The backend classifier folds LT/threshold into `hmp` (see

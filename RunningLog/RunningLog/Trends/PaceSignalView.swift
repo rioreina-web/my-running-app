@@ -600,8 +600,15 @@ private struct SpectrumDistribution: View {
                         let mi = buckets[i]
                         let bh = CGFloat(mi / vmax) * h
                         let f = (Double(i) + 0.5) / Double(n)
+                        // Unscrubbed bars stay near full strength. At 0.4 the
+                        // whole distribution washed toward paper the moment a
+                        // finger landed — Easy composited to 1.16:1 and LT to
+                        // 1.64:1, so the bars no longer matched the ramp
+                        // directly beneath them. The scrubbed bar is already
+                        // marked by an ink outline and a hairline; the dim only
+                        // has to whisper. (Rio, 2026-08-21.)
                         RoundedRectangle(cornerRadius: 1.5).fill(PaceSpectrum.color(at: f))
-                            .opacity(scrubIndex == nil || scrubIndex == i ? 1 : 0.4)
+                            .opacity(scrubIndex == nil || scrubIndex == i ? 1 : 0.85)
                             .frame(width: cw * 0.76, height: max(bh, 0))
                             .position(x: cw * (CGFloat(i) + 0.5), y: h - bh / 2)
                     }

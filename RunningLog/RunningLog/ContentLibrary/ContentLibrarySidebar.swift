@@ -58,7 +58,7 @@ struct ContentLibrarySidebar: View {
 
             ZStack(alignment: .leading) {
                 // Scrim — design spec rgba(26,24,21,0.46)
-                Color(hex: "1A1815")
+                Color.drip.textPrimary
                     .opacity(isPresented ? 0.46 : 0)
                     .ignoresSafeArea()
                     .onTapGesture { close() }

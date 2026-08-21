@@ -15,9 +15,9 @@ import SwiftUI
 //
 //  PALETTE. Mood owns the warm/green ramp. Coral is the niggle alert and the
 //  scrub marker, never a fill. The miles and TLS bars stack by pace zone on
-//  the blue ramp (`PaceSpectrum`) — blue belongs to pace, and these bars ARE
+//  the blue ramp (`PaceSpectrum`) — the ramp belongs to pace, and these bars ARE
 //  pace signals now, so the rule is earned rather than dodged. (They were
-//  graphite until 2026-08-18 precisely because a blue bar would have read as
+//  graphite until 2026-08-18 precisely because a ramp-colored bar would have read as
 //  a pace signal it wasn't.) A day with distance but no lap breakdown still
 //  draws flat graphite: we cannot say how it was distributed, and must not
 //  guess.

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Signals + zone simplify — before / after</title>
+<style>
+  :root{
+    --bg:#F5F3F0; --card:#FFFFFF; --divider:#E8E4E0;
+    --ink:#1A1815; --sec:#6B6560; --ter:#9B9590;
+    --coral:#D4592A;
+    --z1:#9B9590; --z2:#4A9E6B; --z3:#C4873A; --z4:#E0742E; --z5:#8F2A1E;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+    --serif:"Iowan Old Style",Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--serif);padding:28px 20px 60px}
+  h1{font-size:19px;font-weight:600;margin:0 0 4px}
+  .sub{font-family:var(--mono);font-size:10px;letter-spacing:1.2px;color:var(--ter);text-transform:uppercase;margin-bottom:28px}
+  .grid{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+  .col{flex:1 1 320px;min-width:300px}
+  .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--ter);margin-bottom:8px}
+  .tag.after{color:var(--coral)}
+  .panel{background:var(--card);border:1px solid var(--divider);padding:18px}
+  .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:1.3px;color:var(--coral);text-transform:uppercase}
+  .rowhead{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--sec);padding-bottom:12px;border-bottom:1px solid var(--divider);margin-bottom:14px}
+  .rowhead b{color:var(--ter);font-weight:400}
+
+  /* zone bar */
+  .zbar{display:flex;height:20px;border:1px solid var(--divider)}
+  .zbar i{display:block;border-right:1px solid var(--bg)}
+  .legend-old{display:flex;gap:6px;margin-top:10px}
+  .legend-old div{flex:1}
+  .legend-old .k{display:flex;align-items:center;gap:4px;font-family:var(--mono);font-size:8px;color:var(--ter)}
+  .legend-old .sw{width:6px;height:6px;display:inline-block}
+  .legend-old .t{font-family:var(--mono);font-size:12px;color:var(--sec);margin-top:2px}
+  .legend-old .p{font-family:var(--mono);font-size:8px;color:var(--ter)}
+  .legend-new{display:flex;gap:16px;margin-top:10px;align-items:center}
+  .legend-new span{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11px;color:var(--sec)}
+  .legend-new .sw{width:6px;height:6px}
+  .legend-new .zid{font-size:9px;color:var(--ter)}
+  .dim{opacity:.5}
+  .main .zid{color:var(--ink)!important}
+  .main .clk{color:var(--coral)}
+
+  /* chips */
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border:1px solid var(--divider);border-radius:999px;background:var(--card);font-family:var(--mono);cursor:pointer;transition:transform .08s}
+  .chip:active{transform:scale(.97)}
+  .chip .dot{width:7px;height:7px;border-radius:50%}
+  .chip .k{font-size:9.5px;letter-spacing:1px;color:var(--ter)}
+  .chip .v{font-size:10.5px;letter-spacing:.7px;color:var(--ink)}
+  .read{font-family:var(--serif);font-style:italic;font-size:13px;color:var(--sec);line-height:1.5;margin:0}
+  .strike{text-decoration:line-through;text-decoration-color:var(--coral);color:var(--ter)}
+
+  /* popover */
+  .pop{position:fixed;inset:0;background:rgba(26,24,21,.28);display:none;align-items:center;justify-content:center;padding:20px;z-index:9}
+  .pop.on{display:flex}
+  .popcard{width:268px;background:var(--bg);border:1px solid var(--divider);padding:18px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+  .popcard .pk{font-family:var(--mono);font-size:11px;letter-spacing:1.3px;color:var(--coral);text-transform:uppercase}
+  .popcard .pv{font-family:var(--mono);font-size:20px;color:var(--ink);margin:10px 0}
+  .popcard .pd{font-size:13px;color:var(--sec);line-height:1.5;margin:0 0 10px}
+  .popcard .pt{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:9px;letter-spacing:.8px;color:var(--ter)}
+  .note{font-size:13px;color:var(--sec);line-height:1.6;max-width:660px;margin:26px 0 0}
+  .note b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+
+<h1>The zone panel, and signals you can tap</h1>
+<div class="sub">Run detail · 2026-08-20 · prototype</div>
+
+<div class="grid">
+  <div class="col">
+    <div class="tag">Before</div>
+    <div class="panel">
+      <div class="rowhead"><span>HR ZONES</span><b>31 MIN Z4 · 12 MIN Z2</b></div>
+      <div class="zbar">
+        <i style="background:var(--z1);width:3%" class="dim"></i>
+        <i style="background:var(--z2);width:24%" class="dim"></i>
+        <i style="background:var(--z3);width:9%" class="dim"></i>
+        <i style="background:var(--z4);width:62%"></i>
+        <i style="background:var(--z5);width:2%" class="dim"></i>
+      </div>
+      <div class="legend-old">
+        <div><div class="k"><span class="sw dim" style="background:var(--z1)"></span>Z1</div><div class="t">1:20</div><div class="p">3%</div></div>
+        <div><div class="k"><span class="sw dim" style="background:var(--z2)"></span>Z2</div><div class="t">12:04</div><div class="p">24%</div></div>
+        <div><div class="k"><span class="sw dim" style="background:var(--z3)"></span>Z3</div><div class="t">4:31</div><div class="p">9%</div></div>
+        <div><div class="k"><span class="sw" style="background:var(--z4)"></span><span style="color:var(--ink)">Z4</span></div><div class="t" style="color:var(--coral)">31:12</div><div class="p">62%</div></div>
+        <div><div class="k"><span class="sw dim" style="background:var(--z5)"></span>Z5</div><div class="t">0:58</div><div class="p">2%</div></div>
+      </div>
+    </div>
+    <p class="note" style="margin-top:14px">Fifteen numbers under a bar that already draws the same proportions — plus a 0:00 column on any zone the run barely touched.</p>
+  </div>
+
+  <div class="col">
+    <div class="tag after">After</div>
+    <div class="panel">
+      <div class="rowhead"><span>HR ZONES</span><b>31 MIN Z4 · 12 MIN Z2</b></div>
+      <div class="zbar">
+        <i style="background:var(--z1);width:3%" class="dim"></i>
+        <i style="background:var(--z2);width:24%" class="dim"></i>
+        <i style="background:var(--z3);width:9%" class="dim"></i>
+        <i style="background:var(--z4);width:62%"></i>
+        <i style="background:var(--z5);width:2%" class="dim"></i>
+      </div>
+      <div class="legend-new">
+        <span><i class="sw dim" style="background:var(--z1)"></i><i class="zid">Z1</i><i class="clk">1:20</i></span>
+        <span><i class="sw dim" style="background:var(--z2)"></i><i class="zid">Z2</i><i class="clk">12:04</i></span>
+        <span><i class="sw dim" style="background:var(--z3)"></i><i class="zid">Z3</i><i class="clk">4:31</i></span>
+        <span class="main"><i class="sw" style="background:var(--z4)"></i><i class="zid">Z4</i><i class="clk">31:12</i></span>
+        <span><i class="sw dim" style="background:var(--z5)"></i><i class="zid">Z5</i><i class="clk">1:58</i></span>
+      </div>
+    </div>
+    <p class="note" style="margin-top:14px">One line: the zones that actually carried time, each with its clock. The percentage is gone — the bar was already saying it. A zone under 1% drops out entirely.</p>
+  </div>
+</div>
+
+<div style="height:40px"></div>
+
+<div class="grid">
+  <div class="col" style="flex:1 1 100%">
+    <div class="tag after">Signals — tap any chip</div>
+    <div class="panel">
+      <div class="eyebrow">Signals</div>
+      <div class="chips">
+        <button class="chip" data-k="SPREAD" data-v="±13s" data-t="warn"><i class="dot" style="background:#C4873A"></i><i class="k">SPREAD</i><i class="v">±13s</i></button>
+        <button class="chip" data-k="HR" data-v="Z4 FROM R2" data-t="warn"><i class="dot" style="background:#C4873A"></i><i class="k">HR</i><i class="v">Z4 FROM R2</i></button>
+        <button class="chip" data-k="DRIFT" data-v="+8%" data-t="warn"><i class="dot" style="background:#C4873A"></i><i class="k">DRIFT</i><i class="v">+8%</i></button>
+        <button class="chip" data-k="HEAT" data-v="+14s/mi" data-t="warn"><i class="dot" style="background:#C4873A"></i><i class="k">HEAT</i><i class="v">+14s/mi</i></button>
+        <button class="chip" data-k="VS PLAN" data-v="ON TARGET" data-t="good"><i class="dot" style="background:#4A9E6B"></i><i class="k">VS PLAN</i><i class="v">ON TARGET</i></button>
+      </div>
+      <p class="read">8 reps at 6:07/mi, inside a 26-second spread<span class="strike">, HR in Z4 from rep 2 on</span>.</p>
+    </div>
+    <p class="note">The struck-through clause is what the sentence used to add — word for word what the HR chip already says. One place per fact: the chip states the zone, the sentence states the shape.</p>
+  </div>
+</div>
+
+<div class="pop" id="pop">
+  <div class="popcard" onclick="event.stopPropagation()">
+    <div class="pk" id="pk">HEAT</div>
+    <div class="pv" id="pv">+14s/mi</div>
+    <p class="pd" id="pd"></p>
+    <div class="pt"><i class="dot" id="pdot" style="width:7px;height:7px;border-radius:50%;background:#C4873A"></i><span id="ptc"></span></div>
+  </div>
+</div>
+
+<script>
+const DEF = {
+  "SPREAD":"The gap between your fastest and slowest work rep, written as ± either side of the middle. A small number means the reps came out even.",
+  "HR":"The heart-rate zone that carried the most time in this session, and the first work rep whose average heart rate reached it.",
+  "DRIFT":"How far your pace-to-heart-rate ratio moved from the first half of the work to the second. Positive means heart rate climbed while the pace held.",
+  "HEAT":"What the day's heat and humidity cost you against the same effort run in cool air, in the unit the chip shows. It appears only when that cost reaches 3 seconds.",
+  "VS PLAN":"Your average work pace against the target pace written in the session note. Absent when the note names no target — the session's own average is never treated as one."
+};
+const TONE = {good:["IN THE USUAL RANGE","#4A9E6B"],warn:["WORTH NOTICING","#C4873A"],hot:["WELL OUTSIDE THE USUAL RANGE","#B83A4A"]};
+const pop = document.getElementById('pop');
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{
+  const k=c.dataset.k, t=TONE[c.dataset.t];
+  pk.textContent=k; pv.textContent=c.dataset.v; pd.textContent=DEF[k];
+  ptc.textContent=t[0]; pdot.style.background=t[1];
+  pop.classList.add('on');
+}));
+pop.addEventListener('click',()=>pop.classList.remove('on'));
+</script>
+</body>
+</html>

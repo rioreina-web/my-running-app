@@ -1,9 +1,31 @@
 -- ============================================================================
 -- Cross-source dedup v2 — matching on TIME + DISTANCE, quarantine not DELETE.
 --
--- Replaces the (user, UTC-day, 0.5mi-bucket) rule from 20260613240000, which
--- deleted genuine runs. Validated against a 13-case battery: v2 13/13, the
--- original 8/13 (five real runs destroyed, the one true duplicate missed).
+-- Replaces the (user, UTC-day, 0.5mi-bucket) matching rule. Validated against a
+-- 13-case battery: v2 13/13, the old rule 8/13 (five real runs destroyed, the
+-- one true duplicate missed).
+--
+-- CHECKED AGAINST PRODUCTION 2026-08-20 — read this before applying:
+--
+--   1. THE OLD SWEEP IS NOT RUNNING. `dedupe-training-logs` is absent from
+--      cron.job on RunningAppMVP2. Migration 20260613240000 IS applied, so it
+--      was scheduled once and unscheduled later. Nothing is being deleted right
+--      now. This migration is therefore NOT urgent — it is a correctness fix to
+--      land before anything re-enables a sweep.
+--
+--   2. THE LIVE FUNCTION IS NEWER THAN 20260613240000. Three later migrations
+--      amended it (20260618000000, 20260629172316, 20260702200000). The live
+--      body now excludes `source IN ('voice_log','check_in')` and any row with
+--      `audio_url IS NOT NULL`, so voice memos are already protected. THAT
+--      PROTECTION IS PRESERVED BELOW — see the base CTE. The 13-case battery was
+--      run against the 20260613240000 text, so it overstates the damage the
+--      CURRENT function would do to memo rows; the distance/time matching bug it
+--      demonstrates is unchanged and still real.
+--
+--   3. A dry-run of v2's matching over 180 days of production data returned
+--      ZERO pairs. The cross-source duplicates it targets have already been
+--      deleted by the old sweep. v2 would quarantine nothing today. Its value is
+--      forward-looking: it is what should run if a sweep is ever re-enabled.
 --
 -- WHAT CHANGED AND WHY
 --
@@ -38,10 +60,30 @@ ALTER TABLE public.training_logs
 
 -- ON DELETE SET NULL is load-bearing: without it the self-reference blocks any
 -- future deletion of a keeper that a quarantined row still points at.
+--
+-- TRIGGER INTERACTION — checked, and clean. `training_logs` carries three
+-- AFTER UPDATE triggers, and this function now UPDATEs rows the old one
+-- DELETEd, so they were a real risk:
+--   • coachable_moment_outbox  WHEN (OLD.cleaned_notes IS NULL AND NEW … NOT NULL)
+--   • daily_read_workout_rerender  — same WHEN clause
+--   • enqueue_voice_job  WHEN (processing_status='pending' AND audio_url/status changed)
+-- The quarantine UPDATE touches only duplicate_of / superseded_at /
+-- superseded_reason, so none of the three WHEN clauses evaluate true. The notes
+-- merge in step 1 CAN fire the first two — but that merge is unchanged from the
+-- original function, so this is existing behaviour, not a new side effect.
+-- RE-CHECK THIS if you ever add a column to the quarantine UPDATE.
 
-CREATE INDEX IF NOT EXISTS training_logs_live_idx
-  ON public.training_logs (user_id, workout_date DESC)
-  WHERE superseded_at IS NULL;
+-- NOTE: index creation is deliberately NOT in this transaction. A plain
+-- CREATE INDEX holds a write lock for its duration; on a table this size that
+-- is short but not free. Run it separately, after the migration, outside any
+-- transaction block:
+--
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS training_logs_live_idx
+--     ON public.training_logs (user_id, workout_date DESC)
+--     WHERE superseded_at IS NULL;
+--
+-- The function is correct without it; the index only matters once reads filter
+-- on superseded_at (step 3 of DEDUPE-FIX-APPLY.md).
 
 CREATE OR REPLACE FUNCTION public.dedupe_recent_training_logs_v2(
   p_days         integer DEFAULT 3,
@@ -64,6 +106,11 @@ BEGIN
     WHERE tl.workout_distance_miles IS NOT NULL
       AND tl.superseded_at IS NULL
       AND tl.workout_date >= (now() - make_interval(days => p_days))
+      -- Carried over from 20260702200000 and NOT to be dropped: voice memos and
+      -- check-ins are reflections shown alongside a run, never duplicate runs. A
+      -- row carrying a recording is protected regardless of source.
+      AND tl.source NOT IN ('voice_log', 'check_in')
+      AND tl.audio_url IS NULL
   ),
   flagged AS (
     SELECT *,

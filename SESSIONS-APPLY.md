@@ -66,8 +66,8 @@ cooldown.
 > The constant survives anyway, for a better reason. Over all 80 same-day
 > end-to-start gaps in this athlete's repaired history the distribution is
 > sharply bimodal: **the largest gap inside a session is 73 min, the smallest
-> gap between sessions is 148 min, and nothing lands in between.** Any constant
-> in (73, 148] produces identical grouping. 90 is not load-bearing to the
+> gap between sessions is 236 min, and nothing lands in between.** Any constant
+> in (73, 236] produces identical grouping. 90 is not load-bearing to the
 > minute, which is the property you want in a threshold. Locked by the test
 > `90 minutes sits in a genuinely EMPTY band`.
 

@@ -341,7 +341,7 @@ struct WeekTrainingLoadSection: View {
                         Circle()
                             // A day that ran without laps is drawn at its real
                             // size in paper-deep: the miles happened, the pace
-                            // did not arrive, and a blue circle would be a
+                            // did not arrive, and a ramp-colored circle would be a
                             // claim about pace we cannot make.
                             .fill(d.markColor)
                             .frame(width: dia, height: dia)
@@ -643,7 +643,7 @@ struct WeekTrainingLoadSection: View {
         }
 
         /// Circle fill. Paper-deep when the run arrived without laps: there
-        /// is no pace to report and a blue circle would invent one.
+        /// is no pace to report and a ramp-colored circle would invent one.
         @MainActor var markColor: Color {
             guard let z = dominantZone else { return Color.drip.paperDeep }
             return ZoneTaxonomy.color(z.token)

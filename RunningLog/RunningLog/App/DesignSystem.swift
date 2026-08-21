@@ -81,19 +81,22 @@ extension Color {
 
 struct DripColors {
     // Backgrounds - Warm paper tones
-    let background = Color(hex: "F5F3F0")       // Warm paper
+    let background = Color(hex: "FAFAF9")       // Off-white paper (was warm cream F5F3F0)
     let cardBackground = Color(hex: "FFFFFF")    // Clean white
-    let cardBackgroundElevated = Color(hex: "FAFAF8") // Slightly warm white
-    let calendarBackground = Color(hex: "E8E4DF")    // Darker warm tone for calendar
+    let cardBackgroundElevated = Color(hex: "FFFFFF") // On off-white paper there is no room
+                                                      // for a third surface — collapses to card.
+    let calendarBackground = Color(hex: "F0F0EE")    // Neutral inset well (was E8E4DF)
 
     // Accents - Burnt orange editorial pop
-    let coral = Color(hex: "D4592A")             // Burnt orange (primary accent)
-    let coralLight = Color(hex: "E8764A")        // Lighter variant
+    let coral = Color(hex: "E63946")             // Scarlet (primary accent)
+    // NOTE: the token is still *named* coral. Renaming it would touch ~5,900
+    // callsites, so the rename is a separate mechanical pass — not this one.
+    let coralLight = Color(hex: "F2616C")        // Lighter variant
     /// `--coral-deep` from `design-system/colors_and_type.css` (#B84420).
     /// The press / hover state of `coral` (e.g. the primary record button
     /// darkening). Per the design system, the one coral accent only ever
     /// deepens to this — it never shifts hue.
-    let coralDeep = Color(hex: "B84420")         // Coral press/hover state
+    let coralDeep = Color(hex: "C42A36")         // Press/hover state
     /// Deprecated alias for `coralDeep`. The old name read like a Stripe
     /// color, not the editorial press-state coral. Retained so any stray
     /// reference keeps compiling; migrate callsites to `coralDeep`.
@@ -103,7 +106,7 @@ struct DripColors {
     /// `rgba(212, 89, 42, 0.12)`. Capsule fill / tint behind the active
     /// segmented chip, the "Maintaining" pill, etc. Per the design system
     /// README, this is *"the only transparency in the system."*
-    let coralWash = Color(red: 212/255, green: 89/255, blue: 42/255, opacity: 0.12)
+    let coralWash = Color(red: 230/255, green: 57/255, blue: 70/255, opacity: 0.12)
 
     // Mood colors - Muted editorial tones
     let energized = Color(hex: "2D8A4E")         // Deep green
@@ -113,24 +116,35 @@ struct DripColors {
     let struggling = Color(hex: "C45A3A")        // Terracotta
     let injured = Color(hex: "B83A4A")           // Deep rose
 
-    // Pace — lives outside the mood palette. Blue = pace, warm = mood,
-    // coral = alert; the three palettes never share hues. This is the
-    // navy (Mile) end of the universal blue pace ramp; the full ramp is
-    // PaceSpectrum.swift. (Renamed from `speed` 2026-07-03.)
-    let paceFast = Color(hex: "0E1D4E")          // Navy — fast paces (Mile end of the blue pace ramp)
+    // Pace — rides the brand accent hue. This is the burnt-brick (Mile)
+    // end of the universal pace ramp; the full ramp is PaceSpectrum.swift.
+    // (Renamed from `speed` 2026-07-03; reverted from a same-day coral rebrand 2026-08-21.)
+    // It sits far enough below `coral` in lightness (L .33 vs .62) to stay
+    // readable against it when both appear on one card.
+    let paceFast = Color(hex: "0E1D4E")          // Navy — fast paces (Mile end of the pace ramp)
 
     // Text - Rich editorial contrast
-    let textPrimary = Color(hex: "1A1815")       // Rich ink black
-    let textSecondary = Color(hex: "6B6560")     // Warm gray
-    let textTertiary = Color(hex: "9B9590")      // Light warm gray
+    // INK — a cool near-black, and the ramp below is the same ink diluted.
+    // Richness here is chroma, not darkness: #000 has zero chroma and reads
+    // as a hole punched in the paper, not as ink. This ramp leans blue for
+    // two reasons — it opposes the scarlet accent (so scarlet reads more
+    // scarlet), and it rhymes with #0E1D4E, the Mile end of the pace ramp
+    // that is already in the palette. Warm ink belonged to the cream paper;
+    // on neutral paper it has nothing to sit with.
+    let textPrimary = Color(hex: "0D1016")       // Cool near-black — 18.2:1 on paper
+    let textSecondary = Color(hex: "585D68")     // Same ink, diluted — 6.3:1
+    let textTertiary = Color(hex: "8F95A1")      // Same ink, diluted further — 2.9:1.
+                                                 // No longer shares a value with the
+                                                 // `neutral` MOOD (9B9590) — that is
+                                                 // deliberate: moods are unchanged.
 
     // Utility
-    let divider = Color(hex: "E8E4E0")           // Warm rule line
+    let divider = Color(hex: "E6E7EA")           // The ink at its faintest — same hue
     let success = Color(hex: "2D8A4E")           // Same as energized
     /// `--paper-deep` from `design-system/colors_and_type.css` (#E8E4DF).
     /// Calendar / inset wells, histogram tracks behind a fill bar.
     /// Slightly darker than `background`.
-    let paperDeep = Color(hex: "E8E4DF")
+    let paperDeep = Color(hex: "F0F0EE")
 
     /// Simplified mood → border color: green (positive), amber (neutral/tired), red (struggling)
     func moodBorderColor(for mood: String?) -> Color? {
@@ -204,6 +218,19 @@ extension Font {
     /// The CSS source of truth is `Post Run Drip Design System/colors_and_type.css`.
     static func dripEyebrow(_ size: CGFloat) -> Font {
         .system(size: size, weight: .medium, design: .monospaced)
+    }
+
+    /// Body italic — PT Serif Italic. This is the product's *voice*:
+    /// transcribed voice logs, coach notes, and the quiet instructional
+    /// lines under a headline.
+    ///
+    /// It exists because those callsites were written as
+    /// `.system(size:, design: .serif).italic()`, which renders **New York**,
+    /// not PT Serif — so the journal voice had silently drifted off the
+    /// design system on every surface that used it. PTSerif-Italic.ttf is
+    /// already bundled and listed in Info.plist's UIAppFonts.
+    static func dripBodyItalic(_ size: CGFloat) -> Font {
+        .custom("PTSerif-Italic", size: size)
     }
 
     /// Meta/Captions - PT Serif for small sentence-case body

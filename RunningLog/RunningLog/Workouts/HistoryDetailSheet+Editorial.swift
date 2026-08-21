@@ -89,14 +89,36 @@ extension HistoryDetailSheet {
                 // a free-text field (blank = falls back to the date).
                 VStack(alignment: .leading, spacing: 8) {
                     if isEditing {
+                        // Eyebrow ABOVE the headline, set exactly as read mode
+                        // sets it. Edit mode used to print it underneath and a
+                        // point larger, so the same screen ordered its own
+                        // header two different ways depending on the mode, and
+                        // the date changed rank when you tapped Edit.
+                        Text(headerDateEyebrow)
+                            .font(.dripEyebrow(10)).tracking(1.2)
+                            .foregroundStyle(Color.drip.textSecondary)
+
+                        // Same 44pt display face as `editorialHeadline` and as
+                        // `inlineTitleField`. The inline editor already holds
+                        // this line — "the swap is the cursor appearing, not
+                        // the layout changing" — and the form path was the one
+                        // editor that broke it, dropping the headline to 30pt
+                        // and re-flowing the page on entry.
                         TextField("Add a title (optional)", text: $editTitle, axis: .vertical)
-                            .font(.dripDisplay(30))
+                            .font(.dripDisplay(44))
                             .foregroundStyle(Color.drip.textPrimary)
                             .lineLimit(1 ... 3)
-                        Text(headerDateEyebrow)
-                            .font(.dripEyebrow(11)).tracking(1.2)
-                            .foregroundStyle(Color.drip.textTertiary)
-                        EditableMoodPicker(selectedMood: $editMood)
+
+                        // The rail gets a name. Unlabelled in edit mode, six
+                        // coloured pills under a title read as decoration;
+                        // read mode calls the same fact "how it felt" through
+                        // the badge's position, which a form has to say out
+                        // loud.
+                        VStack(alignment: .leading, spacing: 8) {
+                            DripEyebrow(text: "HOW IT FELT")
+                            EditableMoodPicker(selectedMood: $editMood)
+                        }
+                        .padding(.top, 4)
                     } else {
                         // The workout is the title (athlete's own title wins if
                         // set); the day-of-week is the fallback only when there's
@@ -149,8 +171,20 @@ extension HistoryDetailSheet {
                 // into the editorial port — only the mood picker made it in,
                 // so workout type, distance, and duration were uneditable.
                 // saveEdits() already persists all three; this binds them.
+                //
+                // The two sections used to be cards — a bordered white one and
+                // a green-tinted one, stacked. Both are now bare sections on
+                // paper, separated from the header by the canonical
+                // `line · dot · line` break, because that is how every other
+                // section on this sheet is separated. A card is what you reach
+                // for when a surface has no typographic system; this one has
+                // one. (2026-08-20)
                 if isEditing {
-                    VStack(spacing: 16) {
+                    EditorialRule()
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+
+                    VStack(alignment: .leading, spacing: 24) {
                         EditableWorkoutTypeSection(selectedType: $editWorkoutType)
                         EditableWorkoutStatsSection(
                             distanceText: $editDistanceText,
@@ -158,7 +192,7 @@ extension HistoryDetailSheet {
                         )
                     }
                     .padding(.horizontal, 24)
-                    .padding(.top, 22)
+                    .padding(.top, 20)
                 }
 
                 // ── Stat strip (replaces "ORIGINAL NOTES" stat list +
@@ -218,15 +252,25 @@ extension HistoryDetailSheet {
                 // notes field bound to $editNotesText (persisted by
                 // saveEdits as cleaned_notes).
                 if isEditing {
+                    // Same rule that opens the memo block in read mode, so the
+                    // section arrives at the same place on the page either way.
+                    EditorialRule()
+                        .padding(.horizontal, 24)
+                        .padding(.top, 24)
+
                     // Label matches read mode's "SUMMARY" eyebrow.
                     editorialSection(eyebrow: "SUMMARY") {
+                        // Set at 13.5pt PT Serif with 3pt leading — the exact
+                        // type `memoBlock` prints the summary in. The inset
+                        // elevated well and its 10pt radius are gone: the
+                        // athlete's words sit on the paper in both modes, and
+                        // the well was a second surface inside a page that
+                        // allows no card-on-card.
                         TextField("How did the run feel?", text: $editNotesText, axis: .vertical)
-                            .font(.dripBody(14))
+                            .font(.dripBody(13.5))
                             .foregroundStyle(Color.drip.textPrimary)
-                            .lineLimit(3 ... 10)
-                            .padding(12)
-                            .background(Color.drip.cardBackgroundElevated)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .lineSpacing(3)
+                            .lineLimit(3 ... 12)
                     }
                 } else if hasMemoBlock {
                     // Read mode: summary + play row + the words behind a tap.
@@ -367,6 +411,12 @@ extension HistoryDetailSheet {
                 Spacer().frame(height: 40)
             }
         }
+        // An escape hatch from the Ask field that costs nothing: drag the
+        // entry and the keyboard goes with it. Without this the only way out
+        // is the keyboard's own Return, and on a page this long the athlete
+        // ends up swiping — which, before the page-turn lock in
+        // `SessionAskBlock`, turned the page instead.
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // Day + date eyebrow shown under a custom title (or above the mood

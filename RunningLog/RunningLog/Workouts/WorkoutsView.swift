@@ -233,7 +233,7 @@ enum PaceZone: Int, CaseIterable, Comparable {
         }
     }
 
-    // Pace zones ride the universal blue depth ramp (source of truth:
+    // Pace zones ride the universal pace depth ramp (source of truth:
     // PaceSpectrum). One hue, ten depths — pace reads as intensity, never
     // as green/coral (green = mood, coral = alert only).
     var color: Color {
@@ -304,8 +304,8 @@ enum MPZone: Int, CaseIterable {
         }
     }
 
-    // %MP effort zones ride the universal blue depth ramp (source of truth:
-    // PaceSpectrum) — deepening blue with intensity, never green/coral.
+    // %MP effort zones ride the universal pace depth ramp (source of truth:
+    // PaceSpectrum) — deepening with intensity, never the mood greens.
     var color: Color {
         switch self {
         case .seventy: return PaceSpectrum.easy

@@ -43,6 +43,14 @@ struct RunningLogApp: App {
             // were the last thing keeping seventeen orphaned Trends files in
             // the target; all of it is in git if a screenshot harness is
             // wanted back.
+            } else if CommandLine.arguments.contains("-effortLandscape") {
+                EffortLandscapePreviewScene()
+                    .preferredColorScheme(.light)
+            } else if CommandLine.arguments.contains("-effortPreview") {
+                // "The Effort" portrait 3a — seeded with the handoff's synthetic
+                // 5 × 2 mi @ MP session, for visual iteration without auth/data.
+                EffortPreviewScene()
+                    .preferredColorScheme(.light)
             } else if CommandLine.arguments.contains("-trendsV2Preview") {
                 NavigationStack {
                     // v2 rebuilt 2026-08-03: no previewMode / demoBiometrics
@@ -87,9 +95,9 @@ struct RunningLogApp: App {
         // Navigation Bar - Clean editorial
         let navBarAppearance = UINavigationBarAppearance()
         navBarAppearance.configureWithOpaqueBackground()
-        navBarAppearance.backgroundColor = UIColor(Color(hex: "F5F3F0"))
-        navBarAppearance.titleTextAttributes = [.foregroundColor: UIColor(Color(hex: "1A1815"))]
-        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor(Color(hex: "1A1815"))]
+        navBarAppearance.backgroundColor = UIColor(Color.drip.background)
+        navBarAppearance.titleTextAttributes = [.foregroundColor: UIColor(Color.drip.textPrimary)]
+        navBarAppearance.largeTitleTextAttributes = [.foregroundColor: UIColor(Color.drip.textPrimary)]
         UINavigationBar.appearance().standardAppearance = navBarAppearance
         UINavigationBar.appearance().scrollEdgeAppearance = navBarAppearance
         UINavigationBar.appearance().compactAppearance = navBarAppearance

@@ -44,6 +44,17 @@ struct SessionAskBlock: View {
     @State private var showAll = false
     @FocusState private var fieldFocused: Bool
 
+    /// The pager's page-turn lock (`HistoryDetailPager`). While the athlete is
+    /// typing, a horizontal drag must not turn the page: UIKit is also trying
+    /// to keep the focused field on screen, and the two fight — the page
+    /// drifts, or a swipe that was meant to move the cursor flips the entry
+    /// and takes the half-typed question with it. The lock already exists for
+    /// the telemetry scrubber; this is the same problem.
+    ///
+    /// Defaults to `.constant(false)` when no pager is hosting us (a
+    /// single-entry sheet), so the write is simply discarded.
+    @Environment(\.pageTurnLocked) private var pageTurnLocked
+
     /// Mirrored from `session-questions.ts:COLD_START_QUESTIONS`. `suggested`
     /// arrives with the first answer, so on a cold sheet the rail shows three
     /// questions that apply to any run at all. An empty rail reads as broken;
@@ -67,6 +78,21 @@ struct SessionAskBlock: View {
     }
 
     private var railQuestions: [String] { Array(suggestions.prefix(Self.railSize)) }
+
+    /// Changes whenever the rail's chips change text — the signal
+    /// `SessionAskChipFlow` uses to throw away cached chip sizes. Cheap:
+    /// hashing five short strings once per body, against re-measuring five
+    /// wrapped paragraphs of Crimson Pro on every layout pass.
+    private var railCacheKey: Int {
+        var hasher = Hasher()
+        hasher.combine(showAll)
+        hasher.combine(hasInsight)
+        hasher.combine(isGenerating)
+        hasher.combine(hasInsightError)
+        hasher.combine(canGenerateInsight)
+        for q in suggestions { hasher.combine(q) }
+        return hasher.finalize()
+    }
     private var restQuestions: [String] { Array(suggestions.dropFirst(Self.railSize)) }
 
     private var canSubmit: Bool {
@@ -95,6 +121,12 @@ struct SessionAskBlock: View {
         .overlay(alignment: .top) { DripHairline() }
         .padding(.horizontal, 24)
         .padding(.top, 16)
+        .onChange(of: fieldFocused) { _, focused in
+            pageTurnLocked.wrappedValue = focused
+        }
+        // Paging away, closing the sheet, or the block being swapped out while
+        // the field still holds focus would otherwise leave the pager locked.
+        .onDisappear { pageTurnLocked.wrappedValue = false }
     }
 
     // ── .abhead ──────────────────────────────────────────────
@@ -156,7 +188,9 @@ struct SessionAskBlock: View {
 
     // ── .rail ────────────────────────────────────────────────
     private var rail: some View {
-        SessionAskChipFlow(spacing: 6) {
+        // `key` invalidates the layout's measurement cache: the chips are
+        // whole sentences, and a new answer brings a new set of them.
+        SessionAskChipFlow(spacing: 6, key: railCacheKey) {
             readChip
             ForEach(railQuestions, id: \.self) { q in
                 questionChip(q)
@@ -375,18 +409,53 @@ struct SessionAskBlock: View {
 private struct SessionAskChipFlow: Layout {
     var spacing: CGFloat = 6
 
-    private func sizes(_ subviews: Subviews, maxWidth: CGFloat) -> [CGSize] {
-        subviews.map { subview in
+    /// Identifies the current set of chips. When it changes, cached sizes are
+    /// thrown away. See `SessionAskBlock.railCacheKey`.
+    var key: Int = 0
+
+    /// Measured chip sizes, held across layout passes.
+    ///
+    /// `Layout` offers a cache precisely so text isn't re-measured on every
+    /// pass, and this rail is measured a lot: it lives in the same view as the
+    /// "Ask about this run…" field, so **every keystroke** re-runs its layout.
+    /// Measuring a wrapped question ("Was this the right session for where I
+    /// am right now?") in a custom serif face is the slow kind of layout work,
+    /// and until this cache existed it happened up to twice per chip per pass
+    /// — once in `sizeThatFits`, then all over again in `placeSubviews`.
+    struct Cache {
+        var key: Int = 0
+        var width: CGFloat = -1
+        var count: Int = -1
+        var sizes: [CGSize] = []
+
+        var isEmpty: Bool { sizes.isEmpty }
+    }
+
+    func makeCache(subviews: Subviews) -> Cache { Cache() }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        // A different rail (new answer, disclosure toggled, read chip changed
+        // state) invalidates every measurement.
+        if cache.key != key || cache.count != subviews.count { cache = Cache() }
+    }
+
+    private func sizes(_ subviews: Subviews, maxWidth: CGFloat, cache: inout Cache) -> [CGSize] {
+        if !cache.isEmpty, cache.key == key, cache.width == maxWidth, cache.count == subviews.count {
+            return cache.sizes
+        }
+        let measured = subviews.map { subview -> CGSize in
             let ideal = subview.sizeThatFits(.unspecified)
             guard ideal.width > maxWidth else { return ideal }
             // Too wide for a row: re-measure, capped, so it wraps its text.
             return subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
         }
+        cache = Cache(key: key, width: maxWidth, count: subviews.count, sizes: measured)
+        return measured
     }
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         let maxWidth = proposal.width ?? .greatestFiniteMagnitude
-        let measured = sizes(subviews, maxWidth: maxWidth)
+        let measured = sizes(subviews, maxWidth: maxWidth, cache: &cache)
 
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
         for size in measured {
@@ -405,9 +474,9 @@ private struct SessionAskChipFlow: Layout {
         in bounds: CGRect,
         proposal: ProposedViewSize,
         subviews: Subviews,
-        cache: inout ()
+        cache: inout Cache
     ) {
-        let measured = sizes(subviews, maxWidth: bounds.width)
+        let measured = sizes(subviews, maxWidth: bounds.width, cache: &cache)
 
         var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
         for (index, size) in measured.enumerated() {

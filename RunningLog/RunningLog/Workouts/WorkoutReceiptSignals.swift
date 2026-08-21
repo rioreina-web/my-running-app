@@ -46,24 +46,100 @@ extension ReceiptSignal.Tone {
 
 /// A capsule: status dot · quiet key · the number. Mono throughout, tabular so
 /// a row of chips keeps its rhythm.
+///
+/// Tapping one opens `SignalExplainer` — the chips are the densest thing on the
+/// screen, five abbreviations carrying five different calculations, and there
+/// was nowhere to learn what DRIFT or VS PLAN actually measured. The popover
+/// is the whole affordance: no help icon, no legend row, no paragraph added to
+/// the page for a reader who already knows. (2026-08-20)
 struct SignalChip: View {
+    let signal: ReceiptSignal
+    @State private var explaining = false
+
+    var body: some View {
+        Button { explaining = true } label: {
+            HStack(spacing: 7) {
+                Circle().fill(signal.tone.color).frame(width: 7, height: 7)
+                Text(signal.key)
+                    .font(.dripStat(9.5)).tracking(1.0)
+                    .foregroundStyle(Color.drip.textTertiary)
+                Text(signal.value)
+                    .font(.dripStat(10.5)).tracking(0.7)
+                    .foregroundStyle(Color.drip.textPrimary)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Color.drip.cardBackground)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Explains what \(signal.key) measures")
+        .popover(isPresented: $explaining) {
+            SignalExplainer(signal: signal)
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+/// What one chip measures, in the athlete's language: the number it is showing
+/// now, one plain sentence on how it was computed, and what its dot colour
+/// means. Nothing here grades the session or advises training — it defines a
+/// term (hard rule #2).
+struct SignalExplainer: View {
     let signal: ReceiptSignal
 
     var body: some View {
-        HStack(spacing: 7) {
-            Circle().fill(signal.tone.color).frame(width: 7, height: 7)
+        VStack(alignment: .leading, spacing: 10) {
             Text(signal.key)
-                .font(.dripStat(9.5)).tracking(1.0)
-                .foregroundStyle(Color.drip.textTertiary)
+                .font(.dripEyebrow(11)).tracking(1.3)
+                .foregroundStyle(Color.drip.coral)
             Text(signal.value)
-                .font(.dripStat(10.5)).tracking(0.7)
+                .font(.dripStat(20)).monospacedDigit()
                 .foregroundStyle(Color.drip.textPrimary)
-                .monospacedDigit()
+            Text(Self.definition(for: signal.key))
+                .font(.dripBody(13))
+                .foregroundStyle(Color.drip.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 7) {
+                Circle().fill(signal.tone.color).frame(width: 7, height: 7)
+                Text(Self.toneCaption(signal.tone))
+                    .font(.dripStat(9)).tracking(0.8)
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
         }
-        .padding(.horizontal, 12).padding(.vertical, 7)
-        .background(Color.drip.cardBackground)
-        .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
+        .padding(18)
+        .frame(width: 268, alignment: .leading)
+        .background(Color.drip.background)
+    }
+
+    /// One sentence per chip. Keyed off the same string the chip prints, so a
+    /// new signal without an entry falls back rather than mis-defining itself.
+    static func definition(for key: String) -> String {
+        switch key {
+        case "SPREAD":
+            "The gap between your fastest and slowest work rep, written as ± either side of the middle. A small number means the reps came out even."
+        case "HR":
+            "The heart-rate zone that carried the most time in this session, and the first work rep whose average heart rate reached it."
+        case "DRIFT":
+            "How far your pace-to-heart-rate ratio moved from the first half of the work to the second. Positive means heart rate climbed while the pace held."
+        case "HEAT":
+            "What the day's heat and humidity cost you against the same effort run in cool air, in the unit the chip shows. It appears only when that cost reaches 3 seconds."
+        case "VS PLAN":
+            "Your average work pace against the target pace written in the session note. Absent when the note names no target — the session's own average is never treated as one."
+        default:
+            "A measured signal from this run's own laps, stream and weather. Nothing here is generated."
+        }
+    }
+
+    /// What the dot colour says — the status, never an instruction.
+    static func toneCaption(_ tone: ReceiptSignal.Tone) -> String {
+        switch tone {
+        case .good:    "IN THE USUAL RANGE"
+        case .warn:    "WORTH NOTICING"
+        case .hot:     "WELL OUTSIDE THE USUAL RANGE"
+        case .neutral: "STATED, NOT GRADED"
+        }
     }
 }
 
@@ -73,15 +149,32 @@ struct SignalChip: View {
 /// repeated block (the `×4` tag); `rest` is the recovery leg that follows a
 /// work bout, italicised beside it rather than given a row of its own.
 struct RecipeStep: Identifiable {
+
+    /// What the row *is*.
+    ///
+    /// Was a bare `isWork: Bool` whose only job was to pick the colour of a
+    /// leading rule. The rule is gone (see `WorkoutRecipeView`), so the flag
+    /// became a real three-way distinction instead:
+    ///
+    ///   • `.work`     — a bout. Sits flush at the margin.
+    ///   • `.recovery` — a jog, a warmup, a cooldown, a stated rest. Indents.
+    ///   • `.summary`  — NOT a segment: the session's own totals, e.g.
+    ///     "6.2 mi overall". These used to fall through as steps, which put a
+    ///     6-mile "rep" in the middle of a 3×2 recipe and drew it with the
+    ///     work colour. They now render under a rule as a footer.
+    enum Kind { case work, recovery, summary }
+
     let id = UUID()
     var reps: Int?          // ×4 tag — only on the first row of a block
-    var isWork: Bool        // draws the coral spine segment
+    var kind: Kind = .work
     var distance: String    // "3 mi", "400m", "1 mi"
     var detail: String?     // "warmup", "@ 6:00"
     var rest: String?       // "400m jog"
-    /// A row inside a repeated block that isn't its head. It carries no tag,
-    /// but the view still reserves the tag's width so the block stays aligned.
+    /// A row inside a repeated block that isn't its head — what gathers the
+    /// rows under one brace.
     var inBlock: Bool = false
+
+    var isWork: Bool { kind == .work }
 }
 
 /// Best-effort segmenter for the athlete's / coach's workout note.
@@ -114,13 +207,20 @@ enum WorkoutRecipeParser {
         #"^\s*(\d+)\s*(?:x|×|sets?\s+of|rounds?\s+of|reps?\s+of)\s*"#
 
     private static let restWords = ["jog", "rest", "recovery", "recover", "walk", "float", "break"]
-    /// Labels that carry a distance but aren't a segment of the session — the
-    /// run total, its duration, the conditions. Rendering these as steps would
-    /// put a 17-mile "rep" in the recipe.
+    /// Labels that carry a distance but aren't a segment of the session — they
+    /// describe the whole run. Rendering these as steps put a 17-mile "rep" in
+    /// the recipe; they now become `.summary` rows in the footer.
+    private static let summaryLabels: Set<String> = ["distance", "total", "duration", "time"]
+    /// The same, minus a distance worth showing — dropped outright.
     private static let metadataLabels: Set<String> = [
-        "distance", "total", "duration", "time", "weather", "recoveries",
-        "pace", "type", "workout type", "notes", "effort", "rpe", "elevation",
+        "weather", "recoveries", "pace", "type", "workout type",
+        "notes", "effort", "rpe", "elevation",
     ]
+    /// Trailing words that turn a bare line into a total rather than a leg:
+    /// "6.2 mi overall", "37 min in total". Unlike `summaryLabels` these carry
+    /// no colon, so the label pass never sees them — which is exactly how
+    /// "6.2 mi overall" ended up drawn as a rep.
+    private static let summaryWords = ["overall", "in total", "total", "altogether", "combined"]
     private static let warmupLabels = ["warmup", "warm up", "warm-up", "wu"]
     private static let cooldownLabels = ["cooldown", "cool down", "cool-down", "cd"]
 
@@ -136,8 +236,9 @@ enum WorkoutRecipeParser {
             : expand(lines.first ?? text, role: nil)
 
         // Two rows is the bar: one row is the note with extra chrome around it,
-        // and zero means we read nothing at all.
-        return steps.count >= 2 ? steps : nil
+        // and zero means we read nothing at all. Totals don't count toward it —
+        // "Distance: 6.2 mi / Duration: 37 min" is a receipt, not a recipe.
+        return steps.filter({ $0.kind != .summary }).count >= 2 ? steps : nil
     }
 
     // MARK: Labelled lines ("Warmup: 3 miles")
@@ -150,27 +251,41 @@ enum WorkoutRecipeParser {
         }
         let label = String(line[line.startIndex..<colon])
             .trimmingCharacters(in: .whitespaces).lowercased()
-        // A pace like "5:08" reads as a colon too; a numeric "label" isn't one.
-        guard !label.isEmpty, label.rangeOfCharacter(from: .letters) != nil else {
+        // A pace reads as a colon too, so "4 x (800m @ 2:38, 200m @ 45s)" used
+        // to parse as label `4 x (800m @ 2` + value `38, 200m @ 45s` — which
+        // silently ate the first rep AND the ×4 tag. A real label is a word:
+        // letters, no digits, none of the segment punctuation.
+        let labelPunctuation = CharacterSet(charactersIn: "(@×+/")
+        guard !label.isEmpty,
+              label.rangeOfCharacter(from: .letters) != nil,
+              label.rangeOfCharacter(from: .decimalDigits) == nil,
+              label.rangeOfCharacter(from: labelPunctuation) == nil
+        else {
             return expand(line, role: nil)
         }
         guard !metadataLabels.contains(label) else { return [] }
 
         let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+
+        // "Distance: 6.2 mi" describes the run, not a leg of it — footer, not step.
+        if summaryLabels.contains(label) {
+            guard let d = firstDistance(in: value) else { return [] }
+            return [RecipeStep(reps: nil, kind: .summary, distance: d.text, detail: label, rest: nil)]
+        }
         if warmupLabels.contains(label) { return role(value, "warmup") }
         if cooldownLabels.contains(label) { return role(value, "cooldown") }
         // "Break: 5 minutes" — the label is what makes it a recovery leg; the
         // value alone ("5 minutes") carries no sign of it.
         let rows = expand(value, role: nil)
         guard looksLikeRest(label) else { return rows }
-        return rows.map { var r = $0; r.isWork = false; r.detail = r.detail ?? label; return r }
+        return rows.map { var r = $0; r.kind = .recovery; r.detail = r.detail ?? label; return r }
     }
 
     /// A warmup / cooldown line: the label already says what it is, so the
     /// row is just the distance and the role. "Quick (2 miles)" → "2 mi warmup".
     private static func role(_ value: String, _ word: String) -> [RecipeStep] {
         guard let d = firstDistance(in: value) else { return [] }
-        return [RecipeStep(reps: nil, isWork: false, distance: d.text, detail: word, rest: nil)]
+        return [RecipeStep(reps: nil, kind: .recovery, distance: d.text, detail: word, rest: nil)]
     }
 
     // MARK: Segment runs
@@ -270,7 +385,12 @@ enum WorkoutRecipeParser {
         let head = tail
         detail = tidy(tail).flatMap { $0.count <= 40 ? $0 : nil }
 
-        return RecipeStep(reps: reps, isWork: !looksLikeRest(head),
+        // A line that names the whole session ("6.2 mi overall") is not a leg
+        // of it. Checked before rest, because "total recovery" is a summary.
+        let kind: RecipeStep.Kind = looksLikeSummary(head) ? .summary
+            : looksLikeRest(head) ? .recovery : .work
+
+        return RecipeStep(reps: reps, kind: kind,
                           distance: d.text, detail: detail, rest: rest)
     }
 
@@ -288,6 +408,11 @@ enum WorkoutRecipeParser {
     private static func looksLikeRest(_ s: String) -> Bool {
         let l = s.lowercased()
         return restWords.contains { l.contains($0) }
+    }
+
+    private static func looksLikeSummary(_ s: String) -> Bool {
+        let l = s.lowercased()
+        return summaryWords.contains { l.contains($0) }
     }
 
     /// A distance, or — when the segment is prescribed by time ("10 minutes @
@@ -315,51 +440,156 @@ enum WorkoutRecipeParser {
     }
 }
 
-/// The note, readable in one glance: a spine down the left, one row per
-/// segment, the repeated block marked with a coral spine and an `×N` tag.
+/// The hairline brace that gathers a repeated block.
+///
+/// Arms point LEFT, toward the rows it groups; the stem sits on the right, in
+/// the dead space past the paces. That side is deliberate — see the note on
+/// `WorkoutRecipeView` for why the recipe's leading edge has to stay empty.
+private struct RepeatBrace: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let stem = rect.maxX - 0.5
+        p.move(to: CGPoint(x: rect.minX, y: rect.minY + 0.5))
+        p.addLine(to: CGPoint(x: stem, y: rect.minY + 0.5))
+        p.addLine(to: CGPoint(x: stem, y: rect.maxY - 0.5))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - 0.5))
+        return p
+    }
+}
+
+/// The note, readable in one glance.
+///
+/// **There is no left rule here — that mark belongs to mood** (2026-08-21).
+/// Every row used to carry a 2pt rule at its leading edge, filled
+/// `Color.drip.coral` on a work leg and `paperDeep` on everything else. That
+/// is the same width, the same position and an overlapping hue as the mood
+/// spine on `JournalLogRow`, `TodayPlate18` and `HomeDayPager` — so a warm bar
+/// meant *"this day went badly"* in the feed and *"this is the hard part"* one
+/// tap later in the sheet. Same mark, opposite charge, no announcement.
+///
+/// It also broke the three-palette rule already written down in
+/// `design-system/colors_and_type.css` — *"blue = pace, warm = mood, coral =
+/// alert; the three palettes never share hues"*. A 2×2mi rep at 5:28 is not an
+/// alert, and scarlet is already spending itself on VOICE / EDIT / TODAY and
+/// the key-session star on the same screen.
+///
+/// So structure is drawn, not coloured:
+///
+///   • a repeated block gets a hairline brace on the RIGHT, which says the
+///     thing the colour never did — *these rows are one thing you repeated* —
+///     and costs no left gutter;
+///   • recovery legs step right instead of going pale;
+///   • the session's own totals sit under a rule as a footer rather than
+///     inside the recipe as extra reps (`RecipeStep.Kind.summary`).
+///
+/// The leading edge of a row is now free everywhere except mood. Keep it that
+/// way: if a future surface needs to mark structure here, give it a shape, an
+/// indent or a rule of its own — not a coloured bar.
 struct WorkoutRecipeView: View {
     let steps: [RecipeStep]
 
-    private func blockTag(_ text: String) -> some View {
-        Text(text)
-            .font(.dripStat(9)).tracking(1.0)
-            .foregroundStyle(Color.drip.background)
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(Color.drip.textPrimary)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+    /// Consecutive rows drawn as one unit. `reps` non-nil is a repeated block
+    /// and earns the brace. `rows` is never empty.
+    private struct Run: Identifiable {
+        let reps: Int?
+        let rows: [RecipeStep]
+        var id: UUID { rows[0].id }
+    }
+
+    /// The segments, gathered: a row carrying `reps` opens a block and every
+    /// `inBlock` row beneath joins it.
+    private var runs: [Run] {
+        let rows = steps.filter { $0.kind != .summary }
+        var out: [Run] = []
+        var i = rows.startIndex
+        while i < rows.endIndex {
+            if let n = rows[i].reps {
+                var block = [rows[i]]
+                var j = rows.index(after: i)
+                while j < rows.endIndex, rows[j].inBlock {
+                    block.append(rows[j])
+                    j = rows.index(after: j)
+                }
+                out.append(Run(reps: n, rows: block))
+                i = j
+            } else {
+                out.append(Run(reps: nil, rows: [rows[i]]))
+                i = rows.index(after: i)
+            }
+        }
+        return out
+    }
+
+    /// "6.2 mi overall" — the run's own numbers, never a leg of it.
+    private var totals: [RecipeStep] { steps.filter { $0.kind == .summary } }
+
+    private func row(_ step: RecipeStep) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+            Text(step.distance)
+                .font(.dripStat(12.5)).monospacedDigit()
+                .foregroundStyle(step.isWork ? Color.drip.textPrimary : Color.drip.textSecondary)
+            if let d = step.detail {
+                Text(d)
+                    .font(.dripStat(11)).monospacedDigit()
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
+            if let r = step.rest {
+                Text(r)
+                    .font(.dripBody(11.5)).italic()
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 5)
+        // The hierarchy is the indent. Easy legs step back from the margin;
+        // no second colour is needed to say the same thing.
+        .padding(.leading, step.kind == .recovery ? 16 : 0)
+    }
+
+    @ViewBuilder
+    private func runView(_ run: Run) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(run.rows) { step in row(step) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let n = run.reps {
+                // One row needs no brace — "×4  800m" already reads as a set.
+                if run.rows.count > 1 {
+                    RepeatBrace()
+                        .stroke(Color.drip.textTertiary,
+                                style: StrokeStyle(lineWidth: 1, lineJoin: .round))
+                        .frame(width: 6)
+                        .padding(.vertical, 6)
+                }
+                Text("×\(n)")
+                    .font(.dripStat(10)).tracking(0.8).monospacedDigit()
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(steps) { step in
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    if let n = step.reps {
-                        blockTag("×\(n)")
-                    } else if step.inBlock {
-                        // Same slot, no ink — keeps the block's rows aligned.
-                        blockTag("×0").hidden()
+            ForEach(runs) { run in runView(run) }
+
+            if !totals.isEmpty {
+                Rectangle()
+                    .fill(Color.drip.divider)
+                    .frame(height: 1)
+                    .padding(.top, 9)
+                ForEach(totals) { step in
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Text(step.distance)
+                            .font(.dripStat(11.5)).monospacedDigit()
+                        if let d = step.detail {
+                            Text(d).font(.dripBody(11.5)).italic()
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Text(step.distance)
-                        .font(.dripStat(12.5)).monospacedDigit()
-                        .foregroundStyle(Color.drip.textPrimary)
-                    if let d = step.detail {
-                        Text(d)
-                            .font(.dripStat(11)).monospacedDigit()
-                            .foregroundStyle(Color.drip.textSecondary)
-                    }
-                    if let r = step.rest {
-                        Text(r)
-                            .font(.dripBody(11.5)).italic()
-                            .foregroundStyle(Color.drip.textTertiary)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 5)
-                .padding(.leading, 12)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(step.isWork ? Color.drip.coral : Color.drip.paperDeep)
-                        .frame(width: 2)
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .padding(.top, 7)
                 }
             }
         }

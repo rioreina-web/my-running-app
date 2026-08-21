@@ -30,7 +30,7 @@
 //      pacing the app never measured — the same lie `deriveKeySession` avoids
 //      when it emits no dot for a lap-less session.
 //    • Zone-anchored color ONLY when a zone table exists, so a 6:20 mile is
-//      the same blue here, on the Read, and on a rep strip. Without zones it
+//      the same color here, on the Read, and on a rep strip. Without zones it
 //      falls back to the run's own slow/fast bounds, and to flat ink when the
 //      run has no spread to speak of.
 //

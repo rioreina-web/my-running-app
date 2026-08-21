@@ -624,7 +624,7 @@ struct WeekStressClockSheet: View {
     /// Keeps its pace colours rather than going grey. That follows the
     /// small-multiples decision at the top of `plot`: two panels at equal
     /// scale, so neither week has to be demoted to a tint to stay legible.
-    /// (The "GREY, never a faded blue" note further up is left over from the
+    /// (The "GREY, never a faded ramp color" note further up is left over from the
     /// abandoned single-panel overlay — see the note in `plot`.)
     ///
     /// Not a `Button`: selection belongs to the week being read, and a tap
@@ -717,7 +717,7 @@ struct WeekStressClockSheet: View {
     /// Monday's easy hour. A per-run scale would make every run look identical.
     ///
     /// NEUTRAL INK. Blue is pace, warm is mood, coral is alert (CLAUDE.md).
-    /// Heart rate is none of those, and drawing it in a pace blue over a
+    /// Heart rate is none of those, and drawing it in a pace color over a
     /// pace-coloured bar would be claiming the two mean the same thing.
     ///
     /// A DROPOUT BREAKS THE LINE — `Trace.segments` is what makes that happen.

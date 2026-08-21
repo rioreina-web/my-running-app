@@ -274,12 +274,55 @@ struct SessionAskBlock: View {
 }
 ```
 
-`suggested` arrives with the first answer, so on a cold sheet the rail shows
-`COLD_START_QUESTIONS` — three questions that apply to any run at all, mirrored
-from `session-questions.ts`. Don't block the rail on a network call; an empty
-rail reads as broken, a generic one reads as not-loaded-yet, which is what it
-is. Those three strings existing in two places is the one duplication in this
-design and it's deliberate.
+### 5.0 · CORRECTION — the rail must load before the first question
+
+**Found in the built app, 2026-08-20. This document had it wrong.**
+
+Earlier drafts said `suggested` arrives *with the first answer*, and the
+client falls back to `COLD_START_QUESTIONS` until then. The build followed
+that faithfully, and the result is the bug: on a freshly opened session the
+rail shows the read chip plus **two** generic questions, and *MORE QUESTIONS*
+is hidden because there is nothing behind it.
+
+Twelve of the fifteen are unreachable at exactly the moment they matter — the
+first look, when the athlete is deciding whether this box is worth using. The
+questions were supposed to be the demonstration that the app knows what kind
+of session it's looking at. Deferring them until after she's already asked one
+inverts that.
+
+**The fix: a questions-only mode.** `session-ask` accepts
+`{ training_log_id, questions_only: true }` and returns `{ suggested }` alone —
+no prompt, **no model call**, no `assembleWithBudget`. The client calls it in
+`.task {}` on appear.
+
+This is the `ask` function's own pattern. `analyzer_id: "__catalog__"`
+(`ask/index.ts`) returns the chip rail with no analyzer run and no model cost,
+for the same reason: the rail has to be populated before it can invite a
+question. Follow it.
+
+**Keep it lean.** Don't run the full `buildSessionBlock` for this — it fetches
+laps and assembles prose nobody is going to read. `SessionShape` comes almost
+entirely off the single `training_logs` row that select already pulls:
+
+| Field | From |
+|---|---|
+| `repCount` | `parsed_structure` |
+| `hasSplits` | `pace_segments` or `stream_meta` |
+| `hasHeartRate` / `hasElevation` | `stream_meta` |
+| `hasConditions` | `weather_actual` |
+| `hasNotes` | `cleaned_notes` |
+| `workoutType`, `distanceMiles` | the row |
+
+`hasPrescription`, `hasComparable`, `hasBodyMention` and `hasGoal` need
+lookups. **Default them to `false` on this path** rather than spending queries:
+a question wrongly withheld costs one rail slot, a question wrongly offered
+costs an answer that has to apologise. The full path can afford the lookups;
+the on-appear path shouldn't take them.
+
+**Client:** cache per `workoutId` for the session — swiping fifty logs should
+not be fifty round trips. Keep `COLD_START_QUESTIONS` as the pre-response
+fallback; it's still correct for a slow network, it was just never meant to be
+what she normally sees.
 
 ### The read chip
 

@@ -56,7 +56,7 @@ enum FastSystem: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Position on the blue pace ramp (PaceSpectrum), fast systems deeper navy.
+    /// Position on the pace ramp (PaceSpectrum), fast systems deeper navy.
     var spectrumColor: Color {
         switch self {
         case .mp: PaceSpectrum.mp

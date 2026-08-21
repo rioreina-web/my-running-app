@@ -611,7 +611,7 @@ struct TrainingTabView: View {
         }
     }
 
-    /// Universal blue pace ramp with the zone labels placed *within*
+    /// Universal pace ramp with the zone labels placed *within*
     /// the spectrum at their true (warped) axis positions — EASY on the
     /// pale end, MP at center, LT / MILE in the deep blues, FASTEST at
     /// the navy terminal. Positions mirror `PaceZoneScale`'s warp anchors.

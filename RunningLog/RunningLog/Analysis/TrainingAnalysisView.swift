@@ -187,7 +187,7 @@ struct TrainingAnalysisView: View {
     private enum ZoneFamily {
         case aerobic, tempo, fast
 
-        // Intensity bands ride the universal blue pace ramp — pace reads as
+        // Intensity bands ride the universal pace ramp — pace reads as
         // depth, not as green/coral (green = mood, coral = alert only).
         var nameColor: Color {
             switch self {

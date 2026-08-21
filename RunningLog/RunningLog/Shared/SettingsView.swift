@@ -224,7 +224,7 @@ struct SettingsView: View {
 
     private var monogram: some View {
         ZStack {
-            Color(red: 0.055, green: 0.114, blue: 0.306) // navy — pace ramp dark end
+            Color(red: 14/255, green: 29/255, blue: 78/255) // navy — pace ramp dark end (PaceSpectrum.mile)
             Text(initials)
                 .font(.dripDisplay(22))
                 .foregroundStyle(.white)

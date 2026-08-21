@@ -114,7 +114,7 @@ enum BandAnchor: Hashable {
     /// Band colour from the canonical pace ramp — faster reads deeper. Blue is
     /// pace and only pace (three-palette rule). A typed pace is placed on the
     /// same ramp by where it falls in the athlete's own ladder, so a custom
-    /// 10K-ish pace is the same blue as the 10K chip rather than a new hue.
+    /// 10K-ish pace is the same color as the 10K chip rather than a new hue.
     func color(in ladder: BandLadder?) -> Color {
         switch self {
         case .mp: return PaceSpectrum.mp

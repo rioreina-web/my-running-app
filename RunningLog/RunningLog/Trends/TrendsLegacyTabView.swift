@@ -11,7 +11,7 @@
 //  Exactly two things came back from v2, and nothing else:
 //
 //    • THE RECOVERY SCORE — the ledger card, closing section 04. It is the one
-//      number on this tab the segmenter does NOT own; see `recoveryScore`.
+//      number on this tab the segmenter does NOT own; see `recoverySection`.
 //    • ASK — `AskBar`, at the foot of the scroll.
 //
 //  The name stays `TrendsLegacyTabView` on purpose: renaming the type would
@@ -29,7 +29,7 @@
 //    1 · Load            (VolumeDetailView — week totals + acute:chronic band)
 //    2 · Pace            (PaceSignalView + the threshold-band row)
 //    3 · Key sessions    (week readout + receipt ledger + head-to-head)
-//    4 · Recovery        (the recovery score, then RecoveryReadView's load line)
+//    4 · Recovery        (TrendsRecoverySection — two axes, a state, folded)
 //    5 · Mood            (TrendsMoodSection — 30-day block, own stepper)
 //    6 · Race prediction (RacePredictionTrack)
 //    foot · Ask          (AskBar)
@@ -390,17 +390,23 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
-            // 04 · RECOVERY — today's score first, then the load behind it.
+            // 04 · RECOVERY — two axes and a state, in foldable chunks.
             //
-            // The score now LEADS. This section used to open with three stat
-            // tiles headed by "Readiness N/100" off
-            // `athlete_state.last_readiness_score` — an older server-side
-            // readiness the ledger below was built to replace (see
-            // `TrendsRecoveryDemand.swift` header). Two 0–100 numbers one
-            // screen apart, usually disagreeing, and the athlete's first
-            // question was which one to believe. The old readiness is no
-            // longer surfaced anywhere; the ledger is the one recovery number
-            // this app keeps. (Rio, 2026-08-17.)
+            // Rebuilt 2026-08-19. This section has now shed two different
+            // single numbers in three days, for the same underlying reason.
+            // First "Readiness N/100" off `athlete_state.last_readiness_score`
+            // (a stale server score sitting next to a live one). Then the
+            // ledger total itself — which summed DEMAND and SUPPLY into one
+            // scalar, so a 39 could mean "big block, feeling fine" or "barely
+            // running, feeling awful", and so a missing channel lowered the
+            // roof until `Clear` was arithmetically unreachable and the card
+            // had to apologise for it in four clauses of 9pt uppercase.
+            //
+            // `TrendsRecoveryRead` reports the two axes separately and lets
+            // the QUADRANT be the headline — the demand x supply sentence that
+            // was computed on every ledger since 2026-08-06 and never once
+            // rendered on this tab. See that file's header for the full
+            // argument. (Rio, 2026-08-19.)
             //
             // Mood and niggles used to live here too, as a week-by-week ribbon
             // and a by-body-part row. Section 05 below now reads both by day,
@@ -409,21 +415,9 @@ struct TrendsLegacyTabView: View {
             // (Rio, 2026-08-15.) `MoodDetailView` and `NigglesDetailView` are
             // still in `TrendsDetailViews.swift`, now unreferenced — the voice
             // quote was the one thing only they showed.
-            sectionHead("Recovery", "Rest and readiness")
-            subHead("Recovery score · today")
-                .padding(.top, 14)
-            recoveryScore
-                .padding(.top, 6)
-            subHead("The load behind it")
-                .padding(.top, 26)
-            RecoveryReadView(
-                hardSessions28d: athleteState?.load_distribution?.recovery_read?.hard_sessions_28d,
-                avgDaysBetweenHard: athleteState?.load_distribution?.recovery_read?.avg_days_between_hard,
-                downWeek: athleteState?.load_distribution?.recovery_read?.down_week,
-                bodySignalCount: athleteState?.bodySignalCount ?? 0,
-                embedded: true
-            )
-            .padding(.top, 8)
+            sectionHead("Recovery", "Where you stand today")
+            recoverySection
+                .padding(.top, 12)
 
             EditorialRule().padding(.vertical, 22)
 
@@ -461,53 +455,49 @@ struct TrendsLegacyTabView: View {
         }
     }
 
-    // MARK: 04 · recovery score
+    // MARK: 04 · recovery
 
-    /// The recovery ledger — the number, its band, the move since yesterday,
-    /// and the arithmetic folded away underneath.
+    /// Today's recovery read — the two axes and the state.
     ///
     /// Deliberately NOT windowed, and the only thing on this tab that isn't.
     /// The segmenter owns every other number here (see the ONE TIME CONTROL
-    /// rule at the top of the file), but the ledger is a *today* number built
-    /// over the full history: its load factor reads an 8-week baseline and its
-    /// niggle factor a 14-day lookback, both of which sit behind a 4 wk
-    /// window's first day. Handing it `window` would quietly change the
-    /// arithmetic every time the segmenter moved while the label still said
-    /// today — so it reads `service.days` end to end, and the subhead names
-    /// the day it means.
+    /// rule at the top of the file), but this is a *today* read built over the
+    /// full history: its load axis runs 7-day and 42-day EWMAs and its body
+    /// axis ranks against 180 days, all of which sit behind a 4 wk window's
+    /// first day. Handing it `window` would quietly change the arithmetic
+    /// every time the segmenter moved while the label still said today — so it
+    /// reads `service.days` end to end.
     ///
     /// `service.days` is one entry per day through today, rest days included,
-    /// so the last index is today and the one before it is yesterday.
+    /// so the last index is today.
     @ViewBuilder
-    private var recoveryScore: some View {
-        if let ledger = recoveryLedger {
-            TrendsRecoveryLedgerView(
-                ledger: ledger,
-                previous: previousRecoveryScore,
-                // No `onSeeTrend`. The score's trend line lived in v2's signal
-                // lanes and there is no lane on this tab to jump to, so the
-                // gauge stays a gauge instead of a button pointing at nothing.
+    private var recoverySection: some View {
+        if let read = recoveryRead {
+            TrendsRecoverySection(
+                read: read,
                 onSleepLogged: { Task { await service.refresh(force: true) } }
             )
         } else {
             EmptyStateView(
                 variant: .dataPending,
-                eyebrow: "No score yet",
-                title: "The score reads your mood logs, your niggles and your last few weeks of running. A few more days and it fills in."
+                eyebrow: "No read yet",
+                title: "This reads your mood logs, your niggles and your last few weeks of running. A few more days and it fills in."
             )
         }
     }
 
-    /// Today's ledger.
-    private var recoveryLedger: TrendsRecoveryLedger? {
+    /// The schedule context comes from `athlete_state` rather than being
+    /// recomputed here, so the load chunk cannot disagree with the server
+    /// about how the hard days are spaced.
+    private var recoveryRead: TrendsRecoveryRead? {
         guard !service.days.isEmpty else { return nil }
-        return TrendsRecoveryLedger.ledger(days: service.days, at: service.days.count - 1)
-    }
-
-    /// Yesterday's total, for the delta. `nil` on the first day of history.
-    private var previousRecoveryScore: Int? {
-        guard service.days.count > 1 else { return nil }
-        return TrendsRecoveryLedger.ledger(days: service.days, at: service.days.count - 2).total
+        return TrendsRecoveryRead.read(
+            days: service.days,
+            at: service.days.count - 1,
+            hardSessions28d: athleteState?.load_distribution?.recovery_read?.hard_sessions_28d,
+            avgDaysBetweenHard: athleteState?.load_distribution?.recovery_read?.avg_days_between_hard,
+            downWeek: athleteState?.load_distribution?.recovery_read?.down_week
+        )
     }
 
     /// Section 02's body: the current threshold band and how much work has

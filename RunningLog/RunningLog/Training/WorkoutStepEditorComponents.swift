@@ -175,7 +175,7 @@ enum WorkoutLabelGrammar {
 // MARK: - Zone chip row
 
 /// Horizontal menu of the ten canonical pace zones, each chip riding the
-/// blue depth ramp (PaceSpectrum via NamedPace.color) with the athlete's
+/// pace depth ramp (PaceSpectrum via NamedPace.color) with the athlete's
 /// resolved pace underneath. Selecting a zone sets the builder's default —
 /// new steps land at this zone, and the summary label leans on it.
 struct BuilderZoneChipRow: View {
