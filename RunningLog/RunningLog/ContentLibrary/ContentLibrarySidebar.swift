@@ -52,6 +52,9 @@ private let menuGroups: [MenuGroup] = [
 struct ContentLibrarySidebar: View {
     @Binding var isPresented: Bool
     @Binding var activeDestination: AppDestination?
+    /// Held rather than read through `.shared` at the callsite so the footer
+    /// label re-renders the moment the skin flips.
+    @State private var skinStore = DripSkinStore.shared
 
     var body: some View {
         GeometryReader { geo in
@@ -181,10 +184,14 @@ struct ContentLibrarySidebar: View {
     /// point is flipping it repeatedly while looking at the thing.
     private var skinToggle: some View {
         Button {
-            DripSkinStore.shared.toggle()
+            skinStore.toggle()
+            // Close, like every other menu action. The panel sits over the Log
+            // tab — the one surface the skin changes — so leaving it open makes
+            // a working flip look like a dead button. This was the bug.
+            close()
         } label: {
             VStack(alignment: .trailing, spacing: 3) {
-                Text("SKIN · \(DripSkinStore.shared.skin.label.uppercased())")
+                Text("SKIN · \(skinStore.skin.label.uppercased())")
                     .font(.dripEyebrow(9))
                     .tracking(0.9)
                     .foregroundStyle(Color.drip.coral)
