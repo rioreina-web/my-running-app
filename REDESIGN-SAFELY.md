@@ -148,19 +148,79 @@ static func dripDisplay(_ size: CGFloat) -> Font {
 
 Note `dripStat` and `dripEyebrow` use the *system* monospace font rather than a bundled one. Between them that's **1,144** callsites — every number and every uppercase label in the app. They need an actual decision (keep SF Mono, or bundle a new mono), not a find-and-replace.
 
-### Layout — new files, never edited files
+### Layout — new files, but far fewer than you'd think
 
-For a screen you want structurally different:
+Yes: a structural layout change means a second file. There is no token that turns one arrangement of boxes into a different arrangement.
 
-- Keep `HomePage.swift` exactly as it is.
-- Add `HomePageWild.swift` next to it.
-- At the one place the app decides what to show:
+But the number of duplicated files is **not** "every screen." It's bounded by how many screens' *bones* actually change. Three tiers, and only the third one duplicates:
 
-  ```swift
-  if DripTheme.id == .wild { HomePageWild() } else { HomePage() }
-  ```
+**Tier 1 — same bones, new skin → zero new files.**
+If a screen keeps its structure and just wears new colors and type, the token swap already did it. This will cover most of the app.
 
-The old screen is never touched, so it can never break. You rebuild screens one at a time, in any order, shipping as you go. A half-finished redesign is still a fully working app — the screens you haven't reached yet simply render the old way.
+**Tier 2 — shared components → one file, two bodies.**
+Don't duplicate these. Put the branch *inside* the component:
+
+```swift
+struct EditorialRule: View {
+    var body: some View {
+        if DripTheme.id == .wild { /* new mark */ } else { /* today's rule */ }
+    }
+}
+```
+
+One edit, and every callsite follows. Current usage counts — `EditorialRule` **57**, `EmptyStateView` **48**, `Hairline` **28**, `SectionHeader` **21**, `DripButton` **20**, `MoodBadge` **11**, `PlateStrip` **10**. Changing `EditorialRule` once restyles 57 places. Duplicating it 57 times would be the mistake.
+
+**Tier 3 — genuinely different screens → two files.** This is where your instinct is right.
+
+There are only six root screens:
+
+| Screen | File | Lines |
+|---|---|---|
+| Log | `Workouts/VoiceLogView.swift` | 1,748 |
+| Train | `Training/Analytics/TrainingTabView.swift` | 1,565 |
+| Sheet | `App/SheetTabView.swift` | 776 |
+| Week | `Week/WeekTabView.swift` | 756 |
+| Trends | `Trends/TrendsTabView.swift` | 109 |
+| Ask | `Analysis/AskTabView.swift` | 42 |
+
+So the worst case is six duplicated files, not 324. And you almost certainly won't want all six rebuilt.
+
+### Go finer than a whole tab
+
+Trends and Ask are 109 and 42 lines because they're **thin shells that compose sections**. The real content lives in the section files below them. That means you rarely have to duplicate a 1,700-line screen — you duplicate the one *section* whose layout changed and leave the shell alone.
+
+### You have already built this exact pattern
+
+`TrendsTabView.swift` right now:
+
+```swift
+switch surface {
+case .v1:    TrendsLegacyTabView(...)
+case .block: TrendsBlockView(...)
+}
+```
+
+Two completely different layouts of the same screen, both live in the app, chosen by a stored setting, with a door in the UI to flip between them. That *is* the redesign architecture. You invented it already to compare two Trends designs on device. The redesign just applies it at the app level with `DripTheme.id` instead of `surfaceRaw`.
+
+### Where the app-level switch physically goes
+
+`App/RunningLogApp.swift`, in the `ZStack` that mounts the tabs. Today:
+
+```swift
+NavigationStack { TrendsTabView() }
+    .opacity(selectedTab == 4 ? 1 : 0)
+```
+
+Becomes:
+
+```swift
+NavigationStack {
+    if DripTheme.id == .wild { TrendsTabViewWild() } else { TrendsTabView() }
+}
+.opacity(selectedTab == 4 ? 1 : 0)
+```
+
+One line per screen you rebuild. Screens you haven't reached yet keep rendering the old way, so the app never stops working.
 
 ### The payoff
 
