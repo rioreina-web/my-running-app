@@ -1442,7 +1442,11 @@ struct WorkoutPickerSheet: View {
 
     /// Fetch Strava-sourced training_logs and map them to RunningWorkout so they
     /// appear in the workout link picker.
-    private static func fetchStravaRunningWorkouts(limit: Int) async -> [RunningWorkout] {
+    ///
+    /// Internal rather than private so `WildWorkoutPickerSheet` can call it.
+    /// The source list below is the single rule both pickers must obey — see
+    /// the comment on `.in("source", …)` — so it lives in one place.
+    static func fetchStravaRunningWorkouts(limit: Int) async -> [RunningWorkout] {
         struct Row: Decodable {
             let id: String
             let workout_date: Date?

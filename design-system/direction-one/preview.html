@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Direction I</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="direction-one.css">
+<style>
+  html, body { margin:0; padding:0; background:#C6C6C6; }
+  .sheet { padding:34px 28px 44px; font-family:"Schibsted Grotesk", sans-serif; }
+  .row { display:flex; gap:34px; align-items:flex-start; flex-wrap:wrap; }
+  .col { display:flex; flex-direction:column; gap:12px; flex:none; width:393px; }
+  .cap { font-size:11px; font-weight:600; letter-spacing:.16em; text-transform:uppercase; color:#4A4A4A; }
+  .cap b { color:#111; }
+  .phone {
+    width:393px; height:852px; flex:none; overflow:hidden;
+    display:flex; flex-direction:column; border-radius:46px;
+    box-shadow:0 22px 60px rgba(0,0,0,.28), 0 0 0 10px #0C0C0C, 0 0 0 11px #2C2C2C;
+  }
+  /* status bar */
+  .sb { height:52px; flex:none; padding:0 30px 0 34px; display:flex; align-items:center; justify-content:space-between;
+        font-family:var(--font-data); font-size:15px; font-weight:600; }
+  .sb .g { display:flex; align-items:center; gap:6px; }
+  .sb .bars { display:flex; align-items:flex-end; gap:2px; height:11px; }
+  .sb .bars i { width:3px; background:#111; border-radius:1px; display:block; }
+  .sb .bars i:nth-child(1){height:4px}.sb .bars i:nth-child(2){height:6px}
+  .sb .bars i:nth-child(3){height:9px}.sb .bars i:nth-child(4){height:11px}
+  .sb .batt { display:flex; align-items:center; justify-content:center; min-width:29px; height:16px;
+              background:#111; color:#fff; border-radius:3px; font-size:10px; font-weight:600; padding:0 4px; }
+  /* masthead */
+  .mast { flex:none; padding:6px var(--gutter) 14px; border-bottom:1px solid var(--rule);
+          display:flex; align-items:baseline; justify-content:space-between; gap:16px; }
+  .wordmark { font-family:var(--font-display); font-weight:700; font-size:17px; letter-spacing:-.035em; }
+  .wordmark .pt { color:var(--red); }
+  .body { flex:1; min-height:0; padding:0 var(--gutter); overflow:hidden; }
+  /* week ledger */
+  .ledger { display:grid; grid-template-columns:repeat(7,1fr); gap:0; padding:14px 0 15px; }
+  .ledger div { display:flex; flex-direction:column; align-items:center; gap:7px; }
+  .ledger .n { font-family:var(--font-data); font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--ink-3); }
+  .ledger .n.on { color:var(--ink); }
+  /* entries */
+  .entry { padding:17px 0 18px; border-top:1px solid var(--rule); }
+  .entry:first-of-type { border-top:2px solid var(--rule-strong); }
+  .ehead { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+  .ehead .sp { margin-left:auto; }
+  .stats { display:flex; gap:26px; margin-top:13px; }
+  .byline { margin-top:12px; display:flex; align-items:center; gap:7px; }
+  .words { margin-top:11px; }
+  /* tab bar */
+  .tb { flex:none; display:grid; grid-template-columns:repeat(6,1fr); border-top:1px solid var(--rule); padding:0 4px 4px; }
+  .tb button { background:transparent; border:0; display:flex; flex-direction:column; align-items:center; gap:7px;
+               padding:11px 0 8px; cursor:pointer; min-height:auto; }
+  .tb .dot { width:6px; height:6px; border-radius:999px; border:1px solid var(--ink-3); background:transparent; }
+  .tb button.on .dot { background:var(--red); border-color:var(--red); }
+  .tb button.on .d1-label { color:var(--ink); }
+  .home { flex:none; display:flex; justify-content:center; padding:2px 0 9px; }
+  .home i { display:block; width:134px; height:5px; border-radius:999px; background:var(--ink); }
+  /* detail screen */
+  .lede { padding:18px 0 20px; border-bottom:1px solid var(--rule); }
+  .splits { padding:16px 0 4px; }
+  .split { display:grid; grid-template-columns:26px 1fr auto auto; align-items:center; gap:12px; padding:9px 0; border-top:1px solid var(--rule); }
+  .split .bar { height:3px; background:var(--paper-deep); position:relative; }
+  .split .bar i { position:absolute; inset:0 auto 0 0; background:var(--ink); display:block; }
+  .split .bar i.k { background:var(--session); }
+  .machine-block { padding:15px 0 16px; border-top:1px solid var(--rule); }
+</style>
+</head>
+<body>
+<div class="sheet">
+<div class="row">
+
+  <!-- ============ LOG FEED ============ -->
+  <div class="col">
+    <span class="cap"><b>Log</b> · week feed</span>
+    <div class="phone d1">
+      <div class="sb"><span>10:12</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span>
+        <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 11.2.5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg>
+        <span class="batt">84</span></span></div>
+
+      <div class="mast">
+        <span class="wordmark">Post Run <span class="pt">Drip</span></span>
+        <span class="d1-label">Week 14 · marathon block</span>
+      </div>
+
+      <div class="body">
+        <div class="ledger">
+          <div><span class="d1-label d1-label--sm">M</span><span class="n">6.0</span></div>
+          <div><span class="d1-label d1-label--sm">T</span><span class="n on">8.4</span></div>
+          <div><span class="d1-label d1-label--sm">W</span><span class="n">5.2</span></div>
+          <div><span class="d1-label d1-label--sm">T</span><span class="n">—</span></div>
+          <div><span class="d1-label d1-label--sm">F</span><span class="n">7.1</span></div>
+          <div><span class="d1-label d1-label--sm">S</span><span class="n">4.4</span></div>
+          <div><span class="d1-label d1-label--sm">S</span><span class="n">18.0</span></div>
+        </div>
+
+        <!-- keyed session -->
+        <div class="entry">
+          <div class="ehead">
+            <span class="d1-mood-dot is-tired"></span>
+            <span class="d1-label d1-label--ink">Tue · May 5</span>
+            <span class="sp"></span>
+            <span class="d1-chip-rail"><span class="d1-chip d1-chip--keyed">Threshold</span></span>
+          </div>
+          <h2 class="d1-display d1-display--m">6 × 800m.</h2>
+          <p class="words d1-voice">"Legs were heavy the first mile but they loosened up by the third rep.
+            Held the last two on feel, didn't look at the watch."</p>
+          <div class="stats">
+            <div class="d1-stat"><span class="d1-label d1-label--sm">Distance</span>
+              <span class="d1-stat__value">8.4<i>mi</i></span></div>
+            <div class="d1-stat"><span class="d1-label d1-label--sm">Avg pace</span>
+              <span class="d1-stat__value">7:42<i>/mi</i></span></div>
+            <div class="d1-stat"><span class="d1-label d1-label--sm">Time</span>
+              <span class="d1-stat__value">64:12</span></div>
+          </div>
+          <div class="byline">
+            <span class="d1-label d1-label--sm">Voice memo · Garmin</span>
+            <span class="d1-mood is-tired" style="margin-left:auto">Tired</span>
+          </div>
+        </div>
+
+        <!-- easy -->
+        <div class="entry">
+          <div class="ehead">
+            <span class="d1-mood-dot is-positive"></span>
+            <span class="d1-label d1-label--ink">Mon · May 4</span>
+            <span class="sp"></span>
+            <span class="d1-chip-rail"><span class="d1-chip">Easy</span></span>
+          </div>
+          <h2 class="d1-display d1-display--m">Easy 6 miles.</h2>
+          <div class="stats">
+            <div class="d1-stat"><span class="d1-label d1-label--sm">Distance</span>
+              <span class="d1-stat__value">6.0<i>mi</i></span></div>
+            <div class="d1-stat"><span class="d1-label d1-label--sm">Avg pace</span>
+              <span class="d1-stat__value">8:58<i>/mi</i></span></div>
+            <div class="d1-stat"><span class="d1-label d1-label--sm">Avg HR</span>
+              <span class="d1-stat__value">142<i>bpm</i></span></div>
+          </div>
+          <div class="byline">
+            <span class="d1-label d1-label--sm">Strava</span>
+            <span class="d1-mood is-positive" style="margin-left:auto">Positive</span>
+          </div>
+        </div>
+
+        <div class="entry">
+          <div class="ehead">
+            <span class="d1-mood-dot is-neutral"></span>
+            <span class="d1-label d1-label--ink">Sun · May 3</span>
+            <span class="sp"></span>
+            <span class="d1-chip-rail"><span class="d1-chip">Long run</span></span>
+          </div>
+          <h2 class="d1-display d1-display--m">18 miles, long run.</h2>
+        </div>
+      </div>
+
+      <div class="tb">
+        <button class="on"><span class="dot"></span><span class="d1-label d1-label--sm">Log</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Train</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Trends</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Week</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Ask</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Sheet</span></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+  <!-- ============ WORKOUT SHEET ============ -->
+  <div class="col">
+    <span class="cap"><b>Workout sheet</b> · athlete vs machine</span>
+    <div class="phone d1">
+      <div class="sb"><span>10:14</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span>
+        <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 11.2.5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg>
+        <span class="batt">84</span></span></div>
+
+      <div class="mast">
+        <span class="wordmark">Post Run <span class="pt">Drip</span></span>
+        <span class="d1-label">Tue · May 5</span>
+      </div>
+
+      <div class="body">
+        <div class="d1-kicker" style="margin-top:14px">
+          <span class="d1-label d1-label--ink">Threshold</span>
+          <span class="d1-label">6 × 800m · 2:00 jog</span>
+        </div>
+
+        <div class="lede">
+          <h1 class="d1-display d1-display--xl" style="margin-top:14px">6 × 800m.</h1>
+          <p class="d1-dek">Held to 2:58 through five, then 3:04 on the last.</p>
+          <span class="d1-orn" style="margin-top:16px"></span>
+        </div>
+
+        <div class="splits">
+          <div class="d1-label" style="margin-bottom:4px">Reps · 800m</div>
+          <div class="split"><span class="d1-label d1-label--sm">1</span>
+            <span class="bar"><i class="k" style="width:88%"></i></span>
+            <span class="d1-data" style="font-size:13px">2:58</span><span class="d1-label d1-label--sm">168 bpm</span></div>
+          <div class="split"><span class="d1-label d1-label--sm">2</span>
+            <span class="bar"><i class="k" style="width:87%"></i></span>
+            <span class="d1-data" style="font-size:13px">2:57</span><span class="d1-label d1-label--sm">171 bpm</span></div>
+          <div class="split"><span class="d1-label d1-label--sm">3</span>
+            <span class="bar"><i class="k" style="width:88%"></i></span>
+            <span class="d1-data" style="font-size:13px">2:58</span><span class="d1-label d1-label--sm">173 bpm</span></div>
+          <div class="split"><span class="d1-label d1-label--sm">4</span>
+            <span class="bar"><i class="k" style="width:88%"></i></span>
+            <span class="d1-data" style="font-size:13px">2:58</span><span class="d1-label d1-label--sm">176 bpm</span></div>
+          <div class="split"><span class="d1-label d1-label--sm">5</span>
+            <span class="bar"><i class="k" style="width:89%"></i></span>
+            <span class="d1-data" style="font-size:13px">2:59</span><span class="d1-label d1-label--sm">178 bpm</span></div>
+          <div class="split"><span class="d1-label d1-label--sm">6</span>
+            <span class="bar"><i class="k" style="width:93%"></i></span>
+            <span class="d1-data" style="font-size:13px">3:04</span><span class="d1-label d1-label--sm">179 bpm</span></div>
+        </div>
+
+        <!-- the athlete: italic mono -->
+        <div class="machine-block">
+          <div class="d1-label" style="margin-bottom:9px">In your words</div>
+          <p class="d1-voice" style="margin:0">"Legs were heavy the first mile but they loosened up by the
+            third rep. Held the last two on feel, didn't look at the watch."</p>
+        </div>
+
+        <!-- the machine: roman mono, no colour of its own -->
+        <div class="machine-block">
+          <div class="d1-label" style="margin-bottom:9px">Computed</div>
+          <p class="d1-machine" style="margin:0">Rep 6 ran 6s slower than the set average of 2:58, with heart
+            rate 11 bpm above rep 1. Threshold pace estimate unchanged at 5:58 / mi.</p>
+        </div>
+      </div>
+
+      <div class="tb">
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Log</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Train</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Trends</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Week</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Ask</span></button>
+        <button class="on"><span class="dot"></span><span class="d1-label d1-label--sm">Sheet</span></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+  <!-- ============ RECORD ============ -->
+  <div class="col">
+    <span class="cap"><b>Log</b> · voice-first front door</span>
+    <div class="phone d1">
+      <div class="sb"><span>10:16</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span>
+        <svg width="16" height="12" viewBox="0 0 16 12"><path d="M8 11.2.5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg>
+        <span class="batt">84</span></span></div>
+
+      <div class="mast">
+        <span class="wordmark">Post Run <span class="pt">Drip</span></span>
+        <span class="d1-label">Tue · May 5</span>
+      </div>
+
+      <div class="body">
+        <div class="d1-kicker" style="margin-top:14px">
+          <span class="d1-label d1-label--ink">Log a run</span>
+          <span class="d1-label">Nothing filed today</span>
+        </div>
+
+        <h1 class="d1-display d1-display--xl" style="margin-top:20px">Log your run.</h1>
+        <p class="d1-dek">Say it the way you'd say it to your coach.</p>
+
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; padding:76px 0 0">
+          <button class="d1-record" aria-label="Record"><i></i></button>
+          <span class="d1-label" style="letter-spacing:.16em">Hold to record</span>
+        </div>
+
+        <div style="margin-top:64px; padding-top:15px; border-top:1px solid var(--rule)">
+          <div class="d1-label" style="margin-bottom:9px">From your coach</div>
+          <blockquote class="d1-coach">
+            <p class="d1-prose" style="margin:0; font-size:17px">Consistent splits, not negative.
+              Let the rhythm settle before you chase anything.</p>
+          </blockquote>
+        </div>
+      </div>
+
+      <div class="tb">
+        <button class="on"><span class="dot"></span><span class="d1-label d1-label--sm">Log</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Train</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Trends</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Week</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Ask</span></button>
+        <button><span class="dot"></span><span class="d1-label d1-label--sm">Sheet</span></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

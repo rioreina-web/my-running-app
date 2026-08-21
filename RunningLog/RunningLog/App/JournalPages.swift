@@ -21,6 +21,37 @@
 
 import SwiftUI
 
+// MARK: - File-private date helper
+//
+// "AUG 20" for the read chip's `dateLabel`.
+//
+// `HistoryDetailSheet+Editorial.swift` declares an identical
+// `Date.editorialDateString`, but declares it `private` — so it is not visible
+// here, and this file called it anyway. That is a build error, not a runtime
+// one: this file has never compiled since it was added.
+//
+// The fix is a local copy rather than promoting the other one to internal,
+// because that file says so in as many words: the shared
+// `Date.shortDateString` returns "May 21, 9:06 AM" and is used elsewhere —
+// "Don't change it — add local helpers instead."
+//
+// One formatter, allocated once. `DateFormatter()` is expensive and this is
+// read from inside a view body, so a per-call allocation would run on every
+// render of every page. (Same lesson as the ISO8601DateFormatter note in
+// LogView.groupIntoWeeks.)
+private let journalEditorialDayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "MMM d"
+    return f
+}()
+
+private extension Date {
+    var editorialDateString: String {
+        journalEditorialDayFormatter.string(from: self).uppercased()
+    }
+}
+
 // MARK: - Shared frame
 
 /// Pages sit in a vertical ScrollView that does not bounce when the content

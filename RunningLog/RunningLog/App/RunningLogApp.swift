@@ -118,6 +118,8 @@ struct MainTabView: View {
     @State private var athleteProfileService = AthleteProfileService()
     @State private var activeDestination: AppDestination?
     @State private var showSettings = false
+    /// Which skin renders. Only tab 0 reads it today — see DripTheme.swift.
+    @State private var skinStore = DripSkinStore.shared
 
     // Sidebar state
     @State private var showSidebar = false
@@ -162,8 +164,22 @@ struct MainTabView: View {
             // Sheet in DEBUG and release alike.
             ZStack {
                 // Tab 0 — Log (front door)
+                //
+                // Two screens, one tab. `LogWildView` is Direction I; the
+                // editorial `VoiceLogView` is untouched and still serves
+                // the default skin. REDESIGN-SAFELY.md §5 tier 3: same
+                // data, different bones — both read VoiceLogViewModel, so
+                // flipping the skin never changes what is in the journal.
+                //
+                // Flip it in ☰ → the footer toggle.
                 NavigationStack {
-                    VoiceLogView()
+                    Group {
+                        if skinStore.skin == .wild {
+                            LogWildView()
+                        } else {
+                            VoiceLogView()
+                        }
+                    }
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
                                 Button {
@@ -403,6 +419,12 @@ struct MainTabView: View {
             NavigationStack {
                 destination.view
                     .environment(athleteProfileService)
+                    // CheckInView reads @Environment(CoachCheckInManager.self)
+                    // and this cover presents from the OUTER ZStack, so it is
+                    // not a descendant of the inner TabView's injection at the
+                    // top of this file. Same trap as AthleteProfileService
+                    // above — without this line, ☰ → Check In crashes.
+                    .environment(checkInManager)
                     .toolbar {
                         ToolbarItem(placement: .topBarLeading) {
                             Button {
@@ -433,6 +455,11 @@ enum AppDestination: Identifiable {
     case paceChart
     case contentLibrary
     case settings
+    /// Check in — added 2026-08-21 with the wild skin. That skin drops the
+    /// LOG RUN / CHECK IN control from the Log screen, so the mode needs a
+    /// door of its own; this is it. Harmless under the editorial skin,
+    /// where the on-screen control still exists too.
+    case checkIn
 
     var id: Self { self }
 
@@ -446,6 +473,7 @@ enum AppDestination: Identifiable {
         case .paceChart: PaceChartView()
         case .contentLibrary: ContentLibraryHubView()
         case .settings: SettingsView()
+        case .checkIn: CheckInView()
         }
     }
 }

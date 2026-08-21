@@ -32,6 +32,7 @@
 //  accessibility actions named for content rather than screen direction.
 //
 
+import os
 import Supabase
 import SwiftUI
 import UIKit

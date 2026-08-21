@@ -39,10 +39,11 @@ private let menuGroups: [MenuGroup] = [
     MenuGroup(head: "Review", entries: [
         MenuEntry(number: "04", label: "Training Analysis", hint: "Trends across your block.", destination: .analysis),
         MenuEntry(number: "05", label: "Injuries", hint: "Track, analyze, recover.", destination: .injuries),
+        MenuEntry(number: "06", label: "Check In", hint: "How you're feeling. No run attached.", destination: .checkIn),
     ]),
     MenuGroup(head: "Library & Account", entries: [
-        MenuEntry(number: "06", label: "Content Library", hint: "Films, drills & reading.", destination: .contentLibrary),
-        MenuEntry(number: "07", label: "Settings", hint: "Account, data & app preferences.", destination: .settings),
+        MenuEntry(number: "07", label: "Content Library", hint: "Films, drills & reading.", destination: .contentLibrary),
+        MenuEntry(number: "08", label: "Settings", hint: "Account, data & app preferences.", destination: .settings),
     ]),
 ]
 
@@ -164,10 +165,7 @@ struct ContentLibrarySidebar: View {
             }
             .buttonStyle(.plain)
             Spacer()
-            Text(buildString)
-                .font(.dripEyebrow(9))
-                .tracking(0.9)  // 0.10em at 9pt
-                .foregroundStyle(Color.drip.textTertiary)
+            skinToggle
         }
         .padding(.horizontal, 24)
         .padding(.top, 14)
@@ -175,6 +173,29 @@ struct ContentLibrarySidebar: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Color.drip.divider).frame(height: 1)
         }
+    }
+
+    /// The redesign switch (REDESIGN-SAFELY.md §5). Today it only changes
+    /// the Log tab; every other surface renders the editorial skin either
+    /// way. Lives in the footer rather than Settings because the whole
+    /// point is flipping it repeatedly while looking at the thing.
+    private var skinToggle: some View {
+        Button {
+            DripSkinStore.shared.toggle()
+        } label: {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("SKIN · \(DripSkinStore.shared.skin.label.uppercased())")
+                    .font(.dripEyebrow(9))
+                    .tracking(0.9)
+                    .foregroundStyle(Color.drip.coral)
+                Text(buildString)
+                    .font(.dripEyebrow(9))
+                    .tracking(0.9)  // 0.10em at 9pt
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+            .frame(minHeight: 44, alignment: .trailing)
+        }
+        .buttonStyle(.plain)
     }
 
     private var buildString: String {
