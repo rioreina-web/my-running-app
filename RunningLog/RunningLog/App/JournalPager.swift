@@ -28,7 +28,7 @@
 //  compared; it is not fine shipped.
 //
 //  The mechanic is `HistoryDetailPager`'s, again: paging ScrollView +
-//  LazyHStack + scrollPosition, a rail underneath, a soft haptic on the turn,
+//  a hinge turn (App/HingePager.swift), a rail underneath, a soft haptic,
 //  accessibility actions named for content rather than screen direction.
 //
 
@@ -117,21 +117,19 @@ struct JournalPagerView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let entry {
-                ScrollView(.horizontal) {
-                    LazyHStack(spacing: 0) {
-                        ForEach(pages) { page in
-                            pageView(page, entry: entry)
-                                .containerRelativeFrame(.horizontal)
-                                .frame(maxHeight: .infinity)
-                                .id(page.id)
-                        }
-                    }
-                    .scrollTargetLayout()
+                // The four faces of one session, turned on a hinge rather
+                // than slid. `HingePager` owns the gesture, the shading and
+                // the accessibility actions; everything below it — progress,
+                // spine, haptics — is unchanged.
+                HingePager(
+                    items: pages,
+                    selection: $pageID,
+                    locked: $pagingLocked,
+                    order: .sequence
+                ) { page in
+                    pageView(page, entry: entry)
                 }
-                .scrollTargetBehavior(.paging)
-                .scrollPosition(id: $pageID)
-                .scrollIndicators(.hidden)
-                .scrollDisabled(pagingLocked)
+                .frame(maxHeight: .infinity)
                 .environment(\.pageTurnLocked, $pagingLocked)
 
                 JournalProgress(count: pages.count, index: pageIndex)
@@ -166,8 +164,7 @@ struct JournalPagerView: View {
             UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         }
         .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "Next page") { step(1) }
-        .accessibilityAction(named: "Previous page") { step(-1) }
+        // Turn actions live on `HingePager` now — see App/HingePager.swift.
     }
 
     @ViewBuilder
@@ -178,12 +175,6 @@ struct JournalPagerView: View {
         case .workout: JournalWorkoutPage(log: entry)
         case .read:    JournalReadPage(log: entry)
         }
-    }
-
-    private func step(_ delta: Int) {
-        let target = pageIndex + delta
-        guard pages.indices.contains(target) else { return }
-        withAnimation(.snappy(duration: 0.28)) { pageID = pages[target].id }
     }
 
     /// Whether this entry has a lap/stream row behind it, which decides

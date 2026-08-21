@@ -26,9 +26,12 @@
 //    every page's `isEditing` and view model back up. Letting the whole page
 //    (chrome included) turn is both simpler and truer to the metaphor.
 //
-//  • Paging is a `ScrollView(.horizontal)` with `.scrollTargetBehavior(.paging)`
-//    rather than a `TabView(.page)`, because we need to *disable* the swipe on
-//    demand — see the page-turn lock below.
+//  • Paging is `HingePager` (App/HingePager.swift) — the sheet rotates about
+//    its leading edge and lifts off the one beneath. It replaced a
+//    `ScrollView(.horizontal)` + `.scrollTargetBehavior(.paging)`, which could
+//    only slide: a paging scroll lays its children side by side, so there is
+//    no page "beneath" for a turning sheet to reveal. The page-turn lock below
+//    is unchanged, and `HingePager` honours it.
 //
 //  • One entry in, no pager: the view degrades to a plain `HistoryDetailSheet`.
 //    Every existing call site keeps working unchanged.
@@ -112,21 +115,18 @@ struct HistoryDetailPager: View {
 
     private var pagedBody: some View {
         VStack(spacing: 0) {
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
-                    ForEach(entries) { entry in
-                        HistoryDetailSheet(entry: entry, onUpdate: onUpdate)
-                            .containerRelativeFrame(.horizontal)
-                            .frame(maxHeight: .infinity)
-                            .id(entry.id)
-                    }
-                }
-                .scrollTargetLayout()
+            // Book order — oldest sheet first, today last — turned on a
+            // hinge. `.book` is what names the VoiceOver actions "Older" and
+            // "Newer" the right way round; see App/HingePager.swift.
+            HingePager(
+                items: entries,
+                selection: $currentID,
+                locked: $pagingLocked,
+                order: .book
+            ) { entry in
+                HistoryDetailSheet(entry: entry, onUpdate: onUpdate)
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $currentID)
-            .scrollIndicators(.hidden)
-            .scrollDisabled(pagingLocked)
+            .frame(maxHeight: .infinity)
 
             PageTurnRail(
                 entries: entries,
@@ -152,18 +152,8 @@ struct HistoryDetailPager: View {
         // Custom actions are only surfaced by VoiceOver when the container is
         // itself an accessibility element.
         .accessibilityElement(children: .contain)
-        // Named for time, not for screen direction — "previous/next page" would
-        // be ambiguous to someone who can't see which way the book runs.
-        .accessibilityAction(named: "Older entry") { step(-1) }
-        .accessibilityAction(named: "Newer entry") { step(1) }
-    }
-
-    private func step(_ delta: Int) {
-        let target = currentIndex + delta
-        guard entries.indices.contains(target) else { return }
-        withAnimation(.snappy(duration: 0.28)) {
-            currentID = entries[target].id
-        }
+        // The turn actions — still named for time, not screen direction — moved
+        // to `HingePager`, which derives the wording from `HingeOrder.book`.
     }
 }
 
