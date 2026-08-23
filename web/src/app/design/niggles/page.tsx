@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import NigglesDashboard from "./niggles-client";
 
 /* ════════════════════════════════════════════════════════════════════
-   POST RUN DRIP — NIGGLES · v2 PROTOTYPE
+   NIGGLES · v2 PROTOTYPE
    A niggles-primary dashboard: body-part mentions auto-extracted from
    voice logs, plotted over time, with training as a switchable
    overlay. Recurrence and resolution are derived by fixed rule.

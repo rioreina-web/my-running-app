@@ -48,10 +48,22 @@ import {
 
 /* ── Tokens ───────────────────────────────────────────────────────── */
 
-const CORAL = "#D4592A";
-const INK_2 = "#6B6560";
-const INK_3 = "#9B9590";
-const SAGE = "#6B8068";
+/* Every colour resolves through the design tokens in `globals.css`.
+   Nothing here is a literal hex, so a rebrand is a token change in one
+   file rather than a sweep through this prototype. */
+const CORAL = "var(--color-coral)";
+const INK_1 = "var(--color-text-primary)";
+const INK_2 = "var(--color-text-secondary)";
+const INK_3 = "var(--color-text-tertiary)";
+const SAGE = "var(--color-success)";
+const PAPER = "var(--color-bg-card)";
+const WELL = "var(--color-bg-calendar)";
+const WELL_SOFT = "var(--color-divider-soft)";
+
+/** Token colour at partial opacity — hex concatenation breaks on var(). */
+function wash(color: string, pct: number): string {
+  return `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+}
 
 const STATUS: Record<ThreadStatus, { label: string; color: string; note: string }> = {
   active: { label: "Active", color: CORAL, note: "mentioned in the last 14 days" },
@@ -244,7 +256,7 @@ function Timeline({
                 >
                   <span
                     className="font-mono text-[10.5px] tracking-[1.3px] uppercase"
-                    style={{ color: isSel ? CORAL : "#1A1815" }}
+                    style={{ color: isSel ? CORAL : INK_1 }}
                   >
                     {t.label}
                   </span>
@@ -268,7 +280,7 @@ function Timeline({
                       className="w-full rounded-t-[1px]"
                       style={{
                         height: `${(cfg.value(w) / max) * 100}%`,
-                        background: w.partial ? "#E8E4DF" : "#EDE9E4",
+                        background: w.partial ? WELL : WELL_SOFT,
                       }}
                       title={`Week of ${shortDate(w.start)} · ${cfg.format(cfg.value(w))}`}
                     />
@@ -306,7 +318,7 @@ function Timeline({
                         left: `${xPct(t.lastSeen)}%`,
                         right: 0,
                         background:
-                          "repeating-linear-gradient(90deg,#C9C3BC 0 3px,transparent 3px 7px)",
+                          `repeating-linear-gradient(90deg,${INK_3} 0 3px,transparent 3px 7px)`,
                       }}
                       aria-hidden
                     />
@@ -332,8 +344,8 @@ function Timeline({
                           width: isSel ? 13 : 9,
                           height: isSel ? 13 : 9,
                           background: resolved ? "transparent" : STATUS[t.status].color,
-                          border: resolved ? `2px solid ${SAGE}` : "2px solid #FFFFFF",
-                          boxShadow: isSel ? `0 0 0 3px rgba(212,89,42,0.22)` : "none",
+                          border: `2px solid ${resolved ? SAGE : PAPER}`,
+                          boxShadow: isSel ? `0 0 0 3px ${wash(CORAL, 22)}` : "none",
                         }}
                       >
                         <span className="sr-only">
@@ -384,7 +396,7 @@ function Timeline({
         <LegendDot color={INK_3} label="Mention · quiet thread" />
         <LegendDot color={SAGE} label="Resolved · athlete's own words" hollow />
         <span className="inline-flex items-center gap-2">
-          <span className="w-5 h-2 rounded-[1px]" style={{ background: "#EDE9E4" }} />
+          <span className="w-5 h-2 rounded-[1px]" style={{ background: WELL_SOFT }} />
           <Mono color={INK_2}>Training overlay</Mono>
         </span>
       </div>
@@ -469,7 +481,7 @@ function ThreadCard({ thread }: { thread: NiggleThread }) {
         </span>
         <span
           className="font-mono text-[9.5px] tracking-[1.3px] uppercase px-2 py-1 rounded-[2px]"
-          style={{ color: st.color, background: `${st.color}1F` }}
+          style={{ color: st.color, background: wash(st.color, 12) }}
         >
           {st.label}
         </span>
@@ -522,7 +534,7 @@ function ThreadCard({ thread }: { thread: NiggleThread }) {
 
       {/* resolution */}
       {thread.resolution && (
-        <div className="px-5 py-4 border-b border-divider-soft" style={{ background: "#F7F9F6" }}>
+        <div className="px-5 py-4 border-b border-divider-soft" style={{ background: wash(SAGE, 5) }}>
           <Mono color={SAGE}>Resolved · {shortDate(thread.resolution.mentionedAt)}</Mono>
           <p className="mt-2 font-body italic text-[14px] leading-[1.45] text-text-primary">
             &ldquo;{thread.resolution.quote}&rdquo;
@@ -598,7 +610,7 @@ function TallyBars({ rows, accent }: { rows: { label: string; count: number }[];
           </span>
           <span
             className="font-mono text-[11px] tabular-nums text-right"
-            style={{ color: r.count === 0 ? INK_3 : "#1A1815" }}
+            style={{ color: r.count === 0 ? INK_3 : INK_1 }}
           >
             {r.count}
           </span>
@@ -690,7 +702,7 @@ export default function NigglesDashboard() {
       {/* plate strip */}
       <header className="border-b border-divider px-10 py-4">
         <div className="mx-auto max-w-[1080px] flex items-baseline justify-between gap-4">
-          <Mono color={INK_2}>Post Run Drip · Niggles · v2 prototype</Mono>
+          <Mono color={INK_2}>Niggles · v2 prototype</Mono>
           <Mono color={INK_3}>Internal · mock data</Mono>
         </div>
       </header>
@@ -764,9 +776,9 @@ export default function NigglesDashboard() {
                   onClick={() => setOverlay(o.id)}
                   className="font-mono text-[10px] tracking-[1.3px] uppercase px-3 py-1.5 rounded-[3px] border transition-colors"
                   style={{
-                    color: on ? "#FFFFFF" : INK_2,
+                    color: on ? PAPER : INK_2,
                     background: on ? CORAL : "transparent",
-                    borderColor: on ? CORAL : "#E8E4E0",
+                    borderColor: on ? CORAL : "var(--color-divider)",
                   }}
                 >
                   {o.label}
@@ -847,7 +859,7 @@ export default function NigglesDashboard() {
               <li key={s} className="flex items-baseline gap-3">
                 <span
                   className="font-mono text-[9.5px] tracking-[1.3px] uppercase px-2 py-1 rounded-[2px] shrink-0"
-                  style={{ color: STATUS[s].color, background: `${STATUS[s].color}1F` }}
+                  style={{ color: STATUS[s].color, background: wash(STATUS[s].color, 12) }}
                 >
                   {STATUS[s].label}
                 </span>
