@@ -458,6 +458,15 @@ verify_jwt = false
 # reconcile-log, the Sunday cron, and on-demand from iOS.
 verify_jwt = false
 
+[functions.delete-account]
+# Athlete-initiated account deletion (App Store 5.1.1(v) requires it in-app,
+# and the privacy policy promises it). verify_jwt = true; the function then
+# gates with requireAuthOrServiceRole, so an athlete deletes only themselves
+# and a support-initiated service-role call must name the subject explicitly.
+# Also requires {"confirm":"DELETE"} in the body so a stray retry can't erase
+# an account.
+verify_jwt = true
+
 [functions.revert-plan-adjustment]
 # Reverses an auto-applied or accepted plan adjustment using the
 # before-state stored on the action_payload.

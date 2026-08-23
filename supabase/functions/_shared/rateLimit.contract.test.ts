@@ -256,6 +256,10 @@ const AUTH_GATE_PINNED: Record<
   "compute-workout-features": "requireAuthOrServiceRole",
   "post-run-reconciliation":  "requireAuthOrServiceRole",
   "get-pace-zones":           "requireAuthOrServiceRole",
+  // Account deletion. Irreversible and cross-table, so the gate is pinned
+  // here too: an athlete may only delete themselves (body user_id must match
+  // the JWT), and a support-initiated service-role call must name the subject.
+  "delete-account":           "requireAuthOrServiceRole",
   // fetch-workout-weather resolves the caller once and authorizes per mode:
   // its four modes name their subject differently (none / from the plan row
   // / from the body), so a single body-user_id gate doesn't fit.
