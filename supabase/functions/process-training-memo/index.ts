@@ -579,12 +579,25 @@ Deno.serve(async (req) => {
         .eq("id", record.id)
         .single();
 
-      // Use user_id from log, fall back to "dev-user" when auth is disabled
-      const injuryUserId = logData?.user_id || "dev-user";
-      const textToScan = `${analysis.cleaned_notes || ""} ${analysis.transcription || ""}`;
-      const detected = detectInjury(textToScan);
+      // Niggles are health data, so they must be attributed to a real
+      // athlete or not written at all. This used to fall back to the literal
+      // string "dev-user" when the log had no user_id, collecting every such
+      // record into one shared pseudo-account.
+      //
+      // Note this runs inside the request handler's try block — skipping is a
+      // guard, not an early `return`, which would abandon the whole response.
+      const injuryUserId: string | null = logData?.user_id ?? null;
+      if (!injuryUserId) {
+        console.error(
+          `[process-training-memo] training_log ${record.id} has no user_id — ` +
+            `skipping niggle detection rather than attributing it to a placeholder.`,
+        );
+      }
 
-      if (detected || analysis.mood === "injured") {
+      const textToScan = `${analysis.cleaned_notes || ""} ${analysis.transcription || ""}`;
+      const detected = injuryUserId ? detectInjury(textToScan) : null;
+
+      if (injuryUserId && (detected || analysis.mood === "injured")) {
         const injury = detected || {
           bodyArea: "unspecified",
           side: "unknown",

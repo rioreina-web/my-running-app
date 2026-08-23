@@ -178,3 +178,67 @@ function timingSafeEqual(a: string, b: string): boolean {
   }
   return diff === 0;
 }
+
+export type Caller =
+  | { isServiceRole: true; userId: null }
+  | { isServiceRole: false; userId: string }
+  | { isServiceRole: false; userId: null };
+
+/**
+ * Resolve WHO is calling, without deciding whether they're allowed.
+ *
+ * Returns one of three states:
+ *  - `{ isServiceRole: true,  userId: null }`   — the service-role key.
+ *  - `{ isServiceRole: false, userId: "..." }`  — a valid end-user JWT.
+ *  - `{ isServiceRole: false, userId: null }`   — anon key, or no/invalid
+ *    token. NOT authenticated.
+ *
+ * Use this only where the subject user can't be a single body field —
+ * e.g. an endpoint whose modes derive the subject differently (from a
+ * plan id, or not at all). Everywhere else prefer
+ * `requireAuthOrServiceRole`, which resolves the caller AND authorizes
+ * them against a body user_id in one step.
+ *
+ * The critical distinction this exists to make: the anon key is a valid
+ * project JWT that satisfies the gateway's `verify_jwt`, and it ships
+ * publicly in the iOS binary and the web bundle. "No user claim"
+ * therefore means "unauthenticated", NOT "trusted server caller".
+ * Collapsing those two is what made several functions readable by
+ * anyone holding the anon key.
+ */
+export async function resolveCaller(req: Request): Promise<Caller> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return { isServiceRole: false, userId: null };
+  }
+  const token = authHeader.slice("Bearer ".length).trim();
+  if (!token) return { isServiceRole: false, userId: null };
+
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (serviceRoleKey && timingSafeEqual(token, serviceRoleKey)) {
+    return { isServiceRole: true, userId: null };
+  }
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY") ?? serviceRoleKey!,
+    { global: { headers: { Authorization: `Bearer ${token}` } } },
+  );
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return { isServiceRole: false, userId: null };
+
+  return { isServiceRole: false, userId: user.id };
+}
+
+/**
+ * 403 for an authenticated caller acting outside what they own.
+ */
+export function forbiddenResponse(
+  corsHeaders: Record<string, string>,
+  message = "Not authorized for this resource",
+): Response {
+  return new Response(
+    JSON.stringify({ error: message }),
+    { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
+}

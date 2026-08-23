@@ -78,7 +78,7 @@ import {
   type InjuryRow,
 } from "../_shared/weeklyAnalytics.ts";
 
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
@@ -522,24 +522,25 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId } = body;
 
-    // Verify authenticated user from JWT.
-    // verify_jwt = true in config.toml ensures only valid Supabase JWTs
-    // (user, anon, or service_role) reach this function. If the JWT contains
-    // a user claim, use it. Otherwise fall back to payloadUserId from the body
-    // (used by iOS app which sends anon key + userId in body).
-    let userId = await getAuthenticatedUser(req);
-
-    if (!userId && payloadUserId) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(payloadUserId)) {
-        userId = payloadUserId;
-        console.log(`Using userId from payload: ${payloadUserId}`);
-      }
-    }
-
-    if (!userId) {
-      return unauthorizedResponse(corsHeaders);
-    }
+    // Verify the authenticated user.
+    //
+    // `verify_jwt = true` is NOT an authentication check on its own: the anon
+    // key is a valid project JWT and ships publicly inside the iOS binary and
+    // the web bundle. This function previously fell back to the body's
+    // `userId` whenever the token carried no user claim, so anyone holding
+    // that public key could pass any athlete's UUID and receive their state
+    // — injuries, mood history, training log, conversation history — narrated
+    // back by the LLM, and write into their conversation thread.
+    //
+    // requireAuthOrServiceRole distinguishes the three callers properly:
+    //   - iOS  → user JWT (callEdgeFunction sends session.accessToken);
+    //            body userId must match the token subject, else 403.
+    //   - web  → service-role key from the /api/coach route, which has
+    //            already authenticated the session and passes that user's id.
+    //   - anon → rejected.
+    const auth = await requireAuthOrServiceRole(req, payloadUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const userId = auth.userId;
 
     if (!message) {
       return new Response(

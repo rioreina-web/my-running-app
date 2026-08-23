@@ -398,17 +398,36 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # (security hardening — no arbitrary SQL or debug endpoints in production).
 
 # ── User-facing functions ──
-# verify_jwt = false because the iOS app sends the anon key (not a user JWT)
-# as the Authorization bearer. Each function validates the user internally
-# via getAuthenticatedUser() from _shared/auth.ts, which extracts the user
-# from the JWT if one is present. This pattern allows both anon-key calls
-# (from mobile) and authenticated calls (from web) to reach the function.
+# verify_jwt only proves the caller holds SOME JWT signed by this project.
+# The anon key is such a JWT, and it ships publicly in the iOS binary and the
+# web bundle — so the gateway setting is a coarse filter, never the auth
+# check. Each function must establish the acting user itself.
+#
+# The note that used to live here said iOS "sends the anon key (not a user
+# JWT)". That stopped being true once Sign in with Apple landed:
+# `callEdgeFunction` (RunningLog/Services/Supabase.swift) sends
+# `session.accessToken` and only falls back to the anon key when there is no
+# session. The stale note was load-bearing, though — it justified functions
+# treating "token carries no user claim" as "trusted service-role caller"
+# and reading the subject from the request body, which let anyone holding
+# the public key act as any athlete. Fixed in the 2026-08 IDOR sweep.
+#
+# Use `requireAuthOrServiceRole` (or `resolveCaller` when the subject isn't a
+# single body field) from _shared/auth.ts. Both compare against the real
+# service-role key rather than inferring trust from a missing user claim.
+# `_shared/rateLimit.contract.test.ts` fails CI if the old shape reappears.
 
 [functions.coaching-agent]
-# Supabase gateway requires valid JWT (anon key counts).
-# Function validates user internally via getAuthenticatedUser().
-# When called with anon/service key (no user claim), falls back to
-# payloadUserId — validated as UUID format + rate-limited per user.
+# Gateway requires a valid project JWT (the anon key counts, so this is not
+# an auth check). The function gates internally with
+# requireAuthOrServiceRole: iOS presents a user JWT and its body userId must
+# match the token subject; the web /api/coach route presents the service-role
+# key naming the session user it already authenticated.
+#
+# It previously fell back to a body userId whenever the token carried no user
+# claim, checking only that the value looked like a UUID. Since the anon key
+# is public, that let any caller name any athlete and receive their state —
+# injuries, mood, training history, conversation — via the LLM.
 verify_jwt = true
 
 [functions.coaching-daily-read]

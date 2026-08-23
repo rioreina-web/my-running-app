@@ -235,7 +235,10 @@ Deno.test("audit-pending list has a non-empty justification for every entry", ()
 // If a future edit drops the auth gate, the function name doesn't appear
 // in either list — and this test fails, calling it out by name.
 
-const AUTH_GATE_PINNED: Record<string, "requireAuthOrServiceRole" | "requireServiceRole"> = {
+const AUTH_GATE_PINNED: Record<
+  string,
+  "requireAuthOrServiceRole" | "requireServiceRole" | "resolveCaller"
+> = {
   "race-intel":            "requireAuthOrServiceRole",
   "race-readiness":        "requireAuthOrServiceRole",
   "block-review":          "requireAuthOrServiceRole",
@@ -243,6 +246,20 @@ const AUTH_GATE_PINNED: Record<string, "requireAuthOrServiceRole" | "requireServ
   "injury-early-warning":  "requireAuthOrServiceRole",
   "process-training-memo": "requireAuthOrServiceRole",
   "process-check-in":      "requireServiceRole",
+
+  // 2026-08 IDOR sweep. Each of these resolved its subject user as
+  // "body user_id, or the JWT subject if there is one" — and the anon key,
+  // which ships publicly in the iOS binary and web bundle, satisfies
+  // `verify_jwt` while carrying no user claim. So the body always won and
+  // any caller could name any athlete.
+  "coaching-agent":           "requireAuthOrServiceRole",
+  "compute-workout-features": "requireAuthOrServiceRole",
+  "post-run-reconciliation":  "requireAuthOrServiceRole",
+  "get-pace-zones":           "requireAuthOrServiceRole",
+  // fetch-workout-weather resolves the caller once and authorizes per mode:
+  // its four modes name their subject differently (none / from the plan row
+  // / from the body), so a single body-user_id gate doesn't fit.
+  "fetch-workout-weather":    "resolveCaller",
 };
 
 for (const [fn, helper] of Object.entries(AUTH_GATE_PINNED)) {
@@ -268,3 +285,75 @@ for (const [fn, helper] of Object.entries(AUTH_GATE_PINNED)) {
     );
   });
 }
+
+// ── The IDOR pattern itself must not come back ─────────────────────────
+//
+// Pinning individual functions above only protects functions someone
+// thought to pin. This test scans every function for the shape of the bug
+// instead: resolving the subject user as "whatever the body says, falling
+// back to the token" (or vice versa).
+//
+// Why the shape is always wrong: the anon key is a valid project JWT, it
+// satisfies the gateway's `verify_jwt`, it carries no user claim, and it
+// ships publicly inside the iOS binary and the web bundle. So "the token
+// named no user" does NOT mean "a trusted server called this" — it means
+// "unauthenticated". Any fallback to a body-supplied id on that branch is
+// reachable by anyone.
+//
+// The correct helpers (`requireAuthOrServiceRole`, `resolveCaller`) decide
+// on the token itself, comparing against the real service-role key.
+
+const IDOR_PATTERNS: Array<{ re: RegExp; label: string }> = [
+  {
+    // const uid = body.user_id || (await getAuthenticatedUser(req));
+    re: /=\s*(?:body\.)?\w*[Uu]ser_?[Ii]d\s*\|\|\s*\(?\s*await\s+getAuthenticatedUser/,
+    label: "`body.user_id || await getAuthenticatedUser(req)` — the body wins outright",
+  },
+  {
+    // let userId = await getAuthenticatedUser(req); ... userId = userId || body.user_id
+    re: /await\s+getAuthenticatedUser\s*\([^)]*\)\s*(?:\|\||\?\?)\s*(?:body\.)?\w*[Uu]ser_?[Ii]d/,
+    label: "`await getAuthenticatedUser(req) || body.user_id` — falls back to the body",
+  },
+  {
+    // if (!userId && bodyUserId) userId = bodyUserId;
+    re: /if\s*\(\s*!\s*\w*[Uu]ser_?[Ii]d\s*&&\s*\w*[Uu]ser_?[Ii]d\s*\)\s*\{?\s*\w*[Uu]ser_?[Ii]d\s*=/,
+    label: "`if (!userId && bodyUserId) userId = bodyUserId` — same fallback, spelled long",
+  },
+];
+
+Deno.test("no edge function resolves its subject user from the request body", async () => {
+  const offenders: string[] = [];
+
+  for await (const entry of Deno.readDir(FUNCTIONS_DIR)) {
+    if (!entry.isDirectory || entry.name.startsWith("_")) continue;
+
+    const path = `${FUNCTIONS_DIR}${entry.name}/index.ts`;
+    let src: string;
+    try {
+      src = await Deno.readTextFile(path);
+    } catch {
+      continue;
+    }
+
+    // Strip comments so the explanatory write-ups left at each fix site
+    // (which quote the old code) don't trip the scan.
+    const code = src
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+    for (const { re, label } of IDOR_PATTERNS) {
+      if (re.test(code)) offenders.push(`  - ${entry.name}: ${label}`);
+    }
+  }
+
+  assertEquals(
+    offenders,
+    [],
+    "These functions resolve the acting user from the request body:\n" +
+      offenders.join("\n") +
+      "\n\nUse requireAuthOrServiceRole(req, body.user_id, corsHeaders) — or " +
+      "resolveCaller(req) when the subject isn't a single body field. Both " +
+      "compare against the real service-role key instead of inferring trust " +
+      "from the absence of a user claim.",
+  );
+});

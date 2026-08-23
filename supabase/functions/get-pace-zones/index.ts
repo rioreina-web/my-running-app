@@ -24,7 +24,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { fetchAndComputePaceZones } from "../_shared/pace-engine.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
@@ -38,26 +38,27 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  let authedUserId = await getAuthenticatedUser(req);
-  let targetUserId = authedUserId;
-
-  // Service-role cross-call: POST { user_id } overrides the target.
+  // "No user JWT present" was previously treated as "this must be the
+  // service-role cross-call", and the body's user_id was trusted on that
+  // basis. The anon key presents no user claim either, and it is public —
+  // so that branch let anyone read any athlete's pace zones.
+  //
+  // requireAuthOrServiceRole makes the distinction on the token itself:
+  // a real user JWT computes for its own subject (a body user_id that
+  // disagrees is a 403), and only the actual service-role key may name a
+  // different subject. iOS calls this with a JWT and an empty body.
+  let payloadUserId: string | undefined;
   if (req.method === "POST") {
     const body = await req.json().catch(() => ({}));
-    const payloadUserId: string | undefined = body?.user_id;
-    if (payloadUserId && UUID_RE.test(payloadUserId)) {
-      // Trust the body only when no user JWT is present (service-role call).
-      // User JWTs always compute for themselves — body is ignored to prevent
-      // a logged-in athlete from spoofing another user's zones.
-      if (!authedUserId) {
-        targetUserId = payloadUserId;
-      }
+    const candidate: unknown = body?.user_id;
+    if (typeof candidate === "string" && UUID_RE.test(candidate)) {
+      payloadUserId = candidate;
     }
   }
 
-  if (!targetUserId) {
-    return unauthorizedResponse(corsHeaders);
-  }
+  const auth = await requireAuthOrServiceRole(req, payloadUserId, corsHeaders);
+  if ("response" in auth) return auth.response;
+  const targetUserId = auth.userId;
 
   try {
     const supabase = createClient(supabaseUrl, serviceKey);

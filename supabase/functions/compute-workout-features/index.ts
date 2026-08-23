@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -343,6 +344,15 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // This function had no auth check at all, while querying training_logs
+    // with the service-role client (which bypasses RLS). Any holder of the
+    // public anon key could name any user_id and drive a read of that
+    // athlete's entire training history. Callers are iOS only
+    // (WorkoutSyncService, VoiceLogViewModel), both of which send a user JWT
+    // plus their own user_id in the body.
+    const auth = await requireAuthOrServiceRole(req, user_id, corsHeaders);
+    if ("response" in auth) return auth.response;
 
     // Fetch workouts to process
     let query = supabase

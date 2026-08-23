@@ -17,6 +17,13 @@ const TIER_LIMITS: Record<string, number> = {
   unlimited: 100,
 };
 
+/**
+ * Production is detected by DENO_DEPLOYMENT_ID, which Deno Deploy / Supabase
+ * Edge set and `supabase functions serve` does not — the same signal
+ * `_shared/cors.ts` uses to decide whether a missing config value is fatal.
+ */
+const isProduction = Boolean(Deno.env.get("DENO_DEPLOYMENT_ID"));
+
 let redis: Redis | null = null;
 
 // Circuit breaker state
@@ -286,10 +293,19 @@ export async function checkFeatureRateLimit(
  *   1. `isServiceRole === true` — service-role callers (cron, triggers,
  *      other edge functions) bypass user-keyed limits. Auth check is the
  *      gate for those callers, not this.
- *   2. `isRateLimitEnabled() === false` — Redis env not configured (dev /
- *      local serve). Permissive fallback rather than fail-closed; the
- *      production Redis is the gate.
+ *   2. `isRateLimitEnabled() === false` — Redis env not configured. Outside
+ *      production this is permissive (local `functions serve` has no Redis).
+ *      IN PRODUCTION IT IS A 503: an unset UPSTASH_REDIS_URL/TOKEN used to
+ *      return `null` here, silently uncapping every LLM endpoint at once
+ *      while `docs/deploy/secrets-inventory.md` claimed the opposite. A
+ *      misconfigured limiter must not read as "no limit".
  *   3. `rl.allowed === true` — normal accept path.
+ *
+ * Note the separate failure mode below this one: when Redis IS configured
+ * but erroring, the circuit breaker (3 strikes → 60s) deliberately allows
+ * requests through so an outage can't lock every athlete out. That trades
+ * spend for availability during an outage and is a live decision, not an
+ * oversight — see the PR that introduced this comment.
  *
  * Usage in an edge function:
  *
@@ -316,7 +332,29 @@ export async function enforceFeatureRateLimit(
   opts: { isServiceRole?: boolean; tier?: string } = {},
 ): Promise<Response | null> {
   if (opts.isServiceRole) return null;
-  if (!isRateLimitEnabled()) return null;
+
+  if (!isRateLimitEnabled()) {
+    if (!isProduction) return null;
+
+    console.error(
+      `[rateLimit] UPSTASH_REDIS_URL/TOKEN unset in production — refusing ` +
+        `"${feature}" rather than serving it unlimited.`,
+    );
+    return new Response(
+      JSON.stringify({
+        error: "Rate limiting is unavailable — please try again shortly",
+        feature,
+      }),
+      {
+        status: 503,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+        },
+      },
+    );
+  }
 
   const rl = await checkFeatureRateLimit(userId, feature, opts.tier ?? "free");
   if (rl.allowed) return null;
