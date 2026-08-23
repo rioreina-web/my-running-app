@@ -17,6 +17,14 @@ type PreviewEntry = {
 
 const PREVIEWS: PreviewEntry[] = [
   {
+    slug: "niggles",
+    title: "Niggles (v2 · prototype)",
+    subtitle:
+      "Body-part mentions from voice logs, over time, with a training overlay.",
+    source: "outputs/niggles-v2-dashboard-2026-08-23.md",
+    status: "ported",
+  },
+  {
     slug: "training-summary",
     title: "Training summary",
     subtitle: "This week at a glance — the dashboard, in editorial form.",
