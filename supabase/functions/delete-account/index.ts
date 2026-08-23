@@ -57,33 +57,6 @@ async function sha256Hex(input: string): Promise<string> {
     .join("");
 }
 
-/** Recursively list every object under a prefix (Storage list is per-level). */
-async function listPrefix(
-  supabase: ReturnType<typeof createClient>,
-  bucket: string,
-  prefix: string,
-  depth = 0,
-): Promise<string[]> {
-  if (depth > 4) return []; // memo paths are at most {user}/{ts}/{file}
-  const out: string[] = [];
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .list(prefix, { limit: 1000 });
-
-  if (error || !data) return out;
-
-  for (const entry of data) {
-    const full = prefix ? `${prefix}/${entry.name}` : entry.name;
-    // Storage marks folders with a null id.
-    if (entry.id === null) {
-      out.push(...(await listPrefix(supabase, bucket, full, depth + 1)));
-    } else {
-      out.push(full);
-    }
-  }
-  return out;
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -115,6 +88,45 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    /**
+     * Recursively list every object under a prefix — Storage's `list` returns
+     * one level at a time, and memo paths can be `{user}/{timestamp}/{file}`.
+     *
+     * Declared here, closing over `supabase`, rather than taking the client as
+     * a parameter. Annotating such a parameter means naming SupabaseClient's
+     * generic instantiation, and `ReturnType<typeof createClient>` resolves to
+     * a different one than the created client — which is what broke CI. A
+     * closure has no type boundary to get wrong.
+     */
+    const listPrefix = async (
+      bucket: string,
+      prefix: string,
+      depth = 0,
+    ): Promise<string[]> => {
+      if (depth > 4) return [];
+      const out: string[] = [];
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .list(prefix, { limit: 1000 });
+
+      if (error || !data) return out;
+
+      for (const entry of data) {
+        const full = prefix ? `${prefix}/${entry.name}` : entry.name;
+        // Storage marks a folder with a null `id`. The SDK declares it as
+        // `string`, so the cast states the runtime shape explicitly rather
+        // than leaving a `string === null` comparison that a stricter SDK
+        // typing could reject as having no overlap.
+        const isFolder = (entry as { id: string | null }).id === null;
+        if (isFolder) {
+          out.push(...(await listPrefix(bucket, full, depth + 1)));
+        } else {
+          out.push(full);
+        }
+      }
+      return out;
+    };
+
     // ── 1. Collect storage paths while the rows still exist ─────────────
     const memoPaths = new Set<string>();
 
@@ -141,7 +153,7 @@ Deno.serve(async (req: Request) => {
     byBucket.set(MEMO_BUCKET, memoPaths);
 
     for (const bucket of USER_FOLDERED_BUCKETS) {
-      const found = await listPrefix(supabase, bucket, userId);
+      const found = await listPrefix(bucket, userId);
       if (!found.length) continue;
       const set = byBucket.get(bucket) ?? new Set<string>();
       found.forEach((p) => set.add(p));
