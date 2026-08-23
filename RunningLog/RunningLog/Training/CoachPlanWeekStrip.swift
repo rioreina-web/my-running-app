@@ -140,10 +140,9 @@ private struct DayCellView: View {
     /// register, so it goes unnamed and the tags that remain mean
     /// something.
     private var typeLabel: String {
-        if workout.workoutType == .easy { return "" }
         switch workout.workoutType {
+        case .easy:          return ""
         case .rest:          return "REST"
-        case .easy:          return "EASY"
         case .tempo:         return "TEMPO"
         case .intervals:     return "INTV"
         case .longRun:       return "LONG"
