@@ -72,9 +72,9 @@ struct TrainingTabView: View {
     /// Today's workout shown in the DayDetailSheet (Mark complete flow).
     @State private var selectedScheduledWorkout: ScheduledWorkout?
 
-    /// Navigation flag — both the goal-line "Race plan ↗" and the
-    /// week-strip "VIEW PLAN ↗" links push TrainingPlanView. Single
-    /// flag keeps SwiftUI's destination resolution unambiguous.
+    /// Navigation flag for the week-strip "VIEW PLAN ↗" link, which
+    /// pushes TrainingPlanView. The header used to carry a second link
+    /// to the same destination; it was cut as duplication.
     @State private var showPlan = false
 
     /// Navigation flag for the BLOCK view's "VIEW ALL ↗" link.
@@ -104,8 +104,7 @@ struct TrainingTabView: View {
                     weekText: weekText,
                     dateText: todayLabel,
                     headline: headlineText,
-                    goalLine: goalLine,
-                    onOpenRacePlan: { showPlan = true }
+                    goalLine: goalLine
                 )
 
                 Spacer().frame(height: 18)
@@ -172,13 +171,12 @@ struct TrainingTabView: View {
             EditorialRule()
             Spacer().frame(height: 16)
 
-            // Week strip — eyebrow + "VIEW PLAN ↗" + the existing primitive
+            // Week strip. No section eyebrow: the segmenter a few points
+            // above is already reading "THIS WEEK" in coral, and a
+            // "THE WEEK" label under it was the same word twice. The
+            // "VIEW PLAN ↗" link keeps the row and sits right-aligned.
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("THE WEEK")
-                        .font(.dripEyebrow(11))
-                        .tracking(1.3)
-                        .foregroundStyle(Color.drip.textSecondary)
+                HStack {
                     Spacer()
                     Button { showPlan = true } label: {
                         Text("VIEW PLAN ↗")
@@ -402,12 +400,14 @@ struct TrainingTabView: View {
         return "\(race) BLOCK"
     }
 
+    /// Week counter only. The "TRAINING · " prefix this used to carry
+    /// was the third restatement of the same fact on one screen — the
+    /// PlateStrip above says TRAINING, the tab bar says TRAIN. Empty
+    /// with no active plan, which hides the line entirely.
     private var weekText: String {
-        guard let plan = trainingPlanVM.activePlan else {
-            return "TRAINING"
-        }
+        guard let plan = trainingPlanVM.activePlan else { return "" }
         let week = String(format: "%02d", plan.currentWeek)
-        return "TRAINING  ·  WEEK \(week) OF \(plan.totalWeeks)"
+        return "WEEK \(week) OF \(plan.totalWeeks)"
     }
 
     private var todayLabel: String {

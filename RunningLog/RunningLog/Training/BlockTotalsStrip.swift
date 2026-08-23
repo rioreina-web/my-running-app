@@ -64,8 +64,8 @@ struct BlockTotalsStrip: View {
         .padding(.horizontal, 10)
     }
 
+    /// Zero renders as "0", not an em-dash — see the empty-state rule.
     private func formatValue(_ value: Double) -> String {
-        if value <= 0 { return "—" }
-        return "\(Int(value.rounded()))"
+        "\(Int(max(0, value).rounded()))"
     }
 }
