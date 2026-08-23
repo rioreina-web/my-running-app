@@ -144,17 +144,27 @@ Not fixed; flagged here so they don't get lost.
 
 ### Higher priority
 
-- **`training-memos` UPDATE/DELETE policies are unscoped.** The `public`
-  role has `bucket_id = 'training-memos'` policies for both UPDATE and
-  DELETE with no owner check — anyone can overwrite or delete any user's
-  voice memo. Worse than the listing issue the advisor flagged. Needs a
-  migration that scopes both to the object owner, with verification that
-  the app's own delete path still works.
-- **Memos are fundamentally public.** Today's fix only stops enumeration.
-  The real confidentiality fix is `public = false` on the bucket +
-  switching iOS (`VoiceLogViewModel.swift`, `OfflineQueue.swift`) from
-  `getPublicURL` to `createSignedURL`, plus a plan for already-stored
-  public URLs in `training_logs.audio_url`.
+- ~~**`training-memos` UPDATE/DELETE policies are unscoped.**~~ **RESOLVED
+  2026-08-23** — `20260823120000_private_training_memos_bucket.sql` drops the
+  unscoped `public`-role policies and recreates the owner-scoped set.
+  Verified against a real Postgres: a signed-in user cannot read, update,
+  delete, or upload into another athlete's folder.
+- ~~**Memos are fundamentally public.**~~ **RESOLVED 2026-08-23** — same
+  migration sets `public = false`. The plan noted here assumed iOS needed
+  `createSignedURL`; it doesn't. iOS never plays memos back (every
+  `audioUrl` use is a `!= nil` check driving a mic icon), and the
+  server-side readers download with the service-role client, which bypasses
+  bucket privacy. So the fix was to store the object PATH instead of a URL
+  (`VoiceLogViewModel.swift`, `OfflineQueue.swift`), resolve it centrally in
+  `_shared/storage.ts`, and normalize the already-stored public URLs in
+  `training_logs.audio_url` in the same migration.
+- **Niggle-classifier input trusted the request body.** Found while doing
+  the above: `process-training-memo` and `process-check-in` took
+  `audio_url` from the payload and downloaded it with the service-role
+  client, so an authenticated caller could name their own log id and
+  user_id — passing the auth gate — while pointing `audio_url` at another
+  athlete's memo. Both now read the column from the row. **RESOLVED
+  2026-08-23.**
 - **3 production functions are untracked in this repo.**
   `strava-test-pull`, `adapt-plan`, `build-pace-profile` exist only in
   this working tree — not committed on `design/editorial-v2` or `main`.

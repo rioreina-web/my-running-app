@@ -35,13 +35,15 @@ final class VoiceLogViewModel {
                 .from("training-memos")
                 .upload(storagePath, data: audioData, options: FileOptions(contentType: "audio/m4a", upsert: true))
 
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: storagePath)
-            let audioPublicURL = publicURL.absoluteString
+            // Store the storage PATH, not a URL. The bucket is private
+            // (20260823120000_private_training_memos_bucket.sql), so a public
+            // URL would be a dead link, and a signed URL would expire in the
+            // row. Server-side readers resolve the path with the service-role
+            // client; see _shared/storage.ts.
+            let audioPathValue = storagePath
 
             // --- Step 2: Insert record via Supabase SDK ---
-            var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
+            var insertData = TrainingLogInsert(audioUrl: audioPathValue)
             insertData.userId = userId
             insertData.processingStatus = "pending"
             insertData.source = "voice_log"
@@ -143,13 +145,15 @@ final class VoiceLogViewModel {
                 .from("training-memos")
                 .upload(storagePath, data: audioData, options: FileOptions(contentType: "audio/m4a", upsert: true))
 
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: storagePath)
-            let audioPublicURL = publicURL.absoluteString
+            // Store the storage PATH, not a URL. The bucket is private
+            // (20260823120000_private_training_memos_bucket.sql), so a public
+            // URL would be a dead link, and a signed URL would expire in the
+            // row. Server-side readers resolve the path with the service-role
+            // client; see _shared/storage.ts.
+            let audioPathValue = storagePath
 
             // Insert check-in record via Supabase SDK
-            var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
+            var insertData = TrainingLogInsert(audioUrl: audioPathValue)
             insertData.userId = userId
             insertData.processingStatus = "pending"
             insertData.source = "check_in"

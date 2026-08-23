@@ -18,6 +18,7 @@ import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireServiceRole } from "../_shared/auth.ts";
+import { resolveTrainingMemoPath } from "../_shared/storage.ts";
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
@@ -51,7 +52,7 @@ Deno.serve(async (req: Request) => {
         .eq("id", record.id),
       supabase
         .from("training_logs")
-        .select("user_id")
+        .select("user_id, audio_url")
         .eq("id", record.id)
         .single(),
     ]);
@@ -60,13 +61,25 @@ Deno.serve(async (req: Request) => {
       return errorResponse(`training_log ${record.id} has no user_id`, 404);
     }
 
+    // Read audio_url from the row rather than the payload. This function is
+    // service-role only, so the body is trusted today — but the download runs
+    // on a client that bypasses bucket privacy, and the row is the authority
+    // on what it contains. Costs nothing: the row was already being fetched.
+    const rowAudioUrl: string | null = userRes.data?.audio_url ?? null;
+    if (!rowAudioUrl) {
+      return errorResponse(`training_log ${record.id} has no audio_url`, 404);
+    }
+
     // ── Step 2: Fetch context + download audio in parallel ────────────
-    const audioUrl = new URL(record.audio_url);
-    const bucketPrefix = "/storage/v1/object/public/training-memos/";
-    const pathIndex = audioUrl.pathname.indexOf(bucketPrefix);
-    const storagePath = pathIndex !== -1
-      ? decodeURIComponent(audioUrl.pathname.slice(pathIndex + bucketPrefix.length))
-      : audioUrl.pathname.split("/").pop();
+    // Handles a bare path (what iOS writes now), a legacy public URL, and a
+    // signed URL. Unresolvable values are refused rather than guessed.
+    const storagePath = resolveTrainingMemoPath(rowAudioUrl);
+    if (!storagePath) {
+      return errorResponse(
+        `training_log ${record.id}: could not resolve a storage path from audio_url`,
+        400,
+      );
+    }
 
     const [recentLogsRes, planRes, audioDownload] = await Promise.all([
       supabase

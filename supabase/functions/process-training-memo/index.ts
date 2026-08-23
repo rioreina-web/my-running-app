@@ -5,6 +5,7 @@ import { rebuildAthleteState } from "../_shared/athlete-state.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { resolveTrainingMemoPath } from "../_shared/storage.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import {
   loadCoachContext,
@@ -172,12 +173,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Concurrency guard: prevent duplicate processing
+    // Concurrency guard: prevent duplicate processing.
+    // Also the point where the row's OWN audio_url and user_id are read.
+    // Both used to be taken from the request body, and the download below
+    // runs on the service-role client (which bypasses bucket privacy), so a
+    // caller could name their own log id and user_id — passing the auth gate
+    // — while pointing audio_url at another athlete's memo, and have it
+    // transcribed into their own log. The body is a notification that a row
+    // changed; the row is the authority on what it contains.
     const { data: currentStatus } = await supabase
       .from("training_logs")
-      .select("processing_status, last_processing_attempt")
+      .select("processing_status, last_processing_attempt, user_id, audio_url")
       .eq("id", record.id)
       .single();
+
+    if (!currentStatus) {
+      return new Response(
+        JSON.stringify({ error: "Training log not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (currentStatus.user_id !== authUserId) {
+      // 404, not 403, so this can't be used to probe which log ids exist.
+      return new Response(
+        JSON.stringify({ error: "Training log not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (!currentStatus.audio_url) {
+      return new Response(
+        JSON.stringify({ message: "Skipped: row has no audio" }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     if (currentStatus?.processing_status === "processing") {
       const lastAttempt = currentStatus.last_processing_attempt
@@ -202,16 +232,12 @@ Deno.serve(async (req) => {
       .eq("id", record.id)
       .single();
 
-    // Extract storage path from URL (everything after the bucket name)
-    const audioUrl = new URL(record.audio_url);
-    const bucketPrefix = "/storage/v1/object/public/training-memos/";
-    const pathIndex = audioUrl.pathname.indexOf(bucketPrefix);
-    const storagePath = pathIndex !== -1
-      ? decodeURIComponent(audioUrl.pathname.slice(pathIndex + bucketPrefix.length))
-      : audioUrl.pathname.split("/").pop();
+    // Resolve the row's audio_url to a storage path. Handles a bare path
+    // (what iOS writes now), a legacy public URL, and a signed URL.
+    const storagePath = resolveTrainingMemoPath(currentStatus.audio_url);
 
     if (!storagePath) {
-      throw new Error("Could not extract storage path from audio URL");
+      throw new Error("Could not resolve a storage path from the row's audio_url");
     }
 
     // Download audio file from storage

@@ -215,12 +215,11 @@ final class OfflineQueueManager {
                 .from("training-memos")
                 .upload(fileName, data: audioData, options: .init(contentType: "audio/m4a"))
 
-            let publicURL = try supabase.storage
-                .from("training-memos")
-                .getPublicURL(path: fileName)
-
+            // Store the storage PATH, not a URL — the bucket is private
+            // (20260823120000_private_training_memos_bucket.sql). See the
+            // matching note in VoiceLogViewModel.
             let logData: [String: Any] = [
-                "audio_url": publicURL.absoluteString,
+                "audio_url": fileName,
                 "notes": dict["notes"] ?? "",
                 "mood": dict["mood"] ?? "neutral",
                 "user_id": userId,
