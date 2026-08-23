@@ -133,6 +133,27 @@ jobs:
         if: ${{ env.SUPABASE_DB_URL != '' }}
         run: supabase db lint --db-url "$SUPABASE_DB_URL" --schema public --fail-on error
 
+  migration-filenames:
+    name: Migration filename gate (DB)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need base ref for the changed-file diff
+      # Two checks. The collision check runs on every event: two migrations
+      # that parse to the same version make `supabase db push` silently skip
+      # one, which is how `user_profiles` never reached prod (see
+      # docs/migration-ledger-reconciliation-2026-06-11.md). The format check
+      # is ratcheted to changed files, so the 24 already-applied legacy
+      # filenames stay grandfathered — renaming them would re-diverge the ledger.
+      - name: Check migration filenames
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 .github/scripts/check_migration_filenames.py "origin/${{ github.base_ref }}"
+          else
+            python3 .github/scripts/check_migration_filenames.py
+          fi
+
   eval-gate:
     name: Eval coverage gate (prompts)
     if: github.event_name == 'pull_request'

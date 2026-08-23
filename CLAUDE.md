@@ -94,6 +94,7 @@ Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
 - Shared TS utilities: `supabase/functions/_shared/`
 - Rule evaluators (V1 coachable_moments): `supabase/functions/_shared/rules/`
 - Migrations: `supabase/migrations/` — naming `YYYYMMDDHHMMSS_descriptive.sql`
+  (exactly 14 digits; CI-enforced — see hard rule #10)
 - Specs: `docs/specs/`
 - Coaching philosophy (source of truth for AI behavior):
   `docs/coaching/principles.md`
@@ -147,6 +148,16 @@ Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
    SHA.** No dashboard SQL-editor or MCP `apply_migration` against prod —
    ad-hoc applies are how the ledger diverged (17 re-stamped entries, 2
    ghost migrations). See `docs/migration-ledger-reconciliation-2026-06-11.md`.
+10. **Migration filenames are exactly `<14-digit-UTC-timestamp>_<snake_case>.sql`.**
+    The Supabase CLI reads the version as the digits before the FIRST
+    underscore, so an 8-digit prefix silently collides with another
+    migration and the CLI *skips the file without erroring*. That is the
+    root cause of `user_profiles` never reaching prod. Enforced by
+    `.github/scripts/check_migration_filenames.py` in CI: version
+    collisions fail on every event; the format check is ratcheted to
+    changed files, so the 24 already-applied legacy filenames stay
+    grandfathered (renaming them would re-diverge the ledger). Stamp a new
+    one with `date -u +%Y%m%d%H%M%S`.
 
 ## Conventions
 
