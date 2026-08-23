@@ -390,7 +390,13 @@ Deno.serve(async (req) => {
       throw new Error("Transcription failed — no text extracted from audio");
     }
 
-    console.log(`Transcription complete via ${transcriptionProvider}: "${transcription.slice(0, 100)}..."`);
+    // Length, not content. This used to log the first 100 characters of the
+    // raw transcript — verbatim health data (injuries, mood, life context)
+    // into a log store with a different retention and access model than the
+    // database it came from.
+    console.log(
+      `Transcription complete via ${transcriptionProvider}: ${transcription.length} chars`,
+    );
 
     // ── Step 2: Analyze transcript with Gemini ──
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
@@ -642,7 +648,9 @@ Deno.serve(async (req) => {
         // When an injury is detected in a voice memo, immediately run the
         // injury risk assessment so the athlete state gets updated with the
         // new risk score and the coaching agent knows about it.
-        console.log(`[Voice-to-Action] Injury detected (${injury.bodyArea}) — triggering injury-early-warning`);
+        // Body area omitted deliberately — "which body part hurts" is the
+        // health datum itself, and this line exists to trace the pipeline.
+        console.log(`[Voice-to-Action] Niggle detected — triggering injury-early-warning`);
         try {
           const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
           const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

@@ -458,6 +458,13 @@ verify_jwt = false
 # reconcile-log, the Sunday cron, and on-demand from iOS.
 verify_jwt = false
 
+[functions.purge-expired-memos]
+# Voice-memo audio retention sweep. Server-only (cron/operator) — gated with
+# requireServiceRole. verify_jwt = false so a pg_net/cron caller presenting the
+# service-role key isn't rejected by the gateway before the function's own
+# check runs. Defaults to a dry run; deleting requires {"dry_run": false}.
+verify_jwt = false
+
 [functions.delete-account]
 # Athlete-initiated account deletion (App Store 5.1.1(v) requires it in-app,
 # and the privacy policy promises it). verify_jwt = true; the function then
