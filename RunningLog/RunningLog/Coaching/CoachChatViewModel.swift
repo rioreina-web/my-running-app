@@ -156,7 +156,7 @@ final class CoachChatViewModel {
                             rateLimit.limit = limit
                         }
                         showRateLimitAlert = true
-                        await appendErrorMessage("You've reached your daily limit. Your questions reset at midnight UTC.")
+                        appendErrorMessage("You've reached your daily limit. Your questions reset at midnight UTC.")
                     }
                     return
                 }
@@ -166,7 +166,7 @@ final class CoachChatViewModel {
                     Log.coach.error("Coach auth failed despite callEdgeFunction")
                     await MainActor.run {
                         isLoading = false
-                        await appendErrorMessage("Not signed in. Please sign in and try again.")
+                        appendErrorMessage("Not signed in. Please sign in and try again.")
                     }
                     return
                 }
@@ -176,7 +176,7 @@ final class CoachChatViewModel {
                     Log.coach.error("Coach error: \(error)")
                     await MainActor.run {
                         isLoading = false
-                        await appendErrorMessage(error)
+                        appendErrorMessage(error)
                     }
                     return
                 }
@@ -204,7 +204,7 @@ final class CoachChatViewModel {
                         )
                         messages.append(assistantMessage)
                     } else {
-                        await appendErrorMessage("Coach returned an empty response. Please try again.")
+                        appendErrorMessage("Coach returned an empty response. Please try again.")
                     }
                     isLoading = false
                 }
@@ -213,7 +213,7 @@ final class CoachChatViewModel {
                 Log.coach.error("Coach response decode failed: \(rawBody.prefix(300))")
                 await MainActor.run {
                     isLoading = false
-                    await appendErrorMessage("Coach returned an unexpected response. Please try again.")
+                    appendErrorMessage("Coach returned an unexpected response. Please try again.")
                 }
             }
 
@@ -221,13 +221,13 @@ final class CoachChatViewModel {
             Log.coach.error("Coach request timed out")
             await MainActor.run {
                 isLoading = false
-                await appendErrorMessage("Coach took too long to respond. Please try again.")
+                appendErrorMessage("Coach took too long to respond. Please try again.")
             }
         } catch {
             Log.coach.error("Coach call failed: \(error.localizedDescription)")
             await MainActor.run {
                 isLoading = false
-                await appendErrorMessage("Couldn't reach the coach. Check your connection and try again.")
+                appendErrorMessage("Couldn't reach the coach. Check your connection and try again.")
             }
             await ErrorReporter.shared.report(error, context: "coaching agent call")
         }
