@@ -10,6 +10,51 @@ companion for the data model.
 
 ---
 
+## 0. Status — rebranded, 2026-08-24
+
+The July redesign was confirmed as the direction, so §4 has been carried
+out on branch **`design/niggles-v2-rebrand`**, which is the four niggles
+commits replayed onto `origin/design/log-detail-editorial` (the redesign
+line, 113 commits ahead of `main`). One conflict, in
+`web/src/app/design/page.tsx` — both branches prepended a design-index
+entry; resolved by keeping both.
+
+Done: §4 steps 2, 3, 4 and 5. Not done: §4 step 1 is now moot, and
+nothing has been pushed — the branch is local, and PR #6 still points
+`claude/niggles-dashboard-prototype-w7bib4` → `main`.
+
+**§4 step 3 was not mechanical, and the reason matters.** Rules R3/R4
+tell you to "use a tracking token utility" and "use the type scale" —
+*neither existed*. There were no `tracking-*` or `text-*` token
+utilities anywhere in `web/`, which is why all 101 `tracking-[]` and 291
+`text-[]` callsites the gate cites as "existing debt" are arbitrary: the
+gate has been forbidding a pattern without ever shipping its
+replacement. The scale now exists in `web/src/app/globals.css`, lifted
+verbatim from `design-system/colors_and_type.css` (8 size steps, 3
+tracking steps) plus one documented web-only step (`--text-display-2xl`,
+56px) for preview-page headlines that have no mobile equivalent. Every
+surface in `web/` can now pay its debt down against real tokens; the
+niggles prototype is the first to do so.
+
+**A palette violation this doc missed.** `resolved` status rendered in
+`--color-success` (#2D8A4E), which is an alias of `--mood-energized`.
+Under the three-palette rule green is mood-only — a resolved niggle is
+not a mood. Status is now coral for `active` (it is genuinely an alert)
+and ink weight + *form* for the other two: a resolved dot is hollow, a
+quiet thread trails off dashed. That is also better for accessibility
+than a colour-only encoding, per the foundations' VoiceOver note.
+
+**One honesty fix, unprompted.** The in-progress week's overlay bar was
+drawn in the *darker* of the two greys, so an incomplete week read as
+more solid than a finished one. It is now the lighter wash.
+
+**Gotcha for anyone re-running the gate locally:**
+`check_design_tokens.py` diffs `<base>...HEAD`, so it cannot see working-
+tree edits. Stage first and run `--staged`, or it will report violations
+on lines you already fixed.
+
+---
+
 ## 1. What shipped
 
 A niggles-primary dashboard prototype at `/design/niggles` — mock data,
@@ -140,24 +185,44 @@ the redesign branch merges down, this PR goes red.
 
 ---
 
-## 4. Proposed rebase, if the redesign is the direction
+## 4. The rebase — done 2026-08-24
 
-1. **Confirm the branch is live, not abandoned.** Everything below is
-   wasted if `design/log-detail-editorial` was a dead end. This is the
-   decision that gates the rest.
-2. **Repoint the palette** to `design-system/ui_kits/ios_app/tokens.css`;
-   move the training overlay onto the blue depth ramp; retract coral to
-   alert + one-per-cluster.
-3. **Replace arbitrary type classes** with the token utilities the gate
-   expects — clears all 60 violations and makes the prototype gate-clean
-   ahead of the merge.
-4. **Reframe as a Signal card.** Keep the current page as the *expanded*
-   state; add the collapsed one-row summary (`L. ACHILLES · 7 · active ·
-   sparkline · ▸`) that it expands from.
-5. **Re-verify** at 393pt and 1280px, then update PR #6.
+1. ~~**Confirm the branch is live.**~~ Confirmed; the redesign is the
+   direction.
+2. ~~**Repoint the palette.**~~ Training overlay moved onto the blue
+   depth ramp (`--color-pace-easy`, washed to 34% — 16% for the
+   in-progress week) and off the neutral paper-greys it was borrowing.
+   Coral retracted to alert-only in ten places: the overlay switcher's
+   selected state, the clear-filter link, the selected row label, the
+   today line and its axis label, the dot-selection ring, the readout
+   eyebrow, the recurrence day-count, and the session tallies (which are
+   training data, so they moved to the blue ramp too). What still earns
+   coral: an active mention and its legend key, the active-thread tile,
+   the section eyebrows, the readout's 2px left-bar (that is the
+   coach-quote primitive), and the co-occurrence headline number.
+3. ~~**Replace arbitrary type classes.**~~ All 60 gone — 41 `text-[Npx]`
+   and 19 `tracking-[…]`. See §0: the utilities had to be *defined*
+   first. Four sizes snapped to a neighbouring step rather than matching
+   exactly (9.5→10, 13.5→13, 17→15, 38→40); the 17→15 one is the only
+   visible loss, on the readout's verbatim quote, which no longer
+   outranks body copy. Worth a look before this ships.
+4. ~~**Reframe as a Signal card.**~~ `SummaryCard` + `Sparkline` built to
+   the `trends.md` spec: collapsed is one 44pt row
+   (`NIGGLE TIMELINE · 5 body areas · 15 mentions · 16 weeks · 2 ACTIVE ·
+   ▸`) that expands in place. `Timeline` grew a `framed` prop so the
+   expanded state sheds its own card chrome — the brief is explicit that
+   this must not be a card inside a card. It mounts open on this study
+   page and ships closed in Trends.
+5. ~~**Re-verify.**~~ `tsc --noEmit` clean, `eslint` clean, `next build`
+   succeeds with `/design/niggles` still prerendering static, and the
+   design-token gate passes. Driven in Chromium at 1280×900 and 393×852:
+   the summary row measures exactly 44px on desktop and 58px stacked on
+   a phone, dot hit areas stay 30px, `scrollWidth == innerWidth` (no
+   horizontal overflow), all four overlay modes cycle, dot-tap opens the
+   readout, thread scoping works, and the console is clean.
 
-Steps 2–3 are mechanical. Step 4 is a genuine design call and should
-follow a read of `trends.md` in full.
+**PR #6 is untouched.** Retargeting it means changing both its head and
+its base, which is a call for whoever owns the branch.
 
 ---
 
