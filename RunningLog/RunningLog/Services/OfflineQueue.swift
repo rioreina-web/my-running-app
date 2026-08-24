@@ -45,7 +45,7 @@ final class OfflineQueueManager {
     private init() {
         do {
             container = try ModelContainer(for: PendingUpload.self)
-            Task { refreshCount() }
+            Task { await refreshCount() }
         } catch {
             logger.error("Failed to create SwiftData container: \(error.localizedDescription)")
             Task { await ErrorReporter.shared.report(error, context: "OfflineQueueManager.init: Failed to create SwiftData container") }
