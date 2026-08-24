@@ -573,4 +573,42 @@ final class InjuryService {
     var isEmpty: Bool {
         injuries.isEmpty && niggleMentions.isEmpty && niggleResolutions.isEmpty
     }
+
+    // MARK: - Mention timeline
+
+    /// The niggle mention-timeline, derived from rows this service already
+    /// holds — no extra fetch. Built fresh on read; `@Observable` invalidates
+    /// it whenever `fetchNiggles`/`fetchTrainingDays` land.
+    ///
+    /// DATE columns arrive as Strings (see `NiggleMentionRow`), so they are
+    /// parsed here with the bare-DATE formatter rather than `utcDay(fromISO:)`,
+    /// which expects a full ISO-8601 timestamp and would drop every row.
+    var niggleTimeline: NiggleTimeline {
+        let df = Self.dateFmt
+
+        let mentions: [NiggleMention] = niggleMentions.compactMap { row in
+            guard let date = df.date(from: row.mentioned_at) else { return nil }
+            return NiggleMention(
+                id: row.id,
+                bodyArea: row.body_area,
+                side: NiggleSide(raw: row.side),
+                quote: row.verbatim_quote,
+                severityHint: row.severity_hint,
+                mentionedAt: date
+            )
+        }
+
+        let resolutions = niggleResolutions.compactMap {
+            row -> (bodyArea: String, side: NiggleSide, resolvedAt: Date, quote: String?)? in
+            guard let date = df.date(from: row.resolved_at) else { return nil }
+            return (row.body_area, NiggleSide(raw: row.side), date, row.verbatim_quote)
+        }
+
+        return NiggleTimelineBuilder.build(
+            mentions: mentions,
+            resolutions: resolutions,
+            milesByDay: milesByDay,
+            today: Date()
+        )
+    }
 }

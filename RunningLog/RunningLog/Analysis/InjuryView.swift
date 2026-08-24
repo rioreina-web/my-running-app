@@ -78,6 +78,18 @@ struct InjuryListView: View {
                         }
                     }
 
+                    // Niggle mention-timeline — the history behind the list
+                    // above. Sits between the active aches and the resolved
+                    // ones because it is context, not an alert: what was said,
+                    // when, and what the training was doing at the time.
+                    // Derived from rows InjuryService already holds.
+                    if !injuryService.niggleTimeline.isEmpty {
+                        EditorialRule()
+                            .padding(.horizontal, 20)
+                        NiggleTimelineCard(timeline: injuryService.niggleTimeline)
+                            .padding(.horizontal, 20)
+                    }
+
                     // Resolved injuries — keep existing collapsed-section
                     // pattern for now. Editorial restyle is a follow-up; the
                     // pressing redesign was the active list.
