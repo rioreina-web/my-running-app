@@ -11,7 +11,11 @@ import {
   validationErrorResponse,
   internalErrorResponse,
 } from "../_shared/validation.ts";
-import { getOrBuildPaceProfile, resolveSteps } from "../_shared/resolve-pace.ts";
+import {
+  getOrBuildPaceProfile,
+  resolveSteps,
+  type ResolvablePaceStep,
+} from "../_shared/resolve-pace.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -623,7 +627,16 @@ Deno.serve(async (req: Request) => {
         const paceProfile = await getOrBuildPaceProfile(supabase, userId);
         planData.workouts = planData.workouts.map((day) => ({
           ...day,
-          steps: resolveSteps(day.steps, paceProfile) as ImportedStep[],
+          // ResolvablePaceStep is an open record ([key: string]: unknown) with
+          // every field optional; ImportedStep is closed and requires
+          // durationType/durationValue/notes. Neither is assignable to the
+          // other, so both directions route through `unknown`. Safe at
+          // runtime: resolveStepPace spreads the input step and only rewrites
+          // pace fields, so ImportedStep's required keys survive untouched.
+          steps: resolveSteps(
+            day.steps as unknown as ResolvablePaceStep[],
+            paceProfile,
+          ) as unknown as ImportedStep[],
         }));
         planData.qualityTemplates = extractQualityTemplates(planData.workouts);
         response.planData = planData;
