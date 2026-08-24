@@ -35,6 +35,7 @@ import {
   type SessionInput as FitnessSessionInput,
 } from "./fitnessSignal.ts";
 import { oneHourPaceSecPerMile } from "./paces.ts";
+import { rowsForAiContext, withheldCount } from "./aiSourcePolicy.ts";
 import { formatPace, formatTime, formatTimeDelta } from "./shared/format.ts";
 import { buildMoodTrend, type MoodLogRow } from "./builders/buildMoodTrend.ts";
 import { buildLifeContext, type LifeContext, type LifeContextLogRow } from "./builders/buildLifeContext.ts";
@@ -719,7 +720,23 @@ export async function rebuildAthleteState(
     }
   }
 
-  const logs = (recentLogsRes.data ?? []) as Array<Record<string, unknown>>;
+  // Everything downstream of `logs` ends up inside a prompt — this is the
+  // athlete_state that coaching-agent, the daily read and Ask all narrate from.
+  // So the source policy applies here rather than at each consumer. Inert
+  // unless AI_EXCLUDED_SOURCES says otherwise; see _shared/aiSourcePolicy.ts.
+  const allRecentLogs = (recentLogsRes.data ?? []) as Array<Record<string, unknown>>;
+  const logsWithheld = withheldCount(allRecentLogs as Array<{ source?: string | null }>);
+  if (logsWithheld > 0) {
+    // Loud on purpose. A context that just lost rows has to leave a trace, or
+    // "why did the coach get vague" is undebuggable. Counts only, never rows.
+    console.warn(
+      `[AthleteState] AI source policy withheld ${logsWithheld}/${allRecentLogs.length} ` +
+        `recent logs from model context (deterministic maths still sees all of them)`,
+    );
+  }
+  const logs = rowsForAiContext(
+    allRecentLogs as Array<Record<string, unknown> & { source?: string | null }>,
+  ) as Array<Record<string, unknown>>;
   const profile = profileRes.data;
   const snapshot = (snapshotRes.data as Array<Record<string, unknown>> | null)?.[0];
   const injuries = (injuriesRes.data ?? []) as Array<{
