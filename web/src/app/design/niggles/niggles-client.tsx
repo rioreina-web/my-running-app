@@ -142,7 +142,7 @@ function Section({
   return (
     <section className="mt-14">
       <Mono color={CORAL}>{fig}</Mono>
-      <h2 className="mt-2 font-display text-[30px] leading-[1.1] tracking-[-0.015em]">
+      <h2 className="mt-2 font-display text-[24px] sm:text-[30px] leading-[1.1] tracking-[-0.015em]">
         {title}
       </h2>
       <p className="mt-2 max-w-[640px] font-body italic text-[13.5px] leading-[1.5] text-text-secondary">
@@ -199,11 +199,30 @@ const OVERLAYS: {
 
 /* ── Timeline ─────────────────────────────────────────────────────── */
 
-const ROW_H = 40;
+
+/* Row geometry differs by breakpoint. On phones the row label sits ABOVE
+   its track so the plot gets the full screen width (168px of gutter is
+   43% of a 393pt screen); from `sm` up the label returns to a gutter
+   beside the track. Heights come from CSS calc over `--rows` / `--i`
+   rather than inline px, so one markup tree serves both. */
+const ROW_H_CLS = "h-[54px] sm:h-[40px]";
+const PLOT_H_CLS = "h-[calc(var(--rows)*54px)] sm:h-[calc(var(--rows)*40px)]";
+const ROW_TOP_CLS = "top-[calc(var(--i)*54px)] sm:top-[calc(var(--i)*40px)]";
+/** Baseline sits low in the row on phones to clear the label above it. */
+const TRACK_Y_CLS = "top-[70%] sm:top-1/2";
 
 function xPct(iso: string): number {
   const span = day(SPAN_END) - day(SPAN_START);
   return ((day(iso) - day(SPAN_START)) / span) * 100;
+}
+
+function rowSummary(t: NiggleThread): React.ReactNode {
+  return (
+    <>
+      {t.mentionCount} {t.mentionCount === 1 ? "mention" : "mentions"} ·{" "}
+      <span style={{ color: STATUS[t.status].color }}>{STATUS[t.status].label}</span>
+    </>
+  );
 }
 
 function Timeline({
@@ -223,13 +242,13 @@ function Timeline({
 }) {
   const cfg = OVERLAYS.find((o) => o.id === overlay)!;
   const max = overlay === "off" ? 1 : Math.max(...WEEKS.map(cfg.value));
-  const plotH = threads.length * ROW_H;
+  const axisTicks = WEEKS.filter((_, i) => i % 4 === 0);
 
   return (
     <div className="bg-bg-card border border-divider rounded-lg overflow-hidden">
       {/* overlay axis readout */}
       {overlay !== "off" && (
-        <div className="px-5 pt-4 pb-2 flex items-baseline justify-between border-b border-divider-soft">
+        <div className="px-5 pt-4 pb-2 flex flex-col sm:flex-row gap-0.5 sm:gap-4 sm:items-baseline sm:justify-between border-b border-divider-soft">
           <Mono>OVERLAY · {cfg.label}</Mono>
           <Mono color={INK_3}>
             {cfg.axis} · PEAK {cfg.format(max)}
@@ -239,8 +258,8 @@ function Timeline({
 
       <div className="px-5 py-5">
         <div className="flex">
-          {/* ── row labels ── */}
-          <div className="w-[168px] shrink-0" style={{ height: plotH }}>
+          {/* ── row labels · gutter, from sm up ── */}
+          <div className={`hidden sm:block w-[168px] shrink-0 ${PLOT_H_CLS}`}>
             {threads.map((t) => {
               const isSel = selectedKey === t.key;
               return (
@@ -248,11 +267,8 @@ function Timeline({
                   key={t.key}
                   type="button"
                   onClick={() => onSelectThread(isSel ? null : t.key)}
-                  className="w-full text-left pr-4 flex flex-col justify-center transition-opacity"
-                  style={{
-                    height: ROW_H,
-                    opacity: selectedKey && !isSel ? 0.35 : 1,
-                  }}
+                  className={`w-full text-left pr-4 flex flex-col justify-center transition-opacity ${ROW_H_CLS}`}
+                  style={{ opacity: selectedKey && !isSel ? 0.35 : 1 }}
                 >
                   <span
                     className="font-mono text-[10.5px] tracking-[1.3px] uppercase"
@@ -260,9 +276,11 @@ function Timeline({
                   >
                     {t.label}
                   </span>
-                  <span className="font-mono text-[9.5px] tracking-[1.1px] uppercase" style={{ color: INK_3 }}>
-                    {t.mentionCount} {t.mentionCount === 1 ? "mention" : "mentions"} ·{" "}
-                    <span style={{ color: STATUS[t.status].color }}>{STATUS[t.status].label}</span>
+                  <span
+                    className="font-mono text-[9.5px] tracking-[1.1px] uppercase"
+                    style={{ color: INK_3 }}
+                  >
+                    {rowSummary(t)}
                   </span>
                 </button>
               );
@@ -270,7 +288,10 @@ function Timeline({
           </div>
 
           {/* ── plot ── */}
-          <div className="relative flex-1" style={{ height: plotH }}>
+          <div
+            className={`relative flex-1 ${PLOT_H_CLS}`}
+            style={{ "--rows": threads.length } as React.CSSProperties}
+          >
             {/* training overlay bars, behind everything */}
             {overlay !== "off" && (
               <div className="absolute inset-0 flex items-end" aria-hidden>
@@ -301,53 +322,67 @@ function Timeline({
 
             {/* row baselines + dots */}
             {threads.map((t, i) => {
-              const dim = selectedKey !== null && selectedKey !== t.key;
+              const isSel = selectedKey === t.key;
+              const dim = selectedKey !== null && !isSel;
               return (
                 <div
                   key={t.key}
-                  className="absolute left-0 right-0 transition-opacity"
-                  style={{ top: i * ROW_H, height: ROW_H, opacity: dim ? 0.22 : 1 }}
+                  className={`absolute left-0 right-0 transition-opacity ${ROW_TOP_CLS} ${ROW_H_CLS}`}
+                  style={{ "--i": i, opacity: dim ? 0.22 : 1 } as React.CSSProperties}
                 >
-                  <div className="absolute left-0 right-0 top-1/2 h-px bg-divider" />
+                  {/* label above the track — phones only */}
+                  <button
+                    type="button"
+                    onClick={() => onSelectThread(isSel ? null : t.key)}
+                    className="sm:hidden absolute top-0 left-0 right-0 text-left font-mono text-[9.5px] tracking-[1.1px] uppercase truncate"
+                    style={{ color: isSel ? CORAL : INK_1 }}
+                  >
+                    {t.label} <span style={{ color: INK_3 }}>· {rowSummary(t)}</span>
+                  </button>
+
+                  <div className={`absolute left-0 right-0 h-px bg-divider ${TRACK_Y_CLS}`} />
 
                   {/* quiet-since tail, drawn from the last mention to today */}
                   {t.status === "quiet" && (
                     <div
-                      className="absolute top-1/2 h-px"
+                      className={`absolute h-px ${TRACK_Y_CLS}`}
                       style={{
                         left: `${xPct(t.lastSeen)}%`,
                         right: 0,
-                        background:
-                          `repeating-linear-gradient(90deg,${INK_3} 0 3px,transparent 3px 7px)`,
+                        background: `repeating-linear-gradient(90deg,${INK_3} 0 3px,transparent 3px 7px)`,
                       }}
                       aria-hidden
                     />
                   )}
 
-                  {MENTIONS.filter(
-                    (m) => `${m.bodyPart}:${m.side}` === t.key
-                  ).map((m) => {
-                    const isSel = selectedMentionId === m.id;
+                  {MENTIONS.filter((m) => `${m.bodyPart}:${m.side}` === t.key).map((m) => {
+                    const isDotSel = selectedMentionId === m.id;
                     const resolved = m.kind === "resolution";
+                    const size = isDotSel ? 13 : 9;
                     return (
                       <button
                         key={m.id}
                         type="button"
                         onClick={() => {
-                          onSelectMention(isSel ? null : m.id);
+                          onSelectMention(isDotSel ? null : m.id);
                           onSelectThread(t.key);
                         }}
                         title={`${shortDate(m.mentionedAt)} — "${m.quote}"`}
-                        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 rounded-full transition-transform hover:scale-125"
-                        style={{
-                          left: `${xPct(m.mentionedAt)}%`,
-                          width: isSel ? 13 : 9,
-                          height: isSel ? 13 : 9,
-                          background: resolved ? "transparent" : STATUS[t.status].color,
-                          border: `2px solid ${resolved ? SAGE : PAPER}`,
-                          boxShadow: isSel ? `0 0 0 3px ${wash(CORAL, 22)}` : "none",
-                        }}
+                        /* The visible dot stays 9px; the button around it is
+                           30px on touch so a mention is actually tappable. */
+                        className={`absolute -translate-y-1/2 -translate-x-1/2 grid place-items-center w-[30px] h-[30px] sm:w-[22px] sm:h-[22px] ${TRACK_Y_CLS}`}
+                        style={{ left: `${xPct(m.mentionedAt)}%` }}
                       >
+                        <span
+                          className="rounded-full transition-transform"
+                          style={{
+                            width: size,
+                            height: size,
+                            background: resolved ? "transparent" : STATUS[t.status].color,
+                            border: `2px solid ${resolved ? SAGE : PAPER}`,
+                            boxShadow: isDotSel ? `0 0 0 3px ${wash(CORAL, 22)}` : "none",
+                          }}
+                        />
                         <span className="sr-only">
                           {t.label}, {shortDate(m.mentionedAt)}
                         </span>
@@ -369,12 +404,16 @@ function Timeline({
 
         {/* ── axis ── */}
         <div className="flex mt-2">
-          <div className="w-[168px] shrink-0" />
+          <div className="hidden sm:block w-[168px] shrink-0" />
           <div className="relative flex-1 h-4">
-            {WEEKS.filter((_, i) => i % 4 === 0).map((w) => (
+            {axisTicks.map((w, i) => (
               <span
                 key={w.start}
-                className="absolute font-mono text-[9.5px] tracking-[1.1px] uppercase"
+                /* Every 4th week is legible on desktop; on a phone that many
+                   ticks collide, so only alternates survive. */
+                className={`absolute font-mono text-[9.5px] tracking-[1.1px] uppercase ${
+                  i % 2 === 1 ? "hidden sm:inline" : ""
+                }`}
                 style={{ left: `${xPct(w.start)}%`, color: INK_3 }}
               >
                 {shortDate(w.start)}
@@ -403,6 +442,7 @@ function Timeline({
     </div>
   );
 }
+
 
 function LegendDot({
   color,
@@ -600,7 +640,7 @@ function TallyBars({ rows, accent }: { rows: { label: string; count: number }[];
   return (
     <ul className="space-y-2.5">
       {rows.map((r) => (
-        <li key={r.label} className="grid grid-cols-[104px_1fr_28px] items-center gap-3">
+        <li key={r.label} className="grid grid-cols-[84px_1fr_24px] sm:grid-cols-[104px_1fr_28px] items-center gap-2 sm:gap-3">
           <Mono color={INK_2}>{r.label}</Mono>
           <span className="h-[7px] bg-divider-soft rounded-[1px] overflow-hidden">
             <span
@@ -631,7 +671,7 @@ function CoOccurrence({ thread }: { thread: NiggleThread | null }) {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
       <div className="bg-bg-card border border-divider rounded-lg px-5 py-5 lg:col-span-1">
         <Mono>{scope} · 24 h window</Mono>
-        <p className="mt-4 font-display text-[40px] leading-none tracking-[-0.02em] tabular-nums" style={{ color: CORAL }}>
+        <p className="mt-4 font-display text-[34px] sm:text-[40px] leading-none tracking-[-0.02em] tabular-nums" style={{ color: CORAL }}>
           {longCount}
           <span className="text-text-tertiary"> / {mentions.length}</span>
         </p>
@@ -700,18 +740,18 @@ export default function NigglesDashboard() {
   return (
     <div className="min-h-screen bg-bg-base text-text-primary font-body">
       {/* plate strip */}
-      <header className="border-b border-divider px-10 py-4">
+      <header className="border-b border-divider px-5 sm:px-10 py-4">
         <div className="mx-auto max-w-[1080px] flex items-baseline justify-between gap-4">
           <Mono color={INK_2}>Niggles · v2 prototype</Mono>
           <Mono color={INK_3}>Internal · mock data</Mono>
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1080px] px-10 py-14">
+      <main className="mx-auto max-w-[1080px] px-5 sm:px-10 py-10 sm:py-14">
         {/* ── opening figure ── */}
         <section>
           <Mono color={CORAL}>Fig. 01 · The body, as you described it</Mono>
-          <h1 className="mt-3 font-display text-[56px] leading-[1.0] tracking-[-0.02em]">
+          <h1 className="mt-3 font-display text-[40px] sm:text-[56px] leading-[1.0] tracking-[-0.02em]">
             Niggles.
           </h1>
           <p className="mt-5 max-w-[660px] font-body text-[16px] leading-[1.6] text-text-secondary">
@@ -774,7 +814,7 @@ export default function NigglesDashboard() {
                   key={o.id}
                   type="button"
                   onClick={() => setOverlay(o.id)}
-                  className="font-mono text-[10px] tracking-[1.3px] uppercase px-3 py-1.5 rounded-[3px] border transition-colors"
+                  className="font-mono text-[10px] tracking-[1.3px] uppercase px-2.5 sm:px-3 py-1.5 rounded-[3px] border transition-colors"
                   style={{
                     color: on ? PAPER : INK_2,
                     background: on ? CORAL : "transparent",

@@ -306,6 +306,31 @@ and week volume under each quote.
 Footer keeps the liability line the design system already specifies:
 *"Not medical advice. If anything gets sharper, see a clinician."*
 
+### Phone layout
+
+The first pass was desktop-width only and the timeline broke on a
+phone: a 168px row-label gutter is 43% of a 393pt screen, leaving
+103px of plot for 16 weeks — 6.4px per week, with the August achilles
+dots nearly merged and the axis collapsing into `1UN 0DAY`.
+
+Fixed by changing the row geometry per breakpoint rather than
+shrinking it. On phones the row label sits **above** its track, so the
+plot gets the full width: 311px, 19.4px per week. Row height goes
+54px (from 40px) to fit the label; the baseline drops to 70% of the
+row to clear it. Axis ticks thin from every 4th week to every 8th.
+The overlay header stacks. Dot hit areas go from 9px to 30px while
+the visible dot stays 9px.
+
+One caveat for the iOS build: even at 19.4px/week, precise dot-tapping
+is not a good primary interaction on a touch screen. The timeline's
+job on a phone is to show *shape* — tapping the row to open that
+thread's mention list should be the main path, with dot-tapping as a
+convenience. Worth settling before anyone writes the Swift Charts
+version.
+
+Measured at 393pt (iPhone 16 Pro) and 1280px; the desktop layout is
+byte-identical to before the change.
+
 ### Verified
 
 `npx tsc --noEmit` clean, `eslint` clean, `next build` succeeds and
