@@ -1,304 +1,103 @@
 -- ============================================================================
--- Pin `search_path` on the remaining SECURITY DEFINER functions, and stop
--- exposing `increment_subscriber_count` to anon/authenticated.
+-- Pin `search_path` on `increment_subscriber_count`, and stop exposing the
+-- maintenance RPCs to anon/authenticated.
 --
 -- A SECURITY DEFINER function runs as its owner. Without a pinned
--- `search_path` it resolves unqualified names using the CALLER's path — so
--- whoever can get an object onto that path decides what the definer executes.
+-- `search_path` it resolves unqualified names using the CALLER's path.
 --
--- What raises this above hygiene here: four of these five functions read
--- `vault.decrypted_secrets` to pull `service_role_key`, then pass it to
--- `net.http_post` as a bearer token. The service-role key bypasses RLS for
--- every user, so a successful shadow of `vault` or `net` in one of these
--- would disclose it. They are trigger functions on `training_logs`, firing as
--- the definer on any athlete's own INSERT.
+-- The subtlety that makes this more than hygiene: `pg_catalog` is implicitly
+-- searched FIRST when it is not named explicitly, so a plain shadow of a
+-- built-in does not win. But an EXACT-ARITY function in a schema on the path
+-- outranks `pg_catalog`'s VARIADIC match regardless of order. So a definer
+-- calling unqualified `jsonb_build_object(...)` can be hijacked by
+-- `public.jsonb_build_object(text, text)` — demonstrated on PG16 during this
+-- work, exfiltrating a service-role key read from `vault.decrypted_secrets`.
+-- Excluding `public` from the path is what closes that; pinning to a path
+-- that still contains `public` does not.
 --
 -- Exploitability today is low: on PG15+ (this project is major_version 17)
 -- `CREATE` on `public` is not granted to `PUBLIC`, so an ordinary
--- `authenticated` role cannot create the shadowing object. This migration
--- removes the dependency on that being and staying true — the fix is free and
--- changes no behaviour.
+-- `authenticated` role cannot create the shadowing object.
 --
--- `pg_catalog, pg_temp` matches the convention already set by
--- 20260609233602_harden_current_coach_id_search_path.sql and
--- 20260611140000_backfill_workout_insights_via_outbox.sql. Because that path
--- excludes `public`, every table reference below is schema-qualified.
+-- ── WHY THIS MIGRATION IS MUCH SMALLER THAN IT WAS ─────────────────────────
 --
--- Bodies are otherwise reproduced verbatim from:
---   trigger_voice_log_processing    — 20260410100000_auto_process_voice_logs.sql
---   trigger_post_run_reconciliation — 20260416400000_adaptive_triggers.sql
---   fn_trigger_reconcile_log        — 20260417500000_trigger_reconcile_log.sql
---   fn_trigger_workout_insight      — 20260428110000_trigger_workout_insight.sql
---   increment_subscriber_count      — 20260312_coach_training_plans.sql
+-- It used to `CREATE OR REPLACE` five trigger functions, reproducing their
+-- bodies "verbatim" from old migrations in this repo, in order to attach the
+-- pin. Checked against production on 2026-08-24, that was wrong in every case
+-- but one:
 --
--- CREATE OR REPLACE preserves each function's OID, so the existing triggers
--- keep pointing at it — no trigger is dropped or recreated here.
+--   trigger_voice_log_processing     ALREADY pinned (pg_catalog, pg_temp) in
+--                                    prod, and prod's BODY IS A DIFFERENT
+--                                    ARCHITECTURE. Prod inserts into
+--                                    `voice_processing_jobs` for the drain to
+--                                    pick up, and handles typed notes
+--                                    (kind = 'note') and check-ins. This
+--                                    repo's copy predates the outbox: it
+--                                    calls net.http_post directly and returns
+--                                    early when audio_url IS NULL. Replacing
+--                                    prod's body with it would revert the
+--                                    queue AND silently stop every typed note
+--                                    from being processed.
 --
--- Already hardened, deliberately not touched: current_coach_id (20260609233602),
--- backfill_workout_insights (20260611140000), fn_enqueue_workout_insight.
+--   fn_trigger_reconcile_log         ALREADY pinned in prod ('public',
+--                                    'pg_temp'), body has diverged from this
+--                                    repo's.
+--
+--   trigger_post_run_reconciliation  DOES NOT EXIST in prod. Nor does the
+--   fn_trigger_workout_insight       edge function the first one posts to.
+--                                    Creating them would add dead code.
+--
+--   increment_subscriber_count       Genuinely unpinned in prod (proconfig
+--                                    IS NULL). This is the one real fix.
+--
+-- The lesson is the same one the stop notice on this PR draws for the edge
+-- functions: this repo is roughly half of production
+-- (docs/repo-prod-drift-2026-08-24.md), so "reproduced verbatim from the repo"
+-- is not the same as "matches what is deployed". Tightening a pin on a body
+-- you have not read is how you ship a regression.
+--
+-- The two already-pinned functions are left alone. `fn_trigger_reconcile_log`
+-- keeping `public` on its path is a real (small) residual — closing it needs
+-- its body schema-qualified, which must be done against PROD's body, not this
+-- repo's. The report block at the end names anything still outstanding.
 -- ============================================================================
 
 BEGIN;
 
--- ── trigger_voice_log_processing ────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION trigger_voice_log_processing()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
-AS $fn$
-DECLARE
-  _function_name TEXT;
-  _supabase_url TEXT;
-  _service_key TEXT;
-  _payload JSONB;
-BEGIN
-  -- Only fire for new rows with audio that need processing
-  IF NEW.audio_url IS NULL OR NEW.processing_status != 'pending' THEN
-    RETURN NEW;
-  END IF;
-
-  -- Pick the right edge function based on source
-  IF NEW.source = 'check_in' THEN
-    _function_name := 'process-check-in';
-  ELSE
-    _function_name := 'process-training-memo';
-  END IF;
-
-  -- Build the payload the edge functions expect
-  _payload := jsonb_build_object(
-    'record', jsonb_build_object(
-      'id', NEW.id::text,
-      'audio_url', NEW.audio_url
-    )
-  );
-
-  _supabase_url := current_setting('app.settings.supabase_url', true);
-  _service_key := current_setting('app.settings.service_role_key', true);
-
-  -- Require app.settings to be configured — no hardcoded fallback
-  IF _supabase_url IS NULL OR _supabase_url = '' THEN
-    RAISE WARNING 'app.settings.supabase_url is not configured — skipping voice log auto-processing';
-    RETURN NEW;
-  END IF;
-
-  -- Use pg_net to make an async HTTP POST to the edge function.
-  -- This runs outside the transaction so it doesn't block the INSERT.
-  IF _service_key IS NOT NULL AND _service_key != '' THEN
-    PERFORM net.http_post(
-      url := _supabase_url || '/functions/v1/' || _function_name,
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || _service_key,
-        'apikey', _service_key
-      ),
-      body := _payload
-    );
-  END IF;
-
-  RETURN NEW;
-END;
-$fn$;
-
--- ── trigger_post_run_reconciliation ─────────────────────────────────────────
-CREATE OR REPLACE FUNCTION trigger_post_run_reconciliation()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
-AS $fn$
-DECLARE
-  _supabase_url TEXT;
-  _service_key TEXT;
-  _payload JSONB;
-BEGIN
-  -- Only fire for rows with actual workout data (not voice-only logs)
-  IF NEW.workout_date IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  IF COALESCE(NEW.workout_distance_miles, 0) <= 0 THEN
-    RETURN NEW;
-  END IF;
-
-  -- Build payload
-  _payload := jsonb_build_object(
-    'training_log_id', NEW.id::text,
-    'user_id', NEW.user_id
-  );
-
-  _supabase_url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'supabase_url' LIMIT 1);
-  _service_key := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'service_role_key' LIMIT 1);
-
-  IF _supabase_url IS NULL OR _supabase_url = '' THEN
-    RAISE WARNING 'app.settings.supabase_url not configured — skipping post-run reconciliation';
-    RETURN NEW;
-  END IF;
-
-  IF _service_key IS NOT NULL AND _service_key != '' THEN
-    PERFORM net.http_post(
-      url := _supabase_url || '/functions/v1/post-run-reconciliation',
-      headers := jsonb_build_object(
-        'Content-Type', 'application/json',
-        'Authorization', 'Bearer ' || _service_key,
-        'apikey', _service_key
-      ),
-      body := _payload
-    );
-  END IF;
-
-  RETURN NEW;
-END;
-$fn$;
-
--- ── fn_trigger_reconcile_log ────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION fn_trigger_reconcile_log()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
-AS $fn$
-DECLARE
-    _supabase_url TEXT;
-    _service_key  TEXT;
-    _payload      JSONB;
-BEGIN
-    -- Guards: skip rows that don't represent an actual workout.
-    IF NEW.user_id IS NULL THEN
-        RETURN NEW;
-    END IF;
-
-    IF NEW.workout_duration_minutes IS NULL
-       OR NEW.workout_duration_minutes <= 0 THEN
-        RETURN NEW;
-    END IF;
-
-    _supabase_url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'supabase_url' LIMIT 1);
-    _service_key  := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'service_role_key' LIMIT 1);
-
-    IF _supabase_url IS NULL OR _supabase_url = ''
-       OR _service_key IS NULL OR _service_key = '' THEN
-        RAISE WARNING
-            'app.settings.supabase_url / service_role_key not configured — skipping reconcile-log';
-        RETURN NEW;
-    END IF;
-
-    _payload := jsonb_build_object('training_log_id', NEW.id::text);
-
-    PERFORM net.http_post(
-        url := _supabase_url || '/functions/v1/reconcile-log',
-        headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || _service_key,
-            'apikey', _service_key
-        ),
-        body := _payload
-    );
-
-    RETURN NEW;
-END;
-$fn$;
-
--- ── fn_trigger_workout_insight ──────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION fn_trigger_workout_insight()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
-AS $fn$
-DECLARE
-    _supabase_url TEXT;
-    _service_key  TEXT;
-BEGIN
-    -- Guards
-    IF NEW.user_id IS NULL THEN
-        RETURN NEW;
-    END IF;
-
-    IF NEW.workout_duration_minutes IS NULL
-       OR NEW.workout_duration_minutes <= 0 THEN
-        RETURN NEW;
-    END IF;
-
-    -- Skip voice logs — process-training-memo handles those.
-    IF NEW.audio_url IS NOT NULL THEN
-        RETURN NEW;
-    END IF;
-
-    -- Skip rows that already have an insight (e.g. coach manually wrote one).
-    IF NEW.coach_insight IS NOT NULL AND length(trim(NEW.coach_insight)) > 0 THEN
-        RETURN NEW;
-    END IF;
-
-    _supabase_url := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'supabase_url' LIMIT 1);
-    _service_key  := (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'service_role_key' LIMIT 1);
-
-    IF _supabase_url IS NULL OR _supabase_url = ''
-       OR _service_key IS NULL OR _service_key = '' THEN
-        RAISE WARNING
-            'app.settings.supabase_url / service_role_key not configured — '
-            'skipping generate-workout-insight';
-        RETURN NEW;
-    END IF;
-
-    PERFORM net.http_post(
-        url := _supabase_url || '/functions/v1/generate-workout-insight',
-        headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'Authorization', 'Bearer ' || _service_key,
-            'apikey', _service_key
-        ),
-        body := jsonb_build_object('training_log_id', NEW.id::text)
-    );
-
-    RETURN NEW;
-END;
-$fn$;
-
 -- ── increment_subscriber_count ──────────────────────────────────────────────
--- `plan_templates` was unqualified; with `public` off the path it must be
--- `public.plan_templates`.
-CREATE OR REPLACE FUNCTION increment_subscriber_count(template_id UUID)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
-AS $fn$
+-- Body reproduced from PRODUCTION (read 2026-08-24), not from this repo, with
+-- `plan_templates` schema-qualified so the function is correct under a path
+-- that excludes `public`. CREATE OR REPLACE preserves the OID.
+DO $$
 BEGIN
-    UPDATE public.plan_templates
-    SET subscriber_count = subscriber_count + 1
-    WHERE id = template_id;
-END;
-$fn$;
+    IF to_regprocedure('public.increment_subscriber_count(uuid)') IS NULL THEN
+        RAISE NOTICE 'increment_subscriber_count not present — skipping pin';
+        RETURN;
+    END IF;
 
--- This one RETURNS void rather than TRIGGER, so unlike the four above
--- PostgREST exposes it at /rest/v1/rpc/increment_subscriber_count. Any
--- anon-key holder could therefore inflate any template's subscriber_count.
--- Its only caller is the subscribe-to-plan edge function, which uses the
--- service-role client.
---
--- REVOKE must name PUBLIC. A function's default ACL is NULL, which means
--- "EXECUTE to PUBLIC" — so revoking from `anon, authenticated` alone leaves
--- both roles executing it through PUBLIC. Verified on PG16:
---   default                          -> has_function_privilege(authenticated) = true
---   REVOKE FROM anon, authenticated  -> still true
---   REVOKE FROM PUBLIC               -> false
--- Revoking PUBLIC also strips service_role, so it is granted back explicitly.
-REVOKE EXECUTE ON FUNCTION public.increment_subscriber_count(UUID)
-    FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.increment_subscriber_count(UUID) TO service_role;
+    EXECUTE $fn$
+        CREATE OR REPLACE FUNCTION public.increment_subscriber_count(template_id UUID)
+        RETURNS void
+        LANGUAGE plpgsql
+        SECURITY DEFINER
+        SET search_path = pg_catalog, pg_temp
+        AS $body$
+        BEGIN
+            UPDATE public.plan_templates
+               SET subscriber_count = subscriber_count + 1
+             WHERE id = template_id;
+        END;
+        $body$;
+    $fn$;
+END $$;
 
--- ── Re-apply the outbox RPC revokes from 20260610230628 ─────────────────────
--- That migration used `REVOKE EXECUTE ... FROM anon, authenticated` without
--- naming PUBLIC, and its comment asserts the opposite of the behaviour
--- measured above. On the default ACL that revoke is a no-op, so these four
--- are most likely still callable by any anon-key holder via
--- /rest/v1/rpc/. Redone here correctly.
---
--- Guarded by to_regprocedure because fn_weekly_plan_rebalance has no
--- definition in this repo — it was applied ad-hoc and only ever appears as a
--- REVOKE (see docs/migration-ledger-reconciliation-2026-06-11.md), so it does
--- not exist in a freshly reset local database.
+-- ── Maintenance / outbox RPCs: service-role only ────────────────────────────
+-- REVOKE must name PUBLIC: a function's default ACL is NULL, i.e. EXECUTE to
+-- PUBLIC, so revoking from anon/authenticated alone leaves both reaching it
+-- through PUBLIC. Guarded by to_regprocedure because several of these have no
+-- definition in this repo — they were applied ad-hoc (see
+-- docs/migration-ledger-reconciliation-2026-06-11.md) and are absent from a
+-- freshly reset local database.
 DO $$
 DECLARE
     fn TEXT;
@@ -306,13 +105,14 @@ DECLARE
         'public.claim_coach_insight_jobs(int)',
         'public.claim_coachable_moment_jobs(int)',
         'public.claim_voice_processing_jobs(int)',
-        'public.fn_weekly_plan_rebalance()'
+        'public.fn_weekly_plan_rebalance()',
+        'public.increment_subscriber_count(uuid)'
     ];
 BEGIN
     FOREACH fn IN ARRAY targets LOOP
         IF to_regprocedure(fn) IS NOT NULL THEN
             EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC, anon, authenticated', fn);
-            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', fn);
+            EXECUTE format('GRANT  EXECUTE ON FUNCTION %s TO service_role', fn);
         ELSE
             RAISE NOTICE 'Skipping % — not present in this database', fn;
         END IF;
@@ -322,42 +122,31 @@ END $$;
 -- ── Verification ────────────────────────────────────────────────────────────
 DO $$
 DECLARE
-    owned TEXT[] := ARRAY[
-        'trigger_voice_log_processing',
-        'trigger_post_run_reconciliation',
-        'fn_trigger_reconcile_log',
-        'fn_trigger_workout_insight',
-        'increment_subscriber_count'
-    ];
-    bad TEXT;
-    fn TEXT;
+    fn        TEXT;
     role_name TEXT;
+    bad       TEXT;
+    loose     TEXT;
 BEGIN
-    -- 1. Hard assert: everything THIS migration redefined is pinned.
-    SELECT string_agg(p.proname, ', ' ORDER BY p.proname)
-    INTO bad
-    FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public'
-      AND p.proname = ANY(owned)
-      AND p.prosecdef
-      AND NOT EXISTS (
-            SELECT 1 FROM unnest(COALESCE(p.proconfig, '{}'::text[])) cfg
-            WHERE cfg LIKE 'search\_path=%'
-          );
-
-    IF bad IS NOT NULL THEN
-        RAISE EXCEPTION 'Still have a mutable search_path after this migration: %', bad;
+    -- 1. The one function this migration owns is pinned.
+    IF to_regprocedure('public.increment_subscriber_count(uuid)') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public'
+              AND p.proname = 'increment_subscriber_count'
+              AND 'search_path=pg_catalog, pg_temp' = ANY(COALESCE(p.proconfig, '{}'::text[]))
+        ) THEN
+            RAISE EXCEPTION 'increment_subscriber_count did not get its search_path pin';
+        END IF;
     END IF;
 
-    -- 2. Hard assert: neither anon nor authenticated can reach the
-    --    RPC-exposed functions any more.
+    -- 2. Nothing on the target list is client-callable.
     FOREACH fn IN ARRAY ARRAY[
-        'public.increment_subscriber_count(uuid)',
         'public.claim_coach_insight_jobs(int)',
         'public.claim_coachable_moment_jobs(int)',
         'public.claim_voice_processing_jobs(int)',
-        'public.fn_weekly_plan_rebalance()'
+        'public.fn_weekly_plan_rebalance()',
+        'public.increment_subscriber_count(uuid)'
     ] LOOP
         CONTINUE WHEN to_regprocedure(fn) IS NULL;
         FOREACH role_name IN ARRAY ARRAY['anon', 'authenticated'] LOOP
@@ -367,28 +156,35 @@ BEGIN
         END LOOP;
     END LOOP;
 
-    -- 3. Report-only: any OTHER SECURITY DEFINER function in public still
-    --    carrying a mutable search_path. Deliberately a warning, not a
-    --    failure — this migration shouldn't abort over a function whose
-    --    definition doesn't live in this repo and which it therefore can't
-    --    fix (fn_weekly_plan_rebalance is exactly that case).
-    SELECT string_agg(p.proname, ', ' ORDER BY p.proname)
-    INTO bad
-    FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public'
-      AND NOT (p.proname = ANY(owned))
-      AND p.prosecdef
+    -- 3. Report-only: SECURITY DEFINER functions with NO pin at all.
+    SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prosecdef
       AND NOT EXISTS (
             SELECT 1 FROM unnest(COALESCE(p.proconfig, '{}'::text[])) cfg
-            WHERE cfg LIKE 'search\_path=%'
-          );
+            WHERE cfg LIKE 'search\_path=%');
 
     IF bad IS NOT NULL THEN
         RAISE WARNING
-            'Other SECURITY DEFINER function(s) still have a mutable search_path: %. '
-            'Pin them with SET search_path = pg_catalog, pg_temp and schema-qualify their bodies.',
-            bad;
+            'SECURITY DEFINER function(s) with a mutable search_path: %. '
+            'Pin with SET search_path = pg_catalog, pg_temp and schema-qualify '
+            'the body — against the DEPLOYED body, not this repo''s copy.', bad;
+    END IF;
+
+    -- 4. Report-only: pinned, but the path still contains `public`, which is
+    --    what the exact-arity-beats-variadic hijack needs. Not failed on:
+    --    fixing these means rewriting bodies that live only in production.
+    SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO loose
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prosecdef
+      AND EXISTS (
+            SELECT 1 FROM unnest(COALESCE(p.proconfig, '{}'::text[])) cfg
+            WHERE cfg LIKE 'search\_path=%' AND cfg LIKE '%public%');
+
+    IF loose IS NOT NULL THEN
+        RAISE WARNING
+            'SECURITY DEFINER function(s) pinned to a path that still includes '
+            'public: %. Lower risk than no pin at all, but not closed.', loose;
     END IF;
 END $$;
 
