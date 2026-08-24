@@ -108,7 +108,7 @@ final class HistoryDetailViewModel {
                 Log.database.info("Coach insight saved to database")
             } catch {
                 Log.database.error("Failed to save coach insight: \(error)")
-                ErrorReporter.shared.report(error, context: "save coach insight")
+                await ErrorReporter.shared.report(error, context: "save coach insight")
             }
         }
     }

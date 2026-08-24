@@ -48,7 +48,7 @@ final class OfflineQueueManager {
             Task { refreshCount() }
         } catch {
             logger.error("Failed to create SwiftData container: \(error.localizedDescription)")
-            Task { ErrorReporter.shared.report(error, context: "OfflineQueueManager.init: Failed to create SwiftData container") }
+            Task { await ErrorReporter.shared.report(error, context: "OfflineQueueManager.init: Failed to create SwiftData container") }
         }
     }
 
@@ -233,7 +233,7 @@ final class OfflineQueueManager {
         } catch {
             upload.lastError = error.localizedDescription
             logger.error("Voice log upload failed: \(error.localizedDescription)")
-            ErrorReporter.shared.report(error, context: "OfflineQueueManager.uploadVoiceLog: Voice log upload failed for item \(upload.id)")
+            await ErrorReporter.shared.report(error, context: "OfflineQueueManager.uploadVoiceLog: Voice log upload failed for item \(upload.id)")
             return false
         }
     }
@@ -246,7 +246,7 @@ final class OfflineQueueManager {
             return true
         } catch {
             upload.lastError = error.localizedDescription
-            ErrorReporter.shared.report(error, context: "OfflineQueueManager.uploadManualWorkout: Manual workout upload failed for item \(upload.id)")
+            await ErrorReporter.shared.report(error, context: "OfflineQueueManager.uploadManualWorkout: Manual workout upload failed for item \(upload.id)")
             return false
         }
     }
@@ -259,7 +259,7 @@ final class OfflineQueueManager {
             return true
         } catch {
             upload.lastError = error.localizedDescription
-            ErrorReporter.shared.report(error, context: "OfflineQueueManager.uploadTrainingLog: Training log upload failed for item \(upload.id)")
+            await ErrorReporter.shared.report(error, context: "OfflineQueueManager.uploadTrainingLog: Training log upload failed for item \(upload.id)")
             return false
         }
     }
