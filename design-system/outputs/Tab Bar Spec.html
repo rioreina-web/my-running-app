@@ -1,0 +1,573 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Tab Bar Spec" subtitle="V1 Canonical · Short roster · handoff doc" -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Tab Bar · Spec · Post Run Drip</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../colors_and_type.css">
+  <link rel="stylesheet" href="../ui_kits/ios_app/tokens.css">
+  <style>
+    html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink);
+      font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+    .page { max-width: 1040px; margin: 0 auto; padding: 56px 56px 96px; box-sizing: border-box; }
+
+    /* --- Header --- */
+    .plate { display: flex; justify-content: space-between; font-family: var(--font-mono);
+      font-size: 11px; letter-spacing: 0.14em; color: var(--ink-2); text-transform: uppercase;
+      padding-bottom: 24px; border-bottom: 1px solid var(--rule); }
+    .plate b { color: var(--ink); font-weight: 600; }
+    h1 { font-family: var(--font-display); font-weight: 700; font-size: 72px; line-height: 1;
+      letter-spacing: -0.02em; margin: 36px 0 6px; }
+    .deck { font-family: var(--font-body); font-style: italic; font-size: 20px; color: var(--ink-2);
+      line-height: 1.4; margin: 0 0 36px; }
+    .erule { display: flex; align-items: center; gap: 12px; margin: 24px 0 40px; }
+    .erule::before, .erule::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+    .erule .dot { width: 4px; height: 4px; border-radius: 999px; background: var(--coral); }
+
+    /* --- Section --- */
+    section { margin: 64px 0 0; }
+    .sec-eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.14em;
+      color: var(--coral); text-transform: uppercase; margin-bottom: 6px; }
+    .sec-eyebrow .num { color: var(--ink-2); margin-right: 8px; }
+    .sec-title { font-family: var(--font-display); font-weight: 700; font-size: 36px;
+      line-height: 1.05; letter-spacing: -0.01em; margin: 0 0 12px; }
+    .sec-sub { font-family: var(--font-body); font-style: italic; font-size: 15px; color: var(--ink-2);
+      margin: 0 0 32px; max-width: 720px; line-height: 1.55; }
+
+    /* --- Tab bar (canonical, used everywhere) --- */
+    .tb { background: var(--paper); border-top: 1px solid var(--rule);
+      display: grid; grid-template-columns: repeat(5, 1fr); padding: 10px 0 12px; }
+    .tb .tab { display: flex; flex-direction: column; align-items: center; gap: 7px;
+      cursor: default; user-select: none; position: relative; }
+    .tb .dot { width: 6px; height: 6px; border-radius: 999px; background: transparent;
+      border: 1.5px solid var(--ink-3); box-sizing: border-box; }
+    .tb .tab.is-active .dot { background: var(--coral); border-color: var(--coral); }
+    .tb .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em;
+      color: var(--ink-2); text-transform: uppercase; font-weight: 500; }
+    .tb .tab.is-active .lbl { color: var(--ink); font-weight: 600; }
+    .tb .tab.is-pressed { transform: scale(0.97); }
+    .tb .tab.is-pressed .dot { transform: scale(0.65); background: var(--ink-3); border-color: var(--ink-3); }
+    .tb .tab.is-disabled { opacity: 0.32; }
+    .tb .badge { position: absolute; top: 8px; left: calc(50% + 9px);
+      width: 6px; height: 6px; border-radius: 999px; background: var(--coral);
+      box-shadow: 0 0 0 2px var(--paper); }
+    /* Dark mode for cards that opt in */
+    .dark { background: #1A1815; --paper: #1A1815; --ink: #F5F3F0;
+      --ink-2: rgba(245,243,240,0.62); --ink-3: rgba(245,243,240,0.32);
+      --rule: rgba(245,243,240,0.10); --card: #23211D; }
+
+    /* --- Anatomy diagram (single-tab zoom + measurements list) --- */
+    .anatomy { display: grid; grid-template-columns: 360px 1fr; gap: 56px;
+      align-items: center; margin: 16px 0 40px; }
+    .zoom-stage { background: var(--paper-elevated); border: 1px solid var(--rule);
+      border-radius: 4px; padding: 36px 0 0; position: relative; }
+    .zoom-rule { height: 1px; background: var(--rule); margin: 0 64px 30px; }
+    .zoom-tab { display: flex; flex-direction: column; align-items: center; gap: 21px;
+      padding: 0 0 36px; }
+    .zoom-tab .zdot { width: 18px; height: 18px; border-radius: 999px;
+      background: var(--coral); border: 4.5px solid var(--coral); box-sizing: border-box; }
+    .zoom-tab .zlbl { font-family: var(--font-mono); font-size: 30px;
+      letter-spacing: 0.12em; color: var(--ink); text-transform: uppercase; font-weight: 600; }
+    .zoom-caption { font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.10em; color: var(--ink-3); text-transform: uppercase;
+      text-align: center; margin-top: 10px; }
+    .zoom-caption b { color: var(--ink-2); }
+    .specs { margin: 0; padding: 0; }
+    .specs dt { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em;
+      color: var(--ink-2); text-transform: uppercase; margin-top: 16px; }
+    .specs dt:first-child { margin-top: 0; }
+    .specs dd { margin: 4px 0 0; font-family: var(--font-body); font-size: 14px;
+      color: var(--ink); line-height: 1.55; }
+    .specs dd code { font-family: var(--font-mono); font-size: 12px;
+      background: var(--card); padding: 1px 6px; border-radius: 3px; color: var(--coral); }
+    .actual { padding: 24px 0; background: var(--paper-elevated);
+      border: 1px solid var(--rule); border-radius: 4px; }
+    .actual .actual-cap { font-family: var(--font-mono); font-size: 10px;
+      letter-spacing: 0.14em; color: var(--ink-2); text-transform: uppercase;
+      text-align: center; margin: 0 0 18px; }
+    .actual .actual-cap b { color: var(--ink); font-weight: 600; }
+    .actual .actual-frame { width: 390px; margin: 0 auto;
+      box-shadow: 0 0 0 1px var(--rule); }
+
+    /* --- Token sheet --- */
+    .tokens { width: 100%; border-collapse: collapse; font-family: var(--font-mono); }
+    .tokens th { text-align: left; font-size: 10px; letter-spacing: 0.14em;
+      color: var(--ink-2); text-transform: uppercase; padding: 12px 16px;
+      border-bottom: 1px solid var(--rule); font-weight: 500; }
+    .tokens td { font-size: 12px; color: var(--ink); padding: 14px 16px;
+      border-bottom: 1px solid var(--rule); vertical-align: middle;
+      font-variant-numeric: tabular-nums; }
+    .tokens td:first-child { color: var(--coral); }
+    .tokens td.role { font-family: var(--font-body); font-style: italic;
+      color: var(--ink-2); font-size: 13px; }
+    .tokens .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px;
+      vertical-align: middle; margin-right: 8px; border: 1px solid var(--rule); }
+
+    /* --- States grid --- */
+    .states { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .state-card { display: flex; flex-direction: column; background: var(--paper);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .state-card.dark { box-shadow: 0 2px 8px rgba(0,0,0,0.40); }
+    .state-card .state-head { padding: 14px 16px 0; display: flex; justify-content: space-between;
+      font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em;
+      color: var(--ink-2); text-transform: uppercase; }
+    .state-card .state-head b { color: var(--ink); font-weight: 600; }
+    .state-card .state-fill { flex: 1; min-height: 88px; }
+    .state-note { font-family: var(--font-body); font-style: italic; font-size: 13px;
+      color: var(--ink-2); margin: 10px 0 0; line-height: 1.5; }
+
+    /* --- Motion --- */
+    .motion-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+    .motion-card { padding: 24px; background: var(--card); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .motion-name { font-family: var(--font-display); font-weight: 700; font-size: 22px;
+      color: var(--ink); letter-spacing: -0.01em; }
+    .motion-prop { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em;
+      color: var(--ink-2); text-transform: uppercase; margin-top: 4px; }
+    .motion-meta { display: flex; gap: 18px; margin: 16px 0 14px;
+      font-family: var(--font-mono); font-size: 11px; color: var(--ink-2);
+      font-variant-numeric: tabular-nums; }
+    .motion-meta b { color: var(--ink); font-weight: 600; margin-right: 4px; }
+    .motion-curve svg { width: 100%; height: 80px; }
+
+    /* --- Layout diagram --- */
+    .layout { display: grid; grid-template-columns: 220px 1fr; gap: 48px; align-items: start; }
+    .phone { width: 220px; height: 460px; border-radius: 32px; background: var(--paper);
+      border: 1px solid var(--ink); position: relative; overflow: hidden; }
+    .phone .strip { position: absolute; left: 0; right: 0; display: flex; align-items: center;
+      justify-content: center; font-family: var(--font-mono); font-size: 8px;
+      letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase; }
+    .phone .strip-line { border-top: 1px dashed var(--ink-3); }
+    .layout-list dt { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em;
+      color: var(--ink-2); text-transform: uppercase; margin-top: 16px; }
+    .layout-list dt:first-child { margin-top: 0; }
+    .layout-list dd { margin: 4px 0 0; font-family: var(--font-body); font-size: 14px;
+      color: var(--ink); line-height: 1.55; }
+    .layout-list dd code { font-family: var(--font-mono); font-size: 12px;
+      background: var(--card); padding: 1px 6px; border-radius: 3px; color: var(--coral); }
+
+    /* --- Code block --- */
+    pre { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.65;
+      background: #1A1815; color: #F5F3F0; padding: 28px 32px; border-radius: 6px;
+      overflow-x: auto; margin: 0 0 16px; tab-size: 2; }
+    pre .kw { color: #E8764A; }
+    pre .ty { color: #C4873A; }
+    pre .st { color: #4A9E6B; }
+    pre .cm { color: rgba(245,243,240,0.45); font-style: italic; }
+    pre .nm { color: rgba(245,243,240,0.85); }
+
+    .code-caption { font-family: var(--font-body); font-style: italic; font-size: 13px;
+      color: var(--ink-2); margin: -8px 0 28px; line-height: 1.55; }
+
+    .footer { margin-top: 96px; padding-top: 32px; border-top: 1px solid var(--rule);
+      display: flex; justify-content: space-between; font-family: var(--font-mono);
+      font-size: 10px; letter-spacing: 0.14em; color: var(--ink-2); text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="plate">
+      <div><b>POST RUN DRIP · iOS</b> — TAB BAR SPECIFICATION</div>
+      <div>v1.0 · MAY 2026 · FOR SWIFTUI HANDOFF</div>
+    </div>
+
+    <h1>Tab Bar.</h1>
+    <p class="deck">Editorial. Restrained. Canonical. Five surfaces, one coral dot, ten-point monospace tracked +0.12em — the running magazine table-of-contents at the bottom of the app.</p>
+
+    <div class="erule"><span class="dot"></span></div>
+
+    <!-- ═══ 01 · ANATOMY ═══════════════════════════════════════════ -->
+    <section>
+      <div class="sec-eyebrow"><span class="num">01</span> ANATOMY</div>
+      <h2 class="sec-title">The bar at 1.6×.</h2>
+      <p class="sec-sub">Every measurement below is in points (1pt = 1 logical pixel). The bar is a five-column equal-width grid pinned to the bottom of every primary surface.</p>
+
+      <div class="anatomy">
+        <div>
+          <div class="zoom-stage">
+            <div class="zoom-rule"></div>
+            <div class="zoom-tab">
+              <div class="zdot"></div>
+              <div class="zlbl">Log</div>
+            </div>
+          </div>
+          <div class="zoom-caption">SINGLE TAB &nbsp;·&nbsp; <b>3× ZOOM</b> &nbsp;·&nbsp; ACTIVE</div>
+        </div>
+
+        <dl class="specs">
+          <dt>Top hairline</dt>
+          <dd><code>1pt</code> rule, full width · <code>--rule</code> · separates bar from screen content above.</dd>
+          <dt>Padding top</dt>
+          <dd><code>10pt</code></dd>
+          <dt>Dot</dt>
+          <dd><code>Ø 6pt</code> with <code>1.5pt</code> border (border-box). Active = filled coral + coral border · inactive = transparent fill + <code>--ink-3</code> border.</dd>
+          <dt>Gap dot → label</dt>
+          <dd><code>7pt</code></dd>
+          <dt>Label</dt>
+          <dd><code>10pt</code> ui-monospace · letter-spacing <code>0.12em</code> (≈ <code>1.2pt</code>) · uppercase · weight <code>500</code> inactive · <code>600</code> active.</dd>
+          <dt>Padding bottom</dt>
+          <dd><code>12pt</code></dd>
+          <dt>Column width</dt>
+          <dd>Equal-width grid · <code>1fr</code> per column · <code>78pt</code> each at a <code>390pt</code> viewport.</dd>
+        </dl>
+      </div>
+
+      <div class="actual">
+        <p class="actual-cap">FULL BAR &nbsp;·&nbsp; <b>ACTUAL SIZE</b> &nbsp;·&nbsp; 390 × 50pt</p>
+        <div class="actual-frame">
+          <div class="tb">
+            <div class="tab is-active"><div class="dot"></div><div class="lbl">Log</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Train</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Trends</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Coach</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Plan</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 02 · TOKENS ═══════════════════════════════════════════ -->
+    <section>
+      <div class="sec-eyebrow"><span class="num">02</span> TOKENS</div>
+      <h2 class="sec-title">What it's made of.</h2>
+      <p class="sec-sub">Every value resolves to a token in <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">colors_and_type.css</code> · use the same names in SwiftUI (<code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">Color.drip.coral</code>, etc.) — no new constants.</p>
+
+      <table class="tokens">
+        <thead>
+          <tr><th style="width:34%">Token</th><th style="width:24%">Value</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>--paper</td><td><span class="swatch" style="background:#F5F3F0"></span>#F5F3F0</td><td class="role">Bar background. Warm newsprint.</td></tr>
+          <tr><td>--rule</td><td><span class="swatch" style="background:#E8E4E0"></span>#E8E4E0</td><td class="role">1pt hairline that separates the bar from screen content.</td></tr>
+          <tr><td>--ink</td><td><span class="swatch" style="background:#1A1815"></span>#1A1815</td><td class="role">Active label color.</td></tr>
+          <tr><td>--ink-2</td><td><span class="swatch" style="background:#6B6560"></span>#6B6560</td><td class="role">Inactive label color.</td></tr>
+          <tr><td>--ink-3</td><td><span class="swatch" style="background:#9B9590"></span>#9B9590</td><td class="role">Inactive dot border.</td></tr>
+          <tr><td>--coral</td><td><span class="swatch" style="background:#D4592A"></span>#D4592A</td><td class="role">Active dot fill + border. Badge dot. The only accent in the system.</td></tr>
+          <tr><td colspan="3" style="background:var(--card); color:var(--ink-2); font-family:var(--font-body); font-style:italic;">Type</td></tr>
+          <tr><td>font-family</td><td>ui-monospace, SF Mono</td><td class="role">System monospace stack. No custom font for the bar.</td></tr>
+          <tr><td>font-size</td><td>10pt</td><td class="role">The label, exactly.</td></tr>
+          <tr><td>font-weight</td><td>500 / 600</td><td class="role">500 inactive · 600 active. The weight crossfade carries the state change.</td></tr>
+          <tr><td>letter-spacing</td><td>0.12em (≈ 1.2pt)</td><td class="role">Tracked-out to match every other eyebrow in the system.</td></tr>
+          <tr><td>text-transform</td><td>uppercase</td><td class="role">Always.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══ 03 · STATES ═══════════════════════════════════════════ -->
+    <section>
+      <div class="sec-eyebrow"><span class="num">03</span> STATES</div>
+      <h2 class="sec-title">Every variation SwiftUI must render.</h2>
+      <p class="sec-sub">All six are the same component with different prop values — no parallel implementations. Dark-mode versions inherit the same dot diameter, padding, and tracking; only the color tokens change.</p>
+
+      <div class="states">
+        <div class="state-card">
+          <div class="state-head"><b>DEFAULT</b> <span>LOG ACTIVE</span></div>
+          <div class="state-fill"></div>
+          <div class="tb">
+            <div class="tab is-active"><div class="dot"></div><div class="lbl">Log</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Train</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Trends</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Coach</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Plan</div></div>
+          </div>
+        </div>
+
+        <div class="state-card">
+          <div class="state-head"><b>PRESSED</b> <span>FINGER ON LOG</span></div>
+          <div class="state-fill"></div>
+          <div class="tb">
+            <div class="tab is-pressed"><div class="dot"></div><div class="lbl">Log</div></div>
+            <div class="tab is-active"><div class="dot"></div><div class="lbl">Train</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Trends</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Coach</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Plan</div></div>
+          </div>
+        </div>
+
+        <div class="state-card">
+          <div class="state-head"><b>BADGE</b> <span>COACH HAS 1 NEW</span></div>
+          <div class="state-fill"></div>
+          <div class="tb">
+            <div class="tab is-active"><div class="dot"></div><div class="lbl">Log</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Train</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Trends</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Coach</div><div class="badge"></div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Plan</div></div>
+          </div>
+        </div>
+
+        <div class="state-card">
+          <div class="state-head"><b>DISABLED</b> <span>PLAN — NO PLAN YET</span></div>
+          <div class="state-fill"></div>
+          <div class="tb">
+            <div class="tab is-active"><div class="dot"></div><div class="lbl">Log</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Train</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Trends</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Coach</div></div>
+            <div class="tab is-disabled"><div class="dot"></div><div class="lbl">Plan</div></div>
+          </div>
+        </div>
+
+        <div class="state-card dark">
+          <div class="state-head"><b>DARK</b> <span>LOG ACTIVE</span></div>
+          <div class="state-fill"></div>
+          <div class="tb">
+            <div class="tab is-active"><div class="dot"></div><div class="lbl">Log</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Train</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Trends</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Coach</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Plan</div></div>
+          </div>
+        </div>
+
+        <div class="state-card dark">
+          <div class="state-head"><b>DARK + BADGE</b> <span>TRAIN ACTIVE · COACH NEW</span></div>
+          <div class="state-fill"></div>
+          <div class="tb">
+            <div class="tab"><div class="dot"></div><div class="lbl">Log</div></div>
+            <div class="tab is-active"><div class="dot"></div><div class="lbl">Train</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Trends</div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Coach</div><div class="badge"></div></div>
+            <div class="tab"><div class="dot"></div><div class="lbl">Plan</div></div>
+          </div>
+        </div>
+      </div>
+
+      <p class="state-note"><b>Notes.</b> Pressed = the whole tab scales to <span style="font-family:var(--font-mono);color:var(--ink)">0.97</span> on touch-down (80ms), and the dot scales to <span style="font-family:var(--font-mono);color:var(--ink)">0.65</span> with a momentary ink-3 fill. Badge is a 6pt coral dot offset <span style="font-family:var(--font-mono);color:var(--ink)">9pt</span> right of the column center, with a 2pt paper-color halo so it reads as a separate mark from the column dot. Disabled is <span style="font-family:var(--font-mono);color:var(--ink)">opacity 0.32</span> + <code style="font-family:var(--font-mono);font-size:12px;background:var(--card);padding:1px 6px;border-radius:3px;color:var(--coral);">allowsHitTesting(false)</code>.</p>
+    </section>
+
+    <!-- ═══ 04 · MOTION ═══════════════════════════════════════════ -->
+    <section>
+      <div class="sec-eyebrow"><span class="num">04</span> MOTION</div>
+      <h2 class="sec-title">Four curves. No more.</h2>
+      <p class="sec-sub">All animations use the system <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">.easeOut</code> curve — the same one every other affordance in the app uses. Don't introduce a new spring.</p>
+
+      <div class="motion-grid">
+        <div class="motion-card">
+          <div class="motion-name">Dot fill.</div>
+          <div class="motion-prop">SELECTION COMMIT · ON CHANGE</div>
+          <div class="motion-meta"><span><b>150ms</b> duration</span><span><b>easeOut</b> curve</span></div>
+          <div class="motion-curve">
+            <svg viewBox="0 0 240 80" preserveAspectRatio="none">
+              <path d="M 0 76 C 60 76, 60 4, 240 4" fill="none" stroke="var(--coral)" stroke-width="1.5"/>
+              <line x1="0" y1="76" x2="240" y2="76" stroke="var(--rule)"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="motion-card">
+          <div class="motion-name">Label weight.</div>
+          <div class="motion-prop">REGULAR ↔ SEMIBOLD CROSSFADE</div>
+          <div class="motion-meta"><span><b>150ms</b> duration</span><span><b>easeOut</b> curve</span></div>
+          <div class="motion-curve">
+            <svg viewBox="0 0 240 80" preserveAspectRatio="none">
+              <path d="M 0 76 C 60 76, 60 4, 240 4" fill="none" stroke="var(--coral)" stroke-width="1.5"/>
+              <line x1="0" y1="76" x2="240" y2="76" stroke="var(--rule)"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="motion-card">
+          <div class="motion-name">Press scale.</div>
+          <div class="motion-prop">TAB → 0.97 ON TOUCH-DOWN</div>
+          <div class="motion-meta"><span><b>80ms</b> in</span><span><b>80ms</b> out</span></div>
+          <div class="motion-curve">
+            <svg viewBox="0 0 240 80" preserveAspectRatio="none">
+              <path d="M 0 76 C 40 70, 60 30, 120 30 C 180 30, 200 70, 240 76" fill="none" stroke="var(--coral)" stroke-width="1.5"/>
+              <line x1="0" y1="76" x2="240" y2="76" stroke="var(--rule)"/>
+            </svg>
+          </div>
+        </div>
+
+        <div class="motion-card">
+          <div class="motion-name">Haptic.</div>
+          <div class="motion-prop">.SENSORYFEEDBACK(.SELECTION)</div>
+          <div class="motion-meta"><span><b>on</b> selectedTab change</span></div>
+          <div class="motion-curve">
+            <svg viewBox="0 0 240 80" preserveAspectRatio="none">
+              <line x1="0" y1="76" x2="240" y2="76" stroke="var(--rule)"/>
+              <line x1="120" y1="76" x2="120" y2="20" stroke="var(--coral)" stroke-width="1.5"/>
+              <circle cx="120" cy="20" r="3" fill="var(--coral)"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ 05 · LAYOUT / SAFE AREA ═══════════════════════════════ -->
+    <section>
+      <div class="sec-eyebrow"><span class="num">05</span> LAYOUT &nbsp;·&nbsp; SAFE AREA</div>
+      <h2 class="sec-title">Where it sits on the device.</h2>
+      <p class="sec-sub">Hand the bar to SwiftUI through <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">.safeAreaInset(edge: .bottom)</code> — that's the only correct way to keep the home-indicator clearance honest across iPhone SE through 16 Pro Max.</p>
+
+      <div class="layout">
+        <div class="phone">
+          <!-- status bar zone -->
+          <div class="strip" style="top: 0; height: 56px; background: rgba(232,228,224,0.4);">STATUS · 56pt</div>
+          <div class="strip-line" style="top: 56px;"></div>
+          <!-- content -->
+          <div class="strip" style="top: 56px; bottom: 84px; background: var(--paper);">CONTENT &nbsp;·&nbsp; FLEX</div>
+          <!-- hairline above bar -->
+          <div class="strip-line" style="bottom: 84px;"></div>
+          <!-- the bar -->
+          <div class="strip" style="bottom: 34px; height: 50px; background: rgba(212,89,42,0.06); color: var(--coral);">TAB BAR · 50pt</div>
+          <!-- safe area -->
+          <div class="strip-line" style="bottom: 34px;"></div>
+          <div class="strip" style="bottom: 0; height: 34px; background: rgba(232,228,224,0.3);">SAFE AREA · 34pt</div>
+          <!-- home indicator -->
+          <div style="position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+            width: 80px; height: 4px; border-radius: 999px; background: rgba(0,0,0,0.25);"></div>
+        </div>
+
+        <dl class="layout-list">
+          <dt>Total bar height</dt>
+          <dd><code>50pt</code> — <code>1pt</code> rule + <code>10pt</code> top + <code>~27pt</code> content (dot + 7pt gap + 10pt label) + <code>12pt</code> bottom.</dd>
+          <dt>Bottom safe-area inset</dt>
+          <dd><code>34pt</code> on Face ID devices · <code>0pt</code> on Home button devices. Don't hard-code — let SwiftUI provide it.</dd>
+          <dt>Column width</dt>
+          <dd>Equal-width grid · <code>frame(maxWidth: .infinity)</code> per item. With <code>5</code> tabs on a <code>390pt</code> screen that's <code>78pt</code> per column.</dd>
+          <dt>Hit target</dt>
+          <dd><code>78 × 50pt</code> per tab — comfortably above Apple's <code>44pt</code> minimum.</dd>
+          <dt>Background</dt>
+          <dd><code>Color.drip.paper</code> — opaque, no blur. The bar is part of the page, not a floating chrome.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <!-- ═══ 06 · IMPLEMENTATION ═══════════════════════════════════ -->
+    <section>
+      <div class="sec-eyebrow"><span class="num">06</span> IMPLEMENTATION</div>
+      <h2 class="sec-title">SwiftUI skeleton.</h2>
+      <p class="sec-sub">Drop into <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">DripTabBar.swift</code>. Replace the <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">TabView</code> in <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">MainTabView</code> with a <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">ZStack</code> + <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">.safeAreaInset</code>. Remove the <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">UITabBarAppearance</code> code in <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">RunningLogApp.swift</code> once you're done.</p>
+
+      <pre><span class="cm">// DripTabBar.swift</span>
+<span class="kw">import</span> SwiftUI
+
+<span class="kw">enum</span> <span class="ty">DripTab</span>: <span class="ty">String</span>, <span class="ty">CaseIterable</span>, <span class="ty">Hashable</span> {
+  <span class="kw">case</span> log, train, trends, coach, plan
+
+  <span class="kw">var</span> label: <span class="ty">String</span> {
+    <span class="kw">switch</span> <span class="kw">self</span> {
+    <span class="kw">case</span> .log:    <span class="st">"Log"</span>
+    <span class="kw">case</span> .train:  <span class="st">"Train"</span>
+    <span class="kw">case</span> .trends: <span class="st">"Trends"</span>
+    <span class="kw">case</span> .coach:  <span class="st">"Coach"</span>
+    <span class="kw">case</span> .plan:   <span class="st">"Plan"</span>
+    }
+  }
+}
+
+<span class="kw">struct</span> <span class="ty">DripTabBar</span>: <span class="ty">View</span> {
+  @<span class="ty">Binding</span> <span class="kw">var</span> selected: <span class="ty">DripTab</span>
+  <span class="kw">var</span> badged: <span class="ty">Set</span>&lt;<span class="ty">DripTab</span>&gt; = []
+  <span class="kw">var</span> disabled: <span class="ty">Set</span>&lt;<span class="ty">DripTab</span>&gt; = []
+
+  <span class="kw">var</span> body: <span class="kw">some</span> <span class="ty">View</span> {
+    <span class="ty">VStack</span>(spacing: <span class="nm">0</span>) {
+      <span class="ty">Rectangle</span>().fill(<span class="ty">Color</span>.drip.rule).frame(height: <span class="nm">1</span>)
+      <span class="ty">HStack</span>(spacing: <span class="nm">0</span>) {
+        <span class="ty">ForEach</span>(<span class="ty">DripTab</span>.allCases, id: \.<span class="kw">self</span>) { tab <span class="kw">in</span>
+          <span class="ty">DripTabItem</span>(
+            tab: tab,
+            isActive: selected == tab,
+            isBadged: badged.contains(tab),
+            isDisabled: disabled.contains(tab)
+          ) {
+            selected = tab
+          }
+          .frame(maxWidth: .infinity)
+        }
+      }
+      .padding(.top, <span class="nm">10</span>)
+      .padding(.bottom, <span class="nm">12</span>)
+    }
+    .background(<span class="ty">Color</span>.drip.paper)
+    .sensoryFeedback(.selection, trigger: selected)
+  }
+}
+
+<span class="kw">struct</span> <span class="ty">DripTabItem</span>: <span class="ty">View</span> {
+  <span class="kw">let</span> tab: <span class="ty">DripTab</span>
+  <span class="kw">let</span> isActive: <span class="ty">Bool</span>
+  <span class="kw">let</span> isBadged: <span class="ty">Bool</span>
+  <span class="kw">let</span> isDisabled: <span class="ty">Bool</span>
+  <span class="kw">let</span> action: () -&gt; <span class="ty">Void</span>
+
+  @<span class="ty">State</span> <span class="kw">private</span> <span class="kw">var</span> isPressed = <span class="kw">false</span>
+
+  <span class="kw">var</span> body: <span class="kw">some</span> <span class="ty">View</span> {
+    <span class="ty">VStack</span>(spacing: <span class="nm">7</span>) {
+      <span class="ty">ZStack</span> {
+        <span class="ty">Circle</span>()
+          .strokeBorder(
+            isActive ? <span class="ty">Color</span>.drip.coral : <span class="ty">Color</span>.drip.inkTertiary,
+            lineWidth: <span class="nm">1.5</span>
+          )
+        <span class="kw">if</span> isActive {
+          <span class="ty">Circle</span>().fill(<span class="ty">Color</span>.drip.coral)
+        }
+      }
+      .frame(width: <span class="nm">6</span>, height: <span class="nm">6</span>)
+      .scaleEffect(isPressed ? <span class="nm">0.65</span> : <span class="nm">1.0</span>)
+
+      <span class="ty">Text</span>(tab.label.uppercased())
+        .font(.system(size: <span class="nm">10</span>,
+                      weight: isActive ? .semibold : .regular,
+                      design: .monospaced))
+        .tracking(<span class="nm">1.2</span>) <span class="cm">// 0.12em × 10pt</span>
+        .foregroundStyle(isActive ? <span class="ty">Color</span>.drip.ink : <span class="ty">Color</span>.drip.inkSecondary)
+        .overlay(alignment: .topTrailing) {
+          <span class="kw">if</span> isBadged {
+            <span class="ty">Circle</span>()
+              .fill(<span class="ty">Color</span>.drip.coral)
+              .frame(width: <span class="nm">6</span>, height: <span class="nm">6</span>)
+              .overlay(<span class="ty">Circle</span>().stroke(<span class="ty">Color</span>.drip.paper, lineWidth: <span class="nm">2</span>))
+              .offset(x: <span class="nm">9</span>, y: -<span class="nm">14</span>)
+          }
+        }
+    }
+    .scaleEffect(isPressed ? <span class="nm">0.97</span> : <span class="nm">1.0</span>)
+    .opacity(isDisabled ? <span class="nm">0.32</span> : <span class="nm">1.0</span>)
+    .contentShape(<span class="ty">Rectangle</span>())
+    .allowsHitTesting(!isDisabled)
+    .animation(.easeOut(duration: <span class="nm">0.15</span>), value: isActive)
+    .animation(.easeOut(duration: <span class="nm">0.08</span>), value: isPressed)
+    .onTapGesture { action() }
+    .simultaneousGesture(
+      <span class="ty">DragGesture</span>(minimumDistance: <span class="nm">0</span>)
+        .onChanged { _ <span class="kw">in</span> isPressed = <span class="kw">true</span> }
+        .onEnded   { _ <span class="kw">in</span> isPressed = <span class="kw">false</span> }
+    )
+  }
+}</pre>
+      <p class="code-caption">Implement <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">Color.drip.{paper,rule,ink,inkSecondary,inkTertiary,coral}</code> as static properties on <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">Color</code> if you don't already — the values are in §02 above.</p>
+
+      <pre><span class="cm">// MainTabView.swift — replace TabView with this shape</span>
+<span class="kw">struct</span> <span class="ty">MainTabView</span>: <span class="ty">View</span> {
+  @<span class="ty">State</span> <span class="kw">private</span> <span class="kw">var</span> selectedTab: <span class="ty">DripTab</span> = .log
+
+  <span class="kw">var</span> body: <span class="kw">some</span> <span class="ty">View</span> {
+    <span class="ty">Group</span> {
+      <span class="kw">switch</span> selectedTab {
+      <span class="kw">case</span> .log:    <span class="ty">LogScreen</span>()
+      <span class="kw">case</span> .train:  <span class="ty">TrainingScreen</span>()
+      <span class="kw">case</span> .trends: <span class="ty">TrendsScreen</span>()
+      <span class="kw">case</span> .coach:  <span class="ty">CoachScreen</span>()
+      <span class="kw">case</span> .plan:   <span class="ty">PlanScreen</span>()
+      }
+    }
+    .safeAreaInset(edge: .bottom) {
+      <span class="ty">DripTabBar</span>(selected: $selectedTab)
+    }
+  }
+}</pre>
+      <p class="code-caption">A switch tears each tab down on change, which loses scroll position and view-model state. If that matters, instantiate all five views once and toggle <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">.opacity</code> / <code style="font-family:var(--font-mono);font-size:13px;background:var(--card);padding:2px 6px;border-radius:3px;color:var(--coral);">.allowsHitTesting</code> in a ZStack instead. Heavier memory; preserves state.</p>
+    </section>
+
+    <div class="footer">
+      <span>POST RUN DRIP · TAB BAR · v1.0</span>
+      <span>— END OF SPEC —</span>
+    </div>
+  </div>
+</body>
+</html>

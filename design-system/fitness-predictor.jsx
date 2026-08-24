@@ -8,16 +8,8 @@
 const { useState, useMemo } = React;
 const ACCENT = "#D4592A";
 const ACCENT_SOFT = "rgba(212,89,42,0.08)";
-const SAGE = "#6B8068";           // mood only — never a pace/zone fill
-// Pace = single-hue blue depth ramp (Easy → Mile). Source of truth:
-// RunningLog/Workouts/PaceSpectrum.swift. Blue = pace, warm = mood,
-// coral = alert; the three palettes never share hues.
-const PACE = {
-  easy:   "#93B9D6", mod:  "#74A8CC", steady: "#578FC0", mp:    "#3F7CB5",
-  hmp:    "#2F66A8", lt:   "#27549B", tenK:   "#20448B", fiveK: "#1A3679",
-  threeK: "#142964", mile: "#0E1D4E",
-};
-const RECOVERY = "#B4ADA4";       // warm gray for below-easy recovery
+const SAGE = "#6B8068";
+const PLUM = "#6B4A8A";
 const INK = "#1A1815";
 const INK2 = "#6B6560";
 const INK3 = "#9B9590";
@@ -71,32 +63,32 @@ const fmtDelta = (t) => {
 /* Distances — central spine of the page */
 const DISTANCES = [
   {
-    id: "mile", label: "1 mile",     km: 1.609, kind: "Speed", color: PACE.mile,
+    id: "mile", label: "1 mile",     km: 1.609, kind: "Speed", color: PLUM,
     pred: s(5, 44), low: s(5, 36), high: s(5, 54),
     pr:   s(5, 38), prDate: "Jun ’24",
     pace: s(5, 44), notes: "Track or downhill mile. Honest effort.",
   },
   {
-    id: "5k",  label: "5 km",        km: 5,     kind: "Speed", color: PACE.fiveK,
+    id: "5k",  label: "5 km",        km: 5,     kind: "Speed", color: PLUM,
     pred: s(19, 12), low: s(18, 52), high: s(19, 36),
     pr:   s(19, 24), prDate: "Oct ’24",
     pace: s(6, 11),  notes: "Off this fitness, today, with two days easy.",
   },
   {
-    id: "10k", label: "10 km",       km: 10,    kind: "Tempo", color: PACE.tenK,
+    id: "10k", label: "10 km",       km: 10,    kind: "Tempo", color: ACCENT,
     pred: s(39, 48), low: s(39, 12), high: s(40, 30),
     pr:   s(40, 18), prDate: "Mar ’25",
     pace: s(6, 24),  notes: "The distance the engine reads cleanest at.",
   },
   {
-    id: "hm",  label: "Half marathon", km: 21.0975, kind: "Threshold", color: PACE.hmp,
+    id: "hm",  label: "Half marathon", km: 21.0975, kind: "Threshold", color: ACCENT,
     pred: s(87, 32),  low: s(86, 0),  high: s(89, 30),
     pr:   s(87, 8),   prDate: "May ’26",
     pace: s(6, 41),   notes: "Slower than May 2 tune-up; legs not fresh.",
     recent: true,
   },
   {
-    id: "mar", label: "Marathon",    km: 42.195, kind: "Goal", color: PACE.mp,
+    id: "mar", label: "Marathon",    km: 42.195, kind: "Goal", color: ACCENT,
     pred: s(188, 42), low: s(184, 0),  high: s(194, 0),
     pr:   s(194, 46), prDate: "Boston ’25",
     pace: s(7, 12),   notes: "The model is bullish. The race isn’t.",
@@ -130,10 +122,10 @@ const GOAL_RACE = {
   stretchGoal: s(190, 0),  // 3:10:00
   modelPred: s(188, 42),   // 3:08:42 from above
   paceBuckets: [
-    { range: "Mi 1–5",   pace: s(7, 24), note: "Hold back. Course drops; don’t cash it.", color: PACE.steady },
-    { range: "Mi 6–16",  pace: s(7, 18), note: "Goal-pace rhythm. The race is here.", color: PACE.mp },
-    { range: "Mi 17–21", pace: s(7, 20), note: "Newton hills. Effort, not pace.", color: PACE.mp },
-    { range: "Mi 22–26", pace: s(7, 12), note: "Drop is earned. Use it if it’s there.", color: PACE.hmp },
+    { range: "Mi 1–5",   pace: s(7, 24), note: "Hold back. Course drops; don’t cash it.", color: SAGE },
+    { range: "Mi 6–16",  pace: s(7, 18), note: "Goal-pace rhythm. The race is here.", color: INK },
+    { range: "Mi 17–21", pace: s(7, 20), note: "Newton hills. Effort, not pace.", color: ACCENT },
+    { range: "Mi 22–26", pace: s(7, 12), note: "Drop is earned. Use it if it’s there.", color: ACCENT },
   ],
 };
 

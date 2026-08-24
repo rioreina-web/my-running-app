@@ -1,0 +1,183 @@
+<!doctype html>
+<!-- @dsCard group="Broadsheet" name="Broadsheet · log feed" subtitle="Direction II applied — the week as a printed page of dispatches" viewport="900x1010" -->
+<html lang="en"><head><meta charset="utf-8"><title>Broadsheet · log feed</title>
+<link rel="stylesheet" href="broadsheet.css">
+<style>
+html,body{margin:0;padding:0;background:#C8C5BC}
+.wrap{padding:30px 28px 40px;display:flex;gap:34px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;flex:none;width:393px}
+.cap{font-family:var(--bs-label);font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#4A463C;line-height:1.4}
+.cap b{color:#14120E;font-weight:700}
+.phone{width:393px;height:852px;flex:none;background:var(--bs-paper);color:var(--bs-ink);font-family:var(--bs-text);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 22px 60px rgba(0,0,0,.28),0 0 0 10px #0C0C0C,0 0 0 11px #2C2C2C}
+a{color:var(--bs-cold);text-decoration:none}a:hover{color:var(--bs-hot-text)}
+button{cursor:pointer}
+.sb{height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-family:var(--bs-data);font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+.sb .bars i{width:3px;background:var(--bs-ink);border-radius:1px;display:block}
+.sb .bars i:nth-child(1){height:4px}.sb .bars i:nth-child(2){height:6px}.sb .bars i:nth-child(3){height:9px}.sb .bars i:nth-child(4){height:11px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:var(--bs-ink);color:var(--bs-paper);font-size:10px;font-weight:600;padding:0 4px}
+.masthead{flex:none;margin:8px var(--bs-gutter) 0;display:flex;align-items:baseline;justify-content:space-between;gap:14px;border-top:3px solid var(--bs-rule-ink);padding-top:7px}
+.masthead .name{font-family:var(--bs-display);font-size:23px;line-height:1;letter-spacing:-.01em;white-space:nowrap}
+.masthead .folio{font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--bs-ink-3);text-align:right;white-space:nowrap}
+.scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none;padding:0 var(--bs-gutter)}
+.scroll::-webkit-scrollbar{display:none}
+
+/* week banner — the ledger up top, ink only */
+.week{padding:var(--bs-s4) 0 var(--bs-s3);border-bottom:1px solid var(--bs-rule)}
+.week .hd{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.week .tot{display:flex;align-items:flex-end;gap:10px;margin-top:10px}
+.week .tot b{font-family:var(--bs-data);font-size:40px;font-weight:500;letter-spacing:-.035em;line-height:.86;font-variant-numeric:tabular-nums}
+.week .tot span{font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink-3);padding-bottom:3px;white-space:nowrap}
+.week .tot em{font-family:var(--bs-text);font-style:italic;font-size:14px;color:var(--bs-ink-2);margin-left:auto;padding-bottom:3px;white-space:nowrap}
+.bars{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;align-items:end;height:56px;margin-top:14px}
+.bars i{display:block;background:var(--bs-ink)}
+.bars i.q{background:var(--bs-ink-4)}
+.bars i.h{background:var(--bs-hot)}
+.days{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:6px}
+.days span{font-family:var(--bs-label);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--bs-ink-3);text-align:center}
+
+/* a dispatch */
+.art{padding:var(--bs-s4) 0;border-bottom:1px solid var(--bs-rule)}
+.art .kick{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.art .kick .dot{width:7px;height:7px;border-radius:999px;display:block;flex:none}
+.art .kick b{font-family:var(--bs-label);font-size:10px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink-3);white-space:nowrap}
+.art .kick .type{margin-left:auto;font-family:var(--bs-label);font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;white-space:nowrap;padding:3px 6px 4px}
+.art .kick .type.keyed{background:var(--bs-cold);color:#fff}
+.art .kick .type.easy{border:1px solid var(--bs-rule);color:var(--bs-ink-3)}
+.art h2{font-family:var(--bs-display);font-size:30px;line-height:.96;letter-spacing:-.018em;margin:0}
+.art h2 em{font-style:italic}
+.art .stand{font-family:var(--bs-text);font-style:italic;font-size:16px;line-height:1.42;color:var(--bs-ink-2);margin:9px 0 0;text-wrap:pretty}
+.art .nums{display:flex;align-items:baseline;gap:0;margin-top:13px;border-top:1px solid var(--bs-rule)}
+.art .nums div{flex:1;padding:9px 10px 0;border-right:1px solid var(--bs-rule);display:flex;flex-direction:column;gap:5px}
+.art .nums div:first-child{padding-left:0}
+.art .nums div:last-child{border-right:0;padding-right:0}
+.art .nums b{font-family:var(--bs-label);font-size:9px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--bs-ink-3)}
+.art .nums span{font-family:var(--bs-data);font-size:17px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.art .nums span i{font-style:normal;font-size:10px;color:var(--bs-ink-3);margin-left:1px}
+.art .lead{font-family:var(--bs-text);font-size:17px;line-height:1.55;margin:12px 0 0;text-wrap:pretty}
+.art .lead::first-letter{float:left;font-family:var(--bs-display);font-size:54px;line-height:.76;padding:5px 8px 0 0;color:var(--bs-hot-text)}
+.art .byline{font-family:var(--bs-label);font-size:9px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink-3);margin:12px 0 0}
+.art .pull{font-family:var(--bs-display);font-size:24px;line-height:1.08;margin:0;padding:var(--bs-s3) 0;border-top:1px solid var(--bs-rule-ink);border-bottom:1px solid var(--bs-rule-ink)}
+.rest{padding:var(--bs-s3) 0;border-bottom:1px solid var(--bs-rule);display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.rest span{font-family:var(--bs-text);font-style:italic;font-size:17px;color:var(--bs-ink-2)}
+.rest b{font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink-4);white-space:nowrap}
+.end{display:flex;align-items:center;justify-content:center;gap:10px;padding:var(--bs-s4) 0 var(--bs-s5)}
+.end i{flex:1;height:1px;background:var(--bs-rule)}
+.end b{font-family:var(--bs-label);font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--bs-ink-3);white-space:nowrap}
+.tb{flex:none;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--bs-rule-ink);padding:0 var(--bs-gutter)}
+.tb button{background:transparent;border:0;padding:11px 0 9px;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:44px}
+.tb i{display:block;width:100%;height:2px;background:transparent}
+.tb b{font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--bs-ink-3);white-space:nowrap}
+.tb button.on i{background:var(--bs-hot)}
+.tb button.on b{color:var(--bs-ink);font-weight:700}
+.home{flex:none;display:flex;justify-content:center;padding:6px 0 9px}
+.home i{display:block;width:134px;height:5px;border-radius:999px;background:var(--bs-ink)}
+</style></head>
+<body><div class="wrap">
+
+  <div class="col">
+    <span class="cap"><b>Log feed</b> &nbsp;· the week, top of the page</span>
+    <div class="phone" data-screen-label="Broadsheet log feed · top">
+      <div class="sb"><span>10:12</span><span class="g"><span class="bars" style="display:flex;align-items:flex-end;gap:2px;height:11px"><i></i><i></i><i></i><i></i></span><svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#14120E"/></svg><span class="batt">84</span></span></div>
+      <div class="masthead"><span class="name">Post Run Drip</span><span class="folio">Fri 21 Aug<br>No. 214</span></div>
+      <div class="scroll">
+        <div class="week">
+          <div class="hd"><span class="bs-kicker">This week</span><span class="bs-label">Mon 17 &mdash; Sun 23</span></div>
+          <div class="tot"><b>25.4</b><span>mi of 32</span><em>four to file</em></div>
+          <div class="bars">
+            <i style="height:34%"></i><i class="q" style="height:6%"></i><i style="height:58%"></i><i class="q" style="height:6%"></i><i class="h" style="height:100%"></i><i style="height:46%"></i><i class="q" style="height:6%"></i>
+          </div>
+          <div class="days"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+        </div>
+
+        <div class="art">
+          <div class="kick"><span class="dot" style="background:var(--bs-good)"></span><b>Friday 21 Aug</b><span class="type keyed">Intervals</span></div>
+          <h2>6 &times; 800m.</h2>
+          <p class="lead">Legs turned over better than Tuesday. Last two reps were the fastest, which almost never happens, and the hamstring stayed quiet the whole way.</p>
+          <div class="nums">
+            <div><b>Dist</b><span>7.47<i>mi</i></span></div>
+            <div><b>Time</b><span>53:51</span></div>
+            <div><b>Pace</b><span>7:13<i>/mi</i></span></div>
+          </div>
+          <p class="byline">Filed 8:40 &middot; voice, 0:42 &middot; transcribed</p>
+        </div>
+
+        <div class="art">
+          <div class="kick"><span class="dot" style="background:var(--bs-rough)"></span><b>Thursday 20 Aug</b><span class="type easy">Easy</span></div>
+          <h2>Easy 4.4 miles.</h2>
+          <p class="stand">&mdash; still not right, ankle stiff for the first mile, knee finally fine &mdash;</p>
+          <div class="nums">
+            <div><b>Dist</b><span>4.43<i>mi</i></span></div>
+            <div><b>Time</b><span>31:52</span></div>
+            <div><b>Pace</b><span>7:12<i>/mi</i></span></div>
+          </div>
+        </div>
+
+        <div class="rest"><span>Wednesday &mdash; rest.</span><b>Nothing filed</b></div>
+        <div class="end"><i></i><b>Earlier this week</b><i></i></div>
+      </div>
+      <div class="tb">
+        <button><i></i><b>Log</b></button>
+        <button class="on"><i></i><b>Week</b></button>
+        <button><i></i><b>Plan</b></button>
+        <button><i></i><b>Desk</b></button>
+        <button><i></i><b>Ask</b></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <span class="cap"><b>Log feed</b> &nbsp;· scrolled, long run as the lead article</span>
+    <div class="phone" data-screen-label="Broadsheet log feed · scrolled">
+      <div class="sb"><span>10:14</span><span class="g"><span class="bars" style="display:flex;align-items:flex-end;gap:2px;height:11px"><i></i><i></i><i></i><i></i></span><svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#14120E"/></svg><span class="batt">84</span></span></div>
+      <div class="masthead"><span class="name">Post Run Drip</span><span class="folio">Sun 16 Aug<br>No. 213</span></div>
+      <div class="scroll">
+        <div class="art" style="padding-top:var(--bs-s3)">
+          <div class="kick"><span class="dot" style="background:var(--bs-good)"></span><b>Sunday 16 Aug</b><span class="type keyed">Long run</span></div>
+          <h2>18 miles, long run.</h2>
+          <p class="lead">Felt strong through fourteen and then the hills took over. Held the effort rather than the pace, which is what the plan asked for, and finished with something left.</p>
+          <div class="nums">
+            <div><b>Dist</b><span>18.04<i>mi</i></span></div>
+            <div><b>Time</b><span>2:16:41</span></div>
+            <div><b>Pace</b><span>7:35<i>/mi</i></span></div>
+          </div>
+          <p class="byline">Filed 11:26 &middot; voice, 1:38 &middot; transcribed</p>
+        </div>
+
+        <div class="art" style="border-bottom:0;padding-bottom:var(--bs-s3)">
+          <p class="pull">&ldquo;Hold splits, don&rsquo;t chase them.&rdquo;</p>
+          <p class="byline" style="margin-top:10px">The desk, on Sunday&rsquo;s effort</p>
+        </div>
+
+        <div class="art">
+          <div class="kick"><span class="dot" style="background:var(--bs-flat)"></span><b>Saturday 15 Aug</b><span class="type easy">Easy</span></div>
+          <h2>Shakeout, 5 miles.</h2>
+          <p class="stand">&mdash; forty minutes, flat, legs neutral &mdash;</p>
+          <div class="nums">
+            <div><b>Dist</b><span>5.02<i>mi</i></span></div>
+            <div><b>Time</b><span>38:44</span></div>
+            <div><b>Pace</b><span>7:43<i>/mi</i></span></div>
+          </div>
+        </div>
+
+        <div class="art" style="border-bottom:0">
+          <div class="kick"><span class="dot" style="background:var(--bs-hurt)"></span><b>Thursday 13 Aug</b><span class="type easy">Cut short</span></div>
+          <h2>Cut short at 3 miles.</h2>
+          <p class="stand">&mdash; calf tightened on the bridge, walked home, iced it &mdash;</p>
+        </div>
+        <div class="end"><i></i><b>End of week 213</b><i></i></div>
+      </div>
+      <div class="tb">
+        <button><i></i><b>Log</b></button>
+        <button class="on"><i></i><b>Week</b></button>
+        <button><i></i><b>Plan</b></button>
+        <button><i></i><b>Desk</b></button>
+        <button><i></i><b>Ask</b></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+</div></body></html>

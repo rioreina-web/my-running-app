@@ -1,0 +1,371 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Trends · redesign" subtitle="Session ledger on the locked system — pace ramp on the reps, mood rule at the leading edge" viewport="470x1000" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Trends</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
+<style>
+/* Colour comes from colors_and_type.css, except the pace ramp, which has no
+   Direction I token yet — the ten stops below are transcribed verbatim from
+   RunningLog/Workouts/PaceSpectrum.swift, the shipped source of truth.
+
+   Three hue lanes, three jobs, per the collision note in PaceSpectrum.swift:
+     blue  = pace   (the rep strip)
+     mood  = feeling (the leading-edge rule + the mood word)
+     red   = alert  (the watching line, the active tab)
+   Nothing borrows another lane. */
+:root{
+  --pace-0:#93B9D6; /* Easy     */
+  --pace-1:#74A8CC; /* Moderate */
+  --pace-2:#578FC0; /* Steady   */
+  --pace-3:#3F7CB5; /* MP       */
+  --pace-4:#2F66A8; /* HMP      */
+  --pace-5:#27549B; /* LT       */
+  --pace-6:#20448B; /* 10K      */
+  --pace-7:#1A3679; /* 5K       */
+  --pace-8:#142964; /* 3K       */
+  --pace-9:#0E1D4E; /* Mile     */
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--paper-deep);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.stage{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:28px 20px}
+.phone{width:393px;height:852px;flex:none;background:var(--paper);color:var(--ink);
+  font-family:var(--font-data);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 26px 70px rgba(0,0,0,.30),0 0 0 11px #0C0C0C,0 0 0 12px #2C2C2C}
+button{font-family:var(--font-label);cursor:pointer}
+
+/* ---- tracked label face — 9–11px, the only small type permitted ---- */
+.lb{font-family:var(--font-label);font-weight:600;font-size:11px;letter-spacing:.15em;
+  text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
+.lb--ink{color:var(--ink);font-weight:700}
+.lb--red{color:var(--red-text)}
+.lb--9{font-size:9px;letter-spacing:.20em}
+
+/* ---- status bar ---- */
+.sb{height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;
+  font-family:var(--font-data);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;position:relative}
+.sb .island{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:126px;height:34px;border-radius:var(--r-pill);background:var(--ink)}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;
+  background:var(--ink);color:var(--paper);border-radius:4px;font-size:10px;font-weight:700;padding:0 4px}
+
+/* ---- masthead ---- */
+.hd{flex:none;height:52px;padding:0 var(--space-6);display:flex;align-items:center;justify-content:space-between}
+.icon{width:44px;height:44px;margin-left:-11px;background:transparent;border:0;display:flex;flex-direction:column;
+  justify-content:center;gap:5px;padding:0 10px}
+.icon i{display:block;height:2px;border-radius:2px;background:var(--ink)}
+.rule-heavy{flex:none;height:2px;background:var(--rule-strong);margin:0 var(--space-6)}
+
+/* ---- state strip: mood + what the app is watching ---- */
+.state{flex:none;padding:14px var(--space-6);display:flex;align-items:center;gap:14px}
+.mood{display:flex;align-items:center;gap:7px}
+.mood i{width:7px;height:7px;border-radius:var(--r-pill);background:var(--mood-neutral);flex:none}
+.mood .lb{color:var(--mood-neutral);font-weight:700}
+.state .watch{overflow:hidden;text-overflow:ellipsis}
+
+/* ---- pace key — the ramp read once, so colour means something below ---- */
+.key{flex:none;padding:0 var(--space-6) 15px;border-bottom:1px solid var(--rule)}
+.key .bar{height:4px;background:linear-gradient(to right,
+  var(--pace-0),var(--pace-1),var(--pace-2),var(--pace-3),var(--pace-4),
+  var(--pace-5),var(--pace-6),var(--pace-7),var(--pace-8),var(--pace-9))}
+.key .ends{margin-top:7px;display:flex;align-items:center;justify-content:space-between}
+
+/* ---- feed ---- */
+.feed{flex:1;min-height:0;overflow-y:auto}
+.feed::-webkit-scrollbar{display:none}
+
+/* month group — sticks to the top of the feed as you scroll past it */
+.sec{position:sticky;top:0;z-index:2;background:var(--paper);
+  display:flex;align-items:center;gap:12px;padding:26px var(--space-6) 12px}
+.sec hr{flex:1;height:1px;background:var(--rule);border:0;margin:0}
+.sec .lb b{font-weight:600;color:var(--ink)}
+
+/* one session — the leading-edge rule is MOOD, and only ever mood */
+.row{--m:var(--mood-neutral);
+  position:relative;display:block;width:100%;text-align:left;background:transparent;
+  border:0;border-bottom:1px solid var(--rule);
+  padding:18px var(--space-6) 22px}
+.row::before{content:"";position:absolute;left:0;top:18px;bottom:22px;width:2px;background:var(--m)}
+.row:last-of-type{border-bottom:0}
+.row:active{background:var(--paper-elevated)}
+.row[data-mood="energized"] {--m:var(--mood-energized)}
+.row[data-mood="positive"]  {--m:var(--mood-positive)}
+.row[data-mood="neutral"]   {--m:var(--mood-neutral)}
+.row[data-mood="tired"]     {--m:var(--mood-tired)}
+.row[data-mood="struggling"]{--m:var(--mood-struggling)}
+.row[data-mood="injured"]   {--m:var(--mood-injured)}
+
+.row .eyebrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.row .eyebrow em{font-style:normal;color:var(--m);font-weight:700}
+
+/* type chip — hairline outline. Ink, not blue: blue belongs to pace alone. */
+.chip{font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.20em;text-transform:uppercase;
+  white-space:nowrap;color:var(--ink-2);border:1px solid var(--rule);border-radius:var(--r-tight);
+  padding:3px 7px;background:transparent}
+.chip--key{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+.row .line{margin-top:11px;display:flex;align-items:baseline;justify-content:space-between;gap:14px}
+.row h2{font-family:var(--font-display);font-weight:700;font-size:18px;letter-spacing:-.03em;
+  line-height:1.15;margin:0;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.row .right{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}
+
+/* pace — Inter, tabular, the unit demoted */
+.pace{font-family:var(--font-data);font-variant-numeric:tabular-nums;letter-spacing:-.03em;
+  font-weight:500;font-size:20px;line-height:1;color:var(--ink);white-space:nowrap}
+.pace u{font-style:normal;text-decoration:none;font-size:10px;font-weight:500;letter-spacing:.06em;
+  color:var(--ink-2);margin-left:3px}
+
+/* delta — the trend in the Trends tab. A fact, not a verdict: the sign
+   carries the meaning, so it takes no colour of its own. */
+.delta{font-family:var(--font-label);font-size:9px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.delta b{font-family:var(--font-data);font-size:10px;font-weight:600;letter-spacing:0;
+  text-transform:none;font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* rep strip — every bar sits on its own pace stop. Pale sky is easy,
+   navy is a mile rep. A slow rep is a pale bar; red stays alert-only. */
+.reps{margin-top:14px;display:flex;gap:2px;height:7px;background:var(--paper-deep)}
+.reps b{display:block;height:100%}
+.reps b[data-z="0"]{background:var(--pace-0)} .reps b[data-z="1"]{background:var(--pace-1)}
+.reps b[data-z="2"]{background:var(--pace-2)} .reps b[data-z="3"]{background:var(--pace-3)}
+.reps b[data-z="4"]{background:var(--pace-4)} .reps b[data-z="5"]{background:var(--pace-5)}
+.reps b[data-z="6"]{background:var(--pace-6)} .reps b[data-z="7"]{background:var(--pace-7)}
+.reps b[data-z="8"]{background:var(--pace-8)} .reps b[data-z="9"]{background:var(--pace-9)}
+
+/* ---- footer actions ---- */
+.more{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;
+  padding:18px var(--space-6);background:transparent;border:0;border-top:1px solid var(--rule)}
+.more .lb{display:flex;align-items:center;gap:7px}
+.compare{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;
+  padding:19px var(--space-6);background:transparent;border:0;border-top:2px solid var(--rule-strong)}
+
+/* ---- tab bar ---- */
+.tb{flex:none;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);padding:0 4px 6px}
+.tb button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 0 10px}
+.tb .dot{width:6px;height:6px;border-radius:var(--r-pill);border:1px solid var(--ink-3);background:transparent}
+.tb .lb{font-size:10px;letter-spacing:.10em}
+.tb button.on .dot{background:var(--red);border-color:var(--red)}
+.tb button.on .lb{color:var(--ink);font-weight:700}
+.home{flex:none;display:flex;justify-content:center;padding:0 0 9px}
+.home i{display:block;width:134px;height:5px;border-radius:var(--r-pill);background:var(--ink)}
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="phone" data-screen-label="Trends">
+
+  <div class="sb">
+    <span>4:57</span>
+    <span class="island"></span>
+    <span class="g">
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none" aria-hidden="true"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="currentColor"/></svg>
+      <span class="batt">94</span>
+    </span>
+  </div>
+
+  <div class="hd">
+    <button class="icon" aria-label="Menu"><i></i><i></i><i></i></button>
+    <span class="lb lb--ink">Trends</span>
+  </div>
+  <div class="rule-heavy"></div>
+
+  <div class="state">
+    <span class="mood"><i></i><span class="lb">Neutral</span></span>
+    <span class="lb lb--red lb--9 watch">Watching: left ankle, left knee</span>
+  </div>
+
+  <div class="key">
+    <div class="bar"></div>
+    <div class="ends">
+      <span class="lb lb--9">Easy</span>
+      <span class="lb lb--9">Mile</span>
+    </div>
+  </div>
+
+  <div class="feed">
+
+    <div class="sec"><span class="lb"><b>August</b> &middot; 7 sessions &middot; 76 mi</span><hr></div>
+
+    <button class="row" data-mood="struggling">
+      <div class="eyebrow">
+        <span class="lb lb--9">Tue &middot; Aug 18 &middot; <em>Struggling</em></span>
+        <span class="chip chip--key">LT</span>
+      </div>
+      <div class="line">
+        <h2>3&times;2mi &middot; 6.2 mi</h2>
+        <span class="right">
+          <span class="pace">5:19<u>/mi</u></span>
+          <span class="delta"><b>+4s</b> vs last 2mi</span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="6" style="flex:1"></b><b data-z="5" style="flex:1"></b><b data-z="4" style="flex:1"></b>
+      </div>
+    </button>
+
+    <button class="row" data-mood="struggling">
+      <div class="eyebrow">
+        <span class="lb lb--9">Sun &middot; Aug 16 &middot; <em>Struggling</em></span>
+        <span class="chip">Long</span>
+      </div>
+      <div class="line">
+        <h2>Long run &middot; 17.1 mi</h2>
+        <span class="right">
+          <span class="pace">6:42<u>/mi avg</u></span>
+          <span class="delta"><b>+4s</b> vs Aug 8</span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="1" style="flex:1"></b><b data-z="1" style="flex:1"></b><b data-z="1" style="flex:1"></b>
+        <b data-z="2" style="flex:1"></b><b data-z="1" style="flex:1"></b><b data-z="1" style="flex:1"></b>
+        <b data-z="0" style="flex:1"></b><b data-z="0" style="flex:1"></b><b data-z="0" style="flex:1"></b>
+        <b data-z="0" style="flex:1"></b>
+      </div>
+    </button>
+
+    <button class="row" data-mood="positive">
+      <div class="eyebrow">
+        <span class="lb lb--9">Tue &middot; Aug 11 &middot; <em>Positive</em></span>
+        <span class="chip">LT</span>
+      </div>
+      <div class="line">
+        <h2>10&times;1K &middot; 6.6 mi</h2>
+        <span class="right">
+          <span class="pace">5:10<u>/mi</u></span>
+          <span class="delta"><b>&minus;6s</b> vs last 1K</span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="6" style="flex:1"></b><b data-z="7" style="flex:1"></b><b data-z="6" style="flex:1"></b>
+        <b data-z="6" style="flex:1"></b><b data-z="6" style="flex:1"></b><b data-z="7" style="flex:1"></b>
+        <b data-z="6" style="flex:1"></b><b data-z="6" style="flex:1"></b><b data-z="3" style="flex:1"></b>
+        <b data-z="6" style="flex:1"></b>
+      </div>
+    </button>
+
+    <button class="row" data-mood="neutral">
+      <div class="eyebrow">
+        <span class="lb lb--9">Sat &middot; Aug 8 &middot; <em>Neutral</em></span>
+        <span class="chip">Long</span>
+      </div>
+      <div class="line">
+        <h2>Long run &middot; 18.1 mi</h2>
+        <span class="right">
+          <span class="pace">6:38<u>/mi avg</u></span>
+          <span class="delta"><b>+1s</b> vs Aug 1</span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="1" style="flex:1"></b><b data-z="2" style="flex:1"></b><b data-z="1" style="flex:1"></b>
+        <b data-z="2" style="flex:1"></b><b data-z="2" style="flex:1"></b><b data-z="1" style="flex:1"></b>
+        <b data-z="2" style="flex:1"></b><b data-z="2" style="flex:1"></b><b data-z="1" style="flex:1"></b>
+        <b data-z="2" style="flex:1"></b>
+      </div>
+    </button>
+
+    <button class="row" data-mood="positive">
+      <div class="eyebrow">
+        <span class="lb lb--9">Thu &middot; Aug 6 &middot; <em>Positive</em></span>
+        <span class="chip">LT</span>
+      </div>
+      <div class="line">
+        <h2>5&times;1200m &middot; 4.2 mi</h2>
+        <span class="right">
+          <span class="pace">5:11<u>/mi</u></span>
+          <span class="delta"><b>&minus;3s</b> vs last 1200m</span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="7" style="flex:1"></b><b data-z="6" style="flex:1"></b><b data-z="7" style="flex:1"></b>
+        <b data-z="6" style="flex:1"></b><b data-z="5" style="flex:1"></b>
+      </div>
+    </button>
+
+    <button class="row" data-mood="tired">
+      <div class="eyebrow">
+        <span class="lb lb--9">Tue &middot; Aug 4 &middot; <em>Tired</em></span>
+        <span class="chip">LT</span>
+      </div>
+      <div class="line">
+        <h2>1mi-600m-1700m-600m-1mi&hellip;</h2>
+        <span class="right">
+          <span class="pace">5:45<u>/mi</u></span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="4" style="flex:3.2"></b><b data-z="8" style="flex:1.2"></b><b data-z="4" style="flex:3.4"></b>
+        <b data-z="7" style="flex:1.2"></b><b data-z="3" style="flex:3.2"></b><b data-z="7" style="flex:1.2"></b>
+      </div>
+    </button>
+
+    <button class="row" data-mood="neutral">
+      <div class="eyebrow">
+        <span class="lb lb--9">Sat &middot; Aug 1 &middot; <em>Neutral</em></span>
+        <span class="chip">Long</span>
+      </div>
+      <div class="line">
+        <h2>Long run &middot; 17.0 mi</h2>
+        <span class="right">
+          <span class="pace">6:37<u>/mi avg</u></span>
+          <span class="delta"><b>&minus;5s</b> vs Jul 25</span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="1" style="flex:1"></b><b data-z="1" style="flex:1"></b><b data-z="2" style="flex:1"></b>
+        <b data-z="1" style="flex:1"></b><b data-z="2" style="flex:1"></b><b data-z="1" style="flex:1"></b>
+        <b data-z="2" style="flex:1"></b><b data-z="2" style="flex:1"></b><b data-z="1" style="flex:1"></b>
+        <b data-z="2" style="flex:1"></b>
+      </div>
+    </button>
+
+    <div class="sec"><span class="lb"><b>July</b> &middot; 5 sessions &middot; 58 mi</span><hr></div>
+
+    <button class="row" data-mood="energized">
+      <div class="eyebrow">
+        <span class="lb lb--9">Tue &middot; Jul 28 &middot; <em>Energized</em></span>
+        <span class="chip">LT</span>
+      </div>
+      <div class="line">
+        <h2>1mi-800m-800m-1mi-800m&hellip;</h2>
+        <span class="right">
+          <span class="pace">5:05<u>/mi</u></span>
+          <span class="delta"><b>&minus;8s</b> vs Jul 14</span>
+        </span>
+      </div>
+      <div class="reps">
+        <b data-z="6" style="flex:3.2"></b><b data-z="8" style="flex:1.6"></b><b data-z="7" style="flex:1.6"></b>
+        <b data-z="6" style="flex:3.2"></b><b data-z="7" style="flex:1.6"></b><b data-z="4" style="flex:1.6"></b>
+        <b data-z="6" style="flex:3.2"></b>
+      </div>
+    </button>
+
+    <button class="more">
+      <span class="lb lb--ink">Show more <span aria-hidden="true">&#9662;</span></span>
+      <span class="lb lb--9">8 of 12+</span>
+    </button>
+
+    <button class="compare">
+      <span class="lb lb--ink">Two side by side</span>
+      <span class="lb lb--ink" aria-hidden="true">&rsaquo;</span>
+    </button>
+
+  </div>
+
+  <div class="tb">
+    <button><span class="dot"></span><span class="lb">Log</span></button>
+    <button><span class="dot"></span><span class="lb">Train</span></button>
+    <button class="on"><span class="dot"></span><span class="lb">Trends</span></button>
+    <button><span class="dot"></span><span class="lb">Week</span></button>
+    <button><span class="dot"></span><span class="lb">Ask</span></button>
+    <button><span class="dot"></span><span class="lb">Sheet</span></button>
+  </div>
+
+  <div class="home"><i></i></div>
+
+</div>
+</div>
+</body>
+</html>

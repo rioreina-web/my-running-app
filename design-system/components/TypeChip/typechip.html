@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- @dsCard group="Components" name="Type Chip" subtitle="Keyed session in blue, everything easy as a hairline" viewport="700x230" -->
+<html lang="en"><head><meta charset="utf-8"><title>Type Chip</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased}
+.card{padding:28px 32px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.note{font-family:var(--font-serif);font-style:italic;font-size:13px;color:var(--ink-2);line-height:1.45;margin:18px 0 0;max-width:62ch}
+</style></head>
+<body><div class="card"><div id="root"></div></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script>
+var NS = window.PostRunDripDesignSystem_019e23;
+var h = React.createElement;
+ReactDOM.createRoot(document.getElementById("root")).render(
+  h("div", null,
+    h("div", { className: "row" },
+      h(NS.TypeChip, { keyed: true }, "Intervals"),
+      h(NS.TypeChip, { keyed: true }, "Long run"),
+      h(NS.TypeChip, null, "Easy"),
+      h(NS.TypeChip, null, "Recovery"),
+      h(NS.TypeChip, null, "Cut short"),
+      h(NS.TypeChip, null, "Shakeout")
+    ),
+    h("p", { className: "note" }, "One keyed chip per screenful. If two sessions both look keyed, the week has no shape \u2014 pick the one that mattered.")
+  )
+);
+</script>
+</body></html>

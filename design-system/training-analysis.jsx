@@ -7,16 +7,8 @@
 
 const { useState, useMemo } = React;
 const ACCENT = "#D4592A";
-const SAGE = "#6B8068";            // mood only — never a pace/zone fill
-// Pace = single-hue blue depth ramp (Easy → Mile). Source of truth:
-// RunningLog/Workouts/PaceSpectrum.swift. Blue = pace, warm = mood,
-// coral = alert; the three palettes never share hues.
-const PACE = {
-  easy:   "#93B9D6", mod:  "#74A8CC", steady: "#578FC0", mp:    "#3F7CB5",
-  hmp:    "#2F66A8", lt:   "#27549B", tenK:   "#20448B", fiveK: "#1A3679",
-  threeK: "#142964", mile: "#0E1D4E",
-};
-const RECOVERY = "#B4ADA4";        // warm gray for below-easy recovery
+const SAGE = "#6B8068";
+const PLUM = "#6B4A8A";
 const INK = "#1A1815";
 const INK2 = "#6B6560";
 const INK3 = "#9B9590";
@@ -64,32 +56,32 @@ const WEEKS = [
 
 /* Pace distribution buckets (minutes per mile, % of miles in window) */
 const PACE_BUCKETS = [
-  { label: "≤ 6:30", min: 0,   max: 6.5,  zone: "5K",   curr: 4,  prior: 1,  color: PACE.fiveK },
-  { label: "6:30–7:00", min: 6.5, max: 7.0, zone: "10K", curr: 6,  prior: 5,  color: PACE.tenK },
-  { label: "7:00–7:30", min: 7.0, max: 7.5, zone: "Thr", curr: 10, prior: 8,  color: PACE.lt },
-  { label: "7:30–8:00", min: 7.5, max: 8.0, zone: "MP",  curr: 8,  prior: 6,  color: PACE.mp },
-  { label: "8:00–8:30", min: 8.0, max: 8.5, zone: "Mod", curr: 22, prior: 26, color: PACE.mod },
-  { label: "8:30–9:00", min: 8.5, max: 9.0, zone: "Easy",curr: 36, prior: 38, color: PACE.easy },
-  { label: "9:00+",     min: 9.0, max: 11,  zone: "Rec", curr: 14, prior: 16, color: RECOVERY },
+  { label: "≤ 6:30", min: 0,   max: 6.5,  zone: "5K",   curr: 4,  prior: 1,  color: PLUM },
+  { label: "6:30–7:00", min: 6.5, max: 7.0, zone: "10K", curr: 6,  prior: 5,  color: PLUM },
+  { label: "7:00–7:30", min: 7.0, max: 7.5, zone: "Thr", curr: 10, prior: 8,  color: ACCENT },
+  { label: "7:30–8:00", min: 7.5, max: 8.0, zone: "MP",  curr: 8,  prior: 6,  color: ACCENT },
+  { label: "8:00–8:30", min: 8.0, max: 8.5, zone: "Mod", curr: 22, prior: 26, color: INK },
+  { label: "8:30–9:00", min: 8.5, max: 9.0, zone: "Easy",curr: 36, prior: 38, color: INK },
+  { label: "9:00+",     min: 9.0, max: 11,  zone: "Rec", curr: 14, prior: 16, color: SAGE },
 ];
 
 /* HR-zone time (minutes), week vs 4-wk avg */
 const HR_ZONES = [
-  { z: "Z1", name: "Recovery",  range: "< 130", curr: 18, prior: 24, color: RECOVERY },
-  { z: "Z2", name: "Aerobic",   range: "130–148", curr: 184, prior: 168, color: PACE.easy },
-  { z: "Z3", name: "Tempo",     range: "148–162", curr: 62, prior: 48, color: PACE.mp },
-  { z: "Z4", name: "Threshold", range: "162–172", curr: 28, prior: 22, color: PACE.lt },
-  { z: "Z5", name: "VO₂ Max",   range: "> 172",  curr: 6,  prior: 4,  color: PACE.fiveK },
+  { z: "Z1", name: "Recovery",  range: "< 130", curr: 18, prior: 24, color: SAGE },
+  { z: "Z2", name: "Aerobic",   range: "130–148", curr: 184, prior: 168, color: INK },
+  { z: "Z3", name: "Tempo",     range: "148–162", curr: 62, prior: 48, color: ACCENT },
+  { z: "Z4", name: "Threshold", range: "162–172", curr: 28, prior: 22, color: ACCENT },
+  { z: "Z5", name: "VO₂ Max",   range: "> 172",  curr: 6,  prior: 4,  color: PLUM },
 ];
 
 /* Workout type mix, last 4 weeks */
 const TYPE_MIX = [
-  { type: "Easy",       miles: 92, count: 11, color: PACE.easy,   accent: false },
-  { type: "Long",       miles: 61, count: 4,  color: PACE.steady, accent: false },
-  { type: "Tempo",      miles: 24, count: 3,  color: PACE.lt,     accent: true },
-  { type: "Intervals",  miles: 13, count: 2,  color: PACE.fiveK,  accent: true },
-  { type: "Race / sim", miles: 13, count: 1,  color: PACE.mile,   accent: true },
-  { type: "Recovery",   miles: 12, count: 3,  color: RECOVERY,    accent: false },
+  { type: "Easy",       miles: 92, count: 11, color: INK,    accent: false },
+  { type: "Long",       miles: 61, count: 4,  color: SAGE,   accent: false },
+  { type: "Tempo",      miles: 24, count: 3,  color: ACCENT, accent: true },
+  { type: "Intervals",  miles: 13, count: 2,  color: ACCENT, accent: true },
+  { type: "Race / sim", miles: 13, count: 1,  color: PLUM,   accent: true },
+  { type: "Recovery",   miles: 12, count: 3,  color: INK3,   accent: false },
 ];
 
 /* Race-readiness · predicted marathon finish over the block */
@@ -502,9 +494,9 @@ function FigMileage({ weeks, chartStyle, coachVoice }) {
           <MileageBars weeks={weeks} />
         )}
         <div className="mt-5 pt-4 border-t border-divider-soft grid grid-cols-3 gap-x-6 gap-y-2">
-          <LegendDot color={INK}         label="Easy + steady" />
-          <LegendDot color={PACE.lt}     label="Quality (tempo / interval)" />
-          <LegendDot color={PACE.steady} label="Long run" />
+          <LegendDot color={INK}    label="Easy + steady" />
+          <LegendDot color={ACCENT} label="Quality (tempo / interval)" />
+          <LegendDot color={SAGE}   label="Long run" />
           <LegendDot color="transparent" borderColor={ACCENT} label="Planned (current week)" dashed />
         </div>
         {coachVoice === "heavy" ? (
@@ -592,9 +584,9 @@ function MileageBars({ weeks }) {
             {/* base */}
             <rect x={x} y={y + qualH + longH} width={barW} height={baseH} fill={INK} opacity={w.current ? 0.95 : 0.85} rx="1" />
             {/* quality stack */}
-            {qualH > 0 ? <rect x={x} y={y + longH} width={barW} height={qualH} fill={PACE.lt} rx="1" /> : null}
+            {qualH > 0 ? <rect x={x} y={y + longH} width={barW} height={qualH} fill={ACCENT} rx="1" /> : null}
             {/* long stack */}
-            {longH > 0 ? <rect x={x} y={y} width={barW} height={longH} fill={PACE.steady} rx="1" /> : null}
+            {longH > 0 ? <rect x={x} y={y} width={barW} height={longH} fill={SAGE} rx="1" /> : null}
 
             {/* miles label */}
             <text x={x + barW / 2} y={y - 8} textAnchor="middle" fontFamily="ui-monospace, Menlo, monospace" fontSize="10.5" letterSpacing="1.2" fill={w.current ? ACCENT : INK} fontWeight={w.current ? 700 : 500}>

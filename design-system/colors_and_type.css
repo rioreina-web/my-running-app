@@ -1,10 +1,27 @@
 /* =============================================================
    Post Run Drip — Foundations
    "Restraint as foundation, intensity as accent."
-   Editorial running magazine. Warm paper. Ink. One coral.
+   Editorial sports desk. White page. Near-black ink. One red.
    ============================================================= */
 
-/* ---- Fonts ------------------------------------------------- */
+/* ---- Fonts · LOCKED ----------------------------------------
+   Four roles, one face each. Do not add a fifth family.
+
+   Display · Instrument Sans — every headline. Free, and the closest
+             free grotesk to Neue Haas by measure (+3.1% at 46px/700),
+             so it does not move a line break. Haas and Akzidenz were
+             tried and removed: licensed Monotype/Berthold faces we
+             have no right to ship.
+   Label   · Schibsted Grotesk — every tracked uppercase label. Free.
+             Wide at display size, which is why it is not the headline.
+   Prose   · Crimson Pro (self-hosted, variable) — the summary and
+             any passage a person actually reads.
+   Data    · Inter — every numeral, tabular. The secondary UI face.
+   Mono    · JetBrains Mono (self-hosted) — transcribed memos and
+             machine-generated answers, nothing else.
+   ------------------------------------------------------------ */
+@import url("https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap");
+
 @font-face {
   font-family: "Crimson Pro";
   src: url("fonts/CrimsonPro-Variable.ttf") format("truetype-variations");
@@ -13,112 +30,108 @@
   font-display: swap;
 }
 @font-face {
-  font-family: "PT Serif";
-  src: url("fonts/PTSerif-Regular.ttf") format("truetype");
-  font-weight: 400;
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-VariableFont_wght.ttf") format("truetype-variations");
+  font-weight: 100 800;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: "PT Serif";
-  src: url("fonts/PTSerif-Italic.ttf") format("truetype");
-  font-weight: 400;
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Italic-VariableFont_wght.ttf") format("truetype-variations");
+  font-weight: 100 800;
   font-style: italic;
-  font-display: swap;
-}
-@font-face {
-  font-family: "PT Serif";
-  src: url("fonts/PTSerif-Bold.ttf") format("truetype");
-  font-weight: 700;
-  font-style: normal;
   font-display: swap;
 }
 
 :root {
-  /* ---- Color · Surfaces (warm paper) ---------------------- */
-  --paper:           #F5F3F0;  /* page background — warm newsprint */
-  --paper-elevated:  #FAFAF8;  /* slightly warmer white card */
-  --card:            #FFFFFF;  /* clean white card */
-  --paper-deep:      #E8E4DF;  /* calendar / inset wells */
-  --rule:            #E8E4E0;  /* thin editorial rule */
+  /* ---- Color · Surfaces (white page) --------------------- */
+  --paper:           #FFFFFF;  /* page background */
+  --paper-elevated:  #FAFAFA;  /* hover / active surface */
+  --card:            #FFFFFF;  /* cards sit on rules, not tints */
+  --paper-deep:      #F2F2F2;  /* inset wells */
+  --rule:            #EBEBEB;  /* the hairline — most-used border */
+  --rule-strong:     #111111;  /* 2px editorial rule under headers */
 
   /* ---- Color · Ink (text) -------------------------------- */
-  --ink:             #1A1815;  /* rich ink black — display & body */
-  --ink-2:           #6B6560;  /* warm gray — meta, labels */
-  --ink-3:           #9B9590;  /* light warm gray — captions, disabled */
+  --ink:             #111111;  /* display & body */
+  --ink-2:           #6B6B6B;  /* meta, labels — 5.3:1, safe at 10px */
+  --ink-3:           #9A9A9A;  /* HAIRLINES AND DISABLED ONLY.
+                                  2.8:1 — never use for text. */
 
-  /* ---- Color · Coral (the only accent / alert) ----------- */
-  /* THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert.
-     The three palettes never share hues, so a color's job is always
-     unambiguous. Green is mood-only (a "safe zone" band goes neutral
-     gray, never green); coral is alert-only (never a pace fill).
+  /* ---- Color · Red (the only accent) -------------------- */
+  --red:             #EE2B24;  /* fills: record button, dots, rules */
+  --red-text:        #D31F19;  /* text ≤13px — 5.0:1 */
+  --red-deep:        #B81810;  /* pressed */
+  --red-wash:        rgba(238, 43, 36, 0.10);
+  /* legacy aliases — older artifacts still reference coral */
+  --coral:           var(--red);
+  --coral-light:     #F1524C;
+  --coral-deep:      var(--red-deep);
+  --coral-wash:      var(--red-wash);
 
-     THE LEFT-RULE RULE (2026-08-21): the 2px vertical rule at a block's
-     leading edge is a mark with one meaning, and that meaning is MOOD.
+  /* ---- Color · Session (workout type in a ledger) -------
+     One blue, text-only, and only ever on the name of a hard
+     session. Easy work stays ink-2. Never a fill, never a chip. */
+  --session:         #1F4FA8;  /* 7.3:1 — the keyed session */
 
-       • COLOURED (mood palette)  →  how the athlete felt. Only mood.
-       • NEUTRAL (--rule / --paper-deep)  →  a block set apart: a quote,
-         a transcript, nested content. Says "this text is inset",
-         claims no status.
-       • CORAL  →  never. Coral is alert-only (above), and a left rule
-         is structure, not an alert.
+  /* ---- Color · AI ----------------------------------------
+     The machine has NO colour of its own. Olive is retired: a
+     generated answer is marked by posture (roman mono) and by
+     weight on the values it computed — nothing else. These two
+     names survive only so older artifacts keep resolving. */
+  --ai:              var(--ink);      /* rules, dots, stamps */
+  --ai-text:         var(--ink);      /* computed values — weight, not hue */
 
-     Written down because it was broken: THE WORKOUT drew a coral rule
-     beside every work rep while the journal feed drew a mood rule in the
-     same width and position, so a warm bar meant "this day went badly"
-     in the feed and "this is the hard part" one tap later in the sheet.
-     Structure now gets a shape or an indent instead — see the brace in
-     RunningLog/Workouts/WorkoutReceiptSignals.swift. */
-  --coral:           #D4592A;  /* burnt orange — primary accent / alert */
-  --coral-light:     #E8764A;  /* lighter — hover lift on dark */
-  --coral-deep:      #B84420;  /* darker — pressed state */
-  --coral-wash:      rgba(212, 89, 42, 0.12); /* capsule fill, tint */
+  /* ---- Color · Moods -------------------------------------
+     One ramp, read left to right: green is good, grey is
+     nothing, orange is tired, and the two reds are trouble.
+     Every value clears 4.5:1 on paper, because a mood is
+     always type — a tracked pill, never a bare swatch. */
+  --mood-energized:  #12703A;  /* 5.9:1 — deep green */
+  --mood-positive:   #1F7A41;  /* 5.2:1 — green */
+  --mood-neutral:    #6B6B6B;  /* 5.3:1 — grey, the same as ink-2 */
+  --mood-tired:      #A8560A;  /* 4.8:1 — orange */
+  --mood-struggling: #C62828;  /* 4.9:1 — red */
+  --mood-injured:    #8E1219;  /* 8.2:1 — deep red, the end of the ramp */
+  --mood-speed:      #5A3C78;  /* off-ramp: a session type, not a feeling */
+  --success:         #1F7A41;
 
-  /* ---- Color · Moods (muted editorial — mood ONLY) ------- */
-  --mood-energized:  #2D8A4E;  /* deep green */
-  --mood-positive:   #4A9E6B;  /* sage */
-  --mood-neutral:    #9B9590;  /* warm gray */
-  --mood-tired:      #C4873A;  /* amber */
-  --mood-struggling: #C45A3A;  /* terracotta */
-  --mood-injured:    #B83A4A;  /* deep rose */
-  --success:         #2D8A4E;  /* aliases energized */
-
-  /* ---- Color · Pace (single-hue blue depth ramp) --------- */
-  /* Ten stops for the ten canonical zones, Easy → Mile. Pace reads as
-     intensity (depth), never a rainbow. Source of truth:
-     RunningLog/Workouts/PaceSpectrum.swift. */
-  --pace-easy:       #93B9D6;  /* pale sky */
-  --pace-moderate:   #74A8CC;
-  --pace-steady:     #578FC0;
-  --pace-mp:         #3F7CB5;
-  --pace-hmp:        #2F66A8;
-  --pace-lt:         #27549B;
-  --pace-10k:        #20448B;
-  --pace-5k:         #1A3679;
-  --pace-3k:         #142964;
-  --pace-mile:       #0E1D4E;  /* navy */
-  --pace-fast:       #0E1D4E;  /* alias — fast/Mile end (was --mood-speed) */
-  --pace-easy-text:  #5E93BE;  /* legibility-darkened Easy for small text */
-
-  /* ---- Type · Family ------------------------------------- */
-  --font-display: "Crimson Pro", Georgia, "Times New Roman", serif;
-  --font-body:    "PT Serif", Georgia, "Times New Roman", serif;
-  --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  /* ---- Type · Family (locked — four roles) ---------------- */
+  --font-display: "Instrument Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-label:   "Schibsted Grotesk", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-prose:   "Crimson Pro", Georgia, "Times New Roman", Times, serif;
+  --font-data:    "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* role aliases — body copy and small UI text ride the data face;
+     --font-serif stays Times for the one-line italic accent dek. */
+  --font-body:    var(--font-data);
+  --font-serif:   "Times New Roman", Times, serif;
 
   /* ---- Type · Size scale (mobile-app native) -------------- */
-  --t-display-xl: 40px;  /* "May 5th." plate headers */
-  --t-display-l:  32px;  /* "Marathon block" */
-  --t-display-m:  24px;  /* card values, page titles */
-  --t-display-s:  20px;  /* goal lines */
-  --t-body:       15px;  /* paragraph body */
-  --t-body-sm:    13px;  /* secondary body */
-  --t-meta:       11px;  /* monospaced section labels */
-  --t-meta-sm:    10px;  /* smallest captions */
+  --t-display-xl: 40px;  /* hero headline, one line, uppercase */
+  --t-display-l:  34px;
+  --t-display-m:  25px;  /* entry titles */
+  --t-display-s:  21px;
+  --t-body:       17px;
+  --t-body-sm:    14px;
+  --t-meta:       12px;  /* tracked caps labels */
+  --t-meta-sm:    11px;  /* smallest permitted type */
 
-  /* ---- Type · Tracking ----------------------------------- */
-  --tracking-label:  0.12em;  /* SECTION HEADERS */
-  --tracking-caption: 0.10em; /* TIRED / EASY pills */
-  --tracking-meta:   0.14em;  /* plate top strip */
+  /* ---- Type · Weight ------------------------------------- */
+  --w-black:  900; /* @kind other */
+  --w-bold:   700; /* @kind other */
+  --w-medium: 500; /* @kind other */
+  --w-regular:400; /* @kind other */
+
+  /* ---- Type · Tracking -----------------------------------
+     Tight on display, modest on caps. The old +0.14em spacing
+     belonged to the serif era and reads as decoration here. */
+  --tracking-display: -0.04em;
+  --tracking-title:  -0.025em;
+  --tracking-label:   0.03em;
+  --tracking-caption: 0.06em;
+  --tracking-meta:    0.10em;
 
   /* ---- Spacing scale (8pt) ------------------------------- */
   --space-1:  4px;
@@ -126,89 +139,105 @@
   --space-3: 12px;
   --space-4: 16px;
   --space-5: 20px;
-  --space-6: 24px;
+  --space-6: 22px;  /* canonical screen gutter */
   --space-7: 32px;
   --space-8: 40px;
   --space-9: 56px;
 
   /* ---- Radii --------------------------------------------- */
-  --r-pill:     999px;   /* capsules, mood badges */
-  --r-card:     12px;    /* stat cards, sheets */
-  --r-button:   10px;    /* DripButton */
-  --r-input:    8px;
-  --r-tight:    4px;
+  --r-pill:     999px;   /* chips, record button */
+  --r-card:     0px;     /* cards are rules, not boxes */
+  --r-button:   999px;
+  --r-input:    4px;
+  --r-tight:    2px;
 
-  /* ---- Shadow (used sparingly — editorial = flat) -------- */
-  --shadow-card:    0 2px 8px rgba(0, 0, 0, 0.06);
-  --shadow-coral:   0 4px 12px rgba(212, 89, 42, 0.30);
-  --shadow-press:   0 1px 2px rgba(0, 0, 0, 0.04);
+  /* ---- Shadow — flat system; rules do the work ----------- */
+  --shadow-card:  none;
+  --shadow-press: none;
+  --shadow-sheet: 0 -1px 0 var(--rule);
 
   /* ---- Borders ------------------------------------------- */
   --border-hairline: 1px solid var(--rule);
-  --border-coral:    1.5px solid var(--coral);
+  --border-heavy:    2px solid var(--ink);
+  --border-red:      2px solid var(--red);
 
   /* ---- Motion -------------------------------------------- */
-  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);   /* SwiftUI easeOut feel */
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --dur-fast: 150ms;
-  --dur-base: 300ms;
-  --dur-slow: 1800ms;  /* pulsing record button */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1); /* @kind other */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* @kind other */
+  --dur-fast: 150ms; /* @kind other */
+  --dur-base: 300ms; /* @kind other */
+  --dur-slow: 1800ms; /* @kind other */
 }
 
 /* =============================================================
    Semantic type — apply these classes for editorial voice
    ============================================================= */
 
-/* Plate header strip — top of every screen / artifact */
+/* Plate strip — surface name at the top of a screen */
 .drip-plate-strip {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
   font-size: var(--t-meta);
-  font-weight: 500;
-  letter-spacing: var(--tracking-meta);
+  font-weight: var(--w-bold);
+  letter-spacing: var(--tracking-caption);
   color: var(--ink-2);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-/* Section eyebrows — TUESDAY, FROM YOUR COACH, ZONE SHIFTS */
+/* Section eyebrows — THIS WEEK · 25 MI, LINKED TO */
 .drip-eyebrow {
-  font-family: var(--font-mono);
+  font-family: var(--font-label);
   font-size: var(--t-meta);
-  font-weight: 500;
-  letter-spacing: var(--tracking-label);
+  font-weight: var(--w-bold);
+  letter-spacing: var(--tracking-caption);
   color: var(--ink-2);
   text-transform: uppercase;
+  white-space: nowrap;
 }
-.drip-eyebrow--coral { color: var(--coral); }
+.drip-eyebrow--red { color: var(--red-text); }
+.drip-eyebrow--coral { color: var(--red-text); } /* legacy alias */
 
-/* Display — "May 5th.", "Marathon block" */
+/* Display — "LOG YOUR RUN." Uppercase, Black, tight, one line. */
 .drip-display {
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: var(--w-black);
   color: var(--ink);
-  letter-spacing: -0.01em;
-  line-height: 1.05;
+  letter-spacing: var(--tracking-display);
+  line-height: 1;
+  text-transform: uppercase;
 }
 .drip-display-xl { font-size: var(--t-display-xl); }
 .drip-display-l  { font-size: var(--t-display-l); }
-.drip-display-m  { font-size: var(--t-display-m); }
-.drip-display-s  { font-size: var(--t-display-s); }
 
-/* Stat numerals — monospaced, semibold */
+/* Title — entry headings. Sentence case, Black, not uppercase. */
+.drip-title {
+  font-family: var(--font-display);
+  font-weight: var(--w-black);
+  font-size: var(--t-display-m);
+  color: var(--ink);
+  letter-spacing: var(--tracking-title);
+  line-height: 1.06;
+}
+.drip-display-m { font-size: var(--t-display-m); }
+.drip-display-s { font-size: var(--t-display-s); }
+
+/* Stat numerals — mono, tabular */
 .drip-stat {
-  font-family: var(--font-mono);
-  font-weight: 600;
+  font-family: var(--font-data);
+  letter-spacing: -0.03em;
+  font-weight: var(--w-medium);
   color: var(--ink);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
-/* Body — PT Serif, magazine paragraphs */
+/* Body */
 .drip-body {
   font-family: var(--font-body);
   font-size: var(--t-body);
-  font-weight: 400;
+  font-weight: var(--w-regular);
   color: var(--ink);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 .drip-body-sm {
   font-family: var(--font-body);
@@ -217,51 +246,94 @@
   line-height: 1.5;
 }
 
-/* Italic quote — voice-log entries, footer captions on plates */
-.drip-quote {
-  font-family: var(--font-body);
+/* Prose — the summary, the memo written out, anything read as
+   sentences rather than scanned. The only place Crimson appears. */
+.drip-prose {
+  font-family: var(--font-prose);
+  font-size: 20px;
+  font-weight: var(--w-regular);
+  color: var(--ink);
+  line-height: 1.48;
+  text-wrap: pretty;
+}
+
+/* Serif accent — deks, credits, optional asides.
+   The one place a serif appears in the interface. */
+.drip-accent {
+  font-family: var(--font-serif);
   font-style: italic;
   font-size: var(--t-body);
-  color: var(--ink);
-  line-height: 1.5;
-}
-
-/* Caption — meta lines under stats, mood pills (tracked) */
-.drip-caption {
-  font-family: var(--font-mono);
-  font-size: var(--t-meta-sm);
-  font-weight: 500;
   color: var(--ink-2);
-  letter-spacing: var(--tracking-caption);
-  text-transform: uppercase;
+  line-height: 1.4;
 }
 
-/* Label — buttons, links (Crimson Pro semibold) */
-.drip-label {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 15px;
+/* Voice — a transcribed memo. Mono italic: the athlete, verbatim. */
+.drip-voice {
+  font-family: var(--font-mono);
+  font-style: italic;
+  font-size: var(--t-body-sm);
+  font-weight: var(--w-regular);
+  letter-spacing: -0.01em;
   color: var(--ink);
+  line-height: 1.55;
 }
 
-/* Editorial rule · line · dot · line · — own block */
-.drip-rule {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+/* AI — a generated answer. Mono roman in ink, olive on computed values.
+   Never italic: italic mono is the athlete; roman mono is the machine. */
+.drip-ai {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: var(--w-regular);
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  line-height: 1.72;
 }
-.drip-rule::before, .drip-rule::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--rule);
+.drip-ai__value { font-weight: var(--w-medium); color: var(--ink); }
+.drip-ai__label {
+  font-family: var(--font-mono);
+  font-size: var(--t-meta);
+  font-weight: var(--w-medium);
+  letter-spacing: var(--tracking-meta);
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
 }
-.drip-rule::after { content: ""; }
-.drip-rule__dot {
-  width: 3px; height: 3px;
-  border-radius: 999px;
-  background: var(--rule);
+.drip-quote { /* legacy alias */
+  font-family: var(--font-mono);
+  font-style: italic;
+  font-size: var(--t-body-sm);
+  color: var(--ink);
+  line-height: 1.55;
 }
+
+/* Caption */
+.drip-caption {
+  font-family: var(--font-label);
+  font-size: var(--t-meta-sm);
+  font-weight: var(--w-medium);
+  color: var(--ink-2);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Label — buttons, actions */
+.drip-label {
+  font-family: var(--font-label);
+  font-weight: var(--w-bold);
+  font-size: var(--t-meta);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* Rules replace the old line·dot·line mark — a flat hairline,
+   or a 2px ink rule when a section needs real weight. */
+.drip-rule { height: 1px; background: var(--rule); border: 0; }
+.drip-rule--heavy { height: 2px; background: var(--ink); }
+.drip-rule--red { height: 2px; background: var(--red); }
+.drip-rule__dot { display: none; } /* retired */
 
 /* =============================================================
    Page reset for design-system previews

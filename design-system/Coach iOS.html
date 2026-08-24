@@ -1,0 +1,281 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Coach iOS" subtitle="The Read · canonical + reply state · alternates kept for compare" viewport="1600x1100" -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Post Run Drip · iOS · Coach (redesign)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="ui_kits/ios_app/tokens.css">
+  <style>
+    html, body { margin: 0; padding: 0; min-height: 100vh; background: #f0eee9; }
+    #root { width: 100%; min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- kit -->
+  <script type="text/babel" src="ui_kits/ios_app/ios-frame.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/Primitives.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/design-canvas.jsx"></script>
+
+  <!-- existing coach screen (for the "current" reference artboard) -->
+  <script type="text/babel" src="ui_kits/ios_app/CoachScreen.jsx"></script>
+
+  <!-- coach redesign -->
+  <script type="text/babel" src="coach-ios-fixtures.jsx"></script>
+  <script type="text/babel" src="coach-ios-shared.jsx"></script>
+  <script type="text/babel" src="coach-ios-read.jsx"></script>
+  <script type="text/babel" src="coach-ios-briefing.jsx"></script>
+  <script type="text/babel" src="coach-ios-thread.jsx"></script>
+
+  <script type="text/babel" data-presets="env,react">
+    /* One iOS frame for each Coach surface. Tab bar shows "Coach"
+       active so it's clear where this lives. */
+    function CoachFrame({ children }) {
+      return (
+        <IOSDevice width={390} height={844}>
+          <div style={{
+            paddingTop: 62, paddingBottom: 34,
+            height: "100%", boxSizing: "border-box",
+            display: "flex", flexDirection: "column",
+            background: "var(--paper)",
+          }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              {children}
+            </div>
+            <TabBar active="coach" onChange={() => {}} />
+          </div>
+        </IOSDevice>
+      );
+    }
+
+    function Canvas() {
+      const F = window.COACH_FIXTURES;
+      return (
+        <DesignCanvas
+          title="Coach · iOS · The Read"
+          subtitle={"A coach that actually knows you \u2014 a signed morning paragraph that cites your workouts (\u25c6 coral) and the knowledge base (\u00a7 outlined) inline. Built on the real RAG + multi-provider backend in the codebase."}
+        >
+          <DCSection
+            id="canonical"
+            title="The Read · canonical"
+            subtitle="The pick. Editorial morning post + reply state. Both lead with the coach's voice, cite evidence inline, and end with an honest line about what's missing."
+          >
+            <DCArtboard
+              id="read-default"
+              label="A · The Read · this morning's post"
+              width={414}
+              height={874}
+            >
+              <CoachFrame>
+                <CoachScreenRead data={F.read} workouts={F.workouts} docs={F.docs} />
+              </CoachFrame>
+            </DCArtboard>
+
+            <DCArtboard
+              id="read-reply"
+              label="A · The Read · reply to a fueling question"
+              width={414}
+              height={874}
+            >
+              <CoachFrame>
+                <CoachScreenReadReply data={F.readReply} workouts={F.workouts} docs={F.docs} />
+              </CoachFrame>
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection
+            id="alternates"
+            title="The two alternates"
+            subtitle="Same training data underneath. Different theory of what Coach should be. Kept here for comparison."
+          >
+            <DCArtboard
+              id="dir-briefing"
+              label="B · Briefing · decisions waiting"
+              width={414}
+              height={874}
+            >
+              <CoachFrame>
+                <CoachScreenBriefing data={F.briefing} workouts={F.workouts} />
+              </CoachFrame>
+            </DCArtboard>
+
+            <DCArtboard
+              id="dir-thread"
+              label="C · Thread, refined · pinned + cited"
+              width={414}
+              height={874}
+            >
+              <CoachFrame>
+                <CoachScreenThread data={F.thread} workouts={F.workouts} />
+              </CoachFrame>
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection
+            id="problem"
+            title="The current Coach tab"
+            subtitle={"What we\u2019re replacing. Generic AI chat, welcome card literally says \u201CAI running coach\u201D \u2014 against the brand voice doc. No evidence anywhere."}
+          >
+            <DCArtboard id="current" label="0 · Current · for reference" width={414} height={874}>
+              <IOSDevice width={390} height={844}>
+                <div style={{
+                  paddingTop: 62, paddingBottom: 34,
+                  height: "100%", boxSizing: "border-box",
+                  display: "flex", flexDirection: "column",
+                  background: "var(--paper)",
+                }}>
+                  <div style={{ flex: 1, overflow: "hidden" }}>
+                    <CoachScreen onOpenReport={() => {}} />
+                  </div>
+                  <TabBar active="coach" onChange={() => {}} />
+                </div>
+              </IOSDevice>
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection
+            id="notes"
+            title="Why The Read won"
+            subtitle="And what each citation type does"
+          >
+            <DCArtboard id="notes-card" label="Notes" width={1200} height={620}>
+              <div style={{
+                width: "100%", height: "100%",
+                background: "var(--paper)",
+                padding: "36px 44px",
+                boxSizing: "border-box",
+                fontFamily: "var(--font-body)",
+                color: "var(--ink)",
+                overflowY: "auto",
+              }}>
+                <div style={{
+                  fontFamily: "var(--font-mono)", fontSize: 10,
+                  letterSpacing: "0.14em", color: "var(--ink-2)",
+                  textTransform: "uppercase", marginBottom: 6,
+                }}>DESIGN NOTES · THE READ</div>
+                <h2 style={{
+                  fontFamily: "var(--font-display)", fontWeight: 700,
+                  fontSize: 26, margin: "0 0 8px 0", letterSpacing: "-0.01em",
+                }}>The coach writes. Then cites. Then admits what it can&rsquo;t see.</h2>
+                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55, color: "var(--ink-2)", maxWidth: 880 }}>
+                  Editorial first means the prose carries the brand voice
+                  (&ldquo;coach first, software second&rdquo;). Inline citations
+                  make the data layer visible without leading with it.
+                  The &ldquo;what I can&rsquo;t see&rdquo; block is the one
+                  thing AI coaches almost never do &mdash; and the brand voice
+                  doc explicitly names it as the biggest trust-builder.
+                </p>
+
+                <div style={{
+                  display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 24,
+                  marginTop: 28, alignItems: "start",
+                }}>
+                  {[
+                    {
+                      tag: "◆ WORKOUT",
+                      style: "coral wash",
+                      mean: "Your own data.",
+                      body: "Pulled from training_logs — a workout you actually ran. Coral wash + diamond mark. Tappable opens the workout detail (Plate 23).",
+                      voice: "“…you held 18 through drizzle without a fade ◆ LONG · SUN.”",
+                    },
+                    {
+                      tag: "§ KNOWLEDGE",
+                      style: "outlined",
+                      mean: "The library.",
+                      body: "Pulled from RAG (match_coaching_documents, top-5 by cosine similarity over 768-dim embeddings). Outlined chip + section mark — visually distinct from your data.",
+                      voice: "“…ninety grams an hour § Fueling for Training.”",
+                    },
+                    {
+                      tag: "♪ MEMO",
+                      style: "voice log",
+                      mean: "What you said.",
+                      body: "Pulled from voice-log transcripts in extracted_data. Shows in the Sources expander, never inline (memos are private — they're context, not citation).",
+                      voice: "Hidden by default. One tap on SOURCES to reveal.",
+                    },
+                    {
+                      tag: "WHAT I CAN’T SEE",
+                      style: "ink left bar",
+                      mean: "Honesty.",
+                      body: "The block the coach writes when sleep didn't sync, an injury mention is fresh, or the dataset is thin. Brand voice attribute 3.4 made visible: 'I don’t have enough data to answer that specifically yet.'",
+                      voice: "“Sleep this week — your watch hasn’t synced since Sunday.”",
+                    },
+                  ].map((d, i) => (
+                    <div key={i} style={{
+                      borderTop: "2px solid var(--ink)",
+                      paddingTop: 12,
+                      display: "flex", flexDirection: "column", gap: 8,
+                    }}>
+                      <span style={{
+                        fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600,
+                        letterSpacing: "0.14em", color: "var(--coral)",
+                      }}>{d.tag}</span>
+                      <h3 style={{
+                        fontFamily: "var(--font-display)", fontWeight: 700,
+                        fontSize: 18, margin: 0, letterSpacing: "-0.005em",
+                      }}>{d.mean}</h3>
+                      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: "var(--ink)" }}>
+                        {d.body}
+                      </p>
+                      <p style={{
+                        margin: 0, fontSize: 12, lineHeight: 1.45,
+                        color: "var(--ink-2)", fontStyle: "italic",
+                        paddingLeft: 10, borderLeft: "2px solid var(--coral)",
+                      }}>
+                        {d.voice}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{
+                  marginTop: 28, paddingTop: 18,
+                  borderTop: "1px solid var(--rule)",
+                  display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32,
+                }}>
+                  <div>
+                    <span style={{
+                      fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600,
+                      letterSpacing: "0.14em", color: "var(--ink-2)",
+                    }}>HOW THE BACKEND FEEDS IT</span>
+                    <p style={{ margin: "8px 0 0 0", fontSize: 13, lineHeight: 1.55 }}>
+                      Each morning post is one call to the coaching agent:
+                      ~13 parallel context fetches (training logs, athlete
+                      profile, weekly report, fitness snapshots, race intel,
+                      RAG top-5 docs, …) routed to Gemini Flash via{" "}
+                      <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>_shared/router.ts</code>.
+                      Simple Q&amp;A goes to Groq Llama 8B. Fitness Predictor
+                      stays on Claude Haiku. The "confidence" bar reads the
+                      <code style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}> model_used</code> +
+                      doc-count off the response.
+                    </p>
+                  </div>
+                  <div>
+                    <span style={{
+                      fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 600,
+                      letterSpacing: "0.14em", color: "var(--ink-2)",
+                    }}>OPEN QUESTIONS</span>
+                    <ul style={{ margin: "8px 0 0 0", paddingLeft: 18, fontSize: 13, lineHeight: 1.55 }}>
+                      <li>Cadence — daily, every run, weekly? The fixture is daily; weekly may feel less frantic.</li>
+                      <li>Push notifications — does the morning post nudge, or wait to be opened?</li>
+                      <li>Reply latency — Llama 8B is ~1s, Gemini Flash ~3-5s. The signature shows the time; is that good or noise?</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<Canvas />);
+  </script>
+</body>
+</html>

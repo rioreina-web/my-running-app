@@ -4,7 +4,7 @@
 
 Post Run Drip (PRD) is a running app for serious athletes — half **diary**, half **cockpit**. The voice is editorial: think *The New York Times Magazine* sports section, not a tech-bro fitness tracker. The product is built around the idea that a runner's data should read like a story, with a coach's voice running through it.
 
-The aesthetic is a *printed running log*. Warm paper. Black ink. One coral accent — used as restraint allows, never as decoration.
+The aesthetic is a *sports desk*. White page. Near-black ink. One red — used as restraint allows, never as decoration.
 
 ---
 
@@ -39,12 +39,35 @@ The codebase reader has access — assume the reader does not, and rely on this 
 | Path | What |
 |---|---|
 | `colors_and_type.css` | Foundational CSS vars — color, type, spacing, radii, motion |
-| `fonts/` | Crimson Pro variable + PT Serif (Regular/Italic/Bold) TTFs from the iOS app |
+| `styles.css` | Global stylesheet entry — imports `colors_and_type.css` |
+| `components/` | Built React components (see **Components** below) |
+| `fonts/` | Self-hosted faces: Crimson Pro, JetBrains Mono. PT Serif remains but is legacy. |
 | `assets/` | PRD logo, brand marks, generic imagery |
 | `preview/` | Design system tab cards — colors, type, components |
+| `templates/app-screen/` | **Start here for a new screen** — phone shell, masthead, week ledger, entries, tab bar |
+| `broadsheet/` | Direction II, "Broadsheet" — a parallel newsprint/editorial system, scoped `--bs-*` |
 | `ui_kits/ios_app/` | iOS app recreation — TodayHome, Training, WorkoutDetail, Injuries, Sign-in |
 | `slides/` | (none — no slide template was provided) |
 | `SKILL.md` | Skill manifest for Claude Code compatibility |
+
+---
+
+## Components
+
+Eight primitives are built and exported. Everything else in the app composes from these.
+
+| Component | What it is |
+|---|---|
+| `Eyebrow` | Tracked monospace section label — `TUESDAY`, `FROM YOUR COACH`. `coral` for the one active section per screen. |
+| `EditorialRule` | The canonical section break: thin rule · 3px dot · thin rule. A typesetting mark, not a divider. |
+| `PlateStrip` | Plate header at the top of every editorial surface — surface name, figure number, date. |
+| `MoodPill` | Tracked uppercase mood at 12% wash. Six moods, low chroma, no faces. |
+| `StatTile` | Tracked label over a tabular monospaced numeral, with optional unit and delta. |
+| `CoachQuote` | The "from your coach" blockquote — 2px coral-at-50% left stripe, italic body. The one coloured left border in the system. |
+| `TypeChip` | Session type. Solid blue for the keyed session, hairline outline for everything easy. One keyed chip per screenful. |
+| `LogEntry` | One run in the feed: mood dot, date, type chip, factual headline, the athlete's words, up to three stats, provenance byline. |
+
+Each lives in `components/<Name>/` with its `.jsx`, a `.d.ts` describing its props, and a preview card.
 
 ---
 
@@ -100,24 +123,35 @@ The pattern: **state the absence, then say what will fill it.** Italic, secondar
 ## Visual foundations
 
 ### Color — one accent, used like punctuation
-PRD is a **monochromatic warm-paper system with a single coral hit**. Coral is *never* a fill across large surfaces — it's used the way italics or a colored capital is in a magazine: to point.
+PRD is a **white, near-monochrome system with a single red hit**. Red is *never* a fill across large surfaces — it's used the way a second ink is in a magazine: to point.
 
-- **Surfaces** are warm paper `#F5F3F0` with white cards `#FFFFFF` and a slightly warmer elevated white `#FAFAF8`. The `#E8E4DF` deep paper appears in calendar wells.
-- **Ink** is rich black-warm `#1A1815` (not pure `#000`), with `#6B6560` warm gray for meta and `#9B9590` for captions. Three text tones, no more.
-- **Coral** `#D4592A` is the *only* accent. It appears as: the eyebrow color for the active section, the active-day dot in the week strip, the "Mark complete" underline, the record button, and inline links. **One coral element per visual cluster, maximum.** If two would compete, drop one to ink-2.
-- **Moods** sit at low chroma — deep green, sage, amber, terracotta, deep rose. Always rendered as a tracked uppercase pill at 12% wash, never as a full fill.
-- **Pace** is a single-hue **blue depth ramp**, pale sky `#93B9D6` (Easy) → navy `#0E1D4E` (Mile) — ten stops for the ten canonical zones. Pace reads as *intensity* (depth), never as a rainbow. Source of truth: `RunningLog/Workouts/PaceSpectrum.swift`.
+- **Surfaces** are pure white `#FFFFFF`. There is no tinted paper. Separation comes from **hairlines**, not from fills or shadows: `#EBEBEB` for the standard rule, `#F2F2F2` for the rare inset well, `2px #111111` when a header needs real weight.
+- **Ink** is near-black `#111111`, with `#6B6B6B` for meta and labels. `#9A9A9A` exists for **hairlines and disabled states only** — at 2.8:1 it must never be used for text. Two text tones, not three.
+- **Red** `#EE2B24` is the *only* accent, and it lives on fills: the record button, the active tab rule, the active tab-bar dot. For text at 13px or smaller use `#D31F19` (5.0:1) — the brand red fails contrast at label sizes. **One red element per visual cluster, maximum.**
+- **Moods** are the only place additional hues appear, and all six were darkened to clear 4.5:1 — deep green, sage, amber, red, rose, plum. Tracked uppercase, and the entry's left rule carries the mood colour.
 
-**The three-palette rule: blue = pace, warm = mood, coral = alert. The three palettes never share hues** — so on any surface a color's job is unambiguous. Green is mood-only (a "safe zone" band goes neutral gray, never green); coral is alert-only (niggles, out-of-zone workload, brand punctuation — never a pace fill).
+### Typography — five locked roles (Aug 2026)
 
-> **Hue history.** On 2026-08-21 the ramp was moved onto the coral accent, then onto a wine ramp, then reverted here. Coral was pulled for a reason worth keeping: pace is the largest colored surface in the product, so putting it on the brand hue made orange the dominant color of every chart and left coral nothing to point *with*. An accent that covers half the screen has stopped being an accent. If the hue is ever revisited, the free regions on the wheel are roughly 200–315° — everything warm is taken by coral and the tired/struggling/injured moods, and everything green by energized/positive.
+| Role | Face | Token |
+|---|---|---|
+| Display | Instrument Sans 700 | `--font-display` |
+| Label | Schibsted Grotesk 600, tracked caps | `--font-label` |
+| Prose | Crimson Pro 400 — anything read as sentences | `--font-prose` |
+| Data | Inter 500/600, tabular — every numeral | `--font-data` |
+| Mono | JetBrains Mono — transcripts and machine answers only | `--font-mono` |
 
-### Typography — three families, sharply assigned
-- **Crimson Pro** (variable serif) — display headlines, button labels, section actions. Bold, tall, slightly condensed. Used for "May 5th.", "Marathon block.", "Active aches."
-- **PT Serif** — body, paragraph copy, italic quotes. Warm and readable.
-- **Monospaced** (`SF Mono` on iOS / `ui-monospace` on web) — *every* uppercase label, eyebrow, stat caption, plate strip. Tracked `+0.10em` to `+0.14em`. Numerals are also monospaced (`tabular-nums`) so columns of stats stay rectangular.
+Every face is free to ship. Neue Haas Grotesk and Akzidenz-Grotesk were trialled and removed — licensed Monotype/Berthold faces with no legitimate webfont available. Instrument Sans replaced Haas on measurement: +3.1% width at 46px/700, the closest free grotesk, so no line break moved. Crimson Pro and JetBrains Mono are self-hosted in `fonts/`; the three grotesks load from Google. Times survives in exactly one role: the single-line italic dek (`--font-serif`). Archivo and PT Serif are retired. **Italic mono is the athlete; roman mono is the machine** — and the machine has no colour of its own, so weight (not hue) marks the values it computed.
 
-Type is the visual identity — not color, not shape. If you only got the type right, the brand would still read.
+**Copy rule:** a headline names the session, it never editorialises it. `6 × 800m.` — not "Six by eight hundred, held."
+
+### Legacy note — one sans, two specialists
+- **Helvetica Neue** — the whole interface. **Black (900)** for display, uppercase and tight (`-0.04em`), one line wherever possible. **Black** sentence-case for entry titles. **Bold (700)** for every tracked caps label at `+0.03em` to `+0.06em`. Archivo is the webfont fallback off Apple platforms.
+- **Times** — the serif accent, italic. Deks, optional notes, credits. One or two lines at a time; never body copy. This is the contrast against the industrial sans, and the only serif in the system.
+- **DM Mono** — every numeral, and the athlete's transcribed voice memos in *italic*. Data looks computed even mid-sentence; a voice memo looks transcribed.
+
+Three registers, and you can tell who is speaking without a label: **Helvetica is the app**, **DM Mono italic is the athlete**, **Times italic is the aside**.
+
+Type is the visual identity — not colour, not shape. If you only got the type right, the brand would still read.
 
 ### Spacing & layout
 - **8pt grid.** 4 / 8 / 12 / 16 / 20 / 24 / 32 / 40 / 56.
@@ -146,18 +180,19 @@ Type is the visual identity — not color, not shape. If you only got the type r
 - **Focus:** 2px coral outline, 2px offset. Never a glow.
 
 ### Borders, dividers, edges
-- **Hairlines only.** `1px solid #E8E4E0`. The hairline is the design system's most-used border.
-- **Coral border on selected/active:** `1.5px solid #D4592A` (e.g. the active mood radio, the active week-strip cell ring).
+- **Hairlines only.** `1px solid #EBEBEB`. The hairline is the design system's most-used border, and the *only* structural device — rules replace cards, tints, and shadows entirely.
+- **A 2px ink rule** (`2px solid #111111`) when a header or block needs real weight.
+- **A 2px accent rule** marks the active tab (`--red`) or an AI surface (`--ai`). Never both on one screen.
+- **A 2px mood rule** runs down the left of a log entry, carrying that entry's mood colour. This is the one coloured left-border in the system. Do not generalize.
 - **Editorial blockquote left-bar:** **2px** coral-at-50%-opacity stripe, 12px text inset — this is the canonical "from your coach" treatment. **This is the one place a colored left-border appears in the system.** Do not generalize.
 
 ### Shadow system
-- **`shadow-card`** — `0 2px 8px rgba(0,0,0,0.06)`. The default. Tiles, sheets.
-- **`shadow-coral`** — `0 4px 12px rgba(212,89,42,0.30)`. *Only* the primary record button.
-- **`shadow-press`** — `0 1px 2px rgba(0,0,0,0.04)`. Pressed/recessed surfaces.
-- No inset shadows. No multi-layer shadows. No colored shadows except the coral on the record button.
+- **There is no shadow system.** `--shadow-card` and `--shadow-press` are `none`. Depth is not part of this brand; hairlines and type weight carry every hierarchy.
+- The one exception is a sheet's top edge (`--shadow-sheet`, a 1px rule), because a sheet needs to read as a layer.
+- No inset shadows. No coloured shadows. No blur, no glass, no `backdrop-filter`.
 
 ### Transparency / blur
-- **Used almost nowhere.** The mood-pill background is `coral-wash` (12% coral) — that is the only transparency in the system.
+- **Used nowhere.** Every surface is opaque white. Mood is a coloured word and a coloured rule, not a wash.
 - **No `backdrop-filter`** anywhere.
 
 ### Imagery (when needed)
@@ -181,8 +216,45 @@ Type is the visual identity — not color, not shape. If you only got the type r
 - Cards stand alone on the paper — no card-in-card.
 
 ### Fixed elements
-- **Tab bar at bottom**, 5 tabs (`LOG · TRAIN · TRENDS · COACH · RUNS`), monospaced uppercase labels with the active label in coral and a filled coral 6px dot above. Hairline divider above.
-- **Plate strip at top** of editorial surfaces (`RUNNING LOG — TRENDS · v1 ANALYTICS SURFACE` left, figure number + date right). Monospaced, tracked, on `paper` background.
+- **Tab bar at bottom**, 6 tabs (`LOG · TRAIN · TRENDS · WEEK · ASK · SHEET`), Helvetica Bold uppercase at 11px / `+0.03em`, a 6px dot above each. Active tab: filled red dot, ink label at 700. Inactive: hollow dot, `--ink-2` label. Hairline above, 44px minimum target.
+- **Plate line at top** — the surface name alone (`RUNNING LOG`), Helvetica Bold caps 12px in `--ink-2`. The old two-line `— LOG · v1 VOICE LOG` strip and `FIG. 09` figure numbers are **retired**; they belonged to the serif era and read as costume here.
+- **Header row** above it: hamburger left, `TODAY ↗` right in Bold caps. Both flat — no pills, no shadows.
+- **Section tabs** under the plate: two Bold caps labels, 52px tall, active one in ink with a 2px accent rule beneath.
+
+---
+
+## Canonical screens
+
+Two screens are canonical and consume the tokens directly (they link `styles.css` and hold no hardcoded colour):
+**`Workout Sheet - Redesign.html`** and **`Voice Log - Neue Haas.html`**. The feed has not been migrated yet.
+
+The three below are the earlier Helvetica/Archivo era, kept for reference. Read the canonical three first.
+
+### `Voice Log 032c.html` — the reference
+The screen every other screen is copied from. Plate line, two section tabs, a centred Helvetica Black uppercase hero (`LOG YOUR RUN.`) at 40px on one line, a Times italic dek, a `LINKED TO` row, then the red record button centred in the space that's left. Establishes the gutter (22px), the hairline rhythm, and the header treatment.
+
+### `Log Feed 032c.html` — the diary
+Filter chips (pill, black when active), `THIS WEEK · 25 MI` section labels, then entries. Each entry: a 2px mood rule down the left, a sentence-case Helvetica Black title at 23px, a Bold caps meta line with generous `word-spacing` around the middots, the voice memo in JetBrains Mono *italic*, and the mood in Bold caps in its own colour. Entries are separated by ~52px and a hairline — not by cards.
+
+### `AI Insight.html` — generated content
+Same chrome as Voice Log. The answer is JetBrains Mono **roman** in ink. Olive is retired: computed values are marked by weight, the label sits in `--ink-2`, and colour appears only where it names something real — blue on pace bands, a red wash behind the athlete's quoted words, orange on the heat penalty. The athlete's quoted words break out into Times italic. The active tab rule turns olive instead of red.
+
+**The rule that ties them together:** *italic mono is the athlete, roman mono is the machine, Helvetica is the app, Times italic is an aside.* Four voices, and you never need a name label to tell who is speaking.
+
+---
+
+## What we are deliberately not
+
+The warm-paper-and-coral system this replaced was well made, and it looked like every other AI product shipping in 2026: cream `#F5F3F0` surfaces, a burnt-orange accent, a literary serif, generous soft radii. That palette has become the house style of AI apps, and it made a running app for serious athletes read as a chatbot with a diary skin.
+
+So, explicitly:
+
+- **No cream, no beige, no warm paper.** The page is `#FFFFFF`. Warmth comes from photography and from the athlete's own words, never from the surface.
+- **No literary serif for display.** Times appears only as a short italic aside. Headlines are Helvetica Black — a sports desk, not a novel.
+- **No burnt orange or terracotta.** The accent is a hard red `#EE2B24`.
+- **No soft cards.** `--r-card` is `0`. Radii exist only for pills and the record button.
+- **No shadows, no tints, no washes.** If something needs separating, it gets a rule.
+- **No emoji, no illustration, no gradient, no glass.**
 
 ---
 
@@ -219,7 +291,7 @@ See [`ICONOGRAPHY.md`](#iconography) section below — the codebase uses **Apple
 ## How to use this system
 
 1. **Always start with the editorial voice.** If your copy is "wellness app" generic, the visuals can't save it.
-2. **Coral is a punctuation mark, not a paint.** When you find yourself adding a second coral element, change one to ink-2 instead.
-3. **Type carries the brand.** Use Crimson Pro display for headlines, PT Serif for body, monospaced for every uppercase label.
-4. **Editorial rules, not horizontal lines.** Use the `line · dot · line` divider for section breaks.
-5. **The plate header strip + footer caption** is the single most identifiable visual gesture. Use it on any standalone artifact (slides, exports, web pages).
+2. **Red is a punctuation mark, not a paint.** When you find yourself adding a second red element, change one to ink-2 instead. Use `--red-text` for anything 13px or smaller.
+3. **Type carries the brand.** Helvetica Neue Black for display, Bold caps for labels, DM Mono for numerals and voice, Times italic for asides.
+4. **Hairlines, not boxes.** Structure comes from `1px #EBEBEB` rules and a `2px #111` rule under headers. No card shadows, no radii except pills.
+5. **`--ink-3` is not a text colour.** Hairlines and disabled states only.

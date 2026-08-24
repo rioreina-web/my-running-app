@@ -1,0 +1,152 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Workout Detail Redesign" subtitle="Interval/tempo detail, rebuilt dense — rep chart hero, full Strava telemetry, weather, comparisons, route. 3 directions + live tweaks." -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Post Run Drip · Workout Detail · Redesign</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="colors_and_type.css">
+  <style>
+    html, body { margin: 0; padding: 0; min-height: 100vh; background: #f0eee9; }
+    #root { width: 100%; min-height: 100vh; }
+    .ref-board { width: 100%; height: 100%; background: #cfccc6; display: flex; align-items: center; justify-content: center; }
+    .ref-board img { max-width: 100%; max-height: 100%; display: block; }
+    .ref-tag { position: absolute; top: 12px; left: 12px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em; background: rgba(107,101,96,0.95); color: #fff; padding: 4px 8px; border-radius: 2px; text-transform: uppercase; z-index: 2; }
+
+    /* ── floating tweaks panel ── */
+    #tweaks { position: fixed; top: 16px; right: 16px; z-index: 9999; width: 232px;
+      background: #fffefb; border: 1px solid #e0dbd4; border-radius: 12px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.14); font-family: var(--font-mono);
+      overflow: hidden; transition: transform .25s cubic-bezier(.2,.7,.2,1); }
+    #tweaks.collapsed { transform: translateX(calc(100% - 44px)); }
+    .tw-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; cursor: pointer; border-bottom: 1px solid #eee8e0; }
+    .tw-title { font-size: 10px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #1A1815; }
+    .tw-chev { color: #9B9590; font-size: 12px; transition: transform .25s; }
+    #tweaks.collapsed .tw-chev { transform: rotate(180deg); }
+    .tw-body { padding: 6px 14px 14px; }
+    .tw-row { padding: 11px 0; border-bottom: 1px solid #f0ebe4; }
+    .tw-row:last-child { border-bottom: none; }
+    .tw-label { font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #6B6560; margin-bottom: 7px; }
+    .tw-seg { display: flex; gap: 0; border: 1px solid #e0dbd4; border-radius: 7px; overflow: hidden; }
+    .tw-seg button { flex: 1; border: none; background: transparent; padding: 6px 4px; font-family: var(--font-mono);
+      font-size: 9.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #6B6560; cursor: pointer; }
+    .tw-seg button.on { background: #D4592A; color: #fff; }
+    .tw-toggle { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+    .tw-tname { font-size: 11px; color: #1A1815; font-family: var(--font-body); }
+    .tw-sw { width: 38px; height: 22px; border-radius: 999px; background: #d8d3cc; position: relative; transition: background .2s; flex: 0 0 auto; }
+    .tw-sw.on { background: #D4592A; }
+    .tw-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 999px; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+    .tw-sw.on::after { transform: translateX(16px); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="tweaks"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- kit -->
+  <script type="text/babel" src="ui_kits/ios_app/ios-frame.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/Primitives.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/design-canvas.jsx"></script>
+
+  <!-- redesign -->
+  <script type="text/babel" src="wd-redesign-data.jsx"></script>
+  <script type="text/babel" src="wd-redesign-charts.jsx"></script>
+  <script type="text/babel" src="wd-redesign-screens.jsx"></script>
+
+  <script type="text/babel" data-presets="env,react">
+    function WDFrame({ children }) {
+      return (
+        <IOSDevice width={390} height={844}>
+          <div style={{ paddingTop: 56, paddingBottom: 34, height: "100%", boxSizing: "border-box", display: "flex", flexDirection: "column", background: "var(--paper)" }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>{children}</div>
+            <TabBar active="runs" onChange={() => {}} />
+          </div>
+        </IOSDevice>
+      );
+    }
+
+    function Ref({ src, label }) {
+      return (
+        <div style={{ position: "relative", width: "100%", height: "100%" }}>
+          <span className="ref-tag">{label}</span>
+          <div className="ref-board"><img src={src} alt="current workout detail" /></div>
+        </div>
+      );
+    }
+
+    function Canvas() {
+      return (
+        <DesignCanvas
+          title="Workout Detail · Redesign"
+          subtitle="The interval/tempo detail, rebuilt dense. Rep chart leads; every Strava stream is charted; weather is woven into the read; comparison is vs recent tempos. Use the Tweaks panel (top-right) to flip weather adjustment, HR-zone coloring, units, and the comparison set across all three."
+        >
+          <DCSection id="reference" title="Reference — current production" subtitle="Sparse: rep bars with no distance, no elevation, no weather, no map, no comparison.">
+            <DCArtboard id="cur-1" label="Current · top" width={390} height={844}><Ref src="uploads/IMG_4011.PNG" label="Current · session" /></DCArtboard>
+            <DCArtboard id="cur-2" label="Current · splits" width={390} height={844}><Ref src="uploads/IMG_4012.PNG" label="Current · rep chart + splits" /></DCArtboard>
+          </DCSection>
+
+          <DCSection id="redesign" title="Redesign — three directions" subtitle="A · Rep Receipt — hero rep chart then a clean receipt of telemetry. B · Telemetry Dashboard — densest, synchronized multi-channel stack. C · The Session Read — narrative, charts as evidence.">
+            <DCArtboard id="receipt" label="A · Rep Receipt" width={390} height={844}><WDFrame><DirReceipt /></WDFrame></DCArtboard>
+            <DCArtboard id="dashboard" label="B · Telemetry Dashboard" width={390} height={844}><WDFrame><DirDashboard /></WDFrame></DCArtboard>
+            <DCArtboard id="read" label="C · The Session Read" width={390} height={844}><WDFrame><DirRead /></WDFrame></DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+
+    /* ── floating tweaks panel ── */
+    function Tweaks() {
+      const st = wdStore.use();
+      const [open, setOpen] = React.useState(true);
+      React.useEffect(() => {
+        document.getElementById("tweaks").className = open ? "" : "collapsed";
+      }, [open]);
+      const Seg = ({ label, val, options }) => (
+        <div className="tw-row">
+          <div className="tw-label">{label}</div>
+          <div className="tw-seg">
+            {options.map((o) => (
+              <button key={o.v} className={st[val] === o.v ? "on" : ""} onClick={() => wdStore.set({ [val]: o.v })}>{o.l}</button>
+            ))}
+          </div>
+        </div>
+      );
+      const Tog = ({ label, val }) => (
+        <div className="tw-row">
+          <div className="tw-toggle" onClick={() => wdStore.set({ [val]: !st[val] })}>
+            <span className="tw-tname">{label}</span>
+            <span className={"tw-sw" + (st[val] ? " on" : "")} />
+          </div>
+        </div>
+      );
+      return (
+        <React.Fragment>
+          <div className="tw-head" onClick={() => setOpen((o) => !o)}>
+            <span className="tw-title">Tweaks</span>
+            <span className="tw-chev">{open ? "›" : "‹"}</span>
+          </div>
+          <div className="tw-body">
+            <Tog label="Heat-adjusted pace" val="weatherAdjust" />
+            <Tog label="Color by HR zone" val="colorByZone" />
+            <Seg label="Units" val="units" options={[{ v: "mi", l: "mi" }, { v: "km", l: "km" }]} />
+            <Seg label="Compare against" val="comparison" options={[{ v: "recent", l: "Recent" }, { v: "thisSession", l: "Session" }, { v: "best", l: "Best" }]} />
+          </div>
+        </React.Fragment>
+      );
+    }
+
+    function mount() {
+      if (typeof window.DirReceipt !== "function" || typeof window.DesignCanvas !== "function") {
+        return setTimeout(mount, 50);
+      }
+      ReactDOM.createRoot(document.getElementById("root")).render(<Canvas />);
+      ReactDOM.createRoot(document.getElementById("tweaks")).render(<Tweaks />);
+    }
+    mount();
+  </script>
+</body>
+</html>

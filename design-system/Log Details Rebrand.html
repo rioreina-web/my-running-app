@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Log Details Rebrand" subtitle="Three brand-aligned directions for the log detail sheet" -->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Post Run Drip · Log Details · Brand Rebrand</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="ui_kits/ios_app/tokens.css">
+  <style>
+    html, body { margin: 0; padding: 0; min-height: 100vh; background: #1A1815; }
+    #root { width: 100%; min-height: 100vh; }
+    .ref-board {
+      width: 100%; height: 100%;
+      background: #000;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ref-board img {
+      max-width: 100%; max-height: 100%;
+      display: block;
+    }
+    .ref-tag {
+      position: absolute; top: 12px; left: 12px;
+      font-family: ui-monospace, "SF Mono", monospace;
+      font-size: 10px; letter-spacing: 0.14em;
+      background: rgba(212, 89, 42, 0.95); color: #fff;
+      padding: 4px 8px; border-radius: 2px;
+      text-transform: uppercase; z-index: 2;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- kit -->
+  <script type="text/babel" src="ui_kits/ios_app/ios-frame.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/Primitives.jsx"></script>
+  <script type="text/babel" src="ui_kits/ios_app/design-canvas.jsx"></script>
+
+  <!-- screens -->
+  <script type="text/babel" src="log-details-rebrand.jsx"></script>
+
+  <script type="text/babel" data-presets="env,react">
+    /* Frame the screen inside an iPhone bezel + a tab bar at the bottom */
+    function LDFrame({ children }) {
+      return (
+        <IOSDevice width={390} height={844}>
+          <div style={{
+            paddingTop: 62, paddingBottom: 34,
+            height: "100%", boxSizing: "border-box",
+            display: "flex", flexDirection: "column",
+            background: "var(--paper)",
+          }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>{children}</div>
+            <TabBar active="log" onChange={() => {}} />
+          </div>
+        </IOSDevice>
+      );
+    }
+
+    /* Current screenshots — reference */
+    function CurrentScreenshot({ src, label }) {
+      return (
+        <div style={{ position: "relative", width: "100%", height: "100%" }}>
+          <span className="ref-tag">{label}</span>
+          <div className="ref-board">
+            <img src={src} alt="Current Log Details screen" />
+          </div>
+        </div>
+      );
+    }
+
+    function Canvas() {
+      return (
+        <DesignCanvas
+          title="Log Details · Brand Rebrand"
+          subtitle="Hairlines + plates, mono numerals, one coral per cluster. No mint, no pink, no red."
+        >
+          <DCSection id="reference" title="Reference — current production">
+            <DCArtboard id="current-1" label="Current · entry detail (top)" width={390} height={844}>
+              <CurrentScreenshot
+                src="scraps/log-details-before-2.png"
+                label="Current · v1"
+              />
+            </DCArtboard>
+            <DCArtboard id="current-2" label="Current · entry detail (scrolled)" width={390} height={844}>
+              <CurrentScreenshot
+                src="scraps/log-details-before-1.png"
+                label="Current · v1 (scrolled)"
+              />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection id="rebrand" title="Rebrand — three directions">
+            <DCArtboard id="editorial" label="A · Editorial — Thursday plate" width={390} height={844}>
+              <LDFrame><LogDetailsEditorial /></LDFrame>
+            </DCArtboard>
+            <DCArtboard id="receipt" label="B · Receipt — single readout" width={390} height={844}>
+              <LDFrame><LogDetailsReceipt /></LDFrame>
+            </DCArtboard>
+            <DCArtboard id="dense" label="C · Dense — keep current order, restyle" width={390} height={844}>
+              <LDFrame><LogDetailsDense /></LDFrame>
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Canvas />);
+  </script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Log Feed · 032c" subtitle="Diary feed — Helvetica Black entry titles, Times italic voice quotes, mood as one colour" viewport="470x960" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Log Feed</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;900&family=JetBrains+Mono:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+/* --mood-tired / --mood-struggling are darkened from colors_and_type.css (#C4873A / #C45A3A),
+   which fail 4.5:1 at label sizes. --red-text is the brand red darkened for text ≤13px. */
+:root{--paper:#FFFFFF;--ink:#111111;--ink-2:#6B6B6B;--ink-3:#9A9A9A;--rule:#EBEBEB;--red:#EE2B24;--red-text:#D31F19;--mood-tired:#8F5D06;--mood-struggling:#D31F19;--sans:"Helvetica Neue",Helvetica,"Archivo",system-ui,sans-serif;--serif:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#C6C6C6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.stage{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:28px 20px}
+.phone{width:393px;height:852px;flex:none;background:var(--paper);color:var(--ink);font-family:var(--sans);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 26px 70px rgba(0,0,0,.3),0 0 0 11px #0C0C0C,0 0 0 12px #2C2C2C}
+a{color:var(--ink)}a:hover{color:var(--red)}
+button{font-family:var(--sans)}
+.caps{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+
+/* status bar with dynamic island */
+.sb{height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700;position:relative}
+.sb .island{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:126px;height:34px;border-radius:999px;background:#0A0A0A}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:var(--ink);color:#fff;border-radius:4px;font-size:10px;font-weight:700;padding:0 4px}
+
+/* header */
+.hd{flex:none;height:56px;padding:0 22px;display:flex;align-items:center;justify-content:space-between}
+.icon{width:44px;height:44px;margin-left:-11px;background:transparent;border:0;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 10px;cursor:pointer}
+.icon i{display:block;height:2px;border-radius:2px;background:var(--ink)}
+.link{height:44px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;text-decoration:none}
+
+/* filter chips */
+.chips{flex:none;display:flex;gap:7px;padding:2px 22px 16px;border-bottom:1px solid var(--rule)}
+.chip{height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--rule);background:transparent;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2);cursor:pointer}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+
+/* feed */
+.feed{flex:1;min-height:0;overflow-y:auto}
+.feed::-webkit-scrollbar{display:none}
+.sec{padding:22px 22px 4px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;word-spacing:.3em}
+.entry{padding:20px 22px 22px;border-bottom:1px solid var(--rule)}
+.entry .in{border-left:2px solid var(--red);padding-left:16px}
+.entry.tired .in{border-left-color:var(--mood-tired)}
+.entry .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.entry h2{font-size:23px;font-weight:900;letter-spacing:-.025em;line-height:1.06;margin:0;white-space:nowrap}
+.entry h2 .star{color:var(--red);font-size:15px;margin-left:6px;vertical-align:2px}
+.voice{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--red-text);background:transparent;border:0;padding:4px 0;cursor:pointer;white-space:nowrap}
+.entry .meta{margin-top:7px;font-size:11px;font-weight:700;letter-spacing:.09em;line-height:1.4;word-spacing:.3em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.entry .quote{font-family:var(--serif);font-style:italic;font-weight:400;font-size:14px;line-height:1.55;letter-spacing:-.01em;color:var(--ink);margin:12px 0 0;text-wrap:pretty}
+.entry .mood{display:inline-block;margin-top:12px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--mood-struggling)}
+.entry.tired .mood{color:var(--mood-tired)}
+
+/* tab bar */
+.tb{flex:none;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);padding:0 4px 6px}
+.tb button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 0 10px;cursor:pointer}
+.tb .dot{width:6px;height:6px;border-radius:999px;border:1px solid var(--ink-3);background:transparent}
+.tb .lb{font-size:11px;font-weight:500;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
+.tb button.on .dot{background:var(--red);border-color:var(--red)}
+.tb button.on .lb{color:var(--ink);font-weight:700}
+.home{flex:none;display:flex;justify-content:center;padding:0 0 9px}
+.home i{display:block;width:134px;height:5px;border-radius:999px;background:var(--ink)}
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="phone" data-screen-label="Log Feed">
+
+  <div class="sb">
+    <span>10:17</span>
+    <span class="island"></span>
+    <span class="g">
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg>
+      <span class="batt">83</span>
+    </span>
+  </div>
+
+  <div class="hd">
+    <button class="icon" aria-label="Menu"><i></i><i></i><i></i></button>
+    <a class="link" href="#">Today <span>&#8599;</span></a>
+  </div>
+
+  <div class="chips">
+    <button class="chip on">All</button>
+    <button class="chip">Voice</button>
+    <button class="chip">Notes</button>
+    <button class="chip">Check-ins</button>
+  </div>
+
+  <div class="feed">
+
+    <div class="sec">This week · 25 mi</div>
+
+    <div class="entry tired">
+      <div class="in">
+        <div class="top">
+          <h2>Easy</h2>
+          <button class="voice">&#9654; Voice</button>
+        </div>
+        <div class="meta">Aug 20 · Easy · 4.43 mi</div>
+        <p class="quote">“First run back after being sick. My chest didn't feel great, and I'm still dealing with a cough. My left leg felt a little tired as well.”</p>
+        <span class="mood">Tired</span>
+      </div>
+    </div>
+
+    <div class="entry">
+      <div class="in">
+        <div class="top">
+          <h2>Tuesday <span class="star">&#9733;</span></h2>
+          <button class="voice">&#9654; Voice</button>
+        </div>
+        <div class="meta">Aug 18 · Intervals · 6.22 mi</div>
+        <p class="quote">“I struggled a lot with today's 3x2 mile workout. It was hot and humid, and I've been feeling a bit worn down, almost with a sore throat-ish kind of vibe. Overall, it w…”</p>
+        <span class="mood">Struggling</span>
+      </div>
+    </div>
+
+    <div class="sec">Last week · 71 mi</div>
+
+    <div class="entry">
+      <div class="in">
+        <div class="top">
+          <h2>Sunday <span class="star">&#9733;</span></h2>
+          <button class="voice">&#9654; Voice</button>
+        </div>
+        <div class="meta">Aug 16 · Long run · 17.13 mi</div>
+        <p class="quote">“Completed a steady long run, but the heat and humidity became a significant factor after about 90 minutes, leading me to take walk breaks in the second…”</p>
+        <span class="mood">Struggling</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="tb">
+    <button class="on"><span class="dot"></span><span class="lb">Log</span></button>
+    <button><span class="dot"></span><span class="lb">Train</span></button>
+    <button><span class="dot"></span><span class="lb">Trends</span></button>
+    <button><span class="dot"></span><span class="lb">Week</span></button>
+    <button><span class="dot"></span><span class="lb">Ask</span></button>
+    <button><span class="dot"></span><span class="lb">Sheet</span></button>
+  </div>
+
+  <div class="home"><i></i></div>
+
+</div>
+</div>
+</body>
+</html>
