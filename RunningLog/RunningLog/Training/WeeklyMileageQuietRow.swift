@@ -8,7 +8,10 @@
 //  total so the runner can clock progress without scrolling.
 //
 //      WEEKLY MILEAGE                                      +8% VS PRIOR
-//      47.2 MILES
+//      47.2
+//
+//  The "MILES" unit label is gone — the eyebrow one line above already
+//  says MILEAGE, and the number is the point.
 //
 //  Coral discipline: none — except the delta turns coral when the
 //  comparison drops below prior (a small signal that volume slipped).
@@ -35,24 +38,20 @@ struct WeeklyMileageQuietRow: View {
                     .foregroundStyle(deltaColor)
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(numberText)
-                    .font(.dripStat(40))
-                    .foregroundStyle(Color.drip.textPrimary)
-                    .monospacedDigit()
-                Text("MILES")
-                    .font(.dripEyebrow(11))
-                    .tracking(1.0)
-                    .foregroundStyle(Color.drip.textSecondary)
-            }
-            .padding(.top, 6)
+            Text(numberText)
+                .font(.dripStat(40))
+                .foregroundStyle(Color.drip.textPrimary)
+                .monospacedDigit()
+                .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// Zero renders as "0.0", not an em-dash. Nothing logged yet is a
+    /// real, honest number here — and em-dash placeholders are against
+    /// the design system's empty-state rule.
     private var numberText: String {
-        if thisWeekMiles <= 0 { return "—" }
-        return String(format: "%.1f", thisWeekMiles)
+        String(format: "%.1f", max(0, thisWeekMiles))
     }
 
     private var deltaText: String {

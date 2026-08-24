@@ -14,7 +14,12 @@
 //       · open circle        = upcoming
 //       · short dash         = rest day
 //   - Distance below the node in serif display.
-//   - Workout-type tag below distance in mono caps.
+//   - Workout-type tag below distance in mono caps — only on days that
+//     deviate from easy running. Easy is the week's default and doesn't
+//     need naming seven times; tagging every cell turned the strip into
+//     a wall of mono. Quality days, long runs, races and rest still get
+//     their tag, so the shape of the week reads at a glance instead of
+//     being buried in repetition.
 //
 //  The strip takes the runner's `[ScheduledWorkout]` for the current
 //  week. Days are rendered in dayOfWeek order (Mon → Sun).
@@ -119,19 +124,25 @@ private struct DayCellView: View {
         workout.workoutType == .rest
     }
 
+    /// Empty on rest days and on days with no distance on file — the
+    /// node already carries "rest", and an em-dash placeholder is
+    /// against the design system's empty-state rule.
     private var distanceLabel: String {
-        if isRest { return "—" }
+        if isRest { return "" }
         if let m = workout.workout?.totalDistanceMiles, m > 0 {
             // Round to integer for the strip — fractional miles are noise here.
             return "\(Int(m.rounded()))"
         }
-        return "—"
+        return ""
     }
 
+    /// Blank for easy days. See the file header: easy is the default
+    /// register, so it goes unnamed and the tags that remain mean
+    /// something.
     private var typeLabel: String {
         switch workout.workoutType {
+        case .easy:          return ""
         case .rest:          return "REST"
-        case .easy:          return "EASY"
         case .tempo:         return "TEMPO"
         case .intervals:     return "INTV"
         case .longRun:       return "LONG"
@@ -172,7 +183,8 @@ private struct DayCellView: View {
                 .frame(height: 24)
                 .padding(.top, 6)
 
-            // Row 4: type
+            // Row 4: type — reserved height even when blank so the
+            // cells stay on a shared baseline grid.
             Text(typeLabel)
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .tracking(0.6)

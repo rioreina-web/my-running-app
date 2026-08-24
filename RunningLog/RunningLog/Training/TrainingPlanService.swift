@@ -236,7 +236,7 @@ final class TrainingPlanService {
         } catch {
             print("[ScheduledWorkouts] ERROR: \(error)")
             Log.coach.error("Failed to load workouts: \(error)")
-            ErrorReporter.shared.report(error, context: "load scheduled workouts")
+            await ErrorReporter.shared.report(error, context: "load scheduled workouts")
         }
     }
 
