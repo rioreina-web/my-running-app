@@ -1,8 +1,44 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 /**
+ * True when `token` cannot possibly resolve to a user — i.e. it carries no
+ * `sub` claim. Supabase API keys (anon and service-role) are JWTs with a
+ * `role` claim and no subject, so `auth.getUser()` on one is guaranteed to
+ * come back `403: invalid claim: missing sub claim`.
+ *
+ * Why this exists: on 2026-08-07, 88 of every 100 requests reaching GoTrue
+ * were exactly that 403 — service-role callers landing in a user-JWT path.
+ * Each one is a round-trip to an auth service that must query the database
+ * to answer, and during the 20:23 UTC stall the database was the scarce
+ * resource. Skipping a call whose outcome is already known costs nothing and
+ * changes no authorization decision: the caller still gets the same 401.
+ *
+ * This deliberately does NOT verify the signature — the gateway already did
+ * (`verify_jwt = true` in config.toml). It only reads a claim to decide
+ * whether asking GoTrue is worth the trip.
+ */
+function lacksSubjectClaim(token: string): boolean {
+  const parts = token.split(".");
+  if (parts.length !== 3) return true;
+  try {
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "=")));
+    return typeof payload?.sub !== "string" || payload.sub.length === 0;
+  } catch {
+    // Undecodable payload can't name a user either.
+    return true;
+  }
+}
+
+/**
  * Extract and verify the authenticated user from the JWT Authorization header.
  * Returns the user's UUID string, or null if not authenticated.
+ *
+ * NOTE: there is no service-role bypass here by design — this helper's whole
+ * contract is "which user is calling", and a service-role key names no user.
+ * Endpoints that legitimately accept both callers want
+ * `requireAuthOrServiceRole` (user_id supplied in the body) or
+ * `requireServiceRole` (no user needed) instead.
  */
 export async function getAuthenticatedUser(
   req: Request
@@ -13,6 +49,11 @@ export async function getAuthenticatedUser(
   }
 
   const token = authHeader.replace("Bearer ", "");
+
+  // Guaranteed-403 shapes (API keys, malformed tokens) never reach GoTrue.
+  if (!token || lacksSubjectClaim(token)) {
+    return null;
+  }
 
   const supabaseClient = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -115,6 +156,22 @@ export async function requireAuthOrServiceRole(
   }
 
   // ── User-JWT path ─────────────────────────────────────────────────
+  // A token with no `sub` reaching this point is an API key that did NOT
+  // match serviceRoleKey above — i.e. the function's env copy of the key has
+  // drifted from whatever the caller used (Vault, another function's env).
+  // That drift 403'd the drains on 2026-06-11 and is invisible in the
+  // response, which is a generic 401 either way. Log it loudly and skip the
+  // GoTrue round-trip that would only confirm what the claim already says.
+  if (lacksSubjectClaim(token)) {
+    console.warn(
+      "[auth] non-user token did not match SUPABASE_SERVICE_ROLE_KEY — " +
+        "service-key drift between this function's env and the caller, or a " +
+        "user-facing endpoint invoked by a service caller. Rejecting without " +
+        "calling GoTrue.",
+    );
+    return { response: unauthorizedResponse(corsHeaders) };
+  }
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_ANON_KEY") ?? serviceRoleKey!,
@@ -217,6 +274,14 @@ export async function resolveCaller(req: Request): Promise<Caller> {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (serviceRoleKey && timingSafeEqual(token, serviceRoleKey)) {
     return { isServiceRole: true, userId: null };
+  }
+
+  // Same short-circuit the other two helpers use: a token with no `sub`
+  // that did not match the service-role key above is an API key (the anon
+  // key, typically). GoTrue can only answer "missing sub claim", so skip
+  // the round-trip. The result is identical — an unauthenticated caller.
+  if (lacksSubjectClaim(token)) {
+    return { isServiceRole: false, userId: null };
   }
 
   const supabase = createClient(
