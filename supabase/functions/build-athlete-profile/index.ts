@@ -18,6 +18,8 @@ import {
   buildAthleteProfile,
   buildAthleteProfileContext,
   type AthleteProfile,
+  type BiomechanicsRow,
+  type FormCheckRow,
 } from "../_shared/athleteProfile.ts";
 import { rebuildAthleteState } from "../_shared/athlete-state.ts";
 import { corsHeaders } from "../_shared/cors.ts";
@@ -140,8 +142,8 @@ Deno.serve(async (req: Request) => {
     // data and aren't built anymore. Pass empty (the old queries used dropped
     // columns and errored to [] regardless) — this just removes the two wasted
     // round-trips + the recurring Postgres column-does-not-exist errors.
-    const formChecks: unknown[] = [];
-    const biomechanicsData: unknown[] = [];
+    const formChecks: FormCheckRow[] = [];
+    const biomechanicsData: BiomechanicsRow[] = [];
     const goalsData = goalsResult.data || [];
     const plansData = plansResult.data || [];
 
