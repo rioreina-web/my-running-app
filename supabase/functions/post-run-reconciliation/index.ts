@@ -15,7 +15,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { adjustPace, buildWeatherJson, heatCategoryLabel } from "../_shared/pace-heat-adjustment.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -93,10 +93,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Auth: accept JWT or service-role with user_id in body (for trigger calls)
-    let userId = await getAuthenticatedUser(req);
-    if (!userId && bodyUserId) userId = bodyUserId;
-    if (!userId) return unauthorizedResponse(corsHeaders);
+    // Auth: a user JWT, or the service-role key naming the subject user
+    // (the pg_net trigger from 20260416400000_adaptive_triggers.sql).
+    //
+    // The previous form fell back to `bodyUserId` whenever the token carried
+    // no user claim. The anon key satisfies that condition and is public, so
+    // the fallback was reachable by anyone, not just the trigger.
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const userId = auth.userId;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -111,6 +116,16 @@ Deno.serve(async (req: Request) => {
       .single();
 
     if (logErr || !log) {
+      return new Response(
+        JSON.stringify({ error: "Training log not found" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // The log is fetched by id alone, so confirm it actually belongs to the
+    // authenticated subject before reading it or deriving insights from it.
+    // 404 rather than 403 so this can't be used to probe which log ids exist.
+    if (log.user_id !== userId) {
       return new Response(
         JSON.stringify({ error: "Training log not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }

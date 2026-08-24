@@ -59,7 +59,13 @@ final class CoachChatViewModel {
             ],
         ]
 
-        payload["userId"] = AuthManager.shared.currentUserId ?? supabase.auth.currentUser?.id.uuidString ?? "dev-user"
+        // Only name a user when we actually know one. The server now requires
+        // a body userId to match the JWT subject, so a placeholder like
+        // "dev-user" would be rejected outright; omitting the field lets the
+        // JWT alone identify the caller.
+        if let uid = AuthManager.shared.currentUserId ?? supabase.auth.currentUser?.id.uuidString {
+            payload["userId"] = uid
+        }
         if !workoutSummary.isEmpty { payload["workoutSummary"] = workoutSummary }
         if !planContext.isEmpty { payload["trainingPlanContext"] = planContext }
         if !fitnessPredictions.isEmpty { payload["fitnessPredictions"] = fitnessPredictions }
@@ -117,8 +123,10 @@ final class CoachChatViewModel {
         fitnessPredictions: String
     ) async {
         var payload: [String: Any] = ["message": message]
-        // Send user ID — fall back to "dev-user" when auth gate is disabled
-        payload["userId"] = AuthManager.shared.currentUserId ?? supabase.auth.currentUser?.id.uuidString ?? "dev-user"
+        // Only name a user when we actually know one — see note above.
+        if let uid = AuthManager.shared.currentUserId ?? supabase.auth.currentUser?.id.uuidString {
+            payload["userId"] = uid
+        }
         if let convId = conversationId {
             payload["conversationId"] = convId
         }

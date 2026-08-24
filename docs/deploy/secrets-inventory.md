@@ -17,7 +17,7 @@ it). Verify that once; rotate on any suspected exposure.
 | `GROQ_API_KEY` | coaching-agent, process-training-memo | **high** (spend) | Transcription/fast-path. |
 | `OPENAI_API_KEY` | process-training-memo | **high** (spend) | Whisper fallback. |
 | `ALLOWED_ORIGIN` | every function via `_shared/cors.ts` | medium | **Required in prod** — new cors.ts throws on import when unset (fail-closed). Smoke test verifies. |
-| `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` | `_shared/rateLimit.ts` (all rate-limited fns) | medium | If unset, rate limiting **fails closed** (denies). Verify set in prod — open checklist item #6. |
+| `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` | `_shared/rateLimit.ts` (all rate-limited fns) | **high** (spend) | **Required in prod.** If unset, `enforceFeatureRateLimit` now returns 503 in production (fail-closed) and stays permissive only outside it. Until 2026-08 it returned *allow* here, silently uncapping every LLM endpoint — this row previously documented the opposite of what the code did. Verify set in prod — open checklist item #6. |
 | `UPSTASH_VECTOR_URL` / `UPSTASH_VECTOR_TOKEN` | `_shared` (vector search) | medium | |
 | `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` | strava-test-pull | medium | OAuth app creds. |
 | `RECONCILE_SHARED_SECRET` | reconcile-log | medium | Trigger→function shared secret. |

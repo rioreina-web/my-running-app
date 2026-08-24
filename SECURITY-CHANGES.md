@@ -144,17 +144,27 @@ Not fixed; flagged here so they don't get lost.
 
 ### Higher priority
 
-- **`training-memos` UPDATE/DELETE policies are unscoped.** The `public`
-  role has `bucket_id = 'training-memos'` policies for both UPDATE and
-  DELETE with no owner check — anyone can overwrite or delete any user's
-  voice memo. Worse than the listing issue the advisor flagged. Needs a
-  migration that scopes both to the object owner, with verification that
-  the app's own delete path still works.
-- **Memos are fundamentally public.** Today's fix only stops enumeration.
-  The real confidentiality fix is `public = false` on the bucket +
-  switching iOS (`VoiceLogViewModel.swift`, `OfflineQueue.swift`) from
-  `getPublicURL` to `createSignedURL`, plus a plan for already-stored
-  public URLs in `training_logs.audio_url`.
+- ~~**`training-memos` UPDATE/DELETE policies are unscoped.**~~ **RESOLVED
+  2026-08-23** — `20260823120000_private_training_memos_bucket.sql` drops the
+  unscoped `public`-role policies and recreates the owner-scoped set.
+  Verified against a real Postgres: a signed-in user cannot read, update,
+  delete, or upload into another athlete's folder.
+- ~~**Memos are fundamentally public.**~~ **RESOLVED 2026-08-23** — same
+  migration sets `public = false`. The plan noted here assumed iOS needed
+  `createSignedURL`; it doesn't. iOS never plays memos back (every
+  `audioUrl` use is a `!= nil` check driving a mic icon), and the
+  server-side readers download with the service-role client, which bypasses
+  bucket privacy. So the fix was to store the object PATH instead of a URL
+  (`VoiceLogViewModel.swift`, `OfflineQueue.swift`), resolve it centrally in
+  `_shared/storage.ts`, and normalize the already-stored public URLs in
+  `training_logs.audio_url` in the same migration.
+- **Niggle-classifier input trusted the request body.** Found while doing
+  the above: `process-training-memo` and `process-check-in` took
+  `audio_url` from the payload and downloaded it with the service-role
+  client, so an authenticated caller could name their own log id and
+  user_id — passing the auth gate — while pointing `audio_url` at another
+  athlete's memo. Both now read the column from the row. **RESOLVED
+  2026-08-23.**
 - **3 production functions are untracked in this repo.**
   `strava-test-pull`, `adapt-plan`, `build-pace-profile` exist only in
   this working tree — not committed on `design/editorial-v2` or `main`.
@@ -163,13 +173,28 @@ Not fixed; flagged here so they don't get lost.
 
 ### Lower priority
 
-- ~9 `SECURITY DEFINER` functions are executable by `anon` / `authenticated`
-  via `/rest/v1/rpc/...` — `claim_coachable_moment_jobs`,
-  `trigger_voice_log_processing`, `fn_weekly_plan_rebalance`,
-  `fn_trigger_reconcile_log`, `trigger_parse_workout_structure`,
-  `fn_enqueue_coachable_moment_evaluation`, `current_coach_id`,
-  `increment_subscriber_count`. Revoke `EXECUTE` from `anon` /
-  `authenticated`; these are meant for cron/triggers only.
+- ~~`SECURITY DEFINER` functions executable by `anon` / `authenticated` via
+  `/rest/v1/rpc/...`~~ **MOSTLY RESOLVED 2026-08-23**
+  (`20260823130000_pin_search_path_security_definer.sql`). Two corrections to
+  the note that was here:
+  - Only functions **not** returning `TRIGGER` are RPC-reachable. Most of the
+    list above (`trigger_voice_log_processing`, `fn_trigger_reconcile_log`,
+    `fn_enqueue_coachable_moment_evaluation`, …) are trigger functions and
+    were never callable over PostgREST.
+  - **`REVOKE EXECUTE ... FROM anon, authenticated` does not work on its own.**
+    A function's default ACL is NULL, meaning EXECUTE to `PUBLIC`, so both
+    roles keep access through `PUBLIC`. Measured on PG16: default → true;
+    after revoking from the two roles → still true; only after
+    `REVOKE ... FROM PUBLIC` → false (which also strips `service_role`, so it
+    must be granted back).
+    **This means `20260610230628_harden_outbox_rpcs_and_pricing_rls.sql` did
+    not actually revoke anything** — `claim_coach_insight_jobs`,
+    `claim_coachable_moment_jobs`, `claim_voice_processing_jobs` and
+    `fn_weekly_plan_rebalance` are most likely still anon-callable in prod.
+    Redone correctly in the 2026-08-23 migration. **Worth confirming against
+    prod**, since Supabase may grant these roles explicitly in some setups,
+    in which case the June revoke would have worked.
+  - `current_coach_id` was already hardened by `20260609233602`.
 - 2 `SECURITY DEFINER` views (`daily_cost_estimate`, `daily_usage`) bypass
   RLS — review and convert to `SECURITY INVOKER` if not intentional.
 - Leaked-password protection disabled in Auth settings — toggle in the
@@ -179,7 +204,29 @@ Not fixed; flagged here so they don't get lost.
 - `reconcile-log`'s shared-secret check uses `!==` (not constant-time).
   Server-to-server only, low impact, but trivially fixable with a
   timingSafeEqual helper.
-- ~20 functions with mutable `search_path` — same class of bug that broke
+- ~~functions with mutable `search_path`~~ **RESOLVED for every SECURITY
+  DEFINER function whose definition lives in this repo, 2026-08-23** —
+  `trigger_voice_log_processing`, `trigger_post_run_reconciliation`,
+  `fn_trigger_reconcile_log`, `fn_trigger_workout_insight`,
+  `increment_subscriber_count`. `current_coach_id`,
+  `backfill_workout_insights` and `fn_enqueue_workout_insight` were already
+  pinned.
+  Rated higher than "lower priority" once the mechanism was demonstrated: the
+  four trigger functions read `vault.decrypted_secrets` for the
+  **service_role_key** and pass it to `net.http_post`. Those references are
+  schema-qualified, so they can't be shadowed directly — but the bodies also
+  call **unqualified** built-ins (`jsonb_build_object`, `length`, `trim`),
+  and a same-arity function earlier on the path beats `pg_catalog`'s variadic
+  version. Reproduced on PG16: with the unpinned function, an
+  `evil.jsonb_build_object` shadow ran as the definer and exfiltrated the
+  service-role key into the request body. With the migration applied, the same
+  attack resolves to `pg_catalog` and the payload is correct.
+  Precondition is `CREATE` on a schema in the caller's `search_path`, which
+  PG15+ does not grant on `public` by default — so exploitability was low, but
+  the fix is free and removes the dependency on that staying true.
+  `fn_weekly_plan_rebalance` is **not** fixed: it has no definition in this
+  repo (applied ad-hoc). The migration reports it as a warning rather than
+  failing. Original note follows — same class of bug that broke
   Strava sync on 2026-05-20. Add `SET search_path = pg_catalog, pg_temp`
   and schema-qualify table refs.
 

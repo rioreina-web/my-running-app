@@ -17,7 +17,7 @@
  */
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { resolveCaller, unauthorizedResponse, forbiddenResponse } from "../_shared/auth.ts";
 import { buildWeatherJson } from "../_shared/pace-heat-adjustment.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -192,7 +192,58 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Resolve the caller once; each mode authorizes against it below.
+    //
+    // Every mode previously resolved the subject as
+    // `body.user_id || (await getAuthenticatedUser(req))` — the body winning
+    // outright, so no token with a user claim was needed at all. The anon
+    // key is public, so any caller could name any athlete.
+    //
+    // A single top-level gate doesn't fit here because the modes name their
+    // subject differently: mode 1 has no subject (caller supplies the
+    // coordinates), mode 2's subject comes from the plan row, and modes 3/4
+    // take it from the body.
+    const caller = await resolveCaller(req);
+    if (!caller.isServiceRole && !caller.userId) {
+      return unauthorizedResponse(corsHeaders);
+    }
+
+    /**
+     * Authorize a mode whose subject user arrives in the request body.
+     * Service-role callers must name the subject; a user JWT may only act
+     * on itself. Returns the subject id, or a Response to return as-is.
+     */
+    const subjectFromBody = (
+      bodyUserId: unknown,
+    ): { userId: string } | { response: Response } => {
+      const named = typeof bodyUserId === "string" && bodyUserId.length > 0
+        ? bodyUserId
+        : null;
+
+      if (caller.isServiceRole) {
+        if (!named) {
+          return {
+            response: new Response(
+              JSON.stringify({ error: "Service-role caller must specify user_id in body" }),
+              { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            ),
+          };
+        }
+        return { userId: named };
+      }
+
+      // User JWT: `caller.userId` is non-null here (checked above).
+      if (named && named !== caller.userId) {
+        return { response: forbiddenResponse(corsHeaders, "JWT user does not match body user_id") };
+      }
+      return { userId: caller.userId! };
+    };
+
     // ── Mode 1: Single point fetch ─────────────────────────────
+    // No user subject — the caller passes coordinates directly. Being
+    // authenticated at all (checked above) is the whole gate; this is a
+    // cached proxy to Open-Meteo, and leaving it open let anyone burn the
+    // upstream quota and write into weather_cache.
     if (body.lat != null && body.lon != null && body.timestamp) {
       const { lat, lon, timestamp, kind = "forecast" } = body;
       const ts = new Date(timestamp);
@@ -245,9 +296,31 @@ Deno.serve(async (req: Request) => {
 
     // ── Mode 2: Batch forecast for a plan's next 7 days ────────
     if (body.plan_id && body.kind === "forecast_week") {
-      const { plan_id, user_id } = body;
-      const uid = user_id || (await getAuthenticatedUser(req));
-      if (!uid) return unauthorizedResponse(corsHeaders);
+      const { plan_id } = body;
+
+      // The subject is whoever owns the plan — not whoever the body claims.
+      // This also repairs the daily cron
+      // (20260423100000_daily_weather_forecast_cron.sql), which posts
+      // { plan_id, kind } with the service-role key and no user_id: the old
+      // `user_id || getAuthenticatedUser(req)` resolved to null for it, so
+      // every run 401'd.
+      const { data: planRow } = await supabase
+        .from("training_plans")
+        .select("user_id")
+        .eq("id", plan_id)
+        .maybeSingle();
+
+      if (!planRow?.user_id) {
+        return new Response(
+          JSON.stringify({ error: "Plan not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      const uid: string = planRow.user_id;
+      if (!caller.isServiceRole && caller.userId !== uid) {
+        return forbiddenResponse(corsHeaders, "Not authorized for this plan");
+      }
 
       // Get user's home location
       const { data: profile } = await supabase
@@ -360,8 +433,9 @@ Deno.serve(async (req: Request) => {
     // Pulls the forecast for the new hour and writes it back.
     if (body.workout_id && body.kind === "refresh_one") {
       const { workout_id } = body;
-      const uid = body.user_id || (await getAuthenticatedUser(req));
-      if (!uid) return unauthorizedResponse(corsHeaders);
+      const subject = subjectFromBody(body.user_id);
+      if ("response" in subject) return subject.response;
+      const uid = subject.userId;
 
       // Resolve location. iOS sends a CoreLocation fix in body.lat/lon
       // when permission is granted; we only fall back to user_profiles
@@ -392,10 +466,14 @@ Deno.serve(async (req: Request) => {
         );
       }
 
+      // Scope the lookup to the subject's own plans. Selecting by
+      // `workout_id` alone let any authenticated caller read — and, below,
+      // write weather onto — another athlete's scheduled workout.
       const { data: w } = await supabase
         .from("scheduled_workouts")
-        .select("id, date, scheduled_hour")
+        .select("id, date, scheduled_hour, training_plans!inner(user_id)")
         .eq("id", workout_id)
+        .eq("training_plans.user_id", uid)
         .maybeSingle();
       if (!w) {
         return new Response(
@@ -448,8 +526,9 @@ Deno.serve(async (req: Request) => {
 
     // ── Mode 3: Backfill actuals for a user's last N days ──────
     if (body.kind === "backfill_actuals") {
-      const uid = body.user_id || (await getAuthenticatedUser(req));
-      if (!uid) return unauthorizedResponse(corsHeaders);
+      const subject = subjectFromBody(body.user_id);
+      if ("response" in subject) return subject.response;
+      const uid = subject.userId;
 
       const days = body.days || 90;
       const { data: profile } = await supabase

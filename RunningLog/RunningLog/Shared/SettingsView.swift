@@ -25,6 +25,9 @@ struct SettingsView: View {
     @State private var backfillResultMessage: String?
     @State private var isStravaSyncing = false
     @State private var stravaSyncResultMessage: String?
+    @State private var showDeleteAccountConfirmation = false
+    @State private var isDeletingAccount = false
+    @State private var deleteAccountError: String?
 
     private var appVersion: String {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -48,6 +51,7 @@ struct SettingsView: View {
                         appSection
                         if AuthManager.shared.isAuthenticated {
                             signOutSection
+                            deleteAccountSection
                         } else {
                             signInSection
                         }
@@ -73,6 +77,17 @@ struct SettingsView: View {
             }
             .toolbarBackground(Color.drip.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
+            .alert("Delete Account?", isPresented: $showDeleteAccountConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete Everything", role: .destructive) { performAccountDeletion() }
+            } message: {
+                Text("This permanently deletes your training history, voice memos, niggles and coaching conversations. It cannot be undone.")
+            }
+            .alert("Couldn't delete account", isPresented: .constant(deleteAccountError != nil)) {
+                Button("OK") { deleteAccountError = nil }
+            } message: {
+                Text(deleteAccountError ?? "")
+            }
             .alert("Sign Out?", isPresented: $showSignOutConfirmation) {
                 Button("Cancel", role: .cancel) {}
                 Button("Sign Out", role: .destructive) { performSignOut() }
@@ -711,6 +726,51 @@ struct SettingsView: View {
             } catch {
                 Log.app.error("Sign out failed: \(error)")
                 await MainActor.run { isSigningOut = false }
+            }
+        }
+    }
+
+    // MARK: - Delete Account
+
+    /// App Store 5.1.1(v) requires account deletion to be initiable in-app, and
+    /// the privacy policy promises it. Deliberately placed below Sign Out and
+    /// styled as text rather than a filled button — discoverable, not inviting.
+    private var deleteAccountSection: some View {
+        Button {
+            showDeleteAccountConfirmation = true
+        } label: {
+            HStack(spacing: 8) {
+                if isDeletingAccount {
+                    ProgressView().tint(Color.drip.injured)
+                }
+                Text(isDeletingAccount ? "Deleting…" : "Delete Account")
+                    .font(.dripLabel(13))
+            }
+            .foregroundStyle(Color.drip.injured)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        }
+        .disabled(isDeletingAccount)
+    }
+
+    private func performAccountDeletion() {
+        isDeletingAccount = true
+        Task {
+            do {
+                // The server requires this exact confirmation value, so a
+                // stray retry or a mis-wired caller can't erase an account.
+                _ = try await callEdgeFunction(
+                    name: "delete-account",
+                    body: ["confirm": "DELETE"]
+                )
+                // Data is gone; drop the session so the app returns to sign-in.
+                try? await AuthManager.shared.signOut()
+            } catch {
+                Log.app.error("Account deletion failed: \(error)")
+                await MainActor.run {
+                    isDeletingAccount = false
+                    deleteAccountError = error.localizedDescription
+                }
             }
         }
     }

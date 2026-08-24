@@ -206,43 +206,22 @@ struct CoachInsightSection: View {
     private func callCoachingAgent(message: String) async {
         Log.coach.debug("callCoachingAgent() starting...")
 
-        guard let url = URL(string: "\(supabaseURL)/functions/v1/coaching-agent") else {
-            Log.coach.error("Invalid URL")
-            await MainActor.run {
-                isLoading = false
-                coachInsight = "Error: Invalid URL configuration"
-            }
-            return
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30 // 30 second timeout
-
-        let payload: [String: Any] = ["message": message]
-
+        // Routed through callEdgeFunction so this sends the signed-in user's
+        // JWT. It previously hand-built the request with the anon key as the
+        // bearer and no userId in the body, which the server could not resolve
+        // to a user at all — the call has been returning 401 rather than a
+        // coach insight. It is also the shape that made coaching-agent
+        // guessable: the server used to accept a body userId whenever the
+        // token carried no user claim, and the anon key ships in this binary.
         do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
             Log.coach.debug("Making API request to coaching-agent...")
 
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let data = try await callEdgeFunction(
+                name: "coaching-agent",
+                body: ["message": message]
+            )
 
             Log.coach.debug("Received response from API")
-
-            if let httpResponse = response as? HTTPURLResponse {
-                Log.coach.debug("HTTP status code: \(httpResponse.statusCode)")
-                if httpResponse.statusCode != 200 {
-                    let errorBody = String(data: data, encoding: .utf8) ?? "No body"
-                    Log.coach.error("Response body: \(errorBody)")
-                    throw NSError(
-                        domain: "CoachError",
-                        code: httpResponse.statusCode,
-                        userInfo: [NSLocalizedDescriptionKey: "Server error (\(httpResponse.statusCode)): \(errorBody)"]
-                    )
-                }
-            }
 
             // Log raw response for debugging
             if let rawResponse = String(data: data, encoding: .utf8) {
