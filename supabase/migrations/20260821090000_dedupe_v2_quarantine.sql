@@ -173,6 +173,24 @@ BEGIN
   RETURN v_marked;
 END; $$;
 
+-- ── Grants: nobody but service_role ──────────────────────────────────────
+--
+-- CREATE FUNCTION grants EXECUTE to PUBLIC by default. Without these lines
+-- this function would be reachable at /rest/v1/rpc/dedupe_recent_training_logs_v2
+-- by anyone holding the anon key — which ships in the iOS binary and the web
+-- bundle. It is SECURITY DEFINER and takes no user_id, so it operates across
+-- EVERY athlete's rows and bypasses RLS entirely.
+--
+-- That is precisely the hole the 2026-07-17 sweep closed on v1: the live
+-- `dedupe_recent_training_logs` reads anon=false / authenticated=false today
+-- because it was explicitly revoked. Re-checked 2026-08-24. Creating v2
+-- without these REVOKEs would have re-opened it under a new name — quarantine
+-- instead of delete, so less destructive, but still a cross-user write any
+-- unauthenticated caller could trigger.
+REVOKE ALL ON FUNCTION public.dedupe_recent_training_logs_v2(integer, numeric, numeric, numeric, boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.dedupe_recent_training_logs_v2(integer, numeric, numeric, numeric, boolean) FROM anon;
+REVOKE ALL ON FUNCTION public.dedupe_recent_training_logs_v2(integer, numeric, numeric, numeric, boolean) FROM authenticated;
+
 COMMENT ON FUNCTION public.dedupe_recent_training_logs_v2 IS
   'Cross-source dedup v2. Matches on start-time proximity AND distance tolerance (never a UTC-day + 0.5mi bucket). Quarantines via superseded_at; never deletes. p_dry_run counts without writing.';
 

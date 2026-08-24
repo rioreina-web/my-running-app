@@ -134,7 +134,8 @@ const KNOWN_UNGATED_FUNCTIONS = new Set([
   "drain-voice-processing-jobs", // cron drain — gate with requireServiceRole
   "evaluate-coachable-moment",
   "generate-workout-insight",
-  "ingest-documents",
+  // ingest-documents — H3 FIXED 2026-08-24: local `===` service-role check
+  // replaced with the shared requireServiceRole gate (constant-time compare).
   "parse-workout-shorthand", // pure text parser (no DB, no LLM) — likely safe; document + keep or gate
   "rebuild-athlete-state",
   "reconcile-log",
@@ -142,6 +143,11 @@ const KNOWN_UNGATED_FUNCTIONS = new Set([
   // `(deps.resolveUser ?? getAuthenticatedUser)(req)`; the old regex just
   // couldn't see it. The widened AUTH_GATE_RE now matches it.
   "strava-sync",
+  // ── Gated, but not by the shared helper (AUTH_GATE_RE cannot see these) ──
+  // Both authenticate every request; neither can use requireAuthOrServiceRole
+  // because neither caller can present a Supabase JWT.
+  "mcp", // sha256 path-token looked up in mcp_access_tokens; expiry enforced; 401 on miss
+  "vital-webhook", // Svix HMAC over the raw body + 5-min replay window; fails closed when the secret is unset
 ]);
 
 Deno.test("H3 — no NEW edge function ships without a shared auth gate", () => {
@@ -412,6 +418,24 @@ const KNOWN_USER_PROFILES_READERS = new Set([
   "_shared/profile.ts",
 ]);
 
+/**
+ * Cut products whose code still queries user_profiles and always will, because
+ * the fix is deletion rather than a repoint. Kept separate from the punch list
+ * above so that list stays a list of things somebody intends to FIX.
+ *
+ * Each is already recorded as cut in CUT_FUNCTIONS_PENDING_DELETION
+ * (_shared/rateLimit.contract.test.ts) and none is deployed to prod — verified
+ * 2026-08-24 against the live function inventory, which is why the dead query
+ * has never cost anything. Repointing them at athlete_state would be work
+ * spent on code scheduled for removal.
+ *
+ * DELETE THE DIRECTORIES and these entries together.
+ */
+const CUT_FUNCTIONS_PENDING_DELETION = new Set([
+  "biomechanics-analysis/index.ts", // CV running-form product — cut 2026-05 (Maya roadmap C.1)
+  "form-check-analysis/index.ts",   // CV form check — cut 2026-05 (Maya roadmap C.1)
+]);
+
 const USER_PROFILES_RE = /\.from\(\s*["'`]user_profiles["'`]\s*\)/;
 
 function findUserProfilesReaders(): string[] {
@@ -428,7 +452,9 @@ function findUserProfilesReaders(): string[] {
 
 Deno.test("M4 — no NEW code queries the ghost table user_profiles", () => {
   const offenders = findUserProfilesReaders().filter(
-    (f) => !KNOWN_USER_PROFILES_READERS.has(f),
+    (f) =>
+      !KNOWN_USER_PROFILES_READERS.has(f) &&
+      !CUT_FUNCTIONS_PENDING_DELETION.has(f),
   );
   assertEquals(
     offenders,

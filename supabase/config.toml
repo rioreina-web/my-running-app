@@ -492,19 +492,16 @@ verify_jwt = true
 [functions.subscribe-to-plan]
 verify_jwt = false
 
-[functions.assess-fitness]
-verify_jwt = false
+# Removed 2026-08-24: assess-fitness, log-manual-workout and log-training no
+# longer exist under supabase/functions. Their `verify_jwt = false` entries
+# outlived them, which made the unauthenticated surface read three functions
+# larger than it is on every audit. Delete the entry when you delete the
+# function.
 
 [functions.build-athlete-profile]
 verify_jwt = false
 
 [functions.generate-training-plan]
-verify_jwt = false
-
-[functions.log-manual-workout]
-verify_jwt = false
-
-[functions.log-training]
 verify_jwt = false
 
 [functions.parse-training-plan]
