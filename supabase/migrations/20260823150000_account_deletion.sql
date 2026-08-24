@@ -1,39 +1,42 @@
 -- ============================================================================
--- Account deletion: fix a live erasure bug, and bring the function into the
--- repo.
+-- Account deletion: the audit tombstone.
 --
--- `public.delete_user_account(text)` ALREADY EXISTS IN PRODUCTION (applied as
--- ledger version 20260720120000, whose migration file is not in this repo).
--- It is SECURITY DEFINER, search_path-pinned, service-role only, and it
--- discovers user-linked tables from the catalog at run time — a good design.
+-- WHAT THIS MIGRATION USED TO DO, AND WHY IT NO LONGER DOES
 --
--- It has one bug, and it is the expensive kind. Its discovery query filters:
+-- It used to `CREATE OR REPLACE public.delete_user_account(text)` to fix a
+-- live erasure bug: the function's catalog-driven loop filtered
 --
 --     AND col.data_type IN ('text', 'character varying')
 --
--- Seven user-linked tables carry `user_id` as `uuid`, not text:
---   athlete_pace_profiles, conversation_messages, plan_adjustments,
---   training_blocks, usage_tracking, user_tiers, workout_reconciliations
+-- so seven tables typing `user_id` as `uuid` were skipped silently while the
+-- function still reported success — `conversation_messages` among them.
 --
--- Those are skipped silently, and the function still returns a report saying
--- the deletion completed. So an erasure request today leaves rows behind —
--- including `conversation_messages`, which holds the athlete's coaching
--- conversation content. A deletion that reports success while retaining
--- personal data is worse than one that fails loudly.
+-- THAT BUG WAS FIXED IN PRODUCTION ON 2026-08-24 AT 19:00Z, by ledger
+-- migration `20260824190000_delete_user_account_uuid_columns`, which does not
+-- originate from this repo. Verified against prod the same evening: the
+-- discovery query now reads `data_type IN ('text','character varying','uuid')`
+-- and uuid columns delete via `%I = $1::uuid`. 59 user-linked tables covered,
+-- 0 uncovered.
 --
--- The fix is one line in the discovery query: drop the data_type filter and
--- compare `%I::text = $1`, which matches text and uuid columns alike. Also
--- widen to `athlete_user_id` (already present) and keep `athlete_id`.
+-- That fix is BETTER than the one this migration carried. Both cover uuid,
+-- but they differ on which side of the comparison gets cast:
 --
--- Name and signature are preserved deliberately. An earlier draft of this
--- change introduced a second function (`delete_user_data`) because the repo
--- gave no sign that `delete_user_account` existed. Two deletion functions
--- with slightly different coverage is exactly how erasure quietly rots, so
--- there is one function and it keeps the name production already uses.
+--     this repo's version   DELETE ... WHERE %I::text = $1      -- casts COLUMN
+--     production's version  DELETE ... WHERE %I = $1::uuid      -- casts PARAM
 --
--- Storage is not handled here. Deleting `storage.objects` rows leaves the
--- bytes in the object store; only the Storage API removes them, which the
--- `delete-account` edge function does before calling this.
+-- Casting the column defeats any index on it; casting the parameter does not.
+-- For a one-off erasure that difference is small, but it is real, and there is
+-- no reason to trade down.
+--
+-- So the function definition is GONE from this migration. Re-asserting it here
+-- would overwrite the better implementation with the worse one — the same
+-- mistake, in SQL, that the stop notice at the top of this PR describes for the
+-- edge functions. When the repo is reconciled against production (see
+-- docs/repo-prod-drift-2026-08-24.md), the authoritative definition should come
+-- from prod, not from here.
+--
+-- What remains is the one thing production does NOT have: the tombstone table
+-- that `delete-account` writes to after a successful erasure.
 -- ============================================================================
 
 BEGIN;
@@ -59,142 +62,57 @@ COMMENT ON TABLE public.deleted_accounts IS
 ALTER TABLE public.deleted_accounts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.deleted_accounts FROM PUBLIC, anon, authenticated;
 
--- ── delete_user_account ─────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.delete_user_account(target_user_id TEXT)
-RETURNS JSONB
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $function$
-DECLARE
-    rec        record;
-    n          bigint;
-    pass       int     := 0;
-    remaining  boolean := true;
-    report     jsonb   := '{}'::jsonb;
-    total      bigint  := 0;
-BEGIN
-    IF coalesce(target_user_id, '') = '' THEN
-        RAISE EXCEPTION 'delete_user_account: target_user_id is required';
-    END IF;
-
-    -- Repeat passes until no delete is blocked by a not-yet-removed child.
-    -- Cap the passes so a genuine FK cycle can't loop forever.
-    WHILE remaining AND pass < 15 LOOP
-        remaining := false;
-        pass := pass + 1;
-
-        FOR rec IN
-            SELECT col.table_name AS tbl, col.column_name AS colname
-            FROM information_schema.columns col
-            JOIN information_schema.tables tb
-              ON tb.table_schema = col.table_schema
-             AND tb.table_name   = col.table_name
-             AND tb.table_type   = 'BASE TABLE'
-            WHERE col.table_schema = 'public'
-              AND col.column_name IN ('user_id', 'athlete_user_id', 'athlete_id')
-              -- NO data_type filter. The previous version required
-              -- text/character varying, which silently skipped the seven
-              -- tables whose user_id is uuid — including conversation_messages
-              -- — while still reporting the deletion as complete.
-              AND col.table_name <> 'deleted_accounts'
-            ORDER BY col.table_name
-        LOOP
-            BEGIN
-                -- Cast the column rather than the parameter: `%I::text = $1`
-                -- matches text and uuid columns alike. It gives up the index
-                -- on that column, which is irrelevant for a one-off erasure
-                -- and is the whole point of the fix.
-                EXECUTE format(
-                    'DELETE FROM public.%I WHERE %I::text = $1',
-                    rec.tbl, rec.colname
-                ) USING target_user_id;
-
-                GET DIAGNOSTICS n = ROW_COUNT;
-                IF n > 0 THEN
-                    total  := total + n;
-                    report := report || jsonb_build_object(
-                        rec.tbl,
-                        coalesce((report ->> rec.tbl)::bigint, 0) + n
-                    );
-                END IF;
-            EXCEPTION
-                WHEN foreign_key_violation THEN
-                    -- A child row (same user) still references this row.
-                    -- Leave it for a later pass once the child is gone.
-                    remaining := true;
-                WHEN invalid_text_representation THEN
-                    -- A uuid column compared against a non-uuid id. Not this
-                    -- user's table; skip rather than abort the whole erasure.
-                    NULL;
-            END;
-        END LOOP;
-    END LOOP;
-
-    IF remaining THEN
-        RAISE EXCEPTION
-            'delete_user_account: could not resolve delete order for user % after % passes (possible FK cycle)',
-            target_user_id, pass;
-    END IF;
-
-    RETURN jsonb_build_object(
-        'user_id',     target_user_id,
-        'tables',      report,
-        'total_rows',  total,
-        'passes',      pass
-    );
-END;
-$function$;
-
-COMMENT ON FUNCTION public.delete_user_account(TEXT) IS
-    'Deletes every row for one athlete across all public tables carrying '
-    'user_id / athlete_user_id / athlete_id, discovered from the catalog at '
-    'run time and compared as text so uuid columns are covered too. Returns '
-    'per-table counts. Does NOT touch storage — the delete-account edge '
-    'function removes objects via the Storage API first.';
-
--- Service-role only. REVOKE must name PUBLIC: a function's default ACL is
--- NULL, i.e. EXECUTE to PUBLIC, so revoking from anon/authenticated alone
--- leaves both reaching it through PUBLIC.
-REVOKE EXECUTE ON FUNCTION public.delete_user_account(TEXT) FROM PUBLIC, anon, authenticated;
-GRANT  EXECUTE ON FUNCTION public.delete_user_account(TEXT) TO service_role;
-
 -- ── Verification ────────────────────────────────────────────────────────────
 DO $$
 DECLARE
+    fn        CONSTANT TEXT := 'public.delete_user_account(text)';
+    def       TEXT;
     uncovered TEXT;
 BEGIN
-    IF has_function_privilege('anon', 'public.delete_user_account(text)', 'EXECUTE')
-       OR has_function_privilege('authenticated', 'public.delete_user_account(text)', 'EXECUTE') THEN
-        RAISE EXCEPTION 'delete_user_account must not be callable by anon/authenticated';
-    END IF;
-
-    IF NOT has_function_privilege('service_role', 'public.delete_user_account(text)', 'EXECUTE') THEN
-        RAISE EXCEPTION 'service_role must retain EXECUTE on delete_user_account';
-    END IF;
-
     IF has_table_privilege('anon', 'public.deleted_accounts', 'SELECT')
        OR has_table_privilege('authenticated', 'public.deleted_accounts', 'SELECT') THEN
         RAISE EXCEPTION 'deleted_accounts must not be client-readable';
     END IF;
 
-    -- The bug this migration fixes: assert the discovery query no longer
-    -- excludes non-text user columns. If a future edit reintroduces a
-    -- data_type filter, these tables go uncovered again silently.
+    -- Report on delete_user_account WITHOUT redefining it. The function has no
+    -- definition in this repo (it arrived via prod-only ledger version
+    -- 20260720120000), so on a fresh local database it simply is not there.
+    IF to_regprocedure(fn) IS NULL THEN
+        RAISE NOTICE
+            'delete_user_account is not present in this database. It exists in '
+            'production only; delete-account will fail here until the repo is '
+            'reconciled. See docs/repo-prod-drift-2026-08-24.md.';
+        RETURN;
+    END IF;
+
+    SELECT pg_get_functiondef(to_regprocedure(fn)) INTO def;
+
+    -- The uuid-coverage regression check. Warn rather than fail: this
+    -- migration no longer owns the function, so it must not abort a deploy
+    -- over an implementation it deliberately declines to overwrite.
     SELECT string_agg(col.table_name, ', ' ORDER BY col.table_name)
     INTO uncovered
     FROM information_schema.columns col
     JOIN information_schema.tables tb
-      ON tb.table_schema=col.table_schema AND tb.table_name=col.table_name
-     AND tb.table_type='BASE TABLE'
-    WHERE col.table_schema='public'
-      AND col.column_name IN ('user_id','athlete_user_id','athlete_id')
-      AND col.data_type NOT IN ('text','character varying')
+      ON tb.table_schema = col.table_schema
+     AND tb.table_name   = col.table_name
+     AND tb.table_type   = 'BASE TABLE'
+    WHERE col.table_schema = 'public'
+      AND col.column_name IN ('user_id', 'athlete_user_id', 'athlete_id')
+      AND col.data_type NOT IN ('text', 'character varying', 'uuid')
       AND col.table_name <> 'deleted_accounts';
 
     IF uncovered IS NOT NULL THEN
-        RAISE NOTICE
-            'Non-text user columns now covered by delete_user_account: %', uncovered;
+        RAISE WARNING
+            'delete_user_account may not erase these tables (user column is '
+            'neither text nor uuid): %', uncovered;
+    END IF;
+
+    IF def !~ 'uuid' THEN
+        RAISE WARNING
+            'delete_user_account appears not to handle uuid-typed user columns. '
+            'Production fixed this in ledger version 20260824190000; if this '
+            'database predates that, erasure is silently incomplete.';
     END IF;
 END $$;
 
