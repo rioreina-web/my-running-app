@@ -13,7 +13,7 @@
  *   2. Remove the objects through the Storage API. Deleting `storage.objects`
  *      rows in SQL would leave the bytes in the object store, so this cannot
  *      be folded into the SQL function.
- *   3. Delete the database rows (`delete_user_data`).
+ *   3. Delete the database rows (`delete_user_account`).
  *   4. Delete the auth user, so the account cannot be signed into again.
  *   5. Write the tombstone.
  *
@@ -186,9 +186,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 3. Database rows ────────────────────────────────────────────────
+    // `delete_user_account` already existed in production (ledger version
+    // 20260720120000, whose migration file is missing from this repo).
+    // 20260823150000 fixes its erasure bug rather than adding a second
+    // deletion function beside it.
     const { data: counts, error: dataErr } = await supabase.rpc(
-      "delete_user_data",
-      { p_user_id: userId },
+      "delete_user_account",
+      { target_user_id: userId },
     );
 
     if (dataErr) {
