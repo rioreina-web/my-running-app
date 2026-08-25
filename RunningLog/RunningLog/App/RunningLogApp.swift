@@ -373,6 +373,7 @@ enum AppDestination: Identifiable {
     case goals
     case analysis
     case injuries
+    case niggles
     case fitnessPredictor
     case paceChart
     case contentLibrary
@@ -386,6 +387,7 @@ enum AppDestination: Identifiable {
         case .goals: GoalsView()
         case .analysis: AnalysisView()
         case .injuries: InjuryListView()
+        case .niggles: NiggleTimelineScreen()
         case .fitnessPredictor: FitnessPredictorView(trainingViewModel: TrainingPlanViewModel())
         case .paceChart: PaceChartView()
         case .contentLibrary: ContentLibraryHubView()

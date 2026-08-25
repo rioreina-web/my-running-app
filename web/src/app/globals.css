@@ -51,6 +51,34 @@
   --color-danger: #B83A4A;
   --color-warning: #C4873A;
 
+  /* Type · size scale. Lifted verbatim from the design system's token
+     source-of-truth (`design-system/colors_and_type.css`), so the web and
+     the iOS kit name the same steps. These generate the `text-*` utilities
+     that rule R4 in `.github/scripts/check_design_tokens.py` requires in
+     place of arbitrary `text-[Npx]`. */
+  --text-display-xl: 40px;  /* "May 5th." plate headers */
+  --text-display-l: 32px;   /* "Marathon block" */
+  --text-display-m: 24px;   /* card values, page titles */
+  --text-display-s: 20px;   /* goal lines */
+  --text-body: 15px;        /* paragraph body */
+  --text-body-sm: 13px;     /* secondary body */
+  --text-meta: 11px;        /* monospaced section labels */
+  --text-meta-sm: 10px;     /* smallest captions */
+
+  /* One step above the shared scale, web only. The design-system scale is
+     mobile-app native and tops out at 40px; a full-width preview page wants
+     a larger opening headline than any phone screen does. Not part of the
+     iOS contract — do not port. */
+  --text-display-2xl: 56px;
+
+  /* Type · tracking. Also from `colors_and_type.css`. Generates the
+     `tracking-*` utilities rule R3 requires in place of `tracking-[…]`.
+     Display type does not appear here on purpose: its -0.01em sits on
+     `.font-display` below, so headlines never carry a tracking class. */
+  --tracking-meta: 0.14em;     /* plate top strip */
+  --tracking-label: 0.12em;    /* SECTION HEADERS */
+  --tracking-caption: 0.10em;  /* TIRED / EASY pills */
+
   /* Fonts — the iOS app's canonical families, self-hosted via next/font/local
      in app/layout.tsx (the same TTFs as design-system/fonts). Crimson Pro
      (display serif), PT Serif (body + italic quotes). The mono stack matches

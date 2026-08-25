@@ -39,10 +39,11 @@ private let menuGroups: [MenuGroup] = [
     MenuGroup(head: "Review", entries: [
         MenuEntry(number: "04", label: "Training Analysis", hint: "Trends across your block.", destination: .analysis),
         MenuEntry(number: "05", label: "Injuries", hint: "Track, analyze, recover.", destination: .injuries),
+        MenuEntry(number: "06", label: "Niggles", hint: "Every ache you've mentioned, over time.", destination: .niggles),
     ]),
     MenuGroup(head: "Library & Account", entries: [
-        MenuEntry(number: "06", label: "Content Library", hint: "Films, drills & reading.", destination: .contentLibrary),
-        MenuEntry(number: "07", label: "Settings", hint: "Account, data & app preferences.", destination: .settings),
+        MenuEntry(number: "07", label: "Content Library", hint: "Films, drills & reading.", destination: .contentLibrary),
+        MenuEntry(number: "08", label: "Settings", hint: "Account, data & app preferences.", destination: .settings),
     ]),
 ]
 
