@@ -4,24 +4,29 @@
 //
 //  The niggle mention-timeline — derivation only, no UI, no interpretation.
 //
-//  Ported from the web prototype at `web/src/app/design/niggles/niggles-data.ts`
-//  (see `outputs/niggles-v2-dashboard-2026-08-23.md` for the contract). The
-//  prototype ran on mock rows; this runs on the real `body_mentions` and
-//  `niggle_resolutions` that `InjuryService` already loads.
+//  REBUILT 2026-08-24 against the real `body_mentions` rows. The first version
+//  was ported from a web prototype built on mock data, and the mock data lied
+//  about the shape of the real thing in three ways that all produced visible
+//  bugs:
 //
-//  Everything here is a MECHANICAL derivation from dates and mileage. Per the
-//  Niggles rules in CLAUDE.md the system reports what was said and when, never
-//  what it means. "Quiet" is deliberately not "healed" — we do not know that.
+//   1. `side` is usually NULL, even when the athlete clearly said "left" —
+//      "sore left knee" arrives with side = null. Keying a thread on
+//      (area, side) therefore split one knee into "Knee" and "L. Knee".
+//      Threads are now keyed on BODY AREA ALONE and side is demoted to a
+//      descriptor derived from whichever rows did capture it.
 //
-//  Two deliberate departures from the prototype, both noted in the handoff:
+//   2. `niggle_resolutions` contains complaints, not just all-clears. Of the
+//      five rows on file, three read "I did have a knee issue", "I felt it a
+//      little bit", "was feeling a little tight". So a resolution row is NOT
+//      trusted to close a thread on its own: it must fall strictly after the
+//      last mention, and any mention after any resolution voids it. Even then
+//      we say "settled", never "healed" — the system does not know that.
 //
-//   1. Volume bands are athlete-referenced (terciles of this athlete's own
-//      non-empty weeks), not the prototype's hardcoded 45/55 mi cuts. Those
-//      were Maya's numbers; they would be meaningless for a 20 mi/wk runner.
-//   2. The session-label tally (prototype Fig. 03a — "6 of 7 after long runs")
-//      is NOT built here. It needs a session label per day, and
-//      `fetchTrainingDays` only selects distance. Volume-band tallies carry
-//      the co-occurrence figure until that fetch is widened.
+//   3. The same ache gets logged twice on one day from one memo. Mentions are
+//      deduped per (area, day).
+//
+//  Everything here is still a mechanical function of dates and mileage.
+//  Nothing interprets.
 //
 
 import Foundation
@@ -33,11 +38,10 @@ enum NiggleRule {
     static let activeWindowDays = 14
     /// A gap this long before a mention reads as a return, not a continuation.
     static let recurrenceGapDays = 21
-    /// How far back the timeline looks.
-    static let windowWeeks = 16
-    /// A tally needs at least this many mentions before it renders as a
-    /// pattern. Handoff §5.2: a single data point must never read as one.
-    static let minTallyMentions = 3
+    /// The timeline is ongoing — it runs from the first ache ever recorded to
+    /// today, and never truncates. This bound exists only so a corrupt far-past
+    /// date cannot stretch the axis to nothing; it is not a display window.
+    static let sanityFloorWeeks = 520   // 10 years
 }
 
 // MARK: - Values
@@ -53,29 +57,11 @@ enum NiggleSide: String {
         default:            self = .unspecified
         }
     }
-
-    /// Label prefix. Unspecified contributes nothing rather than "Unspecified".
-    var prefix: String {
-        switch self {
-        case .left: return "L."
-        case .right: return "R."
-        case .both: return "Both"
-        case .unspecified: return ""
-        }
-    }
 }
 
 enum NiggleThreadStatus: Int {
-    /// Sort rank doubles as the raw value: active first, resolved last.
-    case active = 0, quiet = 1, resolved = 2
-
-    var label: String {
-        switch self {
-        case .active: return "ACTIVE"
-        case .quiet: return "QUIET"
-        case .resolved: return "RESOLVED"
-        }
-    }
+    /// Raw value doubles as sort rank.
+    case active = 0, quiet = 1, settled = 2
 }
 
 struct NiggleMention: Identifiable, Equatable {
@@ -89,22 +75,32 @@ struct NiggleMention: Identifiable, Equatable {
     let mentionedAt: Date
 }
 
-/// A gap long enough that the ache reads as having come back.
+/// A row from `niggle_resolutions`. Named "positive note" rather than
+/// "resolution" because the table demonstrably contains both.
+struct NigglePositiveNote: Equatable {
+    let on: Date
+    let quote: String?
+}
+
 struct NiggleReturn: Equatable {
     let afterDays: Int
     let on: Date
 }
 
-/// Every mention of one body area + side, in date order.
+/// Every mention of one body area, in date order. Side is an attribute of the
+/// thread, not part of its identity — see the header note.
 struct NiggleThread: Identifiable, Equatable {
     let id: String
     let bodyArea: String
-    let side: NiggleSide
     let label: String
+    /// "left", "mostly left", or nil when no row ever captured a side.
+    let sideNote: String?
+    /// The raw side to send to `resolve-niggle`. `.unspecified` when no row
+    /// captured one — the edge function treats that as "any side".
+    let dominantSide: NiggleSide
     let status: NiggleThreadStatus
     let mentions: [NiggleMention]
-    let resolvedAt: Date?
-    let resolutionQuote: String?
+    let positiveNotes: [NigglePositiveNote]
     let firstSeen: Date
     let lastSeen: Date
     let spanDays: Int
@@ -113,24 +109,24 @@ struct NiggleThread: Identifiable, Equatable {
 
     var mentionCount: Int { mentions.count }
     var lastQuote: String? { mentions.last?.quote }
+
+    /// Plain-language recency. The screen never says "healed".
+    var recencyLine: String {
+        switch daysSinceLast {
+        case 0: return "mentioned today"
+        case 1: return "mentioned yesterday"
+        case 2...13: return "mentioned \(daysSinceLast)d ago"
+        case 14...59: return "last mentioned \(daysSinceLast / 7)w ago"
+        default: return "last mentioned \(daysSinceLast / 30)mo ago"
+        }
+    }
 }
 
-/// One week of the training overlay. Volume only — this is the athlete's own
-/// mileage, not a derived load score.
 struct NiggleWeek: Identifiable, Equatable {
     let start: Date
     let miles: Double
-    /// The in-progress week. Drawn lighter, never darker: an incomplete week
-    /// must not read as more solid than a finished one.
     let partial: Bool
-
     var id: Date { start }
-}
-
-struct NiggleTally: Identifiable, Equatable {
-    let label: String
-    let count: Int
-    var id: String { label }
 }
 
 // MARK: - The timeline
@@ -140,22 +136,20 @@ struct NiggleTimeline: Equatable {
     let weeks: [NiggleWeek]
     let spanStart: Date
     let spanEnd: Date
-    /// Mentions per week, index-aligned with `weeks`. Drives the sparkline.
-    let mentionsPerWeek: [Int]
-    /// Athlete-referenced volume bands. Empty when there is too little
-    /// mileage history to cut terciles that mean anything.
-    let volumeBands: [NiggleTally]
 
     var isEmpty: Bool { threads.isEmpty }
     var activeCount: Int { threads.filter { $0.status == .active }.count }
-    var quietCount: Int { threads.filter { $0.status == .quiet }.count }
-    var resolvedCount: Int { threads.filter { $0.status == .resolved }.count }
-    var returnCount: Int { threads.reduce(0) { $0 + $1.returns.count } }
     var totalMentions: Int { threads.reduce(0) { $0 + $1.mentionCount } }
 
+    /// Where a date sits across the drawn span, 0...1.
+    func position(of date: Date) -> Double {
+        let total = spanEnd.timeIntervalSince(spanStart)
+        guard total > 0 else { return 1 }
+        return min(max(date.timeIntervalSince(spanStart) / total, 0), 1)
+    }
+
     static let empty = NiggleTimeline(
-        threads: [], weeks: [], spanStart: .distantPast, spanEnd: .distantPast,
-        mentionsPerWeek: [], volumeBands: []
+        threads: [], weeks: [], spanStart: .distantPast, spanEnd: .distantPast
     )
 }
 
@@ -166,8 +160,7 @@ enum NiggleTimelineBuilder {
     static var utcCalendar: Calendar = {
         var c = Calendar(identifier: .gregorian)
         c.timeZone = TimeZone(identifier: "UTC") ?? .current
-        // Weeks start Monday, matching the prototype and the rest of the app.
-        c.firstWeekday = 2
+        c.firstWeekday = 2   // Monday
         return c
     }()
 
@@ -175,7 +168,6 @@ enum NiggleTimelineBuilder {
         utcCalendar.dateComponents([.day], from: a, to: b).day ?? 0
     }
 
-    /// Monday of the week containing `date`, at UTC start-of-day.
     static func weekStart(of date: Date) -> Date {
         let c = utcCalendar
         let comps = c.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
@@ -183,168 +175,134 @@ enum NiggleTimelineBuilder {
     }
 
     static func titleCase(_ part: String) -> String {
-        // The one body area whose casing is not simple capitalisation.
         if part.lowercased() == "it band" { return "IT band" }
         return part.prefix(1).uppercased() + part.dropFirst()
     }
 
-    /// Builds the whole timeline. Pure: same inputs, same output.
-    ///
-    /// - Parameters:
-    ///   - mentions: every `body_mentions` row, any order.
-    ///   - resolutions: `niggle_resolutions`, keyed by area+side downstream.
-    ///   - milesByDay: per-UTC-day run mileage, for the training overlay.
-    ///   - today: the reference day. Injected so tests need no clock.
     static func build(
-        mentions: [NiggleMention],
+        mentions rawMentions: [NiggleMention],
         resolutions: [(bodyArea: String, side: NiggleSide, resolvedAt: Date, quote: String?)],
         milesByDay: [Date: Double],
         today: Date
     ) -> NiggleTimeline {
 
         let todayDay = utcCalendar.startOfDay(for: today)
-        let currentWeek = weekStart(of: todayDay)
-        guard let spanStart = utcCalendar.date(
-            byAdding: .weekOfYear, value: -(NiggleRule.windowWeeks - 1), to: currentWeek
+        guard let floor = utcCalendar.date(
+            byAdding: .weekOfYear, value: -NiggleRule.sanityFloorWeeks, to: todayDay
         ) else { return .empty }
 
-        // ── Weeks + overlay ────────────────────────────────────────────
-        var weeks: [NiggleWeek] = []
-        for i in 0..<NiggleRule.windowWeeks {
-            guard let start = utcCalendar.date(byAdding: .weekOfYear, value: i, to: spanStart)
-            else { continue }
-            var miles = 0.0
-            for d in 0..<7 {
-                if let day = utcCalendar.date(byAdding: .day, value: d, to: start) {
-                    miles += milesByDay[day] ?? 0
-                }
-            }
-            weeks.append(NiggleWeek(start: start, miles: miles, partial: start == currentWeek))
-        }
-
-        // ── Threads ────────────────────────────────────────────────────
-        // Scope to the window, but derive status from the mention's true
-        // recency — an ache last mentioned 20 weeks ago is quiet, not absent.
-        let inWindow = mentions.filter { $0.mentionedAt >= spanStart }
-
-        var resolutionByKey: [String: (resolvedAt: Date, quote: String?)] = [:]
-        for r in resolutions {
-            let k = key(area: r.bodyArea, side: r.side)
-            // Keep the most recent resolution per thread.
-            if let existing = resolutionByKey[k], existing.resolvedAt >= r.resolvedAt { continue }
-            resolutionByKey[k] = (r.resolvedAt, r.quote)
-        }
-
+        // ── Group by body area alone; dedupe per (area, day) ───────────
         var groups: [String: [NiggleMention]] = [:]
-        for m in inWindow {
-            groups[key(area: m.bodyArea, side: m.side), default: []].append(m)
+        for m in rawMentions where m.mentionedAt >= floor {
+            groups[m.bodyArea.lowercased(), default: []].append(m)
+        }
+
+        var notesByArea: [String: [NigglePositiveNote]] = [:]
+        for r in resolutions where r.resolvedAt >= floor {
+            notesByArea[r.bodyArea.lowercased(), default: []]
+                .append(NigglePositiveNote(on: r.resolvedAt, quote: r.quote))
         }
 
         var threads: [NiggleThread] = []
-        for (k, rows) in groups {
-            let ordered = rows.sorted { $0.mentionedAt < $1.mentionedAt }
-            guard let first = ordered.first, let lastMention = ordered.last else { continue }
+        for (area, rows) in groups {
+            // One mention per day: a single memo can write the same ache twice.
+            var seenDays = Set<Date>()
+            let ordered = rows
+                .sorted { $0.mentionedAt < $1.mentionedAt }
+                .filter { seenDays.insert($0.mentionedAt).inserted }
 
-            let resolution = resolutionByKey[k]
-            // A resolution only closes the thread if nothing was said after it.
-            let isResolved = (resolution?.resolvedAt).map { $0 >= lastMention.mentionedAt } ?? false
+            guard let first = ordered.first, let last = ordered.last else { continue }
 
-            let daysSinceLast = days(from: lastMention.mentionedAt, to: todayDay)
-            let status: NiggleThreadStatus = isResolved
-                ? .resolved
+            let notes = (notesByArea[area] ?? []).sorted { $0.on < $1.on }
+
+            // A positive note only settles the thread if it lands strictly
+            // AFTER the last mention. Same-day ties go to the mention — if you
+            // mentioned it that day, it is not settled.
+            let settled = (notes.last?.on).map { $0 > last.mentionedAt } ?? false
+
+            let daysSinceLast = days(from: last.mentionedAt, to: todayDay)
+            let status: NiggleThreadStatus = settled
+                ? .settled
                 : (daysSinceLast <= NiggleRule.activeWindowDays ? .active : .quiet)
 
             var returns: [NiggleReturn] = []
-            for i in 1..<max(ordered.count, 1) {
-                let gap = days(from: ordered[i - 1].mentionedAt, to: ordered[i].mentionedAt)
-                if gap >= NiggleRule.recurrenceGapDays {
-                    returns.append(NiggleReturn(afterDays: gap, on: ordered[i].mentionedAt))
+            if ordered.count > 1 {
+                for i in 1..<ordered.count {
+                    let gap = days(from: ordered[i - 1].mentionedAt, to: ordered[i].mentionedAt)
+                    if gap >= NiggleRule.recurrenceGapDays {
+                        returns.append(NiggleReturn(afterDays: gap, on: ordered[i].mentionedAt))
+                    }
                 }
             }
 
-            let prefix = first.side.prefix
-            let name = titleCase(first.bodyArea)
-
             threads.append(NiggleThread(
-                id: k,
-                bodyArea: first.bodyArea,
-                side: first.side,
-                label: prefix.isEmpty ? name : "\(prefix) \(name)",
+                id: area,
+                bodyArea: area,
+                label: titleCase(area),
+                sideNote: sideNote(for: ordered),
+                dominantSide: dominantSide(for: ordered),
                 status: status,
                 mentions: ordered,
-                resolvedAt: isResolved ? resolution?.resolvedAt : nil,
-                resolutionQuote: isResolved ? resolution?.quote : nil,
+                positiveNotes: notes,
                 firstSeen: first.mentionedAt,
-                lastSeen: lastMention.mentionedAt,
-                spanDays: days(from: first.mentionedAt, to: lastMention.mentionedAt),
+                lastSeen: last.mentionedAt,
+                spanDays: days(from: first.mentionedAt, to: last.mentionedAt),
                 daysSinceLast: daysSinceLast,
                 returns: returns
             ))
         }
 
-        // Active first, then most-recently-seen. Ties broken by label so the
-        // order is stable across rebuilds (dictionary iteration is not).
         threads.sort {
             if $0.status != $1.status { return $0.status.rawValue < $1.status.rawValue }
-            if $0.lastSeen != $1.lastSeen { return $0.lastSeen > $1.lastSeen }
+            if $0.mentionCount != $1.mentionCount { return $0.mentionCount > $1.mentionCount }
             return $0.label < $1.label
         }
 
-        // ── Sparkline ──────────────────────────────────────────────────
-        var perWeek = [Int](repeating: 0, count: weeks.count)
-        for t in threads {
-            for m in t.mentions {
-                let ws = weekStart(of: m.mentionedAt)
-                if let idx = weeks.firstIndex(where: { $0.start == ws }) { perWeek[idx] += 1 }
+        // ── Span: first mention ever → today. No window. ───────────────
+        let earliest = threads.map(\.firstSeen).min() ?? todayDay
+        let spanStart = weekStart(of: max(earliest, floor))
+
+        var weeks: [NiggleWeek] = []
+        let currentWeek = weekStart(of: todayDay)
+        var cursor = spanStart
+        while cursor <= currentWeek {
+            var miles = 0.0
+            for d in 0..<7 {
+                if let day = utcCalendar.date(byAdding: .day, value: d, to: cursor) {
+                    miles += milesByDay[day] ?? 0
+                }
             }
+            weeks.append(NiggleWeek(start: cursor, miles: miles, partial: cursor == currentWeek))
+            guard let next = utcCalendar.date(byAdding: .weekOfYear, value: 1, to: cursor)
+            else { break }
+            cursor = next
         }
 
-        let allMentions = threads.flatMap(\.mentions)
-
         return NiggleTimeline(
-            threads: threads,
-            weeks: weeks,
-            spanStart: spanStart,
-            spanEnd: todayDay,
-            mentionsPerWeek: perWeek,
-            volumeBands: volumeBands(mentions: allMentions, weeks: weeks)
+            threads: threads, weeks: weeks, spanStart: spanStart, spanEnd: todayDay
         )
     }
 
-    static func key(area: String, side: NiggleSide) -> String {
-        "\(area.lowercased())|\(side.rawValue)"
+    /// The most-reported side, ignoring rows that captured none.
+    static func dominantSide(for mentions: [NiggleMention]) -> NiggleSide {
+        var counts: [NiggleSide: Int] = [:]
+        for s in mentions.map(\.side) where s != .unspecified { counts[s, default: 0] += 1 }
+        return counts.max(by: { $0.value < $1.value })?.key ?? .unspecified
     }
 
-    /// Counts mentions by the volume of the week they landed in, using bands
-    /// cut from THIS athlete's own weeks (terciles of non-empty weeks). The
-    /// prototype's fixed 45/55 mi cuts were one athlete's numbers.
-    ///
-    /// Returns empty when the evidence is too thin to read as a pattern —
-    /// fewer than `minTallyMentions`, or a mileage spread too narrow to split.
-    static func volumeBands(mentions: [NiggleMention], weeks: [NiggleWeek]) -> [NiggleTally] {
-        guard mentions.count >= NiggleRule.minTallyMentions else { return [] }
-        let run = weeks.filter { $0.miles > 0 }.map(\.miles).sorted()
-        guard run.count >= 6 else { return [] }
-
-        let low = run[run.count / 3]
-        let high = run[(run.count * 2) / 3]
-        // A spread this narrow means the bands would be noise, not signal.
-        guard high - low >= 5 else { return [] }
-
-        let milesForWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0.start, $0.miles) })
-        func band(_ miles: Double) -> Int { miles < low ? 0 : (miles < high ? 1 : 2) }
-
-        var counts = [0, 0, 0]
-        for m in mentions {
-            guard let miles = milesForWeek[weekStart(of: m.mentionedAt)], miles > 0 else { continue }
-            counts[band(miles)] += 1
+    /// Side is unreliable per-row, so report what the rows that DID capture it
+    /// agree on, and hedge when they disagree. nil when none captured a side.
+    static func sideNote(for mentions: [NiggleMention]) -> String? {
+        let sided = mentions.map(\.side).filter { $0 != .unspecified }
+        guard !sided.isEmpty else { return nil }
+        var counts: [NiggleSide: Int] = [:]
+        for s in sided { counts[s, default: 0] += 1 }
+        guard let (top, n) = counts.max(by: { $0.value < $1.value }) else { return nil }
+        let word = top == .both ? "both sides" : top.rawValue
+        if n == sided.count {
+            // Every sided row agrees, but some rows had no side at all.
+            return n == mentions.count ? word : "mostly \(word)"
         }
-
-        func mi(_ d: Double) -> String { String(format: "%.0f", d.rounded()) }
-        return [
-            NiggleTally(label: "Under \(mi(low)) mi", count: counts[0]),
-            NiggleTally(label: "\(mi(low)) – \(mi(high)) mi", count: counts[1]),
-            NiggleTally(label: "\(mi(high)) mi and up", count: counts[2]),
-        ]
+        return "mostly \(word)"
     }
 }

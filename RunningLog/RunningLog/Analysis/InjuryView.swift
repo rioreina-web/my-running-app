@@ -86,7 +86,18 @@ struct InjuryListView: View {
                     if !injuryService.niggleTimeline.isEmpty {
                         EditorialRule()
                             .padding(.horizontal, 20)
-                        NiggleTimelineCard(timeline: injuryService.niggleTimeline)
+                        NiggleTimelineCard(
+                            timeline: injuryService.niggleTimeline,
+                            onResolve: { thread in
+                                Task {
+                                    _ = await injuryService.resolveNiggle(
+                                        bodyArea: thread.bodyArea,
+                                        side: thread.dominantSide == .unspecified
+                                            ? "" : thread.dominantSide.rawValue
+                                    )
+                                }
+                            }
+                        )
                             .padding(.horizontal, 20)
                     }
 

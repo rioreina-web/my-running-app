@@ -57,13 +57,13 @@ final class InjuryService {
         let userId = (AuthManager.shared.currentUserId ?? "").lowercased()
         guard !userId.isEmpty else { return }
         do {
-            let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-            let since = Calendar.current.date(byAdding: .month, value: -12, to: Date()) ?? Date()
+            // No date floor: the niggle timeline is ongoing, so it needs every
+            // mention ever recorded, not a trailing year. The 1000-row limit is
+            // the only bound, and at current rates that is many years of aches.
             let mentions: [NiggleMentionRow] = try await supabase
                 .from("body_mentions")
                 .select("id, training_log_id, body_area, side, verbatim_quote, severity_hint, mentioned_at")
                 .eq("user_id", value: userId)
-                .gte("mentioned_at", value: df.string(from: since))
                 .order("mentioned_at", ascending: false)
                 .limit(1000)
                 .execute().value
@@ -89,13 +89,15 @@ final class InjuryService {
         let userId = AuthManager.shared.userId
         guard !userId.isEmpty else { return }
         do {
-            let since = Calendar.current.date(byAdding: .month, value: -12, to: Date()) ?? Date()
+            // Ten years, so the timeline's volume strip still has mileage
+            // behind mentions from several seasons back.
+            let since = Calendar.current.date(byAdding: .year, value: -10, to: Date()) ?? Date()
             let rows: [TrainingDayRow] = try await supabase
                 .from("training_logs")
                 .select("workout_date, workout_distance_miles")
                 .eq("user_id", value: userId)
                 .gte("workout_date", value: ISO8601DateFormatter().string(from: since))
-                .limit(3000)
+                .limit(10000)
                 .execute().value
             var map: [Date: Double] = [:]
             for r in rows {
