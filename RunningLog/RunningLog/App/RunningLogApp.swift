@@ -460,6 +460,10 @@ enum AppDestination: Identifiable {
     /// door of its own; this is it. Harmless under the editorial skin,
     /// where the on-screen control still exists too.
     case checkIn
+    /// Niggles — the mention timeline. Aches are the thing runners go looking
+    /// for by name, so the timeline gets its own door rather than living only
+    /// as a card buried on the injuries screen.
+    case niggles
 
     var id: Self { self }
 
@@ -474,6 +478,7 @@ enum AppDestination: Identifiable {
         case .contentLibrary: ContentLibraryHubView()
         case .settings: SettingsView()
         case .checkIn: CheckInView()
+        case .niggles: NiggleTimelineScreen()
         }
     }
 }
