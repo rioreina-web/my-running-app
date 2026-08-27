@@ -298,12 +298,15 @@ Command: `--user=03857bf3-… --from=2026-01-26 --step=1 --sessions`
 
 | | shipped model |
 |---|---|
-| **MAPE** | **2.23%** ← the number Phase 1 must beat |
+| **MAPE** | **2.22%** ← the number Phase 1 must beat |
 | mean error (bias) | −0.92% |
 | median | −0.82% |
 | worst | −7.32% |
 | predicted slow / fast | 8 / 15 |
 | **coverage** | **23 / 250 parsed sessions** |
+
+(Re-measured 2026-08-27 after the §2.1 race-weather fix; 2.23% → 2.22%, i.e.
+unchanged inside the noise floor. The floor was not binding on this history.)
 
 By month — the drift the single MAPE averages away:
 
