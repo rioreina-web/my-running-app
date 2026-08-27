@@ -165,13 +165,22 @@ full  (open-meteo-archive-backfill): temp_f, dew_point_f, humidity, wind_mph,
 sparse(open-meteo-backfill)        : temp_f, dew_point_f          ← no adjustment_pct
 ```
 
-- [ ] Confirm `raceConditionsFor` derives the correction when `adjustment_pct` is
-      absent rather than reading zero heat cost. The April race is the *only*
-      hot race in the set, so a silent zero there would flatter every number in
-      §1.1 and §1.5.
+- [x] **CLOSED 2026-08-27 — the defect was never there.** `raceConditionsFor`
+      does not read `adjustment_pct`, and it cannot: `WeatherInput` has exactly
+      two fields (`tempF`, `dewPointF`), `mapWeather` populates only those, and
+      `normalizeRaceTime` derives `heatFraction` from `heatAdjustmentPct(temp,
+      dew)` on every call. Both shapes are therefore the same input. April's
+      33:02 normalizes to **32:23 (−39s, −1.97%)** from the sparse row — the
+      non-zero the §1.1 numbers depend on, and it reconciles §1.1's −1.08%
+      exactly (32:02 predicted vs 32:23 neutral).
 
 **Done when:** a unit test pins both shapes to the same correction for the same
-temp/dew.
+temp/dew. → `fitnessInputs.test.ts`, 6 tests. It pins the *derivation*, not the
+current answer: one test feeds a deliberately wrong `adjustment_pct: 0` in the
+full shape and asserts nothing moves, so a future reader that starts trusting
+the stored percentage fails here instead of silently flattening the only hot
+race in the set. A second pins fail-closed — a half-present reading maps to
+`null` ("not on file", reported as missing) and never to zero heat.
 
 ### 2.3 — Re-measure the cold start before deleting it (G0.6)  *(0.25d)*
 
