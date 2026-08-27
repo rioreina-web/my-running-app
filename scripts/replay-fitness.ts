@@ -73,6 +73,8 @@
  *   --step=N             days per step (default 1 — the nightly cron's cadence)
  *   --horizons=1,7,14,28 days before race day to score at (default 1,7,14,28,56)
  *   --sessions           list every scored session, not just the summaries
+ *   --estimator          ALSO run the Phase-1 estimator and score both side by
+ *                        side. Old is untouched; the two chains never interact.
  *   --json               emit the full chain as JSON instead of the tables
  */
 
@@ -82,6 +84,11 @@ import { generateFitnessPrediction, type FitnessPredictionResult, type PriorSnap
 import { buildPredictionInput, distanceToRaceType } from "../supabase/functions/_shared/fitnessInputs.ts";
 import { estimateFromSession, formatMSS, type ParsedSession }
   from "../supabase/functions/_shared/trainingZoneSignal.ts";
+import { estimateFitness, raceObservation, sessionObservation, type Observation }
+  from "../supabase/functions/_shared/fitnessEstimator.ts";
+import { normalizeRaceTime } from "../supabase/functions/_shared/raceNormalization.ts";
+import { equivalentRacePaceSecPerMile, RACE_DISTANCE_MI, type RaceKey }
+  from "../supabase/functions/_shared/paces.ts";
 
 // ---------------------------------------------------------------------------
 
@@ -128,11 +135,15 @@ interface Race {
   distanceKey: string;
   actualSeconds: number;
   logId: string;
+  /** Conditions-neutral time and how big that correction was — the estimator
+   *  prices a race's uncertainty by the size of its own correction. */
+  neutralSeconds: number;
+  correctionFraction: number;
 }
 
 const { data: raceRows, error: raceErr } = await db
   .from("training_logs")
-  .select("id, workout_date, race_result")
+  .select("id, workout_date, race_result, weather_actual")
   .eq("user_id", userId)
   .not("race_result", "is", null)
   .order("workout_date", { ascending: true })
@@ -148,7 +159,17 @@ for (const r of raceRows ?? []) {
   const d = String(r.workout_date ?? "").slice(0, 10);
   if (!rr || typeof rr.finish_time_seconds !== "number" || !d) continue;
   if (!distanceToRaceType(String(rr.distance ?? ""))) continue;
-  races.push({ date: d, distanceKey: String(rr.distance), actualSeconds: rr.finish_time_seconds, logId: String(r.id) });
+  const key = distanceToRaceType(String(rr.distance)) as unknown as RaceKey;
+  const wxRaw = r.weather_actual as { temp_f?: number; dew_point_f?: number } | null;
+  const cond = wxRaw && Number.isFinite(Number(wxRaw.temp_f)) && Number.isFinite(Number(wxRaw.dew_point_f))
+    ? { tempF: Number(wxRaw.temp_f), dewPointF: Number(wxRaw.dew_point_f), elevationGainM: null }
+    : null;
+  const neutral = cond ? normalizeRaceTime(rr.finish_time_seconds, key, cond).neutralSeconds : rr.finish_time_seconds;
+  races.push({
+    date: d, distanceKey: String(rr.distance), actualSeconds: rr.finish_time_seconds, logId: String(r.id),
+    neutralSeconds: neutral,
+    correctionFraction: (rr.finish_time_seconds - neutral) / rr.finish_time_seconds,
+  });
 }
 if (races.length === 0) {
   console.error("no scoreable races for this athlete");
@@ -209,6 +230,25 @@ const stepBefore = (target: Date): Step | null => {
   }
   return best;
 };
+
+// ── Phase-1 estimator, run as a SECOND chain (REDESIGN Phase 1) ────────────
+// The plan requires old and new side by side over the full history before any
+// switch. The two chains share only the input assembly: the new one never
+// reads the old one's estimate, and the old one is not modified at all.
+const useEstimator = !!args.get("estimator");
+const processSd = args.get("process-sd") ? Number(args.get("process-sd")) : undefined;
+const observations: Observation[] = [];
+const seenObs = new Set<string>();
+interface EstStep { date: string; pace: number | null; sd: number | null }
+const estSteps: EstStep[] = [];
+
+/** The estimator's own state as of just before `date` — what prices a session. */
+const estimateAsOf = (date: string) =>
+  estimateFitness({
+    observations: observations.filter((o) => o.date < date),
+    now: parseDay(date),
+    processSdPerWeek: processSd,
+  });
 
 const residuals: SessionResidual[] = [];
 /** Quality-candidate sessions that produced no residual, by reason. */
@@ -306,6 +346,23 @@ for (let t = from.getTime(); t <= to.getTime(); t += stepDays * DAY) {
     // predicted − actual, so > 0 = model predicted slower than the run.
     const errPct = (estimate.predictedPaceForDuration - estimate.neutralWorkPace)
       / estimate.neutralWorkPace * 100;
+    // Second chain: the same session, priced against the ESTIMATOR's own prior
+    // state rather than the old engine's, and kept as an observation with a
+    // variance instead of a number to be clamped later.
+    if (useEstimator) {
+      const priorEst = estimateAsOf(log.date);
+      if (priorEst) {
+        const own = estimateFromSession(session, priorEst.pace, "tenK", 0);
+        if (own.estimate) {
+          const e = own.estimate;
+          observations.push(sessionObservation(
+            e.equivalentPace, e.workSeconds / 60, e.ratio, e.confidence, log.date,
+            `${p.type ?? "session"} ${Math.round(e.workSeconds / 60)}min`,
+          ));
+        }
+      }
+    }
+
     residuals.push({
       date: log.date,
       // The parser leaves `type` empty on some rows; an unlabelled bucket in
@@ -324,6 +381,23 @@ for (let t = from.getTime(); t <= to.getTime(); t += stepDays * DAY) {
       confidence: estimate.confidence,
       zoneLabel: estimate.zoneLabel,
     });
+  }
+
+  if (useEstimator) {
+    // Races become observations once they are in the past. Priced by the size
+    // of their own conditions correction — no exclusion rule.
+    for (const r of races) {
+      if (r.date >= day(at) || seenObs.has(r.logId)) continue;
+      seenObs.add(r.logId);
+      const key = distanceToRaceType(r.distanceKey) as unknown as RaceKey;
+      if (!key) continue;
+      observations.push(raceObservation(
+        equivalentRacePaceSecPerMile(key, r.neutralSeconds, "tenK" as RaceKey),
+        r.correctionFraction, r.date, `${r.distanceKey.toUpperCase()} race`,
+      ));
+    }
+    const est = estimateFitness({ observations, now: at, processSdPerWeek: processSd });
+    estSteps.push({ date: day(at), pace: est?.pace ?? null, sd: est?.sd ?? null });
   }
 
   done++;
@@ -526,3 +600,83 @@ for (const [reason, n] of [...census].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${padS(String(n), 5)}  ${reason}`);
 }
 console.log();
+
+// ---------------------------------------------------------------------------
+// Side by side: the Phase-1 estimator against the shipped model (REDESIGN §1).
+// ---------------------------------------------------------------------------
+
+if (useEstimator) {
+  console.log(`${"═".repeat(78)}`);
+  console.log("PHASE-1 ESTIMATOR vs SHIPPED MODEL");
+  console.log("═".repeat(78));
+
+  const estBefore = (target: Date): EstStep | null => {
+    let best: EstStep | null = null;
+    for (const e of estSteps) {
+      if (parseDay(e.date).getTime() < target.getTime() && e.pace != null) best = e;
+    }
+    return best;
+  };
+
+  // ── gate 1: the races ────────────────────────────────────────────────────
+  console.log(`\n  GATE 1 — race errors at -1d (vs RAW; §2.1 neutral basis noted in §6)`);
+  console.log(`  ${pad("race", 22)}${padS("actual", 10)}${padS("old", 10)}${padS("new", 10)}${padS("old err", 10)}${padS("new err", 10)}`);
+  for (const race of races) {
+    const raceDay = parseDay(race.date);
+    const o = stepBefore(raceDay);
+    const n = estBefore(raceDay);
+    if (!o?.pred && !n) continue;
+    const key = distanceToRaceType(race.distanceKey) as unknown as RaceKey;
+    if (!key) continue;
+    const oldP = o?.pred ? predictedFor(o.pred, race.distanceKey) : null;
+    // The estimator's state is a 10K-equivalent pace; read it at this distance.
+    const newP = n?.pace != null
+      ? equivalentRacePaceSecPerMile("tenK" as RaceKey, n.pace * RACE_DISTANCE_MI["tenK" as RaceKey], key) * RACE_DISTANCE_MI[key]
+      : null;
+    const e = (p: number | null) => p == null ? "—" : `${p > race.actualSeconds ? "+" : ""}${((p - race.actualSeconds) / race.actualSeconds * 100).toFixed(2)}%`;
+    console.log(
+      `  ${pad(`${race.date} ${race.distanceKey}`, 22)}${padS(fmt(race.actualSeconds), 10)}` +
+      `${padS(oldP == null ? "—" : fmt(oldP), 10)}${padS(newP == null ? "—" : fmt(newP), 10)}` +
+      `${padS(e(oldP), 10)}${padS(e(newP), 10)}`,
+    );
+  }
+
+  // ── gate 2: session residuals, scored the SAME way for both ──────────────
+  // Re-price every scored session against the estimator's state at the same
+  // moment the old chain was priced at, so the two MAPEs are comparable.
+  const newErr: number[] = [];
+  for (const r of residuals) {
+    const n = estBefore(parseDay(r.date));
+    if (!n?.pace) continue;
+    // The residual is a ratio statement; re-express it against the new level.
+    const predicted = r.predictedPace * (n.pace / r.anchorPace);
+    newErr.push((predicted - r.neutralWorkPace) / r.neutralWorkPace * 100);
+  }
+  const mape = (xs: number[]) => xs.reduce((s, x) => s + Math.abs(x), 0) / xs.length;
+  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const oldErr = residuals.map((r) => r.errPct);
+  console.log(`\n  GATE 2 — session residuals (n=${newErr.length})`);
+  console.log(`  ${pad("", 14)}${padS("MAPE", 10)}${padS("bias", 10)}`);
+  console.log(`  ${pad("shipped", 14)}${padS(`${mape(oldErr).toFixed(2)}%`, 10)}${padS(`${mean(oldErr) > 0 ? "+" : ""}${mean(oldErr).toFixed(2)}%`, 10)}`);
+  console.log(`  ${pad("estimator", 14)}${padS(`${mape(newErr).toFixed(2)}%`, 10)}${padS(`${mean(newErr) > 0 ? "+" : ""}${mean(newErr).toFixed(2)}%`, 10)}`);
+  const delta = mape(newErr) - mape(oldErr);
+  console.log(`  ${pad("", 14)}${padS(`${delta > 0 ? "+" : ""}${delta.toFixed(2)}pp`, 10)}  ${delta < 0 ? "← estimator better" : "← estimator WORSE"}`);
+
+  // ── gate 3: does the pre-April window actually move? ─────────────────────
+  const apr = races.find((r) => r.date.startsWith("2026-04"));
+  if (apr) {
+    const end = parseDay(apr.date);
+    const start = new Date(end.getTime() - 56 * DAY);
+    const win = (xs: Array<{ date: string; pace: number | null }>) =>
+      xs.filter((x) => x.pace != null && parseDay(x.date) >= start && parseDay(x.date) <= end);
+    const o = win(steps.map((s) => ({ date: s.date, pace: s.pred?.estimated10kPaceSeconds ?? null })));
+    const n = win(estSteps);
+    const span = (xs: Array<{ pace: number | null }>) =>
+      xs.length < 2 ? 0 : Math.abs((xs[xs.length - 1].pace! - xs[0].pace!));
+    console.log(`\n  GATE 3 — movement across the 56 days before ${apr.date}`);
+    console.log(`  ${pad("shipped", 14)}${padS(`${span(o).toFixed(1)}s/mi`, 12)} over ${o.length} steps`);
+    console.log(`  ${pad("estimator", 14)}${padS(`${span(n).toFixed(1)}s/mi`, 12)} over ${n.length} steps`);
+    console.log(`  (§1.3 measured the shipped model moving ~10s across this window — "materially" means more than that)`);
+  }
+  console.log();
+}

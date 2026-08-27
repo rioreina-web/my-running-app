@@ -412,6 +412,69 @@ or a `detectWorkBouts` fix will look like a model improvement.
 
 ---
 
+## 8 · Phase 1 built, and it does NOT pass its gate  *(2026-08-27)*
+
+`fitnessEstimator.ts` exists: state is a level with a variance, every
+performance is an observation with a variance, and combining them is the
+recursive form of the shrinkage `raceCurve.ts` already uses. Twenty unit tests
+green, including the acceptance case harvested from `evidenceBlend.ts` (eight
+weeks of training closes >80% of the race→training gap). `replay-fitness.ts
+--estimator` runs both chains side by side; they share only the input
+assembly. **Nothing is switched. `compute-fitness-snapshot` is untouched.**
+
+Against the three exit gates:
+
+| gate | shipped | estimator | |
+|---|---|---|---|
+| Feb 10K err | +2.07% | **−1.28%** | improved |
+| Apr 10K err | −3.03% | −3.77% | worse |
+| **session MAPE** | **2.28%** | **2.55%** | **FAILS** |
+| 56d pre-April movement | 0.9 s/mi | **4.4 s/mi** | ~5× more |
+
+Gate 2 is the one that matters and it fails. `PROCESS_SD_PER_WEEK` was swept
+against the loss rather than argued about — 0.002→2.72%, 0.004→2.51%,
+0.006→2.49%, 0.009→2.55%. A shallow minimum at 0.006, **and every point on it
+is worse than the shipped 2.28%.** The estimator is at its measured best and
+still loses.
+
+### Why, and why this is not simply "the estimator is bad"
+
+The shipped model barely moves — 0.9 s/mi across the 56 days before April,
+which is §1.3's complaint restated. But a model that barely moves scores WELL
+on a residual loss when the observations are noisy around a stable true level:
+it predicts the mean and never chases. The estimator moves toward each
+session, so when the next session disagrees it eats the error. **On n=23 noisy
+sessions, stiffness is a winning strategy for this loss function.**
+
+That is a statement about the loss, not only about the estimator. §7 already
+found the residual set is 25 of 66 quality sessions, that `detectWorkBouts`
+contributes 0 of 12, and that 10 of the 20 plausibility rejections are
+progression runs the model has no way to price. A loss function built on the
+surviving 23 cannot yet distinguish "tracks fitness better" from "chases parse
+noise better".
+
+### So the honest conclusion
+
+**Do not switch on this evidence, and do not tune the estimator further
+against this loss.** Tuning against an under-powered loss is how the eight
+clamps got here in the first place — each one defensible against the evidence
+available when it was written.
+
+The gate is not wrong; the evidence behind it is too thin to pass anything.
+Ranked, before Phase 1 is re-judged:
+
+1. **`detectWorkBouts` work/rest discrimination** (§7). 12 sessions, and it is
+   the path for every non-Strava athlete. Biggest single lever on n.
+2. **Decide what a progression run states.** 10 more sessions, and it is a
+   modelling question the estimator would have to answer anyway.
+3. Re-run `--estimator` when n is meaningfully above 23, and only then read
+   gate 2.
+
+The estimator is committed as-is — unswitched, tested, and measured. It is
+cheaper to keep it beside the engine than to rebuild it when the loss is ready.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code
