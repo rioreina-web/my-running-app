@@ -251,6 +251,52 @@ The plan ordered G1 (generalization) next. §1.3 argues for reordering:
 
 ---
 
+## 6 · The Phase-0 baseline  *(2026-08-27, session residuals)*
+
+G0.2 landed: `replay-fitness.ts` now prices every quality session against the
+estimate standing on the last step **strictly before** the session was run, and
+reports the residual. n=2 races became n=23 sessions. Sign convention is the
+race table's — error > 0 means the model predicted SLOWER than the athlete ran.
+
+Command: `--user=03857bf3-… --from=2026-01-26 --step=1 --sessions`
+
+| | shipped model |
+|---|---|
+| **MAPE** | **2.23%** ← the number Phase 1 must beat |
+| mean error (bias) | −0.92% |
+| median | −0.82% |
+| worst | −7.32% |
+| predicted slow / fast | 8 / 15 |
+| **coverage** | **23 / 250 parsed sessions** |
+
+By month — the drift the single MAPE averages away:
+
+| | n | mean | MAPE |
+|---|---|---|---|
+| 2026-03 | 1 | −0.39% | 0.39% |
+| 2026-04 | 5 | −1.53% | 3.42% |
+| 2026-05 | 3 | +0.43% | 1.84% |
+| 2026-06 | 5 | −0.29% | 1.59% |
+| 2026-07 | 4 | −0.37% | 1.46% |
+| 2026-08 | 5 | −2.30% | 2.87% |
+
+**Read coverage before error.** The residual set is the model's *own* admission
+basis — `estimateFromSession` drops anything outside the 0.86–1.10 plausibility
+window. A Phase-1 model can lower MAPE by admitting fewer, easier sessions, so
+the harness prints the rejection census next to the error and a fall in
+`scored` invalidates a MAPE win. Current census: 170 non-quality type, 20
+slower-than-curve, 16 no usable work reps, 13 no estimate predates the session,
+4 declared race, 3 under the work floor, 1 faster-than-curve. The 170 is the
+binding limit — the loss function sees only what the parser typed as quality.
+
+Races re-verified on the same run: **Feb +2.07%** reproduces §1.1 exactly, and
+April predicts **32:02**, also exactly. April reads −3.03% here against the
+**raw** 33:02 where §1.1 records −1.08% against the ~32:23 neutral — the same
+number on a different basis, not a regression. That gap is §2.1
+(normalize-at-confirmation); until it lands, compare race errors on one basis.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code

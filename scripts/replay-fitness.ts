@@ -26,6 +26,35 @@
  *   3. `diagnostics` is kept per step. A backtest that stores only the output
  *      tells you THAT it was wrong, not WHICH STAGE was.
  *
+ * SESSION RESIDUALS (G0.2 in FITNESS-REDESIGN-APPLY.md). Two races is not a
+ * loss function. But every quality session is a bounded statement about
+ * fitness, and `trainingZoneSignal` already prices one: it asks the athlete's
+ * own pace/duration curve what the session's effective duration is worth at
+ * the current estimate, and compares that to what was actually run. The anchor
+ * cancels out of the ratio, so the comparison is a statement about the
+ * ESTIMATE, not about the curve.
+ *
+ * So: for every quality session in the range, price it against the estimate
+ * standing on the last step STRICTLY BEFORE the session's date, and keep the
+ * residual. That turns n=2 scoreable races into n=every-workout, and it is the
+ * loss function Phase 1 has to beat.
+ *
+ * Two things that make these residuals honest, and one that does not:
+ *
+ *   - Strictly out-of-sample. The pricing estimate predates the session, so it
+ *     cannot contain it. Late-created rows (106/307 landed >2 days late) are
+ *     scored against the estimate that stood BEFORE THE RUN, not before the
+ *     upload — a row arriving late is a property of data plumbing, not of how
+ *     wrong the model was about the athlete that day.
+ *   - Coverage is printed next to error, always. `estimateFromSession` drops
+ *     sessions outside the 0.86–1.10 plausibility window, so the residual set
+ *     is the model's OWN admission basis. A later model could "win" purely by
+ *     admitting fewer, easier sessions — so the rejection census is printed
+ *     beside the error table and a drop in `scored` is a red flag, not a
+ *     silent improvement. Compare error only at comparable coverage.
+ *   - What it is NOT: an unbiased sample of running. It is quality work only,
+ *     and only quality work the parser understood.
+ *
  * WHAT IT CANNOT DO — read the limits in `fitnessInputs.ts`'s header before
  * trusting a number. Briefly: `parsed_structure` has no per-column history so
  * the row's `created_at` is an optimistic proxy, and `athlete_state
@@ -43,6 +72,7 @@
  *   --to=YYYY-MM-DD      chain end   (default: today)
  *   --step=N             days per step (default 1 — the nightly cron's cadence)
  *   --horizons=1,7,14,28 days before race day to score at (default 1,7,14,28,56)
+ *   --sessions           list every scored session, not just the summaries
  *   --json               emit the full chain as JSON instead of the tables
  */
 
@@ -50,6 +80,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { generateFitnessPrediction, type FitnessPredictionResult, type PriorSnapshotInput }
   from "../supabase/functions/_shared/fitnessPrediction.ts";
 import { buildPredictionInput, distanceToRaceType } from "../supabase/functions/_shared/fitnessInputs.ts";
+import { estimateFromSession, formatMSS, type ParsedSession }
+  from "../supabase/functions/_shared/trainingZoneSignal.ts";
 
 // ---------------------------------------------------------------------------
 
@@ -139,8 +171,65 @@ interface Step {
   laps: number;
 }
 
+/**
+ * One quality session priced against the estimate that predated it.
+ * `errPct > 0` means the model predicted SLOWER than the athlete ran — the
+ * same sign convention as the race table, so the two can be read together.
+ */
+interface SessionResidual {
+  date: string;
+  type: string;
+  /** Date of the step whose estimate priced it, and how far back that was. */
+  pricedFrom: string;
+  lagDays: number;
+  anchorPace: number;
+  neutralWorkPace: number;
+  predictedPace: number;
+  errPct: number;
+  workMinutes: number;
+  effectiveMinutes: number;
+  repCount: number;
+  heatNormalized: boolean;
+  confidence: number;
+  zoneLabel: string;
+}
+
 const chain: PriorSnapshotInput[] = [];
 const steps: Step[] = [];
+
+/**
+ * Last step strictly before `target`. Mirrors prediction_scores' rule, and is
+ * what keeps session residuals out-of-sample: the estimate that priced a
+ * session was computed before that session existed.
+ */
+const stepBefore = (target: Date): Step | null => {
+  let best: Step | null = null;
+  for (const s of steps) {
+    if (parseDay(s.date).getTime() < target.getTime() && s.pred) best = s;
+  }
+  return best;
+};
+
+const residuals: SessionResidual[] = [];
+/** Quality-candidate sessions that produced no residual, by reason. */
+const sessionRejections: Array<{ date: string; reason: string }> = [];
+/** Sessions already priced — a log stays in the input window for weeks. */
+const scoredSessions = new Set<string>();
+/** Dates already spoken for by a scored race; a race is an anchor, not training. */
+const raceDates = new Set(races.map((r) => r.date));
+
+/**
+ * Stable identity for a session. `VoiceLogInput` carries no row id, and an
+ * athlete can run twice in a day, so the blocks themselves are the fingerprint.
+ */
+const sessionKey = (date: string, blocks: readonly { role?: string; durationS?: number | null }[]) =>
+  `${date}|${blocks.length}|${blocks.reduce((s, b) => s + (b.durationS ?? 0), 0)}`;
+
+/** The fitted-curve tilt this step's prediction was built with. */
+const tiltOf = (p: FitnessPredictionResult): number => {
+  const rc = p.diagnostics?.race_curve as { tilt_vs_generic?: number } | undefined;
+  return typeof rc?.tilt_vs_generic === "number" ? rc.tilt_vs_generic : 0;
+};
 
 const totalSteps = Math.floor((to.getTime() - from.getTime()) / (stepDays * DAY)) + 1;
 console.error(
@@ -174,12 +263,75 @@ for (let t = from.getTime(); t <= to.getTime(); t += stepDays * DAY) {
     });
   }
 
+  // ── Session residuals ───────────────────────────────────────────────────
+  // Price every newly-visible quality session against the estimate standing
+  // on the last step STRICTLY BEFORE the session was run. `steps` already
+  // holds this step, and `stepBefore` is exclusive, so a session dated today
+  // is priced by yesterday's estimate — never by one that contains it.
+  for (const log of input.extendedVoiceLogs ?? []) {
+    const p = log.parsedStructure;
+    if (!p || !p.blocks || p.blocks.length === 0) continue;
+    const key = sessionKey(log.date, p.blocks);
+    if (scoredSessions.has(key)) continue;
+    scoredSessions.add(key);
+
+    const prior = stepBefore(parseDay(log.date));
+    if (!prior?.pred) {
+      // Sessions older than the chain's start have nothing standing before
+      // them. Not a model failure — record it so coverage stays honest.
+      sessionRejections.push({ date: log.date, reason: "no estimate predates this session" });
+      continue;
+    }
+
+    const session: ParsedSession = {
+      date: log.date,
+      type: p.type,
+      confidence: p.confidence,
+      intentPattern: p.intentPattern ?? null,
+      tempF: log.weather?.tempF ?? null,
+      dewPointF: log.weather?.dewPointF ?? null,
+      blocks: p.blocks,
+      declaredRace: raceDates.has(log.date),
+    };
+    const { estimate, reason } = estimateFromSession(
+      session,
+      prior.pred.estimated10kPaceSeconds,
+      "tenK",
+      tiltOf(prior.pred),
+    );
+    if (!estimate) {
+      sessionRejections.push({ date: log.date, reason });
+      continue;
+    }
+    // predicted − actual, so > 0 = model predicted slower than the run.
+    const errPct = (estimate.predictedPaceForDuration - estimate.neutralWorkPace)
+      / estimate.neutralWorkPace * 100;
+    residuals.push({
+      date: log.date,
+      // The parser leaves `type` empty on some rows; an unlabelled bucket in
+      // the by-type table reads as a formatting glitch rather than as data.
+      type: String(p.type ?? "").trim().toLowerCase() || "(untyped)",
+      pricedFrom: prior.date,
+      lagDays: Math.round((parseDay(log.date).getTime() - parseDay(prior.date).getTime()) / DAY),
+      anchorPace: prior.pred.estimated10kPaceSeconds,
+      neutralWorkPace: estimate.neutralWorkPace,
+      predictedPace: estimate.predictedPaceForDuration,
+      errPct,
+      workMinutes: estimate.workSeconds / 60,
+      effectiveMinutes: estimate.effectiveSeconds / 60,
+      repCount: estimate.repCount,
+      heatNormalized: estimate.heatNormalized,
+      confidence: estimate.confidence,
+      zoneLabel: estimate.zoneLabel,
+    });
+  }
+
   done++;
   if (done % 20 === 0) console.error(`  ${done}/${totalSteps} · ${day(at)} · ${pred ? fmt(pred.predicted10kSeconds) : "null"}`);
 }
 
 if (args.get("json")) {
-  console.log(JSON.stringify({ steps, races }, null, 2));
+  console.log(JSON.stringify({ steps, races, residuals, sessionRejections }, null, 2));
   Deno.exit(0);
 }
 
@@ -196,15 +348,6 @@ const predictedFor = (p: FitnessPredictionResult, distanceKey: string): number |
     case "marathon": return p.predictedMarathonSeconds;
     default: return null;
   }
-};
-
-/** Last step strictly before `target`. Mirrors prediction_scores' rule. */
-const stepBefore = (target: Date): Step | null => {
-  let best: Step | null = null;
-  for (const s of steps) {
-    if (parseDay(s.date).getTime() < target.getTime() && s.pred) best = s;
-  }
-  return best;
 };
 
 console.log(`\n${"═".repeat(78)}`);
@@ -260,4 +403,126 @@ for (const h of horizons) {
 const withPred = steps.filter((s) => s.pred).length;
 console.log(`\n  ${withPred}/${steps.length} steps produced a prediction · ${steps.length - withPred} abstained`);
 console.log(`  NOTE: actuals are RAW finish times. Normalize for conditions before`);
-console.log(`        reading a hot race's error as model error (G0.4 stores neutral).\n`);
+console.log(`        reading a hot race's error as model error (G0.4 stores neutral).`);
+
+// ---------------------------------------------------------------------------
+// Session residuals — the loss function (G0.2).
+// ---------------------------------------------------------------------------
+
+interface Stats { n: number; mean: number; mape: number; median: number; worst: number; slow: number }
+
+const statsOf = (rs: readonly SessionResidual[]): Stats => {
+  const e = rs.map((r) => r.errPct).sort((a, b) => a - b);
+  const mid = Math.floor(e.length / 2);
+  return {
+    n: e.length,
+    mean: e.reduce((s, x) => s + x, 0) / e.length,
+    mape: e.reduce((s, x) => s + Math.abs(x), 0) / e.length,
+    median: e.length % 2 ? e[mid] : (e[mid - 1] + e[mid]) / 2,
+    worst: e.reduce((w, x) => (Math.abs(x) > Math.abs(w) ? x : w), 0),
+    slow: e.filter((x) => x > 0).length,
+  };
+};
+
+const pct = (x: number) => `${x > 0 ? "+" : ""}${x.toFixed(2)}%`;
+
+/** Group label → residuals, in first-seen order. */
+const groupBy = (rs: readonly SessionResidual[], key: (r: SessionResidual) => string) => {
+  const m = new Map<string, SessionResidual[]>();
+  for (const r of rs) {
+    const k = key(r);
+    (m.get(k) ?? m.set(k, []).get(k)!).push(r);
+  }
+  return m;
+};
+
+const statTable = (title: string, groups: Map<string, SessionResidual[]>, w = 14) => {
+  console.log(`\n  ${title}`);
+  console.log(`  ${pad("", w)}${padS("n", 4)}${padS("mean", 10)}${padS("MAPE", 9)}${padS("median", 9)}${padS("worst", 9)}${padS("% slow", 9)}`);
+  for (const [label, rs] of groups) {
+    if (rs.length === 0) continue;
+    const s = statsOf(rs);
+    console.log(
+      `  ${pad(label, w)}${padS(String(s.n), 4)}${padS(pct(s.mean), 10)}${padS(`${s.mape.toFixed(2)}%`, 9)}` +
+      `${padS(pct(s.median), 9)}${padS(pct(s.worst), 9)}${padS(`${Math.round(s.slow / s.n * 100)}%`, 9)}`,
+    );
+  }
+};
+
+console.log(`\n${"═".repeat(78)}`);
+console.log(`SESSION RESIDUALS · every quality session priced by the estimate that predated it`);
+console.log("═".repeat(78));
+console.log(`  error > 0 = model predicted SLOWER than the athlete ran (same sign as races)`);
+
+if (residuals.length === 0) {
+  console.log(`\n  no session produced a residual — see the rejection census below`);
+} else {
+  const all = statsOf(residuals);
+  // Residuals are in discovery order, which is neither chronological nor its
+  // reverse — a late-created row is discovered long after it was run.
+  const dates = residuals.map((r) => r.date).sort();
+  console.log(`\n  SCORED ${all.n} sessions · ${dates[0]} → ${dates[dates.length - 1]}`);
+  console.log(`  ${pad("MAPE", 22)}${padS(`${all.mape.toFixed(2)}%`, 10)}   ← the number Phase 1 must beat`);
+  console.log(`  ${pad("mean error (bias)", 22)}${padS(pct(all.mean), 10)}`);
+  console.log(`  ${pad("median error", 22)}${padS(pct(all.median), 10)}`);
+  console.log(`  ${pad("worst", 22)}${padS(pct(all.worst), 10)}`);
+  console.log(`  ${pad("predicted slow / fast", 22)}${padS(`${all.slow} / ${all.n - all.slow}`, 10)}`);
+
+  statTable(
+    "BY SESSION TYPE",
+    groupBy([...residuals].sort((a, b) => (a.type < b.type ? -1 : 1)), (r) => r.type),
+  );
+
+  // Monthly, oldest first — a model that is drifting shows it here and nowhere
+  // else. A single MAPE over eight months averages a June failure into January.
+  statTable(
+    "BY MONTH",
+    groupBy([...residuals].sort((a, b) => (a.date < b.date ? -1 : 1)), (r) => r.date.slice(0, 7)),
+  );
+
+  // The heat correction is the single largest adjustment applied to a rep pace,
+  // and a third of rows carry no weather at all. Split so it cannot hide.
+  statTable(
+    "BY HEAT NORMALIZATION",
+    groupBy(residuals, (r) => (r.heatNormalized ? "normalized" : "no weather")),
+    14,
+  );
+
+  if (args.get("sessions")) {
+    console.log(`\n  EVERY SCORED SESSION (oldest first)`);
+    console.log(
+      `  ${pad("date", 12)}${pad("type", 12)}${padS("eff min", 8)}${padS("ran", 8)}${padS("predicted", 10)}` +
+      `${padS("error", 9)}  zone / priced from`,
+    );
+    for (const r of [...residuals].sort((a, b) => (a.date < b.date ? -1 : 1))) {
+      console.log(
+        `  ${pad(r.date, 12)}${pad(r.type.slice(0, 11), 12)}${padS(r.effectiveMinutes.toFixed(0), 8)}` +
+        `${padS(formatMSS(r.neutralWorkPace), 8)}${padS(formatMSS(r.predictedPace), 10)}${padS(pct(r.errPct), 9)}` +
+        `  ${r.zoneLabel} / ${r.pricedFrom} (-${r.lagDays}d)${r.heatNormalized ? "" : " · no weather"}`,
+      );
+    }
+  }
+}
+
+// Coverage. Printed unconditionally and next to the error, because a model
+// that improves its MAPE by admitting fewer sessions has not improved.
+console.log(`\n${"─".repeat(78)}`);
+console.log("COVERAGE  (a later model may only claim a better MAPE at comparable coverage)");
+console.log("─".repeat(78));
+const considered = residuals.length + sessionRejections.length;
+console.log(`  ${residuals.length}/${considered} parsed sessions scored · ${sessionRejections.length} not priced\n`);
+
+// Bucket by reason, with the numbers stripped out — "only 6 min of work" and
+// "only 9 min of work" are one finding, not two.
+const census = new Map<string, number>();
+for (const r of sessionRejections) {
+  const bucket = r.reason
+    .replace(/^\d+(\.\d+)?% /, "")
+    .replace(/only \d+ min of work \(need \d+\)/, "under the work-minutes floor")
+    .replace(/type "[^"]*"/, "non-quality type");
+  census.set(bucket, (census.get(bucket) ?? 0) + 1);
+}
+for (const [reason, n] of [...census].sort((a, b) => b[1] - a[1])) {
+  console.log(`  ${padS(String(n), 5)}  ${reason}`);
+}
+console.log();
