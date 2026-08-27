@@ -336,6 +336,82 @@ number on a different basis, not a regression. That gap is §2.1
 
 ---
 
+## 7 · Where session coverage actually goes  *(2026-08-27)*
+
+§6 reported 23/250 scored and named "170 non-quality type" as the binding
+limit. **That reading was wrong and the conclusion drawn from it — go improve
+parser coverage — would have made the model worse.** The census:
+
+`parsed_structure` coverage is not the problem: 305 logs, 11 unparsed (4%),
+256 with blocks. The 47% era is over.
+
+**The 170 type rejections are correct and load-bearing.** Work reps inside
+`easy` sessions have a **median duration of 1800s** and inside `long_run`
+**3386s** — the parser assigns the whole continuous run one `work_rep` block.
+They are not strides. The type filter is the only thing stopping 119
+easy/long runs from being priced as quality efforts, which is precisely the
+failure that broke v1 (the 2026-08-01 alternation session reading as a 35:38
+10K). Relaxing it trades a real defence for fake coverage.
+
+The real story is in the 66 quality-typed sessions since 2026-01-26, of which
+25 score — and it splits cleanly by `parsed_structure.geometry_source`:
+
+| provenance | n | scored | |
+|---|---|---|---|
+| `watch_laps` | 23 | **16 (70%)** | healthy — this is what good looks like |
+| `detectWorkBouts` | 12 | **0 (0%)** | broken, see below |
+| absent (intent-derived) | 22 | 7 | geometry from the *prescription*, not the run |
+| `model` | 9 | 2 | |
+
+### `detectWorkBouts` scores 0 of 12, and it is the path that will grow
+
+The stream-derived rep detector marks warmup and easy running as `work_rep`:
+
+```
+2026-05-16 progression  work_rep 10.01mi @ 6:44   ← the easy portion
+                        work_rep  3.07mi @ 6:30   ← the actual work
+2026-05-28 progression  work_rep  1.02mi @ 7:25   ← the warmup
+                        work_rep 11.36mi @ 6:22
+2026-05-02 interval     work_rep  0.25mi @ 22:33  ← walking
+```
+
+The distance-weighted mean is then dragged submaximal, the plausibility
+window correctly rejects it as "aerobic work", and the session says nothing.
+**The model is behaving correctly on bad geometry.** Every one of the 12 fails
+this way — 0/12 is a bug signature, not a distribution.
+
+This matters beyond the 12: Vital/Junction gives no native laps, so
+`detectWorkBouts` is the path for every non-Strava athlete
+([[project_garmin_lap_derivation]]). It is broken for all of them.
+
+### Do NOT "fix" the null-duration sessions
+
+Intent-derived rows carry `duration_s: null` with distance and pace present,
+so deriving `duration = distance × pace` looks like free coverage. Measured:
+**+2 sessions.** One of the two is `2026-01-27`, whose twelve reps all read
+exactly `4:34` — that is the *prescribed* pace from
+`"12 x 400m (2 sets of 6)"`, not twelve measured ones. Landing that fix would
+feed the model a plan as if it were a performance. Rejected: the tell for a
+prescription is identical paces across reps and it is worth a guard, not a
+recovery.
+
+**So the ranked list, if session residuals are to be the loss function:**
+
+1. Fix `detectWorkBouts` work/rest discrimination. 12 sessions here, and it
+   gates every Garmin athlete. Biggest and most general.
+2. Decide what a `progression` run states. Ten of the twenty
+   "slower than the curve" rejections are progressions; averaging a
+   progression's work portion is structurally guaranteed to read submaximal.
+   Pricing the final segment rather than the mean is a Phase-1/2 modelling
+   question, not a parser one.
+3. Guard against prescription-derived geometry reaching the estimator at all.
+
+None of this changes the §6 baseline — it explains it. Phase 1 should be
+scored on `watch_laps` sessions specifically as well as on the pooled number,
+or a `detectWorkBouts` fix will look like a model improvement.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code
