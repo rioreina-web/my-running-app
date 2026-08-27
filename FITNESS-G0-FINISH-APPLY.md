@@ -475,6 +475,79 @@ cheaper to keep it beside the engine than to rebuild it when the loss is ready.
 
 ---
 
+## 9 · n=23 is close to the ceiling — four measured negative results  *(2026-08-27)*
+
+§8 concluded the loss was under-powered and ranked coverage fixes. Those were
+then measured. **None of them work, and §7's ranking was wrong.**
+
+### `detectWorkBouts` is NOT broken — 0/12 is the correct answer
+
+§7 called this the biggest lever. It isn't a bug. The detector's contract is
+"a rep is bounded by a recovery", and every one of its 12 sessions is genuinely
+aerobic running that the model is right to reject:
+
+```
+2026-07-04 typed "interval"  0.09mi jog + 7.11mi @ 6:51 + 5.18mi @ 6:49
+2026-08-09 typed "tempo"     2.82mi @ 7:06 + 3.19mi @ 7:30   (wtype=easy)
+2026-08-08 typed "interval"  1.03mi @ 6:18 + 29-MIN STOP + 1.02mi @ 7:40
+2026-08-08 typed "long_run"  18.1mi @ 6:39 as one bout
+```
+
+For a 5:09/mi 10K athlete, 6:49–7:30 is easy running. The defect is the
+parser's TYPE label, not the geometry — and the pace-based plausibility window
+catches it correctly. Fixing the detector would recover nothing.
+
+### Dropping warmups mislabelled as `work_rep` makes it WORSE
+
+Real case: `1.02mi @ 7:25` then `11.36mi @ 6:22` — the first block is a warmup
+typed as work, dragging a genuine marathon-pace session below the window.
+Reclassifying work bouts more than N% slower than the session's fastest:
+
+| tolerance | scored | |
+|---|---|---|
+| 8% | 25 → 21 | −4 |
+| 12% | 25 → 22 | −3 |
+| 15% | 25 → 22 | −3 |
+| 20% | 25 → 24 | −1 |
+
+Negative at every setting and gains nothing anywhere. Interval sessions have
+naturally varying rep paces, so the filter eats real reps and pushes those
+sessions under `MIN_WORK_SECONDS`.
+
+### Deriving `duration = distance × pace` recovers a PRESCRIPTION
+
++2 sessions, and one is `2026-01-27` whose twelve reps all read exactly
+`4:34` — the prescribed pace from `"12 x 400m"`. Rejected (§7).
+
+### The forgotten-watch fix recovers nothing either
+
+Correct and committed (`b6c1a90`), and it removes a silent wrong-direction
+failure. But scored sessions stayed at 25/66.
+
+### What this means
+
+**n≈23 is close to the true ceiling for this athlete's history**, not a
+symptom of broken plumbing. `watch_laps` sessions already score at 16/23
+(70%). The rest of the athlete's running is genuinely aerobic — the parser
+mistypes some of it as interval/tempo, but the model rejects it correctly and
+would still reject it after any type fix.
+
+So the loss function cannot be strengthened by data work on this athlete, and
+**§8's "re-run when n is meaningfully above 23" has no cheap path to it.**
+
+That reopens a question rather than answering it: gate 2 is the weakest of the
+three gates *and* the one the estimator is judged on. The estimator wins gate
+1 (Feb error 2.07% → 1.28%) and gate 3 (movement 0.9 → 4.4 s/mi, ~5×) and
+loses gate 2 by 0.27pp on 23 noisy sessions where stiffness is structurally
+advantaged.
+
+**This is a decision for Rio, not a thing to quietly resolve in code**, and it
+is exactly the shape §5 warns about: re-specifying the gate after seeing the
+result is how a model gets validated against a prior belief. Stated plainly so
+it is a choice rather than a drift.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code
