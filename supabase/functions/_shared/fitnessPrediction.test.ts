@@ -1438,3 +1438,36 @@ Deno.test("a COOL race is conditions-known with no correction — not the same a
   assertEquals(f!.conditions_known, true);
   assertEquals(f!.pr_seconds, 905);
 });
+
+// ── EF signal versioning (REDESIGN §0.3) ────────────────────────────────────
+
+/**
+ * `athlete_state.fitness_signal` is a singleton with no history, so the EF gate
+ * is OFF in replay — the one gate that can hold the estimate against a slow
+ * training signal is the one part of the model that cannot be scored. Every
+ * snapshot now records the buckets it saw, which is what will eventually make
+ * it scoreable. History accrues only from here forward, so these pin that the
+ * recording happens on EVERY path, including the ones that never reach the
+ * blend where `ef_verdict` is written.
+ */
+const EF_BUCKETS: EfficiencyBucketInput[] = [
+  { bucket: "threshold", direction: "flat", confidence: "high", efDeltaPct: 0.4, recentSamples: 9, baselineSamples: 12 },
+];
+
+Deno.test("every snapshot records the EF buckets it saw, raw", () => {
+  const r = generateFitnessPrediction({ ...OLD_5K(), efficiencySignal: EF_BUCKETS });
+  assert(r !== null);
+  // The raw buckets, not the collapsed verdict — the verdict's eligibility
+  // thresholds are themselves unvalidated, and storing it would bake them in.
+  assertEquals(r!.diagnostics.efficiency_signal, EF_BUCKETS);
+});
+
+Deno.test("no EF signal records an explicit null, not an absent key", () => {
+  // A missing key and "we looked and there was nothing" are different facts,
+  // and only one of them is distinguishable from a snapshot written before
+  // this recording existed.
+  const r = generateFitnessPrediction(OLD_5K());
+  assert(r !== null);
+  assert("efficiency_signal" in r!.diagnostics);
+  assertEquals(r!.diagnostics.efficiency_signal, null);
+});

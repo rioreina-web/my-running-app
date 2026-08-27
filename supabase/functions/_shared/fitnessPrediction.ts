@@ -1772,6 +1772,27 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
    * tuned against an argument.
    */
   const diag: Record<string, unknown> = {};
+  /**
+   * The EF buckets THIS snapshot saw (2026-08-27, REDESIGN §0.3).
+   *
+   * `athlete_state.fitness_signal` is a singleton with no history, so its past
+   * values are unknowable and the EF gate is switched OFF in replay — not as a
+   * hack, but because there is genuinely nothing to replay against. That makes
+   * the one gate that can hold the estimate against a slow training signal the
+   * one part of the model that cannot be scored.
+   *
+   * Recording the buckets on each snapshot versions the signal at the only
+   * place it is ever consumed. It fixes nothing retroactively — history starts
+   * accumulating from the first snapshot written after this ships, and every
+   * day it is not recorded is a day that can never be scored. That is the whole
+   * argument for landing it before the parts that will use it.
+   *
+   * Kept as the raw buckets, not the collapsed verdict: `efficiencyVerdict`'s
+   * eligibility rules (confidence ≥ medium, ≥4 recent + ≥4 baseline samples)
+   * are themselves unvalidated constants, and a stored verdict would bake them
+   * in and make them unscoreable for exactly the same reason.
+   */
+  diag.efficiency_signal = input.efficiencySignal ?? null;
   diag.race_curve = {
     exponent: Math.round(distanceCurve.exponent * 10000) / 10000,
     fitted_exponent: distanceCurve.fittedExponent === null ? null : Math.round(distanceCurve.fittedExponent * 10000) / 10000,
