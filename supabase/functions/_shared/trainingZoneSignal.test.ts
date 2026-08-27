@@ -73,7 +73,7 @@ function tenByOneK(): ParsedSession {
 Deno.test("10×1K at 5:18 reads as a ~32:00 10K, not Riegel's 36:45", () => {
   const { estimate } = estimateFromSession(tenByOneK(), ANCHOR);
   assert(estimate, "the calibration session must produce an estimate");
-  const race = raceOf(estimate.tenKEquivalent);
+  const race = raceOf(estimate.equivalentPace);
   assert(
     race > 1890 && race < 1980,
     `10×1K priced at ${formatMSS(race)}; want 31:30–33:00 (Riegel gave 36:45)`,
@@ -96,7 +96,7 @@ Deno.test("rep DISTANCE does not change the answer — only work total and pace"
   const asKs = estimateFromSession(mk(0.62, 10), ANCHOR).estimate;
   const asMiles = estimateFromSession(mk(1.0, 6), ANCHOR).estimate;
   assert(asKs && asMiles);
-  const gap = Math.abs(raceOf(asKs.tenKEquivalent) - raceOf(asMiles.tenKEquivalent));
+  const gap = Math.abs(raceOf(asKs.equivalentPace) - raceOf(asMiles.equivalentPace));
   assert(gap < 25, `rep length moved the estimate by ${gap}s; the two sessions are the same work`);
 });
 
@@ -126,7 +126,7 @@ Deno.test("running exactly the predicted pace confirms the estimate, it does not
   );
   assert(estimate);
   assertAlmostEquals(estimate.ratio, 1.0, 0.01);
-  assertAlmostEquals(raceOf(estimate.tenKEquivalent), raceOf(ANCHOR), 20);
+  assertAlmostEquals(raceOf(estimate.equivalentPace), raceOf(ANCHOR), 20);
 });
 
 Deno.test("more rest at the same pace is worth less", () => {
@@ -142,7 +142,7 @@ Deno.test("more rest at the same pace is worth less", () => {
   const loose = estimateFromSession(mk(300), ANCHOR).estimate;
   assert(tight && loose);
   assert(
-    tight.tenKEquivalent < loose.tenKEquivalent,
+    tight.equivalentPace < loose.equivalentPace,
     "the same pace off long recovery must grade out slower than off short recovery",
   );
 });
@@ -153,7 +153,7 @@ Deno.test("heat credits the effort — the same paces in hot air imply more fitn
   const a = estimateFromSession(hot, ANCHOR).estimate;
   const b = estimateFromSession(cool, ANCHOR).estimate;
   assert(a && b);
-  assert(a.tenKEquivalent < b.tenKEquivalent, "the hot session should imply the faster 10K");
+  assert(a.equivalentPace < b.equivalentPace, "the hot session should imply the faster 10K");
   assert(a.heatNormalized);
   assert(!b.heatNormalized, "40°F dew is below the chart — nothing to credit");
   assert(b.caveats.some((c) => c.includes("not heat-normalized")));
@@ -276,7 +276,7 @@ Deno.test("the anchor cancels: the same session prices the same from any startin
   const from30 = estimateFromSession(s, paceOf(30 * 60)).estimate;
   const from35 = estimateFromSession(s, paceOf(35 * 60)).estimate;
   assert(from30 && from35, "both beliefs should admit this session");
-  const gap = Math.abs(raceOf(from30.tenKEquivalent) - raceOf(from35.tenKEquivalent));
+  const gap = Math.abs(raceOf(from30.equivalentPace) - raceOf(from35.equivalentPace));
   assert(gap < 30, `a 5-minute swing in the anchor moved the session's verdict by ${gap}s`);
 });
 
@@ -302,7 +302,8 @@ const est = (date: string, tenK: number, effectiveSeconds = 1700): ZoneEstimate 
   neutralWorkPace: paceOf(tenK),
   predictedPaceForDuration: paceOf(tenK),
   ratio: 1,
-  tenKEquivalent: paceOf(tenK),
+  equivalentPace: paceOf(tenK),
+  distanceKey: "tenK",
   zoneLabel: "10K",
   workSeconds: effectiveSeconds,
   workMiles: 6,
@@ -326,8 +327,8 @@ Deno.test("a submaximal aerobic session cannot drag the estimate down", () => {
   const a = combineZoneEstimates(sharp, now)!;
   const b = combineZoneEstimates(withDrag, now)!;
   assert(
-    Math.abs(raceOf(a.tenKPace) - raceOf(b.tenKPace)) < 10,
-    `one long submaximal session moved the estimate ${Math.abs(raceOf(a.tenKPace) - raceOf(b.tenKPace))}s`,
+    Math.abs(raceOf(a.equivalentPace) - raceOf(b.equivalentPace)) < 10,
+    `one long submaximal session moved the estimate ${Math.abs(raceOf(a.equivalentPace) - raceOf(b.equivalentPace))}s`,
   );
   assertEquals(b.consideredCount, 4);
   assert(b.sessionCount < 4, "the drag session must not be selected");
@@ -345,7 +346,7 @@ Deno.test("the estimate follows form DOWN — best-of is not a ratchet", () => {
     now,
   )!;
   assert(
-    raceOf(faded.tenKPace) > raceOf(good.tenKPace) + 60,
+    raceOf(faded.equivalentPace) > raceOf(good.equivalentPace) + 60,
     "a window of slower sessions must produce a slower estimate",
   );
 });
@@ -353,7 +354,7 @@ Deno.test("the estimate follows form DOWN — best-of is not a ratchet", () => {
 Deno.test("recency outweighs an equally-good older session", () => {
   const now = new Date("2026-08-17T00:00:00Z");
   const c = combineZoneEstimates([est("2026-08-16", 1900), est("2026-06-16", 1900)], now)!;
-  assertAlmostEquals(raceOf(c.tenKPace), 1900, 2);
+  assertAlmostEquals(raceOf(c.equivalentPace), 1900, 2);
   assertEquals(c.sessionCount, 2);
 });
 
@@ -396,4 +397,69 @@ Deno.test("formatMSS rounds the total, never the remainder", () => {
 Deno.test("PLAUSIBLE_RATIO_MAX leaves room for a hot, honest quality session", () => {
   // 2026-08-04 really did come in 7.6% slow in 76°F / 76°F dew and is real work.
   assert(PLAUSIBLE_RATIO_MAX > 1.08);
+});
+
+// ── distance-native seed (2026-08-27) ────────────────────────────────────────
+
+Deno.test("a marathon-seeded curve is not a mile-seeded curve mislabeled", () => {
+  // Same athlete, same underlying fitness — but buildFitnessCurve must build
+  // a DIFFERENT shape depending on which distance actually anchors it, or the
+  // seed parameter does nothing.
+  const marathonPace = 550; // sec/mi, roughly a 4:00 marathon pace
+  const fromMarathon = buildFitnessCurve(marathonPace, "marathon");
+  const asIfTenK = buildFitnessCurve(marathonPace, "tenK");
+  const mpFromMarathon = fromMarathon.find((p) => p.label === "MP")!.paceSecPerMile;
+  const mpAsIfTenK = asIfTenK.find((p) => p.label === "MP")!.paceSecPerMile;
+  // Seeded correctly at marathon, MP should equal the seed almost exactly.
+  // Mislabeled as a 10K, the generic table stretches it out over marathon
+  // distance from what it thinks is a 10K, landing far off the seed.
+  assertAlmostEquals(mpFromMarathon, marathonPace, 2);
+  assert(Math.abs(mpAsIfTenK - marathonPace) > 40, "mislabeling the seed must not be free");
+});
+
+Deno.test("curveTilt=0 is bit-identical to the untilted table, at any seed distance", () => {
+  const a = buildFitnessCurve(600, "half", 0);
+  const b = buildFitnessCurve(600, "half");
+  assertEquals(a, b);
+});
+
+Deno.test("a nonzero tilt changes the shape without moving the seed's own point", () => {
+  const flat = buildFitnessCurve(600, "half", -0.01); // more durable than generic
+  const generic = buildFitnessCurve(600, "half", 0);
+  const hmFlat = flat.find((p) => p.label === "HM")!.paceSecPerMile;
+  const hmGeneric = generic.find((p) => p.label === "HM")!.paceSecPerMile;
+  const mpFlat = flat.find((p) => p.label === "MP")!.paceSecPerMile;
+  const mpGeneric = generic.find((p) => p.label === "MP")!.paceSecPerMile;
+  assertAlmostEquals(hmFlat, hmGeneric, 1); // the seed's own distance is untouched
+  assert(mpFlat < mpGeneric, "a flatter-than-generic athlete should get a faster marathon");
+});
+
+Deno.test("estimateFromSession prices a marathon-anchored session in marathon-native terms", () => {
+  const marathonPace = 400; // roughly a 2:55 marathon
+  // A 1-hour threshold effort at 6:30/mi — priced against a curve seeded at
+  // marathonPace this lands inside the plausible window under EITHER
+  // interpretation (a marathon-native curve at ~376 s/mi predicted for this
+  // duration, a 10K-mislabeled curve at ~410), so the test isolates the
+  // question this file exists to ask: does the seed's distance change the
+  // answer, not whether the session clears the plausibility gate.
+  const session: ParsedSession = {
+    date: "2026-06-01",
+    type: "steady",
+    confidence: 0.9,
+    intentPattern: null,
+    tempF: null,
+    dewPointF: null,
+    declaredRace: false,
+    blocks: [
+      { role: "work_rep", durationS: 3600, distanceMiles: 9.23, avgPacePerMile: "6:30", avgHr: null, elevationGainM: null },
+    ],
+  };
+  const seededRight = estimateFromSession(session, marathonPace, "marathon");
+  const seededWrong = estimateFromSession(session, marathonPace, "tenK");
+  assert(seededRight.estimate !== null, seededRight.reason);
+  assert(seededWrong.estimate !== null, seededWrong.reason);
+  assertEquals(seededRight.estimate!.distanceKey, "marathon");
+  // Same rep, same current pace number — but mislabeling what distance that
+  // number is AT changes what the curve thinks the rep was worth.
+  assert(seededRight.estimate!.ratio !== seededWrong.estimate!.ratio);
 });

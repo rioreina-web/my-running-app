@@ -205,8 +205,18 @@ export interface ZoneEstimate {
   predictedPaceForDuration: number;
   /** neutralWorkPace ÷ predictedPaceForDuration. <1 is faster than predicted. */
   ratio: number;
-  /** The 10K pace this session implies (sec/mile). */
-  tenKEquivalent: number;
+  /**
+   * What this session implies the pace AT `distanceKey` should be (sec/mile).
+   * Renamed from `tenKEquivalent` (2026-08-27) — it was never really a 10K
+   * statement, it was a statement at whatever distance the caller's current
+   * estimate happened to be seeded from. Naming it "10K" when it usually
+   * carried a marathon-anchored athlete's marathon-relative evidence is
+   * exactly the kind of silent coupling that made the model harder to reason
+   * about than the math actually required.
+   */
+  equivalentPace: number;
+  /** Which distance `equivalentPace` (and the curve it was priced against) is at. */
+  distanceKey: RaceKey;
   /** Nearest named zone to `predictedPaceForDuration` — for prose only. */
   zoneLabel: string;
   workSeconds: number;
@@ -256,18 +266,36 @@ export interface ZoneSignalResult {
  * one-hour race pace — and it fills the otherwise wide gap between 10K and
  * half.
  */
-export function buildFitnessCurve(tenKPaceSecPerMile: number): FitnessCurvePoint[] {
-  const tenKTime = tenKPaceSecPerMile * RACE_DISTANCE_MI.tenK;
-  const paceAt = (key: RaceKey) => equivalentRacePaceSecPerMile("tenK", tenKTime, key);
+export function buildFitnessCurve(
+  seedPaceSecPerMile: number,
+  seedDistanceKey: RaceKey = "tenK",
+  curveTilt = 0,
+): FitnessCurvePoint[] {
+  // ── Distance-native seed (2026-08-27) ────────────────────────────────────
+  // Was hardcoded to a 10K seed, always — this curve is what prices EVERY
+  // training session, so a marathoner whose evidence is a marathon still had
+  // that evidence forced through a 10K conversion before it could price a
+  // single rep. Generalizing the seed doesn't change existing behavior:
+  // callers that keep passing (pace, "tenK", 0) get the exact prior curve.
+  //
+  // `curveTilt` mirrors fitnessPrediction.ts's raceTime() — the generic table
+  // gives the shape, the athlete's OWN fitted exponent (`raceCurve.ts`,
+  // shrunk toward generic by evidence) nudges it. Passed as a plain number so
+  // this module stays free of raceCurve.ts's types; the caller computes it.
+  const seedTime = seedPaceSecPerMile * RACE_DISTANCE_MI[seedDistanceKey];
+  const paceAt = (key: RaceKey): number => {
+    const table = equivalentRacePaceSecPerMile(seedDistanceKey, seedTime, key);
+    if (curveTilt === 0 || key === seedDistanceKey) return table;
+    return table * Math.pow(RACE_DISTANCE_MI[key] / RACE_DISTANCE_MI[seedDistanceKey], curveTilt);
+  };
 
-  const tenK = tenKPaceSecPerMile;
   const hm = paceAt("half");
   const points: FitnessCurvePoint[] = [
     { label: "mile", seconds: paceAt("mile") * RACE_DISTANCE_MI.mile, paceSecPerMile: paceAt("mile") },
     { label: "3K", seconds: paceAt("threeK") * RACE_DISTANCE_MI.threeK, paceSecPerMile: paceAt("threeK") },
     { label: "5K", seconds: paceAt("fiveK") * RACE_DISTANCE_MI.fiveK, paceSecPerMile: paceAt("fiveK") },
-    { label: "10K", seconds: tenKTime, paceSecPerMile: tenK },
-    { label: "LT", seconds: 3600, paceSecPerMile: oneHourPaceSecPerMile(tenK, hm) },
+    { label: "10K", seconds: paceAt("tenK") * RACE_DISTANCE_MI.tenK, paceSecPerMile: paceAt("tenK") },
+    { label: "LT", seconds: 3600, paceSecPerMile: oneHourPaceSecPerMile(paceAt("tenK"), hm) },
     { label: "HM", seconds: hm * RACE_DISTANCE_MI.half, paceSecPerMile: hm },
     { label: "MP", seconds: paceAt("marathon") * RACE_DISTANCE_MI.marathon, paceSecPerMile: paceAt("marathon") },
   ];
@@ -430,9 +458,11 @@ function hrDriftAcrossReps(reps: readonly NormalizedRep[]): number | null {
  */
 export function estimateFromSession(
   session: ParsedSession,
-  currentTenKPace: number,
+  currentPace: number,
+  currentDistanceKey: RaceKey = "tenK",
+  curveTilt = 0,
 ): { estimate: ZoneEstimate | null; reason: string } {
-  if (!(currentTenKPace > 0)) return { estimate: null, reason: "no current estimate to compare against" };
+  if (!(currentPace > 0)) return { estimate: null, reason: "no current estimate to compare against" };
   if (session.declaredRace) return { estimate: null, reason: "declared race — handled as an anchor, not training" };
 
   const type = String(session.type ?? "").toLowerCase();
@@ -458,7 +488,7 @@ export function estimateFromSession(
   // Distance-weighted: a mile rep is worth more than a 400 in the same session.
   const neutralWorkPace = reps.reduce((s, r) => s + r.pace * r.miles, 0) / workMiles;
 
-  const curve = buildFitnessCurve(currentTenKPace);
+  const curve = buildFitnessCurve(currentPace, currentDistanceKey, curveTilt);
   const predicted = predictedPaceForDuration(curve, effectiveSeconds);
   if (!(predicted.pace > 0)) return { estimate: null, reason: "could not price that duration" };
 
@@ -496,7 +526,8 @@ export function estimateFromSession(
       neutralWorkPace,
       predictedPaceForDuration: predicted.pace,
       ratio,
-      tenKEquivalent: currentTenKPace * ratio,
+      equivalentPace: currentPace * ratio,
+      distanceKey: currentDistanceKey,
       zoneLabel: predicted.label,
       workSeconds,
       workMiles,
@@ -524,12 +555,14 @@ export function estimateFromSession(
 /** Run every session through `estimateFromSession`, keeping the rejections. */
 export function estimateFromSessions(
   sessions: readonly ParsedSession[],
-  currentTenKPace: number,
+  currentPace: number,
+  currentDistanceKey: RaceKey = "tenK",
+  curveTilt = 0,
 ): ZoneSignalResult {
   const estimates: ZoneEstimate[] = [];
   const rejected: Array<{ date: string; reason: string }> = [];
   for (const s of sessions) {
-    const { estimate, reason } = estimateFromSession(s, currentTenKPace);
+    const { estimate, reason } = estimateFromSession(s, currentPace, currentDistanceKey, curveTilt);
     if (estimate) estimates.push(estimate);
     else rejected.push({ date: s.date, reason });
   }
@@ -544,10 +577,12 @@ export function estimateFromSessions(
 /** Fraction of a window's sessions that count toward the estimate. */
 export const BEST_FRACTION = 0.4;
 
-/** How much a session's 10K statement counts. */
+/** How much a session's pace statement counts. */
 export interface WeightedZoneSignal {
-  /** Weighted 10K pace across the sessions used (sec/mile). */
-  tenKPace: number;
+  /** Weighted equivalent pace across the sessions used (sec/mile), at `distanceKey`. */
+  equivalentPace: number;
+  /** The distance `equivalentPace` is expressed at — carried through from the estimates. */
+  distanceKey: RaceKey;
   /** Total work minutes behind the sessions used. */
   workMinutes: number;
   /** Sessions that fed the number. */
@@ -590,7 +625,7 @@ export function combineZoneEstimates(
 ): WeightedZoneSignal | null {
   if (estimates.length === 0) return null;
 
-  const ranked = [...estimates].sort((a, b) => a.tenKEquivalent - b.tenKEquivalent);
+  const ranked = [...estimates].sort((a, b) => a.equivalentPace - b.equivalentPace);
   const keep = Math.max(2, Math.ceil(ranked.length * bestFraction));
   const best = ranked.slice(0, Math.min(keep, ranked.length));
 
@@ -607,7 +642,7 @@ export function combineZoneEstimates(
     const w = (e.effectiveSeconds / 60) * recency;
     if (!(w > 0)) continue;
     wsum += w;
-    sum += e.tenKEquivalent * w;
+    sum += e.equivalentPace * w;
     workMinutes += e.workSeconds / 60;
     used.push(e);
   }
@@ -615,7 +650,11 @@ export function combineZoneEstimates(
 
   used.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first
   return {
-    tenKPace: sum / wsum,
+    equivalentPace: sum / wsum,
+    // All estimates share one distanceKey by construction — every session in
+    // a single combine call was priced against the same seed (fitnessPrediction
+    // .ts calls this once per iteration with one current anchor distance).
+    distanceKey: used[0].distanceKey,
     workMinutes: Math.round(workMinutes),
     sessionCount: used.length,
     consideredCount: estimates.length,

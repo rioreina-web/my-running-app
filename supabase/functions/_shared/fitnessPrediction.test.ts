@@ -23,6 +23,7 @@ import {
   type VoiceLogInput,
   type WorkoutInput,
 } from "./fitnessPrediction.ts";
+import { equivalentRaceTimeSeconds } from "./paces.ts";
 
 // Fixed "now" so date math is deterministic.
 const NOW = new Date("2026-07-02T12:00:00Z");
@@ -243,16 +244,15 @@ Deno.test("training-plan goal anchors when no race/training signal", () => {
   assert(r!.dataSource.includes("training plan"), r!.dataSource);
 });
 
-// ── fastest-workout last resort (Low) ───────────────────────────────────────
+// ── abstention, where the fastest-workout rung used to be (G0.6) ────────────
 
-Deno.test("only easy workouts, no anchor → Low, fastest-workout source", () => {
+Deno.test("only easy workouts, no anchor → abstains rather than guessing", () => {
   const workouts = [run(daysAgo(2), 5, 540), run(daysAgo(4), 6, 560), run(daysAgo(6), 4, 520)];
   const r = generateFitnessPrediction({ workouts, voiceLogs: [], now: NOW });
-  assert(r !== null);
-  assertEquals(r!.confidenceTier, "low");
-  // " · v2" marks the multi-signal server model (Part 2 data_source suffix).
-  assertEquals(r!.dataSource, "fastest workout · v2");
-  assertEquals(r!.workoutCount, 3);
+  // Was `fastest workout · v2` at 0.95 × easy pace — the rung the 2026-08-24
+  // replay caught active 7 days before a 10K PB, at +3.40%. Easy running is
+  // not evidence of race fitness, and no number beats a wrong one.
+  assertEquals(r, null);
 });
 
 // ── detraining decay ────────────────────────────────────────────────────────
@@ -291,10 +291,11 @@ Deno.test("range fraction grows as confidence drops", () => {
     voiceLogs: [log(daysAgo(15), "Raced the 10k, finish time 40:00.")],
     now: NOW,
   })!;
-  // Low (fastest workout)
+  // Low (voice-log paces — the remaining low-tier rung now that the
+  // fastest-workout guess is gone, G0.6).
   const low = generateFitnessPrediction({
     workouts: [run(daysAgo(2), 5, 540)],
-    voiceLogs: [],
+    voiceLogs: [{ date: daysAgo(2), notes: "felt ok", pacesMentioned: ["6:30"] }],
     now: NOW,
   })!;
   const highFrac = high.range10kSeconds / high.predicted10kSeconds;
@@ -1214,5 +1215,132 @@ Deno.test("training contributes even when it nearly agrees with the anchor", () 
   assert(
     (near.diagnostics.training_signal_pace as number) > 0,
     "the signal's own value must be recorded whether or not it moved things",
+  );
+});
+
+// ── G0.3: the distance curve tilts the table, never replaces it ─────────────
+
+Deno.test("no curve evidence → predictions are bit-identical to the ratio table", () => {
+  // One race at one distance: fitRaceCurve cannot see a slope and returns
+  // GENERIC_EXPONENT, so the tilt is exactly zero.
+  const voiceLogs = [log(daysAgo(20), "Raced the 10k, finish time 40:00.")];
+  const r = generateFitnessPrediction({ workouts: [], voiceLogs, extendedVoiceLogs: voiceLogs, now: NOW })!;
+  const d = r.diagnostics as Record<string, { tilt_vs_generic: number; races_used: number }>;
+  assertEquals(d.race_curve.tilt_vs_generic, 0);
+  // The table's implied exponents differ per pair (10K→mile 1.0778, 10K→5K
+  // 1.0552), so a naive power-law conversion would move every distance even
+  // here. This is the guard against that.
+  // The 5K is the clean comparison: mile carries speed-evidence shading and
+  // half/marathon carry endurance shading, all of which are legitimate steps
+  // applied AFTER the conversion. Only the conversion is under test here.
+  assertEquals(r.predicted5kSeconds, Math.round(equivalentRaceTimeSeconds("tenK", r.predicted10kSeconds, "fiveK")));
+});
+
+Deno.test("a contaminated race is excluded from the curve fit but still anchors", () => {
+  // A hot race needing a big conditions correction is the highest-leverage
+  // point on the log-distance axis and the least trustworthy one. It must not
+  // set a per-athlete constant — but it is still a race.
+  const voiceLogs = [
+    log(daysAgo(400), "Raced the 5k, finish time 15:05.", { weather: { tempF: 78, dewPointF: 72 } }),
+    log(daysAgo(20), "Raced the 10k, finish time 31:20.", { weather: { tempF: 47, dewPointF: 36 } }),
+  ];
+  const r = generateFitnessPrediction({ workouts: [], voiceLogs, extendedVoiceLogs: voiceLogs, now: NOW })!;
+  const d = r.diagnostics as Record<string, { excluded: Array<{ date: string; reason: string }>; races_used: number }>;
+  assertEquals(d.race_curve.excluded.length, 1, JSON.stringify(d.race_curve.excluded));
+  assert(d.race_curve.excluded[0].reason.includes("conditions correction"), d.race_curve.excluded[0].reason);
+  // Excluded from the FIT only. The race still anchored: the estimate rests on
+  // one of the two, and the run itself was never discarded.
+  assert(r.dataSource.startsWith("race ("), r.dataSource);
+});
+
+// ── G: athlete-aware build-comparison cap (2026-08-27) ──────────────────────
+// A flat cap on training-inferred improvement treats a first-year runner and
+// a ten-year veteran identically, and treats an advanced athlete's ONE
+// marathon attempt as if it were as reliable a ceiling as a repeatedly-raced
+// 10K. Both are wrong. These tests build the exact class of scenario this
+// session traced by hand: a weaker PR-era block vs. a genuinely, broadly
+// stronger current block, and check the SAME measured training delta is
+// allowed to move the estimate further for a beginner, or for an advanced
+// athlete new to the specific distance, than for an established veteran.
+
+function weeklyBlock(
+  anchor: Date, weeks: number,
+  spec: { longMi: number; longPace: number; thMi: number; thPace: number },
+): { workouts: WorkoutInput[]; voiceLogs: VoiceLogInput[] } {
+  const workouts: WorkoutInput[] = [];
+  const voiceLogs: VoiceLogInput[] = [];
+  for (let w = 0; w < weeks; w++) {
+    const base = w * 7;
+    const d = (offset: number) => new Date(anchor.getTime() - (base + offset) * 86_400_000).toISOString().slice(0, 10);
+    const push = (date: string, mi: number, pace: number, type: string) => {
+      workouts.push(run(date, mi, pace));
+      workouts[workouts.length - 1].type = type;
+      voiceLogs.push(log(date, type));
+    };
+    push(d(0), spec.longMi, spec.longPace, "long_run");
+    push(d(3), spec.thMi, spec.thPace, "tempo");
+    [1, 2, 5, 6].forEach((o) => push(d(o), 6, 500, "easy"));
+  }
+  return { workouts, voiceLogs };
+}
+
+function buildScenario(
+  experienceLevel: string | null,
+  priorRacesAtDistance: number, // additional marathon PRs beyond the anchor, to simulate event familiarity
+): PredictionInput {
+  const raceDate = new Date(NOW.getTime() - 126 * 86_400_000); // 18 weeks ago
+  // Deliberately extreme delta — large enough that raw measured credit clears
+  // the tightest (advanced, established) cap, so the athlete-aware ceiling
+  // actually has something to bind against and the tests can tell the caps
+  // apart. A modest, realistic delta (this file's OTHER scenario) sits well
+  // under every cap here, which is itself worth knowing: at today's
+  // CREDIT_SCALE the athlete-aware ceiling mostly matters for exceptional
+  // training blocks, not everyday ones.
+  const priorBlock = weeklyBlock(raceDate, 7, { longMi: 14, longPace: 480, thMi: 5, thPace: 450 });
+  const currentBlock = weeklyBlock(NOW, 10, { longMi: 26, longPace: 380, thMi: 18, thPace: 330 });
+  const workouts = [...priorBlock.workouts, ...currentBlock.workouts];
+  const voiceLogs = [...priorBlock.voiceLogs, ...currentBlock.voiceLogs];
+
+  const seededRaces = [
+    { raceType: "marathon" as const, paceSecondsPerMile: (2 * 3600 + 46 * 60) / 26.2188, date: raceDate.toISOString().slice(0, 10), totalTimeSeconds: 2 * 3600 + 46 * 60 },
+  ];
+  for (let i = 0; i < priorRacesAtDistance; i++) {
+    const d = new Date(raceDate.getTime() - (200 + i * 200) * 86_400_000);
+    seededRaces.push({ raceType: "marathon", paceSecondsPerMile: (2 * 3600 + 50 * 60) / 26.2188, date: d.toISOString().slice(0, 10), totalTimeSeconds: 2 * 3600 + 50 * 60 });
+  }
+
+  return {
+    workouts, voiceLogs, extendedWorkouts: workouts, extendedVoiceLogs: voiceLogs,
+    seededRaces, priorSnapshots: [], plan: null, laps: [], efficiencySignal: null,
+    experienceLevel, now: NOW,
+  };
+}
+
+Deno.test("athlete-aware cap: a beginner earns more credit than an advanced athlete for the SAME training delta", () => {
+  const advanced = generateFitnessPrediction(buildScenario("advanced", 3))!; // established at the distance
+  const beginner = generateFitnessPrediction(buildScenario("beginner", 3))!;
+  assert(advanced !== null && beginner !== null);
+  const advCredit = (advanced.diagnostics as any).build_credit_athlete_scaling?.applied_credit_pct ?? 0;
+  const begCredit = (beginner.diagnostics as any).build_credit_athlete_scaling?.applied_credit_pct ?? 0;
+  assert(begCredit > advCredit, `beginner=${begCredit} advanced=${advCredit} — should not be equal`);
+  assert(beginner.predictedMarathonSeconds < advanced.predictedMarathonSeconds);
+});
+
+Deno.test("athlete-aware cap: an advanced athlete NEW to the distance earns more credit than one well-established at it", () => {
+  const established = generateFitnessPrediction(buildScenario("advanced", 3))!; // 4 total races at marathon
+  const newcomer = generateFitnessPrediction(buildScenario("advanced", 0))!;    // only the anchor race, ever
+  const estCredit = (established.diagnostics as any).build_credit_athlete_scaling?.applied_credit_pct ?? 0;
+  const newCredit = (newcomer.diagnostics as any).build_credit_athlete_scaling?.applied_credit_pct ?? 0;
+  assert(newCredit > estCredit, `newcomer=${newCredit} established=${estCredit} — event familiarity should matter`);
+  assertEquals((established.diagnostics as any).build_credit_athlete_scaling.races_at_anchor_distance, 4);
+  assertEquals((newcomer.diagnostics as any).build_credit_athlete_scaling.races_at_anchor_distance, 1);
+});
+
+Deno.test("athlete-aware cap: missing experience level degrades to the conservative default, not extra allowance", () => {
+  const unknown = generateFitnessPrediction(buildScenario(null, 3))!;
+  const advanced = generateFitnessPrediction(buildScenario("advanced", 3))!;
+  assertEquals(
+    (unknown.diagnostics as any).build_credit_athlete_scaling.experience_cap,
+    (advanced.diagnostics as any).build_credit_athlete_scaling.experience_cap,
   );
 });

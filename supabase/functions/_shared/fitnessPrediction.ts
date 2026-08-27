@@ -216,6 +216,16 @@ export interface PredictionInput {
    * blend block. A day-stale read is fine (11-week trend).
    */
   efficiencySignal?: EfficiencyBucketInput[] | null;
+  /**
+   * athlete_state.experience_level ("beginner" | "intermediate" | "advanced" |
+   * "elite"). Governs how much training-inferred improvement is plausible
+   * (2026-08-27) — novice athletes genuinely have a much larger adaptation
+   * reserve than veterans; treating them identically was the same error as
+   * the flat per-zone credit. Missing/unrecognized degrades to the
+   * conservative "advanced" assumption, not an extra allowance — consistent
+   * with this file's bias-to-false-negatives default elsewhere.
+   */
+  experienceLevel?: string | null;
   now?: Date; // injectable for tests; defaults to new Date()
 }
 
@@ -374,6 +384,70 @@ export const HALF_MAX_ENDURANCE_PENALTY = 0.06; // halves need less durability t
  */
 export { heatNeutralPace };
 
+import { applyFloor, computePrFloors, type DistanceFloor, type PrRecord } from "./prFloor.ts";
+import { compareBuildWindows, type BuildComparisonResult } from "./buildComparison.ts";
+
+/**
+ * How much room a training-inferred improvement plausibly has, by athlete
+ * experience (2026-08-27). Novice and early-intermediate athletes have a
+ * genuinely larger adaptation reserve — this is standard exercise-physiology
+ * territory (VO2max and running economy both show steep early-training-age
+ * improvement that flattens hard with years of consistent training), not a
+ * hedge. A flat cap across experience levels was the same mistake as the flat
+ * per-zone credit, one layer up. `unknown` degrades to the conservative
+ * "advanced" value — bias toward false negatives, consistent with this file's
+ * other defaults (matches the vocabulary in athlete_state.experience_level:
+ * `20260410200000_create_athlete_state.sql`).
+ */
+export const BUILD_CREDIT_CAP_BY_EXPERIENCE: Record<string, number> = {
+  beginner: 0.25,
+  intermediate: 0.15,
+  advanced: 0.10,
+  elite: 0.08, // less room still — elite athletes sit closest to their ceiling
+};
+export const BUILD_CREDIT_CAP_DEFAULT = 0.10; // "advanced" — unknown gets no extra allowance
+
+/**
+ * Separately: how ESTABLISHED is the athlete at the anchor's specific
+ * distance, regardless of overall experience? An advanced marathoner who has
+ * raced the distance once, eighteen months ago, is not "established at the
+ * marathon" in the sense this cap is trying to protect — that PR is as
+ * likely to reflect pacing/fueling inexperience specific to 26.2 miles as a
+ * true ceiling. Multiplies the experience-based cap; does not replace it.
+ */
+export const EVENT_FAMILIARITY_MULTIPLIER_BY_RACE_COUNT = [
+  { maxRaces: 1, multiplier: 1.8 },  // this is at most their only attempt
+  { maxRaces: 3, multiplier: 1.3 },  // developing at this distance
+] as const;
+export const EVENT_FAMILIARITY_MULTIPLIER_ESTABLISHED = 1.0; // 4+ races at this distance
+import { convertAlongCurve, fitRaceCurve, GENERIC_EXPONENT, RACE_KM, type RaceCurve, type RacePoint }
+  from "./raceCurve.ts";
+
+/**
+ * A race needing a conditions correction larger than this is excluded from the
+ * CURVE FIT (it still anchors, still sets a PR floor, still shows as a PR).
+ *
+ * WHY (2026-08-24, measured). The fitted exponent is the most
+ * correction-sensitive thing in the model, because the shortest race sits at
+ * the end of the log-distance axis and therefore carries the most leverage on
+ * the slope. On the calibration athlete, choosing heat-normalized vs raw times
+ * moved the fit from b=1.0496 to b=1.0703 — and the marathon it implies from
+ * 2:25:49 to 2:28:59. A three-and-a-half-minute swing decided by a correction
+ * that [[heat-intensity-scaling]]'s own controlled re-test found over-credits
+ * by roughly 2×.
+ *
+ * The bias in a correction scales with the correction's size: a race needing
+ * 4.5% inherits ~2% of unknown error if the heat model is 2× hot; a race
+ * needing none inherits nothing. So magnitude is the eligibility test. This is
+ * not "drop the inconvenient point" — it is refusing to let a known-biased
+ * correction set a per-athlete constant, and it is the same rule prFloor.ts
+ * follows for its own inputs.
+ *
+ * 2.5% keeps the Apr 10K (2.0%) and excludes the Aug 5K (4.5%). Revisit when
+ * the heat model is recalibrated — at that point this can loosen.
+ */
+export const SHAPE_MAX_CORRECTION_PCT = 0.025;
+
 // ---------------------------------------------------------------------------
 // Lap-level interval analysis (Part 2B — rest-aware, server-only).
 // ---------------------------------------------------------------------------
@@ -525,14 +599,23 @@ const RACE_TYPE_TO_KEY: Record<RaceType, RaceKey> = {
  * another, via the shared equivalence table. Mirrors iOS `convert(racePace:)`
  * and `convert(pace:from:to:)`.
  */
-function convertPace(paceSecPerMile: number, from: RaceType, to: RaceType): number {
+/**
+ * `curveTilt` mirrors raceTime()'s convention (2026-08-27): the generic table
+ * gives the shape, `distanceCurve.exponent - GENERIC_EXPONENT` nudges it
+ * toward the athlete's own fitted curve. Default 0 is bit-identical to the
+ * pre-existing generic-only conversion — every call site that predates the
+ * curve keeps its exact behavior until it's updated to pass a real tilt.
+ */
+function convertPace(paceSecPerMile: number, from: RaceType, to: RaceType, curveTilt = 0): number {
   const fromKey = RACE_TYPE_TO_KEY[from];
   const toKey = RACE_TYPE_TO_KEY[to];
   const fromMiles = RACE_TYPE_MILES[from];
   const toMiles = RACE_TYPE_MILES[to];
   const fromTime = paceSecPerMile * fromMiles;
   const toTime = equivalentRaceTimeSeconds(fromKey, fromTime, toKey);
-  return toTime > 0 ? toTime / toMiles : paceSecPerMile;
+  let result = toTime > 0 ? toTime / toMiles : paceSecPerMile;
+  if (curveTilt !== 0 && from !== to) result *= Math.pow(toMiles / fromMiles, curveTilt);
+  return result;
 }
 
 /** Days between two "yyyy-MM-dd"/ISO dates (UTC), fractional. */
@@ -834,7 +917,7 @@ function recoveryPenaltyFromSegments(segments: PaceSegmentInput[] | null | undef
 // deliberately disabled in the iOS source; see its comment).
 // ---------------------------------------------------------------------------
 
-export function detectTrainingAnchors(voiceLogs: VoiceLogInput[]): TrainingAnchor[] {
+export function detectTrainingAnchors(voiceLogs: VoiceLogInput[], curveTilt = 0): TrainingAnchor[] {
   const anchors: TrainingAnchor[] = [];
 
   for (const log of voiceLogs) {
@@ -850,7 +933,7 @@ export function detectTrainingAnchors(voiceLogs: VoiceLogInput[]): TrainingAncho
 
     const fromType = distanceKeyToRaceType(parsed.equivalentRacePace.distanceKey);
     if (!fromType) continue;
-    const tenK = convertPace(paceSec, fromType, "tenK");
+    const tenK = convertPace(paceSec, fromType, "tenK", curveTilt);
     const workDist = parsed.workSummary?.totalDistanceMi ?? 0;
 
     let kind: TrainingAnchor["kind"];
@@ -1072,11 +1155,25 @@ export function detectDetraining(
   const lowVolume = (baselineMilesPerWeek > 0 && ratio < 0.5) || recentMilesPerWeek < 15.0;
 
   const qualifyingTypes = new Set(["tempo", "interval", "race", "progression", "race_pace"]);
-  const recentQuality = voiceLogs.some((log) => {
+  const recentQualityFromVoiceLogs = voiceLogs.some((log) => {
     const d = parseDay(log.date);
     return d !== null && d >= threeWeeksAgo && log.parsedStructure !== null && log.parsedStructure !== undefined &&
       qualifyingTypes.has(log.parsedStructure.type.toLowerCase());
   });
+  // WORKOUT-TYPE FALLBACK (2026-08-27): the check above only saw quality work
+  // that arrived with a parsed voice memo. A device-synced GPS workout with a
+  // type label ("tempo", "interval"...) but no voice memo attached carried
+  // the exact same evidence and was invisible to it — a real athlete training
+  // hard, quietly misread as having done zero quality work, which could push
+  // decay past the continuous-training 2% ceiling below for no real reason.
+  // `WorkoutInput.type` is the same field `buildComparison.ts` already
+  // trusts for this; this closes the same gap here.
+  const qualifyingWorkoutTypes = new Set(["tempo", "threshold", "interval", "intervals", "race", "race_pace", "progression", "fartlek"]);
+  const recentQualityFromWorkouts = workouts.some((w) => {
+    const d = parseDay(w.date);
+    return d !== null && d >= threeWeeksAgo && qualifyingWorkoutTypes.has((w.type ?? "").toLowerCase());
+  });
+  const recentQuality = recentQualityFromVoiceLogs || recentQualityFromWorkouts;
   const zeroQuality = !recentQuality;
 
   const recentWorkoutDates = workouts
@@ -1295,6 +1392,42 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   // then collapse remaining near-duplicate imports so one real race anchors
   // once instead of triple-counting toward confidence (2026-07-24).
   const detectedRaces = dedupeRaces(mergedRaces.filter((r) => !r.userExcluded));
+
+  // ── The athlete's own distance curve (2026-08-24, G0.3) ───────────────────
+  // The ratio table encodes one fatigue exponent (~1.06) applied to everyone —
+  // a population average wearing the costume of a fact. `b` is what separates
+  // two runners with identical 10Ks into a four-minute marathon gap.
+  //
+  // Shrinkage does the safety work, not a coverage threshold: a thin or noisy
+  // fit lands near generic on its own (raceCurve.ts, empirical Bayes against
+  // EXPONENT_PRIOR_SD). Our job here is only to not FEED it evidence we know is
+  // contaminated — see SHAPE_MAX_CORRECTION_PCT.
+  const curvePoints: RacePoint[] = [];
+  const curveExcluded: Array<{ date: string; reason: string }> = [];
+  for (const race of detectedRaces) {
+    if (!(race.totalTimeSeconds > 0)) continue;
+    const km = RACE_KM[race.raceType as keyof typeof RACE_KM];
+    if (!km) continue;
+    const conditions = raceConditionsFor(race, laps, weatherByDate);
+    const neutral = conditions !== null
+      ? normalizeRaceTime(race.totalTimeSeconds, race.raceType, conditions).neutralSeconds
+      : race.totalTimeSeconds;
+    const correction = Math.abs(race.totalTimeSeconds - neutral) / race.totalTimeSeconds;
+    if (correction > SHAPE_MAX_CORRECTION_PCT) {
+      curveExcluded.push({
+        date: race.date,
+        reason: `conditions correction ${(correction * 100).toFixed(1)}% exceeds ${(SHAPE_MAX_CORRECTION_PCT * 100).toFixed(1)}%`,
+      });
+      continue;
+    }
+    curvePoints.push({ date: race.date, distanceKm: km, seconds: neutral });
+  }
+  const distanceCurve: RaceCurve = fitRaceCurve(curvePoints, now);
+  // Single source for the tilt every conversion in this function applies —
+  // computed once here so ranking, blending, the zone signal, and raceTime()
+  // all nudge toward the SAME athlete-fitted shape rather than each computing
+  // their own (and risking drift if the formula is ever tuned in one place).
+  const curveTilt = distanceCurve.exponent - GENERIC_EXPONENT;
 
   // Voice paces + structured interval paces (fallback path when no anchor).
   const voicePaces: number[] = [];
@@ -1618,6 +1751,19 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
    * tuned against an argument.
    */
   const diag: Record<string, unknown> = {};
+  diag.race_curve = {
+    exponent: Math.round(distanceCurve.exponent * 10000) / 10000,
+    fitted_exponent: distanceCurve.fittedExponent === null ? null : Math.round(distanceCurve.fittedExponent * 10000) / 10000,
+    standard_error: distanceCurve.fittedStandardError === null ? null : Math.round(distanceCurve.fittedStandardError * 10000) / 10000,
+    evidence_weight: Math.round(distanceCurve.evidenceWeight * 1000) / 1000,
+    drift_pct_per_year: distanceCurve.driftPctPerYear === null ? null : Math.round(distanceCurve.driftPctPerYear * 100) / 100,
+    races_used: distanceCurve.racesUsed,
+    distinct_distances: distanceCurve.distinctDistances,
+    excluded: curveExcluded,
+    generic_exponent: GENERIC_EXPONENT,
+    tilt_vs_generic: Math.round(curveTilt * 10000) / 10000,
+    why: distanceCurve.why,
+  };
   // Dates already spoken for by a detected race. A race is the anchor; letting
   // it back in as training evidence would count one performance twice.
   const racesInWindow = new Set(detected.map((r) => r.date));
@@ -1683,11 +1829,74 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     effectiveDecayPerWeek = Math.max(Math.min(effectiveDecayPerWeek, 0.004), -0.002);
 
     let decayFactor = 1.0 + anchorWeeksAgo * effectiveDecayPerWeek;
-    // UNPROVEN-IMPROVEMENT CAP (2026-07-16, mirrors Swift): improvement
-    // inferred from volume trends alone is capped at 0.5% TOTAL, no matter how
-    // old the anchor. Proven improvement still arrives through the measured
-    // hard-pace signal below.
-    decayFactor = Math.max(decayFactor, 0.995);
+
+    // BUILD COMPARISON (2026-08-27): is THIS training block broadly, genuinely
+    // stronger than the block that produced the anchor race? Not one
+    // flattering session — a training profile that's deeper AND sharper
+    // across multiple zones (see buildComparison.ts for the cherry-pick
+    // guard). When it is, that discounts the decay directly, the same way a
+    // race would reset it, just bounded far more conservatively — this is
+    // inference from training, not a demonstrated result, and does not get
+    // to out-argue one. Inert without a race anchor or without history
+    // covering the race's own build window.
+    //
+    // MUST be a direct subtraction, not merely a wider floor: `decayFactor`
+    // starts ABOVE 1 whenever `effectiveDecayPerWeek` is positive (the normal
+    // case for an aging anchor), and `Math.max(decayFactor, floor)` is then a
+    // no-op — the floor only ever mattered for the rare case where the OLD,
+    // much weaker 2-4-week build-gate had already pushed decay negative on
+    // its own. Caught by running this exact fix against the scenario it was
+    // built for: raw decay computed 1.038 (worse, not better) despite 3 of 4
+    // training zones showing genuine improvement, because the wider ceiling
+    // never engaged. Subtracting the credit directly is what makes broad,
+    // real improvement evidence actually move the number.
+    const buildComparison: BuildComparisonResult | null = chosenRace
+      ? compareBuildWindows(extendedWorkouts, parseDay(chosenRace.date) ?? now, now)
+      : null;
+    const rawBuildCreditPct = buildComparison?.creditPct ?? 0;
+
+    // ATHLETE-AWARE CAP (2026-08-27): the measured credit above is a fact
+    // about the training; how much that fact is ALLOWED to move the estimate
+    // depends on who the athlete is. Two multiplicative factors:
+    //   1. Overall experience — a beginner's adaptation reserve is real and
+    //      much larger than a veteran's.
+    //   2. Familiarity with THIS SPECIFIC distance — an advanced athlete's
+    //      PR at a distance they've run once is a weaker ceiling than one
+    //      they've repeatedly demonstrated, independent of their general
+    //      experience level.
+    const experienceCap = BUILD_CREDIT_CAP_BY_EXPERIENCE[(input.experienceLevel ?? "").toLowerCase()]
+      ?? BUILD_CREDIT_CAP_DEFAULT;
+    const racesAtAnchorDistance = chosenRace
+      ? detectedRaces.filter((r) => r.raceType === chosenRace!.raceType).length
+      : 0;
+    const eventFamiliarityMultiplier = chosenRace
+      ? (EVENT_FAMILIARITY_MULTIPLIER_BY_RACE_COUNT.find((t) => racesAtAnchorDistance <= t.maxRaces)?.multiplier
+        ?? EVENT_FAMILIARITY_MULTIPLIER_ESTABLISHED)
+      : EVENT_FAMILIARITY_MULTIPLIER_ESTABLISHED;
+    const athleteCreditCap = experienceCap * eventFamiliarityMultiplier;
+    const buildCreditPct = Math.min(rawBuildCreditPct, athleteCreditCap);
+
+    if (buildCreditPct > 0) decayFactor -= buildCreditPct;
+    // UNPROVEN-IMPROVEMENT CEILING (2026-07-16, mirrors Swift; widened
+    // 2026-08-27; made athlete-aware same day): improvement inferred from
+    // training alone — short-term volume trend OR this block comparison —
+    // is capped at 0.5% TOTAL plus whatever the build comparison earned
+    // AFTER the athlete-aware cap above, no matter how old the anchor.
+    // Proven improvement still arrives through the measured hard-pace
+    // signal below, uncapped.
+    decayFactor = Math.max(decayFactor, 1 - (0.005 + buildCreditPct));
+    if (buildComparison) {
+      diag.build_comparison = buildComparison;
+      diag.build_credit_athlete_scaling = {
+        raw_credit_pct: Math.round(rawBuildCreditPct * 10000) / 10000,
+        experience_level: input.experienceLevel ?? null,
+        experience_cap: experienceCap,
+        races_at_anchor_distance: racesAtAnchorDistance,
+        event_familiarity_multiplier: eventFamiliarityMultiplier,
+        athlete_credit_cap: Math.round(athleteCreditCap * 10000) / 10000,
+        applied_credit_pct: Math.round(buildCreditPct * 10000) / 10000,
+      };
+    }
     // CONTINUOUS-TRAINING DECAY CAP (2026-07-16): VO2 decay applies to
     // STOPPED training. An athlete with zero detraining evidence (volume held,
     // no layoff) does not drift 4-5% off a demonstrated race just because the
@@ -1727,7 +1936,12 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     // for the continuous work you actually did, how did your pace compare to
     // what your current fitness predicts for that duration? See
     // trainingZoneSignal.ts for the model and why the anchor cancels out of it.
-    const zoneRead = estimateFromSessions(zoneSessions, estimated10KPace);
+    // Seed stays at 10K denomination (a legitimate, stable comparison unit
+    // once the level itself is curve-correct); curveTilt carries the
+    // athlete's own SHAPE into the reference curve that prices every
+    // session, so a marathoner's threshold work is judged against a
+    // marathon-shaped curve, not the generic table's (2026-08-27).
+    const zoneRead = estimateFromSessions(zoneSessions, estimated10KPace, "tenK", curveTilt);
     zoneEstimates = zoneRead.estimates;
     zoneRejections = zoneRead.rejected;
     // Feed the mile prediction's speed-evidence test from the same reps.
@@ -1740,7 +1954,7 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     let efHeldClamped = false;
     if (zoneSignal !== null) {
       zoneSignalUsed = zoneSignal.used;
-      paceSegmentSignal = zoneSignal.tenKPace;
+      paceSegmentSignal = zoneSignal.equivalentPace;
       const diff = paceSegmentSignal - estimated10KPace;
       // NO DEADBAND (2026-08-17). This used to require |diff| > 3 s/mi before
       // the training signal was allowed to count at all. On the calibration
@@ -1877,10 +2091,10 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     let converged: number | null = null;
     let used = 0;
     for (let i = 0; i < 8; i++) {
-      const read = estimateFromSessions(zoneSessions, seed);
+      const read = estimateFromSessions(zoneSessions, seed, "tenK", curveTilt);
       const combined = combineZoneEstimates(read.estimates, now);
       if (combined === null) break;
-      const next = combined.tenKPace;
+      const next = combined.equivalentPace;
       used = combined.used.length;
       zoneEstimates = read.estimates;
       zoneRejections = read.rejected;
@@ -1919,11 +2133,23 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
     if (trainingSignal !== null) {
       estimated10KPace = trainingSignal;
       dataSource = trainingSource;
-    } else if (workouts.length > 0) {
-      const fastest = workouts.reduce((f, w) => (w.paceSecondsPerMile < f.paceSecondsPerMile ? w : f), workouts[0]);
-      estimated10KPace = fastest.paceSecondsPerMile * 0.95;
-      dataSource = "fastest workout";
     }
+    // ── The fastest-workout rung is GONE (2026-08-24, G0.6) ──
+    //
+    // It read `fastest easy run × 0.95` as a race estimate. Its own comment at
+    // the cold start measured it at ELEVEN MINUTES out on a synthetic 45-min
+    // 10K runner, and the 2026-08-24 replay caught it live: seven days before
+    // the athlete's 31:20 10K PB it was the active source, at +3.40%.
+    //
+    // It only ever fired when every real signal was absent — no race, no
+    // readable structure, no parsed intervals. That is not a case for a worse
+    // guess; it is the case for saying so. `estimated10KPace` stays 0 and the
+    // guard below returns null, which the surfaces already handle as "tell me
+    // a recent race or log a hard session".
+    //
+    // A wrong number is worse than no number here: it anchors the athlete,
+    // it seeds tomorrow's curve prior, and it is indistinguishable on screen
+    // from an estimate that rests on evidence.
   }
 
   if (!(estimated10KPace > 0)) return null; // no usable signal → no fabricated row
@@ -1960,8 +2186,37 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   // ROUND, don't truncate (2026-07-16, mirrors Swift) — Math.trunc floored
   // every prediction fast twice.
   const tenKSeconds = Math.round(estimated10KPace * TEN_K_MILES);
-  const raceTime = (to: RaceType): number =>
-    Math.round(equivalentRaceTimeSeconds("tenK", tenKSeconds, RACE_TYPE_TO_KEY[to]));
+
+
+  // The curve TILTS the table; it does not replace it.
+  //
+  // WHY (2026-08-24, found by a test rather than by reasoning). The obvious
+  // implementation — convert straight along the fitted power law — silently
+  // changes every athlete's numbers even when the fit falls back to generic,
+  // because RACE_RATIOS_TO_10K was never a single-exponent curve. Its implied
+  // exponents differ per pair:
+  //
+  //     10K → mile      1.0778        10K → half        1.0586
+  //     10K → 5K        1.0552        10K → marathon    1.0623
+  //
+  // That structure is real physiology from the VDOT work, not noise to be
+  // straightened out, and throwing it away would have quietly moved the mile
+  // 3.3% faster for everyone under the banner of personalization.
+  //
+  // So we apply only the athlete's DEVIATION from generic on top of the table:
+  //
+  //     T2 = T_table(D2) · (D2/D1)^(b_fitted − b_generic)
+  //
+  // b_fitted = generic ⇒ factor 1 ⇒ exactly today's number. No evidence, no
+  // change — which is the property that makes this safe to ship before the
+  // heat model is recalibrated. `curveTilt` itself is computed once, right
+  // after distanceCurve is fit (2026-08-27) — see there.
+  const raceTime = (to: RaceType): number => {
+    const table = equivalentRaceTimeSeconds("tenK", tenKSeconds, RACE_TYPE_TO_KEY[to]);
+    if (curveTilt === 0) return Math.round(table);
+    const km = RACE_KM[to as keyof typeof RACE_KM];
+    return Math.round(table * Math.pow(km / RACE_KM.tenK, curveTilt));
+  };
 
   const structuredIntervalCount = intervalPaces.filter((i) => i.type === "interval").length;
   const structuredTempoCount = intervalPaces.filter((i) => i.type === "tempo" || i.type === "threshold").length;
@@ -2070,6 +2325,96 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   }
   const halfSeconds = Math.round(halfSecondsD);
 
+  // ── PR plausibility floor (2026-08-24, G0.5) ──────────────────────────────
+  // Bounds how far below the athlete's own best the model may claim they are,
+  // given how they are training now. See prFloor.ts for the four rules; the
+  // two that decide behaviour here:
+  //
+  //   • A RACE BEATS THE FLOOR. When a race inside the primary window anchors
+  //     the estimate, that is a measurement and the floor stands down entirely
+  //     — including when the athlete simply raced badly.
+  //   • SAME-DISTANCE ONLY. Each published time is bounded by the PR at ITS
+  //     distance or not at all. Nothing is converted in.
+  const floorSuppressedByRace = chosenRace !== null && anchorWeeksAgo <= racePrimaryWindowWeeks;
+  let prFloors = new Map<RaceType, DistanceFloor>();
+  if (!floorSuppressedByRace) {
+    // PRs at any age, normalized the same way the anchor is. `scoredRaces`
+    // cannot be reused: it drops everything past the 36-week trusted window,
+    // and a lifetime PR is usually older than that.
+    const prRecords: PrRecord[] = [];
+    for (const race of detectedRaces) {
+      if (!(race.totalTimeSeconds > 0)) continue;
+      const conditions = raceConditionsFor(race, laps, weatherByDate);
+      const seconds = conditions !== null
+        ? normalizeRaceTime(race.totalTimeSeconds, race.raceType, conditions).neutralSeconds
+        // Rule 3: no weather on file → RAW. A hot race's raw time is slower
+        // than its neutral, so the floor loosens rather than over-clamping.
+        : race.totalTimeSeconds;
+      prRecords.push({
+        distanceKey: race.raceType,
+        date: race.date,
+        seconds,
+        conditionsKnown: conditions !== null,
+      });
+    }
+    // The athlete's own median weekly mileage over the long window — the
+    // honest proxy for PR-era volume, which sits outside anything we hold.
+    const milesByWeek = new Map<string, number>();
+    for (const w of extendedWorkouts) {
+      const d = parseDay(w.date);
+      if (!d) continue;
+      const wk = Math.floor(d.getTime() / (7 * 86_400_000));
+      milesByWeek.set(String(wk), (milesByWeek.get(String(wk)) ?? 0) + w.distanceMiles);
+    }
+    const weekly = [...milesByWeek.values()].sort((a, b) => a - b);
+    const referenceWeeklyMiles = weekly.length > 0 ? weekly[Math.floor(weekly.length / 2)] : null;
+
+    prFloors = computePrFloors(prRecords, {
+      now,
+      weeklyMiles,
+      referenceWeeklyMiles,
+      qualityDensity,
+    });
+    diag.pr_floor = {
+      reference_weekly_miles: referenceWeeklyMiles,
+      weekly_miles: weeklyMiles,
+      quality_density: qualityDensity,
+      floors: [...prFloors.values()].map((f) => ({
+        distance: f.distanceKey,
+        pr_seconds: Math.round(f.prSeconds),
+        pr_date: f.prDate,
+        years_since: f.yearsSincePr,
+        max_decline_pct: Math.round(f.maxDeclinePct * 10000) / 100,
+        floor_seconds: Math.round(f.floorSeconds),
+        conditions_known: f.conditionsKnown,
+      })),
+    };
+  } else {
+    diag.pr_floor = { suppressed_by_race: true, anchor_weeks_ago: Math.round(anchorWeeksAgo * 10) / 10 };
+  }
+
+  const fMile = applyFloor(mileSeconds, prFloors.get("mile"));
+  const f5k = applyFloor(fiveKSeconds, prFloors.get("fiveK"));
+  const f10k = applyFloor(tenKSeconds, prFloors.get("tenK"));
+  const fHalf = applyFloor(halfSeconds, prFloors.get("half"));
+  const fMara = applyFloor(marathonSeconds, prFloors.get("marathon"));
+  const flooredDistances = [
+    fMile.bound ? "mile" : null,
+    f5k.bound ? "5K" : null,
+    f10k.bound ? "10K" : null,
+    fHalf.bound ? "half" : null,
+    fMara.bound ? "marathon" : null,
+  ].filter((x): x is string => x !== null);
+  if (flooredDistances.length > 0) {
+    diag.pr_floor_bound = flooredDistances;
+  }
+
+  const pubMile = fMile.seconds;
+  const pub5k = f5k.seconds;
+  const pub10k = f10k.seconds;
+  const pubHalf = fHalf.seconds;
+  const pubMarathon = fMara.seconds;
+
   // ── Distance-aware ranges (2026-07-16, mirrors Swift) ──
   // A flat ±% per tier claimed the same certainty for a mile predicted off a
   // half marathon as for the half itself. Ranges widen with:
@@ -2087,6 +2432,13 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   const marathonExtra = (weeklyMiles < 30.0 ? 0.01 : 0) +
     (qualityDensity !== null && qualityDensity < 0.05 ? 0.01 : 0);
 
+  // Surface the floor only when it actually clamped something, the same rule
+  // the EF gate follows — a marker on a row where nothing was bound would
+  // claim credit for a no-op.
+  if (flooredDistances.length > 0) {
+    dataSource += ` + PR floor (${flooredDistances.join(", ")})`;
+  }
+
   // "· v2" marks the richer multi-signal server model for the iOS client.
   dataSource = `${dataSource} · v2`;
 
@@ -2102,20 +2454,20 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
 
   return {
     estimated10kPaceSeconds: estimated10KPace,
-    predictedMileSeconds: mileSeconds,
-    predicted5kSeconds: fiveKSeconds,
-    predicted10kSeconds: tenKSeconds,
-    predictedHalfSeconds: halfSeconds,
-    predictedMarathonSeconds: marathonSeconds,
+    predictedMileSeconds: pubMile,
+    predicted5kSeconds: pub5k,
+    predicted10kSeconds: pub10k,
+    predictedHalfSeconds: pubHalf,
+    predictedMarathonSeconds: pubMarathon,
     confidence,
     confidenceTier: tier,
     dataSource,
     workoutCount: workouts.length,
-    rangeMileSeconds: Math.round(mileSeconds * rangeFraction(RANGE_ITEM_MILES.mile, mileExtra)),
-    range5kSeconds: Math.round(fiveKSeconds * rangeFraction(RANGE_ITEM_MILES.fiveK)),
-    range10kSeconds: Math.round(tenKSeconds * rangeFraction(RANGE_ITEM_MILES.tenK)),
-    rangeHalfSeconds: Math.round(halfSeconds * rangeFraction(RANGE_ITEM_MILES.half)),
-    rangeMarathonSeconds: Math.round(marathonSeconds * rangeFraction(RANGE_ITEM_MILES.marathon, marathonExtra)),
+    rangeMileSeconds: Math.round(pubMile * rangeFraction(RANGE_ITEM_MILES.mile, mileExtra)),
+    range5kSeconds: Math.round(pub5k * rangeFraction(RANGE_ITEM_MILES.fiveK)),
+    range10kSeconds: Math.round(pub10k * rangeFraction(RANGE_ITEM_MILES.tenK)),
+    rangeHalfSeconds: Math.round(pubHalf * rangeFraction(RANGE_ITEM_MILES.half)),
+    rangeMarathonSeconds: Math.round(pubMarathon * rangeFraction(RANGE_ITEM_MILES.marathon, marathonExtra)),
     summary,
     lifetimePRs,
     // The anchor as a fact, not prose. `neutralSeconds` falls back to the raw

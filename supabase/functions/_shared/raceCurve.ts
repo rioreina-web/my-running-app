@@ -193,9 +193,24 @@ export function fitRaceCurve(races: readonly RacePoint[], now: Date): RaceCurve 
   // With zero degrees of freedom the fit is exact and tells us nothing about
   // its own reliability — fall back to the prior scale rather than claim
   // perfect precision, which would let two races override everything.
-  const sigma2 = dof > 0 ? sse / dof : NaN;
+  //
+  // ONE degree of freedom is the same problem wearing a number (2026-08-25).
+  // Three parameters through four points fits almost exactly by construction,
+  // so SSE is tiny, so the reported standard error is tiny, so shrinkage hands
+  // the fit ~100% weight. Measured on the calibration athlete's real races:
+  // 4 points → b = 1.0533 ±0.0008 → weight 100%, moving her marathon 91
+  // seconds. A ±0.0008 claim on a 1-dof fit is an overfitting signature, not
+  // precision, and nothing downstream can catch it — both of her scoreable
+  // races are 10Ks, and the 10K is the conversion origin where the tilt is
+  // exactly 1.0. The backtest is structurally blind to this parameter.
+  //
+  // So dof ≤ 1 is treated like dof = 0: the fit is reported, but it is scored
+  // at the prior scale, which lands it at 50% weight instead of 100%. It still
+  // moves the number — it just has to share the decision with the population
+  // until there is a race left over to check it with.
+  const sigma2 = dof > 1 ? sse / dof : NaN;
   const inv = solve(A, Array.from({ length: k }, (_, i) => (i === 1 ? 1 : 0)));
-  const se = dof > 0 && inv !== null && sigma2 >= 0
+  const se = dof > 1 && inv !== null && sigma2 >= 0
     ? Math.sqrt(Math.max(sigma2 * inv[1], 0))
     : EXPONENT_PRIOR_SD;
 
