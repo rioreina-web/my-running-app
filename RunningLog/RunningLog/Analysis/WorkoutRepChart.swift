@@ -581,14 +581,23 @@ enum WorkoutLapsService {
         } catch { return nil }
     }
 
-    /// Manual override of the detected workout type. compute-workout-features
-    /// only fills workout_type when it's null, so a manual value persists.
+    /// Manual override of the detected workout type.
+    ///
+    /// Goes through `set_workout_type` declared as `athlete` — the top of the
+    /// authority ladder (migration 20260827170000). That is what makes a manual
+    /// pick durable: nothing else can overwrite it, not the lap-geometry pass,
+    /// not a memo re-processed later, not a Strava re-sync promoting a device
+    /// twin. The previous direct UPDATE relied on compute-workout-features
+    /// happening to guard on NULL, which was never a guarantee the other four
+    /// writers respected.
     static func setType(workoutId: UUID, type: String) async {
         do {
             try await supabase
-                .from("training_logs")
-                .update(["workout_type": type])
-                .eq("id", value: workoutId.uuidString)
+                .rpc("set_workout_type", params: [
+                    "p_log": workoutId.uuidString,
+                    "p_type": type,
+                    "p_source": "athlete",
+                ])
                 .execute()
         } catch {
             Log.coach.error("WorkoutLapsService.setType failed: \(error)")

@@ -486,7 +486,7 @@ Deno.serve(async (req) => {
     // linkage column exists.
     const { data: existingRecord, error: existingErr } = await supabase
       .from("training_logs")
-      .select("workout_distance_miles, workout_duration_minutes, pace_segments, vital_workout_id, workout_date, workout_type, external_streams, parsed_structure")
+      .select("workout_distance_miles, workout_duration_minutes, pace_segments, vital_workout_id, workout_date, created_at, workout_type, external_streams, parsed_structure")
       .eq("id", record.id)
       .single();
 
@@ -510,27 +510,63 @@ Deno.serve(async (req) => {
       const er = existingRecord as {
         workout_distance_miles?: number | null;
         workout_date?: string | null;
+        created_at?: string | null;
         external_streams?: unknown;
         pace_segments?: unknown;
       } | null;
       const erDist = er?.workout_distance_miles ?? null;
       const erDate = er?.workout_date ?? null;
+      const erCreated = er?.created_at ?? null;
       const erHasStreams = er?.external_streams != null;
-      if (!erHasStreams && erDist && erDate) {
-        const day = String(erDate).slice(0, 10);
+      // Fall back to created_at when the row is NULL-dated. iOS only stamped
+      // workout_date when the athlete had picked a run in the recorder, so a
+      // memo recorded with nothing selected skipped this whole block and never
+      // found its run — which is precisely how 2026-08-24's 10-mile memo stayed
+      // stranded beside that morning's Strava 10.01 (this is the ONLY path that
+      // reconciles a memo arriving AFTER the run; strava-sync's orphan merge
+      // only fires while writing a run row, hours earlier).
+      const erWhen = erDate ?? erCreated;
+      if (!erHasStreams && erDist && erWhen) {
+        // Stated date → that UTC day (unchanged). Fallback clock → look BACK
+        // from the recording, not symmetrically around it: an athlete records a
+        // memo after running, often hours later (2026-08-24's was 6h29m after
+        // the run started), and essentially never about a run that has not
+        // happened yet. Mirrors ORPHAN_FALLBACK_* in _shared/voiceOrphanMatch.
+        let lo: string, hi: string;
+        if (erDate) {
+          const day = String(erDate).slice(0, 10);
+          lo = `${day}T00:00:00Z`;
+          hi = `${day}T23:59:59Z`;
+        } else {
+          const base = Date.parse(String(erCreated));
+          lo = new Date(base - 18 * 60 * 60 * 1000).toISOString();
+          hi = new Date(base + 3 * 60 * 60 * 1000).toISOString();
+        }
         const { data: siblings } = await supabase
           .from("training_logs")
-          .select("id, workout_distance_miles, external_streams, pace_segments, parsed_structure")
+          .select("id, workout_date, workout_distance_miles, external_streams, pace_segments, parsed_structure")
           .eq("user_id", authUserId)
           .neq("id", record.id)
           .not("external_streams", "is", null)
-          .gte("workout_date", `${day}T00:00:00Z`)
-          .lte("workout_date", `${day}T23:59:59Z`)
+          .gte("workout_date", lo)
+          .lte("workout_date", hi)
           .limit(10);
-        const match = (siblings ?? []).find((s: { workout_distance_miles?: number | null }) =>
-          typeof s.workout_distance_miles === "number" &&
-          Math.abs((s.workout_distance_miles as number) - (erDist as number)) <= 0.3
-        ) as { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown } | undefined;
+        // Closest in time among the distance matches, not merely the first row
+        // the query happened to return. Irrelevant while the window was a single
+        // day with one run in it; it matters now that the fallback window can
+        // span 21h and therefore two different runs.
+        const erWhenT = Date.parse(String(erWhen));
+        const match = (siblings ?? [])
+          .filter((s: { workout_distance_miles?: number | null }) =>
+            typeof s.workout_distance_miles === "number" &&
+            Math.abs((s.workout_distance_miles as number) - (erDist as number)) <= 0.3
+          )
+          .sort((a: { workout_date?: string | null }, b: { workout_date?: string | null }) =>
+            Math.abs(Date.parse(String(a.workout_date)) - erWhenT) -
+            Math.abs(Date.parse(String(b.workout_date)) - erWhenT)
+          )[0] as
+            | { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown }
+            | undefined;
         if (match) {
           mergedStreams = match.external_streams ?? null;
           // The laps table is keyed on the SIBLING row's id (the lap-writer
@@ -1051,6 +1087,13 @@ Deno.serve(async (req) => {
       );
     }
 
+    // The memo's read of what the session WAS. Carried separately from
+    // updatePayload because workout_type is arbitrated by the authority ladder
+    // (migration 20260827170000) and has to be written through
+    // set_workout_type with an explicit source. Null when the athlete's words
+    // named no type — we never guess one.
+    let memoWorkoutType: string | null = null;
+
     // Build update payload — only overwrite distance/duration if no HealthKit values exist
     const updatePayload: Record<string, unknown> = {
       cleaned_notes: analysis.cleaned_notes,
@@ -1095,12 +1138,16 @@ Deno.serve(async (req) => {
     if (analysis.extracted_data) {
       const ed = analysis.extracted_data;
 
-      // workout_type: non-empty string, capped length. (No CHECK constraint
-      // exists on the column yet, so guard here.)
+      // workout_type: non-empty string, capped length. Deliberately NOT part of
+      // updatePayload — it goes through set_workout_type below, declared as
+      // `memo`, so the authority ladder can rank the athlete's own words above
+      // a machine guess (and below an explicit picker choice). Writing it here
+      // would arrive as an undeclared write and be demoted to `unknown`.
+      // The vocabulary CHECK (20260827170000) now backstops the length guard.
       if (typeof ed.workout_type === "string") {
         const wt = ed.workout_type.trim();
         if (wt.length > 0 && wt.length <= 40) {
-          updatePayload.workout_type = wt;
+          memoWorkoutType = wt;
         }
       }
 
@@ -1152,6 +1199,27 @@ Deno.serve(async (req) => {
 
     if (updateError) {
       throw new Error(`Failed to update training log: ${updateError.message}`);
+    }
+
+    // The workout type, declared as `memo` so the ladder can rank it. This
+    // outranks the lapless device heuristic and the server's lap geometry —
+    // the athlete saying "I did an easy 8-miler" is better evidence than either
+    // — but is itself outranked by an explicit pick in a picker. A refusal is a
+    // normal outcome (the athlete has already retyped the run by hand), so it
+    // is logged, not thrown: nothing about the memo itself has failed.
+    if (memoWorkoutType) {
+      const { data: storedType, error: typeErr } = await supabase.rpc("set_workout_type", {
+        p_log: record.id,
+        p_type: memoWorkoutType,
+        p_source: "memo",
+      });
+      if (typeErr) {
+        console.warn(`[process-training-memo] set_workout_type failed: ${typeErr.message}`);
+      } else if (storedType !== memoWorkoutType) {
+        console.log(
+          `[process-training-memo] memo type "${memoWorkoutType}" outranked; row keeps "${storedType}"`,
+        );
+      }
     }
 
     // Parse the workout structure (GPS streams + any spoken detail) now that the

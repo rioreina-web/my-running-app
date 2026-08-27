@@ -157,10 +157,16 @@ final class HistoryDetailViewModel {
 
         // Normalized before the comparison so re-saving an entry the picker
         // loaded as "interval" doesn't write "interval" straight back.
+        //
+        // Deliberately NOT added to `updateData`: workout_type is arbitrated by
+        // the authority ladder (migration 20260827170000) and has to be written
+        // through `set_workout_type` with an explicit source. A plain UPDATE
+        // arrives undeclared, is demoted to `unknown`, and would be silently
+        // refused against any stronger incumbent — the athlete's edit would
+        // appear to save and then not stick. Written after the main update
+        // below, at `athlete` rank, and mirrored the same way.
         let newType = WorkoutLabel.normalize(workoutType.isEmpty ? nil : workoutType)
-        if newType != currentEntry.workoutType {
-            updateData["workout_type"] = newType.map { .string($0) } ?? .null
-        }
+        let typeChanged = newType != currentEntry.workoutType
 
         let newDistance = Double(distanceText)
         if newDistance != currentEntry.workoutDistanceMiles {
@@ -188,32 +194,44 @@ final class HistoryDetailViewModel {
         // last-writer-wins this whole thread of work exists to remove. That
         // column has exactly one editor now.
 
-        guard !updateData.isEmpty else {
+        // `typeChanged` counts as an edit even when nothing else did — it is
+        // saved through its own RPC below, so it is not in `updateData`.
+        guard !updateData.isEmpty || typeChanged else {
             isSavingEdits = false
             return true
         }
 
         do {
-            try await supabase
-                .from("training_logs")
-                .update(updateData)
-                .eq("id", value: entryId.uuidString)
-                .execute()
+            if !updateData.isEmpty {
+                try await supabase
+                    .from("training_logs")
+                    .update(updateData)
+                    .eq("id", value: entryId.uuidString)
+                    .execute()
 
-            // A Strava-linked run is two rows, and the workout receipt renders
-            // from the OTHER one — so an edit to any field the receipt reads
-            // that lands only here saves cleanly and changes nothing the
-            // athlete can see. Mirror those fields.
-            //
-            // `workout_type` joined `workout_notes` on 2026-08-07: the receipt
+                // A Strava-linked run is two rows, and the workout receipt
+                // renders from the OTHER one — so an edit to any field the
+                // receipt reads that lands only here saves cleanly and changes
+                // nothing the athlete can see. Mirror those fields.
+                //
+                // (Patch; the real fix is one session identity per run.)
+                let mirrored = updateData.filter { Self.streamRowMirroredFields.contains($0.key) }
+                if !mirrored.isEmpty {
+                    await mirrorToStreamRow(mirrored)
+                }
+            }
+
+            // `workout_type` joined the mirrored set on 2026-08-07: the receipt
             // reads it via `WorkoutLapsService.fetchType` and writes it via
             // `setType`, both against the stream row, so the two pickers were
-            // editing different rows with no reconciliation at all.
-            //
-            // (Patch; the real fix is one session identity per run.)
-            let mirrored = updateData.filter { Self.streamRowMirroredFields.contains($0.key) }
-            if !mirrored.isEmpty {
-                await mirrorToStreamRow(mirrored)
+            // editing different rows with no reconciliation at all. It still
+            // has to reach both rows — it just travels by RPC now so it lands
+            // at `athlete` rank on each and cannot be quietly outranked.
+            if typeChanged {
+                await Self.setTypeAtAthleteRank(logId: entryId, type: newType)
+                if let mirrorId = linkedStreamLogId, mirrorId != entryId {
+                    await Self.setTypeAtAthleteRank(logId: mirrorId, type: newType)
+                }
             }
 
             currentEntry = TrainingLog(
@@ -343,6 +361,40 @@ final class HistoryDetailViewModel {
         }
     }
 
+    /// Save how hard the session felt, 1–10. `nil` clears it.
+    ///
+    /// Writes `rpe_source` alongside the number, and that pairing is the whole
+    /// point: `extract-rpe` is idempotent and fires from four places, so
+    /// without the provenance stamp the athlete's correction would be
+    /// overwritten by the next dispatch, backfill, or `cleaned_notes` webhook.
+    /// The edge function reads this column and leaves `felt_rpe` alone when it
+    /// says `"athlete"`.
+    @MainActor
+    func saveRpeInline(_ rpe: Int?) async -> InlineSaveResult {
+        let clamped = rpe.map { min(10, max(1, $0)) }
+        guard clamped != currentEntry.feltRpe else { return .unchanged }
+
+        do {
+            let updateData: [String: AnyJSON] = [
+                "felt_rpe": clamped.map { AnyJSON.integer($0) } ?? .null,
+                // Clearing hands the field back to the model rather than
+                // pinning it to an athlete-authored nil.
+                "rpe_source": clamped == nil ? .null : .string("athlete"),
+            ]
+            try await supabase
+                .from("training_logs")
+                .update(updateData)
+                .eq("id", value: entryId.uuidString)
+                .execute()
+            currentEntry = currentEntry.replacingRpe(clamped)
+            return .saved
+        } catch {
+            Log.database.error("Failed to save inline RPE: \(error)")
+            ErrorReporter.shared.report(error, context: "save inline rpe")
+            return .failed
+        }
+    }
+
     // MARK: - Mirror workout notes onto the linked stream row
 
     /// Copy `workout_notes` onto the Strava import row when this entry is
@@ -396,6 +448,25 @@ final class HistoryDetailViewModel {
     /// since 2026-08-05 is the common case (a memo attaches to the run's row
     /// rather than creating a second one).
     @MainActor
+    /// Write `workout_type` at the top of the authority ladder.
+    ///
+    /// A nil `type` is a real edit — the athlete clearing the field — and the
+    /// ladder accepts it at `athlete` rank, which is why this cannot just skip
+    /// the call when the value is nil.
+    static func setTypeAtAthleteRank(logId: UUID, type: String?) async {
+        do {
+            try await supabase
+                .rpc("set_workout_type", params: [
+                    "p_log": AnyJSON.string(logId.uuidString),
+                    "p_type": type.map { AnyJSON.string($0) } ?? .null,
+                    "p_source": AnyJSON.string("athlete"),
+                ])
+                .execute()
+        } catch {
+            Log.database.error("set_workout_type(athlete) for \(logId) failed: \(error)")
+        }
+    }
+
     private func mirrorToStreamRow(_ fields: [String: AnyJSON]) async {
         guard let mirrorId = linkedStreamLogId, mirrorId != entryId, !fields.isEmpty else { return }
         do {
@@ -608,7 +679,7 @@ final class HistoryDetailViewModel {
     /// a live device: the inline WORKOUT receipt and the COMPARE row (both gated
     /// on `linkedStreamLogId != nil` in `HistoryDetailSheet+Editorial`), and
     /// `mirrorWorkoutNotes` below. The sibling query in
-    /// `VoiceLogView.fetchStravaRunningWorkouts` carries the corrected source
+    /// `HealthKitManager.fetchStravaRunningWorkouts` carries the corrected source
     /// list and a comment about this exact failure mode; the two drifted apart.
     ///
     /// A source allowlist is the wrong shape for the question. What the caller
@@ -964,7 +1035,43 @@ private extension TrainingLog {
             vitalWorkoutId: vitalWorkoutId,
             paceSegments: paceSegments,
             parsedStructure: parsedStructure,
-            title: title
+            title: title,
+            feltRpe: feltRpe,
+            rpeSource: rpeSource
+        )
+    }
+
+    /// Same rebuild-don't-mutate contract as `replacingMood`, for the inline
+    /// RPE slider. Setting a value always stamps `rpeSource = "athlete"`;
+    /// clearing it drops provenance back to nil so the next extraction is free
+    /// to propose a number again — clearing is "I have no opinion", not "the
+    /// model is wrong forever".
+    func replacingRpe(_ newRpe: Int?) -> TrainingLog {
+        TrainingLog(
+            id: id,
+            createdAt: createdAt,
+            audioUrl: audioUrl,
+            notes: notes,
+            cleanedNotes: cleanedNotes,
+            mood: mood,
+            workoutDate: workoutDate,
+            workoutDistanceMiles: workoutDistanceMiles,
+            workoutDurationMinutes: workoutDurationMinutes,
+            processingStatus: processingStatus,
+            processingError: processingError,
+            processingAttempts: processingAttempts,
+            transcriptUrl: transcriptUrl,
+            coachInsight: coachInsight,
+            workoutNotes: workoutNotes,
+            workoutPacePerMile: workoutPacePerMile,
+            workoutType: workoutType,
+            source: source,
+            vitalWorkoutId: vitalWorkoutId,
+            paceSegments: paceSegments,
+            parsedStructure: parsedStructure,
+            title: title,
+            feltRpe: newRpe,
+            rpeSource: newRpe == nil ? nil : "athlete"
         )
     }
 }

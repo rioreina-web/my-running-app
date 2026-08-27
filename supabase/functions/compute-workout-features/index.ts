@@ -649,8 +649,25 @@ Deno.serve(async (req) => {
             density_baseline_source: effort.density.baselineSource,
           });
         }
-        // Backfill the untyped training_logs (don't clobber a set type).
-        if (!log.workout_type && seg.workoutKind) {
+        // Offer the geometry read for EVERY log, not just untyped ones. The
+        // old `!log.workout_type` guard was this function conceding the column
+        // to whoever wrote first — which on a HealthKit-then-Strava run was the
+        // lapless device heuristic, and it could not be corrected afterwards
+        // (2026-08-26: an 8.22 mi easy run stuck at `tempo`). Arbitration now
+        // lives in the DB: set_workout_type declares this writer as `geometry`,
+        // which outranks `device`/`unknown` and is outranked by `memo`/`plan`/
+        // `athlete`. So this can heal a machine guess and still never overwrite
+        // the athlete's own words.
+        //
+        // Gated on `seg.source !== "overall"`. "overall" is segmentFromOverall's
+        // last-resort single block, used when a row has neither laps nor
+        // pace_segments — a telemetry-less voice memo, typically. That path
+        // hardcodes zone "easy" because it has nothing to classify FROM, so its
+        // `workoutKind` is a placeholder, not a reading. Writing it here would
+        // let a memo the athlete spoke as an interval session get quietly
+        // restated as `easy` by a classifier that never saw a single split.
+        // Only a segmentation with real geometry behind it gets to speak.
+        if (seg.workoutKind && seg.source !== "overall") {
           typeBackfill.push({ id: log.id, workout_type: seg.workoutKind });
         }
         // Backfill workout_notes from laps ONLY when the voice memo left it
@@ -747,15 +764,39 @@ Deno.serve(async (req) => {
       if (upsertError) throw new Error(`Failed to upsert features: ${upsertError.message}`);
     }
 
-    // Backfill training_logs.workout_type for untyped imports.
+    // Write the geometry read through the authority ladder. The RPC returns the
+    // value actually STORED, which is the incumbent when the ladder refused —
+    // so a refusal is a normal outcome here, not an error, and is counted
+    // separately rather than logged as a failure.
     let typesBackfilled = 0;
+    let typesRefused = 0;
     for (const t of typeBackfill) {
-      const { error } = await supabase
-        .from("training_logs")
-        .update({ workout_type: t.workout_type })
-        .eq("id", t.id)
-        .is("workout_type", null);
-      if (!error) typesBackfilled++;
+      const { data: stored, error } = await supabase.rpc("set_workout_type", {
+        p_log: t.id,
+        p_type: t.workout_type,
+        p_source: "geometry",
+      });
+      if (error) {
+        // Pre-migration deploy order: the function may land before
+        // 20260827170000. Fall back to the old fill-only-when-null write so a
+        // deploy race degrades to the previous behaviour instead of dropping
+        // the type entirely.
+        if (/set_workout_type|function|schema cache/i.test(error.message)) {
+          const { error: fallbackErr } = await supabase
+            .from("training_logs")
+            .update({ workout_type: t.workout_type })
+            .eq("id", t.id)
+            .is("workout_type", null);
+          if (!fallbackErr) typesBackfilled++;
+          continue;
+        }
+        continue;
+      }
+      if (stored === t.workout_type) typesBackfilled++;
+      else typesRefused++;
+    }
+    if (typesRefused > 0) {
+      console.log(`[compute-workout-features] ${typesRefused} type write(s) outranked by a stronger source`);
     }
 
     // Backfill training_logs.workout_notes from laps for sessions the athlete

@@ -28,7 +28,13 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
-import { type OrphanCandidate, pickBestOrphan } from "../_shared/voiceOrphanMatch.ts";
+import {
+  ORPHAN_FALLBACK_AFTER_MS,
+  ORPHAN_FALLBACK_BEFORE_MS,
+  ORPHAN_TIME_WINDOW_MS,
+  type OrphanCandidate,
+  pickBestOrphan,
+} from "../_shared/voiceOrphanMatch.ts";
 import {
   buildPaceSegments,
   paceStringFromSpeedMps,
@@ -132,20 +138,32 @@ async function reconcileVoiceOrphan(
   runDistanceMiles: number,
 ): Promise<void> {
   try {
-    const windowMs = 4 * 60 * 60 * 1000; // matches ORPHAN_TIME_WINDOW_MS
+    const windowMs = ORPHAN_TIME_WINDOW_MS;
     const base = new Date(runDate).getTime();
     const lo = new Date(base - windowMs).toISOString();
     const hi = new Date(base + windowMs).toISOString();
+    // NULL-dated memos are windowed on created_at instead, and asymmetrically:
+    // a memo is WRITTEN after the run it describes, sometimes many hours after.
+    // Mirrors ORPHAN_FALLBACK_* — pickBestOrphan re-checks both bounds.
+    const cLo = new Date(base - ORPHAN_FALLBACK_AFTER_MS).toISOString();
+    const cHi = new Date(base + ORPHAN_FALLBACK_BEFORE_MS).toISOString();
     const { data, error } = await db
       .from("training_logs")
-      .select("id, workout_date, workout_distance_miles")
+      .select("id, workout_date, workout_distance_miles, created_at")
       .eq("user_id", userId)
       .is("external_streams", null)      // no telemetry
       .not("audio_url", "is", null)      // is a voice memo
       .is("vital_workout_id", null)      // not already linked to a run
       .neq("id", runId)
-      .gte("workout_date", lo)
-      .lte("workout_date", hi);
+      // Window on workout_date when it is set, else on created_at. A range
+      // predicate on a NULL column matches NOTHING, so the old workout_date-only
+      // filter made NULL-dated memos — every memo recorded without a run picked
+      // in the recorder — structurally invisible to reconciliation. pickBestOrphan
+      // applies the same fallback and still enforces the ±4h / distance checks.
+      .or(
+        `and(workout_date.gte.${lo},workout_date.lte.${hi}),` +
+          `and(workout_date.is.null,created_at.gte.${cLo},created_at.lte.${cHi})`,
+      );
     if (error) {
       console.warn(`[strava-sync] orphan lookup failed for ${userId}: ${error.message}`);
       return;
@@ -663,6 +681,24 @@ async function syncUser(row: CredRow, lookbackDays: number, perUserLimit: number
             console.log(
               `[strava-sync] promoted ${twin.source} row ${twin.id} → strava ${a.id} (absorbed device twin)`,
             );
+            // workout_type is DERIVED from the lapless copy too, and clearing it
+            // belongs with parsed_structure/coach_insight above — but it cannot
+            // go in that payload, because an undeclared write is demoted to
+            // `unknown` by the authority ladder and would be refused. Declaring
+            // `device` clears exactly what the device heuristic wrote and is
+            // refused against anything stronger, so a re-sync can never wipe a
+            // type the athlete picked or spoke. This is the specific hole that
+            // left 2026-08-26's easy run reading "Threshold": the promote
+            // cleared every other derived field and carried this one forward.
+            // The compute pass fired below refills it from real lap geometry.
+            const { error: clearTypeErr } = await db.rpc("set_workout_type", {
+              p_log: twin.id,
+              p_type: null,
+              p_source: "device",
+            });
+            if (clearTypeErr) {
+              console.warn(`[strava-sync] device type clear failed for ${twin.id}: ${clearTypeErr.message}`);
+            }
             // Features were computed off the lapless copy — drop them so the
             // next compute pass rebuilds from real lap geometry.
             const { error: featErr } = await db
