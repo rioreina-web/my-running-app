@@ -223,6 +223,8 @@ export interface ZoneEstimate {
   workMiles: number;
   restSeconds: number;
   restRatio: number;
+  /** Seconds discarded as a stopped clock — neither work nor recovery. */
+  deadTimeSeconds: number;
   effectiveSeconds: number;
   repCount: number;
   /** Mean HR across work reps, when the blocks carried it. Reported, not applied. */
@@ -368,6 +370,51 @@ export function parsePaceMSS(raw: string | null | undefined): number | null {
 const WORK_ROLES = new Set(["work_rep", "work", "rep"]);
 const REST_ROLES = new Set(["recovery", "rest", "float", "jog"]);
 
+/**
+ * THE FORGOTTEN WATCH (2026-08-27).
+ *
+ * A runner finishes their reps, stops, stands around talking, and only then
+ * jogs a cooldown — with the watch still running the whole time. The device
+ * records that as a segment, and it has a duration and a distance and
+ * therefore a "pace", but it is not a pace. It is a break.
+ *
+ * Measured on this athlete's quality sessions: 148 of 424 rest-minutes sit in
+ * blocks slower than 30:00/mi, including one block of 1751s — twenty-nine
+ * minutes — at 153:36/mi. That is not recovery, it is a stopped clock that
+ * nobody stopped.
+ *
+ * It is not harmless, and it fails in the damaging direction. `effectiveSeconds
+ * = work / (1 + REST_DISCOUNT · restRatio)`, so counting a stand-around as rest
+ * SHRINKS the effective duration, which prices the session against a shorter,
+ * faster point on the curve, which inflates the ratio, which pushes a real
+ * workout past PLAUSIBLE_RATIO_MAX and throws it away. Leaving your watch on
+ * costs you the session.
+ *
+ * PACE ALONE CANNOT DECIDE THIS. A 60-second standing recovery between 200m
+ * reps covers ~0.04mi and reads as 25:00/mi — genuinely slow, genuinely rest,
+ * and genuinely prescribed. The tell is that it is short. So dead time is
+ * both: longer than any recovery a coach prescribes AND not locomotion.
+ *
+ * The pace half is athlete-relative on purpose. An absolute cutoff is the bug
+ * that made every rep of a 58:00 10K runner fall outside the rep-pace window
+ * (see MIN_REP_PACE below) — the same mistake one field over.
+ */
+const NOT_RUNNING_MULTIPLE = 2.5;
+const MAX_PRESCRIBED_REST_SECONDS = 300;
+
+/** Is this block locomotion at all, judged against the athlete's own pace? */
+function isDeadTime(
+  durationS: number | null | undefined,
+  distanceMiles: number | null | undefined,
+  currentPace: number,
+): boolean {
+  const dur = durationS ?? 0;
+  if (!(dur > MAX_PRESCRIBED_REST_SECONDS)) return false; // short = prescribed
+  const mi = distanceMiles ?? 0;
+  if (mi <= 0.01) return true;                            // long and stationary
+  return dur / mi > NOT_RUNNING_MULTIPLE * currentPace;   // long and not running
+}
+
 /** Session types that never carry a fitness statement, whatever the paces. */
 const NON_QUALITY_TYPES = new Set([
   "easy", "recovery", "long_run", "rest", "cross_train", "strength", "walk", "warmup", "cooldown",
@@ -389,6 +436,7 @@ interface NormalizedRep {
  */
 function normalizedWorkReps(
   session: ParsedSession,
+  currentPace: number,
 ): { reps: NormalizedRep[]; heatNormalized: boolean } {
   const hasWeather = session.tempF != null && session.dewPointF != null;
   const reps: NormalizedRep[] = [];
@@ -403,6 +451,12 @@ function normalizedWorkReps(
     // Prefer the block's own pace; fall back to geometry when it is "—".
     let pace = parsePaceMSS(b.avgPacePerMile) ?? seconds / miles;
     if (!(pace >= MIN_REP_PACE && pace <= MAX_REP_PACE)) continue;
+    // A "work rep" slower than 2.5x the athlete's own pace is not work — it is
+    // the forgotten watch again, this time mislabelled as effort rather than
+    // rest. `detectWorkBouts` emits these: a real 2026-05-02 row carries a
+    // 0.25mi "work_rep" at 22:33/mi. Athlete-relative, so a 58:00 10K runner's
+    // genuine reps are never caught by it.
+    if (pace > NOT_RUNNING_MULTIPLE * currentPace) continue;
 
     if (hasWeather) {
       const neutral = heatNeutralPace(pace, session.tempF!, session.dewPointF!, miles);
@@ -422,20 +476,29 @@ function normalizedWorkReps(
 }
 
 /** Rest carried BETWEEN work reps — leading warm-up and trailing jog excluded. */
-function restBetweenReps(blocks: readonly ParsedBlock[]): number {
+function restBetweenReps(
+  blocks: readonly ParsedBlock[],
+  currentPace: number,
+): { rest: number; deadTime: number } {
   const workIdx: number[] = [];
   blocks.forEach((b, i) => {
     if (WORK_ROLES.has(String(b.role ?? "").toLowerCase())) workIdx.push(i);
   });
-  if (workIdx.length < 2) return 0;
+  if (workIdx.length < 2) return { rest: 0, deadTime: 0 };
   const first = workIdx[0];
   const last = workIdx[workIdx.length - 1];
   let rest = 0;
+  let deadTime = 0;
   for (let i = first + 1; i < last; i++) {
     const role = String(blocks[i].role ?? "").toLowerCase();
-    if (REST_ROLES.has(role)) rest += blocks[i].durationS ?? 0;
+    if (!REST_ROLES.has(role)) continue;
+    const dur = blocks[i].durationS ?? 0;
+    // A stopped clock is neither work nor recovery. Counting it as rest
+    // shrinks the effective duration and throws the session away.
+    if (isDeadTime(dur, blocks[i].distanceMiles, currentPace)) deadTime += dur;
+    else rest += dur;
   }
-  return rest;
+  return { rest, deadTime };
 }
 
 /** Mean HR of the last third of reps minus the first third. */
@@ -469,7 +532,7 @@ export function estimateFromSession(
   if (NON_QUALITY_TYPES.has(type)) return { estimate: null, reason: `type "${type}" carries no fitness statement` };
   if (!session.blocks || session.blocks.length === 0) return { estimate: null, reason: "no parsed blocks" };
 
-  const { reps, heatNormalized } = normalizedWorkReps(session);
+  const { reps, heatNormalized } = normalizedWorkReps(session, currentPace);
   if (reps.length === 0) return { estimate: null, reason: "no usable work reps" };
 
   const workSeconds = reps.reduce((s, r) => s + r.seconds, 0);
@@ -481,7 +544,7 @@ export function estimateFromSession(
     };
   }
 
-  const restSeconds = restBetweenReps(session.blocks);
+  const { rest: restSeconds, deadTime: deadTimeSeconds } = restBetweenReps(session.blocks, currentPace);
   const restRatio = workSeconds > 0 ? restSeconds / workSeconds : 0;
   const effectiveSeconds = workSeconds / (1 + REST_DISCOUNT * restRatio);
 
@@ -510,6 +573,9 @@ export function estimateFromSession(
   else caveats.push("HR recorded but not yet folded into the pace math");
   if (session.confidence < 0.6) caveats.push(`parser confidence ${session.confidence.toFixed(2)}`);
   if (restSeconds === 0 && reps.length > 1) caveats.push("no rest blocks between reps — treated as continuous");
+  if (deadTimeSeconds > 0) {
+    caveats.push(`${Math.round(deadTimeSeconds / 60)} min of stopped clock excluded (watch left running)`);
+  }
 
   const why = [
     `${reps.length} work rep${reps.length === 1 ? "" : "s"}`,
@@ -533,6 +599,7 @@ export function estimateFromSession(
       workMiles,
       restSeconds,
       restRatio,
+      deadTimeSeconds,
       effectiveSeconds,
       repCount: reps.length,
       meanHr,

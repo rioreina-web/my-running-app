@@ -309,6 +309,7 @@ const est = (date: string, tenK: number, effectiveSeconds = 1700): ZoneEstimate 
   workMiles: 6,
   restSeconds: 600,
   restRatio: 0.33,
+  deadTimeSeconds: 0,
   effectiveSeconds,
   repCount: 10,
   meanHr: 164,
