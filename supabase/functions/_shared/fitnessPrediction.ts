@@ -205,6 +205,16 @@ export interface PredictionInput {
    */
   seededRaces?: DetectedRace[];
   /**
+   * Race-day weather for races of ANY age (2026-08-27, G0-FINISH §2.1).
+   *
+   * `weatherByDate` is otherwise built from the 180-day training window, so a
+   * PR older than that read as "no weather on file" and normalized to its RAW
+   * time — fail-open, but systematically weakest exactly where the PR floor
+   * most needs strength. Races are few and known by id, so the caller fetches
+   * their weather all-time. Optional; absent degrades to the old behavior.
+   */
+  raceWeather?: Array<{ date: string; weather: WeatherInput }>;
+  /**
    * running_workout_laps rows for the last ~21 days (server-only signal).
    * Optional — the model works identically without them.
    */
@@ -1366,7 +1376,18 @@ export function generateFitnessPrediction(input: PredictionInput): FitnessPredic
   const laps = input.laps ?? [];
 
   // Conditions by date — normalizes race + segment paces to neutral (Part 2A).
+  //
+  // Race-day weather is laid down FIRST and the training window overlays it.
+  // For a race inside 180 days both come from the same `weather_actual` row, so
+  // the overlay is a no-op; outside it, the race entry is the only reading
+  // there is. Without this every PR older than the window normalized to its raw
+  // time and reported `conditions_known: false` (G0-FINISH §2.1).
   const weatherByDate = new Map<string, WeatherInput>();
+  for (const rw of input.raceWeather ?? []) {
+    if (Number.isFinite(rw.weather.tempF) && Number.isFinite(rw.weather.dewPointF)) {
+      weatherByDate.set(rw.date, rw.weather);
+    }
+  }
   for (const log of extendedVoiceLogs) {
     const wx = log.weather;
     if (wx && Number.isFinite(wx.tempF) && Number.isFinite(wx.dewPointF)) {

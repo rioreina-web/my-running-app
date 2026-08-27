@@ -148,12 +148,39 @@ being used.
       Store `neutral_seconds` + `conditions` on `race_result` at confirmation.
       Three call sites re-derive today; storing it once kills the window gap for
       the anchor, the floor, and `prediction_scores` together.
-- [ ] Until that lands, widen the weather fetch for *race* rows specifically —
-      races are few and known by id, so fetch their weather all-time rather than
-      inside the 180-day training window.
+      **Still open, and genuinely coupled to the blocked confirm/dismiss UI** —
+      there is no confirmation event to hang it on today (all five races are
+      unconfirmed `source='detected'` rows). Do it when the UI lands.
+- [x] **DONE 2026-08-27.** Widened the weather fetch for race rows: the
+      all-time race query now selects `weather_actual`, and `raceWeather` on
+      `PredictionInput` seeds `weatherByDate` *before* the training window
+      overlays it. Same argument as the all-time race-lap fetch that already
+      sits ten lines below it — races are few and known by id.
 
 **Done when:** `conditions_known` is true for every PR that has a
 `weather_actual` row, and the 5K floor tightens to its neutral equivalent.
+→ **Both, verified on the live account:**
+
+```
+tenK   PR 1880 (2026-02-07)  floor 32:52   conditions_known: TRUE
+mara   PR 8563 (2025-01-19)  floor 2:30:52 conditions_known: TRUE
+half   PR 4119 (2024-12-08)  floor 1:12:38 conditions_known: TRUE
+5K     PR  905→864 (2024-08-08)  floor 16:00 → 15:16  conditions_known: TRUE
+```
+
+All five race rows carry `weather_actual`. Only the 5K moved, which is the
+correct outcome — it is the only hot one (77.7°F / 72.4° dew, −41s). The other
+three were genuinely cool races, so neutral equals raw. **That distinction is
+the point:** "we know it was cool" and "we have no idea" produce the same
+number and must not produce the same claim; one of the four new tests pins
+exactly that, because it is the easy thing to collapse later.
+
+Effect on the current estimate: **none.** Race scores are bit-identical and
+session residuals move ≤0.01% (MAPE 2.23% → 2.22%, inside the sub-1% noise
+floor the harness header warns about). This is a latent-safety fix — the floor
+was not binding today. It binds when the athlete detrains, which is precisely
+when a 44-seconds-too-loose 5K floor would have let the model publish a time
+the athlete could not run.
 
 ### 2.2 — Two `weather_actual` shapes, one reader  *(0.25d)*
 

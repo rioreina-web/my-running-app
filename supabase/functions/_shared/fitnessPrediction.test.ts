@@ -1344,3 +1344,97 @@ Deno.test("athlete-aware cap: missing experience level degrades to the conservat
     (advanced.diagnostics as any).build_credit_athlete_scaling.experience_cap,
   );
 });
+
+// ── all-time race weather (G0-FINISH §2.1) ──────────────────────────────────
+
+/**
+ * `weatherByDate` is built from the 180-day training window, so a PR older than
+ * that used to normalize to its RAW time and report `conditions_known: false`.
+ * Fail-open — a hot race's raw time is SLOWER than its neutral, so the floor
+ * loosened — but systematically weakest exactly where the PR floor most needs
+ * strength. The real case: a 15:05 5K run at 77.7°F / 72.4° dew, two years old,
+ * whose floor sat at 16:00 instead of 15:16.
+ *
+ * `raceWeather` carries race-day conditions for races of any age. These pin
+ * that it is READ, that it only ever tightens, and that a cool race is
+ * distinguishable from a race with no weather on file at all.
+ */
+const OLD_5K = (): PredictionInput => ({
+  workouts: [],
+  // The anchor must be OLDER than the 16-week primary window, or the PR floor
+  // is suppressed entirely (a fresh race outranks a floor, by design).
+  voiceLogs: [
+    log(daysAgo(140), "Raced the 10k, finish time 33:00."),
+    log(daysAgo(5), "Evening tempo.", {
+      parsedStructure: {
+        confidence: 0.7,
+        type: "interval",
+        equivalentRacePace: { pacePerMile: "7:30", distanceKey: "tenK" },
+        workSummary: { totalDistanceMi: 4 },
+      },
+    }),
+  ],
+  now: NOW,
+  // Two years old — far outside any training window, so nothing else can
+  // supply its conditions.
+  seededRaces: [{
+    raceType: "fiveK",
+    date: "2024-08-08",
+    totalTimeSeconds: 905,
+    paceSecondsPerMile: 905 / 3.107,
+  }],
+});
+
+const floorFor = (r: ReturnType<typeof generateFitnessPrediction>, distance: string) => {
+  const pf = r?.diagnostics?.pr_floor as { floors?: Array<Record<string, unknown>> } | undefined;
+  return pf?.floors?.find((f) => f.distance === distance);
+};
+
+Deno.test("a PR older than the training window is normalized from raceWeather", () => {
+  const hot = generateFitnessPrediction({
+    ...OLD_5K(),
+    raceWeather: [{ date: "2024-08-08", weather: { tempF: 77.7, dewPointF: 72.4 } }],
+  });
+  const f = floorFor(hot, "fiveK");
+  assert(f, "expected a 5K floor");
+  assertEquals(f.conditions_known, true);
+  // 15:05 at 72.4° dew is not a 15:05 performance.
+  assert(
+    (f.pr_seconds as number) < 905,
+    `expected the hot 5K to normalize faster than raw, got ${f.pr_seconds}`,
+  );
+});
+
+Deno.test("without raceWeather the same PR falls back to raw, and says so", () => {
+  const f = floorFor(generateFitnessPrediction(OLD_5K()), "fiveK");
+  assert(f, "expected a 5K floor");
+  assertEquals(f.conditions_known, false);
+  assertEquals(f.pr_seconds, 905);
+});
+
+Deno.test("race weather only ever TIGHTENS the floor — never loosens it", () => {
+  const raw = floorFor(generateFitnessPrediction(OLD_5K()), "fiveK");
+  const withWx = floorFor(
+    generateFitnessPrediction({
+      ...OLD_5K(),
+      raceWeather: [{ date: "2024-08-08", weather: { tempF: 77.7, dewPointF: 72.4 } }],
+    }),
+    "fiveK",
+  );
+  assert((withWx!.floor_seconds as number) < (raw!.floor_seconds as number));
+});
+
+Deno.test("a COOL race is conditions-known with no correction — not the same as no weather", () => {
+  // The distinction the whole fix rests on: "we know it was cool" and "we have
+  // no idea what it was" produce the same number and must not produce the same
+  // claim. Three of the four real PRs are exactly this case.
+  const f = floorFor(
+    generateFitnessPrediction({
+      ...OLD_5K(),
+      raceWeather: [{ date: "2024-08-08", weather: { tempF: 47.5, dewPointF: 36.3 } }],
+    }),
+    "fiveK",
+  );
+  assertEquals(f!.conditions_known, true);
+  assertEquals(f!.pr_seconds, 905);
+});

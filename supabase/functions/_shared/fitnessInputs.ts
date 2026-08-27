@@ -63,6 +63,7 @@ import {
   type PriorSnapshotInput,
   type RaceType,
   type VoiceLogInput,
+  type WeatherInput,
   type WorkoutInput,
 } from "./fitnessPrediction.ts";
 
@@ -108,6 +109,8 @@ export interface BuiltPredictionInput {
     logRowCount: number;
     lapRowCount: number;
     priorSnapshotCount: number;
+    /** Race rows that carried usable all-time weather (G0-FINISH §2.1). */
+    raceWeatherCount: number;
     efficiencySignalUsed: boolean;
   };
 }
@@ -199,15 +202,29 @@ export async function buildPredictionInput(
   // speed evidence and the PR display, never the current-fitness anchor.
   let raceQ = db
     .from("training_logs")
-    .select("id, workout_date, race_result")
+    .select("id, workout_date, race_result, weather_actual")
     .eq("user_id", userId)
     .not("race_result", "is", null);
   if (asOfIso) raceQ = raceQ.lt("created_at", asOfIso);
   const { data: raceRows } = await raceQ.order("workout_date", { ascending: false }).limit(100);
+  // Race-day weather, ALL TIME (2026-08-27, G0-FINISH §2.1). The model's
+  // conditions map is built from the 180-day training window, so every PR older
+  // than that read as "no weather on file" — all four of this athlete's, since
+  // Feb 7 crossed the line in August. That is fail-open but systematically
+  // weakest where it should be strongest: the 5K PR was run at 72.4° dew, so
+  // its true floor sits ~30s faster than the raw time being used.
+  //
+  // Fixed here rather than per-consumer: the anchor, the PR floor and
+  // prediction_scores all read the same map. Races are few and known by id, so
+  // fetching their weather all-time costs nothing — the same argument that
+  // already justifies the separate all-time race-lap fetch below.
+  const raceWeather: Array<{ date: string; weather: WeatherInput }> = [];
   for (const row of raceRows ?? []) {
     const date = toDay(row.workout_date as string);
     if (!date) continue;
     if (row.id) workoutDateById.set(String(row.id), date);
+    const rwx = mapWeather(row.weather_actual);
+    if (rwx) raceWeather.push({ date, weather: rwx });
     const rr = row.race_result as { distance?: string; finish_time_seconds?: number } | null;
     if (rr && typeof rr.finish_time_seconds === "number") {
       const rt = distanceToRaceType(String(rr.distance ?? ""));
@@ -356,6 +373,7 @@ export async function buildPredictionInput(
       priorSnapshots,
       plan,
       seededRaces,
+      raceWeather,
       laps,
       efficiencySignal,
       experienceLevel,
@@ -367,6 +385,7 @@ export async function buildPredictionInput(
       logRowCount: (logRows ?? []).length,
       lapRowCount: laps.length,
       priorSnapshotCount: priorSnapshots.length,
+      raceWeatherCount: raceWeather.length,
       efficiencySignalUsed: includeEf && efficiencySignal !== null,
     },
   };
