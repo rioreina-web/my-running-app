@@ -609,6 +609,63 @@ All three. A mixed gate 1 is not a pass.
 
 ---
 
+## 11 · The verdict: n=23 cannot tell the two models apart  *(2026-08-27)*
+
+§10's re-specified gate was run. **It fails — and it falsified the hypothesis
+§10 was built on.**
+
+| horizon | shipped | estimator | delta |
+|---|---|---|---|
+| −1d | 2.28% | 2.49% | +0.22pp |
+| −14d | 2.26% | 2.43% | +0.17pp |
+| **−28d (gate 2b)** | **2.20%** | **2.50%** | **+0.29pp** |
+| −56d | 2.27% | 2.67% | +0.40pp |
+
+§10 predicted the stiff model would degrade at longer horizons by carrying a
+stale level through a training block. **It does not.** Its advantage *widens*
+with horizon, and the curves never cross — so 28d was not load-bearing and the
+re-specification was not goalpost-moving, it was simply wrong.
+
+Taken alone that reads as "the estimator is worse." It is not:
+
+```
+paired bootstrap (n=23): delta 0.31pp, 95% CI [-0.07, 0.67]
+estimator worse on 14/23 sessions   (coin flip = 11.5)
+```
+
+**The confidence interval spans zero.** On this evidence the two models are
+statistically indistinguishable. Neither "the estimator tracks fitness better"
+nor "the clamps encode something real" is supported. The gate is not failable
+OR passable at n=23 — it lacks the power to decide, and a 14/23 split is what
+noise looks like.
+
+### What this settles
+
+1. **Do not ship the estimator.** There is no evidence it is better, and the
+   athlete-facing number does not change on a coin flip.
+2. **Do not delete it.** There is no evidence it is worse, it is 20 tests
+   green, and rebuilding it later costs more than keeping it parked.
+3. **The blocker is statistical power, not code and not parsing.** §9 closed
+   every cheap route to more sessions on this athlete. More power means more
+   ATHLETES — Phase 3 partial pooling, which arrives with its own loss
+   function to pool against.
+
+### The honest shape of the whole exercise
+
+Phase 0 was worth it and stands: the harness, the baseline, the race-weather
+fix, the EF versioning, the forgotten-watch fix. Phase 1's estimator is built,
+tested and measured, and the measurement says "cannot tell".
+
+That is a real result, not a failure to reach one. The alternative — shipping
+the redesign because its architecture is nicer — is precisely how eight clamps
+arrived, each defensible against the evidence available at the time. The
+redesign does not get an exemption from its own thesis.
+
+**Phase 1 is BLOCKED on evidence, not on engineering.** Re-run `--estimator`
+when there is a second athlete with real history.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code

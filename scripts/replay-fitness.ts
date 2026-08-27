@@ -641,26 +641,86 @@ if (useEstimator) {
     );
   }
 
-  // ── gate 2: session residuals, scored the SAME way for both ──────────────
-  // Re-price every scored session against the estimator's state at the same
-  // moment the old chain was priced at, so the two MAPEs are comparable.
-  const newErr: number[] = [];
-  for (const r of residuals) {
-    const n = estBefore(parseDay(r.date));
-    if (!n?.pace) continue;
-    // The residual is a ratio statement; re-express it against the new level.
-    const predicted = r.predictedPace * (n.pace / r.anchorPace);
-    newErr.push((predicted - r.neutralWorkPace) / r.neutralWorkPace * 100);
+  // ── gate 2: session residuals at several horizons (§10) ──────────────────
+  // Each session priced against the estimate standing H days BEFORE it, for
+  // both chains identically. Gate 2b (H=28) is decisive; H=1 stays reported
+  // but non-decisive. Reporting the whole curve is what makes the choice of 28
+  // checkable rather than asserted — if the two cross between 1 and 28, the
+  // horizon is doing the work and the re-specification is invalid.
+  const mape = (xs: number[]) => xs.length === 0 ? NaN : xs.reduce((s, x) => s + Math.abs(x), 0) / xs.length;
+  const mean = (xs: number[]) => xs.length === 0 ? NaN : xs.reduce((s, x) => s + x, 0) / xs.length;
+
+  console.log(`\n  GATE 2 — session residuals by horizon (H = days before the session)`);
+  console.log(`  ${pad("horizon", 10)}${padS("n", 4)}${padS("shipped", 11)}${padS("estimator", 12)}${padS("delta", 10)}`);
+  const RESIDUAL_HORIZONS = [1, 14, 28, 56];
+  const byHorizon = new Map<number, { old: number; nw: number; n: number }>();
+  for (const H of RESIDUAL_HORIZONS) {
+    const oldErr: number[] = [];
+    const newErr: number[] = [];
+    for (const r of residuals) {
+      const target = new Date(parseDay(r.date).getTime() - (H - 1) * DAY);
+      const o = stepBefore(target);
+      const n = estBefore(target);
+      // Both chains must have a state at this horizon, or the session counts
+      // for neither — otherwise the two columns score different sessions.
+      if (!o?.pred || !n?.pace) continue;
+      // The residual is a ratio statement about the level; re-express the
+      // session's predicted pace against each chain's level at that moment.
+      oldErr.push((r.predictedPace * (o.pred.estimated10kPaceSeconds / r.anchorPace) - r.neutralWorkPace) / r.neutralWorkPace * 100);
+      newErr.push((r.predictedPace * (n.pace / r.anchorPace) - r.neutralWorkPace) / r.neutralWorkPace * 100);
+    }
+    byHorizon.set(H, { old: mape(oldErr), nw: mape(newErr), n: oldErr.length });
+    const d = mape(newErr) - mape(oldErr);
+    const flag = H === 28 ? "  ← GATE 2b (decisive)" : H === 1 ? "  ← reported, not decisive" : "";
+    console.log(
+      `  ${pad(`-${H}d`, 10)}${padS(String(oldErr.length), 4)}${padS(`${mape(oldErr).toFixed(2)}%`, 11)}` +
+      `${padS(`${mape(newErr).toFixed(2)}%`, 12)}${padS(`${d > 0 ? "+" : ""}${d.toFixed(2)}pp`, 10)}${flag}`,
+    );
   }
-  const mape = (xs: number[]) => xs.reduce((s, x) => s + Math.abs(x), 0) / xs.length;
-  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
-  const oldErr = residuals.map((r) => r.errPct);
-  console.log(`\n  GATE 2 — session residuals (n=${newErr.length})`);
-  console.log(`  ${pad("", 14)}${padS("MAPE", 10)}${padS("bias", 10)}`);
-  console.log(`  ${pad("shipped", 14)}${padS(`${mape(oldErr).toFixed(2)}%`, 10)}${padS(`${mean(oldErr) > 0 ? "+" : ""}${mean(oldErr).toFixed(2)}%`, 10)}`);
-  console.log(`  ${pad("estimator", 14)}${padS(`${mape(newErr).toFixed(2)}%`, 10)}${padS(`${mean(newErr) > 0 ? "+" : ""}${mean(newErr).toFixed(2)}%`, 10)}`);
-  const delta = mape(newErr) - mape(oldErr);
-  console.log(`  ${pad("", 14)}${padS(`${delta > 0 ? "+" : ""}${delta.toFixed(2)}pp`, 10)}  ${delta < 0 ? "← estimator better" : "← estimator WORSE"}`);
+  const g2 = byHorizon.get(28)!;
+  console.log(`\n  GATE 2b verdict: ${g2.nw < g2.old ? "PASS" : "FAIL"} ` +
+    `(estimator ${g2.nw.toFixed(2)}% vs shipped ${g2.old.toFixed(2)}%, n=${g2.n})`);
+  // The cherry-pick check, stated in §10 and computed rather than asserted.
+  const signs = RESIDUAL_HORIZONS.map((H) => Math.sign(byHorizon.get(H)!.nw - byHorizon.get(H)!.old));
+  const crosses = new Set(signs.filter((x) => x !== 0)).size > 1;
+  console.log(`  horizon check: the two curves ${crosses ? "CROSS — the choice of 28d is doing the work (§10 invalidation)" : "do not cross; 28d is not load-bearing"}`);
+
+  // Is a 0.3pp gap on 23 sessions distinguishable from noise? A paired
+  // bootstrap answers it; "the estimator is worse" and "we cannot tell" are
+  // very different findings and the MAPE alone does not separate them.
+  {
+    const pairs: Array<[number, number]> = [];
+    for (const r of residuals) {
+      const target = new Date(parseDay(r.date).getTime() - 27 * DAY);
+      const o = stepBefore(target);
+      const n = estBefore(target);
+      if (!o?.pred || !n?.pace) continue;
+      pairs.push([
+        Math.abs((r.predictedPace * (o.pred.estimated10kPaceSeconds / r.anchorPace) - r.neutralWorkPace) / r.neutralWorkPace * 100),
+        Math.abs((r.predictedPace * (n.pace / r.anchorPace) - r.neutralWorkPace) / r.neutralWorkPace * 100),
+      ]);
+    }
+    // Deterministic bootstrap: a fixed LCG, so the number is reproducible.
+    let seed = 12345;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const diffs: number[] = [];
+    for (let b = 0; b < 4000; b++) {
+      let so = 0, sn = 0;
+      for (let i = 0; i < pairs.length; i++) {
+        const p = pairs[Math.floor(rnd() * pairs.length)];
+        so += p[0]; sn += p[1];
+      }
+      diffs.push((sn - so) / pairs.length);
+    }
+    diffs.sort((a, b) => a - b);
+    const lo = diffs[Math.floor(0.025 * diffs.length)];
+    const hi = diffs[Math.floor(0.975 * diffs.length)];
+    const worse = pairs.filter(([o, n]) => n > o).length;
+    console.log(`  paired bootstrap (n=${pairs.length}): delta ${(diffs.reduce((a, x) => a + x, 0) / diffs.length).toFixed(2)}pp, ` +
+      `95% CI [${lo.toFixed(2)}, ${hi.toFixed(2)}]`);
+    console.log(`  estimator worse on ${worse}/${pairs.length} sessions · ` +
+      `${lo > 0 ? "CI excludes zero — a real loss" : "CI SPANS ZERO — cannot distinguish from noise"}`);
+  }
 
   // ── gate 3: does the pre-April window actually move? ─────────────────────
   const apr = races.find((r) => r.date.startsWith("2026-04"));
