@@ -548,6 +548,67 @@ it is a choice rather than a drift.
 
 ---
 
+## 10 · Re-specifying gate 2 — WRITTEN BEFORE RE-RUNNING  *(2026-08-27)*
+
+§9 left a decision: gate 2 is the weakest of the three measurements and the
+only one the estimator loses. Re-specifying a gate after seeing the score is
+the §5 trap. So the new gate is defined here, with its justification, and
+committed BEFORE the number behind it is known. If it fails, it fails.
+
+### The defect in gate 2 as written
+
+Gate 2 scores each session against the estimate standing ONE day before it.
+One-step-ahead prediction of a noisy observation around a slowly-moving level
+is won by predicting the mean and never moving. Stiffness is not incidentally
+advantaged here — it is the optimal strategy for this metric. The shipped
+model moves 0.9 s/mi across eight weeks and scores 2.28%; that is the metric
+rewarding the exact behaviour §1.3 indicts as the defect.
+
+A metric that a known-broken model wins is not measuring what it claims to.
+
+### The replacement
+
+The stiffness advantage is a property of the HORIZON, not of the residual.
+Ask instead: *what did the model think this athlete could run a month before
+they ran it?* A stiff model carries a stale level through a training block and
+is wrong at the end of it. A tracking model has followed the block and is
+right. Neither can win by refusing to move.
+
+**Gate 2 becomes session-residual MAPE at a 28-day horizon** — each session
+priced against the estimate that stood 28 days before it, same session set,
+same sign convention.
+
+- **Gate 2a (1-day)** stays reported, and is NOT decisive. Deleting the
+  measurement the estimator loses would be the trap wearing a disguise.
+- **Gate 2b (28-day)** is decisive. The estimator must beat the shipped model.
+- Both are reported at 1/14/28/56 days so the horizon's effect is visible
+  rather than asserted, and so a reader can see whether 28 was cherry-picked.
+
+### Why this is not moving the goalposts to the estimator's advantage
+
+The prediction it makes is falsifiable and it is not obviously true. If
+fitness is genuinely near-constant for this athlete over 28 days, the stiff
+model wins at every horizon and the estimator fails again — its extra
+movement would just be noise, and that is the honest verdict. The estimator
+only wins if its movement tracks something real.
+
+The one thing that would invalidate this: if the curves CROSS at some horizon
+between 1 and 28, the choice of 28 is doing the work rather than the
+principle. That is visible in the table below by construction.
+
+### Pass condition, fixed now
+
+1. Gate 1 — Feb and Apr race errors hold or improve. *(already: 2.07→1.28
+   improved, 3.03→3.77 worse — so this gate is currently MIXED and must be
+   read as such, not as a pass.)*
+2. Gate 2b — 28-day session MAPE strictly better than the shipped model's.
+3. Gate 3 — the 56-day pre-April window moves materially. *(already: 0.9 →
+   4.4 s/mi.)*
+
+All three. A mixed gate 1 is not a pass.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code
