@@ -82,6 +82,29 @@ export interface LlmOpts {
   timeoutMs?: number;
 }
 
+/**
+ * Did this answer keep every offset the coach wrote?
+ *
+ * `RawStep` carries the model's flat schema fields, so this reads those rather
+ * than the validated shape — the point is to catch a bad answer BEFORE it is
+ * accepted, not after.
+ */
+function keptItsOffsets(input: string, steps: RawStep[]): boolean {
+  const carried = steps.map((s) => {
+    const v = (s as { paceAdjustmentValue?: number | null }).paceAdjustmentValue;
+    const t = (s as { paceAdjustmentType?: string | null }).paceAdjustmentType;
+    if (v == null || v === 0) return null;
+    return `${v > 0 ? "+" : "-"}${Math.abs(v)}${t === "percent" ? "%" : ""}`;
+  });
+  const written = input.matchAll(
+    /(?:MP|HMP?|LT|5k|10k|3k|mile|marathon|threshold|tempo)?\s*(?<![\d])([+-])(\d+(?:\.\d+)?)\s*(%)?(?!['′"″\d])/gi,
+  );
+  for (const m of written) {
+    if (!carried.includes(`${m[1]}${m[2]}${m[3] ? "%" : ""}`)) return false;
+  }
+  return true;
+}
+
 export async function parseWithModel(
   input: string,
   opts: LlmOpts = {},
@@ -91,7 +114,23 @@ export async function parseWithModel(
   // JSON; at temperature 0 a retry reproduces the identical loop and buys
   // nothing. A small nudge breaks it. Never more than one retry — a coach is
   // waiting, and the grammar's answer is right there as a fallback.
-  return (await attempt(input, opts, 0)) ?? (await attempt(input, opts, 0.3));
+  //
+  // The retry now also fires on a SILENTLY WRONG answer, not just an unparseable
+  // one. Measured 2026-08-28: on "16 x K alternating MP-3% & MP+5%" — its own
+  // worked example — flash-lite returned sixteen steps at plain MP on two runs
+  // of three, and flash did the same, every time reporting no error. A dropped
+  // offset is not a cosmetic loss: it turns eight hard kilometres and eight
+  // floats into sixteen identical ones. Since the same call succeeds sometimes,
+  // a second roll at a different temperature is worth one round trip.
+  const first = await attempt(input, opts, 0);
+  if (first && keptItsOffsets(input, first.steps)) return first;
+
+  const second = await attempt(input, opts, 0.3);
+  if (second && keptItsOffsets(input, second.steps)) return second;
+
+  // Neither kept them. Prefer whichever answered at all — the caller marks the
+  // affected steps unresolved rather than presenting this as a clean parse.
+  return second ?? first;
 }
 
 async function attempt(

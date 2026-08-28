@@ -27,7 +27,11 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { llmBudgetAllows } from "../_shared/llm-budget.ts";
 import { parseWithModel } from "../_shared/workout-shorthand-llm.ts";
-import { validateSteps, type ValidatedStep } from "../_shared/workout-step-validator.ts";
+import {
+  uncoveredOffsets,
+  validateSteps,
+  type ValidatedStep,
+} from "../_shared/workout-step-validator.ts";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -648,6 +652,24 @@ Deno.serve(async (req: Request) => {
           unparsed: llm.unparsed,
         });
         if (validated.steps.length > 0) {
+          // Last line of defence. `parseWithModel` already retried once when the
+          // first answer lost an offset; if it is STILL missing, the coach must
+          // be told rather than handed sixteen identical kilometres that look
+          // like a finished session. An unanswered question is always cheaper
+          // than a confident wrong answer — the same rule the prompt opens with.
+          const stillMissing = uncoveredOffsets(input, validated.steps);
+          if (stillMissing.length > 0) {
+            validated.warnings.push(
+              `the model dropped ${stillMissing.join(", ")} — confirm the pace on each rep before saving`,
+            );
+            for (const s of validated.steps) {
+              if (!s.paceAdjustment && s.unresolvedReasonCode == null) {
+                s.unresolvedReasonCode = "ambiguous";
+                s.unresolved = "an offset written in the text did not reach this step";
+              }
+            }
+          }
+
           const legacySteps = validated.steps.map(toLegacyStep);
           return json({
             ...legacyEnvelope(legacySteps, input),

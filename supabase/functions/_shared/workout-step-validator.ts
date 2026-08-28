@@ -308,3 +308,49 @@ function fmtPace(secPerMile: number): string {
   const s = Math.round(secPerMile % 60);
   return `${m}:${String(s).padStart(2, "0")}/mi`;
 }
+
+// ── Did the answer keep what the coach wrote? ───────────────
+
+/**
+ * Pace offsets present in the source that no emitted step is carrying.
+ *
+ * The model is the reason this exists on the server side. Asked for
+ * "16 x K alternating MP-3% & MP+5%" — a string written verbatim as a worked
+ * example in its own prompt, with paceAdjustmentType/paceAdjustmentValue in a
+ * constrained response schema — gemini-3.5-flash-lite returned sixteen steps at
+ * plain MP on two runs out of three, and gemini-3.5-flash did the same. It
+ * reports `errors: []` and no unresolved reason while doing it, so the caller
+ * sees sixteen tidy steps and a session the coach never prescribed.
+ *
+ * Neither a better prompt nor a bigger model fixed it (both measured
+ * 2026-08-28). So verify the output against the input instead of trusting
+ * either layer's self-report: an offset written in the text that reached no
+ * step means the answer is wrong however confident it looks.
+ *
+ * Mirrors `uncoveredPaceOffsets` in web/src/components/coach/workout-nl-parser.ts.
+ * Two implementations because the web grammar runs in the browser and this runs
+ * in Deno; they must stay in step.
+ */
+const ZONE_WORDS_RE = "MP|HMP?|LT|5k|10k|3k|mile|marathon|threshold|tempo|easy|steady|moderate|medium|recovery";
+
+export function uncoveredOffsets(
+  text: string,
+  steps: ReadonlyArray<Pick<ValidatedStep, "paceAdjustment">>,
+): string[] {
+  // Sign glued to its number, so "MP + 2mi @ HM" (a separator) and "8-12m" (a
+  // range) and "-5' rec" (a duration) are not read as offsets.
+  const written = text.matchAll(
+    new RegExp(`(?:${ZONE_WORDS_RE})?\\s*(?<![\\d])([+-])(\\d+(?:\\.\\d+)?)\\s*(%)?(?!['′"″\\d])`, "gi"),
+  );
+  const carried = steps.map((s) => {
+    const a = s.paceAdjustment;
+    if (!a) return null;
+    return `${a.value > 0 ? "+" : "-"}${Math.abs(a.value)}${a.type === "percent" ? "%" : ""}`;
+  });
+  const missing: string[] = [];
+  for (const m of written) {
+    const want = `${m[1]}${m[2]}${m[3] ? "%" : ""}`;
+    if (!carried.includes(want)) missing.push(want);
+  }
+  return [...new Set(missing)];
+}
