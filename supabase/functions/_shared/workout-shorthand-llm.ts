@@ -66,7 +66,21 @@ const RESPONSE_SCHEMA = {
           // returned unterminated JSON. An enum makes that unrepresentable.
           unresolved: { type: "string", enum: ["no_pace_written", "effort_word_not_a_zone", "progression_without_paces", "ambiguous"], nullable: true },
         },
-        required: ["stepType", "durationType", "durationValue"],
+        // The pace fields are REQUIRED, not optional, and that is the fix for
+        // the offset-dropping. They are still `nullable`, so "no offset here"
+        // remains expressible — but the model must now emit the key and decide,
+        // instead of quietly omitting it. Left optional, flash-lite returned
+        // sixteen steps at plain MP on two runs of three and flash on every
+        // run, always by OMISSION and never by getting the number wrong. That
+        // asymmetry is the tell: it was skipping the field, not misreading it.
+        required: [
+          "stepType",
+          "durationType",
+          "durationValue",
+          "paceZone",
+          "paceAdjustmentType",
+          "paceAdjustmentValue",
+        ],
       },
     },
     workoutNote: { type: "string", nullable: true },
