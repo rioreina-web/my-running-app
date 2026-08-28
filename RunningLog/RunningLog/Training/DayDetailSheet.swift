@@ -1487,6 +1487,19 @@ struct WorkshopView: View {
             .steps(fromShorthand: result)
             .map { $0.toWorkoutStep(racePaceSeconds: racePaceSeconds, equivalentPaces: equiv) }
 
+        // Never overwrite a real workout with a failed parse.
+        //
+        // The server's own grammar answers whenever the model is unavailable —
+        // no key, exhausted budget, a timeout — and on this coach's plans it is
+        // very weak: 125 of 137 real workouts came back with zero total
+        // distance. Applying that replaces a prescribed session with an empty
+        // one, and the coach's text is still sitting in the box either way, so
+        // doing nothing is strictly better than doing that.
+        guard !steps.isEmpty, steps.contains(where: { $0.durationValue > 0 }) else {
+            isApplying = false
+            return
+        }
+
         let workoutType = ScheduledWorkoutType(rawValue: result.workoutType) ?? .intervals
 
         let workout = PlannedWorkout(

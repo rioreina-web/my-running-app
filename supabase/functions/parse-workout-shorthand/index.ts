@@ -373,9 +373,28 @@ function parseShorthand(input: string): ParseResult {
     }
   }
 
+  // A step with no duration is not a step — it is a parse failure wearing the
+  // shape of one, and shipping it is worse than shipping nothing.
+  //
+  // Measured against this coach's 137 real workouts, this grammar produced a
+  // total distance of ZERO on 125 of them, and on 10 of those it reported no
+  // error at all. Those answers reached the client as an ordinary 200 with a
+  // step list, so the plan editor built a workout of 0-mile steps and had no
+  // way to know the parse had failed. Dropping them here is what makes the
+  // `errors` array honest, and an empty `steps` is a signal the caller can act
+  // on — which a list of zeroes is not.
+  const runnable = steps.filter((s) => s.durationValue > 0);
+  const dropped = steps.length - runnable.length;
+  if (dropped > 0) {
+    errors.push(
+      `${dropped} ${dropped === 1 ? "segment" : "segments"} had no readable distance or duration and were dropped`,
+    );
+    runnable.forEach((s, i) => { s.order = i; });
+  }
+
   return {
-    steps,
-    ...legacyEnvelope(steps, input, workoutModifier),
+    steps: runnable,
+    ...legacyEnvelope(runnable, input, workoutModifier),
     estimatedDurationMinutes: null, // would need pace context to compute
     errors,
     raw: input,
