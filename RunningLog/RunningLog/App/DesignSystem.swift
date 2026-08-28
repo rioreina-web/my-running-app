@@ -80,23 +80,36 @@ extension Color {
 // MARK: - DripColors
 
 struct DripColors {
+    /// Which palette every token below resolves to.
+    ///
+    /// REDESIGN-SAFELY.md §5: "a completely new palette … can be applied to
+    /// the entire app by editing roughly 60 lines in one file." This is that
+    /// edit. Reading it from a view body registers with `@Observable`, so
+    /// flipping the skin in ☰ repaints live.
+    ///
+    /// NOT swapped, deliberately: `paceFast` and everything in
+    /// `PaceSpectrum.swift`. Blue owns pace, the ramp is ordered dark = fast,
+    /// and PALETTE.md is explicit that the ordering IS the information.
+    /// Recolouring it to match a rebrand would destroy the data.
+    private var wild: Bool { DripSkinStore.shared.skin == .wild }
+
     // Backgrounds - Warm paper tones
-    let background = Color(hex: "FAFAF9")       // Off-white paper (was warm cream F5F3F0)
-    let cardBackground = Color(hex: "FFFFFF")    // Clean white
-    let cardBackgroundElevated = Color(hex: "FFFFFF") // On off-white paper there is no room
+    var background: Color { wild ? Color(hex: "FFFFFF") : Color(hex: "FAFAF9") }       // Off-white paper (was warm cream F5F3F0)
+    var cardBackground: Color { wild ? Color(hex: "FFFFFF") : Color(hex: "FFFFFF") }    // Clean white
+    var cardBackgroundElevated: Color { wild ? Color(hex: "FFFFFF") : Color(hex: "FFFFFF") } // On off-white paper there is no room
                                                       // for a third surface — collapses to card.
-    let calendarBackground = Color(hex: "F0F0EE")    // Neutral inset well (was E8E4DF)
+    var calendarBackground: Color { wild ? Color(hex: "F2F2F2") : Color(hex: "F0F0EE") }    // Neutral inset well (was E8E4DF)
 
     // Accents - Burnt orange editorial pop
-    let coral = Color(hex: "E63946")             // Scarlet (primary accent)
+    var coral: Color { wild ? Color(hex: "EE2B24") : Color(hex: "E63946") }             // Scarlet (primary accent)
     // NOTE: the token is still *named* coral. Renaming it would touch ~5,900
     // callsites, so the rename is a separate mechanical pass — not this one.
-    let coralLight = Color(hex: "F2616C")        // Lighter variant
+    var coralLight: Color { wild ? Color(hex: "EE2B24") : Color(hex: "F2616C") }        // Lighter variant
     /// `--coral-deep` from `design-system/colors_and_type.css` (#B84420).
     /// The press / hover state of `coral` (e.g. the primary record button
     /// darkening). Per the design system, the one coral accent only ever
     /// deepens to this — it never shifts hue.
-    let coralDeep = Color(hex: "C42A36")         // Press/hover state
+    var coralDeep: Color { wild ? Color(hex: "D31F19") : Color(hex: "C42A36") }         // Press/hover state
     /// Deprecated alias for `coralDeep`. The old name read like a Stripe
     /// color, not the editorial press-state coral. Retained so any stray
     /// reference keeps compiling; migrate callsites to `coralDeep`.
@@ -106,15 +119,17 @@ struct DripColors {
     /// `rgba(212, 89, 42, 0.12)`. Capsule fill / tint behind the active
     /// segmented chip, the "Maintaining" pill, etc. Per the design system
     /// README, this is *"the only transparency in the system."*
-    let coralWash = Color(red: 230/255, green: 57/255, blue: 70/255, opacity: 0.12)
+    var coralWash: Color { wild
+        ? Color(red: 238/255, green: 43/255, blue: 36/255, opacity: 0.10)
+        : Color(red: 230/255, green: 57/255, blue: 70/255, opacity: 0.12) }
 
     // Mood colors - Muted editorial tones
-    let energized = Color(hex: "2D8A4E")         // Deep green
-    let positive = Color(hex: "4A9E6B")          // Sage green
-    let neutral = Color(hex: "9B9590")           // Warm gray
-    let tired = Color(hex: "C4873A")             // Amber
-    let struggling = Color(hex: "C45A3A")        // Terracotta
-    let injured = Color(hex: "B83A4A")           // Deep rose
+    var energized: Color { wild ? Color(hex: "12703A") : Color(hex: "2D8A4E") }         // Deep green
+    var positive: Color { wild ? Color(hex: "1F7A41") : Color(hex: "4A9E6B") }          // Sage green
+    var neutral: Color { wild ? Color(hex: "6B6B6B") : Color(hex: "9B9590") }           // Warm gray
+    var tired: Color { wild ? Color(hex: "A8560A") : Color(hex: "C4873A") }             // Amber
+    var struggling: Color { wild ? Color(hex: "B3261E") : Color(hex: "C45A3A") }        // Terracotta
+    var injured: Color { wild ? Color(hex: "8E1219") : Color(hex: "B83A4A") }           // Deep rose
 
     // Pace — rides the brand accent hue. This is the burnt-brick (Mile)
     // end of the universal pace ramp; the full ramp is PaceSpectrum.swift.
@@ -131,20 +146,20 @@ struct DripColors {
     // scarlet), and it rhymes with #0E1D4E, the Mile end of the pace ramp
     // that is already in the palette. Warm ink belonged to the cream paper;
     // on neutral paper it has nothing to sit with.
-    let textPrimary = Color(hex: "0D1016")       // Cool near-black — 18.2:1 on paper
-    let textSecondary = Color(hex: "585D68")     // Same ink, diluted — 6.3:1
-    let textTertiary = Color(hex: "8F95A1")      // Same ink, diluted further — 2.9:1.
+    var textPrimary: Color { wild ? Color(hex: "111111") : Color(hex: "0D1016") }       // Cool near-black — 18.2:1 on paper
+    var textSecondary: Color { wild ? Color(hex: "6B6B6B") : Color(hex: "585D68") }     // Same ink, diluted — 6.3:1
+    var textTertiary: Color { wild ? Color(hex: "9A9A9A") : Color(hex: "8F95A1") }      // Same ink, diluted further — 2.9:1.
                                                  // No longer shares a value with the
                                                  // `neutral` MOOD (9B9590) — that is
                                                  // deliberate: moods are unchanged.
 
     // Utility
-    let divider = Color(hex: "E6E7EA")           // The ink at its faintest — same hue
-    let success = Color(hex: "2D8A4E")           // Same as energized
+    var divider: Color { wild ? Color(hex: "EBEBEB") : Color(hex: "E6E7EA") }           // The ink at its faintest — same hue
+    var success: Color { wild ? Color(hex: "12703A") : Color(hex: "2D8A4E") }           // Same as energized
     /// `--paper-deep` from `design-system/colors_and_type.css` (#E8E4DF).
     /// Calendar / inset wells, histogram tracks behind a fill bar.
     /// Slightly darker than `background`.
-    let paperDeep = Color(hex: "F0F0EE")
+    var paperDeep: Color { wild ? Color(hex: "F2F2F2") : Color(hex: "F0F0EE") }
 
     /// Simplified mood → border color: green (positive), amber (neutral/tired), red (struggling)
     func moodBorderColor(for mood: String?) -> Color? {
@@ -189,24 +204,42 @@ extension Color {
 /// Editorial typography: Crimson Pro (display), PT Serif (body), SF Mono (stats)
 /// "The Press" font pack — tall elegant magazine feel
 extension Font {
+    /// Which type system every role below resolves to. See `DripTheme.swift`.
+    private static var wild: Bool { DripSkinStore.shared.skin == .wild }
+
     /// Display fonts - Crimson Pro headlines (tall, elegant serif)
     static func dripDisplay(_ size: CGFloat) -> Font {
-        .custom("CrimsonPro-Regular", size: size).weight(.bold)
+        wild
+            ? .custom(WildFace.display, size: size)
+            : .custom("CrimsonPro-Regular", size: size).weight(.bold)
     }
 
     /// Stats - Monospaced for numbers (lighter weight, refined)
     static func dripStat(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .semibold, design: .monospaced)
+        // Inter, tabular. §1: "Every numeral, tabular." Inter is barred from
+        // display on purpose — Inter on numerals against a tighter grotesk on
+        // headlines is the contrast the system is built on.
+        wild
+            ? .custom(WildFace.dataSemibold, size: size).monospacedDigit()
+            : .system(size: size, weight: .semibold, design: .monospaced)
     }
 
     /// Body text - PT Serif (warm, readable editorial body)
     static func dripBody(_ size: CGFloat) -> Font {
-        .custom("PTSerif-Regular", size: size)
+        // Inter. The Data role "doubles as body/UI copy" — Crimson is reserved
+        // for prose the athlete actually wrote, which is a different job.
+        wild
+            ? .custom(WildFace.dataRegular, size: size)
+            : .custom("PTSerif-Regular", size: size)
     }
 
     /// Labels - Crimson Pro semibold for buttons and labels
     static func dripLabel(_ size: CGFloat) -> Font {
-        .custom("CrimsonPro-Regular", size: size).weight(.semibold)
+        // Buttons and links — sentence-case, so the display face at 500, not
+        // the tracked-caps label role (that is `dripEyebrow`).
+        wild
+            ? .custom(WildFace.displayMedium, size: size)
+            : .custom("CrimsonPro-Regular", size: size).weight(.semibold)
     }
 
     /// Eyebrows - SF Mono medium for the editorial uppercase labels
@@ -217,7 +250,12 @@ extension Font {
     ///   • plate meta +0.14em (top plate strip)           — size × 0.14
     /// The CSS source of truth is `Post Run Drip Design System/colors_and_type.css`.
     static func dripEyebrow(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .medium, design: .monospaced)
+        // Schibsted Grotesk — THE label role. Mono is reserved for transcripts
+        // and machine answers; the design doc lists these mono labels as the
+        // era-one hangover to retype, and this is that retyping.
+        wild
+            ? .custom(WildFace.label, size: size)
+            : .system(size: size, weight: .medium, design: .monospaced)
     }
 
     /// Body italic — PT Serif Italic. This is the product's *voice*:
@@ -230,7 +268,15 @@ extension Font {
     /// design system on every surface that used it. PTSerif-Italic.ttf is
     /// already bundled and listed in Info.plist's UIAppFonts.
     static func dripBodyItalic(_ size: CGFloat) -> Font {
-        .custom("PTSerif-Italic", size: size)
+        // The single-line italic dek — Times, and this is its only role.
+        //
+        // Note this token also fronts transcribed voice logs at a few call
+        // sites, and those want italic MONO (the athlete's voice), not the
+        // dek. `JournalWildRow` sets its own; any other surface showing a
+        // transcript needs the same treatment by hand.
+        wild
+            ? .custom(WildFace.serifItalic, size: size)
+            : .custom("PTSerif-Italic", size: size)
     }
 
     /// Meta/Captions - PT Serif for small sentence-case body
@@ -238,7 +284,9 @@ extension Font {
     /// canonical caption per the design system spec — see `dripEyebrow`
     /// above for uppercase labels. Rename pending.
     static func dripCaption(_ size: CGFloat) -> Font {
-        .custom("PTSerif-Regular", size: size)
+        wild
+            ? .custom(WildFace.dataRegular, size: size)
+            : .custom("PTSerif-Regular", size: size)
     }
 }
 
@@ -354,11 +402,18 @@ struct MoodBadge: View {
                 .tracking(1.0)  // 0.10em caption tracking at 10pt
         }
         .foregroundStyle(moodColor)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(moodColor.opacity(0.12))
+        // Direction I: "a mood is always type or a dot, never a large fill."
+        // The tinted capsule put six saturated washes on a page whose rule is
+        // one red — and at pill size `struggling` and the brand red read as
+        // the same colour, so the alert stopped being an alert.
+        .padding(.horizontal, DripSkinStore.shared.skin == .wild ? 0 : 10)
+        .padding(.vertical, DripSkinStore.shared.skin == .wild ? 0 : 5)
+        .background {
+            if DripSkinStore.shared.skin != .wild {
+                Capsule().fill(moodColor.opacity(0.12))
+            }
+        }
         .fixedSize()
-        .clipShape(Capsule())
     }
 }
 

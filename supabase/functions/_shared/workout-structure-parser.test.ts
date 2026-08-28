@@ -6,6 +6,7 @@ import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.t
 import {
   formatDeclared,
   parseDeclaredWorkout,
+  parsePace,
   parseDistanceMeters,
   type PaceSpec,
 } from "./workout-structure-parser.ts";
@@ -124,4 +125,48 @@ Deno.test("the REST being recovery does not make the SESSION a recovery run", ()
 Deno.test("a genuine recovery run still parses as one", () => {
   const w = parseDeclaredWorkout("easy 5 mile recovery run");
   assertEquals(w.kind, "recovery");
+});
+
+// ── Offsets from a zone ─────────────────────────────────────────
+//
+// Regression pack for the silent pace drop: every form below used to come back
+// as a bare `mp` zone at confidence "high", so an alternation's fast and float
+// legs were stored as the SAME pace with nothing to signal the loss.
+
+Deno.test("MP+N% / MP-N% keep the two legs of an alternation apart", () => {
+  const w = parseDeclaredWorkout("1k @ MP+5% / 1k @ MP-5% for 20k");
+  assertEquals(w.kind, "alternation");
+  assertEquals(w.reps, 10);
+  assertEquals(w.totalDistanceMeters, 20000);
+  const [slow, fast] = w.block.map((b) => b.pace);
+  assertEquals(slow?.kind, "pct");
+  assertEquals(fast?.kind, "pct");
+  // MINUS IS FASTER. `pct` is a percentage of zone SPEED, so the fast leg must
+  // exceed 100 and the slow leg must fall below it.
+  assert((fast as { pct: number }).pct > 100, "MP-5% must be faster than MP");
+  assert((slow as { pct: number }).pct < 100, "MP+5% must be slower than MP");
+  assert((fast as { pct: number }).pct !== (slow as { pct: number }).pct);
+});
+
+Deno.test("MP-N / MP+N read as seconds per mile, minus being faster", () => {
+  assertEquals(parsePace("MP-10"), { kind: "relative", ofZone: "mp", deltaSec: 10, faster: true });
+  assertEquals(parsePace("MP+30"), { kind: "relative", ofZone: "mp", deltaSec: 30, faster: false });
+  assertEquals(parsePace("MP minus 10"), { kind: "relative", ofZone: "mp", deltaSec: 10, faster: true });
+});
+
+Deno.test("a minute suffix is minutes, not seconds", () => {
+  // "w/800 float MP+1'" — the float is 60s/mi slower, not 1s/mi.
+  assertEquals(parsePace("MP+1'"), { kind: "relative", ofZone: "mp", deltaSec: 60, faster: false });
+});
+
+Deno.test("an offset relative to MP is still MP work for kind inference", () => {
+  assertEquals(parseDeclaredWorkout("4 x 3mi @ MP-5 w/800m easy").kind, "threshold");
+});
+
+Deno.test("an undecodable offset degrades loudly, never to a bare zone", () => {
+  const p = parsePace("MP+about a minute");
+  assertEquals(p?.kind, "effort", "an operator we cannot decode must not return a confident zone");
+  const w = parseDeclaredWorkout("6 x 1 mile @ MP+about a minute");
+  assert(w.confidence !== "high", `unparsed pace must not stay high, got ${w.confidence}`);
+  assert((w.note ?? "").includes("unparsed pace"), `expected a note, got ${w.note}`);
 });

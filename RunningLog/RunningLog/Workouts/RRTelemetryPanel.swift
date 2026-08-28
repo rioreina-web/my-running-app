@@ -30,10 +30,18 @@ import SwiftUI
 
 /// How the scrubber is activated, so the same chart can live both inside a
 /// vertically-scrolling page and on a dedicated full-screen view.
-/// - `.hold`: press-and-hold then drag. A plain vertical swipe still scrolls
-///   the page, so this is safe inside a ScrollView (the inline card).
-/// - `.drag`: touch and drag immediately moves the point. Used full-screen,
-///   where there's no page scroll to protect.
+///
+/// BOTH modes are now gated behind a DOUBLE-TAP that arms the scrubber
+/// (`scrubArmed`). Merely swiping across a chart — scrolling the page past it,
+/// panning the time axis, brushing it on the way somewhere else — must never
+/// drop a crosshair; a press-and-hold was too easy to trigger by accident and
+/// full-screen's bare drag fired on the very first touch. Once armed, the
+/// crosshair STAYS put when you lift your finger, and a second double-tap puts
+/// it away.
+/// - `.hold`: armed drags scrub; unarmed, the chart passes touches straight
+///   through, so a plain swipe still scrolls the page (the inline card).
+/// - `.drag`: armed drags scrub and auto-pan the zoomed axis to follow the
+///   point. Used full-screen, where there's no page scroll to protect.
 enum RRScrubMode { case hold, drag }
 
 // MARK: - Panel (chips + chart + readout + expand)
@@ -54,6 +62,9 @@ struct RRTelemetryPanel: View {
     // (Cadence, Elevation) via the chips.
     @State private var active: Set<TelemetryMetric> = [.heartRate, .pace]
     @State private var scrub: Double? = nil
+    /// Double-tap arms the scrubber; until then drags over the chart are inert.
+    /// Shared across every lane, like `scrub`, so arming one arms the stack.
+    @State private var scrubArmed = false
     @State private var showFull = false
     @State private var showRepPace = false
     /// Apply the HR-zone overlay (bands behind the trace + zone axis tags).
@@ -105,12 +116,13 @@ struct RRTelemetryPanel: View {
             // it. Roughly ~4 reps per screen (min zoom 1 for easy runs w/o reps).
             RRStackedTelemetry(times: times, series: series, active: active,
                                windows: windows, km: km, scrub: $scrub,
+                               scrubArmed: $scrubArmed,
                                zones: zones, zonesOn: zonesOn, showRepPace: showRepPace,
                                scrubMode: .hold, panelHeight: 172,
                                initialZoom: defaultZoom)
-            Text(scrub == nil
-                 ? "TAP A REP OR PRESS & HOLD FOR LIVE VALUES · EXPAND TO SCRUB"
-                 : "LIVE · TAP ANOTHER REP OR DRAG TO MOVE")
+            Text(scrubArmed
+                 ? "SCRUB ON · DRAG TO MOVE · DOUBLE-TAP TO PUT IT AWAY"
+                 : "DOUBLE-TAP A PANEL FOR LIVE VALUES · EXPAND FOR FULL SCREEN")
                 .font(.dripStat(11)).tracking(0.4)
                 .foregroundStyle(Color.drip.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -202,6 +214,10 @@ struct RRTelemetryChart: View {
     let windows: [RRWindow]
     let km: Bool
     @Binding var scrub: Double?
+    /// Armed by a double-tap on any lane. While false this chart claims no
+    /// drag at all, so swiping across it scrolls/pans exactly as if the
+    /// scrubber weren't there.
+    @Binding var scrubArmed: Bool
     /// Fixed chart height. Pass `nil` to let the chart fill the space it's
     /// given (used full-screen so the layout fits any device without clipping).
     var height: CGFloat? = 220
@@ -264,30 +280,41 @@ struct RRTelemetryChart: View {
                 if showTooltip, let s = scrub, let idx = index(s) {
                     tooltip(idx: idx, frac: s, rect: rect, canvasWidth: geo.size.width)
                 }
+                // Armed affordance: the plot picks up a coral hairline so it's
+                // obvious the next drag will scrub rather than scroll.
+                if scrubArmed {
+                    Path(roundedRect: rect, cornerRadius: 3)
+                        .stroke(Color.drip.coral.opacity(0.45), lineWidth: 1)
+                }
             }
             .contentShape(Rectangle())
 
-            // Two clean gesture stacks — no GestureMask juggling, which was
-            // silently disabling the scrub drag (`.none` also disables sibling
-            // gestures). Each mode wires only the gestures it actually uses.
+            // Gestures, in one shape for both modes: a double-tap ARMS the
+            // scrubber (and drops the crosshair where you tapped), and only
+            // then does a drag scrub. Unarmed, the scrub drag is masked to
+            // `.subviews` — i.e. off — so the chart claims nothing and a swipe
+            // across it scrolls the page exactly as if it weren't there.
+            // `.subviews` and not `.none`: `.none` also disables the SIBLING
+            // gestures, which is what silently killed the scrubber before.
             if scrubMode == .drag {
-                // Full screen: a single touch-and-drag IS the scrubber (primary
-                // gesture, so it reliably wins). Pinch zoom runs alongside it.
+                // Full screen: no page scroll to protect, and the armed drag
+                // auto-pans so the scrubbed point stays centered while zoomed.
                 plot
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { setScrub($0.location.x, rect, autoPan: true) }
-                            .onEnded { _ in scrub = nil }
-                    )
                     .simultaneousGesture(zoomGesture(rect))
+                    .simultaneousGesture(scrubDragGesture(rect, autoPan: true),
+                                         including: scrubArmed ? .all : .subviews)
+                    .simultaneousGesture(armGesture(rect))
             } else {
-                // Inline card (inside a ScrollView): pinch zoom + (when zoomed)
-                // horizontal pan, plus press-hold-then-drag to scrub so a plain
-                // vertical swipe still scrolls the page.
+                // Inline card (inside a ScrollView): pinch zoom + (when zoomed,
+                // and NOT armed) horizontal pan. Arming hands the horizontal
+                // drag to the scrubber so the two can't fight over it.
                 plot
                     .simultaneousGesture(zoomGesture(rect))
-                    .simultaneousGesture(panGesture(rect), including: zoom > 1 ? .all : .subviews)
-                    .simultaneousGesture(holdScrubGesture(rect))
+                    .simultaneousGesture(panGesture(rect),
+                                         including: (zoom > 1 && !scrubArmed) ? .all : .subviews)
+                    .simultaneousGesture(scrubDragGesture(rect),
+                                         including: scrubArmed ? .all : .subviews)
+                    .simultaneousGesture(armGesture(rect))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: height == nil ? .infinity : nil)
@@ -318,13 +345,40 @@ struct RRTelemetryChart: View {
             .onEnded { _ in lastPan = panOffset }
     }
 
-    private func holdScrubGesture(_ rect: CGRect) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.18)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                if case .second(true, let drag?) = value { setScrub(drag.location.x, rect) }
+    /// Double-tap arms (and places) the scrubber; double-tap again puts it
+    /// away. `SpatialTapGesture` so the crosshair lands where you tapped
+    /// instead of at some arbitrary default — the tap IS the first placement,
+    /// and the drag that follows is only fine-tuning.
+    private func armGesture(_ rect: CGRect) -> some Gesture {
+        SpatialTapGesture(count: 2)
+            .onEnded { e in
+                if scrubArmed {
+                    scrubArmed = false
+                    scrub = nil
+                } else {
+                    scrubArmed = true
+                    setScrub(e.location.x, rect)
+                }
             }
-            .onEnded { _ in scrub = nil }
+    }
+
+    /// The armed scrubber. `minimumDistance: 4` so the two taps that arm it
+    /// aren't swallowed as a zero-distance drag, and the crosshair is LEFT in
+    /// place on lift — the athlete reads the values after the finger is gone.
+    ///
+    /// Inline (`.hold`, inside a ScrollView) a decidedly VERTICAL drag is left
+    /// alone: armed or not, scrolling the page past the chart must not drag the
+    /// crosshair sideways with it. Full-screen there's no page to scroll, so
+    /// every direction scrubs.
+    private func scrubDragGesture(_ rect: CGRect, autoPan: Bool = false) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { v in
+                if scrubMode == .hold {
+                    let dx = abs(v.translation.width), dy = abs(v.translation.height)
+                    if dy > 24 && dy > dx { return }
+                }
+                setScrub(v.location.x, rect, autoPan: autoPan)
+            }
     }
 
     /// Maps a touch x-position to a 0–1 scrub fraction (accounting for zoom +
@@ -851,16 +905,18 @@ struct RRTelemetryFullScreen: View {
     @Binding var zonesOn: Bool
     @Environment(\.dismiss) private var dismiss
     @State private var scrub: Double? = nil
+    @State private var scrubArmed = false
 
     /// Panels that will actually render (mirrors RRStackedTelemetry.panels).
     private var panelCount: Int {
         TelemetryMetric.priority.filter { active.contains($0) && (series[$0]?.count ?? 0) > 1 }.count
     }
     /// With 1–2 charts everything fits the screen at a generous size, so we
-    /// keep the fit-to-screen layout and the bare touch-drag scrubber. With 3+
+    /// keep the fit-to-screen layout and the auto-panning scrubber. With 3+
     /// charts, squeezing them all on screen made each one unreadably short —
     /// instead every chart keeps a Strava-like ~240pt height and the page
-    /// scrolls (press-and-hold scrubs, so a plain drag still scrolls).
+    /// scrolls (scrubbing is armed by a double-tap either way, so an unarmed
+    /// drag always scrolls).
     private var scrolls: Bool { panelCount > 2 }
 
     var body: some View {
@@ -885,23 +941,26 @@ struct RRTelemetryFullScreen: View {
                     ScrollView(showsIndicators: false) {
                         RRStackedTelemetry(times: times, series: series, active: active,
                                            windows: windows, km: km, scrub: $scrub,
+                                           scrubArmed: $scrubArmed,
                                            zones: zones, zonesOn: zonesOn, showRepPace: showRepPace,
                                            scrubMode: .hold, panelHeight: 240)
                             .padding(.bottom, 8)
                     }
                 } else {
                     // Flexible height (`height: nil`) fills the screen. `.drag`
-                    // scrub means a single touch-and-drag moves the point.
+                    // scrub means an ARMED touch-and-drag moves the point and
+                    // pans the zoomed axis to keep it centered.
                     RRStackedTelemetry(times: times, series: series, active: active,
                                        windows: windows, km: km, scrub: $scrub,
+                                       scrubArmed: $scrubArmed,
                                        zones: zones, zonesOn: zonesOn, showRepPace: showRepPace,
                                        scrubMode: .drag, panelHeight: nil)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                Text(scrub == nil
-                     ? (scrolls ? "SCROLL FOR MORE · PRESS & HOLD A PANEL TO SCRUB"
-                                : "DRAG ACROSS A PANEL TO SCRUB · TAP CLOSE TO RETURN")
-                     : "LIVE · DRAG TO MOVE THE POINT")
+                Text(scrubArmed
+                     ? "SCRUB ON · DRAG TO MOVE THE POINT · DOUBLE-TAP TO PUT IT AWAY"
+                     : (scrolls ? "SCROLL FOR MORE · DOUBLE-TAP A PANEL TO SCRUB"
+                                : "DOUBLE-TAP A PANEL TO SCRUB · TAP CLOSE TO RETURN"))
                     .font(.dripStat(9)).tracking(0.6).foregroundStyle(Color.drip.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -924,6 +983,9 @@ struct RRStackedTelemetry: View {
     let windows: [RRWindow]
     let km: Bool
     @Binding var scrub: Double?
+    /// Shared across every lane so a double-tap on one arms the whole stack —
+    /// the lanes already share one crosshair, so they must share its switch.
+    @Binding var scrubArmed: Bool
     var zones: [RRZone] = []
     var zonesOn: Bool = false
     var showRepPace: Bool = false
@@ -941,6 +1003,7 @@ struct RRStackedTelemetry: View {
 
     init(times: [Double], series: [TelemetryMetric: [Double]], active: Set<TelemetryMetric>,
          windows: [RRWindow], km: Bool, scrub: Binding<Double?>,
+         scrubArmed: Binding<Bool>,
          zones: [RRZone] = [], zonesOn: Bool = false, showRepPace: Bool = false,
          scrubMode: RRScrubMode = .hold, panelHeight: CGFloat? = 148, initialZoom: CGFloat = 1) {
         self.times = times
@@ -949,6 +1012,7 @@ struct RRStackedTelemetry: View {
         self.windows = windows
         self.km = km
         self._scrub = scrub
+        self._scrubArmed = scrubArmed
         self.zones = zones
         self.zonesOn = zonesOn
         self.showRepPace = showRepPace
@@ -981,7 +1045,7 @@ struct RRStackedTelemetry: View {
     @ViewBuilder private func stack(_ h: CGFloat) -> some View {
         ForEach(Array(panels.enumerated()), id: \.element) { idx, m in
             RRStackPanel(metric: m, times: times, series: series, windows: windows,
-                         km: km, scrub: $scrub,
+                         km: km, scrub: $scrub, scrubArmed: $scrubArmed,
                          zones: m == .heartRate ? zones : [],
                          zonesOn: m == .heartRate ? zonesOn : false,
                          showRepPace: m == .pace ? showRepPace : false,
@@ -1005,6 +1069,7 @@ struct RRStackPanel: View {
     let windows: [RRWindow]
     let km: Bool
     @Binding var scrub: Double?
+    @Binding var scrubArmed: Bool
     var zones: [RRZone] = []
     var zonesOn: Bool = false
     var showRepPace: Bool = false
@@ -1030,6 +1095,7 @@ struct RRStackPanel: View {
             header
             RRTelemetryChart(times: times, series: series, active: [metric],
                              windows: windows, km: km, scrub: $scrub,
+                             scrubArmed: $scrubArmed,
                              height: height, scrubMode: scrubMode,
                              showRepPace: showRepPace,
                              zones: zones, zonesOn: zonesOn,

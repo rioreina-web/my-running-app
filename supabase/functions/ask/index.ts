@@ -42,6 +42,7 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0"
 import { corsHeaders } from "../_shared/cors.ts";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
+import { llmBudgetAllows, llmBudgetBlockedResponse } from "../_shared/llm-budget.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { validateLength } from "../_shared/validation.ts";
@@ -419,6 +420,14 @@ Deno.serve(async (req) => {
       if (fast) {
         analyzerId = fast;
       } else {
+        // Global spend brake. Independent of UNBOUND_USAGE: that flag governs
+        // the per-user quota (fairness), this governs the day's total spend
+        // (solvency). Subject stays null — the per-subject ceiling is a loop
+        // detector for one row reprocessed, which a typed question is not, so
+        // this imposes no per-athlete question cap.
+        if (!(await llmBudgetAllows("ask_route", { userId }))) {
+          return llmBudgetBlockedResponse("ask_route", corsHeaders);
+        }
         const routed = await routeWithModel(question);
         analyzerId = routed.analyzerId;
         rawParams = routed.params;
@@ -518,9 +527,16 @@ Deno.serve(async (req) => {
       const capped = rlBlocked || UNBOUND_USAGE
         ? null
         : await enforceMonthlyCap(userId, "analysis", corsHeaders);
-      if (rlBlocked || capped) {
+      // Global spend brake, checked last so an already-blocked call does not
+      // consume a ledger row. Degrades to bare facts rather than 429ing: the
+      // facts are computed and free, and Layer 2 is the only paid part here.
+      const budgetBlocked = (rlBlocked || capped)
+        ? false
+        : !(await llmBudgetAllows("ask_narrate", { userId }));
+      if (rlBlocked || capped || budgetBlocked) {
         // Out of narration budget is NOT out of answer. Serve the facts.
-        console.log(`ask: narration budget exhausted for ${userId} — serving bare facts`);
+        const why = budgetBlocked ? "global LLM budget" : "per-user quota";
+        console.log(`ask: narration blocked by ${why} for ${userId} — serving bare facts`);
       } else {
         // `result.title` before `analyzer.label`: the standing label is a fixed
         // string ("Is my LT pace improving?") while the run may have resolved

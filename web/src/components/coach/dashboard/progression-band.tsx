@@ -18,7 +18,7 @@ export function ProgressionBand({ progression }: { progression: Progression }) {
 
   return (
     <div className="grid gap-3.5 md:grid-cols-[340px_1fr] md:items-stretch">
-      <div className="flex flex-col rounded-xl border border-divider bg-bg-card p-5">
+      <div className="flex flex-col border-b border-divider py-5">
         <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
           Predicted marathon
         </div>
@@ -79,7 +79,7 @@ export function ProgressionBand({ progression }: { progression: Progression }) {
         ) : null}
       </div>
 
-      <div className="rounded-xl border border-divider bg-bg-card p-5">
+      <div className="border-b border-divider py-5">
         <div className="mb-1.5 flex items-baseline justify-between">
           <div className="font-display text-[17px] font-bold text-text-primary">Fitness curve</div>
           <div className="font-mono text-[10px] uppercase tracking-[0.06em] text-text-tertiary">

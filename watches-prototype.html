@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watches · authored by the athlete or the coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;700&family=Schibsted+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Crimson+Pro:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFFFF; --paper-deep:#F2F2F2; --rule:#EBEBEB; --rule-strong:#111111;
+  --ink:#111111; --ink2:#6B6B6B; --ink3:#9A9A9A;
+  --red:#EE2B24; --red-text:#D31F19; --session:#1F4FA8;
+  --display:"Instrument Sans",system-ui,sans-serif;
+  --label:"Schibsted Grotesk",system-ui,sans-serif;
+  --data:"Inter",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+  --prose:"Crimson Pro",Georgia,serif;
+  --dek:"Times New Roman",Times,Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#E4E4E4; color:var(--ink);
+  font-family:var(--data);
+  padding:40px 24px 90px;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- page furniture ---------- */
+.page-head{max-width:1360px;margin:0 auto 14px}
+.page-head .eyebrow{
+  font-family:var(--label);font-weight:600;font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);
+}
+.page-head h1{
+  font-family:var(--display);font-weight:700;font-size:38px;
+  letter-spacing:-.045em;margin-top:10px;
+}
+.page-head p{
+  font-family:var(--dek);font-style:italic;font-size:18px;
+  color:#444;margin-top:10px;max-width:66ch;line-height:1.45;
+}
+.page-note{
+  max-width:1360px;margin:0 auto 40px;padding-top:14px;
+  border-top:1px solid #CFCFCF;
+  font-family:var(--data);font-size:13px;line-height:1.6;color:#4A4A4A;
+  max-width:78ch;
+}
+.page-note b{font-weight:600;color:var(--ink)}
+.page-note code{font-family:var(--mono);font-size:12px;background:#D8D8D8;padding:1px 5px;border-radius:3px}
+
+.rail{
+  display:flex;gap:34px;justify-content:center;align-items:flex-start;
+  flex-wrap:wrap;max-width:1360px;margin:0 auto;
+}
+.slot{width:393px;flex:0 0 auto}
+.slot > figcaption{margin-top:16px}
+.slot .cap-label{
+  font-family:var(--label);font-weight:700;font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink);
+}
+.slot .cap-body{
+  font-family:var(--dek);font-style:italic;font-size:15px;line-height:1.5;
+  color:#3A3A3A;margin-top:7px;
+}
+
+/* ---------- phone shell ---------- */
+.phone{
+  width:393px;height:852px;background:var(--paper);
+  border-radius:44px;overflow:hidden;position:relative;
+  box-shadow:0 1px 2px rgba(0,0,0,.14),0 18px 44px rgba(0,0,0,.20);
+  display:flex;flex-direction:column;
+}
+.statusbar{
+  height:54px;flex:0 0 54px;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 30px 6px;font-family:var(--data);font-weight:600;font-size:15px;
+}
+.statusbar .glyphs{display:flex;gap:6px;align-items:center;color:var(--ink)}
+.bat{width:26px;height:13px;border:1.4px solid var(--ink);border-radius:4px;position:relative}
+.bat::after{content:"";position:absolute;left:1.4px;top:1.4px;bottom:1.4px;width:70%;background:#2ECC5B;border-radius:2px}
+.screen{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.scroll{flex:1;overflow:hidden;padding:0 22px}
+
+/* ---------- shared type ---------- */
+.lab{
+  font-family:var(--label);font-weight:600;font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);
+}
+.lab.ink{color:var(--ink)}
+.lab.red{color:var(--red-text)}
+.lab.dim{color:var(--ink3)}
+.rule{height:1px;background:var(--rule)}
+.rule.strong{height:2px;background:var(--rule-strong)}
+.disp{font-family:var(--display);font-weight:700;letter-spacing:-.045em;color:var(--ink)}
+.dek{font-family:var(--dek);font-style:italic;color:var(--ink2)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.prose{font-family:var(--prose);font-size:16px;line-height:1.5;color:var(--ink)}
+
+/* ---------- nav bar ---------- */
+.navbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:4px 22px 12px;
+}
+.navbar .back{font-family:var(--data);font-size:15px;color:var(--ink2)}
+.navbar .act{font-family:var(--label);font-weight:700;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--red-text)}
+.masthead{padding:0 22px 12px}
+.masthead h2{font-family:var(--display);font-weight:700;font-size:31px;letter-spacing:-.045em;line-height:1.02}
+.masthead .sub{font-family:var(--dek);font-style:italic;font-size:14px;color:var(--ink2);margin-top:6px;line-height:1.4}
+
+/* ---------- list rows ---------- */
+.sect{margin-top:20px}
+.sect-head{display:flex;align-items:baseline;justify-content:space-between;padding-bottom:7px;border-bottom:2px solid var(--ink)}
+.watch{padding:14px 0;border-bottom:1px solid var(--rule);display:flex;gap:12px;align-items:flex-start}
+.watch .body{flex:1}
+.watch .title{font-family:var(--data);font-weight:600;font-size:15px;line-height:1.35;letter-spacing:-.01em}
+.watch .meta{font-family:var(--mono);font-size:10.5px;color:var(--ink3);margin-top:5px;letter-spacing:.02em}
+.watch .meta em{font-style:normal;color:var(--red-text)}
+.tick{
+  width:34px;height:20px;border-radius:999px;background:var(--ink);position:relative;flex:0 0 34px;margin-top:2px;
+}
+.tick::after{content:"";position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:999px;background:#fff}
+.tick.off{background:#D6D6D6}
+.tick.off::after{right:auto;left:2px}
+.stamp{
+  font-family:var(--label);font-weight:700;font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  border:1px solid var(--ink);padding:2px 5px;border-radius:3px;color:var(--ink);align-self:flex-start;margin-top:1px;
+}
+.stamp.coach{border-color:var(--session);color:var(--session)}
+
+/* ---------- add door ---------- */
+.field{
+  border:1px solid var(--ink);border-radius:10px;padding:14px 15px;margin-top:6px;
+  min-height:96px;position:relative;
+}
+.field .typed{font-family:var(--data);font-size:16.5px;line-height:1.45;letter-spacing:-.01em}
+.field .caret{display:inline-block;width:2px;height:18px;background:var(--red);vertical-align:-3px;margin-left:1px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.hint{font-family:var(--dek);font-style:italic;font-size:14px;color:var(--ink3);line-height:1.45;margin-top:9px}
+.startrow{padding:12px 0;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;align-items:center;gap:10px}
+.startrow .t{font-family:var(--data);font-size:14.5px;font-weight:500;letter-spacing:-.01em}
+.startrow .c{font-family:var(--mono);font-size:16px;color:var(--ink3)}
+
+/* ---------- parsed card ---------- */
+.parsed{border:2px solid var(--ink);border-radius:12px;padding:15px 15px 13px;margin-top:14px}
+.prow{display:flex;align-items:baseline;gap:10px;padding:9px 0}
+.prow + .prow{border-top:1px solid var(--rule)}
+.prow .k{font-family:var(--label);font-weight:700;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink3);width:64px;flex:0 0 64px}
+.prow .v{flex:1;font-family:var(--data);font-size:15px;font-weight:600;letter-spacing:-.01em}
+.prow .v small{font-family:var(--dek);font-style:italic;font-weight:400;font-size:13.5px;color:var(--ink2);display:block;margin-top:2px;letter-spacing:0}
+.prow .edit{font-family:var(--mono);font-size:11px;color:var(--red-text)}
+
+/* ---------- backtest ---------- */
+.bt{margin-top:16px}
+.bt-head{display:flex;align-items:baseline;justify-content:space-between}
+.bt-count{font-family:var(--display);font-weight:700;font-size:40px;letter-spacing:-.05em;line-height:1;margin-top:6px}
+.bt-count span{font-size:17px;color:var(--ink2);letter-spacing:-.02em;font-weight:500}
+.plot{position:relative;height:132px;margin-top:14px;border-bottom:1px solid var(--ink);border-left:1px solid var(--rule)}
+.plot .thresh{position:absolute;left:0;right:0;height:0;border-top:2px dashed var(--red);}
+.plot .thresh b{
+  position:absolute;right:0;top:-17px;font-family:var(--mono);font-size:10px;color:var(--red-text);
+  background:#fff;padding:0 3px;letter-spacing:.02em;
+}
+.dot{position:absolute;width:8px;height:8px;border-radius:999px;background:#C9C9C9;transform:translate(-50%,50%)}
+.dot.hit{background:var(--red)}
+.dot.heat{background:#fff;border:2px solid var(--red);width:9px;height:9px}
+.axis{display:flex;justify-content:space-between;margin-top:7px}
+.axis span{font-family:var(--mono);font-size:9.5px;color:var(--ink3);letter-spacing:.04em}
+.legend{display:flex;gap:14px;margin-top:11px;flex-wrap:wrap}
+.legend i{width:8px;height:8px;border-radius:999px;display:inline-block;margin-right:6px;vertical-align:0}
+.legend span{font-family:var(--data);font-size:11.5px;color:var(--ink2)}
+.heatrow{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin-top:14px;padding:11px 12px;background:var(--paper-deep);border-radius:8px;
+}
+.heatrow .t{font-family:var(--data);font-size:13px;font-weight:500;line-height:1.35}
+.heatrow .t small{display:block;font-family:var(--dek);font-style:italic;font-weight:400;font-size:12.5px;color:var(--ink2);margin-top:2px}
+
+/* ---------- stepper ---------- */
+.stepper{display:flex;align-items:center;gap:0;margin-top:12px;border:1px solid var(--ink);border-radius:9px;overflow:hidden}
+.stepper button{flex:0 0 52px;height:48px;border:0;background:#fff;font-family:var(--display);font-size:22px;font-weight:500;color:var(--ink)}
+.stepper .val{flex:1;text-align:center;font-family:var(--display);font-weight:700;font-size:24px;letter-spacing:-.03em;border-left:1px solid var(--rule);border-right:1px solid var(--rule);line-height:48px}
+.stepper .val small{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--ink2);letter-spacing:.04em;margin-left:5px}
+
+/* ---------- footer buttons ---------- */
+.footer{padding:14px 22px 30px;border-top:1px solid var(--rule);background:#fff}
+.btn{
+  width:100%;height:52px;border-radius:10px;background:var(--ink);color:#fff;border:0;
+  font-family:var(--label);font-weight:700;font-size:13px;letter-spacing:.09em;text-transform:uppercase;
+}
+.btn.ghost{background:#fff;color:var(--ink2);border:1px solid var(--rule);margin-top:9px;height:44px}
+
+/* ---------- fired note on the log ---------- */
+.entry-head{display:flex;align-items:baseline;justify-content:space-between;margin-top:6px}
+.entry-date{font-family:var(--label);font-weight:700;font-size:10px;letter-spacing:.14em;text-transform:uppercase}
+.entry-title{font-family:var(--display);font-weight:700;font-size:27px;letter-spacing:-.04em;margin-top:9px;line-height:1.06}
+.statline{display:flex;gap:0;margin-top:14px;border-top:1px solid var(--ink);border-bottom:1px solid var(--rule)}
+.statline div{flex:1;padding:10px 0}
+.statline div + div{border-left:1px solid var(--rule);padding-left:12px}
+.statline .k{font-family:var(--label);font-weight:600;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+.statline .v{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:-.03em;margin-top:3px}
+.fired{
+  margin-top:18px;border-left:3px solid var(--red);padding:2px 0 2px 13px;
+}
+.fired .who{font-family:var(--label);font-weight:700;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--red-text)}
+.fired .msg{font-family:var(--prose);font-size:16.5px;line-height:1.45;margin-top:7px}
+.fired .evid{font-family:var(--mono);font-size:10.5px;color:var(--ink3);margin-top:9px;line-height:1.6;letter-spacing:.01em}
+.fired .acts{display:flex;gap:8px;margin-top:12px}
+.fired .acts span{
+  font-family:var(--label);font-weight:700;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  border:1px solid var(--rule);border-radius:999px;padding:6px 11px;color:var(--ink2);
+}
+.memo{margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)}
+.memo .q{font-family:var(--prose);font-style:italic;font-size:16px;line-height:1.5;color:var(--ink)}
+
+/* ---------- coach roster ---------- */
+.ath{display:flex;align-items:center;gap:11px;padding:12px 0;border-bottom:1px solid var(--rule)}
+.ava{width:32px;height:32px;border-radius:999px;background:var(--paper-deep);flex:0 0 32px;display:flex;align-items:center;justify-content:center;font-family:var(--label);font-weight:700;font-size:12px;color:var(--ink2)}
+.ath .n{flex:1;font-family:var(--data);font-size:15px;font-weight:500;letter-spacing:-.01em}
+.ath .n small{display:block;font-family:var(--mono);font-size:10px;color:var(--ink3);margin-top:3px;letter-spacing:.02em}
+.check{width:22px;height:22px;border-radius:6px;border:1.6px solid var(--ink);flex:0 0 22px;position:relative}
+.check.on{background:var(--ink)}
+.check.on::after{content:"";position:absolute;left:6.5px;top:3px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
+.check.off{border-color:#D2D2D2}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="eyebrow">Post Run Drip · AI spine · prototype</div>
+  <h1>Watches</h1>
+  <p>A thing to look for in training, written by the athlete or by the coach. The app checks it against real
+  sessions and says something when it's crossed. Six screens: what a person's watches look like, the two ways
+  to make one, the screen that keeps them from being noisy, what firing looks like on a run, and the coach
+  setting one across a roster.</p>
+</div>
+
+<div class="page-note">
+  <b>Not shown, on purpose:</b> free-form logic. A watch is a saved row with a metric, a scope, a comparison,
+  a window and a cooldown — the same shape as the five rules already in <code>_shared/rules/</code>, just
+  authored in the app instead of shipped in TypeScript. The language model appears twice: once to turn a typed
+  sentence into that row (screen 3), and once to word the message (screen 5). The check itself is arithmetic.
+</div>
+
+<div class="rail">
+
+<!-- ═══════════════ 1 · THE LIST ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Train</span><span class="act">+ Add</span></div>
+      <div class="masthead">
+        <h2>Watches</h2>
+        <div class="sub">Things the app is looking for while you train.</div>
+      </div>
+      <div class="scroll">
+
+        <div class="sect" style="margin-top:8px">
+          <div class="sect-head"><span class="lab ink">From Coach Reyes</span><span class="lab dim">3</span></div>
+
+          <div class="watch">
+            <span class="stamp coach">C</span>
+            <div class="body">
+              <div class="title">Heart rate stays under 145 on easy runs</div>
+              <div class="meta">FIRED <em>3×</em> IN 28 DAYS · LAST: SAT</div>
+            </div>
+            <div class="tick"></div>
+          </div>
+
+          <div class="watch">
+            <span class="stamp coach">C</span>
+            <div class="body">
+              <div class="title">Long run doesn't fade more than 20 sec/mi over the last third</div>
+              <div class="meta">FIRED <em>1×</em> IN 28 DAYS · LAST: AUG 9</div>
+            </div>
+            <div class="tick"></div>
+          </div>
+
+          <div class="watch">
+            <span class="stamp coach">C</span>
+            <div class="body">
+              <div class="title">Weekly mileage doesn't jump more than 12% over last week</div>
+              <div class="meta">QUIET · 28 DAYS</div>
+            </div>
+            <div class="tick"></div>
+          </div>
+        </div>
+
+        <div class="sect">
+          <div class="sect-head"><span class="lab ink">Yours</span><span class="lab dim">2</span></div>
+
+          <div class="watch">
+            <span class="stamp">Y</span>
+            <div class="body">
+              <div class="title">Tell me if I mention the same niggle 3 times in two weeks</div>
+              <div class="meta">FIRED <em>1×</em> IN 28 DAYS · LEFT CALF</div>
+            </div>
+            <div class="tick"></div>
+          </div>
+
+          <div class="watch">
+            <span class="stamp">Y</span>
+            <div class="body">
+              <div class="title">Tell me if I go 10 days without a full rest day</div>
+              <div class="meta">MUTED BY YOU · AUG 14</div>
+            </div>
+            <div class="tick off"></div>
+          </div>
+        </div>
+
+        <div style="margin-top:22px;padding-top:13px;border-top:1px solid var(--rule)">
+          <div class="dek" style="font-size:14px;line-height:1.45">
+            Your coach's watches can be turned off, and she'll see that you did.
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">1 · The list</div>
+    <div class="cap-body">Coach-set and self-set live in one place, marked but not walled off. The fired count is
+    the honest bit — a watch that has gone off nine times this month is a watch set wrong, and the list says so
+    before the athlete has to work it out.</div>
+  </figcaption>
+</figure>
+
+<!-- ═══════════════ 2 · ADD ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Watches</span><span class="act" style="color:var(--ink3)">Next</span></div>
+      <div class="masthead">
+        <h2>What should<br>we watch for?</h2>
+      </div>
+      <div class="scroll">
+        <div class="field">
+          <div class="typed">keep me under 145 on easy days<span class="caret"></span></div>
+        </div>
+        <div class="hint">Say it however you'd say it out loud. You'll see exactly what it turned into before it saves.</div>
+
+        <div class="sect" style="margin-top:26px">
+          <div class="sect-head"><span class="lab ink">Or start from one of these</span></div>
+
+          <div class="startrow"><span class="t">Heart rate ceiling on easy runs</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Pace ceiling on easy runs</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Long-run fade</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Week-over-week mileage jump</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Quality sessions missed</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Same niggle mentioned repeatedly</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Run of low-energy logs</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Days without a rest day</span><span class="c">›</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">2 · Two doors, one destination</div>
+    <div class="cap-body">Typing is the door people will describe to a friend. The list underneath is the door
+    that actually gets used, and it's eight rows because eight covers most of what a coach asks for. Both land
+    on the same screen next.</div>
+  </figcaption>
+</figure>
+
+<!-- ═══════════════ 3 · PARSED ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Back</span><span class="act">Save</span></div>
+      <div class="masthead">
+        <h2>Here's what<br>that means</h2>
+        <div class="sub">Change anything that's wrong. It saves as this, not as your sentence.</div>
+      </div>
+      <div class="scroll">
+        <div class="parsed">
+          <div class="prow"><span class="k">Watch</span><span class="v">Average heart rate</span><span class="edit">edit</span></div>
+          <div class="prow"><span class="k">On</span><span class="v">Easy runs<small>Runs you or the plan marked easy or recovery — 19 of your last 34.</small></span><span class="edit">edit</span></div>
+          <div class="prow"><span class="k">When</span><span class="v">It goes over 145 bpm<small>For more than 5 minutes, so one hill doesn't count.</small></span><span class="edit">edit</span></div>
+          <div class="prow"><span class="k">Then</span><span class="v">Add a note to that run<small>No push. Coach Reyes sees it in her inbox.</small></span><span class="edit">edit</span></div>
+          <div class="prow"><span class="k">At most</span><span class="v">Once a week</span><span class="edit">edit</span></div>
+        </div>
+
+        <div style="margin-top:16px" class="rule"></div>
+        <div style="margin-top:13px" class="lab ink">Your sentence</div>
+        <div class="dek" style="font-size:15.5px;margin-top:5px;line-height:1.45">"keep me under 145 on easy days"</div>
+        <div class="hint" style="margin-top:9px">Kept alongside, so you can see later what you meant.</div>
+
+        <div style="margin-top:20px;padding:13px 14px;background:var(--paper-deep);border-radius:8px">
+          <div class="lab ink" style="font-size:9.5px">One thing before you save</div>
+          <div style="font-family:var(--data);font-size:13px;line-height:1.5;margin-top:6px;color:#333">
+            145 is close to your average easy heart rate already. Have a look at what it would have done
+            over the last eight weeks →
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="btn">See what it would have caught</button>
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">3 · The sentence becomes a row</div>
+    <div class="cap-body">The only place a language model touches the trigger path, and it stops here — the
+    athlete confirms a structured watch, not a prompt. Every line is editable, so a bad parse costs one tap
+    rather than a retry. The original sentence is kept beside it as the record of intent.</div>
+  </figcaption>
+</figure>
+
+<!-- ═══════════════ 4 · BACKTEST ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Back</span><span class="act">Save watch</span></div>
+      <div class="masthead">
+        <h2>Try it on the<br>last 8 weeks</h2>
+      </div>
+      <div class="scroll">
+
+        <div class="stepper">
+          <button>−</button>
+          <div class="val">145<small>BPM</small></div>
+          <button>+</button>
+        </div>
+
+        <div class="bt">
+          <div class="bt-head"><span class="lab ink">Would have spoken up</span></div>
+          <div class="bt-count">3 <span>times, out of 19 easy runs</span></div>
+
+          <div class="plot">
+            <!-- threshold at 145; scale 130 (bottom) → 158 (top) -->
+            <div class="thresh" style="bottom:53.6%"><b>145</b></div>
+            <div class="dot" style="left:4%;bottom:28.6%"></div>
+            <div class="dot" style="left:9.3%;bottom:39.3%"></div>
+            <div class="dot" style="left:14.6%;bottom:21.4%"></div>
+            <div class="dot" style="left:19.9%;bottom:50%"></div>
+            <div class="dot hit" style="left:25.2%;bottom:67.9%"></div>
+            <div class="dot" style="left:30.5%;bottom:35.7%"></div>
+            <div class="dot" style="left:35.8%;bottom:42.9%"></div>
+            <div class="dot heat" style="left:41.1%;bottom:75%"></div>
+            <div class="dot" style="left:46.4%;bottom:32.1%"></div>
+            <div class="dot" style="left:51.7%;bottom:46.4%"></div>
+            <div class="dot" style="left:57%;bottom:25%"></div>
+            <div class="dot hit" style="left:62.3%;bottom:60.7%"></div>
+            <div class="dot" style="left:67.6%;bottom:39.3%"></div>
+            <div class="dot" style="left:72.9%;bottom:28.6%"></div>
+            <div class="dot heat" style="left:78.2%;bottom:78.6%"></div>
+            <div class="dot" style="left:83.5%;bottom:35.7%"></div>
+            <div class="dot" style="left:88.8%;bottom:50%"></div>
+            <div class="dot" style="left:94.1%;bottom:32.1%"></div>
+            <div class="dot hit" style="left:99%;bottom:57.1%"></div>
+          </div>
+          <div class="axis"><span>JUN 30</span><span>AUG 24</span></div>
+
+          <div class="legend">
+            <span><i style="background:#C9C9C9"></i>Under</span>
+            <span><i style="background:var(--red)"></i>Would have fired</span>
+            <span><i style="background:#fff;border:2px solid var(--red);width:9px;height:9px"></i>Over, but hot</span>
+          </div>
+        </div>
+
+        <div class="heatrow">
+          <div class="t">Allow for the heat
+            <small>Two of those runs were over 74° with a high dew point. Your heart rate was high; your effort wasn't.</small>
+          </div>
+          <div class="tick" style="margin-top:0"></div>
+        </div>
+
+        <div style="margin-top:15px" class="dek">
+          Without the heat allowance this watch would have fired 5 times, twice on days you ran fine.
+        </div>
+
+      </div>
+      <div class="footer">
+        <button class="btn">Save watch</button>
+        <button class="btn ghost">Try 148 instead</button>
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">4 · The screen that stops the noise</div>
+    <div class="cap-body">The whole feature lives or dies here. Run the watch against the athlete's own history
+    before it's ever saved, and they fix their own threshold in ten seconds. The heat toggle is real — the
+    adjustment is already computed on 90 of the last 91 runs, and a heart-rate watch without it fires all
+    summer and gets switched off in week two.</div>
+  </figcaption>
+</figure>
+
+<!-- ═══════════════ 5 · FIRED ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Log</span><span class="act" style="color:var(--ink3)">Edit</span></div>
+      <div class="scroll">
+        <div class="entry-head"><span class="entry-date">Saturday, August 23</span><span class="lab dim">EASY</span></div>
+        <div class="entry-title">6.2 miles, 8:41 pace</div>
+
+        <div class="statline">
+          <div><div class="k">Avg HR</div><div class="v">149</div></div>
+          <div><div class="k">Time</div><div class="v">53:54</div></div>
+          <div><div class="k">Cond.</div><div class="v">71°</div></div>
+        </div>
+
+        <div class="fired">
+          <div class="who">Watch · Coach Reyes</div>
+          <div class="msg">Twelve of those minutes sat above 145, mostly in the second half. Conditions were
+          mild enough that the heat doesn't explain it — this one just drifted up.</div>
+          <div class="evid">
+            HR CEILING · EASY RUNS · OVER 145 BPM FOR 5+ MIN<br>
+            12:04 ABOVE · AVG 149 · HEAT ADJ. −1 BPM<br>
+            3RD TIME IN 28 DAYS
+          </div>
+          <div class="acts"><span>Adjust</span><span>Mute 2 weeks</span><span>Not useful</span></div>
+        </div>
+
+        <div class="memo">
+          <div class="lab ink">Your memo</div>
+          <div class="q" style="margin-top:8px">"Legs felt heavy the first two miles then it opened up. Ran
+          the last bit with Dana so it got a little quick."</div>
+        </div>
+
+        <div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)">
+          <div class="dek" style="font-size:14px;line-height:1.45">
+            Coach Reyes sees this in her inbox with the same three lines of evidence.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">5 · What firing looks like</div>
+    <div class="cap-body">On the run, not in a notification centre. One sentence of plain reading, then the
+    arithmetic underneath it in mono so it can be checked. <b>Not useful</b> is the important button — it's how
+    a watch gets tuned by the person it's aimed at, and it's the data that tells you which templates are wrong.</div>
+  </figcaption>
+</figure>
+
+<!-- ═══════════════ 6 · COACH ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Cancel</span><span class="act">Set watch</span></div>
+      <div class="masthead">
+        <h2>Who is this for?</h2>
+        <div class="sub">Heart rate over 145 on easy runs · at most once a week</div>
+      </div>
+      <div class="scroll">
+
+        <div class="sect" style="margin-top:6px">
+          <div class="sect-head"><span class="lab ink">Roster</span><span class="lab dim">4 of 9</span></div>
+
+          <div class="ath"><div class="ava">MC</div><div class="n">Maya Chen<small>WOULD HAVE FIRED 3× IN 8 WEEKS</small></div><div class="check on"></div></div>
+          <div class="ath"><div class="ava">JR</div><div class="n">Jordan Reese<small>WOULD HAVE FIRED 1× IN 8 WEEKS</small></div><div class="check on"></div></div>
+          <div class="ath"><div class="ava">TA</div><div class="n">Tomás Alvarez<small>WOULD HAVE FIRED 11× — THRESHOLD TOO LOW FOR HIM</small></div><div class="check off"></div></div>
+          <div class="ath"><div class="ava">SK</div><div class="n">Sam Kirby<small>WOULD HAVE FIRED 2× IN 8 WEEKS</small></div><div class="check on"></div></div>
+          <div class="ath"><div class="ava">PW</div><div class="n">Priya Walsh<small>NO HEART RATE DATA — CAN'T RUN THIS ONE</small></div><div class="check off"></div></div>
+          <div class="ath"><div class="ava">DN</div><div class="n">Dana Nolan<small>WOULD HAVE FIRED 4× IN 8 WEEKS</small></div><div class="check on"></div></div>
+        </div>
+
+        <div style="margin-top:18px;padding:13px 14px;background:var(--paper-deep);border-radius:8px">
+          <div class="lab ink" style="font-size:9.5px">Per athlete</div>
+          <div style="font-family:var(--data);font-size:13px;line-height:1.5;margin-top:6px;color:#333">
+            One number won't fit nine people. Tap a name to set their own ceiling — the watch stays one watch,
+            with a number per athlete.
+          </div>
+        </div>
+
+      </div>
+      <div class="footer">
+        <button class="btn">Set for 4 athletes</button>
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">6 · The coach side</div>
+    <div class="cap-body">Same watch, aimed at a roster — and the backtest runs per athlete before she commits,
+    which is what stops one ceiling being wrong for six people. The two rows she can't tick are the honest
+    ones: a threshold that's wrong for Tomás, and an athlete with no heart-rate data at all.</div>
+  </figcaption>
+</figure>
+
+<!-- ═══════════════ 7 · BUILD FROM SCRATCH ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Cancel</span><span class="act">Test it</span></div>
+      <div class="masthead">
+        <h2>Build your own</h2>
+        <div class="sub">Nothing preset. Every part is yours to pick.</div>
+      </div>
+      <div class="scroll">
+        <div class="parsed" style="border-width:1px">
+          <div class="prow"><span class="k">Watch</span><span class="v">Heart-rate drift<small>Second-half average vs first-half, same run.</small></span><span class="edit">change</span></div>
+          <div class="prow"><span class="k">On</span><span class="v">Long runs over 90 min<small>Two filters, both must be true.</small></span><span class="edit">change</span></div>
+          <div class="prow"><span class="k">When</span><span class="v">Drift is over 6%</span><span class="edit">change</span></div>
+          <div class="prow" style="background:#FBFBFB;margin:0 -15px;padding-left:15px;padding-right:15px">
+            <span class="k" style="color:var(--red-text)">And</span>
+            <span class="v">Felt effort was 6 or higher<small>From the memo, when you gave one.</small></span><span class="edit">change</span>
+          </div>
+          <div class="prow"><span class="k">Over</span><span class="v">Any single run</span><span class="edit">change</span></div>
+          <div class="prow"><span class="k">Then</span><span class="v">Note on the run + tell my coach</span><span class="edit">change</span></div>
+          <div class="prow"><span class="k">At most</span><span class="v">Once every 10 days</span><span class="edit">change</span></div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <div style="flex:1;text-align:center;padding:11px 0;border:1px dashed #C9C9C9;border-radius:8px;font-family:var(--label);font-weight:700;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2)">+ And</div>
+          <div style="flex:1;text-align:center;padding:11px 0;border:1px dashed #C9C9C9;border-radius:8px;font-family:var(--label);font-weight:700;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2)">+ Or</div>
+        </div>
+
+        <div style="margin-top:18px;padding-top:13px;border-top:1px solid var(--rule)">
+          <div class="lab ink">Reads as</div>
+          <div class="dek" style="font-size:15.5px;margin-top:6px;line-height:1.45">
+            "On long runs over 90 minutes, tell me when my heart rate drifts more than 6% <em>and</em> it felt
+            like a 6 or harder."
+          </div>
+          <div class="hint" style="margin-top:9px">Written back out in plain words, so you can check you built what you meant.</div>
+        </div>
+
+        <div style="margin-top:16px;padding:12px 13px;background:var(--paper-deep);border-radius:8px">
+          <div style="font-family:var(--data);font-size:12.5px;line-height:1.5;color:#333">
+            <b style="font-weight:600">Never fired in 8 weeks.</b> Two conditions that both have to be true is a
+            narrow watch — worth testing before you save it.
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <button class="btn">Test on the last 8 weeks</button>
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">7 · Fully open, not free-form</div>
+    <div class="cap-body">No template anywhere in this. Any measure, any set of filters, any comparison, any
+    window, joined with <em>and</em> / <em>or</em>, ending in whatever you want it to do. The templates on
+    screen 2 are just this screen pre-filled — same row in the database, same evaluator. The plain-English
+    read-back at the bottom is what keeps a seven-part watch honest.</div>
+  </figcaption>
+</figure>
+
+<!-- ═══════════════ 8 · THE VOCABULARY ═══════════════ -->
+<figure class="slot">
+  <div class="phone">
+    <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⏶ <span class="bat"></span></span></div>
+    <div class="screen">
+      <div class="navbar"><span class="back">‹ Back</span><span class="act" style="color:var(--ink3)">Done</span></div>
+      <div class="masthead">
+        <h2>What can<br>be watched</h2>
+        <div class="sub">Everything the app measures. Anything greyed out, it can't see on you yet.</div>
+      </div>
+      <div class="scroll">
+
+        <div class="sect" style="margin-top:2px">
+          <div class="sect-head"><span class="lab ink">In a run</span></div>
+          <div class="startrow"><span class="t">Average heart rate</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Time above a heart rate</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Heart-rate drift, first half to second</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Pace, average or per split</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Fade over the last third</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Heat-adjusted pace</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Rep pace vs the target</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Elevation gain</span><span class="c">›</span></div>
+          <div class="startrow" style="opacity:.4"><span class="t">Cadence</span><span class="c">not synced</span></div>
+        </div>
+
+        <div class="sect">
+          <div class="sect-head"><span class="lab ink">Across days</span></div>
+          <div class="startrow"><span class="t">Weekly mileage, and the jump</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Load vs your own 28-day baseline</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Sessions completed vs planned</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Days since a rest day</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Threshold minutes</span><span class="c">›</span></div>
+        </div>
+
+        <div class="sect">
+          <div class="sect-head"><span class="lab ink">From what you said</span></div>
+          <div class="startrow"><span class="t">Mood on the log</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Felt effort</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">A body part you mention</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">A word or phrase you choose</span><span class="c">›</span></div>
+        </div>
+
+        <div class="sect">
+          <div class="sect-head"><span class="lab ink">Overnight</span></div>
+          <div class="startrow"><span class="t">Sleep hours</span><span class="c">›</span></div>
+          <div class="startrow"><span class="t">Resting heart rate</span><span class="c">›</span></div>
+          <div class="startrow" style="opacity:.4"><span class="t">HRV</span><span class="c">no data</span></div>
+        </div>
+
+        <div style="margin-top:20px;padding-top:13px;border-top:1px solid var(--rule);padding-bottom:24px">
+          <div class="dek" style="font-size:14px;line-height:1.45">
+            The list grows as the app measures more. Nothing here is a preset — these are the things that exist.
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <figcaption>
+    <div class="cap-label">8 · Where the real ceiling is</div>
+    <div class="cap-body">The limit on customization was never the builder — it's this list. A watch can combine
+    anything on it in any shape, and can't reference something the app doesn't measure. Showing the greyed rows
+    is the honest move: it answers "why can't I watch that" before it's asked, and it turns the roadmap into a
+    list of rows to un-grey.</div>
+  </figcaption>
+</figure>
+
+</div>
+</body>
+</html>

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 import { EditorialDivider } from "@/components/ui/editorial-divider";
 import { MoodBadge } from "@/components/ui/mood-badge";
 import { displayWorkoutType } from "@/lib/workout-label";
@@ -85,7 +84,6 @@ export default async function CoachWorkoutDetailPage({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 space-y-10">
-      <CoachPortalNav />
 
       <Link
         href={`/coach-portal/athletes/${athleteId}`}

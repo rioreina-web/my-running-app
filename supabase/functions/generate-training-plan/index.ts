@@ -143,6 +143,7 @@ const WORKOUT_LIBRARY: Record<string, WorkoutDef> = {
   FARTLEK: { workoutType: "workout", name: "8x3' Steady + 2' Easy", description: "8x3' steady / 2' easy", pacePercentage: 85, focusArea: "Fartlek", recoveryType: "Continuous" },
   EASY:    { workoutType: "easy",    name: "Easy Run", description: "Easy conversational pace at 70-75%", pacePercentage: 70, focusArea: "Recovery", recoveryType: "Steady State" },
   REST:    { workoutType: "rest",    name: "Rest Day", description: "Rest day", pacePercentage: 0, focusArea: "Recovery", recoveryType: "Steady State" },
+  XT:      { workoutType: "cross_train", name: "Cross-Training", description: "Cross-training (bike, swim, elliptical, etc.) — low-impact aerobic effort", pacePercentage: 0, focusArea: "Cross-Training", recoveryType: "Active Recovery" },
   STRIDES: { workoutType: "strides", name: "Easy Run + Strides", description: "Easy run + 4-6x100m strides at 115%", pacePercentage: 70, focusArea: "Neuromuscular", recoveryType: "Walk" },
   RACE:    { workoutType: "race",    name: "Race Day", description: "Race day", pacePercentage: 100, focusArea: "Race Simulation", recoveryType: "Continuous" },
 };
@@ -1131,6 +1132,10 @@ function buildSteps(code: string, def: WorkoutDef, totalMiles: number, goalTimeS
     return [{ stepType: "rest", durationType: "time_seconds", durationValue: 0, pacePercentage: 0, notes: "Rest day" }];
   }
 
+  if (code === "XT") {
+    return [{ stepType: "active", durationType: "time_seconds", durationValue: 40 * 60, pacePercentage: 0, notes: "Cross-training (bike, swim, elliptical, etc.) — low-impact aerobic effort" }];
+  }
+
   if (code === "EASY") {
     let notes = "Easy conversational pace";
     if (goalTimeSec && raceDistMi) {
@@ -1497,7 +1502,7 @@ function enrichWorkout(raw: Record<string, unknown>, goalTimeSec?: number, raceD
   // Update name and description with actual paces for ALL workout types
   let name = def.name;
   let description = def.description;
-  const skipEnrich = ["EASY", "REST", "STRIDES", "RACE", "FARTLEK"].includes(code);
+  const skipEnrich = ["EASY", "REST", "XT", "STRIDES", "RACE", "FARTLEK"].includes(code);
   const isProgression = /progression|progressive/i.test(def.description) && !/\dx/i.test(def.description);
   if (paceGoal && raceDistMi && !skipEnrich) {
     if (isProgression) {
@@ -1625,10 +1630,23 @@ function validatePlan(data: Record<string, unknown>): string | null {
 // Expand compact week-based plan into full daily workouts.
 // The deterministic builder now plans ALL 7 days per week, so this function
 // simply assigns calendar dates and handles race day overlay.
+// Pick `count` entries spread evenly across `days`, in order, without repeats.
+function pickEvenlySpread(days: number[], count: number): number[] {
+  if (count <= 0 || days.length === 0) return [];
+  const n = Math.min(count, days.length);
+  const picked = new Set<number>();
+  for (let i = 0; i < n; i++) {
+    picked.add(days[Math.floor((i * days.length) / n)]);
+  }
+  return [...picked];
+}
+
 function expandPlan(
   planData: Record<string, unknown>,
   preferredLongRunDay: number,
   _profile?: RunnerProfile,
+  restDaysPerWeek?: number,
+  crossTrainDaysPerWeek?: number,
 ): void {
   const weeks = planData.weeks as Array<Record<string, unknown>> | undefined;
   if (!weeks) return;
@@ -1715,15 +1733,49 @@ function expandPlan(
     const remainingMiles = Math.max(0, weeklyMileage - qualityMiles);
     const emptyDays = [1, 2, 3, 4, 5, 6, 7].filter(d => !assignedDays.has(d));
 
-    if (emptyDays.length > 0 && remainingMiles > 0) {
-      const easyMilesPerDay = Math.round((remainingMiles / emptyDays.length) * 10) / 10;
-      // Cap easy runs at reasonable range (3-12mi)
-      const cappedMiles = Math.max(3, Math.min(12, easyMilesPerDay));
+    // Carve rest days and cross-training days out of the empty days first,
+    // spread evenly across the week, before filling the rest with easy runs.
+    const restDays = pickEvenlySpread(emptyDays, restDaysPerWeek ?? 0);
+    const daysAfterRest = emptyDays.filter(d => !restDays.includes(d));
+    const xtDays = pickEvenlySpread(daysAfterRest, crossTrainDaysPerWeek ?? 0);
+    const runDays = daysAfterRest.filter(d => !xtDays.includes(d));
 
-      for (const dow of emptyDays) {
+    const placeNonRunDay = (dow: number, workoutCode: "REST" | "XT") => {
+      const dayDate = new Date(weekStart);
+      dayDate.setDate(dayDate.getDate() + (dow - 1));
+      if (dayDate < startDate || dayDate > endDate) return;
+      allWorkouts.push({
+        date: dayDate.toISOString().split("T")[0],
+        dayOfWeek: dow,
+        weekNumber: weekNum,
+        session: 1,
+        workoutCode,
+        totalDistanceMiles: 0,
+        estimatedDurationMinutes: workoutCode === "XT" ? 40 : 0,
+      });
+    };
+    restDays.forEach(dow => placeNonRunDay(dow, "REST"));
+    xtDays.forEach(dow => placeNonRunDay(dow, "XT"));
+
+    if (runDays.length > 0 && remainingMiles > 0) {
+      // Spread whole miles evenly across the remaining run days rather than
+      // forcing every day to the same number — days can differ, just by a
+      // mile or two, never more (Bresenham-style even distribution of the
+      // remainder).
+      const totalEasyMiles = Math.round(remainingMiles);
+      const n = runDays.length;
+      const base = Math.floor(totalEasyMiles / n);
+
+      runDays.forEach((dow, i) => {
+        const cumulative = Math.floor(((i + 1) * (totalEasyMiles - base * n)) / n) -
+          Math.floor((i * (totalEasyMiles - base * n)) / n);
+        const dayMiles = base + cumulative;
+        // Cap easy runs at reasonable range (3-12mi)
+        const cappedMiles = Math.max(3, Math.min(12, dayMiles));
+
         const dayDate = new Date(weekStart);
         dayDate.setDate(dayDate.getDate() + (dow - 1));
-        if (dayDate < startDate || dayDate > endDate) continue;
+        if (dayDate < startDate || dayDate > endDate) return;
 
         const dateStr = dayDate.toISOString().split("T")[0];
         allWorkouts.push({
@@ -1735,7 +1787,7 @@ function expandPlan(
           totalDistanceMiles: cappedMiles,
           estimatedDurationMinutes: Math.round(cappedMiles * 10),
         });
-      }
+      });
     }
   }
 
@@ -2035,7 +2087,13 @@ Deno.serve(async (req: Request) => {
           delete planData.weeks;
           planData.workouts = flatWorkouts;
         } else {
-          expandPlan(planData, preferredLongRunDay, (body as Record<string, unknown>)._runnerProfile as RunnerProfile | undefined);
+          expandPlan(
+            planData,
+            preferredLongRunDay,
+            (body as Record<string, unknown>)._runnerProfile as RunnerProfile | undefined,
+            body.restDaysPerWeek as number | undefined,
+            body.crossTrainDaysPerWeek as number | undefined,
+          );
         }
 
         // Enrich every workout with library data — this is the enforcement layer

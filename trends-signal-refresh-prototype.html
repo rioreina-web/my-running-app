@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends — signal chart, refined</title>
+<style>
+@font-face{font-family:"Crimson Pro";src:url("design-system/fonts/CrimsonPro-Variable.ttf") format("truetype-variations");font-weight:200 900;font-display:swap}
+@font-face{font-family:"PT Serif";src:url("design-system/fonts/PTSerif-Regular.ttf") format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"PT Serif";src:url("design-system/fonts/PTSerif-Bold.ttf") format("truetype");font-weight:700;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("design-system/fonts/JetBrainsMono-VariableFont_wght.ttf") format("truetype-variations");font-weight:100 800;font-display:swap}
+
+:root{
+  /* Rebrand 2026-08-21 · off-white + scarlet (DesignSystem.swift, editorial skin) */
+  --paper:#FAFAF9; --card:#FFFFFF; --well:#F0F0EE; --rule:#E6E7EA;
+  --ink:#0D1016; --ink-2:#585D68; --ink-3:#8F95A1;
+  --red:#E63946; --red-text:#E01C2B; --red-deep:#C42A36;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E9E9E7;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:46px 24px 90px}
+.wrap{max-width:1130px;margin:0 auto}
+.page-head .kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--red-text);margin-bottom:10px}
+.page-head h1{font-family:var(--font-display);font-weight:700;font-size:34px;letter-spacing:-.015em;margin-bottom:12px}
+.page-head p{font-size:15px;line-height:1.6;color:var(--ink-2);max-width:750px}
+.page-head p b{color:var(--ink)}
+
+.layout{display:flex;gap:48px;align-items:flex-start;flex-wrap:wrap;margin-top:38px}
+.notes{width:360px;flex:1;min-width:300px}
+.notes h3{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin:0 0 12px}
+.notes ol{list-style:none;counter-reset:n}
+.notes li{counter-increment:n;font-size:14px;line-height:1.6;color:var(--ink-2);padding-left:26px;position:relative;margin-bottom:14px}
+.notes li:before{content:counter(n,decimal-leading-zero);position:absolute;left:0;top:1px;
+  font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;color:var(--red-text);font-weight:600}
+.notes li b{color:var(--ink);font-weight:700}
+.notes code{font-family:var(--font-mono);font-size:12px;background:#F1F1EF;border:1px solid #DEDEDB;border-radius:3px;padding:0 4px}
+.res{border-top:1px solid #D7D7D4;margin-top:24px;padding-top:20px}
+.res table{border-collapse:collapse;width:100%;margin-top:10px}
+.res th{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);
+  text-align:left;padding:0 10px 7px 0;font-weight:600;border-bottom:1px solid var(--rule)}
+.res td{font-size:13px;color:var(--ink-2);padding:8px 10px 8px 0;border-bottom:1px solid var(--rule);vertical-align:top}
+.res td:first-child{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);font-weight:600;white-space:nowrap}
+.res p{font-size:13.5px;line-height:1.6;color:var(--ink-2);margin-top:14px}
+.res p b{color:var(--ink)}
+
+/* ---------- phone ---------- */
+.phone{width:392px;height:844px;background:var(--paper);border-radius:44px;border:11px solid #0D1016;
+  box-shadow:0 24px 60px rgba(13,16,22,.26);overflow:hidden;position:relative;flex-shrink:0}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:148px;height:29px;background:#0D1016;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;
+  padding:13px 26px 5px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen{height:calc(844px - 44px - 62px);overflow-y:auto;scrollbar-width:none}
+.screen::-webkit-scrollbar{width:0}
+.inner{padding:0 18px 26px}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:62px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .dot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .dot{background:var(--red)}
+.tab span{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--ink);font-weight:600}
+
+/* ---------- pinned window picker ---------- */
+.wbar{position:sticky;top:0;z-index:20;background:var(--paper);padding:8px 18px 9px;border-bottom:1px solid transparent}
+.wbar.stuck{border-bottom-color:var(--rule)}
+.wrow{display:flex;gap:5px}
+.wrow button{flex:1;height:32px;border-radius:999px;cursor:pointer;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:.09em;text-transform:uppercase;font-weight:600;
+  background:var(--card);border:1px solid var(--rule);color:var(--ink-2)}
+.wrow button.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.wmeta{display:flex;justify-content:space-between;margin-top:8px;font-family:var(--font-mono);font-size:9px;
+  letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+
+/* ---------- screen type ---------- */
+.hero{display:flex;align-items:baseline;gap:9px;margin:14px 0 5px}
+.hero .n{font-family:var(--font-display);font-weight:700;font-size:52px;line-height:.82;color:var(--red);letter-spacing:-.03em}
+.hero .of{font-family:var(--font-display);font-weight:700;font-size:23px;color:var(--ink);letter-spacing:-.01em}
+.hero-label{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-2)}
+.quote{border-left:2px solid var(--red);padding-left:12px;margin-top:16px}
+.quote p{font-family:var(--font-display);font-weight:400;font-size:18px;line-height:1.32;color:var(--ink)}
+
+.strip-wrap{margin:18px -18px 0;padding:0 18px;overflow-x:auto;scrollbar-width:none;
+  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 34px),transparent 100%);
+  mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 34px),transparent 100%)}
+.strip-wrap::-webkit-scrollbar{height:0}
+.strip{display:flex;gap:6px;width:max-content;padding-bottom:2px}
+.chip{display:flex;align-items:center;gap:6px;height:29px;padding:0 12px;border-radius:999px;cursor:pointer;
+  font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;
+  background:var(--card);border:1px solid var(--rule);color:var(--ink-3)}
+.chip i{width:7px;height:7px;border-radius:2px;background:transparent;border:1px solid var(--ink-3)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+.chip.on i{border-color:transparent}
+
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;margin-top:14px;padding:11px 11px 9px}
+.dayline{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding-bottom:9px;border-bottom:1px solid var(--rule)}
+.dayline .d{font-family:var(--font-mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink);font-weight:600}
+.dayline .v{font-family:var(--font-body);font-size:12.5px;color:var(--ink-2)}
+.cardfoot{display:flex;justify-content:space-between;gap:10px;padding-top:8px;margin-top:2px;border-top:1px solid var(--rule);
+  font-family:var(--font-mono);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+
+.sect{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink-2);margin:22px 0 10px}
+.daycard{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:12px 13px}
+.daycard .h{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px}
+.daycard .h .d{font-family:var(--font-mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink);font-weight:600}
+.daycard .h .m{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.daycard .g{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.daycard .g div{background:var(--card);padding:8px 9px}
+.daycard .g .k{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+.daycard .g .val{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+.daycard .g .val.dim{color:var(--ink-3);font-weight:400}
+.daycard .note{font-family:var(--font-display);font-size:15px;line-height:1.4;color:var(--ink);margin-top:10px}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px}
+.legend span{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+.legend i{width:9px;height:9px;border-radius:2px;display:block}
+svg{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page-head">
+  <div class="kicker">Post Run Drip · Trends</div>
+  <h1>One chart, three depths.</h1>
+  <p>Your layout, on the rebrand palette — off-white <b>#FAFAF9</b>, cool ink <b>#0D1016</b>, one scarlet <b>#E63946</b>. Three windows: <b>14D</b> day by day for the close look, <b>1M</b> a month of days, <b>3M</b> bucketed to weeks for the overview. Every lane changes resolution with the window. Miles per week is the <b>whole</b> week — actual for weeks that are done, actual + planned for the one in progress. Everything is live: switch windows, toggle lanes, tap a column.</p>
+</header>
+
+<div class="layout">
+  <div class="notes">
+    <h3>What changed</h3>
+    <ol>
+      <li><b>Three windows, pinned at the top</b> like <code>TrendsWindowPicker</code>. 14D is the deep look — full-size day cells, every night of sleep. 1M is the same marks across a month. 3M is the overview.</li>
+      <li><b>3M buckets to weeks.</b> 91 daily columns in 262px is 2.9px each — the marks stop carrying anything. At 3M every lane switches to weekly and the chart footer says so. It also means 3M hides a single bad night; if that matters more than the overview, one constant moves it back to daily.</li>
+      <li><b>Miles per week is the whole week.</b> No more <code>48*</code> / <code>10*</code>. A finished week shows its full total even where the window cuts through it — the block just runs off the left edge. The week in progress shows <b>actual solid, planned above it with a dashed cap</b>, labelled with the projected total.</li>
+      <li><b>The gutter fits its labels.</b> 46px — no more <b>VIGGLE</b> and <b>VK VOL</b>.</li>
+      <li><b>Each lane captions its own scale</b> underneath: <code>PEAK 96</code>, <code>USUAL 6H20–8H</code>, <code>USUAL 43–47 BPM</code>.</li>
+      <li><b>Sleep and RHR are lines over your usual band</b>, not deviation bars. Nights outside the band get a scarlet dot and a value.</li>
+      <li><b>Chips fit on one line</b>, same fill-on / hairline-off language, scrolling with a fade.</li>
+      <li><b>The day readout stops printing twice.</b> The card below is the real detail — and at weekly resolution it becomes the week.</li>
+    </ol>
+
+    <div class="res">
+      <h3>How each lane re-resolves</h3>
+      <table>
+        <tr><th>Lane</th><th>14D · 1M</th><th>3M</th></tr>
+        <tr><td>Mood</td><td>One square per day</td><td>Low days per week, 0–7</td></tr>
+        <tr><td>Niggle</td><td>Dot on the day</td><td>Days named that week</td></tr>
+        <tr><td>TLS</td><td>Daily load</td><td>Weekly total load</td></tr>
+        <tr><td>Wk vol</td><td colspan="2">Always weekly — the lane never changes</td></tr>
+        <tr><td>Sleep · RHR</td><td>Nightly</td><td>Weekly mean, same band</td></tr>
+      </table>
+      <p><b>One flag, unchanged.</b> PALETTE.md's known collision lands on this screen: scarlet <code>#E63946</code> and <code>struggling</code> <code>#C45A3A</code> are 16° apart at the same lightness, and at 3M the weekly mood bars are drawn in struggling right next to the scarlet today rule. Nudging struggling darker is the one-value fix you already wrote down.</p>
+      <p><b>Data is synthetic</b> — a plausible year: two builds, two races, a recovery block, and a knee patch in the spring. Shapes are real enough to judge the layout.</p>
+    </div>
+  </div>
+
+  <div class="phone">
+    <div class="notch"></div>
+    <div class="statusbar"><span>9:58</span><span>·ııl &nbsp;≋ &nbsp;88</span></div>
+    <div class="screen" id="screen">
+      <div class="wbar" id="wbar"></div>
+      <div class="inner" id="inner"></div>
+    </div>
+    <div class="tabbar">
+      <div class="tab"><i class="dot"></i><span>Log</span></div>
+      <div class="tab"><i class="dot"></i><span>Train</span></div>
+      <div class="tab active"><i class="dot"></i><span>Trends</span></div>
+      <div class="tab"><i class="dot"></i><span>Week</span></div>
+      <div class="tab"><i class="dot"></i><span>Ask</span></div>
+      <div class="tab"><i class="dot"></i><span>Sheet</span></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+/* ============================== tokens ============================== */
+const EMPTY='#EFEFED', INK='#0D1016', INK2='#585D68', INK3='#8F95A1', RULE='#E6E7EA',
+      RED='#E63946', REDTX='#E01C2B', WELL='#F4F4F2',
+      TLS_BASE='#93B9D6', TLS_KEY='#2F66A8', VOL='#CFCFCB', VOL_PLAN='#EDEDEB';
+const MOOD={energized:'#2D8A4E',positive:'#4A9E6B',neutral:'#9B9590',tired:'#C4873A',struggling:'#C45A3A',injured:'#B83A4A'};
+const LOWSET=new Set(['struggling','injured']);
+
+/* ============================== data ==============================
+   A synthetic season ending Tue 25 Aug 2026 — two builds, two races,
+   a recovery block, a knee patch in the spring. Seeded, so it never
+   changes between reloads.                                          */
+let seed=20260825;
+const rnd=()=>((seed=(seed*1664525+1013904223)%4294967296)/4294967296);
+const gauss=()=>{let s=0;for(let i=0;i<3;i++)s+=rnd();return (s/3-0.5)*2;};
+
+const TODAY=new Date(2026,7,25);                       // Tue
+const DAY=864e5;
+const mondayOf=d=>{const x=new Date(d);const k=(x.getDay()+6)%7;x.setDate(x.getDate()-k);x.setHours(0,0,0,0);return x;};
+const key=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const fdate=d=>MON[d.getMonth()]+' '+d.getDate();
+const hm=v=>Math.floor(v)+'h'+String(Math.round(v%1*60)).padStart(2,'0');
+
+/* weekly mileage target, oldest week (0) → current week (52) */
+function weekTarget(w){
+  let t;
+  if(w<8)        t=34+w*0.9;                    // base
+  else if(w<21)  t=41+(w-8)*1.35;               // build 1
+  else if(w===21)t=46;                          // race week
+  else if(w<26)  t=22+(w-22)*4;                 // recovery
+  else if(w<41)  t=40+(w-26)*1.9;               // build 2
+  else if(w===41)t=50;                          // race week
+  else if(w<45)  t=24+(w-42)*5;                 // recovery
+  else           t=44+(w-45)*1.7;               // current block
+  if(w>7 && w<41 && w%4===3) t*=0.74;           // down week
+  return Math.round(t);
+}
+const SHAPE=[.13,.16,.05,.14,.10,.28,.14];      // Mon…Sun share of the week
+
+const ALL=[];                                   // 53 weeks of days, oldest first
+const curMonday=mondayOf(TODAY);
+const start=new Date(curMonday.getTime()-52*7*DAY);
+for(let w=0;w<53;w++){
+  const target=weekTarget(w);
+  for(let k=0;k<7;k++){
+    const date=new Date(start.getTime()+(w*7+k)*DAY);
+    const future=date>TODAY;
+    let mi=Math.round(target*SHAPE[k]*(1+gauss()*.14)*10)/10;
+    if(k===2 && rnd()<.55) mi=0;                            // Wed often off
+    if(k===6 && rnd()<.30) mi=0;
+    const isKey=(k===1&&mi>0)||(k===5&&mi>10&&rnd()<.4);
+    const tls=mi>0?Math.round(mi*4.4*(1+gauss()*.12)+(isKey?14:0)):0;
+    const q=isKey?Math.round(tls*(0.24+rnd()*.14)):0;
+    /* mood — heavier weeks and the day after a long run skew tired */
+    const hard=(target>52?.16:0)+(k===6?.16:0)+(k===0?.10:0);
+    const r=rnd();
+    let mood=null;
+    if(rnd()<.72){
+      mood = r<.10+hard*.5 ? 'struggling'
+           : r<.30+hard    ? 'tired'
+           : r<.62         ? 'neutral'
+           : r<.88         ? 'positive' : 'energized';
+    }
+    if(w>=18&&w<=25&&rnd()<.10) mood='injured';
+    /* niggle — a knee patch in the spring, odd days elsewhere */
+    let nig=null;
+    if(w>=18&&w<=27){ if(rnd()<.34) nig='knee'; }
+    else if(rnd()<.055) nig=rnd()<.6?'knee':'calf';
+    const sl=Math.round(Math.max(3.1,7.15+gauss()*.55+(rnd()<.025?-3.4:0))*100)/100;
+    const rhr=Math.round(45+gauss()*1.5+(target>55?.7:0));
+    ALL.push({date,k:key(date),dow:DOW[k],w,future,
+      mi:future?null:mi, plan:Math.round(target*SHAPE[k]*10)/10,
+      tls:future?null:tls, q:future?0:q,
+      mood:future?null:mood, nig:future?null:nig,
+      sl:future?null:sl, rhr:future?null:rhr,
+      note:future?'Planned':(mi===0?'No log · rest day':(isKey?mi+' mi · key session':mi+' mi easy'))});
+  }
+}
+const TODAY_I=ALL.findIndex(d=>d.k===key(TODAY));
+const PAST=ALL.slice(0,TODAY_I+1);
+
+/* full-week mileage: actual for finished weeks, actual + planned for the one running */
+const WEEKMI={};
+ALL.forEach(d=>{
+  const m=WEEKMI[d.w]||(WEEKMI[d.w]={done:0,plan:0,cur:false});
+  if(d.future){ m.plan+=d.plan; m.cur=true; } else m.done+=d.mi;
+});
+Object.values(WEEKMI).forEach(m=>{m.done=Math.round(m.done);m.plan=Math.round(m.plan);m.total=m.done+m.plan;});
+
+/* usual ranges — the athlete's own 90-night baseline */
+const base=PAST.slice(-90);
+const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+const sd=a=>{const m=mean(a);return Math.sqrt(mean(a.map(v=>(v-m)**2)));};
+const slV=base.map(d=>d.sl), rhrV=base.map(d=>d.rhr);
+const SLEEP_BAND=[mean(slV)-sd(slV), mean(slV)+sd(slV)];
+const RHR_BAND=[Math.round(mean(rhrV)-sd(rhrV)), Math.round(mean(rhrV)+sd(rhrV))];
+
+/* ============================== windows ============================== */
+const WINDOWS=[{id:'14d',label:'14D',days:14},{id:'1m',label:'1M',days:30},{id:'3m',label:'3M',days:91}];
+let win=WINDOWS[0], sel=null;
+/* 14D and 1M read day by day. 3M is the overview, so it buckets to weeks —
+   move this one number if you want 3M to stay daily. */
+const WEEKLY_ABOVE=60;
+
+/* ============================== geometry ============================== */
+const GUT=46, W=308, PW=W-GUT;
+const T=(x,y,s,{size=9,fill:f=INK3,anchor='start',weight=400,track=.9,base='auto'}={})=>
+ `<text x="${x}" y="${y}" fill="${f}" font-size="${size}" text-anchor="${anchor}" font-weight="${weight}" letter-spacing="${track}" dominant-baseline="${base}" font-family="JetBrains Mono, ui-monospace, monospace">${s}</text>`;
+const R=(x,y,w,h,f,rx=0,ex='')=>`<rect x="${x}" y="${y}" width="${Math.max(0,w)}" height="${Math.max(0,h)}" rx="${rx}" fill="${f}" ${ex}/>`;
+const L=(x1,y1,x2,y2,c,w=1,ex='')=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${c}" stroke-width="${w}" ${ex}/>`;
+
+/* ============================== bucketing ============================== */
+function build(){
+  const days=PAST.slice(-win.days);
+  const weekly=win.days>WEEKLY_ABOVE;
+  let B;
+  if(!weekly){
+    B=days.map(d=>({kind:'day',d,label:fdate(d.date)+' · '+d.dow,
+      mood:d.mood,nig:d.nig,tls:d.tls,q:d.q,sl:d.sl,rhr:d.rhr,mi:d.mi,w:d.w,
+      today:d.k===key(TODAY),date:d.date,note:d.note}));
+  }else{
+    const by={};
+    days.forEach(d=>{(by[d.w]||(by[d.w]=[])).push(d);});
+    B=Object.keys(by).map(Number).sort((a,b)=>a-b).map(w=>{
+      const g=by[w], m=mondayOf(g[0].date);
+      return {kind:'week',w,days:g,date:m,
+        label:'Wk of '+fdate(m),
+        low:g.filter(x=>LOWSET.has(x.mood)).length,
+        nigN:g.filter(x=>x.nig).length,
+        tls:g.reduce((a,x)=>a+(x.tls||0),0),
+        q:g.reduce((a,x)=>a+(x.q||0),0),
+        mi:WEEKMI[w].total, miDone:WEEKMI[w].done, miPlan:WEEKMI[w].plan,
+        sl:mean(g.map(x=>x.sl)), rhr:mean(g.map(x=>x.rhr)),
+        today:g.some(x=>x.k===key(TODAY)),
+        note:WEEKMI[w].plan>0
+          ? WEEKMI[w].total+' mi projected · '+WEEKMI[w].done+' so far'
+          : WEEKMI[w].total+' mi · '+g.filter(x=>x.mi>0).length+' runs'};
+    });
+  }
+  /* week blocks spanning the buckets they cover */
+  const wk=[]; let cur=null;
+  B.forEach((b,i)=>{
+    const w=b.kind==='day'?b.w:b.w;
+    if(!cur||cur.w!==w){ cur={w,a:i,b:i,mi:WEEKMI[w]}; wk.push(cur); } else cur.b=i;
+  });
+  return {B,weekly,wk,days};
+}
+
+/* ============================== lanes ============================== */
+function mk(S){
+  const {B,weekly,wk}=S, n=B.length, CW=PW/n;
+  const cx=i=>GUT+i*CW+CW/2;
+  const thin=CW<7;
+  const bw=Math.max(1.4, Math.min(14, CW*0.72));
+  const todayI=B.findIndex(b=>b.today);
+  S.n=n; S.CW=CW; S.cx=cx; S.thin=thin; S.bw=bw; S.todayI=todayI;
+
+  const maxTLS=Math.max(...B.map(b=>b.tls||0))||1;
+  const maxMI=Math.max(...B.map(b=>(weekly?b.miDone:b.mi)||0))||1;
+  const maxWK=Math.max(...wk.map(w=>w.mi.total))||1;
+  const maxLOW=Math.max(3,...B.map(b=>b.low||0));
+  const maxNIG=Math.max(2,...B.map(b=>b.nigN||0));
+
+  const bar=(i,y,h,v,max,fill,rx=1.5)=>{
+    if(!v) return ''; const bh=v/max*h;
+    return R(cx(i)-bw/2,y+h-bh,bw,bh,fill,thin?0:rx);
+  };
+
+  const laneMood=(y,h)=>{
+    let s='';
+    if(!weekly){
+      B.forEach((b,i)=>{
+        const x=cx(i)-bw/2;
+        if(b.today) s+=R(x,y,bw,h,'#FFFFFF',thin?0:3,`stroke="${INK}" stroke-width="${thin?1:1.4}"`);
+        else s+=R(x,y,bw,h,b.mood?MOOD[b.mood]:EMPTY,thin?0:3);
+      });
+    }else{
+      s+=L(GUT,y+h,W,y+h,RULE,1);
+      B.forEach((b,i)=>{ s+=bar(i,y,h,b.low,maxLOW,MOOD.struggling); });
+    }
+    return s;
+  };
+  const laneNiggle=(y,h)=>{
+    let s='';
+    if(!weekly){
+      const cyy=y+h/2;
+      B.forEach((b,i)=>{
+        if(b.nig){ s+= thin ? R(cx(i)-bw/2,y+1,bw,h-2,MOOD.injured,0,'opacity=".6"')
+                            : `<circle cx="${cx(i)}" cy="${cyy}" r="4" fill="${MOOD.injured}" opacity=".55"/>`; }
+        else if(!b.today&&!thin) s+=`<circle cx="${cx(i)}" cy="${cyy}" r="1.1" fill="${INK3}" opacity=".4"/>`;
+      });
+    }else{
+      s+=L(GUT,y+h,W,y+h,RULE,1);
+      B.forEach((b,i)=>{ s+=bar(i,y,h,b.nigN,maxNIG,MOOD.injured,1); });
+    }
+    return s;
+  };
+  const laneTLS=(y,h)=>{
+    let s=L(GUT,y+h,W,y+h,RULE,1);
+    B.forEach((b,i)=>{
+      if(!b.tls) return;
+      const bh=b.tls/maxTLS*h, qh=(b.q||0)/maxTLS*h, x=cx(i)-bw/2;
+      s+=R(x,y+h-bh,bw,bh-qh,TLS_BASE,thin?0:1.5);
+      if(qh>0.6) s+=R(x,y+h-bh,bw,qh,TLS_KEY,thin?0:1.5);
+    });
+    return s;
+  };
+  const laneMiles=(y,h)=>{
+    let s=L(GUT,y+h,W,y+h,RULE,1);
+    B.forEach((b,i)=>{ s+=bar(i,y,h,weekly?b.miDone:b.mi,maxMI,VOL); });
+    return s;
+  };
+  const laneKeys=(y,h)=>{
+    let s=''; const cyy=y+h/2;
+    B.forEach((b,i)=>{ if(b.q) s+=R(cx(i)-bw/2,cyy-4,bw,8,TLS_KEY,thin?0:2); });
+    return s;
+  };
+  /* --- miles per week: the WHOLE week. Done solid, planned above with a dashed cap. --- */
+  const laneWeek=(y,h)=>{
+    let s=L(GUT,y+h,W,y+h,RULE,1);
+    const wide=wk.length<=8;
+    wk.forEach(g=>{
+      const x0=Math.max(GUT, cx(g.a)-CW/2+(wide?1.5:0.6));
+      const x1=cx(g.b)+CW/2-(wide?1.5:0.6);
+      const hDone=g.mi.done/maxWK*h, hAll=g.mi.total/maxWK*h;
+      s+=R(x0,y+h-hDone,x1-x0,hDone,VOL,wide?3:1);
+      if(g.mi.plan>0){
+        s+=R(x0+.5,y+h-hAll+.5,x1-x0-1,hAll-hDone-1,VOL_PLAN,wide?3:1,
+             `stroke="${INK3}" stroke-width="1" stroke-dasharray="3 2.5"`);
+      }
+      const txt=g.mi.plan>0 ? g.mi.total+' proj' : g.mi.total+' mi';
+      const tw=txt.length*5.7, projH=hAll-hDone;
+      if(wide){
+        const tx=Math.max(GUT+tw/2+2, Math.min(W-3-tw/2, (x0+x1)/2));
+        /* sit inside the planned part where it fits, then inside the block, then above it */
+        const ty = (g.mi.plan>0 && projH>=13) ? y+h-hAll+projH/2+3.5
+                 : (hAll>=19)                 ? y+h-hAll+hAll/2+3.5
+                 :                              y+h-hAll-6;
+        s+=T(tx, ty, txt, {size:9,fill:g.mi.plan>0?INK2:INK,anchor:'middle',weight:600,track:.3});
+      }
+    });
+    return s;
+  };
+  const laneBand=(key,band,pad,fmt)=>(y,h)=>{
+    const vals=B.map(b=>b[key]).filter(v=>v!=null);
+    const lo=Math.min(band[0],...vals)-pad, hi=Math.max(band[1],...vals)+pad;
+    const sc=v=>y+h-((v-lo)/(hi-lo))*h;
+    let s=R(GUT,sc(band[1]),PW,sc(band[0])-sc(band[1]),WELL,2);
+    s+=L(GUT,sc(band[1]),W,sc(band[1]),'#E2E2E0',1);
+    s+=L(GUT,sc(band[0]),W,sc(band[0]),'#E2E2E0',1);
+    const pts=[];
+    B.forEach((b,i)=>{ if(b[key]!=null) pts.push([cx(i),sc(b[key]),b[key]]); });
+    s+=`<polyline points="${pts.map(p=>p[0]+','+p[1]).join(' ')}" fill="none" stroke="${INK2}" stroke-width="${thin?1.1:1.5}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    let far=null,fd=0;
+    pts.forEach(p=>{const dd=Math.max(band[0]-p[2],p[2]-band[1]); if(dd>fd){fd=dd;far=p;}});
+    pts.forEach(p=>{
+      const out=p[2]<band[0]||p[2]>band[1];
+      if(out) s+=`<circle cx="${p[0]}" cy="${p[1]}" r="${thin?2.4:3.4}" fill="${RED}"/>`;
+      else if(!thin) s+=`<circle cx="${p[0]}" cy="${p[1]}" r="2" fill="${INK2}"/>`;
+    });
+    if(far && far[0]<W-56) s+=T(far[0]+7,far[1]+3.5,fmt(far[2]),{size:9.5,fill:REDTX,weight:600,track:.2});
+    else if(far) s+=T(far[0]-7,far[1]+3.5,fmt(far[2]),{size:9.5,fill:REDTX,anchor:'end',weight:600,track:.2});
+    return s;
+  };
+
+  const peakWk=Math.max(...wk.map(g=>g.mi.total));
+  return [
+   {id:'mood',   g:'Mood',   h:weekly?26:14, on:true,  sw:MOOD.energized, chip:'Mood',
+    cap:weekly?`Low days / wk · peak ${maxLOW}`:`${B.filter(b=>LOWSET.has(b.mood)).length} low days`, draw:laneMood},
+   {id:'mileage',g:'Miles',  h:38, on:false, sw:VOL,   chip:'Mileage',
+    cap:weekly?`Weekly total · peak ${Math.round(maxMI)} mi`:`Max ${Math.round(maxMI)} mi`, draw:laneMiles},
+   {id:'niggle', g:'Niggle', h:weekly?22:14, on:true,  sw:MOOD.injured, chip:'Niggles',
+    cap:weekly?`Named / wk · peak ${maxNIG}`:`${B.filter(b=>b.nig).length} days`, draw:laneNiggle},
+   {id:'keys',   g:'Keys',   h:16, on:false, sw:TLS_KEY, chip:'Key sessions',
+    cap:`${B.filter(b=>b.q).length} with quality work`, draw:laneKeys},
+   {id:'tls',    g:'TLS',    h:58, on:true,  sw:TLS_BASE, chip:'TLS',
+    cap:`Peak ${maxTLS}`, draw:laneTLS},
+   {id:'vol',    g:'Wk vol', h:34, on:true,  sw:VOL,   chip:'Weekly volume',
+    cap:`Whole week · peak ${peakWk} mi`, draw:laneWeek},
+   {id:'sleep',  g:'Sleep',  h:42, on:true,  sw:INK2,  chip:'Sleep',
+    cap:`Usual ${hm(SLEEP_BAND[0])}–${hm(SLEEP_BAND[1])}`,
+    draw:laneBand('sl',SLEEP_BAND,.4,hm)},
+   {id:'rhr',    g:'RHR',    h:36, on:true,  sw:INK2,  chip:'Resting HR',
+    cap:`Usual ${RHR_BAND[0]}–${RHR_BAND[1]} bpm`,
+    draw:laneBand('rhr',RHR_BAND,1,v=>Math.round(v))}
+  ];
+}
+
+/* lane on/off survives a window change */
+const ON={mood:1,mileage:0,niggle:1,keys:0,tls:1,vol:1,sleep:1,rhr:1};
+
+/* ============================== axis ============================== */
+function axis(S,y){
+  const {B,cx,CW,n}=S;
+  let cands=[];
+  if(win.days<=45){
+    B.forEach((b,i)=>{ if(b.date.getDay()===1) cands.push([i,fdate(b.date)]); });
+    if(!cands.length||cands[0][0]>2) cands.unshift([0,fdate(B[0].date)]);
+  }
+  else { B.forEach((b,i)=>{ const prev=i?B[i-1].date:null;
+          if(!prev||prev.getMonth()!==b.date.getMonth()) cands.push([i,MON[b.date.getMonth()]+(b.date.getMonth()===0?" '"+String(b.date.getFullYear()%100):'')]); }); }
+  if(!cands.length) cands=[[0,fdate(B[0].date)]];
+  const step=Math.ceil(cands.length/5);
+  const picked=cands.filter((_,i)=>i%step===0);
+  let lastX=-1e3, out='';
+  picked.forEach(([i,s])=>{
+    const x=Math.min(cx(i)-CW/2, W-34);
+    if(x-lastX < s.length*6.4+10) return;
+    lastX=x;
+    out+=T(x, y, s.toUpperCase(), {size:9,fill:INK3,track:.9,base:'hanging'});
+  });
+  return out;
+}
+
+/* ============================== chart ============================== */
+function chart(S,LANES){
+  const CAP=13, GAP=15;
+  let y=4, body='', over='';
+  LANES.forEach(l=>{
+    if(!ON[l.id]) return;
+    over+=T(GUT-9,y+l.h/2,l.g.toUpperCase(),{size:8.5,fill:INK2,anchor:'end',weight:600,track:.5,base:'middle'});
+    body+=l.draw(y,l.h);
+    over+=T(W-3,y+l.h+4,l.cap.toUpperCase(),{size:8.5,fill:INK3,anchor:'end',track:.6,base:'hanging'});
+    y+=l.h+CAP+GAP;
+  });
+  const AX=y-GAP+13, H=AX+16;
+  /* week / month dividers behind everything */
+  let bg='';
+  const every = S.weekly ? 4 : (win.days<=45?1:0);
+  if(every){
+    S.B.forEach((b,i)=>{
+      const isDiv = S.weekly ? (i%every===0&&i) : (b.date.getDay()===1&&i);
+      if(isDiv) bg+=L(S.cx(i)-S.CW/2,0,S.cx(i)-S.CW/2,AX-4,RULE,1);
+    });
+  } else {
+    S.B.forEach((b,i)=>{ const p=i?S.B[i-1].date:null;
+      if(p&&p.getMonth()!==b.date.getMonth()) bg+=L(S.cx(i)-S.CW/2,0,S.cx(i)-S.CW/2,AX-4,RULE,1); });
+  }
+  if(sel!=null&&sel!==S.todayI) bg+=L(S.cx(sel),0,S.cx(sel),AX-4,INK,Math.max(1,Math.min(S.CW,14)),'opacity=".05"')
+      + L(S.cx(sel),0,S.cx(sel),AX-4,INK,1,'opacity=".22"');
+  if(S.todayI>=0) bg+=L(S.cx(S.todayI),0,S.cx(S.todayI),AX-4,RED,1,'opacity=".42"');
+  const hit=S.B.map((b,i)=>`<rect x="${S.cx(i)-S.CW/2}" y="0" width="${S.CW}" height="${AX-4}" fill="transparent" style="cursor:pointer" onclick="pick(${i})"/>`).join('');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${bg}${body}${over}${axis(S,AX)}${hit}</svg>`;
+}
+
+/* ============================== render ============================== */
+function render(){
+  const S=build(), LANES=mk(S), B=S.B;
+  if(sel==null||sel>=B.length) sel=B.length-(S.weekly?1:2);
+  const b=B[sel];
+  const days=S.days;
+  const low=days.filter(d=>LOWSET.has(d.mood)).length;
+  const nig=days.filter(d=>d.nig).length;
+  const nigParts={}; days.forEach(d=>{if(d.nig)nigParts[d.nig]=(nigParts[d.nig]||0)+1;});
+  const topPart=Object.keys(nigParts).sort((a,x)=>nigParts[x]-nigParts[a])[0];
+  let b2b=0; for(let i=1;i<days.length;i++) if(LOWSET.has(days[i].mood)&&LOWSET.has(days[i-1].mood)) b2b++;
+  const runs=days.filter(d=>d.mi>0).length;
+
+  document.getElementById('wbar').innerHTML=`
+    <div class="wrow">${WINDOWS.map(w=>`<button class="${w.id===win.id?'on':''}" onclick="setWin('${w.id}')">${w.label}</button>`).join('')}</div>
+    <div class="wmeta"><span>${fdate(days[0].date)}${win.days>180?" '"+String(days[0].date.getFullYear()%100):''} – ${fdate(days[days.length-1].date)}</span><span>${runs} runs</span></div>`;
+
+  document.getElementById('inner').innerHTML=`
+  <div class="hero"><span class="n">${low}</span><span class="of">of ${days.length} days</span></div>
+  <div class="hero-label">Struggling or worse</div>
+  <div class="quote"><p>${b2b?`Low days back to back ${b2b===1?'once':b2b+' times'}.`:'No low days back to back.'} Niggles on ${nig} days — mostly ${topPart||'knee'}.</p></div>
+
+  <div class="strip-wrap"><div class="strip">
+    ${LANES.map(l=>`<button class="chip ${ON[l.id]?'on':''}" onclick="toggle('${l.id}')">
+       <i style="${ON[l.id]?`background:${l.sw}`:''}"></i>${l.chip}</button>`).join('')}
+  </div></div>
+
+  <div class="card">
+    <div class="dayline"><span class="d">${b.label}${b.today?' · Today':''}</span><span class="v">${b.note}</span></div>
+    ${chart(S,LANES)}
+    <div class="cardfoot"><span>${S.weekly?`Weekly means · ${B.length} weeks`:`Daily · ${B.length} days`}</span><span>Tap to read</span></div>
+  </div>
+
+  <div class="sect">${S.weekly?'The week':'The day'}</div>
+  <div class="daycard">
+    <div class="h"><span class="d">${b.label}</span>
+      <span class="m">${S.weekly?(b.miPlan>0?'Week in progress':`${b.low} low · ${b.nigN} niggle`):(b.mood||'No log')}</span></div>
+    <div class="g">
+      <div><div class="k">Miles</div><div class="val ${b.mi?'':'dim'}">${b.mi!=null?Math.round(b.mi*10)/10:'—'}</div></div>
+      <div><div class="k">TLS</div><div class="val ${b.tls?'':'dim'}">${b.tls!=null?Math.round(b.tls):'—'}</div></div>
+      <div><div class="k">Sleep</div><div class="val ${b.sl?'':'dim'}">${b.sl!=null?hm(b.sl):'—'}</div></div>
+      <div><div class="k">RHR</div><div class="val ${b.rhr?'':'dim'}">${b.rhr!=null?Math.round(b.rhr):'—'}</div></div>
+    </div>
+    <div class="note">${b.note}${b.nig?` · ${b.nig} niggle`:''}</div>
+  </div>
+
+  <div class="sect">${S.weekly?'Weekly marks':'Mood by day'}</div>
+  <div class="legend">${S.weekly
+    ? `<span><i style="background:${MOOD.struggling}"></i>Low days</span>
+       <span><i style="background:${MOOD.injured}"></i>Niggle days</span>
+       <span><i style="background:${TLS_BASE}"></i>Weekly load</span>
+       <span><i style="background:${TLS_KEY}"></i>Quality share</span>
+       <span><i style="background:${VOL}"></i>Miles run</span>
+       <span><i style="background:${VOL_PLAN};border:1px dashed ${INK3}"></i>Planned</span>`
+    : Object.keys(MOOD).map(k=>`<span><i style="background:${MOOD[k]}"></i>${k}</span>`).join('')
+      +`<span><i style="background:${EMPTY};border:1px solid ${RULE}"></i>No log</span>`}
+  </div>
+  <div style="height:16px"></div>`;
+}
+window.setWin=id=>{win=WINDOWS.find(w=>w.id===id);sel=null;render();};
+window.toggle=id=>{ON[id]=ON[id]?0:1;render();};
+window.pick=i=>{sel=i;render();};
+document.getElementById('screen').addEventListener('scroll',e=>{
+  document.getElementById('wbar').classList.toggle('stuck',e.target.scrollTop>4);
+});
+render();
+</script>
+</body>
+</html>

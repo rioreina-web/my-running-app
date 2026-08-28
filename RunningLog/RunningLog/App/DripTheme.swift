@@ -98,8 +98,14 @@ struct WildColors {
     let positive = Color(hex: "1F7A41")
     let neutral = Color(hex: "6B6B6B")
     let tired = Color(hex: "A8560A")
-    let struggling = Color(hex: "C62828")
+    /// Pushed off brand red. `direction-one.css` closes the doc's open
+    /// question §2 in favour of separation: `#C62828` sat close enough to
+    /// `#EE2B24` to read as one colour at pill size. This is the darker,
+    /// browner step the doc named as its fallback.
+    let struggling = Color(hex: "B3261E")
     let injured = Color(hex: "8E1219")
+    /// Off the ramp — a session type, not a feeling.
+    let speed = Color(hex: "5A3C78")
 
     /// Mood → colour. Unknown / absent mood gets `ink3`, which is correct
     /// here because it is used as a 2pt rule, not as text.

@@ -1026,8 +1026,8 @@ private struct SectionCChart: View {
 ///
 /// This used to open with three stat tiles, led by "Readiness N/100" off
 /// `athlete_state.last_readiness_score` — a second 0–100 on the same screen
-/// as today's score, computed by an older server model the ledger replaced
-/// (see `TrendsRecoveryDemand.swift`). Two scales, one screen; the tiles
+/// as the recovery score that used to sit here, computed by an older server
+/// model. Two scales, one screen; the tiles
 /// also broke their own numbers ("4.2" wrapped mid-digit) whenever all three
 /// rendered. One quiet line now, and no second score. (Rio, 2026-08-17.)
 ///

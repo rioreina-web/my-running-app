@@ -2,7 +2,7 @@
 //  TrendsSignalLanes.swift
 //  RunningLog · Trends
 //
-//  The five-signal chart: mileage, key work, recovery, mood and niggles on one
+//  The four-signal chart: mileage, key work, mood and niggles on one
 //  shared time axis. Drag across it to read a single day down all five lanes.
 //
 //  **Why lanes and not the calendar.** `trends-v2-spec-2026-07-30` chose a
@@ -27,8 +27,7 @@
 //     cost more legibility for every reader than it bought for those it
 //     helped. The redundancy moved off the drawing rather than disappearing:
 //     the scrub readout names the mood in words, each column's VoiceOver
-//     label speaks it down all five lanes, and the audio graph still places
-//     mood on the `TrendsRecoveryFactors.moodPoints` ordering via
+//     label speaks it down every lane, and the audio graph places mood on
 //     `TrendsMoodColor.rank`. Colour carries the glance; words carry the
 //     certainty.
 //   • **Bar height is miles against the window maximum, one scale for the whole
@@ -65,7 +64,7 @@ struct TrendsSignalLanes: View {
     // Lane geometry. Heights are the design's, in points. The gaps around
     // text grow with `microType` so a label never lands on the lane above it
     // at the accessibility sizes.
-    private let laneHeights: [CGFloat] = [82, 26, 54, 16, 13]
+    private let laneHeights: [CGFloat] = [82, 26, 16, 13]
     private var headerHeight: CGFloat { max(12, microType + 3) }
     private var laneGap: CGFloat { max(15, microType + 6) }
     /// Extra room under the mileage lane for its legend.
@@ -118,7 +117,7 @@ struct TrendsSignalLanes: View {
                     // left-to-right along the time axis, each child reading
                     // down all five lanes for that bucket.
                     .accessibilityElement(children: .contain)
-                    .accessibilityLabel("Five signal lanes: mileage, key work, recovery, mood and niggles")
+                    .accessibilityLabel("Four signal lanes: mileage, key work, mood and niggles")
                     .accessibilityChildren {
                         HStack(spacing: 0) {
                             ForEach(set.buckets) { bucket in
@@ -227,7 +226,6 @@ struct TrendsSignalLanes: View {
     private func summaryLine(_ b: TrendsBucket) -> String {
         var parts: [String] = [runSummary(b)]
         if let mood = b.mood { parts.append(mood) }
-        parts.append("recovery \(b.recovery)")
         if let area = b.niggles.first?.area { parts.append(area) }
         return parts.joined(separator: " · ")
     }
@@ -237,7 +235,7 @@ struct TrendsSignalLanes: View {
     private struct Layout {
         let width: CGFloat
         let count: Int
-        /// Lane plot-area tops, indexed 0…4.
+        /// Lane plot-area tops, indexed 0…3.
         let tops: [CGFloat]
         let heights: [CGFloat]
         let slot: CGFloat
@@ -309,23 +307,22 @@ struct TrendsSignalLanes: View {
             guard show else { continue }
             var p = Path()
             p.move(to: CGPoint(x: layout.x(i), y: layout.tops[0]))
-            p.addLine(to: CGPoint(x: layout.x(i), y: layout.bottom(4)))
+            p.addLine(to: CGPoint(x: layout.x(i), y: layout.bottom(3)))
             ctx.stroke(p, with: .color(rule), lineWidth: 1)
         }
 
         drawMileage(ctx, layout: layout)
         drawKeyWork(ctx, layout: layout)
-        drawRecovery(ctx, layout: layout)
         drawMood(ctx, layout: layout)
         drawNiggles(ctx, layout: layout)
         drawAxis(ctx, layout: layout)
 
         // Scrub crosshair, spanning every lane — this is what makes the shared
-        // axis worth having: one gesture reads all five signals for one day.
+        // axis worth having: one gesture reads every signal for one day.
         if let i = scrubIndex, buckets.indices.contains(i) {
             var line = Path()
             line.move(to: CGPoint(x: layout.centreX(i), y: layout.tops[0]))
-            line.addLine(to: CGPoint(x: layout.centreX(i), y: layout.bottom(4)))
+            line.addLine(to: CGPoint(x: layout.centreX(i), y: layout.bottom(3)))
             ctx.stroke(line, with: .color(ink.opacity(0.45)), style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
         }
     }
@@ -454,69 +451,12 @@ struct TrendsSignalLanes: View {
         }
     }
 
-    // 3 · Recovery — line over banded ground.
-    private func drawRecovery(_ ctx: GraphicsContext, layout: Layout) {
-        let lane = 2
-        let top = layout.tops[lane], h = layout.heights[lane]
-        let buckets = set.buckets
-        guard let first = buckets.first, let last = buckets.last else { return }
-
-        let delta = last.recovery - first.recovery
-        laneHeader(ctx, layout: layout, lane: lane,
-                   left: "Recovery",
-                   right: "\(last.recovery) · \(delta >= 0 ? "+" : "−")\(abs(delta)) over window")
-
-        // The lane's floor matches the score's actual clamp (8…96) — a scale
-        // starting above the clamp plotted floor scores below the lane.
-        func y(_ v: Int) -> CGFloat {
-            top + h - CGFloat((Double(v) - 8) / (96 - 8)) * h
-        }
-
-        // Band grounds, at low alpha so the line stays the figure.
-        let bands: [(Int, Int, Color)] = [
-            (75, 96, Color.drip.positive),
-            (60, 75, Color.drip.neutral),
-            (45, 60, Color.drip.tired),
-            (8, 45, Color.drip.struggling),
-        ]
-        for (lo, hi, colour) in bands {
-            let rect = CGRect(x: 0, y: y(hi), width: layout.width, height: y(lo) - y(hi))
-            ctx.fill(Path(rect), with: .color(colour.opacity(0.07)))
-        }
-
-        var mid = Path()
-        mid.move(to: CGPoint(x: 0, y: y(60)))
-        mid.addLine(to: CGPoint(x: layout.width, y: y(60)))
-        ctx.stroke(mid, with: .color(Color.drip.textTertiary.opacity(0.55)),
-                   style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
-
-        let points = buckets.enumerated().map { CGPoint(x: layout.centreX($0.offset), y: y($0.element.recovery)) }
-        guard points.count > 1 else { return }
-
-        var area = Path()
-        area.move(to: CGPoint(x: points[0].x, y: top + h))
-        for p in points { area.addLine(to: p) }
-        area.addLine(to: CGPoint(x: points[points.count - 1].x, y: top + h))
-        area.closeSubpath()
-        ctx.fill(area, with: .color(Color.drip.textPrimary.opacity(0.05)))
-
-        var line = Path()
-        line.move(to: points[0])
-        for p in points.dropFirst() { line.addLine(to: p) }
-        ctx.stroke(line, with: .color(Color.drip.textPrimary),
-                   style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
-
-        let end = points[points.count - 1]
-        let dot = CGRect(x: end.x - 3, y: end.y - 3, width: 6, height: 6)
-        ctx.fill(Path(ellipseIn: dot.insetBy(dx: -1.5, dy: -1.5)), with: .color(Color.drip.background))
-        ctx.fill(Path(ellipseIn: dot), with: .color(Self.bandColour(last.recovery)))
-    }
 
     // 4 · Mood — colour only, one equal-height swatch per logged day.
     // Unlogged renders as empty ground: a day with no feeling logged is a
     // fact about the week, not a zero.
     private func drawMood(_ ctx: GraphicsContext, layout: Layout) {
-        let lane = 3
+        let lane = 2
         let top = layout.tops[lane], h = layout.heights[lane]
 
         laneHeader(ctx, layout: layout, lane: lane,
@@ -576,7 +516,7 @@ struct TrendsSignalLanes: View {
 
     // 5 · Niggles — ticks, opacity from the athlete's own severity word.
     private func drawNiggles(_ ctx: GraphicsContext, layout: Layout) {
-        let lane = 4
+        let lane = 3
         let top = layout.tops[lane], h = layout.heights[lane]
         let mentions = set.niggleMentionCount
 
@@ -655,7 +595,6 @@ struct TrendsSignalLanes: View {
                 .padding(.bottom, 1)
 
             readoutRow("Run", runSummary(bucket))
-            readoutRow("Recovery", "\(bucket.recovery) · \(TrendsRecoveryLedger.Band.of(bucket.recovery).rawValue.uppercased())")
             readoutRow("Mood", bucket.mood?.uppercased() ?? "not logged")
             readoutRow("Niggle", bucket.niggles.isEmpty
                        ? "none"
@@ -733,7 +672,6 @@ struct TrendsSignalLanes: View {
             parts.append(set.grain == .day ? "rest day" : "no miles")
         }
 
-        parts.append("recovery \(b.recovery), \(TrendsRecoveryLedger.Band.of(b.recovery).rawValue)")
 
         if let mood = b.mood, !mood.isEmpty { parts.append("mood \(mood)") }
 
@@ -787,14 +725,6 @@ struct TrendsSignalLanes: View {
         }
     }
 
-    static func bandColour(_ score: Int) -> Color {
-        switch TrendsRecoveryLedger.Band.of(score) {
-        case .flat: Color.drip.struggling
-        case .worn: Color.drip.tired
-        case .steady: Color.drip.neutral
-        case .clear: Color.drip.positive
-        }
-    }
 }
 
 // MARK: - Audio graph
@@ -873,11 +803,6 @@ extension TrendsSignalLanes: AXChartDescriptorRepresentable {
                 let word = b.keyCount == 1 ? "1 key session" : "\(b.keyCount) key sessions"
                 return (Double(b.keyCount) / maxKey * 100, word)
             },
-            makeSeries("Recovery", continuous: true) { b in
-                // The score's real clamp, matching the lane's own floor.
-                let n = (Double(b.recovery) - 8) / (96 - 8) * 100
-                return (n, "\(b.recovery), \(TrendsRecoveryLedger.Band.of(b.recovery).rawValue)")
-            },
             makeSeries("Mood", continuous: false) { b in
                 guard let mood = b.mood, !mood.isEmpty else { return nil }
                 return (TrendsMoodColor.rank(mood) * 100, mood)
@@ -894,7 +819,7 @@ extension TrendsSignalLanes: AXChartDescriptorRepresentable {
 
         return AXChartDescriptor(
             title: "Five signals",
-            summary: "Mileage, key work, recovery, mood and niggles over "
+            summary: "Mileage, key work, mood and niggles over "
                 + "\(buckets.count) \(grainWord)\(buckets.count == 1 ? "" : "s"), "
                 + "each series scaled to its own lane.",
             xAxis: xAxis,

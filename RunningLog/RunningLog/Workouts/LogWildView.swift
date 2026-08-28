@@ -90,6 +90,47 @@ private struct WildJournalWeek: Identifiable {
     let entries: [TrainingLog]
 }
 
+// MARK: - Default log mode
+
+/// Which instrument the Log tab hands you first.
+///
+/// Stored as a plain string rather than a `RawRepresentable` enum so
+/// `@AppStorage` needs no custom conformance. `SettingsView` writes it,
+/// `LogWildView` reads it, and both go through these constants so a typo
+/// cannot quietly split them into two different keys.
+enum LogDefaultMode {
+    static let key = "defaultLogMode"
+    static let voice = "voice"
+    static let text = "text"
+}
+
+// MARK: - Run phrasing
+//
+// File scope, not members, because `WildNoteComposerSheet` at the foot of this
+// file needs the same phrasing as the front door's linked block. Two copies of
+// "Today morning" is how the linked block and the picker ended up disagreeing
+// about the same run in the first place.
+
+private func dayPhrase(for date: Date) -> String {
+    let cal = Calendar.current
+    let hour = cal.component(.hour, from: date)
+    let partOfDay = hour < 12 ? "morning" : (hour < 17 ? "afternoon" : "evening")
+    if cal.isDateInToday(date) { return "Today \(partOfDay)" }
+    if cal.isDateInYesterday(date) { return "Yesterday \(partOfDay)" }
+    return "\(wildWeekdayFormatter.string(from: date)) \(partOfDay)"
+}
+
+private func metaLine(for w: RunningWorkout) -> String {
+    let pace = w.pacePerMile > 0
+        ? PaceCalculator.formatPaceFromMinutes(w.pacePerMile) + "/mi"
+        : "—"
+    return "\(w.formattedDuration) · \(pace)"
+}
+
+private func shortDate(_ d: Date) -> String {
+    wildShortDateFormatter.string(from: d)
+}
+
 // MARK: - LogWildView
 
 struct LogWildView: View {
@@ -109,15 +150,16 @@ struct LogWildView: View {
     @State private var selectedWorkout: RunningWorkout?
     @State private var showWorkoutPicker = false
 
-    // Typed note
+    // Typed note. The composer is a sheet now, so the text, the focus and
+    // the save all live inside `WildNoteComposerSheet` — this screen only
+    // owns the flag that presents it.
     @State private var showComposer = false
-    @State private var manualNotes = ""
-    @FocusState private var composerFocused: Bool
 
     // Journal
     @State private var journalKind: WildJournalKind = .all
     @State private var journalSearch = ""
     @State private var showSearch = false
+    @FocusState private var journalSearchFocused: Bool
     @State private var selectedHistoryEntry: TrainingLog?
     /// Week-grouped entries, built ONCE per change rather than per frame.
     ///
@@ -128,6 +170,16 @@ struct LogWildView: View {
     @State private var weekGroups: [WildJournalWeek] = []
 
     @State private var showToday = false
+
+    /// Voice by default. Set in Settings → App → Write notes by default.
+    @AppStorage(LogDefaultMode.key) private var defaultLogMode: String = LogDefaultMode.voice
+
+    /// True when the athlete has asked to type first AND nothing is being
+    /// recorded. A take in progress always shows the record block, because
+    /// that is the only place the stop control lives.
+    private var writingFirst: Bool {
+        defaultLogMode == LogDefaultMode.text && !recorder.isRecording
+    }
 
     /// The scroll anchor the masthead's "Today ↗" and the lede's
     /// "All runs ↗" both jump to.
@@ -158,10 +210,11 @@ struct LogWildView: View {
         .onAppear {
             recorder.prepare()
             Task {
-                if healthKitManager.recentWorkouts.isEmpty {
-                    let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-                    await MainActor.run { healthKitManager.recentWorkouts = workouts }
-                }
+                // Merged across HealthKit + Vital + Strava. This used to
+                // fetch HealthKit only, and only when the list was empty —
+                // so a Strava-only run never reached the block below, and a
+                // run that landed mid-session never reached it either.
+                await healthKitManager.refreshRecentRunsIfStale()
                 await viewModel.loadHistory()
                 rebuildWeekGroups()
             }
@@ -179,6 +232,22 @@ struct LogWildView: View {
                 healthKitManager: healthKitManager,
                 selectedWorkout: $selectedWorkout,
                 isPresented: $showWorkoutPicker
+            )
+        }
+        .sheet(isPresented: $showComposer) {
+            WildNoteComposerSheet(
+                healthKitManager: healthKitManager,
+                viewModel: viewModel,
+                selectedWorkout: $selectedWorkout,
+                isPresented: $showComposer,
+                onSaved: {
+                    // `saveManualNotes` reloads the journal, but the new note
+                    // lands below the fold — so saving looked like nothing
+                    // happening. Scroll to it. Seeing the entry IS the
+                    // receipt; it beats a toast that says it worked.
+                    rebuildWeekGroups()
+                    jumpRequest += 1
+                }
             )
         }
         .sheet(isPresented: $showConfirmation) {
@@ -246,7 +315,9 @@ struct LogWildView: View {
         }
         ToolbarItemGroup(placement: .keyboard) {
             Spacer()
-            Button("Done") { composerFocused = false }
+            // The journal search field is the only thing on this screen that
+            // takes the keyboard now — the composer brings its own.
+            Button("Done") { journalSearchFocused = false }
                 .font(.wildData(15))
                 .foregroundStyle(Color.wild.redText)
         }
@@ -272,11 +343,7 @@ struct LogWildView: View {
         VStack(spacing: 0) {
             lede
             linkedRun
-            if showComposer {
-                composer
-            } else {
-                recordBlock
-            }
+            if writingFirst { writeBlock } else { recordBlock }
         }
         // One screenful. The nav bar and tab bar are outside this, so the
         // page is the visible scroll viewport — which is what `geo.size`
@@ -304,7 +371,9 @@ struct LogWildView: View {
                     .font(.wildDisplay(46))
                     .tracking(46 * -0.05)
                     .foregroundStyle(Color.wild.ink)
-                Text("Tap the button to start your voice memo.")
+                Text(writingFirst
+                     ? "Tap the button to write a note."
+                     : "Tap the button to start your voice memo.")
                     .font(.wildDek(17))
                     .foregroundStyle(Color.wild.ink2)
                     .padding(.top, 12)
@@ -367,7 +436,10 @@ struct LogWildView: View {
                                 .tracking(13 * -0.02)
                                 .foregroundStyle(Color.wild.ink)
                             Text(metaLine(for: w))
-                                .font(.custom(WildFace.mono, size: 11))
+                                // Data role, not mono: these are measured
+                                // stats. Mono is transcripts and machine
+                                // answers, nothing else (system §1).
+                                .font(.wildData(11))
                                 .foregroundStyle(Color.wild.ink2)
                                 .monospacedDigit()
                         }
@@ -402,13 +474,13 @@ struct LogWildView: View {
 
     /// The run the block is showing: whatever is selected, else the newest.
     private var latestWorkout: RunningWorkout? {
-        selectedWorkout ?? healthKitManager.recentWorkouts.first
+        selectedWorkout ?? healthKitManager.recentRuns.first
     }
 
     private var railOfRecentRuns: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 7) {
-                ForEach(healthKitManager.recentWorkouts.prefix(6), id: \.id) { w in
+                ForEach(healthKitManager.recentRuns.prefix(6), id: \.id) { w in
                     railChip(
                         date: shortDate(w.startDate),
                         value: String(format: "%.2f", w.distanceMiles),
@@ -418,7 +490,7 @@ struct LogWildView: View {
                     }
                 }
                 railChip(date: "None", value: nil, active: selectedWorkout == nil
-                         && healthKitManager.recentWorkouts.isEmpty) {
+                         && healthKitManager.recentRuns.isEmpty) {
                     selectedWorkout = nil
                 }
             }
@@ -433,11 +505,14 @@ struct LogWildView: View {
         Button(action: tap) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(date.uppercased())
-                    .font(.custom(WildFace.mono, size: 10))
-                    .tracking(1.0)
+                    // Tracked uppercase → the Label role (Schibsted), not
+                    // mono. Tracking derived from size, same value as before.
+                    .font(.wildLabel(10))
+                    .tracking(10 * 0.10)
                 if let value {
                     Text(value)
-                        .font(.custom(WildFace.monoMedium, size: 10))
+                        // Data role — a measured distance, not a machine answer.
+                        .font(.wildData(10, semibold: true))
                         .monospacedDigit()
                 }
             }
@@ -474,13 +549,7 @@ struct LogWildView: View {
 
             if !recorder.isRecording {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.22)) { showComposer = true }
-                    // One tick, so the TextEditor exists before it is asked to
-                    // take focus. Setting focus in the same render pass that
-                    // creates the field is a no-op.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        composerFocused = true
-                    }
+                    showComposer = true
                 } label: {
                     WildLabel("Type a note instead ↗", size: 10, tracking: 0.14)
                         .frame(minHeight: 44)
@@ -497,95 +566,56 @@ struct LogWildView: View {
         .overlay(alignment: .bottom) { WildRule() }
     }
 
-    // MARK: - Composer
-
-    @ViewBuilder
-    /// Occupies the record button's slot rather than hanging below it.
+    /// The front door when the athlete types more than they talk.
     ///
-    /// It used to sit under `frontDoor`, which is a full screenful — so
-    /// opening it put a composer somewhere the athlete could not see, and
-    /// tapping "Type a note instead" looked like a button that did nothing.
-    /// Writing a note and recording one are the same act with a different
-    /// instrument, so they get the same slot: one or the other, in the place
-    /// you just tapped.
-    private var composer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                WildLabel("Note · today", size: 10, tracking: 0.14)
-                Spacer()
-                saveNoteButton
-            }
-            .frame(minHeight: 24)
-
-            ZStack(alignment: .topLeading) {
-                if manualNotes.isEmpty {
-                    Text("How did the run feel?")
-                        .font(.wildDek(19))
-                        .foregroundStyle(Color.wild.ink2)
-                        .padding(.top, 8)
-                        .padding(.leading, 5)
-                        .allowsHitTesting(false)
-                }
-                TextEditor(text: $manualNotes)
-                    .font(.wildProse(19))
-                    .foregroundStyle(Color.wild.ink)
-                    .scrollContentBackground(.hidden)
-                    .focused($composerFocused)
-                    .frame(minHeight: 120)
-            }
-            .padding(.top, 6)
-
-            Spacer(minLength: 8)
+    /// A mirror of `recordBlock`: one primary, its label, and the other
+    /// instrument as a quiet link underneath. The primary is a type slab bound
+    /// by the 2pt editorial rules rather than a second circular button —
+    /// a filled circle reads as "record" everywhere, and the one red belongs
+    /// to the record button alone.
+    ///
+    /// `Record instead ↗` starts the take immediately rather than just
+    /// swapping the view. That flips `recorder.isRecording`, which sends
+    /// `writingFirst` false and hands the screen back to `recordBlock`, where
+    /// the stop control is.
+    private var writeBlock: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 12)
 
             Button {
-                composerFocused = false
-                withAnimation(.easeInOut(duration: 0.22)) { showComposer = false }
+                showComposer = true
             } label: {
-                WildLabel("Record instead ↗", size: 10, tracking: 0.14)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                Text("Write a note.")
+                    .font(.wildDisplay(30))
+                    .tracking(30 * -0.045)
+                    .foregroundStyle(Color.wild.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 26)
+                    .overlay(alignment: .top) { WildRule(strong: true) }
+                    .overlay(alignment: .bottom) { WildRule(strong: true) }
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.horizontal, 22)
-        .padding(.top, 18)
-        .padding(.bottom, 12)
-        .background(Color.wild.paperDeep)
-        .overlay(alignment: .bottom) { WildRule() }
-        .transition(.opacity)
-    }
 
-    @ViewBuilder
-    private var saveNoteButton: some View {
-        if viewModel.isUploading {
-            ProgressView().controlSize(.mini).tint(Color.wild.ink2)
-        } else {
+            WildLabel("Tap to write", size: 11, tracking: 0.16)
+                .padding(.top, 12)
+
             Button {
-                let text = manualNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { return }
-                composerFocused = false
-                Task {
-                    let saved = await viewModel.saveManualNotes(text, selectedWorkout: selectedWorkout)
-                    guard saved else { return }
-                    manualNotes = ""
-                    selectedWorkout = nil
-                    withAnimation(.easeInOut(duration: 0.22)) { showComposer = false }
-                    // `saveManualNotes` reloads the journal, but the new note
-                    // lands below the fold — so saving looked like nothing
-                    // happening. Scroll to it. Seeing the entry IS the receipt;
-                    // it beats a toast that says it worked.
-                    rebuildWeekGroups()
-                    jumpRequest += 1
-                }
+                toggleRecording()
             } label: {
-                WildLabel("Save ↗", size: 10, tracking: 0.14,
-                          color: manualNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                 ? Color.wild.ink2 : Color.wild.redText)
+                WildLabel("Record instead ↗", size: 10, tracking: 0.14)
                     .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
-            .disabled(manualNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(.top, 4)
+            .disabled(viewModel.isUploading)
+
+            Spacer(minLength: 12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 20)
+        .overlay(alignment: .bottom) { WildRule() }
     }
 
     // MARK: - PAGE TWO · the journal
@@ -650,6 +680,7 @@ struct LogWildView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Color.wild.ink2)
             TextField("Search your words", text: $journalSearch)
+                .focused($journalSearchFocused)
                 .font(.wildDataRegular(14))
                 .foregroundStyle(Color.wild.ink)
                 .textInputAutocapitalization(.never)
@@ -698,7 +729,11 @@ struct LogWildView: View {
                            ? "No \(journalKind.label.lowercased()) entries yet."
                            : "Nothing matches \u{201C}\(journalSearch)\u{201D}.")
         } else {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+            // Not pinned. A pinned header sticks to the scroll view's top
+            // edge, and the scroll view extends under the navigation bar — so
+            // the week label was being clipped in half by the toolbar. 032c
+            // scrolls its section labels with the content; so does this.
+            LazyVStack(spacing: 0) {
                 ForEach(weekGroups) { week in
                     Section {
                         ForEach(week.entries, id: \.id) { log in
@@ -740,9 +775,8 @@ struct LogWildView: View {
             Spacer()
         }
         .padding(.horizontal, 22)
-        .padding(.top, 24)
-        .padding(.bottom, 8)
-        // Opaque so entries scroll cleanly under the pinned header.
+        .padding(.top, 34)
+        .padding(.bottom, 14)
         .background(Color.wild.paper)
     }
 
@@ -756,7 +790,7 @@ struct LogWildView: View {
                 }
             }
             .padding(.horizontal, 22)
-            .padding(.vertical, 14)
+            .padding(.vertical, 18)
             .overlay(alignment: .bottom) { WildRule() }
         } else {
             Button {
@@ -765,8 +799,8 @@ struct LogWildView: View {
                 JournalWildRow(entry: log,
                                niggles: viewModel.niggleByLog[log.id.uuidString] ?? [])
                     .padding(.horizontal, 22)
-                    .padding(.top, 20)
-                    .padding(.bottom, 24)
+                    .padding(.top, 26)
+                    .padding(.bottom, 30)
                     .contentShape(Rectangle())
                     .overlay(alignment: .bottom) { WildRule() }
             }
@@ -917,26 +951,6 @@ struct LogWildView: View {
 
     // MARK: - Copy helpers
 
-    private func dayPhrase(for date: Date) -> String {
-        let cal = Calendar.current
-        let hour = cal.component(.hour, from: date)
-        let partOfDay = hour < 12 ? "morning" : (hour < 17 ? "afternoon" : "evening")
-        if cal.isDateInToday(date) { return "Today \(partOfDay)" }
-        if cal.isDateInYesterday(date) { return "Yesterday \(partOfDay)" }
-        return "\(wildWeekdayFormatter.string(from: date)) \(partOfDay)"
-    }
-
-    private func metaLine(for w: RunningWorkout) -> String {
-        let pace = w.pacePerMile > 0
-            ? PaceCalculator.formatPaceFromMinutes(w.pacePerMile) + "/mi"
-            : "—"
-        return "\(w.formattedDuration) · \(pace)"
-    }
-
-    private func shortDate(_ d: Date) -> String {
-        wildShortDateFormatter.string(from: d)
-    }
-
     // MARK: - Recording
 
     private func toggleRecording() {
@@ -980,5 +994,255 @@ struct LogWildView: View {
         pendingURL = nil
         pendingDuration = 0
         viewModel.statusMessage = ""
+    }
+}
+
+// MARK: - Note composer
+
+private let wildComposerStampFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "EEE · MMM d"
+    return f
+}()
+
+/// Typing a note is its own surface.
+///
+/// It used to sit in the record button's slot on the front door — see
+/// `LOG-WILD-APPLY.md` §6d, which put it there so "Type a note instead" would
+/// not look like a button that did nothing. That reasoning was right about the
+/// symptom and this keeps the cure: the sheet opens on the same tap, instantly.
+///
+/// But the slot is at the foot of a page sized to the whole viewport inside a
+/// scroll view. With the keyboard up that left roughly 44pt — enough for the
+/// "Note · today" label and the Save link, and nothing at all for the text the
+/// athlete came to write. The tab bar still took its own 50pt off the bottom,
+/// and the keyboard toolbar's Done button landed on top of it. No arrangement
+/// of padding wins that; the slot itself was the problem.
+///
+/// On a sheet there is no tab bar, nothing scrolls underneath, and the writing
+/// surface is simply what is left after four fixed rows — a little over twice
+/// what the slot could ever give.
+///
+/// Prototype: `note-composer-prototype.html`.
+struct WildNoteComposerSheet: View {
+    @ObservedObject var healthKitManager: HealthKitManager
+    /// `@Observable`, so a plain `let` tracks it.
+    let viewModel: VoiceLogViewModel
+    @Binding var selectedWorkout: RunningWorkout?
+    @Binding var isPresented: Bool
+    /// Fired after a save lands, so the Log screen can rebuild the feed and
+    /// scroll to the new entry.
+    var onSaved: () -> Void
+
+    @State private var text = ""
+    @State private var showWorkoutPicker = false
+    @FocusState private var focused: Bool
+
+    private var trimmed: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool { !trimmed.isEmpty && !viewModel.isUploading }
+
+    /// Whatever the note will attach to: an explicit pick, else the newest run.
+    /// Reads `recentRuns` — merged across HealthKit, Vital and Strava — because
+    /// a Strava-only run has to be linkable too.
+    private var target: RunningWorkout? {
+        selectedWorkout ?? healthKitManager.recentRuns.first
+    }
+
+    var body: some View {
+        ZStack {
+            Color.wild.paper.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                bar
+                WildRule()
+                lede
+                WildRule()
+                linkedLine
+                WildRule()
+                writingSurface
+                WildRule()
+                footer
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .sheet(isPresented: $showWorkoutPicker) {
+            WildWorkoutPickerSheet(
+                healthKitManager: healthKitManager,
+                selectedWorkout: $selectedWorkout,
+                isPresented: $showWorkoutPicker
+            )
+        }
+        .task {
+            // The field has to exist before it can take focus — asking in the
+            // same render pass that creates it is a no-op.
+            try? await Task.sleep(for: .milliseconds(120))
+            focused = true
+        }
+    }
+
+    // MARK: Bar
+
+    private var bar: some View {
+        HStack {
+            Button {
+                focused = false
+                isPresented = false
+            } label: {
+                WildLabel("Cancel", size: 10, tracking: 0.14)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            if viewModel.isUploading {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(Color.wild.ink2)
+                    .frame(minHeight: 44)
+            } else {
+                Button(action: save) {
+                    // Grey until there is something to save, then the one red.
+                    // Same verb-plus-arrow as `Mark complete ↗` elsewhere, so
+                    // there is no new affordance to learn.
+                    WildLabel("Save ↗", size: 10, tracking: 0.14,
+                              color: canSave ? Color.wild.redText : Color.wild.ink3)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSave)
+            }
+        }
+        .padding(.horizontal, 22)
+    }
+
+    // MARK: Lede
+
+    private var lede: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Note.")
+                .font(.wildDisplay(34))
+                .tracking(34 * -0.045)
+                .foregroundStyle(Color.wild.ink)
+            Text("Write a note about your run.")
+                .font(.wildDek(16))
+                .foregroundStyle(Color.wild.ink2)
+                .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22)
+        .padding(.vertical, 18)
+    }
+
+    // MARK: Linked run
+
+    /// One line, not the front door's whole block. You need to know where the
+    /// note lands; you do not need the 32pt figure and the chip rail twice.
+    private var linkedLine: some View {
+        Button {
+            focused = false
+            showWorkoutPicker = true
+        } label: {
+            HStack(spacing: 10) {
+                if let w = target {
+                    Text(String(format: "%.2f mi", w.distanceMiles))
+                        .font(.wildData(15, semibold: true))
+                        .tracking(15 * -0.02)
+                        .monospacedDigit()
+                        .foregroundStyle(Color.wild.ink)
+                    Text("\(dayPhrase(for: w.startDate)) · \(metaLine(for: w))")
+                        // Data role — measured stats, not a transcript.
+                        .font(.wildData(11))
+                        .foregroundStyle(Color.wild.ink2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 8)
+                    WildLabel("Change ↗", size: 10, tracking: 0.14, color: Color.wild.ink)
+                } else {
+                    WildLabel("Link a run ↗", size: 10, tracking: 0.14, color: Color.wild.ink)
+                    Spacer(minLength: 8)
+                }
+            }
+            .frame(minHeight: 44)
+            .padding(.horizontal, 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: The writing surface
+
+    private var writingSurface: some View {
+        ZStack(alignment: .topLeading) {
+            if text.isEmpty {
+                // The canonical prompt. Prose, not mono italic: italic
+                // JetBrains Mono is a transcript — the machine quoting the
+                // athlete back — and this is the athlete writing.
+                Text("How did the run feel?")
+                    .font(.wildProse(20))
+                    .foregroundStyle(Color.wild.ink3)
+                    .padding(.top, 8)
+                    .padding(.leading, 5)
+                    .allowsHitTesting(false)
+            }
+            TextEditor(text: $text)
+                .font(.wildProse(20))
+                .foregroundStyle(Color.wild.ink)
+                .scrollContentBackground(.hidden)
+                .focused($focused)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // 17, not 22: TextEditor carries about 5pt of its own leading inset,
+        // so this is what lines the first character up with everything above.
+        .padding(.horizontal, 17)
+        .padding(.top, 12)
+    }
+
+    // MARK: Footer
+
+    private var footer: some View {
+        HStack {
+            Button {
+                focused = false
+                isPresented = false
+            } label: {
+                // Out of the writing surface. In the old inline composer this
+                // sat directly under the field, competing with the thing being
+                // typed into.
+                WildLabel("Record instead ↗", size: 10, tracking: 0.14)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            WildLabel(wildComposerStampFormatter.string(from: Date()),
+                      size: 10, tracking: 0.14, color: Color.wild.ink3)
+        }
+        .padding(.horizontal, 22)
+    }
+
+    // MARK: Save
+
+    private func save() {
+        let body = trimmed
+        guard !body.isEmpty else { return }
+        focused = false
+        Task {
+            let saved = await viewModel.saveManualNotes(body, selectedWorkout: selectedWorkout)
+            // On failure the view model surfaces the error and the sheet stays
+            // up with the text intact. Dismissing here would throw away words
+            // the athlete cannot get back.
+            guard saved else { return }
+            text = ""
+            selectedWorkout = nil
+            isPresented = false
+            onSaved()
+        }
     }
 }

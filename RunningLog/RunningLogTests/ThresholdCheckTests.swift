@@ -133,7 +133,11 @@ private func build(
     let read = build([effort(day: 90, heat: true), effort(day: 92, heat: true)])
     #expect(read.efforts.count == 2)
     #expect(read.efforts.allSatisfy { abs($0.devPct) < 0.5 })
-    #expect(read.efforts.allSatisfy(\.inHeat))
+    // Hoisted: as the whole #expect argument, the macro rewrites this to
+    // `$0.allSatisfy($1)` with no `try` — a compile error. Wrapped in a
+    // comparison it would be fine; bare it is not.
+    let allInHeat = read.efforts.allSatisfy(\.inHeat)
+    #expect(allInHeat)
 }
 
 // MARK: - Rule 2 · two agreeing efforts before any verdict

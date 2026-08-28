@@ -3,10 +3,10 @@
 //  RunningLog
 //
 //  Apple Health → `daily_biometrics` (source 'healthkit'). The producer that
-//  makes the recovery ledger's Overnight and Sleep factors actually fire.
+//  makes the nightly Sleep and Resting HR signals actually fire.
 //
-//  Context: the ledger (TrendsRecoveryFactors.overnight / .sleep), the storage
-//  (daily_biometrics), and the read path (trends-timeline) were all built for a
+//  Context: the storage (daily_biometrics) and the read path
+//  (trends-timeline) were both built for a
 //  Garmin-via-Junction producer that has delivered nothing since 2026-04-03.
 //  Everything downstream was complete and starved. This reads the same three
 //  signals off the watch the athlete is already wearing.

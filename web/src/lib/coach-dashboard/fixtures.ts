@@ -157,6 +157,7 @@ export const mayaResolvedNiggles: NiggleGroup[] = [
     latestDate: "May 30",
     latestQuote: "hammy tight during strides, loosened up.",
     otherDates: [],
+    quotes: [{ date: "2026-05-30", dateLabel: "May 30", quote: "hammy tight during strides, loosened up." }],
     recurrence: false,
     resolved: true,
   },

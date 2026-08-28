@@ -104,6 +104,23 @@ struct TrainingLog: Codable, Identifiable {
     /// sites (and tests) keep compiling without passing it.
     var title: String? = nil
 
+    /// How hard the session felt, 1–10.
+    ///
+    /// Proposed by `extract-rpe` reading the voice memo, and correctable on the
+    /// workout-detail slider — `rpeSource` records which of the two it was.
+    /// Nil is meaningful and must render as "not set": the extractor is
+    /// instructed to return null rather than guess when the memo says nothing
+    /// about effort, so a nil here is an honest absence, not a missing read.
+    /// Defaulted for the same reason as `title` — existing memberwise-init call
+    /// sites (and tests) keep compiling without passing it.
+    var feltRpe: Int? = nil
+
+    /// Provenance of `feltRpe`: `"llm"` (read out of the memo) or `"athlete"`
+    /// (set on the slider). Once this is `"athlete"` the number is frozen
+    /// against re-extraction — the guard lives in `supabase/functions/extract-rpe`,
+    /// which is otherwise idempotent and would overwrite it on the next dispatch.
+    var rpeSource: String? = nil
+
     enum CodingKeys: String, CodingKey {
         case id
         case createdAt = "created_at"
@@ -127,6 +144,8 @@ struct TrainingLog: Codable, Identifiable {
         case paceSegments = "pace_segments"
         case parsedStructure = "parsed_structure"
         case title
+        case feltRpe = "felt_rpe"
+        case rpeSource = "rpe_source"
     }
 
     /// Every column this struct decodes — and nothing else. ALWAYS pass this
@@ -141,7 +160,8 @@ struct TrainingLog: Codable, Identifiable {
         workout_distance_miles, workout_duration_minutes, processing_status, \
         processing_error, processing_attempts, transcript_url, coach_insight, \
         workout_notes, workout_pace_per_mile, workout_type, source, \
-        vital_workout_id, pace_segments, parsed_structure, title
+        vital_workout_id, pace_segments, parsed_structure, title, felt_rpe, \
+        rpe_source
         """
 
     /// Trimmed title if the athlete set a non-empty one, else nil. Views use

@@ -11,13 +11,13 @@ import {
   validationErrorResponse,
   internalErrorResponse,
 } from "../_shared/validation.ts";
-import { getOrBuildPaceProfile, resolveSteps } from "../_shared/resolve-pace.ts";
+import {
+  getOrBuildPaceProfile,
+  resolveSteps,
+  type ResolvablePaceStep,
+} from "../_shared/resolve-pace.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 // ── Interfaces ──────────────────────────────────────────────────
 
@@ -623,7 +623,24 @@ Deno.serve(async (req: Request) => {
         const paceProfile = await getOrBuildPaceProfile(supabase, userId);
         planData.workouts = planData.workouts.map((day) => ({
           ...day,
-          steps: resolveSteps(day.steps, paceProfile) as ImportedStep[],
+          // ResolvablePaceStep is an `interface` carrying an index signature
+          // ([key: string]: unknown) with every field optional; ImportedStep is
+          // an `interface` with no index signature and four REQUIRED keys
+          // (stepType, durationType, durationValue, notes). Interfaces get no
+          // implicit index signature, so neither type is assignable to the
+          // other and both directions have to route through `unknown`.
+          //
+          // Safe at runtime: resolveStepPace spreads the input step and only
+          // rewrites pace fields, so ImportedStep's required keys survive
+          // untouched. A generic <T extends ResolvablePaceStep> would express
+          // this properly, but ImportedStep cannot satisfy that constraint
+          // while it is an interface — and this function is a cut product
+          // pending deletion (CUT_FUNCTIONS_PENDING_DELETION), so the cast is
+          // the right amount of effort. Deleting the directory retires it.
+          steps: resolveSteps(
+            day.steps as unknown as ResolvablePaceStep[],
+            paceProfile,
+          ) as unknown as ImportedStep[],
         }));
         planData.qualityTemplates = extractQualityTemplates(planData.workouts);
         response.planData = planData;

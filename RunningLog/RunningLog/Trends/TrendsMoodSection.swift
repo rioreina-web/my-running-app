@@ -41,17 +41,33 @@ struct TrendsMoodSection: View {
 
     // Both blocks are HELD, not computed.
     //
-    // `TrendsMoodBlocks.block` runs `TrendsRecoveryLedger.series` over the
-    // entire timeline — it has to, because recovery needs an 8-week baseline
-    // behind the window's first column. As computed properties these ran twice
-    // on every body evaluation, which on a scrolling tab is once per frame.
+    // `TrendsMoodBlocks.block` walks the entire timeline — it has to, because
+    // the nightly lanes need a 28-day baseline sitting behind the window's
+    // first column. As computed properties these ran twice on every body
+    // evaluation, which on a scrolling tab is once per frame.
     @State private var block: TrendsMoodBlock?
     @State private var previous: TrendsMoodBlock?
+
+    /// "What moved" — held for the same reason the blocks are. It walks the
+    /// whole timeline for its baselines, so recomputing it per body evaluation
+    /// is once per frame on a scrolling tab.
+    ///
+    /// Always read from TODAY, never from the fortnight the stepper is
+    /// parked on: stepping back to look at July must not change what the app
+    /// says is happening now.
+    @State private var signalsRead: TrendsSignalsRead?
 
     private var maxBack: Int { TrendsMoodBlocks.maxBlocksBack(dayCount: days.count) }
 
     private var activeLanes: [TrendsMoodLane] {
         TrendsMoodLane.drawOrder.filter { lanesOn.contains($0) }
+    }
+
+    /// The day behind a column. `buckets` and `days` are both day-grain on this
+    /// surface, so the index is shared — but bounds-check rather than assume,
+    /// because a refresh can land between the two reads.
+    private func day(_ block: TrendsMoodBlock, _ i: Int) -> TrendsDay? {
+        block.days.indices.contains(i) ? block.days[i] : nil
     }
 
     /// Cheap stand-in for "the timeline changed". The count alone would miss a
@@ -87,6 +103,14 @@ struct TrendsMoodSection: View {
 
     private func loaded(_ block: TrendsMoodBlock) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            // The finding first, then the evidence under it. The lanes answer
+            // "show me"; this answers "is there anything to look at".
+            if let signalsRead {
+                TrendsSignalsReadView(read: signalsRead) { lane in
+                    withAnimation(.easeInOut(duration: 0.16)) { _ = lanesOn.insert(lane) }
+                }
+                .padding(.bottom, 22)
+            }
             stepper(block)
             headline(block)
             said(block)
@@ -100,6 +124,7 @@ struct TrendsMoodSection: View {
     private func rebuild() {
         block = TrendsMoodBlocks.block(days: days, keySessions: keySessions, blocksBack: blocksBack)
         previous = TrendsMoodBlocks.block(days: days, keySessions: keySessions, blocksBack: blocksBack + 1)
+        signalsRead = TrendsSignalsRead.read(days: days)
     }
 
     // MARK: The window
@@ -241,8 +266,31 @@ struct TrendsMoodSection: View {
         .padding(.top, 18)
     }
 
+    /// A nightly lane is offered when the athlete has that series AT ALL,
+    /// anywhere in the timeline — a stable property of the athlete, not of the
+    /// fortnight on screen, so the chip row does not reshuffle underneath the
+    /// reader as they step back through blocks. Whether a given fortnight can
+    /// actually place those nights against a baseline is the lane's own
+    /// business, and it says so in place.
+    ///
+    /// This is also how HRV stays off the screen until it exists. The Apple
+    /// Health path has supplied resting HR and sleep since 2026-08-06 and zero
+    /// HRV (iOS never reports a denied READ scope — the query just returns an
+    /// empty array), so an HRV chip today would offer a lane that can only ever
+    /// draw nothing. It appears on its own the first night a reading lands.
+    private var offeredLanes: [TrendsMoodLane] {
+        TrendsMoodLane.drawOrder.filter { lane in
+            switch lane {
+            case .sleep: days.contains { $0.sleepTotalMin != nil }
+            case .restingHR: days.contains { $0.restingHr != nil }
+            case .hrv: days.contains { $0.hrvRmssd != nil }
+            default: true
+            }
+        }
+    }
+
     private var chipRows: [[TrendsMoodLane]] {
-        let all = TrendsMoodLane.drawOrder
+        let all = offeredLanes
         return stride(from: 0, to: all.count, by: 3).map { Array(all[$0..<min($0 + 3, all.count)]) }
     }
 
@@ -304,7 +352,7 @@ struct TrendsMoodSection: View {
 
     private func readout(_ block: TrendsMoodBlock) -> String {
         if let i = scrubIndex, block.buckets.indices.contains(i) {
-            return TrendsMoodLanes.spoken(block.buckets[i])
+            return TrendsMoodLanes.spoken(block.buckets[i], day: day(block, i))
         }
         if let highlight {
             let word = highlight == "nolog" ? "days with no log" : highlight
@@ -328,7 +376,7 @@ struct TrendsMoodSection: View {
                         Text(bucket.label.uppercased())
                             .font(.dripEyebrow(eyebrowSmall - 1)).tracking(1.2)
                             .foregroundStyle(Color.drip.textTertiary)
-                        Text(TrendsMoodLanes.spoken(bucket))
+                        Text(TrendsMoodLanes.spoken(bucket, day: day(block, i)))
                             .font(.dripBody(13.5))
                             .foregroundStyle(Color.drip.textPrimary)
                             .multilineTextAlignment(.leading)
@@ -356,7 +404,7 @@ struct TrendsMoodSection: View {
             .buttonStyle(.plain)
             .disabled(bucket.miles <= 0 || isOpening)
             .padding(.top, 10)
-            .accessibilityLabel(TrendsMoodLanes.spoken(bucket))
+            .accessibilityLabel(TrendsMoodLanes.spoken(bucket, day: day(block, i)))
             .accessibilityHint(bucket.miles > 0 ? "Opens this day" : "Rest day, nothing to open")
         }
     }

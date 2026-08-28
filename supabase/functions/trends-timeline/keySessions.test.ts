@@ -122,22 +122,56 @@ Deno.test("heat-adjusted pace uses the uniform session ratio", () => {
 });
 
 Deno.test("quality_load: weighted work-minutes, rest + easy excluded", () => {
+  // Every rep sits EXACTLY on the 5k anchor (ZONES.fiveK = 360). At a knot the
+  // Hermite basis in `paceWeight` returns the knot value unchanged, so the
+  // literal 5.5 below is ZONE_WEIGHTS["5k"] read off the table — an
+  // independent expectation, not a number recomputed from the code under test.
+  //
+  // (2026-08-24) This used to run 358/360/365 against a flat 5.5. That was
+  // right until 2026-08-14, when quality_load moved off the discrete
+  // ZONE_WEIGHTS[zone] step onto the continuous paceWeight() curve and
+  // off-anchor reps stopped scoring at their zone's flat weight. The test kept
+  // asserting the abandoned model and had been red ever since — nothing ran
+  // it. The companion test below now covers the curve itself, so the same
+  // drift would fail loudly instead of silently.
   const laps: KeySessionLap[] = [
     easy(0),      // excluded from load
-    rep(1, 358),
+    rep(1, 360),
     rest(2),      // excluded from load
     rep(3, 360),
     rest(4),      // excluded from load
-    rep(5, 365),
+    rep(5, 360),
     easy(6),      // excluded from load
   ];
   const s = deriveKeySession(LOG, laps, undefined, ZONES)!;
-  // Same three 5k work bouts the pace test asserts (zone = 5k → weight 5.5).
-  // Load = Σ(bout sec × 5.5) / 60, over work bouts only.
-  const workSec = movSecs(1000, 358) + movSecs(1000, 360) + movSecs(1000, 365);
+  // Load = Σ(bout sec × 5.5) / 60, over work bouts only — rest and easy
+  // contribute nothing, which is what this test is really for.
+  const workSec = movSecs(1000, 360) * 3;
   const expected = Math.round((workSec * 5.5 / 60) * 10) / 10;
   assertEquals(s.quality_load, expected);
   assert(s.quality_load > 0, "a real rep session carries load");
+});
+
+Deno.test("quality_load: off-anchor reps ride the curve, not the zone step", () => {
+  // The 2026-08-14 behaviour the test above can no longer see, because it now
+  // sits on an anchor by construction. A rep either side of the 5k knot must
+  // score either side of the knot's load, continuously — under the old
+  // discrete model both scored identically at a flat 5.5, and a rep that
+  // crossed a zone boundary jumped a whole step on GPS-level noise.
+  const loadAt = (pace: number) =>
+    deriveKeySession(
+      LOG,
+      [rep(0, pace), rest(1), rep(2, pace), rest(3), rep(4, pace)],
+      undefined,
+      ZONES,
+    )!.quality_load;
+
+  const anchor = loadAt(360); // exactly 5k
+  const faster = loadAt(350); // toward 3k
+  const slower = loadAt(372); // toward 10k
+
+  assert(faster > anchor, `faster reps must weigh more (${faster} vs ${anchor})`);
+  assert(slower < anchor, `slower reps must weigh less (${slower} vs ${anchor})`);
 });
 
 Deno.test("time-weighted work HR over work bouts only", () => {

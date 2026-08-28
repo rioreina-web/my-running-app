@@ -295,6 +295,8 @@ extension ScheduledWorkoutType {
         case "progression": return .progression
         case "strides": return .strides
         case "rest": return .rest
+        case "cross_train", "cross_training", "crosstraining": return .crossTraining
+        case "strength": return .strength
         default: return .easy
         }
     }

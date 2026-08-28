@@ -554,6 +554,13 @@ extension HistoryDetailSheet {
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
+            // Effort sits with mood because they answer the same question, and
+            // both are read out of the same voice memo. Unlike mood it is
+            // always visible rather than hidden behind a tap: mood renders a
+            // pill the athlete can see is set, whereas an RPE with nowhere to
+            // appear is exactly how this number stayed invisible for months.
+            EditableRPESlider(rpe: inlineRpeBinding, source: displayedRpeSource)
+
             if inlineSaveFailed {
                 // Coral is right — it is the alert palette. The FACE is
                 // `dripCaption`, not a tracked eyebrow: eyebrows label
@@ -591,6 +598,35 @@ extension HistoryDetailSheet {
                 commitInlineMood(newMood)
                 withAnimation(.easeOut(duration: 0.18)) { isPickingMoodInline = false }
             }
+        )
+    }
+
+    /// The RPE on screen: the one being saved if a save is in flight, else the
+    /// stored one. Same reason as `displayedMood` — without the pending arm a
+    /// first-ever rating snaps back to NOT RATED for the length of the round
+    /// trip, and the drag reads as rejected.
+    ///
+    /// `hasPendingRpe` rather than `pendingRpe != nil` because clearing is a
+    /// legitimate pending value: a plain nil-coalesce would fall through to the
+    /// stored number and flash the old rating back over the clear.
+    private var displayedRpe: Int? {
+        hasPendingRpe ? pendingRpe : vm.currentEntry.feltRpe
+    }
+
+    /// Provenance follows the displayed value: a rating being saved is the
+    /// athlete's by definition, so the caption flips to YOUR RATING under their
+    /// finger rather than after the network confirms it.
+    private var displayedRpeSource: String? {
+        hasPendingRpe ? (pendingRpe == nil ? nil : "athlete") : vm.currentEntry.rpeSource
+    }
+
+    /// Reads the displayed RPE; writing straight through to the row IS the
+    /// save, matching `inlineMoodBinding`. The slider commits on release, so
+    /// this fires once per drag rather than once per step.
+    private var inlineRpeBinding: Binding<Int?> {
+        Binding(
+            get: { displayedRpe },
+            set: { commitInlineRpe($0) }
         )
     }
 

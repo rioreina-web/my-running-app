@@ -41,6 +41,8 @@ export interface WorkoutSplit {
   /** Heat-adjusted pace, e.g. "8:46" (blue text beside the raw pace). Absent
    *  when no lap-level heat adjustment exists for this bucket. */
   adj?: string;
+  /** Distance-weighted avg heart rate for this split/bucket, bpm. */
+  hrAvg?: number;
 }
 
 // ── Enrichment blocks (spec §4) ──────────────────────────────────────────
@@ -70,6 +72,12 @@ export interface WorkoutConditions {
   dewHot?: boolean;
   climbFt: number;
   hrAvg: number;
+  /** Heat-adjustment cost as a percent of raw pace, e.g. 3.3. Absent when no
+   *  lap carries a heat-adjusted pace. */
+  heatCostPct?: number;
+  /** Relative humidity, percent. Flat read from weather_actual — no per-lap
+   *  average exists for it. */
+  humidityPct?: number;
   /** Avg HR zone label, e.g. "Z3". */
   hrZone?: string;
   /** Pa:HR decoupling, e.g. "+8.4%". Absent until derived/stored. */
@@ -148,6 +156,14 @@ export interface WorkoutDetail {
   kpis: Array<{ k: string; v: string; sub?: string; accent?: boolean }>;
   splitLabel: string;
   splits: WorkoutSplit[];
+  /** "The session as written" — training_logs.workout_notes (the prescription/
+   *  description COLUMN, not the separate workout_notes table). A machine
+   *  reading of the session, so it renders roman, never italic. */
+  sessionAsWritten?: string;
+  /** e.g. "Effort load 187 · density 73.3% · stress 135". Omitted entirely
+   *  (not rendered as a dash) when effort_load/density_pct/stress_load are
+   *  all null. */
+  effortLine?: string;
   /** Enrichment blocks (spec §4) — all optional. */
   prescribed?: WorkoutPrescribed;
   conditions?: WorkoutConditions;
@@ -192,10 +208,20 @@ export interface DashboardDay {
   /** Key session — a long, MP, HM, LT, or race worth drilling into. */
   key: boolean;
   mood: Mood;
+  /** Whether `mood` reflects a real training_logs.mood value, vs the
+   *  "neutral" default used when nothing was recorded — a logged run with no
+   *  mood and an explicit "neutral" mood are different answers. */
+  moodLogged?: boolean;
   /** Latest body mention for the day (verbatim), or null. */
   niggle: { area: string; quote: string } | null;
   /** Voice-note / cleaned_notes text (may be empty). */
   note: string;
+  /** Weighted-minutes stress load for the day (training_logs.stress_load),
+   *  summed across every upload on the day. Absent until the scorer has run. */
+  load?: number;
+  /** Number of logged runs on this calendar day (multiple uploads summed into
+   *  one day). 0 for rest, undefined for an unlogged day. */
+  sessions?: number;
   /** False for a calendar day with no logged activity (rendered faint, not a
    *  mood color). Absent/true for logged days and all fixtures. */
   logged?: boolean;
@@ -287,6 +313,10 @@ export interface NiggleGroup {
   latestDate: string;
   latestQuote: string;
   otherDates: string[];
+  /** Every verbatim quote for this area, oldest → newest. The count alone
+   *  isn't trustworthy (a "cleared" mention still counts) — render every
+   *  quote, never just the tally. */
+  quotes: Array<{ date: string; dateLabel: string; quote: string }>;
   /** athlete_state_niggle_recurrence — gets the one coral accent per cluster. */
   recurrence: boolean;
   resolved?: boolean;
@@ -300,6 +330,147 @@ export interface MoodSummary {
   distribution: Array<{ mood: Mood; count: number }>;
   /** Caption with optional `**…**` emphasis. */
   caption: string;
+}
+
+// ── v2 · training-first bands ────────────────────────────────────────────
+// The dashboard opens on the training, not the diagnosis. These four blocks
+// back sections 01–03 and 05 of that order. Every one is OPTIONAL — an athlete
+// with no plan, no reconciliations or no stress scoring still renders.
+
+/** §01 — one fact on the latest run's headline strip. */
+export interface LatestFact {
+  label: string;
+  value: string;
+  /** Small trailing unit, set in ink-3 (e.g. "mi", "/mi", "bpm"). */
+  unit?: string;
+}
+
+/** §01 — one mile split under the latest run. */
+export interface LatestSplit {
+  /** Mile number, 1-indexed. */
+  n: number;
+  /** Pace, e.g. "8:49". */
+  pace: string;
+  /** At or under the run's own average — underlined in ink rather than rule. */
+  fast: boolean;
+}
+
+/**
+ * §01 — the lede. The most recent logged session in full, with its memo
+ * attached. Distinct from `days[last]` because it carries the enrichment
+ * (facts, splits) that until now only key days received.
+ */
+export interface LatestSession {
+  /** training_logs.id — opens the drawer. */
+  dayId: string;
+  /** e.g. "Wed · Aug 26". */
+  whenLabel: string;
+  /** e.g. "14 hours ago". Absent when the log has no clock time. */
+  agoLabel?: string;
+  /** Factual headline naming the session, e.g. "Easy 8 mi". Never editorial. */
+  title: string;
+  /** e.g. "Held · prescribed easy 8", or "+11 s/mi vs 7:05". */
+  verdict: string;
+  /** False renders the verdict in red. */
+  onTarget: boolean;
+  facts: LatestFact[];
+  splits?: LatestSplit[];
+  /** e.g. "Mile splits · average 8:52 · last mile fastest". */
+  splitsCaption?: string;
+  /** The athlete's own words. Empty string when no memo. */
+  note: string;
+  /** e.g. "Voice memo · Aug 26". */
+  noteMeta?: string;
+  mood: Mood;
+  /** True when this run was itself the keyed session. */
+  key: boolean;
+}
+
+/**
+ * §01/§02 — the last keyed session, shown beside the lede when the most
+ * recent run is an easy day (which it usually is).
+ */
+export interface LastKeySession {
+  dayId: string;
+  whenLabel: string;
+  title: string;
+  /** Target vs ran, both formatted paces. Either may be absent. */
+  targetPace?: string;
+  actualPace?: string;
+  hrAvg?: number;
+  tempF?: number;
+  note?: string;
+  onTarget: boolean;
+}
+
+/**
+ * §02 — one keyed session on the six-week strip, against the target it was
+ * set at. `deltaSec` is the HEAT-ADJUSTED delta from
+ * workout_reconciliations.adjusted_pace_delta_seconds — an athlete 10 s/mi
+ * slow in 80°F dew is not slipping, and the raw delta would say they were.
+ */
+export interface KeySessionMark {
+  dayId: string;
+  /** e.g. "Aug 25". */
+  dateLabel: string;
+  /** Two short lines, e.g. ["5 mi", "@ HMP"]. */
+  title: string;
+  subtitle?: string;
+  /** Signed seconds per mile vs target; null when never reconciled. */
+  deltaSec: number | null;
+  /** Pre-formatted verdict, when one exists without a signed number (a
+   *  fixture, or a row reconciled before the delta column was populated).
+   *  Takes precedence over `deltaSec` for display. */
+  deltaLabel?: string;
+  /** e.g. "7:16 vs 7:05". */
+  compare?: string;
+  /** From workout_reconciliations.hit_target when present. */
+  onTarget: boolean;
+  /** The most recent keyed session — gets the blue rule. */
+  latest?: boolean;
+  /** Informational placement against the athlete's OWN pace zones
+   *  (athlete_pace_profiles), used when there's no reconciliation to compare
+   *  against — e.g. "near LT (threshold)". Never a hit/miss verdict: with no
+   *  prescription, there's nothing to miss. Absent when the athlete has no
+   *  calibrated pace table. */
+  zoneLabel?: string;
+  /** Signed seconds/mile vs. the matched zone's pace — a caption, not a
+   *  color driver. Only `deltaSec` (from a real reconciliation) drives color. */
+  zoneDeltaSec?: number;
+}
+
+/**
+ * §03 — where the athlete sits in the block. Two different adherence numbers
+ * on purpose: sessions RUN and key sessions HIT are not the same question, and
+ * showing only the first flatters a block that is missing its targets.
+ */
+export interface BlockStats {
+  weekNumber: number;
+  totalWeeks: number;
+  /** e.g. "Build · 7 weeks to Chicago". */
+  phaseLabel?: string;
+  /** This week, so far. */
+  sessionsRun: number;
+  sessionsPlanned: number;
+  milesThisWeek: number;
+  milesPlanned?: number;
+  /** Completion over the trailing window: sessions run of sessions prescribed. */
+  ranPct?: number;
+  ranOf?: { run: number; prescribed: number };
+  /** Execution over the same window: keyed sessions that hit their target. */
+  hitOf?: { hit: number; total: number };
+  /** e.g. "Aug 3". Absent when the plan has never been edited. */
+  lastChangeLabel?: string;
+  /** e.g. "Cutback week · by you". */
+  lastChangeNote?: string;
+}
+
+/** §05 — acute vs chronic weighted minutes (training_logs.stress_load). */
+export interface StressLoad {
+  /** Trailing 7-day sum. */
+  acute: number;
+  /** Trailing 28-day daily mean, scaled to 7 days. */
+  chronic: number;
 }
 
 export interface AthleteHeader {
@@ -347,6 +518,20 @@ export interface DashboardData {
   /** Absent when there's not enough data yet (e.g. no plan / no anchors). */
   progression?: Progression;
   weeklyVolume: WeeklyVolumeWeek[];
+  /** §01 — the lede. Absent only when nothing has ever been logged. */
+  latest?: LatestSession;
+  /** §01 — the full drill-down detail for `latest` (conditions, splits,
+   *  session-as-written, effort line) — the workout sheet reads this directly
+   *  rather than through LatestSession's lossier `facts`/`splits` mapping. */
+  latestDetail?: WorkoutDetail;
+  /** §01 — the last keyed session, beside the lede. */
+  lastKey?: LastKeySession;
+  /** §02 — six weeks of keyed sessions against target. May be empty. */
+  keySessions: KeySessionMark[];
+  /** §03 — position in the block. Absent when there is no active plan. */
+  block?: BlockStats;
+  /** §05 — acute vs chronic weighted minutes. */
+  stress?: StressLoad;
   /** Absent when there's no athlete_state row to read acute:chronic from. */
   acwr?: Acwr;
   niggles: NiggleGroup[];

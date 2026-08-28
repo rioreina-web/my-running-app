@@ -914,7 +914,7 @@ struct TrainingTabView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 10) {
                         dayLabel(d.label, accent: isToday)
-                        typeChip(run.typeLabel, bucket: run.bucket)
+                        typeChip(run)
                         Text("\(vm.formatMiles(d.split.total)) mi")
                             .font(.dripDisplay(16))
                             .foregroundStyle(Color.drip.textPrimary)
@@ -924,11 +924,11 @@ struct TrainingTabView: View {
                                 .foregroundStyle(Color.drip.textTertiary)
                         }
                         Spacer()
-                        if let pace = run.pace, !pace.isEmpty {
-                            Text(pace)
-                                .font(.dripStat(13))
-                                .foregroundStyle(Color.drip.textPrimary)
-                        }
+                        // No pace on the week list. Only some rows carry one,
+                        // so it hung off the right edge of three days out of
+                        // five and read as ragged rather than as a column. The
+                        // week is a mileage and intensity read; pace belongs to
+                        // the day, and the row opens onto it.
                     }
                     let mood = vm.mood(on: d.date)
                     let readout = vm.conditions(on: d.date)?.readout
@@ -1081,37 +1081,68 @@ struct TrainingTabView: View {
     /// Completed-run chip — rides the intensity bucket's ramp color.
     /// Blue is pace-only (three-palette rule); the pale Easy stop takes
     /// ink text for contrast, deeper stops take paper.
-    private func typeChip(_ label: String, bucket: IntensityBucket) -> some View {
-        zoneChip(label, color: bucket.color, darkText: bucket == .easy)
+    /// Completed-run chip. Colour is the run's own workout type placed on the
+    /// pace ramp, so EASY reads pale sky and MP reads the darker blue three
+    /// stops down — the same scale the charts use.
+    ///
+    /// `bucket` stays as the fallback for rows whose stored type is missing or
+    /// off-taxonomy: there the pace-derived bucket is the only intensity we
+    /// actually know, and it beats defaulting everything to easy.
+    private func typeChip(_ run: SessionDetail) -> some View {
+        let zone = IntensityRamp.zone(forTypeKey: run.typeKey)
+        let offRamp = IntensityRamp.isOffRamp(run.typeKey)
+        let color: Color = offRamp ? Color.drip.divider
+            : zone.map { IntensityRamp.colors[$0] } ?? run.bucket.color
+        let dark: Bool = offRamp ? true
+            : zone.map { $0 <= 2 } ?? (run.bucket == .easy)
+        return zoneChip(run.typeLabel, color: color, darkText: dark)
     }
 
     /// Planned-workout chip. Running types map onto the pace ramp;
     /// non-running work (strength, cross-training) stays off the pace
     /// palette entirely — neutral well, ink text.
-    @ViewBuilder private func typeChip(for type: ScheduledWorkoutType) -> some View {
-        switch type {
-        case .easy, .recovery, .strides, .longRun:
-            zoneChip(type.displayName.uppercased(), color: IntensityRamp.easy, darkText: true)
-        case .progression:
-            zoneChip(type.displayName.uppercased(), color: IntensityRamp.aerobic, darkText: false)
-        case .tempo:
-            zoneChip(type.displayName.uppercased(), color: IntensityRamp.threshold, darkText: false)
-        case .intervals:
-            zoneChip(type.displayName.uppercased(), color: IntensityRamp.colors[7], darkText: false)
-        case .race:
-            zoneChip(type.displayName.uppercased(), color: IntensityRamp.colors[9], darkText: false)
-        case .strength, .crossTraining, .rest:
-            zoneChip(type.displayName.uppercased(), color: Color.drip.divider, darkText: true)
-        }
+    private func typeChip(for type: ScheduledWorkoutType) -> some View {
+        let zone = IntensityRamp.zone(forTypeKey: type.rawValue)
+        return zoneChip(type.displayName.uppercased(),
+                        color: IntensityRamp.color(forTypeKey: type.rawValue),
+                        darkText: IntensityRamp.needsDarkText(zone: zone))
     }
 
+    @ViewBuilder
     private func zoneChip(_ label: String, color: Color, darkText: Bool) -> some View {
-        Text(label)
-            .font(.dripEyebrow(9)).tracking(0.8)
-            .foregroundStyle(darkText ? Color.drip.textPrimary : Color.drip.background)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(RoundedRectangle(cornerRadius: 4).fill(color))
+        if DripSkinStore.shared.skin == .wild {
+            // The chip carries the session's own place on the pace ramp — pale
+            // sky for easy, navy for the fast end — the same scale the charts
+            // use, so a colour means the same thing wherever it appears. An
+            // earlier pass collapsed this to one session-blue for keyed work
+            // and a hairline outline for everything else; that read as two
+            // categories where the training has ten.
+            //
+            // Capsule + `darkText` stay from that pass: `darkText` is the
+            // pale-fill half of the ramp at every call site (easy, recovery,
+            // strides, long run, and the off-ramp strength/rest greys), which
+            // is exactly where ink text beats knocked-out white.
+            //
+            // Sized down (was 10/6 padding, 0.16 tracking): at the old size the
+            // chip stood taller than the mileage figure beside it, so a week of
+            // day rows read as a column of pills with runs attached. It labels
+            // the row — it is not the row's headline.
+            Text(label)
+                .font(.dripEyebrow(9))
+                .tracking(9 * 0.12)
+                .foregroundStyle(darkText ? Color.drip.textPrimary : Color.drip.background)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(color)
+                .clipShape(Capsule())
+        } else {
+            Text(label)
+                .font(.dripEyebrow(9)).tracking(0.8)
+                .foregroundStyle(darkText ? Color.drip.textPrimary : Color.drip.background)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(RoundedRectangle(cornerRadius: 4).fill(color))
+        }
     }
 
     /// Completed run line used by the Today section — same anatomy as a
@@ -1120,7 +1151,7 @@ struct TrainingTabView: View {
         Button { route = .day(Date()) } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 10) {
-                    typeChip(run.typeLabel, bucket: run.bucket)
+                    typeChip(run)
                     Text("\(vm.formatMiles(run.miles)) mi")
                         .font(.dripDisplay(22))
                         .foregroundStyle(Color.drip.textPrimary)

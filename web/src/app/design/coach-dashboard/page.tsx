@@ -19,7 +19,10 @@ export const metadata: Metadata = {
 export default async function CoachDashboardPreview() {
   const data = await getAthleteDashboard("maya");
   return (
-    <div className="min-h-screen bg-bg-base text-text-primary">
+    // data-skin="wild" mirrors (app)/coach-portal/layout.tsx. Without it the
+    // preview renders the editorial skin and every .drip-* role goes inert —
+    // i.e. it previews a page that does not exist.
+    <div data-skin="wild" className="min-h-screen bg-bg-base text-text-primary">
       <CoachAthleteDashboard data={data} />
     </div>
   );

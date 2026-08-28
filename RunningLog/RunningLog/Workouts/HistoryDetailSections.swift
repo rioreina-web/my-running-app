@@ -97,6 +97,118 @@ struct EditableMoodPicker: View {
     }
 }
 
+// MARK: - EditableRPESlider
+
+/// How hard the session felt, 1–10, on a coral slider.
+///
+/// **The value arrives already filled in.** `extract-rpe` reads an RPE out of
+/// the voice memo, so for most entries this control opens on a number the model
+/// proposed — the athlete is correcting, not authoring. The provenance caption
+/// says which, because an unlabelled 8 the athlete never chose is a number they
+/// have no reason to trust.
+///
+/// **Unset is a real state and must look like one.** The extractor is told to
+/// return null rather than guess when a memo says nothing about effort, so nil
+/// here is an honest absence. Parking the knob at 5 and calling it "not set"
+/// would fabricate the exact reading that rule exists to prevent — so the
+/// untouched control renders dimmed and reads NOT RATED, and only the athlete's
+/// own drag commits a value.
+///
+/// **Exactly one coral mark, and it is the number.** The design system calls
+/// coral punctuation rather than paint ("one coral element per visual cluster,
+/// maximum"), and this control shares its cluster with the mood pill and the
+/// mood picker's coral selection ring. So the readout carries the accent and
+/// the track stays ink — tinting the filled track would make coral the largest
+/// painted surface in the row, which is the same mistake that got the coral
+/// pace ramp reverted on 2026-08-21.
+struct EditableRPESlider: View {
+    /// nil = never rated. Writing through this binding IS the save, same
+    /// contract as `EditableMoodPicker`'s.
+    @Binding var rpe: Int?
+
+    /// `"llm"` when the number came out of the memo, `"athlete"` once corrected.
+    var source: String?
+
+    @State private var draft: Double = 5
+    @State private var isDragging = false
+
+    private var hasValue: Bool { rpe != nil }
+
+    /// Show a number while dragging even before the first commit, so the knob
+    /// isn't moving under a label that still says NOT RATED.
+    private var showsNumber: Bool { hasValue || isDragging }
+
+    private var provenanceCaption: String? {
+        guard hasValue, !isDragging else { return nil }
+        switch source {
+        case "athlete": return "YOUR RATING"
+        case "llm":     return "FROM YOUR MEMO"
+        default:        return nil
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(showsNumber ? "FELT \(Int(draft))/10" : "NOT RATED")
+                    .font(.dripEyebrow(10))
+                    .tracking(1.0)          // 0.10em caption tracking at 10pt
+                    .foregroundStyle(showsNumber ? Color.drip.coral : Color.drip.textTertiary)
+                    .contentTransition(.numericText())
+
+                Spacer(minLength: 0)
+
+                if let caption = provenanceCaption {
+                    Text(caption)
+                        .font(.dripEyebrow(9.5))
+                        .tracking(0.95)     // 9.5 × 0.10em
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+
+                if hasValue {
+                    // Clearing hands the field back to the model rather than
+                    // pinning an athlete-authored nil — the undo, matching the
+                    // mood picker's tap-the-selected-pill-to-clear gesture.
+                    Button {
+                        rpe = nil
+                    } label: {
+                        Text("CLEAR")
+                            .font(.dripEyebrow(9.5))
+                            .tracking(0.95)
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Slider(value: $draft, in: 1...10, step: 1) { editing in
+                isDragging = editing
+                // Commit on release, not on every step: a drag from 3 to 8
+                // would otherwise fire six writes and six provenance stamps.
+                if !editing { rpe = Int(draft) }
+            }
+            .tint(Color.drip.textSecondary)
+            .opacity(showsNumber ? 1 : 0.45)
+            .accessibilityLabel("How hard it felt")
+            .accessibilityValue(hasValue ? "\(Int(draft)) out of 10" : "Not rated")
+
+            if !showsNumber {
+                Text("DRAG TO RATE")
+                    .font(.dripEyebrow(9.5))
+                    .tracking(0.95)
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: showsNumber)
+        .onAppear { draft = Double(rpe ?? 5) }
+        // Keep the knob honest when the row is refetched underneath the sheet
+        // (a re-extraction landing, or a save being rolled back on failure).
+        .onChange(of: rpe) { _, new in
+            if let new { draft = Double(new) }
+        }
+    }
+}
+
 // MARK: - EditableWorkoutTypeSection
 
 /// The workout-label rail — mono caps chips, hairline outlines, one coral.

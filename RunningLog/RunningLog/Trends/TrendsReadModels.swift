@@ -62,17 +62,12 @@ struct TrendsRead {
 
     // MARK: Lanes
 
-    /// The recovery score for each day of the month, from the canonical
-    /// `TrendsRecoveryLedger`. **Computed over the whole history and then
-    /// sliced** — the score at any day reads a trailing window, so building
-    /// it from one month alone would starve the first days of the month.
-    let recovery: [LanePoint]
 
     /// Trailing-7-day mileage per day. This is *not* an acute:chronic
     /// ratio: `recovery-trend-v2-2026-07-27` §7.1 dismantled ACWR (coupling
-    /// yields r = 0.52 from arithmetic alone; the only RCT was null), and
-    /// `TrendsRecoveryLedger` states the replacement — load is measured
-    /// against **the athlete's own 8-week average**. That average is
+    /// yields r = 0.52 from arithmetic alone; the only RCT was null). The
+    /// replacement is that load is measured against **the athlete's own
+    /// 8-week average**. That average is
     /// `loadBaseline`, drawn as the reference line.
     let load: [LanePoint]
 
@@ -80,10 +75,6 @@ struct TrendsRead {
     /// ends. `nil` when there isn't 8 weeks of history to average.
     let loadBaseline: Double?
 
-    /// Latest recovery score in the month, and its band word
-    /// (`Flat` · `Worn` · `Steady` · `Clear`).
-    let recoveryNow: Int?
-    let recoveryBand: String?
 
     struct LanePoint: Identifiable {
         let id = UUID()
@@ -315,21 +306,6 @@ enum TrendsReadBuilder {
         let past = history.sorted { $0.date < $1.date }
         let monthDates = Set(month.map(\.date))
 
-        // Recovery — canonical ledger, over the full history, then sliced.
-        let ledgers = TrendsRecoveryLedger.series(days: past)
-        // `uniquingKeysWith`, not `uniqueKeysWithValues`: the timeline is
-        // meant to be one row per day, but a duplicate key would *trap* on
-        // the strict initialiser and take the tab down. First value wins.
-        let scoreByDate = Dictionary(
-            zip(past, ledgers).map { ($0.date, $1.total) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let recovery = past
-            .filter { monthDates.contains($0.date) }
-            .compactMap { day in
-                scoreByDate[day.date].map { LanePointBox(date: day.date, value: Double($0)) }
-            }
-
         // Load — trailing 7-day mileage, and the athlete's own 8-week mean.
         let rolling = trailingSeven(past)
         let load = past
@@ -342,13 +318,8 @@ enum TrendsReadBuilder {
         return assemble(
             month: month,
             keySessions: keySessions,
-            recovery: recovery.map { TrendsRead.LanePoint(date: $0.date, value: $0.value) },
             load: load.map { TrendsRead.LanePoint(date: $0.date, value: $0.value) },
             loadBaseline: baseline,
-            recoveryNow: recovery.last.map { Int($0.value) },
-            recoveryBand: recovery.last.map {
-                TrendsRecoveryLedger.Band.of(Int($0.value)).rawValue
-            }
         )
     }
 
@@ -389,11 +360,8 @@ enum TrendsReadBuilder {
     private static func assemble(
         month days: [TrendsDay],
         keySessions: [KeySession],
-        recovery: [TrendsRead.LanePoint],
         load: [TrendsRead.LanePoint],
         loadBaseline: Double?,
-        recoveryNow: Int?,
-        recoveryBand: String?
     ) -> TrendsRead {
         let ordered = days.sorted { $0.date < $1.date }
         let runDays = ordered.filter { $0.miles > 0 }
@@ -413,11 +381,8 @@ enum TrendsReadBuilder {
                 weeks: monthWeeks(ordered, callouts: [:], zones: [:]),
                 moodCounts: [],
                 isThin: true,
-                recovery: recovery,
                 load: load,
                 loadBaseline: loadBaseline,
-                recoveryNow: recoveryNow,
-                recoveryBand: recoveryBand
             )
         }
 
@@ -491,11 +456,8 @@ enum TrendsReadBuilder {
             weeks: monthWeeks(ordered, callouts: callouts, zones: zones),
             moodCounts: moodCounts,
             isThin: false,
-            recovery: recovery,
             load: load,
             loadBaseline: loadBaseline,
-            recoveryNow: recoveryNow,
-            recoveryBand: recoveryBand
         )
     }
 

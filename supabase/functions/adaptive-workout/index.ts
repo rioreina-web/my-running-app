@@ -12,11 +12,7 @@
  * TODO(delete-after-2026-05-17): remove this file and its config.toml entry.
  */
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 Deno.serve((req: Request) => {
   if (req.method === "OPTIONS") {

@@ -9,6 +9,7 @@
  */
 
 import type { TrainingLogRow } from "../weeklyAnalytics.ts";
+import type { CauseConfidence, CauseSource, SkipCause } from "../cause.ts";
 
 // ─── Mood vocabulary ──────────────────────────────────────────────────────────
 // Matches the labels written by process-training-memo / process-check-in.
@@ -80,6 +81,14 @@ export interface ScheduledWorkoutRow {
   date: string; // ISO date (YYYY-MM-DD)
   status: "scheduled" | "completed" | "skipped" | "modified";
   workout_type: string;
+  /**
+   * Why the session was missed, when we know. Closed vocabulary — see
+   * `_shared/cause.ts` and 20260821140000_skip_cause_attribution.sql.
+   * Null on anything not skipped, and on skips we haven't attributed yet.
+   */
+  skip_cause?: SkipCause | null;
+  skip_cause_source?: CauseSource | null;
+  skip_cause_confidence?: CauseConfidence | null;
 }
 
 // ─── Weather-aware training log augmentation ──────────────────────────────────

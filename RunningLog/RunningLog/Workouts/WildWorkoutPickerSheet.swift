@@ -18,13 +18,15 @@
 //    • selection is the same ink badge the front door uses for LATEST, so
 //      there is no new marker to learn
 //
-//  THE FETCH IS NOT DUPLICATED. `WorkoutPickerSheet.fetchStravaRunningWorkouts`
-//  carries a warning worth repeating: its source list is the only way a synced
-//  run reaches this picker, and this picker is the only way the view model
-//  learns a run's `vital_workout_id` — which is what its attach-to-existing-row
-//  branch keys on. Omit a source there and every memo for that source silently
-//  becomes a NEW duplicate `training_logs` row. So this calls that method
-//  rather than writing its own.
+//  THE FETCH IS NOT DUPLICATED. Every source, and the merge across them,
+//  lives in `HealthKitManager.refreshRecentRuns` — the same call the Log tab's
+//  linked-run block reads, so the two can never disagree about which run is
+//  latest. A warning worth repeating from there: that method's Strava source
+//  list is the only way a synced run reaches this picker, and this picker is
+//  the only way the view model learns a run's `vital_workout_id` — which is
+//  what its attach-to-existing-row branch keys on. Omit a source there and
+//  every memo for that source silently becomes a NEW duplicate
+//  `training_logs` row.
 //
 
 import SwiftUI
@@ -228,39 +230,15 @@ struct WildWorkoutPickerSheet: View {
 
     // MARK: Data
 
-    /// Fetch from HealthKit, Vital and Strava-imported `training_logs` in
-    /// parallel, then merge. Garmin often syncs to more than one of them, so
-    /// a run is a duplicate when it starts within 5 minutes AND lasts within
-    /// 2 minutes of one already kept.
+    /// Fetch every source, merge, dedup — all of it in
+    /// `HealthKitManager.refreshRecentRuns`, which is also what the Log tab's
+    /// linked-run block reads. This sheet used to carry its own copy of that
+    /// merge and publish only the HealthKit half back, which is why the Log
+    /// screen could not see a Strava-only run (2026-08-24).
     private func refresh() async {
         isRefreshing = true
-
-        async let hkWorkouts = healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-        async let vitalWorkouts = VitalManager.shared.fetchRecentRunningWorkouts(limit: 30)
-        async let stravaWorkouts = WorkoutPickerSheet.fetchStravaRunningWorkouts(limit: 30)
-
-        let hk = await hkWorkouts
-        let vital = await vitalWorkouts
-        let strava = await stravaWorkouts
-
-        var merged: [RunningWorkout] = []
-        let appendIfUnique: (RunningWorkout) -> Void = { w in
-            let isDuplicate = merged.contains { existing in
-                abs(existing.startDate.timeIntervalSince(w.startDate)) < 300
-                    && abs(existing.durationMinutes - w.durationMinutes) < 2.0
-            }
-            if !isDuplicate { merged.append(w) }
-        }
-        // Order matters: whichever source lands first wins the row, and Vital
-        // and Strava carry `vital_workout_id` where HealthKit does not.
-        for w in vital { appendIfUnique(w) }
-        for w in strava { appendIfUnique(w) }
-        for w in hk { appendIfUnique(w) }
-
-        merged.sort { $0.startDate > $1.startDate }
-
+        let merged = await healthKitManager.refreshRecentRuns()
         await MainActor.run {
-            healthKitManager.recentWorkouts = hk
             workouts = merged
             isRefreshing = false
         }

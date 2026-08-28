@@ -250,7 +250,6 @@ struct MoodLoadGroup: Identifiable {
     /// Mean quality load on those days.
     let meanLoad: Double
     /// Mean recovery score on those days.
-    let meanRecovery: Double
 }
 
 struct MoodLoadRead {
@@ -317,8 +316,7 @@ enum MoodLoadBuilder {
                 id: mood,
                 dayCount: days.count,
                 meanMiles: SignalLabMath.mean(days.map(\.miles)) ?? 0,
-                meanLoad: SignalLabMath.mean(days.map(\.qualityLoad)) ?? 0,
-                meanRecovery: SignalLabMath.mean(days.map { Double($0.recovery) }) ?? 0
+                meanLoad: SignalLabMath.mean(days.map(\.qualityLoad)) ?? 0
             )
         }
 

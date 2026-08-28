@@ -168,7 +168,13 @@ private func baseline(days: [Int] = Array(1...12)) -> [KeySession] {
     // Long runs group under LONG for chips and means, never under a work zone.
     let longMean = read.zoneMeans.first { $0.zone == EfficiencyIndexBuilder.longZoneToken }
     #expect(longMean != nil)
-    #expect(read.points(zone: EfficiencyIndexBuilder.longZoneToken).allSatisfy(\.isLongRun))
+    // Hoisted out of #expect: the macro expands `.allSatisfy(_:)` to
+    // `$0.allSatisfy($1)` without a `try`, and allSatisfy takes a throwing
+    // closure — inside the macro that is a compile error that takes the
+    // whole test target down with it.
+    let allLong = read.points(zone: EfficiencyIndexBuilder.longZoneToken)
+        .allSatisfy(\.isLongRun)
+    #expect(allLong)
 }
 
 // MARK: - Rule 3 · heat

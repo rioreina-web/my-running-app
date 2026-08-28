@@ -75,6 +75,12 @@ struct HistoryDetailSheet: View {
     /// collapses on tap, so without this the old pill sits there for the
     /// length of the round trip and the tap looks ignored.
     @State var pendingMood: String?
+    /// RPE shown optimistically while its save is in flight, and whether there
+    /// is one at all. Two pieces of state rather than one because `nil` is a
+    /// real pending value here — the athlete clearing a rating — so
+    /// `pendingRpe != nil` cannot stand in for "a save is in flight".
+    @State var pendingRpe: Int?
+    @State var hasPendingRpe = false
     /// The last inline save failed. Surfaced under the headline: the field has
     /// already closed by then, so a silent failure looks exactly like an edit
     /// that evaporated.
@@ -196,7 +202,9 @@ struct HistoryDetailSheet: View {
         }
         .sheet(isPresented: $showWorkoutPicker) {
             HistoryWorkoutPickerSheet(
-                workouts: healthKitManager.recentWorkouts,
+                // Merged, not HealthKit-only: this picker links a memo to a
+                // run, and a Strava-only run has to be linkable too.
+                workouts: healthKitManager.recentRuns,
                 selectedWorkout: $selectedWorkout,
                 isPresented: $showWorkoutPicker,
                 onSelect: { workout in
@@ -264,10 +272,10 @@ struct HistoryDetailSheet: View {
     private func loadWorkouts() {
         Task {
             _ = await healthKitManager.requestAuthorization()
-            let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-            await MainActor.run {
-                healthKitManager.recentWorkouts = workouts
-            }
+            // Publishes the merged HealthKit + Vital + Strava list that the
+            // picker above reads. Fetching HealthKit alone here is what used
+            // to hide Strava-only runs from it.
+            await healthKitManager.refreshRecentRuns()
         }
     }
 
@@ -386,6 +394,31 @@ struct HistoryDetailSheet: View {
             // flight, and clearing unconditionally would flash the first
             // tap's mood back over the second one's.
             if pendingMood == mood { pendingMood = nil }
+            switch result {
+            case .saved: onUpdate()
+            case .unchanged: break
+            case .failed: inlineSaveFailed = true
+            }
+        }
+    }
+
+    /// Releasing the slider IS the save — same no-Save-button contract as the
+    /// mood pills. One column, and reversible with CLEAR, so a confirmation
+    /// step would cost more than the mistake it prevents.
+    func commitInlineRpe(_ newRpe: Int?) {
+        pendingRpe = newRpe
+        hasPendingRpe = true
+        inlineSaveFailed = false
+        Task {
+            let result = await vm.saveRpeInline(newRpe)
+            // Only clear MY optimistic value — same reasoning as the mood
+            // commit: two quick drags put two saves in flight, and clearing
+            // unconditionally would flash the first drag's number back over
+            // the second one's.
+            if hasPendingRpe, pendingRpe == newRpe {
+                hasPendingRpe = false
+                pendingRpe = nil
+            }
             switch result {
             case .saved: onUpdate()
             case .unchanged: break

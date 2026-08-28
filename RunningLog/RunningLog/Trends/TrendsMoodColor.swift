@@ -23,9 +23,8 @@ enum TrendsMoodColor {
         }
     }
 
-    /// The vocabulary in order, best to worst. Same six words as
-    /// `CLAUDE.md`'s closed mood vocabulary and the same order the recovery
-    /// ledger scores them in — see `TrendsRecoveryFactors.moodPoints`.
+    /// The vocabulary in order, best to worst. The same six words as
+    /// `CLAUDE.md`'s closed mood vocabulary.
     static let ordered = [
         "energized", "positive", "neutral", "tired", "struggling", "injured",
     ]
@@ -38,11 +37,8 @@ enum TrendsMoodColor {
     /// its own.
     ///
     /// The ordering survives here because the audio graph has to place each
-    /// point on an axis. It is the same order the recovery receipt scores
-    /// moods in (`TrendsRecoveryFactors.moodPoints`, +12 down to −18), so the
-    /// chart and the ledger cannot disagree. It is a rank, never a
-    /// measurement: the stored value stays TEXT and every readout still
-    /// speaks the word.
+    /// point on an axis. It is a rank, never a measurement: the stored value
+    /// stays TEXT and every readout still speaks the word.
     ///
     /// A word outside the vocabulary sits at the neutral step rather than at
     /// either extreme — the same fallback `color(_:)` makes.

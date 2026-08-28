@@ -318,6 +318,62 @@ Worth a pass of its own, and worth doing before the global palette swap rather
 than after — a rename with 92 call sites is mechanical today and a merge
 conflict later.
 
+## 6f · The global swap — Train, and everything else
+
+`design-system/direction-one/` is now the authoritative spec, and
+`direction-one.css` + `PALETTE.md` settled several things this work had been
+guessing at. Applied:
+
+**The tokens are skin-aware.** `Color.drip.*` and every `drip*` font now
+resolve to Direction I when the skin is WILD and to today's values when it is
+EDITORIAL. This is REDESIGN-SAFELY §5's "roughly 60 lines in one file", spent.
+It covers **5,605 colour call sites and 2,810 font call sites** without editing
+any of them, so Train, Trends, Week, Ask and Sheet all repaint at once.
+
+Type mapping: display → Instrument Sans Bold; stat → Inter SemiBold tabular;
+eyebrow → Schibsted SemiBold (the mono-label retyping the doc lists as open
+question 1); body and caption → Inter; label → Instrument Sans Medium;
+bodyItalic → Times italic (the dek).
+
+**`struggling` moved to `#B3261E`.** `direction-one.css` closes the doc's open
+question §2 in favour of separation — `#C62828` was close enough to brand red
+to read as the same colour at pill size.
+
+**The pace ramp is deliberately NOT swapped.** `paceFast` and everything in
+`PaceSpectrum.swift` keep their values. PALETTE.md is explicit: the ramp is
+ordered dark = fast and *the ordering is the information*. Recolouring it to
+match a rebrand would destroy data, not restyle it.
+
+**Two components a token swap cannot fix**, both branched internally per §5
+tier 2, so every call site follows:
+
+- `MoodBadge` (11 call sites, 4 in Train) loses its tinted capsule. Direction I:
+  *"a mood is always type or a dot, never a large fill."* Six saturated washes
+  on a page whose rule is one red is exactly the collision PALETTE.md's known
+  issue §1 describes.
+- Train's `zoneChip` stops filling every row with a pace-ramp colour. Direction
+  I: solid session-blue for the keyed session, hairline outline for everything
+  easy, one keyed chip per screenful. `direction-one.css` names this mistake
+  directly — *"if blue starts appearing as chips and bars everywhere it has
+  stopped meaning anything. That mistake has been made once already."* The ramp
+  still owns pace in the charts, where its ordering carries meaning; in a column
+  of chips it was decoration.
+
+### Where the Log feed now disagrees with the spec
+
+`direction-one/preview.png` is newer than the 032c screen I built the feed
+from, and it makes two different calls:
+
+1. **Mood is a dot beside the date plus the mood word**, not a 2pt coloured
+   leading rule. Direction I reserves the one coloured left border for the
+   coach quote.
+2. **Stat tiles stayed** — tracked label over a tabular numeral, three across
+   (`DISTANCE / 8.4 MI`). I had collapsed those to one line.
+
+I have NOT changed the feed, because you saw 032c and said "make it like this"
+after that preview was written. Worth one decision: 032c's rule, or
+direction-one's dot.
+
 ## 7 · Known gaps
 
 - **Dynamic Type.** Every size here is a literal point size, matching the rest of

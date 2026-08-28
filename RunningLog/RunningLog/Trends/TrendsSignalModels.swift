@@ -175,7 +175,6 @@ struct TrendsBucket: Identifiable {
     let mood: String?
     /// The body mentions that landed in this bucket, verbatim.
     let niggles: [TrendsDay.DayNiggle]
-    let recovery: Int
     /// Monday, at day grain — the chart rules a gridline here.
     let isWeekStart: Bool
     /// Days rolled into this bucket. 1 at day grain.
@@ -349,7 +348,6 @@ struct TrendsBucketSet {
         return TrendsBucketSet.modal(logged)
     }
 
-    var currentRecovery: Int { buckets.last?.recovery ?? 0 }
 
     static func modal(_ values: [String]) -> String? {
         guard !values.isEmpty else { return nil }
@@ -382,24 +380,15 @@ enum TrendsSignalBuilder {
             return TrendsBucketSet(grain: .day, buckets: [], days: [])
         }
 
-        // Recovery is computed against the FULL history, not the window — the
-        // 8-week load baseline and the 14-day niggle lookback both need days
-        // that sit before the window's first column.
-        let ledgers = TrendsRecoveryLedger.series(days: allDays)
-        let recoveryByDate = Dictionary(
-            allDays.enumerated().map { ($0.element.date, ledgers[$0.offset].total) },
-            uniquingKeysWith: { a, _ in a }
-        )
-
         let qualityDates = qualitySessionDates(keySessions)
         let longRunDates = longRunSessionDates(keySessions)
 
         let grain: TrendsBucketSet.Grain = windowed.count <= dailyGrainLimit ? .day : .week
         let buckets: [TrendsBucket] = grain == .day
             ? windowed.map {
-                dayBucket($0, quality: qualityDates, longRuns: longRunDates, recovery: recoveryByDate)
+                dayBucket($0, quality: qualityDates, longRuns: longRunDates)
             }
-            : weekBuckets(windowed, quality: qualityDates, longRuns: longRunDates, recovery: recoveryByDate)
+            : weekBuckets(windowed, quality: qualityDates, longRuns: longRunDates)
 
         return TrendsBucketSet(grain: grain, buckets: buckets, days: windowed)
     }
@@ -418,7 +407,7 @@ enum TrendsSignalBuilder {
         }
     }
 
-    // MARK: key + long recovery
+    // MARK: key + long sessions
 
     /// Dates carrying a qualifying **non-long-run** key session. A nil quality
     /// load never clears the floor, so an older payload degrades to "not key"
@@ -439,9 +428,7 @@ enum TrendsSignalBuilder {
     ///
     /// Exposed for surfaces that render days outside the bucket pipeline — the
     /// week drill-down lists seven days while the chart is bucketed weekly, and
-    /// the two must not disagree about which of them was key work. Note this
-    /// deliberately does **not** build the recovery series: a week row carries
-    /// no score, and `series(days:)` walks the whole history.
+    /// the two must not disagree about which of them was key work.
     static func channels(
         for days: [TrendsDay],
         keySessions: [KeySession]
@@ -484,8 +471,7 @@ enum TrendsSignalBuilder {
     private static func dayBucket(
         _ day: TrendsDay,
         quality: Set<String>,
-        longRuns: Set<String>,
-        recovery: [String: Int]
+        longRuns: Set<String>
     ) -> TrendsBucket {
         let ch = channel(for: day, quality: quality, longRuns: longRuns)
         let date = TrendsWeekday.date(from: day.date) ?? Date(timeIntervalSince1970: 0)
@@ -500,7 +486,6 @@ enum TrendsSignalBuilder {
             qualityLoad: ch.isKey ? 1 : 0,
             mood: (day.mood?.isEmpty == false) ? day.mood : nil,
             niggles: day.niggles,
-            recovery: recovery[day.date] ?? 50,
             isWeekStart: TrendsWeekday.index(from: day.date) == 0,
             dayCount: 1
         )
@@ -511,8 +496,7 @@ enum TrendsSignalBuilder {
     private static func weekBuckets(
         _ days: [TrendsDay],
         quality: Set<String>,
-        longRuns: Set<String>,
-        recovery: [String: Int]
+        longRuns: Set<String>
     ) -> [TrendsBucket] {
         var groups: [(key: String, days: [TrendsDay])] = []
         for day in days {
@@ -544,8 +528,6 @@ enum TrendsSignalBuilder {
                 return m
             })
 
-            let recs = ds.map { recovery[$0.date] ?? 50 }
-
             // At week grain the bar is a weekly total, not a session. Colouring
             // it by type would wash the lane — nearly every week contains a key
             // session — so the channel is carried by the KEY WORK lane instead.
@@ -562,7 +544,6 @@ enum TrendsSignalBuilder {
                 qualityLoad: Double(keyCount),
                 mood: weekMood,
                 niggles: ds.flatMap(\.niggles),
-                recovery: recs.isEmpty ? 50 : Int((Double(recs.reduce(0, +)) / Double(recs.count)).rounded()),
                 isWeekStart: true,
                 dayCount: ds.count
             )
@@ -592,291 +573,6 @@ enum TrendsSignalBuilder {
     }
 }
 
-// MARK: - Recovery ledger
-
-/// The recovery score, and the arithmetic that produced it.
-///
-/// **Why there is a number here at all.** `trends-v2-spec-2026-07-30` §5 says
-/// "there is no recovery score, and there should never be one". Read closely,
-/// the objection is not to *a number* — it is to an **opaque** number, the
-/// 0–100 composite that arrives with authority and no accounting, which is
-/// what the convergence rule exists to prevent.
-///
-/// So: the score ships, and it shows its receipt. Every factor carries the
-/// evidence it moved on, no factor fires silently, and a skeptical athlete can
-/// audit the number in four seconds. That satisfies the objection the spec
-/// actually makes.
-///
-/// **Load is measured against the athlete's own 8-week average, not an
-/// acute:chronic ratio.** `recovery-trend-v2-2026-07-27` §7.1 dismantled ACWR:
-/// coupling produces r = 0.52 from arithmetic alone, random numbers reproduce
-/// the published association, and the only RCT was null (RR 1.01).
-///
-/// **Band words avoid the copy lint.** `ready`, `recovered` and `risk` are
-/// banned; `clear` reuses the vocabulary already in `RecoveryDayModel`.
-///
-/// Two of the five factors — mood and body mentions — are the athlete's own
-/// words; the other three are derived from the athlete's own runs. No watch
-/// data is required — this ships months before the biometrics pipeline
-/// matures, and on the evidence the self-report carries most of the signal
-/// anyway.
-///
-/// The factor arithmetic lives in `TrendsRecoveryFactors` (retooled
-/// 2026-08-05): trailing-7-day recency-weighted mood, clear-day credit in
-/// place of the subtract-only "Days on", and maxima that make every band —
-/// including `Clear` — attainable. The old inline arithmetic topped out at
-/// 69 against a `Clear` band starting at 75, so the best band was
-/// mathematically unreachable; see that file's header for the full account.
-struct TrendsRecoveryLedger {
-
-    struct Factor: Identifiable {
-        let id = UUID()
-        /// "Mood", "Yesterday", "Right knee"…
-        let name: String
-        /// The uppercase evidence line under the name. Never a conclusion.
-        let evidence: String
-        let points: Int
-        /// Where the evidence came from. The receipt groups by this —
-        /// WORDS / RUNS / NIGHTS — which makes the evidence hierarchy
-        /// visible: the athlete's words lead, the watch corroborates.
-        var source: Source = .runs
-        /// False when the factor's input channel had nothing to say today
-        /// (mood unlogged, baseline too thin). Zero-with-data — "none in
-        /// 14 days" — stays true: absence of niggles is information, not
-        /// missing data. Drives the coverage line.
-        var hasData: Bool = true
-
-        /// Set when the factor DID score, but on a fallback path because part
-        /// of its input channel is missing.
-        ///
-        /// This is distinct from `hasData`, and the distinction is the whole
-        /// point: a degraded factor has data and a number, so it looks
-        /// identical to a full one on the receipt. Only the factor that took
-        /// the branch knows it was a fallback, so it is recorded there rather
-        /// than re-derived from the evidence string in the view.
-        var gap: Gap? = nil
-
-        /// The clause the coverage line prints for a degraded factor, or nil
-        /// when the factor read its full input.
-        var degraded: String? { gap?.note }
-
-        /// Which half of an input channel is missing. Typed rather than a bare
-        /// string so a surface can offer the fix for a specific gap without
-        /// pattern-matching prose.
-        enum Gap: Equatable {
-            /// No nightly rating, so Sleep scored off duration alone — the
-            /// Tier-3 fallback, range +2/−3 instead of Tier-1's +4/−6.
-            case sleepRating
-            /// No HRV, so Overnight scored off resting HR alone. Loses the
-            /// 3×3 cross-check, and with it the only cell that subtracts.
-            case hrv
-            /// The load unit ladder dropped off the `stressLoad` (TLS) rung —
-            /// at least one run day in the window carries no `stress_load`,
-            /// so Recovery need is measuring duration × channel intensity
-            /// instead of the real per-workout TLS. TrendsService's repair
-            /// sweep exists to close this gap; the clause discloses it while
-            /// it's open.
-            case loadUnitDuration
-            /// Bottom rung: no durations either, so load is miles × intensity.
-            case loadUnitMiles
-
-            var note: String {
-                switch self {
-                case .sleepRating: "sleep from duration, not your rating"
-                case .hrv: "resting HR only, no HRV"
-                case .loadUnitDuration: "load from duration, not TLS"
-                case .loadUnitMiles: "load from miles, not TLS"
-                }
-            }
-        }
-
-        /// The most this factor could contribute today, given which of its
-        /// input channels are actually live. Feeds `TrendsRecoveryLedger
-        /// .ceiling`; see that property for why the number matters.
-        ///
-        /// Factors that can only ever subtract (body mentions, the session
-        /// spike) carry 0 — in the best case they are silent, not positive.
-        /// A new factor that forgets to set this under-reports the ceiling
-        /// rather than over-reporting it, which is the safe direction.
-        var bestCase: Int = 0
-
-        enum Source { case words, runs, nights }
-    }
-
-    let factors: [Factor]
-    /// Clamped 8…96.
-    let total: Int
-    /// 50 + Σ points, before clamping. Shown in the arithmetic line.
-    let rawSum: Int
-
-    static let base = 50
-
-    // Points per mood label live in `TrendsRecoveryFactors.moodPoints` — one
-    // table, one home. The label is the input; the score is derived and
-    // disclosed. Mood itself is never stored numerically.
-
-    enum Band: String, CaseIterable {
-        case flat = "Flat", worn = "Worn", steady = "Steady", clear = "Clear"
-
-        /// The band's bounds on the real 8…96 scale, declared once.
-        ///
-        /// These used to live inline in `of(_:)` and again in the gauge's own
-        /// band table, and the ceiling cap added 2026-08-07 would have made a
-        /// third copy. A gauge that draws `Clear` starting at one number while
-        /// the score classifies it at another is the kind of disagreement
-        /// nobody notices until a band looks wrong on screen.
-        var lowerBound: Int {
-            switch self {
-            case .flat: 8
-            case .worn: 45
-            case .steady: 60
-            case .clear: 75
-            }
-        }
-
-        var upperBound: Int {
-            switch self {
-            case .flat: 45
-            case .worn: 60
-            case .steady: 75
-            case .clear: 96
-            }
-        }
-
-        static func of(_ score: Int) -> Band {
-            allCases.last { score >= $0.lowerBound } ?? .flat
-        }
-    }
-
-    var band: Band { Band.of(total) }
-
-    // MARK: The quadrant read (2026-08-06)
-
-    /// Whether the athlete's own Tier-1 signals — sleep quality, soreness,
-    /// mood — are currently saying the recovery need is being met.
-    enum Supply { case holding, dragging }
-
-    /// Demand x supply. The number and the receipt are unchanged; this picks
-    /// the SENTENCE, and it is the whole point of splitting the score into two
-    /// terms (`outputs/recovery-need-model-2026-08-06.md` §4).
-    ///
-    /// `quietButDragging` is the cell a load-only score structurally cannot
-    /// produce — light training, low words — and it is precisely the cell that
-    /// caught the only real injury episode in Rio's 202 days. It exists only
-    /// because supply is a separate term that can speak while demand is quiet.
-    enum Quadrant {
-        case adaptingWell       // high demand · supply holding
-        case followingDown      // high demand · supply dragging — the flag
-        case fresh              // low demand  · supply holding
-        case quietButDragging   // low demand  · supply dragging — the tell
-        case unknown            // warm-up gate closed: no trustworthy demand
-
-        /// Describes and states; never prescribes. Every word here is checked
-        /// against the copy ban list (rest / ice / should / must / because /
-        /// caused / recovered / ready / risk).
-        var sentence: String {
-            switch self {
-            case .adaptingWell:
-                "A big block, and nothing on the recovery side is following it down."
-            case .followingDown:
-                "A big block, and your own signals are following it down."
-            case .fresh:
-                "Nothing's asking much of you, and nothing's dragging."
-            case .quietButDragging:
-                "Training is light, but your words are low — worth a look at sleep, life, a niggle."
-            case .unknown:
-                "Not enough training history yet to read the load side."
-            }
-        }
-    }
-
-    let quadrant: Quadrant
-
-    /// Tier-1 supply: the athlete's own words. Dragging when any words-sourced
-    /// factor is currently subtracting. Sleep and soreness lead here; mood is
-    /// the minor corroborator, which is already encoded in their point weights.
-    var supply: Supply {
-        factors.contains { $0.source == .words && $0.points < 0 } ? .dragging : .holding
-    }
-
-    /// The channels that scored on a fallback path today, in factor order.
-    /// Empty when every factor read its full input.
-    var degradations: [String] { factors.compactMap(\.degraded) }
-
-    /// The same list, typed — so a surface can offer the fix for one specific
-    /// gap (the nightly rating is one tap; HRV is a permission grant).
-    var gaps: [Factor.Gap] { factors.compactMap(\.gap) }
-
-    /// The highest total today's LIVE channels can produce — base plus every
-    /// factor's `bestCase`, under the same 8…96 clamp as `total`.
-    ///
-    /// This exists because a missing channel does not just cost points on the
-    /// day, it lowers the roof. With no HRV and no nightly sleep rating the
-    /// ceiling is **74** against a `Clear` band that starts at 75, so the best
-    /// band on the gauge is not merely unreached — it is arithmetically
-    /// unreachable, and a gauge that draws it as open territory is inviting
-    /// the athlete to chase something the data cannot give them. Rule 3 of
-    /// this file's header applies: say which detail was dropped.
-    ///
-    /// `TrendsRecoveryFactors.theoreticalRange` answers a different question —
-    /// what the model can do when every channel is present. This answers what
-    /// it can do today.
-    var ceiling: Int {
-        min(96, max(8, Self.base + factors.reduce(0) { $0 + $1.bestCase }))
-    }
-
-    /// Bands the current ceiling puts out of reach. Drives the gauge's cap.
-    var unreachableBands: [Band] {
-        Band.allCases.filter { $0.lowerBound > ceiling }
-    }
-
-    /// The arithmetic line: "Starts at 50 + 6 − 3 + 0 + 4 + 0 =".
-    var arithmetic: String {
-        let terms = factors.map { ($0.points >= 0 ? "+ " : "− ") + String(abs($0.points)) }
-        return "Starts at \(Self.base) " + terms.joined(separator: " ") + "  ="
-    }
-
-    // MARK: Computation
-
-    /// The ledger for every day in `days`, index-aligned. Computed as a series
-    /// because each day's load and niggle factors look backwards.
-    static func series(days: [TrendsDay]) -> [TrendsRecoveryLedger] {
-        days.indices.map { ledger(days: days, at: $0) }
-    }
-
-    static func ledger(days: [TrendsDay], at i: Int) -> TrendsRecoveryLedger {
-        guard days.indices.contains(i) else {
-            return TrendsRecoveryLedger(factors: [], total: base, rawSum: base, quadrant: .unknown)
-        }
-
-        // The five factors — mood over the trailing week, recent load, body
-        // mentions, load vs the athlete's own 8-week average, clear days —
-        // live in `TrendsRecoveryFactors` (retooled 2026-08-05) so the
-        // arithmetic has exactly one home. `theoreticalRange` there proves
-        // every band, including `Clear`, is attainable.
-        let factors = TrendsRecoveryFactors.all(days: days, at: i)
-
-        let raw = base + factors.reduce(0) { $0 + $1.points }
-
-        // The quadrant needs supply, which is a property of the factors we
-        // just built — so it is derived here rather than inside the factor
-        // builder, keeping "what the words say" in exactly one place.
-        let dragging = factors.contains { $0.source == .words && $0.points < 0 }
-        let quadrant: Quadrant = switch TrendsRecoveryDemand.demandLevel(days: days, at: i) {
-        case .high: dragging ? .followingDown : .adaptingWell
-        case .low: dragging ? .quietButDragging : .fresh
-        case .unknown: .unknown
-        }
-
-        return TrendsRecoveryLedger(
-            factors: factors,
-            total: min(96, max(8, raw)),
-            rawSum: raw,
-            quadrant: quadrant
-        )
-    }
-}
-
 // MARK: - The read
 
 /// The computed lede. Every string here is a function of the same buckets the
@@ -885,11 +581,15 @@ struct TrendsRecoveryLedger {
 /// and rendered forever drifts silently.
 struct TrendsSignalRead {
 
-    /// Recovery moves smaller than this are noise, and the screen says so.
-    /// This is the most important threshold on the surface: it's the
-    /// difference between a tool that observes and one that manufactures
-    /// signal.
-    static let noiseThreshold = 3.0
+    /// Mileage moves smaller than this (percent, front half to back) are
+    /// noise, and the screen says so. This is the most important threshold on
+    /// the surface: it's the difference between a tool that observes and one
+    /// that manufactures signal.
+    ///
+    /// It used to threshold the recovery delta. The recovery score was cut on
+    /// 2026-08-24 — a lede that keyed off it was asserting a direction the
+    /// number could not support.
+    static let noiseThreshold = 8.0
 
     let headline: String
     /// The coral-emphasised tail of the headline, if any.
@@ -930,32 +630,26 @@ struct TrendsSignalRead {
         let back = Array(set.buckets.suffix(set.buckets.count - half))
         let milesFront = mean(front.map(\.miles))
         let milesBack = mean(back.map(\.miles))
-        let recFront = mean(front.map { Double($0.recovery) })
-        let recBack = mean(back.map { Double($0.recovery) })
         let dMiles = milesFront > 0 ? (milesBack - milesFront) / milesFront * 100 : 0
-        let dRec = recBack - recFront
 
         let headline: String
         let accent: String
         let note: String
 
-        if abs(dRec) < noiseThreshold {
-            if dMiles > 8 { headline = "Load's climbing."; accent = "You're holding it." }
-            else if dMiles < -8 { headline = "Load eased off."; accent = "You held level." }
-            else { headline = "Steady on"; accent = "both counts." }
-            note = "Recovery moved \(signed(dRec)) points across the window — inside the week-to-week noise on this measure. Nothing is proven here yet."
-        } else if dRec < 0 && dMiles > 8 {
+        // Load only. What the load COST is a question for the nightly signals,
+        // read one at a time against their own baselines — not for a lede.
+        if abs(dMiles) < noiseThreshold {
+            headline = "Steady"
+            accent = "through the window."
+            note = "Mileage moved \(signed(dMiles))% front half to back — inside the noise on this measure. Nothing is proven here."
+        } else if dMiles > 0 {
             headline = "Load's climbing."
-            accent = "You aren't."
-            note = "Mileage is up \(Int(dMiles.rounded()))% in the back half while recovery fell \(String(format: "%.1f", abs(dRec))) points. Those two moving opposite ways is the shape worth watching."
-        } else if dRec > 0 {
-            if dMiles > 8 { headline = "More work,"; accent = "and you're absorbing it." }
-            else { headline = "You're coming"; accent = "back up." }
-            note = "Recovery rose \(String(format: "%.1f", dRec)) points across the window" + (dMiles > 8 ? " while mileage climbed \(Int(dMiles.rounded()))%." : ".")
+            accent = "\(Int(dMiles.rounded()))% in the back half."
+            note = "The back half of this window carries \(Int(dMiles.rounded()))% more mileage than the front."
         } else {
-            headline = "Recovery's"
-            accent = "drifting down."
-            note = "Down \(String(format: "%.1f", abs(dRec))) points with mileage \(dMiles >= 0 ? "up" : "down") \(Int(abs(dMiles).rounded()))%. Load isn't the obvious explanation here."
+            headline = "Load eased off."
+            accent = "\(Int(abs(dMiles).rounded()))% down."
+            note = "The back half of this window carries \(Int(abs(dMiles).rounded()))% less mileage than the front."
         }
 
         return TrendsSignalRead(

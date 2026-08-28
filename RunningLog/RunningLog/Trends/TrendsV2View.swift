@@ -310,28 +310,6 @@ struct TrendsV2View: View {
                 .padding(.top, 14)
             }
 
-            EditorialRule().padding(.vertical, 24)
-
-            section(eyebrow: "Recovery score · \(recoveryDayLabel(set))", number: "02",
-                    sub: "Every score shows its own arithmetic. Starts at 50, and each line carries the evidence it moved on.",
-                    anchor: "recovery") {
-                if let ledger = ledger(for: set) {
-                    TrendsRecoveryLedgerView(
-                        ledger: ledger,
-                        previous: previousScore(for: set),
-                        onSeeTrend: { jump(proxy, to: "signals") },
-                        onSleepLogged: { Task { await service.refresh(force: true) } }
-                    )
-                } else {
-                    EmptyStateView(
-                        variant: .dataPending,
-                        eyebrow: "No score yet",
-                        title: "The score reads your mood logs, your niggles and your last few weeks of running. A few more days and it fills in."
-                    )
-                }
-            }
-
-            EditorialRule().padding(.vertical, 24)
 
             section(eyebrow: "What lines up", number: "03",
                     sub: "Computed from the window in view. When there isn't enough to say, it says that.",
@@ -627,27 +605,8 @@ struct TrendsV2View: View {
 
     // MARK: Ledger for the window's last day
 
-    /// The ledger is built over the FULL history — the 8-week load baseline and
-    /// the 14-day niggle lookback both need days that sit before the window's
-    /// first column — then read at the window's last day.
-    ///
-    /// These take the already-built `set` rather than reading `bucketSet`
-    /// again: the old computed-var shape evaluated the full builder (including
-    /// the whole-history recovery series) three times per render.
-    private func ledgerIndex(for set: TrendsBucketSet) -> Int? {
-        guard let lastISO = set.days.last?.date else { return nil }
-        return service.days.lastIndex(where: { $0.date == lastISO })
-    }
 
-    private func ledger(for set: TrendsBucketSet) -> TrendsRecoveryLedger? {
-        guard let idx = ledgerIndex(for: set) else { return nil }
-        return TrendsRecoveryLedger.ledger(days: service.days, at: idx)
-    }
 
-    private func previousScore(for set: TrendsBucketSet) -> Int? {
-        guard let idx = ledgerIndex(for: set), idx > 0 else { return nil }
-        return TrendsRecoveryLedger.ledger(days: service.days, at: idx - 1).total
-    }
 
     /// "Today" only when the window actually ends today — otherwise name the
     /// day, so a custom range never labels a July score as today's.

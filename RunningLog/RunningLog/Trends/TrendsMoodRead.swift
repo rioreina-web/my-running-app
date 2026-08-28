@@ -99,6 +99,104 @@ enum TrendsMoodRead {
     }
 }
 
+// MARK: - Nightly biometrics
+
+/// One nightly series, expressed as DEVIATION from the athlete's own trailing
+/// baseline in their own SD units — never raw bpm or raw minutes.
+///
+/// WHY DEVIATION. A lane is read by looking straight down a column, and bpm,
+/// minutes and mood labels are not comparable by eye in their native units.
+/// Normalising every series to "how far from YOUR normal" is the thing that
+/// lets three lanes dipping in the same week read as one pattern — which is
+/// the whole reason these are lanes and not a score. A single number over the
+/// same four channels CANCELS them: sleep fine against load enormous, and
+/// sleep awful against load tiny, collapse to the same value.
+///
+/// WHY THE ATHLETE'S OWN SD. A fixed ±3 bpm or ±45 min would encode one
+/// athlete's between-night variability as everyone's.
+///
+/// WHAT IT DOES NOT SAY. This reports the measurement and the band it usually
+/// sits in. It does not say what a night MEANS — a lone resting-HR rise cannot
+/// separate accumulated fatigue from a late meal, a warm room, alcohol or the
+/// start of a cold. The lane draws nights; anything that speaks reads windows.
+struct TrendsBiometricSeries {
+
+    /// Per column, aligned with `buckets` at day grain. `nil` where the night
+    /// carried no reading — drawn as a gap, never interpolated and never 0.
+    let deviations: [Double?]
+    /// The mean the deviations are measured from, in native units.
+    let baseline: Double
+    /// The athlete's own between-night SD across the baseline window.
+    let sd: Double
+    /// Nights inside the window that carried a reading.
+    let readings: Int
+    /// Nights behind the window that the baseline was built from.
+    let baselineNights: Int
+}
+
+enum TrendsBiometrics {
+
+    /// Nights of history required behind the window before a baseline is
+    /// honest. Fourteen was the gate the retired recovery ledger used for the
+    /// same question, kept so the threshold has one definition.
+    static let minBaselineNights = 14
+
+    /// How far behind the window a baseline is drawn from. `overnight` uses a
+    /// 28-day baseline; so does this.
+    static let baselineDays = 28
+
+    /// A single baseline for the whole window rather than a rolling one, on
+    /// purpose: a wobbling centre line cannot be compared column to column,
+    /// and comparing columns is what the lane is for.
+    ///
+    /// Returns `nil` — the lane says so in place rather than drawing — when
+    /// there is no history behind the window, too few baseline nights, no
+    /// variation to normalise by, or no readings at all inside the window.
+    /// Population SD. Lived on the recovery ledger until that surface was cut
+    /// (2026-08-24); it was never a recovery idea, just arithmetic.
+    static func stdev(_ xs: [Double]) -> Double {
+        guard xs.count > 1 else { return 0 }
+        let m = xs.reduce(0, +) / Double(xs.count)
+        let v = xs.reduce(0) { $0 + ($1 - m) * ($1 - m) } / Double(xs.count)
+        return v.squareRoot()
+    }
+
+    static func series(
+        days: [TrendsDay],
+        windowStart: Int,
+        windowCount: Int,
+        value: (TrendsDay) -> Double?
+    ) -> TrendsBiometricSeries? {
+        guard windowStart >= 0, windowCount > 0,
+              windowStart + windowCount <= days.count else { return nil }
+
+        let lower = max(0, windowStart - baselineDays)
+        guard lower < windowStart else { return nil }
+
+        let base = days[lower..<windowStart].compactMap(value)
+        guard base.count >= minBaselineNights else { return nil }
+
+        let mean = base.reduce(0, +) / Double(base.count)
+        let sd = stdev(base)
+        guard sd > 0 else { return nil }
+
+        let deviations = days[windowStart..<(windowStart + windowCount)].map { day -> Double? in
+            guard let v = value(day) else { return nil }
+            return (v - mean) / sd
+        }
+        let readings = deviations.compactMap { $0 }.count
+        guard readings > 0 else { return nil }
+
+        return TrendsBiometricSeries(
+            deviations: deviations,
+            baseline: mean,
+            sd: sd,
+            readings: readings,
+            baselineNights: base.count
+        )
+    }
+}
+
 // MARK: - The block
 
 /// One fortnight, resolved through the same bucket pipeline the rest of Trends
@@ -110,6 +208,24 @@ struct TrendsMoodBlock {
     let blocksBack: Int
     let from: Date
     let to: Date
+
+    // The nightly lanes (2026-08-24). Built by `TrendsMoodBlocks.block`, which
+    // holds the full timeline — a baseline needs 28 days sitting BEHIND this
+    // window's first column, exactly like the recovery factors do.
+    let restingHR: TrendsBiometricSeries?
+    let sleep: TrendsBiometricSeries?
+    let hrv: TrendsBiometricSeries?
+
+    /// The nightly series a lane draws, or `nil` when this fortnight cannot
+    /// draw it honestly.
+    func series(for lane: TrendsMoodLane) -> TrendsBiometricSeries? {
+        switch lane {
+        case .restingHR: restingHR
+        case .sleep: sleep
+        case .hrv: hrv
+        default: nil
+        }
+    }
 
     // `self.` is load-bearing: as the first token inside a computed-property
     // body, a bare `set` parses as the start of a setter clause.
@@ -243,6 +359,21 @@ enum TrendsMoodBlocks {
             keySessions: keySessions,
             window: .custom(from: from, to: to)
         )
-        return TrendsMoodBlock(set: set, blocksBack: blocksBack, from: from, to: to)
+        // Nightly lanes read the FULL history for the same reason the builder
+        // above does — the baseline sits behind the window's first column.
+        let start = end - width
+        func nightly(_ value: @escaping (TrendsDay) -> Double?) -> TrendsBiometricSeries? {
+            TrendsBiometrics.series(days: days, windowStart: start, windowCount: width, value: value)
+        }
+
+        return TrendsMoodBlock(
+            set: set,
+            blocksBack: blocksBack,
+            from: from,
+            to: to,
+            restingHR: nightly { $0.restingHr },
+            sleep: nightly { $0.sleepTotalMin.map(Double.init) },
+            hrv: nightly { $0.hrvRmssd }
+        )
     }
 }

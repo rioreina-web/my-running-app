@@ -7,11 +7,14 @@ import { Rich } from "./rich-text";
  * whole-window distribution bar. Mood is a TEXT label rendered as color, never
  * coerced to a number.
  */
+const NOT_LOGGED_COLOR = "#E4E0DA"; // --rule step — a labeled state, not an undocumented gray cell
+
 export function MoodStrip({ mood }: { mood: MoodSummary }) {
   const total = mood.distribution.reduce((s, d) => s + d.count, 0) || 1;
+  const notLoggedCount = mood.strip.filter((c) => c.logged === false).length;
 
   return (
-    <div className="rounded-xl border border-divider bg-bg-card p-5">
+    <div className="border-b border-divider py-5">
       <h4 className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
         Mood · 28 days
       </h4>
@@ -20,9 +23,9 @@ export function MoodStrip({ mood }: { mood: MoodSummary }) {
         {mood.strip.map((c, i) => (
           <span
             key={i}
-            title={c.logged === false ? `${c.dateLabel} · no log` : `${c.dateLabel} · ${c.mood}`}
+            title={c.logged === false ? `${c.dateLabel} · not logged` : `${c.dateLabel} · ${c.mood}`}
             className="h-[34px] flex-1 rounded-[3px]"
-            style={{ background: c.logged === false ? "#E4E0DA" : MOOD_COLOR[c.mood] }}
+            style={{ background: c.logged === false ? NOT_LOGGED_COLOR : MOOD_COLOR[c.mood] }}
           />
         ))}
       </div>
@@ -51,6 +54,12 @@ export function MoodStrip({ mood }: { mood: MoodSummary }) {
             {d.mood} {d.count}
           </span>
         ))}
+        {notLoggedCount ? (
+          <span className="inline-flex items-center gap-1.5 font-mono text-[9.5px] uppercase tracking-[0.04em] text-text-tertiary">
+            <span className="h-[9px] w-[9px] rounded-sm" style={{ background: NOT_LOGGED_COLOR }} />
+            not logged {notLoggedCount}
+          </span>
+        ) : null}
       </div>
 
       <p className="mt-4 border-t border-divider pt-3.5 font-body text-[13.5px] leading-snug text-text-primary">

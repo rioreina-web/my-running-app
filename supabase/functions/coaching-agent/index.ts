@@ -22,6 +22,7 @@ import { validateLength, validateUUID, validationErrorResponse, internalErrorRes
 // Import shared modules
 import { getCachedResponse, cacheResponse, isCacheEnabled } from "../_shared/cache.ts";
 import { checkFeatureRateLimit, enforceMonthlyCap, shouldEnforceRateLimits } from "../_shared/rateLimit.ts";
+import { llmBudgetAllows, llmBudgetBlockedResponse } from "../_shared/llm-budget.ts";
 import {
   classifyQuery,
   getBestAvailableModel,
@@ -659,6 +660,18 @@ Deno.serve(async (req: Request) => {
       // Hard monthly cost ceiling on the highest-cost conversational surface.
       const monthlyCapped = await enforceMonthlyCap(userId, "coaching", corsHeaders);
       if (monthlyCapped) return monthlyCapped;
+    }
+
+    // ── Global spend brake ──────────────────────────────────────────────
+    // Outside the block above on purpose. That block is the per-user quota
+    // and is disabled by UNBOUND_USAGE and skipped for `proactive`; this is
+    // the day's total-spend ceiling and must hold in both cases — a cron
+    // check-in storm spends real money too. Subject stays null: the
+    // per-subject ceiling is a loop detector for a single row reprocessed,
+    // so this adds no per-athlete question cap. Proactive callers are job
+    // queue work and drain after the ceiling resets at UTC midnight.
+    if (!(await llmBudgetAllows("chat", { userId }))) {
+      return llmBudgetBlockedResponse("chat", corsHeaders);
     }
 
     // ========================================================================

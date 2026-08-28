@@ -63,14 +63,13 @@ private func bucket(
     _ iso: String,
     miles: Double,
     load: Double,
-    mood: String?,
-    recovery: Int = 50
+    mood: String?
 ) -> TrendsBucket {
     TrendsBucket(
         startISO: iso, date: Date(timeIntervalSince1970: 0), label: iso,
         miles: miles, keyCount: load > 0 ? 1 : 0, longCount: 0,
         channel: miles > 0 ? .easy : .rest, qualityLoad: load, mood: mood,
-        niggles: [], recovery: recovery, isWeekStart: false, dayCount: 1
+        niggles: [], isWeekStart: false, dayCount: 1
     )
 }
 

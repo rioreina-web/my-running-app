@@ -29,8 +29,7 @@
 //    1 · Load            (VolumeDetailView — week totals + acute:chronic band)
 //    2 · Pace            (PaceSignalView + the threshold-band row)
 //    3 · Key sessions    (week readout + receipt ledger + head-to-head)
-//    4 · Recovery        (TrendsRecoverySection — two axes, a state, folded)
-//    5 · Mood            (TrendsMoodSection — 30-day block, own stepper)
+//    4 · Signals         (TrendsMoodSection — 30-day block, own stepper)
 //    6 · Race prediction (RacePredictionTrack)
 //    foot · Ask          (AskBar)
 //
@@ -390,23 +389,28 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
-            // 04 · RECOVERY — two axes and a state, in foldable chunks.
+            // 04 · RECOVERY WAS HERE, AND IS GONE (2026-08-24).
             //
-            // Rebuilt 2026-08-19. This section has now shed two different
-            // single numbers in three days, for the same underlying reason.
-            // First "Readiness N/100" off `athlete_state.last_readiness_score`
-            // (a stale server score sitting next to a live one). Then the
-            // ledger total itself — which summed DEMAND and SUPPLY into one
-            // scalar, so a 39 could mean "big block, feeling fine" or "barely
-            // running, feeling awful", and so a missing channel lowered the
-            // roof until `Clear` was arithmetically unreachable and the card
-            // had to apologise for it in four clauses of 9pt uppercase.
+            // The section shed three different single numbers in five days,
+            // each for the same reason. First "Readiness N/100" off
+            // `athlete_state.last_readiness_score` (a stale server score next
+            // to a live one). Then the ledger total, which summed DEMAND and
+            // SUPPLY into one scalar — a 39 could mean "big block, feeling
+            // fine" or "barely running, feeling awful". Then the BODY
+            // percentile that replaced it, which still summed four supply
+            // channels before ranking them, so opposing signals still
+            // cancelled.
             //
-            // `TrendsRecoveryRead` reports the two axes separately and lets
-            // the QUADRANT be the headline — the demand x supply sentence that
-            // was computed on every ledger since 2026-08-06 and never once
-            // rendered on this tab. See that file's header for the full
-            // argument. (Rio, 2026-08-19.)
+            // The 214-day replay (`outputs/recovery-score-validation-2026-08-18.md`)
+            // settled it: over seven months the number never left a 37-point
+            // strip, had no relationship with `felt_rpe`, did not separate rest
+            // days from run days, and did not move ahead of the one injury in
+            // the window. The receipt under it was the good part, and the
+            // receipt does not need a score to exist.
+            //
+            // What replaced it: the nightly signals are lanes in section 04
+            // below, each against the athlete's own ±0.5 sd band, co-presented
+            // so the athlete reads across them. Co-present, never compose.
             //
             // Mood and niggles used to live here too, as a week-by-week ribbon
             // and a by-body-part row. Section 05 below now reads both by day,
@@ -415,9 +419,6 @@ struct TrendsLegacyTabView: View {
             // (Rio, 2026-08-15.) `MoodDetailView` and `NigglesDetailView` are
             // still in `TrendsDetailViews.swift`, now unreferenced — the voice
             // quote was the one thing only they showed.
-            sectionHead("Recovery", "Where you stand today")
-            recoverySection
-                .padding(.top, 12)
 
             EditorialRule().padding(.vertical, 22)
 
@@ -470,35 +471,7 @@ struct TrendsLegacyTabView: View {
     ///
     /// `service.days` is one entry per day through today, rest days included,
     /// so the last index is today.
-    @ViewBuilder
-    private var recoverySection: some View {
-        if let read = recoveryRead {
-            TrendsRecoverySection(
-                read: read,
-                onSleepLogged: { Task { await service.refresh(force: true) } }
-            )
-        } else {
-            EmptyStateView(
-                variant: .dataPending,
-                eyebrow: "No read yet",
-                title: "This reads your mood logs, your niggles and your last few weeks of running. A few more days and it fills in."
-            )
-        }
-    }
 
-    /// The schedule context comes from `athlete_state` rather than being
-    /// recomputed here, so the load chunk cannot disagree with the server
-    /// about how the hard days are spaced.
-    private var recoveryRead: TrendsRecoveryRead? {
-        guard !service.days.isEmpty else { return nil }
-        return TrendsRecoveryRead.read(
-            days: service.days,
-            at: service.days.count - 1,
-            hardSessions28d: athleteState?.load_distribution?.recovery_read?.hard_sessions_28d,
-            avgDaysBetweenHard: athleteState?.load_distribution?.recovery_read?.avg_days_between_hard,
-            downWeek: athleteState?.load_distribution?.recovery_read?.down_week
-        )
-    }
 
     /// Section 02's body: the current threshold band and how much work has
     /// landed inside it, as one tappable line. Enough to know whether it's

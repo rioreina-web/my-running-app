@@ -143,13 +143,13 @@ final class TrendsService {
     private static let sweepCap = 20
 
     /// Backfills `training_logs.stress_load` — TLS, weighted training-minutes
-    /// — so the recovery model can measure load in it.
+    /// — so load surfaces can measure in it.
     ///
-    /// `TrendsRecoveryDemand.loadUnit` only picks the `stressLoad` rung when
-    /// EVERY run day in the window carries one (mixing units inside one EWMA
-    /// is the documented artifact — see the LoadUnit doc). So a single null
-    /// row silently drops the whole recovery score down the ladder to
-    /// duration × channel intensity. Nulls happen two ways in practice:
+    /// Load consumers only pick the `stressLoad` rung when EVERY run day in
+    /// the window carries one, since mixing units inside one EWMA is a
+    /// documented artifact. So a single null row silently drops the whole
+    /// window down the ladder to duration × channel intensity. Nulls happen
+    /// two ways in practice:
     /// rows whose features were computed before the `20260731120000` column
     /// existed (batch mode skips any log that already has a features row, so
     /// they stay null forever), and Strava-ingested rows that nothing ever

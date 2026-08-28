@@ -1,7 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_SERVICE_ROLE_KEY } from "@/lib/env.server";
+import { serviceRoleKey } from "@/lib/env.server";
 
 /**
  * Service-role Supabase client — bypasses RLS. Use ONLY in server code, and
@@ -17,7 +17,7 @@ import { SUPABASE_SERVICE_ROLE_KEY } from "@/lib/env.server";
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!url) throw new Error("[supabase/admin] NEXT_PUBLIC_SUPABASE_URL is not set.");
-  return createClient(url, SUPABASE_SERVICE_ROLE_KEY, {
+  return createClient(url, serviceRoleKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

@@ -3,8 +3,12 @@ import "server-only";
 import type {
   DashboardData,
   DashboardDay,
-  MoodSummary,
+  KeySessionMark,
+  LastKeySession,
+  LatestFact,
+  LatestSession,
   Mood,
+  MoodSummary,
   NiggleGroup,
 } from "./types";
 import {
@@ -56,12 +60,14 @@ function deriveNiggles(days: DashboardDay[]): NiggleGroup[] {
       latestDate: latest.dateLabel,
       latestQuote: latest.niggle!.quote,
       otherDates: list.slice(0, -1).map((d) => d.dateLabel),
+      quotes: list.map((d) => ({ date: d.date, dateLabel: d.dateLabel, quote: d.niggle!.quote })),
       recurrence: list.length >= 3,
       linkDayId: latest.id,
     });
   }
 
-  groups.sort((a, b) => b.mentions - a.mentions);
+  // Newest-mentioned area first (spec §2.3), matching the live builder.
+  groups.sort((a, b) => b.quotes[b.quotes.length - 1].date.localeCompare(a.quotes[a.quotes.length - 1].date));
   return [...groups, ...mayaResolvedNiggles];
 }
 
@@ -89,6 +95,71 @@ function deriveMood(days: DashboardDay[]): MoodSummary {
     distribution,
     caption:
       "**Mostly positive.** The two **struggling** days landed on the two hardest sessions. No injured days this cycle.",
+  };
+}
+
+/**
+ * v2 bands, derived from the same fixture days so the design preview and the
+ * live route render the identical composition. Mirrors the derivation in
+ * from-supabase.ts; when the two disagree, the live read wins.
+ */
+function deriveKeySessions(days: DashboardDay[]): KeySessionMark[] {
+  const keys = days.filter((d) => d.key && d.zone !== null).slice(-6);
+  return keys.map((d, i) => ({
+    dayId: d.id,
+    dateLabel: d.dateLabel,
+    title: d.label,
+    subtitle: d.actual ?? undefined,
+    deltaSec: null,
+    deltaLabel: d.delta ?? undefined,
+    compare: d.actual ?? undefined,
+    onTarget: d.onTarget,
+    latest: i === keys.length - 1,
+  }));
+}
+
+function deriveLatest(days: DashboardDay[]): LatestSession | undefined {
+  const run = days.filter((d) => d.logged !== false && d.zone !== null);
+  const d = run[run.length - 1];
+  if (!d) return undefined;
+  const facts: LatestFact[] = [{ label: "Distance", value: String(d.miles), unit: "mi" }];
+  for (const k of d.detail?.kpis ?? []) {
+    if (facts.length >= 5) break;
+    if (k.k.toLowerCase() === "distance") continue;
+    facts.push({ label: k.k, value: k.v, unit: k.sub });
+  }
+  // A day with no enrichment still states its pace — `actual` carries it as
+  // "6.0 mi · 9:07/mi", and one lonely Distance cell reads as a broken band.
+  const pace = /·\s*([0-9]{1,2}:[0-9]{2})\/mi/.exec(d.actual ?? "");
+  if (facts.length < 2 && pace) facts.push({ label: "Pace", value: pace[1], unit: "/mi" });
+  return {
+    dayId: d.id,
+    whenLabel: `${d.dow} \u00B7 ${d.dateLabel}`,
+    title: d.label,
+    verdict: d.delta ? `${d.delta} vs plan` : "Not reconciled against the plan",
+    onTarget: d.delta ? d.onTarget : true,
+    facts,
+    note: d.note,
+    noteMeta: d.note ? `Athlete note \u00B7 ${d.dateLabel}` : undefined,
+    mood: d.mood,
+    key: d.key,
+  };
+}
+
+function deriveLastKey(days: DashboardDay[]): LastKeySession | undefined {
+  const run = days.filter((d) => d.logged !== false && d.zone !== null);
+  const latestId = run[run.length - 1]?.id;
+  const keys = days.filter((d) => d.key && d.zone !== null);
+  const k = keys[keys.length - 1];
+  if (!k || k.id === latestId) return undefined;
+  return {
+    dayId: k.id,
+    whenLabel: `${k.dow} \u00B7 ${k.dateLabel}`,
+    title: k.label,
+    hrAvg: k.detail?.conditions?.hrAvg,
+    tempF: k.detail?.conditions?.tempF,
+    note: k.note || undefined,
+    onTarget: k.onTarget,
   };
 }
 
@@ -144,5 +215,8 @@ export async function getAthleteDashboard(
     acwr: mayaAcwr,
     niggles: deriveNiggles(mayaDays),
     mood: deriveMood(mayaDays),
+    latest: deriveLatest(mayaDays),
+    lastKey: deriveLastKey(mayaDays),
+    keySessions: deriveKeySessions(mayaDays),
   };
 }

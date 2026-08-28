@@ -36,25 +36,8 @@ export function AnchorHeader({ header }: { header: AthleteHeader }) {
   }
 
   return (
-    <div className="rounded-2xl border border-divider bg-bg-card p-6">
+    <div className="border-b border-divider py-6">
       <div className="flex items-center gap-4">
-        {header.avatarUrl ? (
-          // Signed Supabase URL — plain <img> avoids next/image remote-pattern
-          // config for a short-lived URL.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={header.avatarUrl}
-            alt={header.name}
-            className="h-14 w-14 shrink-0 rounded-full object-cover"
-          />
-        ) : (
-          <div
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full font-display text-[22px] font-bold text-white"
-            style={{ background: "linear-gradient(135deg,#2F66A8,#0E1D4E)" }}
-          >
-            {header.initials}
-          </div>
-        )}
         <div className="min-w-0 flex-1">
           <div className="font-display text-[30px] font-bold leading-none tracking-[-0.01em] text-text-primary">
             {header.name}
@@ -73,7 +56,7 @@ export function AnchorHeader({ header }: { header: AthleteHeader }) {
           ) : null}
         </div>
         {header.totalWeeks > 0 ? (
-          <span className="whitespace-nowrap self-start rounded-full bg-bg-calendar px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-text-secondary">
+          <span className="drip-eyebrow self-start whitespace-nowrap">
             Week {header.weekNumber} of {header.totalWeeks}
           </span>
         ) : null}

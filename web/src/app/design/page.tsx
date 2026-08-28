@@ -13,9 +13,20 @@ type PreviewEntry = {
   subtitle: string;
   source: string;
   status: "ported" | "pending";
+  /** Set for a static mockup served from public/ rather than a React route. */
+  href?: string;
 };
 
 const PREVIEWS: PreviewEntry[] = [
+  {
+    slug: "coach-athlete-mockup",
+    title: "Coach · The Athlete (mockup)",
+    subtitle:
+      "The training-first redesign, both skins. The design the ported dashboard was built from.",
+    source: "design-system/Coach Portal Athlete.html · static",
+    status: "ported",
+    href: "/design/coach-athlete.html",
+  },
   {
     slug: "coach-dashboard",
     title: "Coach athlete dashboard",
@@ -182,6 +193,11 @@ function PreviewRow({
   );
 
   if (isPorted) {
+    // A static mockup is a plain document, not a route — client routing would
+    // try to render it as a page.
+    if (entry.href) {
+      return <a href={entry.href}>{inner}</a>;
+    }
     return <Link href={`/design/${entry.slug}`}>{inner}</Link>;
   }
   return inner;

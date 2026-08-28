@@ -82,13 +82,45 @@ jobs:
       - name: pytest (smoke tests for /health + JWT middleware)
         run: pytest tests/ -v
 
+  # Cheap ubuntu job so the expensive macOS one can be gated on a real answer
+  # rather than on someone remembering to apply a label.
+  ios-changes:
+    name: Detect iOS changes
+    runs-on: ubuntu-latest
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need both sides of the PR to diff
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Non-PR events (push to main, manual dispatch) always run iOS.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          changed=$(git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}")
+          if grep -qE '^(RunningLog/|\.github/workflows/ci\.yml$)' <<<"$changed"; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ios=false" >> "$GITHUB_OUTPUT"
+          fi
+
   ios:
     name: iOS (Xcode)
     runs-on: macos-15
-    # iOS runners are ~10× more expensive than ubuntu. Only run when iOS files
-    # change, plus all pushes to main. Override with workflow_dispatch.
+    needs: ios-changes
+    # iOS runners are ~10× more expensive than ubuntu, so this stays gated —
+    # but on whether iOS files actually changed, which is what the gate always
+    # claimed to do. It previously required a hand-applied `ios` label, so it
+    # was SKIPPED on nearly every PR (5 of the last 6) and the suite it guards
+    # went unrun. The label and workflow_dispatch remain as manual overrides.
     if: |
-      github.event_name == 'push' ||
+      needs.ios-changes.outputs.ios == 'true' ||
       contains(toJSON(github.event.pull_request.labels.*.name), 'ios') ||
       github.event_name == 'workflow_dispatch'
     defaults:
@@ -98,13 +130,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
-      # The RunningLog project ships a single app target with no test bundle,
-      # so `xcodebuild test` fails with "no test bundles available to test".
-      # Validate that the app compiles instead. Switch back to `test` if/when
-      # a unit-test target is added.
-      - name: Build
+      # Runs the RunningLogTests bundle (501 tests / 84 suites as of
+      # 2026-08-24), which also compiles the app target — so this strictly
+      # supersedes the old `xcodebuild build` step.
+      #
+      # History: this job ran `build` only, under a comment claiming the
+      # project had "a single app target with no test bundle". That was true
+      # until 2026-06-10 (bb9ddbf), when RunningLogTests was added; the comment
+      # outlived it by 75 days and the suite never ran in CI. It was red the
+      # whole time — one unmarked `try` inside an #expect macro took the whole
+      # target down, and building the app target alone could never see it.
+      - name: Test
         run: |
-          xcodebuild build \
+          xcodebuild test \
             -project RunningLog.xcodeproj \
             -scheme RunningLog \
             -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \

@@ -508,6 +508,25 @@ export function WorkoutStepEditor({ steps, onChange, athletePaces }: WorkoutStep
                           </option>
                         ))}
                       </select>
+                      {/* Direction, spelled out. The sign convention (positive
+                          adds seconds to a pace, so positive = slower) is
+                          correct but reads backwards to a coach, who sees "+2%"
+                          and thinks "2% harder". A native `title` can't fix that
+                          — you have to hover and wait for it. This says it on
+                          the surface, next to the number it describes. */}
+                      {step.paceAdjustment && step.paceAdjustment.value !== 0 && (
+                        <span
+                          className="text-[10px] font-medium uppercase tracking-[0.08em] whitespace-nowrap"
+                          style={{
+                            color:
+                              step.paceAdjustment.value > 0
+                                ? "var(--color-mood-tired)"
+                                : "var(--color-text-secondary)",
+                          }}
+                        >
+                          {step.paceAdjustment.value > 0 ? "slower" : "faster"}
+                        </span>
+                      )}
                       <button
                         onClick={() => updateStep(idx, { exactPaceSecPerMile: 6 * 60 + 30 })}
                         className="text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-coral)] px-1"
@@ -579,8 +598,14 @@ export function WorkoutStepEditor({ steps, onChange, athletePaces }: WorkoutStep
                 </div>
               </div>
 
-              {/* Recovery sub-row (only when repeated) */}
-              {isRepeated && (
+              {/* Recovery sub-row.
+                  Gated on `isRepeated` until 2026-08-26, when compound sets
+                  started expanding leg by leg: each leg of
+                  "6 sets of (1k @ HM - 1' rest - 600m @ 10k - 1' rest)" is a
+                  SINGLE step carrying its own rest, so `repeats` is undefined
+                  and the rest was stored but never drawn. It read as though
+                  the parser had dropped it. Show it whenever it exists. */}
+              {(isRepeated || step.recovery) && (
                 <div className="flex items-center gap-2 px-3 pb-2.5 -mt-1 flex-wrap">
                   <span className="text-[10px] text-[var(--color-text-tertiary)] uppercase tracking-wider pl-3 ml-0.5 border-l-2 border-[var(--color-divider)]">
                     recovery
@@ -687,6 +712,21 @@ export function WorkoutStepEditor({ steps, onChange, athletePaces }: WorkoutStep
                           </option>
                         ))}
                       </select>
+                      {/* Same reasoning as the work-bout cell above. */}
+                      {step.recovery?.paceAdjustment &&
+                        step.recovery.paceAdjustment.value !== 0 && (
+                          <span
+                            className="text-[10px] font-medium uppercase tracking-[0.08em] whitespace-nowrap"
+                            style={{
+                              color:
+                                step.recovery.paceAdjustment.value > 0
+                                  ? "var(--color-mood-tired)"
+                                  : "var(--color-text-secondary)",
+                            }}
+                          >
+                            {step.recovery.paceAdjustment.value > 0 ? "slower" : "faster"}
+                          </span>
+                        )}
                     </>
                   )}
                   <button
@@ -792,7 +832,9 @@ function summarizeStep(step: WorkoutStep): string {
   const pace = paceLabelWithAdjustment(step.paceZone, step.paceAdjustment, step.exactPaceSecPerMile);
   const reps = step.repeats && step.repeats > 1 ? `${step.repeats} × ` : "";
   const main = `${reps}${dur} @ ${pace}`;
-  if (step.recovery && (step.repeats ?? 1) > 1) {
+  // Same reasoning as the editor row above: an expanded set leg has a recovery
+  // without repeats, and omitting it here made the summary contradict the rows.
+  if (step.recovery) {
     const rdur = formatStepDuration(step.recovery.durationType, step.recovery.durationValue);
     // paceZone is optional now (undefined = standing rest). For a standing-
     // rest recovery, summarize as "{dur} rest" rather than "{dur} @ {pace} recovery".

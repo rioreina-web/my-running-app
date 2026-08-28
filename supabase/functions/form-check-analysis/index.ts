@@ -15,10 +15,7 @@ import { validateUUID, validationErrorResponse, internalErrorResponse } from "..
 import { compressTrainingContext, estimateTokens } from "../_shared/context.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { corsHeaders } from "../_shared/cors.ts";
 
 interface FormCheckRequest {
   formCheckId: string;

@@ -51,7 +51,7 @@ struct JournalWildRow: View {
     @State private var keySessions = KeySessionStore.shared
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 18) {
             // The mood, as the page edge.
             Rectangle()
                 .fill(Color.wild.mood(entry.mood))
@@ -63,22 +63,22 @@ struct JournalWildRow: View {
                     .font(.wildLabel(11))
                     .tracking(11 * 0.09)
                     .foregroundStyle(Color.wild.ink2)
-                    .padding(.top, 8)
+                    .padding(.top, 10)
 
                 words
-                    .padding(.top, 13)
+                    .padding(.top, 18)
 
                 if let mood = moodWord {
                     Text(mood)
                         .font(.wildLabel(11))
                         .tracking(11 * 0.12)
                         .foregroundStyle(Color.wild.moodText(entry.mood))
-                        .padding(.top, 13)
+                        .padding(.top, 18)
                 }
 
                 if !niggles.isEmpty {
                     niggleRow
-                        .padding(.top, 12)
+                        .padding(.top, 14)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -182,7 +182,7 @@ struct JournalWildRow: View {
             Text("\u{201C}\(text)\u{201D}")
                 .font(.wildSaid(14))
                 .tracking(14 * -0.01)
-                .lineSpacing(14 * 0.55)
+                .lineSpacing(14 * 0.62)
                 .foregroundStyle(Color.wild.ink)
                 .lineLimit(4)
                 .multilineTextAlignment(.leading)
@@ -190,7 +190,7 @@ struct JournalWildRow: View {
             // Written. Crimson, no quotes — nobody said it out loud.
             Text(text)
                 .font(.wildProse(17))
-                .lineSpacing(17 * 0.5)
+                .lineSpacing(17 * 0.56)
                 .foregroundStyle(Color.wild.ink)
                 .lineLimit(4)
                 .multilineTextAlignment(.leading)

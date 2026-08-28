@@ -37,7 +37,7 @@ const NAV_ITEMS: NavItem[] = [
 const FEATURE_ITEMS: NavItem[] = [
   { href: "/injuries", label: "Niggles", icon: HeartPulse },
   { href: "/pace-chart", label: "Pace Chart", icon: Timer },
-  { href: "/coach-portal/plans", label: "Coach Portal", icon: UserCheck },
+  { href: "/coach-portal", label: "Coach Portal", icon: UserCheck },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [

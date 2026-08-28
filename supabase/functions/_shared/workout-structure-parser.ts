@@ -65,7 +65,22 @@ const ZONE_SYNONYMS: Array<[RegExp, PaceZoneName]> = [
 ];
 
 function parseZoneName(text: string): PaceZoneName | null {
-  for (const [re, zone] of ZONE_SYNONYMS) if (re.test(text)) return zone;
+  return matchZone(text)?.zone ?? null;
+}
+
+/**
+ * Like `parseZoneName`, but reports the substring that matched. The bare
+ * `.test()` version is what let modifiers vanish: "MP+5%" contains `\bmp\b`,
+ * so it came back as a plain `mp` zone and the "+5%" was dropped on the floor.
+ */
+function matchZone(text: string): { zone: PaceZoneName; matched: string; index: number } | null {
+  for (const [re, zone] of ZONE_SYNONYMS) {
+    const m = text.match(re);
+    // `m.index`, never `indexOf(m[0])`: "2mi tempo (MP-5)" contains "mp" inside
+    // "tempo" at an earlier offset, so indexOf pointed at the wrong token and
+    // the suffix came back as "o (mp-5)" — the offset was invisible again.
+    if (m && m.index != null) return { zone, matched: m[0], index: m.index };
+  }
   return null;
 }
 
@@ -91,9 +106,53 @@ export function parsePace(text: string): PaceSpec | null {
   const exp = t.match(/\b(\d):(\d{2})\b/);
   if (exp) return { kind: "explicit", secPerMile: Number(exp[1]) * 60 + Number(exp[2]) };
 
-  // Bare zone
-  const zone = parseZoneName(t);
-  if (zone) return { kind: "zone", zone };
+  // Zone, with whatever is glued to it.
+  //
+  // THIS IS THE BRANCH THAT USED TO LOSE PACES. `parseZoneName` tested for the
+  // zone token anywhere in the string and returned it, so "MP+5%" came back as
+  // a plain `mp` and the "+5%" was discarded — an alternation's fast and float
+  // legs stored as the same pace, at confidence "high", with no note. The rule
+  // now: match the zone, then the suffix must be either nothing, or an offset
+  // we actually decoded. Never anything else.
+  //
+  // MINUS MEANS FASTER — the coach's own shorthand, all over
+  // `session-library.json` ("8-12m alternations (MP-10/MP+30)", "4-6x2m @ MP-5
+  // w/800 float MP+1'"). Suffix sets the unit: none/" = seconds, ' = minutes,
+  // % = percent. The percent form maps onto `pct`, which is a percentage of
+  // zone SPEED (see pace-engine.ts), so the reciprocal is correct: 5% slower
+  // *pace* is 100/1.05 = 95.2% of MP speed, not 95%.
+  const zm = matchZone(t);
+  if (zm) {
+    const after = t.slice(zm.index + zm.matched.length);
+    const off = after.match(/^\s*(?:([+-])|\b(plus|minus)\b)\s*(\d{1,3}(?:\.\d+)?)\s*(%|'|")?/);
+    // A PLUS ALSO JOINS SEGMENTS. "4mi at MP + 2 x 1mi @ HM" and "15' LT + 6x1k
+    // @ 10k" are two blocks glued with a plus, not MP+2 and LT+6. A rep marker
+    // or a distance unit straight after the number means concatenation, so only
+    // a bare number (or one with a %/'/" suffix) is an offset. Without this the
+    // offset decode invented a pace on 14 of the 59 offset-shaped corpus rows.
+    const isOffset = !!off && (!!off[4] ||
+      !/^\s*(?:[x×]|mi\b|m\b|k\b|km\b|mile)/.test(after.slice(off[0].length)));
+    if (off && isOffset) {
+      const faster = off[1] === "-" || off[2] === "minus";
+      const n = Number(off[3]);
+      if (off[4] === "%") {
+        const paceFactor = faster ? 1 - n / 100 : 1 + n / 100;
+        return { kind: "pct", ofZone: zm.zone, pct: Math.round((100 / paceFactor) * 10) / 10 };
+      }
+      return { kind: "relative", ofZone: zm.zone, deltaSec: off[4] === "'" ? n * 60 : n, faster };
+    }
+    // ATTACHED SIGN = OPERATOR, SPACED HYPHEN = PUNCTUATION.
+    //
+    // The coach writes "MP+5%" glued, but also "2 x 4mi hilly steady -
+    // Lollipop", where " - " introduces a route name. Firing on any sign
+    // flagged those as unparsed paces; requiring a digit made the guard
+    // unreachable. So: a sign touching the zone token is an operator we failed
+    // to read; a spaced hyphen is a dash. A concatenating plus is neither.
+    if (!off && /^[+-]/.test(after)) {
+      return { kind: "effort", label: text.trim() };
+    }
+    return { kind: "zone", zone: zm.zone };
+  }
 
   return null;
 }
@@ -209,6 +268,25 @@ function matchAlternation(text: string): DeclaredWorkout | null {
 }
 
 /**
+ * The zone a pace is expressed *relative to*, for kind inference.
+ *
+ * `zone`, `pct` and `relative` all name a zone; only `explicit` (a clock pace)
+ * and `effort` (unparsed) do not. Omitting `relative` here is what made
+ * "4 x 3mi @ MP-5 w/800m easy" classify as intervals instead of threshold —
+ * the pace WAS marathon pace, just offset. Any new zone-bearing PaceSpec
+ * variant must be added here too.
+ */
+function zoneOf(pace: PaceSpec | undefined | null): PaceZoneName | null {
+  if (!pace) return null;
+  switch (pace.kind) {
+    case "zone": return pace.zone;
+    case "pct":
+    case "relative": return pace.ofZone;
+    default: return null;
+  }
+}
+
+/**
  * Reps: "6x800m @ 5K w/ 90s jog", "5×1mi at 10k", "9x1k @ 5:07",
  * "2x3mi at threshold". Optional recovery clause.
  */
@@ -229,7 +307,7 @@ function matchReps(text: string): DeclaredWorkout | null {
   // A "rep" workout with no recovery and long reps at threshold/MP reads as a
   // cruise/threshold; with recovery + short reps it's intervals.
   let kind: DeclaredWorkout["kind"] = "intervals";
-  const z = pace && pace.kind === "zone" ? pace.zone : pace && pace.kind === "pct" ? pace.ofZone : null;
+  const z = zoneOf(pace);
   if (longRep && (z === "threshold" || z === "10k" || z === "mp")) kind = "threshold";
 
   return {
@@ -258,7 +336,7 @@ function matchContinuous(text: string): DeclaredWorkout | null {
   const isProg = /\bprogression\b/.test(text);
   // tempo/threshold continuous block
   let kind: DeclaredWorkout["kind"] = isProg ? "progression" : "tempo";
-  const z = pace && pace.kind === "zone" ? pace.zone : null;
+  const z = zoneOf(pace);
   if (!isProg && (z === "threshold" || z === "10k")) kind = "threshold";
 
   return {
@@ -317,9 +395,27 @@ export function parseDeclaredWorkout(input: string): DeclaredWorkout {
   const matchers = [matchAlternation, matchReps, matchSimple, matchContinuous];
   for (const m of matchers) {
     const r = m(text);
-    if (r) return { ...r, raw: input };
+    if (r) return flagUnparsedPaces({ ...r, raw: input });
   }
   return { raw: input, kind: "unknown", reps: 0, block: [], confidence: "low", note: "no structure recognized" };
+}
+
+/**
+ * A segment whose pace came back as `effort` carries no number. The STRUCTURE
+ * may still be perfect — "1k @ MP+5% / 1k @ MP-5% for 20k" gets the 10 cycles
+ * and the 20 km right — so the workout is not discarded; but it must not claim
+ * "high", or a consumer reading paces gets a confident answer built on a pace
+ * nobody decoded.
+ */
+function flagUnparsedPaces(w: DeclaredWorkout): DeclaredWorkout {
+  const unparsed = w.block.filter((b) => b.pace?.kind === "effort");
+  if (unparsed.length === 0) return w;
+  const labels = [...new Set(unparsed.map((b) => (b.pace as { label: string }).label))];
+  return {
+    ...w,
+    confidence: w.confidence === "high" ? "medium" : w.confidence,
+    note: [w.note, `unparsed pace: ${labels.join(", ")}`].filter(Boolean).join("; "),
+  };
 }
 
 // ── Canonical formatter (display / store) ───────────────────────

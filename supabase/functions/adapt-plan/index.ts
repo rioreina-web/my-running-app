@@ -9,7 +9,7 @@
  * Request body: { user_id: UUID, trigger?: "reconcile" | "weekly_rebalance" | "manual" }
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import {
   runAllRules,
@@ -21,7 +21,28 @@ import { proposePaceAdjustment } from "../_shared/pace_adjuster.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 
-Deno.serve(async (req: Request) => {
+/**
+ * Test seams. Each defaults to the real collaborator, so the production path
+ * is unchanged — the `Deno.serve` call below passes no deps.
+ *
+ * This endpoint is `verify_jwt = false` and writes `plan_adjustments`, so the
+ * gate here is the only thing standing between a caller and another athlete's
+ * training plan. That deserves an executed test, not a grep.
+ */
+export interface AdaptPlanDeps {
+  resolveAuth?: (
+    req: Request,
+    bodyUserId: string | undefined,
+  ) => Promise<
+    { response: Response } | { userId: string; isServiceRole: boolean }
+  >;
+  buildClient?: () => SupabaseClient;
+}
+
+export async function handleAdaptPlan(
+  req: Request,
+  deps: AdaptPlanDeps = {},
+): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
@@ -32,14 +53,18 @@ Deno.serve(async (req: Request) => {
     // Auth: user JWT (body.user_id must match the token) OR a service-role
     // caller that names the subject user (e.g. reconcile-log → adapt-plan).
     // Closes the bypass where an anon-key caller passed any body.user_id.
-    const auth = await requireAuthOrServiceRole(req, userIdFromBody, corsHeaders);
+    const auth = await (deps.resolveAuth ??
+      ((r: Request, u: string | undefined) =>
+        requireAuthOrServiceRole(r, u, corsHeaders)))(req, userIdFromBody);
     if ("response" in auth) return auth.response;
     const userId = auth.userId;
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = deps.buildClient
+      ? deps.buildClient()
+      : createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
 
     // ── Gather inputs ──────────────────────────────────────
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
@@ -179,7 +204,9 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
-});
+}
+
+Deno.serve((req) => handleAdaptPlan(req));
 
 /** Apply the diff for an auto-applied adjustment. Reprices / caps / pauses
  *  work against scheduled_workouts; update_fitness writes a new

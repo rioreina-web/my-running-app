@@ -18,7 +18,8 @@ import {
   type ZoneMiles,
   type PaceZone,
 } from "./workout-helpers";
-import { parseWorkoutText } from "./workout-nl-parser";
+import { parseShorthand } from "./workout-shorthand-client";
+import { buildClarifications, applyClarification, type Clarification } from "./workout-clarify";
 import { PaceReferenceEditor, resolvePaceTable, type PaceAnchor } from "./pace-reference-editor";
 import {
   PlanSetupSection,
@@ -381,6 +382,14 @@ export function PlanBuilderClient({
   // "Describe it" natural-language box → parsed steps.
   const [builderNL, setBuilderNL] = useState("");
   const [builderNLUnparsed, setBuilderNLUnparsed] = useState<string[]>([]);
+  // Steps that WERE built but rest on a guess (missing pace, dropped set
+  // rest). Distinct from `unparsed` — these look complete in the editor, so
+  // they need their own, louder callout.
+  const [builderNLWarnings, setBuilderNLWarnings] = useState<string[]>([]);
+  // Open questions from the last parse. Answering one writes straight to the
+  // step, so this shrinks as the coach taps through it.
+  const [builderNLQuestions, setBuilderNLQuestions] = useState<Clarification[]>([]);
+  const [builderNLBusy, setBuilderNLBusy] = useState(false);
   // When set, the builder modal is editing this existing library workout in
   // place (Save updates the row) rather than creating a new one.
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -477,17 +486,33 @@ export function PlanBuilderClient({
   // Appending (not replacing) lets a coach build up a workout in pieces and
   // never destroys hand-edited steps. Unparseable fragments are surfaced, not
   // dropped silently.
-  const applyDescribeIt = () => {
+  const applyDescribeIt = async () => {
     const text = builderNL.trim();
-    if (!text) return;
-    const { steps, unparsed } = parseWorkoutText(text);
-    if (steps.length > 0) {
-      setBuilderSteps((prev) => [...prev, ...steps]);
-      const zone = headlineZone(steps);
-      if (zone) setBuilderType(WORKOUT_TYPE_FOR_ZONE[zone] ?? builderType);
+    if (!text || builderNLBusy) return;
+    setBuilderNLBusy(true);
+    try {
+      // Local grammar first; only escalates to the server when it left
+      // something unresolved, and falls back to it on any failure.
+      const { steps, unparsed, warnings, unresolved } = await parseShorthand(text);
+      if (steps.length > 0) {
+        setBuilderSteps((prev) => [...prev, ...steps]);
+        const zone = headlineZone(steps);
+        if (zone) setBuilderType(WORKOUT_TYPE_FOR_ZONE[zone] ?? builderType);
+      }
+      setBuilderNLUnparsed(unparsed);
+      setBuilderNLWarnings(warnings);
+      setBuilderNLQuestions(buildClarifications(steps, unresolved));
+      if (steps.length > 0) setBuilderNL("");
+    } finally {
+      setBuilderNLBusy(false);
     }
-    setBuilderNLUnparsed(unparsed);
-    if (steps.length > 0) setBuilderNL("");
+  };
+
+  // Answering resolves the step in place — no re-parse, so the coach's own
+  // edits survive and the parse cannot drift on a second pass.
+  const answerClarification = (c: Clarification, value: string) => {
+    setBuilderSteps((prev) => applyClarification(prev, c, value));
+    setBuilderNLQuestions((prev) => prev.filter((q) => q.id !== c.id));
   };
 
   const saveBuilderTemplate = async () => {
@@ -1997,17 +2022,52 @@ export function PlanBuilderClient({
                 <button
                   type="button"
                   onClick={applyDescribeIt}
-                  disabled={!builderNL.trim()}
+                  disabled={!builderNL.trim() || builderNLBusy}
                   className="shrink-0 px-3 py-1.5 text-xs font-medium border border-divider rounded-lg text-text-secondary hover:text-text-primary hover:border-text-tertiary transition-colors disabled:opacity-40"
                 >
-                  Build steps
+                  {builderNLBusy ? "Reading…" : "Build steps"}
                 </button>
               </div>
+              {/* Questions come before the warnings: these are the ones the
+                  coach can close with a tap, and closing them removes the
+                  reason most of the warnings exist. */}
+              {builderNLQuestions.length > 0 && (
+                <div className="space-y-2 pt-1">
+                  {builderNLQuestions.map((q) => (
+                    <div key={q.id} className="space-y-1.5">
+                      <p className="text-[11px] text-text-primary leading-snug">{q.question}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {q.options.map((o) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            onClick={() => answerClarification(q, o.value)}
+                            className="px-2 py-0.5 text-[11px] rounded-full border border-divider text-text-secondary hover:border-coral hover:text-text-primary transition-colors"
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {builderNLUnparsed.length > 0 && (
                 <p className="text-[11px] text-[var(--color-warning)] leading-snug">
                   Couldn&apos;t parse: {builderNLUnparsed.join(" · ")}. Add these
                   by hand below.
                 </p>
+              )}
+              {/* Louder than `unparsed` on purpose. A dropped fragment is
+                  visibly missing from the editor; a guessed pace is not —
+                  the step sits there looking finished. Coral is the alert
+                  palette and this is exactly an alert. */}
+              {builderNLWarnings.length > 0 && (
+                <ul className="text-[11px] text-[var(--color-danger)] leading-snug list-none space-y-0.5">
+                  {builderNLWarnings.map((w, i) => (
+                    <li key={i}>Check before saving: {w}</li>
+                  ))}
+                </ul>
               )}
             </div>
 

@@ -15,7 +15,7 @@ export function SignalBand({
 }) {
   return (
     <div className="grid gap-3.5 md:grid-cols-[1fr_1.35fr]">
-      <div className="rounded-xl border border-divider bg-bg-card p-5">
+      <div className="border-b border-divider py-5">
         <h4 className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
           Watch list
         </h4>
@@ -48,7 +48,7 @@ export function SignalBand({
         )}
       </div>
 
-      <div className="rounded-xl border border-divider bg-bg-card p-5">
+      <div className="border-b border-divider py-5">
         <h4 className="mb-3 font-mono text-[10px] uppercase tracking-[0.12em] text-text-tertiary">
           Coachable moments · AI observations
         </h4>

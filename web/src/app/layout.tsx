@@ -29,6 +29,55 @@ const ptSerif = localFont({
   variable: "--font-pt-serif",
 });
 
+// Direction I — the locked four-role system from design-system/CLAUDE.md,
+// mirroring `WildFace` in RunningLog/App/DripTheme.swift face for face and
+// weight for weight. Same TTFs the app bundles, copied from
+// RunningLog/Fonts. Self-hosted for the same reason as the two above.
+//
+// Scoped, not global: only [data-skin="wild"] subtrees resolve these (see
+// globals.css). That mirrors DripTheme's own note — the skin switch is
+// "DELIBERATELY NOT GLOBAL (yet)" — so repainting the coach portal cannot
+// repaint the log, trends, or plan surfaces by accident.
+const instrumentSans = localFont({
+  src: [
+    { path: "../fonts/InstrumentSans-Medium.ttf", weight: "500", style: "normal" },
+    { path: "../fonts/InstrumentSans-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "../fonts/InstrumentSans-Bold.ttf", weight: "700", style: "normal" },
+  ],
+  display: "swap",
+  variable: "--font-instrument-sans",
+});
+
+const schibstedGrotesk = localFont({
+  src: [
+    { path: "../fonts/SchibstedGrotesk-Medium.ttf", weight: "500", style: "normal" },
+    { path: "../fonts/SchibstedGrotesk-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "../fonts/SchibstedGrotesk-Bold.ttf", weight: "700", style: "normal" },
+  ],
+  display: "swap",
+  variable: "--font-schibsted",
+});
+
+const inter = localFont({
+  src: [
+    { path: "../fonts/Inter-Regular.ttf", weight: "400", style: "normal" },
+    { path: "../fonts/Inter-Medium.ttf", weight: "500", style: "normal" },
+    { path: "../fonts/Inter-SemiBold.ttf", weight: "600", style: "normal" },
+  ],
+  display: "swap",
+  variable: "--font-inter",
+});
+
+const jetBrainsMono = localFont({
+  src: [
+    { path: "../fonts/JetBrainsMono-Regular.ttf", weight: "400", style: "normal" },
+    { path: "../fonts/JetBrainsMono-Medium.ttf", weight: "500", style: "normal" },
+    { path: "../fonts/JetBrainsMono-Italic.ttf", weight: "400", style: "italic" },
+  ],
+  display: "swap",
+  variable: "--font-jetbrains",
+});
+
 export const metadata: Metadata = {
   title: "Post Run Drip",
   description:
@@ -43,7 +92,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${crimsonPro.variable} ${ptSerif.variable} antialiased`}
+        className={`${crimsonPro.variable} ${ptSerif.variable} ${instrumentSans.variable} ${schibstedGrotesk.variable} ${inter.variable} ${jetBrainsMono.variable} antialiased`}
       >
         {children}
       </body>

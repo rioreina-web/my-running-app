@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit } from "@/lib/rate-limit";
-import { SUPABASE_SERVICE_ROLE_KEY } from "@/lib/env.server";
+import { serviceRoleKey } from "@/lib/env.server";
 import { z } from "zod";
 
 const coachSchema = z.object({
@@ -33,8 +33,8 @@ export async function POST(request: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${serviceRoleKey()}`,
+        apikey: serviceRoleKey(),
       },
       body: JSON.stringify({
         userId: user.id,

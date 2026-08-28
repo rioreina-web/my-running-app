@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/card";
 import { EditorialDivider } from "@/components/ui/editorial-divider";
 import { PlanTemplateRow } from "@/components/coach/plan-template-row";
 import { CoachSetupPrompt } from "@/components/coach/coach-setup-prompt";
-import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function CoachPlansPage() {
@@ -38,7 +37,6 @@ export default async function CoachPlansPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <CoachPortalNav />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

@@ -8,7 +8,6 @@ import { ZoneDot } from "@/components/ui/zone-dot";
 import { EditorialDivider } from "@/components/ui/editorial-divider";
 import { EmptyState } from "@/components/ui/empty-state";
 import { WorkoutTemplateCard } from "@/components/coach/workout-template-card";
-import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 
 // Pace/intensity = single-hue blue depth ramp (source of truth:
 // RunningLog/Workouts/PaceSpectrum.swift). Blue = pace, warm = mood,
@@ -89,20 +88,23 @@ export default async function WorkoutTemplatesPage() {
         className="mb-4"
       />
 
-      <CoachPortalNav />
 
+      {/* The plate strip above already names the surface and counts the file.
+          Repeating "Workout Library · 10 templates" here said it a third time.
+          The headline names the thing; the line under it says what you do with
+          it. No "signature", no "reused everywhere" — the interface supplies
+          facts, per design-system/CLAUDE.md. */}
       <PageHeader
         eyebrow="Workout Library"
-        eyebrowRight={libraryCount > 0 ? `${libraryCount} templates` : undefined}
-        title="Reusable workouts."
-        subtitle="Signature sessions to drag into your training plans — saved once, reused everywhere."
+        title="Workouts."
+        subtitle="Sessions you've written. Drop one onto any day in a plan."
         action={
           <Link
             href="/coach-portal/workouts/new"
             className="inline-flex items-center gap-2 rounded-[10px] bg-coral px-4 py-2.5 font-display text-[15px] font-semibold text-white transition-colors hover:bg-coral-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral focus-visible:ring-offset-2 focus-visible:ring-offset-bg-base"
           >
             <Plus size={16} strokeWidth={2} />
-            New Template
+            New workout
           </Link>
         }
       />

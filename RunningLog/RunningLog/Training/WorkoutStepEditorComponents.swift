@@ -87,13 +87,20 @@ enum WorkoutLabelGrammar {
 
     /// Live one-line summary for the builder header. Nil when there are no
     /// active steps yet (the empty state owns that moment).
-    static func summaryLine(steps: [EditableWorkoutStep]) -> String? {
+    ///
+    /// `equivalentPaces` is what lets a workout built in the fixed basis keep a
+    /// real name — the steps carry numbers rather than zones, so the label has
+    /// to ask the table which zone each number sits nearest.
+    static func summaryLine(
+        steps: [EditableWorkoutStep],
+        equivalentPaces: EquivalentPaces? = nil
+    ) -> String? {
         let actives = steps.filter { $0.stepType == .active }
         guard !actives.isEmpty else { return nil }
 
         // Interval grammar — a single active block carrying repeats.
         if actives.count == 1, let reps = actives[0].repeats, reps > 1 {
-            let zoneLabel = actives[0].paceSelection.baseNamedPace.map(grammarName) ?? "Workout"
+            let zoneLabel = actives[0].paceSelection.labelZone(in: equivalentPaces).map(grammarName) ?? "Workout"
             let rep = repLabel(durationType: actives[0].durationType, value: actives[0].durationValue)
             return "\(zoneLabel) \(reps)×\(rep)"
         }
@@ -101,21 +108,22 @@ enum WorkoutLabelGrammar {
         // Flat interval grammar — several identical active steps.
         if actives.count > 1 {
             let first = actives[0]
+            let firstZone = first.paceSelection.labelZone(in: equivalentPaces)
             let identical = actives.allSatisfy {
                 $0.durationType == first.durationType
                     && $0.durationValue == first.durationValue
-                    && $0.paceSelection.baseNamedPace == first.paceSelection.baseNamedPace
+                    && $0.paceSelection.labelZone(in: equivalentPaces) == firstZone
                     && ($0.repeats ?? 1) == 1
             }
             if identical, (first.repeats ?? 1) == 1 {
-                let zoneLabel = first.paceSelection.baseNamedPace.map(grammarName) ?? "Workout"
+                let zoneLabel = firstZone.map(grammarName) ?? "Workout"
                 let rep = repLabel(durationType: first.durationType, value: first.durationValue)
                 return "\(zoneLabel) \(actives.count)×\(rep)"
             }
         }
 
         // Continuous grammar — dominant zone + total active volume.
-        let zone = dominantZone(in: actives)
+        let zone = dominantZone(in: actives, equivalentPaces: equivalentPaces)
         let zoneLabel = zone.map(grammarName) ?? "Workout"
         let miles = totalMiles(of: actives)
         if miles > 0 {
@@ -134,10 +142,13 @@ enum WorkoutLabelGrammar {
     }
 
     /// Active zone carrying the most distance — the workout's headline zone.
-    static func dominantZone(in steps: [EditableWorkoutStep]) -> NamedPace? {
+    static func dominantZone(
+        in steps: [EditableWorkoutStep],
+        equivalentPaces: EquivalentPaces? = nil
+    ) -> NamedPace? {
         var byZone: [NamedPace: Double] = [:]
         for step in steps where step.stepType == .active {
-            guard let zone = step.paceSelection.baseNamedPace else { continue }
+            guard let zone = step.paceSelection.labelZone(in: equivalentPaces) else { continue }
             byZone[zone, default: 0] += max(milesOf(step), 0.01)
         }
         return byZone.max { $0.value < $1.value }?.key
@@ -169,6 +180,85 @@ enum WorkoutLabelGrammar {
             total += recSingle * (reps - 1)
         }
         return total
+    }
+}
+
+// MARK: - Pace basis row
+
+/// The one control that answers "what do these numbers mean?" — Goal, Current,
+/// or Fixed. Sits above the zone rail because it governs it: the zone chips
+/// underneath read off whichever table this row selects, and in Fixed they
+/// stand down entirely.
+///
+/// Design: mono eyebrow, three plain chips, one italic-serif line stating the
+/// anchor in prose. Coral marks the selection and nothing else in the cluster.
+/// When a basis has no data behind it the row says so in a sentence rather than
+/// showing a dead chip with an em-dash under it (hard rule #8).
+struct BuilderPaceBasisRow: View {
+    @Binding var basis: WorkoutPaceBasis
+    /// What the currently selected basis is anchored to, in prose.
+    let caption: String
+    /// Bases with nothing behind them. Tapping one does nothing; `note` says why.
+    let unavailable: Set<WorkoutPaceBasis>
+    /// One sentence naming what's missing, shown only while something is.
+    let unavailableNote: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("PACE BASIS")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .tracking(1.0)
+                .foregroundStyle(Color.drip.textSecondary)
+
+            HStack(spacing: 6) {
+                ForEach(WorkoutPaceBasis.allCases, id: \.self) { candidate in
+                    basisChip(candidate)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Text(caption)
+                .font(.system(size: 13, design: .serif).italic())
+                .foregroundStyle(Color.drip.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let unavailableNote, !unavailable.isEmpty {
+                Text(unavailableNote)
+                    .font(.system(size: 12, design: .serif).italic())
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func basisChip(_ candidate: WorkoutPaceBasis) -> some View {
+        let isSelected = basis == candidate
+        let isOff = unavailable.contains(candidate)
+
+        Button {
+            guard !isOff else { return }
+            basis = candidate
+        } label: {
+            Text(candidate.displayName)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(chipForeground(isSelected: isSelected, isOff: isOff))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(isSelected ? Color.drip.coral : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isSelected ? Color.clear : Color.drip.divider, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(isOff)
+    }
+
+    private func chipForeground(isSelected: Bool, isOff: Bool) -> Color {
+        if isSelected { return .white }
+        return isOff ? Color.drip.textTertiary.opacity(0.5) : Color.drip.textPrimary
     }
 }
 
@@ -217,6 +307,7 @@ struct BuilderStepCard: View {
     @Binding var step: EditableWorkoutStep
     let equivalentPaces: EquivalentPaces
     let racePaceSeconds: Double
+    let paceBasis: WorkoutPaceBasis
     let isFirst: Bool
     let isLast: Bool
     let onMoveUp: () -> Void
@@ -230,6 +321,7 @@ struct BuilderStepCard: View {
                 step: $step,
                 equivalentPaces: equivalentPaces,
                 racePaceSeconds: racePaceSeconds,
+                paceBasis: paceBasis,
                 onDelete: onDelete
             )
 

@@ -26,6 +26,7 @@ import SwiftUI
 
 enum TrendsMoodLane: String, CaseIterable, Identifiable {
     case mood, miles, niggles, key, load, weekly
+    case sleep, restingHR, hrv
 
     var id: String { rawValue }
 
@@ -38,6 +39,19 @@ enum TrendsMoodLane: String, CaseIterable, Identifiable {
         case .key: "Key sessions"
         case .load: "TLS"
         case .weekly: "Weekly volume"
+        case .sleep: "Sleep"
+        case .restingHR: "Resting HR"
+        case .hrv: "HRV"
+        }
+    }
+
+    /// The nightly lanes. They share a drawing routine, a scale and a palette,
+    /// and they are the ones offered conditionally — see `TrendsMoodSection
+    /// .offeredLanes`.
+    var isNightly: Bool {
+        switch self {
+        case .sleep, .restingHR, .hrv: true
+        default: false
         }
     }
 
@@ -50,6 +64,9 @@ enum TrendsMoodLane: String, CaseIterable, Identifiable {
         case .key: "KEY"
         case .load: "TLS"
         case .weekly: "WK VOL"
+        case .sleep: "SLEEP"
+        case .restingHR: "RHR"
+        case .hrv: "HRV"
         }
     }
 
@@ -65,6 +82,10 @@ enum TrendsMoodLane: String, CaseIterable, Identifiable {
         case .key: 20
         case .load: 54
         case .weekly: 44
+        // Deviation lanes spend half their height above the centre rule and
+        // half below, so they need roughly double a one-sided bar to give
+        // either direction the same room.
+        case .sleep, .restingHR, .hrv: 46
         }
     }
 
@@ -80,6 +101,12 @@ enum TrendsMoodLane: String, CaseIterable, Identifiable {
         case .key: Color.drip.divider
         case .load: PaceSpectrum.steady
         case .weekly: Color.drip.textTertiary
+        // Graphite, all three, on purpose. The warm/green ramp belongs to
+        // mood, coral is the niggle alert, and the blue ramp belongs to pace —
+        // a nightly lane borrowing any of them would read as a signal it
+        // isn't. It would also imply a valence these lanes must not carry: a
+        // resting HR above your usual is not "bad", it is above your usual.
+        case .sleep, .restingHR, .hrv: Color.drip.textSecondary
         }
     }
 
@@ -90,7 +117,19 @@ enum TrendsMoodLane: String, CaseIterable, Identifiable {
 
     /// Draw order is fixed regardless of toggle order, so the chart does not
     /// reshuffle itself under the reader.
-    static let drawOrder: [TrendsMoodLane] = [.mood, .miles, .niggles, .key, .load, .weekly]
+    /// Words, then runs, then nights — "the athlete's words lead; the watch
+    /// corroborates." The nightly lanes sit at the foot for that reason.
+    static let drawOrder: [TrendsMoodLane] = [
+        .mood, .miles, .niggles, .key, .load, .weekly, .sleep, .restingHR, .hrv,
+    ]
+
+    /// The band a nightly lane calls "your usual range", in SD.
+    static let bandSD: Double = 0.5
+
+    /// Half a nightly lane's vertical span, in SD. FIXED, never fitted to the
+    /// window: a fortnight whose worst night was 1 sd out must not draw that
+    /// night as tall as a 3-sd night draws in another fortnight.
+    static let deviationSpan: Double = 2.5
 }
 
 // MARK: - The chart
@@ -137,10 +176,13 @@ struct TrendsMoodLanes: View {
                 .accessibilityLabel("Thirty days of mood, with \(lanes.count) lanes")
                 .accessibilityChildren {
                     HStack(spacing: 0) {
-                        ForEach(block.buckets) { bucket in
+                        ForEach(Array(block.buckets.enumerated()), id: \.element.id) { i, bucket in
                             Color.clear
                                 .accessibilityElement()
-                                .accessibilityLabel(Self.spoken(bucket))
+                                .accessibilityLabel(
+                                    Self.spoken(bucket,
+                                                day: block.days.indices.contains(i) ? block.days[i] : nil)
+                                )
                         }
                     }
                 }
@@ -243,6 +285,10 @@ struct TrendsMoodLanes: View {
                                 flatColour: Color.drip.textSecondary)
             case .weekly:
                 drawWeekly(ctx, layout: layout, lane: i)
+            case .sleep, .restingHR, .hrv:
+                drawDeviation(ctx, layout: layout, lane: i,
+                              series: block.series(for: lane),
+                              colour: lane.chipColour)
             }
         }
 
@@ -551,13 +597,117 @@ struct TrendsMoodLanes: View {
 
     // MARK: Spoken
 
-    static func spoken(_ bucket: TrendsBucket) -> String {
+    /// The nightly lanes — sleep, resting HR, HRV.
+    ///
+    /// A centre rule is the athlete's own baseline and the pale well around it
+    /// is ±`TrendsMoodLane.bandSD`, the same "inside your usual range" threshold `overnight`
+    /// thresholds direction at. A mark runs from the rule to the night's
+    /// deviation, so DIRECTION is which side of the rule it sits on and
+    /// MAGNITUDE is how far it reaches. Nights inside the band are drawn quiet;
+    /// nights outside it darken.
+    ///
+    /// Colour never says good or bad, and the two directions are drawn
+    /// identically. A resting HR above your usual is not "bad" — it is above
+    /// your usual, and one night cannot tell you which of a dozen reasons put
+    /// it there. Reading meaning into a column is the athlete's call; this lane
+    /// only supplies the column and the band it usually sits in.
+    ///
+    /// Nights with no reading draw NOTHING — not a zero, not a bridged line
+    /// between the nights either side. A missing night and an average night are
+    /// different facts, the same contract `TrendsDay` holds everywhere else.
+    private func drawDeviation(
+        _ ctx: GraphicsContext,
+        layout: Layout,
+        lane: Int,
+        series: TrendsBiometricSeries?,
+        colour: Color
+    ) {
+        let top = layout.tops[lane]
+        let height = layout.heights[lane]
+        let mid = top + height / 2
+        let half = height / 2
+
+        // The usual-range well, then the baseline rule over it.
+        let bandHalf = half * CGFloat(TrendsMoodLane.bandSD / TrendsMoodLane.deviationSpan)
+        ctx.fill(
+            Path(CGRect(x: layout.gutter,
+                        y: mid - bandHalf,
+                        width: max(0, layout.width - layout.gutter),
+                        height: bandHalf * 2)),
+            with: .color(Color.drip.paperDeep)
+        )
+        var rule = Path()
+        rule.move(to: CGPoint(x: layout.gutter, y: mid))
+        rule.addLine(to: CGPoint(x: layout.width, y: mid))
+        ctx.stroke(rule, with: .color(Color.drip.divider.opacity(0.8)), lineWidth: 1)
+
+        // No baseline behind this fortnight, or nothing measured inside it.
+        // Say so in place — an empty lane that looks like a flat lane would be
+        // read as "nothing happened", which is a claim we have not earned.
+        guard let series else {
+            ctx.draw(
+                Text("no readings we can place against your usual")
+                    .font(.dripEyebrow(microType - 1))
+                    .foregroundStyle(Color.drip.textTertiary),
+                at: CGPoint(x: layout.gutter + max(0, layout.width - layout.gutter) / 2, y: mid),
+                anchor: .center
+            )
+            return
+        }
+
+        for (i, deviation) in series.deviations.enumerated() {
+            guard i < layout.count, let deviation else { continue }
+
+            let clipped = abs(deviation) > TrendsMoodLane.deviationSpan
+            let reach = min(abs(deviation), TrendsMoodLane.deviationSpan) / TrendsMoodLane.deviationSpan
+            let length = max(1.5, CGFloat(reach) * half)
+            let above = deviation > 0
+            let rect = CGRect(
+                x: layout.centreX(i) - layout.barWidth / 2,
+                y: above ? mid - length : mid,
+                width: layout.barWidth,
+                height: length
+            )
+            let inBand = abs(deviation) < TrendsMoodLane.bandSD
+            ctx.fill(
+                Path(roundedRect: rect, cornerRadius: 1.5),
+                with: .color(colour.opacity(inBand ? 0.28 : 0.95))
+            )
+
+            // Past the fixed span. The dashed cap is the same idiom the flat
+            // fallback bar uses: the mark is bounded, the night was not.
+            if clipped {
+                var cap = Path()
+                let y = above ? rect.minY - 2.5 : rect.maxY + 2.5
+                cap.move(to: CGPoint(x: rect.minX, y: y))
+                cap.addLine(to: CGPoint(x: rect.maxX, y: y))
+                ctx.stroke(cap, with: .color(colour),
+                           style: StrokeStyle(lineWidth: 1.2, dash: [2, 2]))
+            }
+        }
+    }
+
+    /// `day` carries the nightly readings, which live on `TrendsDay` rather
+    /// than on the bucket. Optional so the callers that have no day handy keep
+    /// reading exactly as they did.
+    static func spoken(_ bucket: TrendsBucket, day: TrendsDay? = nil) -> String {
         var parts: [String] = [bucket.label]
         parts.append(bucket.mood.map { "felt \($0)" } ?? "no log")
         parts.append(bucket.miles > 0 ? String(format: "%.1f miles", bucket.miles) : "rest day")
         if bucket.keyCount > 0 { parts.append("key session") }
         if bucket.hasNiggle {
             parts.append("niggle: " + bucket.niggles.map(\.area).joined(separator: ", "))
+        }
+        if let day {
+            if let sleep = day.sleepTotalMin {
+                parts.append("slept \(sleep / 60)h \(sleep % 60)m")
+            }
+            if let rhr = day.restingHr {
+                parts.append(String(format: "resting HR %.0f", rhr))
+            }
+            if let hrv = day.hrvRmssd {
+                parts.append(String(format: "HRV %.0f", hrv))
+            }
         }
         return parts.joined(separator: ", ")
     }

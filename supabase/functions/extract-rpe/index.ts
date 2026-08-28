@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
   // Load the log (RLS bypassed by service client; scope by user_id for safety).
   const { data: log, error: loadErr } = await supabase
     .from("training_logs")
-    .select("id, user_id, cleaned_notes, notes, transcript_url")
+    .select("id, user_id, cleaned_notes, notes, transcript_url, felt_rpe, rpe_source")
     .eq("id", logId)
     .eq("user_id", userId)
     .single();
@@ -239,18 +239,46 @@ Deno.serve(async (req) => {
     ? null
     : Math.min(10, Math.max(1, extracted.felt_rpe));
 
+  // ── Athlete override wins, permanently ──────────────────────────────────
+  // This function is idempotent and fires from four places (client post-memo,
+  // service-role backfill, the `dispatch_rpe_extraction` cron, and the DB
+  // webhook on cleaned_notes UPDATE). Without this guard, an RPE the athlete
+  // set on the workout-detail slider would be silently overwritten by whichever
+  // one ran next — the athlete would correct a number and watch it revert.
+  //
+  // Only `felt_rpe` is frozen. `rpe_pull_quote` and `rpe_tags` keep refreshing,
+  // because the quote is derived from the transcript rather than asserted by
+  // the athlete, and it is the part that actually renders today.
+  //
+  // Product rule this enforces: the model proposes an RPE, the athlete disposes.
+  const athleteOwnsRpe = log.rpe_source === "athlete";
+
+  const updatePayload: Record<string, unknown> = {
+    rpe_pull_quote: extracted.pull_quote,
+    rpe_tags: extracted.tags,
+    rpe_extracted_at: new Date().toISOString(),
+  };
+
+  if (!athleteOwnsRpe) {
+    updatePayload.felt_rpe = felt;
+    // Leave provenance NULL when the model abstained, so "unset" stays
+    // distinguishable from "the model looked and found no effort signal".
+    updatePayload.rpe_source = felt == null ? null : "llm";
+  }
+
   const { error: updErr } = await supabase
     .from("training_logs")
-    .update({
-      felt_rpe: felt,
-      rpe_pull_quote: extracted.pull_quote,
-      rpe_tags: extracted.tags,
-      rpe_extracted_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq("id", logId)
     .eq("user_id", userId);
 
   if (updErr) return jsonResponse({ error: `update failed: ${updErr.message}` }, 500);
 
-  return jsonResponse({ felt_rpe: felt, pull_quote: extracted.pull_quote, tags: extracted.tags });
+  return jsonResponse({
+    felt_rpe: athleteOwnsRpe ? log.felt_rpe : felt,
+    rpe_source: athleteOwnsRpe ? "athlete" : (felt == null ? null : "llm"),
+    athlete_override: athleteOwnsRpe,
+    pull_quote: extracted.pull_quote,
+    tags: extracted.tags,
+  });
 });

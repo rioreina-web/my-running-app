@@ -73,14 +73,28 @@ struct PaceIntensity: Codable, Equatable {
         racePaceSeconds / (percentage / 100.0)
     }
 
-    /// Format pace string given race pace — supports ranges and km display
+    /// The pace this intensity actually names, in seconds per mile, when it
+    /// carries one. Nil for the legacy percentage-only shape, which needs a
+    /// race pace to mean anything — `paceSeconds(forRacePace:)` is the reader
+    /// for that case, and it divides by zero if handed one of these.
+    var concreteSecondsPerMile: Double? {
+        guard let km = paceSecondsPerKm, km > 0 else { return nil }
+        return km * RaceDistanceConstants.kmPerMile
+    }
+
+    /// Format pace string given race pace. Renders per-mile: the app is
+    /// mile-first everywhere else (`EquivalentPaces.formatPace`,
+    /// `PaceCalculator.formatPace`, every zone table), and a step that happened
+    /// to carry its pace in `paceSecondsPerKm` used to be the one place a "/km"
+    /// string leaked into an otherwise per-mile screen. `PaceCalculator.formatPaceKm`
+    /// is the explicit opt-in when km is actually wanted.
     func formattedPace(forRacePace racePaceSeconds: Double) -> String {
         if let paceKm = paceSecondsPerKm {
-            let fast = Self.formatTime(paceKm)
+            let fast = Self.formatTime(paceKm * RaceDistanceConstants.kmPerMile)
             if let slowKm = paceSecondsPerKmHigh {
-                return "\(fast)-\(Self.formatTime(slowKm))/km"
+                return "\(fast)-\(Self.formatTime(slowKm * RaceDistanceConstants.kmPerMile))/mi"
             }
-            return "\(fast)/km"
+            return "\(fast)/mi"
         }
         let low = paceSeconds(forRacePace: racePaceSeconds)
         if let highPct = percentageHigh {
@@ -114,15 +128,21 @@ struct PaceIntensity: Codable, Equatable {
         forRacePace racePaceSeconds: Double,
         equivalentPaces: EquivalentPaces?
     ) -> String {
-        guard racePaceSeconds > 0 else { return "—" }
-        let actualPace = paceSeconds(forRacePace: racePaceSeconds)
+        // Prefer the pace the intensity actually names. Reading the percentage
+        // first divided by zero for concrete-only intensities (coach-authored
+        // "M:SS" steps, and anything saved in the fixed basis), which pushed a
+        // real pace through as `inf` and lost the label.
+        guard let actualPace = concreteSecondsPerMile
+            ?? (racePaceSeconds > 0 ? paceSeconds(forRacePace: racePaceSeconds) : nil),
+            actualPace.isFinite
+        else { return "—" }
 
         if let equiv = equivalentPaces,
            let namedPace = equiv.closestNamedPace(forPaceSeconds: actualPace) {
             return namedPace.shortName
         }
 
-        return formattedPace(forRacePace: racePaceSeconds)
+        return formattedPace(forRacePace: racePaceSeconds)  // per-mile, see above
     }
 
     /// Format seconds as M:SS, or H:MM:SS when total duration >= 1 hour.
@@ -603,5 +623,125 @@ struct EquivalentPaces {
         let mins = totalSecs / 60
         let secs = totalSecs % 60
         return "\(mins):\(String(format: "%02d", secs))/mi"
+    }
+}
+
+// MARK: - Workout Pace Basis
+
+/// What the numbers in a built workout MEAN. The builder switches between the
+/// three without rewriting the workout's structure:
+///
+///   .goal    — zones derived from the goal race time. "MP" is the pace the
+///              athlete is training toward, not the one they hold today.
+///   .current — zones derived from the athlete's pace profile (the fitness
+///              read). "MP" is what today's fitness supports, and it moves as
+///              fitness moves.
+///   .fixed   — every step carries an absolute pace in seconds per mile.
+///              Nothing re-derives it: 6:30 stays 6:30 when the goal changes
+///              or a new snapshot lands.
+///
+/// Goal and current are *relative* bases — the same step means different clock
+/// numbers under each. Fixed is the absence of a basis, which is why switching
+/// into it freezes the numbers as they stand and switching back out re-attaches
+/// them to the nearest zone (carrying an offset when they don't sit on one
+/// exactly). Nothing is lost in either direction.
+enum WorkoutPaceBasis: String, Codable, CaseIterable, Sendable {
+    case goal
+    case current
+    case fixed
+
+    var displayName: String {
+        switch self {
+        case .goal: return "Goal"
+        case .current: return "Current"
+        case .fixed: return "Fixed"
+        }
+    }
+
+    /// True when the basis resolves named zones out of a pace table.
+    var isRelative: Bool { self != .fixed }
+}
+
+// MARK: - EquivalentPaces from current fitness
+
+extension EquivalentPaces {
+
+    /// Anchor preference when reading a pace profile: longer, more frequently
+    /// evidenced distances first. A training log carries far more half/10K
+    /// shaped evidence than mile evidence, so anchoring there keeps the derived
+    /// table steadier week to week.
+    private static let currentFitnessAnchors: [(profileKey: String, calcKey: String)] = [
+        ("half", "half"),
+        ("10K", "10K"),
+        ("marathon", "marathon"),
+        ("5K", "5K"),
+        ("mile", "mile"),
+    ]
+
+    /// Build the zone table from CURRENT fitness rather than from the goal.
+    ///
+    /// Paces the profile actually measured are used verbatim; the rest are
+    /// filled with PaceCalculator equivalents off the best available anchor, so
+    /// the table is complete even when the profile knows only one distance.
+    /// Returns nil when the profile carries no race anchor at all — the caller
+    /// states that absence in prose rather than showing an invented table.
+    ///
+    /// `paceOverrides` are deliberately NOT applied here: those are the
+    /// athlete's corrections to their GOAL zones. Current fitness is a
+    /// measurement, and letting a goal correction rewrite it would make the two
+    /// bases agree by construction, which is the one thing the switch exists to
+    /// be able to disprove. `disabledPaces` DOES carry across — that's a
+    /// display preference ("don't show me 3K"), not a number.
+    static func fromCurrentFitness(
+        _ profile: AthletePaceProfile?,
+        disabledPaces: Set<NamedPace> = []
+    ) -> EquivalentPaces? {
+        guard let profile else { return nil }
+
+        guard let anchor = currentFitnessAnchors.first(where: {
+            (profile.pace(for: $0.profileKey)?.secondsPerMile ?? 0) > 0
+        }),
+            let anchorPace = profile.pace(for: anchor.profileKey)?.secondsPerMile,
+            let anchorMiles = PaceCalculator.distances[anchor.calcKey],
+            anchorMiles > 0
+        else { return nil }
+
+        let anchorSeconds = Int((anchorPace * anchorMiles).rounded())
+
+        /// Equivalent pace at `calcKey`, projected off the anchor performance.
+        func derived(_ calcKey: String) -> Double {
+            let seconds = PaceCalculator.getEquivalentTime(
+                fromDistance: anchor.calcKey,
+                fromSeconds: anchorSeconds,
+                toDistance: calcKey
+            )
+            let miles = PaceCalculator.distances[calcKey] ?? 1.0
+            return Double(seconds) / miles
+        }
+
+        /// Measured pace when the profile has one, projected otherwise.
+        func measured(_ profileKey: String, calcKey: String) -> Double {
+            if let p = profile.pace(for: profileKey)?.secondsPerMile, p > 0 { return p }
+            return derived(calcKey)
+        }
+
+        var table = EquivalentPaces(
+            mpPace: measured("marathon", calcKey: "marathon"),
+            hmPace: measured("half", calcKey: "half"),
+            tenKPace: measured("10K", calcKey: "10K"),
+            fiveKPace: measured("5K", calcKey: "5K"),
+            threeKPace: derived("3K"), // pace profiles never carry a 3K anchor
+            milePace: measured("mile", calcKey: "mile")
+        )
+        table.disabledPaces = disabledPaces
+        return table
+    }
+
+    /// Nearest named zone to `paceSeconds` with no tolerance gate — always
+    /// returns a zone when the table has any enabled ones. Used when rebasing a
+    /// frozen pace back onto zones: the offset carries whatever doesn't land on
+    /// the zone exactly, so "nearest" never loses a second.
+    func nearestNamedPace(toPaceSeconds paceSeconds: Double) -> NamedPace? {
+        closestNamedPace(forPaceSeconds: paceSeconds, tolerance: .greatestFiniteMagnitude)
     }
 }

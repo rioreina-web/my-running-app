@@ -298,9 +298,6 @@ struct TrendsReadView: View {
         guard let day = scrubDay else { return nil }
         var parts = [TrendsReadBuilder.label(day.date)]
         parts.append(day.miles > 0 ? "\(Int(day.miles.rounded())) mi" : "rest")
-        if let rec = read.recovery.first(where: { $0.date == day.date }) {
-            parts.append("rec \(Int(rec.value))")
-        }
         if let load = read.load.first(where: { $0.date == day.date }) {
             parts.append("7-day \(Int(load.value.rounded()))")
         }
@@ -490,13 +487,11 @@ struct TrendsReadView: View {
     @ViewBuilder
     private func lanes(_ read: TrendsRead) -> some View {
         lane(
-            title: "Recovery",
-            trailing: scrubSummary(read) ?? read.recoveryNow.map { now in
-                "\(now)\(read.recoveryBand.map { " · \($0.uppercased())" } ?? "")"
-            } ?? "No score",
-            points: read.recovery,
-            reference: 60,
-            referenceLabel: "STEADY 60",
+            title: "Load",
+            trailing: scrubSummary(read) ?? "",
+            points: read.load,
+            reference: read.loadBaseline,
+            referenceLabel: "8-WK MEAN",
             height: 62,
             floor: 0,
             ceiling: 100,

@@ -95,7 +95,7 @@ Deno.test("every profile's own 10K-pace session reads back as their 10K", () => 
     const anchor = tenKPaceOf(p);
     const { estimate, reason } = estimateFromSession(repSession(p, 5, anchor), anchor);
     assert(estimate, `${p.name}: session dropped — ${reason}`);
-    const impliedTenK = estimate.tenKEquivalent * MI;
+    const impliedTenK = estimate.equivalentPace * MI;
     const errPct = Math.abs(impliedTenK - p.tenKSeconds) / p.tenKSeconds;
     assert(
       errPct < 0.06,
@@ -112,7 +112,7 @@ Deno.test("a faster session reads faster for every profile, not just quick ones"
     const faster = estimateFromSession(repSession(p, 5, anchor * 0.97), anchor).estimate;
     assert(onPace && faster, `${p.name}: a 3%-faster session should still be readable`);
     assert(
-      faster.tenKEquivalent < onPace.tenKEquivalent,
+      faster.equivalentPace < onPace.equivalentPace,
       `${p.name}: running faster did not read as fitter`,
     );
   }

@@ -88,6 +88,67 @@ enum IntensityRamp {
     static var aerobic: Color   { colors[2] }
     static var threshold: Color { colors[5] }
 
+    // MARK: Workout type → ramp stop
+
+    /// Which stop a workout type sits on. The ramp's ten stops are already
+    /// named after the pace taxonomy — z1 Easy, z2 Moderate, z3 Steady, z4 MP,
+    /// … z10 Mile — so a type addresses the ramp directly. Chips read the
+    /// scale the charts read, and a colour means one thing app-wide.
+    ///
+    /// nil = off the pace ramp entirely (strength, cross-training, rest).
+    /// Those are not slow running; they are not running, and giving them a
+    /// pale-blue chip would file them at the easy end of a scale they are not
+    /// on. Callers render them in a neutral.
+    ///
+    /// Keyed on the stored `workout_type`, normalised through `WorkoutLabel`,
+    /// never on the display string — the display string is a rendering of this
+    /// key and the two drift.
+    static func zone(forTypeKey typeKey: String?) -> Int? {
+        guard let key = WorkoutLabel.normalize(typeKey) else { return nil }
+        switch key {
+        // Aerobic efforts, and the long run — a long run is an easy run that
+        // lasts, so it files at the easy end, not a stop of its own.
+        case "easy", "recovery", "strides", "long_run":  return 0   // z1 Easy
+        case "moderate":                                 return 1   // z2 Moderate
+        case "steady", "progression":                    return 2   // z3 Steady
+        // A long run workout carries MP-ish work inside it.
+        case "mp", "long_wo":                            return 3   // z4 MP
+        case "hmp":                                      return 4   // z5 HMP
+        // `threshold` is the session, `lt` the pace zone; they land together.
+        // Fartlek is threshold work with the structure taken out.
+        case "lt", "threshold", "fartlek":               return 5   // z6 LT
+        case "10k":                                      return 6   // z7 10K
+        case "intervals", "5k", "hills":                 return 7   // z8 5K
+        case "3k":                                       return 8   // z9 3K
+        case "mile", "race":                             return 9   // z10 Mile
+        case "strength", "cross_train", "rest":          return nil
+        default:                                         return nil
+        }
+    }
+
+    /// Not running at all — strength, cross-training, rest. Distinct from
+    /// `zone(forTypeKey:)` returning nil on an unrecognised key, where the
+    /// caller may still know something (a completed run's pace-derived
+    /// bucket) and should use it rather than fall back to the neutral.
+    static func isOffRamp(_ typeKey: String?) -> Bool {
+        guard let key = WorkoutLabel.normalize(typeKey) else { return false }
+        return key == "strength" || key == "cross_train" || key == "rest"
+    }
+
+    /// Ramp colour for a workout type, or `Color.drip.divider` for the
+    /// off-ramp types. Pair with `needsDarkText(zone:)` for the label.
+    static func color(forTypeKey typeKey: String?) -> Color {
+        guard let z = zone(forTypeKey: typeKey) else { return Color.drip.divider }
+        return colors[z]
+    }
+
+    /// True where the stop is pale enough that ink text out-reads knocked-out
+    /// white. z1–z3 are the pale half; from z4 (MP) down the fills carry white.
+    static func needsDarkText(zone: Int?) -> Bool {
+        guard let zone else { return true }   // off-ramp neutral is a light grey
+        return zone <= 2
+    }
+
     /// RGB stops (0–255) mirroring `colors`, for continuous interpolation.
     private static let rgbStops: [(r: Double, g: Double, b: Double)] = [
         (147, 185, 214), // z1 Easy (pale sky)
@@ -227,6 +288,9 @@ struct SessionDetail: Identifiable {
     let id: UUID
     let date: Date
     let typeLabel: String
+    /// Stored `workout_type`, kept alongside the rendered label so colour can
+    /// address `IntensityRamp` by key rather than by display string.
+    let typeKey: String?
     let miles: Double
     let pace: String?
     let pullQuote: String?    // voice-memo / cleaned-notes
@@ -1113,6 +1177,7 @@ final class TrainingAnalyticsViewModel {
             id: row.id,
             date: row.date,
             typeLabel: Self.typeLabel(row.typeKey),
+            typeKey: row.typeKey,
             miles: row.miles ?? 0,
             pace: row.pace,
             // `rpe_pull_quote` is extracted from the memo, so it is already the

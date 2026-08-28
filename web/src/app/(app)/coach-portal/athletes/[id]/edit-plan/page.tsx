@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 import {
   LivePlanEditorClient,
   type EditableWorkout,
 } from "@/components/coach/live-plan-editor-client";
+import { PlanEditTextBox } from "@/components/coach/plan-edit-textbox";
 
 // Coach "Edit live plan" screen (R5, Phase B / build-plan B5). Loads the
 // athlete's active plan and its FUTURE scheduled_workouts, then hands off to
@@ -67,7 +67,6 @@ export default async function EditLivePlanPage({
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 space-y-8">
-      <CoachPortalNav />
 
       <Link
         href={`/coach-portal/athletes/${id}`}
@@ -75,6 +74,8 @@ export default async function EditLivePlanPage({
       >
         ← Back to athlete
       </Link>
+
+      <PlanEditTextBox athleteUserId={id} />
 
       <LivePlanEditorClient
         athleteUserId={id}

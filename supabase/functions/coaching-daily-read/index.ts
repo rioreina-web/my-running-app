@@ -134,7 +134,33 @@ const QUALITY_WORKOUT_TYPES = new Set([
 
 // ── Entry point ──────────────────────────────────────────────────────
 
-Deno.serve(async (req) => {
+/**
+ * Seams for tests. Every field defaults to the real collaborator, so the
+ * production path below is unchanged — `Deno.serve` passes no deps at all.
+ *
+ * These exist because this function is `verify_jwt = false`: the gateway
+ * validates nothing, so the authorization decision is entirely this file's,
+ * and "the gate is present in the source" (what the H3 contract test can
+ * check) is a weaker claim than "a wrong-user token gets a 403" (what a test
+ * calling the handler can check).
+ */
+export interface DailyReadDeps {
+  resolveAuth?: (
+    req: Request,
+    bodyUserId: string | undefined,
+  ) => Promise<
+    { response: Response } | { userId: string; isServiceRole: boolean }
+  >;
+  buildClient?: (isServiceRole: boolean, req: Request) => SupabaseClient;
+  rateLimit?: (userId: string, isServiceRole: boolean) => Promise<Response | null>;
+  monthlyCap?: (userId: string, isServiceRole: boolean) => Promise<Response | null>;
+  budgetAllows?: (userId: string) => Promise<boolean>;
+}
+
+export async function handleCoachingDailyRead(
+  req: Request,
+  deps: DailyReadDeps = {},
+): Promise<Response> {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -162,13 +188,25 @@ Deno.serve(async (req) => {
     );
   }
 
-  const auth = await requireAuthOrServiceRole(req, body.user_id, corsHeaders);
+  const auth = await (deps.resolveAuth ??
+    ((r: Request, u: string | undefined) =>
+      requireAuthOrServiceRole(r, u, corsHeaders)))(req, body.user_id);
   if ("response" in auth) return auth.response;
   const { userId, isServiceRole } = auth;
 
-  const rlBlocked = await enforceFeatureRateLimit(userId, "daily_read", corsHeaders, { isServiceRole });
+  const rlBlocked = await (deps.rateLimit ??
+    ((u: string, svc: boolean) =>
+      enforceFeatureRateLimit(u, "daily_read", corsHeaders, { isServiceRole: svc })))(
+    userId,
+    isServiceRole,
+  );
   if (rlBlocked) return rlBlocked;
-  const monthlyCapped = await enforceMonthlyCap(userId, "daily_read", corsHeaders, { isServiceRole });
+  const monthlyCapped = await (deps.monthlyCap ??
+    ((u: string, svc: boolean) =>
+      enforceMonthlyCap(u, "daily_read", corsHeaders, { isServiceRole: svc })))(
+    userId,
+    isServiceRole,
+  );
   if (monthlyCapped) return monthlyCapped;
 
   const triggeredBy = body.triggered_by ?? "cron";
@@ -182,19 +220,21 @@ Deno.serve(async (req) => {
   // Service role goes through SUPABASE_SERVICE_ROLE_KEY so RLS doesn't
   // block writes; user-JWT path uses the anon key and the request's
   // bearer (RLS scopes it to the user automatically).
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    isServiceRole
-      ? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-      : Deno.env.get("SUPABASE_ANON_KEY")!,
-    isServiceRole
-      ? {}
-      : {
+  const supabase = deps.buildClient
+    ? deps.buildClient(isServiceRole, req)
+    : createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      isServiceRole
+        ? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+        : Deno.env.get("SUPABASE_ANON_KEY")!,
+      isServiceRole
+        ? {}
+        : {
           global: {
             headers: { Authorization: req.headers.get("Authorization") ?? "" },
           },
         },
-  );
+    );
 
   try {
     const readDate = await resolveAthleteLocalDate(supabase, userId);
@@ -220,7 +260,10 @@ Deno.serve(async (req) => {
     // workout_trigger paths are exactly the machine-invoked paths a
     // runaway rides in on. One RPC, one ledger row, hard stop at the
     // daily ceiling (see migration 20260813180100).
-    if (!(await llmBudgetAllows("daily_read", { userId }))) {
+    if (
+      !(await (deps.budgetAllows ??
+        ((u: string) => llmBudgetAllows("daily_read", { userId: u })))(userId))
+    ) {
       return llmBudgetBlockedResponse("daily_read", corsHeaders);
     }
 
@@ -410,7 +453,9 @@ Deno.serve(async (req) => {
     // just log. The next cron tick will retry.
     return jsonResponse(500, { error: "Internal error", detail: message });
   }
-});
+}
+
+Deno.serve((req) => handleCoachingDailyRead(req));
 
 // ── Date resolution ──────────────────────────────────────────────────
 

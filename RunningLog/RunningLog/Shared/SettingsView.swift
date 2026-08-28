@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("coachCheckInsEnabled") private var coachCheckInsEnabled = true
     @AppStorage("smartInsightsEnabled") private var smartInsightsEnabled = true
     @AppStorage("isCoachMode") private var isCoachMode = false
+    @AppStorage(LogDefaultMode.key) private var defaultLogMode: String = LogDefaultMode.voice
     @AppStorage("userMaxHR") private var userMaxHR: Int = 180
     // Display units for distance & pace. Default Miles; flips the whole app.
     @AppStorage("distanceUnit") private var distanceUnit: String = DistanceUnit.miles.rawValue
@@ -594,6 +595,31 @@ struct SettingsView: View {
             EditorialSectionHeader(index: "05", title: "App")
 
             VStack(spacing: 0) {
+                Toggle(isOn: Binding(
+                    get: { defaultLogMode == LogDefaultMode.text },
+                    set: { defaultLogMode = $0 ? LogDefaultMode.text : LogDefaultMode.voice }
+                )) {
+                    HStack {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color.drip.coral)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Write notes by default")
+                                .font(.dripBody(14))
+                                .foregroundStyle(Color.drip.textPrimary)
+                            Text("The Log tab opens ready to type instead of record")
+                                .font(.dripCaption(12))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                    }
+                }
+                .tint(Color.drip.coral)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+
+                Divider()
+                    .background(Color.drip.divider)
+
                 Link(destination: URL(string: "https://postrundrip.com/privacy")!) {
                     HStack {
                         Image(systemName: "hand.raised.fill")

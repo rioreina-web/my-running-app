@@ -648,6 +648,10 @@ struct EditableWorkoutStep: Identifiable {
         /// Named pace ± offset in percent. Positive = slower, negative = faster.
         case namedPacePercentOffset(NamedPace, Double)
         case custom(Double)
+        /// An absolute pace in seconds per mile, written down as a number.
+        /// Basis-independent: neither a goal change nor a new fitness read
+        /// moves it. This is what the athlete means by "just run 6:30s".
+        case fixed(Double)
         /// Target time in seconds for the rep distance (e.g., 1600m in 305s = 5:05)
         case targetTime(Double)
         case none
@@ -687,7 +691,10 @@ struct EditableWorkoutStep: Identifiable {
                 let base = equivalentPaces.paceSeconds(for: named)
                 return max(base * (1 + pct / 100.0), 1)
             case .custom(let pct):
+                guard pct > 0 else { return nil }
                 return max(racePaceSeconds / (pct / 100.0), 1)
+            case .fixed(let secondsPerMile):
+                return secondsPerMile > 0 ? secondsPerMile : nil
             case .targetTime:
                 return nil // Target time is absolute, not pace-based
             case .none:
@@ -695,14 +702,32 @@ struct EditableWorkoutStep: Identifiable {
             }
         }
 
-        /// Convert to PaceIntensity given equivalent paces and race pace
+        /// Convert to PaceIntensity given equivalent paces and race pace.
+        ///
+        /// Always carries the RESOLVED pace in `paceSecondsPerKm`, not just a
+        /// percentage. A bare percentage is only meaningful next to the race
+        /// pace it was computed against, so a workout authored on current
+        /// fitness and re-read after the goal moved used to silently render at
+        /// a different pace — the exact drift the decoder's "percentage-only
+        /// fallback" comment warns about. Writing the number down ends it.
+        ///
+        /// `percentage` stays populated for relative selections so older
+        /// readers keep working, and is deliberately 0 for `.fixed`: that zero,
+        /// plus an absent `paceZone`, is how a fixed pace is recognised on the
+        /// way back in.
         func toPaceIntensity(
             racePaceSeconds: Double,
             equivalentPaces: EquivalentPaces
         ) -> PaceIntensity? {
-            guard let target = resolvedPaceSeconds(equivalentPaces: equivalentPaces, racePaceSeconds: racePaceSeconds) else { return nil }
-            let percentage = racePaceSeconds / target * 100.0
-            return PaceIntensity(percentage: percentage)
+            guard let target = resolvedPaceSeconds(equivalentPaces: equivalentPaces, racePaceSeconds: racePaceSeconds),
+                  target > 0
+            else { return nil }
+            let secondsPerKm = target / RaceDistanceConstants.kmPerMile
+            if case .fixed = self {
+                return PaceIntensity(percentage: 0, paceSecondsPerKm: secondsPerKm)
+            }
+            let percentage = racePaceSeconds > 0 ? racePaceSeconds / target * 100.0 : 0
+            return PaceIntensity(percentage: percentage, paceSecondsPerKm: secondsPerKm)
         }
     }
 
@@ -717,10 +742,37 @@ struct EditableWorkoutStep: Identifiable {
 
         self.hrTarget = step.targetHR
 
+        // Read order is authored-intent first, resolved-number second.
+        //
+        //   1. A `paceZone` is the authored intent. It survives a change of
+        //      pace basis — "at threshold" still means threshold whether the
+        //      table comes from the goal or from current fitness — so it wins
+        //      over any pace already resolved out of it. Reading the resolved
+        //      number first used to drop it: "7 × 1mi at threshold" came back
+        //      as a step with no zone at all, and the next save wrote the loss
+        //      back. Same class of silent structural loss as the May 2026
+        //      repeats/recovery regression.
+        //   2. A concrete pace with NO zone is a literal prescription — the
+        //      coach-authored `target_pace: "M:SS"` shape, or anything this
+        //      editor saved in the fixed basis. It is a fixed pace, not a
+        //      percentage of something: reading it through
+        //      `paceSeconds(forRacePace:)` divided by a zero percentage and
+        //      landed on `.custom(0)`.
+        //   3. A percentage is the legacy shape and the least trustworthy —
+        //      it only means anything alongside the race pace it was computed
+        //      against.
         if step.targetHR != nil {
             // HR-targeted step — no pace selection
             self.paceSelection = .none
-        } else if let intensity = step.targetPaceIntensity, let equiv = equivalentPaces {
+        } else if step.paceZone != nil {
+            self.paceSelection = EditableWorkoutStep.paceSelection(
+                from: step.paceZone,
+                adjustment: step.paceAdjustment
+            )
+        } else if let concrete = step.targetPaceIntensity?.concreteSecondsPerMile,
+                  (step.targetPaceIntensity?.percentage ?? 0) <= 0 {
+            self.paceSelection = .fixed(concrete)
+        } else if let intensity = step.targetPaceIntensity, intensity.percentage > 0, let equiv = equivalentPaces {
             let actualPace = intensity.paceSeconds(forRacePace: racePaceSeconds)
             // Use tight tolerance (1s) so only exact named-pace matches snap — prevents
             // custom percentages near a named pace from losing their precise value
@@ -729,21 +781,10 @@ struct EditableWorkoutStep: Identifiable {
             } else {
                 self.paceSelection = .custom(intensity.percentage)
             }
-        } else if let intensity = step.targetPaceIntensity {
+        } else if let intensity = step.targetPaceIntensity, intensity.percentage > 0 {
             self.paceSelection = .custom(intensity.percentage)
         } else {
-            // A step can carry a zone with NO targetPaceIntensity — that is
-            // exactly what zone-based web authoring produces. Reading only
-            // `targetPaceIntensity` above dropped it: "7 × 1mi at threshold"
-            // round-tripped to a step with no zone at all, and saving from
-            // the iOS editor then wrote the loss back. The recovery branch
-            // below has always read `paceZone` directly; this is the parent
-            // step catching up to it. Same class of silent structural loss
-            // as the May 2026 repeats/recovery regression.
-            self.paceSelection = EditableWorkoutStep.paceSelection(
-                from: step.paceZone,
-                adjustment: step.paceAdjustment
-            )
+            self.paceSelection = .none
         }
 
         // Carry over interval structure verbatim. Before this fix, repeats
@@ -858,9 +899,102 @@ struct EditableWorkoutStep: Identifiable {
             return (p, WorkoutPaceAdjustment(type: .secondsPerMile, value: sec))
         case .namedPacePercentOffset(let p, let pct):
             return (p, WorkoutPaceAdjustment(type: .percent, value: pct))
-        case .custom, .targetTime, .none:
+        case .custom, .fixed, .targetTime, .none:
             return (nil, nil)
         }
+    }
+}
+
+// MARK: - Switching pace basis
+
+extension EditableWorkoutStep.PaceSelection {
+
+    /// Freeze this selection into the absolute pace it currently resolves to.
+    ///
+    /// Used when the builder moves to `.fixed`: whatever the zones happened to
+    /// mean at that moment becomes the prescription, and stops moving. Targets
+    /// that never had a pace (`.none`, `.targetTime`) are left alone — a rest
+    /// leg with no pace target doesn't acquire one by changing basis.
+    func frozen(with table: EquivalentPaces, racePaceSeconds: Double) -> Self {
+        switch self {
+        case .fixed, .targetTime, .none:
+            return self
+        case .namedPace, .namedPaceOffset, .namedPacePercentOffset, .custom:
+            guard let resolved = resolvedPaceSeconds(
+                equivalentPaces: table,
+                racePaceSeconds: racePaceSeconds
+            ) else { return self }
+            return .fixed(resolved)
+        }
+    }
+
+    /// The zone this selection should be LABELLED with.
+    ///
+    /// `baseNamedPace` when there is one; for a fixed pace, the zone its number
+    /// sits nearest on `table`. Labelling only — nothing resolves through this.
+    /// Without it a workout pinned to 6:30 loses its name: the grammar has no
+    /// zone to reach for and "LT 5×1mi" degrades to "Workout 5×1mi", which is
+    /// what the athlete would then have seen saved.
+    func labelZone(in table: EquivalentPaces?) -> NamedPace? {
+        if let base = baseNamedPace { return base }
+        guard case .fixed(let secondsPerMile) = self, secondsPerMile > 0 else { return nil }
+        return table?.nearestNamedPace(toPaceSeconds: secondsPerMile)
+    }
+
+    /// Re-attach a frozen pace to `table`'s named zones.
+    ///
+    /// The nearest zone carries the label; the remainder rides as an offset, so
+    /// 6:30 against a table whose LT is 6:24 comes back as "LT+6s" rather than
+    /// being rounded into LT and quietly losing six seconds. Fixed → relative →
+    /// fixed is lossless in both directions.
+    func rebased(onto table: EquivalentPaces) -> Self {
+        guard case .fixed(let secondsPerMile) = self, secondsPerMile > 0 else { return self }
+        guard let zone = table.nearestNamedPace(toPaceSeconds: secondsPerMile) else { return self }
+        let delta = secondsPerMile - table.paceSeconds(for: zone)
+        return abs(delta) < 0.5 ? .namedPace(zone) : .namedPaceOffset(zone, delta.rounded())
+    }
+}
+
+extension EditableWorkoutStep {
+
+    /// Rewrite this step (and its recovery leg) for a move from `from` to `to`.
+    ///
+    /// Goal ↔ current is a no-op on the steps themselves: the zones are the
+    /// same words, and only the table underneath them changes, which is exactly
+    /// what makes the switch cheap. Crossing into or out of `.fixed` is the
+    /// only move that touches the selections.
+    ///
+    /// - Parameters:
+    ///   - outgoing: the table the steps are currently being read against —
+    ///     the one that decides what "MP" meant a moment ago.
+    ///   - incoming: the table they're moving to.
+    func switchingBasis(
+        from: WorkoutPaceBasis,
+        to: WorkoutPaceBasis,
+        outgoing: EquivalentPaces,
+        incoming: EquivalentPaces,
+        racePaceSeconds: Double
+    ) -> EditableWorkoutStep {
+        guard from != to else { return self }
+        var copy = self
+
+        func convert(_ selection: PaceSelection) -> PaceSelection {
+            switch (from, to) {
+            case (_, .fixed):
+                return selection.frozen(with: outgoing, racePaceSeconds: racePaceSeconds)
+            case (.fixed, _):
+                return selection.rebased(onto: incoming)
+            default:
+                return selection // goal ↔ current: the words don't change
+            }
+        }
+
+        copy.paceSelection = convert(paceSelection)
+        if var rec = copy.recovery {
+            rec.paceSelection = convert(rec.paceSelection)
+            copy.recovery = rec
+        }
+        return copy
     }
 }
 

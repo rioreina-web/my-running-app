@@ -169,16 +169,12 @@ struct VoiceLogView: View {
         .onAppear {
             setupAudioSession()
             Task {
-                // HealthKit auth + the recent-workouts fetch happen ONCE, in
-                // the launch task (RunningLogApp), which publishes into
-                // `healthKitManager.recentWorkouts`. Re-requesting here raced
-                // the launch task's auth call and doubled the query. Only
-                // fetch if the launch task hasn't populated the list yet
-                // (e.g. auth was granted after launch).
-                if healthKitManager.recentWorkouts.isEmpty {
-                    let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-                    await MainActor.run { healthKitManager.recentWorkouts = workouts }
-                }
+                // Merged across HealthKit + Vital + Strava, and throttled, so
+                // this is cheap on a tab switch but still catches a run that
+                // landed mid-session. It does NOT request authorization, so
+                // it cannot race the launch task's auth call the way the old
+                // unconditional fetch here did.
+                await healthKitManager.refreshRecentRunsIfStale()
                 await viewModel.loadHistory()
             }
         }
@@ -1407,93 +1403,16 @@ struct WorkoutPickerSheet: View {
 
     private func refreshWorkouts() async {
         isRefreshing = true
-
-        // Fetch from HealthKit, Vital (stubbed), and Strava-imported training_logs in parallel.
-        async let hkWorkouts = healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-        async let vitalWorkouts = VitalManager.shared.fetchRecentRunningWorkouts(limit: 30)
-        async let stravaWorkouts = Self.fetchStravaRunningWorkouts(limit: 30)
-
-        let hk = await hkWorkouts
-        let vital = await vitalWorkouts
-        let strava = await stravaWorkouts
-
-        // Merge, dedup across sources (Garmin often syncs to multiple places).
-        // Match on start time within 5 min AND similar duration (within 2 min).
-        var merged: [RunningWorkout] = []
-        let appendIfUnique: (RunningWorkout) -> Void = { w in
-            let isDuplicate = merged.contains { existing in
-                abs(existing.startDate.timeIntervalSince(w.startDate)) < 300
-                    && abs(existing.durationMinutes - w.durationMinutes) < 2.0
-            }
-            if !isDuplicate { merged.append(w) }
-        }
-        for w in vital { appendIfUnique(w) }
-        for w in strava { appendIfUnique(w) }
-        for w in hk { appendIfUnique(w) }
-
-        merged.sort { $0.startDate > $1.startDate }
-
+        // The merge (HealthKit + Vital + Strava, deduped) and the Strava fetch
+        // both moved to `HealthKitManager.refreshRecentRuns` on 2026-08-24.
+        // They used to live here AND, copy-pasted verbatim, in
+        // `WildWorkoutPickerSheet` — while the Log tab's linked-run block read
+        // raw `recentWorkouts` and so never saw a Strava-only run. One copy
+        // now, so no two surfaces can disagree about which run is latest.
+        let merged = await healthKitManager.refreshRecentRuns()
         await MainActor.run {
-            healthKitManager.recentWorkouts = hk
             mergedWorkouts = merged
             isRefreshing = false
-        }
-    }
-
-    /// Fetch Strava-sourced training_logs and map them to RunningWorkout so they
-    /// appear in the workout link picker.
-    ///
-    /// Internal rather than private so `WildWorkoutPickerSheet` can call it.
-    /// The source list below is the single rule both pickers must obey — see
-    /// the comment on `.in("source", …)` — so it lives in one place.
-    static func fetchStravaRunningWorkouts(limit: Int) async -> [RunningWorkout] {
-        struct Row: Decodable {
-            let id: String
-            let workout_date: Date?
-            let workout_distance_miles: Double?
-            let workout_duration_minutes: Double?
-            let vital_workout_id: String?
-            let cleaned_notes: String?
-            let source: String?
-        }
-        do {
-            let userId = AuthManager.shared.userId
-            let rows: [Row] = try await supabase
-                .from("training_logs")
-                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, cleaned_notes, source")
-                .eq("user_id", value: userId)
-                // MUST include "strava". This list is the ONLY way a synced run
-                // reaches the link picker, and the picker is the ONLY way
-                // VoiceLogViewModel learns a run's vital_workout_id — which is
-                // what its attach-to-existing-row branch keys on. Omitting a
-                // source here silently downgrades every memo for that source
-                // into a NEW duplicate training_logs row.
-                .in("source", values: ["garmin", "vital", "strava", "auto_sync", "strava_backfill"])
-                .order("workout_date", ascending: false, nullsFirst: false)
-                .limit(limit)
-                .execute()
-                .value
-
-            return rows.compactMap { r -> RunningWorkout? in
-                guard let start = r.workout_date,
-                      let dist = r.workout_distance_miles, dist > 0,
-                      let dur = r.workout_duration_minutes, dur > 0,
-                      let uuid = UUID(uuidString: r.id) else { return nil }
-                return RunningWorkout(
-                    id: uuid,
-                    startDate: start,
-                    endDate: start.addingTimeInterval(dur * 60),
-                    distanceMiles: dist,
-                    durationMinutes: dur,
-                    pacePerMile: dur / dist,
-                    calories: 0,
-                    sourceApp: (r.source ?? "").lowercased() == "strava" ? "Strava" : "Garmin",
-                    vitalWorkoutId: r.vital_workout_id
-                )
-            }
-        } catch {
-            Log.app.error("Strava workout fetch failed: \(error)")
-            return []
         }
     }
 }

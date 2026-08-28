@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 import { CoachAthleteDashboard } from "@/components/coach/dashboard/coach-dashboard";
 import { buildDashboardFromSupabase } from "@/lib/coach-dashboard/from-supabase";
 
@@ -46,7 +45,6 @@ export default async function CoachAthleteDetailPage({
 
   return (
     <div>
-      <CoachPortalNav />
       <div className="mx-auto max-w-[1060px] px-4 pt-4">
         <Link
           href="/coach-portal/athletes"

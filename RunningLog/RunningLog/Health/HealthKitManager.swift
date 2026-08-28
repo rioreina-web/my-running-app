@@ -3,6 +3,11 @@ import CoreLocation
 import Foundation
 import HealthKit
 import os
+// PostgREST + Supabase are required by `fetchStravaRunningWorkouts` below.
+// This target builds with SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY, so
+// calling members of a type means importing the module that declares them.
+import PostgREST
+import Supabase
 import SwiftUI
 
 // MARK: - HealthKitManager
@@ -840,6 +845,171 @@ class HealthKitManager: ObservableObject {
 
         // If we get here, return the last time
         return points.last?.time ?? 0
+    }
+
+    // MARK: - Recent runs (merged across every source)
+
+    /// The athlete's recent runs, merged and deduped across EVERY source:
+    /// HealthKit, Vital, and Strava-imported `training_logs`.
+    ///
+    /// **Athlete-facing surfaces should read this, not `recentWorkouts`.**
+    /// `recentWorkouts` is the raw HealthKit list and is a strict SUBSET — a
+    /// Strava-only run (Strava → Apple Health sync off or lagging) never
+    /// appears in it.
+    ///
+    /// That subset was a real bug, found 2026-08-24: the Log tab's linked-run
+    /// block read `recentWorkouts` while the link picker built this merged
+    /// list and kept it private, so the two surfaces disagreed about which run
+    /// was "latest" — and showed different durations for the SAME run (53:51
+    /// from HealthKit's copy, 53:50 from Strava's). The merge lives here now,
+    /// in one place, and both surfaces read the result.
+    ///
+    /// Reach for `recentWorkouts` only when you need HealthKit-native samples
+    /// (route data, heart-rate series) that no other source carries.
+    @Published var recentRuns: [RunningWorkout] = []
+
+    /// True while `refreshRecentRuns` is in flight — for pickers that show a
+    /// syncing row.
+    @Published var isRefreshingRecentRuns = false
+
+    /// When `recentRuns` was last published, so callers can skip a refetch.
+    @Published private(set) var recentRunsUpdatedAt: Date?
+
+    /// Fetch all three sources in parallel, merge, dedup, publish.
+    ///
+    /// Garmin often syncs to more than one service, so a run counts as a
+    /// duplicate when it starts within 5 minutes AND lasts within 2 minutes of
+    /// one already kept.
+    ///
+    /// **Source order is load-bearing — do not reorder.** Whichever source
+    /// lands first wins the row, and Vital and Strava carry `vital_workout_id`
+    /// where HealthKit does not. That ID is what `VoiceLogViewModel`'s
+    /// attach-to-existing-row branch keys on; lose it and every memo silently
+    /// becomes a NEW duplicate `training_logs` row instead of attaching to the
+    /// run it describes. Vital, then Strava, then HealthKit.
+    @discardableResult
+    func refreshRecentRuns(limit: Int = 30) async -> [RunningWorkout] {
+        await MainActor.run { self.isRefreshingRecentRuns = true }
+
+        // Ask HealthKit only when it can actually answer. `fetchRecent-
+        // RunningWorkouts` reports an ErrorReporter banner when it is not
+        // authorized, and this method now runs on every foreground and every
+        // Log-tab appear — so for a Strava-only athlete who never granted
+        // Health, the unguarded call would put a red banner on screen several
+        // times a session while the merge below was working perfectly.
+        await checkAuthorizationStatus()
+        let healthKitCanAnswer = await MainActor.run { self.isAuthorized }
+
+        async let hkTask = healthKitCanAnswer
+            ? fetchRecentRunningWorkouts(limit: 20)
+            : HealthKitManager.noRuns()
+        async let vitalTask = VitalManager.shared.fetchRecentRunningWorkouts(limit: limit)
+        async let stravaTask = HealthKitManager.fetchStravaRunningWorkouts(limit: limit)
+
+        let hk = await hkTask
+        let vital = await vitalTask
+        let strava = await stravaTask
+
+        var merged: [RunningWorkout] = []
+        let appendIfUnique: (RunningWorkout) -> Void = { w in
+            let isDuplicate = merged.contains { existing in
+                abs(existing.startDate.timeIntervalSince(w.startDate)) < 300
+                    && abs(existing.durationMinutes - w.durationMinutes) < 2.0
+            }
+            if !isDuplicate { merged.append(w) }
+        }
+        for w in vital { appendIfUnique(w) }
+        for w in strava { appendIfUnique(w) }
+        for w in hk { appendIfUnique(w) }
+
+        merged.sort { $0.startDate > $1.startDate }
+
+        await MainActor.run {
+            // Both are published, and `recentWorkouts` stays HealthKit-only on
+            // purpose: `WorkoutSyncService.syncUnloggedWorkouts` writes its
+            // input into `training_logs`, so handing it merged rows would
+            // re-insert runs that are already there.
+            self.recentWorkouts = hk
+            self.recentRuns = merged
+            self.recentRunsUpdatedAt = Date()
+            self.isRefreshingRecentRuns = false
+        }
+        return merged
+    }
+
+    /// The empty-list branch for the `async let` above — `async let` needs an
+    /// awaitable expression on both sides of the ternary.
+    private static func noRuns() async -> [RunningWorkout] { [] }
+
+    /// Refresh only when the list is missing or older than `maxAge`.
+    ///
+    /// This is the `onAppear` entry point: cheap on a tab switch, but still
+    /// correct when a run lands mid-session.
+    @discardableResult
+    func refreshRecentRunsIfStale(maxAge: TimeInterval = 60,
+                                  limit: Int = 30) async -> [RunningWorkout] {
+        let last = await MainActor.run { self.recentRunsUpdatedAt }
+        let cached = await MainActor.run { self.recentRuns }
+        if let last, !cached.isEmpty, Date().timeIntervalSince(last) < maxAge {
+            return cached
+        }
+        return await refreshRecentRuns(limit: limit)
+    }
+
+    /// Fetch Strava-sourced `training_logs` and map them to `RunningWorkout`.
+    ///
+    /// Moved here from `WorkoutPickerSheet` (2026-08-24) so the merge above
+    /// owns every source. The source list below is the single rule every
+    /// surface obeys — see the comment on `.in("source", …)`.
+    static func fetchStravaRunningWorkouts(limit: Int) async -> [RunningWorkout] {
+        struct Row: Decodable {
+            let id: String
+            let workout_date: Date?
+            let workout_distance_miles: Double?
+            let workout_duration_minutes: Double?
+            let vital_workout_id: String?
+            let cleaned_notes: String?
+            let source: String?
+        }
+        do {
+            let userId = AuthManager.shared.userId
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, cleaned_notes, source")
+                .eq("user_id", value: userId)
+                // MUST include "strava". This list is the ONLY way a synced run
+                // reaches the link picker, and the picker is the ONLY way
+                // VoiceLogViewModel learns a run's vital_workout_id — which is
+                // what its attach-to-existing-row branch keys on. Omitting a
+                // source here silently downgrades every memo for that source
+                // into a NEW duplicate training_logs row.
+                .in("source", values: ["garmin", "vital", "strava", "auto_sync", "strava_backfill"])
+                .order("workout_date", ascending: false, nullsFirst: false)
+                .limit(limit)
+                .execute()
+                .value
+
+            return rows.compactMap { r -> RunningWorkout? in
+                guard let start = r.workout_date,
+                      let dist = r.workout_distance_miles, dist > 0,
+                      let dur = r.workout_duration_minutes, dur > 0,
+                      let uuid = UUID(uuidString: r.id) else { return nil }
+                return RunningWorkout(
+                    id: uuid,
+                    startDate: start,
+                    endDate: start.addingTimeInterval(dur * 60),
+                    distanceMiles: dist,
+                    durationMinutes: dur,
+                    pacePerMile: dur / dist,
+                    calories: 0,
+                    sourceApp: (r.source ?? "").lowercased() == "strava" ? "Strava" : "Garmin",
+                    vitalWorkoutId: r.vital_workout_id
+                )
+            }
+        } catch {
+            Log.app.error("Strava workout fetch failed: \(error)")
+            return []
+        }
     }
 }
 

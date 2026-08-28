@@ -51,6 +51,9 @@ export interface EnrichLap {
 export interface WeatherActual {
   temp_f?: number | null;
   dew_point_f?: number | null;
+  /** Relative humidity, percent. No per-lap average exists for this — it's a
+   *  flat read of the run's weather snapshot. */
+  humidity?: number | null;
 }
 
 // ── Formatters ─────────────────────────────────────────────────────────────
@@ -141,9 +144,10 @@ export function buildConditions(
   const hrAvg = weightedAvg(laps, (l) => l.avg_heart_rate);
   const climbM = laps.reduce((s, l) => s + Number(l.total_elevation_gain ?? 0), 0);
   const climbFt = Math.round(climbM * FEET_PER_METER);
+  const humidityPct = weather?.humidity != null ? Math.round(Number(weather.humidity)) : undefined;
 
   // Nothing worth a strip.
-  if (tempF == null && dewPointF == null && hrAvg == null && climbFt <= 0) return undefined;
+  if (tempF == null && dewPointF == null && hrAvg == null && climbFt <= 0 && humidityPct == null) return undefined;
 
   const dewHot = dewPointF != null && dewPointF > DEW_HOT_F;
   const caption =
@@ -151,12 +155,25 @@ export function buildConditions(
       ? `Dew point ${Math.round(dewPointF)}° sits past the ${DEW_HOT_F}° hot threshold — every lap carried a heat adjustment.`
       : undefined;
 
+  // Heat cost as a % of raw pace — the same adj/raw weighted averages
+  // heatAdjHeadline derives, expressed as a percentage instead of a delta.
+  let heatCostPct: number | undefined;
+  if (hasHeatAdj(laps)) {
+    const adj = weightedAvg(laps, (l) => l.heat_adjusted_pace_sec_per_mile);
+    const raw = weightedAvg(laps, (l) => l.avg_pace_sec_per_mile);
+    if (adj != null && raw != null && raw > 0) {
+      heatCostPct = Math.round(((adj - raw) / raw) * 1000) / 10;
+    }
+  }
+
   return {
     tempF: tempF != null ? Math.round(tempF) : 0,
     dewPointF: dewPointF != null ? Math.round(dewPointF) : 0,
     dewHot,
     climbFt,
     hrAvg: hrAvg != null ? Math.round(hrAvg) : 0,
+    heatCostPct,
+    humidityPct,
     startTime,
     caption,
   };
@@ -243,11 +260,13 @@ export function buildSplits(
       bounds.push([startMi, endMi]);
       const raw = weightedAvg(b, (l) => l.avg_pace_sec_per_mile);
       const adj = weightedAvg(b, (l) => l.heat_adjusted_pace_sec_per_mile);
+      const hr = weightedAvg(b, (l) => l.avg_heart_rate);
       splits.push({
         name: `Miles ${Math.round(startMi) + 1}–${Math.round(endMi)}`,
         pace: raw != null ? fmtPaceSec(raw) : null,
         adj: adj != null ? fmtPaceSec(adj) : undefined,
         onTarget: !overBand(raw),
+        hrAvg: hr != null ? Math.round(hr) : undefined,
       });
       startMi = endMi;
     }
@@ -286,6 +305,7 @@ export function buildSplits(
           pace: raw != null ? fmtPaceSec(raw) : null,
           adj: adj != null ? fmtPaceSec(adj) : undefined,
           onTarget: !overBand(raw),
+          hrAvg: l.avg_heart_rate != null ? Math.round(Number(l.avg_heart_rate)) : undefined,
         });
       }
     } else {
@@ -294,11 +314,13 @@ export function buildSplits(
         if (mi <= 0) return;
         const raw = weightedAvg(laps, (l) => l.avg_pace_sec_per_mile);
         const adj = weightedAvg(laps, (l) => l.heat_adjusted_pace_sec_per_mile);
+        const hr = weightedAvg(laps, (l) => l.avg_heart_rate);
         splits.push({
           name: `${name} · ${mi.toFixed(1)} mi`,
           pace: raw != null ? fmtPaceSec(raw) : null,
           adj: adj != null ? fmtPaceSec(adj) : undefined,
           onTarget: true, // warm-up / cool-down aren't measured against the band
+          hrAvg: hr != null ? Math.round(hr) : undefined,
         });
       };
 
@@ -315,6 +337,7 @@ export function buildSplits(
           pace: raw != null ? fmtPaceSec(raw) : null,
           adj: adj != null ? fmtPaceSec(adj) : undefined,
           onTarget: !overBand(raw),
+          hrAvg: l.avg_heart_rate != null ? Math.round(Number(l.avg_heart_rate)) : undefined,
         });
       }
       aggregate(runLaps.slice(lastWork + 1), "Cool-down");

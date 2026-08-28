@@ -1,0 +1,1711 @@
+[
+ {
+  "text": "4 mi @ MP + 2mi @ HM + 1mi fast 4' rec b/t reps",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "hm",
+   "recovery"
+  ],
+  "lightVariant": "4m + 2mi (same paces)"
+ },
+ {
+  "text": "4m + 2mi (same paces)",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "6-7 x mile cutdown (MP > 10k) 2' rec",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 7,
+  "qualityMiles": 7,
+  "zones": [
+   "mp"
+  ],
+  "lightVariant": "5 x mile cutdown"
+ },
+ {
+  "text": "5 x mile cutdown",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "8-10 sets of 3' fast (HM effort)/3' medium (MP+45)",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ],
+  "lightVariant": "6 sets of 3' fast/3' moderate"
+ },
+ {
+  "text": "6 sets of 3' fast/3' moderate",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ]
+ },
+ {
+  "text": "10-12 x K @ HM-5 - 1' rec (rest 4' at halfway)",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 6.8,
+  "qualityMiles": 6.8,
+  "zones": [
+   "hm"
+  ],
+  "lightVariant": "8 x K"
+ },
+ {
+  "text": "7m moderate + 3x3m @ MP w/800 recovery",
+  "sheet": "Fall24",
+  "day": "saturday",
+  "kind": "marathon_pace",
+  "totalMiles": 17.5,
+  "qualityMiles": 9,
+  "zones": [
+   "moderate",
+   "mp"
+  ]
+ },
+ {
+  "text": "20' Progression @MP>HM + 6x800 @ 10k - 90' rec",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "tenK"
+  ],
+  "lightVariant": "20' Progression + 4x800"
+ },
+ {
+  "text": "20' Progression + 4x800",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "2 x 4mi @ MP effort 800m rec",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "marathon_pace",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ],
+  "lightVariant": "4mi + 2x1mi @ HM"
+ },
+ {
+  "text": "4mi + 2x1mi @ HM",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "hm"
+  ]
+ },
+ {
+  "text": "2mi/1mi/2mi/1mi - 2mi (HM) 1mi (10k) 3' rec",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ],
+  "lightVariant": "2mi/1mi/2mi - same paces"
+ },
+ {
+  "text": "4m warmup + 4-6x2m @ MP-5 w/800 float MP+1'",
+  "sheet": "Fall24",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "2mi/1mi/2mi - same paces",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "15' at LT + 3-4 sets of (800m @10k + 200m jog + 600m @ 5k) 2' b/t sets",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "tenK",
+   "fiveK"
+  ],
+  "lightVariant": "15' LT + 2-3 sets"
+ },
+ {
+  "text": "15' LT + 2-3 sets",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold"
+  ]
+ },
+ {
+  "text": "8-12m alternations (MP-10/MP+30)",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ],
+  "lightVariant": "6 miles of alternations"
+ },
+ {
+  "text": "6 miles of alternations",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "7 x mile tempo cutdown (MP > 10k) 1' rest",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 7,
+  "qualityMiles": 7,
+  "zones": [
+   "mp"
+  ],
+  "lightVariant": "5 x mile cutdown (HM > 5k)"
+ },
+ {
+  "text": "5 x mile cutdown (HM > 5k)",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "progression",
+  "totalMiles": 5,
+  "qualityMiles": 5,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "15' LT + 6x1k @ 10k w/90s rest",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "tenK"
+  ],
+  "lightVariant": "15' LT + 4 x 1k @ 10k pace"
+ },
+ {
+  "text": "4-5 x 3m w/.5 float (HM do 4) MP-5",
+  "sheet": "Fall24",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": 17.5,
+  "qualityMiles": 15,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "15' LT + 4 x 1k @ 10k pace",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "tenK"
+  ]
+ },
+ {
+  "text": "10x2' fast/2' moderate",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ],
+  "lightVariant": "Same"
+ },
+ {
+  "text": "4mi @ MP + 4x1mi @ HM-5",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "mp",
+   "hm"
+  ],
+  "lightVariant": "4mi at MP + 2 x 1mi @ HM"
+ },
+ {
+  "text": "4mi at MP + 2 x 1mi @ HM",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "threshold",
+  "totalMiles": 6,
+  "qualityMiles": 6,
+  "zones": [
+   "mp",
+   "hm"
+  ]
+ },
+ {
+  "text": "15' progression + 2 sets of (6 x 400 @ 5k) 1' rest/ 4' b/t sets",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "fiveK"
+  ],
+  "lightVariant": "Same"
+ },
+ {
+  "text": "3m/3m/2m w/800 float - MP/MP-10/MP-20",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "7 x mile cutdown - MP>10k - 90s recovery",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 7,
+  "qualityMiles": 0,
+  "zones": [
+   "recovery"
+  ],
+  "lightVariant": "6 x mile cutdown"
+ },
+ {
+  "text": "3m/2m/3m/2m/3m w/.5 float (3m=MP-5/2m=MP-10)",
+  "sheet": "Fall24",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "6 x mile cutdown",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "3 sets of 4x800 @ 10k pace w/1' rest - 4' rest b/t sets",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "tenK"
+  ],
+  "lightVariant": "2 x 3m @ MP>HM"
+ },
+ {
+  "text": "2 x 3m @ MP>HM",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "progression",
+  "totalMiles": 6,
+  "qualityMiles": 6,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "8-12m alternations MP-10/MP+20",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ],
+  "lightVariant": "2 sets of 4 x 800 @ 10k"
+ },
+ {
+  "text": "2 sets of 4 x 800 @ 10k",
+  "sheet": "Fall24",
+  "day": "tuesday_light",
+  "kind": "other",
+  "totalMiles": 4,
+  "qualityMiles": 4,
+  "zones": [
+   "tenK"
+  ]
+ },
+ {
+  "text": "7-8 x mile @ HM w/1' rest",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "1m WU - 2 x 10m @ MP + 15-25 w/1m float",
+  "sheet": "Fall24",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "20' @ MP > HM + 3-5 x 1200 @ HM-5 - 400m jog",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "easy"
+  ]
+ },
+ {
+  "text": "4 x (10' steady + 2' easy + 2' fast + 2' easy)",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "moderate",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "steady",
+   "easy"
+  ],
+  "lightVariant": "3 sets"
+ },
+ {
+  "text": "5 x 3m w/.5 float MP -5",
+  "sheet": "Fall24",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": 17.5,
+  "qualityMiles": 15,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "8-10m of alternations MP-10/MP+10",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "2mi tempo (MP-5) + 4x400m @ 10k",
+  "sheet": "Fall24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 3,
+  "qualityMiles": 3,
+  "zones": [
+   "mp",
+   "tenK"
+  ]
+ },
+ {
+  "text": "2mi Tempo -5' rec - 3-4 sets of 800 (5k)/300 (mile) - 90' rec",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold"
+  ]
+ },
+ {
+  "text": "6 mile fast progression run - MP+10 -> HM-5",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 6,
+  "qualityMiles": 6,
+  "zones": [
+   "mile"
+  ]
+ },
+ {
+  "text": "4 mi tempo + 6 x 800m @ 10k",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 7,
+  "qualityMiles": 7,
+  "zones": [
+   "threshold",
+   "tenK"
+  ]
+ },
+ {
+  "text": "8-10 x 3' fast/3' medium",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ]
+ },
+ {
+  "text": "Run by feel (fast ~HM pace, medium ~MP+30-50)",
+  "sheet": "Spring24-",
+  "day": "saturday",
+  "kind": "long_run",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": []
+ },
+ {
+  "text": "14m at MP + 15-25s (steady effort)",
+  "sheet": "Spring24-",
+  "day": "saturday",
+  "kind": "moderate",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "steady"
+  ]
+ },
+ {
+  "text": "45'-1hr Hilly Progression Run > MP+30 > MP (3-4 loops)",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp"
+  ],
+  "lightVariant": "Additional notes"
+ },
+ {
+  "text": "4-5 sets of 1200-300 - 10k/mile - 2' rec",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "recovery"
+  ],
+  "lightVariant": "Jan > 1 LR 18-20m"
+ },
+ {
+  "text": "Jan > 1 LR 18-20m",
+  "sheet": "Spring24-",
+  "day": "tuesday_light",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "5 x 3' fast/3' medium + 4x30s fast strides for 3M > 8-10x3' fast/3' medium not racing",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ],
+  "lightVariant": "Feb> 2 LRs - 20-23m"
+ },
+ {
+  "text": "3M Half",
+  "sheet": "Spring24-",
+  "day": "sunday",
+  "kind": "other",
+  "totalMiles": 3,
+  "qualityMiles": 3,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "Feb> 2 LRs - 20-23m",
+  "sheet": "Spring24-",
+  "day": "tuesday_light",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "6mi tempo MP + 4 x 800",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "easy"
+  ]
+ },
+ {
+  "text": "7 x mile cutdown w/90s rec",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "2x4mi @ Marathon Effort - Hilly Course (Lollipop)",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "hills",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "4xMile at 10K + 4x600 w/200j on track - paces 5k > 3k",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 5.5,
+  "qualityMiles": 5.5,
+  "zones": [
+   "tenK",
+   "fiveK"
+  ]
+ },
+ {
+  "text": "16-20k Alternations",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "4 x 2Mi cutdown - 3' rec - MP > HM-10",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "recovery"
+  ]
+ },
+ {
+  "text": "5 sets of 1200/400 - 10k/3k pace 2' rec",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": 5,
+  "qualityMiles": 5,
+  "zones": [
+   "tenK",
+   "threeK"
+  ]
+ },
+ {
+  "text": "7m easy + 2-3 x 4m steady w/1mi recovery - A) 21-22m (3 x4mi at MP+15) B) 18 miles (2 x4mi at MP+5)",
+  "sheet": "Spring24-",
+  "day": "saturday",
+  "kind": "long_run",
+  "totalMiles": 31,
+  "qualityMiles": 24,
+  "zones": [
+   "easy",
+   "mp"
+  ]
+ },
+ {
+  "text": "10-12 x 2' fast/2' easy hilly fartlek",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "10-12K @ HMP>10k 90' rec",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 6.8,
+  "qualityMiles": 6.8,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "4-5x3M w/800m jog at MP",
+  "sheet": "Spring24-",
+  "day": "saturday",
+  "kind": "long_run",
+  "totalMiles": 17.5,
+  "qualityMiles": 15,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "4mi @ MP + 4x1mi @ HMP w/2' rec",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "mp",
+   "hm"
+  ]
+ },
+ {
+  "text": "Eugene- 6m warmup + 10m progression MP+20>MP-10",
+  "sheet": "Spring24-",
+  "day": "saturday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "Progressive Fartlek - (15' at MP) + 3' easy + (10' at HMP) + 3' easy + (5' at 10k )+ 3' easy + (5x1' fast/1' easy)",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "easy",
+   "hm",
+   "tenK"
+  ]
+ },
+ {
+  "text": "Boston squad for Tuesday: 15' at MP + 3' easy + 5 x 1' fast/1' easy",
+  "sheet": "Spring24-",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "easy"
+  ]
+ },
+ {
+  "text": "3M light tempo (MP) + 4 x 200",
+  "sheet": "Spring24-",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "easy"
+  ]
+ },
+ {
+  "text": "3-4 sets of (10' steady + 2' easy + 2' fast + 2' easy)",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "moderate",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "steady",
+   "easy"
+  ]
+ },
+ {
+  "text": "20' progression + 3-4 sets of 600/400 at 5k/3k (1'30 rec)",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "fiveK",
+   "threeK"
+  ]
+ },
+ {
+  "text": "Mabry Miles - 5 x Mile - Tempo effort (HM-5) - 2' rec + 4x400 fast (3k)",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threeK"
+  ]
+ },
+ {
+  "text": "10' LT + 3-4 sets of 1200/300 @ 10k/mile w/2' rec - 4' b/t sets",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "tenK",
+   "mile"
+  ]
+ },
+ {
+  "text": "7mi alternations ( 1m at MP-10/1mi at MP +20)",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": 2,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "8x600m cutdown w90s rec 5k > 3k",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "recovery"
+  ]
+ },
+ {
+  "text": "3m + 2m + 1m - 5' rest - HM/10k/5k",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "4-5 x mile cutdown w/4' rec 10k > 5k",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 5,
+  "qualityMiles": 5,
+  "zones": [
+   "tenK"
+  ]
+ },
+ {
+  "text": "6-8 sets of (3' fast + 3' moderate) HM / MP+30 - heat adjusted",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "moderate",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ]
+ },
+ {
+  "text": "10' at LT + 1600/1200/800/400 - 5k > mile pace",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "easy"
+  ]
+ },
+ {
+  "text": "2 sets of 5xK w/1' rec - tempo effort - 5' b/t sets",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "10' LT + 5 sets of 600/400 w/200j - 5k/3k",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "fiveK",
+   "threeK"
+  ]
+ },
+ {
+  "text": "6-7 x 6' steady + 2' easy - (steady is MP effort)",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "moderate",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "steady",
+   "easy"
+  ]
+ },
+ {
+  "text": "10' LT + 6-8 x 800 @ 10k w/1' rec",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "tenK"
+  ]
+ },
+ {
+  "text": "FALL24 in other tab",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": []
+ },
+ {
+  "text": "LT = Lactate Threshold or 10mi pace",
+  "sheet": "SoS24",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 10,
+  "qualityMiles": 10,
+  "zones": [
+   "threshold"
+  ]
+ },
+ {
+  "text": "6-7xmile threshold",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 7,
+  "qualityMiles": 7,
+  "zones": [
+   "threshold"
+  ]
+ },
+ {
+  "text": "8 x 3' fast/3' medium",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ]
+ },
+ {
+  "text": "8-10 x K at 10k effort",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": 5.6,
+  "qualityMiles": 5.6,
+  "zones": [
+   "tenK"
+  ]
+ },
+ {
+  "text": "7-8m progression run - last 2-3m at HM effort",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 7.5,
+  "qualityMiles": 7.5,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "6-8x 800 + 6-8 x 300 - Austin High",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "intervals",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "10 x 3' fast/3' medium fartlek - Enfield",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ]
+ },
+ {
+  "text": "6-7 x mile w/2' rec (HMP -5) - Camp Mabry",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "2 x 4mi hilly steady - Lollipop",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "hills",
+  "totalMiles": 8,
+  "qualityMiles": 0,
+  "zones": [
+   "steady"
+  ]
+ },
+ {
+  "text": "10-12 x K - Zilker",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "4mi progression (MP>HMP) + 4x800m at 10k",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 6,
+  "qualityMiles": 6,
+  "zones": [
+   "mp",
+   "tenK"
+  ]
+ },
+ {
+  "text": "3 x 3mi @ MP w/.5m recovery",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "marathon_pace",
+  "totalMiles": 10.5,
+  "qualityMiles": 9,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "Tempo K's - 10-12 x K at HM-5 / 90s rest",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": []
+ },
+ {
+  "text": "6-8 x 1200m at HM w/400m float",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": 7,
+  "qualityMiles": 5.2,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "4 x 3 Mi at MP w/800 rec - GN",
+  "sheet": "Fall23",
+  "day": "saturday",
+  "kind": "long_run",
+  "totalMiles": 14,
+  "qualityMiles": 12,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "8-10x800 w/200 j @ 10k",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": 5.6,
+  "qualityMiles": 4.5,
+  "zones": [
+   "tenK"
+  ]
+ },
+ {
+  "text": "10 mi Alternations- (1 mi at MP-10/ 1 mi at MP+30)",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": 2,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "7-8 x mile cutdown MP > 10k w/2' rec",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "8m steady + 3 x 3mi w/1 mi float + 1-2m easy - PD",
+  "sheet": "Fall23",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "steady",
+   "easy"
+  ]
+ },
+ {
+  "text": "10 x 2min fast/ 2min easy",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "2 x 4mi at MP",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "3mi steady + 200s",
+  "sheet": "Fall23",
+  "day": "tuesday",
+  "kind": "moderate",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "steady",
+   "easy"
+  ]
+ },
+ {
+  "text": "6 x mile @ MP/HM w/400 j",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "marathon_pace",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "3m tempo @ MP + 1-2 sets of 4x800 @ 10k pace 1' rest/4' b/t sets",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "tenK"
+  ]
+ },
+ {
+  "text": "6-7 x mile cutdown w/90s rec",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "10-12 x K @ HM-5 w/1' rest",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 6.8,
+  "qualityMiles": 6.8,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "3/3/2 @ MP/MP-10/MP-20",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "marathon_pace",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": []
+ },
+ {
+  "text": "3-4 x 2mi @ HM - 2' recovery",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "20-23m @ MP+30-1'",
+  "sheet": "Spring 25",
+  "day": "saturday",
+  "kind": "marathon_pace",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "https://www.strava.com/routes/3138892083020741640",
+  "sheet": "Spring 25",
+  "day": "sunday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": []
+ },
+ {
+  "text": "2-4 sets of (2k @ MP/2x1k @ HM) 1' rest - 3' b/t sets",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "hm"
+  ]
+ },
+ {
+  "text": "2m tempo + 5-6 sets of 600/400 @ 5k/3k - 200j",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 5.7,
+  "qualityMiles": 5.7,
+  "zones": [
+   "threshold",
+   "fiveK",
+   "threeK"
+  ]
+ },
+ {
+  "text": "7m moderate + 3 x 4M @ MP w/1m float",
+  "sheet": "Spring 25",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": 22,
+  "qualityMiles": 12,
+  "zones": [
+   "moderate",
+   "mp"
+  ]
+ },
+ {
+  "text": "10-12 x 3' fast/2' moderate hilly fartlek",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "moderate"
+  ]
+ },
+ {
+  "text": "5 x 3m @ MP-5 w/.5 recovery",
+  "sheet": "Spring 25",
+  "day": "saturday",
+  "kind": "marathon_pace",
+  "totalMiles": 17.5,
+  "qualityMiles": 15,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "Thu: 7-8 x 1m @ HM w/1' rest - Camp Mabry",
+  "sheet": "Spring 25",
+  "day": "saturday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "15k - 20k alternations",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "Eugene - 15' @ MP + 3 sets of 2k/1k @ HM/10k",
+  "sheet": "Spring 25",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "hm",
+   "tenK"
+  ]
+ },
+ {
+  "text": "10-12 x K HM > MP",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 6.8,
+  "qualityMiles": 6.8,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "1 mi @ tempo + 3 sets of 600/300m",
+  "sheet": "Spring26",
+  "day": "thursday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "easy"
+  ]
+ },
+ {
+  "text": "4-5 x 3mi @ MP-5 w/800 j",
+  "sheet": "Spring26",
+  "day": "saturday",
+  "kind": "marathon_pace",
+  "totalMiles": 17.5,
+  "qualityMiles": 15,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "10' @ tempo @ MP + 2k/16/1200/800/400 (15k > 3k) 400m moderate float",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "threeK"
+  ]
+ },
+ {
+  "text": "2 x 4m tempo @ MP-10",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "7m moderate + 7mi threshold",
+  "sheet": "Spring26",
+  "day": "saturday",
+  "kind": "threshold",
+  "totalMiles": 14,
+  "qualityMiles": 7,
+  "zones": [
+   "moderate",
+   "threshold"
+  ]
+ },
+ {
+  "text": "2-3 sets (2k@HM / 5x400m@5k w/1' rest ) 400m slow jog b/t 2k/400s - ideally 8-12k total",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": 7.5,
+  "qualityMiles": 7.5,
+  "zones": [
+   "hm",
+   "fiveK"
+  ]
+ },
+ {
+  "text": "2m tempo + 8 x 400m @ 10k w/1' rest + 2m tempo (3M will do only through 400s)",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "tenK",
+   "easy"
+  ]
+ },
+ {
+  "text": "1mi tempo + 8 x 200m @ mile + 4-5 x 300m @ 800m pace w/2' rest",
+  "sheet": "Spring26",
+  "day": "thursday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "mile",
+   "easy"
+  ]
+ },
+ {
+  "text": "10-12 x K",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "other",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "4 x 200m strides + 1200m @ 5k + 3 x 400m @ mile +800m @ 3k + 3 x 300m @ 800",
+  "sheet": "Spring26",
+  "day": "thursday",
+  "kind": "strides",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "fiveK",
+   "mile",
+   "threeK"
+  ]
+ },
+ {
+  "text": "7m moderate + 3 x 4m @ MP w/1mi float",
+  "sheet": "Spring26",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": 22,
+  "qualityMiles": 12,
+  "zones": [
+   "moderate",
+   "mp"
+  ]
+ },
+ {
+  "text": "6m fast progression run (MP > HM-5)",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": 6,
+  "qualityMiles": 6,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "15' @ MP + 4-5 x 1200m @ HM/400m moderate float",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "mp",
+   "easy"
+  ]
+ },
+ {
+  "text": "7-10m of 800m @ MP-5/MP+20",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "marathon_pace",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "3 sets of 2k/2 x 1k @ HM/10k - 2'/1' rest",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "4mi warmup + 3/2/3/2/3 - MP/MP-10 - float 800m @ MP+1'",
+  "sheet": "Spring26",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "5-7 sets 5' @ threshold effort/2' moderate",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy"
+  ]
+ },
+ {
+  "text": "15' progression + 2 sets of 1600 @ 10k - 2:30 rest - 4 x 400m @ 5k/45' rest - 2:30 rest",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "progression",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "easy",
+   "tenK"
+  ]
+ },
+ {
+  "text": "7 mi moderate + 4/3/2/1 @ MP w/1mi float @ MP+45/1'",
+  "sheet": "Spring26",
+  "day": "saturday",
+  "kind": "alternation",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "moderate"
+  ]
+ },
+ {
+  "text": "2 x 4mi @ MP-10",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "marathon_pace",
+  "totalMiles": 8,
+  "qualityMiles": 8,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "7-8 x mile w/.25 float @ HM+5",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "alternation",
+  "totalMiles": 10.4,
+  "qualityMiles": 8,
+  "zones": [
+   "hm"
+  ]
+ },
+ {
+  "text": "4 - 5 x 3mi @ MP-5 w/.5mi floats",
+  "sheet": "Spring26",
+  "day": "saturday",
+  "kind": "marathon_pace",
+  "totalMiles": 17.5,
+  "qualityMiles": 15,
+  "zones": [
+   "mp"
+  ]
+ },
+ {
+  "text": "10' tempo + 8 x k @ 10k",
+  "sheet": "Spring26",
+  "day": "tuesday",
+  "kind": "threshold",
+  "totalMiles": null,
+  "qualityMiles": null,
+  "zones": [
+   "threshold",
+   "tenK"
+  ]
+ }
+]

@@ -535,7 +535,18 @@ struct PaceChartView: View {
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2)
                 Spacer()
+
+                Text("From your goal time")
+                    .font(.dripCaption(10))
+                    .foregroundStyle(Color.drip.textTertiary)
             }
+
+            // These are goal-driven what-ifs. They move when the goal time
+            // above changes; the training paces below do not.
+            Text("If you raced the goal above, this is the pace at every distance.")
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             VStack(spacing: 0) {
                 ForEach(PaceChartDistance.allCases) { distance in
@@ -640,11 +651,18 @@ struct PaceChartView: View {
                     .foregroundStyle(Color.drip.textTertiary)
             }
 
+            // Says out loud that this block is anchored to real fitness, so a
+            // changed goal time above not moving these reads as intended, not broken.
+            Text(trainingPacesBasisNote)
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             VStack(spacing: 0) {
                 // Easy (not clickable)
                 trainingPaceRow(
                     name: "Easy",
-                    description: "70-80% MP",
+                    description: "70-80% of current MP",
                     paceRange: formatPaceRangeWithUnit(
                         low: viewModel.trainingPaces["Easy Fast"],
                         high: viewModel.trainingPaces["Easy Slow"]
@@ -669,7 +687,7 @@ struct PaceChartView: View {
                 // Moderate (not clickable)
                 trainingPaceRow(
                     name: "Moderate",
-                    description: "80-90% MP",
+                    description: "80-90% of current MP",
                     paceRange: formatPaceRangeWithUnit(
                         low: viewModel.trainingPaces["Moderate Fast"],
                         high: viewModel.trainingPaces["Moderate Slow"]
@@ -689,7 +707,7 @@ struct PaceChartView: View {
                 // Steady (not clickable)
                 trainingPaceRow(
                     name: "Steady",
-                    description: "90-100% MP",
+                    description: "90-100% of current MP",
                     paceRange: formatPaceRangeWithUnit(
                         low: viewModel.trainingPaces["Steady Fast"],
                         high: viewModel.trainingPaces["Steady Slow"]
@@ -710,8 +728,8 @@ struct PaceChartView: View {
                 // goal-Riegel fallback when the engine has nothing yet.
                 if let mpPace = viewModel.engineZones?.marathon?.pace ?? viewModel.racePaces["marathon"] {
                     trainingPaceRow(
-                        name: "MP",
-                        description: "Marathon Pace",
+                        name: mpRowName,
+                        description: mpRowDescription,
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(mpPace) : PaceCalculator.formatPace(mpPace),
                         adjustedPaceRange: nil,
                         color: Color.drip.coral,
@@ -726,8 +744,8 @@ struct PaceChartView: View {
                 // HMP — engine race anchor or goal-Riegel fallback.
                 if let hmpPace = viewModel.engineZones?.halfMarathon?.pace ?? viewModel.racePaces["half"] {
                     trainingPaceRow(
-                        name: "HMP",
-                        description: "Half Marathon Pace",
+                        name: hmpRowName,
+                        description: hmpRowDescription,
                         paceRange: viewModel.useKilometers ? PaceCalculator.formatPaceKm(hmpPace) : PaceCalculator.formatPace(hmpPace),
                         adjustedPaceRange: nil,
                         color: Color.drip.tired,
@@ -740,6 +758,48 @@ struct PaceChartView: View {
             }
             .background(Color.drip.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
+
+    /// True when the MP row shows the engine's real marathon anchor rather
+    /// than falling back to the goal-time Riegel value. Drives the row name so
+    /// "Current MP" is never shown for a number that came from the goal.
+    private var mpIsFromEngine: Bool {
+        viewModel.engineZones?.marathon?.pace != nil
+    }
+
+    /// Same test for the HMP row.
+    private var hmpIsFromEngine: Bool {
+        viewModel.engineZones?.halfMarathon?.pace != nil
+    }
+
+    private var mpRowName: String {
+        mpIsFromEngine ? "Current MP" : "Goal MP"
+    }
+
+    private var mpRowDescription: String {
+        mpIsFromEngine ? "Marathon pace from your runs" : "Marathon pace from your goal time"
+    }
+
+    private var hmpRowName: String {
+        hmpIsFromEngine ? "Current HMP" : "Goal HMP"
+    }
+
+    private var hmpRowDescription: String {
+        hmpIsFromEngine ? "Half marathon pace from your runs" : "Half marathon pace from your goal"
+    }
+
+    /// One line under the TRAINING PACES header. The chart shows two marathon
+    /// paces at once (goal-derived above, fitness-derived here); this states
+    /// which one this block is, so they don't read as a contradiction.
+    private var trainingPacesBasisNote: String {
+        switch viewModel.trainingPaceSource {
+        case .engine:
+            return "Where your fitness is now. These don't change when you change the goal above."
+        case .goalFallback:
+            return "Derived from your goal time until you've logged enough runs."
+        case .empty:
+            return "Log a few runs and these will fill in."
         }
     }
 
@@ -922,15 +982,15 @@ struct PaceChartView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 // swiftlint:disable:next line_length
-                Text("Race paces are calculated using standard equivalency formulas. Training paces are based on percentage of marathon pace (MP) effort.")
+                Text("Two different things on one screen. Race paces are what-ifs: standard equivalency formulas applied to the goal time you typed. Training paces are your real zones, built from your logged runs — they don't move when the goal changes.")
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
 
-                Text("MP = Marathon Pace")
+                Text("Current MP = your marathon pace now · Goal MP = the pace your goal time asks for")
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
 
-                Text("HMP = Half Marathon Pace")
+                Text("HMP = half marathon pace, same distinction")
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
 

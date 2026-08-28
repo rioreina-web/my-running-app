@@ -231,10 +231,17 @@ struct SessionRollupTests {
 
     @Test("Pace is derived and never renders a :60 second")
     func paceNeverRendersSixtySeconds() {
-        // 6.1 mi in 48 min = 472.13 s/mi. Flooring the minutes and rounding
-        // the remainder independently prints "7:60".
+        // 6.0 mi in 47.96 min = 479.6 s/mi. Flooring the minutes (7) and
+        // rounding the remainder (59.6 → 60) independently prints "7:60"; the
+        // correct carry is "8:00".
+        //
+        // (2026-08-24) The inputs used to be 6.1 mi in 48 min, which is
+        // 472.13 s/mi — it renders "7:52" under both the naive and the correct
+        // formatter, so it never exercised the carry, and the "8:00"
+        // expectation was simply wrong arithmetic. The seconds remainder has
+        // to land in [59.5, 60) for this test to mean anything.
         let s = SessionRollup.sessions(from: [
-            row(at(7, 19, 6, 0), 6.1, 48, "intervals")
+            row(at(7, 19, 6, 0), 6.0, 47.96, "intervals")
         ])[0]
         #expect(mmss(s.paceSeconds) == "8:00")
     }

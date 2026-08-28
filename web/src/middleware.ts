@@ -12,6 +12,16 @@ const PUBLIC_PATHS = ["/", "/blog", "/login", "/reset-password", "/studio"];
 // CREATES the session. Gating it would bounce every confirmation and recovery
 // link to /login with the code unspent.
 
+// Static design mockups served straight out of public/design/*.html. These
+// are self-contained HTML from design-system/ — inline <style>, inline style
+// attributes, and a small skin-toggle script — so the nonce-based CSP below
+// would strip them and render the page unstyled. They stay BEHIND the auth
+// gate (they are not in PUBLIC_PATHS); only the CSP header is skipped, and
+// only for hand-authored static files with no user data in them.
+function isDesignMockup(pathname: string): boolean {
+  return pathname.startsWith("/design/") && pathname.endsWith(".html");
+}
+
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
   if (pathname.startsWith("/blog/")) return true;
@@ -65,6 +75,9 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublicPath(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
+
+  // Auth has already been enforced above. A design mockup renders as authored.
+  if (isDesignMockup(pathname)) return response;
 
   // Set nonce-based CSP — no 'unsafe-inline' or 'unsafe-eval'
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";

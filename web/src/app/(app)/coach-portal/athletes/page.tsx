@@ -1,19 +1,25 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { SectionHeader } from "@/components/ui/section-header";
 import { Card } from "@/components/ui/card";
-import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 import { CoachSetupPrompt } from "@/components/coach/coach-setup-prompt";
-import { AthleteRosterCard, type RosterAthlete } from "@/components/coach/athlete-roster-card";
+import {
+  RosterLedger,
+  RosterAllClear,
+  type RosterRow,
+} from "@/components/coach/roster-ledger";
 
-// Daily-scan dashboard for the coach: card grid of subscribed athletes
-// with mileage trend, pace adherence, and wellness flags.
+// The Desk — the coach's daily scan, and the portal's landing surface.
 //
-// Signals on each card:
-//   - Mileage trend ← training_logs (last 6 weeks, weekly buckets)
+// Signals on each row:
+//   - Mileage trend  ← training_logs (last 6 weeks, weekly buckets)
 //   - Pace adherence ← workout_reconciliations.adjusted_pace_delta_seconds
 //                      rolled up over the last 7 days, quality workouts only
-//   - Wellness flags ← athlete_state (mood, ACWR, injury risk)
+//   - Mood + flags   ← athlete_state (mood, ACWR, injury risk)
+//   - Last run       ← most recent training_logs.workout_date
+//
+// Rows sort attention-first: anyone with a reason to be looked at rises to
+// the top, and the quiet ones collapse to a one-line tail. Every reason is
+// a fact drawn from a column above — the ledger never diagnoses.
 
 export default async function CoachAthletesPage() {
   const supabase = await createClient();
@@ -95,7 +101,7 @@ export default async function CoachAthletesPage() {
   }
 
   // Bulk-fetch the last 6 weeks of training_logs miles per athlete to
-  // power the sparkline. Schema columns are workout_date (timestamptz)
+  // power the volume bars. Schema columns are workout_date (timestamptz)
   // and workout_distance_miles — not date / distance_miles.
   const nowMs = new Date().getTime();
   const sixWeeksAgo = new Date();
@@ -107,8 +113,10 @@ export default async function CoachAthletesPage() {
     .gte("workout_date", sixWeeksAgo.toISOString())
     .order("workout_date", { ascending: true });
 
-  // Group miles into 6 weekly buckets per athlete (oldest → newest).
+  // Group miles into 6 weekly buckets per athlete (oldest → newest), and
+  // track the most recent logged run while we're walking the same rows.
   const milesByAthleteByWeek = new Map<string, number[]>();
+  const lastRunMsByAthlete = new Map<string, number>();
   for (const id of athleteIds) milesByAthleteByWeek.set(id, [0, 0, 0, 0, 0, 0]);
   for (const row of (logs ?? []) as Array<{ user_id: string; workout_date: string; workout_distance_miles: number | null }>) {
     const d = new Date(row.workout_date);
@@ -116,6 +124,9 @@ export default async function CoachAthletesPage() {
     const bucketIdx = 5 - weeksAgo; // 0 = oldest, 5 = current week
     const bucket = milesByAthleteByWeek.get(row.user_id);
     if (bucket && row.workout_distance_miles != null) bucket[bucketIdx] += row.workout_distance_miles;
+
+    const prev = lastRunMsByAthlete.get(row.user_id) ?? 0;
+    if (d.getTime() > prev) lastRunMsByAthlete.set(row.user_id, d.getTime());
   }
 
   // ── Real signal #1: pace adherence ─────────────────────────────────
@@ -133,7 +144,7 @@ export default async function CoachAthletesPage() {
     .in("user_id", athleteIds)
     .gte("created_at", sevenDaysAgo.toISOString());
 
-  const paceByAthlete = new Map<string, RosterAthlete["paceAdherence"]>();
+  const paceByAthlete = new Map<string, RosterRow["paceAdherence"]>();
   const recsForAthlete = new Map<string, number[]>();
   for (const r of (recsRaw ?? []) as Array<{
     user_id: string;
@@ -159,19 +170,18 @@ export default async function CoachAthletesPage() {
     );
   }
 
-  // ── Real signal #2: wellness flags from athlete_state ──────────────
-  // Map athlete_state columns to the WellnessFlag enum the card knows
-  // how to render. The card already supports `fatigue` and `soreness`;
-  // we extend the surface with `injury_risk` and `overreaching` because
-  // those are the highest-signal coaching flags athlete_state actually
-  // computes today. hr_drift / sleep stay reserved for when Vital data
-  // gets wired in.
+  // ── Real signal #2: mood + load flags from athlete_state ───────────
+  // Each attention line names the column it came from and the number in
+  // it. No inference, no diagnosis — the coach reads the fact and makes
+  // the call. `last_mood` additionally drives the mood rule under the
+  // athlete's name; it is the only place the mood ramp appears.
   const { data: statesRaw } = await supabase
     .from("athlete_state")
     .select("user_id, last_mood, mood_trend, acwr, injury_risk_score, active_injuries")
     .in("user_id", athleteIds);
 
-  const wellnessByAthlete = new Map<string, RosterAthlete["wellnessFlags"]>();
+  const moodByAthlete = new Map<string, string | null>();
+  const attentionByAthlete = new Map<string, string[]>();
   for (const s of (statesRaw ?? []) as Array<{
     user_id: string;
     last_mood: string | null;
@@ -180,30 +190,36 @@ export default async function CoachAthletesPage() {
     injury_risk_score: number | null;
     active_injuries: unknown;
   }>) {
-    const flags: RosterAthlete["wellnessFlags"] = [];
+    const reasons: string[] = [];
 
-    const m = (s.last_mood ?? "").toLowerCase();
-    const mt = (s.mood_trend ?? "").toLowerCase();
-    if (m === "tired" || m === "struggling" || mt.includes("declin")) {
-      flags.push("fatigue");
+    const mood = (s.last_mood ?? "").toLowerCase() || null;
+    moodByAthlete.set(s.user_id, mood);
+
+    const trend = (s.mood_trend ?? "").toLowerCase();
+    if (mood === "tired" || mood === "struggling" || trend.includes("declin")) {
+      reasons.push(mood === "struggling" ? "Mood · struggling" : "Mood · declining");
     }
 
     const activeInjuries = Array.isArray(s.active_injuries) ? s.active_injuries : [];
-    if ((s.injury_risk_score ?? 0) >= 5 || activeInjuries.length > 0) {
-      flags.push("injury_risk");
+    if (activeInjuries.length > 0) {
+      reasons.push(
+        `Active injury · ${activeInjuries.length}`
+      );
+    } else if ((s.injury_risk_score ?? 0) >= 5) {
+      reasons.push(`Injury risk · ${s.injury_risk_score}`);
     }
 
     if ((s.acwr ?? 0) > 1.5) {
-      flags.push("overreaching");
+      reasons.push(`ACWR ${Number(s.acwr).toFixed(2)}`);
     }
 
-    wellnessByAthlete.set(s.user_id, flags);
+    attentionByAthlete.set(s.user_id, reasons);
   }
 
-  // Shape data for the card component. Pace adherence + wellness flags
-  // are stubbed deterministically off the athlete id so the prototype
-  // shows variety; the eventual queries will replace these.
-  const roster: RosterAthlete[] = subscriptions.map((s, idx) => {
+  // Shape rows, then add the two signals that come from the log timeline
+  // rather than athlete_state: a quiet athlete and an off-target one both
+  // need the coach, and neither shows up in the columns above.
+  const rows: RosterRow[] = subscriptions.map((s) => {
     const profile = profilesById.get(s.athlete_user_id);
     const displayName = profile?.name?.trim()
       || profile?.email?.split("@")[0]
@@ -215,10 +231,23 @@ export default async function CoachAthletesPage() {
       Math.min(s.plan_template.duration_weeks, Math.ceil((nowMs - planStart.getTime()) / (1000 * 60 * 60 * 24 * 7)))
     );
 
-    const paceAdherence: RosterAthlete["paceAdherence"] =
-      paceByAthlete.get(s.athlete_user_id) ?? "unknown";
-    const wellnessFlags: RosterAthlete["wellnessFlags"] =
-      wellnessByAthlete.get(s.athlete_user_id) ?? [];
+    const paceAdherence = paceByAthlete.get(s.athlete_user_id) ?? "unknown";
+
+    const lastRunMs = lastRunMsByAthlete.get(s.athlete_user_id);
+    const daysSinceLastRun =
+      lastRunMs === undefined
+        ? null
+        : Math.max(0, Math.floor((nowMs - lastRunMs) / (1000 * 60 * 60 * 24)));
+
+    const attention = [...(attentionByAthlete.get(s.athlete_user_id) ?? [])];
+    if (daysSinceLastRun === null) {
+      attention.unshift("No runs logged");
+    } else if (daysSinceLastRun >= 7) {
+      attention.unshift(`${daysSinceLastRun} days quiet`);
+    }
+    if (paceAdherence === "way_off") {
+      attention.push("Pace off target");
+    }
 
     return {
       subscriptionId: s.id,
@@ -228,37 +257,137 @@ export default async function CoachAthletesPage() {
       weeksIn,
       totalWeeks: s.plan_template.duration_weeks,
       mileageTrend: trend,
+      thisWeekMiles: trend[5] ?? 0,
       paceAdherence,
-      wellnessFlags,
+      daysSinceLastRun,
+      mood: moodByAthlete.get(s.athlete_user_id) ?? null,
+      attention,
+      // The athlete's own words belong here, but cleaned_notes is usually
+      // the provider's title ("Morning Run") rather than anything they
+      // said — printing that as a quote would put words in their mouth.
+      // Wire this to the voice-memo transcript, not to notes.
+      lastVoice: null,
     };
   });
 
-  return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      <CoachPortalNav />
+  // Attention first, then most reasons, then quietest.
+  const flagged = rows
+    .filter((r) => r.attention.length > 0)
+    .sort((a, b) => b.attention.length - a.attention.length);
+  const steady = rows.filter((r) => r.attention.length === 0 && r.thisWeekMiles > 0);
+  const clear = rows.filter((r) => r.attention.length === 0 && r.thisWeekMiles === 0);
 
-      <SectionHeader
-        title="Athletes"
-        subtitle={`${roster.length} active ${roster.length === 1 ? "subscription" : "subscriptions"}`}
-      />
+  const totalMiles = rows.reduce((sum, r) => sum + r.thisWeekMiles, 0);
+  const ledgerRows = [...flagged, ...steady];
 
-      {roster.length === 0 ? (
+  if (rows.length === 0) {
+    return (
+      <>
+        <Masthead flaggedCount={0} activeCount={0} totalMiles={0} />
         <Card className="p-8 text-center">
-          <p className="text-[var(--color-text-secondary)]">
+          <p style={{ color: "var(--color-text-secondary)" }}>
             No athletes are subscribed to your plans yet.
           </p>
-          <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
+          <p className="drip-eyebrow mt-2" style={{ color: "var(--color-text-tertiary)" }}>
             Share a plan&rsquo;s join code to onboard your first athlete.
           </p>
         </Card>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {roster.map((athlete) => (
-            <AthleteRosterCard key={athlete.subscriptionId} athlete={athlete} />
-          ))}
-        </div>
-      )}
+      </>
+    );
+  }
 
+  return (
+    <>
+      <Masthead
+        flaggedCount={flagged.length}
+        activeCount={rows.length}
+        totalMiles={totalMiles}
+      />
+
+      <section className="mt-11">
+        <SectionHead
+          eyebrow={`Roster · ${flagged.length > 0 ? "attention first" : "all steady"}`}
+          note="6-week volume, this week's miles, pace against plan."
+        />
+        <RosterLedger rows={ledgerRows} />
+      </section>
+
+      {clear.length > 0 && (
+        <section className="mt-11">
+          <SectionHead
+            eyebrow={`Nothing logged this week · ${clear.length}`}
+            note="No signals, and no runs in the current week."
+          />
+          <RosterAllClear rows={clear} />
+        </section>
+      )}
+    </>
+  );
+}
+
+function Masthead({
+  flaggedCount,
+  activeCount,
+  totalMiles,
+}: {
+  flaggedCount: number;
+  activeCount: number;
+  totalMiles: number;
+}) {
+  // The dek states the count and nothing else. A headline names the surface;
+  // it does not editorialise it.
+  const dek =
+    flaggedCount === 0
+      ? "No athlete is flagged for a decision."
+      : `${flaggedCount} ${flaggedCount === 1 ? "athlete needs" : "athletes need"} a decision.`;
+
+  return (
+    <header className="flex flex-wrap items-end justify-between gap-8 pb-[6px] pt-[34px]">
+      <div>
+        <h1 className="drip-display text-[46px]">The desk</h1>
+        <p
+          className="mt-[9px] text-[15px] italic"
+          style={{ fontFamily: "var(--font-accent)", color: "var(--color-text-secondary)" }}
+        >
+          {dek}
+        </p>
+      </div>
+      <div className="flex gap-[30px]">
+        <Tally n={flaggedCount} label="Flagged" red={flaggedCount > 0} />
+        <Tally n={activeCount} label="Active" />
+        <Tally n={Math.round(totalMiles)} label="Miles this wk" />
+      </div>
+    </header>
+  );
+}
+
+function Tally({ n, label, red = false }: { n: number; label: string; red?: boolean }) {
+  return (
+    <div>
+      <span
+        className="drip-stat block text-[27px] leading-none"
+        style={red ? { color: "var(--red-text)" } : undefined}
+      >
+        {n}
+      </span>
+      <span className="drip-eyebrow mt-[6px] block">{label}</span>
+    </div>
+  );
+}
+
+function SectionHead({ eyebrow, note }: { eyebrow: string; note: string }) {
+  return (
+    <div
+      className="flex items-baseline justify-between gap-3 pb-2"
+      style={{ borderBottom: "2px solid var(--rule-strong)" }}
+    >
+      <span className="drip-eyebrow">{eyebrow}</span>
+      <span
+        className="hidden text-[12.5px] italic sm:block"
+        style={{ fontFamily: "var(--font-accent)", color: "var(--color-text-tertiary)" }}
+      >
+        {note}
+      </span>
     </div>
   );
 }

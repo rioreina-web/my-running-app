@@ -147,6 +147,62 @@ const SERVER_ONLY_FUNCTIONS: Record<string, string> = {
  * verification) BEFORE we add user-keyed rate limits. Tracked as a
  * follow-up in TASKS.md (W2.3-follow-up).
  */
+/**
+ * Surfaces deliberately UNBOUND for the beta — they import and call the
+ * limiters, but a module-level `UNBOUND_USAGE = true` short-circuits the call
+ * so the surface never refuses a question while it is the thing being lived
+ * on (ask/index.ts, 2026-08-10).
+ *
+ * These are NOT in LLM_FUNCTIONS_RATE_LIMITED on purpose. Pinning them there
+ * would pass — the calls are present in the source the regex reads — while the
+ * runtime skips them, which is a green test asserting something false. The
+ * exemption is recorded here instead so the hole is greppable, and the
+ * tripwire test below keeps the re-bind a one-line flip rather than a rewrite.
+ *
+ * ⚠️  RE-BIND BEFORE ANY EXTERNAL USER. Both flags to `false`; then move the
+ *     entry into LLM_FUNCTIONS_RATE_LIMITED with its bucket.
+ */
+const UNBOUND_BETA_SURFACES: Record<string, { feature: string; reason: string }> = {
+  ask: {
+    feature: "analysis",
+    reason:
+      "UNBOUND_USAGE (ask/index.ts, 2026-08-10) skips the daily bucket and the " +
+      "monthly cap on Layer 2 narration. Layer 1 analyzers and chips are " +
+      "computed-only and were always free.",
+  },
+};
+
+Deno.test("unbound beta surfaces still carry the wiring to re-bind in one line", async () => {
+  for (const [fn, { feature }] of Object.entries(UNBOUND_BETA_SURFACES)) {
+    const src = await Deno.readTextFile(`${FUNCTIONS_DIR}${fn}/index.ts`);
+
+    assert(
+      /const\s+UNBOUND_USAGE\s*=\s*(true|false)/.test(src),
+      `${fn} is listed in UNBOUND_BETA_SURFACES but has no module-level ` +
+        `UNBOUND_USAGE constant. Either restore the flag or move ${fn} into ` +
+        `LLM_FUNCTIONS_RATE_LIMITED — the exemption only makes sense while the ` +
+        `flag is what is switching the limiter off.`,
+    );
+
+    // The limiter calls must still be present, so flipping the flag is enough.
+    const featureRe = new RegExp(
+      `(?:enforceFeatureRateLimit|checkFeatureRateLimit)\\s*\\(` +
+        `[^)]*?["']${feature}["']`,
+    );
+    assert(
+      featureRe.test(src),
+      `${fn} no longer calls enforceFeatureRateLimit(userId, "${feature}", ...). ` +
+        `An unbound surface must keep its wiring — otherwise flipping ` +
+        `UNBOUND_USAGE to false silently restores nothing.`,
+    );
+    assert(
+      new RegExp(`enforceMonthlyCap\\s*\\([^)]*?["']${feature}["']`).test(src),
+      `${fn} no longer calls enforceMonthlyCap(userId, "${feature}", ...). ` +
+        `Same reason: the re-bind must stay a one-line flip.`,
+    );
+  }
+});
+
 const AUTH_PATTERN_AUDIT_PENDING: Record<string, string> = {
   // All previously-pending functions audited and gated in W2.3-follow-up:
   //   - process-check-in       → SERVER_ONLY_FUNCTIONS (requireServiceRole)
@@ -263,6 +319,7 @@ Deno.test("no LLM-calling function is silently un-rate-limited", async () => {
   const pinned = new Set(LLM_FUNCTIONS_RATE_LIMITED.map((r) => r.fn));
   const audit  = new Set(Object.keys(AUTH_PATTERN_AUDIT_PENDING));
   const serverOnly = new Set(Object.keys(SERVER_ONLY_FUNCTIONS));
+  const unbound    = new Set(Object.keys(UNBOUND_BETA_SURFACES));
 
   const offenders: string[] = [];
 
@@ -274,7 +331,8 @@ Deno.test("no LLM-calling function is silently un-rate-limited", async () => {
 
     if (
       pinned.has(entry.name) || audit.has(entry.name) ||
-      serverOnly.has(entry.name) || cutPending.has(entry.name)
+      serverOnly.has(entry.name) || cutPending.has(entry.name) ||
+      unbound.has(entry.name)
     ) {
       continue;
     }

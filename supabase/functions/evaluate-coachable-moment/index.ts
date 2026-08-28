@@ -49,7 +49,8 @@ const TRAINING_LOG_FIELDS =
   "cleaned_notes, coach_insight, " +
   "weather_actual, weather_adjusted_pace_delta_seconds_per_mile";
 
-const SCHEDULED_WORKOUT_FIELDS = "id, date, status, workout_type";
+const SCHEDULED_WORKOUT_FIELDS =
+  "id, date, status, workout_type, skip_cause, skip_cause_source, skip_cause_confidence";
 
 /** Returns the Monday-of-this-week at 00:00 UTC for the given reference date. */
 function startOfIsoWeek(now: Date): Date {

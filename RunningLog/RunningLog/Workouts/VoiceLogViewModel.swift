@@ -130,6 +130,18 @@ final class VoiceLogViewModel {
                 insertData.userId = userId
                 insertData.processingStatus = "pending"
                 insertData.source = "voice_log"
+                // ALWAYS stamp workout_date, even with no run selected. A NULL
+                // here is not a harmless blank: four separate matchers key on
+                // it — the sibling-GPS merge in process-training-memo, the
+                // orphan lookup + pickBestOrphan in strava-sync, and the
+                // journal's `order(workout_date, nullsFirst: false)` — so a
+                // NULL-dated memo can never be reconciled with the run it
+                // describes AND sinks to the bottom of the journal. That is
+                // how 2026-08-24's memo silently detached from that morning's
+                // Strava 10-miler. The recording time is the best available
+                // proxy: a memo is recorded in the same session as the run,
+                // which is exactly the ±4h window the matchers use.
+                insertData.workoutDate = Date()
                 if let workout = selectedWorkout {
                     insertData.workoutDate = workout.startDate
                     insertData.workoutDistanceMiles = workout.distanceMiles
@@ -328,6 +340,9 @@ final class VoiceLogViewModel {
             // branch (no audio). Was "not_required", which skipped all parsing.
             insertData.processingStatus = "pending"
             insertData.source = "voice_log"
+            // Same reason as the audio path: never leave workout_date NULL, or
+            // the note detaches from its run and sinks in the journal.
+            insertData.workoutDate = Date()
             if let workout = selectedWorkout {
                 insertData.workoutDate = workout.startDate
                 insertData.workoutDistanceMiles = workout.distanceMiles

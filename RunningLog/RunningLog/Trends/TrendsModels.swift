@@ -131,10 +131,9 @@ struct TrendsDay: Identifiable {
     /// re-imputed server-side. 0 on a rest day.
     var durationMin: Int? = nil
     /// The real per-workout internal-load unit, summed over the day's runs.
-    /// `nil` until the `20260731120000` backfill runs — which is why
-    /// `TrendsRecoveryDemand` carries a fallback ladder rather than assuming
-    /// this is present. Never 0-for-missing: a zero-load day and an
-    /// unmeasured day are different facts.
+    /// `nil` until the `20260731120000` backfill runs, so any consumer needs
+    /// a fallback rather than assuming this is present. Never 0-for-missing:
+    /// a zero-load day and an unmeasured day are different facts.
     var stressLoad: Double? = nil
 
     // Per-zone breakdown of the day (additive, 2026-08-10). Source:

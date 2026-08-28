@@ -109,6 +109,9 @@ struct RunningLogApp: App {
 struct MainTabView: View {
     @Environment(NetworkMonitor.self) private var networkMonitor
     @Environment(\.scenePhase) private var scenePhase
+    /// Guards the foreground refresh so it doesn't fire on the launch
+    /// transition, when the launch task is already fetching.
+    @State private var didInitialRunsFetch = false
     @State private var selectedTab = 0
     /// Latches the first time Ask (tag 10) is opened. See the tab-10
     /// branch below — `CoachView` acts on appear, so it must not be
@@ -332,14 +335,18 @@ struct MainTabView: View {
                     // re-asked by the probe path, so the overnight trio would
                     // stay unrequested and silently empty. One-time top-up.
                     await HealthKitManager.shared.ensureAuthorizationCoversCurrentTypes()
-                    let hkWorkouts = await HealthKitManager.shared.fetchRecentRunningWorkouts(limit: 30)
-                    // Publish for the Log tab's workout picker — this is the
-                    // one HealthKit fetch at launch. VoiceLogView reads this
-                    // instead of re-requesting auth + refetching on appear
-                    // (the duplicate cost ~2 concurrent auth prompts + a
-                    // second query on the launch critical path).
-                    await MainActor.run {
-                        HealthKitManager.shared.recentWorkouts = hkWorkouts
+                    // Publishes BOTH lists: `recentRuns` (HealthKit + Vital
+                    // + Strava, merged — what every athlete-facing surface
+                    // reads) and `recentWorkouts` (raw HealthKit — what the
+                    // sync below must use). One fetch at launch; views read
+                    // the published result instead of re-requesting auth on
+                    // appear (the duplicate cost ~2 concurrent auth prompts).
+                    await HealthKitManager.shared.refreshRecentRuns(limit: 30)
+                    // HealthKit-only on purpose: syncUnloggedWorkouts writes
+                    // its input into training_logs, and the Strava rows in the
+                    // merged list are already there.
+                    let hkWorkouts = await MainActor.run {
+                        HealthKitManager.shared.recentWorkouts
                     }
                     if !hkWorkouts.isEmpty {
                         await WorkoutSyncService().syncUnloggedWorkouts(workouts: hkWorkouts)
@@ -367,6 +374,18 @@ struct MainTabView: View {
                     // exists; never triggers a paid LLM generation. See
                     // DailyReadService.refresh(generateIfMissing:).
                     Task { try? await DailyReadService.shared.refresh() }
+                    // Pick up runs that landed while the app was backgrounded.
+                    // iOS almost never kills a suspended app, so without this
+                    // the recent-runs list could sit days out of date — which
+                    // is exactly how a run showed in the journal feed but not
+                    // in the Log tab's linked-run block (2026-08-24).
+                    // Skipped on the first .active so it can't race the launch
+                    // task's own fetch above.
+                    if didInitialRunsFetch {
+                        Task { await HealthKitManager.shared.refreshRecentRuns() }
+                    } else {
+                        didInitialRunsFetch = true
+                    }
                 }
             }
 

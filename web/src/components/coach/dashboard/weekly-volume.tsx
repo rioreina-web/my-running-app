@@ -85,8 +85,8 @@ export function WeeklyVolume({ weeks }: { weeks: WeeklyVolumeWeek[] }) {
 
   return (
     <div>
-      <div className="my-2 grid grid-cols-3 gap-2.5">
-        <Tile label="This week" value={`${curTotal}`} unit="mi" sub={`target ${cur.targetMiles}`} />
+      <div className="my-3 grid grid-cols-3">
+        <Tile label="Target" value={`${cur.targetMiles}`} unit="mi" sub="this week" />
         <Tile
           label="Vs. prior"
           value={`${delta >= 0 ? "+" : ""}${delta}`}
@@ -189,7 +189,7 @@ export function WeeklyVolume({ weeks }: { weeks: WeeklyVolumeWeek[] }) {
 
 function Tile({ label, value, unit, sub }: { label: string; value: string; unit: string; sub: string }) {
   return (
-    <div className="rounded-[9px] bg-bg-elevated px-3.5 py-3">
+    <div className="border-r border-divider py-1 pr-4 last:border-r-0">
       <div className="font-mono text-[9px] uppercase tracking-[0.1em] text-text-tertiary">{label}</div>
       <div className="mt-1 font-mono text-[21px] font-semibold tabular-nums text-text-primary">
         {value}

@@ -6,6 +6,7 @@ import {
   derivePaceTableFromGoal,
   headlineZone,
   nearestZoneKey,
+  parsePaceSecPerMile,
   totalWorkoutMiles,
   workoutZoneLabel,
   zoneLabelShort,
@@ -17,6 +18,13 @@ import type {
   CoachableMoment,
   DashboardData,
   DashboardDay,
+  BlockStats,
+  KeySessionMark,
+  LastKeySession,
+  LatestFact,
+  LatestSession,
+  LatestSplit,
+  StressLoad,
   Mood,
   MoodSummary,
   NiggleGroup,
@@ -50,12 +58,40 @@ interface LogRow {
   workout_type: string | null;
   mood: string | null;
   cleaned_notes: string | null;
+  /** Prescription/description text — NOT the `workout_notes` table (that's a
+   *  separate note/run-split project that nothing reads yet). */
+  workout_notes: string | null;
   // Enrichment (P1) — all best-effort; a missing column degrades one block.
   workout_duration_minutes: number | null;
-  scheduled_workout_id: string | null;
   weather_actual: Record<string, unknown> | null;
-  start_time: string | null;
+  /** Weighted minutes for this session. Null until the scorer has run. */
+  stress_load: number | null;
+  effort_load: number | null;
+  density_pct: number | null;
 }
+/**
+ * One reconciliation — the prescribed-vs-actual verdict for a single log.
+ * `adjusted_pace_delta_seconds` is HEAT-ADJUSTED, and that is the one we
+ * render: an athlete 10 s/mi slow in 80°F dew has not slipped, and the raw
+ * delta would say they had. Same source the roster's pace adherence uses.
+ */
+interface ReconRow {
+  training_log_id: string;
+  scheduled_workout_id: string | null;
+  target_pace_seconds_per_mile: number | null;
+  actual_pace_seconds_per_mile: number | null;
+  adjusted_target_pace_seconds: number | null;
+  adjusted_pace_delta_seconds: number | null;
+  hit_target: boolean | null;
+}
+
+/** Newest plan edit, for "last plan change" on the block strip. */
+interface PlanAdjRow {
+  action_type: string | null;
+  trigger_type: string | null;
+  applied_at: string | null;
+}
+
 interface PlanRow {
   id: string;
   name: string;
@@ -127,6 +163,7 @@ interface SettingsRow {
   display_name: string | null;
   bio: string | null;
   avatar_path: string | null;
+  timezone: string | null;
 }
 interface ReadRow {
   training_log_id: string;
@@ -230,6 +267,24 @@ const dateLabel = (dt: Date) => `${MONTHS[dt.getMonth()]} ${dt.getDate()}`;
 const dowLabel = (dt: Date) => DOWS[dt.getDay()];
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const trimMiles = (mi: number) => (Number.isInteger(mi) ? `${mi}` : mi.toFixed(1));
+
+/** Signed seconds-per-mile vs target, as a label. Null stays null — "no
+ *  verdict yet" and "on pace" are different answers and must not collapse. */
+const deltaLabel = (sec: number | null): string | null => {
+  if (sec == null) return null;
+  const r = Math.round(sec);
+  if (r === 0) return "on pace";
+  return `${r > 0 ? "+" : "\u2212"}${Math.abs(r)} s/mi`;
+};
+
+/** mm:ss from seconds per mile. Named to avoid shadowing the local
+ *  `paceLabel` inside assembleKeyDetail. */
+const fmtPaceLabel = (sec: number | null | undefined): string | undefined => {
+  if (sec == null) return undefined;
+  const t = Math.round(Number(sec));
+  if (!Number.isFinite(t) || t <= 0) return undefined;
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+};
 const numMiles = (v: number | null) => Number(v ?? 0);
 function fmtHMS(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -245,9 +300,19 @@ function mondayOf(dt: Date): Date {
 }
 const zoneOf = (type: string | null): PaceZone | null => WORKOUT_ZONE[type ?? "easy"] ?? "easy";
 const typeLabel = (type: string | null) => TYPE_LABEL[type ?? "easy"] ?? cap(type ?? "easy");
+// Side-from-quote fallback (trap §4.3): the extractor often leaves `side`
+// NULL even when the athlete plainly said "left"/"right". This surfaces a
+// literal word already in their own quote — not an inference — before
+// falling back to no side prefix.
+function sideFromQuote(quote: string): string | null {
+  if (/\bleft\b/i.test(quote)) return "left";
+  if (/\bright\b/i.test(quote)) return "right";
+  return null;
+}
 function niggleArea(m: MentionRow): string {
   const area = cap(m.body_area.replace(/_/g, " "));
-  return m.side ? `${cap(m.side)} ${area.toLowerCase()}` : area;
+  const side = m.side ?? sideFromQuote(m.verbatim_quote);
+  return side ? `${cap(side)} ${area.toLowerCase()}` : area;
 }
 function prettyRule(id: string): string {
   return id.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -290,7 +355,7 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
       supabase
         .from("training_logs")
         .select(
-          "id, workout_date, workout_distance_miles, workout_pace_per_mile, workout_type, mood, cleaned_notes, workout_duration_minutes, scheduled_workout_id, weather_actual, start_time",
+          "id, workout_date, workout_distance_miles, workout_pace_per_mile, workout_type, mood, cleaned_notes, workout_notes, workout_duration_minutes, weather_actual, stress_load, effort_load, density_pct",
         )
         .eq("user_id", athleteId)
         .gte("workout_date", sinceISO)
@@ -339,7 +404,11 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
     // athlete_state / body_mentions are read above (athlete_settings SELECT is
     // owner-only, so the coach's cookie client wouldn't see it).
     safe<SettingsRow>(
-      admin.from("athlete_settings").select("display_name, bio, avatar_path").eq("user_id", athleteId).maybeSingle(),
+      admin
+        .from("athlete_settings")
+        .select("display_name, bio, avatar_path, timezone")
+        .eq("user_id", athleteId)
+        .maybeSingle(),
     ),
   ]);
 
@@ -359,10 +428,29 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
       )) ?? []
     : [];
 
+  // Prescribed-vs-actual verdicts, keyed by training_log_id. This is what
+  // fills the log's "vs plan" column and the whole key-session strip — until
+  // now `delta` was hardcoded null and no band could answer "did it land?".
+  const recons = logIds.length
+    ? (await safe<ReconRow[]>(
+        supabase
+          .from("workout_reconciliations")
+          .select(
+            "training_log_id, scheduled_workout_id, target_pace_seconds_per_mile, actual_pace_seconds_per_mile, adjusted_target_pace_seconds, adjusted_pace_delta_seconds, hit_target",
+          )
+          .eq("user_id", athleteId)
+          .in("training_log_id", logIds),
+      )) ?? []
+    : [];
+  const reconByLogId = new Map<string, ReconRow>();
+  for (const r of recons) reconByLogId.set(r.training_log_id, r);
+
   // Prescriptions for the linked scheduled_workouts — batched by id (spec §3
-  // row 1). Read through the RLS cookie client (coach-scoped, same as logs).
+  // row 1). There is no scheduled_workout_id column on training_logs; the
+  // only path from a log to its prescription is via workout_reconciliations
+  // above. Read through the RLS cookie client (coach-scoped, same as logs).
   const scheduledIds = Array.from(
-    new Set(logs.map((l) => l.scheduled_workout_id).filter((v): v is string => !!v)),
+    new Set(recons.map((r) => r.scheduled_workout_id).filter((v): v is string => !!v)),
   );
   const scheduled = scheduledIds.length
     ? (await safe<ScheduledRow[]>(
@@ -374,6 +462,19 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
     : [];
   const scheduledById = new Map<string, ScheduledRow>();
   for (const s of scheduled) scheduledById.set(s.id, s);
+
+  // Newest plan edit — athlete shift or coach rewrite, whichever is latest.
+  // select("*") on purpose: several columns are still pending a db push and a
+  // named select would error the whole query rather than degrade one line.
+  const planAdjs =
+    (await safe<PlanAdjRow[]>(
+      supabase
+        .from("plan_adjustments")
+        .select("*")
+        .eq("user_id", athleteId)
+        .order("applied_at", { ascending: false })
+        .limit(1),
+    )) ?? [];
 
   // Cached coach reads (the AI observation), keyed by training_log_id. Written
   // only by the coach-workout-read edge function; read here through the admin
@@ -577,24 +678,21 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
     return den > 0 ? num / den : null;
   };
 
-  const fmtStart = (t: string | null): string | undefined => {
-    if (!t) return undefined;
-    let hh: number;
-    let mm: number;
-    if (t.includes("T")) {
-      const dtp = new Date(t);
-      if (Number.isNaN(dtp.getTime())) return undefined;
-      hh = dtp.getHours();
-      mm = dtp.getMinutes();
-    } else {
-      const m = t.match(/^(\d{1,2}):(\d{2})/);
-      if (!m) return undefined;
-      hh = Number(m[1]);
-      mm = Number(m[2]);
-    }
-    const ampm = hh >= 12 ? "PM" : "AM";
-    const h12 = ((hh + 11) % 12) + 1;
-    return `${h12}:${String(mm).padStart(2, "0")} ${ampm}`;
+  // `training_logs` has no separate start_time column — workout_date is
+  // TIMESTAMPTZ and carries the real clock time. Convert to the athlete's own
+  // zone when athlete_settings.timezone is on file; otherwise label the time
+  // as UTC rather than silently rendering UTC as if it were local.
+  const athleteTimeZone = settings?.timezone || undefined;
+  const fmtStart = (workoutDate: string): string | undefined => {
+    const dtp = new Date(workoutDate);
+    if (Number.isNaN(dtp.getTime())) return undefined;
+    const formatted = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: athleteTimeZone ?? "UTC",
+    }).format(dtp);
+    return athleteTimeZone ? formatted : `${formatted} UTC`;
   };
 
   // Assemble the enriched drill-down for one key day. Every block is
@@ -611,7 +709,8 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
   }): WorkoutDetail {
     const { primary, totalMiles, fallbackSplits, dt, iso, hasNiggle } = args;
     const primaryLaps = (lapsByWorkout.get(primary.id) ?? []) as unknown as EnrichLap[];
-    const sched = primary.scheduled_workout_id ? scheduledById.get(primary.scheduled_workout_id) : undefined;
+    const primaryScheduledId = reconByLogId.get(primary.id)?.scheduled_workout_id;
+    const sched = primaryScheduledId ? scheduledById.get(primaryScheduledId) : undefined;
     const prescribed = buildPrescribed(sched?.workout_data ?? null, totalMiles, athletePaces);
     const band = parseBand(prescribed?.window);
     const plannedMi = prescribed?.distance ?? totalMiles;
@@ -635,7 +734,7 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
       heatAdj,
     });
 
-    const conditions = buildConditions(primaryLaps, primary.weather_actual, fmtStart(primary.start_time));
+    const conditions = buildConditions(primaryLaps, primary.weather_actual, fmtStart(primary.workout_date));
 
     // Chart band: prescription window when present, else collapse to the run's
     // weighted average (an invisible band — no false target).
@@ -709,6 +808,16 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
 
     const cachedRead = readByLogId.get(primary.id);
 
+    // "The session as written" — the prescription/description COLUMN
+    // (training_logs.workout_notes), a machine reading, not the athlete's
+    // memo (cleaned_notes, rendered separately in .drip-voice).
+    const sessionAsWritten = primary.workout_notes?.trim() || undefined;
+    const effortParts: string[] = [];
+    if (primary.effort_load != null) effortParts.push(`Effort load ${Math.round(Number(primary.effort_load))}`);
+    if (primary.density_pct != null) effortParts.push(`density ${Number(primary.density_pct).toFixed(1)}%`);
+    if (primary.stress_load != null) effortParts.push(`stress ${Math.round(Number(primary.stress_load))}`);
+    const effortLine = effortParts.length ? effortParts.join(" · ") : undefined;
+
     return {
       kpis,
       verdictTitle: prescribed
@@ -716,6 +825,8 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
         : undefined,
       splitLabel: splitBlock.splitLabel,
       splits: splitBlock.splits,
+      sessionAsWritten,
+      effortLine,
       prescribed,
       conditions,
       chart,
@@ -727,6 +838,16 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
 
   // 35-day window ending on the most recent logged day (or today).
   const endDate = logs.length ? parseDate(logs[logs.length - 1].workout_date) : new Date();
+  // The most recent date with an actual run. Drives §01's lede and tells the
+  // loop to enrich that day even when it is not a key session.
+  const latestLoggedISO = (() => {
+    for (let i = logs.length - 1; i >= 0; i -= 1) {
+      const l = logs[i];
+      if (numMiles(l.workout_distance_miles) > 0) return l.workout_date;
+    }
+    return null;
+  })();
+
   const days: DashboardDay[] = [];
   const dateToDayId = new Map<string, string>();
 
@@ -752,7 +873,8 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
       ? zonesPresent.slice().sort((a, b) => ZONE_RANK[b] - ZONE_RANK[a])[0]
       : null;
     const primary = runLogs.slice().sort((a, b) => numMiles(b.workout_distance_miles) - numMiles(a.workout_distance_miles))[0];
-    const mood: Mood = primary && primary.mood && MOODS.has(primary.mood as Mood) ? (primary.mood as Mood) : "neutral";
+    const moodLogged = Boolean(primary && primary.mood && MOODS.has(primary.mood as Mood));
+    const mood: Mood = moodLogged ? (primary!.mood as Mood) : "neutral";
     const mention = mentionByDate.get(iso);
     const niggle = mention ? { area: niggleArea(mention), quote: mention.verbatim_quote } : null;
     // A day is key by the ONE definition: what the athlete said, else what the
@@ -775,6 +897,14 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
     });
     const sessions = runLogs.length;
 
+    // Weighted-minutes stress load for the day — Train's per-day/week Load
+    // column. Distinct from `dayLoad` above (quality_load, the key-session
+    // stimulus threshold) — this is training_logs.stress_load, summed.
+    const stressScored = runLogs
+      .map((l) => l.stress_load)
+      .filter((v): v is number => v != null);
+    const dayStressLoad = stressScored.length ? stressScored.reduce((a, b) => a + b, 0) : undefined;
+
     const id = dayLogs[0]?.id ?? `rest-${iso}`;
     dateToDayId.set(iso, id);
 
@@ -795,6 +925,20 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
       onTarget: true,
     }));
 
+    // Prescribed vs actual, heat-adjusted. `delta` was hardcoded null before
+    // this — every band that claims to answer "did it land?" reads it.
+    const recon = primary ? reconByLogId.get(primary.id) : undefined;
+    const deltaSec =
+      recon?.adjusted_pace_delta_seconds != null
+        ? Number(recon.adjusted_pace_delta_seconds)
+        : null;
+    const dayOnTarget =
+      recon?.hit_target != null ? recon.hit_target : deltaSec != null ? deltaSec <= 0 : false;
+
+    // The lede needs splits and conditions, and the most recent run is usually
+    // an easy day — which never qualified for enrichment. Enrich it too.
+    const isLatestLogged = !isRest && iso === latestLoggedISO;
+
     days.push({
       id,
       date: iso,
@@ -805,15 +949,18 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
       zoneMiles,
       miles: totalMiles,
       actual,
-      delta: null,
-      onTarget: false,
+      delta: deltaLabel(deltaSec),
+      onTarget: dayOnTarget,
       key: key && !isRest,
       mood,
+      moodLogged: isRest ? undefined : moodLogged,
       niggle,
       note: (primary?.cleaned_notes ?? "").trim(),
       logged,
+      load: dayStressLoad,
+      sessions,
       detail:
-        key && !isRest
+        (key || isLatestLogged) && !isRest
           ? assembleKeyDetail({
               primary,
               totalMiles,
@@ -873,11 +1020,19 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
         latestDate: dateLabel(parseDate(latest.mentioned_at)),
         latestQuote: latest.verbatim_quote,
         otherDates: list.slice(0, -1).map((x) => dateLabel(parseDate(x.mentioned_at))),
+        quotes: list.map((m) => ({
+          date: m.mentioned_at.slice(0, 10),
+          dateLabel: dateLabel(parseDate(m.mentioned_at)),
+          quote: m.verbatim_quote,
+        })),
         recurrence: list.length >= 3,
         linkDayId: dateToDayId.get(latest.mentioned_at.slice(0, 10)),
       };
     })
-    .sort((a, b) => b.mentions - a.mentions);
+    // Newest-mentioned area first (spec §2.3) — not mentions desc, so a
+    // single fresh mention in a new area doesn't get buried under an old
+    // cluster's tally.
+    .sort((a, b) => b.quotes[b.quotes.length - 1].date.localeCompare(a.quotes[a.quotes.length - 1].date));
 
   // ── mood (per day; unlogged days render faint, excluded from the mix) ──
   const strip = days.slice(-28).map((d) => ({
@@ -1034,6 +1189,222 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
       }))
     : undefined;
 
+  // ── §01 the lede, §02 key sessions, §03 the block, §05 stress ──────────
+  //
+  // All four are derived from data already in scope. Every one degrades to
+  // undefined rather than to a zero — "not scored yet" and "zero" are
+  // different answers and the UI must be able to tell them apart.
+
+  const runDays = days.filter((d) => d.logged !== false && d.zone !== null);
+  const latestDay = runDays.length ? runDays[runDays.length - 1] : undefined;
+
+  const latest: LatestSession | undefined = latestDay
+    ? (() => {
+        const det = latestDay.detail;
+        const cond = det?.conditions;
+        const facts: LatestFact[] = [];
+        facts.push({ label: "Distance", value: trimMiles(latestDay.miles), unit: "mi" });
+        for (const k of det?.kpis ?? []) {
+          if (facts.length >= 5) break;
+          if (k.k.toLowerCase() === "distance") continue; // already the first fact
+          facts.push({ label: k.k, value: k.v, unit: k.sub });
+        }
+        // Same fallback as the fixture path: an unenriched day still states
+        // its pace rather than showing a lone Distance cell.
+        const paceHit = /\u00B7\s*([0-9]{1,2}:[0-9]{2})\/mi/.exec(latestDay.actual ?? "");
+        if (facts.length < 2 && paceHit) {
+          facts.push({ label: "Pace", value: paceHit[1], unit: "/mi" });
+        }
+        if (facts.length < 5 && cond?.hrAvg) {
+          facts.push({ label: "Avg HR", value: String(cond.hrAvg), unit: "bpm" });
+        }
+        if (facts.length < 5 && cond?.tempF != null) {
+          facts.push({ label: "Conditions", value: String(cond.tempF), unit: "\u00B0F" });
+        }
+
+        // Mile splits from the telemetry the drawer already builds. Fast =
+        // at or under the run's own average, so the marks are self-relative
+        // and never imply a target this run did not have.
+        let splits: LatestSplit[] | undefined;
+        let splitsCaption: string | undefined;
+        const laps = det?.chart?.laps ?? [];
+        if (laps.length >= 2) {
+          const perMile = laps.filter((l) => Number.isFinite(l.paceSec) && l.paceSec > 0);
+          if (perMile.length >= 2) {
+            const avg = perMile.reduce((a, l) => a + l.paceSec, 0) / perMile.length;
+            splits = perMile.slice(0, 16).map((l, i) => ({
+              n: i + 1,
+              pace: fmtPaceSec(l.paceSec),
+              fast: l.paceSec <= avg,
+            }));
+            const fastest = perMile.reduce((a, b) => (b.paceSec < a.paceSec ? b : a));
+            const lastIsFastest = perMile[perMile.length - 1] === fastest;
+            splitsCaption = `Mile splits \u00B7 average ${fmtPaceSec(avg)}${
+              lastIsFastest ? " \u00B7 last mile fastest" : ""
+            }`;
+          }
+        }
+
+        const verdict =
+          latestDay.delta === null
+            ? "Not reconciled against the plan"
+            : latestDay.delta === "on pace"
+              ? "Held \u00B7 on pace"
+              : `${latestDay.delta} vs plan`;
+
+        return {
+          dayId: latestDay.id,
+          whenLabel: `${latestDay.dow} \u00B7 ${latestDay.dateLabel}`,
+          title: latestDay.label,
+          verdict,
+          onTarget: latestDay.delta === null ? true : latestDay.onTarget,
+          facts,
+          splits,
+          splitsCaption,
+          note: latestDay.note,
+          noteMeta: latestDay.note ? `Athlete note \u00B7 ${latestDay.dateLabel}` : undefined,
+          mood: latestDay.mood,
+          key: latestDay.key,
+        };
+      })()
+    : undefined;
+
+  // §02 — six weeks of keyed sessions, oldest first so the strip reads left to
+  // right the way the block was run.
+  const sixWeeksAgo = new Date();
+  sixWeeksAgo.setDate(sixWeeksAgo.getDate() - 42);
+  const sixWeeksISO = sixWeeksAgo.toISOString().slice(0, 10);
+  const keyDays = days.filter((d) => d.key && d.date >= sixWeeksISO && d.zone !== null);
+  const keySessions: KeySessionMark[] = keyDays.map((d, i) => {
+    const primaryLog = logsByDate.get(d.date)?.[0];
+    const rec = primaryLog ? reconByLogId.get(primaryLog.id) : undefined;
+    const target = fmtPaceLabel(rec?.adjusted_target_pace_seconds ?? rec?.target_pace_seconds_per_mile);
+    const ran = fmtPaceLabel(rec?.actual_pace_seconds_per_mile);
+
+    // No prescription to compare against for most athletes (spec §3, §1.3 —
+    // only 4/243 reconciliations populated for the canonical athlete).
+    // Re-based on the athlete's OWN pace zones: informational placement, not
+    // a hit/miss verdict — there's nothing to miss without a target.
+    let zoneLabel: string | undefined;
+    let zoneDeltaSec: number | undefined;
+    if (athletePaces && primaryLog) {
+      const actualSec =
+        (primaryLog.workout_pace_per_mile ? parsePaceSecPerMile(primaryLog.workout_pace_per_mile) : null) ??
+        weightedLapPace((lapsByWorkout.get(primaryLog.id) ?? []) as unknown as EnrichLap[]);
+      if (actualSec != null) {
+        const zone = nearestZoneKey(actualSec, athletePaces);
+        const zoneSec = athletePaces[zone];
+        if (zoneSec != null) {
+          zoneLabel = zoneLabelShort(zone);
+          zoneDeltaSec = Math.round(actualSec - zoneSec);
+        }
+      }
+    }
+
+    return {
+      dayId: d.id,
+      dateLabel: d.dateLabel,
+      title: d.label,
+      subtitle: d.actual ?? undefined,
+      deltaSec:
+        rec?.adjusted_pace_delta_seconds != null ? Math.round(Number(rec.adjusted_pace_delta_seconds)) : null,
+      compare: target && ran ? `${ran} vs ${target}` : undefined,
+      onTarget: d.onTarget,
+      latest: i === keyDays.length - 1,
+      zoneLabel,
+      zoneDeltaSec,
+    };
+  });
+
+  const lastKeyDay = keyDays.length ? keyDays[keyDays.length - 1] : undefined;
+  const lastKey: LastKeySession | undefined =
+    lastKeyDay && lastKeyDay.id !== latestDay?.id
+      ? (() => {
+          const primaryLog = logsByDate.get(lastKeyDay.date)?.[0];
+          const rec = primaryLog ? reconByLogId.get(primaryLog.id) : undefined;
+          return {
+            dayId: lastKeyDay.id,
+            whenLabel: `${lastKeyDay.dow} \u00B7 ${lastKeyDay.dateLabel}`,
+            title: lastKeyDay.label,
+            targetPace: fmtPaceLabel(
+              rec?.adjusted_target_pace_seconds ?? rec?.target_pace_seconds_per_mile,
+            ),
+            actualPace: fmtPaceLabel(rec?.actual_pace_seconds_per_mile),
+            hrAvg: lastKeyDay.detail?.conditions?.hrAvg,
+            tempF: lastKeyDay.detail?.conditions?.tempF,
+            note: lastKeyDay.note || undefined,
+            onTarget: lastKeyDay.onTarget,
+          };
+        })()
+      : undefined;
+
+  // §03 — the block. Two adherence numbers on purpose: sessions RUN and key
+  // sessions HIT answer different questions, and a block can score 86% on the
+  // first while missing every target on the second.
+  const weekStartISO = mondayOf(new Date()).toISOString().slice(0, 10);
+  const thisWeekDays = days.filter((d) => d.date >= weekStartISO && d.zone !== null);
+  const plannedThisWeek = planWorkouts.filter(
+    (w) => w.date && w.date >= weekStartISO && w.workout_type !== "rest",
+  );
+  const eightWeeksAgo = new Date();
+  eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+  const eightISO = eightWeeksAgo.toISOString().slice(0, 10);
+  const prescribedDates = new Set(
+    planWorkouts
+      .filter((w) => w.date && w.date >= eightISO && w.date <= todayISO && w.workout_type !== "rest")
+      .map((w) => w.date as string),
+  );
+  const ranDates = new Set(runDays.filter((d) => d.date >= eightISO).map((d) => d.date));
+  const ranCount = Array.from(prescribedDates).filter((dt) => ranDates.has(dt)).length;
+  const keyWindow = days.filter((d) => d.key && d.date >= eightISO && d.zone !== null);
+  const keyJudged = keyWindow.filter((d) => d.delta !== null);
+  const keyHit = keyJudged.filter((d) => d.onTarget).length;
+
+  const lastAdj = planAdjs[0];
+  const block: BlockStats | undefined =
+    header.weekNumber && header.totalWeeks
+      ? {
+          weekNumber: header.weekNumber,
+          totalWeeks: header.totalWeeks,
+          phaseLabel: plan?.name ?? undefined,
+          sessionsRun: thisWeekDays.length,
+          sessionsPlanned: plannedThisWeek.length,
+          milesThisWeek: thisWeekDays.reduce((a, d) => a + d.miles, 0),
+          ranOf: prescribedDates.size
+            ? { run: ranCount, prescribed: prescribedDates.size }
+            : undefined,
+          ranPct: prescribedDates.size
+            ? Math.round((ranCount / prescribedDates.size) * 100)
+            : undefined,
+          hitOf: keyJudged.length ? { hit: keyHit, total: keyJudged.length } : undefined,
+          lastChangeLabel: lastAdj?.applied_at
+            ? dateLabel(parseDate(lastAdj.applied_at.slice(0, 10)))
+            : undefined,
+          lastChangeNote: lastAdj
+            ? `${lastAdj.trigger_type === "coach_rewrite" ? "By you" : "By the athlete"}`
+            : undefined,
+        }
+      : undefined;
+
+  // §05 — acute vs chronic weighted minutes. Chronic is the 28-day mean scaled
+  // to a week, so the two numbers are directly comparable.
+  const sevenAgo = new Date();
+  sevenAgo.setDate(sevenAgo.getDate() - 7);
+  const sevenISO = sevenAgo.toISOString().slice(0, 10);
+  const twentyEightAgo = new Date();
+  twentyEightAgo.setDate(twentyEightAgo.getDate() - 28);
+  const twentyEightISO = twentyEightAgo.toISOString().slice(0, 10);
+  const scoredLogs = logs.filter((l) => l.stress_load != null);
+  const acuteSum = scoredLogs
+    .filter((l) => l.workout_date >= sevenISO)
+    .reduce((a, l) => a + Number(l.stress_load), 0);
+  const chronicSum = scoredLogs
+    .filter((l) => l.workout_date >= twentyEightISO)
+    .reduce((a, l) => a + Number(l.stress_load), 0);
+  const stress: StressLoad | undefined = scoredLogs.length
+    ? { acute: Math.round(acuteSum), chronic: Math.round(chronicSum / 4) }
+    : undefined;
+
   return {
     header,
     watchList,
@@ -1045,5 +1416,11 @@ export async function buildDashboardFromSupabase(athleteId: string): Promise<Das
     niggles,
     mood,
     paceKey,
+    latest,
+    latestDetail: latestDay?.detail,
+    lastKey,
+    keySessions,
+    block,
+    stress,
   };
 }
