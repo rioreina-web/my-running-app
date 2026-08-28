@@ -19,7 +19,12 @@
 // a few more questions.
 
 import { createClient } from "@/lib/supabase/client";
-import { parseWorkoutText, type ParseWorkoutResult, type UnresolvedReason } from "./workout-nl-parser";
+import {
+  parseWorkoutText,
+  uncoveredPaceOffsets,
+  type ParseWorkoutResult,
+  type UnresolvedReason,
+} from "./workout-nl-parser";
 import type { PaceZone, WorkoutStep } from "./workout-helpers";
 
 /** Shape returned by `_shared/workout-step-validator.ts`. */
@@ -90,11 +95,27 @@ export async function parseShorthand(text: string): Promise<ShorthandResult> {
   // "16 x K alternating MP-3% & MP+5%" returned 16 easy kilometres without
   // the model ever being asked, because nothing landed in `unparsed` or
   // `warnings` to say the prescription had been dropped.
+  // ...and `uncoveredPaceOffsets` counts too, because every condition above is
+  // the grammar GRADING ITSELF. That question is worthless against the failure
+  // this parser actually produces: a confident wrong answer. "16 x K
+  // alternating MP-3% & MP +5%" came back as sixteen steps, no warnings, no
+  // unparsed text, nothing unresolved — and half of them had silently lost
+  // their offset. It passed every check here, so the model was never asked,
+  // and the coach got a workout they had not prescribed.
+  //
+  // This one checks the work instead of taking its word: an offset written in
+  // the source that no step is carrying means something was dropped in
+  // transit, whatever the parser claims. Measured at 4 of 68 clean parses on
+  // the real corpus, so it escalates rarely and does not turn every workout
+  // into a paid call.
+  const dropped = uncoveredPaceOffsets(text, local.steps);
+
   const localClean =
     local.steps.length > 0 &&
     local.unparsed.length === 0 &&
     local.warnings.length === 0 &&
-    Object.keys(local.unresolved).length === 0;
+    Object.keys(local.unresolved).length === 0 &&
+    dropped.length === 0;
 
   if (localClean) return { ...local, source: "grammar" };
 

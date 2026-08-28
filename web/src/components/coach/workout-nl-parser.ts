@@ -1147,6 +1147,54 @@ export interface ParseWorkoutResult {
  * doesn't support yet) is returned in `unparsed` so the UI can tell the coach
  * to add it by hand rather than silently dropping it.
  */
+/**
+ * Pace offsets the coach WROTE that no step is carrying.
+ *
+ * The escalation gate asks the grammar whether it had trouble. That question is
+ * worthless against the failure this codebase keeps producing: a parse that
+ * drops something and reports nothing. "16 x K alternating MP-3% & MP +5%" came
+ * back as sixteen clean steps with no warning and no unresolved entry — and
+ * half of them had silently lost their offset. By every signal the client had,
+ * it was a perfect parse.
+ *
+ * So check the work instead of asking. Every "MP-10" / "MP+5%" in the source is
+ * a promise; if no step carries a matching adjustment, something was eaten on
+ * the way through and the answer cannot be trusted, however tidy it looks.
+ *
+ * Deliberately narrow. It reads only signed offsets attached to a zone word —
+ * the token this grammar has now dropped twice — and says nothing about
+ * distances, reps or recoveries. A check that fires on correct parses would
+ * push every workout to the model and cost real money, so it errs toward
+ * silence: fewer false alarms, at the price of not catching every class of
+ * drop.
+ */
+export function uncoveredPaceOffsets(text: string, steps: WorkoutStep[]): string[] {
+  // The sign must be GLUED to its number. Same discriminator splitSegments
+  // uses, and for the same reason: "MP + 2mi @ HM" is a separator followed by a
+  // new leg, not an MP+2 offset. Allowing a space here made this check fire on
+  // 27 of 68 correct parses — a 40% false-alarm rate that would have sent most
+  // of the corpus to the model for no reason.
+  // A trailing ' or " makes the number a DURATION, not an offset: "2mi Tempo
+  // -5' rec" is a five-minute rest, and reading it as MP-5 flagged a correct
+  // parse.
+  const written = text.matchAll(
+    new RegExp(`(?:${ZONE_ALT})\\s*([+-])(\\d+(?:\\.\\d+)?)\\s*(%)?(?!['′"″])`, "gi"),
+  );
+
+  const carried = steps.map((s) => {
+    const a = s.paceAdjustment;
+    if (!a) return null;
+    return `${a.value > 0 ? "+" : "-"}${Math.abs(a.value)}${a.type === "percent" ? "%" : ""}`;
+  });
+
+  const missing: string[] = [];
+  for (const m of written) {
+    const want = `${m[1]}${m[2]}${m[3] ? "%" : ""}`;
+    if (!carried.includes(want)) missing.push(want);
+  }
+  return [...new Set(missing)];
+}
+
 export function parseWorkoutText(text: string): ParseWorkoutResult {
   const { steps: parsed, unparsed } = parseNL(text);
   const steps: WorkoutStep[] = [];
