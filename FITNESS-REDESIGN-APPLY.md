@@ -80,6 +80,21 @@ deno run --allow-net --allow-env scripts/replay-fitness.ts \
 synthetic. Point-in-time is by `created_at`, NOT `workout_date` — 106/307
 rows landed >2 days late. Never treat sub-1% replay differences as signal.)
 
+Manual invocation of the deployed function (verified 2026-08-28): the
+service auth is a JWT **claim decode**, so it needs the legacy JWT — the
+newer `sb_secret_…` key has no claims and gets `{"error":"Service role
+required"}`. Use `SUPABASE_SERVICE_ROLE_JWT` from `web/.env.local`:
+
+```sh
+KEY=$(grep '^SUPABASE_SERVICE_ROLE_JWT=' web/.env.local | cut -d= -f2-)
+curl -s -X POST "https://aqdijapxmjqaetursrde.supabase.co/functions/v1/compute-fitness-snapshot" \
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"user_id":"03857bf3-6276-4634-b3cc-15cc6d0bc653"}'
+```
+
+(Same-day reruns are safe: the writer updates today's row in place and
+`mostRecentPrior` skips same-day rows, so damping stays honest.)
+
 ### 0.3 Remaining Phase-0 items
 
 - **Normalize-at-confirmation**: store the neutral time on the race row at
@@ -104,10 +119,16 @@ rows landed >2 days late. Never treat sub-1% replay differences as signal.)
 - **Handle both `weather_actual` shapes** in `fitnessInputs.ts`: the sparse
   `open-meteo-backfill` rows carry temp_f + dew_point_f only, no
   adjustment_pct (G0-FINISH §2.2).
-- **BLOCKED on Rio**: race confirm/dismiss UI (all 5 anchor races are
-  unconfirmed `source='detected'` rows — the baseline rests on them, and the
-  no-race-auto-inference principle requires detection to propose, never
-  anchor). Needs a UX decision; everything above proceeds without it.
+- **RESOLVED 2026-08-28 — races confirmed as data, UX demoted to backlog.**
+  Rio confirmed verbally that the five detected races are real and the list
+  is complete ("haven't raced since April"). All 5 `race_results` rows now
+  carry `confirmed_at = 2026-08-28T16:05Z` (live UPDATE, verified;
+  `source='detected'` kept as provenance; note appended on each row). The
+  standing no-race-auto-inference violation is closed for this athlete.
+  Remaining, non-blocking: (a) a lightweight confirm/dismiss prompt for
+  FUTURE detections before beta users arrive; (b) when anchoring is next
+  touched, restrict `seededRaces` to `confirmed_at IS NOT NULL` — safe now
+  that the five are confirmed, a behavior change before.
 
 **Exit gate**: replay emits a session-residual error curve for the shipped
 model — the baseline Phase 1 must beat.
