@@ -142,33 +142,3 @@ export function normalizeRaceTime(
   };
 }
 
-/**
- * The §1.3 comparison rule, as one function: among rung-1 races, the most
- * recent wins the anchor role ONLY on normalized times — a newer race may
- * displace an older one when its neutral-equivalent is within `tolerancePct`
- * of (or better than) the incumbent's. The better older race stays as PR
- * context regardless; that is `race_prs`' job, not this function's.
- *
- * Returns the index of the race that should anchor, or null on empty input.
- * Caller supplies races newest-first.
- */
-export function pickAnchorIndex(
-  races: ReadonlyArray<{ normalized: NormalizedRace; ageDays: number }>,
-  tolerancePct = 3.0,
-): number | null {
-  if (races.length === 0) return null;
-  // Newest race anchors unless its normalized time is more than tolerancePct
-  // slower (per equivalent distance is the caller's job — callers compare
-  // same-distance or 10K-equivalent times).
-  let anchor = 0;
-  for (let i = 1; i < races.length; i++) {
-    const cand = races[anchor].normalized.neutralSeconds;
-    const older = races[i].normalized.neutralSeconds;
-    if (cand > older * (1 + tolerancePct / 100)) {
-      // The newer race is materially slower even after conditions — the older
-      // race remains better evidence of capacity (decay handles its age).
-      anchor = i;
-    }
-  }
-  return anchor;
-}

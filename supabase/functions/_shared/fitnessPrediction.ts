@@ -9,9 +9,17 @@
 // on-device, when a user opened the predictor screen — so the server-side
 // Coach Read / athlete-state read stale-or-absent fitness data. This module
 // lets a nightly edge function (compute-fitness-snapshot) regenerate a
-// snapshot for every active athlete, using the SAME algorithm the app shows
-// so the two never diverge. See
+// snapshot for every active athlete. See
 // outputs/fitness-snapshot-writer-diagnosis-2026-07-02.md.
+//
+// THE "FAITHFUL PORT / NEVER DIVERGE" CONSTRAINT IS LEGACY (2026-08-28).
+// Since 2026-08-17 iOS reads the server snapshot and computes nothing, so
+// there is no second implementation to stay in step with and no Swift
+// mirroring is required to change anything here. The constraint is recorded
+// rather than deleted because the truncation points below still mirror the
+// old Swift Int() casts, and those DO still matter — they are what makes the
+// stored seconds reproducible against every snapshot written before the
+// cutover. Change the algorithm freely; change the truncation deliberately.
 //
 // PARITY: the race-equivalence math is reused from _shared/paces.ts, whose
 // RACE_RATIOS_TO_10K table is identical to iOS PaceCalculator.performanceRatios

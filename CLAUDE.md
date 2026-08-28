@@ -247,11 +247,19 @@ race anchor (or goal race time when no anchor exists) via
 **Do not use the legacy seconds-offset ladder** that lived in
 `web/src/app/(app)/pace-chart/page.tsx` — that was a bug, fixed.
 
+**`supabase/functions/_shared/paces.ts` is the source of truth**, specifically
+`TRAINING_MP_SPEED_RATIO`. The ratios below are band midpoints of the canonical
+convention locked 2026-06-04. This table previously documented the pre-2026-06
+values (0.925 / 0.875 / 0.765 / 0.70) — a *different* band convention that made
+the same athlete see different easy paces on web and iOS. If these ever
+disagree with `paces.ts`, `paces.ts` wins and this table is the stale one;
+`_shared/cross-language-pace-contract.test.ts` pins it.
+
 | Zone | Math | Notes |
 |---|---|---|
-| Easy | MP / 0.765 — percentage of MP speed | Aerobic, conversational |
-| Moderate | between Easy and Steady | NEW 2026-05-28; upper aerobic |
-| Steady | MP / 0.925 | Moderate-aerobic, marathon-prep |
+| Easy | MP / 0.75 — percentage of MP speed | Aerobic, conversational |
+| Moderate | MP / 0.85 | NEW 2026-05-28; upper aerobic |
+| Steady | MP / 0.95 | Moderate-aerobic, marathon-prep |
 | MP | anchor (from race anchor or goal_time / race_distance) | Marathon pace |
 | HMP | between MP and LT | NEW 2026-05-28; half marathon pace |
 | LT | 1-hour race pace (interpolated between 10K and HM) | Threshold |

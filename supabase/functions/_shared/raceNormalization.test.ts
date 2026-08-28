@@ -2,7 +2,6 @@ import { assert, assertEquals } from "https://deno.land/std@0.208.0/assert/mod.t
 import {
   elevationCostFraction,
   normalizeRaceTime,
-  pickAnchorIndex,
 } from "./raceNormalization.ts";
 
 // ============================================================================
@@ -87,38 +86,4 @@ Deno.test("elevation model: asymmetric, capped, conservative", () => {
   // No gain / no distance → zero, never NaN.
   assertEquals(elevationCostFraction(0, 10000), 0);
   assertEquals(elevationCostFraction(100, 0), 0);
-});
-
-// ── The §1.3 anchor rule ─────────────────────────────────────────────────
-
-Deno.test("anchor rule: the Cap10K does NOT displace the Feb anchor raw… ", () => {
-  // Raw comparison (the old, wrong behaviour this module replaces): April is
-  // 5.4% slower — even normalized it stays ~2% slower, inside the 3%
-  // tolerance, so the NEWER race anchors. That is the rule working: April
-  // corroborates February's fitness, so recency wins.
-  const idx = pickAnchorIndex([
-    { normalized: CAP10K, ageDays: 125 }, // newest first
-    { normalized: FEB, ageDays: 189 },
-  ]);
-  assertEquals(idx, 0);
-});
-
-Deno.test("…but a genuinely slower new race yields the anchor to the older one", () => {
-  // Same course conditions, but the athlete ran 36:00 — 15% off. No amount of
-  // weather explains that; the older race remains the better capacity evidence.
-  const slow = normalizeRaceTime(2160, "tenK", {
-    tempF: 69,
-    dewPointF: 68,
-    elevationGainM: 100,
-  });
-  const idx = pickAnchorIndex([
-    { normalized: slow, ageDays: 10 },
-    { normalized: FEB, ageDays: 189 },
-  ]);
-  assertEquals(idx, 1);
-});
-
-Deno.test("anchor rule: empty input → null, single race anchors itself", () => {
-  assertEquals(pickAnchorIndex([]), null);
-  assertEquals(pickAnchorIndex([{ normalized: FEB, ageDays: 5 }]), 0);
 });
