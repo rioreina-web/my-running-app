@@ -666,6 +666,59 @@ when there is a second athlete with real history.
 
 ---
 
+## 12 · HR wiring — the last predictor task, stop condition FIRST  *(2026-08-28)*
+
+§11 left the predictor question open: n=23 cannot tell the two models apart.
+HR is the one remaining lever that adds information to the EXISTING sessions
+rather than waiting for a second athlete — EF (speed per heartbeat) is far less
+confounded than session pace because it controls for how hard the athlete
+tried.
+
+This is the **last** predictor task. The stop condition is written here, before
+the work, so the answer is not negotiated after seeing it.
+
+### Scope, fixed
+
+1. Lap HR into `fitnessInputs.ts` — both lap queries currently select
+   `temp_f, dew_point_f, heat_adjusted_pace_sec_per_mile` and **no HR column
+   at all**, while `athlete-state.ts` selects `avg_heart_rate` four lines over.
+   Widen the 21-day lap window to 84 days for `expectedHr`'s baseline.
+2. Adapt orphaned `expectedHr.ts` — `efficiencyTrend` returns
+   `deltaPaceSecPerMile`, a drift statement. Feed it to the estimator as a
+   drift observation, per the plan's "EF = two-directional drift evidence".
+3. Re-run the gate.
+
+A bonus that falls out: `expectedHr` is fitted from LAPS, which are
+point-in-time. So EF becomes replayable without `athlete_state` history, which
+is the §0.3 limitation that forced `includeEfficiencySignal: false`. Both
+chains can be scored with EF live, which is a fairer comparison than either
+has had.
+
+### Stop condition
+
+**Decidable** — the paired bootstrap 95% CI on the 28-day MAPE delta
+**excludes zero**. The better model wins, subject to gates 1 and 3 unchanged
+from §10. If that is the estimator, it ships; if it is the shipped model, the
+estimator is deleted rather than parked.
+
+**Undecidable** — the CI still spans zero. **The current model stays by
+default.** The estimator stays parked, unshipped and untuned. No further gate
+re-specification, no Phase 2, no Phase 3 on this athlete.
+
+Either outcome CLOSES the predictor question. "Undecidable" is a result, not a
+prompt to try again — §9 already closed the cheap routes to more sessions and
+§11 established that more power means more athletes, which is a product
+timeline rather than an engineering task.
+
+### What would NOT count as passing
+
+- A better MAPE whose CI spans zero. That is the §11 finding again.
+- A better MAPE at some horizon other than 28 days. §10 fixed the horizon.
+- HR improving only the shipped model. That is a fine outcome and it ships,
+  but it is not evidence for the redesign.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code
