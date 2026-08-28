@@ -202,15 +202,11 @@ final class RacePredictionService {
 enum RaceTime {
     static func clock(_ seconds: Double) -> String { ModelOfYouState.RaceRange.hms(seconds) }
 
-    /// Display time: hour+ races round to whole minutes (h:mm) — the seconds
-    /// are a math artifact, not signal (marathon-prediction-honesty). Sub-hour
-    /// races keep m:ss.
+    /// Display time: full h:mm:ss / m:ss at every distance (owner call,
+    /// 2026-08-28 — revises the minute-rounding half of rule #7; the range +
+    /// tier + PR-alongside requirements are what carry the honesty now).
     static func headline(_ seconds: Double) -> String {
-        if seconds >= 3600 {
-            let t = Int((seconds / 60).rounded()) * 60
-            return "\(t / 3600):\(String(format: "%02d", (t % 3600) / 60))"
-        }
-        return ModelOfYouState.RaceRange.hms(seconds)
+        ModelOfYouState.RaceRange.hms(seconds)
     }
 
     /// "2:28–2:31" using the headline formatter; nil when there's no low bound.

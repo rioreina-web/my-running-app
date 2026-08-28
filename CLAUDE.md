@@ -172,16 +172,19 @@ removed 2026-07-28.
    helper from `20260311120000_fix_coach_rls_recursion.sql`) — direct
    subqueries against `coach_profiles` cause recursion.
 7. **Race-time predictions ship as a single number + confidence tier, with
-   the lifetime PR alongside** (revised 2026-07-18). We tried a range
-   (`3:08 – 3:14, midpoint 3:11, HIGH CONF`) but the confidence-scaled band
-   read as *too wide and inaccurate* — a marathon window that beat the
-   athlete's PR at the fast end and spanned 13 minutes was worse than one
-   honest estimate. So: show the midpoint as the projection, the HIGH/MEDIUM/
-   LOW tier for certainty, and the demonstrated lifetime PR next to it. Still
-   never dump seconds-precision as if meaningful, and never a bare projection
-   with no confidence tier or PR context. Round marathon/half to the minute.
-   See `outputs/marathon-prediction-honesty.md` (range rationale, now
-   superseded on presentation).
+   the lifetime PR alongside** (revised 2026-07-18; seconds revised
+   2026-08-28). We tried a range (`3:08 – 3:14, midpoint 3:11, HIGH CONF`)
+   but the confidence-scaled band read as *too wide and inaccurate* — a
+   marathon window that beat the athlete's PR at the fast end and spanned 13
+   minutes was worse than one honest estimate. So: show the midpoint as the
+   projection, the HIGH/MEDIUM/LOW tier for certainty, and the demonstrated
+   lifetime PR next to it. **2026-08-28 (owner call): display full seconds at
+   every distance, half/marathon included** — the earlier minute-rounding is
+   retired; the confidence tier, the range, and the PR alongside are what
+   carry the honesty, not coarsened digits. Still never a bare projection
+   with no confidence tier or PR context. See
+   `outputs/marathon-prediction-honesty.md` (range rationale, presentation
+   since revised twice).
 8. **No em-dashes as empty-state placeholders.** Every empty cell uses
    the empty-state component (eyebrow + plain-prose nudge + optional CTA).
    See `outputs/new-user-action-plan.md` and the empty-state component spec.
