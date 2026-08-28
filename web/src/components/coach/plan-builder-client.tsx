@@ -92,6 +92,17 @@ interface PlanTemplateWeek {
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DISTANCES = ["marathon", "half_marathon", "10k", "5k", "custom"];
+
+// The pace an unqualified offset in the describe-it box is relative to. The
+// plan states its race; this is that race's pace, so "+5%" has a declared base
+// rather than an invented one. "custom" is absent deliberately — with no race
+// there is no anchor to bind to, and a bare offset should stay unresolved.
+const ANCHOR_ZONE_FOR_DISTANCE: Record<string, PaceZone | undefined> = {
+  marathon: "mp",
+  half_marathon: "hm",
+  "10k": "tenK",
+  "5k": "fiveK",
+};
 const DISTANCE_LABELS: Record<string, string> = {
   marathon: "Marathon",
   half_marathon: "Half Marathon",
@@ -493,7 +504,15 @@ export function PlanBuilderClient({
     try {
       // Local grammar first; only escalates to the server when it left
       // something unresolved, and falls back to it on any failure.
-      const { steps, unparsed, warnings, unresolved } = await parseShorthand(text);
+      //
+      // `baseZone` is what lets a coach write "16 x k alternating +5% and -3%"
+      // without retyping MP in front of every number. The plan already states
+      // the race, so an unqualified offset has a stated base rather than a
+      // guessed one; without this the grammar cannot hang the offset on
+      // anything and the whole session collapses to one easy step.
+      const { steps, unparsed, warnings, unresolved } = await parseShorthand(text, {
+        baseZone: ANCHOR_ZONE_FOR_DISTANCE[targetDistance],
+      });
       if (steps.length > 0) {
         setBuilderSteps((prev) => [...prev, ...steps]);
         const zone = headlineZone(steps);

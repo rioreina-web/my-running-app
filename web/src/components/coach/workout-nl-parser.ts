@@ -1174,11 +1174,23 @@ export function uncoveredPaceOffsets(text: string, steps: WorkoutStep[]): string
   // new leg, not an MP+2 offset. Allowing a space here made this check fire on
   // 27 of 68 correct parses — a 40% false-alarm rate that would have sent most
   // of the corpus to the model for no reason.
-  // A trailing ' or " makes the number a DURATION, not an offset: "2mi Tempo
-  // -5' rec" is a five-minute rest, and reading it as MP-5 flagged a correct
-  // parse.
+  // Offsets count whether or not a zone is written in front of them.
+  //
+  // Requiring the zone was the first version, and it left the exact hole this
+  // function exists to close: "16 x k +5% and -3%" has no zone anywhere, so
+  // nothing was deemed "written", nothing looked dropped, and the grammar's
+  // confident one-step answer sailed through the gate untouched. Coaches write
+  // the bare form constantly — the base pace is obvious to a human from the
+  // plan, so they do not retype it.
+  //
+  // Guards, in order: a trailing ' or " makes it a DURATION ("-5' rec"); a
+  // digit immediately before the sign makes it a RANGE ("8-12m", "15-25s"); a
+  // digit immediately after the % would be a different token.
   const written = text.matchAll(
-    new RegExp(`(?:${ZONE_ALT})\\s*([+-])(\\d+(?:\\.\\d+)?)\\s*(%)?(?!['′"″])`, "gi"),
+    new RegExp(
+      `(?:${ZONE_ALT})?\\s*(?<![\\d])([+-])(\\d+(?:\\.\\d+)?)\\s*(%)?(?!['′"″\\d])`,
+      "gi",
+    ),
   );
 
   const carried = steps.map((s) => {
@@ -1195,7 +1207,57 @@ export function uncoveredPaceOffsets(text: string, steps: WorkoutStep[]): string
   return [...new Set(missing)];
 }
 
-export function parseWorkoutText(text: string): ParseWorkoutResult {
+/**
+ * Bind offsets the coach wrote WITHOUT naming a base zone to the plan's anchor.
+ *
+ * Coaches do not retype "MP" in front of every number. "16 x k alternating +5%
+ * and -3%" is a complete instruction to a human — the base is the pace the
+ * whole plan is built on — but the grammar needs a zone to hang an offset from,
+ * so every one of these parsed to a single easy step. That is the "sixteen k at
+ * the slowest pace" case.
+ *
+ * This is NOT inventing a pace. The base is stated by the plan (race +
+ * goal time); the caller passes the zone that anchor resolves to, and an
+ * orphaned "+5%" is rewritten to "MP+5%" before parsing so all the existing
+ * machinery applies unchanged. The bound zone then renders on the step, so the
+ * coach can see what it attached to and correct it.
+ *
+ * With no `baseZone` the text is untouched and a bare offset stays unresolved —
+ * a caller that does not know the anchor must not guess one.
+ */
+function bindOrphanOffsets(text: string, baseZone?: PaceZone): string {
+  if (!baseZone) return text;
+  const label = PACE_ZONE_WORD[baseZone];
+  if (!label) return text;
+  // Only a sign+number that is NOT already preceded by a zone word, and not a
+  // duration ("-5' rec") or a range ("8-12m", "15-25s"). Requiring whitespace
+  // or a delimiter before the sign keeps "8-12m" and "MP-3%" out.
+  return text.replace(
+    new RegExp(`(^|[\\s(/&,])([+-])(\\d+(?:\\.\\d+)?)(%?)(?!['′"″\\d])`, "g"),
+    (m, pre: string, sign: string, num: string, pct: string, offset: number) => {
+      const before = text.slice(0, offset + pre.length).trimEnd();
+      if (new RegExp(`(?:${ZONE_ALT})$`, "i").test(before)) return m;
+      return `${pre}${label}${sign}${num}${pct}`;
+    },
+  );
+}
+
+/** PaceZone key → the word this grammar's zone matcher understands. */
+const PACE_ZONE_WORD: Partial<Record<PaceZone, string>> = {
+  mp: "MP", hm: "HM", threshold: "LT", tenK: "10k", fiveK: "5k",
+  threeK: "3k", mile: "mile", easy: "easy", moderate: "moderate", steady: "steady",
+};
+
+export interface ParseOptions {
+  /**
+   * The pace an unqualified offset is relative to — the plan's own anchor.
+   * Omit it and bare offsets stay unresolved rather than being guessed.
+   */
+  baseZone?: PaceZone;
+}
+
+export function parseWorkoutText(text: string, opts: ParseOptions = {}): ParseWorkoutResult {
+  text = bindOrphanOffsets(text, opts.baseZone);
   const { steps: parsed, unparsed } = parseNL(text);
   const steps: WorkoutStep[] = [];
   const unsupported: string[] = [...unparsed];

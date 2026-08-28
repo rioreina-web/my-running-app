@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 import {
   parseWorkoutText,
   uncoveredPaceOffsets,
+  type ParseOptions,
   type ParseWorkoutResult,
   type UnresolvedReason,
 } from "./workout-nl-parser";
@@ -87,8 +88,11 @@ function toWorkoutStep(r: RemoteStep): WorkoutStep {
  * Parse coach shorthand, escalating to the server only when the local grammar
  * left something unresolved. Never rejects.
  */
-export async function parseShorthand(text: string): Promise<ShorthandResult> {
-  const local = parseWorkoutText(text);
+export async function parseShorthand(
+  text: string,
+  opts: ParseOptions = {},
+): Promise<ShorthandResult> {
+  const local = parseWorkoutText(text, opts);
   // `unresolved` counts. A step the grammar built but could not pace is not a
   // clean read — it is a wrong answer wearing a complete-looking step list,
   // and it is the shape that escalation exists for. Leaving it out meant
