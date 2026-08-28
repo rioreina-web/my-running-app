@@ -12,7 +12,17 @@ import { CoachPortalNav } from "@/components/coach/coach-portal-nav";
 //
 // So the chrome is conditional and the skin is not: everything under
 // /coach-portal renders Direction I, but only browsable pages get the frame.
-const FULL_BLEED = ["/builder"];
+//
+// This list must cover EVERY route that renders `PlanBuilderClient`, not every
+// route with "builder" in its URL. Those are not the same set, and the gap was
+// live: `/coach-portal/plans/new` renders the identical builder but does not
+// contain "/builder", so it got the portal frame on top of the builder's own
+// and produced exactly the overlap this comment warns about — the masthead
+// ("RUNNING LOG — PLAN BUILDER") printed through the tab nav
+// ("ROSTER PLANS LIBRARY").
+//
+// PlanBuilderClient has two call sites. If a third appears, it belongs here.
+const FULL_BLEED = ["/coach-portal/plans/new", "/builder"];
 
 export function CoachPortalChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

@@ -965,15 +965,35 @@ function parseSegment(seg: string): ParsedStep | null {
 }
 
 // Split on , ; newline + "then" — but never inside ( ), and never on the "+"
-// of an offset like MP+15 (attached + is an offset, spaced + separates).
+// of an offset like MP+15.
+//
+// "Attached + is an offset, spaced + separates" was the old rule, and it was
+// wrong in a way that destroyed alternations: coaches write "MP +5%" as often
+// as "MP+5%", and the space made this split the leg into "MP" and "5%". The
+// offset vanished, so "16 x K alternating MP-3% & MP +5%" came back as sixteen
+// reps at plain MP — or at `easy`, once nothing resolved. The minus form never
+// had the bug (it is not a separator), which is why only half of every
+// alternation looked wrong.
+//
+// The real discriminator is what sits on either side, not the whitespace:
+// a "+" is an offset when a PACE ZONE ends the text before it and a DIGIT
+// follows immediately. That keeps every genuine separator intact —
+// "4mi + 2x1mi" (no zone before) and "15' @ MP + 8-10x400" (space after the
+// +, so the 8 is a new segment, not an offset).
+const ZONE_BEFORE_PLUS = new RegExp(`(?:${ZONE_ALT})\\s*$`, "i");
+
 function splitSegments(text: string): string[] {
   const out: string[] = [];
   let cur = "";
   let depth = 0;
-  for (const ch of text) {
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (ch === "(") depth++;
     if (ch === ")") depth = Math.max(0, depth - 1);
-    const plusIsOffset = ch === "+" && cur.length > 0 && !/\s/.test(cur.slice(-1));
+    const plusIsOffset =
+      ch === "+" &&
+      /\d/.test(text[i + 1] ?? "") &&
+      ZONE_BEFORE_PLUS.test(cur.trimEnd());
     if (depth === 0 && !plusIsOffset && (ch === "," || ch === ";" || ch === "\n" || ch === "+")) {
       out.push(cur);
       cur = "";
