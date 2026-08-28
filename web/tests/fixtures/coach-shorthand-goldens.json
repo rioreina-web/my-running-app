@@ -1,0 +1,916 @@
+[
+  {
+    "why": "canonical example — must never regress",
+    "input": "2mi wu, 6x800 @ 5k w/ 400m jog, 2mi cd",
+    "steps": [
+      {
+        "stepType": "warmup",
+        "durationType": "distance_miles",
+        "durationValue": 2,
+        "paceZone": "easy"
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 800,
+        "paceZone": "fiveK",
+        "repeats": 6,
+        "recovery": {
+          "durationValue": 400
+        }
+      },
+      {
+        "stepType": "cooldown",
+        "durationType": "distance_miles",
+        "durationValue": 2,
+        "paceZone": "easy"
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "bare 'm' is MILES at small magnitudes; 'mi' is unchanged. Same workout proves both.",
+    "input": "7m moderate + 7mi threshold",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 7,
+        "paceZone": "moderate"
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 7,
+        "paceZone": "threshold"
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "3-4 digit bare 'm' stays METERS — the threshold must not overreach",
+    "input": "8 x 400m @ 10k w/ 200m jog",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 400,
+        "paceZone": "tenK",
+        "repeats": 8,
+        "recovery": {
+          "durationValue": 200
+        }
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "'tempo' resolves to threshold, not easy (18 corpus workouts hit this)",
+    "input": "20 min @ tempo",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "time_seconds",
+        "durationValue": 1200,
+        "paceZone": "threshold"
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "leading-dot decimal recovery: .5 float is a half mile, not five miles",
+    "input": "5 x 3mi @ MP-5 w/.5 float",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 3,
+        "paceZone": "mp",
+        "repeats": 5,
+        "recovery": {
+          "durationValue": 0.5,
+          "durationType": "distance_miles"
+        }
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "descending pair is not a range — used to collapse to a single 155km step",
+    "input": "4-5 sets of 1200-300 - 10k/mile - 2' rec",
+    "forbid": {
+      "maxStepMiles": 30
+    }
+  },
+  {
+    "why": "a rest interval is stripped from the pace clause, not read as a 2:30/mi target",
+    "input": "2 sets of 1600 @ 10k - 2:30 rest",
+    "forbid": {
+      "exactPaceOutsideSecPerMile": [
+        240,
+        1200
+      ]
+    },
+    "stepCount": 1,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 1600,
+        "paceZone": "tenK",
+        "repeats": 2
+      }
+    ],
+    "warnings": []
+  },
+  {
+    "why": "no pace written → no pace invented. Must ASK rather than pick 5K.",
+    "input": "10-12 x K",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "repeats": 11
+      }
+    ],
+    "unresolvedCount": 1
+  },
+  {
+    "why": "an unknown zone word ('800m pace') must ask, not silently become 5K",
+    "input": "4-5 x 300m @ 800m pace w/2' rest",
+    "unresolvedCount": 1
+  },
+  {
+    "why": "set rest has nowhere to live in the flat model — flatten, but say so",
+    "input": "3 sets of 4x800 @ 10k pace w/1' rest - 4' rest b/t sets",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 800,
+        "paceZone": "tenK",
+        "repeats": 12,
+        "recovery": {
+          "durationValue": 60
+        }
+      }
+    ],
+    "warningsInclude": [
+      "set rest"
+    ]
+  },
+  {
+    "why": "bare-m range reads as miles",
+    "input": "8-12m alternations",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 10
+      }
+    ],
+    "unresolvedCount": 1
+  },
+  {
+    "why": "zone offsets survive all of the above",
+    "input": "3mi wu, 4x1mi @ LT w/ 90s jog, 2mi cd",
+    "steps": [
+      {
+        "stepType": "warmup",
+        "durationType": "distance_miles",
+        "durationValue": 3,
+        "paceZone": "easy"
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 1,
+        "paceZone": "threshold",
+        "repeats": 4,
+        "recovery": {
+          "durationValue": 90
+        }
+      },
+      {
+        "stepType": "cooldown",
+        "durationType": "distance_miles",
+        "durationValue": 2,
+        "paceZone": "easy"
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "compound set expands: 6 sets of two legs = 12 active steps between wu and cd",
+    "input": "2mi wu, 6 sets of (1k @ hm / 600m @ 10k), 2mi cd",
+    "stepCount": 14,
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "the original failing workout — legs split on a spaced hyphen, each rep keeps its own rest",
+    "input": "2mi wu + 6 sets of (1k @ hm pace - 1' rest - 600m @ 10k pace - 1' rest) + 2mi cd",
+    "stepCount": 14,
+    "steps": [
+      {
+        "stepType": "warmup",
+        "durationType": "distance_miles",
+        "durationValue": 2
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationValue": 60
+        }
+      }
+    ],
+    "stepsArePrefix": true,
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "a leg's own w/ clause must not be torn apart by the leg separator",
+    "input": "2-3 sets (2k@HM / 5x400m@5k w/1' rest)",
+    "stepCount": 18,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 2,
+        "paceZone": "hm"
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 400,
+        "paceZone": "fiveK",
+        "recovery": {
+          "durationValue": 60
+        }
+      }
+    ],
+    "stepsArePrefix": true,
+    "warnings": []
+  },
+  {
+    "why": "a runaway expansion is refused rather than flooding the editor",
+    "input": "20 sets of (10x400 @ 5k / 200m jog)",
+    "unparsedInclude": [
+      "400m"
+    ],
+    "warningsInclude": [
+      "too many to build"
+    ]
+  },
+  {
+    "why": "ladder with parallel pace list: distances zip to paces by position",
+    "input": "3m/3m/2m w/800 float - MP/MP-10/MP-20",
+    "stepCount": 3,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 3,
+        "paceZone": "mp"
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 3,
+        "paceZone": "mp"
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 2,
+        "paceZone": "mp"
+      }
+    ],
+    "warnings": []
+  },
+  {
+    "why": "ladder + sets: 5 sets of two legs, lists split on a spaced hyphen",
+    "input": "5 sets of 1200/400 - 10k/3k pace 2' rec",
+    "stepCount": 10,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 1200,
+        "paceZone": "tenK"
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 400,
+        "paceZone": "threeK"
+      }
+    ],
+    "stepsArePrefix": true,
+    "warnings": []
+  },
+  {
+    "why": "progression keeps the starting zone and records the destination in the note",
+    "input": "6m fast progression run (MP > HM-5)",
+    "stepCount": 1,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 6,
+        "paceZone": "mp",
+        "notes": "progress to HM-5"
+      }
+    ],
+    "warnings": []
+  },
+  {
+    "why": "a parenthetical pace applies to what precedes it",
+    "input": "3M light tempo (MP) + 4 x 200",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationValue": 3,
+        "paceZone": "mp"
+      }
+    ],
+    "stepsArePrefix": true
+  },
+  {
+    "why": "a parenthetical NOTE is not a set - it must not become phantom steps",
+    "input": "10-12 x K @ HM-5 - 1' rec (rest 4' at halfway)",
+    "stepCount": 1,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "repeats": 11
+      }
+    ]
+  },
+  {
+    "why": "'at' only reads as '@' in front of a pace, never inside prose",
+    "input": "15' at LT",
+    "stepCount": 1,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "time_seconds",
+        "durationValue": 900,
+        "paceZone": "threshold"
+      }
+    ],
+    "warnings": []
+  },
+  {
+    "why": "a bare zone word inside a set leg is honoured",
+    "input": "4 x (10' steady + 2' easy)",
+    "stepCount": 8,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationValue": 600,
+        "paceZone": "steady"
+      },
+      {
+        "stepType": "active",
+        "durationValue": 120,
+        "paceZone": "easy"
+      }
+    ],
+    "stepsArePrefix": true,
+    "warnings": []
+  },
+  {
+    "why": "a pace trailing a recovery clause is not swallowed by it (stays one reps step)",
+    "input": "5 x 3m w/.5 float MP-5",
+    "stepCount": 1,
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_miles",
+        "durationValue": 3,
+        "paceZone": "mp",
+        "repeats": 5,
+        "recovery": {
+          "durationValue": 0.5
+        }
+      }
+    ],
+    "warnings": []
+  },
+  {
+    "why": "compound set written WITHOUT brackets keeps every leg and both paces",
+    "input": "8 sets of 600 @ 5k - 200m jog - 400m @ 3k - 200m jog",
+    "stepCount": 16,
+    "stepsArePrefix": true,
+    "steps": [
+      {
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "fiveK",
+        "recovery": {
+          "durationType": "distance_meters",
+          "durationValue": 200
+        }
+      },
+      {
+        "durationType": "distance_meters",
+        "durationValue": 400,
+        "paceZone": "threeK",
+        "recovery": {
+          "durationType": "distance_meters",
+          "durationValue": 200
+        }
+      }
+    ]
+  },
+  {
+    "why": "a bare-slash float is a recovery, not a dropped clause (pace survives too)",
+    "input": "6 x mile @ HM pace /400m float",
+    "stepCount": 1,
+    "steps": [
+      {
+        "durationType": "distance_miles",
+        "durationValue": 1,
+        "repeats": 6,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "distance_meters",
+          "durationValue": 400
+        }
+      }
+    ]
+  },
+  {
+    "why": "set-wide 'between reps' recovery reaches EVERY leg, not just the last one",
+    "input": "7 sets of 1k @ HM pace & 600 @ 10k pace w/1' between reps",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "compound set with the rests written out positionally keeps all 14",
+    "input": "7 sets of (1k @ HM - 1' rest - 600m @ 10k - 1' rest)",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "set-level recovery written after the parens reaches every leg",
+    "input": "7 x (1k @ hm / 600 @ 10k) w/1' rec",
+    "steps": [
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_km",
+        "durationValue": 1,
+        "paceZone": "hm",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      },
+      {
+        "stepType": "active",
+        "durationType": "distance_meters",
+        "durationValue": 600,
+        "paceZone": "tenK",
+        "recovery": {
+          "durationType": "time_seconds",
+          "durationValue": 60
+        }
+      }
+    ],
+    "unparsed": [],
+    "warnings": []
+  },
+  {
+    "why": "a leg's own recovery still wins over the set's",
+    "input": "2 sets of (1k @ hm - 1' rest - 600m @ 10k)",
+    "stepCount": 4,
+    "unparsed": [],
+    "warnings": []
+  }
+]

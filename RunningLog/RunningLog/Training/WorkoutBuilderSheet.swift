@@ -43,6 +43,13 @@ struct WorkoutBuilderSheet: View {
     @State private var defaultZone: NamedPace = .mp
     @State private var isSaving = false
 
+    /// What the numbers mean. Goal and Current swap the table underneath the
+    /// zones; Fixed freezes them into typed paces. See `WorkoutPaceBasis`.
+    @State private var paceBasis: WorkoutPaceBasis = .goal
+    /// The relative basis Fixed was frozen from, so leaving Fixed lands back
+    /// where the athlete was rather than always on Goal.
+    @State private var basisBeforeFixed: WorkoutPaceBasis = .goal
+
     // Natural-language entry
     @State private var nlInput = ""
     @State private var nlResult: ShorthandParseResult?
@@ -55,8 +62,73 @@ struct WorkoutBuilderSheet: View {
         EquivalentPaces(raceDistance: .marathon, goalTimeSeconds: 14400)
     }
 
-    private var equivalentPaces: EquivalentPaces {
+    /// Zones off the goal race time — the plan's target, not today's fitness.
+    private var goalPaces: EquivalentPaces {
         viewModel.equivalentPaces ?? defaultEquivalentPaces
+    }
+
+    /// Zones off the athlete's pace profile. Nil until a fitness read exists,
+    /// which is why Current can be an unavailable basis.
+    private var currentFitnessPaces: EquivalentPaces? {
+        EquivalentPaces.fromCurrentFitness(
+            AthletePaceProfileService.shared.profile,
+            disabledPaces: goalPaces.disabledPaces
+        )
+    }
+
+    /// The table every zone chip, resolved pace and save reads against.
+    /// In Fixed the steps carry their own numbers, but the table still backs
+    /// the "= LT / LT +6s" orientation line, so it stays on whatever relative
+    /// basis the freeze came from.
+    private var equivalentPaces: EquivalentPaces {
+        switch paceBasis {
+        case .goal: return goalPaces
+        case .current: return currentFitnessPaces ?? goalPaces
+        case .fixed: return table(for: basisBeforeFixed)
+        }
+    }
+
+    private func table(for basis: WorkoutPaceBasis) -> EquivalentPaces {
+        switch basis {
+        case .goal:
+            return goalPaces
+        case .current:
+            return currentFitnessPaces ?? goalPaces
+        case .fixed:
+            // Resolved without recursing back through `basisBeforeFixed` — it
+            // is only ever assigned a relative basis today, and a table lookup
+            // is the wrong place to be relying on that.
+            return basisBeforeFixed == .current ? (currentFitnessPaces ?? goalPaces) : goalPaces
+        }
+    }
+
+    private var unavailableBases: Set<WorkoutPaceBasis> {
+        currentFitnessPaces == nil ? [.current] : []
+    }
+
+    private var unavailableNote: String? {
+        currentFitnessPaces == nil
+            ? "Current paces need a fitness read. Log a few runs and they'll turn on."
+            : nil
+    }
+
+    /// One line naming what the active basis is anchored to. Real numbers, so
+    /// the athlete can see the two bases disagree rather than take it on faith.
+    private var basisCaption: String {
+        let mp = EquivalentPaces.formatPace(equivalentPaces.mpPace)
+        switch paceBasis {
+        case .goal:
+            let goal = goalPaces
+            let time = PaceCalculator.formatTime(goal.goalTimeSeconds)
+            return "Zones off the goal: \(time) \(goal.goalRaceDistance.displayName), MP \(mp)."
+        case .current:
+            guard currentFitnessPaces != nil else {
+                return "No fitness read yet, so these are still goal zones."
+            }
+            return "Zones off your current fitness, MP \(mp). Moves as your fitness moves."
+        case .fixed:
+            return "Every step carries a typed pace. Nothing re-derives it when the goal or your fitness changes."
+        }
     }
 
     /// Coach-issued when the row is a coach prescription or the active
@@ -67,7 +139,7 @@ struct WorkoutBuilderSheet: View {
     }
 
     private var summaryLine: String? {
-        WorkoutLabelGrammar.summaryLine(steps: steps)
+        WorkoutLabelGrammar.summaryLine(steps: steps, equivalentPaces: equivalentPaces)
     }
 
     // MARK: - Body
@@ -96,11 +168,21 @@ struct WorkoutBuilderSheet: View {
                         DD22EditorialRule()
                             .padding(.horizontal, 20)
 
-                        BuilderZoneChipRow(
-                            selectedZone: $defaultZone,
-                            equivalentPaces: equivalentPaces
+                        BuilderPaceBasisRow(
+                            basis: $paceBasis,
+                            caption: basisCaption,
+                            unavailable: unavailableBases,
+                            unavailableNote: unavailableNote
                         )
                         .padding(.horizontal, 20)
+
+                        if paceBasis.isRelative {
+                            BuilderZoneChipRow(
+                                selectedZone: $defaultZone,
+                                equivalentPaces: equivalentPaces
+                            )
+                            .padding(.horizontal, 20)
+                        }
 
                         stepsSection
                             .padding(.horizontal, 20)
@@ -136,6 +218,9 @@ struct WorkoutBuilderSheet: View {
             .toolbarBackground(Color.drip.background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .onAppear(perform: seedFromWorkout)
+            .onChange(of: paceBasis) { previous, next in
+                applyBasisChange(from: previous, to: next)
+            }
         }
     }
 
@@ -226,18 +311,30 @@ struct WorkoutBuilderSheet: View {
             if let result = nlResult, nlError == nil {
                 // Parsed preview — pre-fill only. Nothing is saved until
                 // the athlete reviews the steps and taps Save.
-                Button {
-                    applyParsedResult(result)
-                } label: {
-                    HStack(spacing: 6) {
-                        Text("Fill in \(result.steps.count) steps")
-                            .font(.system(size: 12, design: .monospaced))
-                        Text("\u{2197}")
-                            .font(.system(size: 12))
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        applyParsedResult(result)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Fill in \(result.steps.count) steps")
+                                .font(.system(size: 12, design: .monospaced))
+                            Text("\u{2197}")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundStyle(Color.drip.coral)
                     }
-                    .foregroundStyle(Color.drip.coral)
+                    .buttonStyle(.plain)
+
+                    // A step the parser built but could not pace is the
+                    // dangerous kind: it looks complete in the editor. Say it
+                    // here, before the fill, rather than letting a default
+                    // pass for something the athlete wrote.
+                    if let unpaced = unresolvedNote(result) {
+                        Text(unpaced)
+                            .font(.dripCaption(11))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
                 }
-                .buttonStyle(.plain)
             }
 
             if nlInput.isEmpty && steps.isEmpty {
@@ -290,6 +387,7 @@ struct WorkoutBuilderSheet: View {
                             step: $step,
                             equivalentPaces: equivalentPaces,
                             racePaceSeconds: racePaceSeconds,
+                            paceBasis: paceBasis,
                             isFirst: steps.first?.id == step.id,
                             isLast: steps.last?.id == step.id,
                             onMoveUp: { move(step.id, by: -1) },
@@ -326,14 +424,62 @@ struct WorkoutBuilderSheet: View {
                 racePaceSeconds: racePaceSeconds
             )
         }
-        if let dominant = WorkoutLabelGrammar.dominantZone(in: steps) {
+        if let dominant = WorkoutLabelGrammar.dominantZone(in: steps, equivalentPaces: equivalentPaces) {
             defaultZone = dominant
         }
+        paceBasis = inferredBasis()
+    }
+
+    /// A workout whose every pace target is a typed number was built in Fixed,
+    /// so it reopens there. Anything with a zone in it reopens relative — the
+    /// zones are what would have moved, and the athlete should see them moving.
+    ///
+    /// Goal and Current aren't distinguishable from the saved steps (both write
+    /// zones), so a reopened relative workout lands on Goal and one tap moves
+    /// it. Writing the basis into the step JSON would fix that; it isn't worth
+    /// a schema shape the web and the coach portal don't read yet.
+    private func inferredBasis() -> WorkoutPaceBasis {
+        let targeted = steps.filter { $0.paceSelection != .none }
+        guard !targeted.isEmpty else { return .goal }
+        let allFixed = targeted.allSatisfy {
+            if case .fixed = $0.paceSelection { return true }
+            return false
+        }
+        return allFixed ? .fixed : .goal
+    }
+
+    /// Rewrite every step for a change of basis, then remember where a freeze
+    /// came from so leaving Fixed returns there rather than always to Goal.
+    private func applyBasisChange(from previous: WorkoutPaceBasis, to next: WorkoutPaceBasis) {
+        guard previous != next else { return }
+        let outgoing = table(for: previous)
+        if next == .fixed, previous.isRelative { basisBeforeFixed = previous }
+        let incoming = table(for: next)
+
+        withAnimation {
+            steps = steps.map {
+                $0.switchingBasis(
+                    from: previous,
+                    to: next,
+                    outgoing: outgoing,
+                    incoming: incoming,
+                    racePaceSeconds: racePaceSeconds
+                )
+            }
+        }
+    }
+
+    /// A selection expressed in the active basis: a zone while relative, the
+    /// number that zone currently resolves to while fixed.
+    private func selection(forZone zone: NamedPace) -> EditableWorkoutStep.PaceSelection {
+        let zoned = EditableWorkoutStep.PaceSelection.namedPace(zone)
+        guard paceBasis == .fixed else { return zoned }
+        return zoned.frozen(with: equivalentPaces, racePaceSeconds: racePaceSeconds)
     }
 
     private func addStep() {
         var newStep = EditableWorkoutStep(order: steps.count)
-        newStep.paceSelection = .namedPace(defaultZone)
+        newStep.paceSelection = selection(forZone: defaultZone)
         withAnimation {
             steps.append(newStep)
         }
@@ -399,21 +545,31 @@ struct WorkoutBuilderSheet: View {
             do {
                 // Same pace-zone payload the day-detail workshop sends —
                 // lets the parser estimate a duration for time targets.
-                var paceZones: [String: Any] = [:]
-                if let equiv = viewModel.equivalentPaces {
-                    paceZones["easy"] = equiv.paceSeconds(for: .easy)
-                    paceZones["moderate"] = equiv.paceSeconds(for: .moderate)
-                    paceZones["steady"] = equiv.paceSeconds(for: .steady)
-                    paceZones["marathon"] = equiv.paceSeconds(for: .mp)
-                    paceZones["half"] = equiv.paceSeconds(for: .hm)
-                    paceZones["10k"] = equiv.paceSeconds(for: .tenK)
-                    paceZones["5k"] = equiv.paceSeconds(for: .fiveK)
-                    paceZones["mile"] = equiv.paceSeconds(for: .mile)
-                }
+                // Send the ACTIVE table, not the goal one — otherwise
+                // "20min @ marathon pace" typed under Current fitness gets its
+                // duration estimated off goal MP.
+                let equiv = equivalentPaces
+                let paceZones: [String: Any] = [
+                    "easy": equiv.paceSeconds(for: .easy),
+                    "moderate": equiv.paceSeconds(for: .moderate),
+                    "steady": equiv.paceSeconds(for: .steady),
+                    "marathon": equiv.paceSeconds(for: .mp),
+                    "half": equiv.paceSeconds(for: .hm),
+                    "10k": equiv.paceSeconds(for: .tenK),
+                    "5k": equiv.paceSeconds(for: .fiveK),
+                    "mile": equiv.paceSeconds(for: .mile),
+                ]
 
                 let body: [String: Any] = [
                     "input": trimmed,
                     "paceZones": paceZones,
+                    // The server's deterministic grammar scores 12% against
+                    // this coach's real plans and cannot read a pace offset at
+                    // all; the model layer reads both. Cost is bounded
+                    // server-side by `llmBudgetAllows`, which falls back to
+                    // the grammar rather than failing, so the button always
+                    // does something.
+                    "useModel": true,
                 ]
                 let data = try await callEdgeFunction(name: "parse-workout-shorthand", body: body)
                 let result = try JSONDecoder().decode(ShorthandParseResult.self, from: data)
@@ -450,6 +606,15 @@ struct WorkoutBuilderSheet: View {
     /// one interval set (repeats + recovery) so "6x800 / 400 jog" arrives
     /// as one editable block, not eleven rows.
     private func applyParsedResult(_ result: ShorthandParseResult) {
+        // The structured shape is already one row per step, with its pace and
+        // its repeats intact, so it needs none of the collapsing below — and
+        // it is the only shape that carries an offset. Alternations arrive
+        // here as N legs with alternating adjustments; writing them out is
+        // the correct reading, not a failure to compress.
+        if let structured = result.structuredSteps, !structured.isEmpty {
+            applyStructuredSteps(structured)
+            return
+        }
         let parsed = result.steps.sorted { $0.order < $1.order }
         var built: [EditableWorkoutStep] = []
         var i = 0
@@ -477,12 +642,12 @@ struct WorkoutBuilderSheet: View {
                     j += 1
                 }
 
-                var step = makeEditableStep(from: raw, order: built.count)
+                var step = EditableWorkoutStep(legacyShorthand: raw, order: built.count)
                 if count > 1 {
                     step.repeats = count
                     if let rec = recoveryRaw {
                         step.recovery = EditableWorkoutStep.EditableRecovery(
-                            durationType: durationType(from: rec.durationType),
+                            durationType: EditableWorkoutStep.durationType(fromShorthand: rec.durationType),
                             durationValue: rec.durationValue,
                             paceSelection: rec.recoveryType == "jog"
                                 ? .namedPace(.recovery)
@@ -495,16 +660,30 @@ struct WorkoutBuilderSheet: View {
                 continue
             }
 
-            built.append(makeEditableStep(from: raw, order: built.count))
+            built.append(EditableWorkoutStep(legacyShorthand: raw, order: built.count))
             i += 1
         }
 
+        if let dominant = WorkoutLabelGrammar.dominantZone(in: built, equivalentPaces: equivalentPaces) {
+            defaultZone = dominant
+        }
+        // The parser only speaks zones. Under Fixed those become numbers on
+        // arrival, so a filled-in workout matches the basis it landed in.
+        if paceBasis == .fixed {
+            let table = equivalentPaces
+            built = built.map {
+                $0.switchingBasis(
+                    from: basisBeforeFixed,
+                    to: .fixed,
+                    outgoing: table,
+                    incoming: table,
+                    racePaceSeconds: racePaceSeconds
+                )
+            }
+        }
         withAnimation {
             steps = built
             normalizeOrder()
-        }
-        if let dominant = WorkoutLabelGrammar.dominantZone(in: steps) {
-            defaultZone = dominant
         }
         nlResult = nil
     }
@@ -527,52 +706,44 @@ struct WorkoutBuilderSheet: View {
             && candidate.recoveryType == reference.recoveryType
     }
 
-    private func makeEditableStep(from raw: ShorthandStep, order: Int) -> EditableWorkoutStep {
-        let stepType: PlannedWorkoutStep.StepType = {
-            switch raw.stepType {
-            case "warmup": return .warmup
-            case "cooldown": return .cooldown
-            case "recovery": return .recovery
-            case "rest": return .rest
-            default: return .active
+    /// "2 steps need a pace" — or nil when every step carries the one the
+    /// coach wrote.
+    private func unresolvedNote(_ result: ShorthandParseResult) -> String? {
+        guard let structured = result.structuredSteps else { return nil }
+        let count = structured.filter { $0.unresolvedReason != nil }.count
+        guard count > 0 else { return nil }
+        return count == 1 ? "1 step needs a pace" : "\(count) steps need a pace"
+    }
+
+    private func applyStructuredSteps(_ structured: [ShorthandStructuredStep]) {
+        var built = structured.enumerated().map { index, raw in
+            EditableWorkoutStep(shorthand: raw, order: index)
+        }
+
+        if let dominant = WorkoutLabelGrammar.dominantZone(in: built, equivalentPaces: equivalentPaces) {
+            defaultZone = dominant
+        }
+        if paceBasis == .fixed {
+            let table = equivalentPaces
+            built = built.map {
+                $0.switchingBasis(
+                    from: basisBeforeFixed,
+                    to: .fixed,
+                    outgoing: table,
+                    incoming: table,
+                    racePaceSeconds: racePaceSeconds
+                )
             }
-        }()
-
-        var step = EditableWorkoutStep(order: order, stepType: stepType)
-        step.durationType = durationType(from: raw.durationType)
-        step.durationValue = raw.durationValue
-        if let zone = namedPace(fromReference: raw.paceReference) {
-            step.paceSelection = .namedPace(zone)
-        } else if stepType == .warmup || stepType == .cooldown {
-            step.paceSelection = .namedPace(.easy)
-        } else if stepType == .recovery || stepType == .rest {
-            step.paceSelection = .none
         }
-        return step
+        withAnimation {
+            steps = built
+            normalizeOrder()
+        }
+        nlResult = nil
     }
 
-    private func durationType(from raw: String) -> PlannedWorkoutStep.DurationType {
-        switch raw {
-        case "distance_meters": return .distanceMeters
-        case "time_seconds": return .timeSeconds
-        default: return .distanceMiles
-        }
-    }
-
-    /// parse-workout-shorthand's paceReference vocabulary → NamedPace.
-    private func namedPace(fromReference ref: String?) -> NamedPace? {
-        switch ref {
-        case "easy": return .easy
-        case "moderate": return .moderate
-        case "steady": return .steady
-        case "marathon": return .mp
-        case "half": return .hm
-        case "10k": return .tenK
-        case "5k": return .fiveK
-        case "mile": return .mile
-        default: return nil
-        }
-    }
+    // The wire → editor mapping lives in `ShorthandStepMapping.swift`, shared
+    // with DayDetailSheet's workshop. It used to be five private copies here.
 
     // MARK: - Save
 

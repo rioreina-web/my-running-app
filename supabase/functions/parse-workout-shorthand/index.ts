@@ -25,6 +25,9 @@
  */
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { llmBudgetAllows } from "../_shared/llm-budget.ts";
+import { parseWithModel } from "../_shared/workout-shorthand-llm.ts";
+import { validateSteps, type ValidatedStep } from "../_shared/workout-step-validator.ts";
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -35,6 +38,19 @@ export interface ParsedStep {
   paceReference: string | null;     // "easy", "marathon", "half", "10k", "5k", "mile"
   paceRangeHigh: string | null;     // for range paces like "5k-10k"
   pacePercentage: number | null;    // approximate % of race pace (for legacy compat)
+  /**
+   * An absolute pace in seconds per mile, when the coach wrote a number rather
+   * than a zone ("4mi @ 6:00", "6x800 @ 3:00"). Mutually exclusive with
+   * `paceReference` in practice: a number is the prescription, not a hint
+   * toward a zone.
+   *
+   * This existed on the validated shape as `exactPaceSecPerMile` and was
+   * dropped on the way out here, so a model that correctly read "@ 6:00"
+   * reached iOS as a step with NO pace — which the client then filled in with
+   * its default zone. The number survived the model and the validator and died
+   * in the adapter.
+   */
+  absolutePaceSecPerMile: number | null;
   notes: string | null;
   order: number;
   repCount: number | null;          // null = single, N = repeat count
@@ -61,13 +77,22 @@ const DISTANCE_PATTERNS: Array<{ pattern: RegExp; toMiles: (match: RegExpMatchAr
   { pattern: /^half$/i, toMiles: () => 13.109, toMeters: () => 21097, label: () => "half marathon" },
   { pattern: /^marathon$/i, toMiles: () => 26.219, toMeters: () => 42195, label: () => "marathon" },
   { pattern: /^(\d+)\s*K$/i, toMiles: m => parseInt(m[1]) / 1.60934, toMeters: m => parseInt(m[1]) * 1000, label: m => `${m[1]}K` },
+  // Bare track shorthand: the "800" in "6x800 @ 5K pace". Every pattern above
+  // requires a unit, so the single most common way to write a rep matched
+  // nothing and the step arrived with a distance of zero. The 200 floor is
+  // what separates a track distance from a rep count or a mile figure, and is
+  // the same threshold the web grammar uses.
+  { pattern: /^(\d{3,4})$/, toMiles: m => parseInt(m[1]) / 1609.34, toMeters: m => parseInt(m[1]), label: m => `${m[1]}m` },
 ];
 
 function parseDistance(token: string): { miles: number; meters: number; label: string } | null {
   const cleaned = token.trim();
   for (const { pattern, toMiles, toMeters, label } of DISTANCE_PATTERNS) {
     const match = cleaned.match(pattern);
-    if (match) return { miles: toMiles(match), meters: toMeters(match), label: label(match) };
+    if (!match) continue;
+    // A bare number below the track floor is a count, not a distance.
+    if (/^\d+$/.test(cleaned) && parseInt(cleaned) < 200) return null;
+    return { miles: toMiles(match), meters: toMeters(match), label: label(match) };
   }
   return null;
 }
@@ -166,8 +191,15 @@ function parseSegment(text: string): RawSegment {
     raw: trimmed,
   };
 
-  // Check for warmup/cooldown markers
-  const typeMatch = trimmed.match(/^(wu|cd|warmup|cooldown|warm\s*up|cool\s*down)\b/i);
+  // Check for warmup/cooldown markers.
+  //
+  // The marker is written at EITHER end, and this coach writes it at the far
+  // end: "2mi wu", "2mi cd". Anchoring at the start meant those segments were
+  // classified as work, kept their marker inside the quantity string, and so
+  // failed to parse a distance at all — including in this function's own
+  // documented example, "2mi wu, 6x800 @ 5K pace / 90s jog, 2mi cd", which
+  // returned three errors and zero miles.
+  const typeMatch = trimmed.match(/(?:^|\s)(wu|cd|warmup|cooldown|warm\s*up|cool\s*down)\b/i);
   if (typeMatch) {
     seg.type = classifySegmentType(typeMatch[1]);
   }
@@ -198,7 +230,7 @@ function parseSegment(text: string): RawSegment {
   let quantityStr = trimmed
     .replace(/^\d+\s*x\s*/i, "")           // strip reps
     .replace(/@\s*.+$/, "")                 // strip pace
-    .replace(/^(?:wu|cd|warmup|cooldown|warm\s*up|cool\s*down)\s*/i, "")  // strip type markers
+    .replace(/(?:^|\s)(?:wu|cd|warmup|cooldown|warm\s*up|cool\s*down)\b/i, "")  // strip type markers, either end
     .replace(/\b(?:easy|recovery|moderate|steady|tempo|threshold)\b/i, "") // strip implicit pace
     .trim();
 
@@ -341,14 +373,38 @@ function parseShorthand(input: string): ParseResult {
     }
   }
 
-  // Compute totals
+  return {
+    steps,
+    ...legacyEnvelope(steps, input, workoutModifier),
+    estimatedDurationMinutes: null, // would need pace context to compute
+    errors,
+    raw: input,
+  };
+}
+
+/**
+ * The totals/name/type fields every caller of this function has always been
+ * handed. Extracted so the MODEL path can return the same envelope as the
+ * grammar path.
+ *
+ * It returned a bare `{steps, structuredSteps, warnings, unparsed}` instead,
+ * which iOS — whose `ShorthandParseResult` declares `totalDistanceMiles`,
+ * `workoutType`, `name` and `errors` as non-optional — cannot decode at all.
+ * The moment that client asked for the model it would have gotten a decode
+ * failure and the sheet's generic "couldn't reach the parser", with the
+ * better parse sitting in the response body unread.
+ */
+function legacyEnvelope(
+  steps: ParsedStep[],
+  input: string,
+  workoutModifier: string | null = null,
+): { totalDistanceMiles: number; workoutType: string; name: string; description: string } {
   const totalMiles = steps.reduce((sum, s) => {
-    if (s.durationType === "distance_miles") return sum + s.durationValue;
-    if (s.durationType === "distance_meters") return sum + s.durationValue / 1609.34;
+    if (s.durationType === "distance_miles") return sum + s.durationValue * (s.repCount || 1);
+    if (s.durationType === "distance_meters") return sum + (s.durationValue / 1609.34) * (s.repCount || 1);
     return sum;
   }, 0);
 
-  // Determine workout type
   const activeSteps = steps.filter(s => s.stepType === "active");
   const hasReps = activeSteps.some(s => (s.repCount || 0) > 1) || activeSteps.length > 3;
   const primaryPace = activeSteps[0]?.paceReference;
@@ -358,18 +414,11 @@ function parseShorthand(input: string): ParseResult {
   else if (totalMiles >= 10) workoutType = "long_run";
   else if (workoutModifier === "progressive") workoutType = "progression";
 
-  // Build name
-  const name = buildWorkoutName(steps, workoutModifier);
-
   return {
-    steps,
     totalDistanceMiles: Math.round(totalMiles * 100) / 100,
-    estimatedDurationMinutes: null, // would need pace context to compute
     workoutType,
-    name,
+    name: buildWorkoutName(steps, workoutModifier),
     description: input.trim(),
-    errors,
-    raw: input,
   };
 }
 
@@ -415,6 +464,9 @@ function buildStep(seg: RawSegment, order: number, repCount: number | null): Par
     paceReference: seg.pace?.ref ?? (seg.type === "warmup" || seg.type === "cooldown" ? "easy" : null),
     paceRangeHigh: seg.pace?.rangeHigh ?? null,
     pacePercentage: seg.pace?.pct ?? (seg.type === "warmup" || seg.type === "cooldown" ? 70 : null),
+    // The deterministic grammar reads zone names only; absolute paces are the
+    // model layer's job. Null here is honest, not a gap.
+    absolutePaceSecPerMile: null,
     notes: null,
     order,
     repCount: repCount && repCount > 1 ? repCount : null,
@@ -442,6 +494,7 @@ function buildRecoveryStep(seg: RawSegment, order: number): ParsedStep {
     paceReference: seg.recoveryType === "jog" ? "easy" : null,
     paceRangeHigh: null,
     pacePercentage: seg.recoveryType === "jog" ? 70 : null,
+    absolutePaceSecPerMile: null,
     notes: seg.recoveryType || "rest",
     order,
     repCount: null,
@@ -488,6 +541,44 @@ function buildWorkoutName(steps: ParsedStep[], modifier: string | null): string 
   return `${prefix}Workout (${activeSteps.length} segments)`;
 }
 
+// Bridge the validated shape back onto the legacy ParsedStep the iOS client
+// already decodes, so the model path can ship without an app release. iOS
+// reads `steps`; anything that wants the richer shape reads `structuredSteps`.
+function toLegacyStep(v: ValidatedStep, order: number): ParsedStep {
+  return {
+    stepType: v.stepType,
+    durationType: v.durationType === "distance_km"
+      ? "distance_meters"
+      : (v.durationType as ParsedStep["durationType"]),
+    durationValue: v.durationType === "distance_km"
+      ? Math.round(v.durationValue * 1000)
+      : v.durationValue,
+    paceReference: v.paceZone ? LEGACY_PACE[v.paceZone] ?? null : null,
+    paceRangeHigh: null,
+    pacePercentage: null,
+    absolutePaceSecPerMile: v.exactPaceSecPerMile ?? null,
+    notes: v.note || v.unresolved || null,
+    order,
+    repCount: v.repeats ?? null,
+    recoveryType: v.recovery ? (v.recovery.isJog ? "jog" : "rest") : null,
+  };
+}
+
+// The legacy vocabulary is race-name based ("marathon", "half"); the shared
+// validator speaks the canonical PaceZone keys. One map, one direction.
+const LEGACY_PACE: Record<string, string> = {
+  mp: "marathon", hm: "half", threshold: "threshold", tenK: "10k",
+  fiveK: "5k", threeK: "3k", mile: "mile", easy: "easy",
+  moderate: "moderate", steady: "steady", recovery: "recovery", longRun: "easy",
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 // ── HTTP Handler ───────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -497,7 +588,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const body = await req.json();
-    const { input, paceZones } = body;
+    const { input, paceZones, useModel, todayHint, userId } = body;
 
     if (!input || typeof input !== "string") {
       return new Response(
@@ -508,6 +599,59 @@ Deno.serve(async (req: Request) => {
 
     const result = parseShorthand(input);
 
+    // The grammar answers alone only when it consumed everything cleanly.
+    // Otherwise the model gets a turn - it is markedly better at the tail, and
+    // it is the only one of the two that can read intent ("cutdown" implying a
+    // progression, a parenthetical addressed to a person).
+    // OPT-IN, deliberately. iOS (WorkoutBuilderSheet, DayDetailSheet) has
+    // called this endpoint for months and sends no `useModel`, so defaulting
+    // to on would change behaviour and add per-call cost for a shipping client
+    // nobody has tested against the model path. The web coach portal passes
+    // `useModel: true` explicitly. Flip iOS once it has been exercised.
+    //
+    // `useModel: true` is honoured UNCONDITIONALLY. It used to be gated on
+    // this function's own grammar reporting no errors, which was wrong twice
+    // over: that grammar is the weaker of the two (12% against this coach's
+    // real plans), and a caller sending the flag has already run a better one
+    // and found it wanting. Gating on the weak parser meant its confident
+    // garbage suppressed the model entirely.
+    const wantModel = useModel === true;
+
+    const budgetOk = wantModel ? await llmBudgetAllows("workout_parse", { userId }) : false;
+    if (wantModel && !budgetOk) {
+      console.log("[parse-workout-shorthand] budget guard declined workout_parse — grammar only");
+    }
+    if (wantModel && budgetOk) {
+      const llm = await parseWithModel(input, { todayHint });
+      if (llm) {
+        const validated = validateSteps(llm.steps, {
+          source: "model",
+          unparsed: llm.unparsed,
+        });
+        if (validated.steps.length > 0) {
+          const legacySteps = validated.steps.map(toLegacyStep);
+          return json({
+            ...legacyEnvelope(legacySteps, input),
+            estimatedDurationMinutes: null,
+            // The legacy channel a client that predates `unparsed` still reads.
+            errors: validated.unparsed,
+            steps: legacySteps,
+            // `unresolvedReason` is the closed code; `unresolved` stays the
+            // human sentence. The client asks its question from the code.
+            structuredSteps: validated.steps.map((v) => ({
+              ...v,
+              unresolvedReason: v.unresolvedReasonCode,
+            })),
+            warnings: validated.warnings,
+            unparsed: validated.unparsed,
+            workoutNote: llm.workoutNote,
+            source: "model",
+            raw: input,
+          });
+        }
+      }
+    }
+
     // If pace zones provided, compute estimated duration
     if (paceZones && typeof paceZones === "object") {
       let totalSeconds = 0;
@@ -515,7 +659,9 @@ Deno.serve(async (req: Request) => {
 
       for (const step of result.steps) {
         const paceRef = step.paceReference;
-        const paceSeconds = paceRef ? (paceZones[paceRef] as number) : null;
+        // A written pace is more specific than a zone lookup, so it wins.
+        const paceSeconds = step.absolutePaceSecPerMile
+          ?? (paceRef ? (paceZones[paceRef] as number) : null);
 
         if (step.durationType === "time_seconds") {
           totalSeconds += step.durationValue;
@@ -539,10 +685,7 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    return new Response(
-      JSON.stringify(result),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return json({ ...result, source: "grammar", warnings: [] });
   } catch (error) {
     console.error("[parse-workout-shorthand] Error:", error);
     return new Response(

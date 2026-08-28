@@ -128,13 +128,31 @@ test("standalone rest step", () => {
 
 // ── Compound sets are reported, not silently dropped ─────
 
-test("compound set is v1-unsupported and surfaced in unparsed", () => {
-  const { steps, unparsed } = parseWorkoutText("5 x (600 @ 5k / 400 @ 3k) w/ 90s jog");
-  // No flat step emitted for the compound set...
-  assert.equal(steps.length, 0);
-  // ...but the coach is told about it.
-  assert.equal(unparsed.length, 1);
-  assert.match(unparsed[0], /600.*5k.*400.*3k/i);
+// Superseded 2026-08-25. This used to assert that a compound set emitted NO
+// steps and was handed back as text. That was never a model limit — `repeats`
+// is a compression of the flat format, not the only encoding of it — so the
+// set is now written out leg by leg instead of refused.
+test("compound set expands leg by leg, alternating in order", () => {
+  const { steps, unparsed } = parseWorkoutText("5 x (600 @ 5k / 400 @ 3k)");
+  assert.equal(unparsed.length, 0, `should no longer be refused: ${unparsed.join(" | ")}`);
+  assert.equal(steps.length, 10, "5 sets x 2 legs");
+
+  // Legs alternate rather than grouping — 600/400/600/400, not 600x5 then 400x5.
+  assert.equal(steps[0].durationValue, 600);
+  assert.equal(steps[0].paceZone, "fiveK");
+  assert.equal(steps[1].durationValue, 400);
+  assert.equal(steps[1].paceZone, "threeK");
+  assert.equal(steps[2].durationValue, 600);
+  assert.equal(steps[9].paceZone, "threeK");
+});
+
+test("a rest leg inside a set becomes the preceding rep's recovery", () => {
+  const { steps } = parseWorkoutText("3 sets of (1k @ HM - 1' rest - 600m @ 10k - 1' rest)");
+  assert.equal(steps.length, 6, "rest legs are recoveries, not steps of their own");
+  assert.equal(steps[0].paceZone, "hm");
+  assert.equal(steps[0].recovery?.durationValue, 60);
+  assert.equal(steps[1].paceZone, "tenK");
+  assert.equal(steps[1].recovery?.durationValue, 60);
 });
 
 // ── "then" / mixed separators ────────────────────────────
@@ -179,4 +197,94 @@ test("every emitted step is a well-formed WorkoutStep", () => {
     assert.ok(typeof s.paceZone === "string" && s.paceZone.length > 0);
     assert.ok(typeof s.notes === "string");
   }
+});
+
+// ── Alternations ─────────────────────────────────────────
+//
+// Six real forms from this coach's corpus, none of which parsed before. The
+// failure was the dangerous kind: a complete-looking step list at EASY, with
+// nothing in `unparsed` or `warnings` to say the paces had been dropped.
+
+test("alternation: rep count x bare unit (16 x K alternating MP-3% & MP+5%)", () => {
+  const { steps, unparsed, warnings, unresolved } = parseWorkoutText(
+    "16 x K alternating MP-3% & MP+5%",
+  );
+  assert.equal(unparsed.length, 0);
+  assert.equal(warnings.length, 0);
+  assert.equal(Object.keys(unresolved).length, 0, "every leg must carry the pace the coach wrote");
+  assert.equal(steps.length, 16);
+  for (const s of steps) {
+    assert.equal(s.durationType, "distance_km");
+    assert.equal(s.durationValue, 1);
+    assert.equal(s.paceZone, "mp");
+  }
+  // Fast legs on the odds, float on the evens — the order as written.
+  assert.deepEqual(steps[0].paceAdjustment, { type: "percent", value: -3 });
+  assert.deepEqual(steps[1].paceAdjustment, { type: "percent", value: 5 });
+  assert.deepEqual(steps[15].paceAdjustment, { type: "percent", value: 5 });
+});
+
+test("alternation: the word can be left out (16 x K @ MP-3% & MP+5%)", () => {
+  const { steps, unresolved } = parseWorkoutText("16 x K @ MP-3% & MP+5%");
+  assert.equal(steps.length, 16);
+  assert.equal(Object.keys(unresolved).length, 0);
+  assert.deepEqual(steps[0].paceAdjustment, { type: "percent", value: -3 });
+  assert.deepEqual(steps[1].paceAdjustment, { type: "percent", value: 5 });
+});
+
+test("alternation: leading number is TOTAL distance, legs are 1 mile", () => {
+  // "8-12m" collapses to its midpoint, 10 — so ten 1-mile legs, not ten pairs.
+  const { steps } = parseWorkoutText("8-12m alternations (MP-10/MP+30)");
+  assert.equal(steps.length, 10);
+  assert.equal(steps[0].durationType, "distance_miles");
+  assert.equal(steps[0].durationValue, 1);
+  assert.deepEqual(steps[0].paceAdjustment, { type: "seconds_per_mile", value: -10 });
+  assert.deepEqual(steps[1].paceAdjustment, { type: "seconds_per_mile", value: 30 });
+});
+
+test("alternation: an odd total keeps its odd leg (7mi = 4 fast, 3 float)", () => {
+  // 7 miles of 1-mile alternation is seven legs. Rounding to eight would add a
+  // mile the coach never wrote; rounding to six would drop one.
+  const { steps } = parseWorkoutText("7mi alternations ( 1m at MP-10/1mi at MP +20)");
+  assert.equal(steps.length, 7);
+  const fast = steps.filter((s) => s.paceAdjustment?.value === -10);
+  const float = steps.filter((s) => s.paceAdjustment?.value === 20);
+  assert.equal(fast.length, 4);
+  assert.equal(float.length, 3);
+});
+
+test("alternation: parenthesised legs run the whole distance, not one pair", () => {
+  // Regression: this parsed as a 2-mile session — the two legs, once — and
+  // reported no warning while doing it.
+  const { steps } = parseWorkoutText("10 mi Alternations- (1 mi at MP-10/ 1 mi at MP+30)");
+  assert.equal(steps.length, 10);
+});
+
+test("alternation with no paces stays a question, not a guess", () => {
+  const { steps, unresolved } = parseWorkoutText("6 miles of alternations");
+  assert.equal(steps.length, 1);
+  assert.equal(Object.values(unresolved)[0], "no_pace_written");
+});
+
+// A slash after a pace usually introduces a RECOVERY. None of these may be
+// read as a second work pace.
+test("alternation guard: a jog/float recovery is never eaten as a leg", () => {
+  for (const input of [
+    "6x800 @ 5k / 400 jog",
+    "3x1600 @ 10K pace / 400 jog",
+    "6 x mile @ HM pace /400m float",
+  ]) {
+    const { steps } = parseWorkoutText(input);
+    assert.equal(steps.length, 1, `${input} must stay one repeated step`);
+    assert.ok(steps[0].recovery, `${input} must keep its recovery`);
+  }
+});
+
+test("offset pace written without an @ (16 x 1k MP-3%)", () => {
+  const { steps, unresolved } = parseWorkoutText("16 x 1k MP-3%");
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].repeats, 16);
+  assert.equal(steps[0].paceZone, "mp");
+  assert.deepEqual(steps[0].paceAdjustment, { type: "percent", value: -3 });
+  assert.equal(Object.keys(unresolved).length, 0);
 });

@@ -1063,6 +1063,50 @@ struct ShorthandParseResult: Codable {
     let name: String
     let description: String
     let errors: [String]
+    /// The canonical shape, present whenever the server ran its model layer.
+    ///
+    /// `steps` is a legacy projection: its pace vocabulary is a bare zone name
+    /// ("marathon"), so an offset — "MP-3%", "MP-10" — has nowhere to live and
+    /// is dropped in transit. A perfect parse of "16 x K alternating MP-3% &
+    /// MP+5%" still arrived here as sixteen plain marathon-pace kilometres.
+    /// Prefer this when it is there.
+    let structuredSteps: [ShorthandStructuredStep]?
+    /// Steps that were built but rest on an assumption the coach never wrote.
+    let warnings: [String]?
+    /// Fragments the parser could not turn into a step at all.
+    let unparsed: [String]?
+}
+
+/// A step as `_shared/workout-step-validator.ts` defines it — the shape both
+/// the grammar and the model are normalised into, and the only one that can
+/// express a pace as a zone PLUS an offset.
+struct ShorthandStructuredStep: Codable {
+    let stepType: String
+    let durationType: String
+    let durationValue: Double
+    /// null is legal and meaningful: the coach wrote no pace. Never defaulted
+    /// on this side either — see `unresolvedReason`.
+    let paceZone: String?
+    let paceAdjustment: Adjustment?
+    let exactPaceSecPerMile: Double?
+    let repeats: Int?
+    let recovery: Recovery?
+    let note: String?
+    /// Why the pace is unknown, as a closed code the UI can ask a question about.
+    let unresolvedReason: String?
+
+    struct Adjustment: Codable {
+        /// "percent" or "seconds_per_mile".
+        let type: String
+        /// Positive = slower, negative = faster. Same convention as PaceSelection.
+        let value: Double
+    }
+
+    struct Recovery: Codable {
+        let durationType: String
+        let durationValue: Double
+        let isJog: Bool
+    }
 }
 
 struct ShorthandStep: Codable, Identifiable {
@@ -1073,6 +1117,11 @@ struct ShorthandStep: Codable, Identifiable {
     let paceReference: String?
     let paceRangeHigh: String?
     let pacePercentage: Double?
+    /// Seconds per mile, when the coach wrote a number instead of a zone
+    /// ("4mi @ 6:00", "6x800 @ 3:00"). Optional because the deterministic
+    /// grammar never emits one and older deploys of the function don't send
+    /// the key at all.
+    let absolutePaceSecPerMile: Double?
     let notes: String?
     let order: Int
     let repCount: Int?
@@ -1394,6 +1443,14 @@ struct WorkshopView: View {
                 let body: [String: Any] = [
                     "input": input,
                     "paceZones": paceZones,
+                    // Without this the server answers from its own deterministic
+                    // grammar, which scores 12% against this coach's real plans
+                    // and cannot represent a pace offset at all — and, because
+                    // it never emits `structuredSteps`, the apply below had no
+                    // shape to read a pace out of. Cost is bounded server-side
+                    // by `llmBudgetAllows`, which falls back to the grammar
+                    // rather than failing, so the button always does something.
+                    "useModel": true,
                 ]
 
                 let data = try await callEdgeFunction(name: "parse-workout-shorthand", body: body)
@@ -1414,38 +1471,21 @@ struct WorkshopView: View {
     private func applyShorthandWorkout(_ result: ShorthandParseResult) async {
         isApplying = true
 
-        let steps = result.steps.enumerated().map { index, step in
-            let stepType: PlannedWorkoutStep.StepType = {
-                switch step.stepType {
-                case "warmup": return .warmup
-                case "cooldown": return .cooldown
-                case "recovery", "rest": return .recovery
-                default: return .active
-                }
-            }()
-
-            let durationType: PlannedWorkoutStep.DurationType = {
-                switch step.durationType {
-                case "distance_meters": return .distanceMeters
-                case "time_seconds": return .timeSeconds
-                default: return .distanceMiles
-                }
-            }()
-
-            return PlannedWorkoutStep(
-                id: UUID(),
-                stepType: stepType,
-                durationType: durationType,
-                durationValue: step.durationValue,
-                // TODO(adaptive-plan-1.8): STOP constructing PaceIntensity from a percentage here.
-                //   Use step.paceSecondsPerKm or resolve via AthletePaceProfileService when only
-                //   a pace_reference is set. See: adaptive-plan-loop-prompts.md § Prompt 1.8
-                targetPaceIntensity: step.pacePercentage.map { PaceIntensity(percentage: $0 / 100.0) },
-                notes: [step.notes, step.paceReference.map { "@ \($0) pace" }]
-                    .compactMap { $0 }.joined(separator: " "),
-                order: index
-            )
-        }
+        // Read through the shared wire → editor mapping, then lower to the
+        // persisted shape the same way the builder sheet does.
+        //
+        // This used to build PlannedWorkoutStep by hand and derive the pace from
+        // `step.pacePercentage`, which the server hardcodes to null — so the
+        // `.map` never fired and every step saved from here had no zone, no
+        // offset and no intensity, with "@ marathon pace" in `notes` as its only
+        // trace of a prescription. Going through EditableWorkoutStep keeps the
+        // zone, the offset, an absolute written pace, the rep count and the
+        // recovery, all of which the hand-rolled version dropped.
+        let equiv = viewModel.equivalentPaces
+            ?? EquivalentPaces(raceDistance: .marathon, goalTimeSeconds: 14400)
+        let steps = EditableWorkoutStep
+            .steps(fromShorthand: result)
+            .map { $0.toWorkoutStep(racePaceSeconds: racePaceSeconds, equivalentPaces: equiv) }
 
         let workoutType = ScheduledWorkoutType(rawValue: result.workoutType) ?? .intervals
 
