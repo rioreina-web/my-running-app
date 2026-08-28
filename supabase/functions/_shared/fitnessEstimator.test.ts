@@ -5,6 +5,7 @@ import {
   MAX_STATE_SD,
   type Observation,
   PROCESS_SD_PER_WEEK,
+  efficiencyObservation,
   raceObservation,
   sessionObservation,
 } from "./fitnessEstimator.ts";
@@ -183,4 +184,39 @@ Deno.test("a race outweighs a session of equal age, without a kind rule", () => 
   const r = raceObservation(1880, 0, day(1), "10K");
   const s = sessionObservation(1880 / 6.214, 25, 1.0, 0.8, day(1), "s");
   assert(r.sd < s.sd, `a race should be the tighter observation: ${r.sd} vs ${s.sd}`);
+});
+
+// ── EF as drift evidence (§12) ──────────────────────────────────────────────
+
+Deno.test("EF drift becomes a level observation off the baseline state", () => {
+  const o = efficiencyObservation(320, -6, 4, 10, 12, day(1), "EF")!;
+  assert(o !== null);
+  assertEquals(o.kind, "efficiency");
+  assertAlmostEquals(o.pace, 314, 1e-9, "baseline level plus the drift");
+});
+
+Deno.test("EF is admitted in BOTH directions, unlike the shipped one-way gate", () => {
+  const faster = efficiencyObservation(320, -6, 4, 10, 12, day(1), "EF")!;
+  const slower = efficiencyObservation(320, +6, 4, 10, 12, day(1), "EF")!;
+  assert(faster.pace < 320 && slower.pace > 320);
+});
+
+Deno.test("a thin EF trend is admitted but weighed like a thin thing", () => {
+  const thin = efficiencyObservation(320, -6, 4, 3, 3, day(1), "EF")!;
+  const solid = efficiencyObservation(320, -6, 4, 20, 30, day(1), "EF")!;
+  assert(thin.sd > solid.sd, `${thin.sd} vs ${solid.sd}`);
+});
+
+Deno.test("EF is weaker evidence than a session, which is weaker than a race", () => {
+  // Cheaper-per-beat is consistent with fitter, and also with cooler, fresher
+  // and better rested. The ordering must survive.
+  const ef = efficiencyObservation(320, -6, 4, 20, 30, day(1), "EF")!;
+  const s = sessionObservation(320, 25, 1.0, 0.8, day(1), "s");
+  const r = raceObservation(1880, 0, day(1), "10K");
+  assert(r.sd < s.sd && s.sd < ef.sd, `race ${r.sd} < session ${s.sd} < EF ${ef.sd}`);
+});
+
+Deno.test("too few reps on either side yields nothing, not a guess", () => {
+  assertEquals(efficiencyObservation(320, -6, 4, 2, 30, day(1), "EF"), null);
+  assertEquals(efficiencyObservation(320, -6, 4, 30, 2, day(1), "EF"), null);
 });

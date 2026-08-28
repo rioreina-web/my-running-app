@@ -84,8 +84,10 @@ import { generateFitnessPrediction, type FitnessPredictionResult, type PriorSnap
 import { buildPredictionInput, distanceToRaceType } from "../supabase/functions/_shared/fitnessInputs.ts";
 import { estimateFromSession, formatMSS, type ParsedSession }
   from "../supabase/functions/_shared/trainingZoneSignal.ts";
-import { estimateFitness, raceObservation, sessionObservation, type Observation }
+import { efficiencyObservation, estimateFitness, raceObservation, sessionObservation, type Observation }
   from "../supabase/functions/_shared/fitnessEstimator.ts";
+import { efficiencyTrend, fitExpectedHr, type HrSample }
+  from "../supabase/functions/_shared/expectedHr.ts";
 import { normalizeRaceTime } from "../supabase/functions/_shared/raceNormalization.ts";
 import { equivalentRacePaceSecPerMile, RACE_DISTANCE_MI, type RaceKey }
   from "../supabase/functions/_shared/paces.ts";
@@ -242,10 +244,25 @@ const seenObs = new Set<string>();
 interface EstStep { date: string; pace: number | null; sd: number | null }
 const estSteps: EstStep[] = [];
 
+// EF observations are kept SEPARATE and only the most recent one before any
+// given date is ever used (§12). `efficiencyTrend` compares a 28-day window
+// against an 84-day baseline, so consecutive weekly readings overlap almost
+// entirely — accumulating them would count one piece of evidence many times
+// and falsely tighten the posterior. One live EF statement at a time is the
+// honest reading of what EF actually knows.
+const efObservations: Observation[] = [];
+
+const observationsBefore = (date: string): Observation[] => {
+  const base = observations.filter((o) => o.date < date);
+  let latestEf: Observation | null = null;
+  for (const e of efObservations) if (e.date < date) latestEf = e;
+  return latestEf ? [...base, latestEf] : base;
+};
+
 /** The estimator's own state as of just before `date` — what prices a session. */
 const estimateAsOf = (date: string) =>
   estimateFitness({
-    observations: observations.filter((o) => o.date < date),
+    observations: observationsBefore(date),
     now: parseDay(date),
     processSdPerWeek: processSd,
   });
@@ -283,7 +300,7 @@ for (let t = from.getTime(); t <= to.getTime(); t += stepDays * DAY) {
   const at = new Date(t);
   at.setUTCHours(3, 30, 0, 0);
 
-  const { input, provenance } = await buildPredictionInput(db, userId, at, {
+  const { input, provenance, hrLaps } = await buildPredictionInput(db, userId, at, {
     asOf: at,
     // Rule 2: our own chain, never the stored rows.
     priorSnapshots: chain.slice(0, 50),
@@ -396,7 +413,40 @@ for (let t = from.getTime(); t <= to.getTime(); t += stepDays * DAY) {
         r.correctionFraction, r.date, `${r.distanceKey.toUpperCase()} race`,
       ));
     }
-    const est = estimateFitness({ observations, now: at, processSdPerWeek: processSd });
+    // EF, recomputed weekly from the 84-day lap window. Fitted from LAPS,
+    // which are point-in-time — so unlike athlete_state.fitness_signal this is
+    // genuinely replayable, which is what closes the §0.3 gap.
+    if (done % 7 === 0) {
+      const samples: HrSample[] = [];
+      for (const l of hrLaps) {
+        if (l.isRest === true || l.avgHr == null || l.dewPointF == null) continue;
+        const dur = l.movingTimeSeconds ?? 0;
+        const pace = l.avgPaceSecPerMile ?? 0;
+        if (!(dur > 0) || !(pace > 0)) continue;
+        samples.push({ date: l.date, paceSecPerMile: pace, hr: l.avgHr, durationSeconds: dur, dewPointF: l.dewPointF });
+      }
+      const model = fitExpectedHr(samples);
+      const trend = model ? efficiencyTrend(samples, model, at) : null;
+      if (model && trend) {
+        // The drift needs a level to hang on: the estimator's own state at the
+        // midpoint of the baseline window, ~56 days back.
+        const baseAt = day(new Date(at.getTime() - 56 * DAY));
+        const baseState = estimateAsOf(baseAt);
+        if (baseState) {
+          const o = efficiencyObservation(
+            baseState.pace, trend.deltaPaceSecPerMile, model.residualSd,
+            trend.recentSamples, trend.baselineSamples, day(at), "EF",
+          );
+          if (o) efObservations.push(o);
+        }
+      }
+    }
+
+    const est = estimateFitness({
+      observations: observationsBefore("9999-12-31"),
+      now: at,
+      processSdPerWeek: processSd,
+    });
     estSteps.push({ date: day(at), pace: est?.pace ?? null, sd: est?.sd ?? null });
   }
 
@@ -649,6 +699,20 @@ if (useEstimator) {
   // horizon is doing the work and the re-specification is invalid.
   const mape = (xs: number[]) => xs.length === 0 ? NaN : xs.reduce((s, x) => s + Math.abs(x), 0) / xs.length;
   const mean = (xs: number[]) => xs.length === 0 ? NaN : xs.reduce((s, x) => s + x, 0) / xs.length;
+
+  // Did EF actually reach the model? An undecidable result from a feature that
+  // never fired is a different finding, and must not be reported as this one.
+  const efUsed = efObservations.length;
+  const efDrift = efUsed > 0
+    ? `${efObservations[0].why} … ${efObservations[efUsed - 1].why}`
+    : "(none)";
+  console.log(`\n  EF EVIDENCE — ${efUsed} weekly observations created`);
+  if (efUsed > 0) {
+    console.log(`    first: ${efObservations[0].why}`);
+    console.log(`    last:  ${efObservations[efUsed - 1].why}`);
+  } else {
+    console.log(`    NONE — the HR path did not fire; the gate result below is INVALID`);
+  }
 
   console.log(`\n  GATE 2 — session residuals by horizon (H = days before the session)`);
   console.log(`  ${pad("horizon", 10)}${padS("n", 4)}${padS("shipped", 11)}${padS("estimator", 12)}${padS("delta", 10)}`);

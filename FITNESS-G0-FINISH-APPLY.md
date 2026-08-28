@@ -719,6 +719,75 @@ timeline rather than an engineering task.
 
 ---
 
+## 13 · UNDECIDABLE — the predictor question is closed  *(2026-08-28)*
+
+§12's stop condition was written before the work. It is invoked here.
+
+**HR is wired and it fired.** Not a null result from a feature that never ran:
+
+```
+EF EVIDENCE — 13 weekly observations created
+  first: EF drift  +5.8 s/mi (164v305 reps), ±2.2%
+  last:  EF drift +13.5 s/mi (138v479 reps), ±2.3%
+```
+
+864 of 866 non-rest laps carry HR (100%); 845 are usable as `HrSample`s
+against a `MIN_SAMPLES` of 20. The 84-day fetch returns 739 rows with 165 in
+the recent window — not truncated. EF had every chance.
+
+| horizon | shipped | estimator | delta |
+|---|---|---|---|
+| −1d | 2.28% | 2.62% | +0.33pp |
+| **−28d (gate 2b)** | **2.24%** | **2.51%** | **+0.27pp** |
+| −56d | 2.27% | 2.67% | +0.40pp |
+
+```
+paired bootstrap (n=23): delta 0.28pp, 95% CI [-0.11, 0.69]
+estimator worse on 12/23 sessions   (coin flip = 11.5)
+```
+
+**The CI still spans zero.** 12/23 is a coin flip to one session. Adding a
+second, independent, well-populated evidence stream did not give the gate
+enough power to decide.
+
+### The stop condition, applied
+
+Per §12: **undecidable → the current model stays by default.** The estimator
+stays parked — unshipped, untuned, not deleted. No further gate
+re-specification. No Phase 2. No Phase 3 on this athlete.
+
+**The predictor question is CLOSED.** It reopens on real users, not on
+another idea.
+
+### What this bought anyway, and it is not nothing
+
+The HR wiring stands on its own merits regardless of the verdict:
+
+- `running_workout_laps.avg_heart_rate` now reaches the fitness model. It
+  never did before — both lap queries selected weather and pace and no HR at
+  all, while `athlete-state.ts` selected it four lines over.
+- The lap window is 84 days for EF while the ENGINE still reads its historical
+  21. That split is deliberate: widening what the shipped model sees would
+  have changed its `deriveLapEfforts` pool and confounded the comparison the
+  fetch existed to make.
+- **§0.3 is closed as a side effect.** `expectedHr` is fitted from laps, which
+  are point-in-time, so EF is genuinely replayable — no `athlete_state`
+  history required, and no `includeEfficiencySignal: false` limitation.
+- `expectedHr.ts` is no longer orphaned.
+
+### One finding worth someone's attention, separately
+
+EF drift is **positive and growing**: +5.8 s/mi in the first window, +13.5 s/mi
+in the last. The athlete is running *more expensively* per heartbeat across
+Jun–Aug, and `expectedHr` already controls for dew point, pace and rep length —
+so this is not simply "it got hot". It is either a real efficiency decline or a
+term the HR model is missing (heat acclimation state, cumulative load, sleep).
+Nothing in the predictor acts on it, and nothing here should. Flagging it
+because it is the first genuinely new signal this program has produced, and it
+deserves a look on its own rather than as a component of a parked model.
+
+---
+
 ## 5 · The trap this document exists to avoid
 
 The 2:37 fix was verified as "raw model 309.26 vs prior 309.03 — the new code

@@ -373,3 +373,63 @@ export function sessionObservation(
     why: `${label} — ${Math.round(minutes)} min work, ${(offCurve * 100).toFixed(1)}% off curve, ±${(sd * 100).toFixed(1)}%`,
   };
 }
+
+// ---------------------------------------------------------------------------
+// EF as drift evidence (§12).
+// ---------------------------------------------------------------------------
+
+/**
+ * Base uncertainty of an efficiency-derived drift statement.
+ *
+ * Wider than a session and much wider than a race, and it should be: EF says
+ * the athlete is running cheaper per beat, which is *consistent with* being
+ * fitter but is also consistent with being cooler, fresher, or better rested.
+ * It is corroborating evidence, not a measurement of race pace — which is why
+ * the shipped engine only ever let it gate one direction. Here it is admitted
+ * in both directions, at a variance that reflects what it actually knows.
+ */
+export const EF_BASE_SD = 0.020;
+
+/**
+ * Turn an `expectedHr` efficiency trend into an observation.
+ *
+ * `deltaPaceSecPerMile` is a DRIFT — how much faster the athlete could run at
+ * unchanged heart rate now versus their baseline window. It is not a level, so
+ * it needs one: the caller supplies the state as it stood at the baseline
+ * window's midpoint, and the observation is that level plus the drift.
+ *
+ * Uncertainty comes from the fit itself rather than a constant. `residualSd`
+ * is how tightly the model predicts HR at all, and the sample counts say how
+ * well-determined each window's mean residual is — so a trend drawn from four
+ * reps against four is admitted, and weighed like the thin thing it is.
+ */
+export function efficiencyObservation(
+  baselineLevelPace: number,
+  deltaPaceSecPerMile: number,
+  residualSdBpm: number,
+  recentSamples: number,
+  baselineSamples: number,
+  date: string,
+  label: string,
+): Observation | null {
+  const implied = baselineLevelPace + deltaPaceSecPerMile;
+  if (!(implied > 0) || !Number.isFinite(implied)) return null;
+  if (recentSamples < 3 || baselineSamples < 3) return null;
+
+  // Standard error of a difference of two means, in bpm, carried into pace
+  // through the same ratio the trend itself used.
+  const seBpm = Math.abs(residualSdBpm) *
+    Math.sqrt(1 / recentSamples + 1 / baselineSamples);
+  const bpmToPaceFraction = Math.abs(deltaPaceSecPerMile) > 1e-6
+    ? Math.abs(deltaPaceSecPerMile / baselineLevelPace) / Math.max(Math.abs(deltaPaceSecPerMile), 1e-6)
+    : 0;
+  const sd = EF_BASE_SD + seBpm * bpmToPaceFraction;
+  return {
+    date,
+    kind: "efficiency",
+    pace: implied,
+    sd,
+    why: `${label} — EF drift ${deltaPaceSecPerMile >= 0 ? "+" : ""}${deltaPaceSecPerMile.toFixed(1)} s/mi ` +
+      `(${recentSamples}v${baselineSamples} reps), ±${(sd * 100).toFixed(1)}%`,
+  };
+}

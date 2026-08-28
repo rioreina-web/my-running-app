@@ -85,6 +85,10 @@ export interface LapInput {
   dewPointF?: number | null;
   /** Neutral-day equivalent pace, pre-computed by fetch-workout-weather. */
   heatAdjustedPaceSecPerMile?: number | null;
+  /** Average heart rate for the lap (2026-08-28, §12). The column has always
+   *  existed on `running_workout_laps` — the fitness model simply never
+   *  selected it, so no HR reached any part of this file. */
+  avgHr?: number | null;
 }
 
 /** One labeled GPS pace segment on a training_logs row (pace_segments). */

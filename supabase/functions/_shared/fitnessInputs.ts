@@ -101,6 +101,9 @@ export interface BuildInputOpts {
 
 export interface BuiltPredictionInput {
   input: PredictionInput;
+  /** Laps over the full 84-day window, for fitting `expectedHr`. The engine's
+   *  `input.laps` remains the 21-day set it has always read (§12). */
+  hrLaps: LapInput[];
   /** The raw rows, needed by the caller's race-candidate tagging pass. */
   logRows: Array<Record<string, unknown>>;
   /** What the point-in-time restriction actually excluded, for the record. */
@@ -111,6 +114,8 @@ export interface BuiltPredictionInput {
     priorSnapshotCount: number;
     /** Race rows that carried usable all-time weather (G0-FINISH §2.1). */
     raceWeatherCount: number;
+    /** Laps in the 84-day window that actually carried HR (§12). */
+    hrLapCount: number;
     efficiencySignalUsed: boolean;
   };
 }
@@ -129,6 +134,10 @@ export async function buildPredictionInput(
   const cutoff180 = new Date(now.getTime() - 180 * 86400000).toISOString().slice(0, 10);
   const cutoff112 = new Date(now.getTime() - 112 * 86400000).toISOString();
   const cutoff21 = new Date(now.getTime() - 21 * 86400000).toISOString();
+  // 84 days, not 21 (2026-08-28, §12). `expectedHr` fits a rep-level model and
+  // compares a 28-day recent window against an 84-day baseline; a 21-day fetch
+  // cannot express the baseline half of that comparison at all.
+  const cutoff84 = new Date(now.getTime() - 84 * 86400000).toISOString();
 
   // Training logs: last 180d (covers race detection); the 30d window is derived
   // by date below. One row can be both a run and carry notes/parse/segments.
@@ -189,12 +198,12 @@ export async function buildPredictionInput(
   let lapQ = db
     .from("running_workout_laps")
     .select(
-      "workout_id, lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, is_rest, total_elevation_gain, temp_f, dew_point_f, heat_adjusted_pace_sec_per_mile, lap_start_at",
+      "workout_id, lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, is_rest, total_elevation_gain, temp_f, dew_point_f, heat_adjusted_pace_sec_per_mile, avg_heart_rate, lap_start_at",
     )
     .eq("user_id", userId)
-    .gte("lap_start_at", cutoff21);
+    .gte("lap_start_at", cutoff84);
   if (asOfIso) lapQ = lapQ.lt("created_at", asOfIso);
-  const { data: lapRows } = await lapQ.order("lap_start_at", { ascending: true }).limit(2000);
+  const { data: lapRows } = await lapQ.order("lap_start_at", { ascending: true }).limit(8000);
 
   // Confirmed races — ALL TIME (2026-07-17). Races live in training_logs
   // (workout_type='race' + race_result), not a separate table. Recent ones
@@ -253,7 +262,7 @@ export async function buildPredictionInput(
     let rlQ = db
       .from("running_workout_laps")
       .select(
-        "workout_id, lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, is_rest, total_elevation_gain, temp_f, dew_point_f, heat_adjusted_pace_sec_per_mile, lap_start_at",
+        "workout_id, lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, is_rest, total_elevation_gain, temp_f, dew_point_f, heat_adjusted_pace_sec_per_mile, avg_heart_rate, lap_start_at",
       )
       .eq("user_id", userId)
       .in("workout_id", raceWorkoutIds);
@@ -262,7 +271,14 @@ export async function buildPredictionInput(
     raceLapRows = data ?? [];
   }
 
+  // Laps are fetched over 84 days for `expectedHr`'s baseline, but the ENGINE
+  // still sees only its historical 21 (2026-08-28, §12). Widening what the
+  // shipped model reads would change its `deriveLapEfforts` pool and silently
+  // confound the very comparison this fetch exists to make — the two chains
+  // must differ by the model, not by their inputs. `hrLaps` carries the full
+  // window for EF; `laps` stays exactly what it always was.
   const laps: LapInput[] = [];
+  const hrLaps: LapInput[] = [];
   const seenLapKeys = new Set<string>();
   for (const l of [...(lapRows ?? []), ...(raceLapRows ?? [])]) {
     const key = `${l.workout_id}#${l.lap_index}`;
@@ -270,7 +286,7 @@ export async function buildPredictionInput(
     seenLapKeys.add(key);
     const date = workoutDateById.get(String(l.workout_id)) ?? toDay(String(l.lap_start_at ?? ""));
     if (!date) continue;
-    laps.push({
+    const lap: LapInput = {
       workoutId: String(l.workout_id),
       date,
       lapIndex: num(l.lap_index),
@@ -282,7 +298,10 @@ export async function buildPredictionInput(
       tempF: numOrNull(l.temp_f),
       dewPointF: numOrNull(l.dew_point_f),
       heatAdjustedPaceSecPerMile: numOrNull(l.heat_adjusted_pace_sec_per_mile),
-    });
+      avgHr: numOrNull(l.avg_heart_rate),
+    };
+    hrLaps.push(lap);
+    if (String(l.lap_start_at ?? "") >= cutoff21) laps.push(lap);
   }
 
   // Prior snapshots (last 16 weeks) for the decay-gated baseline fallback AND
@@ -379,6 +398,7 @@ export async function buildPredictionInput(
       experienceLevel,
       now,
     },
+    hrLaps,
     logRows: (logRows ?? []) as Array<Record<string, unknown>>,
     provenance: {
       asOf: asOfIso,
@@ -386,6 +406,7 @@ export async function buildPredictionInput(
       lapRowCount: laps.length,
       priorSnapshotCount: priorSnapshots.length,
       raceWeatherCount: raceWeather.length,
+      hrLapCount: hrLaps.filter((l) => l.avgHr != null).length,
       efficiencySignalUsed: includeEf && efficiencySignal !== null,
     },
   };
