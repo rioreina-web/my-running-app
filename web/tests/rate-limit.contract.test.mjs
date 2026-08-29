@@ -33,6 +33,11 @@ const HELPER_PATH = path.resolve(HERE, "..", "src", "lib", "rate-limit.ts");
 // Every entry below: file, HTTP method, the key tag we expect, and the
 // (limit, windowMs) pair pinned at H.4 close. Loosening a limit here
 // without reviewing this file means the loosening was unconscious.
+//
+// `keyed` defaults to "user" — the route buckets on `${user.id}:tag` behind
+// an auth gate. "ip" is for routes that are public by design (a signup form
+// posted before the visitor has an account): those bucket on the caller's
+// address instead, so the auth-ordering assertions below don't apply.
 const PROTECTED_ROUTES = [
   { file: "coach/route.ts",            method: "POST", tag: "coach",            limit: 20, windowMs: 60_000 },
   { file: "assign-plan/route.ts",      method: "POST", tag: "assign-plan",      limit: 10, windowMs: 60_000 },
@@ -40,12 +45,16 @@ const PROTECTED_ROUTES = [
   { file: "retry-processing/route.ts", method: "POST", tag: "retry-processing", limit:  5, windowMs: 60_000 },
   { file: "vital-stream/route.ts",     method: "GET",  tag: "vital-stream",     limit: 60, windowMs: 60_000 },
   { file: "shift-day/route.ts",        method: "POST", tag: "shift-day",        limit: 30, windowMs: 60_000 },
+  { file: "beta-invite/route.ts",      method: "POST", tag: "beta-invite",      limit:  5, windowMs: 600_000, keyed: "ip" },
 ];
 
 // ── Per-route wiring assertions ──────────────────────────
 
 for (const route of PROTECTED_ROUTES) {
-  test(`route ${route.file}: enforceRateLimit wired with key=user.id:${route.tag}, limit=${route.limit}, windowMs=${route.windowMs}`, async () => {
+  const ipKeyed = route.keyed === "ip";
+  const keyDesc = ipKeyed ? "clientKey(request)" : `user.id:${route.tag}`;
+
+  test(`route ${route.file}: enforceRateLimit wired with key=${keyDesc}, limit=${route.limit}, windowMs=${route.windowMs}`, async () => {
     const src = await readFile(path.join(API_DIR, route.file), "utf8");
 
     // Imports the helper.
@@ -67,27 +76,50 @@ for (const route of PROTECTED_ROUTES) {
     const limitN = String(route.limit);
     const windowN = String(route.windowMs);
     const windowAlt = String(route.windowMs).replace(/(\d{3})$/, "_$1"); // 60000 → 60_000
-    const callRegex = new RegExp(
-      `enforceRateLimit\\(\\s*\`\\$\\{user\\.id\\}:${route.tag}\`\\s*,\\s*${limitN}\\s*,\\s*(?:${windowN}|${windowAlt})\\s*\\)`,
-    );
+    const callRegex = ipKeyed
+      ? new RegExp(
+          `enforceRateLimit\\(\\s*clientKey\\(request\\)\\s*,\\s*${limitN}\\s*,\\s*(?:${windowN}|${windowAlt})\\s*\\)`,
+        )
+      : new RegExp(
+          `enforceRateLimit\\(\\s*\`\\$\\{user\\.id\\}:${route.tag}\`\\s*,\\s*${limitN}\\s*,\\s*(?:${windowN}|${windowAlt})\\s*\\)`,
+        );
     assert.match(
       src,
       callRegex,
-      `${route.file} must call enforceRateLimit(\`\${user.id}:${route.tag}\`, ${route.limit}, ${route.windowMs}). ` +
+      `${route.file} must call enforceRateLimit(${ipKeyed ? "clientKey(request)" : "`${user.id}:" + route.tag + "`"}, ${route.limit}, ${route.windowMs}). ` +
         `If you intentionally changed limits, update PROTECTED_ROUTES in this test file.`,
     );
 
-    // Auth gate must appear BEFORE the rate-limit call. Otherwise an
-    // unauth'd request hits the limiter with `undefined:tag` as the key
-    // and can DOS the bucket for legitimate users hitting the same route
-    // before they've signed in (rare but possible with shared keys).
-    const authIdx = src.search(/supabase\.auth\.getUser\b/);
     const rlIdx = src.search(/enforceRateLimit\s*\(/);
-    assert.ok(authIdx >= 0, `${route.file} must call supabase.auth.getUser() to scope the rate-limit key`);
-    assert.ok(
-      rlIdx > authIdx,
-      `${route.file}: auth check must run BEFORE enforceRateLimit (so the key is scoped to the authenticated user.id)`,
-    );
+
+    if (ipKeyed) {
+      // Public route: the bucket key has to come from the caller's address,
+      // and the limiter has to be the first thing the handler does — there
+      // is no auth gate in front of it to absorb a flood.
+      assert.match(
+        src,
+        /x-forwarded-for/,
+        `${route.file}: clientKey must derive the bucket from the x-forwarded-for address`,
+      );
+      const bodyIdx = src.search(/request\.json\s*\(/);
+      if (bodyIdx >= 0) {
+        assert.ok(
+          rlIdx < bodyIdx,
+          `${route.file}: enforceRateLimit must run BEFORE the request body is parsed`,
+        );
+      }
+    } else {
+      // Auth gate must appear BEFORE the rate-limit call. Otherwise an
+      // unauth'd request hits the limiter with `undefined:tag` as the key
+      // and can DOS the bucket for legitimate users hitting the same route
+      // before they've signed in (rare but possible with shared keys).
+      const authIdx = src.search(/supabase\.auth\.getUser\b/);
+      assert.ok(authIdx >= 0, `${route.file} must call supabase.auth.getUser() to scope the rate-limit key`);
+      assert.ok(
+        rlIdx > authIdx,
+        `${route.file}: auth check must run BEFORE enforceRateLimit (so the key is scoped to the authenticated user.id)`,
+      );
+    }
 
     // Rate-limit must run BEFORE any upstream fetch(). Otherwise a flood
     // of requests burns expensive upstream calls (LLM, edge functions)
