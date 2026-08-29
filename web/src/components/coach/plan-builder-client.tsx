@@ -2041,6 +2041,19 @@ export function PlanBuilderClient({
               ))}
             </div>
 
+            {/* The pace reference, editable WITHOUT leaving the modal. Same
+                anchor state as the plan page — one anchor, two doors — so a
+                goal time set here updates the plan header and vice versa.
+                Before this, a coach who opened the builder with no anchor set
+                was locked to the 7:30 reference runner with no way to say
+                "this is a 2:20 athlete" except closing the modal, finding the
+                PACE REF block, and starting over. */}
+            <PaceReferenceEditor
+              anchor={paceAnchor}
+              onChange={setPaceAnchor}
+              planDistance={targetDistance}
+            />
+
             {/* Describe it — natural-language shorthand → structured steps.
                 Appends to the editor below; unparsed fragments are surfaced. */}
             <div className="border border-divider rounded-xl p-4 bg-bg-elevated space-y-2">
