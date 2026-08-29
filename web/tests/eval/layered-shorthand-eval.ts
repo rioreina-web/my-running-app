@@ -21,7 +21,10 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseWorkoutText } from "../../src/components/coach/workout-nl-parser";
-import { buildPrompt, PACE_ZONES } from "../../../supabase/functions/_shared/prompts/workout-shorthand.v1";
+import {
+  buildPrompt,
+  RESPONSE_SCHEMA as SCHEMA,
+} from "../../../supabase/functions/_shared/prompts/workout-shorthand.v1";
 import { validateSteps } from "../../../supabase/functions/_shared/workout-step-validator";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -35,36 +38,6 @@ if (!KEY) throw new Error("GEMINI_API_KEY required");
 const limitArg = process.argv.indexOf("--limit");
 const entries = limitArg >= 0 ? corpus.slice(0, Number(process.argv[limitArg + 1])) : corpus;
 
-const SCHEMA = {
-  type: "object",
-  properties: {
-    steps: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          stepType: { type: "string", enum: ["warmup", "active", "recovery", "rest", "cooldown"] },
-          durationType: { type: "string", enum: ["distance_miles", "distance_km", "distance_meters", "time_seconds"] },
-          durationValue: { type: "number" },
-          paceZone: { type: "string", enum: [...PACE_ZONES], nullable: true },
-          paceAdjustmentType: { type: "string", enum: ["seconds_per_mile", "percent"], nullable: true },
-          paceAdjustmentValue: { type: "number", nullable: true },
-          exactPaceSecPerMile: { type: "number", nullable: true },
-          repeats: { type: "integer", nullable: true },
-          recoveryDurationType: { type: "string", enum: ["distance_miles", "distance_km", "distance_meters", "time_seconds"], nullable: true },
-          recoveryDurationValue: { type: "number", nullable: true },
-          recoveryIsJog: { type: "boolean", nullable: true },
-          note: { type: "string", nullable: true, maxLength: 120 },
-          unresolved: { type: "string", enum: ["no_pace_written", "effort_word_not_a_zone", "progression_without_paces", "ambiguous"], nullable: true },
-        },
-        required: ["stepType", "durationType", "durationValue"],
-      },
-    },
-    workoutNote: { type: "string", nullable: true },
-    unparsed: { type: "array", items: { type: "string" } },
-  },
-  required: ["steps"],
-};
 
 async function callModel(input: string, temperature: number) {
   const url =

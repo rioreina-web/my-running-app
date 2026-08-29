@@ -272,3 +272,70 @@ export function buildPrompt(input: string, todayHint = ""): string {
     .replace("{{todayHint}}", todayHint ? `Context: ${todayHint}\n` : "")
     .replace("{{input}}", input);
 }
+
+/**
+ * The response schema, exported so there is exactly ONE of it.
+ *
+ * It used to be duplicated: one copy in workout-shorthand-llm.ts (what ships)
+ * and another inside web/tests/eval/layered-shorthand-eval.ts (what we
+ * measured). They drifted — the eval still had the pace fields optional after
+ * the shipping copy made them required — so the eval was scoring a contract
+ * production no longer used, and would have reported the old broken numbers as
+ * if they were current. An eval that measures something other than the
+ * deployed behaviour is worse than no eval.
+ */
+export const RESPONSE_SCHEMA =  {
+  type: "object",
+  properties: {
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          stepType: { type: "string", enum: ["warmup", "active", "recovery", "rest", "cooldown"] },
+          durationType: {
+            type: "string",
+            enum: ["distance_miles", "distance_km", "distance_meters", "time_seconds"],
+          },
+          durationValue: { type: "number" },
+          paceZone: { type: "string", enum: [...PACE_ZONES], nullable: true },
+          paceAdjustmentType: { type: "string", enum: ["seconds_per_mile", "percent"], nullable: true },
+          paceAdjustmentValue: { type: "number", nullable: true },
+          exactPaceSecPerMile: { type: "number", nullable: true },
+          repeats: { type: "integer", nullable: true },
+          recoveryDurationType: {
+            type: "string",
+            enum: ["distance_miles", "distance_km", "distance_meters", "time_seconds"],
+            nullable: true,
+          },
+          recoveryDurationValue: { type: "number", nullable: true },
+          recoveryIsJog: { type: "boolean", nullable: true },
+          note: { type: "string", nullable: true, maxLength: 120 },
+          // CLOSED vocabulary, deliberately. As free text this was where the
+          // model looped: on "cutdown" inputs it wrote the same paragraph of
+          // hedging over and over until it exhausted maxOutputTokens and
+          // returned unterminated JSON. An enum makes that unrepresentable.
+          unresolved: { type: "string", enum: ["no_pace_written", "effort_word_not_a_zone", "progression_without_paces", "ambiguous"], nullable: true },
+        },
+        // The pace fields are REQUIRED, not optional, and that is the fix for
+        // the offset-dropping. They are still `nullable`, so "no offset here"
+        // remains expressible — but the model must now emit the key and decide,
+        // instead of quietly omitting it. Left optional, flash-lite returned
+        // sixteen steps at plain MP on two runs of three and flash on every
+        // run, always by OMISSION and never by getting the number wrong. That
+        // asymmetry is the tell: it was skipping the field, not misreading it.
+        required: [
+          "stepType",
+          "durationType",
+          "durationValue",
+          "paceZone",
+          "paceAdjustmentType",
+          "paceAdjustmentValue",
+        ],
+      },
+    },
+    workoutNote: { type: "string", nullable: true },
+    unparsed: { type: "array", items: { type: "string" } },
+  },
+  required: ["steps"],
+};

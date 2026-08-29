@@ -21,7 +21,7 @@
  */
 
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
-import { buildPrompt, PACE_ZONES } from "./prompts/workout-shorthand.v1.ts";
+import { buildPrompt, RESPONSE_SCHEMA } from "./prompts/workout-shorthand.v1.ts";
 import type { RawStep } from "./workout-step-validator.ts";
 
 export interface LlmParseResult {
@@ -33,61 +33,6 @@ export interface LlmParseResult {
 // Gemini's schema dialect (OpenAPI subset). `nullable` is load-bearing here:
 // it is what lets the model say "the coach wrote no pace" instead of picking
 // one, which is the single most important behaviour in this whole path.
-const RESPONSE_SCHEMA = {
-  type: "object",
-  properties: {
-    steps: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          stepType: { type: "string", enum: ["warmup", "active", "recovery", "rest", "cooldown"] },
-          durationType: {
-            type: "string",
-            enum: ["distance_miles", "distance_km", "distance_meters", "time_seconds"],
-          },
-          durationValue: { type: "number" },
-          paceZone: { type: "string", enum: [...PACE_ZONES], nullable: true },
-          paceAdjustmentType: { type: "string", enum: ["seconds_per_mile", "percent"], nullable: true },
-          paceAdjustmentValue: { type: "number", nullable: true },
-          exactPaceSecPerMile: { type: "number", nullable: true },
-          repeats: { type: "integer", nullable: true },
-          recoveryDurationType: {
-            type: "string",
-            enum: ["distance_miles", "distance_km", "distance_meters", "time_seconds"],
-            nullable: true,
-          },
-          recoveryDurationValue: { type: "number", nullable: true },
-          recoveryIsJog: { type: "boolean", nullable: true },
-          note: { type: "string", nullable: true, maxLength: 120 },
-          // CLOSED vocabulary, deliberately. As free text this was where the
-          // model looped: on "cutdown" inputs it wrote the same paragraph of
-          // hedging over and over until it exhausted maxOutputTokens and
-          // returned unterminated JSON. An enum makes that unrepresentable.
-          unresolved: { type: "string", enum: ["no_pace_written", "effort_word_not_a_zone", "progression_without_paces", "ambiguous"], nullable: true },
-        },
-        // The pace fields are REQUIRED, not optional, and that is the fix for
-        // the offset-dropping. They are still `nullable`, so "no offset here"
-        // remains expressible — but the model must now emit the key and decide,
-        // instead of quietly omitting it. Left optional, flash-lite returned
-        // sixteen steps at plain MP on two runs of three and flash on every
-        // run, always by OMISSION and never by getting the number wrong. That
-        // asymmetry is the tell: it was skipping the field, not misreading it.
-        required: [
-          "stepType",
-          "durationType",
-          "durationValue",
-          "paceZone",
-          "paceAdjustmentType",
-          "paceAdjustmentValue",
-        ],
-      },
-    },
-    workoutNote: { type: "string", nullable: true },
-    unparsed: { type: "array", items: { type: "string" } },
-  },
-  required: ["steps"],
-};
 
 export interface LlmOpts {
   apiKey?: string;
