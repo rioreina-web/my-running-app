@@ -506,18 +506,22 @@ Deno.serve(async (req) => {
     let mergedPaceSegments: unknown = null;
     let siblingRunId: string | null = null;
     let siblingParsedStructure: unknown = null;
-    {
-      const er = existingRecord as {
-        workout_distance_miles?: number | null;
-        workout_date?: string | null;
-        created_at?: string | null;
-        external_streams?: unknown;
-        pace_segments?: unknown;
-      } | null;
-      const erDist = er?.workout_distance_miles ?? null;
+    const er = existingRecord as {
+      workout_distance_miles?: number | null;
+      workout_date?: string | null;
+      created_at?: string | null;
+      external_streams?: unknown;
+      pace_segments?: unknown;
+    } | null;
+    // Shared by the pre-transcription lookup here and the late collapse after
+    // the analysis writes — same window, same distance tolerance, so the two
+    // passes can never disagree about what counts as the sibling.
+    const findSiblingGpsRun = async (dist: number): Promise<
+      | { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown }
+      | null
+    > => {
       const erDate = er?.workout_date ?? null;
       const erCreated = er?.created_at ?? null;
-      const erHasStreams = er?.external_streams != null;
       // Fall back to created_at when the row is NULL-dated. iOS only stamped
       // workout_date when the athlete had picked a run in the recorder, so a
       // memo recorded with nothing selected skipped this whole block and never
@@ -526,47 +530,54 @@ Deno.serve(async (req) => {
       // reconciles a memo arriving AFTER the run; strava-sync's orphan merge
       // only fires while writing a run row, hours earlier).
       const erWhen = erDate ?? erCreated;
-      if (!erHasStreams && erDist && erWhen) {
-        // Stated date → that UTC day (unchanged). Fallback clock → look BACK
-        // from the recording, not symmetrically around it: an athlete records a
-        // memo after running, often hours later (2026-08-24's was 6h29m after
-        // the run started), and essentially never about a run that has not
-        // happened yet. Mirrors ORPHAN_FALLBACK_* in _shared/voiceOrphanMatch.
-        let lo: string, hi: string;
-        if (erDate) {
-          const day = String(erDate).slice(0, 10);
-          lo = `${day}T00:00:00Z`;
-          hi = `${day}T23:59:59Z`;
-        } else {
-          const base = Date.parse(String(erCreated));
-          lo = new Date(base - 18 * 60 * 60 * 1000).toISOString();
-          hi = new Date(base + 3 * 60 * 60 * 1000).toISOString();
-        }
-        const { data: siblings } = await supabase
-          .from("training_logs")
-          .select("id, workout_date, workout_distance_miles, external_streams, pace_segments, parsed_structure")
-          .eq("user_id", authUserId)
-          .neq("id", record.id)
-          .not("external_streams", "is", null)
-          .gte("workout_date", lo)
-          .lte("workout_date", hi)
-          .limit(10);
-        // Closest in time among the distance matches, not merely the first row
-        // the query happened to return. Irrelevant while the window was a single
-        // day with one run in it; it matters now that the fallback window can
-        // span 21h and therefore two different runs.
-        const erWhenT = Date.parse(String(erWhen));
-        const match = (siblings ?? [])
-          .filter((s: { workout_distance_miles?: number | null }) =>
-            typeof s.workout_distance_miles === "number" &&
-            Math.abs((s.workout_distance_miles as number) - (erDist as number)) <= 0.3
-          )
-          .sort((a: { workout_date?: string | null }, b: { workout_date?: string | null }) =>
-            Math.abs(Date.parse(String(a.workout_date)) - erWhenT) -
-            Math.abs(Date.parse(String(b.workout_date)) - erWhenT)
-          )[0] as
-            | { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown }
-            | undefined;
+      if (!erWhen) return null;
+      // Stated date → that UTC day (unchanged). Fallback clock → look BACK
+      // from the recording, not symmetrically around it: an athlete records a
+      // memo after running, often hours later (2026-08-24's was 6h29m after
+      // the run started), and essentially never about a run that has not
+      // happened yet. Mirrors ORPHAN_FALLBACK_* in _shared/voiceOrphanMatch.
+      let lo: string, hi: string;
+      if (erDate) {
+        const day = String(erDate).slice(0, 10);
+        lo = `${day}T00:00:00Z`;
+        hi = `${day}T23:59:59Z`;
+      } else {
+        const base = Date.parse(String(erCreated));
+        lo = new Date(base - 18 * 60 * 60 * 1000).toISOString();
+        hi = new Date(base + 3 * 60 * 60 * 1000).toISOString();
+      }
+      const { data: siblings } = await supabase
+        .from("training_logs")
+        .select("id, workout_date, workout_distance_miles, external_streams, pace_segments, parsed_structure")
+        .eq("user_id", authUserId)
+        .neq("id", record.id)
+        .not("external_streams", "is", null)
+        .gte("workout_date", lo)
+        .lte("workout_date", hi)
+        .limit(10);
+      // Closest in time among the distance matches, not merely the first row
+      // the query happened to return. Irrelevant while the window was a single
+      // day with one run in it; it matters now that the fallback window can
+      // span 21h and therefore two different runs.
+      const erWhenT = Date.parse(String(erWhen));
+      const match = (siblings ?? [])
+        .filter((s: { workout_distance_miles?: number | null }) =>
+          typeof s.workout_distance_miles === "number" &&
+          Math.abs((s.workout_distance_miles as number) - dist) <= 0.3
+        )
+        .sort((a: { workout_date?: string | null }, b: { workout_date?: string | null }) =>
+          Math.abs(Date.parse(String(a.workout_date)) - erWhenT) -
+          Math.abs(Date.parse(String(b.workout_date)) - erWhenT)
+        )[0] as
+          | { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown }
+          | undefined;
+      return match ?? null;
+    };
+    {
+      const erDist = er?.workout_distance_miles ?? null;
+      const erHasStreams = er?.external_streams != null;
+      if (!erHasStreams && erDist) {
+        const match = await findSiblingGpsRun(erDist as number);
         if (match) {
           mergedStreams = match.external_streams ?? null;
           // The laps table is keyed on the SIBLING row's id (the lap-writer
@@ -1201,6 +1212,60 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to update training log: ${updateError.message}`);
     }
 
+    // ── Late sibling collapse ──────────────────────────────────────────
+    // The sibling-GPS lookup above runs BEFORE transcription, so on a bare
+    // memo (nothing selected in the recorder) workout_distance_miles is still
+    // null there and the lookup never fires — the distance it needs is
+    // extracted FROM the transcript, minutes later. That is exactly the
+    // memo-after-run case the lookup exists to cover (2026-08-29: a 21-mi
+    // group-workout memo sat beside its Connect twin and never saw its 22 GPS
+    // splits). Now that the extracted distance is on the row, retry the match
+    // — and rather than copying streams onto this row, which leaves two
+    // 21-mile rows in the journal, collapse the pair through
+    // merge_voice_orphan_into_run: the run row stays canonical (GPS, laps,
+    // splits), inherits the memo's subjective fields, and this voice row is
+    // consumed. Dedup at upload, not at read.
+    //
+    // The RPC refuses SILENTLY when the run already carries its own memo or
+    // real athlete notes (the guard from 20260827171023), so consumption is
+    // detected by the orphan row vanishing, not by the void return. On
+    // refusal the memo stays stranded on its own row — the intended failure
+    // direction; enriching it with a run that already has its own memo would
+    // likely attach the wrong session.
+    let finalLogId = record.id;
+    if (siblingRunId == null && er?.external_streams == null) {
+      const lateDist = (updatePayload.workout_distance_miles as number | undefined) ??
+        (er?.workout_distance_miles as number | null) ?? null;
+      const lateSibling = typeof lateDist === "number" && lateDist > 0
+        ? await findSiblingGpsRun(lateDist)
+        : null;
+      if (lateSibling?.id) {
+        const { error: collapseErr } = await supabase.rpc("merge_voice_orphan_into_run", {
+          p_orphan: record.id,
+          p_run: lateSibling.id,
+        });
+        if (collapseErr) {
+          console.warn(`[process-training-memo] late sibling collapse RPC failed: ${collapseErr.message}`);
+        } else {
+          const { data: orphanStill } = await supabase
+            .from("training_logs")
+            .select("id")
+            .eq("id", record.id)
+            .maybeSingle();
+          if (!orphanStill) {
+            finalLogId = lateSibling.id as string;
+            console.log(
+              `[process-training-memo] late sibling collapse: voice ${record.id} merged into run ${finalLogId}`,
+            );
+          } else {
+            console.log(
+              `[process-training-memo] late sibling collapse refused for run ${lateSibling.id}; memo stays on ${record.id}`,
+            );
+          }
+        }
+      }
+    }
+
     // The workout type, declared as `memo` so the ladder can rank it. This
     // outranks the lapless device heuristic and the server's lap geometry —
     // the athlete saying "I did an easy 8-miler" is better evidence than either
@@ -1209,7 +1274,7 @@ Deno.serve(async (req) => {
     // is logged, not thrown: nothing about the memo itself has failed.
     if (memoWorkoutType) {
       const { data: storedType, error: typeErr } = await supabase.rpc("set_workout_type", {
-        p_log: record.id,
+        p_log: finalLogId,
         p_type: memoWorkoutType,
         p_source: "memo",
       });
@@ -1224,7 +1289,11 @@ Deno.serve(async (req) => {
 
     // Parse the workout structure (GPS streams + any spoken detail) now that the
     // row is written. Direct call — the pg_net trigger is dead on Supabase.
-    fireParseStructure(record.id, authUserId);
+    // After a late collapse this reruns the parser on the RUN row, which now
+    // holds the memo text alongside its streams + laps — replacing the
+    // GPS-only geometry guess from sync time with the athlete's declared
+    // structure.
+    fireParseStructure(finalLogId, authUserId);
 
     // ── Niggle classification (audit fix #2) ──────────────────────────
     // The memo pipeline is the PRIMARY body-mentions writer: persist the
@@ -1237,13 +1306,13 @@ Deno.serve(async (req) => {
     // Kept AWAITED deliberately (unlike the resolution/memory writes below):
     // the niggle chips render alongside the journal entry, and backgrounding
     // this write made them pop in a beat late. It's also the cheapest write.
-    await writeNiggleMentions(supabase, authUserId, record.id, mentionDate, analysis.extracted_data);
+    await writeNiggleMentions(supabase, authUserId, finalLogId, mentionDate, analysis.extracted_data);
     // The all-clear signal: when the athlete says a niggle is better now,
     // record a resolution watermark so it drops out of active analysis until
     // (and unless) a new mention comes in after this date. Background: nothing
     // athlete-visible reads it in the seconds after the entry appears, and the
     // writer never throws — runInBackground still runs it to completion.
-    runInBackground(writeNiggleResolutions(supabase, authUserId, record.id, mentionDate, analysis.extracted_data));
+    runInBackground(writeNiggleResolutions(supabase, authUserId, finalLogId, mentionDate, analysis.extracted_data));
 
     // ── Long-term memory extraction (roadmap 4.1, "it knows you") ─────────
     // Dedup-or-reinforce the LLM's memory_candidates into user_memories:
@@ -1258,7 +1327,7 @@ Deno.serve(async (req) => {
     runInBackground(writeMemoryCandidates(
       supabase,
       authUserId,
-      record.id,
+      finalLogId,
       mentionDate,
       memoExcerpt,
       analysis.memory_candidates,
@@ -1294,7 +1363,10 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        id: record.id,
+        // After a late sibling collapse this is the RUN row's id — the row the
+        // memo now lives on. Callers refreshing by id must use this, not the
+        // (deleted) voice row they inserted.
+        id: finalLogId,
         mood: analysis.mood,
         cleaned_notes: analysis.cleaned_notes,
         // A (2026-06-17 rev3): AI Insight is generated on demand via the
