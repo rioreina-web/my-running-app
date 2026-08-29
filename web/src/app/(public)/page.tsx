@@ -1,247 +1,418 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AppPreview } from "@/components/site/app-preview";
+import {
+  ActionLink,
+  CoachQuote,
+  EditorialRule,
+  Eyebrow,
+  PlateStrip,
+} from "@/components/site/editorial";
+
 export const metadata: Metadata = {
-  title: "Post Run Drip — A running log",
+  title: "Post Run Drip — a training log for self-coached runners",
   description:
-    "A running log for runners with a goal time and a base. Voice-log a run, sync your watch, follow a plan.",
+    "Voice-log the run, sync the watch, and get your training read back honestly — anchored to races you have actually run. No prescriptions, no diagnoses.",
 };
 
 /* ──────────────────────────────────────────────────────────────────────
-   POST RUN DRIP — HOME (ported from home.v4.jsx in the design system)
-   Three things only: training log, analysis, plan. Short copy. No theatre.
+   HOME — rebuilt around the wedge (see outputs/product-state-2026-05-28.md).
+
+   The previous page sold "a running log" to nobody in particular. This one
+   is written to Maya: the self-coached runner who journals her training,
+   anchors on real race history, and wants observation without prescription.
+   Every surface shown here matches the target 4-tab IA in CLAUDE.md.
    ────────────────────────────────────────────────────────────────────── */
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-bg-base text-text-primary font-body">
-      <Header />
-      <main>
-        <Hero />
-        <Features />
-        <Beta />
-      </main>
-      <Footer />
-    </div>
+    <>
+      <PlateStrip
+        surface="Home · v1"
+        fig="Fig. 00"
+        right="Self-coached · 2026"
+      />
+      <Hero />
+      <Surfaces />
+      <Anchored />
+      <Voice />
+      <Niggles />
+      <Roadmap />
+      <Beta />
+    </>
   );
 }
 
-/* ── Helpers ─────────────────────────────────────────────────────── */
-function Mono({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <span
-      className={`font-mono text-[11px] tracking-[1.5px] uppercase ${className}`}
-    >
-      {children}
-    </span>
-  );
-}
+/* ── HERO ────────────────────────────────────────────────────────────── */
 
-/* ── HEADER ──────────────────────────────────────────────────────── */
-function Header() {
-  return (
-    <header className="border-b border-divider bg-bg-base/85 backdrop-blur sticky top-0 z-30">
-      <div className="mx-auto max-w-[1180px] flex items-center justify-between px-10 py-5 whitespace-nowrap gap-6">
-        <Link
-          href="/"
-          className="font-display text-[22px] tracking-[-0.01em] shrink-0"
-        >
-          Post Run Drip
-        </Link>
-        <div className="flex items-center gap-6 shrink-0">
-          <Link
-            href="/login"
-            className="font-body text-[14px] text-text-secondary hover:text-text-primary transition-colors"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-md bg-coral px-4 py-2 font-body text-[14px] font-semibold text-white hover:bg-coral-dark transition-colors"
-          >
-            Get the app
-          </Link>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-/* ── HERO ────────────────────────────────────────────────────────── */
 function Hero() {
   return (
     <section className="border-b border-divider">
-      <div className="mx-auto max-w-[1180px] grid lg:grid-cols-[1.1fr_0.9fr] gap-16 px-10 pt-28 pb-28 items-center">
+      <div className="mx-auto grid max-w-[1180px] items-center gap-14 px-6 py-16 md:px-10 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
         <div>
-          <h1 className="font-display text-[76px] leading-[0.98] tracking-[-0.02em] text-text-primary">
-            A running log.
+          <Eyebrow coral>For runners coaching themselves</Eyebrow>
+          <h1 className="mt-5 font-display text-[clamp(44px,8vw,76px)] font-bold leading-[0.98] tracking-[-0.02em] text-text-primary">
+            Honest observation.
+            <br />
+            <em className="italic text-coral">No prescriptions.</em>
           </h1>
-          <p className="mt-8 max-w-[460px] font-body text-[18px] leading-[1.55] text-text-secondary">
-            For runners with a goal time and a base. Voice-log a run, sync your
-            watch, follow a plan. The training reads itself back to you.
+          <p className="mt-7 max-w-[46ch] font-body text-[17px] leading-[1.6] text-text-secondary">
+            Talk into your phone after the run. The watch data lands on top of
+            it. Post Run Drip keeps the record, reads the two together, and
+            tells you what it sees — anchored to races you have actually run,
+            not the time you are chasing.
           </p>
-          <div className="mt-10 flex items-center gap-3">
+
+          <div className="mt-9 flex flex-wrap items-center gap-5">
             <Link
-              href="/login"
-              className="rounded-md bg-coral px-6 py-3.5 font-body text-[14px] font-semibold text-white shadow-[0_1px_0_var(--color-coral-dark),0_8px_24px_-8px_rgba(212,89,42,0.45)] hover:bg-coral-dark transition-colors"
+              href="/beta"
+              className="rounded-[10px] bg-coral px-6 py-3.5 font-display text-[15px] font-semibold text-white shadow-[0_1px_0_var(--color-coral-dark)] transition-colors hover:bg-coral-dark"
             >
-              Try the beta
+              Request an invite
             </Link>
+            <ActionLink href="/how-it-works">See the four surfaces</ActionLink>
+          </div>
+
+          <div className="mt-10 flex flex-wrap items-baseline gap-x-6 gap-y-2 border-t border-divider pt-5">
+            <Eyebrow>iOS · TestFlight</Eyebrow>
+            <Eyebrow>HealthKit sync</Eyebrow>
+            <Eyebrow>Voice-first logging</Eyebrow>
           </div>
         </div>
 
-        <div className="flex justify-center lg:justify-end">
-          <ProductCard />
+        <div>
+          <AppPreview initialTab="log" />
+          <p className="mt-4 text-center font-body text-[13px] italic text-text-tertiary">
+            Tap a tab. This is the app, at rest.
+          </p>
         </div>
       </div>
     </section>
   );
 }
 
-function ProductCard() {
-  return (
-    <div className="w-full max-w-[420px] rounded-lg border border-divider bg-bg-card shadow-[0_30px_60px_-30px_rgba(26,24,21,0.18)] overflow-hidden">
-      <div className="flex items-baseline justify-between px-6 py-4 border-b border-divider-soft bg-bg-elevated">
-        <Mono className="text-text-tertiary">Running log · Tue</Mono>
-        <Mono className="text-text-tertiary">May 12</Mono>
-      </div>
-      <div className="px-6 pt-6 pb-5">
-        <h3 className="font-display text-[28px] tracking-[-0.01em]">
-          Progression run
-        </h3>
-        <p className="mt-1 font-mono text-[12px] text-text-secondary tabular-nums">
-          10.0 mi · 7:42 avg · 1:17:24
-        </p>
-      </div>
+/* ── SURFACES ────────────────────────────────────────────────────────── */
 
-      <div className="px-6 pb-6">
-        <Mono className="text-text-tertiary">Splits</Mono>
-        <svg viewBox="0 0 360 80" className="mt-3 w-full h-20">
-          {/* steady stretch */}
-          <polyline
-            points="10,52 47,48 84,46 121,42 158,40 195,34 232,36 269,34"
-            fill="none"
-            stroke="#6B8068"
-            strokeWidth="2"
-          />
-          {/* finishing kick */}
-          <polyline
-            points="269,34 306,17 343,12"
-            fill="none"
-            stroke="#D4592A"
-            strokeWidth="2"
-          />
-          {/* dots — steady */}
-          <circle cx="10" cy="52" r="2.5" fill="#6B8068" />
-          <circle cx="47" cy="48" r="2.5" fill="#6B8068" />
-          <circle cx="84" cy="46" r="2.5" fill="#6B8068" />
-          <circle cx="121" cy="42" r="2.5" fill="#6B8068" />
-          <circle cx="158" cy="40" r="2.5" fill="#6B8068" />
-          <circle cx="195" cy="34" r="2.5" fill="#6B8068" />
-          <circle cx="232" cy="36" r="2.5" fill="#6B8068" />
-          <circle cx="269" cy="34" r="2.5" fill="#6B8068" />
-          {/* dots — kick */}
-          <circle cx="306" cy="17" r="2.5" fill="#D4592A" />
-          <circle cx="343" cy="12" r="2.5" fill="#D4592A" />
-        </svg>
-        <div className="mt-2 flex items-center justify-between">
-          <Mono className="text-text-tertiary">Mile 1</Mono>
-          <Mono className="text-text-tertiary">Mile 10</Mono>
+const SURFACES = [
+  {
+    n: "01",
+    title: "Log",
+    body:
+      "Voice memo at the top, six months of training scrolling below. Runs arrive from HealthKit; you supply the part a watch cannot record. No annotation, no scoring — a record you can read back.",
+  },
+  {
+    n: "02",
+    title: "Trends",
+    body:
+      "The 5-second view. Fitness as a range with a confidence, not a fake projection. Volume, load, and the niggles you keep mentioning, each one tappable down to the week it started.",
+  },
+  {
+    n: "03",
+    title: "Train",
+    body:
+      "This week, the calendar, and the longer arc in one place. Pace zones derive from your race history. If a coach issues you a plan, it layers in; if nobody does, the tab still works.",
+  },
+  {
+    n: "04",
+    title: "Coach",
+    body:
+      "A read of your training, on demand. Feeling first, then the workouts, then the mileage. It ends on a question rather than an instruction, and you can ask it to look again through a different lens.",
+  },
+];
+
+function Surfaces() {
+  return (
+    <section id="surfaces" className="border-b border-divider bg-bg-elevated">
+      <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10">
+        <div className="max-w-[52ch]">
+          <Eyebrow>The product</Eyebrow>
+          <h2 className="mt-4 font-display text-[clamp(34px,5vw,52px)] font-bold leading-[1.02] tracking-[-0.015em] text-text-primary">
+            Four surfaces.
+          </h2>
+          <p className="mt-4 font-body text-[16px] leading-[1.6] text-text-secondary">
+            Input, overview, detail, synthesis. Nothing else earns a tab.
+          </p>
         </div>
-      </div>
-    </div>
-  );
-}
 
-/* ── FEATURES ────────────────────────────────────────────────────── */
-function Features() {
-  const items = [
-    {
-      n: "01",
-      title: "Log",
-      body:
-        "Voice-log a run or sync from your watch. Distance, pace, splits, mood — structured automatically.",
-    },
-    {
-      n: "02",
-      title: "Analyze",
-      body:
-        "Twelve weeks of mileage, pace, zones, and load. Plotted properly, with short notes when there's something to say.",
-    },
-    {
-      n: "03",
-      title: "Plan",
-      body:
-        "Goal race in. Plan out. Workouts written like a coach would write them. The week re-tunes when you miss a day.",
-    },
-  ];
+        <div className="mt-14 grid gap-x-10 gap-y-12 md:grid-cols-2 lg:grid-cols-4">
+          {SURFACES.map((s) => (
+            <div key={s.n}>
+              <Eyebrow coral>{s.n}</Eyebrow>
+              <h3 className="mt-3 font-display text-[32px] font-bold leading-tight tracking-[-0.01em] text-text-primary">
+                {s.title}
+              </h3>
+              <p className="mt-3 font-body text-[15px] leading-[1.65] text-text-secondary">
+                {s.body}
+              </p>
+            </div>
+          ))}
+        </div>
 
-  return (
-    <section id="what" className="border-b border-divider bg-bg-elevated">
-      <div className="mx-auto max-w-[1180px] px-10 py-24 grid md:grid-cols-3 gap-12">
-        {items.map((it) => (
-          <div key={it.n}>
-            <Mono className="text-coral">{it.n}</Mono>
-            <h3 className="mt-3 font-display text-[36px] tracking-[-0.01em] leading-tight">
-              {it.title}
-            </h3>
-            <p className="mt-3 font-body text-[16px] leading-[1.6] text-text-secondary">
-              {it.body}
-            </p>
-          </div>
-        ))}
+        <div className="mt-14">
+          <ActionLink href="/how-it-works">
+            Walk through each surface
+          </ActionLink>
+        </div>
       </div>
     </section>
   );
 }
 
-/* ── BETA ────────────────────────────────────────────────────────── */
+/* ── RACE-ANCHORED ───────────────────────────────────────────────────── */
+
+function Anchored() {
+  return (
+    <section className="border-b border-divider">
+      <div className="mx-auto grid max-w-[1180px] items-center gap-14 px-6 py-20 md:px-10 lg:grid-cols-[1fr_0.85fr]">
+        <div>
+          <Eyebrow>Fitness</Eyebrow>
+          <h2 className="mt-4 font-display text-[clamp(32px,4.6vw,48px)] font-bold leading-[1.04] tracking-[-0.015em] text-text-primary">
+            Your 3:28 is the anchor.
+            <br />
+            Your 3:16 is the direction.
+          </h2>
+          <p className="mt-6 max-w-[52ch] font-body text-[16px] leading-[1.65] text-text-secondary">
+            Most apps derive your training paces from the goal you typed in
+            last week. That makes every zone a guess about a runner you are
+            not yet. Post Run Drip anchors on what you have actually raced —
+            marathons, halves, whatever sits in your history — and treats the
+            goal as heading, not fact.
+          </p>
+          <p className="mt-4 max-w-[52ch] font-body text-[16px] leading-[1.65] text-text-secondary">
+            Ten pace zones come out of that anchor. Easy, Moderate, Steady as
+            efforts; MP, HMP, LT, 10K, 5K, 3K, Mile as race paces. A workout
+            is named for its zone, so <em className="italic">MP 7 mi</em> means
+            what it says.
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-bg-card p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+          <div className="flex items-baseline justify-between">
+            <Eyebrow coral>Marathon · predicted</Eyebrow>
+            <Eyebrow>91 days out</Eyebrow>
+          </div>
+          <div className="mt-4 font-mono text-[40px] font-semibold tabular-nums leading-none tracking-[-0.02em] text-text-primary">
+            3:19–3:25
+          </div>
+          <div className="mt-3 font-mono text-[10px] font-medium tracking-[0.12em] uppercase text-text-secondary">
+            Midpoint 3:22 · high confidence
+          </div>
+          <p className="mt-4 font-body text-[13px] italic leading-[1.55] text-text-tertiary">
+            Based on 4 MP workouts, a half in June, and 11 weeks above 40 mi.
+          </p>
+
+          <EditorialRule className="my-6" />
+
+          <Eyebrow>What you will never see</Eyebrow>
+          <div className="mt-3 font-mono text-[26px] font-semibold tabular-nums leading-none text-text-tertiary line-through decoration-coral decoration-1">
+            3:21:47
+          </div>
+          <p className="mt-3 font-body text-[13px] italic leading-[1.55] text-text-tertiary">
+            The seconds are a math artifact. Showing them would be a claim the
+            data cannot support.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── VOICE ───────────────────────────────────────────────────────────── */
+
+function Voice() {
+  return (
+    <section className="border-b border-divider bg-bg-elevated">
+      <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10">
+        <div className="max-w-[54ch]">
+          <Eyebrow>The read</Eyebrow>
+          <h2 className="mt-4 font-display text-[clamp(32px,4.6vw,48px)] font-bold leading-[1.04] tracking-[-0.015em] text-text-primary">
+            It observes. You decide.
+          </h2>
+          <p className="mt-4 font-body text-[16px] leading-[1.65] text-text-secondary">
+            The read starts with how the run felt, because that is what you
+            said first. It carries your anchors and your goal silently, and it
+            never explains its own arithmetic back to you.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-10 md:grid-cols-2">
+          <div>
+            <Eyebrow coral>What it sounds like</Eyebrow>
+            <div className="mt-5 space-y-5">
+              <CoachQuote>
+                Easy paces are creeping down — 8:35 last week, 8:22 this week.
+                Volume is holding at 42.
+              </CoachQuote>
+              <CoachQuote>
+                Tempo locked in at 7:29 average. Four weeks ago that was 7:35.
+              </CoachQuote>
+              <CoachQuote>
+                You are four weeks into the build. Last cycle the analogous
+                week was 35 mi at slower tempos.
+              </CoachQuote>
+            </div>
+          </div>
+
+          <div>
+            <Eyebrow>What it will not say</Eyebrow>
+            <ul className="mt-5 space-y-4 font-body text-[15px] leading-[1.6] text-text-tertiary">
+              {[
+                ["“Based on your 3:28 and your goal of 3:16, you need to…”", "Explaining math you already know."],
+                ["“That is a 12-minute PR — ambitious.”", "Not its call to make."],
+                ["“You will qualify.”", "A certainty claim. Hard rule."],
+                ["“Aim for 3:20 instead.”", "The goal is yours. It does not move."],
+                ["“Rest this one, it is probably ITBS.”", "Not a diagnosis it is allowed to reach."],
+              ].map(([line, why]) => (
+                <li key={line} className="border-l border-divider pl-4">
+                  <span className="block text-text-secondary line-through decoration-divider">
+                    {line}
+                  </span>
+                  <span className="mt-1 block font-mono text-[9px] font-medium tracking-[0.10em] uppercase text-text-tertiary">
+                    {why}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className="mt-12">
+          <ActionLink href="/principles">Read the principles</ActionLink>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── NIGGLES ─────────────────────────────────────────────────────────── */
+
+function Niggles() {
+  return (
+    <section className="border-b border-divider">
+      <div className="mx-auto grid max-w-[1180px] gap-14 px-6 py-20 md:px-10 lg:grid-cols-[0.9fr_1.1fr]">
+        <div>
+          <Eyebrow>Niggles</Eyebrow>
+          <h2 className="mt-4 font-display text-[clamp(32px,4.6vw,48px)] font-bold leading-[1.04] tracking-[-0.015em] text-text-primary">
+            It reports what you said, and where.
+          </h2>
+          <p className="mt-6 max-w-[46ch] font-body text-[16px] leading-[1.65] text-text-secondary">
+            When you mention a body part in a log, it gets recorded against a
+            closed list of about thirty — foot, achilles, calf, IT band, the
+            usual suspects. Your words are kept verbatim. Nothing is renamed
+            into a condition, scored for severity, or turned into advice.
+          </p>
+          <p className="mt-4 font-body text-[13px] italic leading-[1.6] text-text-tertiary">
+            Not medical advice. If anything gets sharper, see a clinician.
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-bg-card p-6 shadow-[0_2px_8px_rgba(0,0,0,0.06)]">
+          <div className="flex items-baseline justify-between border-b border-divider pb-3">
+            <Eyebrow coral>Left achilles</Eyebrow>
+            <Eyebrow>3 mentions · 22 days</Eyebrow>
+          </div>
+          <div className="divide-y divide-divider">
+            {[
+              ["Aug 26", "“Achilles was tight for the first mile again, went quiet after.”"],
+              ["Aug 12", "“Bit of a grumble in the left achilles coming down the hill.”"],
+              ["Aug 4", "“Left achilles sore stepping out of bed. Fine once I got going.”"],
+            ].map(([date, quote]) => (
+              <div key={date} className="py-4">
+                <Eyebrow>{date}</Eyebrow>
+                <p className="mt-2 font-body text-[14px] italic leading-[1.55] text-text-primary">
+                  {quote}
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 font-body text-[13px] italic leading-[1.55] text-text-tertiary">
+            — every mention within a day of a long run. That is the pattern;
+            what it means is yours to decide. —
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── ROADMAP ─────────────────────────────────────────────────────────── */
+
+const PILLARS = [
+  { n: "01", title: "Training", body: "What did I do? What am I supposed to do?", status: "Shipping" },
+  { n: "02", title: "Understanding", body: "How am I doing? Where is this going?", status: "Shipping" },
+  { n: "03", title: "Recovery", body: "How well did I rest? Push today, or pull?", status: "Next" },
+  { n: "04", title: "Mobility", body: "Is the body moving the way it should?", status: "Later" },
+  { n: "05", title: "Strength", body: "Am I doing the work that protects the running?", status: "Later" },
+];
+
+function Roadmap() {
+  return (
+    <section className="border-b border-divider bg-bg-elevated">
+      <div className="mx-auto max-w-[1180px] px-6 py-20 md:px-10">
+        <div className="max-w-[52ch]">
+          <Eyebrow>Sequence</Eyebrow>
+          <h2 className="mt-4 font-display text-[clamp(32px,4.6vw,48px)] font-bold leading-[1.04] tracking-[-0.015em] text-text-primary">
+            Five questions, in order.
+          </h2>
+          <p className="mt-4 font-body text-[16px] leading-[1.65] text-text-secondary">
+            Two of them are built. The rest are honest about being unbuilt.
+          </p>
+        </div>
+
+        <div className="mt-12 border-t border-divider">
+          {PILLARS.map((p) => (
+            <div
+              key={p.n}
+              className="grid grid-cols-[auto_1fr] items-baseline gap-x-6 gap-y-1 border-b border-divider py-6 md:grid-cols-[auto_200px_1fr_auto]"
+            >
+              <Eyebrow>{p.n}</Eyebrow>
+              <h3 className="font-display text-[24px] font-bold tracking-[-0.01em] text-text-primary">
+                {p.title}
+              </h3>
+              <p className="col-span-2 font-body text-[15px] leading-[1.6] text-text-secondary md:col-span-1">
+                {p.body}
+              </p>
+              <span
+                className={`col-start-2 font-mono text-[9px] font-medium tracking-[0.12em] uppercase md:col-start-auto md:text-right ${
+                  p.status === "Shipping" ? "text-coral" : "text-text-tertiary"
+                }`}
+              >
+                {p.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── BETA ────────────────────────────────────────────────────────────── */
+
 function Beta() {
   return (
-    <section id="start" className="border-b border-divider">
-      <div className="mx-auto max-w-[820px] px-10 py-28 text-center">
-        <h2 className="font-display text-[56px] leading-[1] tracking-[-0.015em] text-text-primary">
-          Try it for a week.
+    <section id="beta" className="border-b border-divider">
+      <div className="mx-auto max-w-[760px] px-6 py-24 text-center md:px-10">
+        <Eyebrow coral>Closed beta</Eyebrow>
+        <h2 className="mt-5 font-display text-[clamp(36px,6vw,56px)] font-bold leading-[1.02] tracking-[-0.015em] text-text-primary">
+          Run a week with it.
           <br />
-          <em className="font-display italic text-coral">
-            Tell us what doesn&rsquo;t work.
-          </em>
+          <em className="italic text-coral">Then tell us what is wrong.</em>
         </h2>
-        <p className="mt-8 font-body text-[16px] leading-[1.6] text-text-secondary max-w-[480px] mx-auto">
-          iOS, by TestFlight invite. Built for runners with a goal race and a
-          base.
+        <p className="mx-auto mt-7 max-w-[46ch] font-body text-[16px] leading-[1.65] text-text-secondary">
+          iOS, by TestFlight invite. Built for runners with a race on the
+          calendar and a base under them.
         </p>
-        <div className="mt-10">
+        <div className="mt-9">
           <Link
-            href="/login"
-            className="inline-block rounded-md bg-coral px-7 py-4 font-body text-[15px] font-semibold text-white shadow-[0_1px_0_var(--color-coral-dark),0_12px_32px_-12px_rgba(212,89,42,0.45)] hover:bg-coral-dark transition-colors"
+            href="/beta"
+            className="inline-block rounded-[10px] bg-coral px-7 py-4 font-display text-[16px] font-semibold text-white shadow-[0_1px_0_var(--color-coral-dark)] transition-colors hover:bg-coral-dark"
           >
-            Request a TestFlight invite
+            Request an invite
           </Link>
         </div>
       </div>
     </section>
-  );
-}
-
-/* ── FOOTER ──────────────────────────────────────────────────────── */
-function Footer() {
-  return (
-    <footer className="bg-bg-base">
-      <div className="mx-auto max-w-[1180px] px-10 py-10 flex flex-wrap items-center justify-between gap-4">
-        <div className="font-display text-[20px] tracking-[-0.01em]">
-          Post Run Drip
-        </div>
-        <Mono className="text-text-tertiary">
-          © {new Date().getFullYear()} · Austin, TX
-        </Mono>
-      </div>
-    </footer>
   );
 }

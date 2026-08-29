@@ -34,9 +34,9 @@
   --color-warning: #C4873A;
 
   /* Fonts */
-  --font-display: var(--font-playfair-display), "Georgia", serif;
+  --font-display: var(--font-crimson-pro), "Georgia", serif;
   --font-mono: var(--font-jetbrains-mono), "Courier New", monospace;
-  --font-body: var(--font-dm-sans), "Helvetica Neue", sans-serif;
+  --font-body: var(--font-pt-serif), "Georgia", serif;
 }
 
 body {
@@ -84,4 +84,28 @@ body {
   color: var(--color-text-secondary);
   border-left: 2px solid var(--color-divider);
   padding-left: 0.875rem;
+}
+
+/* Record-button breath — the one animation the system allows itself.
+   1800ms ease-in-out, per design-system/README.md "Animation". Used by the
+   public-site app preview; the iOS app owns its own implementation. */
+@keyframes prd-record-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.15;
+  }
+}
+.prd-record-ring {
+  animation: prd-record-pulse 1800ms ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .prd-record-ring {
+    animation: none;
+    opacity: 0.35;
+  }
 }
