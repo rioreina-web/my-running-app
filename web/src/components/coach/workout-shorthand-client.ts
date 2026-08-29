@@ -148,9 +148,25 @@ export async function parseShorthand(
     // Same accounting on both sides, `unresolved` included — otherwise a
     // model answer that paced every step loses to a grammar answer that
     // paced none of them, on a tie neither of them actually tied.
-    const remoteResidue = warnings.length + unparsed.length + Object.keys(unresolved).length;
+    // `dropped` counts on the LOCAL side, and leaving it out is what made this
+    // comparison hand the coach a wrong workout.
+    //
+    // The grammar's failure mode is a confidently wrong answer: on
+    // "16xk alternating between MP-3% & MP+5%" it returns ONE step at MP-3%
+    // with no warnings, nothing unparsed and nothing unresolved — a local
+    // residue of ZERO. The model then returns sixteen correct alternating legs
+    // plus any warning at all, scores 1, loses 1 > 0, and its correct answer is
+    // discarded in favour of a session the coach never wrote. The check that
+    // caught the drop and triggered the escalation was not consulted again when
+    // deciding which answer to keep, so the escalation was pure cost.
+    const remoteDropped = uncoveredPaceOffsets(text, steps);
+    const remoteResidue =
+      warnings.length + unparsed.length + Object.keys(unresolved).length + remoteDropped.length;
     const localResidue =
-      local.warnings.length + local.unparsed.length + Object.keys(local.unresolved).length;
+      local.warnings.length +
+      local.unparsed.length +
+      Object.keys(local.unresolved).length +
+      dropped.length;
     if (remoteResidue > localResidue && local.steps.length > 0) {
       return { ...local, source: "grammar" };
     }
