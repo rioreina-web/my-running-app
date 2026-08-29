@@ -11,6 +11,7 @@ import {
   weekZoneMiles,
   totalZoneMiles,
   describeWorkoutLine,
+  paceShort,
   stepZones,
   headlineZone,
   zoneLabelShort,
@@ -397,6 +398,9 @@ export function PlanBuilderClient({
   // rest). Distinct from `unparsed` — these look complete in the editor, so
   // they need their own, louder callout.
   const [builderNLWarnings, setBuilderNLWarnings] = useState<string[]>([]);
+  // One-line summary of what the last parse understood, and which layer
+  // answered. The visibility every silent defect of 2026-08-28 was missing.
+  const [builderNLReadback, setBuilderNLReadback] = useState<string | null>(null);
   // Open questions from the last parse. Answering one writes straight to the
   // step, so this shrinks as the coach taps through it.
   const [builderNLQuestions, setBuilderNLQuestions] = useState<Clarification[]>([]);
@@ -510,7 +514,7 @@ export function PlanBuilderClient({
       // the race, so an unqualified offset has a stated base rather than a
       // guessed one; without this the grammar cannot hang the offset on
       // anything and the whole session collapses to one easy step.
-      const { steps, unparsed, warnings, unresolved } = await parseShorthand(text, {
+      const { steps, unparsed, warnings, unresolved, source } = await parseShorthand(text, {
         baseZone: ANCHOR_ZONE_FOR_DISTANCE[targetDistance],
       });
       if (steps.length > 0) {
@@ -518,6 +522,30 @@ export function PlanBuilderClient({
         const zone = headlineZone(steps);
         if (zone) setBuilderType(WORKOUT_TYPE_FOR_ZONE[zone] ?? builderType);
       }
+      // The readback. Every parser defect found on 2026-08-28 was silent — the
+      // wrong answer rendered as a finished-looking step list and nothing said
+      // which layer produced it or what it understood. One line closes that:
+      // the coach sees "16 steps · MP-3%, MP+5% · read by model" and a wrong
+      // read is visible BEFORE saving, not after the athlete runs it.
+      setBuilderNLReadback(
+        steps.length > 0
+          ? `Read as ${steps.length} step${steps.length === 1 ? "" : "s"} · ` +
+            [...new Set(
+              steps.map((s) => {
+                if (s.exactPaceSecPerMile) {
+                  const m = Math.floor(s.exactPaceSecPerMile / 60);
+                  const sec = Math.round(s.exactPaceSecPerMile % 60);
+                  return `${m}:${String(sec).padStart(2, "0")}/mi`;
+                }
+                const adj = s.paceAdjustment
+                  ? `${s.paceAdjustment.value > 0 ? "+" : ""}${s.paceAdjustment.value}${s.paceAdjustment.type === "percent" ? "%" : "s"}`
+                  : "";
+                return `${paceShort(s.paceZone)}${adj}`;
+              }),
+            )].join(", ") +
+            ` · by ${source === "model" ? "the model" : "the grammar"}`
+          : null,
+      );
       setBuilderNLUnparsed(unparsed);
       setBuilderNLWarnings(warnings);
       setBuilderNLQuestions(buildClarifications(steps, unresolved));
@@ -2070,6 +2098,11 @@ export function PlanBuilderClient({
                     </div>
                   ))}
                 </div>
+              )}
+              {builderNLReadback && (
+                <p className="text-[11px] text-text-secondary leading-snug">
+                  {builderNLReadback}
+                </p>
               )}
               {builderNLUnparsed.length > 0 && (
                 <p className="text-[11px] text-[var(--color-warning)] leading-snug">
