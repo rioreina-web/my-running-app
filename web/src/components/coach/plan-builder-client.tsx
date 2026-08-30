@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { WorkoutStepEditor, type WorkoutStep } from "./workout-step-editor";
@@ -98,6 +98,10 @@ const DISTANCES = ["marathon", "half_marathon", "10k", "5k", "custom"];
 // plan states its race; this is that race's pace, so "+5%" has a declared base
 // rather than an invented one. "custom" is absent deliberately — with no race
 // there is no anchor to bind to, and a bare offset should stay unresolved.
+// localStorage key for the coach's last-used pace anchor. Bump the suffix if
+// the PaceAnchor shape ever changes incompatibly.
+const ANCHOR_STORAGE_KEY = "prd.coach.paceAnchor.v1";
+
 const ANCHOR_ZONE_FOR_DISTANCE: Record<string, PaceZone | undefined> = {
   marathon: "mp",
   half_marathon: "hm",
@@ -315,6 +319,45 @@ export function PlanBuilderClient({
     };
   const [paceAnchor, setPaceAnchor] = useState<PaceAnchor>(initialAnchor);
   const paceTable = resolvePaceTable(paceAnchor, targetDistance);
+
+  // Remember the anchor across page loads.
+  //
+  // The anchor used to live ONLY inside the saved plan's phase_config — and
+  // this coach has zero saved plans (plan_templates is empty; they build in
+  // /plans/new and iterate there). So every reload landed back on the 7:30/mi
+  // reference runner and the 2:20 goal had to be retyped, every time, which is
+  // what "it keeps defaulting every chance it gets" was.
+  //
+  // localStorage, deliberately, not a table: no migration (hard rule #9 makes
+  // those a ceremony), works for unsaved drafts, and this is a single coach on
+  // their own machine. If multi-device coaching becomes real, the server-side
+  // home is user_preferences — move it then, keyed the same way.
+  //
+  // Two rules make the ordering safe: prefill only when this is a NEW plan
+  // whose anchor is still empty (an existing plan's own anchor always wins),
+  // and never persist an empty anchor (so the mount-time default can't clobber
+  // the stored one before prefill has run).
+  useEffect(() => {
+    if (existingPlan) return;
+    if (paceAnchor.goalRaceSeconds || Object.keys(paceAnchor.overrides ?? {}).length > 0) return;
+    try {
+      const raw = window.localStorage.getItem(ANCHOR_STORAGE_KEY);
+      if (raw) setPaceAnchor(JSON.parse(raw) as PaceAnchor);
+    } catch {
+      /* corrupted or unavailable storage never blocks the builder */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only prefill
+  }, []);
+  useEffect(() => {
+    const hasContent =
+      paceAnchor.goalRaceSeconds || Object.keys(paceAnchor.overrides ?? {}).length > 0;
+    if (!hasContent) return;
+    try {
+      window.localStorage.setItem(ANCHOR_STORAGE_KEY, JSON.stringify(paceAnchor));
+    } catch {
+      /* full or blocked storage never blocks the builder */
+    }
+  }, [paceAnchor]);
 
   // Plan setup (adaptive skeleton) — day_structure, shape flags, phases.
   // See plan-setup-section.tsx and the Phase A spec.
