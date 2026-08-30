@@ -288,3 +288,148 @@ test("offset pace written without an @ (16 x 1k MP-3%)", () => {
   assert.deepEqual(steps[0].paceAdjustment, { type: "percent", value: -3 });
   assert.equal(Object.keys(unresolved).length, 0);
 });
+
+// ── Reps written at their splits ─────────────────────────
+//
+// This coach writes rep work at the split, not at a zone: "10 x 400m @ 65" is
+// each 400 in 65 seconds. Before these, a clock after "@" was always read as a
+// pace per mile — so "6 x 800m @ 2:30" became 2:30/mi, failed the plausibility
+// check, and the step arrived with NO pace at all while showing the coach
+// "ignored an implausible pace (2:30/mi)". Ordinary notation, silently dropped.
+
+test("split: 6 x 800m @ 2:30 is a rep time, not a 2:30/mi pace", () => {
+  const { steps } = parseWorkoutText("6 x 800m @ 2:30");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.ok(main, "expected an active step");
+  // 800m is 0.4971 mi, so 150s is 301.7 sec/mile.
+  assert.ok(main!.exactPaceSecPerMile != null, "the written split must survive");
+  assert.equal(main!.exactPaceSecPerMile, 302);
+});
+
+test("split: 10 x 400m @ 65 accepts bare seconds", () => {
+  const { steps } = parseWorkoutText("10 x 400m @ 65");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.ok(main, "expected an active step");
+  // 400m is 0.2485 mi, so 65s is 261.5 -> 262 sec/mile.
+  assert.equal(main!.exactPaceSecPerMile, 262);
+  assert.equal(main!.repeats, 10);
+});
+
+test("split: 10 x K @ 3:30 converts on the real kilometre", () => {
+  const { steps } = parseWorkoutText("10 x 1km @ 3:30");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.ok(main, "expected an active step");
+  // 1km is 0.6214 mi, so 210s is 337.96 -> 338 sec/mile.
+  assert.equal(main!.exactPaceSecPerMile, 338);
+});
+
+test("continuous work keeps reading a clock as a pace", () => {
+  const { steps } = parseWorkoutText("4mi @ 6:00");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.ok(main, "expected an active step");
+  // 4 miles in 6:00 is impossible, so this is 6:00 per mile.
+  assert.equal(main!.exactPaceSecPerMile, 360);
+});
+
+test("an explicit unit settles it outright", () => {
+  const { steps } = parseWorkoutText("6 x 800m @ 6:00/mi");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.ok(main, "expected an active step");
+  // Written as a per-mile pace, so it is NOT reinterpreted as an 800 rep time
+  // (which would have been a plausible-but-wrong 12:04/mi).
+  assert.equal(main!.exactPaceSecPerMile, 360);
+});
+
+test("a number that is runnable as neither is still refused", () => {
+  const { steps, warnings } = parseWorkoutText("4mi @ 0:30");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.equal(main?.exactPaceSecPerMile, undefined);
+  assert.ok(
+    warnings.some((w) => w.includes("implausible")),
+    `expected an implausible-pace warning, got: ${warnings.join(" | ")}`,
+  );
+});
+
+test("split: a repeated step whose split would be a jog is read as a pace", () => {
+  // 800m in 6:00 is 12:04/mi — not a rep. So "@ 6:00" is 6:00 per mile.
+  const { steps } = parseWorkoutText("6 x 800m @ 6:00");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.equal(main!.exactPaceSecPerMile, 360);
+});
+
+test("split: a repeated step whose split IS a rep pace stays a split", () => {
+  // 2mi in 12:00 is 6:00/mi — a real rep pace, so this is a split.
+  const { steps } = parseWorkoutText("3 x 2mi @ 12:00");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.equal(main!.exactPaceSecPerMile, 360);
+});
+
+test("continuous: 4 mi @ 5:30 is a pace, so 22:00 of work", () => {
+  const { steps } = parseWorkoutText("4 mi @ 5:30");
+  const main = steps.find((s) => s.stepType === "active");
+  assert.equal(main!.exactPaceSecPerMile, 330);
+  assert.equal(main!.durationValue * main!.exactPaceSecPerMile!, 22 * 60);
+});
+
+// ── A pace per rep ───────────────────────────────────────
+//
+// Cutdowns are written as a list of splits. These used to collapse to the first
+// entry with no warning, so the coach was shown a flat set they had not written.
+
+test("per-rep: a comma list of splits becomes one leg per rep", () => {
+  const { steps, warnings } = parseWorkoutText("6 x 800m @ 2:30, 2:28, 2:26, 2:24, 2:22, 2:20");
+  const active = steps.filter((s) => s.stepType === "active");
+  assert.equal(active.length, 6, "one step per rep");
+  // 800m = 0.4971mi. 150s -> 302, 140s -> 282.
+  assert.equal(active[0].exactPaceSecPerMile, 302);
+  assert.equal(active[5].exactPaceSecPerMile, 282);
+  // Descending, as written.
+  for (let i = 1; i < active.length; i++) {
+    assert.ok(
+      active[i].exactPaceSecPerMile! < active[i - 1].exactPaceSecPerMile!,
+      "each rep must be faster than the last",
+    );
+  }
+  assert.equal(warnings.length, 0, `counts match, so no warning: ${warnings.join(" | ")}`);
+});
+
+test("per-rep: a dash list of bare seconds works too", () => {
+  const { steps } = parseWorkoutText("10 x 400 @ 65-63-61");
+  const active = steps.filter((s) => s.stepType === "active");
+  assert.equal(active.length, 10);
+  assert.equal(active[0].exactPaceSecPerMile, 262); // 65s over 400m
+  assert.equal(active[2].exactPaceSecPerMile, 245); // 61s
+});
+
+test("per-rep: fewer splits than reps holds the last, and says so", () => {
+  const { steps, warnings } = parseWorkoutText("10 x 400 @ 65-63-61");
+  const active = steps.filter((s) => s.stepType === "active");
+  // Reps 4-10 hold the final written split rather than being invented.
+  assert.equal(active[9].exactPaceSecPerMile, active[2].exactPaceSecPerMile);
+  assert.ok(
+    warnings.some((w) => w.includes("3 splits written for 10 reps")),
+    `the hold must be disclosed: ${warnings.join(" | ")}`,
+  );
+});
+
+test("per-rep: more splits than reps is reported, not silently cut", () => {
+  const { warnings } = parseWorkoutText("2 x 800m @ 2:30, 2:28, 2:26");
+  assert.ok(
+    warnings.some((w) => w.includes("3 splits written for 2 reps")),
+    `the drop must be disclosed: ${warnings.join(" | ")}`,
+  );
+});
+
+test("per-rep: recovery still attaches to every leg", () => {
+  const { steps } = parseWorkoutText("6 x 800m @ 2:30, 2:28, 2:26 w/ 400m jog");
+  const active = steps.filter((s) => s.stepType === "active");
+  assert.equal(active.length, 6);
+  assert.ok(active.every((s) => s.recovery != null), "each rep keeps its recovery");
+});
+
+test("per-rep: a zone range is not mistaken for a split list", () => {
+  const { steps } = parseWorkoutText("6 x 800m @ 5k-10k");
+  const active = steps.filter((s) => s.stepType === "active");
+  assert.equal(active.length, 1, "a zone range stays one repeated step");
+  assert.equal(active[0].repeats, 6);
+});

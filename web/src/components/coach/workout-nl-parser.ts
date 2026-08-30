@@ -110,6 +110,23 @@ interface ParsedStep {
   zone: PaceZone | null;
   zoneOff: Off | null;
   paceSec: number | null;
+  /**
+   * True when the coach wrote the unit ("@ 6:00/mi", "@ 3:30/km"), which
+   * settles the pace-vs-rep-time question outright. Without it a bare clock
+   * after "@" is ambiguous and gets resolved by plausibility — see
+   * `resolveWrittenPace`.
+   */
+  paceSecHasUnit: boolean;
+  /**
+   * Several splits written for one repeated step: "6 x 800 @ 2:30, 2:28, 2:26",
+   * "10 x 400 @ 65-63-61". Each entry is raw written seconds; the adapter
+   * resolves them and expands the step into one leg per rep.
+   *
+   * Before this the list was silently truncated to its first entry and the
+   * cutdown vanished with no warning — the session the coach saw built was not
+   * the one they wrote.
+   */
+  paceSecList: number[] | null;
   timeSec: number | null;
   recovery: Recovery | null;
   segments: MiniSegment[] | null;
@@ -564,6 +581,8 @@ function parseAlternation(seg: string): ParsedStep | null {
       paceMode: "zone" as const,
       zone: z!.zone,
       paceSec: null,
+      paceSecHasUnit: false,
+      paceSecList: null,
       zoneOff: z!.off,
       ownRecovery: null,
     }));
@@ -603,6 +622,8 @@ function parseAlternation(seg: string): ParsedStep | null {
     zone: null,
     zoneOff: null,
     paceSec: null,
+    paceSecHasUnit: false,
+    paceSecList: null,
     timeSec: null,
     recovery: null,
   };
@@ -822,6 +843,8 @@ function parseSegment(seg: string): ParsedStep | null {
       paceMode: "zone",
       zone: null,
       paceSec: null,
+      paceSecHasUnit: false,
+      paceSecList: null,
       timeSec: null,
       // A set-wide "between reps" clause outranks nothing — it IS the set's
       // recovery. `recovery` here is the clause written after the set
@@ -845,6 +868,8 @@ function parseSegment(seg: string): ParsedStep | null {
   // pace clause after @
   let zone: PaceZone | null = null;
   let paceSec: number | null = null;
+  let paceSecHasUnit = false;
+  let paceSecList: number[] | null = null;
   let zoneOff: Off | null = null;
   const atIdx = s.indexOf("@");
   let mainPart = s;
@@ -864,10 +889,31 @@ function parseSegment(seg: string): ParsedStep | null {
   }
   let progressTo: string | null = null;
   if (pacePart) {
-    const clock = pacePart.match(/(\d{1,2}):(\d{2})(?:\s*\/?\s*(mi|mile|km|k))?/);
+    // "…@ 2:30, 2:28, 2:26 w/ 400m jog" — the recovery rides on the end of the
+    // pace clause and is parsed separately; the list stops where it starts.
+    const list = parseSplitList(pacePart.replace(/\s*(?:w\/|with)\b[\s\S]*$/i, "").trim());
+    if (list) {
+      paceSecList = list;
+      paceSec = list[0];
+    }
+    const clock = paceSecList ? null : pacePart.match(/(\d{1,2}):(\d{2})(?:\s*\/?\s*(mi|mile|km|k))?/);
     if (clock) {
       paceSec = +clock[1] * 60 + +clock[2];
-      if (clock[3] && /k/i.test(clock[3])) paceSec = paceSec * KM_PER_MILE;
+      if (clock[3]) {
+        paceSecHasUnit = true;
+        if (/k/i.test(clock[3])) paceSec = paceSec * KM_PER_MILE;
+      }
+    } else if (paceSecList) {
+      // handled above
+    } else if (BARE_SECONDS_AFTER_AT.test(pacePart)) {
+      // "10 x 400m @ 65" — a bare number after "@" is seconds for the rep, and
+      // it is how every sub-lap rep gets written. Without this the token
+      // matched no clock, fell through to the zone parse, failed there too,
+      // and the step arrived with no pace at all.
+      //
+      // Deliberately narrow: the whole clause must be JUST a number, so "5k",
+      // "10k", "MP-10" and "-3%" are untouched.
+      paceSec = parseInt(pacePart, 10);
     } else {
       const zo = parseZoneWithOffset(pacePart);
       if (zo) {
@@ -978,6 +1024,8 @@ function parseSegment(seg: string): ParsedStep | null {
     zone,
     zoneOff,
     paceSec: paceSec || null,
+    paceSecHasUnit,
+    paceSecList,
     timeSec: timeSec || null,
     recovery,
     segments: null,
@@ -1030,6 +1078,14 @@ function splitSegments(text: string): string[] {
     // Narrow on purpose: only when the text so far actually says "alternating"
     // AND what follows the comma reads as a bare pace. "2mi wu, 6x800 @ 5k,
     // 2mi cd" still splits three ways, because "6x800 @ 5k" is not a pace.
+    // "6 x 800 @ 2:30, 2:28, 2:26" — the commas separate SPLITS, not segments.
+    // Without this the tail became its own segment, parsed as nothing, and the
+    // cutdown was dropped on the floor.
+    const commaJoinsSplitList =
+      ch === "," &&
+      /@[^@]*(?:\d{1,2}:\d{2}|\b\d{2,3})\s*$/.test(cur) &&
+      SPLIT_LIST_CONTINUES.test(text.slice(i + 1));
+
     const commaJoinsAlternationLegs =
       ch === "," &&
       ALTERNATION_RE.test(cur) &&
@@ -1037,6 +1093,7 @@ function splitSegments(text: string): string[] {
     if (
       depth === 0 &&
       !plusIsOffset &&
+      !commaJoinsSplitList &&
       !commaJoinsAlternationLegs &&
       (ch === "," || ch === ";" || ch === "\n" || ch === "+")
     ) {
@@ -1144,6 +1201,107 @@ const KIND_TO_STEP_TYPE: Record<ParsedStep["kind"], WorkoutStep["stepType"]> = {
 // step but strip the impossible field and say so.
 const MIN_PLAUSIBLE_PACE_SEC_PER_MILE = 240;  // 4:00/mi — faster than the WR mile
 const MAX_PLAUSIBLE_PACE_SEC_PER_MILE = 1200; // 20:00/mi — slower than walking
+
+// Narrower than "runnable": the band a rep is actually run at. Used ONLY to
+// break a tie between reading a number as a pace and reading it as a split —
+// never to reject a pace the coach wrote outright.
+const MIN_PLAUSIBLE_REP_PACE_SEC_PER_MILE = 240;  // 4:00/mi
+const MAX_PLAUSIBLE_REP_PACE_SEC_PER_MILE = 600;  // 10:00/mi
+
+const runnable = (secPerMile: number) =>
+  secPerMile >= MIN_PLAUSIBLE_PACE_SEC_PER_MILE && secPerMile <= MAX_PLAUSIBLE_PACE_SEC_PER_MILE;
+
+/**
+ * A clock written after "@" is either a PACE or a REP TIME, and the coach does
+ * not say which. Decide by which reading a human could actually run.
+ *
+ *   "6 x 800m @ 2:30"   2:30/mi beats the world record; 800m in 2:30 is
+ *                       5:01/mi          -> rep time
+ *   "10 x 400m @ 65"    65 s/mi is nonsense; 400m in 65s is 4:21/mi
+ *                                        -> rep time
+ *   "4mi @ 6:00"        4 miles in 6:00 is impossible; 6:00/mi is a pace
+ *                                        -> pace
+ *
+ * Usually exactly one reading is runnable. When BOTH are, the tiebreak is that
+ * repeated and sub-mile work is written at the pace of each rep — but only if
+ * the split implies a pace someone would actually run a rep at. That guard is
+ * what separates two nearly identical inputs:
+ *
+ *   "3 x 2mi @ 12:00"   as a split -> 6:00/mi. A rep pace. Take it.
+ *   "6 x 800m @ 6:00"   as a split -> 12:04/mi, which is a walk-jog, not an
+ *                       800 rep. So the coach meant 6:00/mi.
+ *
+ * Without the band this read every repeated step as a split and turned that
+ * second one into a 12:04/mi "workout".
+ *
+ * An explicitly written unit ("@ 6:00/mi") skips all of this.
+ *
+ * Returns null when neither reading is runnable — the caller warns, as before.
+ * The previous behaviour discarded a rep time as an "implausible pace" and left
+ * the step with nothing, which is the single most common way this parser lost
+ * a workout: `6 x 800m @ 2:30` is ordinary notation, not a typo.
+ */
+function resolveWrittenPace(
+  seconds: number,
+  opts: { repMiles: number; hasExplicitUnit: boolean; repeats: number },
+): number | null {
+  if (opts.hasExplicitUnit) return runnable(seconds) ? seconds : null;
+
+  const asPace = seconds;
+  const asRepTime = opts.repMiles > 0 ? seconds / opts.repMiles : null;
+  const paceOk = runnable(asPace);
+  const repOk = asRepTime != null && runnable(asRepTime);
+
+  if (paceOk && !repOk) return Math.round(asPace);
+  if (repOk && !paceOk) return Math.round(asRepTime!);
+  if (paceOk && repOk) {
+    const writtenAsReps = opts.repeats > 1 || opts.repMiles < 1;
+    const splitIsARepPace =
+      asRepTime! >= MIN_PLAUSIBLE_REP_PACE_SEC_PER_MILE &&
+      asRepTime! <= MAX_PLAUSIBLE_REP_PACE_SEC_PER_MILE;
+    return Math.round(writtenAsReps && splitIsARepPace ? asRepTime! : asPace);
+  }
+  return null;
+}
+
+/**
+ * A list of splits written for one repeated step: "2:30, 2:28, 2:26" or
+ * "65-63-61" or "2:30/2:28/2:26". Returns the raw written seconds in order.
+ *
+ * Every entry must be a clock or a bare number, which is what keeps this off
+ * "5k-10k" (a zone range), "MP-3%" (an offset) and "10-12k" (a distance range).
+ */
+function parseSplitList(clause: string): number[] | null {
+  const parts = clause.trim().split(/\s*[,\/]\s*|\s*-\s*/).filter(Boolean);
+  if (parts.length < 2) return null;
+  const out: number[] = [];
+  for (const part of parts) {
+    const clock = part.match(/^(\d{1,2}):(\d{2})$/);
+    if (clock) {
+      out.push(+clock[1] * 60 + +clock[2]);
+      continue;
+    }
+    if (/^\d{2,3}$/.test(part)) {
+      out.push(parseInt(part, 10));
+      continue;
+    }
+    return null;
+  }
+  return out;
+}
+
+/**
+ * Does the text after a comma continue a split list?
+ *
+ * A leading clock or bare 2-3 digit number, so long as it is not the start of
+ * the NEXT step. The two negative lookaheads are what separate
+ * "…@ 2:26 w/ 400m jog" (a split, then this rep's recovery) from "…, 2mi cd"
+ * and "…, 10 x 400 @ 65", which are new segments and must still split.
+ */
+const SPLIT_LIST_CONTINUES = /^\s*(?:\d{1,2}:\d{2}|\d{2,3})(?![a-z\d])(?!\s*[x\u00d7]\s*\d)/i;
+
+/** After "@", a clause that is JUST a number is seconds for one rep ("@ 65"). */
+const BARE_SECONDS_AFTER_AT = /^\d{2,3}\s*(?:s|sec|secs|seconds)?$/i;
 const MAX_PLAUSIBLE_STEP_MILES = 30;
 // Expanding a compound set writes every leg out. Past this the editor becomes
 // unusable and the coach is better off building it by hand.
@@ -1312,7 +1470,8 @@ export function parseWorkoutText(text: string, opts: ParseOptions = {}): ParseWo
   const unresolvedLegs = new Set<string>();
   const unresolved: Record<string, UnresolvedReason> = {};
 
-  for (const p of parsed) {
+  // `p` is reassigned when a written split list expands into per-rep legs.
+  for (let p of parsed) {
     // Compound sets — "6 sets of (1k @ HM - 1' rest - 600m @ 10k - 1' rest)".
     //
     // The flat model has no nested container, so these used to be dropped
@@ -1324,6 +1483,60 @@ export function parseWorkoutText(text: string, opts: ParseOptions = {}): ParseWo
     //
     // Each rep leg carries the rest that follows it as its own `recovery`,
     // which keeps the step count at sets × reps rather than sets × legs.
+    // A written list of splits becomes one leg per rep, so each rep carries the
+    // pace the coach gave it. Reusing `segments` rather than adding a second
+    // expansion path means the recovery, set and step-cap handling below all
+    // apply unchanged.
+    if (p.paceSecList && p.paceSecList.length > 1 && !p.segments) {
+      const listMiles = protoDurToMiles(
+        p.durationType,
+        collapseValue(p.durationType, p.durationValue, p.durationValueMax),
+      );
+      const written = p.paceSecList;
+      const legCount = Math.max(1, collapseReps(p) * Math.max(1, p.sets));
+
+      // Never quietly stretch or truncate the coach's list. Both mismatches
+      // still build the session — dropping it would be worse — but neither
+      // happens silently.
+      if (written.length > legCount) {
+        warnings.push(
+          `${written.length} splits written for ${legCount} reps — used the first ${legCount}, check before saving`,
+        );
+      } else if (written.length < legCount) {
+        warnings.push(
+          `${written.length} splits written for ${legCount} reps — held ${fmtClock(written[written.length - 1])} for the rest, check before saving`,
+        );
+      }
+
+      const legs: MiniSegment[] = [];
+      for (let i = 0; i < legCount; i++) {
+        const raw = written[Math.min(i, written.length - 1)];
+        const resolved = resolveWrittenPace(raw, {
+          repMiles: listMiles,
+          hasExplicitUnit: p.paceSecHasUnit,
+          repeats: legCount,
+        });
+        if (resolved == null) {
+          warnings.push(
+            `ignored an implausible pace (${fmtClock(raw)}) on rep ${i + 1} — check this step's pace by hand`,
+          );
+        }
+        legs.push({
+          kind: "rep",
+          reps: 1,
+          durationType: p.durationType,
+          durationValue: p.durationValue,
+          paceMode: resolved == null ? "zone" : "pace",
+          zone: null,
+          paceSec: resolved,
+          zoneOff: null,
+          ownRecovery: null,
+        });
+      }
+      // The legs are the reps now; the set machinery must not multiply them again.
+      p = { ...p, segments: legs, reps: 1, repsMax: null, sets: 1 };
+    }
+
     if (p.segments && p.segments.length > 0) {
       const sets = Math.max(1, p.sets);
       const repLegs = p.segments.filter((sg) => sg.kind === "rep");
@@ -1407,13 +1620,28 @@ export function parseWorkoutText(text: string, opts: ParseOptions = {}): ParseWo
       );
     }
 
-    // Target time ("800 in 2:30") → an exact per-mile pace.
+    // A written number → an exact per-mile pace. "800 in 2:30" states outright
+    // that it is a rep time; "800 @ 2:30" leaves it to be worked out.
+    const paceMiles = protoDurToMiles(
+      p.durationType,
+      collapseValue(p.durationType, p.durationValue, p.durationValueMax),
+    );
     let exactPaceSecPerMile: number | undefined;
     if (p.paceMode === "time" && p.timeSec != null) {
-      const miles = protoDurToMiles(p.durationType, collapseValue(p.durationType, p.durationValue, p.durationValueMax));
-      if (miles > 0) exactPaceSecPerMile = Math.round(p.timeSec / miles);
+      if (paceMiles > 0) exactPaceSecPerMile = Math.round(p.timeSec / paceMiles);
     } else if (p.paceMode === "pace" && p.paceSec != null) {
-      exactPaceSecPerMile = Math.round(p.paceSec);
+      const resolved = resolveWrittenPace(p.paceSec, {
+        repMiles: paceMiles,
+        hasExplicitUnit: p.paceSecHasUnit,
+        repeats: totalRepeats,
+      });
+      if (resolved == null) {
+        warnings.push(
+          `ignored an implausible pace (${fmtPace(Math.round(p.paceSec))}) — check this step's pace by hand`,
+        );
+      } else {
+        exactPaceSecPerMile = resolved;
+      }
     }
     if (
       exactPaceSecPerMile != null &&
@@ -1464,6 +1692,13 @@ export function parseWorkoutText(text: string, opts: ParseOptions = {}): ParseWo
 }
 
 // ── Small formatters used in warning copy ────────────────
+
+/** A written split as the coach typed it: "2:26", or "65" when under a minute. */
+function fmtClock(seconds: number): string {
+  const total = Math.round(seconds);
+  if (total < 60) return `${total}`;
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
 
 function fmtPace(secPerMile: number): string {
   const m = Math.floor(secPerMile / 60);
