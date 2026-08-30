@@ -526,6 +526,13 @@ verify_jwt = false
 [functions.parse-workout-structure]
 verify_jwt = true
 
+# Same claim-decode fix as parse-workout-structure above (2026-08-30): the
+# vault-keyed quality_load backfill 401'd on the exact-match path. verify_jwt
+# stays true so the gateway checks the signature before the function decodes
+# the role claim. Callers: iOS (user JWT) and vault-keyed ops/backfill posts.
+[functions.compute-workout-features]
+verify_jwt = true
+
 [functions.process-training-memo]
 verify_jwt = false
 
