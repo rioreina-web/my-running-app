@@ -768,3 +768,74 @@ Deno.test("derivedLapsFromStream: a traffic-light run is one lap, not four fabri
   assertEquals(laps[0].is_rest, false);
   assert(laps[0].distance > 7000, "spans the whole run");
 });
+
+// ── The 4x3mi float case (fixed 2026-08-29) ────────────────────────────────
+//
+// A real session: 6mi warm-up, then 4 x 3mi at ~6:05 with half-mile floats.
+// Every float scored as WORK and the session collapsed into two "reps" — a
+// 6-mile one at 7:12 (the warm-up) and a 14-mile one at 6:15 (everything
+// else). The Read then narrated that, calling a negative-split cutdown a fade.
+//
+// Two things defeated the global velocity line, and both are why the fix is
+// local rather than a better threshold:
+//   1. the warm-up (6:51-7:44) and the floats (7:35-8:00) are the SAME speed,
+//      so no horizontal line separates them;
+//   2. the bimodal search is captured by the largest gap, and the single 10:22
+//      transition lap is a bigger gap than float-vs-rep — it put the line at
+//      9:08/mi, well slower than every float.
+Deno.test("lapRoles: half-mile floats between 6:0x miles are recoveries, not reps", () => {
+  const spec: Array<[number, string]> = [
+    [1, "7:44"], [1, "7:13"], [1, "7:12"], [1, "7:15"], [1, "6:57"], [1, "6:51"],
+    [1, "10:22"],
+    [1, "6:10"], [1, "6:09"], [1, "6:08"], [0.50, "7:35"],
+    [1, "6:08"], [1, "6:07"], [1, "6:04"], [0.47, "7:47"],
+    [1, "6:02"], [1, "6:01"], [1, "5:58"], [0.51, "8:00"],
+    [1, "5:49"], [1, "5:32"], [1, "5:30"], [0.53, "8:09"],
+  ];
+  const laps: LapInput[] = spec.map(([mi, p], i) => {
+    const [m, sec] = p.split(":").map(Number);
+    return {
+      lap_index: i + 1,
+      distance: mi * 1609.344,
+      moving_time: Math.round(mi * (m * 60 + sec)),
+    };
+  });
+  const roles = lapRoles(laps);
+  const roleAt = (lapIndex: number) => roles.find((r) => r.lap_index === lapIndex)!.role;
+
+  // The three floats — the whole point.
+  for (const lapIndex of [11, 15, 19]) {
+    assertEquals(roleAt(lapIndex), "recovery", `lap ${lapIndex} is a float`);
+  }
+  // Twelve rep miles: four reps of three.
+  assertEquals(roles.filter((r) => r.role === "rep").length, 12);
+  // The warm-up is not a rep, however fast the last of it gets.
+  for (const lapIndex of [1, 2, 3, 4, 5, 6]) {
+    assertEquals(roleAt(lapIndex), "warmup", `lap ${lapIndex} is warm-up`);
+  }
+  assertEquals(roleAt(23), "cooldown");
+});
+
+Deno.test("boutsFromLaps: the same session yields four work bouts, not two", () => {
+  const spec: Array<[number, string]> = [
+    [1, "7:44"], [1, "7:13"], [1, "7:12"], [1, "7:15"], [1, "6:57"], [1, "6:51"],
+    [1, "10:22"],
+    [1, "6:10"], [1, "6:09"], [1, "6:08"], [0.50, "7:35"],
+    [1, "6:08"], [1, "6:07"], [1, "6:04"], [0.47, "7:47"],
+    [1, "6:02"], [1, "6:01"], [1, "5:58"], [0.51, "8:00"],
+    [1, "5:49"], [1, "5:32"], [1, "5:30"], [0.53, "8:09"],
+  ];
+  const laps: LapInput[] = spec.map(([mi, p], i) => {
+    const [m, sec] = p.split(":").map(Number);
+    const dur = Math.round(mi * (m * 60 + sec));
+    return {
+      lap_index: i + 1,
+      distance: mi * 1609.344,
+      moving_time: dur,
+      average_speed: (mi * 1609.344) / dur,
+    };
+  });
+  // Warm-up runs into rep 1 as one bout, then the floats split the rest —
+  // so the reps are separated rather than melted into a single 14-mile block.
+  assert(workBoutCount(boutsFromLaps(laps).segments) >= 4, "floats must split the reps");
+});

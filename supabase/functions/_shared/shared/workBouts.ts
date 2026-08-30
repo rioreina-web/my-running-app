@@ -787,7 +787,11 @@ export function boutsFromLaps(
   );
   const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
 
-  const cls: Segment[] = norm.map((l) => (l.vel < recoveryThreshold ? "recovery" : "work"));
+  // Same two-stage classification as `lapRoles`, so the detected bouts and the
+  // per-lap roles cannot disagree about what was a rep.
+  const globalWork = norm.map((l) => l.vel >= recoveryThreshold);
+  const refinedWork = demoteLocalRecoveries(norm, globalWork);
+  const cls: Segment[] = refinedWork.map((w) => (w ? "work" : "recovery"));
 
   // Merge consecutive same-class laps.
   type Group = { seg: Segment; laps: typeof norm };
@@ -1151,6 +1155,73 @@ export type LapRole = "warmup" | "rep" | "recovery" | "cooldown";
  * "warmup", after the last are "cooldown", and easy laps between reps are
  * "recovery". Keyed by the lap's own `lap_index` so the client joins 1:1.
  */
+/**
+ * How much slower than its neighbours a lap must be to be read as a recovery
+ * despite clearing the global work/recovery line. A half-mile float run at
+ * 7:35 between 6:08 miles is ~19% slower; a warm-up mile inside a warm-up ramp
+ * is ~7% slower than the mile after it. 15% sits between the two.
+ */
+const LOCAL_RECOVERY_CONTRAST = 0.15;
+
+/** Work laps either side of `i` used to establish "what the reps are doing here". */
+const LOCAL_WINDOW = 2;
+
+/**
+ * Demote laps that clear the global work line but are plainly a recovery in
+ * context.
+ *
+ * A single global velocity threshold cannot separate a float from a warm-up
+ * mile when they are run at the same speed — and on a real 4x3mi session they
+ * are: warm-up 6:51-7:44, floats 7:35-8:00. Worse, the bimodal search that
+ * picks the line is dominated by whichever gap is largest, so one very slow
+ * transition lap (10:22) captured the boundary at 9:08/mi and every 7:35 float
+ * scored as work. The session collapsed from 4 reps into 2, and the warm-up was
+ * reported as a 6-mile "rep" at 7:12.
+ *
+ * What actually distinguishes a float is LOCAL: it sits between much faster
+ * laps. That is the signal used here. Laps at the very start or end have no
+ * work on one side and are left to the caller's warm-up/cool-down handling.
+ */
+export function demoteLocalRecoveries(
+  laps: Array<{ vel: number }>,
+  isWork: boolean[],
+): boolean[] {
+  const out = [...isWork];
+  // Computed from the ORIGINAL classification so the result cannot depend on
+  // the order laps happen to be visited in.
+  const workIdx = isWork.map((w, i) => (w ? i : -1)).filter((i) => i >= 0);
+  if (workIdx.length < 3) return out;
+
+  for (const i of workIdx) {
+    const before = workIdx.filter((j) => j < i).slice(-LOCAL_WINDOW);
+    const after = workIdx.filter((j) => j > i).slice(0, LOCAL_WINDOW);
+    // Needs work on BOTH sides — otherwise this is a lead-in or a run-out, and
+    // the caller's bracketing owns it.
+    if (before.length === 0 || after.length === 0) continue;
+    const neighbours = [...before, ...after].map((j) => laps[j].vel);
+    const localWork = median(neighbours);
+    if (localWork <= 0) continue;
+    if (laps[i].vel <= localWork * (1 - LOCAL_RECOVERY_CONTRAST)) out[i] = false;
+  }
+  return out;
+}
+
+/**
+ * The velocity the session's actual work was run at, taken from the FASTER half
+ * of the work laps. Using the plain median would fold a long warm-up into the
+ * baseline — on a 6-mile warm-up plus 12 miles of reps, half the "work" laps
+ * are the warm-up.
+ */
+function coreWorkVelocity(vels: number[]): number {
+  if (vels.length === 0) return 0;
+  const sorted = [...vels].sort((a, b) => a - b);
+  const top = sorted.slice(Math.floor(sorted.length / 2));
+  return median(top.length ? top : sorted);
+}
+
+/** Below this share of the core work velocity, a leading/trailing lap is a ramp. */
+const RAMP_VEL_FRAC = 0.93;
+
 export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: LapRole }> {
   if (!Array.isArray(laps) || laps.length === 0) return [];
   const o = DEFAULTS;
@@ -1188,7 +1259,33 @@ export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: Lap
   });
   const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
 
-  const isWork = rows.map((r) => r.valid && !r.isFragment && r.vel >= recoveryThreshold);
+  const globalWork = rows.map((r) => r.valid && !r.isFragment && r.vel >= recoveryThreshold);
+  // Floats that cleared the global line but are a recovery in context.
+  let isWork = demoteLocalRecoveries(rows, globalWork);
+
+  // Bracket the ramps. A warm-up is work-classified by any velocity line — it
+  // is running — so it has to be recognised by being materially slower than
+  // what the session's reps were actually run at. Without this the six warm-up
+  // miles of a 4x3 stayed "rep" and were reported as a 6-mile rep at 7:12.
+  const coreVel = coreWorkVelocity(rows.filter((_, i) => isWork[i]).map((r) => r.vel));
+  if (coreVel > 0) {
+    const rampCut = coreVel * RAMP_VEL_FRAC;
+    // Walk in from each end and STOP at the first lap already running at work
+    // speed. Without the stop this swept the whole array and demoted slow
+    // interior miles too — which on a hilly steady run invents rep structure
+    // out of the hills.
+    for (let i = 0; i < rows.length; i++) {
+      if (!isWork[i]) continue;
+      if (rows[i].vel >= rampCut) break;
+      isWork[i] = false;
+    }
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (!isWork[i]) continue;
+      if (rows[i].vel >= rampCut) break;
+      isWork[i] = false;
+    }
+  }
+
   const firstWork = isWork.indexOf(true);
   const lastWork = isWork.lastIndexOf(true);
 

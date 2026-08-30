@@ -721,12 +721,20 @@ export function splitsFromParsedBlocks(
       ? parseInt(paceParts[0], 10) * 60 + parseInt(paceParts[1], 10)
       : NaN;
     if (!dist || dist <= 0 || !isFinite(paceSec)) continue;
+    // A block's role is KNOWN here — the parser wrote it — so none of them
+    // should fall through to "unknown", which `formatSplitsBlock` counts as
+    // work for pattern detection. A "recovery" block landing in that bucket is
+    // how a 4x3mi with half-mile floats reported "Fade — second half averaged
+    // 67 sec/mi slower": the 10:22 recovery jog got averaged into the second
+    // half of the work reps. The session was a negative-split cutdown.
     const effortKind: WorkoutSplit["effortKind"] = role === "warmup"
       ? "warmup"
       : role === "cooldown"
       ? "cooldown"
       : role === "work_rep"
       ? "work"
+      : role === "recovery" || role === "rest" || role === "float"
+      ? "rest"
       : "unknown";
     if (effortKind === "work") workIndex += 1;
     out.push({
