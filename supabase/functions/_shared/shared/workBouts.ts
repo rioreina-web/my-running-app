@@ -790,7 +790,7 @@ export function boutsFromLaps(
   // Same two-stage classification as `lapRoles`, so the detected bouts and the
   // per-lap roles cannot disagree about what was a rep.
   const globalWork = norm.map((l) => l.vel >= recoveryThreshold);
-  const refinedWork = demoteLocalRecoveries(norm, globalWork);
+  const refinedWork = stripRamps(norm, demoteLocalRecoveries(norm, globalWork));
   const cls: Segment[] = refinedWork.map((w) => (w ? "work" : "recovery"));
 
   // Merge consecutive same-class laps.
@@ -1222,6 +1222,38 @@ function coreWorkVelocity(vels: number[]): number {
 /** Below this share of the core work velocity, a leading/trailing lap is a ramp. */
 const RAMP_VEL_FRAC = 0.93;
 
+/**
+ * Strip the warm-up and cool-down ramps off the ends of the work set.
+ *
+ * A warm-up is running, so every velocity threshold calls it work. It is
+ * recognised instead by being materially slower than what the session's reps
+ * were actually run at. Both ends walk INWARD and stop at the first lap already
+ * at work speed — sweeping the whole array instead would demote slow interior
+ * miles and cut a hilly steady run into invented reps.
+ *
+ * Shared by `lapRoles` and `boutsFromLaps` so the roles and the detected bouts
+ * cannot disagree. Without it in `boutsFromLaps`, a 0.53mi cool-down merged
+ * into the final rep of a 4x3 and reported it as 3.53mi at 6:00 — hiding a
+ * 5:37 last rep, the whole point of the session.
+ */
+function stripRamps(laps: Array<{ vel: number }>, isWork: boolean[]): boolean[] {
+  const out = [...isWork];
+  const coreVel = coreWorkVelocity(laps.filter((_, i) => out[i]).map((l) => l.vel));
+  if (coreVel <= 0) return out;
+  const rampCut = coreVel * RAMP_VEL_FRAC;
+  for (let i = 0; i < laps.length; i++) {
+    if (!out[i]) continue;
+    if (laps[i].vel >= rampCut) break;
+    out[i] = false;
+  }
+  for (let i = laps.length - 1; i >= 0; i--) {
+    if (!out[i]) continue;
+    if (laps[i].vel >= rampCut) break;
+    out[i] = false;
+  }
+  return out;
+}
+
 export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: LapRole }> {
   if (!Array.isArray(laps) || laps.length === 0) return [];
   const o = DEFAULTS;
@@ -1267,24 +1299,7 @@ export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: Lap
   // is running — so it has to be recognised by being materially slower than
   // what the session's reps were actually run at. Without this the six warm-up
   // miles of a 4x3 stayed "rep" and were reported as a 6-mile rep at 7:12.
-  const coreVel = coreWorkVelocity(rows.filter((_, i) => isWork[i]).map((r) => r.vel));
-  if (coreVel > 0) {
-    const rampCut = coreVel * RAMP_VEL_FRAC;
-    // Walk in from each end and STOP at the first lap already running at work
-    // speed. Without the stop this swept the whole array and demoted slow
-    // interior miles too — which on a hilly steady run invents rep structure
-    // out of the hills.
-    for (let i = 0; i < rows.length; i++) {
-      if (!isWork[i]) continue;
-      if (rows[i].vel >= rampCut) break;
-      isWork[i] = false;
-    }
-    for (let i = rows.length - 1; i >= 0; i--) {
-      if (!isWork[i]) continue;
-      if (rows[i].vel >= rampCut) break;
-      isWork[i] = false;
-    }
-  }
+  isWork = stripRamps(rows, isWork);
 
   const firstWork = isWork.indexOf(true);
   const lastWork = isWork.lastIndexOf(true);
