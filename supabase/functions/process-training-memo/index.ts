@@ -638,7 +638,10 @@ Deno.serve(async (req) => {
       try {
         const formData = new FormData();
         formData.append("file", new File([audioArrayBuffer], fileName, { type: mimeType }));
-        formData.append("model", "whisper-large-v3");
+        // turbo (2026-08-31): ~2x faster than whisper-large-v3 at negligible
+        // accuracy cost on clean speech — and the OpenAI/Gemini fallbacks
+        // below still run full-size models if this one ever degrades.
+        formData.append("model", "whisper-large-v3-turbo");
         formData.append("response_format", "verbose_json");
 
         const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
@@ -745,7 +748,20 @@ Deno.serve(async (req) => {
       });
 
     // ── Step 2: Analyze transcript with Gemini ──
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    // JSON mode + temperature 0 (2026-08-31): responseMimeType forces the
+    // model to emit valid bare JSON — deleting the malformed-response /
+    // markdown-fence failure class that parseJsonResponse had to defend
+    // against — and temp 0 makes the same memo produce the same extraction
+    // on every retry (the model-nondeterminism class from the shorthand
+    // parser postmortem). The OpenAI fallback below runs the same contract
+    // (json_object mode, temp 0).
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0,
+      },
+    });
 
     // Settle the early-reveal write before the final results UPDATE — no
     // write-ordering race.
@@ -791,7 +807,7 @@ Deno.serve(async (req) => {
           model: "gpt-4o-mini",
           messages: [{ role: "user", content: analysisInput }],
           response_format: { type: "json_object" },
-          temperature: 0.3,
+          temperature: 0,
         }),
         signal: AbortSignal.timeout(30000),
       });

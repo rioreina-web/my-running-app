@@ -96,8 +96,9 @@ final class OfflineQueueManager {
     /// onto the row; if the row has since been merged away, it falls back to
     /// the legacy insert path so the memo is never lost.
     @MainActor
-    func enqueueVoiceAttach(audioURL: URL, recordId: String) {
-        guard let container else { return }
+    @discardableResult
+    func enqueueVoiceAttach(audioURL: URL, recordId: String) -> UUID? {
+        guard let container else { return nil }
         let context = container.mainContext
 
         var payloadDict: [String: String] = [:]
@@ -105,7 +106,7 @@ final class OfflineQueueManager {
         payloadDict["source"] = "voice_log"
         payloadDict["attachRecordId"] = recordId
 
-        guard let payloadData = try? JSONEncoder().encode(payloadDict) else { return }
+        guard let payloadData = try? JSONEncoder().encode(payloadDict) else { return nil }
 
         let upload = PendingUpload(type: "voiceLog", payload: payloadData, localFilePath: audioURL.path, ownerUserId: AuthManager.shared.currentUserId)
         context.insert(upload)
@@ -117,6 +118,27 @@ final class OfflineQueueManager {
         }
         refreshCountSync(context: context)
         logger.info("Queued voice attach upload: \(upload.id) -> row \(recordId)")
+        return upload.id
+    }
+
+    /// Remove a fulfilled attach intent. The intent is persisted BEFORE the
+    /// upload starts (app-death guard: if iOS kills us mid-upload, the next
+    /// drain finds the intent and finishes the attach); the foreground path
+    /// calls this the moment its own attach succeeds so the drain never
+    /// replays completed work. Deletes the queue item only — the caller owns
+    /// the audio file's lifecycle.
+    @MainActor
+    func completeVoiceAttach(ticket: UUID) {
+        guard let container else { return }
+        let context = container.mainContext
+        let descriptor = FetchDescriptor<PendingUpload>(predicate: #Predicate { $0.id == ticket })
+        guard let item = try? context.fetch(descriptor).first else { return }
+        context.delete(item)
+        do { try context.save() } catch {
+            Log.app.error("SwiftData save failed (complete voice attach): \(error)")
+        }
+        refreshCountSync(context: context)
+        logger.info("Voice attach intent fulfilled: \(ticket)")
     }
 
     /// Queue a manual workout for later.
@@ -352,21 +374,48 @@ final class OfflineQueueManager {
             // duplicate. Falls through to the legacy insert only when the row
             // has been merged/superseded away since it was created.
             if let attachId = dict["attachRecordId"] {
-                struct IdRow: Decodable { let id: UUID }
+                struct AttachRow: Decodable { let id: UUID; let audio_url: String? }
                 let attachData: [String: AnyJSON] = [
                     "audio_url": .string(audioPublicURL),
                     "processing_status": .string("pending"),
                 ]
-                let updated: [IdRow] = (try? await supabase
+                // IDEMPOTENT attach: only rows still missing audio. Without the
+                // audio_url-is-null guard, a stale retry replaying against an
+                // already-completed row would flip it back to "pending" and
+                // re-run the whole pipeline on a finished memo. A thrown error
+                // here propagates to the catch below → the item stays queued
+                // and retries later (a transient failure must NOT be read as
+                // "row gone", which would mint a duplicate entry).
+                let updated: [AttachRow] = try await supabase
                     .from("training_logs")
                     .update(attachData)
                     .eq("id", value: attachId)
-                    .select("id")
+                    .is("audio_url", value: nil)
+                    .select("id, audio_url")
                     .execute()
-                    .value) ?? []
+                    .value
                 if !updated.isEmpty {
                     await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
                     return true
+                }
+                // 0 rows: either the audio is already attached (foreground won
+                // the race, or an earlier retry landed) — success — or the row
+                // was merged away. Ask the row which.
+                let existing: [AttachRow] = try await supabase
+                    .from("training_logs")
+                    .select("id, audio_url")
+                    .eq("id", value: attachId)
+                    .limit(1)
+                    .execute()
+                    .value
+                if let row = existing.first {
+                    if row.audio_url != nil {
+                        logger.info("Voice attach: row \(attachId) already has audio — intent already fulfilled")
+                        return true
+                    }
+                    // Row exists, no audio, yet our guarded update matched 0
+                    // rows — transient inconsistency; retry later.
+                    return false
                 }
                 logger.error("Voice attach: row \(attachId) gone — falling back to fresh insert")
             }

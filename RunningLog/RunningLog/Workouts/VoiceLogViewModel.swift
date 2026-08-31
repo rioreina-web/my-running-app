@@ -222,6 +222,17 @@ final class VoiceLogViewModel {
         selectedWorkoutDate: Date?,
         checkInManager: CoachCheckInManager
     ) async {
+        // Persist the attach intent BEFORE any bytes move (app-death guard,
+        // 2026-08-31). If iOS kills the app mid-upload, no catch block ever
+        // runs — without this, the row would sit at "uploading" forever with
+        // the m4a orphaned on disk. With it, the next drain finds the intent
+        // and finishes the attach. The drain's attach is idempotent (guarded
+        // on audio_url IS NULL), so the intent replaying after our own
+        // success is a harmless no-op — but we clear it on success anyway.
+        let ticket = OfflineQueueManager.shared.enqueueVoiceAttach(
+            audioURL: localURL,
+            recordId: rowId.uuidString
+        )
         do {
             let audioData = try Data(contentsOf: localURL)
             let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
@@ -230,21 +241,38 @@ final class VoiceLogViewModel {
                 "audio_url": .string(audioPublicURL),
                 "processing_status": .string("pending"),
             ]
+            // Same idempotency guard as the drain: only attach if no audio is
+            // on the row yet (a drain retry may have beaten us here).
             let updated: [TrainingLog] = try await supabase
                 .from("training_logs")
                 .update(attachData)
                 .eq("id", value: rowId.uuidString)
+                .is("audio_url", value: nil)
                 .select(TrainingLog.columns)
                 .execute()
                 .value
 
             guard let attachedLog = updated.first else {
-                // The row vanished between insert and attach — reconcile-log or
-                // the dedup path merged/superseded it mid-upload. Never strand
-                // the audio: the legacy queue path re-creates a row with the
-                // audio attached, and the server's sibling merge collapses it
-                // onto the surviving run.
+                // 0 rows: the row already has audio (a racing drain fulfilled
+                // the intent — done), or it vanished (merged/superseded
+                // mid-upload — requeue as a fresh insert so the audio is
+                // never stranded; the server's sibling merge collapses it
+                // onto the surviving run).
+                struct ProbeRow: Decodable { let id: UUID; let audio_url: String? }
+                let probe: [ProbeRow] = (try? await supabase
+                    .from("training_logs")
+                    .select("id, audio_url")
+                    .eq("id", value: rowId.uuidString)
+                    .limit(1)
+                    .execute()
+                    .value) ?? []
+                if let row = probe.first, row.audio_url != nil {
+                    if let ticket { OfflineQueueManager.shared.completeVoiceAttach(ticket: ticket) }
+                    try? FileManager.default.removeItem(at: localURL)
+                    return
+                }
                 Log.app.error("Voice attach hit a missing row \(rowId) — requeueing as fresh insert")
+                if let ticket { OfflineQueueManager.shared.completeVoiceAttach(ticket: ticket) }
                 OfflineQueueManager.shared.enqueueVoiceLog(
                     audioURL: localURL,
                     notes: nil,
@@ -255,6 +283,7 @@ final class VoiceLogViewModel {
                 return
             }
 
+            if let ticket { OfflineQueueManager.shared.completeVoiceAttach(ticket: ticket) }
             try? FileManager.default.removeItem(at: localURL)
 
             // Direct-invoke processing (2026-08-04, latency Phase 1): the
@@ -285,16 +314,12 @@ final class VoiceLogViewModel {
             }
         } catch {
             Log.app.error("Failed to upload/attach voice memo audio: \(error)")
-            // Data-loss guard: the row exists but its audio didn\'t make it up.
-            // Queue an ATTACH retry (not a fresh insert — that would duplicate
-            // the visible row) targeting this row id. The file survives on
-            // disk inside the queue item.
-            OfflineQueueManager.shared.enqueueVoiceAttach(
-                audioURL: localURL,
-                recordId: rowId.uuidString
-            )
+            // The attach intent was persisted before the upload started, so
+            // the retry path is already armed — the drain replays the attach
+            // against this row (idempotently) when the network returns. The
+            // file survives on disk inside the queue item.
             statusMessage = "Saved — audio will finish uploading in the background."
-            ErrorReporter.shared.report(error, context: "attach voice memo audio (queued for retry)")
+            ErrorReporter.shared.report(error, context: "attach voice memo audio (intent queued)")
             OfflineQueueManager.shared.drainQueue()
         }
     }
