@@ -66,11 +66,6 @@ struct WorkoutRepReceiptView: View {
     /// or a rest, has no entry). Lets the lap table expand a rep back into
     /// the recorded splits.
     @State private var boutMembers: [Int: [WorkoutLapRow]] = [:]
-    /// The SESSION's reps — 4 x 3mi — as distinct from the watch's splits,
-    /// which are the twelve mile presses inside them. The lap table shows the
-    /// splits; this describes the workout. Empty when nothing parsed the run,
-    /// in which case the sentence falls back to counting rep laps.
-    @State private var sessionReps: [WorkoutLapRow] = []
     @State private var zones: RepChartZones = .none
     @State private var showStructureEditor = false
     @State private var prescription: WorkoutPrescription?
@@ -1489,18 +1484,8 @@ struct WorkoutRepReceiptView: View {
             if let zone = timedZone { s += " — \(zone) carried the most time" }
             return s + "."
         }
-        // "4 reps at 5:58, inside a 32-second spread" — reps and spread both
-        // measured across the SESSION's reps. Counting the twelve mile splits
-        // here instead would call a 4x3 a twelve-rep session.
-        let describing = sessionReps.isEmpty ? reps : sessionReps
-        let describingPaces = describing.compactMap { $0.avg_pace_sec_per_mile }.filter { $0 > 0 }
-        let describingAvg = describingPaces.isEmpty
-            ? targetSec
-            : describingPaces.reduce(0, +) / Double(describingPaces.count)
-        var s = "\(describing.count) reps at \(rr_pace(describingAvg, km: km))\(unit)"
-        if describingPaces.count >= 2, let hi = describingPaces.max(), let lo = describingPaces.min() {
-            s += ", inside a \(Int((hi - lo).rounded()))-second spread"
-        }
+        var s = "\(reps.count) reps at \(rr_pace(targetSec, km: km))\(unit)"
+        if let spread = repSpreadSec { s += ", inside a \(spread)-second spread" }
         // The zone clause used to live here ("HR in Z4 from rep 2 on") — word
         // for word what the HR chip two lines above already says. One place
         // per fact: the chip states the zone, the sentence states the shape.
@@ -1749,27 +1734,23 @@ struct WorkoutRepReceiptView: View {
         //
         //   1. A hand-correction always wins — this is YOU.
         //   2. Uniform watch auto-laps → the watch's own recorded splits, as-is.
-        //   3. The watch recorded rest laps → the watch's own laps, EACH ONE
-        //      ITS OWN ROW. They used to be merged here (three 1-mile presses
-        //      inside a 3-mile rep re-joined into one row, the real splits
-        //      demoted to a tap-to-expand). That is the same mistake the
-        //      insight layer made: a lap press is a measurement, a rep is an
-        //      inference drawn on top of one, and the table is where the
-        //      measurement belongs. A 3-mile rep at 6:09 cannot tell you
-        //      whether it was 6:09/6:09/6:09 or 6:25/6:10/5:52, and it showed
-        //      the closing rep of a 4x3 as a flat 5:37 when it was
-        //      5:49/5:32/5:30. The rep grouping is still what the header
-        //      describes; it is not what the splits are.
+        //   3. The watch recorded rest laps → the watch's own laps, merged
+        //      into the workout's reps (three 1-mile presses inside a 3-mile
+        //      rep re-joined), with each bout keeping its member laps so the
+        //      table can show the mile splits inside it.
+        //
+        //      The REP is the unit here — 4 x 3mi is four reps, and a rep's HR
+        //      is its average over three miles, not three separate readings.
+        //      The mile splits are detail within the rep, not a replacement
+        //      for it. (Briefly un-merged 2026-08-30; that made the chart
+        //      label twelve reps and gave HR per mile, which is not the
+        //      session.)
         //   4. Otherwise → CONTINUOUS. Stream mile/km splits from the watch.
         //      The parser NEVER supplies split geometry from the voice memo:
         //      if the watch didn't lap it, the honest record is the watch's
         //      own splits, not reps reconstructed from what you said.
         let rawHasRests = lapRows.contains { $0.is_rest == true }
         let parsedWork = parsed.laps.filter { $0.is_rest != true }.count
-        // The parser's work blocks describe the SESSION (4 x 3mi). They are no
-        // longer used as the split geometry — the watch's laps are — but they
-        // are still the right thing to count in a sentence about the workout.
-        sessionReps = parsed.laps.filter { $0.is_rest != true }
         if parsed.edited && parsedWork >= 1 {
             laps = parsed.laps
             trustRestTags = true
@@ -1778,12 +1759,15 @@ struct WorkoutRepReceiptView: View {
             trustRestTags = false
             isContinuous = true
         } else if rawHasRests {
-            // The watch lapped work + rest — that IS the workout's splits, and
-            // they are shown exactly as recorded. `role` is already on each row
-            // (wu / rec / cd), so the table can name the non-rep laps without
-            // any of them being folded together.
-            laps = lapRows
-            boutMembers = [:]
+            // The watch lapped work + rest — that IS the workout's splits.
+            // Keep each merged bout's member laps so the table can show a
+            // rep's own recorded mile splits.
+            let detailed = WorkoutLapsService.mergeWorkBoutsDetailed(lapRows)
+            laps = detailed.map(\.lap)
+            boutMembers = Dictionary(uniqueKeysWithValues: detailed.compactMap { entry in
+                guard let idx = entry.lap.lap_index, !entry.members.isEmpty else { return nil }
+                return (idx, entry.members)
+            })
             trustRestTags = true
         } else {
             // No recorded lap structure → continuous. `isContinuous` forces the
