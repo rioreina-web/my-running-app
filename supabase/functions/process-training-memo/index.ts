@@ -13,22 +13,7 @@ import {
 import { loadPrompt } from "../_shared/prompt-library.ts";
 import { writeNiggleMentions, writeNiggleResolutions } from "../_shared/niggleWriter.ts";
 import { writeMemoryCandidates } from "../_shared/memoryWriter.ts";
-import {
-  loadCoachContext,
-  formatPacesBlock,
-  classifyPace,
-  comparePrescribedToExecuted,
-  findSimilarPriorWorkout,
-  formatProgressionBlock,
-  formatSplitsBlock,
-  isQualityWorkoutType,
-  splitsFromPaceSegments,
-  splitsFromExtractedIntervals,
-  splitsFromLaps,
-  splitsFromParsedBlocks,
-  type ScheduledLite as CoachScheduledLite,
-} from "../_shared/coach-context.ts";
-import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import { splitsFromExtractedIntervals } from "../_shared/coach-context.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -377,7 +362,7 @@ Deno.serve(async (req) => {
     // an attacker can't distinguish "not yours" from "doesn't exist".
     const { data: ownerRow, error: ownerErr } = await supabase
       .from("training_logs")
-      .select("user_id, notes, cleaned_notes, audio_url, processing_status")
+      .select("user_id, notes, cleaned_notes, audio_url, processing_status, mood")
       .eq("id", recordId)
       .maybeSingle();
     if (ownerErr || !ownerRow || ownerRow.user_id !== authUserId) {
@@ -405,6 +390,16 @@ Deno.serve(async (req) => {
     // row — the outbox payload only carries id/user_id/audio_url.
     const typedNotes = ((ownerRow.notes as string | null) ?? "").trim();
     const audioUrlStr = (ownerRow.audio_url as string | null) ?? record.audio_url ?? null;
+    // A mood already ON the row wins over extraction (2026-08-31). The Read
+    // tab's check-in radio writes the athlete's own rating at insert time;
+    // silently replacing a tapped "tired" with the model's read of their
+    // words is exactly the class of overwrite the workout_type authority
+    // ladder exists to stop. No mood_source column yet, so the rule is
+    // write-once-preserve: whoever set mood first (athlete or a prior
+    // extraction pass) keeps it, and extraction only fills nulls. On a late
+    // sibling collapse this value carries the memo row's declared mood onto
+    // the surviving run row.
+    const declaredMood = (ownerRow.mood as string | null) ?? null;
     const hasAudio = !!audioUrlStr;
     // "Already processed" short-circuit. Gated on processing_status =
     // 'completed', NOT on cleaned_notes alone: the two-stage reveal writes the
@@ -505,7 +500,6 @@ Deno.serve(async (req) => {
     let mergedStreams: unknown = null;
     let mergedPaceSegments: unknown = null;
     let siblingRunId: string | null = null;
-    let siblingParsedStructure: unknown = null;
     const er = existingRecord as {
       workout_distance_miles?: number | null;
       workout_date?: string | null;
@@ -580,11 +574,9 @@ Deno.serve(async (req) => {
         const match = await findSiblingGpsRun(erDist as number);
         if (match) {
           mergedStreams = match.external_streams ?? null;
-          // The laps table is keyed on the SIBLING row's id (the lap-writer
-          // trigger fired when Strava sync wrote its external_streams). Keep
-          // the id so the splits block below can read the true rep structure.
+          // Keep the id so the late-collapse guard below knows a sibling
+          // merge already happened (and skips re-matching).
           siblingRunId = match.id ?? null;
-          siblingParsedStructure = match.parsed_structure ?? null;
           const erHasSegs = Array.isArray(er?.pace_segments) && (er!.pace_segments as unknown[]).length > 0;
           if (!erHasSegs) mergedPaceSegments = match.pace_segments ?? null;
           console.log(`[process-training-memo] merged GPS from sibling run into voice row ${record.id}`);
@@ -592,34 +584,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── Watch laps — the true rep structure ─────────────────────────────
-    // running_workout_laps holds the actual lap presses (work reps + flagged
-    // recoveries). Far richer than pace_segments, which are PER-MILE averages
-    // that smear work + recovery together — feeding those to the model as
-    // "reps" is how a 5×4:00 threshold session got read back as "4×1 mile".
-    // The voice row rarely has laps of its own (no streams yet at this point),
-    // so fall back to the sibling GPS run found above.
-    const watchLaps: Array<{
-      lap_index?: number | null;
-      distance_meters?: number | null;
-      moving_time_seconds?: number | null;
-      avg_pace_sec_per_mile?: number | null;
-      avg_heart_rate?: number | null;
-      is_rest?: boolean | null;
-    }> = [];
-    for (const lapWorkoutId of [record.id, siblingRunId]) {
-      if (!lapWorkoutId) continue;
-      const { data: lapRows } = await supabase
-        .from("running_workout_laps")
-        .select("lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, avg_heart_rate, is_rest")
-        .eq("workout_id", lapWorkoutId)
-        .eq("user_id", authUserId)
-        .order("lap_index", { ascending: true });
-      if (lapRows && lapRows.length > 0) {
-        watchLaps.push(...(lapRows as typeof watchLaps));
-        break;
-      }
-    }
 
     // Audio path only: resolve the storage path + download. Typed notes have
     // no audio and take the text branch in Step 1 below.
@@ -648,70 +612,14 @@ Deno.serve(async (req) => {
       audioData = dlData;
     }
 
-    // Coach context fetched in parallel with transcription — adds zone
-    // anchors and (if linked) prescribed-vs-executed framing to the prompt.
-    const coachContextPromise = loadCoachContext(supabase, authUserId);
-
-    // Scheduled-workout fetch (when linked) for prescribed-vs-executed.
-    // Inert until a real linkage column exists: `training_logs` has no
-    // `scheduled_workout_id` in this schema, so there is nothing to join on.
-    // (Selecting it is what made PostgREST 400 the whole existing-record read.)
-    const scheduledPromise: Promise<{ data: null }> = Promise.resolve({ data: null });
-
-    // Similar prior workout — gated on having workout_type + distance +
-    // duration on the row at function entry (typically true when
-    // HealthKit pre-populated the row). For pure voice-only logs where
-    // workout_type is determined by the LLM analysis later, we skip
-    // progression in this round; the next session will see this one as
-    // the prior.
-    const existingType = (existingRecord as { workout_type?: string | null })?.workout_type ?? null;
-    const existingDist = existingRecord?.workout_distance_miles as number | null;
-    const existingDur = existingRecord?.workout_duration_minutes as number | null;
-    const existingDate = existingRecord?.workout_date as string | null;
-    const existingPaceSec = (existingDist && existingDur && existingDist > 0 && existingDur > 0)
-      ? Math.round((Number(existingDur) * 60) / Number(existingDist))
-      : null;
-
-    const userIdForMatcher = authUserId;
-    const priorPromise = (existingType && existingDist && existingPaceSec && existingDate && userIdForMatcher)
-      ? findSimilarPriorWorkout(
-          supabase,
-          userIdForMatcher,
-          {
-            workoutType: existingType,
-            distanceMiles: existingDist,
-            paceSecPerMile: existingPaceSec,
-          },
-          new Date(existingDate),
-        )
-      : Promise.resolve(null);
-
-    // Start fetching recent logs in parallel with transcription (don't await yet)
-    const recentLogsPromise = supabase
-      .from("training_logs")
-      .select("workout_date, cleaned_notes, mood, workout_notes, workout_distance_miles, workout_type")
-      .eq("user_id", authUserId)
-      .not("cleaned_notes", "is", null)
-      .order("workout_date", { ascending: false })
-      .limit(5);
-
-    // Athlete state — launched HERE, in parallel with transcription, because
-    // it takes no transcript input. It was previously awaited serially after
-    // transcription, which put a full 2-6s rebuild on the critical path (the
-    // blanket invalidation trigger meant the 60-min cache never hit). Wrapped
-    // so a state failure never blocks memo ingest — saving the memo matters
-    // more than the insight.
-    const tStatePromiseStart = Date.now();
-    const athleteStatePromise = (async () => {
-      try {
-        const st = await getOrBuildAthleteState(supabase, authUserId);
-        console.log(`[memo-timing] athlete-state=${Date.now() - tStatePromiseStart}ms`);
-        return st;
-      } catch (err) {
-        console.warn("process-training-memo: athlete-state load failed:", err);
-        return null;
-      }
-    })();
+    // v4 (2026-08-31): no coaching context on this path. The zone anchors,
+    // scheduled-workout comparison, similar-prior matching, recent-log block,
+    // and athlete-state rebuild all existed to feed coach_insight — a field
+    // this function has DISCARDED since the insight went on-demand
+    // (2026-06-17 rev3). generate-workout-insight still loads all of it at
+    // button-tap time. Dropping the athlete-state rebuild alone takes 2-6s
+    // off the critical path (the blanket invalidation trigger means the
+    // 60-min cache essentially never hits).
 
     // ── Step 1: get the transcript ──
     // Voice memos: transcribe the audio (Groq → OpenAI → Gemini fallback).
@@ -839,212 +747,18 @@ Deno.serve(async (req) => {
     // ── Step 2: Analyze transcript with Gemini ──
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-    // Await the recent logs + coach context + scheduled workout + similar
-    // prior workout + athlete state — all fetched in parallel with
-    // transcription. (The early-reveal write rides along so it's settled well
-    // before the final results UPDATE — no write-ordering race.)
-    const [recentRes, coachCtx, scheduledRes, prior, athleteState] = await Promise.all([
-      recentLogsPromise,
-      coachContextPromise,
-      scheduledPromise,
-      priorPromise,
-      athleteStatePromise,
-      earlyRevealPromise,
-    ]);
-    const recentLogs = recentRes.data;
-    const scheduledLite = (scheduledRes.data ?? null) as CoachScheduledLite | null;
+    // Settle the early-reveal write before the final results UPDATE — no
+    // write-ordering race.
+    await earlyRevealPromise;
 
-    // ── Pace anchoring + classification + prescription comparison ──
-    // These blocks are independent: paces always render when zones are
-    // available, classification renders when we have an executed avg pace,
-    // prescription block only renders when a scheduled_workout is linked.
-    const pacesBlock = formatPacesBlock(coachCtx);
 
-    const executedPaceSec = (() => {
-      const dist = existingRecord?.workout_distance_miles;
-      const dur = existingRecord?.workout_duration_minutes;
-      if (dist && dur && dist > 0 && dur > 0) {
-        return Math.round((Number(dur) * 60) / Number(dist));
-      }
-      return null;
-    })();
+    // Structured prompt with distinct fields and few-shot examples —
+    // summarize-only (v4): no coach_insight field, no coaching context.
+    const prompt = loadPrompt("process-training-memo.v4", {});
 
-    const classificationLine =
-      executedPaceSec != null && coachCtx.zones
-        ? classifyPace(executedPaceSec, coachCtx.zones).summary
-        : "";
-
-    const prescribedComparison =
-      scheduledLite
-        ? comparePrescribedToExecuted(
-            scheduledLite,
-            {
-              averagePaceSec: executedPaceSec,
-              paceSegments: existingRecord?.pace_segments as Array<{
-                effort?: string;
-                pace_per_mile?: string;
-                distance_miles?: number;
-              }> | undefined,
-            },
-            coachCtx.zones,
-          )
-        : null;
-
-    // Workout progression block — only when matcher found a comparable
-    // prior AND the deltas are meaningful (formatProgressionBlock filters
-    // out runs that are essentially the same).
-    const progressionComparison = (prior && existingType && existingDist && existingPaceSec)
-      ? formatProgressionBlock(
-          {
-            workoutType: existingType,
-            distanceMiles: existingDist,
-            paceSecPerMile: existingPaceSec,
-          },
-          prior,
-        )
-      : null;
-
-    // Splits block — fidelity ladder, mirroring generate-workout-insight:
-    //   1. parsed_structure blocks — recovery-segmented by the structure
-    //      parser from the GPS stream (own row, else the sibling GPS run's).
-    //      The only source that reliably separates JOGGED recoveries for
-    //      athletes at any pace — the lap `is_rest` heuristic is absolute
-    //      (<200m / <2.0 m/s) and misses recoveries run at a normal jog.
-    //   2. running_workout_laps — actual lap presses (true rep structure,
-    //      rest flagged + relative recovery filter). Fetched above,
-    //      sibling-aware.
-    //   3. pace_segments — PER-MILE averages. Work + recovery smeared
-    //      together; usable pacing context but NOT rep structure.
-    // Voice-extracted intervals can't participate here because the LLM hasn't
-    // run yet; those become available on the row after this function writes
-    // extracted_data. For voice-only workouts with no watch data at all,
-    // splits are surfaced in workout_notes via the LLM's own extraction.
-    const parsedBlocks =
-      ((existingRecord as { parsed_structure?: { blocks?: unknown } } | null)
-        ?.parsed_structure?.blocks ??
-        (siblingParsedStructure as { blocks?: unknown } | null)?.blocks) as
-        | Array<{
-            role?: string;
-            rep_num?: number | null;
-            distance_miles?: number | string;
-            duration_s?: number | string;
-            avg_pace_per_mile?: string;
-            avg_hr?: number | null;
-          }>
-        | null
-        | undefined;
-    const parsedSplits = splitsFromParsedBlocks(parsedBlocks);
-    const lapSplits = splitsFromLaps(watchLaps);
-    const segSplits = splitsFromPaceSegments(
-      (existingRecord?.pace_segments ?? mergedPaceSegments) as Array<{
-        effort?: string;
-        distance_miles?: number | string;
-        pace_per_mile?: string;
-        avg_heart_rate?: number;
-      }> | null,
-    );
-    const workReps = (s: Array<{ effortKind: string }>) =>
-      s.filter((x) => x.effortKind === "work").length;
-    const splitSource: "parsed" | "laps" | "segments" = workReps(parsedSplits) >= 2
-      ? "parsed"
-      : workReps(lapSplits) >= 2
-      ? "laps"
-      : "segments";
-    const watchSplits = splitSource === "parsed"
-      ? parsedSplits
-      : splitSource === "laps"
-      ? lapSplits
-      : segSplits;
-    // Quality sessions get the full split read; easy / steady / long runs use
-    // the large-dropoff-only register — silent on normal drift, but a real big
-    // late fade still surfaces (matches generate-workout-insight).
-    const splitsBlock = isQualityWorkoutType(existingType)
-      ? formatSplitsBlock(watchSplits, coachCtx.zones, { detectPattern: true })
-      : formatSplitsBlock(watchSplits, coachCtx.zones, {
-          detectPattern: true,
-          largeDropoffOnly: true,
-        });
-
-    // Athlete-state block — the SAME canonical context the Daily Read / Coach
-    // surfaces read (goals, phase, mileage, load, niggles, patterns). Without
-    // this the voice-log insight was goal-blind and thinner than the HealthKit
-    // insight; now both reason from the same direction. Fetched in parallel
-    // with transcription (athleteStatePromise above) — same context, no longer
-    // paid for serially on the critical path.
-    let athleteStateContext = "";
-    if (athleteState) {
-      try {
-        const block = stateToPromptContext(athleteState);
-        if (block) athleteStateContext = `\n\n## Athlete state\n${block}`;
-      } catch (err) {
-        console.warn("process-training-memo: athlete-state format failed:", err);
-      }
-    }
-
-    let coachAnchorContext = "";
-    if (athleteStateContext) {
-      coachAnchorContext = athleteStateContext;
-    }
-    if (pacesBlock) {
-      coachAnchorContext += `\n\n${pacesBlock}`;
-    }
-    if (classificationLine) {
-      coachAnchorContext += `\n\n## Zone classification (deterministic — trust this over your own pace math)\n${classificationLine}`;
-    }
-    if (splitsBlock) {
-      coachAnchorContext += `\n\n${splitsBlock}`;
-    }
-    if (prescribedComparison?.block) {
-      coachAnchorContext += `\n\n${prescribedComparison.block}`;
-    }
-    if (progressionComparison?.block) {
-      coachAnchorContext += `\n\n${progressionComparison.block}`;
-    }
-
-    let recentContext = "";
-    if (recentLogs && recentLogs.length > 0) {
-      recentContext = "\n\n## Recent Training Context\nHere are the runner's last few sessions so you understand their current training state:\n";
-      for (const log of recentLogs) {
-        const date = log.workout_date ? String(log.workout_date).split("T")[0] : "?";
-        const dist = log.workout_distance_miles ? Number(log.workout_distance_miles).toFixed(1) + " mi" : "";
-        recentContext += "- " + date + ": " + dist + " " + (log.workout_type || "") + " — " + (log.cleaned_notes || "no notes") + " (mood: " + (log.mood || "?") + ")\n";
-      }
-      recentContext += "\nUse this context to give advice that connects to their training patterns. Do NOT repeat information from previous sessions — focus on TODAY's memo.\n";
-    }
-
-    // Build Garmin/watch data context for sharper coaching. Built from the
-    // SAME fidelity-laddered splits as the splits block above — never from raw
-    // pace_segments, which are per-mile averages: labeling those "reps" is how
-    // a 5×4:00 threshold session got narrated back as "actual 4×1 mile reps"
-    // a minute-per-mile slower than the athlete actually ran.
-    let garminContext = "";
-    if (watchSplits.length > 0) {
-      garminContext = splitSource === "parsed"
-        ? "\n\n## GPS Watch Data (parsed workout structure)\nThe workout structure below was segmented from the GPS stream — recoveries are separated out, and each work line is a true rep as executed:\n"
-        : splitSource === "laps"
-        ? "\n\n## GPS Watch Data (recorded laps)\nThe runner's watch recorded these laps. Rest/recovery laps are excluded — each line below is a WORK rep as the watch captured it:\n"
-        : "\n\n## GPS Watch Data (per-distance splits)\nOnly distance-based splits (per mile/km) are available for this workout. Each line AVERAGES work and any recovery jogs within that distance — these are NOT reps. Do not describe them as reps, and do not contradict the runner's own account of the rep structure based on them:\n";
-      for (const s of watchSplits) {
-        const hr = s.avgHeartRate ? ` (${s.avgHeartRate} bpm)` : "";
-        garminContext += `- ${s.label}: ${s.distanceMiles.toFixed(2)} mi @ ${formatPaceMMSS(s.paceSecPerMile)}/mi${hr}\n`;
-      }
-      const totalDist = existingRecord?.workout_distance_miles ?? 0;
-      if (totalDist > 0) {
-        const totalMin = existingRecord?.workout_duration_minutes || 0;
-        const avgPaceSec = totalMin > 0 ? Math.round((totalMin * 60) / totalDist) : 0;
-        const paceM = Math.floor(avgPaceSec / 60);
-        const paceS = avgPaceSec % 60;
-        garminContext += `Total: ${Number(totalDist).toFixed(1)} mi in ${Math.round(totalMin)} min (${paceM}:${String(paceS).padStart(2, "0")}/mi avg)\n`;
-      }
-      garminContext += "\nUSE THIS DATA in your coach_insight. Compare what the runner SAID about their workout to what the WATCH DATA shows. Note discrepancies. Analyze effort distribution. Were easy segments actually easy? Only call out a fade or negative split on a quality session (tempo / intervals / race-pace reps) AND when it's a real, sizable pace change — normal drift on an easy, steady, or long run is expected and must not be labeled a fade. Be specific about paces.\n";
-    }
-
-    // Structured prompt with distinct fields and few-shot examples
-    const prompt = loadPrompt("process-training-memo.v3", { coachAnchorContext, recentContext });
-
-    // Feed the TEXT transcript + Garmin data to Gemini for analysis
+    // Feed the TEXT transcript to Gemini for analysis
     const result = await model.generateContent([
-      { text: prompt + garminContext + `\n\n## Audio Transcript (from ${transcriptionProvider})\n"${transcription}"` },
+      { text: prompt + `\n\n## Audio Transcript (from ${transcriptionProvider})\n"${transcription}"` },
     ]);
 
     const responseText = result.response.text();
@@ -1108,7 +822,8 @@ Deno.serve(async (req) => {
     // Build update payload — only overwrite distance/duration if no HealthKit values exist
     const updatePayload: Record<string, unknown> = {
       cleaned_notes: analysis.cleaned_notes,
-      mood: analysis.mood,
+      // Athlete-declared mood wins over extraction — see declaredMood above.
+      mood: declaredMood ?? analysis.mood,
       // A (2026-06-17 rev3): the AI Insight is NOT written or triggered here.
       // This function owns only the Voice Summary (cleaned_notes / mood /
       // workout_notes / pace_segments / extracted_data). The athlete-state-aware
@@ -1367,7 +1082,9 @@ Deno.serve(async (req) => {
         // memo now lives on. Callers refreshing by id must use this, not the
         // (deleted) voice row they inserted.
         id: finalLogId,
-        mood: analysis.mood,
+        // Mirror what was actually written — declared mood wins (see above),
+        // so callers persisting this echo don't undo the preserve.
+        mood: declaredMood ?? analysis.mood,
         cleaned_notes: analysis.cleaned_notes,
         // A (2026-06-17 rev3): AI Insight is generated on demand via the
         // "Generate AI insight" button (generate-workout-insight), not here —

@@ -60,6 +60,7 @@ import { TEMPLATE as PROCESS_CHECK_IN_V1 } from "./prompts/process-check-in.v1.t
 import { TEMPLATE as PROCESS_TRAINING_MEMO_V1 } from "./prompts/process-training-memo.v1.ts";
 import { TEMPLATE as PROCESS_TRAINING_MEMO_V2 } from "./prompts/process-training-memo.v2.ts";
 import { TEMPLATE as PROCESS_TRAINING_MEMO_V3 } from "./prompts/process-training-memo.v3.ts";
+import { TEMPLATE as PROCESS_TRAINING_MEMO_V4 } from "./prompts/process-training-memo.v4.ts";
 import { TEMPLATE as RACE_INTEL_V1 } from "./prompts/race-intel.v1.ts";
 import { TEMPLATE as RACE_READINESS_V1 } from "./prompts/race-readiness.v1.ts";
 import { TEMPLATE as RESCHEDULE_PLAN_V1 } from "./prompts/reschedule-plan.v1.ts";
@@ -108,6 +109,7 @@ const REGISTRY: Record<string, string> = {
   "process-training-memo.v1": PROCESS_TRAINING_MEMO_V1,
   "process-training-memo.v2": PROCESS_TRAINING_MEMO_V2,
   "process-training-memo.v3": PROCESS_TRAINING_MEMO_V3,
+  "process-training-memo.v4": PROCESS_TRAINING_MEMO_V4,
   "race-intel.v1": RACE_INTEL_V1,
   "race-readiness.v1": RACE_READINESS_V1,
   "reschedule-plan.v1": RESCHEDULE_PLAN_V1,
