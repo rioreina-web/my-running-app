@@ -839,3 +839,41 @@ Deno.test("boutsFromLaps: the same session yields four work bouts, not two", () 
   // so the reps are separated rather than melted into a single 14-mile block.
   assert(workBoutCount(boutsFromLaps(laps).segments) >= 4, "floats must split the reps");
 });
+
+Deno.test("boutsFromLaps: a merged rep keeps its mile splits", () => {
+  // Merging continuous work into one rep is correct — a 3-mile rep is one rep,
+  // not three — but the average hides how it was run. 3 miles at 6:09 is a
+  // different session depending on whether it was held or built, and the last
+  // rep of this one (5:49 / 5:32 / 5:30) is the whole point of the workout:
+  // its 5:37 average reads as merely equal to the rep before it.
+  const spec: Array<[number, string]> = [
+    [1, "7:44"], [1, "7:13"], [1, "7:12"], [1, "7:15"], [1, "6:57"], [1, "6:51"],
+    [1, "10:22"],
+    [1, "6:10"], [1, "6:09"], [1, "6:08"], [0.50, "7:35"],
+    [1, "6:08"], [1, "6:07"], [1, "6:04"], [0.47, "7:47"],
+    [1, "6:02"], [1, "6:01"], [1, "5:58"], [0.51, "8:00"],
+    [1, "5:49"], [1, "5:32"], [1, "5:30"], [0.53, "8:09"],
+  ];
+  const laps: LapInput[] = spec.map(([mi, p], i) => {
+    const [m, sec] = p.split(":").map(Number);
+    const dist = mi * 1609.344;
+    const dur = Math.round(mi * (m * 60 + sec));
+    return { lap_index: i + 1, distance: dist, moving_time: dur, average_speed: dist / dur };
+  });
+
+  const work = boutsFromLaps(laps).segments.filter((s) => s.kind === "work");
+  assertEquals(work.length, 4);
+  assertEquals(
+    work.map((b) => (b.kind === "work" ? b.splits?.map((s) => s.avg_pace_per_mile) : null)),
+    [
+      ["6:10", "6:09", "6:08"],
+      ["6:08", "6:07", "6:04"],
+      ["6:02", "6:01", "5:58"],
+      ["5:49", "5:32", "5:30"],
+    ],
+  );
+
+  // And they reach the parser prompt, not just the object.
+  const rendered = formatWorkBouts(boutsFromLaps(laps).segments);
+  assert(rendered.includes("splits: 5:49 · 5:32 · 5:30"), rendered);
+});

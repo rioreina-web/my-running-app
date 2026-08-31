@@ -40,6 +40,22 @@ export interface WorkBout {
   avg_vel_ms: number;
   avg_pace_per_mile: string; // "M:SS"
   avg_pace_per_km: string;   // "M:SS"
+  /**
+   * The laps this bout was assembled from, when it came from watch laps.
+   *
+   * A rep's average hides how it was run: 3 miles at 6:09 is a different
+   * session depending on whether it was 6:09/6:09/6:09 or 6:25/6:10/5:52.
+   * Merging continuous work into one rep is right — a 3-mile rep is one rep,
+   * not three — but the mile splits inside it are the part a coach reads, and
+   * they were being discarded at this boundary.
+   *
+   * Absent for stream-derived bouts, which have no lap presses to split on.
+   */
+  splits?: Array<{
+    distance_m: number;
+    duration_s: number;
+    avg_pace_per_mile: string;
+  }>;
 }
 
 export interface Recovery {
@@ -834,6 +850,15 @@ export function boutsFromLaps(
         avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
         avg_pace_per_mile: pace(secPerMile),
         avg_pace_per_km: pace(secPerKm),
+        // Only worth carrying when the bout is more than one lap; a single-lap
+        // bout's "splits" would just restate its own average.
+        splits: g.laps.length > 1
+          ? g.laps.map((l) => ({
+            distance_m: Math.round(l.dist_m),
+            duration_s: Math.round(l.dur_s),
+            avg_pace_per_mile: pace(l.vel > 0 ? 1609.34 / l.vel : 0),
+          }))
+          : undefined,
       });
     } else {
       // A recovery before any work is a warmup, not a separator — skip it.
@@ -1337,6 +1362,17 @@ export function formatWorkBouts(segments: BoutOrRecovery[]): string {
       lines.push(
         `Bout ${s.index}: ${km} km / ${mi} mi in ${dur} @ ${s.avg_pace_per_km}/km (${s.avg_pace_per_mile}/mi) — by distance ≈ ${distSnap}, by time ≈ ${timeSnap}`,
       );
+      // The mile-by-mile inside the rep. An average says a 3-mile rep was 6:09;
+      // these say whether it was held or built.
+      if (s.splits && s.splits.length > 1) {
+        const parts = s.splits.map((sp) => {
+          const spMi = sp.distance_m / 1609.34;
+          // Label anything that is not ~a mile so a 0.5 leg is not read as one.
+          const tag = Math.abs(spMi - 1) < 0.08 ? "" : ` (${spMi.toFixed(2)}mi)`;
+          return `${sp.avg_pace_per_mile}${tag}`;
+        });
+        lines.push(`  splits: ${parts.join(" · ")}`);
+      }
     } else {
       const mmss = `${Math.floor(s.duration_s / 60)}:${String(Math.round(s.duration_s % 60)).padStart(2, "0")}`;
       lines.push(`  ↳ recovery: ${mmss} ${s.style}`);
