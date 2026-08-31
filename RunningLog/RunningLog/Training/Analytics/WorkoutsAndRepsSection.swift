@@ -139,7 +139,30 @@ struct WorkoutsAndRepsSection: View {
         WorkoutLabel.normalize(w.workout_type) == "long_run"
     }
 
+    /// A long run workout (`long_wo`) is one continuous run with structure
+    /// embedded in it — 4×3mi at steady inside a 21-miler. Its reps usually
+    /// run SLOWER than the athlete's race anchors, so `RepDensityStrip`'s
+    /// merge-the-work view collapses the whole run into one block and draws
+    /// nothing; the honest mark is the long-run one — every split, on the
+    /// pace ramp. The zone chip and rep pace still come from the server
+    /// structure (the run-relative pass in `workoutSegmentation.ts`).
+    private func isLongWorkout(_ w: QualityWorkout) -> Bool {
+        WorkoutLabel.normalize(w.workout_type) == "long_wo"
+    }
+
     @State private var items: [QualityWorkout] = []
+    /// The athlete's own key-session marks, via the ONE shared store (so this
+    /// ledger can never disagree with the star on the journal/calendar/day
+    /// sheet). The ledger honors them in BOTH directions: a day marked key
+    /// surfaces its session here even when its type is outside
+    /// `keySessionTypes` — a moderate long run, a steady day, a progression;
+    /// key sessions are whatever the athlete says they are — and a day marked
+    /// not-key drops out even when the type matches. Same precedence as the
+    /// star: the athlete's word beats the type heuristic.
+    @State private var keySessions = KeySessionStore.shared
+    /// Rows present ONLY because the athlete marked their day key — they
+    /// leave the list if the mark is withdrawn, unlike type-qualified rows.
+    @State private var markedInIds: Set<UUID> = []
     @State private var structures: [UUID: String] = [:]
     @State private var lapsById: [UUID: [WorkoutLapRow]] = [:]
     @State private var loaded = false
@@ -150,6 +173,11 @@ struct WorkoutsAndRepsSection: View {
     /// True once the server has returned a short page — there are no older
     /// quality sessions, so the footer stops offering to look for them.
     @State private var reachedEnd = false
+    /// Rows consumed from the type-driven server query. Distinct from
+    /// `items.count` now that marks can insert rows (which would make offsets
+    /// skip server rows) and exclude them (which would refetch the same page
+    /// forever).
+    @State private var serverOffset = 0
     @State private var isLoadingMore = false
     /// Rows whose structure + laps have been asked for. Tracked explicitly
     /// rather than inferred from `lapsById`/`structures`, because a session
@@ -174,6 +202,15 @@ struct WorkoutsAndRepsSection: View {
             }
         }
         .task { await load() }
+        // A mark set or cleared while this ledger is on screen re-applies
+        // immediately — the day sheet's star and this list are one answer.
+        .onChange(of: keySessions.overrideByDay) {
+            guard loaded else { return }
+            Task {
+                await applyOverrides()
+                await enrich(Array(items.prefix(shown)))
+            }
+        }
         // Was a hand-rolled copy of WorkoutRepDetailSheet's chrome — the same
         // NavigationStack + ScrollView + "WORKOUT" toolbar, duplicated. Three
         // surfaces each had one, so the missing Done button and the missing
@@ -305,9 +342,14 @@ struct WorkoutsAndRepsSection: View {
 
     private func receipt(_ w: QualityWorkout) -> some View {
         let long = isLongRun(w)
+        let longWo = isLongWorkout(w)
         let parts = structureParts(structures[w.id])
         let chip: String? = long ? "LONG" : parts.zone
-        let pace = long ? avgPace(w) : repPace(w.id)
+        // long_wo: rep pace from the server structure — see editorialReceipt.
+        let pace = long
+            ? avgPace(w)
+            : longWo ? (parts.pace.map { RepPace(label: $0) } ?? avgPace(w))
+            : repPace(w.id)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(dateLine(w.workout_date))
@@ -346,10 +388,12 @@ struct WorkoutsAndRepsSection: View {
             .padding(.top, 3)
             if let laps = lapsById[w.id] {
                 // Two marks, one language. A rep workout gets blocks with
-                // gaps (the gaps ARE the rest); a long run gets one unbroken
-                // bar split at its own miles. Same PaceSpectrum ramp on both,
-                // so a 5:19 rep and a 6:38 mile are the blues they always are.
-                if long {
+                // gaps (the gaps ARE the rest); a long run — and a long run
+                // workout, which is the same continuous run with structure
+                // inside it — gets one unbroken bar split at its own miles.
+                // Same PaceSpectrum ramp on both, so a 5:19 rep and a 6:38
+                // mile are the blues they always are.
+                if long || longWo {
                     LongRunPaceStrip(laps: laps).padding(.top, 9)
                 } else {
                     RepDensityStrip(laps: laps).padding(.top, 9)
@@ -370,13 +414,20 @@ struct WorkoutsAndRepsSection: View {
     /// rules now carry the dating.
     private func editorialReceipt(_ w: QualityWorkout) -> some View {
         let long = isLongRun(w)
+        let longWo = isLongWorkout(w)
         let parts = structureParts(structures[w.id])
         // Always LONG for a long run, even on the rare row whose stored
         // structure does parse a zone: "Long run" under an LT chip is a
         // contradiction on one line. A long run typed with rep structure is a
         // classifier problem and gets fixed there, not papered over here.
         let chip: String? = long ? "LONG" : parts.zone
-        let pace = long ? avgPace(w) : repPace(w.id)
+        // A long_wo's rep pace comes from the server structure — the reps sit
+        // slower than the work gate, so the client-side lap merge would
+        // return the whole-run mean and print it in rep-pace weight.
+        let pace = long
+            ? avgPace(w)
+            : longWo ? (parts.pace.map { RepPace(label: $0) } ?? avgPace(w))
+            : repPace(w.id)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(dateLine(w.workout_date))
@@ -422,8 +473,11 @@ struct WorkoutsAndRepsSection: View {
             if let laps = lapsById[w.id] {
                 // See `receipt(_:)` — a long run's shape is its splits, and
                 // merging them into work bouts (what RepDensityStrip does
-                // first) collapsed 25 recorded miles into three slabs.
-                if long {
+                // first) collapsed 25 recorded miles into three slabs. A
+                // long_wo is the same continuous run, so it takes the same
+                // mark: every split on the ramp shows the moderate block, the
+                // reps AND the floats, where the rep strip drew nothing.
+                if long || longWo {
                     LongRunPaceStrip(laps: laps, height: 10).padding(.top, 8)
                 } else {
                     RepDensityStrip(laps: laps, height: 10).padding(.top, 8)
@@ -499,6 +553,9 @@ struct WorkoutsAndRepsSection: View {
         // struct — so it's raised here, before the first enrichment decides
         // how many rows to fetch laps for.
         shown = max(shown, initialCount)
+        // The store loads at launch; this is only the cold-path fallback (a
+        // surface reached before RunningLogApp's kickoff finished).
+        if !keySessions.hasLoaded { await keySessions.loadOverrides() }
         do {
             items = try await fetchPage(offset: 0)
         } catch {
@@ -507,9 +564,85 @@ struct WorkoutsAndRepsSection: View {
             loaded = true
             return
         }
+        serverOffset = items.count
         if items.count < Self.fetchPage { reachedEnd = true }
+        await applyOverrides()
         await enrich(Array(items.prefix(shown)))
         loaded = true
+    }
+
+    /// "yyyy-MM-dd" for a fetched row. `workout_date` stores the local wall
+    /// clock, matching `day_overrides.date` — the same convention every other
+    /// key-session surface leans on.
+    private func dayKey(_ w: QualityWorkout) -> String? {
+        guard let d = w.workout_date, d.count >= 10 else { return nil }
+        return String(d.prefix(10))
+    }
+
+    /// Apply the athlete's marks to the fetched list, both directions.
+    /// Exclusion is a filter; inclusion fetches each marked day's main run
+    /// (the day's longest logged session) when the type gate missed it. Runs
+    /// after every page append, and again whenever a mark changes while the
+    /// ledger is on screen, so a tap in the day sheet moves this list the
+    /// same moment it moves the star.
+    private func applyOverrides() async {
+        let keyOverrides = keySessions.overrideByDay
+
+        // A row that is only here because of a mark leaves with the mark —
+        // withdrawing the override (back to auto) must not strand a moderate
+        // run in a list its type never qualified for.
+        items.removeAll { w in
+            guard markedInIds.contains(w.id), let day = dayKey(w) else { return false }
+            return keyOverrides[day] != true
+        }
+        markedInIds = markedInIds.filter { id in items.contains { $0.id == id } }
+
+        guard !keyOverrides.isEmpty else { return }
+
+        // OUT: the athlete said this day was not a key session.
+        items.removeAll { w in
+            guard let day = dayKey(w) else { return false }
+            return keyOverrides[day] == false
+        }
+
+        // IN: days the athlete marked key with no row in the list yet. Only
+        // days inside the span already fetched — older marked days join as
+        // paging reaches them, so the list stays in date order with no holes.
+        let presentDays = Set(items.compactMap(dayKey))
+        let oldestFetched = items.compactMap(dayKey).min()
+        let missingDays = keyOverrides
+            .filter { $0.value && !presentDays.contains($0.key) }
+            .keys
+            .filter { day in
+                guard let oldest = oldestFetched else { return true }
+                return reachedEnd || day >= oldest
+            }
+            .sorted(by: >)
+
+        guard !missingDays.isEmpty else { return }
+        var added = false
+        for day in missingDays.prefix(24) {   // marks are sparse; cap defensively
+            do {
+                let dayRows: [QualityWorkout] = try await supabase
+                    .from("training_logs")
+                    .select("id,workout_date,workout_type,workout_distance_miles,workout_duration_minutes")
+                    .gte("workout_date", value: "\(day)T00:00:00")
+                    .lte("workout_date", value: "\(day)T23:59:59")
+                    .order("workout_distance_miles", ascending: false, nullsFirst: false)
+                    .limit(1)
+                    .execute().value
+                if let row = dayRows.first, !items.contains(where: { $0.id == row.id }) {
+                    items.append(row)
+                    markedInIds.insert(row.id)
+                    added = true
+                }
+            } catch {
+                Log.coach.error("WorkoutsAndRepsSection marked-day fetch failed for \(day): \(error)")
+            }
+        }
+        if added {
+            items.sort { ($0.workout_date ?? "") > ($1.workout_date ?? "") }
+        }
     }
 
     /// One server page of quality sessions, newest first.
@@ -529,12 +662,14 @@ struct WorkoutsAndRepsSection: View {
     /// retrying silently on every tap.
     private func fetchOlder() async {
         do {
-            let older = try await fetchPage(offset: items.count)
+            let older = try await fetchPage(offset: serverOffset)
+            serverOffset += older.count
             // Guard against a duplicate row arriving across page boundaries
             // (two sessions sharing a date can reorder between requests).
             let known = Set(items.map(\.id))
             items.append(contentsOf: older.filter { !known.contains($0.id) })
             if older.count < Self.fetchPage { reachedEnd = true }
+            await applyOverrides()
         } catch {
             Log.coach.error("WorkoutsAndRepsSection page fetch failed: \(error)")
             reachedEnd = true
@@ -645,13 +780,15 @@ struct WorkoutsAndRepsSection: View {
 
     // MARK: format — structure → title + zone chip
 
-    /// "8×1K @ 5:14 (10K)" → (title: "8×1K", zone: "10K").
+    /// "8×1K @ 5:14 (10K)" → (title: "8×1K", zone: "10K", pace: "5:14").
     /// Legacy zone tokens map forward ("threshold" → LT); "tempo" is
     /// ambiguous by decision and gets no chip. The @-pace is dropped from
-    /// the title — the right column carries the measured rep pace instead.
-    private func structureParts(_ raw: String?) -> (title: String?, zone: String?) {
+    /// the title — the right column carries the measured rep pace instead,
+    /// except on a `long_wo` row, where the captured pace IS the rep pace
+    /// (the client-side lap merge has no rep boundary to work from there).
+    private func structureParts(_ raw: String?) -> (title: String?, zone: String?, pace: String?) {
         guard var s = raw?.trimmingCharacters(in: .whitespaces), !s.isEmpty else {
-            return (nil, nil)
+            return (nil, nil, nil)
         }
         var zone: String?
         if s.hasSuffix(")"), let open = s.lastIndex(of: "(") {
@@ -660,16 +797,24 @@ struct WorkoutsAndRepsSection: View {
             zone = Self.zoneChip[token]
             s = String(s[..<open]).trimmingCharacters(in: .whitespaces)
         }
+        var pace: String?
         if let r = s.range(of: #"\s*@\s*\d{1,2}:\d{2}"#, options: .regularExpression) {
+            pace = String(s[r])
+                .replacingOccurrences(of: "@", with: "")
+                .trimmingCharacters(in: .whitespaces)
             s.removeSubrange(r)
         }
         s = s.trimmingCharacters(in: .whitespaces)
-        return (s.isEmpty ? nil : s, zone)
+        return (s.isEmpty ? nil : s, zone, pace)
     }
 
     private static let zoneChip: [String: String] = [
         "mile": "MILE", "3k": "3K", "5k": "5K", "10k": "10K",
         "hmp": "HMP", "mp": "MP", "lt": "LT", "threshold": "LT",
+        // The run-relative structure pass labels long-run-workout reps by
+        // their own zone; steady is the usual one and earns a chip. Moderate
+        // stays chipless — those rows are long runs and wear LONG instead.
+        "steady": "STEADY",
     ]
 
     private func title(_ structure: String?, _ w: QualityWorkout) -> String {
