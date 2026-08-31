@@ -192,7 +192,12 @@ struct TrainingLog: Codable, Identifiable {
     // MARK: - Processing Status
 
     var isPending: Bool {
+        // "uploading": the row exists (optimistic insert, 2026-08-31) but the
+        // audio is still moving in the background — renders exactly like a
+        // pending row; the attach flips it to "pending" and processing takes
+        // over from there.
         processingStatus == "pending" || processingStatus == "processing"
+            || processingStatus == "uploading"
     }
 
     /// Two-stage reveal: the transcript is on the row (`cleanedNotes` holds the
@@ -407,6 +412,15 @@ struct TrainingLogInsert: Codable {
     var vitalWorkoutId: String?
     var paceSegments: [PaceSegment]?
     var externalStreams: ExternalStreamsPayload?
+    /// Athlete-DECLARED mood (the Read tab's check-in radio). Closed
+    /// vocabulary — see SignalLabModels.vocabulary. Only set when the athlete
+    /// tapped a mood themselves; the extraction pipeline fills this column
+    /// for memos where it is nil. Declared mood WINS: both
+    /// process-training-memo and process-check-in preserve a non-null row
+    /// mood over their extraction (deployed 2026-08-31), and mood-only
+    /// check-ins ship processing_status "not_required" so nothing touches
+    /// them at all.
+    var mood: String?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -422,5 +436,6 @@ struct TrainingLogInsert: Codable {
         case vitalWorkoutId = "vital_workout_id"
         case paceSegments = "pace_segments"
         case externalStreams = "external_streams"
+        case mood
     }
 }

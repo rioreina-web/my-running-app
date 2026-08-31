@@ -756,18 +756,62 @@ Deno.serve(async (req) => {
     // summarize-only (v4): no coach_insight field, no coaching context.
     const prompt = loadPrompt("process-training-memo.v4", {});
 
-    // Feed the TEXT transcript to Gemini for analysis
-    const result = await model.generateContent([
-      { text: prompt + `\n\n## Audio Transcript (from ${transcriptionProvider})\n"${transcription}"` },
-    ]);
+    const analysisInput =
+      prompt + `\n\n## Audio Transcript (from ${transcriptionProvider})\n"${transcription}"`;
 
-    const responseText = result.response.text();
-    console.log("Gemini raw response length:", responseText.length);
+    // Analysis with a provider fallback (2026-08-31). Transcription has had a
+    // three-provider chain for months; analysis was Gemini-only — the single
+    // point of failure behind the 2026-08-06 and 2026-08-13 credit outages,
+    // where every memo recorded during the outage stalled for its duration
+    // (worst observed: 7.4h insert→completed). OpenAI answers the same
+    // prompt (json_object mode — the prompt already demands bare JSON). Only
+    // when BOTH providers fail do we rethrow the ORIGINAL Gemini error, so
+    // the provider-exhausted 503 classification in the outer catch still
+    // engages and the outbox waits out the outage without burning retries.
+    let responseText: string;
+    let analysisProvider = "gemini-2.5-flash";
+    try {
+      const result = await model.generateContent([{ text: analysisInput }]);
+      responseText = result.response.text();
+    } catch (geminiErr) {
+      const openaiKey = Deno.env.get("OPENAI_API_KEY");
+      if (!openaiKey) throw geminiErr;
+      console.warn(
+        `[process-training-memo] gemini analysis failed (${
+          geminiErr instanceof Error ? geminiErr.message : String(geminiErr)
+        }) — falling back to OpenAI`,
+      );
+      const oaRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [{ role: "user", content: analysisInput }],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+        }),
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!oaRes.ok) {
+        console.error(
+          `[process-training-memo] OpenAI analysis fallback failed too: HTTP ${oaRes.status}`,
+        );
+        throw geminiErr;
+      }
+      const oaJson = await oaRes.json();
+      responseText = oaJson.choices?.[0]?.message?.content ?? "";
+      if (!responseText) throw geminiErr;
+      analysisProvider = "openai-gpt-4o-mini";
+    }
+    console.log(`Analysis raw response length: ${responseText.length} (provider=${analysisProvider})`);
 
     // Parse and validate
     const rawAnalysis = parseJsonResponse(responseText);
     const analysis = validateAnalysis(rawAnalysis);
-    console.log(`[memo-timing] gemini-analysis=${Date.now() - tTranscribed}ms`);
+    console.log(`[memo-timing] gemini-analysis=${Date.now() - tTranscribed}ms provider=${analysisProvider}`);
 
     // Save full transcript to storage (audio path only — a typed note has no
     // audio storage path to derive the transcript filename from, and the note

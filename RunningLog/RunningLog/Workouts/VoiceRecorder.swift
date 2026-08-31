@@ -85,11 +85,25 @@ final class VoiceRecorder {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dest = docs.appendingPathComponent(name)
 
+        // Speech-tuned, NOT music-tuned (2026-08-31). This was 44.1 kHz /
+        // .high — CD sample rate for a voice memo — which produced ~189 kB
+        // average uploads. Both transcribers in the server's fallback chain
+        // (Groq whisper-large-v3, OpenAI whisper-1) resample their input to
+        // 16 kHz mono before inference, so every byte above this was paid for
+        // on the athlete's cell connection and then discarded upstream.
+        //
+        // 16 kHz / 24 kbps mono AAC is the speech-codec sweet spot: it is
+        // exactly what the models consume, and it cuts a typical memo to
+        // ~70 kB — 2-3x less to push over a weak post-run signal, which is
+        // the connection these are actually recorded on. Transcription
+        // accuracy is unaffected; in-app playback is voice-clear, just not
+        // music-rich.
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100,
+            AVSampleRateKey: 16000,
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVEncoderBitRateKey: 24000,
+            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
         ]
 
         do {

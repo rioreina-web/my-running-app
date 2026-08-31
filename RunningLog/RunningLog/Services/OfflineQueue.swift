@@ -88,6 +88,37 @@ final class OfflineQueueManager {
         logger.info("Queued voice log upload: \(upload.id)")
     }
 
+    /// Queue an audio ATTACH retry for a training_logs row that already exists
+    /// (insert-first flow, 2026-08-31): the row went in before the upload, so
+    /// on upload failure we must retry the attach against THAT row — a fresh
+    /// insert here would duplicate the visible journal entry. The drain
+    /// uploads the audio and PATCHes audio_url + processing_status "pending"
+    /// onto the row; if the row has since been merged away, it falls back to
+    /// the legacy insert path so the memo is never lost.
+    @MainActor
+    func enqueueVoiceAttach(audioURL: URL, recordId: String) {
+        guard let container else { return }
+        let context = container.mainContext
+
+        var payloadDict: [String: String] = [:]
+        payloadDict["audioPath"] = audioURL.path
+        payloadDict["source"] = "voice_log"
+        payloadDict["attachRecordId"] = recordId
+
+        guard let payloadData = try? JSONEncoder().encode(payloadDict) else { return }
+
+        let upload = PendingUpload(type: "voiceLog", payload: payloadData, localFilePath: audioURL.path, ownerUserId: AuthManager.shared.currentUserId)
+        context.insert(upload)
+        do {
+            try context.save()
+        } catch {
+            Log.app.error("SwiftData save failed (enqueue voice attach): \(error)")
+            ErrorReporter.shared.report(error, context: "OfflineQueue: failed to persist voice attach to queue")
+        }
+        refreshCountSync(context: context)
+        logger.info("Queued voice attach upload: \(upload.id) -> row \(recordId)")
+    }
+
     /// Queue a manual workout for later.
     @MainActor
     func enqueueManualWorkout(payload: [String: Any]) {
@@ -314,6 +345,31 @@ final class OfflineQueueManager {
             // JWT, even though the bucket policy is PUBLIC. upload-voice-memo
             // writes with the service role, bypassing that broken layer.
             let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
+
+            // Attach retry (insert-first flow, 2026-08-31): the row already
+            // exists in the journal — PATCH the audio onto it (arming the
+            // attach trigger + 90s-grace outbox job) instead of inserting a
+            // duplicate. Falls through to the legacy insert only when the row
+            // has been merged/superseded away since it was created.
+            if let attachId = dict["attachRecordId"] {
+                struct IdRow: Decodable { let id: UUID }
+                let attachData: [String: AnyJSON] = [
+                    "audio_url": .string(audioPublicURL),
+                    "processing_status": .string("pending"),
+                ]
+                let updated: [IdRow] = (try? await supabase
+                    .from("training_logs")
+                    .update(attachData)
+                    .eq("id", value: attachId)
+                    .select("id")
+                    .execute()
+                    .value) ?? []
+                if !updated.isEmpty {
+                    await MainActor.run { AthletePaceProfileService.shared.scheduleRefresh() }
+                    return true
+                }
+                logger.error("Voice attach: row \(attachId) gone — falling back to fresh insert")
+            }
 
             // Step 2: insert the training_logs row over PostgREST (which works).
             // The DB trigger (pg_net → process-training-memo) picks it up.

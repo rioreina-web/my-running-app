@@ -74,147 +74,107 @@ final class VoiceLogViewModel {
         selectedWorkout: RunningWorkout?,
         checkInManager: CoachCheckInManager
     ) async {
+        // Insert-first (2026-08-31, latency Phase 2): the memo lands in the
+        // journal BEFORE any audio bytes move. The old order — upload the
+        // whole file through upload-voice-memo, then insert — held the UI
+        // hostage to the athlete's post-run cell connection, which is exactly
+        // when upload bandwidth is worst ("it never really uploads fast").
+        // Now the row is inserted immediately at processing_status
+        // "uploading" (renders as a normal pending entry), and the upload +
+        // attach + processing all happen in a background task. The attach
+        // UPDATE (audio_url + status -> "pending") is what arms the server
+        // pipeline: the auto_process_voice_log_on_attach trigger enqueues the
+        // outbox safety-net job, and we direct-invoke processing right after.
         isUploading = true
-        statusMessage = "Uploading..."
+        statusMessage = "Saving..."
 
-        do {
-            let audioData = try Data(contentsOf: localURL)
-            let userId = AuthManager.shared.userId
+        let userId = AuthManager.shared.userId
 
-            // --- Step 1: Upload audio via the service-role edge function ---
-            // Direct storage uploads have been rejected by the storage service
-            // since 2026-06-02 (RLS "Unauthorized" on a valid JWT); the edge
-            // function writes with the service role. See its docstring.
-            let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
+        // --- Resolve the target row: an existing imported run, or a fresh insert ---
+        // If this memo is for an already-imported run (Strava/HealthKit), the
+        // GPS streams, splits, and parsed structure already live on THAT row.
+        // Inserting a separate voice_log row creates a DUPLICATE: the journal
+        // entry shows up empty ("no workout parsed") while the real workout
+        // sits on the other row. So when the selected run has a known source
+        // id, attach to its row instead of inserting.
+        var targetRow: TrainingLog? = nil
+        if let vid = selectedWorkout?.vitalWorkoutId, !vid.isEmpty {
+            let existing: [TrainingLog]? = try? await supabase
+                .from("training_logs")
+                .select(TrainingLog.columns)
+                .eq("user_id", value: userId)
+                .eq("vital_workout_id", value: vid)
+                .limit(1)
+                .execute()
+                .value
+            targetRow = existing?.first
+        }
 
-            // --- Step 2: Attach to the run's existing row, or insert a new one ---
-            // If this memo is for an already-imported run (Strava/HealthKit), the
-            // GPS streams, splits, and parsed structure already live on THAT row.
-            // Inserting a separate voice_log row creates a DUPLICATE: the journal
-            // entry shows up empty ("no workout parsed") while the real workout
-            // sits on the other row, and editing workout notes on one never
-            // reaches the other. So when the selected run has a known source id,
-            // UPDATE its row (attach the audio) instead of inserting — one row,
-            // one set of notes, shown + editable in both the Log tab and the
-            // workout detail sheet. Falls back to a fresh insert on any miss, so
-            // a memo is never lost.
-            var response: [TrainingLog] = []
-            if let vid = selectedWorkout?.vitalWorkoutId, !vid.isEmpty {
-                struct IdRow: Decodable { let id: UUID }
-                let existing: [IdRow]? = try? await supabase
-                    .from("training_logs")
-                    .select("id")
-                    .eq("user_id", value: userId)
-                    .eq("vital_workout_id", value: vid)
-                    .limit(1)
-                    .execute()
-                    .value
-                if let rowId = existing?.first?.id {
-                    let attachData: [String: AnyJSON] = [
-                        "audio_url": .string(audioPublicURL),
-                        "processing_status": .string("pending"),
-                    ]
-                    response = (try? await supabase
-                        .from("training_logs")
-                        .update(attachData)
-                        .eq("id", value: rowId.uuidString)
-                        .select(TrainingLog.columns)
-                        .execute()
-                        .value) ?? []
-                }
+        if targetRow == nil {
+            // No existing run row matched — insert a fresh voice_log row NOW,
+            // before the upload. audio_url intentionally NULL: it arrives via
+            // the background attach. Status "uploading" (not "pending") so the
+            // voice-processing trigger doesn't enqueue a job for a row with
+            // nothing to process yet, and fn_enqueue_workout_insight doesn't
+            // mistake an audio-less memo row for an insightable manual log.
+            var insertData = TrainingLogInsert(audioUrl: nil)
+            insertData.userId = userId
+            insertData.processingStatus = "uploading"
+            insertData.source = "voice_log"
+            // ALWAYS stamp workout_date, even with no run selected. A NULL
+            // here is not a harmless blank: four separate matchers key on
+            // it — the sibling-GPS merge in process-training-memo, the
+            // orphan lookup + pickBestOrphan in strava-sync, and the
+            // journal's `order(workout_date, nullsFirst: false)` — so a
+            // NULL-dated memo can never be reconciled with the run it
+            // describes AND sinks to the bottom of the journal. That is
+            // how 2026-08-24's memo silently detached from that morning's
+            // Strava 10-miler. The recording time is the best available
+            // proxy: a memo is recorded in the same session as the run,
+            // which is exactly the ±4h window the matchers use.
+            insertData.workoutDate = Date()
+            if let workout = selectedWorkout {
+                insertData.workoutDate = workout.startDate
+                insertData.workoutDistanceMiles = workout.distanceMiles
+                insertData.workoutDurationMinutes = workout.durationMinutes
+
+                // Remove auto_sync duplicate
+                let syncService = WorkoutSyncService()
+                await syncService.removeAutoSyncEntry(forWorkoutDate: workout.startDate, distance: workout.distanceMiles)
             }
 
-            if response.isEmpty {
-                // No existing run row matched — insert a new voice_log row.
-                var insertData = TrainingLogInsert(audioUrl: audioPublicURL)
-                insertData.userId = userId
-                insertData.processingStatus = "pending"
-                insertData.source = "voice_log"
-                // ALWAYS stamp workout_date, even with no run selected. A NULL
-                // here is not a harmless blank: four separate matchers key on
-                // it — the sibling-GPS merge in process-training-memo, the
-                // orphan lookup + pickBestOrphan in strava-sync, and the
-                // journal's `order(workout_date, nullsFirst: false)` — so a
-                // NULL-dated memo can never be reconciled with the run it
-                // describes AND sinks to the bottom of the journal. That is
-                // how 2026-08-24's memo silently detached from that morning's
-                // Strava 10-miler. The recording time is the best available
-                // proxy: a memo is recorded in the same session as the run,
-                // which is exactly the ±4h window the matchers use.
-                insertData.workoutDate = Date()
-                if let workout = selectedWorkout {
-                    insertData.workoutDate = workout.startDate
-                    insertData.workoutDistanceMiles = workout.distanceMiles
-                    insertData.workoutDurationMinutes = workout.durationMinutes
-
-                    // Remove auto_sync duplicate
-                    let syncService = WorkoutSyncService()
-                    await syncService.removeAutoSyncEntry(forWorkoutDate: workout.startDate, distance: workout.distanceMiles)
-                }
-
-                response = try await supabase
+            do {
+                let response: [TrainingLog] = try await supabase
                     .from("training_logs")
                     .insert(insertData)
                     .select(TrainingLog.columns)
                     .execute()
                     .value
+                targetRow = response.first
+            } catch {
+                Log.app.error("Failed to insert voice log row: \(error)")
+                // Data-loss guard: a voice memo is the core artifact of a
+                // voice-first product. The row insert failed (offline, 5xx,
+                // RLS) — hand the recording to the offline queue, whose
+                // legacy path re-creates row + audio together on reconnect.
+                OfflineQueueManager.shared.enqueueVoiceLog(
+                    audioURL: localURL,
+                    notes: nil,
+                    mood: nil,
+                    workoutDate: selectedWorkout?.startDate
+                )
+                statusMessage = "Saved — will finish uploading in the background."
+                isUploading = false
+                ErrorReporter.shared.report(error, context: "insert voice log row (queued for retry)")
+                OfflineQueueManager.shared.drainQueue()
+                return
             }
+        }
 
-            try? FileManager.default.removeItem(at: localURL)
-
-            // Show success immediately — don't wait for AI processing
-            isUploading = false
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                showSuccessAnimation = true
-            }
-            Task {
-                try? await Task.sleep(for: .seconds(2.5))
-                withAnimation { self.showSuccessAnimation = false }
-            }
-
-            await loadHistory()
-
-            // Direct-invoke processing (2026-08-04, latency Phase 1): the
-            // INSERT trigger only ENQUEUES a voice_processing_jobs row; nothing
-            // ran until the drain cron fired, which cost a uniform 0-60s
-            // (measured mean 25.6s) of dead time per memo. Now BOTH paths kick
-            // process-training-memo immediately — the attach path always did
-            // (its UPDATE never fired the enqueue trigger), and the insert path
-            // joins it. The outbox row stays behind as the retry net: if this
-            // call is lost to a dropped connection, the drain picks the job up,
-            // and if both run, the function's completed short-circuit +
-            // concurrency guard make the second call a no-op.
-            if let insertedLog = response.first {
-                let capturedRecordId = insertedLog.id.uuidString
-                let capturedUserId = userId
-
-                Task { [weak self] in
-                    _ = await self?.callProcessingFunction(
-                        record: insertedLog,
-                        checkInManager: checkInManager
-                    )
-                }
-
-                Task { [weak self] in
-                    guard let self else { return }
-                    let status = await self.watchProcessing(recordId: capturedRecordId)
-                    // Compute workout features after successful processing
-                    if status == "completed" {
-                        _ = try? await callEdgeFunction(
-                            name: "compute-workout-features",
-                            body: ["user_id": capturedUserId]
-                        )
-                    }
-                }
-            }
-        } catch {
-            Log.app.error("Failed to upload audio log: \(error)")
-            // Data-loss guard: a voice memo is the core artifact of a
-            // voice-first product. On failure (offline, 5xx, RLS), DO NOT lose
-            // the recording. Hand it to the offline queue, which preserves the
-            // file on disk and retries on reconnect. The view clears
-            // recordingURL after this returns, so without enqueueing here the
-            // m4a would orphan with no retry path.
+        guard let row = targetRow else {
+            // Neither attach target nor insert succeeded with a row back —
+            // treat as insert failure (queued above only in the catch; this
+            // guard is the decode-empty edge). Queue and bail.
             OfflineQueueManager.shared.enqueueVoiceLog(
                 audioURL: localURL,
                 notes: nil,
@@ -223,7 +183,118 @@ final class VoiceLogViewModel {
             )
             statusMessage = "Saved — will finish uploading in the background."
             isUploading = false
-            ErrorReporter.shared.report(error, context: "upload audio log (queued for retry)")
+            OfflineQueueManager.shared.drainQueue()
+            return
+        }
+
+        // --- The memo is in the journal. Show success NOW. ---
+        isUploading = false
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+            showSuccessAnimation = true
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            withAnimation { self.showSuccessAnimation = false }
+        }
+        await loadHistory()
+
+        // --- Background: move the bytes, attach, process. ---
+        let capturedRowId = row.id
+        Task { [weak self] in
+            await self?.uploadAndAttach(
+                localURL: localURL,
+                rowId: capturedRowId,
+                selectedWorkoutDate: selectedWorkout?.startDate,
+                checkInManager: checkInManager
+            )
+        }
+    }
+
+    /// Background half of the insert-first flow: upload the audio, attach it
+    /// to the already-visible row (audio_url + processing_status "pending" —
+    /// which arms the server's attach trigger), then direct-invoke processing.
+    /// Every failure path lands the recording in the offline queue; the m4a is
+    /// only deleted after a successful attach.
+    @MainActor
+    private func uploadAndAttach(
+        localURL: URL,
+        rowId: UUID,
+        selectedWorkoutDate: Date?,
+        checkInManager: CoachCheckInManager
+    ) async {
+        do {
+            let audioData = try Data(contentsOf: localURL)
+            let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
+
+            let attachData: [String: AnyJSON] = [
+                "audio_url": .string(audioPublicURL),
+                "processing_status": .string("pending"),
+            ]
+            let updated: [TrainingLog] = try await supabase
+                .from("training_logs")
+                .update(attachData)
+                .eq("id", value: rowId.uuidString)
+                .select(TrainingLog.columns)
+                .execute()
+                .value
+
+            guard let attachedLog = updated.first else {
+                // The row vanished between insert and attach — reconcile-log or
+                // the dedup path merged/superseded it mid-upload. Never strand
+                // the audio: the legacy queue path re-creates a row with the
+                // audio attached, and the server's sibling merge collapses it
+                // onto the surviving run.
+                Log.app.error("Voice attach hit a missing row \(rowId) — requeueing as fresh insert")
+                OfflineQueueManager.shared.enqueueVoiceLog(
+                    audioURL: localURL,
+                    notes: nil,
+                    mood: nil,
+                    workoutDate: selectedWorkoutDate
+                )
+                OfflineQueueManager.shared.drainQueue()
+                return
+            }
+
+            try? FileManager.default.removeItem(at: localURL)
+
+            // Direct-invoke processing (2026-08-04, latency Phase 1): the
+            // attach UPDATE only ENQUEUES the outbox job (90s grace); nothing
+            // runs until the drain fires unless we kick the function now. The
+            // outbox row stays behind as the retry net: if this call is lost
+            // to a dropped connection, the drain picks the job up, and if both
+            // run, the function's completed short-circuit + concurrency guard
+            // make the second call a no-op.
+            let capturedUserId = AuthManager.shared.userId
+            Task { [weak self] in
+                _ = await self?.callProcessingFunction(
+                    record: attachedLog,
+                    checkInManager: checkInManager
+                )
+            }
+
+            Task { [weak self] in
+                guard let self else { return }
+                let status = await self.watchProcessing(recordId: rowId.uuidString)
+                // Compute workout features after successful processing
+                if status == "completed" {
+                    _ = try? await callEdgeFunction(
+                        name: "compute-workout-features",
+                        body: ["user_id": capturedUserId]
+                    )
+                }
+            }
+        } catch {
+            Log.app.error("Failed to upload/attach voice memo audio: \(error)")
+            // Data-loss guard: the row exists but its audio didn\'t make it up.
+            // Queue an ATTACH retry (not a fresh insert — that would duplicate
+            // the visible row) targeting this row id. The file survives on
+            // disk inside the queue item.
+            OfflineQueueManager.shared.enqueueVoiceAttach(
+                audioURL: localURL,
+                recordId: rowId.uuidString
+            )
+            statusMessage = "Saved — audio will finish uploading in the background."
+            ErrorReporter.shared.report(error, context: "attach voice memo audio (queued for retry)")
             OfflineQueueManager.shared.drainQueue()
         }
     }
@@ -233,7 +304,8 @@ final class VoiceLogViewModel {
     @MainActor
     func uploadCheckIn(
         localURL: URL,
-        checkInManager: CoachCheckInManager
+        checkInManager: CoachCheckInManager,
+        mood: String? = nil
     ) async {
         isUploading = true
         statusMessage = "Uploading check-in..."
@@ -259,6 +331,9 @@ final class VoiceLogViewModel {
             insertData.userId = userId
             insertData.processingStatus = "pending"
             insertData.source = "check_in"
+            // The Read tab's check-in radio — athlete-declared, so it renders
+            // in the journal immediately instead of waiting on extraction.
+            insertData.mood = mood
 
             let response: [TrainingLog] = try await supabase
                 .from("training_logs")
@@ -311,10 +386,51 @@ final class VoiceLogViewModel {
         }
     }
 
+    // MARK: - Mood-only check-in
+
+    /// The Read tab's "rate how you are feeling" with no words attached.
+    /// One `check_in` row, mood set, nothing to transcribe or parse —
+    /// `processing_status` is "not_required" so the extraction pipeline never
+    /// touches it and the athlete's rating is authoritative by construction.
+    /// `workout_date` is stamped for the same reason as the memo paths: a
+    /// NULL-dated row sinks in the journal.
+    @MainActor
+    func saveMoodCheckIn(_ mood: String) async -> Bool {
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else {
+            statusMessage = "Not signed in yet — try again in a moment."
+            return false
+        }
+
+        var insertData = TrainingLogInsert()
+        insertData.userId = userId
+        insertData.source = "check_in"
+        insertData.processingStatus = "not_required"
+        insertData.workoutDate = Date()
+        insertData.mood = mood
+
+        do {
+            try await supabase
+                .from("training_logs")
+                .insert(insertData)
+                .execute()
+            await loadHistory()
+            return true
+        } catch {
+            Log.app.error("Failed to save mood check-in: \(error)")
+            ErrorReporter.shared.report(error, context: "save mood check-in")
+            return false
+        }
+    }
+
     // MARK: - Save Manual Notes
 
     @MainActor
-    func saveManualNotes(_ notes: String, selectedWorkout: RunningWorkout?) async -> Bool {
+    func saveManualNotes(
+        _ notes: String,
+        selectedWorkout: RunningWorkout?,
+        mood: String? = nil
+    ) async -> Bool {
         guard !notes.isEmpty else { return false }
 
         isUploading = true
@@ -334,6 +450,10 @@ final class VoiceLogViewModel {
 
             var insertData = TrainingLogInsert(notes: notes)
             insertData.userId = userId
+            // Athlete-declared mood from the Read check-in radio, when one
+            // accompanied the note. Declared mood wins — the extraction
+            // UPDATE preserves a non-null row mood (see TrainingLogInsert.mood).
+            insertData.mood = mood
             // "pending" enqueues the note for the same analysis pass as voice
             // memos (mood + niggle/injury-mention extraction) via the outbox
             // trigger. The drain worker + process-training-memo take the text
