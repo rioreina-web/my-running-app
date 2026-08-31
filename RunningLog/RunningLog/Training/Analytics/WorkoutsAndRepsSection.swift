@@ -388,12 +388,15 @@ struct WorkoutsAndRepsSection: View {
             .padding(.top, 3)
             if let laps = lapsById[w.id] {
                 // Two marks, one language. A rep workout gets blocks with
-                // gaps (the gaps ARE the rest); a long run — and a long run
-                // workout, which is the same continuous run with structure
-                // inside it — gets one unbroken bar split at its own miles.
-                // Same PaceSpectrum ramp on both, so a 5:19 rep and a 6:38
-                // mile are the blues they always are.
-                if long || longWo {
+                // gaps (the gaps ARE the rest); a long run gets one unbroken
+                // bar split at its own miles. A long run WORKOUT sits with
+                // the rep workouts now that enrichment carries the parser's
+                // lap roles — a 4×3mi with floats reads as four blocks, same
+                // as any interval day, and only falls back to the continuous
+                // bar when no rest structure was parsed. Same PaceSpectrum
+                // ramp everywhere, so a 5:19 rep and a 6:38 mile are the
+                // blues they always are.
+                if long || (longWo && !hasRepStructure(laps)) {
                     LongRunPaceStrip(laps: laps).padding(.top, 9)
                 } else {
                     RepDensityStrip(laps: laps).padding(.top, 9)
@@ -471,13 +474,17 @@ struct WorkoutsAndRepsSection: View {
             }
             .padding(.top, 2)
             if let laps = lapsById[w.id] {
-                // See `receipt(_:)` — a long run's shape is its splits, and
-                // merging them into work bouts (what RepDensityStrip does
-                // first) collapsed 25 recorded miles into three slabs. A
-                // long_wo is the same continuous run, so it takes the same
-                // mark: every split on the ramp shows the moderate block, the
-                // reps AND the floats, where the rep strip drew nothing.
-                if long || longWo {
+                // See `receipt(_:)` — a long run's shape is its splits
+                // (RepDensityStrip's bout merge collapsed 25 recorded miles
+                // into three slabs, one per water stop). A long run WORKOUT
+                // is different now that enrichment retags rest from the
+                // parser's lap roles: its reps segment honestly, so it takes
+                // the rep blocks like every other quality day — the
+                // continuous mile ribbon here is only the fallback for a
+                // long_wo the parser never segmented. (The ribbon dressing a
+                // 4×3mi was exactly the "rep strip drew nothing" era: no
+                // rest tags meant one 21-mile bout, which renders empty.)
+                if long || (longWo && !hasRepStructure(laps)) {
                     LongRunPaceStrip(laps: laps, height: 10).padding(.top, 8)
                 } else {
                     RepDensityStrip(laps: laps, height: 10).padding(.top, 8)
@@ -697,12 +704,38 @@ struct WorkoutsAndRepsSection: View {
         }
         await withTaskGroup(of: (UUID, [WorkoutLapRow]).self) { group in
             for id in pending.map(\.id) {
-                group.addTask { (id, await WorkoutLapsService.fetchLaps(workoutId: id)) }
+                group.addTask {
+                    async let l = WorkoutLapsService.fetchLaps(workoutId: id)
+                    async let roles = WorkoutLapsService.fetchLapRoles(workoutId: id)
+                    // Retag work/rest from the parser's lap_roles, exactly as
+                    // the Rep Receipt does (its header note applies here too:
+                    // the DB's generated `is_rest` only flags sub-200m laps,
+                    // so a half-mile float reads as WORK and mergeWorkBouts
+                    // glues a 4×3mi into one 21-mile bout — which is why
+                    // long workouts used to fall back to the continuous mile
+                    // ribbon instead of rep blocks). Roles absent → laps
+                    // unchanged, list behaves exactly as before.
+                    let (rawLaps, roleByIndex) = await (l, roles)
+                    let tagged: [WorkoutLapRow] = roleByIndex.isEmpty ? rawLaps : rawLaps.map { row in
+                        guard let idx = row.lap_index, let role = roleByIndex[idx] else { return row }
+                        var r = row
+                        r.is_rest = role != "rep"
+                        return r
+                    }
+                    return (id, tagged)
+                }
             }
             for await (id, laps) in group where !laps.isEmpty {
                 lapsById[id] = laps
             }
         }
+    }
+
+    /// Does this row's lap set segment into reps? True when the parser (or
+    /// the watch) marked genuine rest inside the run — the precondition for
+    /// the rep-block strip to say anything honest.
+    private func hasRepStructure(_ laps: [WorkoutLapRow]) -> Bool {
+        laps.contains { $0.is_rest == true } && laps.contains { $0.is_rest != true }
     }
 
     // MARK: derived — rep pace (mirrors the strip's work-rep definition)
