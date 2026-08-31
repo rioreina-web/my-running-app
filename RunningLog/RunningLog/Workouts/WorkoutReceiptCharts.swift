@@ -632,6 +632,15 @@ struct LapSplitsList: View {
     /// calibrated on quality work, so an adjusted jog pace isn't a number
     /// anyone should read off.
     var heatOn: Bool = false
+    /// Merged-bout lap_index → the watch laps it was joined from. A row with
+    /// an entry here shows those recorded splits OPEN BY DEFAULT — the merge
+    /// is presentation, and the athlete's own mile splits are the record, so
+    /// they are never hidden behind a tap; the tap is how you fold them away.
+    /// Empty (the default) renders exactly the old static list.
+    var boutMembers: [Int: [WorkoutLapRow]] = [:]
+    /// Reps the athlete has folded closed. Inverted so "visible" needs no
+    /// state at all: a fresh sheet shows every recorded split.
+    @State private var collapsed: Set<Int> = []
 
     private func clock(_ s: Int) -> String {
         s < 60 ? String(format: "0:%02d", s) : String(format: "%d:%02d", s / 60, s % 60)
@@ -639,6 +648,13 @@ struct LapSplitsList: View {
     private func distLabel(_ m: Double) -> String {
         let d = km ? m / 1000 : m / 1609.344
         return String(format: "%.2f %@", d, km ? "km" : "mi")
+    }
+    private func restLabel(_ lap: WorkoutLapRow) -> String {
+        switch lap.role {
+        case "warmup": return "wu"
+        case "cooldown": return "cd"
+        default: return "rec"
+        }
     }
 
     var body: some View {
@@ -678,14 +694,28 @@ struct LapSplitsList: View {
                 let dot = paceSec > 0
                     ? PaceZoneScale.color(forPaceSec: paceSec, mpSec: mpSec)
                     : PaceZoneScale.recoveryGrey
+                let members: [WorkoutLapRow] = lap.lap_index.flatMap { boutMembers[$0] } ?? []
+                let isOpen = !members.isEmpty && (lap.lap_index.map { !collapsed.contains($0) } ?? false)
                 HStack(spacing: 7) {
                     RoundedRectangle(cornerRadius: 2).fill(dot).frame(width: 9, height: 9)
-                    Text(row.num.map { "\($0)" } ?? "rec")
+                    // Non-work rows say what they were, in the watch's own
+                    // vocabulary: warm-up miles are "wu", the cool-down "cd",
+                    // and only a genuine between-reps recovery is "rec". A
+                    // 6:51 warm-up mile labelled "rec" read as nonsense.
+                    Text(row.num.map { "\($0)" } ?? restLabel(lap))
                         .font(.dripBody(14))
                         .foregroundStyle(isRest ? Color.drip.textSecondary : Color.drip.textPrimary)
                         .frame(minWidth: 26, alignment: .leading)
                     if let m = lap.distance_meters, m > 0 {
                         Text(distLabel(m)).font(.dripStat(12)).foregroundStyle(Color.drip.textSecondary)
+                    }
+                    // A merged rep can open into the watch's recorded splits;
+                    // the chevron is the only affordance it needs.
+                    if !members.isEmpty {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(Color.drip.textTertiary)
+                            .rotationEffect(.degrees(isOpen ? 180 : 0))
                     }
                     Spacer()
                     Text(lap.moving_time_seconds.map(clock) ?? "—")
@@ -705,7 +735,50 @@ struct LapSplitsList: View {
                 }
                 .padding(.vertical, 9)
                 .overlay(Rectangle().fill(Color.drip.divider.opacity(0.5)).frame(height: 1), alignment: .bottom)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard !members.isEmpty, let idx = lap.lap_index else { return }
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        if collapsed.contains(idx) { collapsed.remove(idx) } else { collapsed.insert(idx) }
+                    }
+                }
+                if isOpen {
+                    memberRows(members)
+                }
             }
+        }
+    }
+
+    /// The recorded splits inside one merged rep — subordinate rows: indented,
+    /// no zone dot, muted ink, raw paces (the heat adjustment describes the
+    /// merged bout, not its member miles).
+    @ViewBuilder
+    private func memberRows(_ members: [WorkoutLapRow]) -> some View {
+        ForEach(Array(members.enumerated()), id: \.offset) { _, m in
+            HStack(spacing: 7) {
+                Text("·")
+                    .font(.dripBody(14)).foregroundStyle(Color.drip.textTertiary)
+                    .frame(minWidth: 26, alignment: .center)
+                if let d = m.distance_meters, d > 0 {
+                    Text(distLabel(d)).font(.dripStat(11)).foregroundStyle(Color.drip.textTertiary)
+                }
+                Spacer()
+                Text(m.moving_time_seconds.map(clock) ?? "—")
+                    .font(.dripStat(12)).foregroundStyle(Color.drip.textSecondary)
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                    .frame(width: 50, alignment: .trailing)
+                Text((m.avg_pace_sec_per_mile ?? 0) > 0 ? rr_pace(m.avg_pace_sec_per_mile ?? 0, km: km) : "—")
+                    .font(.dripStat(12)).foregroundStyle(Color.drip.textSecondary)
+                    .lineLimit(1)
+                    .frame(width: 50, alignment: .trailing)
+                Text(m.avg_heart_rate.map(String.init) ?? "")
+                    .font(.dripStat(12)).foregroundStyle(Color.drip.textTertiary)
+                    .frame(width: 34, alignment: .trailing)
+            }
+            .padding(.vertical, 6)
+            .padding(.leading, 16)
+            .background(Color.drip.paperDeep.opacity(0.5))
+            .overlay(Rectangle().fill(Color.drip.divider.opacity(0.3)).frame(height: 1), alignment: .bottom)
         }
     }
 }

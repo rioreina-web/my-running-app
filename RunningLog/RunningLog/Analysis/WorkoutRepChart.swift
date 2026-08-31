@@ -25,12 +25,22 @@ struct WorkoutLapRow: Decodable, Identifiable {
     var lap_index: Int?
     var distance_meters: Double?
     var moving_time_seconds: Int?
+    /// Wall-clock duration of the lap, INCLUDING any time stopped. Moving time
+    /// alone cannot locate a lap on the stream's elapsed axis — summing it
+    /// drifts left by every paused second (see `lapElapsedBounds`). Nil on
+    /// synthetic rows (parsed blocks / merged bouts rebuilt in the client).
+    var elapsed_time_seconds: Int?
     var avg_pace_sec_per_mile: Double?
     var avg_heart_rate: Int?
     var is_rest: Bool?
     var temp_f: Double?
     var dew_point_f: Double?
     var heat_adjusted_pace_sec_per_mile: Double?
+    /// The parser's role for this lap (rep / recovery / warmup / cooldown),
+    /// carried client-side only — never selected from the DB (decodes nil).
+    /// Lets the lap table label a warm-up mile "wu" instead of the wrong
+    /// "rec". Pass-through rows keep it; merged bouts don't need it.
+    var role: String? = nil
 }
 
 /// Pace zones (sec/mi) used for the dashed reference lines.
@@ -92,7 +102,7 @@ enum WorkoutLapsService {
         do {
             return try await supabase
                 .from("running_workout_laps")
-                .select("lap_index,distance_meters,moving_time_seconds,avg_pace_sec_per_mile,avg_heart_rate,is_rest,temp_f,dew_point_f,heat_adjusted_pace_sec_per_mile")
+                .select("lap_index,distance_meters,moving_time_seconds,elapsed_time_seconds,avg_pace_sec_per_mile,avg_heart_rate,is_rest,temp_f,dew_point_f,heat_adjusted_pace_sec_per_mile")
                 .eq("workout_id", value: workoutId.uuidString)
                 .order("lap_index", ascending: true)
                 .execute().value
@@ -110,27 +120,47 @@ enum WorkoutLapsService {
     /// Deterministic and trustworthy, unlike the LLM `parse_structure`, which can
     /// bleed recovery into work reps and corrupt the distances and paces.
     static func mergeWorkBouts(_ raw: [WorkoutLapRow]) -> [WorkoutLapRow] {
+        mergeWorkBoutsDetailed(raw).map(\.lap)
+    }
+
+    /// `mergeWorkBouts`, but each output row keeps the watch laps it was
+    /// joined from (`members` is empty for pass-through rows: rests, and work
+    /// bouts the watch recorded as a single lap). The receipt's lap table uses
+    /// this to let a merged rep expand back into its recorded mile splits —
+    /// the merge is presentation, and the athlete's own splits must stay one
+    /// tap away, never discarded.
+    static func mergeWorkBoutsDetailed(
+        _ raw: [WorkoutLapRow]
+    ) -> [(lap: WorkoutLapRow, members: [WorkoutLapRow])] {
         let ordered = raw.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
-        var out: [WorkoutLapRow] = []
+        var out: [(lap: WorkoutLapRow, members: [WorkoutLapRow])] = []
         var i = 0
         var idx = 0
         while i < ordered.count {
             if ordered[i].is_rest == true {
                 var rest = ordered[i]; rest.lap_index = idx
-                out.append(rest); idx += 1; i += 1
+                out.append((rest, [])); idx += 1; i += 1
                 continue
             }
             var dist = 0.0, time = 0.0, hrWeighted = 0.0, hrTime = 0.0
+            // Wall-clock span of the joined bout, summed alongside moving time
+            // so the merged rep can still be located on the stream's elapsed
+            // axis. Nil-safe: if any member lacks it, the bout reports none and
+            // `lapElapsedBounds` falls back to distance-location.
+            var elapsed = 0, elapsedKnown = true
             var temp: Double? = nil, dew: Double? = nil
             var j = i
+            var members: [WorkoutLapRow] = []
             while j < ordered.count, ordered[j].is_rest != true {
                 let w = ordered[j]
                 let d = w.distance_meters ?? 0
                 let t = Double(w.moving_time_seconds ?? 0)
                 dist += d; time += t
+                if let e = w.elapsed_time_seconds { elapsed += e } else { elapsedKnown = false }
                 if let hr = w.avg_heart_rate { hrWeighted += Double(hr) * max(t, 1); hrTime += max(t, 1) }
                 if let tf = w.temp_f { temp = max(temp ?? tf, tf) }
                 if let df = w.dew_point_f { dew = max(dew ?? df, df) }
+                members.append(w)
                 j += 1
             }
             let miles = dist / 1609.344
@@ -150,16 +180,21 @@ enum WorkoutLapsService {
                     paceSeconds: p, temperatureF: t, dewPointF: d, distanceMiles: miles
                 ).neutralEquivalentPaceSeconds
             }()
-            out.append(WorkoutLapRow(
-                lap_index: idx,
-                distance_meters: dist > 0 ? dist : nil,
-                moving_time_seconds: time > 0 ? Int(time) : nil,
-                avg_pace_sec_per_mile: mergedPace,
-                avg_heart_rate: hrTime > 0 ? Int((hrWeighted / hrTime).rounded()) : nil,
-                is_rest: false,
-                temp_f: temp,
-                dew_point_f: dew,
-                heat_adjusted_pace_sec_per_mile: mergedHeatAdj
+            out.append((
+                WorkoutLapRow(
+                    lap_index: idx,
+                    distance_meters: dist > 0 ? dist : nil,
+                    moving_time_seconds: time > 0 ? Int(time) : nil,
+                    elapsed_time_seconds: (elapsedKnown && elapsed > 0) ? elapsed : nil,
+                    avg_pace_sec_per_mile: mergedPace,
+                    avg_heart_rate: hrTime > 0 ? Int((hrWeighted / hrTime).rounded()) : nil,
+                    is_rest: false,
+                    temp_f: temp,
+                    dew_point_f: dew,
+                    heat_adjusted_pace_sec_per_mile: mergedHeatAdj
+                ),
+                // A single-lap bout expands to nothing — no disclosure for it.
+                members.count > 1 ? members : []
             ))
             idx += 1
             i = j

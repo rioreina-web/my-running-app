@@ -61,6 +61,11 @@ struct WorkoutRepReceiptView: View {
 
     // lap data
     @State private var laps: [WorkoutLapRow] = []
+    /// Merged-bout lap_index → the watch laps that bout was joined from.
+    /// Only populated on the merge path (a rep the watch recorded as one lap,
+    /// or a rest, has no entry). Lets the lap table expand a rep back into
+    /// the recorded splits.
+    @State private var boutMembers: [Int: [WorkoutLapRow]] = [:]
     @State private var zones: RepChartZones = .none
     @State private var showStructureEditor = false
     @State private var prescription: WorkoutPrescription?
@@ -172,15 +177,80 @@ struct WorkoutRepReceiptView: View {
         }
     }
 
-    /// Work-rep windows in stream time (cumulative lap durations), plus the
-    /// rest lap that follows each — used for shading, per-rep cadence, recovery.
+    /// Elapsed-time bounds for every lap, on the SAME clock as the stream
+    /// (`sTimes`). Lap rows carry only MOVING time, and summing that drifts
+    /// left of the stream's elapsed axis by every second the watch was paused
+    /// or the athlete stood still — a run with a 13-minute standing break
+    /// before the set drew every rep band mid-recovery (2026-08-30). Distance
+    /// doesn't tick while stopped, so each lap is located by walking its
+    /// cumulative distance through the stream's distance array instead. A
+    /// lap's END is the first sample at/past its cumulative distance; the
+    /// NEXT lap starts at the first sample meaningfully past it (3 m of GPS
+    /// slack), so a standing gap between laps lands in the gap, not in a rep.
+    /// Falls back to the moving-time cumsum when there's no usable stream —
+    /// the lap-only path then behaves exactly as before.
+    private var lapElapsedBounds: [(start: Double, end: Double)] {
+        // 1 · The watch's own wall clock, when every lap carries it. This is
+        //     the authoritative answer — `elapsed_time_seconds` already counts
+        //     the stopped seconds that moving time drops, so the cumulative sum
+        //     lands on the stream's own axis (verified within a few seconds
+        //     against `stream_end_index` on real rows).
+        let elapsedPerLap = orderedLaps.map { $0.elapsed_time_seconds ?? 0 }
+        if !orderedLaps.isEmpty, elapsedPerLap.allSatisfy({ $0 > 0 }) {
+            let base = sTimes.first ?? 0
+            var t = base
+            return elapsedPerLap.map { e in
+                let s = t; t += Double(e)
+                return (s, t)
+            }
+        }
+
+        // 2 · Synthetic rows (parsed blocks, merged bouts that lost a member's
+        //     elapsed time) carry no wall clock. Locate them by cumulative
+        //     DISTANCE instead — distance doesn't tick while you're stopped, so
+        //     it is immune to the same drift.
+        let dist = stream?.distance ?? []
+        let n = min(dist.count, sTimes.count)
+        let lapMeters = orderedLaps.map { $0.distance_meters ?? 0 }
+        let lapTotal = lapMeters.reduce(0, +)
+        guard n > 5, lapTotal > 0, let streamTotal = dist.prefix(n).last, streamTotal > 0 else {
+            // 3 · No stream at all (manual entry) — the lap-only path, where
+            //     moving time is the only clock there is.
+            var t = 0.0
+            return orderedLaps.map { lap in
+                let s = t; t += Double(lap.moving_time_seconds ?? 0)
+                return (s, t)
+            }
+        }
+        // Spread any lap-sum vs GPS-total mismatch proportionally so the last
+        // lap's boundary still lands at the end of the stream.
+        let scale = streamTotal / lapTotal
+        var bounds: [(start: Double, end: Double)] = []
+        var cum = 0.0
+        var i = 0
+        var start = sTimes[0]
+        for meters in lapMeters {
+            cum += meters
+            let target = cum * scale
+            while i < n - 1, dist[i] < target { i += 1 }
+            let end = max(sTimes[i], start)
+            var j = i
+            while j < n - 1, dist[j] <= target + 3 { j += 1 }
+            bounds.append((start, end))
+            start = max(sTimes[j], end)
+        }
+        return bounds
+    }
+
+    /// Work-rep windows on the stream's elapsed clock (see `lapElapsedBounds`),
+    /// plus the rest lap that follows each — used for shading, per-rep
+    /// cadence, recovery.
     private struct RepSlot { let rep: Int; let lap: WorkoutLapRow; let start: Double; let end: Double; let restStart: Double?; let restEnd: Double?; let restLap: WorkoutLapRow? }
     private var slots: [RepSlot] {
         var out: [RepSlot] = []
-        var t = 0.0
         var repNum = 0
+        let bounds = lapElapsedBounds
         for (i, lap) in orderedLaps.enumerated() {
-            let dur = Double(lap.moving_time_seconds ?? 0)
             let isWork = reps.contains { ($0.lap_index ?? -1) == (lap.lap_index ?? -2) }
             if isWork {
                 repNum += 1
@@ -188,13 +258,11 @@ struct WorkoutRepReceiptView: View {
                 var rs: Double? = nil, re: Double? = nil
                 var restLap: WorkoutLapRow? = nil
                 if i + 1 < orderedLaps.count, orderedLaps[i + 1].is_rest == true {
-                    let rl = orderedLaps[i + 1]
-                    rs = t + dur; re = rs! + Double(rl.moving_time_seconds ?? 0)
-                    restLap = rl
+                    rs = bounds[i].end; re = bounds[i + 1].end
+                    restLap = orderedLaps[i + 1]
                 }
-                out.append(RepSlot(rep: repNum, lap: lap, start: t, end: t + dur, restStart: rs, restEnd: re, restLap: restLap))
+                out.append(RepSlot(rep: repNum, lap: lap, start: bounds[i].start, end: bounds[i].end, restStart: rs, restEnd: re, restLap: restLap))
             }
-            t += dur
         }
         return out
     }
@@ -277,17 +345,12 @@ struct WorkoutRepReceiptView: View {
         return segs
     }
 
-    /// Recorded lap boundaries (seconds from start) — cumulative lap durations,
-    /// the interior boundaries only. Powers the optional LAPS overlay.
+    /// Recorded lap boundaries (elapsed seconds from start, distance-located —
+    /// see `lapElapsedBounds`), the interior boundaries only. Powers the
+    /// optional LAPS overlay.
     private var effortLapMarks: [TimeInterval] {
         guard orderedLaps.count > 1 else { return [] }
-        var t = 0.0
-        var marks: [TimeInterval] = []
-        for lap in orderedLaps {
-            t += Double(lap.moving_time_seconds ?? 0)
-            marks.append(t)
-        }
-        return Array(marks.dropLast())
+        return lapElapsedBounds.dropLast().map { $0.end }
     }
 
     private var maxHR: Int {
@@ -889,7 +952,8 @@ struct WorkoutRepReceiptView: View {
                 RRRepBars(reps: allSplits, targetSec: targetSec, colorByZone: colorByZone,
                           colorByPace: colorByPace, heatOn: heatOn, km: km, zones: hrZones,
                           showElev: showElev, fitToWidth: true)
-                LapSplitsList(laps: orderedLaps, km: km, mpSec: targetSec, heatOn: heatOn)
+                LapSplitsList(laps: orderedLaps, km: km, mpSec: targetSec, heatOn: heatOn,
+                              boutMembers: boutMembers)
             } else if !continuousSplits.isEmpty {
                 RRRepBars(reps: continuousSplits, targetSec: continuousAvgPaceSec,
                           colorByZone: colorByZone, colorByPace: colorByPace,
@@ -1034,13 +1098,37 @@ struct WorkoutRepReceiptView: View {
     }
 
     private var mileReps: [RRRep] {
-        mileSplits.enumerated().map { i, s in
+        // Elevation windows need the stream's ELAPSED clock, but
+        // `MileSplit.elapsedTime` is cumulative MOVING time despite the name —
+        // on a run with pauses the windows drifted earlier than the miles they
+        // described. Locate each mile crossing in the distance stream instead.
+        let dists = stream?.distance ?? []
+        let n = min(dists.count, sTimes.count)
+        var crossings: [Double] = []   // elapsed time at each whole-mile mark
+        if n > 5 {
+            var idx = 0
+            for mile in 1...max(mileSplits.count, 1) {
+                let target = Double(mile) * mpm
+                while idx < n - 1, dists[idx] < target { idx += 1 }
+                crossings.append(sTimes[idx])
+            }
+        }
+        return mileSplits.enumerated().map { i, s in
             let dist = s.isPartial ? max(s.partialDistance, 0.0001) : 1.0
             let paceSec = s.paceMinutes * 60
             let label = s.isPartial
                 ? "MI \(String(format: "%.1f", Double(s.mile - 1) + s.partialDistance))"
                 : "MI \(s.mile)"
-            let start = i == 0 ? 0 : mileSplits[i - 1].elapsedTime
+            let start: Double
+            let end: Double
+            if !crossings.isEmpty {
+                start = i == 0 ? (sTimes.first ?? 0) : crossings[i - 1]
+                end = s.isPartial ? (sTimes.last ?? crossings[min(i, crossings.count - 1)])
+                                  : crossings[min(i, crossings.count - 1)]
+            } else {
+                start = i == 0 ? 0 : mileSplits[i - 1].elapsedTime
+                end = s.elapsedTime
+            }
             return RRRep(
                 id: s.mile,
                 label: label,
@@ -1051,7 +1139,7 @@ struct WorkoutRepReceiptView: View {
                 restSec: nil,                       // continuous run — no rest between miles
                 adjPaceSec: mileHeatAdjusted(paceSec),
                 durSec: Int((paceSec * dist).rounded()),
-                elevFt: elevNetFt(start: start, end: s.elapsedTime)
+                elevFt: elevNetFt(start: start, end: end)
             )
         }
     }
@@ -1089,11 +1177,16 @@ struct WorkoutRepReceiptView: View {
         let regular = dl.filter { abs(($0.distance_meters ?? 0) - median) < median * 0.2 }
         guard Double(regular.count) >= Double(dl.count) * 0.6 else { return [] }
         let unitLabel = lapsAreKm ? "KM" : "MI"
-        var cum = 0.0
+        // Elevation windows on the stream's elapsed clock, keyed back to each
+        // lap's position in orderedLaps (dl is a filtered subset).
+        let bounds = lapElapsedBounds
+        let boundsByIndex = Dictionary(
+            zip(orderedLaps.map { $0.lap_index ?? -1 }, bounds),
+            uniquingKeysWith: { first, _ in first })
         return dl.enumerated().map { i, lap in
-            let start = cum
-            let end = cum + Double(lap.moving_time_seconds ?? 0)
-            cum = end
+            let b = boundsByIndex[lap.lap_index ?? -1]
+            let start = b?.start ?? 0
+            let end = b?.end ?? 0
             return RRRep(
                 id: i + 1,
                 label: "\(unitLabel) \(i + 1)",
@@ -1512,11 +1605,10 @@ struct WorkoutRepReceiptView: View {
         // end. `restSec` is nil for every row (each lap is its own bar, so
         // rest is a bar of its own, not a gap after a rep).
         do {
-            var cum = 0.0
+            let bounds = lapElapsedBounds
             allSplits = orderedLaps.enumerated().map { i, lap in
-                let start = cum
-                let end = cum + Double(lap.moving_time_seconds ?? 0)
-                cum = end
+                let start = bounds[i].start
+                let end = bounds[i].end
                 return RRRep(
                     id: i + 1,
                     label: rr_repLabel(lap.distance_meters ?? 0),
@@ -1626,6 +1718,7 @@ struct WorkoutRepReceiptView: View {
             guard let idx = row.lap_index, let role = roleByIndex[idx] else { return row }
             var r = row
             r.is_rest = role != "rep"   // only a "rep" is work; warmup/recovery/cooldown are rest
+            r.role = role               // kept so the lap table can say "wu"/"cd", not "rec"
             return r
         }
         let parsed = await pr
@@ -1660,7 +1753,14 @@ struct WorkoutRepReceiptView: View {
             isContinuous = true
         } else if rawHasRests {
             // The watch lapped work + rest — that IS the workout's splits.
-            laps = WorkoutLapsService.mergeWorkBouts(lapRows)
+            // Keep each merged bout's member laps so the table can expand a
+            // rep back into the watch's own recorded splits on tap.
+            let detailed = WorkoutLapsService.mergeWorkBoutsDetailed(lapRows)
+            laps = detailed.map(\.lap)
+            boutMembers = Dictionary(uniqueKeysWithValues: detailed.compactMap { entry in
+                guard let idx = entry.lap.lap_index, !entry.members.isEmpty else { return nil }
+                return (idx, entry.members)
+            })
             trustRestTags = true
         } else {
             // No recorded lap structure → continuous. `isContinuous` forces the
