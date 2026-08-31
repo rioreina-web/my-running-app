@@ -12,7 +12,9 @@
  */
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
+  formatSplitsBlock,
   splitsFromLaps,
+  splitsFromLapsWithRoles,
   splitsFromPaceSegments,
   splitsFromParsedBlocks,
 } from "./coach-context.ts";
@@ -233,4 +235,49 @@ Deno.test("the mile guard still fires on split-derived segments with no rests", 
   const out = splitsFromPaceSegments(segments);
   assert(out.every((s) => !s.label.startsWith("Rep")), "mile splits are never reps");
   assertEquals(out[0].label, "Mile 1");
+});
+
+// ── Watch laps beat inferred reps (2026-08-30) ─────────────────────────────
+//
+// A lap press is a MEASUREMENT. A "rep" is an inference drawn on top of one,
+// and reading the inference in preference to the measurement means every
+// derived number is computed on a unit the watch never recorded.
+Deno.test("lap splits keep every watch lap, with its role", () => {
+  const spec: Array<[number, string, number]> = [
+    [1, "7:44", 133], [1, "7:13", 138], [1, "7:12", 138], [1, "7:15", 141],
+    [1, "6:57", 143], [1, "6:51", 145], [1, "10:22", 141],
+    [1, "6:10", 152], [1, "6:09", 154], [1, "6:08", 155], [0.50, "7:35", 142],
+    [1, "6:08", 154], [1, "6:07", 154], [1, "6:04", 157], [0.47, "7:47", 144],
+    [1, "6:02", 157], [1, "6:01", 160], [1, "5:58", 162], [0.51, "8:00", 146],
+    [1, "5:49", 162], [1, "5:32", 172], [1, "5:30", 175], [0.53, "8:09", 147],
+  ];
+  const sec = (p: string) => Number(p.split(":")[0]) * 60 + Number(p.split(":")[1]);
+  const laps = spec.map(([mi, p, hr], i) => ({
+    lap_index: i + 1,
+    distance_meters: mi * 1609.344,
+    moving_time_seconds: Math.round(mi * sec(p)),
+    avg_pace_sec_per_mile: sec(p),
+    avg_heart_rate: hr,
+    is_rest: false,
+  }));
+
+  const splits = splitsFromLapsWithRoles(laps);
+  // Every lap survives as its own row — nothing merged into a 3-mile block.
+  assertEquals(splits.length, 23);
+  assertEquals(splits.filter((s) => s.effortKind === "work").length, 12);
+  assertEquals(splits.filter((s) => s.effortKind === "rest").length, 3);
+  assertEquals(splits.filter((s) => s.effortKind === "warmup").length, 7);
+  assertEquals(splits.filter((s) => s.effortKind === "cooldown").length, 1);
+
+  // The rep miles are the real ones, in order, at their own paces.
+  const repPaces = splits.filter((s) => s.effortKind === "work").map((s) => s.paceSecPerMile);
+  assertEquals(repPaces, [370, 369, 368, 368, 367, 364, 362, 361, 358, 349, 332, 330]);
+
+  // Warm-up miles are never reps — the older `splitsFromLaps` labelled them so.
+  assertEquals(splits[0].label, "Warmup");
+  assertEquals(splits[7].label, "Rep 1");
+
+  // And the pattern is read off the reps alone: this session got faster.
+  const block = formatSplitsBlock(splits, null, { detectPattern: true });
+  assert(block!.includes("Negative split"), block!);
 });

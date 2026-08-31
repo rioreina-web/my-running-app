@@ -43,7 +43,7 @@ import {
   findSimilarPriorWorkout,
   formatProgressionBlock,
   formatSplitsBlock,
-  splitsFromLaps,
+  splitsFromLapsWithRoles,
   splitsFromPaceSegments,
   splitsFromExtractedIntervals,
   splitsFromParsedBlocks,
@@ -498,18 +498,27 @@ async function generateInsight(
       ? classifyPace(executedPaceSec, coachCtx.zones).summary
       : "";
 
-  // Splits block — priority by fidelity:
-  //   1. running_workout_laps — the actual lap presses (true rep structure:
-  //      e.g. 8×1K with jog recoveries). Richest, so it wins when present.
-  //   2. Garmin/HK pace_segments — mile-averaged, smears work+rest together
-  //      into "alternating fast/easy miles"; usable but blurs intervals.
-  //   3. Voice-extracted intervals — athlete-recalled, last resort.
-  // Highest fidelity: parse-workout-structure's recovery-segmented execution
-  // blocks (continuous efforts already merged — a 2k is one rep, not two 1ks).
-  // These win over raw laps, which lap every mile/km and would re-split a
-  // continuous rep. Then laps, then watch pace_segments, then voice.
+  // Splits block — priority by FIDELITY TO WHAT THE WATCH RECORDED:
+  //   1. running_workout_laps — the actual lap presses, one row each, with the
+  //      role lapRoles assigns. This is the measurement.
+  //   2. parse-workout-structure's execution blocks — reps inferred from the
+  //      stream. Only when there are no laps.
+  //   3. Garmin/HK pace_segments — mile-averaged, smears work+rest together.
+  //   4. Voice-extracted intervals — athlete-recalled, last resort.
+  //
+  // The order used to put the parsed blocks FIRST, on the reasoning that they
+  // merge a continuous effort into one rep rather than re-splitting it. That
+  // was wrong, and expensively so. A lap press is a measurement; a "rep" is an
+  // inference drawn on top of one, and reading the inference in preference to
+  // the measurement means every derived number — fade, consistency, spread —
+  // is computed on a unit the watch never recorded. On the 2026-08-29 4x3mi it
+  // also meant a mis-segmented parse (two blocks: 6mi @ 7:12 and 14.01mi @
+  // 6:15) was narrated in place of 23 perfectly good laps sitting right there.
+  //
+  // Merging still has a place — it is how the SESSION is described — but it is
+  // not what the splits are.
   const parsedBlockSplits = splitsFromParsedBlocks(log.parsed_structure?.blocks);
-  const lapSplits = splitsFromLaps(laps);
+  const lapSplits = splitsFromLapsWithRoles(laps);
   const watchSplits = splitsFromPaceSegments(log.pace_segments);
   const extractedIntervals = (log.extracted_data?.intervals ?? null) as
     | Array<{ distance?: string; time?: string; rest?: string; count?: number }>
@@ -518,10 +527,10 @@ async function generateInsight(
   // ≥2 work reps needed for a meaningful splits block (formatSplitsBlock's bar),
   // so only prefer a source when it actually yields reps; otherwise fall through.
   const workRepCount = (s: WorkoutSplit[]) => s.filter((x) => x.effortKind === "work").length;
-  const splits = workRepCount(parsedBlockSplits) >= 2
-    ? parsedBlockSplits
-    : lapSplits.length >= 2
+  const splits = workRepCount(lapSplits) >= 2
     ? lapSplits
+    : workRepCount(parsedBlockSplits) >= 2
+    ? parsedBlockSplits
     : watchSplits.length > 0
     ? watchSplits
     : voiceSplits;
