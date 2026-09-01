@@ -23,7 +23,9 @@
 //                       mood line and a niggle lane beneath. Pages back through
 //                       weeks on its own. Replaced Effort · Felt vs Planned
 //                       2026-08-10 (see WeekTrainingLoadSection).
-//    9. Goals & Targets — collapsed; the only place goal paces appear
+//    9. Goal gap — RACE GOAL / CURRENT FITNESS / GAP, always expanded
+//                       (CALENDAR mode). The goal editor itself lives on
+//                       Trends, not here — see GoalAndPacesCard.
 //
 //  All values are real and current-fitness-anchored — see
 //  `TrainingAnalyticsViewModel`. This view owns layout only.
@@ -45,16 +47,13 @@ struct TrainingTabView: View {
 
     @State private var vm = TrainingAnalyticsViewModel()
 
-    // Goal editing. The analytics VM is read-only; goal mutations go
-    // through TrainingPlanViewModel → EditGoalSheet → update-plan-goal,
-    // mirroring the Plan tab's path. AI never invokes this; the athlete
-    // owns the goal (see feedback_ai_advises_never_acts.md).
+    // Read-only here — `allScheduledWorkouts` / `activePlan` feed the day
+    // and week sections below. Goal EDITING (GoalAndPacesCard, EditGoalSheet)
+    // moved to the Trends tab 2026-08-31 (Rio: "move this to trends").
     @State private var planVM = TrainingPlanViewModel()
 
     // Every Training-tab modal routes through one enum, so only a single
-    // sheet is ever live (avoids stacked-`.sheet` fragility). The
-    // editGoal → recompute hand-off is sequenced in the sheet content and
-    // the `onChange(of: route)` below.
+    // sheet is ever live (avoids stacked-`.sheet` fragility).
     @State private var route: TrainingRoute?
 
     /// Train's three modes (beta 4-tab IA — Train is the detail surface, and
@@ -70,15 +69,11 @@ struct TrainingTabView: View {
     @State private var weekOffset = 0
 
     enum TrainingRoute: Identifiable, Equatable {
-        case editGoal
-        case recompute
         case day(Date)
         case volume(VolumeChartKind)
 
         var id: String {
             switch self {
-            case .editGoal:      return "editGoal"
-            case .recompute:     return "recompute"
             case .day(let d):    return "day-\(d.timeIntervalSince1970)"
             case .volume(let k): return "volume-\(k.id)"
             }
@@ -88,9 +83,9 @@ struct TrainingTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                PlateStrip(surface: "TRAINING · ANALYSIS")
-                    .padding(.bottom, 24)
-
+                // PlateStrip("TRAINING · ANALYSIS") removed 2026-08-31 (Rio:
+                // the label spent a full line naming a screen the tab bar
+                // already names). Vertical budget goes to the week list.
                 if vm.isLoading && !vm.hasLoaded {
                     loadingState
                 } else if vm.loadFailed && !vm.hasLoaded {
@@ -110,9 +105,13 @@ struct TrainingTabView: View {
 
                     switch mode {
                     case .current:
+                        // Week list first (Rio, 2026-08-31): the day-by-day
+                        // week must be visible without scrolling — it, not
+                        // the stat strip, is what CURRENT is opened for.
+                        // Summary and Today follow; the stress strip closes.
+                        currentWeekSection
                         summary
                         todaySection
-                        currentWeekSection
                         // Directly under the day-by-day week list: the same
                         // seven days, one level up — what the week cost, how
                         // hard, and WHEN. Shares `weekOffset` with the list
@@ -126,6 +125,11 @@ struct TrainingTabView: View {
                         // stays in the repo unmounted — `ZoneTaxonomy`,
                         // `LoadDay` and `TrainingLoadExplainer` still live off
                         // it — so swapping back is this one line.
+                        //
+                        // 2026-08-31: `TrainWeekView` briefly replaced these
+                        // four sections and was reverted the same day on
+                        // athlete feedback. The file stays in the repo,
+                        // unmounted, per the restore convention.
                         WeekStressStripSection(vm: vm, weekOffset: $weekOffset) {
                             route = .day($0)
                         }
@@ -157,6 +161,10 @@ struct TrainingTabView: View {
                 }
             }
             .padding(.horizontal, 20)
+            .padding(.top, 16)   // breathing room under the status bar —
+                                  // this VStack had none, unlike Trends/Log,
+                                  // so the header sat flush against the top
+                                  // safe-area edge instead of clearing it.
             .padding(.bottom, 40)
         }
         .background(Color.drip.background.ignoresSafeArea())
@@ -165,42 +173,16 @@ struct TrainingTabView: View {
         .task(id: selectedTab.wrappedValue) {
             guard selectedTab.wrappedValue == Self.tabIndex else { return }
             if !vm.hasLoaded { await vm.load() }
-            // Load the plan so EditGoalSheet opens against the current
-            // goal and the recompute soft-ask can find the active plan.
             await planVM.loadActivePlan()
         }
         // Re-derive when scope flips. Closes any open modal.
         .onChange(of: vm.scope) { _, _ in route = nil }
         .sheet(item: $route) { r in
             switch r {
-            case .editGoal:
-                // Plan present → on save, chain the recompute soft-ask
-                // (EditGoalSheet fires onSaved only when a plan exists, and
-                // defers it past its own dismiss). Plan nil (self-coached)
-                // → sets an athlete goal with no chain; the onChange below
-                // refreshes the Goals block once it closes.
-                EditGoalSheet(viewModel: planVM, plan: planVM.activePlan, onSaved: {
-                    route = .recompute
-                })
-                .presentationDetents([.large])
-            case .recompute:
-                if let plan = planVM.activePlan {
-                    RecomputePacesSheet(plan: plan, onComplete: {
-                        await planVM.loadActivePlan()
-                        await vm.load()
-                    })
-                }
             case .day(let day):
                 DayAnalysisSheet(vm: vm, day: day)
             case .volume(let kind):
                 VolumeDetailSheet(vm: vm, kind: kind)
-            }
-        }
-        .onChange(of: route) { old, new in
-            // editGoal closed without entering the recompute chain (cancel,
-            // or a no-plan save) → refresh the Goals block.
-            if old == .editGoal, new == nil, planVM.activePlan == nil {
-                Task { await vm.load() }
             }
         }
     }
@@ -652,73 +634,35 @@ struct TrainingTabView: View {
         return LinearGradient(gradient: Gradient(stops: stops), startPoint: .leading, endPoint: .trailing)
     }()
 
-    // MARK: 9 · Goals (collapsed)
+    // MARK: 9 · Goal gap (always visible — the goal itself is set from
+    // the Trends tab, not from here)
 
+    // Was a DisclosureGroup labeled "GOALS & TARGETS · OPTIONAL", collapsed
+    // by default, with copy that read "targets stay out of the way until
+    // you want them" — in an app whose weekly report has a section called
+    // "Against the goal." GOAL-IA-APPLY.md §1. The goal editor
+    // (GoalAndPacesCard) lives on Trends now (2026-08-31); this block keeps
+    // its one piece of content that card doesn't show — the gap between the
+    // goal and current fitness — always expanded, no "optional" framing.
     @ViewBuilder
     private var goals: some View {
         if let g = vm.goals {
-            DisclosureGroup {
-                VStack(spacing: 0) {
-                    goalRow("RACE GOAL", g.raceGoal)
-                    goalRow("CURRENT FITNESS", g.currentFitness)
-                    goalRow("GAP", g.gap, accent: true)
-                    if let target = g.weeklyTarget { goalRow("WEEKLY TARGET", target) }
-                    Text("Targets stay out of the way until you want them. The only place goal paces appear.")
-                        .font(.system(size: 14, design: .serif).italic())
-                        .foregroundStyle(Color.drip.textTertiary)
-                        .padding(.top, 10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button { route = .editGoal } label: {
-                        Text("ADJUST GOAL & TIME ↗")
-                            .font(.dripEyebrow(10.5)).tracking(1.3)
-                            .foregroundStyle(Color.drip.coral)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                            .padding(.top, 16)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.top, 4)
-                .padding(.bottom, 16)
-            } label: {
-                Text("GOALS & TARGETS · OPTIONAL")
+            VStack(spacing: 0) {
+                Text("GOAL GAP")
                     .font(.dripEyebrow(10.5)).tracking(1.3)
                     .foregroundStyle(Color.drip.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 6)
+                goalRow("RACE GOAL", g.raceGoal)
+                goalRow("CURRENT FITNESS", g.currentFitness)
+                goalRow("GAP", g.gap, accent: true)
+                if let target = g.weeklyTarget { goalRow("WEEKLY TARGET", target) }
             }
-            .tint(Color.drip.textSecondary)
             .padding(.vertical, 16)
             .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
             .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
             .padding(.top, 34)
-        } else {
-            setGoalRow
         }
-    }
-
-    /// Empty state — no goal set yet (self-coached, no plan). Gives the
-    /// athlete a way *in* to set a race + time. Eyebrow + plain-prose
-    /// nudge + CTA, per the empty-state rule (no em-dash placeholders).
-    private var setGoalRow: some View {
-        Button { route = .editGoal } label: {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("GOALS & TARGETS · OPTIONAL")
-                        .font(.dripEyebrow(10.5)).tracking(1.3)
-                        .foregroundStyle(Color.drip.textPrimary)
-                    Text("Set a race and goal time to anchor your paces.")
-                        .font(.system(size: 14, design: .serif).italic())
-                        .foregroundStyle(Color.drip.textTertiary)
-                }
-                Spacer()
-                Text("SET GOAL ↗")
-                    .font(.dripEyebrow(10.5)).tracking(1.3)
-                    .foregroundStyle(Color.drip.coral)
-            }
-        }
-        .buttonStyle(.plain)
-        .padding(.vertical, 16)
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
-        .padding(.top, 34)
     }
 
     private func goalRow(_ label: String, _ value: String, accent: Bool = false) -> some View {

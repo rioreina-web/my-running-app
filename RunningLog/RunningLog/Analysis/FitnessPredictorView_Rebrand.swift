@@ -150,6 +150,7 @@ struct FitnessPredictorRebrandView: View {
             async let predictTask: () = loadPredictions()
             _ = await (historyTask, predictTask)
         }
+        .task { await ActiveGoalStore.shared.loadIfNeeded() }
     }
 
     private var editorialBreak: some View {
@@ -181,11 +182,14 @@ private struct RebrandHeader: View {
     let isAnalyzing: Bool
     let onRefresh: () -> Void
 
+    @Environment(\.openGoalEditor) private var openGoalEditor
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PlateStrip(
                 surface: "FITNESS PREDICTOR · FORWARD READ",
-                fig: "FIG. 29"
+                fig: TrainingDateline.string(for: ActiveGoalStore.shared.soonestActiveGoal),
+                onFigTap: openGoalEditor
             )
             .padding(.horizontal, 24)
 

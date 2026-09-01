@@ -24,13 +24,17 @@
  *   - Does NOT silently re-resolve scheduled_workouts pace targets. The
  *     iOS prompts the athlete: "Recompute paces from this new goal?"
  *     and only re-resolves if they confirm.
+ *   - Best-effort write-through to user_goals (race_name / end_date), so
+ *     TrainingDateline and anything else reading the canonical goal record
+ *     sees a goal set from here too, not only from GoalsView. See Mode C.
  *
  * Body shape:
  * {
  *   "plan_id"?: "uuid" | null,                    -- null = athlete-only goal save
  *   "target_race_distance"?: "5k" | "10k" | "half_marathon" | "marathon" | "general",
  *   "target_time_seconds"?: integer,              -- 0 to clear; null to leave alone
- *   "end_date"?: "YYYY-MM-DD" | null              -- null to clear; absent to leave alone
+ *   "end_date"?: "YYYY-MM-DD" | null,             -- null to clear; absent to leave alone
+ *   "race_name"?: string                          -- optional free text, e.g. "Chicago Marathon"
  * }
  */
 
@@ -48,6 +52,10 @@ interface UpdateBody {
   target_race_distance?: string;
   target_time_seconds?: number;
   end_date?: string | null;
+  // Optional free-text race name (e.g. "Chicago Marathon"). Not stored on
+  // training_plans or athlete_pace_profiles — it's goal context, so it only
+  // ever reaches user_goals.goal_title. See Mode C below.
+  race_name?: string;
 }
 
 const ALLOWED_DISTANCES = new Set([
@@ -297,6 +305,7 @@ Deno.serve(async (req) => {
   if (effectiveDistance && effectiveTimeSeconds) {
     try {
       const targetDate = body.end_date ?? (planRow?.end_date as string | null | undefined) ?? null;
+      const raceName = typeof body.race_name === "string" ? body.race_name.trim() : "";
       const { data: existingGoal } = await supabase
         .from("user_goals")
         .select("id")
@@ -307,14 +316,18 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (existingGoal) {
+        const updatePayload: Record<string, unknown> = {
+          target_race_distance: effectiveDistance,
+          target_time_seconds: effectiveTimeSeconds,
+          athlete_confirmed: true,
+          confirmed_at: new Date().toISOString(),
+        };
+        // Only touch goal_title when the athlete actually typed a race
+        // name — an empty field must not blank out an existing one.
+        if (raceName) updatePayload.goal_title = raceName;
         const { error: goalUpdateErr } = await supabase
           .from("user_goals")
-          .update({
-            target_race_distance: effectiveDistance,
-            target_time_seconds: effectiveTimeSeconds,
-            athlete_confirmed: true,
-            confirmed_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq("id", existingGoal.id);
         if (goalUpdateErr) {
           console.warn("user_goals update failed:", goalUpdateErr.message);
@@ -324,7 +337,7 @@ Deno.serve(async (req) => {
         // have a date, since user_goals.target_date is NOT NULL.
         const { error: goalInsertErr } = await supabase.from("user_goals").insert({
           user_id: user.id,
-          goal_title: describeGoal(effectiveDistance, effectiveTimeSeconds),
+          goal_title: raceName || describeGoal(effectiveDistance, effectiveTimeSeconds),
           target_date: targetDate,
           status: "active",
           target_race_distance: effectiveDistance,

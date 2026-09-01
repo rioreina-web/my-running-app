@@ -1859,8 +1859,11 @@ final class TrainingAnalyticsViewModel {
     func scopeDateline() -> String {
         switch scope {
         case .week:
-            let f = DateFormatter(); f.dateFormat = "MMM d"
-            return "WEEK OF \(f.string(from: thisWeekStart).uppercased()) · \(Self.dayMonthLabel(Date()))"
+            // "WEEK OF AUG 31 – SEP 6", not the start date printed twice —
+            // on the first day of the week, start and "today" are the same
+            // date, and `"WEEK OF \(start) · \(today)"` read as "AUG 31 ·
+            // AUG 31" with nothing distinguishing the two halves.
+            return "WEEK OF \(Self.weekRangeLabel(thisWeekStart))"
         case .month:
             let f = DateFormatter(); f.dateFormat = "MMM d"
             guard let start = cal.date(byAdding: .day, value: -30, to: Date()) else { return "LAST 30 DAYS" }

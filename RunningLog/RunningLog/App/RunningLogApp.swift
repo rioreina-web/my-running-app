@@ -6,11 +6,31 @@
 //
 
 import SwiftUI
+import UIKit
+
+// MARK: - AppDelegate
+
+/// App-level orientation gate. UIKit intersects this mask with the top view
+/// controller's own, so narrowing it to `.landscape` while a full-screen
+/// instrument (The Effort) is up is what makes its orientation stick —
+/// `requestGeometryUpdate` alone is a suggestion the system re-evaluates
+/// against a portrait-happy SwiftUI hosting controller, which is how the
+/// landscape takeover ended up rendering in portrait.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    static var orientationMask: UIInterfaceOrientationMask = .all
+
+    func application(_ application: UIApplication,
+                     supportedInterfaceOrientationsFor window: UIWindow?)
+        -> UIInterfaceOrientationMask {
+        Self.orientationMask
+    }
+}
 
 // MARK: - RunningLogApp
 
 @main
 struct RunningLogApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var authManager = AuthManager.shared
 
     init() {
@@ -163,8 +183,10 @@ struct MainTabView: View {
             // 2026-08-19: Week added (tag 11) — Log · Train · Trends · Week ·
             // Ask · Sheet. See WEEK-TAB-APPLY.md.
             // 2026-08-19: Charts → Ask in the same slot, and the DEBUG-only
-            // Read tab dropped. The bar is Log · Train · Trends · Ask ·
-            // Sheet in DEBUG and release alike.
+            // Read tab dropped.
+            // 2026-08-30: Sheet → Read (CoachReadView, tag 12) in the same
+            // slot. The bar is Log · Train · Trends · Week · Ask · Read in
+            // DEBUG and release alike.
             ZStack {
                 // Tab 0 — Log (front door)
                 //
@@ -263,24 +285,24 @@ struct MainTabView: View {
                     .opacity(selectedTab == 11 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 11)
 
-                // Tab 9 — The Sheet. The dense session table: one row per
-                // SESSION (see SessionRollup.swift), week-grouped, with tag
-                // chips and search. Reads TrainingLogStore.shared, the same
-                // store tab 0 and Train use, so it never doubles the fetch:
-                // the store always fetches its own 400-day window and
-                // `refresh(days:)` only slices the result client-side, so
-                // asking for 400 here costs nothing and changes nothing for
-                // the 180-day callers.
-                NavigationStack { SheetTabView() }
-                    .opacity(selectedTab == 9 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 9)
-
-                // Tab 2 — COACH (The Read) removed 2026-07-28. The tab bar
-                // is Log · Trends · Train. `CoachReadView` stays in the repo,
-                // unlinked, so the surface can be restored as a tab or as a
-                // pushed screen without rebuilding it. The web coach portal
-                // remains canonical for coach work
+                // Tab 12 — THE READ (`CoachReadView`), restored 2026-08-30
+                // in the slot The Sheet held. First shipped as Coach (tag 2,
+                // removed 2026-07-28); the view waited in the repo, unlinked,
+                // for exactly this restore. Mounted eagerly like every tab
+                // except Ask: it has no `.task` and never spends a paid call
+                // on appear — `DailyReadService.shared` is refreshed by the
+                // launch task below, and generation only happens on explicit
+                // intent (pull-to-refresh or the empty-state CTA). The web
+                // coach portal remains canonical for coach work
                 // (adaptive-coach-plan-builder-spec-2026-07-03).
+                NavigationStack { CoachReadView() }
+                    .opacity(selectedTab == 12 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 12)
+
+                // Tab 9 — The Sheet retired 2026-08-30; its slot went to The
+                // Read. `SheetTabView` stays in the repo, unlinked, per the
+                // restore-without-rebuilding convention. Tag 9 is retired —
+                // do not reuse it.
             }
             .safeAreaInset(edge: .bottom) {
                 DripTabBar(selected: $selectedTab)
@@ -434,6 +456,9 @@ struct MainTabView: View {
         // injection. AthleteProfileView reads @Environment(AthleteProfileService)
         // and crashes without it — inject here so both presentation paths inherit it.
         .environment(athleteProfileService)
+        // The tap target every TrainingDateline opens into — see
+        // ActiveGoalStore.swift's "Environment door" section.
+        .environment(\.openGoalEditor) { activeDestination = .goals }
         .fullScreenCover(item: $activeDestination) { destination in
             NavigationStack {
                 destination.view

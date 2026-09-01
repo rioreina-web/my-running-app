@@ -2,19 +2,21 @@
 //  GoalAndPacesCard.swift
 //  RunningLog
 //
-//  Top-of-Training-tab card that surfaces the athlete's goal time and the
-//  full pace ladder derived from it. Tapping the card (or the Edit chip)
-//  opens EditGoalSheet.
+//  A sleek, single line — goal time + distance — that drops down and
+//  expands into the full pace ladder on tap. Collapsed by default so it
+//  reads as a fact, not a card competing with the rest of the tab; the
+//  ladder is there when asked for. Tapping "Edit" (only visible once
+//  expanded) opens EditGoalSheet.
 //
 //  Why this exists: every pace in the training plan flows from this number.
-//  Until this card existed, the goal-time editor was buried in the toolbar
-//  ⋯ menu and only reachable when a plan was already active. Athletes
-//  couldn't set a goal before subscribing to a plan, and the AI Workout
-//  Builder ended up calling the edge function with `goalTimeSeconds: nil`,
-//  which collapsed interval workouts into single Active blocks.
+//  Until this component existed, the goal-time editor was buried in the
+//  toolbar ⋯ menu and only reachable when a plan was already active.
+//  Athletes couldn't set a goal before subscribing to a plan, and the AI
+//  Workout Builder ended up calling the edge function with
+//  `goalTimeSeconds: nil`, which collapsed interval workouts into single
+//  Active blocks.
 //
-//  This card makes the goal a first-class, always-visible artifact. Once
-//  set, it propagates through:
+//  Once set, the goal propagates through:
 //    - subscribe-to-plan (resolveAthletePaces)
 //    - AI Workout Builder (Replace flow)
 //    - All step-level pace rendering
@@ -26,6 +28,8 @@ struct GoalAndPacesCard: View {
     @Bindable var viewModel: TrainingPlanViewModel
     let onEditTapped: () -> Void
 
+    @State private var expanded = false
+
     var body: some View {
         // Source-of-truth precedence:
         //   1. Active plan's targetTimeSeconds — what update-plan-goal writes,
@@ -36,91 +40,105 @@ struct GoalAndPacesCard: View {
         let goalSeconds: Int? = viewModel.activePlan?.targetTimeSeconds
             ?? viewModel.marathonGoalTime
         if let g = goalSeconds, g > 0, let distance = effectiveRaceDistance {
-            populatedCard(goalSeconds: g, distance: distance)
+            populatedLine(goalSeconds: g, distance: distance)
         } else {
-            emptyCard
+            emptyLine
         }
     }
 
     // MARK: - Populated state
 
-    private func populatedCard(goalSeconds: Int, distance: String) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Header row — label + goal time + edit chip
-            HStack(alignment: .firstTextBaseline) {
-                Text("YOUR GOAL")
-                    .font(.dripCaption(11))
-                    .tracking(1.4)
-                    .foregroundStyle(Color.drip.textTertiary)
-                Spacer()
-                Button(action: onEditTapped) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "pencil").font(.system(size: 10))
-                        Text("Edit").font(.dripCaption(11))
-                    }
-                    .foregroundStyle(Color.drip.coral)
+    private func populatedLine(goalSeconds: Int, distance: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                    expanded.toggle()
                 }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("YOUR GOAL")
+                        .font(.dripCaption(11))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.textTertiary)
+                    Text(formatHms(goalSeconds))
+                        .font(.dripDisplay(20))
+                        .foregroundStyle(Color.drip.textPrimary)
+                    Text(formatRaceDistance(distance))
+                        .font(.dripBody(14))
+                        .foregroundStyle(Color.drip.textSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
 
-            // Goal time + race distance
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(formatHms(goalSeconds))
-                    .font(.dripDisplay(28))
-                    .foregroundStyle(Color.drip.textPrimary)
-                Text(formatRaceDistance(distance))
-                    .font(.dripBody(15))
-                    .foregroundStyle(Color.drip.textSecondary)
+            if expanded {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        // Race date + countdown (only when an active plan
+                        // provides one)
+                        if let countdown = raceCountdownText {
+                            Text(countdown)
+                                .font(.dripCaption(11))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                        Spacer()
+                        Button(action: onEditTapped) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "pencil").font(.system(size: 10))
+                                Text("Edit").font(.dripCaption(11))
+                            }
+                            .foregroundStyle(Color.drip.coral)
+                        }
+                    }
+
+                    Divider().background(Color.drip.divider)
+
+                    // Pace ladder — derived on-device from the goal via PaceCalculator
+                    paceLadder(goalSeconds: goalSeconds, distance: distance)
+                }
+                .padding(.top, 14)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-
-            // Race date + countdown (only when an active plan provides one)
-            if let countdown = raceCountdownText {
-                Text(countdown)
-                    .font(.dripCaption(11))
-                    .foregroundStyle(Color.drip.textTertiary)
-            }
-
-            Divider().background(Color.drip.divider)
-
-            // Pace ladder — derived on-device from the goal via PaceCalculator
-            paceLadder(goalSeconds: goalSeconds, distance: distance)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.vertical, 14)
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
     }
 
     // MARK: - Empty state
 
-    private var emptyCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Set your goal time")
-                .font(.dripDisplay(18))
-                .foregroundStyle(Color.drip.textPrimary)
-            Text("Your target race anchors every pace in the plan.")
-                .font(.dripBody(13))
-                .foregroundStyle(Color.drip.textSecondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Button(action: onEditTapped) {
-                HStack(spacing: 6) {
-                    Text("Set goal time")
-                        .font(.dripLabel(14))
-                    Image(systemName: "arrow.right").font(.system(size: 12))
+    // No ladder to expand into yet, so this stays a single tappable line
+    // straight into EditGoalSheet rather than a disclosure with nothing
+    // under it.
+    private var emptyLine: some View {
+        Button(action: onEditTapped) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("YOUR GOAL")
+                        .font(.dripCaption(11))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.textTertiary)
+                    Text("Set a goal time to anchor every pace")
+                        .font(.dripBody(14))
+                        .foregroundStyle(Color.drip.textSecondary)
                 }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Color.drip.coral)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                Spacer()
+                Text("SET →")
+                    .font(.dripCaption(11))
+                    .tracking(1.2)
+                    .foregroundStyle(Color.drip.coral)
             }
-            .padding(.top, 4)
+            .contentShape(Rectangle())
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.plain)
+        .padding(.vertical, 14)
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
     }
 
     // MARK: - Pace ladder
@@ -163,15 +181,22 @@ struct GoalAndPacesCard: View {
     }
 
     private func paceColumn(rows: [(String, Double?)]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(rows, id: \.0) { row in
+        // A zone with no derivable pace is omitted, not printed as an
+        // em-dash placeholder — missing data renders as absent (hard rule
+        // #8; the ios-design-review skill's swiftui-checks.md: "a Text("—")
+        // is a bug with a rule number attached").
+        let resolved: [(String, Double)] = rows.compactMap { label, pace in
+            pace.map { (label, $0) }
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(resolved, id: \.0) { row in
                 HStack {
                     Text(row.0)
                         .font(.dripCaption(12))
                         .foregroundStyle(Color.drip.textSecondary)
                         .frame(width: 70, alignment: .leading)
                     Spacer()
-                    Text(row.1.map { PaceCalculator.formatPace($0) + "/mi" } ?? "—")
+                    Text(PaceCalculator.formatPace(row.1) + "/mi")
                         .font(.dripStat(13))
                         .foregroundStyle(Color.drip.textPrimary)
                 }

@@ -614,13 +614,20 @@ struct SectionHeader: View {
 /// exists (e.g. "BERLIN −86D"), else nil → the slot renders nothing. It used
 /// to be a fake figure number; pass `TrainingDateline.string(for:)`, never a
 /// hardcoded "FIG. NN".
+///
+/// Pass `onFigTap` (typically `@Environment(\.openGoalEditor)`) to make a
+/// printed dateline tappable — GOAL-IA-APPLY.md §3, position 2: "the
+/// dateline becomes the door." Nothing renders as tappable when `fig` is
+/// nil, since there's nothing true to tap into.
 struct PlateStrip: View {
     let surface: String
     let fig: String?
+    let onFigTap: (() -> Void)?
 
-    init(surface: String, fig: String? = nil) {
+    init(surface: String, fig: String? = nil, onFigTap: (() -> Void)? = nil) {
         self.surface = surface
         self.fig = fig
+        self.onFigTap = onFigTap
     }
 
     var body: some View {
@@ -633,10 +640,20 @@ struct PlateStrip: View {
                 .truncationMode(.tail)
             Spacer(minLength: 16)
             if let fig {
-                Text(fig)
-                    .font(.dripEyebrow(10))
-                    .tracking(1.4)
-                    .foregroundStyle(Color.drip.textSecondary)
+                if let onFigTap {
+                    Button(action: onFigTap) {
+                        Text(fig)
+                            .font(.dripEyebrow(10))
+                            .tracking(1.4)
+                            .foregroundStyle(Color.drip.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(fig)
+                        .font(.dripEyebrow(10))
+                        .tracking(1.4)
+                        .foregroundStyle(Color.drip.textSecondary)
+                }
             }
         }
         .frame(maxWidth: .infinity)

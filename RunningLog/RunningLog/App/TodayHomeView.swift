@@ -93,11 +93,19 @@ struct TodayHomeView: View {
 
     private let cal = Calendar.current
 
+    @Environment(\.openGoalEditor) private var openGoalEditor
+
     var body: some View {
         VStack(spacing: 0) {
             // The masthead. Fixed above the pages — it belongs to the
-            // surface, not to any one day.
-            PlateStrip(surface: "TRAINING JOURNAL", fig: "FIG. 18")
+            // surface, not to any one day. Trailing slot is the training
+            // dateline (GOAL-IA-APPLY.md position 1) — tappable into the
+            // goal screen (position 2).
+            PlateStrip(
+                surface: "TRAINING JOURNAL",
+                fig: TrainingDateline.string(for: ActiveGoalStore.shared.soonestActiveGoal),
+                onFigTap: openGoalEditor
+            )
                 .padding(.horizontal, 24)
                 .padding(.top, 16)
                 .padding(.bottom, 12)
@@ -123,6 +131,7 @@ struct TodayHomeView: View {
         .background(Color.drip.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadAll() }
+        .task { await ActiveGoalStore.shared.loadIfNeeded() }
     }
 
     // MARK: - The pager
@@ -700,10 +709,16 @@ struct TodayLogRow: Codable {
         let role: String?
         let distanceMiles: Double?
         let avgPace: String?   // "M:SS"
+        /// Per-leg average heart rate. Already present in the stored
+        /// `parsed_structure` JSON and already selected (the column is fetched
+        /// whole) — it simply was not decoded until Train's week ledger needed
+        /// to show HR climbing across a rep set.
+        let avgHr: Int?
         private enum CodingKeys: String, CodingKey {
             case role
             case distanceMiles = "distance_miles"
             case avgPace = "avg_pace_per_mile"
+            case avgHr = "avg_hr"
         }
     }
 

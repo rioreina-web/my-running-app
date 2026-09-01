@@ -8,11 +8,11 @@
 //  build configuration. See `outputs/trends-audit-2026-08-03.md` for the swap
 //  this reverses.
 //
-//  Exactly two things came back from v2, and nothing else:
-//
-//    • THE RECOVERY SCORE — the ledger card, closing section 04. It is the one
-//      number on this tab the segmenter does NOT own; see `recoverySection`.
-//    • ASK — `AskBar`, at the foot of the scroll.
+//  Exactly two things came back from v2 on 2026-08-11 — the recovery score
+//  and Ask. Neither survived: the recovery score was deleted 2026-08-24 (see
+//  the note ahead of the Mood section below) and Ask moved to its own tab
+//  2026-08-19. Left here as history, not as a current description of what
+//  this file renders — read the numbered list below for that.
 //
 //  The name stays `TrendsLegacyTabView` on purpose: renaming the type would
 //  churn every call site, preview and test that points at it for no gain, and
@@ -23,15 +23,19 @@
 //  see" surface (the tab was previously a tombstone; see git history in
 //  this folder). Built from the approved prototype `trends-tab-prototype.html`.
 //
-//  ONE tab, one scroll, five sections ordered by the question being asked:
+//  ONE tab, one scroll, ordered by the question being asked:
 //
-//    header → range segmenter (the tab's ONLY time control)
+//    header → YOUR GOAL (collapsed line, tap to expand) → range segmenter
+//    (the tab's ONLY time control)
 //    1 · Load            (VolumeDetailView — week totals + acute:chronic band)
 //    2 · Pace            (PaceSignalView + the threshold-band row)
 //    3 · Key sessions    (week readout + receipt ledger + head-to-head)
-//    4 · Signals         (TrendsMoodSection — 30-day block, own stepper)
-//    6 · Race prediction (RacePredictionTrack)
-//    foot · Ask          (AskBar)
+//    4 · Mood            (TrendsMoodSection — 30-day block, own stepper)
+//    4b · Goal pace grid (GoalPaceGridCard — only when a goal + structure resolve)
+//    5 · Race prediction (RacePredictionTrack)
+//
+//  No recovery section (deleted 2026-08-24) and no Ask (moved to its own tab
+//  2026-08-19) — both listed above as history, not as current sections.
 //
 //  Two standing rules for this surface, both learned the hard way on 2026-08-03:
 //
@@ -85,6 +89,23 @@ struct TrendsLegacyTabView: View {
     @State private var openWorkoutLog: TrainingLog?
     /// Set when the athlete opens the Pace Bands drill-down from section 02.
     @State private var showPaceBands = false
+
+    /// Goal editing (GoalAndPacesCard, section 07 — moved here from Train
+    /// 2026-08-31, Rio: "move this to trends"). Mirrors the pattern Train
+    /// used: one Identifiable route so only a single sheet is ever live,
+    /// editGoal → recompute chained the same way.
+    @State private var planVM = TrainingPlanViewModel()
+    @State private var goalRoute: GoalRoute?
+    enum GoalRoute: Identifiable {
+        case editGoal
+        case recompute
+        var id: String {
+            switch self {
+            case .editGoal:  return "editGoal"
+            case .recompute: return "recompute"
+            }
+        }
+    }
 
     /// Section 03's head-to-head, folded away by default (2026-08-11).
     ///
@@ -179,12 +200,36 @@ struct TrendsLegacyTabView: View {
                 // open. Restore both together if the grid ever comes back.
                 await service.refresh()
                 athleteState = await TrendsAthleteState.fetch()
+                // So GoalAndPacesCard (section 07) and EditGoalSheet open
+                // against the current goal, and the recompute soft-ask can
+                // find the active plan.
+                await planVM.loadActivePlan()
             }
         }
         // Head-to-head "Open workout" — presented from the tab, not from the
         // card, so the sheet survives the card re-rendering on scrub.
         .sheet(item: $openWorkoutLog) { log in
             HistoryDetailSheet(entry: log, onUpdate: {})
+        }
+        // Goal editing — editGoal → recompute hand-off is sequenced in the
+        // sheet content itself, same pattern Train used before the move.
+        .sheet(item: $goalRoute) { r in
+            switch r {
+            case .editGoal:
+                EditGoalSheet(
+                    viewModel: planVM,
+                    plan: planVM.activePlan,
+                    existingGoal: ActiveGoalStore.shared.soonestActiveGoal,
+                    onSaved: { goalRoute = .recompute }
+                )
+                .presentationDetents([.large])
+            case .recompute:
+                if let plan = planVM.activePlan {
+                    RecomputePacesSheet(plan: plan, onComplete: {
+                        await planVM.loadActivePlan()
+                    })
+                }
+            }
         }
         // Section 02's drill-down. "Open session ↗" inside it hands the log id
         // back to the same `openWorkout` the head-to-head card uses, so a
@@ -233,27 +278,26 @@ struct TrendsLegacyTabView: View {
         }
     }
 
-    /// One tab, one scroll, five sections, one rhythm. Every section is built
-    /// the same way — eyebrow + one line of what it answers, then its content —
-    /// so once you've read 01 you know how to read 05.
+    /// One tab, one scroll, one rhythm. Every numbered section is built the
+    /// same way — eyebrow + one line of what it answers, then its content —
+    /// so once you've read 01 you know how to read the rest.
     ///
+    ///   00 YOUR GOAL       collapsed line, leads the scroll — everything
+    ///                      below is read against this number
     ///   01 LOAD            how much, and whether the ramp is safe
     ///   02 PACE            where those miles fell, and how many were threshold
-    ///   03 KEY SESSIONS    the grid, the week it lands on, and two side by
+    ///   03 KEY SESSIONS    the ledger, the week it lands on, and two side by
     ///                      side behind a fold
-    ///   04 RECOVERY        how well you're resting, then today's score with
-    ///                      its arithmetic
-    ///   05 MOOD            thirty days of mood against miles, niggles and
+    ///   04 MOOD            thirty days of mood against miles, niggles and
     ///                      key sessions, on one date axis
-    ///   06 RACE PREDICTION where this points
-    ///   ASK                why, and compared to what
+    ///   04b GOAL PACE GRID every key session vs. goal pace — only when a
+    ///                      goal and parsed structure both resolve
+    ///   05 RACE PREDICTION where this points
     ///
-    /// The score closes 04 rather than leading it (Rio, 2026-08-11). It is the
-    /// densest thing in the section — a number, a band, a delta and a foldable
-    /// receipt — and putting it first made the read below it look like
-    /// supporting evidence for a figure the athlete hadn't asked about yet.
-    /// Rest, then how it felt, then what the body said, then the number that
-    /// adds them up.
+    /// No 04 RECOVERY anymore — deleted 2026-08-24, see the note ahead of
+    /// the Mood section for why. Section numbers were not renumbered past
+    /// the gap when it left; they were here for the reader who'd read the
+    /// April change history, not as a promise the sequence has no holes.
     ///
     /// Reordered 2026-08-03 (Rio, "this is messy" pass). Four structural calls:
     ///
@@ -280,8 +324,22 @@ struct TrendsLegacyTabView: View {
     /// the repo (`UnifiedTrainingChart.swift`) if the vertical read is wanted.
     private var loadedContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            segmenter
+            // 00 · YOUR GOAL — the number every section below is read
+            // against, so it leads the scroll rather than closing it (Rio,
+            // 2026-08-31: "put goal at the top" — reverses the initial
+            // foot-of-scroll placement from the same day). A sleek,
+            // collapsed line rather than a section — it carries its own
+            // "YOUR GOAL" label, so no `sectionHead` above it — that drops
+            // down into the full pace ladder on tap ("make it a sleek
+            // line, and have it drop down and expand"). Moved here from
+            // the Train tab; see GoalAndPacesCard's header for why it left
+            // Train.
+            GoalAndPacesCard(viewModel: planVM) { goalRoute = .editGoal }
                 .padding(.top, 16)
+
+            EditorialRule().padding(.vertical, 22)
+
+            segmenter
 
             EditorialRule().padding(.vertical, 22)
 
@@ -441,6 +499,21 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
+            // 05b · GOAL PACE — every non-recovery block of every candidate
+            // session, calendar across / pace-vs-goal down / miles as area.
+            // Renders only when a goal resolves and the window has parsed
+            // structure; no training plan required, so `activePlan == nil`
+            // still reads. Replaces the per-session averaging model
+            // (GoalPaceCard) — see GoalPaceGridDTO.swift's file header.
+            if let gp = service.goalPaceGrid, !gp.isEmpty {
+                EditorialRule().padding(.vertical, 22)
+                sectionHead("Closing on goal pace", "Every key session, by pace and volume")
+                GoalPaceGridCard(data: gp)
+                    .padding(.top, 8)
+            }
+
+            EditorialRule().padding(.vertical, 22)
+
             // 06 · RACE PREDICTION — where the block points
             sectionHead("Race prediction", "Estimated times at your current fitness")
             RacePredictionTrack()
@@ -455,23 +528,6 @@ struct TrendsLegacyTabView: View {
             // behind the tab bar either way.
         }
     }
-
-    // MARK: 04 · recovery
-
-    /// Today's recovery read — the two axes and the state.
-    ///
-    /// Deliberately NOT windowed, and the only thing on this tab that isn't.
-    /// The segmenter owns every other number here (see the ONE TIME CONTROL
-    /// rule at the top of the file), but this is a *today* read built over the
-    /// full history: its load axis runs 7-day and 42-day EWMAs and its body
-    /// axis ranks against 180 days, all of which sit behind a 4 wk window's
-    /// first day. Handing it `window` would quietly change the arithmetic
-    /// every time the segmenter moved while the label still said today — so it
-    /// reads `service.days` end to end.
-    ///
-    /// `service.days` is one entry per day through today, rest days included,
-    /// so the last index is today.
-
 
     /// Section 02's body: the current threshold band and how much work has
     /// landed inside it, as one tappable line. Enough to know whether it's
@@ -517,13 +573,11 @@ struct TrendsLegacyTabView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.drip.textTertiary)
                 }
-                .padding(16)
+                .padding(.vertical, 14)
                 .frame(maxWidth: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.drip.cardBackground)
-                        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
-                )
+                .contentShape(Rectangle())
+                .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
+                .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
             }
             .buttonStyle(.plain)
         }

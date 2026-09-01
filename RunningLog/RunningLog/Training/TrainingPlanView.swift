@@ -254,12 +254,17 @@ struct TrainingPlanView: View {
         .sheet(isPresented: $showEditGoal) {
             // EditGoalSheet now accepts a nil plan — used by GoalAndPacesCard's
             // empty state to set an athlete-level goal before subscribing.
-            EditGoalSheet(viewModel: viewModel, plan: viewModel.activePlan, onSaved: {
-                // After a successful goal save against an active plan, surface
-                // the soft-ask about recomputing future workout paces. The
-                // sheet skips this callback when there's no plan.
-                showRecomputePrompt = true
-            })
+            EditGoalSheet(
+                viewModel: viewModel,
+                plan: viewModel.activePlan,
+                existingGoal: ActiveGoalStore.shared.soonestActiveGoal,
+                onSaved: {
+                    // After a successful goal save against an active plan, surface
+                    // the soft-ask about recomputing future workout paces. The
+                    // sheet skips this callback when there's no plan.
+                    showRecomputePrompt = true
+                }
+            )
             .presentationDetents([.large])
         }
         .sheet(isPresented: $showRecomputePrompt) {

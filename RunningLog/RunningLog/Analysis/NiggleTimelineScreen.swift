@@ -20,6 +20,8 @@ import SwiftUI
 struct NiggleTimelineScreen: View {
     @State private var injuryService = InjuryService()
 
+    @Environment(\.openGoalEditor) private var openGoalEditor
+
     private var timeline: NiggleTimeline { injuryService.niggleTimeline }
 
     var body: some View {
@@ -28,7 +30,11 @@ struct NiggleTimelineScreen: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    PlateStrip(surface: "NIGGLES  ·  MENTION TIMELINE", fig: "FIG. 29")
+                    PlateStrip(
+                        surface: "NIGGLES  ·  MENTION TIMELINE",
+                        fig: TrainingDateline.string(for: ActiveGoalStore.shared.soonestActiveGoal),
+                        onFigTap: openGoalEditor
+                    )
                         .padding(.top, 16)
 
                     header
@@ -57,6 +63,7 @@ struct NiggleTimelineScreen: View {
             }
         }
         .task { await injuryService.fetchAll() }
+        .task { await ActiveGoalStore.shared.loadIfNeeded() }
     }
 
     private var header: some View {

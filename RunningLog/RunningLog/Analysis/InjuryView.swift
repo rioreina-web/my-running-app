@@ -7,6 +7,8 @@ struct InjuryListView: View {
     @State private var selectedInjury: Injury?
     @State private var showAddInjury = false
 
+    @Environment(\.openGoalEditor) private var openGoalEditor
+
     /// Opens the detail/edit sheet for an ache. Voice aches are first promoted
     /// to a real injuries row (idempotent) so they are fully editable, just
     /// like a manually-added injury.
@@ -28,7 +30,11 @@ struct InjuryListView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    PlateStrip(surface: "INJURY  ·  LIVING LOG", fig: "FIG. 28")
+                    PlateStrip(
+                        surface: "INJURY  ·  LIVING LOG",
+                        fig: TrainingDateline.string(for: ActiveGoalStore.shared.soonestActiveGoal),
+                        onFigTap: openGoalEditor
+                    )
                         .padding(.horizontal, 20)
                         .padding(.top, 16)
 
@@ -177,6 +183,7 @@ struct InjuryListView: View {
         .onAppear {
             Task { await injuryService.fetchAll() }
         }
+        .task { await ActiveGoalStore.shared.loadIfNeeded() }
         .sheet(item: $selectedInjury) { injury in
             InjuryDetailSheet(injury: injury, injuryService: injuryService)
                 .presentationDetents([.medium, .large])

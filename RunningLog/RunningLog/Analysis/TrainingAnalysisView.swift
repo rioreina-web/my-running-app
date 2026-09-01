@@ -60,10 +60,16 @@ struct TrainingAnalysisView: View {
 
     private let cal = Calendar.current
 
+    @Environment(\.openGoalEditor) private var openGoalEditor
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                PlateStrip(surface: "ANALYSIS  ·  LOAD & INTENSITY", fig: "FIG. 7")
+                PlateStrip(
+                    surface: "ANALYSIS  ·  LOAD & INTENSITY",
+                    fig: TrainingDateline.string(for: ActiveGoalStore.shared.soonestActiveGoal),
+                    onFigTap: openGoalEditor
+                )
                 header
                 EditorialRule()
                 paceZonesSection
@@ -90,6 +96,7 @@ struct TrainingAnalysisView: View {
         .background(Color.drip.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadAll() }
+        .task { await ActiveGoalStore.shared.loadIfNeeded() }
     }
 
     // MARK: - Header
