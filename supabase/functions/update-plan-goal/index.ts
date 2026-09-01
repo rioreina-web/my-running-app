@@ -209,34 +209,53 @@ Deno.serve(async (req) => {
   ) {
     const ladder = derivePaceLadderFromGoal(effectiveDistance, effectiveTimeSeconds);
     if (ladder) {
+      // Rail 6 (GOAL-ELEMENT-APPLY.md §5): the goal never overwrites a
+      // measured pace. Fetch whatever's on file first — if a zone already
+      // carries a real confidence tier ('high'/'medium'/'low', meaning it
+      // came from a fitness snapshot, not a prior goal save), that zone is
+      // left out of this upsert entirely so the existing value survives.
+      const existingProfileResult = await supabase
+        .from("athlete_pace_profiles")
+        .select(
+          "easy_pace_confidence, marathon_pace_confidence, half_pace_confidence, " +
+            "ten_k_pace_confidence, five_k_pace_confidence, mile_pace_confidence",
+        )
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const existingProfile = existingProfileResult.data as Record<string, unknown> | null;
+
+      const isMeasured = (confidence: unknown) =>
+        confidence === "high" || confidence === "medium" || confidence === "low";
+
       const now = new Date().toISOString();
       const upsertRow: Record<string, unknown> = {
         user_id: user.id,
         goal_race_distance: effectiveDistance,
         goal_time_seconds: effectiveTimeSeconds,
-        easy_pace_seconds: round1(ladder.easy),
-        marathon_pace_seconds: round1(ladder.marathon),
-        half_pace_seconds: round1(ladder.half),
-        ten_k_pace_seconds: round1(ladder.tenK),
-        five_k_pace_seconds: round1(ladder.fiveK),
-        mile_pace_seconds: round1(ladder.mile),
+        updated_at: now,
+      };
+
+      const zones: Array<{ key: string; seconds: number }> = [
+        { key: "easy", seconds: ladder.easy },
+        { key: "marathon", seconds: ladder.marathon },
+        { key: "half", seconds: ladder.half },
+        { key: "ten_k", seconds: ladder.tenK },
+        { key: "five_k", seconds: ladder.fiveK },
+        { key: "mile", seconds: ladder.mile },
+      ];
+      let anyZoneWritten = false;
+      for (const zone of zones) {
+        const existingConfidence = existingProfile?.[`${zone.key}_pace_confidence`];
+        if (isMeasured(existingConfidence)) continue; // demoted — fitness wins
+        anyZoneWritten = true;
+        upsertRow[`${zone.key}_pace_seconds`] = round1(zone.seconds);
         // Confidence reflects that the ladder was derived from an athlete-
         // declared goal, not a measured race or fitness snapshot. Source
         // date pins the moment the athlete set/updated it.
-        easy_pace_confidence: "athlete_goal",
-        marathon_pace_confidence: "athlete_goal",
-        half_pace_confidence: "athlete_goal",
-        ten_k_pace_confidence: "athlete_goal",
-        five_k_pace_confidence: "athlete_goal",
-        mile_pace_confidence: "athlete_goal",
-        easy_pace_source_date: now,
-        marathon_pace_source_date: now,
-        half_pace_source_date: now,
-        ten_k_pace_source_date: now,
-        five_k_pace_source_date: now,
-        mile_pace_source_date: now,
-        updated_at: now,
-      };
+        upsertRow[`${zone.key}_pace_confidence`] = "athlete_goal";
+        upsertRow[`${zone.key}_pace_source_date`] = now;
+      }
+
       const { data: profile, error: profileErr } = await supabase
         .from("athlete_pace_profiles")
         .upsert(upsertRow, { onConflict: "user_id" })
@@ -251,6 +270,11 @@ Deno.serve(async (req) => {
         console.warn("athlete_pace_profiles upsert failed:", profileErr.message);
       } else {
         paceProfileRow = profile;
+        if (!anyZoneWritten) {
+          console.log(
+            `update-plan-goal: all pace zones already measured for user ${user.id}; goal saved without touching the ladder`,
+          );
+        }
       }
     }
   } else if (!planId) {
@@ -261,6 +285,60 @@ Deno.serve(async (req) => {
       "plan_id is null but target_race_distance and target_time_seconds are required to save an athlete-level goal",
       400,
     );
+  }
+
+  // ── Mode C: write through to user_goals ─────────────────────────────
+  // user_goals is the canonical goal record — it's what TrainingDateline
+  // reads (GOAL-IA-APPLY.md §5). Without this, a goal set here (Train tab
+  // / GoalAndPacesCard / onboarding) drives paces but never prints a
+  // countdown anywhere in the app, because user_goals stays empty. Best-
+  // effort: never fails the request, since the plan/pace writes above are
+  // the ones this endpoint's callers actually depend on.
+  if (effectiveDistance && effectiveTimeSeconds) {
+    try {
+      const targetDate = body.end_date ?? (planRow?.end_date as string | null | undefined) ?? null;
+      const { data: existingGoal } = await supabase
+        .from("user_goals")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("target_date", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingGoal) {
+        const { error: goalUpdateErr } = await supabase
+          .from("user_goals")
+          .update({
+            target_race_distance: effectiveDistance,
+            target_time_seconds: effectiveTimeSeconds,
+            athlete_confirmed: true,
+            confirmed_at: new Date().toISOString(),
+          })
+          .eq("id", existingGoal.id);
+        if (goalUpdateErr) {
+          console.warn("user_goals update failed:", goalUpdateErr.message);
+        }
+      } else if (targetDate) {
+        // No active goal row to enrich — only safe to create one when we
+        // have a date, since user_goals.target_date is NOT NULL.
+        const { error: goalInsertErr } = await supabase.from("user_goals").insert({
+          user_id: user.id,
+          goal_title: describeGoal(effectiveDistance, effectiveTimeSeconds),
+          target_date: targetDate,
+          status: "active",
+          target_race_distance: effectiveDistance,
+          target_time_seconds: effectiveTimeSeconds,
+          athlete_confirmed: true,
+          confirmed_at: new Date().toISOString(),
+        });
+        if (goalInsertErr) {
+          console.warn("user_goals insert failed:", goalInsertErr.message);
+        }
+      }
+    } catch (err) {
+      console.warn("user_goals write-through failed:", err);
+    }
   }
 
   return new Response(
@@ -312,6 +390,22 @@ function derivePaceLadderFromGoal(
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+// A plain fallback title for a user_goals row created here (no natural-
+// language statement available — that only exists via interpret-goal).
+// e.g. "Marathon in 3:15:00".
+function describeGoal(raceDistance: string, timeSeconds: number): string {
+  const label = raceDistance
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const h = Math.floor(timeSeconds / 3600);
+  const m = Math.floor((timeSeconds % 3600) / 60);
+  const s = timeSeconds % 60;
+  const time = h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    : `${m}:${String(s).padStart(2, "0")}`;
+  return `${label} in ${time}`;
 }
 
 function jsonError(message: string, status: number): Response {
