@@ -109,6 +109,52 @@ export function buildNiggleRows(
     }
   }
 
+  // ── Explicit all-clears land as severity 'none' rows (step 6, drip-scores)
+  // so the daily_scores soreness baseline includes zero days. Two sources,
+  // both structured — never sniffed from free text:
+  //   1. Per-part resolved_niggles ("left knee feels fine now").
+  //   2. The global no_niggles signal ("legs feel great, nothing hurts"),
+  //      stored on the 'legs' canonical area.
+  // The worst-wins dedupe above makes a same-memo soreness row beat a
+  // 'none' row for the same area (SEVERITY_ORDER.none = 0), and the global
+  // row is skipped entirely when any soreness was extracted.
+  const addAllClear = (area: string, side: "left" | "right" | null, words: string) => {
+    if (byArea.has(area)) return; // a real mention (or earlier all-clear) wins
+    byArea.set(area, {
+      user_id: userId,
+      training_log_id: trainingLogId,
+      body_area: area,
+      side,
+      verbatim_quote: words.slice(0, 400),
+      severity_hint: "none",
+      mentioned_at: mentionedAt.slice(0, 10),
+      source: "memo_llm",
+      updated_at: nowIso,
+    });
+  };
+
+  const resolvedRaw = extracted.resolved_niggles;
+  if (Array.isArray(resolvedRaw)) {
+    for (const e of resolvedRaw) {
+      const o = (e && typeof e === "object") ? e as Record<string, unknown> : null;
+      const location = typeof o?.location === "string" ? o.location : (typeof e === "string" ? e : "");
+      if (!location.trim()) continue;
+      const mapped = normalizeBodyMention(location);
+      if (!mapped) continue; // already logged as dropped by buildNiggleResolutions
+      const words = typeof o?.their_words === "string" && o.their_words.trim() ? o.their_words : location;
+      addAllClear(mapped.body_area, mapped.side, words);
+    }
+  }
+
+  const hadSoreness = entries.length > 0;
+  const nn = extracted.no_niggles;
+  if (!hadSoreness && nn && typeof nn === "object") {
+    const words = (nn as Record<string, unknown>).their_words;
+    if (typeof words === "string" && words.trim()) {
+      addAllClear("legs", null, words);
+    }
+  }
+
   return { rows: [...byArea.values()], dropped };
 }
 
@@ -232,9 +278,23 @@ export async function writeNiggleMentions(
     }
     if (rows.length === 0) return 0;
 
-    const { error } = await supabaseClient
+    let { error } = await supabaseClient
       .from("body_mentions")
       .upsert(rows, { onConflict: "user_id,training_log_id,body_area" });
+    // Deploy-before-migration guard: until 20260902040000 widens the
+    // severity CHECK, 'none' rows are rejected — and one rejected row
+    // fails the whole upsert. Real soreness mentions must never be lost
+    // to a pending all-clear migration.
+    if (error && rows.some((r) => r.severity_hint === "none")) {
+      const realMentions = rows.filter((r) => r.severity_hint !== "none");
+      console.warn(
+        `[niggleWriter] upsert with 'none' rows failed (${error.message}) — retrying with mentions only`,
+      );
+      if (realMentions.length === 0) return 0;
+      ({ error } = await supabaseClient
+        .from("body_mentions")
+        .upsert(realMentions, { onConflict: "user_id,training_log_id,body_area" }));
+    }
     if (error) {
       console.warn(`[niggleWriter] body_mentions upsert failed: ${error.message}`);
       return 0;

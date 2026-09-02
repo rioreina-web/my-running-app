@@ -770,7 +770,7 @@ Deno.serve(async (req) => {
 
     // Structured prompt with distinct fields and few-shot examples —
     // summarize-only (v4): no coach_insight field, no coaching context.
-    const prompt = loadPrompt("process-training-memo.v4", {});
+    const prompt = loadPrompt("process-training-memo.v5", {});
 
     const analysisInput =
       prompt + `\n\n## Audio Transcript (from ${transcriptionProvider})\n"${transcription}"`;

@@ -168,3 +168,50 @@ Deno.test("buildNiggleResolutions returns nothing when there is no all-clear", (
   assertEquals(buildNiggleResolutions(USER, LOG, DATE, null).rows.length, 0);
   assertEquals(buildNiggleResolutions(USER, LOG, DATE, { resolved_niggles: null }).rows.length, 0);
 });
+
+// ── Step 6 (drip-scores): explicit all-clears as severity 'none' rows ──
+
+Deno.test("resolved_niggles: per-part all-clear becomes a severity 'none' body_mentions row", () => {
+  const { rows } = buildNiggleRows(USER, LOG, DATE, {
+    resolved_niggles: [{ location: "left knee", their_words: "left knee feels totally fine now" }],
+  });
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].body_area, "knee");
+  assertEquals(rows[0].side, "left");
+  assertEquals(rows[0].severity_hint, "none");
+  assertEquals(rows[0].verbatim_quote, "left knee feels totally fine now");
+});
+
+Deno.test("no_niggles: global all-clear lands on 'legs' with severity 'none'", () => {
+  const { rows } = buildNiggleRows(USER, LOG, DATE, {
+    no_niggles: { their_words: "legs felt great, nothing hurts" },
+  });
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].body_area, "legs");
+  assertEquals(rows[0].side, null);
+  assertEquals(rows[0].severity_hint, "none");
+});
+
+Deno.test("no_niggles is ignored when the same memo carries a soreness mention", () => {
+  const { rows } = buildNiggleRows(USER, LOG, DATE, {
+    soreness: [{ location: "right calf", their_words: "calf a bit tight", severity_word: "tight" }],
+    no_niggles: { their_words: "otherwise everything felt fine" },
+  });
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].body_area, "calf");
+  assertEquals(rows[0].severity_hint, "tight");
+});
+
+Deno.test("same-area soreness beats an all-clear (worst wins, none = 0)", () => {
+  const { rows } = buildNiggleRows(USER, LOG, DATE, {
+    soreness: [{ location: "knee", their_words: "knee still aching", severity_word: "aching" }],
+    resolved_niggles: [{ location: "knee", their_words: "knee is fine" }],
+  });
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].severity_hint, "sore");
+});
+
+Deno.test("silence stays silence: empty extraction writes no all-clear rows", () => {
+  const { rows } = buildNiggleRows(USER, LOG, DATE, {});
+  assertEquals(rows.length, 0);
+});

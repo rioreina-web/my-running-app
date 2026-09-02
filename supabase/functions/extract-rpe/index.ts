@@ -45,6 +45,7 @@ interface ExtractResult {
   felt_rpe: number | null;
   pull_quote: string | null;
   tags: string[];
+  life_stress: number | null;
 }
 
 /**
@@ -83,6 +84,7 @@ function parseModelJson(text: string): ExtractResult | null {
         felt_rpe: typeof o.felt_rpe === "number" ? Math.round(o.felt_rpe) : null,
         pull_quote: typeof o.pull_quote === "string" && o.pull_quote.trim() ? o.pull_quote.trim() : null,
         tags: Array.isArray(o.tags) ? o.tags.filter((t: unknown) => typeof t === "string").slice(0, 4) : [],
+        life_stress: typeof o.life_stress === "number" ? Math.round(o.life_stress) : null,
       };
     } catch {
       return null;
@@ -110,7 +112,18 @@ Rules:
 - tags: 0–3 short lowercase words describing the session feel (e.g. "tired",
   "humid", "strong", "flat", "easy"). Empty array if none clear.
 
-Return ONLY JSON: {"felt_rpe": <int 1-10 or null>, "pull_quote": <string or null>, "tags": [<string>...]}
+Separately, listen for stress from OUTSIDE training — work, family, travel, life
+events. This is NOT training effort; a brutal workout with a calm life is
+life_stress = null unless life is mentioned.
+- life_stress anchors: 0 = life explicitly calm or relaxed ("nothing going on
+  this week", "on vacation"); 1 = ordinary busyness mentioned in passing
+  ("busy day at work"); 2 = clearly stressed ("stressful week", "a lot going
+  on right now"); 3 = stress that is visibly costing them ("work is crazy,
+  barely sleeping", "deadline hell"); 4 = acute or overwhelming life event.
+- If outside-life stress is not mentioned at all, return life_stress = null.
+  Never guess, and never infer it from training fatigue.
+
+Return ONLY JSON: {"felt_rpe": <int 1-10 or null>, "pull_quote": <string or null>, "tags": [<string>...], "life_stress": <int 0-4 or null>}
 
 Transcript:
 """
@@ -257,6 +270,12 @@ Deno.serve(async (req) => {
     rpe_pull_quote: extracted.pull_quote,
     rpe_tags: extracted.tags,
     rpe_extracted_at: new Date().toISOString(),
+    // Outside-life stress, 0–4 or null when not mentioned. The number only —
+    // the reason is never stored (privacy rule from the score spec). Feeds
+    // the daily_scores 'stress' recovery component (scorer v1.2).
+    felt_stress: extracted.life_stress == null
+      ? null
+      : Math.min(4, Math.max(0, extracted.life_stress)),
   };
 
   if (!athleteOwnsRpe) {
@@ -266,11 +285,23 @@ Deno.serve(async (req) => {
     updatePayload.rpe_source = felt == null ? null : "llm";
   }
 
-  const { error: updErr } = await supabase
+  let { error: updErr } = await supabase
     .from("training_logs")
     .update(updatePayload)
     .eq("id", logId)
     .eq("user_id", userId);
+
+  // Deploy-before-migration guard: until 20260902030000 lands, felt_stress
+  // doesn't exist. Losing the stress number must never lose the RPE.
+  if (updErr && /felt_stress/i.test(updErr.message)) {
+    console.warn("felt_stress column missing (migration pending) — retrying without it");
+    delete updatePayload.felt_stress;
+    ({ error: updErr } = await supabase
+      .from("training_logs")
+      .update(updatePayload)
+      .eq("id", logId)
+      .eq("user_id", userId));
+  }
 
   if (updErr) return jsonResponse({ error: `update failed: ${updErr.message}` }, 500);
 
@@ -280,5 +311,6 @@ Deno.serve(async (req) => {
     athlete_override: athleteOwnsRpe,
     pull_quote: extracted.pull_quote,
     tags: extracted.tags,
+    life_stress: updatePayload.felt_stress,
   });
 });
