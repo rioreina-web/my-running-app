@@ -105,13 +105,13 @@ struct TrainingTabView: View {
 
                     switch mode {
                     case .current:
-                        // Week list first (Rio, 2026-08-31): the day-by-day
-                        // week must be visible without scrolling — it, not
-                        // the stat strip, is what CURRENT is opened for.
-                        // Summary and Today follow; the stress strip closes.
-                        currentWeekSection
+                        // Stat strip first (Rio, 2026-09-01): this week /
+                        // on pace / 4-wk avg orient before the day-by-day
+                        // week list. Today's card is unmounted — it
+                        // duplicated whichever day in the list below was
+                        // already today, per athlete feedback.
                         summary
-                        todaySection
+                        currentWeekSection
                         // Directly under the day-by-day week list: the same
                         // seven days, one level up — what the week cost, how
                         // hard, and WHEN. Shares `weekOffset` with the list
@@ -133,6 +133,18 @@ struct TrainingTabView: View {
                         WeekStressStripSection(vm: vm, weekOffset: $weekOffset) {
                             route = .day($0)
                         }
+                        // Door to the 90-day stress & recovery graph — the
+                        // same question as the week strip, one zoom level out.
+                        NavigationLink {
+                            StressRecoveryView()
+                        } label: {
+                            Text("STRESS & RECOVERY · 90 DAYS ↗")
+                                .font(.dripEyebrow(10.5)).tracking(1.3)
+                                .foregroundStyle(Color.drip.coral)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .padding(.top, 12)
+                        }
+                        .buttonStyle(.plain)
                     case .calendar:
                         scopeToggle
                         // The editorial day-by-day calendar replaces the old
