@@ -30,6 +30,32 @@ function isPublicPath(pathname: string): boolean {
   return false;
 }
 
+// Nonce-based CSP: no 'unsafe-inline' / 'unsafe-eval' for scripts.
+//
+// style-src deliberately uses 'unsafe-inline' rather than the nonce: a nonce
+// only covers <style> elements, never `style=""` attributes, and every chart
+// (recharts) and several layout components emit those. Under CSP3 a nonce
+// makes 'unsafe-inline' ignored, so the two cannot be combined — it is one or
+// the other, and blocking every inline style attribute breaks the app while
+// buying little (style injection needs an HTML injection first, which
+// script-src already contains).
+function buildCsp(nonce: string): string {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' blob: data: https:",
+    "font-src 'self' data:",
+    `connect-src 'self' ${supabaseUrl} https://*.supabase.co https://*.ingest.us.sentry.io`,
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "upgrade-insecure-requests",
+  ].join("; ");
+}
+
 function generateNonce(): string {
   const array = new Uint8Array(16);
   crypto.getRandomValues(array);
@@ -38,8 +64,21 @@ function generateNonce(): string {
 
 export async function middleware(request: NextRequest) {
   const nonce = generateNonce();
-  let response = NextResponse.next({ request });
   const { pathname } = request.nextUrl;
+
+  // Next.js reads the nonce from the *request* headers to stamp its own
+  // inline hydration scripts (`x-nonce` / the CSP request header). Setting
+  // the CSP on the response alone — what this file did until 2026-09-03 —
+  // means Next never sees the nonce, so with 'strict-dynamic' and no
+  // 'unsafe-inline' the framework's own scripts are the first thing the
+  // policy blocks. The request copy is what makes the policy enforceable.
+  const csp = buildCsp(nonce);
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+  const nextInit = { request: { headers: requestHeaders } };
+
+  let response = NextResponse.next(nextInit);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,7 +92,7 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          response = NextResponse.next({ request });
+          response = NextResponse.next(nextInit);
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           );
@@ -78,18 +117,6 @@ export async function middleware(request: NextRequest) {
 
   // Auth has already been enforced above. A design mockup renders as authored.
   if (isDesignMockup(pathname)) return response;
-
-  // Set nonce-based CSP — no 'unsafe-inline' or 'unsafe-eval'
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const csp = [
-    "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
-    `style-src 'self' 'nonce-${nonce}'`,
-    "img-src 'self' blob: data: https:",
-    "font-src 'self' data:",
-    `connect-src 'self' ${supabaseUrl} https://*.supabase.co https://*.ingest.us.sentry.io`,
-    "frame-ancestors 'none'",
-  ].join("; ");
 
   response.headers.set("Content-Security-Policy", csp);
   response.headers.set("x-nonce", nonce);

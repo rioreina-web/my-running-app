@@ -11,6 +11,12 @@ export interface CachedResponse {
   response: string;
   model: string;
   timestamp: number;
+  /** Owner of the answer. Coaching answers embed the asker's personal data
+   *  (paces, moods, injuries), so a hit is only valid for the same athlete.
+   *  Entries without this field predate user scoping (2026-09-01) AND the
+   *  pace readback guard — rejecting them doubles as the invalidation of
+   *  every answer generated before paces were verified. */
+  user_id?: string;
 }
 
 let cacheIndex: Index | null = null;
@@ -32,32 +38,41 @@ function getCache(): Index | null {
 
 /**
  * Look up a similar query in the cache
- * Returns cached response if similarity > 0.92 and < 24 hours old
+ * Returns cached response if similarity > 0.92, < 24 hours old, and owned by
+ * the same athlete. Unowned entries (pre-2026-09-01) are never served.
  */
 export async function getCachedResponse(
-  queryEmbedding: number[]
+  queryEmbedding: number[],
+  userId: string,
 ): Promise<CachedResponse | null> {
   const cache = getCache();
   if (!cache) return null;
 
   try {
+    // topK > 1 so another athlete's near-identical question doesn't shadow
+    // this athlete's own cached answer.
     const results = await cache.query({
       vector: queryEmbedding,
-      topK: 1,
+      topK: 5,
       includeMetadata: true,
     });
 
-    // Only return if similarity > 0.92 (very similar queries)
-    if (results[0]?.score && results[0].score > 0.92) {
+    for (const result of results) {
+      // Only consider very similar queries
+      if (!result.score || result.score <= 0.92) continue;
       // Upstash types metadata as Dict | undefined; route through unknown.
-      const metadata = results[0].metadata as unknown as CachedResponse;
+      const metadata = result.metadata as unknown as CachedResponse;
+
+      // A coaching answer is personal. No owner = pre-scoping entry (also
+      // pre-pace-guard) — skip, never serve across athletes.
+      if (metadata.user_id !== userId) continue;
 
       // Check if cache is less than 24 hours old
       const cacheAge = Date.now() - metadata.timestamp;
       const maxAge = 24 * 60 * 60 * 1000; // 24 hours
 
       if (cacheAge < maxAge) {
-        console.log(`Cache hit! Similarity: ${results[0].score.toFixed(3)}`);
+        console.log(`Cache hit! Similarity: ${result.score.toFixed(3)}`);
         return metadata;
       } else {
         console.log("Cache expired, fetching fresh response");
@@ -78,7 +93,8 @@ export async function cacheResponse(
   queryEmbedding: number[],
   query: string,
   response: string,
-  model: string
+  model: string,
+  userId: string,
 ): Promise<void> {
   const cache = getCache();
   if (!cache) return;
@@ -92,6 +108,7 @@ export async function cacheResponse(
         response,
         model,
         timestamp: Date.now(),
+        user_id: userId,
         // Upstash's upsert wants its own Dict shape; CachedResponse is a
         // plain JSON record, so the conversion is safe.
       } as unknown as Record<string, unknown>,

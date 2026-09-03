@@ -1942,6 +1942,7 @@ Deno.serve(async (req: Request) => {
         const now = new Date().toISOString();
         const coachMsg = aiOutputResolved.coaching_strategy || `Here's your ${raceDistGuess.replace("_", " ")} training plan! Let me know if you'd like to adjust anything.`;
         const { data: convData } = await supabase.from("conversations").insert({
+          user_id: userId,
           messages: [
             { role: "user", content: body.message, timestamp: now },
             { role: "assistant", content: coachMsg, timestamp: now },
@@ -1967,7 +1968,7 @@ Deno.serve(async (req: Request) => {
     // Load conversation history
     let history: Array<{ role: string; content: string; timestamp: string }> = [];
     if (body.conversationId) {
-      const { data } = await supabase.from("conversations").select("messages").eq("id", body.conversationId).single();
+      const { data } = await supabase.from("conversations").select("messages").eq("id", body.conversationId).eq("user_id", userId).single();
       if (data?.messages) history = data.messages;
     }
 
@@ -2035,9 +2036,9 @@ Deno.serve(async (req: Request) => {
 
     let conversationId = body.conversationId;
     if (conversationId) {
-      await supabase.from("conversations").update({ messages: newMessages, updated_at: now }).eq("id", conversationId);
+      await supabase.from("conversations").update({ messages: newMessages, updated_at: now }).eq("id", conversationId).eq("user_id", userId);
     } else {
-      const { data } = await supabase.from("conversations").insert({ messages: newMessages }).select("id").single();
+      const { data } = await supabase.from("conversations").insert({ user_id: userId, messages: newMessages }).select("id").single();
       conversationId = data?.id;
     }
 

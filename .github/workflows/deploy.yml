@@ -29,6 +29,10 @@ on:
         type: boolean
         default: true
 
+# Least-privilege token: no job here writes to the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-prod
   cancel-in-progress: false # never cancel a half-finished prod deploy

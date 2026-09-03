@@ -6,6 +6,10 @@ on:
     branches: [main]
 
 # Cancel superseded runs on the same ref to keep CI cost predictable.
+# Least-privilege token: no job here writes to the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
