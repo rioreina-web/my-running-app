@@ -98,7 +98,10 @@ async function attempt(
     // Cleared in both outcomes — an uncleared timer outlives the call when
     // the API responds first, which Deno's test sanitizer (rightly) flags as
     // a leak and would otherwise keep a process alive past its work.
-    let timer: number | undefined;
+    // ReturnType<typeof setTimeout>: Node typings from npm:@sentry/deno make
+    // setTimeout return `Timeout` under `deno check` (same fix as
+    // workout-shorthand-llm.ts).
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error("timeout")), opts.timeoutMs ?? 20_000);
     });
