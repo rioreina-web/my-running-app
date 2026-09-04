@@ -123,13 +123,35 @@ test("rate-limit.ts exports enforceRateLimit and checkRateLimit", async () => {
   assert.match(src, /export\s+async\s+function\s+enforceRateLimit\b/, "must export enforceRateLimit");
   assert.match(src, /export\s+async\s+function\s+checkRateLimit\b/, "must export checkRateLimit");
 
-  // Permissive fallback when Redis env vars are absent (local dev).
+  // Permissive fallback when Redis env vars are absent — LOCAL DEV ONLY.
   // If this branch goes away silently, every dev machine starts hitting
   // a real Redis or crashing.
   assert.match(
     src,
     /UPSTASH_REDIS_REST_URL/,
     "permissive-fallback path must check UPSTASH_REDIS_REST_URL env var",
+  );
+
+  // ...but that fallback must NOT extend to production. A deploy missing the
+  // two Upstash variables previously removed the limits from all six routes
+  // at once, and those routes reach LLM-backed edge functions with the
+  // service-role key — which bypasses the edge functions' own per-user
+  // quotas, making this the only ceiling on that spend. Fail closed instead.
+  // Mirrors `shouldEnforceRateLimits` in supabase/functions/_shared/rateLimit.ts.
+  assert.match(
+    src,
+    /NODE_ENV\s*===\s*["']production["']/,
+    "missing-Redis path must distinguish production from local dev " +
+      "(fail closed in prod, permissive only in dev)",
+  );
+  // Structural, not just "the words appear somewhere": the no-limiter branch
+  // itself must consult the environment. `allowed: false` alone would pass
+  // against the old fail-open source, since the normal blocked path already
+  // contains it.
+  assert.match(
+    src,
+    /if\s*\(\s*!rl\s*\)\s*\{[\s\S]{0,600}?shouldEnforce\s*\(\s*\)/,
+    "the missing-limiter branch must call shouldEnforce() and deny in production",
   );
 
   // 429 response shape — Retry-After header per RFC 9110.
