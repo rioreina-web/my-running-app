@@ -35,30 +35,44 @@ export function FitnessArc({
 }: {
   data: number[];
   markers: { index: number; short: string }[];
-  goal: number;
+  /** Omitted when no goal is set — the arc still reads on its own. */
+  goal?: number;
   height?: number;
 }) {
   const w = 320;
   const h = height;
-  const all = [...data, goal];
+  const all = goal ? [...data, goal] : data;
   const y = scale(all, h, 12, true); // invert: lower time = higher on chart
   const xs = data.map((_, i) => 24 + (i / (data.length - 1)) * (w - 36));
   const ys = data.map((v) => y(v));
-  const goalY = y(goal);
+  const goalY = goal ? y(goal) : 0;
   const last = data.length - 1;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="m-chart" role="img" aria-label="Twenty-six week fitness arc with race anchors and goal line">
-      {/* goal line */}
-      <line x1={24} x2={w - 12} y1={goalY} y2={goalY} stroke={INK3} strokeWidth={1} strokeDasharray="3 4" />
-      <text x={w - 12} y={goalY - 4} fontSize={8} fill={INK3} textAnchor="end" fontFamily="ui-monospace, monospace" letterSpacing="1">
-        GOAL 3:16
-      </text>
-      {/* race markers */}
+    <svg viewBox={`0 0 ${w} ${h}`} className="m-chart" role="img" aria-label="Twenty-six week fitness arc with race anchors">
+      {goal ? (
+        <>
+          <line x1={24} x2={w - 12} y1={goalY} y2={goalY} stroke={INK3} strokeWidth={1} strokeDasharray="3 4" />
+          <text x={w - 12} y={goalY - 4} fontSize={8} fill={INK3} textAnchor="end" fontFamily="ui-monospace, monospace" letterSpacing="1">
+            GOAL 3:16
+          </text>
+        </>
+      ) : null}
+      {/* race anchors — a rule, a hollow point on the line, and a label on
+          one shared baseline. Edge labels anchor inward so they stay inside
+          the frame instead of colliding with the arc. */}
       {markers.map((m) => (
         <g key={m.short}>
           <line x1={xs[m.index]} x2={xs[m.index]} y1={10} y2={h - 10} stroke={RULE} strokeWidth={1} />
           <circle cx={xs[m.index]} cy={ys[m.index]} r={3} fill="#fff" stroke={INK} strokeWidth={1.5} />
-          <text x={xs[m.index]} y={h - 1} fontSize={7.5} fill={INK2} textAnchor="middle" fontFamily="ui-monospace, monospace" letterSpacing="1">
+          <text
+            x={xs[m.index]}
+            y={h - 1}
+            fontSize={7.5}
+            fill={INK2}
+            textAnchor={m.index === 0 ? "start" : m.index === data.length - 1 ? "end" : "middle"}
+            fontFamily="ui-monospace, monospace"
+            letterSpacing="1"
+          >
             {m.short}
           </text>
         </g>
@@ -66,11 +80,6 @@ export function FitnessArc({
       {/* arc */}
       <path d={pathFrom(xs, ys)} fill="none" stroke={INK} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={xs[last]} cy={ys[last]} r={3.5} fill={CORAL} />
-      {/* anchor label sits under the start of the arc */}
-      <circle cx={xs[0]} cy={ys[0]} r={3} fill="#fff" stroke={INK} strokeWidth={1.5} />
-      <text x={xs[0] - 2} y={ys[0] - 8} fontSize={7.5} fill={INK3} fontFamily="ui-monospace, monospace" letterSpacing="1">
-        HOUSTON 3:28
-      </text>
     </svg>
   );
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { EditorialRule, Eyebrow, PlateStrip, Section, SheetChrome, Spacer, StripCell } from "@/components/mockup/primitives";
+import { EditorialRule, EmptyState, Eyebrow, PlateStrip, Section, SheetChrome, Spacer, StripCell } from "@/components/mockup/primitives";
 import { DETECTED_RACE, FITNESS, GOAL, RACES } from "@/components/mockup/data";
 
 /* Races · race history (confirmed_races), the anchor, a detected race
@@ -13,45 +13,74 @@ const RACE_PLAN = [
   { n: "04", name: "Miles 25–26.2 · home", meta: "WHATEVER IS LEFT", note: "Downhill into Sacramento. Empty it." },
 ];
 
-export default function RacesPage() {
+export default async function RacesPage({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
+  const dayOne = (await searchParams).day === "1";
   return (
     <>
       <PlateStrip surface="RACES · HISTORY + THE NEXT ONE" fig="FIG. 33" />
       <div className="m-body">
-        <SheetChrome back="/mockup/trends" backLabel="Trends" surface="RACES" action={{ label: "+ Add ↗", href: "#" }} />
+        <SheetChrome
+          back={dayOne ? "/mockup/trends?day=1" : "/mockup/trends"}
+          backLabel="Trends"
+          surface="RACES"
+          action={{ label: "+ Add ↗", href: "#" }}
+        />
 
-        <div className="m-section m-mt-14">
-          <Eyebrow coral>NEXT · {GOAL.daysOut} DAYS OUT</Eyebrow>
-          <h1 className="m-display m-display--l">{GOAL.race}.</h1>
-          <p className="m-quote m-quote--sub">
-            {GOAL.date} · Folsom to Sacramento · goal {GOAL.time}.
-          </p>
-        </div>
+        {dayOne ? (
+          <>
+            <div className="m-section m-mt-14">
+              <Eyebrow coral>NOTHING ON THE CALENDAR</Eyebrow>
+              <h1 className="m-display m-display--l">Your races.</h1>
+              <p className="m-body-sm">Imported from Apple Health. Confirm the ones that were races.</p>
+            </div>
+            <Spacer h={16} />
+            <EmptyState
+              eyebrow="NEXT RACE"
+              nudge="No upcoming race yet. Set one and your plan, paces and predictions line up behind it."
+              cta={{ label: "Set a goal race", href: "#" }}
+            />
+          </>
+        ) : (
+          <>
+            <div className="m-section m-mt-14">
+              <Eyebrow coral>NEXT · {GOAL.daysOut} DAYS OUT</Eyebrow>
+              <h1 className="m-display m-display--l">{GOAL.race}.</h1>
+              <p className="m-quote m-quote--sub">
+                {GOAL.date} · Folsom to Sacramento · goal {GOAL.time}.
+              </p>
+            </div>
 
-        <Spacer h={16} />
-        <div className="m-strip m-strip--4">
-          <StripCell l="GOAL" v="3:16" s="7:29 / MI" center />
-          <StripCell l="FITNESS NOW" v={`${FITNESS.rangeLow}–${FITNESS.rangeHigh}`} s={`${FITNESS.confidence} CONF.`} center />
-          <StripCell l="WEEKS LEFT" v="13" s="OF 18" center />
-          <StripCell l="LONG RUNS" v="9" s="16 MI +" center />
-        </div>
+            <Spacer h={16} />
+            <div className="m-strip m-strip--4">
+              <StripCell l="GOAL" v="3:16" s="7:29 / MI" center />
+              <StripCell
+                l="FITNESS NOW"
+                v={`${FITNESS.rangeLow}–${FITNESS.rangeHigh}`}
+                s={`${FITNESS.confidence} CONF.`}
+                center
+              />
+              <StripCell l="WEEKS LEFT" v="13" s="OF 18" center />
+              <StripCell l="LONG RUNS" v="9" s="16 MI +" center />
+            </div>
 
-        <Section eyebrow="RACE PLAN · A DRAFT TO EDIT" eyebrowRight="FROM THE TEMPLATE">
-          <div className="m-mt-4">
-            {RACE_PLAN.map((p) => (
-              <div key={p.n} className="m-step">
-                <span className="m-step__n">{p.n}</span>
-                <div>
-                  <div className="m-step__name">{p.name}</div>
-                  <div className="m-caption m-caption--faint m-mt-4">{p.meta}</div>
-                  <div className="m-step__hint">{p.note}</div>
-                </div>
-                <span />
+            <Section eyebrow="RACE PLAN · A DRAFT TO EDIT" eyebrowRight="FROM THE TEMPLATE">
+              <div className="m-mt-4">
+                {RACE_PLAN.map((p) => (
+                  <div key={p.n} className="m-step">
+                    <span className="m-step__n">{p.n}</span>
+                    <div>
+                      <div className="m-step__name">{p.name}</div>
+                      <div className="m-caption m-caption--faint m-mt-4">{p.meta}</div>
+                      <div className="m-step__hint">{p.note}</div>
+                    </div>
+                    <span />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <p className="m-quote m-quote--faint m-mt-8">Splits are the goal-time math. Nothing here is a prediction.</p>
-        </Section>
+              <p className="m-quote m-quote--faint m-mt-8">Splits are the goal-time math. Nothing here is a prediction.</p>
+            </Section>
+          </>
+        )}
 
         <Spacer h={20} />
         <EditorialRule />

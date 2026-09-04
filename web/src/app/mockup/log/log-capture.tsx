@@ -14,7 +14,7 @@ const MOODS = ["energized", "positive", "neutral", "tired", "struggling"] as con
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-export function LogCapture() {
+export function LogCapture({ dayOne = false }: { dayOne?: boolean }) {
   const [mode, setMode] = useState<"run" | "checkin">("run");
   const [recording, setRecording] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -78,7 +78,18 @@ export function LogCapture() {
         <div className="m-sp-24" />
       </div>
 
-      {!checkin && today ? (
+      {!checkin && dayOne ? (
+        /* No plan on day one, so the row offers the most recent synced run
+           instead of today's prescription. */
+        <div className="m-hlsection m-hlsection--top is-link">
+          <div className="m-row">
+            <Eyebrow>LINKED TO</Eyebrow>
+            <span className="m-caption">CHANGE ↗</span>
+          </div>
+          <div className="m-display m-display--s m-mt-8">SEP 2 · EASY 5.5 MI · 56:50</div>
+          <div className="m-caption m-caption--faint m-mt-4">APPLE HEALTH · YOUR MOST RECENT RUN</div>
+        </div>
+      ) : !checkin && today ? (
         <Link href={`/mockup/train/day/${today.id}`} className="m-hlsection m-hlsection--top is-link m-block">
           <div className="m-row">
             <Eyebrow>LINKED TO</Eyebrow>

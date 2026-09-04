@@ -21,7 +21,7 @@ export default function OnboardingPage() {
   const [hh, setHh] = useState("3");
   const [mm, setMm] = useState("16");
 
-  const detected = RACES.slice(0, 3);
+  const detected = RACES;
   const next = () => setStep((s) => Math.min(3, s + 1));
   const back = () => setStep((s) => Math.max(0, s - 1));
 
@@ -83,7 +83,7 @@ export default function OnboardingPage() {
               </button>
             </div>
             {health ? (
-              <p className="m-quote m-quote--faint m-mt-14">Importing 24 months · 412 workouts · 3 races found.</p>
+              <p className="m-quote m-quote--faint m-mt-14">Importing 24 months · 412 workouts · 5 races found.</p>
             ) : null}
           </>
         ) : null}
@@ -91,7 +91,7 @@ export default function OnboardingPage() {
         {step === 2 ? (
           <>
             <Eyebrow coral>YOUR RACES · 3 OF 4</Eyebrow>
-            <h1 className="m-display m-display--xl m-mt-6">Three efforts look like races.</h1>
+            <h1 className="m-display m-display--xl m-mt-6">Five efforts look like races.</h1>
             <p className="m-quote m-quote--sub m-mt-12">
               Confirm the ones that were. They anchor your pace zones and your fitness read. Goal time is direction; a race is reality.
             </p>
@@ -166,12 +166,12 @@ export default function OnboardingPage() {
             <Eyebrow coral>READY · 4 OF 4</Eyebrow>
             <h1 className="m-display m-display--xl m-mt-6">Everything is here.</h1>
             <p className="m-quote m-quote--sub m-mt-12">
-              Two years of running, three races confirmed, a {hh}:{mm} {distance.toLowerCase()} in December. Log opens on the record button. Talk after your next run.
+              Two years of running, five races confirmed, a {hh}:{mm} {distance.toLowerCase()} in December. Log opens on the record button. Talk after your next run.
             </p>
             <div className="m-mt-24">
               <div className="m-strip m-strip--3">
                 <div className="m-strip__cell"><span className="m-strip__l">WORKOUTS</span><span className="m-strip__v">412</span><span className="m-strip__s">24 MONTHS</span></div>
-                <div className="m-strip__cell"><span className="m-strip__l">RACES</span><span className="m-strip__v">{Object.values(confirmed).filter(Boolean).length || 3}</span><span className="m-strip__s">CONFIRMED</span></div>
+                <div className="m-strip__cell"><span className="m-strip__l">RACES</span><span className="m-strip__v">{Object.values(confirmed).filter(Boolean).length || 5}</span><span className="m-strip__s">CONFIRMED</span></div>
                 <div className="m-strip__cell"><span className="m-strip__l">ANCHOR</span><span className="m-strip__v">3:28</span><span className="m-strip__s">HOUSTON · JAN</span></div>
               </div>
             </div>

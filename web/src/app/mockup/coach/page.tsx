@@ -1,10 +1,12 @@
 import { Eyebrow, PlateStrip } from "@/components/mockup/primitives";
 import { TODAY } from "@/components/mockup/data";
+import { CoachDayOne } from "@/components/mockup/day-one";
 import { CoachRead } from "./coach-read";
 
 /* Coach tab · the AI Daily Read as observation, on demand. */
 
-export default function CoachPage() {
+export default async function CoachPage({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
+  if ((await searchParams).day === "1") return <CoachDayOne />;
   return (
     <>
       <PlateStrip surface="COACH · THE READ" fig="FIG. 14" />

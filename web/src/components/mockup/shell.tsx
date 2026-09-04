@@ -11,7 +11,7 @@
    slide-in menu (AppSidebar in the iOS kit). */
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { ATHLETE } from "./data";
 
@@ -43,6 +43,11 @@ function activeTab(pathname: string) {
 
 export function MockupShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "";
+  // `?day=1` swaps every tab to the state a brand-new account is in.
+  // It rides along the tab links so the whole product can be walked in
+  // either state without losing your place.
+  const dayOne = useSearchParams().get("day") === "1";
+  const q = dayOne ? "?day=1" : "";
   // The menu remembers the path it was opened on, so navigating closes it
   // without an effect.
   const [menuPath, setMenuPath] = useState<string | null>(null);
@@ -67,9 +72,18 @@ export function MockupShell({ children }: { children: ReactNode }) {
           </Link>
           <div className="m-rail__plate">Athlete · site mockup</div>
 
+          <div className="m-seg m-mt-14" role="tablist" aria-label="Account state">
+            <Link href={pathname} role="tab" aria-selected={!dayOne} className={`m-seg__tab${!dayOne ? " is-active" : ""}`}>
+              Week 5
+            </Link>
+            <Link href={`${pathname}?day=1`} role="tab" aria-selected={dayOne} className={`m-seg__tab${dayOne ? " is-active" : ""}`}>
+              Day one
+            </Link>
+          </div>
+
           <nav className="m-rail__tabs" aria-label="Tabs">
             {TABS.map((t) => (
-              <Link key={t.id} href={t.href} className={`m-rail__tab${tab === t.id ? " is-active" : ""}`}>
+              <Link key={t.id} href={`${t.href}${q}`} className={`m-rail__tab${tab === t.id ? " is-active" : ""}`}>
                 <span className="m-tdot" />
                 {t.label}
               </Link>
@@ -112,7 +126,7 @@ export function MockupShell({ children }: { children: ReactNode }) {
 
       <nav className="m-tabbar" aria-label="Tabs">
         {TABS.map((t) => (
-          <Link key={t.id} href={t.href} className={`m-tabbar__tab${tab === t.id ? " is-active" : ""}`}>
+          <Link key={t.id} href={`${t.href}${q}`} className={`m-tabbar__tab${tab === t.id ? " is-active" : ""}`}>
             <span className="m-tdot" />
             {t.label}
           </Link>
@@ -148,6 +162,15 @@ export function MockupShell({ children }: { children: ReactNode }) {
               </div>
             </div>
             <div className="m-menu__nav">
+              <div className="m-seg" role="tablist" aria-label="Account state">
+                <Link href={pathname} role="tab" aria-selected={!dayOne} className={`m-seg__tab${!dayOne ? " is-active" : ""}`}>
+                  Week 5
+                </Link>
+                <Link href={`${pathname}?day=1`} role="tab" aria-selected={dayOne} className={`m-seg__tab${dayOne ? " is-active" : ""}`}>
+                  Day one
+                </Link>
+              </div>
+              <div className="m-sp-12" />
               {INDEX.map((it) => (
                 <Link key={it.href} href={it.href} className="m-menu__item">
                   <span className="m-rail__num">{it.n}</span>

@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { EditorialRule, Eyebrow, Section, Spacer } from "@/components/mockup/primitives";
 import { CycleOverlay, ShareBar } from "@/components/mockup/charts";
-import { CALENDAR, CALENDAR_WEEK_NOTES, GOAL, RACES, THIS_WEEK, WEEK_TOTALS } from "@/components/mockup/data";
+import { CALENDAR, CALENDAR_WEEK_NOTES, DAY_ONE_WEEK, GOAL, RACES, THIS_WEEK, WEEK_TOTALS } from "@/components/mockup/data";
+import { EmptyState } from "@/components/mockup/primitives";
 
 /* Train · three modes behind one segmenter (roadmap Phase 3):
      CURRENT  — this week + today
@@ -28,10 +29,16 @@ const PACE_VOLUME = [
 const THIS_BUILD = [34, 36, 31, 38, 40, 37, 39, 38, 40, 42, 45, 44.6];
 const HOUSTON_BUILD = [30, 32, 33, 31, 35, 36, 34, 37, 38, 36, 40, 39];
 
-export function TrainViews() {
+/** With no plan, the calendar keeps what was run and leaves the rest open. */
+const DAY_ONE_CALENDAR = CALENDAR.map((week) =>
+  week.map((c) => (c.state === "done" ? c : { ...c, zone: undefined, miles: undefined, state: "future" as const })),
+);
+
+export function TrainViews({ dayOne = false }: { dayOne?: boolean }) {
   const [view, setView] = useState<View>("current");
   const [window, setWindow] = useState("12 WK");
   const today = THIS_WEEK.find((d) => d.state === "today")!;
+  const week = dayOne ? DAY_ONE_WEEK : THIS_WEEK;
 
   return (
     <>
@@ -52,25 +59,39 @@ export function TrainViews() {
       {view === "current" ? (
         <>
           <Spacer h={24} />
-          <div className="m-row">
-            <Eyebrow coral>
-              TODAY · {today.dow} · {today.dateUpper}
-            </Eyebrow>
-            <Eyebrow>
-              {today.plannedMiles} MI · {today.zone.toUpperCase()}
-            </Eyebrow>
-          </div>
-          <h2 className="m-display m-display--m m-mt-6">{today.title}</h2>
-          <p className="m-caption m-mt-10">{today.structure}</p>
-          <p className="m-quote m-quote--sub m-mt-12">{today.intent}</p>
-          <div className="m-flex m-gap-16 m-items-baseline m-mt-18">
-            <Link href={`/mockup/train/day/${today.id}`} className="m-link m-link--sm">
-              Open the session ↗
-            </Link>
-            <Link href="/mockup/log" className="m-link m-link--quiet m-link--sm">
-              Log it ↗
-            </Link>
-          </div>
+          {dayOne ? (
+            <>
+              <Eyebrow coral>
+                TODAY · {today.dow} · {today.dateUpper}
+              </Eyebrow>
+              <EmptyState
+                nudge="Nothing planned for today. Runs you record show up here on their own."
+                cta={{ label: "Log a run", href: "/mockup/log?day=1" }}
+              />
+            </>
+          ) : (
+            <>
+              <div className="m-row">
+                <Eyebrow coral>
+                  TODAY · {today.dow} · {today.dateUpper}
+                </Eyebrow>
+                <Eyebrow>
+                  {today.plannedMiles} MI · {today.zone.toUpperCase()}
+                </Eyebrow>
+              </div>
+              <h2 className="m-display m-display--m m-mt-6">{today.title}</h2>
+              <p className="m-caption m-mt-10">{today.structure}</p>
+              <p className="m-quote m-quote--sub m-mt-12">{today.intent}</p>
+              <div className="m-flex m-gap-16 m-items-baseline m-mt-18">
+                <Link href={`/mockup/train/day/${today.id}`} className="m-link m-link--sm">
+                  Open the session ↗
+                </Link>
+                <Link href="/mockup/log" className="m-link m-link--quiet m-link--sm">
+                  Log it ↗
+                </Link>
+              </div>
+            </>
+          )}
 
           <Spacer h={24} />
           <EditorialRule />
@@ -78,17 +99,19 @@ export function TrainViews() {
 
           <Section eyebrow="THE WEEK" eyebrowRight={WEEK_TOTALS.range}>
             <div className="m-wkstrip">
-              {THIS_WEEK.map((d) => {
+              {week.map((d) => {
+                // With no plan, a day that has not been run yet is simply open.
+                const open = dayOne && !d.actualMiles;
                 const inner = (
                   <>
                     <span className="m-wkday__name">{d.dow}</span>
                     <span className="m-wkday__dot" />
-                    <span className="m-wkday__miles">{d.state === "rest" ? "·" : d.actualMiles ?? d.plannedMiles}</span>
-                    <span className="m-wkday__type">{d.zone}</span>
+                    <span className="m-wkday__miles">{open || d.state === "rest" ? "·" : d.actualMiles ?? d.plannedMiles}</span>
+                    <span className="m-wkday__type">{open ? "" : d.zone}</span>
                   </>
                 );
-                const cls = `m-wkday is-${d.state}`;
-                if (d.state === "rest") return <div key={d.id} className={cls}>{inner}</div>;
+                const cls = `m-wkday is-${open ? "rest" : d.state}`;
+                if (open || d.state === "rest") return <div key={d.id} className={cls}>{inner}</div>;
                 const href = d.workoutId ? `/mockup/workouts/${d.workoutId}` : `/mockup/train/day/${d.id}`;
                 return (
                   <Link key={d.id} href={href} className={cls}>
@@ -101,25 +124,52 @@ export function TrainViews() {
 
           <Spacer h={20} />
 
-          <Section eyebrow="WEEKLY MILEAGE" eyebrowRight={`${WEEK_TOTALS.runsDone} OF ${WEEK_TOTALS.runsPlanned} RUNS`}>
+          <Section eyebrow="WEEKLY MILEAGE" eyebrowRight={dayOne ? `${WEEK_TOTALS.runsDone} RUNS SO FAR` : `${WEEK_TOTALS.runsDone} OF ${WEEK_TOTALS.runsPlanned} RUNS`}>
             <div className="m-flex m-items-baseline m-gap-8 m-mt-6">
               <span className="m-big-num">{WEEK_TOTALS.done}</span>
-              <span className="m-caption">OF {WEEK_TOTALS.planned} PLANNED</span>
+              <span className="m-caption">{dayOne ? "MILES THIS WEEK" : `OF ${WEEK_TOTALS.planned} PLANNED`}</span>
             </div>
-            <p className="m-quote m-quote--faint m-mt-8">Last week 45.0. Three weeks above 40.</p>
+            {dayOne ? (
+              <p className="m-body-sm m-mt-8">Last week 45.0. Four-week average 41.2.</p>
+            ) : (
+              <p className="m-quote m-quote--faint m-mt-8">Last week 45.0. Three weeks above 40.</p>
+            )}
           </Section>
 
           <Spacer h={24} />
           <EditorialRule />
           <Spacer h={12} />
 
-          <div className="m-listrow m-listrow--2">
-            <div>
-              <span className="m-listrow__label">{GOAL.planName}</span>
-              <span className="m-listrow__hint">{GOAL.planTemplate}. Change it or drop it; Train keeps working without one.</span>
+          {dayOne ? (
+            <>
+              <Eyebrow>A PLAN, IF YOU WANT ONE</Eyebrow>
+              <div className="m-mt-4">
+                <div className="m-listrow m-listrow--2 is-link">
+                  <div>
+                    <span className="m-listrow__label">Start from a template</span>
+                    <span className="m-listrow__hint">Marathon, half, 10K. Built around your long-run day.</span>
+                  </div>
+                  <span className="m-listrow__value is-coral">BROWSE ↗</span>
+                </div>
+                <div className="m-listrow m-listrow--2 is-link">
+                  <div>
+                    <span className="m-listrow__label">Join a coach&rsquo;s plan</span>
+                    <span className="m-listrow__hint">If someone is writing your weeks, connect here.</span>
+                  </div>
+                  <span className="m-listrow__value">CONNECT ↗</span>
+                </div>
+              </div>
+              <p className="m-body-sm m-mt-14">Train works either way. Without a plan it shows what you have run.</p>
+            </>
+          ) : (
+            <div className="m-listrow m-listrow--2">
+              <div>
+                <span className="m-listrow__label">{GOAL.planName}</span>
+                <span className="m-listrow__hint">{GOAL.planTemplate}. Change it or drop it; Train keeps working without one.</span>
+              </div>
+              <span className="m-listrow__value">TEMPLATE ↗</span>
             </div>
-            <span className="m-listrow__value">TEMPLATE ↗</span>
-          </div>
+          )}
         </>
       ) : null}
 
@@ -130,7 +180,9 @@ export function TrainViews() {
             <span className="m-link m-link--mono">← AUG</span>
             <div className="m-center">
               <div className="m-caption m-caption--ink">SEPTEMBER 2026</div>
-              <div className="m-caption m-caption--faint m-eyebrow--sm m-mt-4">PAST + PLANNED · PLAN LAYERED IN</div>
+              <div className="m-caption m-caption--faint m-eyebrow--sm m-mt-4">
+                {dayOne ? "WHAT YOU RAN · NOTHING PLANNED" : "PAST + PLANNED · PLAN LAYERED IN"}
+              </div>
             </div>
             <span className="m-link m-link--mono">OCT →</span>
           </div>
@@ -141,8 +193,8 @@ export function TrainViews() {
                 {d}
               </div>
             ))}
-            {CALENDAR.map((week, wi) => (
-              <CalendarWeek key={wi} week={week} note={CALENDAR_WEEK_NOTES[wi]} />
+            {(dayOne ? DAY_ONE_CALENDAR : CALENDAR).map((w, wi) => (
+              <CalendarWeek key={wi} week={w} note={dayOne ? { ...CALENDAR_WEEK_NOTES[wi], phase: "LOGGED" } : CALENDAR_WEEK_NOTES[wi]} dayOne={dayOne} />
             ))}
           </div>
           <Spacer h={16} />
@@ -160,8 +212,10 @@ export function TrainViews() {
               PLANNED
             </span>
           </div>
-          <p className="m-quote m-quote--faint m-mt-12">
-            Completed days are what you did. Planned days are the template. Tap any day to open it.
+          <p className={`m-mt-12 ${dayOne ? "m-body-sm" : "m-quote m-quote--faint"}`}>
+            {dayOne
+              ? "Filled days are runs that synced. The rest are open until you run them or add a plan."
+              : "Completed days are what you did. Planned days are the template. Tap any day to open it."}
           </p>
         </>
       ) : null}
@@ -180,7 +234,13 @@ export function TrainViews() {
             </div>
           </div>
           <h2 className="m-display m-display--m m-mt-6">Since Houston.</h2>
-          <p className="m-quote m-quote--sub m-mt-6">Volume climbing 38, 40, 42, 45. Marathon-pace work locking in a few seconds faster each month.</p>
+          {dayOne ? (
+            <p className="m-body-sm m-mt-6">Imported from Apple Health. This view never needed a plan.</p>
+          ) : (
+            <p className="m-quote m-quote--sub m-mt-6">
+              Volume climbing 38, 40, 42, 45. Marathon-pace work locking in a few seconds faster each month.
+            </p>
+          )}
 
           <Spacer h={20} />
           <div className="m-strip m-strip--3">
@@ -199,7 +259,9 @@ export function TrainViews() {
                 </div>
               ))}
             </div>
-            <p className="m-quote m-quote--faint m-mt-10">Easy days stayed easy. That is what let the total climb.</p>
+            {dayOne ? null : (
+              <p className="m-quote m-quote--faint m-mt-10">Easy days stayed easy. That is what let the total climb.</p>
+            )}
           </Section>
 
           <Section eyebrow="CYCLE COMPARISON" eyebrowRight="WEEKS 1–12">
@@ -215,7 +277,7 @@ export function TrainViews() {
           <Section eyebrow="RACES IN THE WINDOW">
             <div className="m-mt-4">
               {RACES.slice(0, 3).map((r) => (
-                <Link key={r.id} href="/mockup/races" className="m-listrow m-listrow--2 is-link">
+                <Link key={r.id} href={dayOne ? "/mockup/races?day=1" : "/mockup/races"} className="m-listrow m-listrow--2 is-link">
                   <div>
                     <span className="m-listrow__label">{r.name}</span>
                     <span className="m-listrow__hint">{r.dateUpper} · {r.distance}{r.anchor ? " · ANCHOR" : ""}</span>
@@ -233,7 +295,16 @@ export function TrainViews() {
   );
 }
 
-function CalendarWeek({ week, note }: { week: (typeof CALENDAR)[number]; note: (typeof CALENDAR_WEEK_NOTES)[number] }) {
+function CalendarWeek({
+  week,
+  note,
+  dayOne = false,
+}: {
+  week: (typeof CALENDAR)[number];
+  note: (typeof CALENDAR_WEEK_NOTES)[number];
+  dayOne?: boolean;
+}) {
+  const logged = week.reduce((sum, c) => sum + (parseFloat(c.miles ?? "") || 0), 0);
   return (
     <>
       {week.map((c, i) => {
@@ -257,7 +328,7 @@ function CalendarWeek({ week, note }: { week: (typeof CALENDAR)[number]; note: (
       })}
       <div className="m-cal__weeknote">
         <span className="m-caption m-caption--faint m-eyebrow--sm">{note.wk} · {note.phase}</span>
-        <span className="m-caption m-caption--faint m-eyebrow--sm">{note.miles} MI</span>
+        <span className="m-caption m-caption--faint m-eyebrow--sm">{dayOne ? logged.toFixed(1) : note.miles} MI</span>
       </div>
     </>
   );

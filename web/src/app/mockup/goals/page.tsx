@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { EditorialRule, Eyebrow, PlateStrip, Section, SheetChrome, Spacer } from "@/components/mockup/primitives";
+import { EditorialRule, EmptyState, Eyebrow, PlateStrip, Section, SheetChrome, Spacer } from "@/components/mockup/primitives";
 import { FITNESS, GOAL, RACES } from "@/components/mockup/data";
 
 /* Goals · what you are chasing, and what you already caught. Kept short. */
@@ -10,8 +10,55 @@ const COMPLETED = [
   { title: "Five runs a week, all of March", sub: "22 of 22. The habit that started this.", date: "MAR 31, 2026" },
 ];
 
-export default function GoalsPage() {
+export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
+  const dayOne = (await searchParams).day === "1";
   const anchor = RACES.find((r) => r.anchor)!;
+
+  if (dayOne) {
+    return (
+      <>
+        <PlateStrip surface="GOALS · ACTIVE" fig="FIG. 31" />
+        <div className="m-body">
+          <SheetChrome back="/mockup/trends?day=1" backLabel="Trends" surface="GOALS" />
+
+          <div className="m-section m-mt-14">
+            <Eyebrow coral>GOALS</Eyebrow>
+            <h1 className="m-display m-display--l">What you&rsquo;re chasing.</h1>
+            <p className="m-body-sm">Kept short. Two is the right number.</p>
+          </div>
+
+          <Spacer h={16} />
+          <EditorialRule />
+
+          <EmptyState
+            eyebrow="ACTIVE"
+            nudge="No goal set yet. Pick a race and your paces, plan and predictions line up behind it."
+            cta={{ label: "Set a goal race", href: "#" }}
+          />
+
+          <div className="m-listrow m-listrow--2 is-link">
+            <div>
+              <span className="m-listrow__label">Your race history is already here</span>
+              <span className="m-listrow__hint">
+                {anchor.name}, {anchor.time}. It anchors the numbers whether or not you set a goal.
+              </span>
+            </div>
+            <Link href="/mockup/races?day=1" className="m-listrow__value is-coral">
+              RACES ↗
+            </Link>
+          </div>
+
+          <Section eyebrow="COMPLETED · 0">
+            <EmptyState nudge="Goals you finish move here." quiet />
+          </Section>
+
+          <Spacer h={24} />
+          <p className="m-body-sm">A goal is direction. A race you ran is what the paces are built on.</p>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <PlateStrip surface="GOALS · ACTIVE" fig="FIG. 31" />

@@ -193,6 +193,7 @@ export const FITNESS_ARC = [
 ];
 export const FITNESS_ARC_LABELS = ["MAR", "MAY", "JUL", "SEP"];
 export const FITNESS_ARC_MARKERS = [
+  { index: 0, label: "HOUSTON MARATHON · THE ANCHOR", short: "HOUSTON" },
   { index: 10, label: "BROOKLYN HALF", short: "HALF" },
   { index: 17, label: "5K", short: "5K" },
 ];
@@ -895,6 +896,15 @@ export const SITE_MAP = [
     ],
   },
   {
+    group: "Day one",
+    items: [
+      { href: "/mockup/log?day=1", label: "Log · day one", hint: "Back-fill landed, nothing said yet. The invitation to talk." },
+      { href: "/mockup/trends?day=1", label: "Trends · day one", hint: "Races anchor a wider range. Niggles and goal still empty." },
+      { href: "/mockup/train?day=1", label: "Train · day one", hint: "No plan. Train still works — that is the point." },
+      { href: "/mockup/coach?day=1", label: "Coach · day one", hint: "Nothing to read yet, and it says so plainly." },
+    ],
+  },
+  {
     group: "Detail surfaces",
     items: [
       { href: "/mockup/workouts/w-0901", label: "Workout detail", hint: "Pace, narrated by the data. Splits, telemetry, the memo." },
@@ -914,3 +924,58 @@ export const SITE_MAP = [
     ],
   },
 ];
+
+/* ════════════════════════════════════════════════════════════════════
+   Day one — the state right after onboarding
+
+   Same athlete, the moment the 2-year HealthKit back-fill lands: the
+   runs and the races are there, but there are no voice memos yet, so
+   no moods, no niggles, no goal, and no plan. This is what most people
+   actually see first, and it is a different product from week 5.
+
+   Two rules from CLAUDE.md drive what these surfaces are allowed to
+   say. `data_depth` is 1 here (runs, but no voice logs and no goal),
+   so the register stays plain: no pull-quotes, no trend prose. And
+   every genuinely empty cell uses the empty-state pattern — state the
+   absence, then say what will fill it — never an em-dash (hard rule #8).
+   ════════════════════════════════════════════════════════════════════ */
+
+export const DAY_ONE = {
+  /** Computed `data_depth`: runs exist, but no voice logs and no goal. */
+  dataDepth: 1,
+  imported: { workouts: 412, months: 24, races: RACES.length },
+};
+
+/** The journal with the qualitative stream removed: what HealthKit knows,
+ *  and nothing she has said. */
+export const DAY_ONE_JOURNAL: MockEntry[] = JOURNAL.map((e) => ({
+  ...e,
+  kind: "none" as const,
+  source: "HealthKit" as const,
+  voiceLength: undefined,
+  mood: undefined,
+  body: undefined,
+  niggles: undefined,
+  life: undefined,
+}));
+
+/** This week with the prescription removed — what she ran, nothing planned.
+ *  `activePlan == nil` is a first-class state, not a failure mode. */
+export const DAY_ONE_WEEK: MockDay[] = THIS_WEEK.map((d) => ({
+  ...d,
+  plannedMiles: 0,
+  structure: "",
+  intent: "",
+  state: d.actualMiles ? "done" : ("future" as DayState),
+}));
+
+/** Fewer signals, so the range widens and confidence drops. Same math,
+ *  honestly reported (hard rule #7). */
+export const DAY_ONE_FITNESS = {
+  rangeLow: "3:21",
+  rangeHigh: "3:31",
+  confidence: "LOW" as const,
+  basis: "based on your race history alone — no logged effort yet this build",
+};
+
+export const DAY_ONE_VOLUME = { last7: "20.6", fourWeekAvg: "41.2", note: "PARTIAL WEEK" };

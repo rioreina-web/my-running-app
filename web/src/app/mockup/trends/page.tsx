@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { EditorialRule, Eyebrow, PlateStrip, Section, Spacer, StatTile } from "@/components/mockup/primitives";
 import { FitnessArc, VolumeBars } from "@/components/mockup/charts";
+import { TrendsDayOne } from "@/components/mockup/day-one";
 import {
   ACWR,
   FITNESS,
@@ -20,7 +21,8 @@ import {
    the 26-week arc with races plotted as anchors, and the tappable GOAL
    line. Predictions are always range + confidence (hard rule #7). */
 
-export default function TrendsPage() {
+export default async function TrendsPage({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
+  if ((await searchParams).day === "1") return <TrendsDayOne />;
   const active = NIGGLES.filter((n) => n.status === "ACTIVE");
   const anchor = RACES.find((r) => r.anchor)!;
   return (
