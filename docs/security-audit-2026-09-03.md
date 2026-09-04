@@ -35,7 +35,7 @@ What is genuinely open, in order of how much it matters:
 | 5 | `coaching-agent`: pre-auth database write on every request; a body flag skips the daily quota; conversation IDs not bound to the caller. | **Medium** | **Fixed in this PR**; port to prod's newer source — §3.2 |
 | 6 | Vital (Junction) API key and one shared Vital user ID are shipped inside the iOS app bundle. | **High** | Operator action: revoke + proxy through the existing `vital-connect` edge function — §4.4 |
 | 7 | Web: CSP nonce never reached Next.js (policy either blocked hydration or was ignored); `assign-plan` route used the service-role key where the edge function authorizes on the user. | **Medium** | **Fixed in this PR** |
-| 8 | No branch protection on the trunk, no dependency/secret scanning, `next@16.1.6` has middleware-bypass advisories, ML service pins a `PyJWT` with seven advisories. | **Medium** | Partly fixed (Dependabot, CI permissions, ML bumps); rest is GitHub settings — §4.6 |
+| 8 | No branch protection on the trunk, no dependency/secret scanning, `next@16.1.6` has middleware-bypass advisories, ML service pins a `PyJWT` with seven advisories. | **Medium** | **Fixed** for dependencies (Next 16.3.4, Sentry, Sanity, ML pins; 47 advisories → 10, none in served code) plus Dependabot and CI permissions; branch protection and scanning remain GitHub settings — §3.4, §4.6 |
 | 9 | Leaked-password protection off; 6-char passwords with no complexity rule; email send limit of 2/hour. | **Medium** | Supabase dashboard — §4.2 |
 | 10 | Privacy policy and terms have 28 `[TODO]`s; no HealthKit third-party-sharing consent flow; nothing linked from the web. | **Launch blocker (App Store 5.1.3)** | §5 |
 
@@ -119,6 +119,15 @@ security-advisor warnings; the remaining two are dashboard settings (§4.2).
   `signing_keys.json`, `supabase/.branches/`, `supabase/snippets/`.
 - Deleted `supabase/snippets/Untitled query 356.sql` (a dashboard snippet
   with the well-known local demo service key; bypasses the migration ledger).
+
+### Follow-up commits on this branch (after the initial review)
+
+| Commit | Change |
+|---|---|
+| `bd9cbf0`, `5651bf0` | **CI was never actually running.** Two `_shared` modules typed a `setTimeout` handle as `number`, which `deno check` rejects because `npm:@sentry/deno` brings Node typings where it returns `Timeout`. The iOS job could not open the project at all (`Secrets.xcconfig` is gitignored but is the base configuration) and selected Xcode 16.4 for an iOS 26.2 target. All pre-existing on the trunk; this PR was the first to surface them. |
+| `892914f` | **Finished the recovery-score removal.** `d0e5b57` deleted the four implementing source files but left their tests, so `RunningLogTests` had not compiled since. Removed the two orphaned test files and the one orphaned suite. Verified contained by diffing declared types before (1621) and after (1617) the sweep: 16 removed, all still-referenced ones confined to those three files. |
+| `040cf5b` | **Web dependency upgrade** — see §4.3. |
+| `0174de6` | **Web rate limiter fails closed in production** — see §4.3. |
 
 ### Validation
 
@@ -260,12 +269,12 @@ or dashboard; "Follow-up" means a separate change.
 
 | Sev | Finding | Status |
 |---|---|---|
-| High | `next@16.1.6`: three middleware-bypass advisories (the app puts all page auth in middleware), a CSP-nonce XSS, a Server Actions null-origin CSRF. `npm audit --omit=dev`: 1 critical / 21 high / 23 moderate. | Follow-up: `next@16.3.x`, `@sentry/nextjs@10.7x`, `sanity@5.3x`; then `npm audit --audit-level=high` in CI. Dependabot added. |
+| High | `next@16.1.6`: three middleware-bypass advisories (the app puts all page auth in middleware), a CSP-nonce XSS, a Server Actions null-origin CSRF. `npm audit --omit=dev`: 1 critical / 21 high / 23 moderate. | **Fixed** — Next 16.3.4, Sentry 10.73.0, Sanity 5.31.2, plus the non-breaking transitive set. 47 → 10 advisories, 0 critical; all 10 remaining are in the Sanity CLI authoring toolchain, none in the served bundle (clearing them needs a Sanity major). Verified by `next build` + 190 tests. Adding `npm audit --audit-level=high` to CI is still a follow-up. |
 | Med | CSP nonce never delivered to Next. | Fixed |
 | Med | `assign-plan` service-role misuse. | Fixed |
 | Med | Any authenticated user can publish to the public `/blog` (`blog_posts` insert policy allows `status='published'`). DOMPurify blocks XSS; phishing/SEO spam is not blocked. | Follow-up: drop the client insert policy (blog is authored in Sanity Studio) |
 | Med | Coach role is self-service (`coach_profiles` insert from the client). | Product decision: approval flag checked in `current_coach_id()` |
-| Med | Web rate limiter fails **open** when Upstash env is missing (edge limiter fails closed). Vercel `UPSTASH_*` unverified. | Follow-up: throw at import in production |
+| Med | Web rate limiter fails **open** when Upstash env is missing (edge limiter fails closed). Vercel `UPSTASH_*` unverified. | **Fixed** — now mirrors the edge policy: permissive in local dev, fail-closed in production. Pinned in the rate-limit contract test. Verifying the Vercel `UPSTASH_*` variables are actually set remains an operator step (§3.3). |
 | Low | `/api/*` and `/monitoring` redirect logged-out callers to `/login` (HTML) instead of 401; Sentry tunnel is blocked for visitors. | Follow-up |
 | Low | `coach-portal/athletes*` pages `return null` for non-coaches instead of `redirect()`. | Follow-up |
 | Low | Join codes from `Math.random`. | Follow-up: `crypto.getRandomValues` |
@@ -337,7 +346,7 @@ error strings, `max_request_body_size="never"` for Sentry, and note that
 | Phase | Work | Effort | Exit test |
 |---|---|---|---|
 | **0 · This week** | §3.1 reconcile repo ↔ prod; §3.2 delete probes, deploy `get-pace-zones`, port two edits; §3.3 dashboard; §3.4 GitHub. Merge this PR. | 1–2 days | Drift detector green; anon-key IDOR curl returns 401; advisor shows ≤ 2 warnings. |
-| **1 · Next two weeks** | Web: bump Next/Sentry/Sanity, add `npm audit` + `pip-audit` to CI, fail-closed web limiter, blog insert policy, API 401s. Edge: error-body sweep, input caps, `process-check-in` no-auto-apply, Strava `state`. iOS: Vital removal, sign-out wipe, file protection, delete dead callers. | 1 week eng | CI green with audit steps enforced; no `err.message` in any client response. |
+| **1 · Next two weeks** | ~~Bump Next/Sentry/Sanity~~ and ~~fail-closed web limiter~~ landed in this PR. Remaining — Web: add `npm audit` + `pip-audit` to CI, blog insert policy, API 401s. Edge: error-body sweep, input caps, `process-check-in` no-auto-apply, Strava `state`. iOS: Vital removal, sign-out wipe, file protection, delete dead callers. | ~4 days eng | CI green with audit steps enforced; no `err.message` in any client response. |
 | **2 · Before beta invite** | Legal docs finalized and linked; HealthKit-AI consent verified; SMTP + confirmations on prod; privacy manifest final; TestFlight build with account deletion tested end-to-end. | 1 week + lawyer | A stranger can sign up, confirm email, record a memo, delete their account, and nothing of theirs remains in the DB or bucket. |
 | **3 · Steady state** | Branch-per-PR preview environments; `ALTER DEFAULT PRIVILEGES` decision; coach approval flag; SHA-pin Actions; quarterly re-run of the advisor + this checklist. | ongoing | — |
 
