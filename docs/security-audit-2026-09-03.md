@@ -72,17 +72,55 @@ real trunk — see §3.1), not on `main`.
 
 ### Database
 
-`supabase/migrations/20260903120000_revoke_definer_execute_and_pin_search_paths.sql`
-— idempotent; skips objects that don't exist:
+Two migrations, both idempotent and both guarded on object existence, so
+they are safe on a fresh local stack as well as on prod.
 
-- `REVOKE EXECUTE ... FROM anon` on `current_coach_id()`.
+`20260903120000_revoke_definer_execute_and_pin_search_paths.sql`
+
+- `REVOKE EXECUTE ... FROM PUBLIC, anon` on `current_coach_id()`, then
+  re-`GRANT` to `authenticated` and `service_role`.
 - `REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated` on twelve
   `SECURITY DEFINER` trigger functions the advisor flags.
 - Pin `search_path = public, pg_temp` on eighteen functions with a
   role-mutable search path (advisor lint 0011).
 
-Apply with `supabase db push` per hard rule #9. It clears 30 of the 32
-security-advisor warnings; the remaining two are dashboard settings (§4.2).
+`20260904120000_drop_client_blog_insert_and_hide_strava_tokens.sql`
+
+- Drop `"Authenticated users can insert posts"` on `blog_posts`. Its
+  `WITH CHECK` only stopped byline forgery, not `status = 'published'`, so
+  any account from the open signup form could put content on the public
+  marketing site. Nothing in the repo writes `blog_posts` — the only client
+  references are two `SELECT`s on the public blog pages — and authoring
+  happens out-of-band via the service role, which bypasses RLS.
+- Withhold `access_token` / `refresh_token` on `strava_credentials` from
+  the client roles, keeping the six non-secret columns readable. RLS was
+  already owner-only, so this is not a cross-user leak; it stops an athlete
+  fetching their own long-lived Strava refresh token over PostgREST when no
+  client ever needs it. The only readers are two service-role edge
+  functions, which bypass grants entirely.
+
+**Verified by execution, not by inspection.** Both migrations were applied
+twice (proving idempotency) against a real PostgreSQL 16 seeded with a
+Supabase-shaped fixture — the `anon`/`authenticated`/`service_role` roles,
+a coach-scoped table whose RLS policy calls `current_coach_id()`, and the
+real `strava_credentials` column list. That run caught a bug in the first
+migration that inspection had missed: `REVOKE EXECUTE ... FROM anon` alone
+leaves `anon` holding the privilege *through PUBLIC*, so the original
+version changed nothing — which is exactly what the advisor lint reports.
+Fixed before the migration ever reached prod (it is unapplied, so hard rule
+\#5's append-only constraint does not bite).
+
+Post-migration behaviour confirmed at runtime: `anon` calling
+`current_coach_id()` gets *permission denied*; `authenticated` can still
+call it, so coach RLS policies keep working; and an `authenticated` insert
+of a published blog post is refused by row-level security. Revoking EXECUTE
+on the twelve trigger functions was also proven not to stop their triggers
+firing — PostgreSQL checks that privilege at `CREATE TRIGGER` time, not on
+each fire.
+
+Apply with `supabase db push` per hard rule #9. Together they clear 30 of
+the 32 security-advisor warnings; the remaining two are dashboard settings
+(§4.2).
 
 ### Web (`web/`)
 

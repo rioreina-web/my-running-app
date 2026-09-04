@@ -34,12 +34,33 @@ DO $$
 DECLARE
     fn text;
 BEGIN
-    -- current_coach_id(): keep for authenticated (RLS policies call it as the
-    -- policy owner, but the client-side /rpc call is harmless), drop for anon.
+    -- current_coach_id(): drop for anon, keep for authenticated.
+    --
+    -- The revoke must name PUBLIC, not just anon. Postgres grants function
+    -- EXECUTE to PUBLIC by default, so `REVOKE ... FROM anon` leaves anon
+    -- holding the privilege *through PUBLIC* and changes nothing — which is
+    -- what the advisor's "Public Can Execute SECURITY DEFINER Function" lint
+    -- is actually reporting. (Verified by executing this migration against a
+    -- real PostgreSQL 16: the anon-only revoke asserted FAIL.)
+    --
+    -- authenticated and service_role are then re-granted explicitly, because
+    -- revoking PUBLIC would otherwise take the privilege from them too. That
+    -- matters here in a way it does not for the trigger functions below:
+    -- current_coach_id() is called inside the USING clauses of every
+    -- coach-scoped RLS policy, and policy expressions are evaluated as the
+    -- querying role. Without EXECUTE, `authenticated` would get "permission
+    -- denied for function current_coach_id" on every coach query.
     IF to_regprocedure('public.current_coach_id()') IS NOT NULL THEN
-        EXECUTE 'REVOKE EXECUTE ON FUNCTION public.current_coach_id() FROM anon';
+        EXECUTE 'REVOKE EXECUTE ON FUNCTION public.current_coach_id() FROM PUBLIC, anon';
+        EXECUTE 'GRANT EXECUTE ON FUNCTION public.current_coach_id() TO authenticated, service_role';
     END IF;
 
+    -- All twelve below are trigger functions (RETURNS trigger), so they are
+    -- not callable through PostgREST anyway, and revoking EXECUTE does not
+    -- stop their triggers firing: PostgreSQL checks EXECUTE on a trigger
+    -- function at CREATE TRIGGER time, not on each fire. Verified against a
+    -- real PostgreSQL 16 — an INSERT as `authenticated`, with EXECUTE revoked
+    -- from PUBLIC/anon/authenticated, still fired the trigger.
     FOREACH fn IN ARRAY ARRAY[
         'public.enforce_watch_athlete_columns()',
         'public.enqueue_rpe_extraction()',
