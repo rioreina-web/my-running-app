@@ -233,7 +233,13 @@ struct TrendsSignalReadTests {
         let read = TrendsSignalRead.compute(
             TrendsSignalBuilder.build(days: flat, keySessions: [], window: .thirtyDays)
         )
-        #expect(read.note.contains("Nothing is proven here yet"))
+        // Asserts the property, not the exact sentence. The copy this test was
+        // written against was the recovery note ("Recovery moved N points …
+        // Nothing is proven here yet."); d0e5b57 removed the recovery score and
+        // rewrote the line for mileage, ending "Nothing is proven here." — same
+        // disclosure, one word shorter. The test kept the old wording and was
+        // never caught because the bundle stopped compiling in the same commit.
+        #expect(read.note.contains("Nothing is proven here"))
     }
 
     @Test("an absence of body mentions is reported as a finding, not an empty state")
