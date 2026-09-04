@@ -126,7 +126,10 @@ async function attempt(
     // resolves before the timeout, which is a real leak on a long-lived
     // Deno Deploy isolate (found while adding the same pattern in
     // plan-edit-llm.ts and Deno's test sanitizer caught it there).
-    let timer: number | undefined;
+    // ReturnType<typeof setTimeout>, not `number`: _shared/sentry.ts pulls in
+    // npm:@sentry/deno, whose Node typings make setTimeout return `Timeout`
+    // under `deno check` — which is what turned the Edge CI job red.
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new Error("timeout")), opts.timeoutMs ?? 20_000);
     });

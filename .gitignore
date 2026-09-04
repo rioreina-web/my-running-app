@@ -32,3 +32,14 @@ supabase/functions/_tmp_*.ts
 
 # Superseded files staged for deletion — never tracked.
 _to_delete/
+
+# Keys, certs, signing material — never tracked (2026-09-03 audit)
+*.pem
+*.p8
+*.p12
+*.mobileprovision
+*.keystore
+**/signing_keys.json
+supabase/.branches/
+# Dashboard SQL snippets bypass the migration ledger (hard rule #9); keep them local.
+supabase/snippets/

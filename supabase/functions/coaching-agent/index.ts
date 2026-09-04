@@ -557,22 +557,10 @@ Deno.serve(async (req: Request) => {
   }
 
   const startTime = Date.now();
-  // DEBUG: log every entry so we can see if Supabase gateway is blocking requests
-  try {
-    const supa = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-    const hasAuth = !!req.headers.get("Authorization");
-    const authPrefix = (req.headers.get("Authorization") || "").slice(0, 30);
-    await supa.from("debug_coach_log").insert({
-      user_id: "entry-point",
-      request_body: { hasAuth, authPrefix, method: req.method, url: req.url },
-      response_body: null,
-      response_status: 0,
-      ms: 0,
-    });
-  } catch (_) {}
+  // The pre-auth "entry-point" debug insert that used to live here was an
+  // unauthenticated write for every request (anyone with the anon key could
+  // fill debug_coach_log) and copied the first 30 chars of the Authorization
+  // header. Removed 2026-09-03; gateway diagnostics belong in function logs.
 
   try {
     // Clone request so we can read body after auth check
@@ -623,6 +611,24 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // A conversationId names a row this service-role client can read for any
+    // user. Bind it to the caller before anything below reads history into
+    // the prompt or appends to it. 404, not 403 — don't confirm it exists.
+    if (conversationId) {
+      const { data: ownedConv } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("id", conversationId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!ownedConv) {
+        return new Response(
+          JSON.stringify({ error: "Conversation not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ========================================================================
     // LAYER 1: Rate Limiting (skip for proactive check-ins)
     // ========================================================================
@@ -632,7 +638,11 @@ Deno.serve(async (req: Request) => {
     // H1 fix (2026-07-15): shouldEnforceRateLimits replaces isRateLimitEnabled
     // — in production a missing Upstash env no longer bypasses the gate
     // (checkFeatureRateLimit fails closed); local dev without Redis still skips.
-    if (userId && shouldEnforceRateLimits() && !proactive && !UNBOUND_USAGE) {
+    // `proactive` is a body flag. Only a service-role caller (the check-in
+    // cron) earns the quota skip — a user JWT that sends proactive:true is
+    // still metered, otherwise the daily limit is one JSON key away.
+    const proactiveFromService = !!proactive && auth.isServiceRole;
+    if (userId && shouldEnforceRateLimits() && !proactiveFromService && !UNBOUND_USAGE) {
       const { data: tierData } = await supabase
         .from("user_tiers")
         .select("tier")
@@ -762,7 +772,7 @@ Deno.serve(async (req: Request) => {
     // LAYER 3: Check semantic cache
     // ========================================================================
     if (queryEmbedding && isCacheEnabled() && !isEditorial) {
-      const cached = await getCachedResponse(queryEmbedding);
+      const cached = await getCachedResponse(queryEmbedding, userId);
 
       if (cached) {
         await supabase.from("usage_tracking").insert({
@@ -825,7 +835,7 @@ Deno.serve(async (req: Request) => {
         .not("user_id", "is", null)
         .order("target_date", { ascending: true }),
       conversationId
-        ? supabase.from("conversation_messages").select("role, content").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(50)
+        ? supabase.from("conversation_messages").select("role, content").eq("conversation_id", conversationId).eq("user_id", userId).order("created_at", { ascending: false }).limit(50)
         : Promise.resolve({ data: null }),
       queryEmbedding
         ? supabase.rpc("match_coaching_documents", {
@@ -1289,7 +1299,8 @@ Deno.serve(async (req: Request) => {
             await supabase
               .from("conversations")
               .update({ updated_at: new Date().toISOString() })
-              .eq("id", finalConversationId);
+              .eq("id", finalConversationId)
+              .eq("user_id", userId);
           }
           if (finalConversationId) {
             await supabase.from("conversation_messages").insert([
@@ -1628,7 +1639,7 @@ Coach:`;
     const isFallback = actualProvider === "fallback"
       || coachResponse.startsWith("I'm having trouble connecting to my AI backend");
     if (!proactive && !isFallback && queryEmbedding && isCacheEnabled()) {
-      await cacheResponse(queryEmbedding, message, coachResponse, complexity);
+      await cacheResponse(queryEmbedding, message, coachResponse, complexity, userId);
     }
 
     // ========================================================================
@@ -1657,7 +1668,8 @@ Coach:`;
       await supabase
         .from("conversations")
         .update({ updated_at: new Date().toISOString() })
-        .eq("id", convIdForSave);
+        .eq("id", convIdForSave)
+        .eq("user_id", userId);
     }
 
     const messageRows = newMessages.map((msg: any) => ({
@@ -1755,7 +1767,10 @@ Coach:`;
     console.error("Coaching agent error:", error);
     captureException(error, { fn: "coaching-agent" });
     await flushSentry();
-    const errBody = { error: `Internal error: ${error?.message || String(error)}` };
+    // Generic to the client; the message (which can carry Postgres/Gemini
+    // internals) goes to logs + debug_coach_log only.
+    const errBody = { error: "Internal error" };
+    const errDetail = String(error?.message || error);
     try {
       const supa = (globalThis as any).__supa as any;
       if (supa) {
@@ -1764,7 +1779,7 @@ Coach:`;
           request_body: null,
           response_body: errBody,
           response_status: 500,
-          error: errBody.error,
+          error: errDetail,
           ms: Date.now() - startTime,
         });
       }

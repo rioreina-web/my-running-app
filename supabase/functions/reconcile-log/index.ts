@@ -24,6 +24,7 @@ import { adjustPaceForHeat } from "../_shared/pace-heat.ts";
 import { fetchWeather } from "../_shared/weather.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { timingSafeEqual } from "../_shared/auth.ts";
 const DEFAULT_TOLERANCE_SECONDS = 5;
 const HARD_STEP_TYPES = new Set(["active"]); // warmup / recovery / cooldown excluded
 
@@ -51,7 +52,7 @@ export async function handleReconcileLog(
   // verification for new-format sb_secret_* keys.
   const expectedSecret = Deno.env.get("RECONCILE_SHARED_SECRET") ?? "";
   const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!expectedSecret || bearer !== expectedSecret) {
+  if (!expectedSecret || !timingSafeEqual(bearer, expectedSecret)) {
     return new Response(JSON.stringify({ error: "Authentication required" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

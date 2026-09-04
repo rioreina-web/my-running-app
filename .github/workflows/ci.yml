@@ -6,6 +6,10 @@ on:
     branches: [main]
 
 # Cancel superseded runs on the same ref to keep CI cost predictable.
+# Least-privilege token: no job here writes to the repo.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -128,8 +132,28 @@ jobs:
         working-directory: RunningLog
     steps:
       - uses: actions/checkout@v4
+      # The project targets iOS 26.2 (IPHONEOS_DEPLOYMENT_TARGET) and the
+      # destination below is an iPhone 17 Pro, so the default Xcode on the
+      # macos-15 image (16.4, iOS 18.5 SDK) cannot build it. The image ships
+      # Xcode 26.2 with the iOS 26.2 simulator runtime; select that.
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      # Secrets.xcconfig is gitignored and referenced as the project's base
+      # configuration, so a fresh checkout cannot even load the project
+      # ("Unable to open base configuration reference file"). Write a
+      # placeholder that satisfies the "Guard: Secrets.xcconfig applied"
+      # build phase (URL must start with http, anon key must not be the
+      # example string). Nothing here is a real credential and the test
+      # bundle never talks to the network.
+      - name: Provide placeholder Secrets.xcconfig
+        run: |
+          cat > Secrets.xcconfig <<'EOF'
+          SUPABASE_URL = https:/$()/ci-placeholder.supabase.co
+          SUPABASE_ANON_KEY = ci-placeholder-anon-key
+          VITAL_API_KEY = ci-placeholder
+          VITAL_USER_ID = ci-placeholder
+          SENTRY_DSN = https:/$()/ci@o0.ingest.us.sentry.io/0
+          EOF
       # Runs the RunningLogTests bundle (501 tests / 84 suites as of
       # 2026-08-24), which also compiles the app target — so this strictly
       # supersedes the old `xcodebuild build` step.
