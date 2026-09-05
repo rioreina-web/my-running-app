@@ -32,6 +32,11 @@ final class HistoryDetailViewModel {
     /// the sheet must dismiss rather than keep editing a deleted id.
     var mergedIntoRunId: UUID?
 
+    /// Why the last link attempt did not connect. Shown on the sheet — the
+    /// failure mode this replaces was a link that silently copied numbers and
+    /// looked like it had worked.
+    var linkError: String?
+
     /// Body-part mentions on THIS entry — the athlete's own words, quoted
     /// verbatim. `HistoryDetailSheet+Editorial`'s `statusRow` comment has
     /// flagged this pill as "deliberately not built yet" pending exactly
@@ -64,12 +69,15 @@ final class HistoryDetailViewModel {
     /// it rather than guessing: guessing wrong in one direction deletes a run.
     var carriesImportedRun: Bool?
 
-    /// Ask the row itself. `TrainingLog` carries neither `external_streams` nor
+    /// Ask the row itself — used by BOTH the delete confirmation and the link
+    /// flow, which need the same fact: is there a run under these words?
+    ///
+    /// `TrainingLog` carries neither `external_streams` nor
     /// `external_id`, and `source` alone is not enough — a memo recorded against
     /// a run can carry any source string. Telemetry is the honest test: if the
     /// row has a stream, there is a run underneath the words.
     @MainActor
-    func loadDeleteScope() async {
+    func loadCarriesImportedRun() async {
         struct ScopeRow: Decodable {
             let has_streams: Bool?
             let external_id: String?
@@ -187,8 +195,23 @@ final class HistoryDetailViewModel {
             || ["voice_log", "manual", "check_in"].contains(currentEntry.source ?? "")
         // (Whether THIS row carries GPS is checked server-side — the endpoint
         // declines with a reason rather than merging a run into a run.)
+        // THE ATHLETE ALREADY TOLD US WHICH RUN. A Strava/Garmin row in the
+        // picker carries its own `training_logs` id — `fetchStravaRunningWorkouts`
+        // maps the row id straight into `RunningWorkout.id` — so re-deriving
+        // "which run was that?" from date + distance throws away the one
+        // unambiguous fact in this flow. When the fuzzy match missed (outside
+        // the time window, or the run's stream had not landed yet) the link
+        // fell through to the copy below and quietly did NOT connect; on a
+        // double day it could resolve to the OTHER run of that day, and this
+        // athlete runs three on a Tuesday.
+        //
+        // So: use the picked id when it really is one of her stream-carrying
+        // rows, and keep the match only for a HealthKit/Vital pick, which has
+        // no row of its own to name.
+        var pickedRunId = await Self.pickedRunLogId(workout)
+        if pickedRunId == nil { pickedRunId = await Self.streamLogId(matching: workout) }
         if isMemoRow,
-           let runId = await Self.streamLogId(matching: workout),
+           let runId = pickedRunId,
            runId != entryId {
             struct Req: Encodable { let memo_log_id: String; let run_log_id: String }
             struct Resp: Decodable { let merged: Bool?; let run_id: String?; let reason: String? }
@@ -206,13 +229,34 @@ final class HistoryDetailViewModel {
                     isLinkingWorkout = false
                     return true
                 }
-                Log.database.info("merge-memo-into-run declined (\(resp.reason ?? "no reason")); copying fields instead")
+                // A decline is an ANSWER, not a hiccup. "That run already has
+                // its own memo" is something she can act on (open that run,
+                // or keep both) and silently copying the run's numbers onto
+                // this row instead is how a link appears to have worked while
+                // leaving two rows behind. Say it and stop.
+                Log.database.info("merge-memo-into-run declined (\(resp.reason ?? "no reason"))")
+                linkError = Self.linkDeclineMessage(resp.reason)
+                isLinkingWorkout = false
+                return false
             } catch {
                 // Network / 5xx: the memo is untouched. Fall back to the copy
                 // rather than failing the athlete's link.
                 Log.database.error("merge-memo-into-run failed: \(error); copying fields instead")
                 ErrorReporter.shared.report(error, context: "merge memo into run")
             }
+        }
+
+        // NEVER COPY ONE RUN'S NUMBERS ONTO ANOTHER RUN. The fallback below
+        // overwrites this row's date, distance and duration with the picked
+        // workout's — correct for a bare memo, corruption for a row that has
+        // its own GPS, where it would silently restate a 7-miler as some other
+        // run. The merge path above is the only legitimate way to join two
+        // rows that both describe real running.
+        if carriesImportedRun == nil { await loadCarriesImportedRun() }
+        if carriesImportedRun == true {
+            linkError = "This entry already has its own GPS run attached, so it can't take another run's distance and time."
+            isLinkingWorkout = false
+            return false
         }
 
         do {
@@ -941,6 +985,48 @@ final class HistoryDetailViewModel {
     /// `docs/specs/runs-and-notes-split.md` on why that matters.
     /// Returns nil when the device workout has no imported row yet, which is a
     /// real state: the run happened but Strava hasn't synced it.
+    /// The `training_logs` row the athlete actually PICKED, when the picked
+    /// item is one of her own stream-carrying rows.
+    ///
+    /// Verified rather than trusted: the id is confirmed to be a row of THIS
+    /// athlete's that carries a GPS stream before it is used as a merge target.
+    /// Nil for a HealthKit/Vital pick (whose id is a device id, not a row id),
+    /// or for a row that has no stream yet — both of which fall back to
+    /// `streamLogId(matching:)`.
+    static func pickedRunLogId(_ workout: RunningWorkout) async -> UUID? {
+        struct Row: Decodable { let id: String }
+        do {
+            let rows: [Row] = try await supabase
+                .from("training_logs")
+                .select("id")
+                .eq("id", value: workout.id.uuidString)
+                .eq("user_id", value: AuthManager.shared.userId)
+                .not("external_streams", operator: .is, value: "null")
+                .limit(1)
+                .execute()
+                .value
+            return rows.first.flatMap { UUID(uuidString: $0.id) }
+        } catch {
+            // Fall back to matching rather than failing the link outright.
+            Log.database.error("picked-run lookup failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Turn the endpoint's machine reason into something worth reading.
+    static func linkDeclineMessage(_ reason: String?) -> String {
+        switch reason {
+        case "run already has its own memo":
+            return "That run already has a memo of its own. Open it to hear that one, or leave this entry where it is."
+        case "memo row already carries GPS":
+            return "This entry is already a run with its own GPS, so it can't be folded into another one."
+        case "target row has no GPS streams":
+            return "That run hasn't finished syncing yet. Try again once its map and splits have landed."
+        default:
+            return "Couldn't connect this entry to that run. Nothing was changed."
+        }
+    }
+
     static func streamLogId(matching workout: RunningWorkout) async -> UUID? {
         let candidates = await fetchStreamCarryingLogsForDate(workout.startDate)
         let t = workout.startDate.timeIntervalSince1970

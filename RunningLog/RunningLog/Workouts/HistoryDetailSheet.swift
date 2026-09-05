@@ -247,11 +247,26 @@ struct HistoryDetailSheet: View {
         } message: {
             Text(deleteWarning)
         }
+        // A link that didn't connect says so. The failure it replaces was
+        // silent: the endpoint declined, the code copied the run's numbers onto
+        // this row instead, and the athlete was left with two rows and the
+        // impression it had worked.
+        .alert(
+            "Couldn't connect",
+            isPresented: Binding(
+                get: { vm.linkError != nil },
+                set: { if !$0 { vm.linkError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { vm.linkError = nil }
+        } message: {
+            Text(vm.linkError ?? "")
+        }
         // Ask what this row actually IS before the dialog can be raised —
-        // telemetry, not `source`, is the test (see `loadDeleteScope`). Until
+        // telemetry, not `source`, is the test (see `loadCarriesImportedRun`). Until
         // it answers, `carriesImportedRun` is nil and the dialog offers the
         // keep-the-run choice, which is the safe way to be wrong.
-        .task { await vm.loadDeleteScope() }
+        .task { await vm.loadCarriesImportedRun() }
         .sheet(isPresented: $showWorkoutPicker) {
             HistoryWorkoutPickerSheet(
                 // Merged, not HealthKit-only: this picker links a memo to a
