@@ -223,7 +223,14 @@ Deno.serve(async (req) => {
 
   let extracted: ExtractResult | null = null;
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    // thinkingBudget 0 (2026-09-04): 2.5-flash thinks by default and this is a
+    // fixed-schema extraction, not a reasoning task — same fix and rationale as
+    // process-training-memo, where it was 10-13s of a 15s call. Cast: SDK has
+    // no thinkingConfig typing.
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+      generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as Record<string, unknown>,
+    });
     const result = await model.generateContent([
       { text: PROMPT.replace("{{TRANSCRIPT}}", transcript.slice(0, 4000)) },
     ]);

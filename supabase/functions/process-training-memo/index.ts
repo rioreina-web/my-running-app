@@ -152,13 +152,14 @@ function parseJsonResponse(responseText: string): Record<string, unknown> {
 }
 
 // Validate and normalize the analysis result
-function validateAnalysis(raw: Record<string, unknown>): AnalysisResult {
-  const transcription = typeof raw.transcription === "string" && raw.transcription.length > 0
-    ? raw.transcription
-    : null;
-
+// `transcription` is the caller's transcript, not a model field: v6 dropped
+// the verbatim echo from the output contract (the model was re-typing its own
+// input — ~0.7s per memo for nothing). Threaded through so the downstream
+// consumers (transcript artifact, memo excerpt) keep reading it off the
+// analysis result.
+function validateAnalysis(raw: Record<string, unknown>, transcription: string): AnalysisResult {
   if (!transcription) {
-    throw new Error("AI response missing transcription field");
+    throw new Error("validateAnalysis called without a transcript");
   }
 
   const mood = typeof raw.mood === "string" && VALID_MOODS.includes(raw.mood as typeof VALID_MOODS[number])
@@ -510,10 +511,29 @@ Deno.serve(async (req) => {
     // Shared by the pre-transcription lookup here and the late collapse after
     // the analysis writes — same window, same distance tolerance, so the two
     // passes can never disagree about what counts as the sibling.
-    const findSiblingGpsRun = async (dist: number): Promise<
+    //
+    // Match hints (2026-09-04): distance when the memo states one (±0.3 mi,
+    // unchanged); otherwise DURATION (±max(12 min, 20%) — athlete-stated times
+    // are rough: "about an hour and a half"); otherwise, if exactly one GPS run
+    // sits in the window, that run. Before this the lookup was gated on a
+    // stated distance alone, so a memo like "10 min warmup then 3×30 min
+    // steady" (2026-09-04, duration 100 vs the run's 115, one run that day)
+    // never even queried for its sibling — zero sibling log lines — and sat
+    // beside its 17.78-mi Strava row as a duplicate. The time-only rule
+    // refuses when the window holds two or more candidates (a double day):
+    // the RPC's own guard stops a run that already carries a memo, but not a
+    // wrong un-memo'd run, and a stranded memo beats a misattached one.
+    const SIBLING_DIST_TOL_MI = 0.3;
+    const siblingDurTolMin = (runMin: number) => Math.max(12, 0.2 * runMin);
+    const findSiblingGpsRun = async (hint: {
+      dist?: number | null;
+      durationMin?: number | null;
+    }): Promise<
       | { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown }
       | null
     > => {
+      const dist = typeof hint.dist === "number" && hint.dist > 0 ? hint.dist : null;
+      const durationMin = typeof hint.durationMin === "number" && hint.durationMin > 0 ? hint.durationMin : null;
       const erDate = er?.workout_date ?? null;
       const erCreated = er?.created_at ?? null;
       // Fall back to created_at when the row is NULL-dated. iOS only stamped
@@ -542,7 +562,7 @@ Deno.serve(async (req) => {
       }
       const { data: siblings } = await supabase
         .from("training_logs")
-        .select("id, workout_date, workout_distance_miles, external_streams, pace_segments, parsed_structure")
+        .select("id, workout_date, workout_distance_miles, workout_duration_minutes, external_streams, pace_segments, parsed_structure")
         .eq("user_id", authUserId)
         .neq("id", record.id)
         .not("external_streams", "is", null)
@@ -554,24 +574,54 @@ Deno.serve(async (req) => {
       // day with one run in it; it matters now that the fallback window can
       // span 21h and therefore two different runs.
       const erWhenT = Date.parse(String(erWhen));
-      const match = (siblings ?? [])
-        .filter((s: { workout_distance_miles?: number | null }) =>
-          typeof s.workout_distance_miles === "number" &&
-          Math.abs((s.workout_distance_miles as number) - dist) <= 0.3
-        )
-        .sort((a: { workout_date?: string | null }, b: { workout_date?: string | null }) =>
+      type Sib = {
+        id?: string;
+        workout_date?: string | null;
+        workout_distance_miles?: number | null;
+        workout_duration_minutes?: number | null;
+        external_streams?: unknown;
+        pace_segments?: unknown;
+        parsed_structure?: unknown;
+      };
+      const pool = (siblings ?? []) as Sib[];
+      let rule: string;
+      let candidates: Sib[];
+      if (dist != null) {
+        rule = `dist=${dist}`;
+        candidates = pool.filter((c) =>
+          typeof c.workout_distance_miles === "number" &&
+          Math.abs(c.workout_distance_miles - dist) <= SIBLING_DIST_TOL_MI
+        );
+      } else if (durationMin != null) {
+        rule = `dur=${durationMin}`;
+        candidates = pool.filter((c) =>
+          typeof c.workout_duration_minutes === "number" &&
+          Math.abs(c.workout_duration_minutes - durationMin) <= siblingDurTolMin(c.workout_duration_minutes)
+        );
+      } else {
+        rule = "time-only";
+        candidates = pool.length === 1 ? pool : [];
+      }
+      const match = candidates
+        .sort((a, b) =>
           Math.abs(Date.parse(String(a.workout_date)) - erWhenT) -
           Math.abs(Date.parse(String(b.workout_date)) - erWhenT)
-        )[0] as
-          | { id?: string; external_streams?: unknown; pace_segments?: unknown; parsed_structure?: unknown }
-          | undefined;
-      return match ?? null;
+        )[0];
+      if (!match) {
+        console.log(
+          `[process-training-memo] sibling lookup (${rule}): ${pool.length} GPS run(s) in window [${lo} .. ${hi}], none matched`,
+        );
+        return null;
+      }
+      console.log(`[process-training-memo] sibling lookup (${rule}): matched run ${match.id} of ${pool.length} in window`);
+      return match;
     };
     {
       const erDist = er?.workout_distance_miles ?? null;
+      const erDur = (er as { workout_duration_minutes?: number | null } | null)?.workout_duration_minutes ?? null;
       const erHasStreams = er?.external_streams != null;
-      if (!erHasStreams && erDist) {
-        const match = await findSiblingGpsRun(erDist as number);
+      if (!erHasStreams && (erDist || erDur)) {
+        const match = await findSiblingGpsRun({ dist: erDist, durationMin: erDur });
         if (match) {
           mergedStreams = match.external_streams ?? null;
           // Keep the id so the late-collapse guard below knows a sibling
@@ -705,7 +755,11 @@ Deno.serve(async (req) => {
       }
       const base64Audio = btoa(binary);
 
-      const geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      // Same thinkingBudget-0 rationale as the analysis call below.
+      const geminiModel = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        generationConfig: { thinkingConfig: { thinkingBudget: 0 } } as Record<string, unknown>,
+      });
       const geminiResult = await geminiModel.generateContent([
         { text: "Transcribe this audio recording verbatim. Return ONLY the transcription text, no formatting." },
         { inlineData: { mimeType, data: base64Audio } },
@@ -755,12 +809,21 @@ Deno.serve(async (req) => {
     // on every retry (the model-nondeterminism class from the shorthand
     // parser postmortem). The OpenAI fallback below runs the same contract
     // (json_object mode, temp 0).
+    // thinkingBudget 0 (2026-09-04): Gemini 2.5 Flash runs dynamic "thinking"
+    // by default, and on this ~5k-token prompt it was spending 10-13s of a
+    // 15.3s analysis call reasoning before emitting a character — the long
+    // pole of the whole memo pipeline (transcription is <2s), and the source
+    // of the memo-to-memo latency variance. Extraction into a fixed schema is
+    // not a reasoning task. Same fix as ask / parse-workout-structure /
+    // parse-training-week; the cast is because @google/generative-ai 0.21.0
+    // has no `thinkingConfig` typing (the runtime accepts it).
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0,
-      },
+        thinkingConfig: { thinkingBudget: 0 },
+      } as Record<string, unknown>,
     });
 
     // Settle the early-reveal write before the final results UPDATE — no
@@ -770,7 +833,7 @@ Deno.serve(async (req) => {
 
     // Structured prompt with distinct fields and few-shot examples —
     // summarize-only (v4): no coach_insight field, no coaching context.
-    const prompt = loadPrompt("process-training-memo.v5", {});
+    const prompt = loadPrompt("process-training-memo.v6", {});
 
     const analysisInput =
       prompt + `\n\n## Audio Transcript (from ${transcriptionProvider})\n"${transcription}"`;
@@ -826,7 +889,7 @@ Deno.serve(async (req) => {
 
     // Parse and validate
     const rawAnalysis = parseJsonResponse(responseText);
-    const analysis = validateAnalysis(rawAnalysis);
+    const analysis = validateAnalysis(rawAnalysis, transcription);
     console.log(`[memo-timing] gemini-analysis=${Date.now() - tTranscribed}ms provider=${analysisProvider}`);
 
     // Save full transcript to storage (audio path only — a typed note has no
@@ -1011,9 +1074,11 @@ Deno.serve(async (req) => {
     if (siblingRunId == null && er?.external_streams == null) {
       const lateDist = (updatePayload.workout_distance_miles as number | undefined) ??
         (er?.workout_distance_miles as number | null) ?? null;
-      const lateSibling = typeof lateDist === "number" && lateDist > 0
-        ? await findSiblingGpsRun(lateDist)
-        : null;
+      const lateDur = (updatePayload.workout_duration_minutes as number | undefined) ??
+        ((er as { workout_duration_minutes?: number | null } | null)?.workout_duration_minutes) ?? null;
+      // Always ask: with neither a distance nor a duration the lookup falls
+      // back to "the only GPS run in the window", and refuses on ambiguity.
+      const lateSibling = await findSiblingGpsRun({ dist: lateDist, durationMin: lateDur });
       if (lateSibling?.id) {
         const { error: collapseErr } = await supabase.rpc("merge_voice_orphan_into_run", {
           p_orphan: record.id,
