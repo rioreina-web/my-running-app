@@ -22,10 +22,17 @@ if ! xcrun devicectl device info details --device "$DEV" 2>&1 | grep -q "tunnelS
   exit 2
 fi
 
-say "Building for device ($(git rev-parse --short HEAD)$(git diff --quiet || echo '+dirty'))"
+# Two identifiers for one phone (2026-09-05): devicectl addresses it by the
+# CoreDevice id ($DEV); xcodebuild only knows the hardware UDID. Handing
+# xcodebuild the CoreDevice id fails with "Unable to find a device matching
+# the provided destination specifier" and a list of simulators — twice today.
+UDID=$(xcrun devicectl device info details --device "$DEV" 2>/dev/null | awk '/udid:/ {print $NF}')
+[ -n "$UDID" ] || { echo "could not read the phone's UDID from devicectl"; exit 1; }
+
+say "Building for device $UDID ($(git rev-parse --short HEAD)$(git diff --quiet || echo '+dirty'))"
 DD=$(mktemp -d)
 xcodebuild -project RunningLog/RunningLog.xcodeproj -scheme RunningLog \
-  -destination "id=$DEV" -derivedDataPath "$DD" -allowProvisioningUpdates build -quiet
+  -destination "platform=iOS,id=$UDID" -derivedDataPath "$DD" -allowProvisioningUpdates build -quiet
 APP=$(find "$DD/Build/Products" -maxdepth 2 -name "RunningLog.app" | head -1)
 [ -n "$APP" ] || { echo "no .app produced"; exit 1; }
 
