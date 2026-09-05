@@ -87,6 +87,15 @@ private struct WildJournalWeek: Identifiable {
     let id: String
     let label: String
     let miles: Double
+    /// Every entry in the week, check-ins included and in date order.
+    ///
+    /// Check-ins were briefly split into a compact strip under the week
+    /// header (2026-08-31) — it read as a different product bolted onto the
+    /// feed: no mood rule, no headline, truncated one-liners in a type
+    /// language nothing else on the page used. `JournalWildRow` already
+    /// renders a check-in correctly (day-of-week headline, "▶ Check-in"
+    /// provenance, mood rule, no distance), so the differentiation belongs
+    /// there and on the detail sheet — not in a second row layout.
     let entries: [TrainingLog]
 }
 
@@ -220,10 +229,14 @@ struct LogWildView: View {
             }
         }
         // The feed is rebuilt on the events that change it, and nowhere else.
-        // `historyLogs.count` catches loads and new entries; the two filters
-        // catch the athlete narrowing the feed; `weeklyMileageRows.count`
-        // catches the mileage fetch landing after the entries do.
-        .onChange(of: viewModel.historyLogs.count) { _, _ in rebuildWeekGroups() }
+        // `historyRevision` — NOT `historyLogs.count` — is the load signal: a
+        // memo finishing processing replaces the array with the same number of
+        // rows, so a count-keyed observer never fired and the cached groups
+        // kept rendering the pending row's "Transcribing" long after the
+        // server said `completed` (2026-09-04). The two filters catch the
+        // athlete narrowing the feed; `weeklyMileageRows.count` catches the
+        // mileage fetch landing after the entries do.
+        .onChange(of: viewModel.historyRevision) { _, _ in rebuildWeekGroups() }
         .onChange(of: viewModel.weeklyMileageRows.count) { _, _ in rebuildWeekGroups() }
         .onChange(of: journalKind) { _, _ in rebuildWeekGroups() }
         .onChange(of: journalSearch) { _, _ in rebuildWeekGroups() }

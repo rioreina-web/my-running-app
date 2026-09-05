@@ -35,6 +35,11 @@ struct HistoryDetailSheet: View {
     /// read. Starts false on every entry: the insight is opt-in per visit.
     @State var showInsight = false
 
+    /// Check-in entries only: the read question this entry answered and the
+    /// training week it sits inside. Loaded in `.task`; nil while loading or
+    /// for workout entries. See `loadCheckInContext` in the editorial extension.
+    @State var checkInContext: CheckInDetailContext?
+
     // Edit mode state
     @State var isEditing = false
     @State var editTitle: String = ""
@@ -210,7 +215,14 @@ struct HistoryDetailSheet: View {
                 onSelect: { workout in
                     Task {
                         let linked = await vm.linkWorkout(workout, workoutNotesText: workoutNotesText)
-                        if linked { onUpdate() }
+                        if linked {
+                            onUpdate()
+                            // The memo was collapsed into the run's row; this
+                            // entry's id is gone. Close rather than keep a
+                            // sheet open on a deleted row — the journal reload
+                            // shows the run carrying the memo.
+                            if vm.mergedIntoRunId != nil { dismiss() }
+                        }
                     }
                 }
             )
@@ -241,6 +253,13 @@ struct HistoryDetailSheet: View {
             WorkoutComparisonSheet(workoutId: workoutDetailId.uuidString.lowercased())
         }
         .task {
+            // A check-in is a reading, not a session — instead of the workout
+            // machinery below, it loads what it's connected TO: the read it
+            // answered and the training week around it.
+            if isCheckInEntry {
+                checkInContext = await Self.loadCheckInContext(for: vm.currentEntry)
+                return
+            }
             await vm.matchVitalWorkout()
             // Poll notes and the coach insight concurrently — each waits up to
             // ~24s for its server-written value, so running them in series would

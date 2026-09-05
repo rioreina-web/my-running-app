@@ -27,6 +27,10 @@ final class HistoryDetailViewModel {
     /// Strava-sourced training_logs rows, so it's always a valid row id (unlike
     /// `matchedVitalWorkout.id`, which for a HealthKit/Vital match is a device id).
     var linkedStreamLogId: UUID?
+    /// Set when "link to a run" collapsed this memo INTO the run's row via
+    /// merge-memo-into-run. This entry's row no longer exists after that —
+    /// the sheet must dismiss rather than keep editing a deleted id.
+    var mergedIntoRunId: UUID?
 
     private let entryId: UUID
 
@@ -61,6 +65,48 @@ final class HistoryDetailViewModel {
     @MainActor
     func linkWorkout(_ workout: RunningWorkout, workoutNotesText: String) async -> Bool {
         isLinkingWorkout = true
+
+        // Collapse, don't copy (2026-09-04). When the picked run already has
+        // its own training_logs row (Strava / Connect import with GPS), copying
+        // its date + distance + duration onto this memo manufactures a second
+        // 17.78-mi row in the journal — which is exactly what happened at 22:36
+        // that day. The run row is canonical; the memo's words, mood, RPE and
+        // structure move onto it and this row is consumed (dedup at upload,
+        // not at read). The server refuses when the run already carries a
+        // different memo, in which case — and when the run has no imported
+        // row yet — we fall through to the old copy so the link still lands.
+        let isMemoRow = currentEntry.audioUrl != nil
+            || ["voice_log", "manual", "check_in"].contains(currentEntry.source ?? "")
+        // (Whether THIS row carries GPS is checked server-side — the endpoint
+        // declines with a reason rather than merging a run into a run.)
+        if isMemoRow,
+           let runId = await Self.streamLogId(matching: workout),
+           runId != entryId {
+            struct Req: Encodable { let memo_log_id: String; let run_log_id: String }
+            struct Resp: Decodable { let merged: Bool?; let run_id: String?; let reason: String? }
+            do {
+                let resp: Resp = try await supabase.functions.invoke(
+                    "merge-memo-into-run",
+                    options: .init(body: Req(
+                        memo_log_id: entryId.uuidString.lowercased(),
+                        run_log_id: runId.uuidString.lowercased()
+                    ))
+                )
+                if resp.merged == true {
+                    mergedIntoRunId = runId
+                    linkedStreamLogId = runId
+                    isLinkingWorkout = false
+                    return true
+                }
+                Log.database.info("merge-memo-into-run declined (\(resp.reason ?? "no reason")); copying fields instead")
+            } catch {
+                // Network / 5xx: the memo is untouched. Fall back to the copy
+                // rather than failing the athlete's link.
+                Log.database.error("merge-memo-into-run failed: \(error); copying fields instead")
+                ErrorReporter.shared.report(error, context: "merge memo into run")
+            }
+        }
+
         do {
             let updateData: [String: AnyJSON] = [
                 "workout_date": .string(ISO8601DateFormatter().string(from: workout.startDate)),

@@ -5,7 +5,9 @@
  *
  * Optimizations over v1:
  *   1. Single Gemini call for transcription + analysis (was 2 serial calls)
- *   2. gemini-2.0-flash-lite for speed (was gemini-2.5-flash)
+ *   2. (RETIRED 2026-08-31) the 2.0-flash "for speed" swap — that model id
+ *      errors now, and it failed every spoken check-in silently. Back on
+ *      gemini-2.5-flash, in step with process-training-memo.
  *   3. Parallelized DB reads (mark-processing + fetch-user + fetch-context)
  *
  * Returns: mood, readiness, recommendation, plan_action, cleaned_notes
@@ -18,6 +20,32 @@ import { loadPrompt } from "../_shared/prompt-library.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
 import { requireServiceRole } from "../_shared/auth.ts";
+
+/** The bearer token off the Authorization header, or "" when absent. */
+function bearerToken(req: Request): string {
+  const h = req.headers.get("Authorization") ?? "";
+  return h.startsWith("Bearer ") ? h.slice("Bearer ".length).trim() : "";
+}
+
+/**
+ * Service-role detection by CLAIM rather than string equality — see the call
+ * site. Mirrors the helper in compute-workout-features / coaching-daily-read.
+ */
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    if (!token) return false;
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const geminiApiKey = Deno.env.get("GEMINI_API_KEY")!;
@@ -33,7 +61,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const authBlocked = requireServiceRole(req, corsHeaders);
+    // Claim-decode first, exact-match second (2026-08-31). The Vault copy of
+    // the service key no longer string-equals this function's env copy, so
+    // `requireServiceRole`'s timing-safe compare 401s every vault-keyed
+    // dispatch — the same drift that hit parse-workout-structure,
+    // compute-workout-features and coaching-daily-read. Safe because
+    // verify_jwt is on: the gateway checked the signature before we see the
+    // token. Without this a spoken check-in cannot be re-processed at all.
+    const authBlocked = isServiceRoleJWT(bearerToken(req))
+      ? null
+      : requireServiceRole(req, corsHeaders);
     if (authBlocked) return authBlocked;
 
     const { record } = await req.json();
@@ -51,7 +88,7 @@ Deno.serve(async (req: Request) => {
         .eq("id", record.id),
       supabase
         .from("training_logs")
-        .select("user_id")
+        .select("user_id, mood")
         .eq("id", record.id)
         .single(),
     ]);
@@ -59,6 +96,12 @@ Deno.serve(async (req: Request) => {
     if (!userId) {
       return errorResponse(`training_log ${record.id} has no user_id`, 404);
     }
+    // A mood already ON the row wins over extraction (2026-08-31). The Read
+    // tab's check-in radio writes the athlete's own rating at insert time —
+    // a tapped "tired" must not be replaced by the model's read of the
+    // recording, and never by the "neutral" fallback below. Same rule as
+    // process-training-memo.
+    const declaredMood = (userRes.data?.mood as string | null) ?? null;
 
     // ── Step 2: Fetch context + download audio in parallel ────────────
     const audioUrl = new URL(record.audio_url);
@@ -171,12 +214,31 @@ Deno.serve(async (req: Request) => {
     const base64Audio = btoa(binary);
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      // gemini-2.5-flash, matching process-training-memo (2026-08-31). The
+      // 2.0-flash id left here by the "speed" optimisation below now errors
+      // outright: on 2026-08-31 a 9:44 voice memo transcribed fine through
+      // the 2.5 memo path while a 10:40 voice CHECK-IN on the same account,
+      // same minute, failed here — so every spoken check-in was landing as
+      // `failed` with no transcript. Keep this id in step with the memo
+      // path; they transcribe the same audio for the same athlete.
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.4,
-        maxOutputTokens: 1500,
+        // 4096, not 1500 (2026-08-31). 2.5-flash spends part of the output
+        // budget on reasoning before it emits a token of answer, so the 1500
+        // that sufficed for 2.0 truncated the JSON mid-string — the retry of
+        // a real check-in died on "Unterminated string at position 214".
+        // Transcript + analysis for a one-minute memo sits far under this.
+        maxOutputTokens: 4096,
         responseMimeType: "application/json",
-      },
+        // thinkingBudget 0 (2026-09-04): the reasoning the note above works
+        // around is dynamic thinking, on by default for 2.5-flash — it cost
+        // process-training-memo 10-13s per memo on the same model, and a
+        // check-in is the same transcribe-and-extract task. Zeroing it is
+        // what makes the 4096 ceiling comfortably sufficient rather than
+        // merely usually sufficient. Cast: SDK has no thinkingConfig typing.
+        thinkingConfig: { thinkingBudget: 0 },
+      } as Record<string, unknown>,
     });
 
     const prompt = loadPrompt("process-check-in.v1", {
@@ -192,12 +254,27 @@ Deno.serve(async (req: Request) => {
     ]);
     const responseText = result.response.text();
 
+    // Three strategies, matching process-training-memo's parseJsonResponse:
+    // direct, fenced-code-block, then first-brace-to-last-brace. A check-in
+    // that parses badly must not cost the athlete their recording.
     let analysis;
     try {
       analysis = JSON.parse(responseText);
     } catch {
       const cleaned = responseText.replace(/```json\s*/g, "").replace(/```/g, "").trim();
-      analysis = JSON.parse(cleaned);
+      try {
+        analysis = JSON.parse(cleaned);
+      } catch {
+        const first = cleaned.indexOf("{");
+        const last = cleaned.lastIndexOf("}");
+        if (first === -1 || last <= first) {
+          throw new Error(
+            `Check-in analysis was not JSON (${responseText.length} chars): ` +
+            responseText.slice(0, 120),
+          );
+        }
+        analysis = JSON.parse(cleaned.substring(first, last + 1));
+      }
     }
 
     const transcription = analysis.transcription || "";
@@ -208,7 +285,8 @@ Deno.serve(async (req: Request) => {
     // ── Step 5: Save results ──────────────────────────────────────────
     const updatePayload: Record<string, unknown> = {
       cleaned_notes: analysis.cleaned_notes || "",
-      mood: analysis.mood || "neutral",
+      // Athlete-declared mood wins over extraction — see declaredMood above.
+      mood: declaredMood ?? (analysis.mood || "neutral"),
       coach_insight: analysis.recommendation || "",
       notes: transcription,
       processing_status: "completed",
@@ -236,7 +314,9 @@ Deno.serve(async (req: Request) => {
     // instead of independently querying the same tables.
     if (userId) {
       await updateAthleteState(supabase, userId, {
-        last_mood: analysis.mood || "neutral",
+        // Same preserve rule as the row update — the state must not carry a
+        // model guess when the athlete rated themselves.
+        last_mood: declaredMood ?? (analysis.mood || "neutral"),
         last_readiness_score: analysis.readiness_score ?? null,
         last_check_in_at: new Date().toISOString(),
         last_updated_by: "process-check-in",
@@ -317,7 +397,8 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({
         success: true,
         id: record.id,
-        mood: analysis.mood,
+        // Mirror what was written — declared mood wins (see above).
+        mood: declaredMood ?? analysis.mood,
         readiness_score: analysis.readiness_score,
         recommendation: analysis.recommendation,
         recommendation_type: analysis.recommendation_type,

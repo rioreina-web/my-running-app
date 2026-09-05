@@ -51,6 +51,13 @@ struct JournalNiggle: Codable, Identifiable {
 @Observable
 final class VoiceLogViewModel {
     var historyLogs: [TrainingLog] = []
+    /// Bumped on every journal load. `historyLogs.count` is NOT a load signal:
+    /// the refresh that matters most — a memo's `processing_status` going
+    /// pending → transcribed → completed — replaces the array with the SAME
+    /// number of rows, so a count-keyed observer never fires and a cached feed
+    /// keeps rendering the stale "Transcribing" row forever (2026-09-04).
+    /// Views that snapshot the feed into `@State` must watch this instead.
+    private(set) var historyRevision = 0
     /// Niggles keyed by training_log_id (uppercased UUID string) — chips per row.
     var niggleByLog: [String: [JournalNiggle]] = [:]
     /// Every run in the recent window (all sources) for the week-header mileage
@@ -310,6 +317,12 @@ final class VoiceLogViewModel {
                         name: "compute-workout-features",
                         body: ["user_id": capturedUserId]
                     )
+                    // TrendsService caches its payload for the rest of the app
+                    // session (`loaded` gate) — without this, a workout logged
+                    // after Trends already loaded once never appears there
+                    // until the athlete force-quits. This is the moment its
+                    // parsed_structure.blocks actually exist to show.
+                    await TrendsService.shared.refresh(force: true)
                 }
             }
         } catch {
@@ -330,7 +343,8 @@ final class VoiceLogViewModel {
     func uploadCheckIn(
         localURL: URL,
         checkInManager: CoachCheckInManager,
-        mood: String? = nil
+        mood: String? = nil,
+        repliedToReadId: UUID? = nil
     ) async {
         isUploading = true
         statusMessage = "Uploading check-in..."
@@ -356,9 +370,17 @@ final class VoiceLogViewModel {
             insertData.userId = userId
             insertData.processingStatus = "pending"
             insertData.source = "check_in"
+            // Stamped for the same reason as the memo paths and
+            // saveMoodCheckIn: the journal orders by workout_date with NULLS
+            // LAST and takes 50, so over a few months of history a NULL-dated
+            // row is not merely sorted low — it is EXCLUDED, and the athlete
+            // sees the check-in they just recorded vanish. This path was the
+            // last one still inserting undated (2026-08-31).
+            insertData.workoutDate = Date()
             // The Read tab's check-in radio — athlete-declared, so it renders
             // in the journal immediately instead of waiting on extraction.
             insertData.mood = mood
+            insertData.repliedToReadId = repliedToReadId
 
             let response: [TrainingLog] = try await supabase
                 .from("training_logs")
@@ -420,7 +442,7 @@ final class VoiceLogViewModel {
     /// `workout_date` is stamped for the same reason as the memo paths: a
     /// NULL-dated row sinks in the journal.
     @MainActor
-    func saveMoodCheckIn(_ mood: String) async -> Bool {
+    func saveMoodCheckIn(_ mood: String, repliedToReadId: UUID? = nil) async -> Bool {
         let userId = AuthManager.shared.userId
         guard !userId.isEmpty else {
             statusMessage = "Not signed in yet — try again in a moment."
@@ -433,6 +455,7 @@ final class VoiceLogViewModel {
         insertData.processingStatus = "not_required"
         insertData.workoutDate = Date()
         insertData.mood = mood
+        insertData.repliedToReadId = repliedToReadId
 
         do {
             try await supabase
@@ -454,7 +477,8 @@ final class VoiceLogViewModel {
     func saveManualNotes(
         _ notes: String,
         selectedWorkout: RunningWorkout?,
-        mood: String? = nil
+        mood: String? = nil,
+        repliedToReadId: UUID? = nil
     ) async -> Bool {
         guard !notes.isEmpty else { return false }
 
@@ -479,6 +503,7 @@ final class VoiceLogViewModel {
             // accompanied the note. Declared mood wins — the extraction
             // UPDATE preserves a non-null row mood (see TrainingLogInsert.mood).
             insertData.mood = mood
+            insertData.repliedToReadId = repliedToReadId
             // "pending" enqueues the note for the same analysis pass as voice
             // memos (mood + niggle/injury-mention extraction) via the outbox
             // trigger. The drain worker + process-training-memo take the text
@@ -552,6 +577,10 @@ final class VoiceLogViewModel {
                         name: "compute-workout-features",
                         body: ["user_id": capturedUserId]
                     )
+                    // See the matching comment in uploadAndAttach — TrendsService
+                    // is a load-once-per-session cache and won't pick up this
+                    // workout's parsed_structure on its own.
+                    await TrendsService.shared.refresh(force: true)
                 }
             }
 
@@ -637,6 +666,7 @@ final class VoiceLogViewModel {
                 }
                 niggleByLog = byLog
                 isLoadingHistory = false
+                historyRevision += 1
             }
         }
 
@@ -682,6 +712,9 @@ final class VoiceLogViewModel {
 
             historyLogs = logs.sorted { $0.displayDate > $1.displayDate }
             loadFailed = false
+            // Publish the rows before the mileage/niggle fetches below, so the
+            // two-stage reveal lands as soon as the transcript does.
+            historyRevision += 1
             // All runs (any source) for the week-header mileage totals.
             weeklyMileageRows = (try? await fetchJournalMileageRows(userId: userId)) ?? []
             // Niggles linked to each log, for the row chips.
@@ -693,6 +726,7 @@ final class VoiceLogViewModel {
             }
             niggleByLog = byLog
             isLoadingHistory = false
+            historyRevision += 1
 
             // Persist the fresh snapshot for the next launch's fast path.
             DiskCache.save(
