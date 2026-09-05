@@ -14,6 +14,26 @@ import SwiftUI
 struct HistoryDetailSheet: View {
     let entry: TrainingLog
     let onUpdate: () -> Void
+
+    /// Delete is one word for three different losses; say which (2026-09-05).
+    /// An imported run row carries GPS the sync will simply bring back in a
+    /// few minutes — but any memo attached to it goes for good. On 2026-09-05
+    /// a 7.02-mi Strava row with a fresh memo on it was deleted under the old
+    /// one-size warning; the run was back by 20:30, the memo was not.
+    private var deleteWarning: String {
+        let e = vm.currentEntry
+        let isImportedRun = e.vitalWorkoutId != nil
+            || ["strava", "auto_sync", "strava_backfill"].contains(e.source ?? "")
+        let hasMemo = e.audioUrl != nil
+        switch (isImportedRun, hasMemo) {
+        case (true, true):
+            return "This run came from your watch and will be re-imported automatically — but the voice memo attached to it will be permanently deleted. To keep the memo, leave this entry alone."
+        case (true, false):
+            return "This run came from your watch. It will be removed now and re-imported on the next sync, so deleting it changes nothing lasting."
+        default:
+            return "This will permanently delete this entry and its recording. This action cannot be undone."
+        }
+    }
     @Environment(\.dismiss) private var dismiss
     @StateObject var healthKitManager = HealthKitManager()
     // `vm` and the @State vars below are intentionally `internal` (no
@@ -203,7 +223,7 @@ struct HistoryDetailSheet: View {
                 }
             }
         } message: {
-            Text("This will permanently delete this training log entry. This action cannot be undone.")
+            Text(deleteWarning)
         }
         .sheet(isPresented: $showWorkoutPicker) {
             HistoryWorkoutPickerSheet(
@@ -257,7 +277,11 @@ struct HistoryDetailSheet: View {
             // machinery below, it loads what it's connected TO: the read it
             // answered and the training week around it.
             if isCheckInEntry {
-                checkInContext = await Self.loadCheckInContext(for: vm.currentEntry)
+                // statusRow (mood + niggles + source) still renders above the
+                // exchange for a check-in, so it needs the same fetch.
+                async let context: Void = { checkInContext = await Self.loadCheckInContext(for: vm.currentEntry) }()
+                async let niggles: Void = vm.fetchNiggles()
+                _ = await (context, niggles)
                 return
             }
             await vm.matchVitalWorkout()
@@ -267,7 +291,8 @@ struct HistoryDetailSheet: View {
             // appears on its own the moment `coach_insight` lands.
             async let notes: Void = fillWorkoutNotesWhenReady()
             async let insight: Void = vm.refreshCoachInsightWhenReady()
-            _ = await (notes, insight)
+            async let niggles: Void = vm.fetchNiggles()
+            _ = await (notes, insight, niggles)
         }
     }
 

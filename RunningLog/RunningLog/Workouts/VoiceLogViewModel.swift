@@ -118,6 +118,21 @@ final class VoiceLogViewModel {
                 .execute()
                 .value
             targetRow = existing?.first
+            // A run that already carries a memo is NOT a target (2026-09-05).
+            // The attach UPDATE below is guarded on `audio_url IS NULL` — the
+            // right idempotency rule for a fresh row, and exactly wrong for a
+            // run that already has a recording: the update matched 0 rows,
+            // the probe saw audio on the row, concluded "a racing drain beat
+            // us", deleted the local file and returned. The athlete's second
+            // memo on the 7.02 vanished with no row, no message, nothing to
+            // retry — and deleting what looked broken was the next thing
+            // they did. A second memo on a run becomes its own voice_log
+            // row, stamped with the run's date/distance/duration so it reads
+            // as linked; the run keeps its first memo.
+            if let t = targetRow, t.audioUrl != nil {
+                Log.app.info("Run \(t.id) already has a memo — saving this one as its own row")
+                targetRow = nil
+            }
         }
 
         if targetRow == nil {
@@ -287,10 +302,18 @@ final class VoiceLogViewModel {
                     .limit(1)
                     .execute()
                     .value) ?? []
-                if let row = probe.first, row.audio_url != nil {
+                // Only "fulfilled" if the audio on the row is the audio WE just
+                // uploaded (a racing drain replayed our own intent). Any other
+                // recording there means this take has nowhere to live yet —
+                // requeue it as a fresh row; never delete the file on the
+                // strength of someone else's audio_url.
+                if let row = probe.first, row.audio_url == audioPublicURL {
                     if let ticket { OfflineQueueManager.shared.completeVoiceAttach(ticket: ticket) }
                     try? FileManager.default.removeItem(at: localURL)
                     return
+                }
+                if let row = probe.first, row.audio_url != nil {
+                    Log.app.error("Voice attach found a DIFFERENT memo on row \(rowId) — saving this take as its own row")
                 }
                 Log.app.error("Voice attach hit a missing row \(rowId) — requeueing as fresh insert")
                 if let ticket { OfflineQueueManager.shared.completeVoiceAttach(ticket: ticket) }
