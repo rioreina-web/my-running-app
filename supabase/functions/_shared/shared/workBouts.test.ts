@@ -8,9 +8,11 @@ import {
   formatWorkBouts,
   type LapInput,
   lapRoles,
+  lapStructureIsDegenerate,
   nearestRepDistance,
   nearestTimeRep,
   RawStreams,
+  singleBoutFromLaps,
   structureHasSpeedContrast,
   WorkBout,
   workBoutCount,
@@ -876,4 +878,102 @@ Deno.test("boutsFromLaps: a merged rep keeps its mile splits", () => {
   // And they reach the parser prompt, not just the object.
   const rendered = formatWorkBouts(boutsFromLaps(laps).segments);
   assert(rendered.includes("splits: 5:49 · 5:32 · 5:30"), rendered);
+});
+
+// ── The fast-start recovery run (2026-09-05) ────────────────────────────────
+//
+// Garmin auto-lapped a 7.02-mile recovery run by kilometre. The first two
+// kilometres came out at 6:31 and 6:46/mi; the other ten ran 7:52-8:21. That is
+// a real velocity split, so laps 1-2 were labelled "rep" and EVERY lap after
+// them "cooldown" — the splits table read `1, cd, cd, cd, cd, cd, cd, cd, cd,
+// cd, cd`, ten cool-down rows for 5.78 miles, and the parser reported a
+// 1.24-mile rep at 6:38 on a run the athlete's own memo called
+// "easy seven-mile recovery run".
+//
+// Real lap rows from training_log 961f2adf, verbatim.
+const SEP5_RECOVERY_LAPS: LapInput[] = [
+  [1000, 243, 4.12], [1000, 252, 3.97], [1000, 304, 3.29], [1000, 306, 3.27],
+  [1000, 300, 3.33], [1000, 311, 3.22], [1000, 293, 3.41], [1000, 293, 3.41],
+  [1000, 273, 3.66], [1000, 287, 3.48], [1000, 294, 3.40], [298.58, 89, 3.35],
+].map(([dist, dur, vel], i) => ({
+  lap_index: i + 1,
+  distance: dist,
+  moving_time: dur,
+  average_speed: vel,
+}));
+
+Deno.test("lapRoles: a quick first km on an easy run is not a rep with a 5.8-mile cooldown", () => {
+  const roles = lapRoles(SEP5_RECOVERY_LAPS);
+  assertEquals(roles.length, 12, "every lap still gets a row");
+  assertEquals(
+    roles.filter((r) => r.role === "cooldown").length,
+    0,
+    "nothing cools down for 45 minutes after 8 minutes of work",
+  );
+  assertEquals(roles.filter((r) => r.role !== "rep").length, 0);
+});
+
+Deno.test("lapStructureIsDegenerate: fires on fast-start-then-settle, not on real sessions", () => {
+  assert(lapStructureIsDegenerate(SEP5_RECOVERY_LAPS));
+
+  // A sandwiched tempo — 2mi warm-up, 2mi at 6:10, 2mi jog — has a warm-up, so
+  // its cool-down is a cool-down. Must survive.
+  const mi = (miles: number, pace: string) => {
+    const [m, sec] = pace.split(":").map(Number);
+    const dist = miles * 1609.344;
+    const dur = Math.round(miles * (m * 60 + sec));
+    return { distance: dist, moving_time: dur, average_speed: dist / dur };
+  };
+  const tempo: LapInput[] = [
+    mi(1, "8:30"), mi(1, "8:20"),
+    mi(1, "6:10"), mi(1, "6:08"),
+    mi(1, "8:40"), mi(1, "8:45"),
+  ].map((l, i) => ({ lap_index: i + 1, ...l }));
+  assert(!lapStructureIsDegenerate(tempo), "a tempo with a warm-up keeps its structure");
+  assertEquals(lapRoles(tempo).filter((r) => r.role === "cooldown").length, 2);
+
+  // Short reps with a long cool-down: work is 4 blocks, so the tail is a tail
+  // however long it runs.
+  const intervals: LapInput[] = [
+    mi(1, "8:30"),
+    mi(0.25, "5:00"), mi(0.25, "9:30"), mi(0.25, "5:02"), mi(0.25, "9:30"),
+    mi(0.25, "5:01"), mi(0.25, "9:30"), mi(0.25, "5:03"),
+    mi(1, "8:40"), mi(1, "8:45"), mi(1, "8:50"),
+  ].map((l, i) => ({ lap_index: i + 1, ...l }));
+  assert(!lapStructureIsDegenerate(intervals), "8x400 with a 3-mile cool-down is a session");
+});
+
+Deno.test("singleBoutFromLaps: an unstructured run keeps every split the watch recorded", () => {
+  const bouts = singleBoutFromLaps(SEP5_RECOVERY_LAPS);
+  assertEquals(bouts.length, 1);
+  const bout = bouts[0];
+  assert(bout.kind === "work");
+
+  // Totals are SUMMED FROM THE LAPS, not re-derived from a stream. The GPS
+  // reconstruction this replaces reported 3271s against the watch's 3245.
+  const watchSecs = SEP5_RECOVERY_LAPS.reduce((a, l) => a + Number(l.moving_time ?? 0), 0);
+  const watchMeters = SEP5_RECOVERY_LAPS.reduce((a, l) => a + Number(l.distance ?? 0), 0);
+  assertEquals(bout.duration_s, watchSecs);
+  assertEquals(bout.distance_m, Math.round(watchMeters));
+
+  // And every recorded split travels with it — including the 0.19mi closing
+  // lap, which is running she did even though it is too short to shape a rep.
+  assertEquals(bout.splits?.length, 12);
+  // Each split's pace is its own distance over its own time — the same
+  // arithmetic running_workout_laps stores, so the block and the lap table
+  // cannot print a different number for the same lap.
+  assertEquals(bout.splits?.[0].avg_pace_per_mile, "6:31");
+  assertEquals(bout.splits?.[5].avg_pace_per_mile, "8:21");
+  assertEquals(bout.splits?.[8].avg_pace_per_mile, "7:19");
+  assertEquals(bout.splits?.[11].distance_m, 299);
+  assertEquals(
+    bout.splits?.reduce((a, sp) => a + sp.duration_s, 0),
+    watchSecs,
+    "the splits account for the whole run",
+  );
+});
+
+Deno.test("singleBoutFromLaps: no laps, no invented bout", () => {
+  assertEquals(singleBoutFromLaps([]).length, 0);
+  assertEquals(singleBoutFromLaps([{ lap_index: 1, distance: 0, moving_time: 0 }]).length, 0);
 });

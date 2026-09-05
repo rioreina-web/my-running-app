@@ -659,12 +659,21 @@ struct LapSplitsList: View {
 
     var body: some View {
         let ordered = laps.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
-        // 1-based work-rep number per row (recoveries get no number).
+        // 1-based work-rep number per row; a non-work row is named by its role.
+        // A run of easy laps is ONE block, so only the first row of it carries
+        // the name — repeating it turned a 5.8-mile cool-down into ten rows
+        // that each said "cd", which reads as ten cool-downs (2026-09-05).
         var workNo = 0
-        let rows: [(lap: WorkoutLapRow, num: Int?)] = ordered.map { lap in
-            if lap.is_rest == true { return (lap, nil) }
-            workNo += 1
-            return (lap, workNo)
+        var prevRestRole: String? = nil
+        let rows: [(lap: WorkoutLapRow, label: String)] = ordered.map { lap in
+            guard lap.is_rest == true else {
+                workNo += 1
+                prevRestRole = nil
+                return (lap, "\(workNo)")
+            }
+            let role = restLabel(lap)
+            defer { prevRestRole = role }
+            return (lap, role == prevRestRole ? "" : role)
         }
         return VStack(spacing: 0) {
             HStack(spacing: 7) {
@@ -684,11 +693,13 @@ struct LapSplitsList: View {
                 let lap = row.lap
                 let isRest = lap.is_rest == true
                 let rawPace = lap.avg_pace_sec_per_mile ?? 0
-                // Adjusted only when the toggle is on, the lap is work, the
-                // row actually stores an adjustment, and it moves the
-                // displayed pace by at least a second.
+                // Adjusted only when the toggle is on, the athlete was actually
+                // running through it (`restForHeat` — the watch's flag, not the
+                // parser's "rec" label), the row stores an adjustment, and it
+                // moves the displayed pace by at least a second.
                 let storedAdj = lap.heat_adjusted_pace_sec_per_mile ?? 0
-                let adjPace: Double? = (heatOn && !isRest && rawPace > 0 && storedAdj > 0
+                let paidHeat = lap.restForHeat != true
+                let adjPace: Double? = (heatOn && paidHeat && rawPace > 0 && storedAdj > 0
                                         && abs(storedAdj - rawPace) >= 1) ? storedAdj : nil
                 let paceSec = adjPace ?? rawPace
                 let dot = paceSec > 0
@@ -702,7 +713,7 @@ struct LapSplitsList: View {
                     // vocabulary: warm-up miles are "wu", the cool-down "cd",
                     // and only a genuine between-reps recovery is "rec". A
                     // 6:51 warm-up mile labelled "rec" read as nonsense.
-                    Text(row.num.map { "\($0)" } ?? restLabel(lap))
+                    Text(row.label)
                         .font(.dripBody(14))
                         .foregroundStyle(isRest ? Color.drip.textSecondary : Color.drip.textPrimary)
                         .frame(minWidth: 26, alignment: .leading)

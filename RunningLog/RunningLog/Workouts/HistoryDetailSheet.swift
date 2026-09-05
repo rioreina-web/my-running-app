@@ -20,19 +20,22 @@ struct HistoryDetailSheet: View {
     /// few minutes — but any memo attached to it goes for good. On 2026-09-05
     /// a 7.02-mi Strava row with a fresh memo on it was deleted under the old
     /// one-size warning; the run was back by 20:30, the memo was not.
+    /// DELETING A LOG DOES NOT DELETE MILEAGE — and the copy no longer has to
+    /// carry that on its own, because the action doesn't either. The earlier
+    /// version of this warning told the athlete her run "will be re-imported on
+    /// the next sync, so deleting it changes nothing lasting". Both halves were
+    /// optimistic: the re-import is a Strava-only accident of the 15-minute
+    /// cron, it does not bring the memo back, and for the nine minutes it took,
+    /// a 65.3-mile week read 58.3. A warning is not a substitute for not doing
+    /// the destructive thing.
     private var deleteWarning: String {
-        let e = vm.currentEntry
-        let isImportedRun = e.vitalWorkoutId != nil
-            || ["strava", "auto_sync", "strava_backfill"].contains(e.source ?? "")
-        let hasMemo = e.audioUrl != nil
-        switch (isImportedRun, hasMemo) {
-        case (true, true):
-            return "This run came from your watch and will be re-imported automatically — but the voice memo attached to it will be permanently deleted. To keep the memo, leave this entry alone."
-        case (true, false):
-            return "This run came from your watch. It will be removed now and re-imported on the next sync, so deleting it changes nothing lasting."
-        default:
-            return "This will permanently delete this entry and its recording. This action cannot be undone."
+        guard vm.carriesImportedRun != false else {
+            return "This removes the entry and its recording for good. Nothing else is affected."
         }
+        let miles = vm.currentEntry.workoutDistanceMiles.map { String(format: "%.2f mi", $0) }
+        let run = miles ?? "the run"
+        return "This entry sits on the \(run) your watch recorded. "
+            + "Deleting the entry removes what you wrote and said. The \(run) stays in your week."
     }
     @Environment(\.dismiss) private var dismiss
     @StateObject var healthKitManager = HealthKitManager()
@@ -211,20 +214,44 @@ struct HistoryDetailSheet: View {
         .onAppear {
             loadWorkouts()
         }
-        .alert("Delete Log?", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                Task {
-                    let deleted = await vm.deleteEntry()
-                    if deleted {
-                        onUpdate()
-                        dismiss()
+        // Two outcomes, two buttons, each naming what it keeps. A single
+        // "Delete" meant different things depending on whether a memo had been
+        // merged onto the run's row — data the athlete cannot see from here —
+        // and on 2026-09-05 it took a 7.02-mile run out of a 65-mile week.
+        // The non-destructive outcome is the default; the run only goes when
+        // she asks for the run to go.
+        .confirmationDialog(
+            "Delete this entry?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            if vm.carriesImportedRun == false {
+                Button("Delete", role: .destructive) {
+                    Task {
+                        if await vm.deleteEntry() { onUpdate(); dismiss() }
+                    }
+                }
+            } else {
+                Button("Delete entry, keep the run") {
+                    Task {
+                        if await vm.deleteLogLayer() { onUpdate(); dismiss() }
+                    }
+                }
+                Button("Delete the run too", role: .destructive) {
+                    Task {
+                        if await vm.deleteEntry() { onUpdate(); dismiss() }
                     }
                 }
             }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text(deleteWarning)
         }
+        // Ask what this row actually IS before the dialog can be raised —
+        // telemetry, not `source`, is the test (see `loadDeleteScope`). Until
+        // it answers, `carriesImportedRun` is nil and the dialog offers the
+        // keep-the-run choice, which is the safe way to be wrong.
+        .task { await vm.loadDeleteScope() }
         .sheet(isPresented: $showWorkoutPicker) {
             HistoryWorkoutPickerSheet(
                 // Merged, not HealthKit-only: this picker links a memo to a

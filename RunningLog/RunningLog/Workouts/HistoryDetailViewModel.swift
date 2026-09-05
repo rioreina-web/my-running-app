@@ -32,6 +32,14 @@ final class HistoryDetailViewModel {
     /// the sheet must dismiss rather than keep editing a deleted id.
     var mergedIntoRunId: UUID?
 
+    /// Body-part mentions on THIS entry — the athlete's own words, quoted
+    /// verbatim. `HistoryDetailSheet+Editorial`'s `statusRow` comment has
+    /// flagged this pill as "deliberately not built yet" pending exactly
+    /// this: reading `body_mentions` was a data change, not a typographic
+    /// one. `JournalLogRow` already reads the same table per-user and
+    /// buckets by log id; this is the one-entry version of that query.
+    var niggles: [JournalNiggle] = []
+
     private let entryId: UUID
 
     init(entry: TrainingLog) {
@@ -42,6 +50,106 @@ final class HistoryDetailViewModel {
 
     // MARK: - Delete
 
+    /// Does this row also carry an IMPORTED RUN — GPS streams, laps, the miles?
+    ///
+    /// DELETING A LOG MUST NOT DELETE MILEAGE. Since the 2026-09-04 merge, a
+    /// voice memo is collapsed INTO the run's row rather than living beside it
+    /// (`merge_voice_orphan_into_run`), so on a run you have talked about, the
+    /// log and the run are ONE ROW. `DELETE FROM training_logs` then takes the
+    /// distance, the duration, the streams and all 12 laps out with the words —
+    /// which is exactly what happened to a 7.02-mile recovery run on
+    /// 2026-09-05, dropping that week from 65.3 to 58.3 miles.
+    ///
+    /// Nil until `loadDeleteScope()` has answered. The confirmation waits for
+    /// it rather than guessing: guessing wrong in one direction deletes a run.
+    var carriesImportedRun: Bool?
+
+    /// Ask the row itself. `TrainingLog` carries neither `external_streams` nor
+    /// `external_id`, and `source` alone is not enough — a memo recorded against
+    /// a run can carry any source string. Telemetry is the honest test: if the
+    /// row has a stream, there is a run underneath the words.
+    @MainActor
+    func loadDeleteScope() async {
+        struct ScopeRow: Decodable {
+            let has_streams: Bool?
+            let external_id: String?
+            let vital_workout_id: String?
+            let workout_distance_miles: Double?
+        }
+        do {
+            let rows: [ScopeRow] = try await supabase
+                .from("training_logs")
+                .select("has_streams:external_streams.is.not.null, external_id, vital_workout_id, workout_distance_miles")
+                .eq("id", value: entryId.uuidString)
+                .limit(1)
+                .execute()
+                .value
+            guard let r = rows.first else { carriesImportedRun = false; return }
+            carriesImportedRun = (r.has_streams ?? false)
+                || r.external_id != nil
+                || r.vital_workout_id != nil
+        } catch {
+            // Unknown is not "no". Failing safe here means offering the
+            // keep-the-run choice, never silently destroying telemetry.
+            Log.database.error("delete-scope probe failed: \(error.localizedDescription)")
+            carriesImportedRun = true
+        }
+    }
+
+    /// Remove the athlete's own entry and LEAVE THE RUN. Everything cleared
+    /// here is something she said or set; everything untouched is something the
+    /// watch measured.
+    ///
+    /// `workout_type` is deliberately NOT cleared — it is on the authority
+    /// ladder (`set_workout_type`), never written directly from a client.
+    /// `notes` is deliberately NOT cleared either: on an imported row that is
+    /// the provider's own summary of the run, not her words.
+    ///
+    /// Nulling `cleaned_notes` / `workout_notes` re-fires the structure-parse
+    /// trigger (it is scoped `UPDATE OF workout_notes, cleaned_notes, notes,
+    /// external_streams`), so the stored structure stops quoting a memo that
+    /// no longer exists without anything here having to ask for that.
+    @MainActor
+    func deleteLogLayer() async -> Bool {
+        isDeleting = true
+        let cleared: [String: AnyJSON] = [
+            "audio_url": .null,
+            "transcript_url": .null,
+            "cleaned_notes": .null,
+            "workout_notes": .null,
+            "mood": .null,
+            "extracted_data": .null,
+            "felt_rpe": .null,
+            "planned_rpe": .null,
+            "rpe_pull_quote": .null,
+            "rpe_tags": .null,
+            "rpe_extracted_at": .null,
+            "rpe_source": .null,
+            "felt_stress": .null,
+            "coach_insight": .null,
+            "coach_insight_status": .null,
+            "title": .null,
+            "replied_to_read_id": .null,
+        ]
+        do {
+            try await supabase
+                .from("training_logs")
+                .update(cleared)
+                .eq("id", value: entryId.uuidString)
+                .execute()
+            isDeleting = false
+            return true
+        } catch {
+            Log.database.error("Failed to clear log layer: \(error)")
+            ErrorReporter.shared.report(error, context: "delete log entry (keep run)")
+            isDeleting = false
+            return false
+        }
+    }
+
+    /// Delete the WHOLE row — the run included. Only correct for a row with no
+    /// imported telemetry, or when the athlete has explicitly asked for the run
+    /// to go too. See `carriesImportedRun`.
     @MainActor
     func deleteEntry() async -> Bool {
         isDeleting = true
@@ -630,6 +738,26 @@ final class HistoryDetailViewModel {
         } catch {
             Log.database.error("latestWorkoutNotes failed: \(error)")
             return nil
+        }
+    }
+
+    // MARK: - Niggles
+
+    /// Body-part mentions linked to this entry, for the status row's chips.
+    /// Text/uuid columns only, so it decodes cleanly via `.value` — same
+    /// contract as `VoiceLogViewModel.fetchNiggles`, scoped to one row
+    /// instead of a whole user's feed.
+    @MainActor
+    func fetchNiggles() async {
+        do {
+            niggles = try await supabase
+                .from("body_mentions")
+                .select("id, training_log_id, body_area, side, verbatim_quote")
+                .eq("training_log_id", value: entryId.uuidString)
+                .execute()
+                .value
+        } catch {
+            Log.database.error("fetchNiggles for \(self.entryId) failed: \(error)")
         }
     }
 

@@ -35,11 +35,16 @@ struct EditableBlock: Identifiable, Equatable {
     var hr: Int?
 
     enum Role: String, CaseIterable {
-        case warmup, work_rep, recovery, cooldown
+        // `steady` is the run that held one effort throughout — the parser's
+        // honest answer when a run has no session in it. Without it here, an
+        // easy run opened in this sheet as a "Work rep", which is the same
+        // invention the parser stopped making.
+        case warmup, work_rep, steady, recovery, cooldown
         var label: String {
             switch self {
             case .warmup:   return "Warm-up"
             case .work_rep: return "Work rep"
+            case .steady:   return "Steady"
             case .recovery: return "Recovery"
             case .cooldown: return "Cool-down"
             }
@@ -48,6 +53,7 @@ struct EditableBlock: Identifiable, Equatable {
             switch self {
             case .warmup:   return "WARM"
             case .work_rep: return "WORK"
+            case .steady:   return "RUN"
             case .recovery: return "REST"
             case .cooldown: return "COOL"
             }
