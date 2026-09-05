@@ -157,6 +157,10 @@ struct LogWildView: View {
 
     // Linked run
     @State private var selectedWorkout: RunningWorkout?
+    /// The athlete tapped "None". Without this there was no way to opt out of
+    /// linking once any run existed: the None chip set `selectedWorkout` to
+    /// nil, and nil is exactly what the display resolves back to "latest".
+    @State private var linkNone = false
     @State private var showWorkoutPicker = false
 
     // Typed note. The composer is a sheet now, so the text, the focus and
@@ -434,7 +438,7 @@ struct LogWildView: View {
                 showWorkoutPicker = true
             } label: {
                 HStack(alignment: .center, spacing: 12) {
-                    if let w = latestWorkout {
+                    if let w = effectiveWorkout {
                         HStack(alignment: .firstTextBaseline, spacing: 5) {
                             Text(String(format: "%.2f", w.distanceMiles))
                                 .font(.wildData(32, semibold: true))
@@ -457,7 +461,7 @@ struct LogWildView: View {
                                 .monospacedDigit()
                         }
                         Spacer(minLength: 8)
-                        if selectedWorkout == nil || selectedWorkout?.id == w.id {
+                        if selectedWorkout == nil, w.id == healthKitManager.recentRuns.first?.id {
                             WildLabel("Latest", size: 9, tracking: 0.14, color: Color.wild.paper)
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 4)
@@ -485,9 +489,18 @@ struct LogWildView: View {
         .overlay(alignment: .bottom) { WildRule() }
     }
 
-    /// The run the block is showing: whatever is selected, else the newest.
-    private var latestWorkout: RunningWorkout? {
-        selectedWorkout ?? healthKitManager.recentRuns.first
+    /// The run a memo or note will attach to: an explicit pick, else the
+    /// newest, else nothing if the athlete chose None.
+    ///
+    /// This is the ONLY resolver (2026-09-05). The hero and the chip rail used
+    /// to display `selectedWorkout ?? recentRuns.first` while the confirm
+    /// sheet and the save read bare `selectedWorkout` — so the screen said
+    /// "Linked to 7.02 mi · Today morning" with that chip lit, and the memo
+    /// saved unlinked. Whatever this returns is what the screen shows and what
+    /// gets written; the two can no longer disagree.
+    private var effectiveWorkout: RunningWorkout? {
+        if linkNone { return nil }
+        return selectedWorkout ?? healthKitManager.recentRuns.first
     }
 
     private var railOfRecentRuns: some View {
@@ -497,14 +510,16 @@ struct LogWildView: View {
                     railChip(
                         date: shortDate(w.startDate),
                         value: String(format: "%.2f", w.distanceMiles),
-                        active: latestWorkout?.id == w.id
+                        active: effectiveWorkout?.id == w.id
                     ) {
                         selectedWorkout = w
+                        linkNone = false
                     }
                 }
-                railChip(date: "None", value: nil, active: selectedWorkout == nil
-                         && healthKitManager.recentRuns.isEmpty) {
+                railChip(date: "None", value: nil,
+                         active: linkNone || (selectedWorkout == nil && healthKitManager.recentRuns.isEmpty)) {
                     selectedWorkout = nil
+                    linkNone = true
                 }
             }
             .padding(.vertical, 2)
@@ -562,7 +577,8 @@ struct LogWildView: View {
 
             if !recorder.isRecording {
                 Button {
-                    showComposer = true
+                    selectedWorkout = effectiveWorkout
+                showComposer = true
                 } label: {
                     WildLabel("Type a note instead ↗", size: 10, tracking: 0.14)
                         .frame(minHeight: 44)
@@ -596,6 +612,7 @@ struct LogWildView: View {
             Spacer(minLength: 12)
 
             Button {
+                selectedWorkout = effectiveWorkout
                 showComposer = true
             } label: {
                 Text("Write a note.")
@@ -974,6 +991,10 @@ struct LogWildView: View {
             }
             pendingURL = take.url
             pendingDuration = take.duration
+            // The sheet and confirmAndUpload read `selectedWorkout` through a
+            // binding. Resolve the default into it NOW so what they see is
+            // what the screen promised.
+            selectedWorkout = effectiveWorkout
             showConfirmation = true
         } else {
             viewModel.statusMessage = ""
