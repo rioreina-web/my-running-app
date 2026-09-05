@@ -795,7 +795,7 @@ struct LogWildView: View {
 
     @ViewBuilder
     private func entryRow(_ log: TrainingLog) -> some View {
-        if log.isPending || log.isFailed {
+        if log.isPending || log.isFailed || log.isStalled {
             JournalWildProcessingRow(entry: log) {
                 Task {
                     await viewModel.retryProcessing(log: log)
@@ -985,7 +985,19 @@ struct LogWildView: View {
     }
 
     private func confirmAndUpload() {
-        guard let url = pendingURL else { return }
+        // NOT a bare `guard ... else { return }` (2026-09-05). pendingURL is
+        // cleared after every save attempt, success or failure, while this
+        // sheet is interactiveDismissDisabled — so if the sheet is ever shown
+        // with no take behind it, "Save Voice Log" became a button that did
+        // nothing, silently, forever, with Discard the only way out. Say so
+        // and close instead of dead-ending the athlete.
+        guard let url = pendingURL else {
+            showConfirmation = false
+            viewModel.statusMessage = "That recording is no longer available. Tap to record again."
+            recorder.discard()
+            pendingDuration = 0
+            return
+        }
         showConfirmation = false
         Task {
             await viewModel.uploadAudioAndSaveLog(

@@ -686,7 +686,7 @@ struct VoiceLogView: View {
 
     @ViewBuilder
     private func nsJournalEntryRow(_ log: TrainingLog) -> some View {
-        if log.isPending || log.isFailed {
+        if log.isPending || log.isFailed || log.isStalled {
             ProcessingLogCard(log: log) {
                 Task { await viewModel.retryProcessing(log: log) }
             }
@@ -1043,7 +1043,12 @@ struct ProcessingLogCard: View {
                 }
             }
 
-            if log.isPending {
+            // isStalled first: a row past the stall threshold is stuck, not
+            // working, and must offer the retry instead of spinning. See
+            // TrainingLog.isStalled.
+            if log.isFailed || log.isStalled {
+                failedContent
+            } else if log.isPending {
                 HStack(spacing: 6) {
                     ProgressView()
                         .scaleEffect(0.6)
@@ -1052,8 +1057,6 @@ struct ProcessingLogCard: View {
                         .font(.dripCaption(11))
                         .foregroundStyle(Color.drip.coral)
                 }
-            } else if log.isFailed {
-                failedContent
             }
         }
         .padding(14)
@@ -1061,7 +1064,7 @@ struct ProcessingLogCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(log.isFailed ? Color.drip.tired.opacity(0.4) : Color.drip.divider, lineWidth: 1)
+                .stroke(log.isFailed || log.isStalled ? Color.drip.tired.opacity(0.4) : Color.drip.divider, lineWidth: 1)
         )
     }
 

@@ -121,6 +121,12 @@ struct TrainingLog: Codable, Identifiable {
     /// which is otherwise idempotent and would overwrite it on the next dispatch.
     var rpeSource: String? = nil
 
+    /// The Read this entry replies to (Read-tab check-ins; migration
+    /// 20260831170000). The check-in detail sheet uses it to show the
+    /// question this entry answered. Defaulted like `title`/`feltRpe` so
+    /// existing memberwise-init call sites keep compiling.
+    var repliedToReadId: UUID? = nil
+
     enum CodingKeys: String, CodingKey {
         case id
         case createdAt = "created_at"
@@ -146,6 +152,7 @@ struct TrainingLog: Codable, Identifiable {
         case title
         case feltRpe = "felt_rpe"
         case rpeSource = "rpe_source"
+        case repliedToReadId = "replied_to_read_id"
     }
 
     /// Every column this struct decodes — and nothing else. ALWAYS pass this
@@ -161,7 +168,7 @@ struct TrainingLog: Codable, Identifiable {
         processing_error, processing_attempts, transcript_url, coach_insight, \
         workout_notes, workout_pace_per_mile, workout_type, source, \
         vital_workout_id, pace_segments, parsed_structure, title, felt_rpe, \
-        rpe_source
+        rpe_source, replied_to_read_id
         """
 
     /// Trimmed title if the athlete set a non-empty one, else nil. Views use
@@ -214,6 +221,23 @@ struct TrainingLog: Codable, Identifiable {
     /// deliberately treats `transcribed` as displayable.
     var isInFlight: Bool {
         isPending || isTranscribed
+    }
+
+    /// In-flight for longer than any healthy memo takes.
+    ///
+    /// A memo reaches `completed` in ~8-9s (measured 2026-09-05: 2.4s upload +
+    /// 1.8s transcription + ~2s analysis). The client's own watch gives up at
+    /// 60s. Anything still in-flight past this is not "working on it" — it is
+    /// stuck, and the honest thing is to say so and offer the retry, instead of
+    /// spinning forever. That infinite spinner is the single most-reported
+    /// symptom in this app's history and it was never once the truth: the row
+    /// was either already finished on the server (2026-09-04, a cached feed) or
+    /// had never been sent at all (2026-09-05, an unsaved take).
+    ///
+    /// Deliberately generous — 3 minutes, not 60s — so a genuinely slow
+    /// provider day still reads as progress rather than failure.
+    var isStalled: Bool {
+        isInFlight && Date().timeIntervalSince(createdAt) > 180
     }
 
     var isFailed: Bool {
@@ -283,6 +307,7 @@ struct TrainingLog: Codable, Identifiable {
 
     /// Short, human headline for the failed card. No jargon, no error codes.
     var failureHeadline: String {
+        if isStalled && !isFailed { return "Taking longer than usual" }
         switch failureKind {
         case .network:
             return "Couldn't reach the server"
@@ -297,6 +322,7 @@ struct TrainingLog: Codable, Identifiable {
 
     /// One reassuring line: the recording is safe, here's what to do.
     var failureDetail: String {
+        if isStalled && !isFailed { return "The recording is safe. Tap to try processing it again." }
         switch failureKind {
         case .network:
             return "Your recording is saved. Check your connection, then tap to retry."
@@ -327,7 +353,8 @@ struct TrainingLog: Codable, Identifiable {
     /// a memo sat dead for seven hours behind a "Tap to try again" that was
     /// never going to work until billing was topped up (2026-08-13).
     var offersManualRetry: Bool {
-        failureKind != .serviceOutage
+        if isStalled && !isFailed { return true }
+        return failureKind != .serviceOutage
     }
 
     // MARK: - Workout Info
@@ -421,6 +448,11 @@ struct TrainingLogInsert: Codable {
     /// check-ins ship processing_status "not_required" so nothing touches
     /// them at all.
     var mood: String?
+    /// The Read this entry replies to (migration 20260831170000). Stamped by
+    /// every Read-tab check-in path so the reply is DATA — listed under the
+    /// read's own question, and fed to next week's read as "replies to your
+    /// last read". Nil for entries not made from the Read tab.
+    var repliedToReadId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case userId = "user_id"
@@ -437,5 +469,6 @@ struct TrainingLogInsert: Codable {
         case paceSegments = "pace_segments"
         case externalStreams = "external_streams"
         case mood
+        case repliedToReadId = "replied_to_read_id"
     }
 }

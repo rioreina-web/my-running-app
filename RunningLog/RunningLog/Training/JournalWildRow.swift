@@ -159,7 +159,10 @@ struct JournalWildRow: View {
         if let d = entry.formattedWorkoutDistance {
             parts.append("\(d) mi")
         } else if entry.source == "check_in" {
-            parts.append("No run")
+            // The time, not "No run". A check-in is not a run that failed to
+            // happen — it is its own kind of entry, and stating an absence
+            // where every other row states a fact reads as a missing value.
+            parts.append(entry.displayDate.formatted(date: .omitted, time: .shortened))
         }
         return parts.joined(separator: "  ·  ")
     }
@@ -242,9 +245,10 @@ struct JournalWildProcessingRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            if entry.isFailed {
+            if entry.isFailed || entry.isStalled {
                 WildLabel(dateLabel, size: 10)
-                WildLabel("Couldn't transcribe", size: 10, color: Color.wild.redText)
+                WildLabel(entry.isFailed ? "Couldn't transcribe" : "Stuck — not our usual",
+                          size: 10, color: Color.wild.redText)
                 Spacer(minLength: 8)
                 Button(action: retry) {
                     WildLabel("Retry ↗", size: 10, color: Color.wild.ink)
