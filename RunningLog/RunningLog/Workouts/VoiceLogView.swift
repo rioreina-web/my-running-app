@@ -955,17 +955,35 @@ struct VoiceLogView: View {
         isRecording = false
         pendingRecordingDuration = recordingDuration
 
-        guard recordingURL != nil else {
-            viewModel.statusMessage = "Error: No recording found"
+        // Same check as VoiceRecorder.stop() on the wild skin (2026-09-05): the
+        // timer and the URL prove nothing was captured. Under ~3 KB (less than
+        // a second of 24 kbps AAC) there is no recording, whatever the clock
+        // said — say so instead of showing "Voice memo recorded" over a file
+        // that Save will fail to read.
+        let bytes = recordingURL.flatMap {
+            try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int
+        } ?? 0
+        guard let url = recordingURL, bytes >= 3_000 else {
+            if let url = recordingURL { try? FileManager.default.removeItem(at: url) }
+            recordingURL = nil
+            viewModel.statusMessage = "Error: Nothing was recorded — check the microphone and try again."
             return
         }
+        _ = url
 
         // Show confirmation sheet instead of uploading directly
         showConfirmation = true
     }
 
     private func confirmAndUpload() {
-        guard let url = recordingURL else { return }
+        // Not a bare `else { return }` — see LogWildView.confirmAndUpload
+        // (2026-09-05). A sheet with no take behind it must close and say so,
+        // not leave "Save Voice Log" as a button that does nothing.
+        guard let url = recordingURL else {
+            showConfirmation = false
+            viewModel.statusMessage = "That recording is no longer available. Tap to record again."
+            return
+        }
         showConfirmation = false
 
         Task {

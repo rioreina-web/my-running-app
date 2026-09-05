@@ -969,7 +969,7 @@ struct LogWildView: View {
     private func toggleRecording() {
         if recorder.isRecording {
             guard let take = recorder.stop() else {
-                viewModel.statusMessage = "Error: No recording found"
+                viewModel.statusMessage = "Error: Nothing was recorded — check the microphone and try again."
                 return
             }
             pendingURL = take.url

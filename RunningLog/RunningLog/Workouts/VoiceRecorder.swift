@@ -144,6 +144,22 @@ final class VoiceRecorder {
         timer = nil
         isRecording = false
         guard let url else { return nil }
+        // The duration is a Timer and the URL is the INTENDED path — neither
+        // proves audio was captured. A session interrupted mid-take, the mic
+        // claimed by another app, or a simulator with no input all produce a
+        // recorder that "ran" for 0:32 and wrote nothing. Returning that as a
+        // take is how the confirm sheet says "Voice memo recorded", Save
+        // then fails reading the file, and the offline queue retries a file
+        // that never existed. ~3 KB is under one second of 24 kbps AAC plus
+        // the container header; anything smaller is not a recording.
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        guard bytes >= 3_000 else {
+            print("[VoiceRecorder] stop: no usable audio on disk (\(bytes) bytes) — discarding take")
+            try? FileManager.default.removeItem(at: url)
+            self.url = nil
+            duration = 0
+            return nil
+        }
         return (url, duration)
     }
 

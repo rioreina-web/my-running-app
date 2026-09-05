@@ -81,6 +81,9 @@ final class VoiceLogViewModel {
         selectedWorkout: RunningWorkout?,
         checkInManager: CoachCheckInManager
     ) async {
+        // One save at a time. isUploading was set but never checked, so two
+        // confirms in flight could insert two rows for one take.
+        guard !isUploading else { return }
         // Insert-first (2026-08-31, latency Phase 2): the memo lands in the
         // journal BEFORE any audio bytes move. The old order — upload the
         // whole file through upload-voice-memo, then insert — held the UI
@@ -206,11 +209,27 @@ final class VoiceLogViewModel {
         await loadHistory()
 
         // --- Background: move the bytes, attach, process. ---
+        //
+        // Persist the attach intent HERE, synchronously, before the detached
+        // task exists (2026-09-05). It used to be the first line inside
+        // uploadAndAttach — which meant an app kill, or this view model being
+        // torn down (the Log skin toggle swaps the whole view and its @State
+        // VM), in the gap before that task ran left a row at "uploading" with
+        // no audio_url, no intent, and no file reference: nothing on the
+        // server or the client would ever retry it (autoRetryStaleRecords
+        // skips audio-less rows). Now the intent is on disk the moment the
+        // row exists, and the drain finishes the attach no matter what
+        // happens to this process.
         let capturedRowId = row.id
+        let ticket = OfflineQueueManager.shared.enqueueVoiceAttach(
+            audioURL: localURL,
+            recordId: capturedRowId.uuidString
+        )
         Task { [weak self] in
             await self?.uploadAndAttach(
                 localURL: localURL,
                 rowId: capturedRowId,
+                ticket: ticket,
                 selectedWorkoutDate: selectedWorkout?.startDate,
                 checkInManager: checkInManager
             )
@@ -226,20 +245,15 @@ final class VoiceLogViewModel {
     private func uploadAndAttach(
         localURL: URL,
         rowId: UUID,
+        ticket: UUID?,
         selectedWorkoutDate: Date?,
         checkInManager: CoachCheckInManager
     ) async {
-        // Persist the attach intent BEFORE any bytes move (app-death guard,
-        // 2026-08-31). If iOS kills the app mid-upload, no catch block ever
-        // runs — without this, the row would sit at "uploading" forever with
-        // the m4a orphaned on disk. With it, the next drain finds the intent
-        // and finishes the attach. The drain's attach is idempotent (guarded
-        // on audio_url IS NULL), so the intent replaying after our own
-        // success is a harmless no-op — but we clear it on success anyway.
-        let ticket = OfflineQueueManager.shared.enqueueVoiceAttach(
-            audioURL: localURL,
-            recordId: rowId.uuidString
-        )
+        // The attach intent (`ticket`) was persisted by the caller before this
+        // task was created — see uploadAudioAndSaveLog. The drain's attach is
+        // idempotent (guarded on audio_url IS NULL), so the intent replaying
+        // after our own success is a harmless no-op — but we clear it on
+        // success anyway.
         do {
             let audioData = try Data(contentsOf: localURL)
             let audioPublicURL = try await uploadVoiceMemoAudio(audioData)
@@ -902,11 +916,19 @@ final class VoiceLogViewModel {
 
     /// Watch a row's `processing_status` until it reaches a terminal state.
     ///
-    /// Cadence: 1s ticks for the first 15s, then 3s, for up to 60s total. The
-    /// transcript typically lands ~6-9s in and the full analysis ~15-20s in
-    /// (post the 2026-08-04 latency work), so the tight early cadence is what
-    /// makes those transitions feel instant; the 3s tail keeps the slow path
-    /// cheap.
+    /// Cadence: 1s ticks for the first 15s, then 3s, for up to 180s total. The
+    /// transcript lands ~6s in and `completed` ~9s in (2026-09-05, thinking
+    /// budget zeroed), so the tight early cadence is what makes those
+    /// transitions feel instant; the 3s tail keeps the slow path cheap.
+    ///
+    /// Why 180s and not 60s: the direct invoke is not the only writer. When it
+    /// is lost (429, dropped connection, app suspended), the outbox drain
+    /// picks the job up at +90s and finishes ~100-110s after attach. A 60s
+    /// watch quit before that could land, so a drain-recovered memo sat
+    /// "Transcribing" until something else happened to reload the feed — and
+    /// past 3 minutes would now read as stuck while already complete on the
+    /// server. The window must outlast the safety net it depends on; 180s
+    /// matches TrainingLog.isStalled so the two can never disagree.
     ///
     /// Refreshes the journal on EVERY status change — most importantly
     /// pending → `transcribed` (the two-stage reveal: the athlete's own words
@@ -919,7 +941,7 @@ final class VoiceLogViewModel {
     private func watchProcessing(recordId: String) async -> String? {
         var lastStatus = "pending"
         var waited: Double = 0
-        while waited < 60 {
+        while waited < 180 {
             let interval: Double = waited < 15 ? 1 : 3
             try? await Task.sleep(for: .seconds(interval))
             waited += interval
@@ -1071,6 +1093,16 @@ final class VoiceLogViewModel {
         // two-stage reveal wrote the transcript but the worker died before the
         // analysis — is just as stale, and the server-side "already processed"
         // guard is status-gated so retrying it re-runs the analysis correctly.
+        // A stale row with NO audio is a memo whose attach never landed
+        // (status "uploading"). Re-invoking the processor cannot help — there
+        // is nothing on the server to process — but the attach intent is in
+        // the offline queue, so drain it: the drain replays the attach
+        // idempotently and the server pipeline takes over from there.
+        if logs.contains(where: { $0.isInFlight && $0.audioUrl == nil && $0.createdAt < fiveMinutesAgo }) {
+            Log.app.info("Stale audio-less memo row found — draining the offline queue to replay its attach")
+            OfflineQueueManager.shared.drainQueue()
+        }
+
         guard let staleLog = logs.first(where: { log in
             log.isInFlight &&
                 log.audioUrl != nil &&
