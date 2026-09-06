@@ -776,6 +776,11 @@ struct DripSplitRow: View {
     let slowest: Bool
     let maxPaceSec: Int
     let minPaceSec: Int
+    /// Drops the per-split distance caption and the cadence column.
+    /// The simplified workout-detail screen uses this: mile number,
+    /// pace bar, pace, HR — the four things a runner actually reads
+    /// down a splits table. Cadence moved to "at a glance".
+    var compact: Bool = false
 
     private var barFraction: CGFloat {
         guard maxPaceSec > minPaceSec else { return 0.5 }
@@ -797,9 +802,11 @@ struct DripSplitRow: View {
                         .frame(width: geo.size.width * barFraction, height: 4)
                 }
                 .frame(height: 4)
-                Text(String(format: "%.2fmi", distanceMi))
-                    .font(.dripCaption(9)).tracking(1.2)
-                    .foregroundStyle(Color.drip.textTertiary)
+                if !compact {
+                    Text(String(format: "%.2fmi", distanceMi))
+                        .font(.dripCaption(9)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Text(paceText).font(.dripCaption(13)).fontWeight(.semibold).monospacedDigit()
@@ -808,9 +815,11 @@ struct DripSplitRow: View {
             Text(hr.map(String.init) ?? "—").font(.dripCaption(12)).monospacedDigit()
                 .foregroundStyle(Color.drip.textSecondary)
                 .frame(width: 36, alignment: .trailing)
-            Text(cadence.map(String.init) ?? "—").font(.dripCaption(12)).monospacedDigit()
-                .foregroundStyle(Color.drip.textTertiary)
-                .frame(width: 36, alignment: .trailing)
+            if !compact {
+                Text(cadence.map(String.init) ?? "—").font(.dripCaption(12)).monospacedDigit()
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .frame(width: 36, alignment: .trailing)
+            }
         }
         .padding(.vertical, 8)
         .overlay(alignment: .bottom) {
@@ -909,5 +918,162 @@ struct DripHeroStatBlock: View {
         }
         .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
         .padding(.vertical, 14)
+    }
+}
+
+// MARK: - Run shape · pace × HR × elevation in one frame ──────────────
+//
+// Added 2026-09-06 for the workout-detail simplification pass. Replaces
+// three separately-scrolled charts (`DripHRZoneChart` + `DripElevationProfile`,
+// `DripPaceOverTimeChart`, `DripCadenceChart`) with a single frame the
+// reader can take in at a glance:
+//
+//   • elevation — ghost fill behind everything, no axis, shape only
+//   • pace      — ink line, y inverted so faster reads higher
+//   • heart rate— coral line (coral is the heart-rate encoding on this
+//                 screen, matching the coral AVG HR hero cell)
+//
+// Each series is normalised to its own min/max: this chart answers
+// "what shape was the run", not "what were the values" — the values
+// live in the stat strip and the splits table. The originals are kept
+// for the expanded "more detail" drawer and other callers.
+
+struct DripRunShapeChart: View {
+    let paceSamples: [Double]        // seconds per mile
+    let hrSamples: [Double]          // bpm
+    let elevationSamples: [Double]   // metres, relative
+
+    var body: some View {
+        GeometryReader { geo in
+            chartContent(geo: geo)
+        }
+    }
+
+    private func chartContent(geo: GeometryProxy) -> some View {
+        let pad: CGFloat = 6
+        let plotW = max(geo.size.width - pad * 2, 1)
+        let plotH = max(geo.size.height - pad * 2, 1)
+
+        return ZStack {
+            // Elevation — ghost fill, deliberately unlabelled.
+            if elevationSamples.count > 1 {
+                Self.areaPath(elevationSamples, w: plotW, h: plotH, x0: pad, y0: pad, invert: false)
+                    .fill(Color.drip.textPrimary.opacity(0.07))
+            }
+            // Pace — ink, inverted (faster = higher).
+            if paceSamples.count > 1 {
+                Self.linePath(paceSamples, w: plotW, h: plotH, x0: pad, y0: pad, invert: true)
+                    .stroke(Color.drip.textPrimary, lineWidth: 1.4)
+            }
+            // Heart rate — coral.
+            if hrSamples.count > 1 {
+                Self.linePath(hrSamples, w: plotW, h: plotH, x0: pad, y0: pad, invert: false)
+                    .stroke(Color.drip.coral, lineWidth: 1.3)
+            }
+        }
+    }
+
+    /// Normalise `samples` into the plot box and return the polyline.
+    /// `invert` flips the y axis (used for pace, where a lower number is
+    /// a better run and should sit higher on the page).
+    private static func linePath(
+        _ samples: [Double], w: CGFloat, h: CGFloat,
+        x0: CGFloat, y0: CGFloat, invert: Bool
+    ) -> Path {
+        let lo = samples.min() ?? 0
+        let hi = samples.max() ?? 1
+        let span = max(hi - lo, 0.0001)
+        return Path { p in
+            for (i, v) in samples.enumerated() {
+                let t = CGFloat(i) / CGFloat(samples.count - 1)
+                let n = CGFloat((v - lo) / span)
+                let y = invert ? y0 + n * h : y0 + h - n * h
+                let point = CGPoint(x: x0 + t * w, y: y)
+                if i == 0 { p.move(to: point) } else { p.addLine(to: point) }
+            }
+        }
+    }
+
+    /// Same normalisation as `linePath`, closed to the baseline so it can
+    /// be filled.
+    private static func areaPath(
+        _ samples: [Double], w: CGFloat, h: CGFloat,
+        x0: CGFloat, y0: CGFloat, invert: Bool
+    ) -> Path {
+        var p = linePath(samples, w: w, h: h, x0: x0, y0: y0, invert: invert)
+        p.addLine(to: CGPoint(x: x0 + w, y: y0 + h))
+        p.addLine(to: CGPoint(x: x0, y: y0 + h))
+        p.closeSubpath()
+        return p
+    }
+}
+
+// MARK: - Chart legend key ────────────────────────────────────────────
+//
+// One mono line under `DripRunShapeChart` naming the three series. The
+// chart carries no axis labels, so this is what makes it readable.
+
+struct DripChartKey: View {
+    struct Item: Identifiable {
+        let id = UUID()
+        let label: String
+        let color: Color
+        let filled: Bool
+
+        init(_ label: String, color: Color, filled: Bool = false) {
+            self.label = label
+            self.color = color
+            self.filled = filled
+        }
+    }
+
+    let items: [Item]
+    var trailing: String? = nil
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(items) { item in
+                HStack(spacing: 5) {
+                    Rectangle()
+                        .fill(item.color)
+                        .frame(width: 12, height: item.filled ? 6 : 2)
+                    Text(item.label)
+                        .font(.dripCaption(9)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+            }
+            Spacer(minLength: 4)
+            if let trailing {
+                Text(trailing)
+                    .font(.dripCaption(9)).tracking(1.2).monospacedDigit()
+                    .foregroundStyle(Color.drip.textTertiary)
+            }
+        }
+    }
+}
+
+// MARK: - Key/value row ───────────────────────────────────────────────
+//
+// Mono label left, mono value right, hairline underneath. Used by the
+// "at a glance" block in the expanded workout-detail drawer, where a
+// number on its own says everything a whole chart used to.
+
+struct DripKeyValueRow: View {
+    let label: String
+    let value: String
+    var coral: Bool = false
+
+    var body: some View {
+        HStack {
+            DripEyebrow(text: label)
+            Spacer(minLength: 12)
+            Text(value)
+                .font(.dripCaption(12)).monospacedDigit()
+                .foregroundStyle(coral ? Color.drip.coral : Color.drip.textPrimary)
+        }
+        .padding(.vertical, 11)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.drip.divider).frame(height: 1)
+        }
     }
 }

@@ -2,25 +2,51 @@
 //  WorkoutAnalystView.swift
 //  RunningLog
 //
-//  Direction B · "Analyst" — Swift port of the chart-dense workout
-//  detail screen. Renders 12 distinct charts in editorial chrome:
+//  The workout detail screen — what you get when you open a run.
 //
-//    1. Hero stat row             (distance · time · avg HR)
-//    2. HR + Elevation stacked    (DripHRZoneChart + DripElevationProfile)
-//    3. Pace over time            (DripPaceOverTimeChart, neg-split shading)
-//    4. Cadence                   (DripCadenceChart)
-//    5. Time in HR zone histogram (DripTimeInZoneRow × 5)
-//    6. Efficiency · HR × Pace    (DripHRPaceScatter)
-//    7. Aerobic decoupling        (DripHRDriftChart)
-//    8. HR recovery 90s           (DripHRRecoveryArc)
-//    9. Mile-by-mile sparklines   (DripMileSparklines)
-//   10. Splits table              (DripSplitRow × N)
-//   11. This-run vs 4w avg        (DripComparisonRow × 4)
-//   12. Route                     (existing map snapshot, wrapped)
+//  Simplified 2026-09-06. The previous version stacked twelve charts of
+//  equal visual weight, ~2,500pt of scroll, with no answer at the top.
+//  This version answers first and buries the analysis:
+//
+//    DEFAULT (about one and a half screens)
+//      · heading + 4-cell stat strip   — distance · time · pace · avg HR
+//      · one plain-language read       — what the run was, in numbers
+//      · SHAPE OF THE RUN              — pace × HR × elevation, ONE chart
+//      · EFFORT                        — a single stacked zone bar
+//      · SPLITS                        — mile · pace · HR
+//
+//    MORE DETAIL (collapsed; everything the old screen showed)
+//      · AT A GLANCE   — cadence, elevation gain, decoupling, efficiency
+//      · CADENCE       — DripCadenceChart
+//      · EFFICIENCY    — DripHRPaceScatter
+//      · DECOUPLING    — DripHRDriftChart
+//      · HR RECOVERY   — DripHRRecoveryArc
+//      · VS 4 WEEKS    — DripComparisonRow
+//      · ROUTE
+//
+//  Six of the old blocks moved into the drawer unchanged. Four were
+//  folded into something smaller that says the same thing:
+//
+//    · HR + elevation, pace-over-time  →  one DripRunShapeChart
+//    · time-in-HR-zone (5 rows)        →  one DripZoneBar + a sentence
+//    · mile-by-mile sparklines         →  dropped; the splits table
+//                                         already said it
+//
+//  No primitive was deleted. `DripHRZoneChart`, `DripElevationProfile`,
+//  `DripPaceOverTimeChart`, `DripTimeInZoneRow` and `DripMileSparklines`
+//  are now unreferenced but stay in `DripWorkoutPrimitives.swift` —
+//  removing them is a separate call, and a future full-analysis surface
+//  is the obvious home for them.
+//
+//  The plain-language read is composed in Swift from the numbers on
+//  screen (`runReadLine`) — no LLM, so no eval-harness gate. It states
+//  what happened and never what to do about it, per
+//  `docs/coaching/principles.md`.
 //
 //  Depends on:
 //    • DripWorkoutPrimitives.swift  (this folder)
-//    • DripEditorialPrimitives.swift (DripPlateStrip, DripHairline, DripEyebrow)
+//    • DripEditorialPrimitives.swift (DripPlateStrip, DripHairline,
+//      DripEyebrow, DripZone, DripZoneBar)
 //    • Existing tokens (Color.drip.*, .dripCaption(n), .dripDisplay(n))
 //    • Existing models (RunningWorkout, MileSplit)
 //
@@ -62,6 +88,11 @@ struct WorkoutAnalystView: View {
     /// Drives the no-stream notice at the top of the screen.
     @State private var streamLoaded = false
 
+    /// Collapsed by default. The analytical charts are real work for a
+    /// reader, and most opens of this screen are "how did that run go",
+    /// not "walk me through my aerobic decoupling."
+    @State private var showMoreDetail = false
+
     // ── Recent baseline (for comparison block) ──────────────────────
     // Each field is optional — present only when we have real data to
     // compare against. Distance + pace come from `RunningWorkout` history
@@ -78,104 +109,14 @@ struct WorkoutAnalystView: View {
             Color.drip.background.ignoresSafeArea()
             ScrollView {
                 VStack(spacing: 0) {
-                    // ─ 0 · Plate strip + heading ─────────────────────
-                    DripPlateStrip(
-                        leadingBottom: "WORKOUT · ANALYSIS",
-                        trailingTop: shortDate,
-                        trailingBottom: dayAndTime
-                    )
-
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("\(dayOfWeek) · \(workoutLabel)")
-                            .font(.dripDisplay(26))
-                            .foregroundStyle(Color.drip.textPrimary)
-                        Spacer()
-                        Text("\(workout.sourceApp.uppercased()) · \(timeShort)")
-                            .font(.dripCaption(9)).tracking(1.2)
-                            .foregroundStyle(Color.drip.textTertiary)
-                    }
-                    .padding(.horizontal, 24).padding(.top, 16)
-
-                    // ─ No-stream notice (only when stream is empty) ──
-                    if !streamLoaded {
-                        noStreamNotice
-                    }
-
-                    // ─ 1 · Hero row 3-up ─────────────────────────────
+                    header
                     heroRow
-
-                    // ─ 2 · HR + 3 · Pace + 4 · Cadence ───────────────
-                    chartBlock(
-                        eyebrow: "HEART RATE · ELEVATION",
-                        rightText: "00:00 → \(timeString)"
-                    ) {
-                        DripHRZoneChart(samples: hrSamples, zones: zones).frame(height: 150)
-                        if !elevationSamples.isEmpty {
-                            DripElevationProfile(samples: elevationSamples).frame(height: 36)
-                        }
-                        timeAxis
-                    }
-
-                    chartBlock(
-                        eyebrow: "PACE · SMOOTHED 30S",
-                        rightText: "AVG \(paceString) /MI"
-                    ) {
-                        DripPaceOverTimeChart(samples: paceSamples, showSplit: true)
-                            .frame(height: 120)
-                    }
-
-                    chartBlock(
-                        eyebrow: "CADENCE · SPM",
-                        rightText: "AVG \(avgCadence)"
-                    ) {
-                        DripCadenceChart(samples: cadenceSamples).frame(height: 56)
-                    }
-
-                    // ─ 5 · Time in HR zone ───────────────────────────
-                    timeInZoneBlock
-
-                    // ─ 6 · Efficiency scatter ────────────────────────
-                    chartBlock(
-                        eyebrow: "EFFICIENCY · HR × PACE",
-                        rightText: "30s WINDOWS"
-                    ) {
-                        Text("— each dot is a 30s window; coral line is the fit. —")
-                            .font(.dripBody(12).italic())
-                            .foregroundStyle(Color.drip.textTertiary)
-                        DripHRPaceScatter(hrSamples: hrSamples, paceSamples: paceSamples)
-                            .frame(height: 180)
-                    }
-
-                    // ─ 7 · Aerobic decoupling ────────────────────────
-                    chartBlock(eyebrow: "AEROBIC DECOUPLING", rightText: "1st vs 2nd HALF") {
-                        DripHRDriftChart(hrSamples: hrSamples, paceSamples: paceSamples)
-                    }
-
-                    // ─ 8 · HR recovery ───────────────────────────────
-                    chartBlock(eyebrow: "HR RECOVERY · 90S", rightText: nil) {
-                        DripHRRecoveryArc(samples: recoverySamples).frame(height: 110)
-                    }
-
-                    // ─ 9 · Mile-by-mile sparklines ───────────────────
-                    chartBlock(eyebrow: "MILE BY MILE · HR + PACE", rightText: "\(splits.count) SPLITS") {
-                        DripMileSparklines(
-                            hrSamples: hrSamples,
-                            splits: mileSparklineSplits
-                        )
-                    }
-
-                    // ─ 10 · Splits table ─────────────────────────────
-                    splitsTableBlock
-
-                    // ─ 11 · Comparison vs 4w avg ─────────────────────
-                    chartBlock(eyebrow: "THIS RUN · vs 4-WEEK AVG", rightText: nil) {
-                        VStack(spacing: 0) { comparisonRows }
-                    }
-
-                    // ─ 12 · Route ────────────────────────────────────
-                    routeBlock
-
-                    Spacer().frame(height: 32)
+                    runReadBlock
+                    shapeBlock
+                    effortBlock
+                    splitsBlock
+                    moreDetailDrawer
+                    Spacer().frame(height: 40)
                 }
             }
         }
@@ -186,59 +127,351 @@ struct WorkoutAnalystView: View {
         }
     }
 
-    /// Quiet italic-serif notice between the title and the hero row when
-    /// no stream bundle exists for this workout. Stream loading happens
-    /// automatically in `.task` on appear — there's no user action to
-    /// take, so this is purely informational.
-    @ViewBuilder
-    private var noStreamNotice: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("——")
-                .foregroundStyle(Color.drip.textTertiary)
-            Text("Detailed stream data isn't available for this workout.")
-                .font(.system(size: 13, design: .serif).italic())
-                .foregroundStyle(Color.drip.textSecondary)
-            Spacer(minLength: 0)
+    // ════════════════════════════════════════════════════════════════
+    // MARK: - Default view
+    // ════════════════════════════════════════════════════════════════
+
+    /// Plate strip, day, and one italic line of provenance. The old
+    /// header crammed day, workout label, source, and time onto one row
+    /// at 26pt; this gives the day the display size it deserves and
+    /// demotes the rest to a serif subtitle.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            DripPlateStrip(
+                leadingBottom: "WORKOUT · DETAIL",
+                trailingTop: shortDate,
+                trailingBottom: dayAndTime
+            )
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(dayOfWeek)
+                    .font(.dripDisplay(44))
+                    .foregroundStyle(Color.drip.textPrimary)
+                Text(subtitleLine)
+                    .font(.dripBody(14).italic())
+                    .foregroundStyle(Color.drip.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 26)
+
+            if !streamLoaded {
+                noStreamNotice
+            }
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 14)
     }
 
-    // ════════════════════════════════════════════════════════════════
-    // MARK: - Blocks
-    // ════════════════════════════════════════════════════════════════
-
+    /// Four cells, evenly weighted, hairline top and bottom. Distance,
+    /// time and pace are the three numbers every runner reads first;
+    /// avg HR earns the fourth cell and the screen's coral, which is
+    /// also the colour of the heart-rate line in the shape chart.
     private var heroRow: some View {
         HStack(spacing: 0) {
-            DripHeroStatBlock(label: "DISTANCE",
-                              value: String(format: "%.2f", workout.distanceMiles),
-                              sub: "MILES")
-                .padding(.trailing, 16)
-            Rectangle().fill(Color.drip.divider).frame(width: 1)
-            DripHeroStatBlock(label: "TIME", value: timeString,
-                              sub: "\(paceString) /MI")
-                .padding(.horizontal, 16)
-            Rectangle().fill(Color.drip.divider).frame(width: 1)
-            DripHeroStatBlock(label: "AVG HR", value: "\(avgHR)",
-                              sub: "\(minHR)–\(maxHR) BPM",
-                              coral: true, alignment: .trailing)
-                .padding(.leading, 16)
+            heroCell(String(format: "%.2f", workout.distanceMiles), "MILES")
+            heroDivider
+            heroCell(timeString, "TIME")
+            heroDivider
+            heroCell(paceString, "/MI")
+            if avgHR > 0 {
+                heroDivider
+                heroCell("\(avgHR)", "AVG HR", coral: true)
+            }
         }
-        .padding(.horizontal, 24).padding(.top, 14)
+        .padding(.horizontal, 24)
+        .padding(.top, 22)
         .overlay(alignment: .top) { DripHairline().padding(.horizontal, 24) }
         .overlay(alignment: .bottom) { DripHairline().padding(.horizontal, 24) }
     }
 
+    private func heroCell(_ value: String, _ label: String, coral: Bool = false) -> some View {
+        VStack(spacing: 5) {
+            Text(value)
+                .font(.dripCaption(21)).fontWeight(.semibold).monospacedDigit()
+                .foregroundStyle(coral ? Color.drip.coral : Color.drip.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.5)
+            Text(label)
+                .font(.dripCaption(9)).tracking(1.2)
+                .foregroundStyle(Color.drip.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+    }
+
+    private var heroDivider: some View {
+        Rectangle().fill(Color.drip.divider).frame(width: 1, height: 34)
+    }
+
+    /// The one thing the old screen never had: a sentence telling you
+    /// how the run went, before any chart. Composed from the numbers
+    /// already on screen — observation only, never a recommendation.
     @ViewBuilder
-    private func chartBlock<Content: View>(
+    private var runReadBlock: some View {
+        if let line = runReadLine {
+            Text(line)
+                .font(.dripBody(15).italic())
+                .foregroundStyle(Color.drip.textPrimary)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+        }
+    }
+
+    /// Pace, heart rate and elevation in a single frame. Was three
+    /// separately-scrolled charts plus two axis rows.
+    @ViewBuilder
+    private var shapeBlock: some View {
+        if !paceSamples.isEmpty || !hrSamples.isEmpty {
+            section(eyebrow: "SHAPE OF THE RUN", rightText: "PACE × HR × ELEVATION") {
+                DripRunShapeChart(
+                    paceSamples: paceSamples,
+                    hrSamples: hrSamples,
+                    elevationSamples: elevationSamples
+                )
+                .frame(height: 168)
+
+                DripChartKey(
+                    items: [
+                        .init("PACE", color: Color.drip.textPrimary),
+                        .init("HEART RATE", color: Color.drip.coral),
+                        .init("ELEVATION", color: Color.drip.textPrimary.opacity(0.12), filled: true),
+                    ],
+                    trailing: timeString
+                )
+                .padding(.top, 8)
+            }
+        }
+    }
+
+    /// One stacked bar instead of five histogram rows, plus a sentence
+    /// naming the zone the run actually lived in.
+    @ViewBuilder
+    private var effortBlock: some View {
+        if zoneTotalSeconds > 0 {
+            sectionRule
+            section(eyebrow: "EFFORT", rightText: "\(timeString) TOTAL") {
+                DripZoneBar(zones: effortZones, height: 16)
+                HStack(spacing: 0) {
+                    ForEach(zones) { z in
+                        Text(zoneShare(z) >= 0.11 ? z.id : "")
+                            .font(.dripCaption(9)).tracking(1.2)
+                            .foregroundStyle(Color.drip.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.top, 6)
+
+                if let sentence = effortSentence {
+                    Text(sentence)
+                        .font(.dripBody(13).italic())
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .padding(.top, 10)
+                }
+            }
+        }
+    }
+
+    /// Mile · pace · HR. The distance caption and cadence column moved
+    /// out — cadence is one number in "at a glance", and every full
+    /// split is a mile by definition.
+    @ViewBuilder
+    private var splitsBlock: some View {
+        if !splits.isEmpty {
+            sectionRule
+            section(
+                eyebrow: "SPLITS",
+                rightText: splits.count == 1 ? "1 MILE" : "\(splits.count) MILES"
+            ) {
+                HStack(spacing: 10) {
+                    Text("MI").font(.dripCaption(9)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .frame(width: 20, alignment: .trailing)
+                    Spacer(minLength: 0)
+                    Text("PACE").font(.dripCaption(9)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .frame(width: 50, alignment: .trailing)
+                    Text("HR").font(.dripCaption(9)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .frame(width: 36, alignment: .trailing)
+                }
+                .padding(.bottom, 6)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(Color.drip.divider).frame(height: 1)
+                }
+
+                ForEach(splits) { split in
+                    DripSplitRow(
+                        index: split.mile,
+                        distanceMi: split.isPartial ? split.partialDistance : 1.0,
+                        paceSec: Int(split.paceMinutes * 60),
+                        paceText: split.formattedPace,
+                        hr: split.avgHeartRate,
+                        cadence: split.avgCadence,
+                        fastest: Int(split.paceMinutes * 60) == fastestSplitSec,
+                        slowest: Int(split.paceMinutes * 60) == slowestSplitSec,
+                        maxPaceSec: slowestSplitSec,
+                        minPaceSec: fastestSplitSec,
+                        compact: true
+                    )
+                }
+            }
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // MARK: - More detail (collapsed)
+    // ════════════════════════════════════════════════════════════════
+
+    private var moreDetailDrawer: some View {
+        VStack(spacing: 0) {
+            sectionRule
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.22)) { showMoreDetail.toggle() }
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        DripEyebrow(text: "MORE DETAIL")
+                        Spacer()
+                        Text(showMoreDetail ? "−" : "+")
+                            .font(.dripCaption(15)).fontWeight(.semibold)
+                            .foregroundStyle(Color.drip.coral)
+                    }
+                    if !showMoreDetail {
+                        Text(moreDetailSummary)
+                            .font(.dripBody(13).italic())
+                            .foregroundStyle(Color.drip.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showMoreDetail ? "Hide more detail" : "Show more detail")
+
+            if showMoreDetail {
+                atAGlanceBlock
+                cadenceBlock
+                efficiencyBlock
+                decouplingBlock
+                recoveryBlock
+                comparisonBlock
+                routeBlock
+            }
+        }
+    }
+
+    /// Numbers that used to cost a whole chart each.
+    @ViewBuilder
+    private var atAGlanceBlock: some View {
+        if !glanceRows.isEmpty {
+            section(eyebrow: "AT A GLANCE", rightText: nil) {
+                ForEach(glanceRows) { row in
+                    DripKeyValueRow(label: row.label, value: row.value)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var cadenceBlock: some View {
+        if !cadenceSamples.isEmpty {
+            section(eyebrow: "CADENCE", rightText: "AVG \(avgCadence) SPM") {
+                DripCadenceChart(samples: cadenceSamples).frame(height: 56)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var efficiencyBlock: some View {
+        if !hrSamples.isEmpty, !paceSamples.isEmpty {
+            section(eyebrow: "EFFICIENCY", rightText: "HR × PACE, 30S WINDOWS") {
+                DripHRPaceScatter(hrSamples: hrSamples, paceSamples: paceSamples)
+                    .frame(height: 170)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var decouplingBlock: some View {
+        if !hrSamples.isEmpty, !paceSamples.isEmpty {
+            section(eyebrow: "AEROBIC DECOUPLING", rightText: "1ST VS 2ND HALF") {
+                DripHRDriftChart(hrSamples: hrSamples, paceSamples: paceSamples)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recoveryBlock: some View {
+        if !recoverySamples.isEmpty {
+            section(eyebrow: "HEART-RATE RECOVERY", rightText: "90S AFTER FINISH") {
+                DripHRRecoveryArc(samples: recoverySamples).frame(height: 110)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var comparisonBlock: some View {
+        if hasBaseline {
+            section(eyebrow: "VS YOUR LAST 4 WEEKS", rightText: nil) {
+                VStack(spacing: 0) { comparisonRows }
+            }
+        }
+    }
+
+    private var routeBlock: some View {
+        section(eyebrow: "ROUTE", rightText: nil) {
+            // TODO: drop the existing MKMapView snapshot inside this well,
+            // or wrap whatever map view the production code uses.
+            Rectangle()
+                .fill(Color.drip.paperDeep)
+                .frame(height: 150)
+                .overlay(
+                    Text("ROUTE · \(String(format: "%.1f", workout.distanceMiles)) MI")
+                        .font(.dripCaption(9)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textTertiary)
+                )
+                .overlay(Rectangle().stroke(Color.drip.divider, lineWidth: 1))
+        }
+    }
+
+    /// Quiet italic-serif notice between the title and the hero row when
+    /// no stream bundle exists for this workout. Stream loading happens
+    /// automatically in `.task` on appear — there's no user action to
+    /// take, so this is purely informational.
+    private var noStreamNotice: some View {
+        Text("Detailed stream data isn't available for this run — distance, time and pace only.")
+            .font(.dripBody(13).italic())
+            .foregroundStyle(Color.drip.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 14)
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // MARK: - Section chrome
+    // ════════════════════════════════════════════════════════════════
+
+    /// Eyebrow row + content, on the 24pt editorial margin. Replaces the
+    /// old `chartBlock` — same shape, but sections are now separated by
+    /// explicit rules rather than by nothing at all, which is what made
+    /// twelve of them read as one undifferentiated column.
+    @ViewBuilder
+    private func section<Content: View>(
         eyebrow: String,
         rightText: String?,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
                 DripEyebrow(text: eyebrow)
-                Spacer()
+                Spacer(minLength: 8)
                 if let rightText {
                     Text(rightText)
                         .font(.dripCaption(9)).tracking(1.2)
@@ -248,89 +481,213 @@ struct WorkoutAnalystView: View {
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 24).padding(.top, 22)
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
     }
 
-    private var timeAxis: some View {
-        HStack {
-            ForEach(Array(timeAxisLabels.enumerated()), id: \.offset) { idx, label in
-                Text(label).font(.dripCaption(9)).tracking(1.2).monospacedDigit()
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(maxWidth: .infinity,
-                           alignment: idx == 0 ? .leading
-                                      : idx == timeAxisLabels.count - 1 ? .trailing : .center)
-            }
+    private var sectionRule: some View {
+        DripHairline()
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // MARK: - Copy
+    // ════════════════════════════════════════════════════════════════
+
+    /// "Easy · 6.9 miles · from Strava"
+    private var subtitleLine: String {
+        var parts: [String] = [workoutLabel.capitalized]
+        parts.append(String(format: "%.1f miles", workout.distanceMiles))
+        if !workout.sourceApp.isEmpty {
+            parts.append("from \(workout.sourceApp)")
         }
+        return parts.joined(separator: " · ")
     }
 
-    private var timeInZoneBlock: some View {
-        let total = zoneSeconds.values.reduce(0, +)
-        return chartBlock(eyebrow: "TIME IN HR ZONE", rightText: "OF \(timeString)") {
-            VStack(spacing: 0) {
-                ForEach(zones) { z in
-                    DripTimeInZoneRow(
-                        id: z.id,
-                        seconds: zoneSeconds[z.id] ?? 0,
-                        totalSeconds: total,
-                        isPrimary: z.isPrimary
+    /// One or two sentences describing what happened, built from the
+    /// numbers already on screen. Every clause cites a figure; none of
+    /// them tells the athlete what to do about it — this screen
+    /// observes, the Coach tab advises, and neither prescribes.
+    /// Returns nil when there isn't enough data to say anything true.
+    private var runReadLine: String? {
+        var clauses: [String] = []
+
+        // Split shape — only claimed when the halves actually differ.
+        if splits.count >= 4 {
+            let secs = splits.filter { !$0.isPartial }.map { Int($0.paceMinutes * 60) }
+            if secs.count >= 4 {
+                let half = secs.count / 2
+                let first = secs.prefix(half).reduce(0, +) / half
+                let second = secs.suffix(secs.count - half).reduce(0, +) / (secs.count - half)
+                let delta = abs(first - second)
+                if delta >= 8 {
+                    clauses.append(
+                        second < first
+                            ? "The second half ran \(delta) seconds a mile quicker than the first."
+                            : "The second half ran \(delta) seconds a mile slower than the first."
                     )
+                } else {
+                    clauses.append("Pace held even across both halves, inside \(max(delta, 1)) seconds a mile.")
                 }
             }
         }
+
+        // Fastest mile — the detail runners look for.
+        if splits.count >= 3, let fastest = splits.filter({ !$0.isPartial }).min(by: { $0.paceMinutes < $1.paceMinutes }) {
+            clauses.append("Mile \(fastest.mile) was the quickest at \(fastest.formattedPace).")
+        }
+
+        // Drift — stated as a number, not as a verdict.
+        if let drift = hrDriftPercent {
+            clauses.append(String(format: "Heart rate drifted %+.1f%% between halves.", drift))
+        }
+
+        guard !clauses.isEmpty else { return nil }
+        return clauses.prefix(3).joined(separator: " ")
     }
 
-    private var splitsTableBlock: some View {
-        let paceSecs = splits.filter { !$0.isPartial }.map { Int($0.paceMinutes * 60) }
-        let minP = paceSecs.min() ?? 0, maxP = paceSecs.max() ?? 0
-        return chartBlock(
-            eyebrow: "SPLITS",
-            rightText: "\(formatPace(minP)) → \(formatPace(maxP))"
-        ) {
-            // Header
-            HStack(spacing: 10) {
-                Text("#").font(.dripCaption(9)).tracking(1.2)
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(width: 20, alignment: .trailing)
-                Text("DIST").font(.dripCaption(9)).tracking(1.2)
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("PACE").font(.dripCaption(9)).tracking(1.2)
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(width: 50, alignment: .trailing)
-                Text("HR").font(.dripCaption(9)).tracking(1.2)
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(width: 36, alignment: .trailing)
-                Text("CAD").font(.dripCaption(9)).tracking(1.2)
-                    .foregroundStyle(Color.drip.textTertiary)
-                    .frame(width: 36, alignment: .trailing)
-            }
-            .padding(.vertical, 4)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.drip.divider).frame(height: 1)
-            }
-            VStack(spacing: 0) {
-                ForEach(splits) { split in
-                    let secs = Int(split.paceMinutes * 60)
-                    DripSplitRow(
-                        index: split.mile,
-                        distanceMi: split.isPartial ? split.partialDistance : 1.0,
-                        paceSec: secs,
-                        paceText: split.formattedPace,
-                        hr: split.avgHeartRate,
-                        cadence: split.avgCadence,
-                        fastest: secs == minP,
-                        slowest: secs == maxP,
-                        maxPaceSec: maxP,
-                        minPaceSec: minP
-                    )
-                }
-            }
+    /// "Mostly zone 3 — 23:30, or 46% of the run."
+    private var effortSentence: String? {
+        guard zoneTotalSeconds > 0 else { return nil }
+        let ranked = zones
+            .map { ($0, zoneSeconds[$0.id] ?? 0) }
+            .sorted { $0.1 > $1.1 }
+        guard let top = ranked.first, top.1 > 0 else { return nil }
+        let pct = Int(((top.1 / zoneTotalSeconds) * 100).rounded())
+        let label = top.0.id.replacingOccurrences(of: "Z", with: "zone ")
+        return "Mostly \(label) — \(Self.formatElapsed(Int(top.1))), or \(pct)% of the run."
+    }
+
+    /// Names what's behind the drawer so the affordance isn't a mystery.
+    private var moreDetailSummary: String {
+        var items: [String] = []
+        if !cadenceSamples.isEmpty { items.append("cadence") }
+        if !hrSamples.isEmpty, !paceSamples.isEmpty {
+            items.append(contentsOf: ["efficiency", "decoupling"])
         }
+        if !recoverySamples.isEmpty { items.append("recovery") }
+        if hasBaseline { items.append("four-week comparison") }
+        items.append("route")
+        let joined = items.joined(separator: ", ")
+        return joined.prefix(1).uppercased() + String(joined.dropFirst()) + "."
+    }
+
+    /// One line of "at a glance". A struct rather than a tuple because
+    /// `ForEach` needs a stable identity and Swift has no key paths into
+    /// tuple components.
+    private struct GlanceRow: Identifiable {
+        let id = UUID()
+        let label: String
+        let value: String
+    }
+
+    /// Rows for "at a glance" — each one only appears when it has a real
+    /// number behind it. No em-dash placeholders (hard rule #8).
+    private var glanceRows: [GlanceRow] {
+        var rows: [GlanceRow] = []
+        if avgCadence > 0 { rows.append(GlanceRow(label: "CADENCE", value: "\(avgCadence) spm")) }
+        if let gain = elevationGainFeet, gain > 0 { rows.append(GlanceRow(label: "ELEVATION GAIN", value: "\(gain) ft")) }
+        if avgHR > 0, maxHR > 0 { rows.append(GlanceRow(label: "HEART RATE RANGE", value: "\(minHR)–\(maxHR) bpm")) }
+        if let drift = hrDriftPercent {
+            rows.append(GlanceRow(label: "AEROBIC DECOUPLING", value: String(format: "%+.1f%%", drift)))
+        }
+        if let ef = efficiencyFactor {
+            rows.append(GlanceRow(label: "EFFICIENCY FACTOR", value: String(format: "%.2f", ef)))
+        }
+        if workout.calories > 0 {
+            rows.append(GlanceRow(label: "ENERGY", value: "\(Int(workout.calories)) kcal"))
+        }
+        return rows
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // MARK: - Derived figures
+    // ════════════════════════════════════════════════════════════════
+
+    private var zoneTotalSeconds: Double { zoneSeconds.values.reduce(0, +) }
+
+    private func zoneShare(_ z: DripHRZone) -> Double {
+        guard zoneTotalSeconds > 0 else { return 0 }
+        return (zoneSeconds[z.id] ?? 0) / zoneTotalSeconds
+    }
+
+    /// Zone segments for the stacked effort bar. Coral marks the zone
+    /// the run mostly lived in — one coral per cluster, and it's the
+    /// segment the sentence underneath names.
+    private var effortZones: [DripZone] {
+        let dominant = zones.max(by: { zoneShare($0) < zoneShare($1) })?.id
+        return zones.map { z in
+            let share = zoneShare(z)
+            let color: Color = z.id == dominant
+                ? Color.drip.coral
+                : Color.drip.textSecondary.opacity(0.15 + 0.45 * share)
+            return DripZone(color: color, pct: share * 100)
+        }
+    }
+
+    private var fastestSplitSec: Int {
+        splits.filter { !$0.isPartial }.map { Int($0.paceMinutes * 60) }.min() ?? 0
+    }
+
+    private var slowestSplitSec: Int {
+        splits.filter { !$0.isPartial }.map { Int($0.paceMinutes * 60) }.max() ?? 0
+    }
+
+    private var hasBaseline: Bool {
+        fourWeekAvg.distMi != nil || fourWeekAvg.pace != nil
+            || fourWeekAvg.hr != nil || fourWeekAvg.cadence != nil
+    }
+
+    /// Pa:Hr decoupling — the percentage change in heart-rate-per-pace
+    /// between the two halves of the run. Reported as a number only;
+    /// interpreting it is not this screen's job.
+    private var hrDriftPercent: Double? {
+        guard hrSamples.count >= 4, paceSamples.count >= 4 else { return nil }
+        let hHalf = hrSamples.count / 2
+        let pHalf = paceSamples.count / 2
+        let hr1 = hrSamples.prefix(hHalf).reduce(0, +) / Double(hHalf)
+        let hr2 = hrSamples.suffix(hrSamples.count - hHalf).reduce(0, +) / Double(hrSamples.count - hHalf)
+        let sp1 = paceSamples.prefix(pHalf).reduce(0, +) / Double(pHalf)
+        let sp2 = paceSamples.suffix(paceSamples.count - pHalf).reduce(0, +) / Double(paceSamples.count - pHalf)
+        guard hr1 > 0, hr2 > 0, sp1 > 0, sp2 > 0 else { return nil }
+        // Ratio of HR to speed; speed is the inverse of sec/mi.
+        let r1 = hr1 * sp1
+        let r2 = hr2 * sp2
+        guard r1 > 0 else { return nil }
+        return (r2 - r1) / r1 * 100
+    }
+
+    /// Speed per beat — higher is more aerobically efficient. Scaled to
+    /// land near 1.0 for a typical easy run so it reads like the figure
+    /// runners are used to seeing.
+    private var efficiencyFactor: Double? {
+        guard avgHR > 0 else { return nil }
+        let secPerMile = workout.pacePerMile * 60
+        guard secPerMile > 0 else { return nil }
+        let yardsPerMinute = 1760.0 / (secPerMile / 60.0)
+        return yardsPerMinute / Double(avgHR)
+    }
+
+    /// Total ascent in feet, summed from the positive deltas in the
+    /// elevation stream (metres). Nil when there's no stream.
+    private var elevationGainFeet: Int? {
+        guard elevationSamples.count > 1 else { return nil }
+        var gain = 0.0
+        for i in 1 ..< elevationSamples.count {
+            let d = elevationSamples[i] - elevationSamples[i - 1]
+            if d > 0 { gain += d }
+        }
+        guard gain > 0 else { return nil }
+        return Int((gain * 3.28084).rounded())
     }
 
     /// Per-metric comparison rows. Each only renders if the matching
     /// `fourWeekAvg.*` field is populated; otherwise the row is skipped
     /// silently so we don't compare today's value against a fake baseline.
+    /// The whole block is gated on `hasBaseline`, so the old "no baseline
+    /// data yet" placeholder is gone — an empty section simply doesn't
+    /// render.
     @ViewBuilder
     private var comparisonRows: some View {
         if let then = fourWeekAvg.distMi, then > 0 {
@@ -380,45 +737,6 @@ struct WorkoutAnalystView: View {
                 pctDelta: pct, better: pct >= 0
             )
         }
-
-        // If we couldn't load anything yet, render a quiet placeholder so
-        // the section doesn't look broken — it's just waiting for data.
-        if fourWeekAvg.distMi == nil && fourWeekAvg.pace == nil
-            && fourWeekAvg.hr == nil && fourWeekAvg.cadence == nil {
-            Text("No baseline data yet — needs at least a few logged runs in the last 28 days.")
-                .font(.system(size: 13, design: .serif).italic())
-                .foregroundStyle(Color.drip.textSecondary)
-                .padding(.vertical, 8)
-        }
-    }
-
-    private var routeBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                DripEyebrow(text: "ROUTE")
-                Spacer()
-                Button {
-                    // present existing GPS map sheet
-                } label: {
-                    Text("OPEN MAP ↗")
-                        .font(.dripCaption(10)).tracking(1.4)
-                        .foregroundStyle(Color.drip.coral)
-                }
-                .buttonStyle(.plain)
-            }
-            // TODO: drop the existing MKMapView snapshot inside this well,
-            // or wrap whatever map view the production code uses.
-            Rectangle()
-                .fill(Color.drip.paperDeep)
-                .frame(height: 140)
-                .overlay(
-                    Text("ROUTE · \(String(format: "%.1f", workout.distanceMiles))MI")
-                        .font(.dripCaption(9)).tracking(1.2)
-                        .foregroundStyle(Color.drip.textTertiary)
-                )
-                .overlay(Rectangle().stroke(Color.drip.divider, lineWidth: 1))
-        }
-        .padding(.horizontal, 24).padding(.top, 22)
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -437,10 +755,6 @@ struct WorkoutAnalystView: View {
     private var dayAndTime: String {
         let f = DateFormatter(); f.dateFormat = "EEE · HH:mm"
         return f.string(from: workout.startDate).uppercased()
-    }
-    private var timeShort: String {
-        let f = DateFormatter(); f.dateFormat = "HH:mm"
-        return f.string(from: workout.startDate)
     }
     private var timeString: String {
         let total = Int(workout.durationMinutes * 60)
@@ -476,27 +790,7 @@ struct WorkoutAnalystView: View {
         return Int(cadenceSamples.reduce(0, +) / Double(cadenceSamples.count))
     }
 
-    private var timeAxisLabels: [String] {
-        let total = Int(workout.durationMinutes * 60)
-        return [0.0, 0.25, 0.5, 0.75, 1.0].map { f in
-            Self.formatElapsed(Int(Double(total) * f))
-        }
-    }
 
-    private var mileSparklineSplits:
-        [(mile: Int, paceText: String, hr: Int, paceSec: Int, isFastest: Bool)]
-    {
-        let secs = splits.map { Int($0.paceMinutes * 60) }
-        let minP = secs.min() ?? 0
-        return splits.map { s in
-            let p = Int(s.paceMinutes * 60)
-            return (mile: s.mile,
-                    paceText: s.formattedPace,
-                    hr: s.avgHeartRate ?? 0,
-                    paceSec: p,
-                    isFastest: p == minP)
-        }
-    }
 
     private func formatPace(_ sec: Int) -> String {
         String(format: "%d:%02d", sec / 60, sec % 60)
