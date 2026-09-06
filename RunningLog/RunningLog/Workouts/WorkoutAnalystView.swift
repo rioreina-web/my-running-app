@@ -178,9 +178,11 @@ struct WorkoutAnalystView: View {
             }
         }
         .padding(.horizontal, 24)
-        .padding(.top, 22)
+        // Rules hug the cell row — applying them after `.padding(.top,)`
+        // would hang the top hairline 22pt clear of the numbers.
         .overlay(alignment: .top) { DripHairline().padding(.horizontal, 24) }
         .overlay(alignment: .bottom) { DripHairline().padding(.horizontal, 24) }
+        .padding(.top, 22)
     }
 
     private func heroCell(_ value: String, _ label: String, coral: Bool = false) -> some View {
@@ -252,15 +254,8 @@ struct WorkoutAnalystView: View {
             sectionRule
             section(eyebrow: "EFFORT", rightText: "\(timeString) TOTAL") {
                 DripZoneBar(zones: effortZones, height: 16)
-                HStack(spacing: 0) {
-                    ForEach(zones) { z in
-                        Text(zoneShare(z) >= 0.11 ? z.id : "")
-                            .font(.dripCaption(9)).tracking(1.2)
-                            .foregroundStyle(Color.drip.textTertiary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(.top, 6)
+                zoneLabelRow
+                    .padding(.top, 6)
 
                 if let sentence = effortSentence {
                     Text(sentence)
@@ -270,6 +265,27 @@ struct WorkoutAnalystView: View {
                 }
             }
         }
+    }
+
+    /// Zone labels under the effort bar. Each label takes the width of
+    /// its own segment so it sits under the block it names — an equal
+    /// share per zone would put every label in the wrong place. Segments
+    /// narrower than 11% are left unlabelled rather than overlapping
+    /// their neighbours.
+    private var zoneLabelRow: some View {
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                ForEach(zones) { z in
+                    Text(zoneShare(z) >= 0.11 ? z.id : "")
+                        .font(.dripCaption(9)).tracking(1.2)
+                        .foregroundStyle(Color.drip.textTertiary)
+                        .lineLimit(1)
+                        .frame(width: geo.size.width * CGFloat(zoneShare(z)),
+                               alignment: .leading)
+                }
+            }
+        }
+        .frame(height: 12)
     }
 
     /// Mile · pace · HR. The distance caption and cadence column moved
