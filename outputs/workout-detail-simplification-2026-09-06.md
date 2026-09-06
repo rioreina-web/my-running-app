@@ -88,12 +88,32 @@ Added to `RunningLog/Workouts/DripWorkoutPrimitives.swift`:
 
 ## Not done
 
-- **Not verified against a compiler.** This container has no Swift
-  toolchain and no Xcode. The screenshots are HTML renderings of the
-  layout, built from the design-system tokens and the real font files —
-  they show the composition, not a simulator capture. Build and eyeball on
-  device before merging.
+- **Not eyeballed on a device.** The Swift compiles — CI's `iOS (Xcode)`
+  job builds it clean — but nobody has looked at the running screen. The
+  screenshots above are HTML renderings of the layout, built from the
+  design-system tokens and the real font files; they show the intended
+  composition, not a simulator capture. Run it before merging, especially
+  the four-cell stat strip under larger Dynamic Type.
 - The route well is still the placeholder rectangle the previous version
   had; wiring the real `MKMapView` snapshot is unchanged work.
 - `workoutLabel` is still hard-coded `"easy"` — the classifier TODO
   predates this pass and now shows in the subtitle line.
+
+## CI note
+
+The `iOS (Xcode)` job had never run on a pull request — it is gated
+behind an `ios` label that nothing had carried — and it could not have
+passed if it had. Two blockers, both fatal before any Swift compiles:
+
+1. `Secrets.xcconfig` is every build configuration's
+   `baseConfigurationReference` but is gitignored, so a fresh checkout
+   fails during `CreateBuildDescription`. The job now stages the
+   committed `.example` first; its placeholder values only reach
+   `Info.plist` strings, which is all a compile check needs.
+2. The runner was `macos-15` (Xcode 16.4, iOS SDK 18.5) while the project
+   sets `IPHONEOS_DEPLOYMENT_TARGET = 26.2` and the job's own destination
+   asks for an iPhone 17 Pro simulator. Now `macos-26`.
+
+Fixed in this PR because it was the only thing standing between the
+change and real compile verification. Label an iOS PR `ios` to get the
+build; without it, no one compiles the Swift before merge.
