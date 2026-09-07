@@ -40,6 +40,11 @@ const PROTECTED_ROUTES = [
   { file: "retry-processing/route.ts", method: "POST", tag: "retry-processing", limit:  5, windowMs: 60_000 },
   { file: "vital-stream/route.ts",     method: "GET",  tag: "vital-stream",     limit: 60, windowMs: 60_000 },
   { file: "shift-day/route.ts",        method: "POST", tag: "shift-day",        limit: 30, windowMs: 60_000 },
+  { file: "suggest-progression/route.ts", method: "POST", tag: "suggest-progression", limit: 30, windowMs: 60_000 },
+  // Per-coach burst guard only; the once-per-athlete-per-day budget is
+  // enforced in the edge function (draft_rewrite bucket, athlete-keyed).
+  { file: "draft-block-rewrite/route.ts", method: "POST", tag: "draft-block-rewrite", limit: 5, windowMs: 60_000 },
+  { file: "rewrite-block/route.ts",       method: "POST", tag: "rewrite-block",       limit: 20, windowMs: 60_000 },
 ];
 
 // ── Per-route wiring assertions ──────────────────────────

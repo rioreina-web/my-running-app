@@ -25,6 +25,11 @@ import {
   type FormCheckRow,
   type ComputedMetrics,
 } from "./weeklyAnalytics.ts";
+import {
+  paceOfSegment,
+  zoneForPace,
+  type ZoneTable,
+} from "./quality-volume.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -74,6 +79,9 @@ export function analyzeTrainingData(opts: {
   targetDistance: string | null;
   /** When false, metrics are computed but coaching signals (proactive questions) are excluded from context */
   includeSignals?: boolean;
+  /** The athlete's pace anchors (`athlete_state.pace_zones`). Quality volume is
+   *  measured against these; omit and quality reads 0 rather than being guessed. */
+  paceZones?: ZoneTable | null;
 }): AnalysisResult {
   const {
     thisWeekLogs,
@@ -86,6 +94,7 @@ export function analyzeTrainingData(opts: {
     targetTimeSeconds,
     targetDistance,
     includeSignals = true,
+    paceZones = null,
   } = opts;
 
   // Need at least some data to analyze
@@ -144,8 +153,10 @@ export function analyzeTrainingData(opts: {
   const recentForFatigue = [...thisWeekLogs, ...(previousWeeksLogs[0] || [])];
   const fatigueSignals = extractFatigueSignals(recentForFatigue);
 
-  // Assess quality of training volume (last 5 weeks)
-  const qualityVolume = assessQualityVolume(allLogs, scheduledThisWeek);
+  // Assess quality of training volume (last 5 weeks). Quality is MP-and-faster
+  // measured against the athlete's own zones — without them we can't say what
+  // "quality" means for this runner, and we don't guess.
+  const qualityVolume = assessQualityVolume(allLogs, scheduledThisWeek, paceZones);
 
   // Add fatigue-based coaching signals
   if (includeSignals) {
@@ -413,7 +424,8 @@ const QUALITY_ZONES = new Set(["tempo", "threshold", "interval", "race_pace"]);
 
 function assessQualityVolume(
   logs: TrainingLogRow[],
-  scheduledWorkouts?: ScheduledWorkoutRow[]
+  scheduledWorkouts?: ScheduledWorkoutRow[],
+  paceZones?: ZoneTable | null
 ): QualityVolumeResult {
   let totalMiles = 0;
   let qualityMiles = 0;
@@ -450,20 +462,24 @@ function assessQualityVolume(
     totalMiles += dist;
     const pace = dur > 0 ? (dur / dist) * 60 : 0;
 
-    // Use pace_segments for per-segment zone breakdown when available
-    if (log.pace_segments && log.pace_segments.length > 0) {
+    // Per-segment breakdown, binned by MEASURED PACE against the athlete's own
+    // zone table — never by `seg.effort`. Those labels are derived relative to
+    // each run's own average (±8% → "steady"), so they carry no absolute
+    // intensity: they booked ~87% of a real athlete's mileage as threshold while
+    // their actual reps fell through to easy. Pace is the only trustworthy
+    // signal here (see the "no pace_segment labels as fitness signal" rule).
+    if (log.pace_segments && log.pace_segments.length > 0 && paceZones?.mp) {
       for (const seg of log.pace_segments) {
-        const segZone = ZONE_MAP[seg.effort] || "easy";
-        const parts = seg.pace_per_mile.split(":").map(Number);
-        const segPace = parts.length === 2 ? parts[0] * 60 + parts[1] : 0;
-        addToZone(segZone, seg.distance_miles, segPace);
+        const segDist = seg.distance_miles ?? 0;
+        if (segDist <= 0) continue;
+        const segPace = paceOfSegment(seg) ?? 0;
+        const segZone = zoneForPace(segPace, paceZones);
+        addToZone(segZone, segDist, segPace);
 
         if (QUALITY_ZONES.has(segZone)) {
-          qualityMiles += seg.distance_miles;
-        } else if (segZone === "long_run") {
-          longRunMiles += seg.distance_miles;
+          qualityMiles += segDist;
         } else {
-          easyMiles += seg.distance_miles;
+          easyMiles += segDist;
         }
       }
     } else {

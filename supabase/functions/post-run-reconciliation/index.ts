@@ -246,7 +246,7 @@ Deno.serve(async (req: Request) => {
 // ── Delta Computation ──────────────────────────────────────────
 
 function computeDelta(log: any, scheduled: any | null, weather: Record<string, any> | null = null): ReconciliationDelta {
-  const qualityTypes = new Set(["tempo", "intervals", "long_run", "race", "progression"]);
+  const qualityTypes = new Set(["threshold", "tempo", "intervals", "interval", "fartlek", "long_run", "long_wo", "race", "progression"]);
 
   // No scheduled workout — this was an unplanned run
   if (!scheduled) {

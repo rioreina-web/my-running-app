@@ -329,10 +329,12 @@ struct WeekDayCard: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            // Day indicator — show "+" for secondary sessions (doubles)
+            // Day indicator — secondary sessions (PM half of a double) show a
+            // "PM" eyebrow instead of the day number, so they read as the
+            // second run stacked under the morning card rather than a bare "+".
             VStack(spacing: 2) {
                 if isSecondarySession {
-                    Text("+")
+                    Text("PM")
                         .font(.dripCaption(10))
                         .foregroundStyle(Color.drip.textTertiary)
                 } else {

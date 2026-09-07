@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Log detail — date rule + one THE WORKOUT</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elev:#FAFAF8; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.12); --positive:#4A9E6B;
+  --display:"Crimson Pro",Georgia,serif; --body:"PT Serif",Georgia,serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DAD6D0;font-family:var(--body);color:var(--ink);padding:28px 16px 60px}
+h1{font-family:var(--display);font-size:26px;font-weight:700;text-align:center;margin-bottom:4px}
+.sub{text-align:center;font-size:13px;color:#5c5750;margin-bottom:26px}
+.stage{display:flex;gap:22px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1240px;margin:0 auto}
+.col{width:372px}
+.coltitle{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#4a4540;margin:0 0 4px 4px}
+.colnote{font-size:12.5px;color:#5c5750;margin:0 0 10px 4px;line-height:1.45;min-height:34px}
+.phone{background:var(--paper);border-radius:26px;box-shadow:0 8px 30px rgba(0,0,0,.16);overflow:hidden;border:1px solid #cfcac4}
+.chrome{display:flex;justify-content:space-between;padding:12px 14px 6px}
+.chip{background:#fff;border-radius:999px;padding:7px 16px;font-family:var(--body);font-size:14px}
+.chip.l{color:var(--coral)} .chip.r{color:var(--ink)}
+.pad{padding:8px 20px 24px}
+.plate{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--ink-2);text-transform:uppercase;line-height:1.7}
+.plate .r{text-align:right}
+hr.rule{border:0;border-top:1px solid var(--rule);margin:14px 0}
+.title{font-family:var(--display);font-weight:700;font-size:38px;line-height:1.05;letter-spacing:-.01em}
+.eyebrow{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin-top:7px}
+.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(74,158,107,.13);color:var(--positive);font-family:var(--mono);font-size:9px;letter-spacing:.12em;padding:5px 11px;border-radius:999px;margin-top:10px}
+.badge i{width:5px;height:5px;border-radius:50%;background:var(--positive);display:block}
+.stats{display:flex;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);margin-top:16px}
+.stats div{flex:1;padding:11px 0;text-align:center;border-right:1px solid var(--rule)}
+.stats div:last-child{border-right:0}
+.stats .k{font-family:var(--mono);font-size:8px;letter-spacing:.13em;color:var(--ink-3)}
+.stats .v{font-family:var(--display);font-weight:700;font-size:21px;margin-top:2px}
+.stats .v small{font-size:11px;font-weight:400;color:var(--ink-2)}
+.linked{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;letter-spacing:.13em;color:var(--ink-2);padding:11px 0;border-bottom:1px solid var(--rule)}
+.sec{margin-top:20px}
+.sechead{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase}
+.sechead .l{color:var(--ink-2)} .sechead .m{color:var(--ink-3);font-size:8.5px} .sechead .e{color:var(--coral);font-size:8.5px;margin-left:8px}
+.prose{font-family:var(--body);font-size:14.5px;line-height:1.55;margin-top:8px}
+.prose.dim{color:var(--ink-2);font-size:13px}
+.recipe{margin-top:9px;border-left:2px solid var(--coral-wash);padding-left:11px}
+.recipe .row{display:flex;justify-content:space-between;font-size:13px;color:var(--ink-2);padding:3px 0;font-family:var(--body)}
+.recipe .row b{color:var(--ink);font-weight:400}
+.recipe .row span{font-family:var(--mono);font-size:10px;color:var(--ink-3)}
+.add{margin-top:9px;border:1px dashed #d9d4ce;border-radius:10px;padding:9px 12px;font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;color:var(--ink-3)}
+.player{display:flex;align-items:center;gap:11px;background:#fff;border-radius:999px;padding:9px 15px;margin-top:12px;border:1px solid #ece8e3}
+.play{width:24px;height:24px;border-radius:50%;background:var(--coral);color:#fff;display:flex;align-items:center;justify-content:center;font-size:9px;flex:0 0 auto}
+.wave{flex:1;height:16px;background:repeating-linear-gradient(90deg,#dcd7d1 0 2px,transparent 2px 5px);border-radius:2px}
+.player span{font-family:var(--mono);font-size:8px;letter-spacing:.12em;color:var(--ink-2)}
+.words{font-family:var(--mono);font-size:8.5px;letter-spacing:.12em;color:var(--ink-3);margin-top:9px}
+/* the old serif date title */
+.olddate{font-family:var(--display);font-weight:700;font-size:30px;margin-top:12px}
+.olddate i{color:var(--coral);font-style:normal}
+.flag{background:rgba(212,89,42,.09);border-left:2px solid var(--coral);padding:7px 10px;margin-top:8px;font-size:11.5px;line-height:1.45;color:#7a4326;font-family:var(--body)}
+/* the new datestamp rule */
+.stamp{display:flex;align-items:center;gap:9px;margin-top:13px}
+.stamp .tick{width:5px;height:5px;background:var(--coral);flex:0 0 auto}
+.stamp .t{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink);white-space:nowrap}
+.stamp .line{flex:1;height:1px;background:var(--rule)}
+.cond{display:flex;background:var(--paper-deep);border-radius:8px;margin-top:13px}
+.cond div{flex:1;padding:9px 0;text-align:center}
+.cond .v{font-family:var(--display);font-weight:700;font-size:15px}
+.cond .k{font-family:var(--mono);font-size:7.5px;letter-spacing:.12em;color:var(--ink-3);margin-top:2px}
+.sig{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #ece8e3;border-radius:999px;padding:5px 11px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;color:var(--ink-2)}
+.sig i{width:5px;height:5px;border-radius:50%;background:#C4873A;display:block}
+.read{font-family:var(--body);font-style:italic;font-size:12.5px;color:var(--ink-2);margin-top:9px;line-height:1.5}
+.fade{position:relative;height:26px;background:linear-gradient(var(--paper),rgba(245,243,240,0))}
+.legend{max-width:1240px;margin:34px auto 0;background:var(--paper);border-radius:14px;padding:20px 24px;border:1px solid #cfcac4}
+.legend h2{font-family:var(--display);font-size:19px;font-weight:700;margin-bottom:10px}
+.legend li{font-size:13.5px;line-height:1.6;margin-left:18px;margin-bottom:5px}
+.legend code{font-family:var(--mono);font-size:11.5px;background:#eee9e3;padding:1px 5px;border-radius:3px}
+</style>
+</head>
+<body>
+
+<h1>Log detail — the date stops being a title, and there's one THE WORKOUT</h1>
+<p class="sub">Static preview of the SwiftUI change. Build in Xcode to see it live.</p>
+
+<div class="stage">
+
+  <!-- ══ BEFORE ══ -->
+  <div class="col">
+    <p class="coltitle">Before · journal entry</p>
+    <p class="colnote">Two display-serif headlines claim to name the page. The workout description is far below the fold, in the receipt.</p>
+    <div class="phone">
+      <div class="chrome"><span class="chip l">Edit</span><span class="chip r">Done</span></div>
+      <div class="pad">
+        <div class="plate"><div>RUNNING LOG<br>— JOURNAL · ENTRY DETAIL</div><div class="r">AUG 8<br>06:36</div></div>
+        <hr class="rule">
+        <div class="title">Long run</div>
+        <div class="eyebrow">SATURDAY&nbsp; ·&nbsp; AUG 8</div>
+        <div class="badge"><i></i>POSITIVE</div>
+        <div class="stats">
+          <div><div class="k">DIST</div><div class="v">18.1<small> mi</small></div></div>
+          <div><div class="k">TIME</div><div class="v">2:00:07</div></div>
+          <div><div class="k">PACE</div><div class="v">6:38<small>/mi</small></div></div>
+        </div>
+        <div class="linked"><span>LINKED · STRAVA</span></div>
+        <div class="sec">
+          <div class="sechead"><span class="l">SUMMARY</span><span class="e">EDIT</span></div>
+          <p class="prose">I felt pretty comfortable on this moderate long run, taking two gels. Everything felt good overall. My knee, which I noticed a little between miles 9 and 12, eventually backed off…</p>
+        </div>
+        <div class="player"><span class="play">▶</span><span class="wave"></span><span>TAP TO PLAY</span></div>
+        <div class="words">READ THE WORDS ↓</div>
+        <div class="sec">
+          <div class="sechead"><span class="l">WORKOUT</span></div>
+          <div class="eyebrow" style="margin-top:9px">SATURDAY · LONG RUN ⌄</div>
+          <div class="olddate">August 8<i>.</i></div>
+          <div class="flag">Same display serif, same weight as “Long run” 30px above it. Read as a second page title.</div>
+        </div>
+        <div class="fade"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ AFTER · journal ══ -->
+  <div class="col">
+    <p class="coltitle">After · journal entry</p>
+    <p class="colnote">One title. THE WORKOUT sits under the stats, so what you set out to do frames how it went. The receipt drops its own date entirely.</p>
+    <div class="phone">
+      <div class="chrome"><span class="chip l">Edit</span><span class="chip r">Done</span></div>
+      <div class="pad">
+        <div class="plate"><div>RUNNING LOG<br>— JOURNAL · ENTRY DETAIL</div><div class="r">AUG 8<br>06:36</div></div>
+        <hr class="rule">
+        <div class="title">Long run</div>
+        <div class="eyebrow">SATURDAY&nbsp; ·&nbsp; AUG 8</div>
+        <div class="badge"><i></i>POSITIVE</div>
+        <div class="stats">
+          <div><div class="k">DIST</div><div class="v">18.1<small> mi</small></div></div>
+          <div><div class="k">TIME</div><div class="v">2:00:07</div></div>
+          <div><div class="k">PACE</div><div class="v">6:38<small>/mi</small></div></div>
+        </div>
+        <div class="linked"><span>LINKED · STRAVA</span></div>
+
+        <div class="sec">
+          <div class="sechead"><span class="l">THE WORKOUT</span><span><span class="m">18.1 MI</span><span class="e">EDIT</span></span></div>
+          <div class="recipe">
+            <div class="row"><b>Warmup</b><span>2 MI EASY</span></div>
+            <div class="row"><b>Steady</b><span>14 MI @ 6:35</span></div>
+            <div class="row"><b>Cooldown</b><span>2 MI</span></div>
+          </div>
+        </div>
+
+        <div class="sec">
+          <div class="sechead"><span class="l">SUMMARY</span><span class="e">EDIT</span></div>
+          <p class="prose">I felt pretty comfortable on this moderate long run, taking two gels. Everything felt good overall. My knee, which I noticed a little between miles 9 and 12, eventually backed off…</p>
+        </div>
+        <div class="player"><span class="play">▶</span><span class="wave"></span><span>TAP TO PLAY</span></div>
+        <div class="words">READ THE WORDS ↓</div>
+        <div class="sec">
+          <div class="sechead"><span class="l">WORKOUT</span></div>
+          <div class="eyebrow" style="margin-top:9px">SATURDAY · LONG RUN ⌄</div>
+          <p class="prose dim" style="margin-top:6px"><i>18.10 mi · 2:00:07 · Strava</i></p>
+          <div class="cond">
+            <div><div class="v">75°</div><div class="k">TEMP</div></div>
+            <div><div class="v">73°</div><div class="k">DEWPOINT</div></div>
+            <div><div class="v">+13s</div><div class="k">HEAT COST</div></div>
+            <div><div class="v">1144</div><div class="k">CLIMB FT</div></div>
+          </div>
+          <div class="flag">No date headline here at all — the entry already says Aug 8 twice, and THE WORKOUT is above.</div>
+        </div>
+        <div class="fade"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ AFTER · standalone ══ -->
+  <div class="col">
+    <p class="coltitle">After · workout detail sheet</p>
+    <p class="colnote">Opened on its own, the receipt still needs a header — but as a datestamp rule, not a serif title. Same THE WORKOUT block, same row, same editor.</p>
+    <div class="phone">
+      <div class="chrome"><span class="chip l" style="visibility:hidden">Edit</span><span class="chip r" style="font-family:var(--mono);font-size:9px;letter-spacing:.12em">WORKOUT</span><span class="chip l">Done</span></div>
+      <div class="pad">
+        <div class="eyebrow" style="margin-top:4px">SATURDAY · LONG RUN ⌄</div>
+        <div class="stamp"><span class="tick"></span><span class="t">AUGUST 8 · 2026</span><span class="line"></span></div>
+        <p class="prose dim" style="margin-top:9px"><i>18.10 mi · 2:00:07 · Strava</i></p>
+        <div class="stats">
+          <div><div class="k">DISTANCE</div><div class="v">18.10</div></div>
+          <div><div class="k">DURATION</div><div class="v" style="font-size:17px">2:00:07</div></div>
+          <div><div class="k">PACE</div><div class="v" style="font-size:17px">6:38</div></div>
+          <div><div class="k">AVG HR</div><div class="v">155</div></div>
+        </div>
+        <div class="cond">
+          <div><div class="v">75°</div><div class="k">TEMP</div></div>
+          <div><div class="v">73°</div><div class="k">DEWPOINT</div></div>
+          <div><div class="v">+13s</div><div class="k">HEAT COST</div></div>
+          <div><div class="v">1144</div><div class="k">CLIMB FT</div></div>
+        </div>
+
+        <div class="sec">
+          <div class="sechead"><span class="l">THE WORKOUT</span><span><span class="m">18.1 MI</span><span class="e">EDIT</span></span></div>
+          <div class="recipe">
+            <div class="row"><b>Warmup</b><span>2 MI EASY</span></div>
+            <div class="row"><b>Steady</b><span>14 MI @ 6:35</span></div>
+            <div class="row"><b>Cooldown</b><span>2 MI</span></div>
+          </div>
+          <div class="flag">Identical block, identical row. Edit it here and the journal entry shows the change — and the reverse.</div>
+        </div>
+
+        <hr class="rule">
+        <div class="sec" style="margin-top:6px">
+          <div class="sechead"><span style="color:var(--coral)">SIGNALS</span></div>
+          <div style="margin-top:9px"><span class="sig"><i></i>HEAT&nbsp; +13s/mi</span></div>
+          <p class="read">18.1 mi at 6:38/mi, average heart rate 155. No rep structure to break out — Z3 carried the most time.</p>
+        </div>
+        <div class="fade"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h2>What changed in the code</h2>
+  <ul>
+    <li><b>New file</b> — <code>Workouts/TheWorkoutBlock.swift</code>. The single implementation of THE WORKOUT: renders the description, offers <code>+ ADD THE WORKOUT</code> when there isn't one, and opens the one editor.</li>
+    <li><b>Deleted</b> — the journal's <code>editorialNotesComposer</code> / <code>notesEditor</code> (~110 lines) and the receipt's <code>workoutRecipeSection</code> (~70 lines). They were two editors for one database column under two different labels, writing to two different rows.</li>
+    <li><b>One row, always</b> — the block writes the row the receipt reads from and mirrors onto the journal row in the same save, so a Strava-linked run (which is two rows) can't hold two different answers.</li>
+    <li><b>Global Edit no longer touches the description.</b> It used to write a value seeded when the sheet opened, which could silently overwrite a newer edit. That column now has exactly one door.</li>
+    <li><b>The date</b> — <code>WorkoutRepReceiptView</code> gained a <code>placement</code> flag. Standalone it renders the mono datestamp rule; embedded in a journal entry it renders no date header at all.</li>
+  </ul>
+</div>
+
+</body>
+</html>

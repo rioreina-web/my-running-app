@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beta Design Overhaul — Mockups · 2026-07-13</title>
+<style>
+  /* Post Run Drip tokens (from design-system/colors_and_type.css) */
+  @font-face {
+    font-family: "Crimson Pro";
+    src: url("../design-system/fonts/CrimsonPro-Variable.ttf") format("truetype-variations");
+    font-weight: 200 900; font-display: swap;
+  }
+  @font-face {
+    font-family: "PT Serif";
+    src: url("../design-system/fonts/PTSerif-Regular.ttf") format("truetype");
+    font-weight: 400; font-display: swap;
+  }
+  @font-face {
+    font-family: "PT Serif";
+    src: url("../design-system/fonts/PTSerif-Italic.ttf") format("truetype");
+    font-weight: 400; font-style: italic; font-display: swap;
+  }
+  :root {
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-wash:rgba(212,89,42,0.12);
+    --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+    --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+    /* pace ramp — PaceSpectrum.swift, ten stops */
+    --pz-easy:#93B9D6; --pz-mod:#74A8CC; --pz-steady:#578FC0; --pz-mp:#3F7CB5; --pz-hmp:#2F66A8;
+    --pz-lt:#27549B; --pz-10k:#20448B; --pz-5k:#1A3679; --pz-3k:#142964; --pz-mile:#0E1D4E;
+    --font-display:"Crimson Pro", Georgia, "Times New Roman", serif;
+    --font-body:"PT Serif", Georgia, serif;
+    --font-mono:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background:#DDD8D1; font-family:var(--font-body); color:var(--ink); padding:40px 24px 80px; -webkit-font-smoothing:antialiased; }
+
+  .intro { max-width: 720px; margin: 0 auto 48px; }
+  .intro h1 { font-family:var(--font-display); font-weight:700; font-size:32px; line-height:1.05; letter-spacing:-0.01em; }
+  .intro p { font-size:15px; line-height:1.55; color:var(--ink-2); margin-top:12px; }
+  .intro .strip { font-family:var(--font-mono); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-2); margin-bottom:10px; }
+
+  .frames { display:flex; flex-wrap:wrap; gap:48px; justify-content:center; align-items:flex-start; }
+  .frame-wrap { width:390px; }
+  .frame-cap { margin-bottom:14px; }
+  .frame-cap .eyebrow { font-family:var(--font-mono); font-size:11px; font-weight:500; letter-spacing:0.12em; text-transform:uppercase; color:var(--coral); }
+  .frame-cap h2 { font-family:var(--font-display); font-weight:700; font-size:22px; margin-top:4px; }
+  .frame-cap p { font-size:13px; line-height:1.5; color:var(--ink-2); margin-top:6px; }
+  .phone { width:390px; background:var(--paper); border-radius:44px; border:1px solid #C9C3BB; box-shadow:0 20px 50px rgba(0,0,0,0.18); overflow:hidden; }
+  .statusbar { height:48px; display:flex; align-items:flex-end; justify-content:space-between; padding:0 28px 4px; font-family:var(--font-mono); font-size:12px; font-weight:600; color:var(--ink); }
+  .screen { padding:10px 20px 0; }
+
+  /* shared primitives */
+  .plate-strip { display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-2); padding-bottom:10px; border-bottom:1px solid var(--ink); }
+  .eyebrow { font-family:var(--font-mono); font-size:11px; font-weight:500; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-2); }
+  .eyebrow.coral { color:var(--coral); }
+  .display-xl { font-family:var(--font-display); font-weight:700; font-size:34px; line-height:1.05; letter-spacing:-0.01em; }
+  .display-m { font-family:var(--font-display); font-weight:700; font-size:22px; line-height:1.1; }
+  .body { font-size:15px; line-height:1.55; }
+  .body-sm { font-size:13px; line-height:1.5; color:var(--ink-2); }
+  .quote { font-style:italic; font-size:14px; line-height:1.5; }
+  .stat { font-family:var(--font-mono); font-weight:600; font-variant-numeric:tabular-nums; }
+  .mono { font-family:var(--font-mono); }
+  .edrule { display:flex; align-items:center; gap:8px; margin:18px 0; }
+  .edrule::before, .edrule::after { content:""; flex:1; height:1px; background:var(--rule); }
+  .edrule i { width:3px; height:3px; border-radius:999px; background:var(--ink-3); }
+
+  .segmenter { display:flex; gap:6px; margin:16px 0 4px; }
+  .segmenter span { font-family:var(--font-mono); font-size:10px; letter-spacing:0.1em; padding:6px 12px; border-radius:999px; color:var(--ink-2); border:1px solid var(--rule); }
+  .segmenter span.on { background:var(--ink); color:var(--paper); border-color:var(--ink); font-weight:600; }
+
+  .zone-chip { font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.08em; color:#fff; padding:3px 8px; border-radius:4px; display:inline-block; }
+  .mood-pill { font-family:var(--font-mono); font-size:9px; font-weight:600; letter-spacing:0.1em; padding:3px 9px; border-radius:999px; display:inline-block; }
+  .niggle-chip { font-family:var(--font-mono); font-size:9px; font-weight:600; letter-spacing:0.08em; color:var(--coral); border:1px solid var(--coral); padding:2px 8px; border-radius:999px; }
+  .cond { font-family:var(--font-mono); font-size:10px; color:var(--ink-3); letter-spacing:0.04em; }
+
+  /* tab bar */
+  .tabbar { border-top:1px solid var(--rule); background:var(--paper); display:flex; padding:12px 0 26px; margin-top:22px; }
+  .tabbar div { flex:1; text-align:center; }
+  .tabbar .dot { width:6px; height:6px; border-radius:999px; border:1.5px solid var(--ink-3); margin:0 auto 7px; }
+  .tabbar .on .dot { background:var(--coral); border-color:var(--coral); }
+  .tabbar span { font-family:var(--font-mono); font-size:10px; letter-spacing:0.12em; color:var(--ink-2); }
+  .tabbar .on span { color:var(--ink); font-weight:600; }
+
+  /* ============ TRAIN · CURRENT ============ */
+  .today-card { background:var(--card); border-radius:12px; padding:16px; margin-top:14px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+  .day-row { display:flex; align-items:center; gap:12px; padding:13px 0; border-bottom:1px solid var(--rule); }
+  .day-row .d { font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; color:var(--ink-3); width:32px; flex-shrink:0; }
+  .day-row .mid { flex:1; min-width:0; }
+  .day-row .nm { font-family:var(--font-display); font-weight:600; font-size:16px; }
+  .day-row .rt { text-align:right; flex-shrink:0; }
+  .week-foot { display:flex; justify-content:space-between; padding:14px 2px 0; }
+  .week-foot div { text-align:center; }
+  .week-foot .v { font-family:var(--font-mono); font-weight:600; font-size:14px; }
+  .week-foot .k { font-family:var(--font-mono); font-size:8.5px; letter-spacing:0.1em; color:var(--ink-3); margin-top:3px; text-transform:uppercase; }
+
+  /* ============ TRAIN · CALENDAR ============ */
+  .cal-head { display:flex; justify-content:space-between; align-items:baseline; margin-top:16px; }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; margin-top:12px; }
+  .cal-grid .dow { font-family:var(--font-mono); font-size:8.5px; letter-spacing:0.1em; color:var(--ink-3); text-align:center; padding-bottom:4px; }
+  .cal-cell { aspect-ratio:1; border-radius:6px; background:var(--paper-deep); position:relative; }
+  .cal-cell .n { position:absolute; top:4px; left:5px; font-family:var(--font-mono); font-size:8px; color:var(--ink-3); }
+  .cal-cell.done .n { color:rgba(255,255,255,0.85); }
+  .cal-cell.planned { background:var(--card); border:1.5px dashed var(--ink-3); }
+  .cal-cell.planned .n { color:var(--ink-2); }
+  .cal-cell.today-c { outline:2px solid var(--coral); outline-offset:1px; }
+  .cal-cell .ng { position:absolute; bottom:4px; right:4px; width:5px; height:5px; border-radius:999px; background:var(--coral); }
+  .phase-tag { display:flex; align-items:center; gap:8px; margin-top:16px; }
+  .phase-tag .bar { flex:1; height:3px; border-radius:2px; background:var(--pz-steady); opacity:0.5; }
+  .plan-actions { display:flex; gap:8px; margin-top:14px; }
+  .plan-actions a { flex:1; text-align:center; font-family:var(--font-display); font-weight:600; font-size:14px; color:var(--ink); border:1px solid var(--ink); border-radius:10px; padding:10px 0; text-decoration:none; }
+  .plan-actions a.primary { background:var(--ink); color:var(--paper); }
+
+  /* ============ TRENDS ============ */
+  .week-strip { display:flex; gap:8px; margin-top:14px; }
+  .wcard { flex:1; background:var(--card); border-radius:12px; padding:12px 12px 10px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+  .wcard .v { font-family:var(--font-mono); font-weight:600; font-size:17px; }
+  .wcard .k { font-family:var(--font-mono); font-size:8.5px; letter-spacing:0.1em; color:var(--ink-3); margin-top:4px; text-transform:uppercase; }
+  .lane-label { font-family:var(--font-mono); font-size:8.5px; letter-spacing:0.1em; color:var(--ink-3); text-transform:uppercase; margin:10px 0 4px; }
+  .pattern-card { background:var(--paper-elevated); border-left:2px solid var(--ink); padding:12px 14px; margin-top:10px; }
+  .pattern-card .conf { font-family:var(--font-mono); font-size:8.5px; letter-spacing:0.1em; color:var(--ink-3); }
+  .ask-bar { display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--rule); border-radius:999px; padding:10px 16px; margin-top:18px; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+  .ask-bar span { font-style:italic; font-size:13px; color:var(--ink-3); flex:1; }
+  .ask-bar .go { width:26px; height:26px; border-radius:999px; background:var(--ink); color:var(--paper); display:flex; align-items:center; justify-content:center; font-size:12px; }
+
+  /* ============ WORKOUT DETAIL ============ */
+  .stat4 { display:flex; margin-top:16px; border-top:1px solid var(--ink); border-bottom:1px solid var(--rule); }
+  .stat4 div { flex:1; padding:12px 0 10px; text-align:center; border-right:1px solid var(--rule); }
+  .stat4 div:last-child { border-right:none; }
+  .stat4 .v { font-family:var(--font-mono); font-weight:600; font-size:16px; }
+  .stat4 .k { font-family:var(--font-mono); font-size:8px; letter-spacing:0.12em; color:var(--ink-3); margin-top:4px; text-transform:uppercase; }
+  .cond-plate { background:var(--paper-deep); border-radius:10px; display:flex; padding:11px 6px; margin-top:12px; }
+  .cond-plate div { flex:1; text-align:center; }
+  .cond-plate .v { font-family:var(--font-mono); font-weight:600; font-size:13px; }
+  .cond-plate .k { font-family:var(--font-mono); font-size:7.5px; letter-spacing:0.1em; color:var(--ink-2); margin-top:3px; text-transform:uppercase; }
+  .reps-table { width:100%; border-collapse:collapse; margin-top:10px; }
+  .reps-table th { font-family:var(--font-mono); font-size:8.5px; letter-spacing:0.1em; color:var(--ink-3); text-transform:uppercase; text-align:right; padding:6px 4px; border-bottom:1px solid var(--ink); font-weight:500; }
+  .reps-table th:first-child { text-align:left; }
+  .reps-table td { font-family:var(--font-mono); font-size:12px; font-variant-numeric:tabular-nums; text-align:right; padding:8px 4px; border-bottom:1px solid var(--rule); }
+  .reps-table td:first-child { text-align:left; }
+  .collapse-row { display:flex; align-items:center; justify-content:space-between; padding:14px 2px; border-bottom:1px solid var(--rule); }
+  .collapse-row .sum { font-family:var(--font-mono); font-size:11px; color:var(--ink-2); }
+  .collapse-row .chev { color:var(--ink-3); font-size:12px; margin-left:10px; }
+  .elev-mini { margin:10px 0 6px; }
+</style>
+</head>
+<body>
+
+<div class="intro">
+  <div class="strip">POST RUN DRIP · BETA DESIGN OVERHAUL · MOCKUPS · JULY 13, 2026</div>
+  <h1>Four screens, one loop.</h1>
+  <p>Companion to <em>beta-design-overhaul-plan-2026-07-13.md</em>. The 4-tab IA (Log · Trends · Train · Coach), the merged Train tab with conditions readable at a glance, Trends with the named PATTERNS correlation surface, and the workout detail restructured into three acts. All tokens from <span class="mono" style="font-size:12px">colors_and_type.css</span>; pace chips from the ten-stop PaceSpectrum ramp. Blue = pace, warm = mood, coral = alert — never crossed.</p>
+</div>
+
+<div class="frames">
+
+  <!-- ============================================================ -->
+  <!-- FRAME 1 · TRAIN — CURRENT                                     -->
+  <!-- ============================================================ -->
+  <div class="frame-wrap">
+    <div class="frame-cap">
+      <div class="eyebrow">01 · Train — Current</div>
+      <h2>The week, conditions included.</h2>
+      <p>Train 2's day-row skeleton + plan-vs-actual. Every completed run carries its conditions readout; the week footer aggregates heat and climb. Recovery is one quiet observed line — never advice.</p>
+    </div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+      <div class="screen">
+        <div class="plate-strip"><span>Running Log</span><span>WK 28 · Jul 13</span></div>
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:14px;">
+          <div class="display-xl">Train</div>
+          <span class="mono" style="font-size:10px; color:var(--ink-3); letter-spacing:0.1em;">MARATHON BLOCK · WK 6/18</span>
+        </div>
+        <div class="segmenter"><span class="on">CURRENT</span><span>CALENDAR</span><span>HISTORY</span></div>
+
+        <div class="today-card">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="eyebrow">Today · Sunday</span>
+            <span class="mono" style="font-size:9px; color:var(--ink-3); letter-spacing:0.08em;">COACH DANA'S PLAN</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:10px;">
+            <span class="zone-chip" style="background:var(--pz-easy); color:var(--ink);">LONG</span>
+            <span class="display-m">14 mi</span>
+          </div>
+          <div class="body-sm" style="margin-top:8px;">Easy–Steady range 8:44 – 9:38 /mi. Forecast 71° by 9am, dewpoint 64° — an honest heat morning.</div>
+        </div>
+
+        <div class="eyebrow" style="margin-top:20px;">This week</div>
+
+        <div class="day-row">
+          <span class="d">MON</span>
+          <div class="mid">
+            <div style="display:flex; align-items:center; gap:8px;"><span class="zone-chip" style="background:var(--pz-easy); color:var(--ink);">EASY</span><span class="nm">6.1 mi</span></div>
+            <div class="cond" style="margin-top:4px;">68° · DP 61° · +120 FT</div>
+          </div>
+          <div class="rt"><div class="stat" style="font-size:13px;">9:12</div><div class="cond">/MI</div></div>
+        </div>
+
+        <div class="day-row">
+          <span class="d">TUE</span>
+          <div class="mid">
+            <div style="display:flex; align-items:center; gap:8px;"><span class="zone-chip" style="background:var(--pz-5k);">5K 6×800</span><span class="nm">7.4 mi</span></div>
+            <div class="cond" style="margin-top:4px;">74° · DP 68° · HEAT ADJ −9S · +310 FT</div>
+          </div>
+          <div class="rt"><div class="stat" style="font-size:13px;">6:41</div><div class="cond">REP AVG</div></div>
+        </div>
+
+        <div class="day-row">
+          <span class="d">WED</span>
+          <div class="mid">
+            <div style="display:flex; align-items:center; gap:8px;"><span class="zone-chip" style="background:var(--pz-easy); color:var(--ink);">EASY</span><span class="nm">5.0 mi</span><span class="niggle-chip">LEFT CALF</span></div>
+            <div class="cond" style="margin-top:4px;">66° · DP 58° · FLAT</div>
+          </div>
+          <div class="rt"><div class="stat" style="font-size:13px;">9:31</div><div class="cond">/MI</div></div>
+        </div>
+
+        <div class="day-row">
+          <span class="d">THU</span>
+          <div class="mid">
+            <div style="display:flex; align-items:center; gap:8px;"><span class="zone-chip" style="background:var(--pz-mp);">MP 7 MI</span><span class="nm">9.0 mi</span></div>
+            <div class="cond" style="margin-top:4px;">72° · DP 66° · HEAT ADJ −7S · +180 FT</div>
+          </div>
+          <div class="rt"><div class="stat" style="font-size:13px;">7:52</div><div class="cond">MP AVG</div></div>
+        </div>
+
+        <div class="day-row" style="border-bottom:none;">
+          <span class="d">FRI</span>
+          <div class="mid"><span class="nm" style="color:var(--ink-3); font-weight:400; font-style:italic; font-size:15px;">Rest</span></div>
+          <div class="rt"><span class="mood-pill" style="background:rgba(196,135,58,0.15); color:var(--mood-tired);">TIRED</span></div>
+        </div>
+
+        <div class="edrule"><i></i></div>
+        <div class="week-foot">
+          <div><div class="v">27.5</div><div class="k">MI SO FAR</div></div>
+          <div><div class="v">1,240</div><div class="k">FT CLIMB</div></div>
+          <div><div class="v">3</div><div class="k">HOT RUNS</div></div>
+          <div><div class="v">8:47</div><div class="k">HEAT-ADJ AVG</div></div>
+        </div>
+        <div class="body-sm quote" style="margin-top:14px; text-align:center;">Sleep averaged 7:10 this week. You said "tired" twice — Wednesday and Friday.</div>
+
+        <div class="tabbar">
+          <div><div class="dot"></div><span>LOG</span></div>
+          <div><div class="dot"></div><span>TRENDS</span></div>
+          <div class="on"><div class="dot"></div><span>TRAIN</span></div>
+          <div><div class="dot"></div><span>COACH</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- FRAME 2 · TRAIN — CALENDAR (plan folded in)                   -->
+  <!-- ============================================================ -->
+  <div class="frame-wrap">
+    <div class="frame-cap">
+      <div class="eyebrow">02 · Train — Calendar</div>
+      <h2>Plan lives here now.</h2>
+      <p>The old Plan tab folded into Train. Completed days fill with pace-intensity blue; coach-planned days sit dashed until they're run. Import / join actions are first-class, and phase tags ride each block.</p>
+    </div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+      <div class="screen">
+        <div class="plate-strip"><span>Running Log</span><span>WK 28 · Jul 13</span></div>
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:14px;">
+          <div class="display-xl">Train</div>
+          <span class="mono" style="font-size:10px; color:var(--ink-3); letter-spacing:0.1em;">MARATHON BLOCK · WK 6/18</span>
+        </div>
+        <div class="segmenter"><span>CURRENT</span><span class="on">CALENDAR</span><span>HISTORY</span></div>
+
+        <div class="cal-head">
+          <span class="display-m">July</span>
+          <span class="mono" style="font-size:10px; color:var(--ink-2); letter-spacing:0.08em;">COACH DANA · CHI MARATHON OCT 11</span>
+        </div>
+
+        <div class="phase-tag">
+          <span class="mono" style="font-size:8.5px; letter-spacing:0.1em; color:var(--ink-2);">BUILD 2</span>
+          <div class="bar"></div>
+          <span class="mono" style="font-size:8.5px; letter-spacing:0.1em; color:var(--ink-3);">38 → 46 MPW</span>
+        </div>
+
+        <div class="cal-grid">
+          <div class="dow">M</div><div class="dow">T</div><div class="dow">W</div><div class="dow">T</div><div class="dow">F</div><div class="dow">S</div><div class="dow">S</div>
+
+          <div class="cal-cell done" style="background:var(--pz-easy);"><span class="n">1</span></div>
+          <div class="cal-cell done" style="background:var(--pz-lt);"><span class="n">2</span></div>
+          <div class="cal-cell done" style="background:var(--pz-easy);"><span class="n">3</span></div>
+          <div class="cal-cell"><span class="n">4</span></div>
+          <div class="cal-cell done" style="background:var(--pz-mod);"><span class="n">5</span></div>
+          <div class="cal-cell done" style="background:var(--pz-easy);"><span class="n">6</span></div>
+          <div class="cal-cell done" style="background:var(--pz-steady);"><span class="n">7</span></div>
+
+          <div class="cal-cell done" style="background:var(--pz-easy);"><span class="n">8</span></div>
+          <div class="cal-cell done" style="background:var(--pz-5k);"><span class="n">9</span></div>
+          <div class="cal-cell done" style="background:var(--pz-easy);"><span class="n">10</span><span class="ng"></span></div>
+          <div class="cal-cell done" style="background:var(--pz-mp);"><span class="n">11</span></div>
+          <div class="cal-cell"><span class="n">12</span></div>
+          <div class="cal-cell done" style="background:var(--pz-easy);"><span class="n">13</span></div>
+          <div class="cal-cell planned today-c"><span class="n">14</span></div>
+
+          <div class="cal-cell planned"><span class="n">15</span></div>
+          <div class="cal-cell planned"><span class="n">16</span></div>
+          <div class="cal-cell planned"><span class="n">17</span></div>
+          <div class="cal-cell"><span class="n">18</span></div>
+          <div class="cal-cell planned"><span class="n">19</span></div>
+          <div class="cal-cell planned"><span class="n">20</span></div>
+          <div class="cal-cell planned"><span class="n">21</span></div>
+
+          <div class="cal-cell planned"><span class="n">22</span></div>
+          <div class="cal-cell planned"><span class="n">23</span></div>
+          <div class="cal-cell planned"><span class="n">24</span></div>
+          <div class="cal-cell"><span class="n">25</span></div>
+          <div class="cal-cell planned"><span class="n">26</span></div>
+          <div class="cal-cell planned"><span class="n">27</span></div>
+          <div class="cal-cell planned"><span class="n">28</span></div>
+        </div>
+
+        <div style="display:flex; gap:14px; margin-top:12px; align-items:center;">
+          <span class="cond"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--pz-steady);vertical-align:-1px;"></span> COMPLETED · PACE DEPTH</span>
+          <span class="cond"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;border:1.5px dashed var(--ink-3);vertical-align:-1px;"></span> PLANNED</span>
+          <span class="cond"><span style="display:inline-block;width:5px;height:5px;border-radius:99px;background:var(--coral);vertical-align:0px;"></span> NIGGLE</span>
+        </div>
+
+        <div class="edrule"><i></i></div>
+        <div class="eyebrow">Week of Jul 14 · from your coach</div>
+        <div class="body-sm" style="margin-top:8px;">Tue <span class="mono" style="font-size:11px;">LT 5 MI</span> · Thu <span class="mono" style="font-size:11px;">MP 8 MI</span> · Sat <span class="mono" style="font-size:11px;">LONG 15</span> · 44 mi planned. Dana moved Thursday's session up a day — <span class="quote">"travel Friday."</span></div>
+
+        <div class="plan-actions">
+          <a class="primary" href="#">Join coach's plan</a>
+          <a href="#">Import plan</a>
+        </div>
+
+        <div class="tabbar">
+          <div><div class="dot"></div><span>LOG</span></div>
+          <div><div class="dot"></div><span>TRENDS</span></div>
+          <div class="on"><div class="dot"></div><span>TRAIN</span></div>
+          <div><div class="dot"></div><span>COACH</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- FRAME 3 · TRENDS — PATTERNS                                   -->
+  <!-- ============================================================ -->
+  <div class="frame-wrap">
+    <div class="frame-cap">
+      <div class="eyebrow">03 · Trends — Patterns</div>
+      <h2>Where qual meets quant.</h2>
+      <p>Signal's stacked lanes absorbed into Trends: volume by pace depth, mood beneath, niggles as coral dots. Below, PATTERNS — AI-surfaced correlations that cite numbers, carry confidence, and end in a question. The ask bar hands off to Coach.</p>
+    </div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+      <div class="screen">
+        <div class="plate-strip"><span>Running Log</span><span>WK 28 · Jul 13</span></div>
+        <div class="display-xl" style="margin-top:14px;">Trends</div>
+
+        <div class="week-strip">
+          <div class="wcard"><div class="v">27.5</div><div class="k">MI · EFFORT</div></div>
+          <div class="wcard"><div class="v">↗ 3%</div><div class="k">FITNESS 4W</div></div>
+          <div class="wcard"><div class="v">1.18</div><div class="k">ACWR · SIGNAL</div></div>
+        </div>
+
+        <div class="segmenter" style="margin-top:16px;"><span>4W</span><span class="on">8W</span><span>26W</span><span>1Y</span></div>
+
+        <div class="lane-label">Weekly volume · by pace depth</div>
+        <svg viewBox="0 0 350 78" width="100%">
+          <g>
+            <rect x="8"   y="38" width="30" height="32" fill="#93B9D6"/><rect x="8"   y="30" width="30" height="8" fill="#3F7CB5"/>
+            <rect x="51"  y="32" width="30" height="38" fill="#93B9D6"/><rect x="51"  y="24" width="30" height="8" fill="#27549B"/>
+            <rect x="94"  y="28" width="30" height="42" fill="#93B9D6"/><rect x="94"  y="18" width="30" height="10" fill="#3F7CB5"/>
+            <rect x="137" y="42" width="30" height="28" fill="#93B9D6"/><rect x="137" y="36" width="30" height="6" fill="#74A8CC"/>
+            <rect x="180" y="24" width="30" height="46" fill="#93B9D6"/><rect x="180" y="14" width="30" height="10" fill="#1A3679"/>
+            <rect x="223" y="20" width="30" height="50" fill="#93B9D6"/><rect x="223" y="10" width="30" height="10" fill="#3F7CB5"/>
+            <rect x="266" y="26" width="30" height="44" fill="#93B9D6"/><rect x="266" y="14" width="30" height="12" fill="#1A3679"/>
+            <rect x="309" y="16" width="30" height="54" fill="#93B9D6"/><rect x="309" y="6"  width="30" height="10" fill="#3F7CB5"/>
+          </g>
+          <line x1="0" y1="72" x2="350" y2="72" stroke="#E8E4E0" stroke-width="1"/>
+        </svg>
+
+        <div class="lane-label">Mood · Niggles</div>
+        <svg viewBox="0 0 350 26" width="100%">
+          <g>
+            <circle cx="23"  cy="9" r="4.5" fill="#4A9E6B"/>
+            <circle cx="66"  cy="9" r="4.5" fill="#4A9E6B"/>
+            <circle cx="109" cy="9" r="4.5" fill="#C4873A"/>
+            <circle cx="152" cy="9" r="4.5" fill="#9B9590"/>
+            <circle cx="195" cy="9" r="4.5" fill="#C4873A"/>
+            <circle cx="238" cy="9" r="4.5" fill="#4A9E6B"/>
+            <circle cx="281" cy="9" r="4.5" fill="#C4873A"/>
+            <circle cx="324" cy="9" r="4.5" fill="#2D8A4E"/>
+            <circle cx="195" cy="22" r="2.5" fill="#D4592A"/>
+            <circle cx="281" cy="22" r="2.5" fill="#D4592A"/>
+            <circle cx="324" cy="22" r="2.5" fill="#D4592A"/>
+          </g>
+        </svg>
+
+        <div class="edrule"><i></i></div>
+        <div class="eyebrow">Patterns · 8 weeks</div>
+
+        <div class="pattern-card">
+          <div class="body-sm" style="color:var(--ink);">Mood dips the day after your long run — 5 of the last 6 weeks, and the dip is deeper when dewpoint topped 65° (3 of those 5).</div>
+          <div style="display:flex; justify-content:space-between; margin-top:8px; align-items:center;">
+            <span class="conf">MODERATE CONFIDENCE · 6 WKS OF DATA</span>
+          </div>
+          <div class="quote" style="margin-top:6px; color:var(--ink-2);">Worth protecting Monday as truly easy?</div>
+        </div>
+
+        <div class="pattern-card">
+          <div class="body-sm" style="color:var(--ink);">Your calf mentions cluster in weeks above 30 mi — 3 mentions in your two highest-mileage weeks, none in the other six.</div>
+          <div style="display:flex; justify-content:space-between; margin-top:8px; align-items:center;">
+            <span class="conf">EARLY SIGNAL · SMALL SAMPLE</span>
+          </div>
+          <div class="quote" style="margin-top:6px; color:var(--ink-2);">Something to watch as the build continues — how did it feel this week?</div>
+        </div>
+
+        <div class="edrule"><i></i></div>
+        <div style="text-align:center;">
+          <div class="eyebrow">Chicago · Oct 11</div>
+          <div class="display-m" style="margin-top:6px;">3:22 – 3:29</div>
+          <div class="cond" style="margin-top:5px;">MIDPOINT 3:25 · MODERATE CONFIDENCE · 2 MP SESSIONS + MAY HALF</div>
+        </div>
+
+        <div class="ask-bar"><span>Ask about your training…</span><div class="go">→</div></div>
+
+        <div class="tabbar">
+          <div><div class="dot"></div><span>LOG</span></div>
+          <div class="on"><div class="dot"></div><span>TRENDS</span></div>
+          <div><div class="dot"></div><span>TRAIN</span></div>
+          <div><div class="dot"></div><span>COACH</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- FRAME 4 · WORKOUT DETAIL — THREE ACTS                         -->
+  <!-- ============================================================ -->
+  <div class="frame-wrap">
+    <div class="frame-cap">
+      <div class="eyebrow">04 · Workout Detail — Three Acts</div>
+      <h2>One view. Hierarchy, finally.</h2>
+      <p>Act 1: the run at a glance, conditions promoted to a plate. Act 2: the story — the Read with the voice memo inline, then Workouts &amp; Reps as the hero table. Act 3: every trace collapsed to a one-line summary; tap to expand.</p>
+    </div>
+    <div class="phone">
+      <div class="statusbar"><span>9:41</span><span>●●●</span></div>
+      <div class="screen">
+        <div class="plate-strip"><span>Workout</span><span>WK 28 · Tue</span></div>
+
+        <!-- ACT 1 -->
+        <div style="margin-top:16px;">
+          <span class="eyebrow">Tuesday · Quality</span>
+          <div class="display-xl" style="margin-top:6px;">July 9<span style="color:var(--coral);">.</span></div>
+          <div class="quote" style="color:var(--ink-2); margin-top:6px;">7.42 mi · 51:08 · HealthKit</div>
+        </div>
+
+        <div class="stat4">
+          <div><div class="v">7.42</div><div class="k">Distance</div></div>
+          <div><div class="v">51:08</div><div class="k">Duration</div></div>
+          <div><div class="v">6:54</div><div class="k">Avg Pace</div></div>
+          <div><div class="v">162</div><div class="k">Avg HR</div></div>
+        </div>
+
+        <div class="cond-plate">
+          <div><div class="v">74°</div><div class="k">Temp</div></div>
+          <div><div class="v">68°</div><div class="k">Dewpoint</div></div>
+          <div><div class="v">−9s/mi</div><div class="k">Heat Adj</div></div>
+          <div><div class="v">+310 ft</div><div class="k">Climb</div></div>
+        </div>
+
+        <!-- ACT 2 -->
+        <div class="edrule"><i></i></div>
+        <div class="eyebrow coral">The Read</div>
+        <div class="body" style="margin-top:8px; font-size:14px;">Sticky morning for 800s — dewpoint 68° puts your 6:41 rep average nearer 6:32 in fair air, which is right on your 5K zone. You held the last two reps steadiest.</div>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+          <span class="mood-pill" style="background:rgba(74,158,107,0.15); color:var(--mood-positive);">POSITIVE</span>
+          <span class="quote" style="color:var(--ink-2); font-size:13px;">"legs came around after rep two"</span>
+        </div>
+
+        <div class="eyebrow" style="margin-top:20px;">Workouts &amp; Reps · 6 × 800 @ 5K</div>
+        <table class="reps-table">
+          <tr><th>Rep</th><th>Pace</th><th>Target</th><th>GAP</th><th>HR</th></tr>
+          <tr><td><span class="zone-chip" style="background:var(--pz-5k); font-size:9px;">1</span></td><td>6:47</td><td>6:40</td><td>6:41</td><td>158</td></tr>
+          <tr><td><span class="zone-chip" style="background:var(--pz-5k); font-size:9px;">2</span></td><td>6:44</td><td>6:40</td><td>6:39</td><td>163</td></tr>
+          <tr><td><span class="zone-chip" style="background:var(--pz-5k); font-size:9px;">3</span></td><td>6:40</td><td>6:40</td><td>6:36</td><td>166</td></tr>
+          <tr><td><span class="zone-chip" style="background:var(--pz-3k); font-size:9px;">4</span></td><td>6:38</td><td>6:40</td><td>6:33</td><td>169</td></tr>
+          <tr><td><span class="zone-chip" style="background:var(--pz-5k); font-size:9px;">5</span></td><td>6:39</td><td>6:40</td><td>6:35</td><td>170</td></tr>
+          <tr><td><span class="zone-chip" style="background:var(--pz-5k); font-size:9px;">6</span></td><td>6:39</td><td>6:40</td><td>6:34</td><td>171</td></tr>
+        </table>
+        <div class="cond" style="margin-top:8px;">REP AVG 6:41 · TARGET 6:40 · RECOVERIES 2:00 JOG</div>
+
+        <!-- ACT 3 -->
+        <div class="edrule"><i></i></div>
+        <div class="eyebrow" style="margin-bottom:2px;">Traces</div>
+
+        <div class="collapse-row"><span class="eyebrow" style="color:var(--ink);">HR Zones</span><span style="display:flex;align-items:center;"><span class="sum">31 MIN Z4 · 12 MIN Z2</span><span class="chev">▸</span></span></div>
+        <div class="collapse-row" style="border-bottom:none; padding-bottom:6px;"><span class="eyebrow" style="color:var(--ink);">Elevation</span><span style="display:flex;align-items:center;"><span class="sum">+310 FT · MAX 5.2% GRADE</span><span class="chev">▾</span></span></div>
+        <svg class="elev-mini" viewBox="0 0 350 44" width="100%">
+          <path d="M0,36 L30,32 L60,34 L95,20 L130,24 L160,10 L200,16 L240,8 L280,18 L315,26 L350,30 L350,44 L0,44 Z" fill="#E8E4DF"/>
+          <path d="M0,36 L30,32 L60,34 L95,20 L130,24 L160,10 L200,16 L240,8 L280,18 L315,26 L350,30" fill="none" stroke="#6B6560" stroke-width="1.5"/>
+        </svg>
+        <div class="collapse-row"><span class="eyebrow" style="color:var(--ink);">Pace Trace</span><span style="display:flex;align-items:center;"><span class="sum">SPLITS 6:38 – 6:47</span><span class="chev">▸</span></span></div>
+        <div class="collapse-row"><span class="eyebrow" style="color:var(--ink);">Cadence</span><span style="display:flex;align-items:center;"><span class="sum">174 AVG</span><span class="chev">▸</span></span></div>
+        <div class="collapse-row"><span class="eyebrow" style="color:var(--ink);">Vs. Recent 800s</span><span style="display:flex;align-items:center;"><span class="sum">−4S ON JUN 24</span><span class="chev">▸</span></span></div>
+        <div class="collapse-row" style="border-bottom:none;"><span class="eyebrow" style="color:var(--ink);">Route</span><span style="display:flex;align-items:center;"><span class="sum">RIVER LOOP</span><span class="chev">▸</span></span></div>
+
+        <div style="height:20px;"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

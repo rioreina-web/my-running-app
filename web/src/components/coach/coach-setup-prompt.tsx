@@ -56,8 +56,10 @@ export function CoachSetupPrompt() {
     <div className="max-w-lg mx-auto pt-8">
       <Card className="p-8">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-4">🏃‍♂️</div>
-          <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+          <span className="block mb-3 font-mono text-[11px] tracking-[1.5px] uppercase text-coral">
+            Coach Portal
+          </span>
+          <h2 className="font-display text-2xl font-bold text-[var(--color-text-primary)]">
             Set Up Your Coach Profile
           </h2>
           <p className="text-sm text-[var(--color-text-secondary)] mt-2">

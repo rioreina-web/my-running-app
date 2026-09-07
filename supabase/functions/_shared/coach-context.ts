@@ -576,24 +576,44 @@ export interface WorkoutSplit {
   paceSecPerMile: number;
   /** Optional. From watch data. */
   avgHeartRate?: number;
-  /** "warmup" / "cooldown" / "work" / unknown. Used for pattern detection. */
-  effortKind: "warmup" | "cooldown" | "work" | "unknown";
+  /** "warmup" / "cooldown" / "work" / "rest" / unknown. Used for pattern detection. */
+  effortKind: "warmup" | "cooldown" | "work" | "rest" | "unknown";
 }
 
 const WARMUP_LABELS = new Set(["warmup", "warm-up", "warm up", "wu"]);
 const COOLDOWN_LABELS = new Set(["cooldown", "cool-down", "cool down", "cd"]);
+/**
+ * The float/jog/standing rest BETWEEN reps. Added 2026-08-20 alongside the
+ * laps-based `pace_segments` (see `_shared/paceSegments.ts`): once segments
+ * come from the watch's laps, the recoveries arrive as their own rows instead
+ * of being averaged into a mile. They must not be counted as reps — a 6×1mi
+ * session would otherwise narrate as twelve reps, half of them at 23:00/mi.
+ */
+const REST_LABELS = new Set(["recovery", "rest", "jog", "float", "recovery_jog"]);
 
 function classifyEffortKind(rawEffort: string | undefined | null): WorkoutSplit["effortKind"] {
   if (!rawEffort) return "unknown";
   const e = rawEffort.toLowerCase().trim();
   if (WARMUP_LABELS.has(e)) return "warmup";
   if (COOLDOWN_LABELS.has(e)) return "cooldown";
+  if (REST_LABELS.has(e)) return "rest";
   // Anything else (interval, tempo, race_pace, threshold, hard, etc.) is "work".
   return "work";
 }
 
 /**
  * Normalize Garmin/HealthKit `pace_segments` rows into WorkoutSplit shape.
+ *
+ * MILE-SPLIT GUARD (2026-08-06): Strava-synced pace_segments are per-mile
+ * averages (`splits_standard`), each tagged only "fast"/"steady"/"easy" — all
+ * of which classify as "work". Labeling those `Rep N` presented mile splits
+ * (work + recovery smeared together) to the LLM as rep structure: a 5×4:00
+ * threshold session read back as "4×1 mile reps" a minute/mi slower than the
+ * athlete ran. When the work segments are uniformly ~1 mile (± a trailing
+ * partial), they're mile splits, and are labeled `Mile N` instead. A genuine
+ * 1-mile-rep session caught by this reads "Mile 3 @ 5:50/mi" — still accurate,
+ * just less presumptuous. Callers wanting true rep structure should prefer
+ * `splitsFromLaps` / parsed blocks; this source is the fallback.
  */
 export function splitsFromPaceSegments(
   segments: Array<{
@@ -616,6 +636,7 @@ export function splitsFromPaceSegments(
     const label = (() => {
       if (effortKind === "warmup") return "Warmup";
       if (effortKind === "cooldown") return "Cooldown";
+      if (effortKind === "rest") return "Recovery";
       if (effortKind === "work") {
         workIndex++;
         return `Rep ${workIndex}`;
@@ -627,6 +648,92 @@ export function splitsFromPaceSegments(
       distanceMiles: dist,
       paceSecPerMile: paceSec,
       avgHeartRate: seg.avg_heart_rate,
+      effortKind,
+    });
+  }
+
+  // Distance-split guard — see docstring. All work segments a uniform ~1 mile
+  // or ~1 km (the last may be a trailing partial) ⇒ these are per-distance
+  // splits, not reps. Deliberately DISTANCE-based, never pace-based, so it
+  // behaves identically for a 5:00/mi runner and a 12:00/mi runner.
+  const work = out.filter((s) => s.effortKind === "work");
+  // ...unless the segments carry explicit recoveries between the work bouts.
+  // That only happens when the source was the watch's own laps, and it is
+  // positive evidence of rep structure: the athlete stopped, so these are reps
+  // that happen to be a mile, not mile splits of a continuous run. Guarding on
+  // this rather than on pace keeps the rule distance-and-structure based.
+  const hasExplicitRest = out.some((s) => s.effortKind === "rest");
+  if (work.length >= 2 && !hasExplicitRest) {
+    const KM_MI = 0.6214;
+    const near = (d: number, unit: number) => Math.abs(d - unit) <= unit * 0.06;
+    const last = work[work.length - 1];
+    const uniform = (unit: number) =>
+      work.slice(0, -1).every((s) => near(s.distanceMiles, unit)) &&
+      (near(last.distanceMiles, unit) || last.distanceMiles < unit);
+    const unitLabel = uniform(1) ? "Mile" : uniform(KM_MI) ? "Km" : null;
+    if (unitLabel) {
+      let idx = 0;
+      for (const s of out) {
+        if (s.effortKind === "work") {
+          idx++;
+          s.label = `${unitLabel} ${idx}`;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Normalize parse-workout-structure's recovery-segmented execution blocks into
+ * WorkoutSplit shape. This is the HIGHEST-fidelity split source: the parser
+ * segments the GPS stream by where the athlete actually slowed down, so
+ * continuous efforts are already merged (a 2k is one rep, not two 1k laps) and
+ * recoveries are already separated — including jogged recoveries that the
+ * lap-level `is_rest` heuristic (absolute <200m / <2.0 m/s thresholds) misses
+ * for athletes whose recovery jog is a normal running pace. Moved here from
+ * generate-workout-insight (2026-08-06) so process-training-memo can read the
+ * sibling GPS run's parsed structure through the same ladder.
+ */
+export function splitsFromParsedBlocks(
+  blocks:
+    | Array<{
+        role?: string;
+        rep_num?: number | null;
+        distance_miles?: number | string;
+        duration_s?: number | string;
+        avg_pace_per_mile?: string;
+        avg_hr?: number | null;
+      }>
+    | null
+    | undefined,
+): WorkoutSplit[] {
+  if (!Array.isArray(blocks) || blocks.length === 0) return [];
+  const out: WorkoutSplit[] = [];
+  let workIndex = 0;
+  for (const b of blocks) {
+    const role = (b.role ?? "").toLowerCase();
+    const dist = typeof b.distance_miles === "number"
+      ? b.distance_miles
+      : parseFloat(String(b.distance_miles ?? "0"));
+    const paceParts = (b.avg_pace_per_mile ?? "").split(":");
+    const paceSec = paceParts.length === 2
+      ? parseInt(paceParts[0], 10) * 60 + parseInt(paceParts[1], 10)
+      : NaN;
+    if (!dist || dist <= 0 || !isFinite(paceSec)) continue;
+    const effortKind: WorkoutSplit["effortKind"] = role === "warmup"
+      ? "warmup"
+      : role === "cooldown"
+      ? "cooldown"
+      : role === "work_rep"
+      ? "work"
+      : "unknown";
+    if (effortKind === "work") workIndex += 1;
+    out.push({
+      label: effortKind === "work" ? `Rep ${workIndex}` : (b.role ?? "segment"),
+      distanceMiles: dist,
+      paceSecPerMile: paceSec,
+      avgHeartRate: typeof b.avg_hr === "number" ? b.avg_hr : undefined,
       effortKind,
     });
   }
@@ -669,6 +776,73 @@ export function splitsFromExtractedIntervals(
 }
 
 /**
+ * Normalize `running_workout_laps` rows into WorkoutSplit shape.
+ *
+ * This is the RICHEST split source — actual lap presses (the true rep
+ * structure: e.g. 8×1K with jog recoveries) rather than the mile-averaged
+ * `pace_segments`, which smear work + rest together into "alternating
+ * fast/easy miles" and make an interval session unreadable. Rest laps
+ * (`is_rest = true`) are dropped so the work reps read cleanly, and sub-50m
+ * GPS-noise fragments are discarded. Lap-level data doesn't distinguish
+ * warmup/cooldown, so everything kept is treated as "work".
+ */
+export function splitsFromLaps(
+  laps: Array<{
+    lap_index?: number | null;
+    distance_meters?: number | string | null;
+    moving_time_seconds?: number | null;
+    avg_pace_sec_per_mile?: number | string | null;
+    avg_heart_rate?: number | null;
+    is_rest?: boolean | null;
+  }> | null | undefined,
+): WorkoutSplit[] {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+  const work = laps
+    .filter((l) => l.is_rest !== true)
+    .sort((a, b) => (a.lap_index ?? 0) - (b.lap_index ?? 0));
+  // First pass: normalize distances/paces and drop noise fragments.
+  const candidates: Array<{ distMi: number; paceSec: number; hr?: number }> = [];
+  for (const l of work) {
+    const meters = typeof l.distance_meters === "number"
+      ? l.distance_meters
+      : parseFloat(String(l.distance_meters ?? "0"));
+    const distMi = Number.isFinite(meters) ? meters / 1609.34 : 0;
+    // Drop GPS-noise fragments (e.g. a 20m auto-lap) that aren't real reps.
+    if (!distMi || distMi < 0.05) continue;
+    let paceSec = typeof l.avg_pace_sec_per_mile === "number"
+      ? l.avg_pace_sec_per_mile
+      : parseFloat(String(l.avg_pace_sec_per_mile ?? ""));
+    if ((!paceSec || !Number.isFinite(paceSec)) && l.moving_time_seconds && distMi > 0) {
+      paceSec = l.moving_time_seconds / distMi;
+    }
+    if (!paceSec || !Number.isFinite(paceSec) || paceSec <= 0) continue;
+    candidates.push({
+      distMi,
+      paceSec,
+      hr: typeof l.avg_heart_rate === "number" ? l.avg_heart_rate : undefined,
+    });
+  }
+  // Second pass: RELATIVE recovery filter. `is_rest` is a generated column
+  // with ABSOLUTE thresholds (<200m or slower than 2.0 m/s ≈ walking) — it
+  // catches standing rests but misses jogged recoveries run at a normal pace
+  // (e.g. 400m at 10:30/mi between 8:00/mi reps). Mirror deriveWorkoutNotes'
+  // rule: a lap much slower than the fastest kept lap (>1.5×) is a
+  // recovery/boundary, not a rep — a ratio, so it holds at any absolute speed.
+  // Guard: only filter when ≥2 laps survive, so a lone-fast-lap outlier can't
+  // erase an otherwise-even session.
+  const fastest = Math.min(...candidates.map((c) => c.paceSec));
+  const kept = candidates.filter((c) => c.paceSec <= fastest * 1.5);
+  const final = kept.length >= 2 ? kept : candidates;
+  return final.map((c, i) => ({
+    label: `Rep ${i + 1}`,
+    distanceMiles: c.distMi,
+    paceSecPerMile: Math.round(c.paceSec),
+    avgHeartRate: c.hr,
+    effortKind: "work" as const,
+  }));
+}
+
+/**
  * Format the splits block for the LLM. Returns null when there's nothing
  * useful — fewer than 2 work segments, or no segments at all.
  *
@@ -679,6 +853,13 @@ export function splitsFromExtractedIntervals(
 export function formatSplitsBlock(
   splits: WorkoutSplit[],
   zones: PaceZones | null,
+  opts: {
+    detectPattern?: boolean;
+    /** First-half→second-half delta (sec/mi) needed to call a fade. Default 12. */
+    patternThreshold?: number;
+    /** Easy/long register: only surface a large late fade; silent otherwise. */
+    largeDropoffOnly?: boolean;
+  } = {},
 ): string {
   if (splits.length === 0) return "";
   const work = splits.filter((s) => s.effortKind === "work" || s.effortKind === "unknown");
@@ -696,13 +877,64 @@ export function formatSplitsBlock(
   }
 
   // Pattern detection — compare first half vs second half of work reps.
-  const pattern = detectSplitPattern(work);
-  if (pattern) lines.push(`Pattern: ${pattern}`);
+  // Two registers:
+  //   • QUALITY sessions (targeting a pace) get the full read — fade / negative
+  //     split / consistent / mixed at the normal ≥12 sec/mi threshold.
+  //   • Easy / recovery / long runs use `largeDropoffOnly`: silent on normal
+  //     drift (expected), but a genuinely large late fade still surfaces because
+  //     it can signal fatigue or heat.
+  // `detectPattern: false` suppresses the line entirely. Default true for
+  // back-compat; the insight callers pass the register explicitly.
+  if (opts.detectPattern !== false) {
+    const pattern = detectSplitPattern(work, {
+      fadeThreshold: opts.patternThreshold,
+      largeDropoffOnly: opts.largeDropoffOnly,
+    });
+    if (pattern) lines.push(`Pattern: ${pattern}`);
+  }
 
   return lines.join("\n");
 }
 
-function detectSplitPattern(work: WorkoutSplit[]): string | null {
+/**
+ * True only for sessions where the athlete is TARGETING a pace — intervals,
+ * tempo, race-pace reps. Fade / negative-split / consistency verdicts only make
+ * sense here. Easy, Recovery, Moderate, Steady, plain Long, and non-run types
+ * return false: on those, pace drifting slower over the run is normal and a
+ * "fade" callout is a false signal.
+ *
+ * Covers both the current pace-zone labels (MP / HMP / LT / 10K / 5K / 3K /
+ * Mile) and legacy workout_type strings (tempo / intervals / threshold / …).
+ */
+export function isQualityWorkoutType(workoutType: string | null | undefined): boolean {
+  if (!workoutType) return false;
+  const t = workoutType.trim().toLowerCase();
+  const firstTok = t.split(/[\s·×x/,-]+/)[0];
+
+  // Explicit deny — aerobic effort zones + structural / non-run types.
+  const AEROBIC = new Set([
+    "easy", "recovery", "moderate", "steady", "long", "long_run", "long run",
+    "cross", "cross-train", "cross_train", "crosstrain", "strength", "rest", "walk",
+  ]);
+  if (AEROBIC.has(t) || AEROBIC.has(firstTok)) return false;
+
+  // Quality: race-pace zone labels + legacy quality strings. "Long wo" (long run
+  // with embedded quality) counts; plain "long" does not.
+  const QUALITY = new Set([
+    "mp", "hmp", "lt", "10k", "5k", "3k", "mile",
+    "tempo", "threshold", "intervals", "interval", "speed", "progression",
+    "workout", "wo", "race",
+  ]);
+  if (QUALITY.has(t) || QUALITY.has(firstTok)) return true;
+  if (t.includes("long wo") || t.includes("long_wo")) return true;
+
+  return false;
+}
+
+function detectSplitPattern(
+  work: WorkoutSplit[],
+  opts: { fadeThreshold?: number; largeDropoffOnly?: boolean } = {},
+): string | null {
   if (work.length < 2) return null;
 
   const mid = Math.floor(work.length / 2);
@@ -720,16 +952,33 @@ function detectSplitPattern(work: WorkoutSplit[]): string | null {
   const paces = work.map((s) => s.paceSecPerMile);
   const spread = Math.max(...paces) - Math.min(...paces);
 
-  if (Math.abs(delta) <= 3 && spread <= 8) {
+  // Easy / recovery / long register: only a genuinely LARGE late fade is worth a
+  // word (fatigue/heat signal). Everything else — normal drift, consistency,
+  // negative splits — stays silent, because those reads only mean something when
+  // the athlete was targeting a pace. Default large threshold is 25 sec/mi.
+  if (opts.largeDropoffOnly) {
+    const bigFade = opts.fadeThreshold ?? 25;
+    if (delta >= bigFade) {
+      return `Late fade — second half averaged ${delta} sec/mi slower than the first.`;
+    }
+    return null;
+  }
+
+  // Quality register. Thresholds are deliberately conservative: a "fade" is a
+  // real positive split (≥12 sec/mi second-half vs first-half on MOVING pace),
+  // not GPS jitter. (2026-07-19: raised from 4 — a 4 sec/mi delta on an easy run
+  // was reading as a "significant fade.")
+  const fadeThreshold = opts.fadeThreshold ?? 12;
+  if (Math.abs(delta) <= 8 && spread <= 15) {
     return `Consistent — work reps held within ${spread} sec/mi.`;
   }
-  if (delta >= 4) {
+  if (delta >= fadeThreshold) {
     return `Fade — second half averaged ${delta} sec/mi slower than the first.`;
   }
-  if (delta <= -4) {
+  if (delta <= -fadeThreshold) {
     return `Negative split — second half averaged ${Math.abs(delta)} sec/mi faster than the first.`;
   }
-  if (spread > 8) {
+  if (spread > 25) {
     return `Mixed — ${spread} sec/mi spread across reps without a clear fade/build pattern.`;
   }
   return null;

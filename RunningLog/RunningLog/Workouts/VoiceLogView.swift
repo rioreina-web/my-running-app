@@ -7,14 +7,38 @@ import SwiftUI
 
 // MARK: - VoiceLogView
 
+/// One Monday-start week of journal entries, for the grouped feed.
+private struct JournalWeek: Identifiable {
+    let id: String
+    let label: String
+    let miles: Double
+    let entries: [TrainingLog]
+}
+
+/// Journal kind filter — voice memo, typed note, or check-in.
+private enum JournalKind: String, CaseIterable {
+    case all, voice, note, checkIn
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .voice: return "Voice"
+        case .note: return "Notes"
+        case .checkIn: return "Check-ins"
+        }
+    }
+}
+
 struct VoiceLogView: View {
     @Environment(CoachCheckInManager.self) private var checkInManager
-    @Environment(\.selectedTab) private var selectedTab
-    @StateObject private var healthKitManager = HealthKitManager()
+    // Beta-audit item #8 (2026-07-16): use the SHARED manager. A fresh
+    // `HealthKitManager()` here had its own isAuthorized/readState that
+    // diverged from the instance the app actually syncs with.
+    @ObservedObject private var healthKitManager = HealthKitManager.shared
     @State private var viewModel = VoiceLogViewModel()
     @State private var isRecording = false
     @State private var audioRecorder: AVAudioRecorder?
     @State private var recordingURL: URL?
+    @State private var showMicDeniedAlert = false
     @State private var manualNotes = ""
     @State private var recordingDuration: TimeInterval = 0
     @State private var timer: Timer?
@@ -29,6 +53,9 @@ struct VoiceLogView: View {
 
     // Feed state
     @State private var selectedHistoryEntry: TrainingLog?
+    // Journal search + kind filter (client-side over the loaded history).
+    @State private var journalSearch = ""
+    @State private var journalKind: JournalKind = .all
 
     // Today sheet — Today doesn't have a tab anymore (voice is the front
     // door), so it lives behind this opener. Edit the IA in MainTabView
@@ -62,11 +89,6 @@ struct VoiceLogView: View {
                             // Quiet status annotation
                             if !viewModel.statusMessage.isEmpty {
                                 nsStatusLine
-                            }
-
-                            // Coach check-in eyebrow line
-                            if checkInManager.showBanner, checkInManager.pendingCheckIn != nil {
-                                nsCoachCheckInLine
                             }
 
                             // Mode toggle (only when idle)
@@ -147,9 +169,12 @@ struct VoiceLogView: View {
         .onAppear {
             setupAudioSession()
             Task {
-                _ = await healthKitManager.requestAuthorization()
-                let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-                await MainActor.run { healthKitManager.recentWorkouts = workouts }
+                // Merged across HealthKit + Vital + Strava, and throttled, so
+                // this is cheap on a tab switch but still catches a run that
+                // landed mid-session. It does NOT request authorization, so
+                // it cannot race the launch task's auth call the way the old
+                // unconditional fetch here did.
+                await healthKitManager.refreshRecentRunsIfStale()
                 await viewModel.loadHistory()
             }
         }
@@ -194,11 +219,26 @@ struct VoiceLogView: View {
             }
         }
         .sheet(item: $selectedHistoryEntry) { entry in
-            HistoryDetailSheet(entry: entry) {
+            // Page through exactly what the athlete can see in the feed right
+            // now — same filter, same order — so the swipe matches the list
+            // they already have in their head.
+            HistoryDetailPager(entries: filteredHistoryLogs, initial: entry) {
                 Task { await viewModel.loadHistory() }
             }
-            .presentationDetents([.medium, .large])
+            // `.large` only: the page rail lives on the bottom edge and the
+            // medium detent crops it.
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .alert("Microphone access needed", isPresented: $showMicDeniedAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("Voice memos need the microphone. Enable it in Settings → PostRunDrip → Microphone. You can also type your notes instead.")
         }
     }
 
@@ -212,7 +252,7 @@ struct VoiceLogView: View {
             Text(isError ? "——" : "·")
                 .foregroundStyle(Color.drip.textTertiary)
             Text(viewModel.statusMessage)
-                .font(.system(size: 14, design: .serif).italic())
+                .font(.dripBodyItalic(14))
                 .foregroundStyle(isError ? Color.drip.coral : Color.drip.textSecondary)
             Spacer()
         }
@@ -220,39 +260,6 @@ struct VoiceLogView: View {
         .padding(.top, 12)
         .padding(.bottom, 4)
         .transition(.opacity)
-    }
-
-    /// Coach check-in surfaced as a quiet single-line eyebrow.
-    @ViewBuilder
-    private var nsCoachCheckInLine: some View {
-        Button {
-            // Coach moved to tab 3 when Trends was inserted at slot 2.
-            selectedTab.wrappedValue = 3
-        } label: {
-            HStack(spacing: 8) {
-                Text("COACH HAS A CHECK-IN WAITING")
-                    .font(.dripCaption(11))
-                    .tracking(1.2)
-                    .foregroundStyle(Color.drip.coral)
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(Color.drip.coral)
-                Spacer()
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        checkInManager.dismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.drip.textTertiary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
     }
 
     /// Text segmented mode toggle with amber underline on the active mode.
@@ -281,7 +288,7 @@ struct VoiceLogView: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 Text(label)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.dripEyebrow(11))
                     .tracking(1.2)
                     .foregroundStyle(active ? Color.drip.coral : Color.drip.textSecondary)
                     .padding(.top, 14)
@@ -309,7 +316,7 @@ struct VoiceLogView: View {
                 // tabular-nums` for this; the serif display token
                 // (`dripDisplay`) used elsewhere is wrong here.
                 Text(formatDuration(recordingDuration))
-                    .font(.system(size: 56, weight: .medium, design: .monospaced))
+                    .font(.dripEyebrow(56))
                     .monospacedDigit()
                     .tracking(-1.0)  // -0.02em at 56pt ≈ -1.1pt
                     .foregroundStyle(Color.drip.textPrimary)
@@ -324,7 +331,7 @@ struct VoiceLogView: View {
             Text(isRecording
                  ? (isCheckInMode ? "Speak your status — tap the button to stop." : "Recording — tap the button to stop.")
                  : (isCheckInMode ? "Tap the button to record a quick check-in." : "Tap the button to start your voice memo."))
-                .font(.system(size: 15, design: .serif).italic())
+                .font(.dripBodyItalic(15))
                 .foregroundStyle(Color.drip.textSecondary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -347,13 +354,13 @@ struct VoiceLogView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text("LINKED TO")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(.dripEyebrow(10))
                             .tracking(1.0)
                             .foregroundStyle(Color.drip.textSecondary)
                         Spacer()
                         HStack(spacing: 4) {
                             Text(selectedWorkout == nil ? "LINK A RUN" : "CHANGE")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.dripEyebrow(10))
                                 .tracking(1.0)
                                 .foregroundStyle(Color.drip.textSecondary)
                             Image(systemName: "arrow.up.right")
@@ -366,11 +373,11 @@ struct VoiceLogView: View {
                             .font(.dripDisplay(20))
                             .foregroundStyle(Color.drip.textPrimary)
                         Text(linkedWorkoutMeta(w))
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.dripEyebrow(10))
                             .foregroundStyle(Color.drip.textTertiary)
                     } else {
                         Text("Optional — attach to a recent run.")
-                            .font(.system(size: 14, design: .serif).italic())
+                            .font(.dripBodyItalic(14))
                             .foregroundStyle(Color.drip.textSecondary)
                     }
                 }
@@ -410,7 +417,7 @@ struct VoiceLogView: View {
                 toggleRecording()
             }
             Text(isRecording ? "TAP TO STOP" : "TAP TO RECORD")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(11))
                 .tracking(1.2)
                 .foregroundStyle(Color.drip.textSecondary)
             Spacer().frame(height: 36)
@@ -427,7 +434,7 @@ struct VoiceLogView: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("OR  ·  TYPE NOTES")
-                        .font(.dripCaption(11))
+                        .font(.dripEyebrow(11))
                         .tracking(1.2)
                         .foregroundStyle(Color.drip.textSecondary)
                     Spacer()
@@ -437,14 +444,14 @@ struct VoiceLogView: View {
                 ZStack(alignment: .topLeading) {
                     if manualNotes.isEmpty {
                         Text("How did your run feel today?")
-                            .font(.system(size: 15, design: .serif).italic())
+                            .font(.dripBodyItalic(15))
                             .foregroundStyle(Color.drip.textTertiary)
                             .padding(.top, 8)
                             .padding(.leading, 4)
                             .allowsHitTesting(false)
                     }
                     TextEditor(text: $manualNotes)
-                        .font(.system(size: 15, design: .serif))
+                        .font(.dripBody(15))
                         .foregroundStyle(Color.drip.textPrimary)
                         .scrollContentBackground(.hidden)
                         .focused($isTextEditorFocused)
@@ -461,7 +468,7 @@ struct VoiceLogView: View {
     private var nsSaveNotesAction: some View {
         if manualNotes.isEmpty {
             Text("SAVE")
-                .font(.dripCaption(11))
+                .font(.dripEyebrow(11))
                 .tracking(1.2)
                 .foregroundStyle(Color.drip.textTertiary)
         } else if viewModel.isUploading {
@@ -478,7 +485,7 @@ struct VoiceLogView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("SAVE")
-                        .font(.dripCaption(11))
+                        .font(.dripEyebrow(11))
                         .tracking(1.2)
                         .foregroundStyle(Color.drip.coral)
                     Image(systemName: "arrow.up.right")
@@ -500,7 +507,7 @@ struct VoiceLogView: View {
         VStack(spacing: 0) {
             HStack {
                 Text("JOURNAL  \(journalCountLabel)")
-                    .font(.dripCaption(11))
+                    .font(.dripEyebrow(11))
                     .tracking(1.2)
                     .foregroundStyle(Color.drip.textSecondary)
                 Spacer()
@@ -516,11 +523,92 @@ struct VoiceLogView: View {
             .padding(.horizontal, 24)
             .padding(.vertical, 14)
 
+            // Search + kind filter — only once there's something to search.
+            if !viewModel.historyLogs.isEmpty {
+                nsJournalFilters
+            }
+
             Rectangle().fill(Color.drip.divider).frame(height: 1)
 
             nsYourLogsContent
         }
         .padding(.bottom, 40)
+    }
+
+    @ViewBuilder
+    private var nsJournalFilters: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.drip.textTertiary)
+                TextField("Search your notes", text: $journalSearch)
+                    .font(.dripBody(14))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .foregroundStyle(Color.drip.textPrimary)
+                if !journalSearch.isEmpty {
+                    Button { journalSearch = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.drip.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.drip.divider, lineWidth: 1))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(JournalKind.allCases, id: \.self) { kind in
+                        journalFilterChip(kind.label, active: journalKind == kind) {
+                            journalKind = kind
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 14)
+    }
+
+    private func journalFilterChip(_ label: String, active: Bool, _ tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            Text(label.uppercased())
+                .font(.dripEyebrow(10))
+                .tracking(0.8)
+                .foregroundStyle(active ? Color.drip.textPrimary : Color.drip.textTertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(active ? Color.drip.cardBackgroundElevated : Color.drip.cardBackground)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(active ? Color.drip.textSecondary : Color.drip.divider, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// History filtered by the active kind + free-text search over notes.
+    private var filteredHistoryLogs: [TrainingLog] {
+        let q = journalSearch.trimmingCharacters(in: .whitespaces).lowercased()
+        return viewModel.historyLogs.filter { log in
+            let kindOK: Bool
+            switch journalKind {
+            case .all:     kindOK = true
+            case .voice:   kindOK = log.audioUrl != nil && log.source != "check_in"
+            case .note:    kindOK = log.audioUrl == nil && log.source != "check_in"
+            case .checkIn: kindOK = log.source == "check_in"
+            }
+            guard kindOK else { return false }
+            guard !q.isEmpty else { return true }
+            let hay = [log.cleanedNotes, log.notes, log.workoutNotes, log.coachInsight]
+                .compactMap { $0?.lowercased() }
+                .joined(separator: " ")
+            return hay.contains(q)
+        }
     }
 
     private var journalCountLabel: String {
@@ -538,40 +626,226 @@ struct VoiceLogView: View {
                 Spacer()
             }
             .padding(.vertical, 32)
+        } else if viewModel.historyLogs.isEmpty && viewModel.loadFailed {
+            // A load error — NOT genuinely empty. Never show "No entries yet"
+            // here: it reads as data loss when the rows are safe on the server.
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Couldn't load your journal. Your entries are safe — this is a connection hiccup.")
+                    .font(.dripBodyItalic(14))
+                    .foregroundStyle(Color.drip.textSecondary)
+                Button {
+                    Task { await viewModel.loadHistory() }
+                } label: {
+                    Text("Tap to retry")
+                        .font(.dripLabel(13))
+                        .foregroundStyle(Color.drip.coral)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 24)
         } else if viewModel.historyLogs.isEmpty {
             Text("No entries yet — record or type to start your journal.")
-                .font(.system(size: 14, design: .serif).italic())
+                .font(.dripBodyItalic(14))
+                .foregroundStyle(Color.drip.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 24)
+        } else if filteredHistoryLogs.isEmpty {
+            Text(journalSearch.isEmpty
+                 ? "No \(journalKind.label.lowercased()) entries yet."
+                 : "Nothing matches \u{201C}\(journalSearch)\u{201D}.")
+                .font(.dripBodyItalic(14))
                 .foregroundStyle(Color.drip.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 24)
         } else {
-            LazyVStack(spacing: 0) {
-                ForEach(Array(viewModel.historyLogs.enumerated()), id: \.element.id) { idx, log in
-                    if log.isPending || log.isFailed {
-                        ProcessingLogCard(log: log) {
-                            Task { await viewModel.retryProcessing(log: log) }
+            // Week-grouped feed with sticky headers (pinnedViews) + a per-week
+            // mileage subtotal — "THIS WEEK · 32 MI".
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                ForEach(historyWeekGroups) { week in
+                    Section {
+                        ForEach(Array(week.entries.enumerated()), id: \.element.id) { idx, log in
+                            nsJournalEntryRow(log)
+                            if idx < week.entries.count - 1 {
+                                Rectangle()
+                                    .fill(Color.drip.divider)
+                                    .frame(height: 1)
+                                    .padding(.horizontal, 24)
+                            }
                         }
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 8)
-                    } else {
-                        Button {
-                            selectedHistoryEntry = log
-                        } label: {
-                            JournalLogRow(entry: log)
-                                .padding(.horizontal, 24)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if idx < viewModel.historyLogs.count - 1 {
-                        Rectangle()
-                            .fill(Color.drip.divider)
-                            .frame(height: 1)
-                            .padding(.horizontal, 24)
+                    } header: {
+                        journalWeekHeader(week)
                     }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func nsJournalEntryRow(_ log: TrainingLog) -> some View {
+        if log.isPending || log.isFailed {
+            ProcessingLogCard(log: log) {
+                Task { await viewModel.retryProcessing(log: log) }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 8)
+        } else {
+            Button {
+                selectedHistoryEntry = log
+            } label: {
+                JournalLogRow(entry: log, niggles: viewModel.niggleByLog[log.id.uuidString] ?? [])
+                    .padding(.horizontal, 24)
+            }
+            .buttonStyle(.plain)
+            .contextMenu { keySessionMenu(for: log) }
+        }
+    }
+
+    /// "FRI AUG 7" — built outside the ViewBuilder, where a DateFormatter can
+    /// just be configured normally.
+    private static func keyDayLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE MMM d"
+        return f.string(from: date).uppercased()
+    }
+
+    /// Long-press a journal entry to declare its day a key session, without
+    /// opening the day sheet.
+    ///
+    /// A long-press menu rather than `.swipeActions` because this feed is a
+    /// LazyVStack in a ScrollView, not a List — swipe actions do not exist
+    /// outside a List, and a hand-rolled horizontal drag here would compete
+    /// with the vertical scroll and with the row's own tap target.
+    ///
+    /// The three options are stated explicitly rather than cycled, because a
+    /// menu should say what each choice does. The DAY is named in the header
+    /// for the same reason the day sheet says "MARKS FRI AUG 7": the override
+    /// is day-scoped, and on a doubles day this row is one of two.
+    @ViewBuilder
+    private func keySessionMenu(for log: TrainingLog) -> some View {
+        let day = log.displayDate
+        let current = KeySessionStore.shared.override(on: day)
+
+        Section("KEY SESSION · MARKS \(Self.keyDayLabel(day))") {
+            Button {
+                Task { await KeySessionStore.shared.set(true, on: day) }
+            } label: {
+                Label("Key session", systemImage: current == true ? "checkmark" : "star")
+            }
+
+            Button {
+                Task { await KeySessionStore.shared.set(false, on: day) }
+            } label: {
+                Label("Not a key session", systemImage: current == false ? "checkmark" : "star.slash")
+            }
+
+            // Only offered when there IS something to withdraw — "back to auto"
+            // on a day you never marked is a no-op that reads like a bug.
+            if current != nil {
+                Button {
+                    Task { await KeySessionStore.shared.clear(on: day) }
+                } label: {
+                    Label("Back to auto", systemImage: "arrow.uturn.backward")
+                }
+            }
+        }
+    }
+
+    // MARK: - Week grouping (journal feed)
+
+    /// Monday 00:00 of the week containing `d` (Monday-start, matching the
+    /// dashboard / Trends convention).
+    private func journalWeekStart(_ d: Date) -> Date {
+        let cal = Calendar.current
+        let sod = cal.startOfDay(for: d)
+        let weekday = cal.component(.weekday, from: sod)   // 1=Sun … 7=Sat
+        let daysFromMonday = (weekday + 5) % 7             // Mon=0 … Sun=6
+        return cal.date(byAdding: .day, value: -daysFromMonday, to: sod) ?? sod
+    }
+
+    /// History entries grouped into Monday-start weeks, newest first, each with a
+    /// label (This week / Last week / Week of Jun 30) + mileage subtotal.
+    private var historyWeekGroups: [JournalWeek] {
+        let totals = weeklyTotalMiles
+        let thisWeek = journalWeekStart(Date())
+        let grouped = Dictionary(grouping: filteredHistoryLogs) {
+            journalWeekStart($0.workoutDate ?? $0.createdAt)
+        }
+        return grouped.keys.sorted(by: >).map { ws in
+            let entries = grouped[ws] ?? []
+            let weeksAgo = Int((thisWeek.timeIntervalSince(ws) / (7 * 86400)).rounded())
+            let label: String
+            switch weeksAgo {
+            case 0: label = "This week"
+            case 1: label = "Last week"
+            default: label = "Week of \(ws.formatted(.dateTime.month(.abbreviated).day()))"
+            }
+            // True weekly total (ALL runs, deduped), not just the authored entries
+            // shown in the feed. Falls back to the entry sum until the fetch lands.
+            let miles = totals[weekKey(ws)]
+                ?? entries.reduce(0.0) { $0 + ($1.workoutDistanceMiles ?? 0) }
+            return JournalWeek(id: ISO8601DateFormatter().string(from: ws),
+                               label: label, miles: miles, entries: entries)
+        }
+    }
+
+    private func weekKey(_ ws: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.calendar = Calendar.current
+        f.timeZone = .current
+        return f.string(from: ws)
+    }
+
+    /// Deduped true mileage per week (all runs, any source), keyed by week-start.
+    private var weeklyTotalMiles: [String: Double] {
+        var byWeek: [String: [JournalMileageRow]] = [:]
+        for r in viewModel.weeklyMileageRows {
+            let key = weekKey(journalWeekStart(r.workoutDate ?? r.createdAt))
+            byWeek[key, default: []].append(r)
+        }
+        return byWeek.mapValues { dedupedMiles($0) }
+    }
+
+    /// Mirrors the dashboard dedup: a voice_log / check_in carrying a distance
+    /// that matches a same-day run from another source is already counted on that
+    /// run — skip it so the total isn't double-counted.
+    private func dedupedMiles(_ rows: [JournalMileageRow]) -> Double {
+        let cal = Calendar.current
+        let withDist = rows.filter { ($0.miles ?? 0) > 0 }
+        var total = 0.0
+        for r in withDist {
+            if r.source == "voice_log" || r.source == "check_in" {
+                let day = cal.startOfDay(for: r.workoutDate ?? r.createdAt)
+                let miles = r.miles ?? 0
+                let coveredByRun = withDist.contains { other in
+                    guard other.source != "voice_log", other.source != "check_in" else { return false }
+                    let oday = cal.startOfDay(for: other.workoutDate ?? other.createdAt)
+                    return oday == day && abs((other.miles ?? 0) - miles) <= 0.3
+                }
+                if coveredByRun { continue }
+            }
+            total += r.miles ?? 0
+        }
+        return total
+    }
+
+    private func journalWeekHeader(_ week: JournalWeek) -> some View {
+        HStack(spacing: 0) {
+            Text("\(week.label.uppercased())  ·  \(Int(week.miles.rounded())) MI")
+                .font(.dripEyebrow(10)).tracking(1.2)
+                .foregroundStyle(Color.drip.textSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 18)
+        .padding(.bottom, 8)
+        // Opaque so rows scroll cleanly under the pinned header.
+        .background(Color.drip.background)
     }
 
     private func formatDuration(_ duration: TimeInterval) -> String {
@@ -605,6 +879,30 @@ struct VoiceLogView: View {
     }
 
     private func startRecording() {
+        // Beta-audit item #8 (2026-07-16): recording used to start blind —
+        // no permission request, and `record()`'s return value ignored. A
+        // user who denied the mic watched the timer run, then a silent
+        // empty .m4a uploaded and transcribed to a blank journal entry.
+        switch AVAudioApplication.shared.recordPermission {
+        case .denied:
+            showMicDeniedAlert = true
+        case .undetermined:
+            Task {
+                let granted = await AVAudioApplication.requestRecordPermission()
+                await MainActor.run {
+                    if granted {
+                        beginRecording()
+                    } else {
+                        showMicDeniedAlert = true
+                    }
+                }
+            }
+        default:
+            beginRecording()
+        }
+    }
+
+    private func beginRecording() {
         let fileName = "training_memo_\(Date().timeIntervalSince1970).m4a"
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let audioURL = documentsPath.appendingPathComponent(fileName)
@@ -624,7 +922,17 @@ struct VoiceLogView: View {
             // "Failed to start recording" is honest.
             try AVAudioSession.sharedInstance().setActive(true)
             audioRecorder = try AVAudioRecorder(url: audioURL, settings: settings)
-            audioRecorder?.record()
+
+            // record() returns false when the hardware/route can't start
+            // (another app holds the mic, route change mid-setup). Treat it
+            // as a real failure — never run the timer over dead air.
+            guard audioRecorder?.record() == true else {
+                audioRecorder = nil
+                try? AVAudioSession.sharedInstance().setActive(false)
+                viewModel.statusMessage = "Error: Couldn't start recording — another app may be using the microphone."
+                return
+            }
+
             recordingURL = audioURL
             isRecording = true
             viewModel.statusMessage = ""
@@ -745,15 +1053,7 @@ struct ProcessingLogCard: View {
                         .foregroundStyle(Color.drip.coral)
                 }
             } else if log.isFailed {
-                Button(action: onRetry) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("Retry transcription")
-                            .font(.dripCaption(11))
-                    }
-                    .foregroundStyle(Color.drip.tired)
-                }
+                failedContent
             }
         }
         .padding(14)
@@ -761,8 +1061,55 @@ struct ProcessingLogCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.drip.divider, lineWidth: 1)
+                .stroke(log.isFailed ? Color.drip.tired.opacity(0.4) : Color.drip.divider, lineWidth: 1)
         )
+    }
+
+    /// Failed state: plain headline + reassuring detail, with copy matched to
+    /// the failure kind. Interactive only when a manual retry can actually
+    /// help — during a provider outage the queue is already retrying, so the
+    /// same copy renders as a passive status line rather than a button that
+    /// cannot succeed.
+    @ViewBuilder
+    private var failedContent: some View {
+        if log.offersManualRetry {
+            Button(action: onRetry) {
+                failedBody
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(log.failureHeadline). \(log.failureDetail)")
+            .accessibilityHint("Double tap to retry")
+        } else {
+            failedBody
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(log.failureHeadline). \(log.failureDetail)")
+        }
+    }
+
+    private var failedBody: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(log.failureHeadline)
+                .font(.dripCaption(12))
+                .foregroundStyle(Color.drip.tired)
+
+            Text(log.failureDetail)
+                .font(.dripBody(13))
+                .foregroundStyle(Color.drip.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+
+            HStack(spacing: 6) {
+                Image(systemName: log.offersManualRetry ? "arrow.clockwise" : "clock")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(log.retryActionLabel)
+                    .font(.dripCaption(11))
+            }
+            .foregroundStyle(log.offersManualRetry ? Color.drip.tired : Color.drip.textSecondary)
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
@@ -1056,82 +1403,16 @@ struct WorkoutPickerSheet: View {
 
     private func refreshWorkouts() async {
         isRefreshing = true
-
-        // Fetch from HealthKit, Vital (stubbed), and Strava-imported training_logs in parallel.
-        async let hkWorkouts = healthKitManager.fetchRecentRunningWorkouts(limit: 20)
-        async let vitalWorkouts = VitalManager.shared.fetchRecentRunningWorkouts(limit: 30)
-        async let stravaWorkouts = Self.fetchStravaRunningWorkouts(limit: 30)
-
-        let hk = await hkWorkouts
-        let vital = await vitalWorkouts
-        let strava = await stravaWorkouts
-
-        // Merge, dedup across sources (Garmin often syncs to multiple places).
-        // Match on start time within 5 min AND similar duration (within 2 min).
-        var merged: [RunningWorkout] = []
-        let appendIfUnique: (RunningWorkout) -> Void = { w in
-            let isDuplicate = merged.contains { existing in
-                abs(existing.startDate.timeIntervalSince(w.startDate)) < 300
-                    && abs(existing.durationMinutes - w.durationMinutes) < 2.0
-            }
-            if !isDuplicate { merged.append(w) }
-        }
-        for w in vital { appendIfUnique(w) }
-        for w in strava { appendIfUnique(w) }
-        for w in hk { appendIfUnique(w) }
-
-        merged.sort { $0.startDate > $1.startDate }
-
+        // The merge (HealthKit + Vital + Strava, deduped) and the Strava fetch
+        // both moved to `HealthKitManager.refreshRecentRuns` on 2026-08-24.
+        // They used to live here AND, copy-pasted verbatim, in
+        // `WildWorkoutPickerSheet` — while the Log tab's linked-run block read
+        // raw `recentWorkouts` and so never saw a Strava-only run. One copy
+        // now, so no two surfaces can disagree about which run is latest.
+        let merged = await healthKitManager.refreshRecentRuns()
         await MainActor.run {
-            healthKitManager.recentWorkouts = hk
             mergedWorkouts = merged
             isRefreshing = false
-        }
-    }
-
-    /// Fetch Strava-sourced training_logs and map them to RunningWorkout so they
-    /// appear in the workout link picker.
-    private static func fetchStravaRunningWorkouts(limit: Int) async -> [RunningWorkout] {
-        struct Row: Decodable {
-            let id: String
-            let workout_date: Date?
-            let workout_distance_miles: Double?
-            let workout_duration_minutes: Double?
-            let vital_workout_id: String?
-            let cleaned_notes: String?
-        }
-        do {
-            let userId = AuthManager.shared.userId
-            let rows: [Row] = try await supabase
-                .from("training_logs")
-                .select("id, workout_date, workout_distance_miles, workout_duration_minutes, vital_workout_id, cleaned_notes")
-                .eq("user_id", value: userId)
-                .eq("source", value: "strava")
-                .order("workout_date", ascending: false, nullsFirst: false)
-                .limit(limit)
-                .execute()
-                .value
-
-            return rows.compactMap { r -> RunningWorkout? in
-                guard let start = r.workout_date,
-                      let dist = r.workout_distance_miles, dist > 0,
-                      let dur = r.workout_duration_minutes, dur > 0,
-                      let uuid = UUID(uuidString: r.id) else { return nil }
-                return RunningWorkout(
-                    id: uuid,
-                    startDate: start,
-                    endDate: start.addingTimeInterval(dur * 60),
-                    distanceMiles: dist,
-                    durationMinutes: dur,
-                    pacePerMile: dur / dist,
-                    calories: 0,
-                    sourceApp: "Strava",
-                    vitalWorkoutId: r.vital_workout_id
-                )
-            }
-        } catch {
-            Log.app.error("Strava workout fetch failed: \(error)")
-            return []
         }
     }
 }
@@ -1235,7 +1516,7 @@ struct RecordingConfirmationSheet: View {
                     // Link workout option
                     VStack(alignment: .leading, spacing: 12) {
                         Text("LINK TO WORKOUT")
-                            .font(.dripCaption(11))
+                            .font(.dripEyebrow(11))
                             .foregroundStyle(Color.drip.textSecondary)
                             .tracking(1.2)
                             .padding(.horizontal, 4)

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Threshold work — surface prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300..800&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#F5F3F0;--card:#FFF;--elev:#FAFAF8;--deep:#E8E4DF;--rule:#E8E4E0;
+  --ink:#1A1815;--ink2:#6B6560;--ink3:#9B9590;--coral:#D4592A;
+  --m-pos:#4A9E6B;--m-tired:#C4873A;--m-strug:#C45A3A;
+  --fd:"Crimson Pro",Georgia,serif;--fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);font-family:var(--fb);color:var(--ink);line-height:1.55;
+  padding:28px 16px 60px;-webkit-font-smoothing:antialiased}
+.page{max-width:1180px;margin:0 auto}
+.strip{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink2);display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.strip .d{width:3px;height:3px;border-radius:99px;background:var(--coral)}
+h1.top{font-family:var(--fd);font-weight:700;font-size:33px;line-height:1.06;margin:10px 0 8px}
+.lede{font-size:14.5px;color:var(--ink2);max-width:620px}
+.lede b{color:var(--ink);font-weight:700}
+.split{display:grid;grid-template-columns:414px 1fr;gap:28px;margin-top:26px;align-items:start}
+@media(max-width:900px){.split{grid-template-columns:1fr}}
+
+/* ---- phone ---- */
+.phone{width:414px;max-width:100%;background:var(--paper);border:1px solid var(--rule);
+  border-radius:26px;overflow:hidden;box-shadow:0 3px 16px rgba(0,0,0,.06);position:sticky;top:20px}
+.nav{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--rule);
+  background:var(--elev);min-height:44px}
+.back{font-family:var(--fm);font-size:11px;letter-spacing:.08em;color:var(--coral);cursor:pointer;
+  background:none;border:none;padding:0;text-transform:uppercase}
+.nav-t{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink2)}
+.scroll{padding:16px 14px 20px;max-height:760px;overflow-y:auto}
+.eyebrow{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+.band{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);margin-top:4px}
+.h{font-family:var(--fd);font-weight:700;font-size:25px;line-height:1.14;margin:9px 0 7px}
+.body{font-size:13px;color:var(--ink2);line-height:1.6}
+.body b{color:var(--ink);font-weight:700}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:14px;margin-top:13px}
+.card-t{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-weight:600}
+.card-s{font-size:11.5px;color:var(--ink2);margin:5px 0 11px;line-height:1.5}
+svg{display:block;width:100%;height:auto}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--ink2);margin-top:9px;align-items:center}
+.sw{display:inline-block;vertical-align:middle;margin-right:4px}
+
+/* rows */
+.rows{margin-top:13px;background:var(--card);border:1px solid var(--rule);border-radius:14px;overflow:hidden}
+.row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--rule);
+  cursor:pointer;background:none;border-left:none;border-right:none;border-top:none;width:100%;text-align:left;
+  font-family:var(--fb)}
+.row:last-child{border-bottom:none}
+.row:hover{background:var(--elev)}
+.row .lbl{flex:1}
+.row .lbl b{font-size:14px;font-weight:400;display:block;color:var(--ink)}
+.row .lbl i{font-family:var(--fm);font-size:8px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ink3);font-style:normal}
+.row .val{font-family:var(--fm);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.row .chev{color:var(--ink3);font-size:14px}
+.read{border-left:2px solid var(--coral);padding-left:12px;margin-top:14px}
+.read .rh{font-family:var(--fm);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink2);margin-bottom:4px}
+.read p{font-size:12.5px;font-style:italic;line-height:1.6}
+.read p+p{margin-top:7px}
+.empty{background:var(--deep);border-radius:10px;padding:12px;margin-top:11px}
+.empty .eh{font-family:var(--fm);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);margin-bottom:4px}
+.empty p{font-size:12px;color:var(--ink2);line-height:1.5}
+.quote{border-top:1px solid var(--rule);padding-top:10px;margin-top:10px}
+.quote .qm{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+.quote p{font-size:12.5px;font-style:italic;line-height:1.55;color:var(--ink)}
+.quote .qd{font-family:var(--fm);font-size:8px;color:var(--ink3);letter-spacing:.06em;margin-top:3px}
+.view{display:none}.view.on{display:block}
+
+/* notes col */
+.notes h2{font-family:var(--fd);font-weight:700;font-size:21px;margin:0 0 10px}
+.n{margin-bottom:17px}
+.n .nt{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);margin-bottom:4px}
+.n p{font-size:13.5px;color:var(--ink2);line-height:1.55}
+.n p b{color:var(--ink);font-weight:700}
+.dark{background:var(--ink);color:#F5F3F0;border-radius:14px;padding:17px;margin-top:6px}
+.dark .dt{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:rgba(245,243,240,.55);margin-bottom:9px}
+.dark p{font-size:12.5px;line-height:1.6;color:rgba(245,243,240,.82)}
+.dark p+p{margin-top:8px}
+.dark b{color:#FBFAF8}
+.dark code{font-family:var(--fm);font-size:11px;background:rgba(255,255,255,.1);padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="strip">POST RUN DRIP <span class="d"></span> TRENDS <span class="d"></span> THRESHOLD WORK <span class="d"></span> PROTOTYPE ON REAL DATA</div>
+  <h1 class="top">Tap any number to see<br>where it came from.</h1>
+  <p class="lede">Every figure here is queried from your database — 17 threshold sessions, March 31 to July 21. Each row opens its own view with a chart, an explanation and a plain read. <b>Mood and notes ride along</b>, because on four of these sessions what you said contradicts what the numbers say.</p>
+
+  <div class="split">
+    <div class="phone">
+      <div class="nav"><button class="back" id="back" style="visibility:hidden">‹ Back</button><span class="nav-t" id="navt">Trends · Threshold</span></div>
+      <div class="scroll" id="scroll"></div>
+    </div>
+
+    <div class="notes">
+      <h2>What the data forced</h2>
+
+      <div class="n"><div class="nt">Matching on volume alone was not enough</div>
+        <p>Your July 8 and July 21 sessions are both 6.0 miles of threshold — but July 8 was <b>10 × 1K</b> and July 21 was <b>6 × mile</b>. Mile reps are harder to hold pace on. So the prototype matches on volume <i>and</i> rep length, which leaves four structurally identical sessions: Mar 31, Apr 4, Apr 12 and Jul 21, all six mile-reps.</p></div>
+
+      <div class="n"><div class="nt">The best chart in here is rep-by-rep heart rate</div>
+        <p>Same workout in March and July, six mile reps each. Your July heart-rate line sits <b>4 to 7 beats below</b> the March one on every single rep, in 11 degrees more heat. No regression, no adjustment — just the two lines.</p></div>
+
+      <div class="n"><div class="nt">Your own words invert the read twice</div>
+        <p>The numbers call July 8 your best recent session. Your voice log says <b>"really struggling today."</b> The numbers call July 21 the slow one; your note explains it was a progression that <b>started at marathon pace by design</b>. Neither number is wrong and neither is the whole story.</p></div>
+
+      <div class="n"><div class="nt">Mood lives on a different row</div>
+        <p>The log carrying the laps and the log carrying the voice memo are <b>separate <code>training_logs</code> rows on the same day</b>. Joining on <code>workout_id</code> returns null every time, which is why mood looks missing when it is not. Join on date.</p></div>
+
+      <div class="dark">
+        <div class="dt">Honest gaps, shown as empty states not zeros</div>
+        <p><b>Niggles is effectively empty.</b> Four <code>body_mentions</code> rows total, none on a threshold day, and <code>niggle_resolutions</code> has zero. The row renders an empty state rather than "no niggles," because we don't know that.</p>
+        <p><b>Five June sessions carry no weather at all</b>, so heat cost is unknown, not zero.</p>
+        <p><b>Hills is half-built.</b> Elevation gain is there (8–100 ft); grade-adjusted pace is not, so hills can report feet climbed but not a seconds cost until <code>flat_pace_sec_per_mile</code> exists alongside the heat-adjusted column.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const INK='#1A1815',INK2='#6B6560',INK3='#9B9590',RULE='#E8E4E0',DEEP='#E8E4DF',CARD='#FFF',CORAL='#D4592A';
+const MOOD={positive:'#4A9E6B',tired:'#C4873A',struggling:'#C45A3A'};
+// ---- REAL DATA (running_workout_laps + training_logs) ----
+const S=[
+ {d:'2026-03-31',lbl:'Mar 31',mi:5.98,rep:1603,n:6,pace:312,hr:170,dr:5,heat:5.2,t:68,ele:34,mood:null,note:'A very good and demanding session — two-mile threshold, then the track for four mile repeats.'},
+ {d:'2026-04-04',lbl:'Apr 4',mi:6.00,rep:1609,n:6,pace:322,hr:169,dr:5,heat:7.9,t:72,ele:21,mood:'positive',note:'A challenging 2×3 mile. First set 5:22, picked it up on the second and held 5:17.'},
+ {d:'2026-04-07',lbl:'Apr 7',mi:2.89,rep:1550,n:3,pace:316,hr:165,dr:6,heat:0.1,t:54,ele:25,mood:'positive',note:'Really tough session. Ten-minute tempo, then paced Shannon.'},
+ {d:'2026-04-12',lbl:'Apr 12',mi:5.99,rep:1606,n:6,pace:317,hr:158,dr:0,heat:6.5,t:69,ele:100,mood:null,note:null,race:1},
+ {d:'2026-04-28',lbl:'Apr 28',mi:3.81,rep:876,n:7,pace:332,hr:165,dr:8,heat:12.0,t:76,ele:42,mood:null,note:null},
+ {d:'2026-05-05',lbl:'May 5',mi:4.00,rep:1609,n:4,pace:321,hr:171,dr:9,heat:6.2,t:69,ele:13,mood:null,note:null},
+ {d:'2026-05-12',lbl:'May 12',mi:1.95,rep:1566,n:2,pace:308,hr:171,dr:null,heat:4.6,t:66,ele:8,mood:null,note:null},
+ {d:'2026-05-15',lbl:'May 15',mi:2.49,rep:1001,n:4,pace:332,hr:150,dr:7,heat:6.5,t:72,ele:12,mood:'positive',note:'The 1K reps felt strong. Then pushed hard on the shorter 300s.'},
+ {d:'2026-05-20',lbl:'May 20',mi:5.59,rep:1000,n:9,pace:308,hr:168,dr:4,heat:5.7,t:67,ele:32,mood:null,note:null},
+ {d:'2026-05-28',lbl:'May 28',mi:1.24,rep:1000,n:2,pace:347,hr:172,dr:null,heat:null,t:null,ele:11,mood:null,note:null},
+ {d:'2026-06-02',lbl:'Jun 2',mi:1.86,rep:1000,n:3,pace:315,hr:173,dr:8,heat:null,t:null,ele:14,mood:'tired',note:'Tempo plus track intervals. Felt pretty tough and I was quite tired.'},
+ {d:'2026-06-09',lbl:'Jun 9',mi:3.51,rep:1411,n:4,pace:327,hr:165,dr:5,heat:null,t:null,ele:20,mood:null,note:null},
+ {d:'2026-06-17',lbl:'Jun 17',mi:4.97,rep:1000,n:8,pace:314,hr:169,dr:6,heat:null,t:null,ele:43,mood:'positive',note:'Threshold at Zilker. A bit warm, but I adjusted well and made the best of the conditions.'},
+ {d:'2026-06-23',lbl:'Jun 23',mi:1.86,rep:1000,n:3,pace:324,hr:159,dr:18,heat:7.5,t:79,ele:23,mood:'struggling',note:'The heat and humidity made it incredibly challenging. Struggled throughout and never felt good.'},
+ {d:'2026-07-08',lbl:'Jul 8',mi:6.01,rep:968,n:10,pace:315,hr:166,dr:4,heat:5.6,t:76,ele:58,mood:'struggling',note:'Mostly 10 reps, seventh and eighth a bit short. I was really struggling today.'},
+ {d:'2026-07-14',lbl:'Jul 14',mi:1.99,rep:1069,n:3,pace:310,hr:169,dr:10,heat:5.7,t:75,ele:14,mood:'positive',note:'Three sets, running much faster than the prescribed paces.'},
+ {d:'2026-07-21',lbl:'Jul 21',mi:6.00,rep:1609,n:6,pace:328,hr:166,dr:6,heat:8.0,t:79,ele:52,mood:'positive',note:'Six miles starting at marathon pace and dropping to half marathon pace, quarter-mile recoveries.'},
+];
+// rep-by-rep HR inside the band, from the laps table
+const REPS={'2026-03-31':[[322,164],[321,171],[308,169],[311,170],[306,173],[306,173]],
+            '2026-07-21':[[328,160],[325,165],[333,166],[334,167],[316,170],[331,169]]};
+// structural twins: 6 miles of mile-reps
+const TWINS=S.filter(s=>s.mi>5.5&&s.rep>1500);
+const A=S.find(s=>s.d==='2026-07-21'), B=S.find(s=>s.d==='2026-03-31');
+const pc=s=>`${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+const mono=(x,y,t,o={})=>{const{s=8,f=INK3,a='start',w=500,ls='.06em'}=o;
+ return `<text x="${x}" y="${y}" font-family="ui-monospace,'SF Mono',Menlo,monospace" font-size="${s}" fill="${f}" text-anchor="${a}" font-weight="${w}" letter-spacing="${ls}">${t}</text>`};
+const svg=(w,h,g,a)=>`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${a||''}">${g}</svg>`;
+
+/* ---------- charts ---------- */
+function volumeChart(){
+  const W=356,H=152,x0=24,x1=W-8,y0=12,y1=H-24;
+  const t0=+new Date(S[0].d), t1=+new Date(S[S.length-1].d);
+  const X=d=>x0+((+new Date(d)-t0)/(t1-t0))*(x1-x0-12)+6, Y=m=>y1-(m/6.5)*(y1-y0);
+  let g='';
+  [2,4,6].forEach(m=>{g+=`<line x1="${x0}" x2="${x1}" y1="${Y(m)}" y2="${Y(m)}" stroke="${RULE}"/>`+mono(x0-4,Y(m)+3,m,{a:'end',s:7.5})});
+  g+=mono(x0-20,y0-2,'MI OF WORK',{s:7.5,f:INK2,ls:'.1em'});
+  g+=`<line x1="${x0}" x2="${x1}" y1="${y1}" y2="${y1}" stroke="${INK3}"/>`;
+  S.forEach(s=>{const tw=TWINS.includes(s),x=X(s.d)-4.5;
+    g+=`<rect x="${x}" y="${Y(s.mi)}" width="9" height="${y1-Y(s.mi)}" rx="2.5" fill="${tw?INK:DEEP}"/>`});
+  ['APR','MAY','JUN','JUL'].forEach((m,i)=>g+=mono(X(['2026-04-01','2026-05-01','2026-06-01','2026-07-01'][i]),y1+14,m,{a:'middle',s:7.5}));
+  return svg(W,H,g,'Threshold miles per session');
+}
+// generic: the four structural twins over time, one metric
+function twinChart(key,{fmt=v=>v,lo,hi,inv=false,unit=''}){
+  const W=356,H=150,x0=30,x1=W-14,y0=16,y1=H-26;
+  const X=i=>x0+i/(TWINS.length-1)*(x1-x0), Y=v=>inv?y0+((v-lo)/(hi-lo))*(y1-y0):y1-((v-lo)/(hi-lo))*(y1-y0);
+  let g='';
+  [lo,(lo+hi)/2,hi].forEach(v=>{g+=`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="${RULE}"/>`+mono(x0-5,Y(v)+3,fmt(v),{a:'end',s:7.5})});
+  g+=mono(x0-24,y0-4,unit,{s:7.5,f:INK2,ls:'.1em'});
+  g+=`<path d="${TWINS.map((s,i)=>`${i?'L':'M'} ${X(i)} ${Y(s[key])}`).join(' ')}" fill="none" stroke="${INK}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  TWINS.forEach((s,i)=>{g+=`<circle cx="${X(i)}" cy="${Y(s[key])}" r="5" fill="${CARD}"/><circle cx="${X(i)}" cy="${Y(s[key])}" r="3.4" fill="${INK}"/>`;
+    g+=mono(X(i),y1+14,s.lbl.toUpperCase(),{a:'middle',s:7});
+    if(s.race)g+=mono(X(i),Y(s[key])-10,'RACE',{a:'middle',s:6.5,f:INK3});});
+  return svg(W,H,g,'The same session over the block');
+}
+function repChart(){
+  const W=356,H=168,x0=30,x1=W-52,y0=16,y1=H-26,lo=155,hi=176;
+  const X=i=>x0+i/5*(x1-x0), Y=v=>y1-((v-lo)/(hi-lo))*(y1-y0);
+  let g='';
+  [160,165,170,175].forEach(v=>{g+=`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="${RULE}"/>`+mono(x0-5,Y(v)+3,v,{a:'end',s:7.5})});
+  g+=mono(x0-24,y0-4,'HEART RATE',{s:7.5,f:INK2,ls:'.1em'});
+  [['2026-03-31',INK3,'4 3'],['2026-07-21',INK,'']].forEach(([d,c,dash])=>{
+    const r=REPS[d];
+    g+=`<path d="${r.map((p,i)=>`${i?'L':'M'} ${X(i)} ${Y(p[1])}`).join(' ')}" fill="none" stroke="${c}" stroke-width="2" stroke-dasharray="${dash}" stroke-linecap="round"/>`;
+    r.forEach((p,i)=>{g+=`<circle cx="${X(i)}" cy="${Y(p[1])}" r="4.6" fill="${CARD}"/><circle cx="${X(i)}" cy="${Y(p[1])}" r="3" fill="${c}"/>`});
+    const last=r[r.length-1];
+    g+=mono(x1+6,Y(last[1])+3,d==='2026-03-31'?'MAR 31':'JUL 21',{s:7.5,f:c,w:700,ls:'.08em'});
+  });
+  for(let i=0;i<6;i++)g+=mono(X(i),y1+14,'REP '+(i+1),{a:'middle',s:6.5});
+  return svg(W,H,g,'Heart rate rep by rep, March against July');
+}
+function heatChart(){
+  const W=356,H=150,x0=30,x1=W-14,y0=14,y1=H-26;
+  const rows=S.filter(s=>s.heat!=null&&s.t!=null);
+  const X=t=>x0+((t-50)/32)*(x1-x0), Y=h=>y1-(h/13)*(y1-y0);
+  let g='';
+  [0,4,8,12].forEach(v=>{g+=`<line x1="${x0}" x2="${x1}" y1="${Y(v)}" y2="${Y(v)}" stroke="${RULE}"/>`+mono(x0-5,Y(v)+3,'+'+v+'s',{a:'end',s:7.5})});
+  g+=mono(x0-24,y0-2,'SECONDS PER MILE',{s:7.5,f:INK2,ls:'.1em'});
+  [55,65,75].forEach(t=>g+=mono(X(t),y1+14,t+'°',{a:'middle',s:7.5}));
+  rows.forEach(s=>{g+=`<circle cx="${X(s.t)}" cy="${Y(s.heat)}" r="5.6" fill="${CARD}"/><circle cx="${X(s.t)}" cy="${Y(s.heat)}" r="4" fill="${INK}" opacity=".55"/>`});
+  return svg(W,H,g,'Heat cost against temperature');
+}
+function moodStrip(){
+  const W=356,H=54,x0=8,x1=W-8,y=26;
+  const t0=+new Date(S[0].d),t1=+new Date(S[S.length-1].d);
+  const X=d=>x0+((+new Date(d)-t0)/(t1-t0))*(x1-x0-14)+7;
+  let g=`<line x1="${x0}" x2="${x1}" y1="${y}" y2="${y}" stroke="${RULE}" stroke-width="1"/>`;
+  S.forEach(s=>{const c=s.mood?MOOD[s.mood]:null;
+    if(c)g+=`<circle cx="${X(s.d)}" cy="${y}" r="6" fill="${c}"/>`;
+    else g+=`<circle cx="${X(s.d)}" cy="${y}" r="4" fill="none" stroke="${INK3}" stroke-width="1.2" stroke-dasharray="1.5 1.5"/>`});
+  g+=mono(x0,y+20,'MAR',{s:7}); g+=mono(x1,y+20,'JUL',{s:7,a:'end'});
+  return svg(W,H,g,'Mood on each threshold session');
+}
+
+/* ---------- views ---------- */
+const dPace=A.pace-B.pace, dHr=A.hr-B.hr, dT=A.t-B.t;
+const V={};
+V.home=()=>`
+ <div class="eyebrow">THRESHOLD WORK</div>
+ <div class="band">10K → 95% MP · 5:06–5:52 /MI</div>
+ <div class="h">Are you holding it cheaper?</div>
+ <p class="body">Six mile-reps in March cost you <b>170 beats</b>. The same six in July cost <b>166</b>, in eleven degrees more heat. You are paying less for the same work.</p>
+ <div class="card"><div class="card-t">Work in the band</div>
+  <div class="card-s">Miles run between 5:06 and 5:52, session by session. Filled bars are the four sessions with identical structure — six mile-reps.</div>
+  ${volumeChart()}
+  <div class="legend"><span><span class="sw" style="width:9px;height:9px;border-radius:2px;background:${INK}"></span>six mile-reps</span>
+  <span><span class="sw" style="width:9px;height:9px;border-radius:2px;background:${DEEP}"></span>other threshold</span></div></div>
+ <div class="rows">
+  ${[['vol','Volume','MILES IN THE BAND','66.1'],
+     ['pace','Pace','MAR 31 → JUL 21',pc(A.pace)],
+     ['hr','Avg heart rate','ON THE FAST WORK',A.hr+''],
+     ['drift','Aerobic drift','LAST THIRD − FIRST THIRD','+'+A.dr],
+     ['heat','Heat &amp; hills','CONDITIONS ON THE DAY','+'+A.heat+'s'],
+     ['felt','How it felt','YOUR OWN WORDS','10 of 17']]
+   .map(([k,l,h,v])=>`<button class="row" data-v="${k}"><span class="lbl"><b>${l}</b><i>${h}</i></span><span class="val">${v}</span><span class="chev">›</span></button>`).join('')}
+ </div>`;
+
+V.vol=()=>`
+ <div class="eyebrow">VOLUME</div><div class="h">66 miles in the band.</div>
+ <p class="body">Across 17 sessions since March 31, averaging <b>3.9 miles</b> of threshold work each. Sessions range from 1.2 to 6.0 miles — a five-fold spread, which is why volume is the thing worth plotting and pace is not.</p>
+ <div class="card"><div class="card-t">Session by session</div>
+  <div class="card-s">Spaced by real date, so the gaps are weeks with no threshold work rather than an artifact of the chart.</div>
+  ${volumeChart()}</div>
+ <div class="read"><div class="rh">The read</div>
+  <p>Roughly one threshold session a week, holding steady through the summer. The two clear gaps are the last week of April and the first week of June.</p></div>`;
+
+V.pace=()=>`
+ <div class="eyebrow">PACE</div><div class="h">Sixteen seconds slower, eleven degrees hotter.</div>
+ <p class="body">Only the four structurally identical sessions are compared here — <b>six mile-reps, six miles of work</b>. Comparing a 1K session to a mile session would tell you nothing.</p>
+ <div class="card"><div class="card-t">The same session, four times</div>
+  <div class="card-s">Average pace of the reps. Lower on the chart is slower.</div>
+  ${twinChart('pace',{lo:305,hi:335,fmt:pc,inv:true,unit:'PACE · FASTER ↑'})}</div>
+ <div class="read"><div class="rh">The read</div>
+  <p>March 5:12, April 5:22, the April race 5:17, July 5:28. The heat model attributes about 3 of July's 16 seconds to the weather.</p>
+  <p>Your note for July 21 explains more of it: the session was built to start at marathon pace and drop to half marathon pace. It opened slow by design, not by fade.</p></div>`;
+
+V.hr=()=>`
+ <div class="eyebrow">AVERAGE HEART RATE</div><div class="h">Four beats cheaper.</div>
+ <p class="body">The strongest signal in your threshold work. Same six mile-reps, same six miles — <b>${B.hr} beats in March, ${A.hr} in July</b>.</p>
+ <div class="card"><div class="card-t">Rep by rep</div>
+  <div class="card-s">Every rep of both sessions, heart rate as it climbed. July sits below March on all six.</div>
+  ${repChart()}
+  <div class="legend"><span><span class="sw" style="width:16px;height:0;border-top:2px dashed ${INK3}"></span>Mar 31 · 68°F</span>
+  <span><span class="sw" style="width:16px;height:2px;background:${INK}"></span>Jul 21 · 79°F</span></div></div>
+ <div class="read"><div class="rh">The read</div>
+  <p>Both sessions climb about nine beats from first rep to last, which is normal. What changed is the whole line: July starts four beats lower and stays four to seven beats lower the entire way, in heat that should have pushed it the other direction.</p></div>`;
+
+V.drift=()=>`
+ <div class="eyebrow">AEROBIC DRIFT</div><div class="h">Heart rate climb, first third to last.</div>
+ <p class="body">How much your heart rate rose across the session at the same pace. Lower is steadier. Yours runs <b>+4 to +10</b> on most sessions.</p>
+ <div class="card"><div class="card-t">The same session, four times</div>
+  <div class="card-s">Beats gained from the opening reps to the closing ones.</div>
+  ${twinChart('dr',{lo:0,hi:10,fmt:v=>'+'+v,unit:'BPM GAINED'})}</div>
+ <div class="empty"><div class="eh">Two sessions have no drift figure</div>
+  <p>May 12 and May 28 ran only two reps in the band, and drift needs at least three to split into a first and last third. Log a third rep and they will fill in.</p></div>
+ <div class="read"><div class="rh">The read</div>
+  <p>Your steadiest threshold sessions are the mile-rep days — +5, +5, +6, and a flat 0 on the April race. The +18 on June 23 is the outlier, and your note that day says the heat and humidity made it incredibly challenging.</p></div>`;
+
+V.heat=()=>`
+ <div class="eyebrow">HEAT &amp; HILLS</div><div class="h">The weather has been taking eight seconds a mile.</div>
+ <p class="body">Heat cost is the gap between your raw pace and what the same effort would have produced in cool conditions.</p>
+ <div class="card"><div class="card-t">Heat cost against temperature</div>
+  <div class="card-s">One dot per session with weather on record.</div>
+  ${heatChart()}</div>
+ <div class="empty"><div class="eh">Five June sessions have no weather</div>
+  <p>June 2, 9 and 17 and two others carry no temperature at all, so their heat cost is unknown rather than zero. They are left off the chart instead of being drawn at the origin.</p></div>
+ <div class="empty"><div class="eh">Hills is only half available</div>
+  <p>Elevation gain is recorded — 34 ft in March, 52 ft in July — but there is no grade-adjusted pace yet, so hills cannot be costed in seconds the way heat can.</p></div>
+ <div class="read"><div class="rh">The read</div>
+  <p>Cost tracks temperature closely: near nothing at 54°F, five to eight seconds through the sixties and seventies, twelve at 76°F. It explains part of the summer slowdown without excusing all of it.</p></div>`;
+
+V.felt=()=>`
+ <div class="eyebrow">HOW IT FELT</div><div class="h">Twice, your words disagree with the numbers.</div>
+ <p class="body">Mood is on <b>10 of 17</b> threshold sessions — much better coverage than your training overall, because you record a voice memo on quality days.</p>
+ <div class="card"><div class="card-t">Mood on each session</div>
+  <div class="card-s">Filled marks are logged; hollow marks are sessions with no voice memo.</div>
+  ${moodStrip()}
+  <div class="legend">${Object.entries(MOOD).map(([k,c])=>`<span><span class="sw" style="width:9px;height:9px;border-radius:99px;background:${c}"></span>${k}</span>`).join('')}
+  <span><span class="sw" style="width:9px;height:9px;border-radius:99px;border:1.2px dashed ${INK3}"></span>not logged</span></div>
+  <div class="quote"><div class="qm" style="color:${MOOD.struggling}">STRUGGLING</div>
+   <p>“Mostly 10 reps, seventh and eighth a bit short. I was really struggling today.”</p>
+   <div class="qd">JUL 8 · YOUR FASTEST RECENT THRESHOLD</div></div>
+  <div class="quote"><div class="qm" style="color:${MOOD.positive}">POSITIVE</div>
+   <p>“Six miles starting at marathon pace and dropping to half marathon pace, quarter-mile recoveries.”</p>
+   <div class="qd">JUL 21 · SIXTEEN SECONDS SLOWER THAN MARCH</div></div>
+ </div>
+ <div class="empty"><div class="eh">Niggles has nothing to show yet</div>
+  <p>Four body mentions exist in total and none of them fall on a threshold day, so there is nothing to attach. This will fill in as you mention body parts in your voice logs — it is not a claim that nothing hurt.</p></div>
+ <div class="read"><div class="rh">The read</div>
+  <p>The session the numbers like best is the one you called struggling. The session the numbers call slow is the one you finished happy, and your note explains why it opened slow — it was a progression by design.</p>
+  <p>Worth keeping both. The numbers are what happened; the note is what it cost you.</p></div>`;
+
+/* ---------- router ---------- */
+const TITLES={home:'Trends · Threshold',vol:'Threshold · Volume',pace:'Threshold · Pace',
+ hr:'Threshold · Heart rate',drift:'Threshold · Drift',heat:'Threshold · Heat &amp; hills',felt:'Threshold · How it felt'};
+function go(v){
+  document.getElementById('scroll').innerHTML=V[v]();
+  document.getElementById('scroll').scrollTop=0;
+  document.getElementById('navt').innerHTML=TITLES[v];
+  document.getElementById('back').style.visibility=v==='home'?'hidden':'visible';
+  document.querySelectorAll('.row').forEach(b=>b.onclick=()=>go(b.dataset.v));
+}
+document.getElementById('back').onclick=()=>go('home');
+go('home');
+</script>
+</body>
+</html>

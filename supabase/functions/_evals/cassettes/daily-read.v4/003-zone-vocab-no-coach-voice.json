@@ -1,0 +1,27 @@
+{
+  "id": "003-zone-vocab-no-coach-voice",
+  "prompt_name": "daily-read.v4",
+  "description": "The Read must use the pace-zone taxonomy (MP, HMP, LT, 10K, 5K) and must NOT use the retired 'tempo' / 'threshold' workout labels. It must also not refer to itself as a coach ('your coach', 'as your coach', 'I'm your coach') or say 'as an AI' — the voice is The Read, not a coach. Note: 'threshold' as a physiological term is acceptable; 'tempo'/'threshold' as a workout LABEL is not — so this checks for the label patterns specifically.",
+  "vars": {},
+  "input": "## Coaching mode\nSELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening; one good question per Read at most. No invented targets.\n\n=== ATHLETE STATE ===\nLevel: intermediate\n\nTraining Load (7d): 41 mi, 5 runs (2 hard, 3 easy)\n28d avg: 44 mpw\nVolume × Intensity load (7d): 84 weighted-min · 28d: 305\nTime in zone (7d): easy 68% · moderate 7% · threshold 17% · hard 8% (polarized)\n\nTraining pace zones (USE THESE — do not calculate or invent paces):\n  Easy: 8:40–9:05/mi\n  MP: 7:25/mi\n  LT: 7:02/mi\n  5K Pace / Intervals: 6:24/mi\n\nRecent runs (trust user notes + work pace over avg pace):\n  2026-06-10 MP 7.0mi work @ 7:26/mi\n  2026-06-08 LT 6.0mi work @ 7:01/mi\n\nPatterns I've noticed (pre-computed — state plainly, don't explain the math):\n  • Strong pacing control — you've been negative-splitting your quality work. [medium: 3 of 4 sessions got faster through the reps]\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [55555555-5555-5555-5555-555555555555] 2026-06-10 · 7.0mi (54m) ★quality\n- [66666666-6666-6666-6666-666666666666] 2026-06-08 · 6.0mi (43m) ★quality\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "headline",
+      "paragraph",
+      "sources",
+      "confidence"
+    ],
+    "forbidden_patterns": [
+      "(?i)\\b(tempo run|a tempo|the tempo|threshold run)\\b",
+      "(?i)\\b(your coach|as your coach|I['’]?m your coach|me, your coach)\\b",
+      "(?i)\\bas an AI\\b"
+    ],
+    "required_patterns": [
+      "(?i)\\b(MP|LT|5K|HMP|easy)\\b"
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"Quality work is sharp.\",\n  \"paragraph\": \"Your quality work is looking sharp this week. Tuesday's 7.0mi MP session came in at 7:26/mi {\\\"workout_id\\\":\\\"55555555-5555-5555-5555-555555555555\\\"}, just a second off your 7:25/mi target. Monday's 6.0mi LT work was also right on, hitting 7:01/mi {\\\"workout_id\\\":\\\"66666666-6666-6666-6666-666666666666\\\"} against a 7:02/mi target. This strong pacing control, with quality sessions getting faster through the reps, is a consistent pattern. You've maintained a polarized load with 68% easy volume. How are you feeling after these two strong sessions?\",\n  \"cant_see\": null,\n  \"sources\": {\n    \"workout_ids\": [\n      \"55555555-5555-5555-5555-555555555555\",\n      \"66666666-6666-6666-6666-666666666666\"\n    ],\n    \"doc_ids\": [],\n    \"memos\": []\n  },\n  \"confidence\": {\n    \"level\": \"MEDIUM\",\n    \"sub\": \"good recent data, no plan in app\"\n  }\n}\n```",
+  "recorded_at": "2026-06-12T22:14:25.361Z",
+  "model": "gemini-2.5-flash"
+}

@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coach Portal — The Athlete</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Schibsted+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   COACH PORTAL · THE ATHLETE
+   The screen a roster row on "Coach Portal Desk.html" opens into.
+   A redesign of web/src/app/(app)/coach-portal/athletes/[id] —
+   today six rounded-2xl card bands (Signal · Daily overlay ·
+   Progression · Load · Body & mind · Training log) plus a gradient
+   avatar. Here: one page, hairlines, no cards, no gradient, one red.
+
+   Sibling of the Desk — same two skins, same primitives, same shell.
+     EDITORIAL   — the tokens RunningLog renders on the phone today
+                   (DesignSystem.swift, non-wild branch).
+     DIRECTION I — the locked system in colors_and_type.css / the
+                   `wild` branch of DripTheme.swift.
+   Same layout, same data. Only the tokens move.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ---- EDITORIAL · live iOS values, DesignSystem.swift ------------- */
+:root,
+[data-skin="editorial"] {
+  --paper:          #FAFAF9;
+  --card:           #FFFFFF;
+  --paper-elevated: #FFFFFF;
+  --paper-deep:     #F0F0EE;
+  --rule:           #E6E7EA;
+  --rule-strong:    #0D1016;
+
+  --ink:            #0D1016;
+  --ink-2:          #585D68;
+  --ink-3:          #8F95A1;
+
+  --red:            #E63946;
+  --red-text:       #C42A36;
+  --red-wash:       rgba(230, 57, 70, 0.09);
+
+  --session:        #1F4FA8;
+
+  --mood-energized: #2D8A4E;
+  --mood-positive:  #4A9E6B;
+  --mood-neutral:   #9B9590;
+  --mood-tired:     #C4873A;
+  --mood-struggling:#C45A3A;
+  --mood-injured:   #B83A4A;
+
+  --font-display: "Crimson Pro", Georgia, serif;
+  --font-label:   ui-monospace, "SF Mono", Menlo, monospace;
+  --font-prose:   "PT Serif", Georgia, serif;
+  --font-data:    ui-monospace, "SF Mono", Menlo, monospace;
+  --font-body:    "PT Serif", Georgia, serif;
+  --font-mono:    ui-monospace, "SF Mono", Menlo, monospace;
+  --font-accent:  "PT Serif", Georgia, serif;
+
+  --display-weight: 700;
+  --display-case:   none;
+  --display-track:  -0.02em;
+  --radius:         3px;
+}
+
+/* ---- DIRECTION I · colors_and_type.css, the locked system -------- */
+[data-skin="wild"] {
+  --paper:          #FFFFFF;
+  --card:           #FFFFFF;
+  --paper-elevated: #FAFAFA;
+  --paper-deep:     #F2F2F2;
+  --rule:           #EBEBEB;
+  --rule-strong:    #111111;
+
+  --ink:            #111111;
+  --ink-2:          #6B6B6B;
+  --ink-3:          #9A9A9A;
+
+  --red:            #EE2B24;
+  --red-text:       #D31F19;
+  --red-wash:       rgba(238, 43, 36, 0.10);
+
+  --session:        #1F4FA8;
+
+  --mood-energized: #12703A;
+  --mood-positive:  #1F7A41;
+  --mood-neutral:   #6B6B6B;
+  --mood-tired:     #A8560A;
+  --mood-struggling:#B3261E;
+  --mood-injured:   #8E1219;
+
+  --font-display: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-label:   "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-prose:   "Crimson Pro", Georgia, serif;
+  --font-data:    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-body:    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-accent:  "Times New Roman", Times, serif;
+
+  --display-weight: 900;
+  --display-case:   uppercase;
+  --display-track:  -0.04em;
+  --radius:         0px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---- shared type roles (identical to the Desk) ------------------- */
+.eyebrow {
+  font-family: var(--font-label);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-2); white-space: nowrap;
+}
+.eyebrow--red  { color: var(--red-text); }
+.eyebrow--blue { color: var(--session); }
+.display {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  text-transform: var(--display-case);
+  letter-spacing: var(--display-track);
+  line-height: 1; color: var(--ink); margin: 0;
+}
+.prose { font-family: var(--font-prose); font-size: 15px; line-height: 1.5; color: var(--ink-2); margin: 0; }
+
+/* The one distinction that matters:
+   italic mono is the athlete — roman is the machine. */
+.voice   { font-family: var(--font-mono); font-style: italic; font-size: 12.5px; color: var(--ink); line-height: 1.55; }
+.machine { font-family: var(--font-mono); font-style: normal; font-size: 12px; font-weight: 500; color: var(--ink); line-height: 1.5; }
+
+.rule      { height: 1px; background: var(--rule); border: 0; margin: 0; }
+.rule--ink { height: 2px; background: var(--rule-strong); }
+
+/* ---- page shell -------------------------------------------------- */
+.shell { max-width: 1180px; margin: 0 auto; padding: 0 28px 72px; }
+
+.plate {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 14px 0 12px;
+  border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; background: var(--paper); z-index: 20;
+}
+.plate__left { display: flex; align-items: center; gap: 10px; }
+.plate__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+
+.skinbar { display: flex; gap: 0; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.skinbar button {
+  font-family: var(--font-label); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 6px 11px; border: 0; cursor: pointer;
+  background: transparent; color: var(--ink-2);
+}
+.skinbar button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* Back to the desk — a line, not a button. */
+.back {
+  display: inline-block; margin: 16px 0 0;
+  font-family: var(--font-label); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-3); text-decoration: none;
+}
+.back:hover { color: var(--ink); }
+
+/* ---- Masthead — no avatar, no gradient. The name carries it. ----- */
+.masthead { padding: 18px 0 0; }
+.masthead h1 { font-size: 52px; }
+.masthead__dek { font-family: var(--font-accent); font-style: italic; font-size: 15px; color: var(--ink-2); margin: 10px 0 0; }
+.masthead__plan { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 12px; }
+.mood-rule { height: 2px; width: 34px; margin-top: 14px; background: var(--mood-tired); }
+
+/* The anchor rail — goal, what the paces are hung on, derived MP. */
+.anchors {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  margin-top: 30px; border-top: 2px solid var(--rule-strong); border-bottom: 1px solid var(--rule);
+}
+.anchor { padding: 15px 20px 15px 0; border-right: 1px solid var(--rule); }
+.anchor:last-child { border-right: 0; }
+.anchor__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 27px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; display: block; margin: 9px 0 0; }
+.anchor__v--red { color: var(--red-text); }
+.anchor__u { font-size: 12px; font-weight: 500; color: var(--ink-3); margin-left: 2px; }
+.anchor__m { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 7px; }
+
+/* ---- Section head — numbered bands, as the live dashboard is ----- */
+.sec { margin-top: 46px; }
+.sec__head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding-bottom: 8px; border-bottom: 2px solid var(--rule-strong); }
+.sec__n { font-family: var(--font-data); font-size: 10px; font-weight: 600; color: var(--ink-3); margin-right: 9px; font-variant-numeric: tabular-nums; }
+.sec__note { font-family: var(--font-accent); font-style: italic; font-size: 12.5px; color: var(--ink-3); }
+
+/* ---- 01 Signal — watch list | observations ----------------------- */
+.signal { display: grid; grid-template-columns: 1fr 1.3fr; gap: 0; }
+@media (max-width: 860px) { .signal { grid-template-columns: 1fr; } }
+.signal__col { padding: 18px 26px 8px 0; }
+.signal__col + .signal__col { border-left: 1px solid var(--rule); padding-left: 26px; padding-right: 0; }
+@media (max-width: 860px) { .signal__col + .signal__col { border-left: 0; border-top: 1px solid var(--rule); padding-left: 0; margin-top: 8px; } }
+
+.watch { display: flex; align-items: flex-start; gap: 11px; padding: 12px 0; border-top: 1px solid var(--rule); }
+.watch:first-of-type { border-top: 0; padding-top: 4px; }
+.watch__dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--ink-3); }
+.watch__dot--red { background: var(--red); }
+.watch__t { font-family: var(--font-body); font-size: 14px; line-height: 1.35; color: var(--ink); }
+.watch__d { font-family: var(--font-body); font-size: 12.5px; color: var(--ink-2); margin-top: 3px; }
+
+/* AI observations are set ROMAN mono. Never italic — that posture belongs to
+   the athlete. Never Crimson — that would read as a person's conclusion.
+   The machine has no colour of its own; its label sits in --ink-2. */
+.obs { padding: 15px 0; border-top: 1px solid var(--rule); }
+.obs:first-of-type { border-top: 0; padding-top: 4px; }
+.obs__top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.obs__q { font-family: var(--font-mono); font-style: normal; font-size: 12px; color: var(--ink-2); margin-top: 7px; line-height: 1.5; }
+
+.chip {
+  font-family: var(--font-label); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 4px 8px; border: 1px solid var(--rule); border-radius: var(--radius);
+  color: var(--ink-2); background: var(--paper-deep); white-space: nowrap;
+}
+.chip--session { color: var(--session); border-color: var(--session); background: transparent; }
+
+/* ---- 02 The week — prescribed over actual, one column per day ---- */
+.week { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--rule); }
+.day { padding: 14px 12px 18px 0; border-right: 1px solid var(--rule); border-top: 2px solid transparent; min-height: 168px; position: relative; }
+.day:last-child { border-right: 0; }
+.day--today { background: var(--paper-elevated); border-top-color: var(--red); }
+.day--key   { border-top-color: var(--session); }
+.day__d { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.day__p { font-family: var(--font-body); font-size: 12.5px; color: var(--ink-2); margin-top: 11px; line-height: 1.3; }
+.day__a { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin-top: 9px; }
+.day__a--none { color: var(--ink-3); font-size: 13px; font-weight: 500; }
+.day__delta { font-family: var(--font-label); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 6px; display: block; }
+.day__delta--off { color: var(--red-text); }
+.day__delta--ok  { color: var(--ink-3); }
+@media (max-width: 900px) {
+  .week { grid-template-columns: repeat(2, 1fr); }
+  .day { min-height: 0; border-bottom: 1px solid var(--rule); }
+}
+
+/* ---- 03 Progression ---------------------------------------------- */
+.prog { display: grid; grid-template-columns: 250px 1fr; gap: 34px; padding-top: 20px; align-items: start; }
+@media (max-width: 860px) { .prog { grid-template-columns: 1fr; gap: 18px; } }
+.prog__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 44px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; display: block; margin: 10px 0 0; }
+.prog__gap { font-family: var(--font-label); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--red-text); display: block; margin-top: 10px; }
+.prog__conf { font-family: var(--font-body); font-size: 12.5px; color: var(--ink-2); margin-top: 14px; line-height: 1.45; }
+.chart { width: 100%; height: 168px; display: block; }
+.chart text { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; fill: var(--ink-3); }
+.chart .v { font-family: var(--font-data); font-size: 10px; letter-spacing: 0; text-transform: none; font-weight: 600; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* ---- 04 Load ------------------------------------------------------ */
+.load { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); border-bottom: 1px solid var(--rule); }
+.load__cell { padding: 17px 20px 17px 0; border-right: 1px solid var(--rule); }
+.load__cell:last-child { border-right: 0; }
+.load__v { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 25px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; display: block; margin: 9px 0 0; }
+.load__u { font-size: 11px; font-weight: 500; color: var(--ink-3); margin-left: 3px; }
+.load__m { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 7px; }
+/* Ratio as a hairline scale, not a dial. Print has no gauges. */
+.band { position: relative; height: 26px; margin-top: 14px; border-top: 1px solid var(--rule); }
+.band__safe { position: absolute; top: -1px; height: 2px; background: var(--ink-3); }
+.band__tick { position: absolute; top: -6px; width: 2px; height: 12px; background: var(--red); }
+.band__lab  { position: absolute; top: 12px; font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+
+/* Six-week volume — a small plot, not a band. Bars are 26px, never full-bleed. */
+.vol { display: grid; grid-template-columns: 92px auto 1fr; align-items: end; gap: 0 30px; margin-top: 26px; }
+@media (max-width: 760px) { .vol { grid-template-columns: 1fr; gap: 14px; } }
+.vol > .eyebrow { padding-bottom: 3px; }
+.vol__plot { display: flex; align-items: flex-end; gap: 9px; height: 56px; }
+.vol__bar { width: 26px; background: var(--ink-3); display: block; position: relative; min-height: 3px; }
+.vol__bar--now { background: var(--ink); }
+.vol__bar b {
+  position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+  font-family: var(--font-data); font-variant-numeric: tabular-nums;
+  font-size: 10px; font-weight: 600; color: var(--ink-3);
+}
+.vol__bar--now b { color: var(--ink); }
+.vol__read { font-size: 13.5px; max-width: 46ch; padding-bottom: 2px; }
+
+/* ---- 05 Body & mind ---------------------------------------------- */
+.bm { display: grid; grid-template-columns: 1.15fr 1fr; gap: 0; }
+@media (max-width: 860px) { .bm { grid-template-columns: 1fr; } }
+.bm__col { padding: 18px 26px 6px 0; }
+.bm__col + .bm__col { border-left: 1px solid var(--rule); padding-left: 26px; padding-right: 0; }
+@media (max-width: 860px) { .bm__col + .bm__col { border-left: 0; border-top: 1px solid var(--rule); padding-left: 0; } }
+
+.nig { padding: 13px 0; border-top: 1px solid var(--rule); }
+.nig:first-of-type { border-top: 0; padding-top: 2px; }
+.nig__top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.nig__name { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 17px; letter-spacing: -0.015em; }
+/* Mentions on a date line — three marks, none of them an all-clear. */
+.nig__line { position: relative; height: 22px; margin-top: 12px; border-top: 1px solid var(--rule); }
+.nig__m { position: absolute; top: -4px; width: 7px; height: 7px; border-radius: 50%; background: var(--mood-tired); transform: translateX(-50%); }
+.nig__d { position: absolute; top: 8px; font-family: var(--font-data); font-size: 9.5px; color: var(--ink-3); transform: translateX(-50%); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Mood — a ramp of rules, one per day. Never a face, never an emoji. */
+.moods { display: flex; gap: 5px; margin-top: 4px; }
+.moodcol { flex: 1; text-align: left; }
+.moodcol i { display: block; height: 3px; background: var(--mood-neutral); }
+.moodcol span { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); display: block; margin-top: 6px; }
+.mood-key { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 20px; }
+.mood-key b { font-family: var(--font-label); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.mood-key i { width: 14px; height: 3px; display: block; }
+
+/* ---- 06 Training log — prescribed vs actual ---------------------- */
+.log__row {
+  display: grid; grid-template-columns: 74px minmax(190px, 1.2fr) minmax(180px, 1.1fr) 96px minmax(200px, 1.6fr);
+  gap: 18px; align-items: start;
+  padding: 16px 8px 16px 0; border-bottom: 1px solid var(--rule);
+}
+.log__row--head { padding: 9px 8px 8px 0; }
+.log__row--key { border-left: 2px solid var(--session); padding-left: 12px; margin-left: -14px; }
+.log__date { font-family: var(--font-data); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; padding-top: 3px; }
+.log__title { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 17px; letter-spacing: -0.015em; line-height: 1.15; }
+.log__sub { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-top: 5px; display: block; }
+.log__num { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+.log__num--off { color: var(--red-text); }
+.log__num--flat { color: var(--ink-3); font-weight: 500; font-size: 13px; }
+@media (max-width: 900px) {
+  .log__row { grid-template-columns: 1fr; gap: 7px; }
+  .log__row--head { display: none; }
+}
+
+/* ---- Coach note — the one coloured left border in the system ----- */
+.note { margin-top: 46px; border-left: 2px solid var(--red); padding: 18px 0 18px 20px; }
+.note__field {
+  margin-top: 14px; padding: 15px 16px; min-height: 76px;
+  border: 1px solid var(--rule); border-radius: var(--radius); background: var(--card);
+  font-family: var(--font-prose); font-size: 15px; color: var(--ink-3);
+}
+.actions { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
+.btn {
+  font-family: var(--font-label); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 9px 15px; border-radius: var(--radius); cursor: pointer;
+  border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+}
+.btn--ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.btn--ghost:hover { border-color: var(--ink); }
+
+.foot { margin-top: 54px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.foot p { font-family: var(--font-accent); font-style: italic; font-size: 12.5px; color: var(--ink-3); margin: 0; }
+</style>
+</head>
+<body data-skin="editorial">
+<div class="shell">
+
+  <!-- PLATE STRIP -------------------------------------------------- -->
+  <div class="plate">
+    <div class="plate__left">
+      <span class="plate__dot"></span>
+      <span class="eyebrow">Coach · The Athlete</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:18px">
+      <span class="eyebrow">Thu · Aug 27 · 7:12 AM</span>
+      <div class="skinbar" role="group" aria-label="Skin">
+        <button aria-pressed="true"  onclick="setSkin('editorial',this)">Editorial</button>
+        <button aria-pressed="false" onclick="setSkin('wild',this)">Direction I</button>
+      </div>
+    </div>
+  </div>
+
+  <a class="back" href="#">← The desk</a>
+
+  <!-- MASTHEAD ------------------------------------------------------ -->
+  <header class="masthead">
+    <span class="masthead__plan">Sub-3:15 marathon · Week 9 of 16 · Build</span>
+    <h1 class="display">Sarah Whitmore</h1>
+    <p class="masthead__dek">Two mentions of the same calf, and a tempo that came in 11 s/mi off.</p>
+    <div class="mood-rule"></div>
+
+    <div class="anchors">
+      <div class="anchor">
+        <span class="eyebrow">Goal</span>
+        <span class="anchor__v">3:15:00</span>
+        <span class="anchor__m">Chicago · Oct 11 · 45 days</span>
+      </div>
+      <div class="anchor">
+        <span class="eyebrow">Paces anchored on</span>
+        <span class="anchor__v">1:32:40</span>
+        <span class="anchor__m">Half · Apr 12 · declared</span>
+      </div>
+      <div class="anchor">
+        <span class="eyebrow">Marathon pace</span>
+        <span class="anchor__v">7:26<span class="anchor__u">/mi</span></span>
+        <span class="anchor__m">10 zones derived from anchor</span>
+      </div>
+      <div class="anchor">
+        <span class="eyebrow eyebrow--red">Week 9</span>
+        <span class="anchor__v anchor__v--red">22.2<span class="anchor__u">/ 44 mi</span></span>
+        <span class="anchor__m">Through Thu · 3 of 6 sessions</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 01 SIGNAL ----------------------------------------------------- -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">01</span>Signal</span>
+      <span class="sec__note">What is asking for a decision, and what the system noticed.</span>
+    </div>
+
+    <div class="signal">
+      <div class="signal__col">
+        <span class="eyebrow" style="display:block;margin-bottom:12px">Watch list · 3</span>
+
+        <div class="watch">
+          <span class="watch__dot watch__dot--red"></span>
+          <div>
+            <div class="watch__t">Left calf mentioned three times in nine days.</div>
+            <div class="watch__d">Aug 17, Aug 20, Aug 24. Not resolved by the athlete.</div>
+          </div>
+        </div>
+
+        <div class="watch">
+          <span class="watch__dot watch__dot--red"></span>
+          <div>
+            <div class="watch__t">Tuesday's tempo missed target by 11 s/mi.</div>
+            <div class="watch__d">Second keyed session in a row off pace.</div>
+          </div>
+        </div>
+
+        <div class="watch">
+          <span class="watch__dot"></span>
+          <div>
+            <div class="watch__t">Sunday's 18 mi is the third long run over 16 in a row.</div>
+            <div class="watch__d">No cutback week since Aug 3.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="signal__col">
+        <span class="eyebrow" style="display:block;margin-bottom:12px">Observations · machine</span>
+
+        <article class="obs">
+          <div class="obs__top">
+            <span class="chip">Pace vs effort</span>
+            <span class="eyebrow">Aug 25</span>
+          </div>
+          <p class="machine">
+            5 mi at half-marathon effort held 7:16/mi against a 7:05 target.
+            Average HR 168 — the same heat-adjusted effort that produced 7:04/mi on Aug 4.
+          </p>
+          <p class="obs__q">The effort matched. The pace did not.</p>
+        </article>
+
+        <article class="obs">
+          <div class="obs__top">
+            <span class="chip">Recurrence</span>
+            <span class="eyebrow">Aug 24</span>
+          </div>
+          <p class="machine">
+            Left calf named in 3 of the last 6 logs. No mention of it resolving.
+          </p>
+          <p class="obs__q">Worth asking before Sunday.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 THE WEEK --------------------------------------------------- -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">02</span>The week · Aug 24 – 30</span>
+      <span class="sec__note">Prescribed above, run below. Blue is the keyed session.</span>
+    </div>
+
+    <div class="week">
+      <div class="day">
+        <span class="day__d">Mon 24</span>
+        <div class="day__p">Easy 6 mi</div>
+        <div class="day__a">6.2 <span class="anchor__u">mi</span></div>
+        <span class="day__delta day__delta--ok">8:41 /mi</span>
+      </div>
+
+      <div class="day day--key">
+        <span class="day__d">Tue 25 · Key</span>
+        <div class="day__p">5 mi @ HMP<br>7:05 /mi</div>
+        <div class="day__a">8.0 <span class="anchor__u">mi</span></div>
+        <span class="day__delta day__delta--off">7:16 · +11 s</span>
+      </div>
+
+      <div class="day">
+        <span class="day__d">Wed 26</span>
+        <div class="day__p">Easy 8 mi</div>
+        <div class="day__a">8.0 <span class="anchor__u">mi</span></div>
+        <span class="day__delta day__delta--ok">8:52 /mi</span>
+      </div>
+
+      <div class="day day--today">
+        <span class="day__d">Thu 27 · Today</span>
+        <div class="day__p">Easy 6 mi<br>+ 6 × 20 s strides</div>
+        <div class="day__a day__a--none">Not logged</div>
+      </div>
+
+      <div class="day">
+        <span class="day__d">Fri 28</span>
+        <div class="day__p">Rest</div>
+      </div>
+
+      <div class="day">
+        <span class="day__d">Sat 29</span>
+        <div class="day__p">Easy 7 mi</div>
+      </div>
+
+      <div class="day">
+        <span class="day__d">Sun 30</span>
+        <div class="day__p">Long 18 mi<br>last 4 @ MP</div>
+        <div class="day__a day__a--none" style="color:var(--red-text)">Decision open</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 PROGRESSION ------------------------------------------------ -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">03</span>Progression</span>
+      <span class="sec__note">Projected finish against the goal, six weeks back.</span>
+    </div>
+
+    <div class="prog">
+      <div>
+        <span class="eyebrow">Projected marathon</span>
+        <span class="prog__v">3:17:40</span>
+        <span class="prog__gap">2:40 off goal</span>
+        <p class="prog__conf">
+          Anchored on the Apr 12 half. 3 keyed sessions in the last 6 weeks
+          carry the estimate; the last two came in slow, which is what widened it.
+        </p>
+      </div>
+
+      <!-- Hairline chart. Ink line, one red goal rule, no fill, no grid. -->
+      <svg class="chart" viewBox="0 0 600 168" preserveAspectRatio="none" role="img"
+           aria-label="Projected marathon time, six weeks. 3:21:10 down to 3:16:20, then back to 3:17:40 against a 3:15:00 goal.">
+        <!-- goal -->
+        <line x1="0" y1="132" x2="600" y2="132" stroke="var(--red)" stroke-width="1.5"/>
+        <!-- baseline -->
+        <line x1="0" y1="150" x2="600" y2="150" stroke="var(--rule)" stroke-width="1"/>
+        <!-- projection: 3:21:10 · 3:20:05 · 3:18:40 · 3:17:05 · 3:16:20 · 3:17:40 -->
+        <polyline points="20,34 136,48 252,66 368,84 484,92 578,76"
+                  fill="none" stroke="var(--ink)" stroke-width="1.75"
+                  vector-effect="non-scaling-stroke"/>
+        <circle cx="20"  cy="34" r="2.5" fill="var(--ink-3)"/>
+        <circle cx="136" cy="48" r="2.5" fill="var(--ink-3)"/>
+        <circle cx="252" cy="66" r="2.5" fill="var(--ink-3)"/>
+        <circle cx="368" cy="84" r="2.5" fill="var(--ink-3)"/>
+        <circle cx="484" cy="92" r="2.5" fill="var(--ink-3)"/>
+        <circle cx="578" cy="76" r="3.5" fill="var(--red)"/>
+        <text class="v" x="20"  y="24">3:21:10</text>
+        <text class="v" x="530" y="66">3:17:40</text>
+        <text x="0" y="126">Goal 3:15:00</text>
+        <text x="20"  y="164">Jul 20</text>
+        <text x="520" y="164">Aug 27</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- 04 LOAD -------------------------------------------------------- -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">04</span>Load</span>
+      <span class="sec__note">How much, and how hard — six weeks of it.</span>
+    </div>
+
+    <div class="load">
+      <div class="load__cell">
+        <span class="eyebrow">This week</span>
+        <span class="load__v">22.2<span class="load__u">mi</span></span>
+        <span class="load__m">44 planned · through Thu</span>
+      </div>
+      <div class="load__cell">
+        <span class="eyebrow">4-week average</span>
+        <span class="load__v">43.8<span class="load__u">mi</span></span>
+        <span class="load__m">Jul 27 – Aug 23</span>
+      </div>
+      <div class="load__cell">
+        <span class="eyebrow">Stress load · 7 day</span>
+        <span class="load__v">412</span>
+        <span class="load__m">486 chronic · weighted minutes</span>
+      </div>
+      <div class="load__cell">
+        <span class="eyebrow">Acute : chronic</span>
+        <span class="load__v">0.85</span>
+        <div class="band">
+          <span class="band__safe" style="left:22%;width:46%"></span>
+          <span class="band__tick" style="left:38%"></span>
+          <span class="band__lab" style="left:22%">0.80</span>
+          <span class="band__lab" style="left:62%">1.30</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Six weeks of volume. Narrow ink bars — a fill this size would be a
+         tint, and the system has none. This week is ink; the rest is --ink-3. -->
+    <div class="vol">
+      <span class="eyebrow">Six weeks</span>
+      <div class="vol__plot">
+        <span class="vol__bar" style="height:57%"><b>29</b></span>
+        <span class="vol__bar" style="height:69%"><b>35</b></span>
+        <span class="vol__bar" style="height:76%"><b>39</b></span>
+        <span class="vol__bar" style="height:90%"><b>46</b></span>
+        <span class="vol__bar" style="height:100%"><b>51</b></span>
+        <span class="vol__bar vol__bar--now" style="height:44%"><b>22</b></span>
+      </div>
+      <p class="prose vol__read">
+        Five weeks of build, then Sunday's call. Week 9 sits at 22 mi through
+        Thursday against 44 planned — the shape of the week depends on it.
+      </p>
+    </div>
+  </section>
+
+  <!-- 05 BODY & MIND -------------------------------------------------- -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">05</span>Body &amp; mind</span>
+      <span class="sec__note">Only what she said, and when she said it.</span>
+    </div>
+
+    <div class="bm">
+      <div class="bm__col">
+        <span class="eyebrow" style="display:block;margin-bottom:12px">Open · 1</span>
+
+        <article class="nig">
+          <div class="nig__top">
+            <span class="nig__name">Left calf</span>
+            <span class="eyebrow eyebrow--red">Open · 3 mentions</span>
+          </div>
+          <div class="nig__line">
+            <span class="nig__m" style="left:6%"></span>
+            <span class="nig__d" style="left:6%">Aug 17</span>
+            <span class="nig__m" style="left:38%"></span>
+            <span class="nig__d" style="left:38%">Aug 20</span>
+            <span class="nig__m" style="left:82%"></span>
+            <span class="nig__d" style="left:82%">Aug 24</span>
+          </div>
+          <p class="voice" style="margin:26px 0 0">
+            “left calf is tight again, back of it, not the achilles. it loosened up
+            after two miles but it&#39;s the same spot as last week.”
+          </p>
+          <span class="eyebrow" style="display:block;margin-top:9px">Aug 24 · voice memo</span>
+        </article>
+
+        <article class="nig">
+          <div class="nig__top">
+            <span class="nig__name">Nothing else named</span>
+            <span class="eyebrow">Last 28 days</span>
+          </div>
+        </article>
+      </div>
+
+      <div class="bm__col">
+        <span class="eyebrow" style="display:block;margin-bottom:14px">Mood · last 14 logs</span>
+        <div class="moods">
+          <span class="moodcol"><i style="background:var(--mood-positive)"></i><span>17</span></span>
+          <span class="moodcol"><i style="background:var(--mood-energized)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-neutral)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-positive)"></i><span>20</span></span>
+          <span class="moodcol"><i style="background:var(--mood-neutral)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-tired)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-neutral)"></i><span>22</span></span>
+          <span class="moodcol"><i style="background:var(--mood-tired)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-tired)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-neutral)"></i><span>24</span></span>
+          <span class="moodcol"><i style="background:var(--mood-struggling)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-tired)"></i><span></span></span>
+          <span class="moodcol"><i style="background:var(--mood-neutral)"></i><span>26</span></span>
+          <span class="moodcol"><i style="background:var(--mood-tired)"></i><span></span></span>
+        </div>
+        <div class="mood-key">
+          <b><i style="background:var(--mood-energized)"></i>Energized</b>
+          <b><i style="background:var(--mood-positive)"></i>Good</b>
+          <b><i style="background:var(--mood-neutral)"></i>Neutral</b>
+          <b><i style="background:var(--mood-tired)"></i>Tired</b>
+          <b><i style="background:var(--mood-struggling)"></i>Struggling</b>
+        </div>
+        <p class="prose" style="margin-top:22px">
+          Six of the last eight logs came in tired or below. The stretch starts on
+          Aug 20, the day after the calf was named a second time.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 TRAINING LOG -------------------------------------------------- -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow"><span class="sec__n">06</span>Training log · prescribed vs actual</span>
+      <span class="sec__note">Her words, unedited. Blue is a keyed session.</span>
+    </div>
+
+    <div>
+      <div class="log__row log__row--head">
+        <span class="eyebrow">Date</span>
+        <span class="eyebrow">Prescribed</span>
+        <span class="eyebrow">Ran</span>
+        <span class="eyebrow">Vs plan</span>
+        <span class="eyebrow">In her words</span>
+      </div>
+
+      <div class="log__row log__row--key">
+        <span class="log__date">Tue<br>Aug 25</span>
+        <span>
+          <span class="log__title">5 mi @ HMP</span>
+          <span class="log__sub">Key session · 7:05 /mi</span>
+        </span>
+        <span>
+          <span class="log__title">8.0 mi</span>
+          <span class="log__sub">7:16 /mi · 168 bpm · 79 °F</span>
+        </span>
+        <span class="log__num log__num--off">+11 s/mi</span>
+        <span class="voice">
+          “legs never came around. the pace was there for two miles and then it just
+          wasn&#39;t. i wasn&#39;t breathing hard, i just couldn&#39;t hold it.”
+        </span>
+      </div>
+
+      <div class="log__row">
+        <span class="log__date">Wed<br>Aug 26</span>
+        <span>
+          <span class="log__title">Easy 8 mi</span>
+          <span class="log__sub">Aerobic</span>
+        </span>
+        <span>
+          <span class="log__title">8.0 mi</span>
+          <span class="log__sub">8:52 /mi · 141 bpm</span>
+        </span>
+        <span class="log__num log__num--flat">Held</span>
+        <span class="voice">“easy day, calf quiet the whole way.”</span>
+      </div>
+
+      <div class="log__row">
+        <span class="log__date">Mon<br>Aug 24</span>
+        <span>
+          <span class="log__title">Easy 6 mi</span>
+          <span class="log__sub">Aerobic</span>
+        </span>
+        <span>
+          <span class="log__title">6.2 mi</span>
+          <span class="log__sub">8:41 /mi · 144 bpm</span>
+        </span>
+        <span class="log__num log__num--flat">Held</span>
+        <span class="voice">
+          “left calf is tight again, back of it, not the achilles.”
+        </span>
+      </div>
+
+      <div class="log__row log__row--key">
+        <span class="log__date">Sun<br>Aug 23</span>
+        <span>
+          <span class="log__title">Long 17 mi</span>
+          <span class="log__sub">Key session · last 3 @ MP</span>
+        </span>
+        <span>
+          <span class="log__title">17.0 mi</span>
+          <span class="log__sub">8:24 /mi · last 3 @ 7:31</span>
+        </span>
+        <span class="log__num log__num--off">+5 s/mi</span>
+        <span class="voice">
+          “got the three at the end but they were a fight. hips were done by 14.”
+        </span>
+      </div>
+
+      <div class="log__row">
+        <span class="log__date">Sat<br>Aug 22</span>
+        <span>
+          <span class="log__title">Easy 7 mi</span>
+          <span class="log__sub">Aerobic</span>
+        </span>
+        <span>
+          <span class="log__title">7.1 mi</span>
+          <span class="log__sub">8:47 /mi · 139 bpm</span>
+        </span>
+        <span class="log__num log__num--flat">Held</span>
+        <span class="log__num log__num--flat" style="font-size:12px">No memo</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- COACH NOTE ------------------------------------------------------- -->
+  <div class="note">
+    <span class="eyebrow eyebrow--red">Write to Sarah</span>
+    <p class="prose" style="margin-top:8px">
+      She sees this as a note from you, not from the app. Nothing on this page is
+      sent unless you send it.
+    </p>
+    <div class="note__field">Cut Sunday to 14 and we keep the last 3 at marathon pace…</div>
+    <div class="actions">
+      <button class="btn">Send note</button>
+      <button class="btn btn--ghost">Cut Sunday to 14</button>
+      <button class="btn btn--ghost">Hold at 18</button>
+    </div>
+  </div>
+
+  <div class="foot">
+    <p>Every number on this page traces to a logged session. Nothing here is inferred from a plan she did not run.</p>
+  </div>
+</div>
+
+<script>
+function setSkin(skin, btn) {
+  document.body.dataset.skin = skin;
+  btn.parentElement.querySelectorAll('button').forEach(function (b) {
+    b.setAttribute('aria-pressed', String(b === btn));
+  });
+}
+</script>
+</body>
+</html>

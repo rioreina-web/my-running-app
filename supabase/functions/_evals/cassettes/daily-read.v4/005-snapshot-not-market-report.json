@@ -1,0 +1,30 @@
+{
+  "id": "005-snapshot-not-market-report",
+  "prompt_name": "daily-read.v4",
+  "description": "The signature v4 (retooled 2026-06-15) behavior: a coach's snapshot, NOT a market report. The Read leads with the WEEK (mileage + a point of view), names the hard days and calls out the LONG RUN specifically, quotes fitness as a RANGE with confidence, and carries the goal as a light backdrop. It must NOT stack market-report tells: no percentage load-deltas (up ~18%), no pace-drift arrows (7:35 → 7:24), no HR-drift figures, no ACWR, no seconds-precision finish time. Replaces the old 005-load-led-windowed cassette, which asserted exactly the voice this revision removes. recorded_response is an authored target exemplar — re-record against the live model (gemini-3.1-pro-preview) via _evals/record.ts before trusting it as a regression baseline.",
+  "vars": {},
+  "input": "## Coaching mode\nPLAN_MODE — active plan, goal marathon. You may evaluate the week, predict race times as RANGES with confidence, and make a soft call on a specific day.\n\n=== ATHLETE STATE ===\nLevel: advanced\nGoal: marathon 3:16 (Chicago, 14 weeks out) · race anchor: marathon 3:28\n\nTraining Load (7d): 52 mi, 8 runs (2 quality, 6 easy)\n28d avg: 49 mpw\nShape of the week: stacking — third straight build week, easy volume holding.\nHard/easy split (7d): easy 73% · 2 quality sessions.\n\nRecent runs (trust user notes + work pace over avg pace):\n  2026-06-13 Long 18.0mi @ 7:42/mi — last 5 quicker, finished strong\n  2026-06-10 LT 6.0mi work @ 7:01/mi — sharp, in control\n  2026-06-07 5K 6×1K @ 6:22 — last reps ragged, faded\n\nRecent quality sessions (did they land?):\n  2026-06-10 LT — even, controlled, landed\n  2026-06-07 5K intervals — came apart in the last 2 reps\n\nThe week's long run:\n  2026-06-13 18.0mi — negative split, last 5 quicker than the first 5\n\nPredicted race times (quote the RANGE, never a single time):\n  Marathon: 3:18–3:22\n  Confidence: High (4 quality + race anchor)\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [a1a1a1a1-0000-0000-0000-000000000001] 2026-06-13 · 18.0mi (138m) long run\n- [b2b2b2b2-0000-0000-0000-000000000002] 2026-06-10 · 6.0mi (43m) ★quality\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["headline", "paragraph", "sources", "confidence"],
+    "forbidden_patterns": [
+      "(?i)\\bACWR\\b",
+      "→",
+      "(?i)up\\s?~?\\d+%",
+      "(?i)\\+\\d+%",
+      "(?i)HR\\s?drift",
+      "(?i)\\b(crush|beast mode|warrior|unleash|champion|go hard)\\b",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\b\\d{1,2}:\\d{2}:\\d{2}\\b",
+      "(?i)\\b(monitor|keep an eye on|keep tabs on)\\b"
+    ],
+    "required_patterns": [
+      "(?i)\\b\\d{2}\\s?(mi|miles)\\b",
+      "(?i)long run",
+      "(?i)\\b3:1\\d\\s?[–-]\\s?3:2\\d\\b"
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"A strong week — keep that achilles honest.\",\n  \"paragraph\": [\n    \"52 miles, and you handled every one of them — third straight build week, and this is about stacking them now, not chasing more. Tuesday's LT work was sharp and in control; Saturday's intervals came apart a little in the last couple reps, which reads like three weeks of work catching up, not your engine. The one I'd circle is the long run — 18 miles \",\n    { \"workout_id\": \"a1a1a1a1-0000-0000-0000-000000000001\" },\n    \", and you were still running it at the end, the last few quicker than the first. If you raced today I'd have you in the low 3:20s, call it 3:18–3:22 — already on the right side of your 3:28, with the sharpening that brings 3:16 into reach still ahead.\"\n  ],\n  \"confidence\": { \"level\": \"HIGH\", \"sub\": \"8 recent runs, a landed long run, and a race anchor.\" },\n  \"sources\": { \"workouts\": [\"a1a1a1a1-0000-0000-0000-000000000001\"], \"docs\": [], \"memos\": [] }\n}\n```",
+  "recorded_at": "2026-06-15T00:00:00.000Z",
+  "model": "gemini-3.1-pro-preview"
+}

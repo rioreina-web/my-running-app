@@ -1,0 +1,239 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Voice Log v2 · three states" subtitle="Run-as-hero instead of an instruction, plus the recording state and the honest empty state" viewport="1330x1010" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Voice Log v2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;700;900&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#FFFFFF;--ink:#111111;--ink-2:#6B6B6B;--ink-3:#9A9A9A;--rule:#EBEBEB;--red:#EE2B24;--red-text:#D31F19;--sans:"Helvetica Neue",Helvetica,"Archivo",system-ui,sans-serif;--serif:"Times New Roman",Times,serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#C6C6C6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.sheet{padding:30px 28px 40px}
+.row{display:flex;gap:34px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;flex:none;width:393px}
+.cap{font-family:var(--sans);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#4A4A4A;line-height:1.4}
+.cap b{color:#111}
+.phone{width:393px;height:852px;flex:none;background:var(--paper);color:var(--ink);font-family:var(--sans);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 22px 60px rgba(0,0,0,.28),0 0 0 10px #0C0C0C,0 0 0 11px #2C2C2C}
+a{color:var(--ink)}a:hover{color:var(--red-text)}
+button{font-family:var(--sans)}
+
+/* chrome — identical to Voice Log 032c */
+.sb{height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+.sb .bars i{width:3px;background:var(--ink);border-radius:1px;display:block}
+.sb .bars i:nth-child(1){height:4px}.sb .bars i:nth-child(2){height:6px}.sb .bars i:nth-child(3){height:9px}.sb .bars i:nth-child(4){height:11px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:var(--ink);color:#fff;border-radius:4px;font-size:10px;font-weight:700;padding:0 4px}
+.mast{flex:none;padding:10px 22px 18px;border-bottom:1px solid var(--rule);display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.mast .mark{height:58px;width:auto;display:block;flex:none}
+.mast .r{display:flex;flex-direction:column;align-items:flex-end;gap:10px;padding-top:2px}
+.mast .rtop{display:flex;align-items:center;gap:2px}
+.icon{width:44px;height:44px;margin-right:-10px;background:transparent;border:0;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 10px;cursor:pointer}
+.icon i{display:block;height:2px;border-radius:2px;background:var(--ink)}
+.link{height:44px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;text-decoration:none}
+.live{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;color:var(--red-text)}
+
+/* ── the run, as the subject of the screen ─────────────────── */
+.body{flex:1;min-height:0;display:flex;flex-direction:column;padding:26px 22px 0;overflow:hidden}
+.eyebrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.eyebrow span{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.eyebrow a{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--ink-2);padding-bottom:2px;white-space:nowrap}
+.kicker{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:2px solid var(--ink);padding-top:8px}
+.kicker span{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.kicker span:first-child{color:var(--ink)}
+.lede{padding:20px 0 24px;text-align:center;border-bottom:1px solid var(--rule)}
+.runttl{font-size:38px;font-weight:900;letter-spacing:-.04em;line-height:.98;margin:0}
+.runttl em{font-family:var(--serif);font-style:italic;font-weight:400;letter-spacing:-.02em}
+.dek{font-family:var(--serif);font-style:italic;font-size:17px;line-height:1.4;color:var(--ink-2);margin:11px 0 0}
+.orn{display:block;width:34px;height:2px;background:var(--red);margin:18px auto 0}
+.linked{padding:16px 0 18px;border-bottom:1px solid var(--rule)}
+.lrun{font-family:var(--mono);font-size:13px;line-height:1.5;color:var(--ink-2);margin:9px 0 0;font-variant-numeric:tabular-nums}
+.lrun b{font-weight:500;color:var(--ink)}
+.lrun i{font-style:normal;font-size:11px}
+.when{font-family:var(--mono);font-size:11px;color:var(--ink-2);margin:7px 0 0;font-variant-numeric:tabular-nums}
+.figure{display:flex;align-items:flex-end;gap:5px;margin:16px 0 0}
+.figure .n{font-family:var(--sans);font-size:54px;font-weight:900;line-height:.86;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.figure .u{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding-bottom:5px}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);margin-top:16px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.fact{padding:15px 10px 16px 0;border-right:1px solid var(--rule);display:flex;flex-direction:column;gap:8px}
+.fact:last-child{border-right:0}
+.fact:not(:first-child){padding-left:12px}
+.fact b{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.fact span{font-family:var(--mono);font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap}
+.fact span i{font-style:normal;font-size:11px;font-weight:400;color:var(--ink-2);margin-left:2px}
+/* hero record — the button is the subject once the run is set */
+.hero{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px 0 30px}
+.hero .big{width:132px;height:132px;flex:none;border-radius:999px;background:var(--red);border:0;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:transform 150ms cubic-bezier(.2,.7,.2,1),background 150ms ease}
+.hero .big::after{content:"";position:absolute;inset:-17px;border-radius:999px;border:1px solid #F0C6C4}
+.hero .big:hover{background:#D31F19}
+.hero .big:active{transform:scale(.97)}
+.hero .big i{display:block;width:46px;height:46px;border-radius:999px;background:#fff}
+.hero .lb{font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.hero .sub{font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2);text-align:center;white-space:nowrap}
+
+/* ── empty state ──────────────────────────────────────────── */
+.empty{margin-top:26px}
+.empty h2{font-size:30px;font-weight:900;letter-spacing:-.03em;line-height:1.04;margin:0}
+.empty p{font-family:var(--serif);font-style:italic;font-size:17px;line-height:1.4;color:var(--ink-2);margin:12px 0 0;max-width:28ch}
+.empty .pick{margin-top:20px;display:flex;flex-direction:column;border-top:1px solid var(--rule)}
+.pickrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--rule);background:transparent;border-left:0;border-right:0;border-top:0;cursor:pointer;text-align:left}
+.pickrow .l{display:flex;flex-direction:column;gap:4px}
+.pickrow .t{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.pickrow .m{font-family:var(--mono);font-size:11px;color:var(--ink-2);white-space:nowrap}
+
+/* ── recording ────────────────────────────────────────────── */
+.rechead{border-top:2px solid var(--red);padding-top:16px;margin-top:0}
+.clock{font-family:var(--mono);font-size:64px;font-weight:500;line-height:.86;letter-spacing:-.05em;font-variant-numeric:tabular-nums;margin:0}
+.meter{display:flex;align-items:center;gap:2px;height:64px;margin-top:22px}
+.meter i{flex:1;background:var(--red);display:block;min-width:2px}
+.meter i.past{background:#F0B4B1}
+.said{font-family:var(--mono);font-style:italic;font-size:13px;line-height:1.6;color:var(--ink);margin:20px 0 0}
+.said .cursor{display:inline-block;width:7px;height:14px;background:var(--red);vertical-align:-2px;margin-left:2px}
+
+/* ── action zone — flush left, not a centred dot ──────────── */
+.act{flex:none;border-top:1px solid var(--rule);padding:16px 22px 18px;display:flex;align-items:center;gap:16px}
+.rec{width:68px;height:68px;flex:none;border-radius:999px;background:var(--red);border:0;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:transform 150ms cubic-bezier(.2,.7,.2,1),background 150ms ease}
+.rec:hover{background:#D31F19}
+.rec:active{transform:scale(.97)}
+.rec i{display:block;width:24px;height:24px;border-radius:999px;background:#fff}
+.rec.stop i{border-radius:2px;width:22px;height:22px}
+.act .txt{display:flex;flex-direction:column;gap:5px;min-width:0}
+.act .txt b{font-size:14px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.act .txt span{font-family:var(--serif);font-style:italic;font-size:14px;color:var(--ink-2)}
+.act .alt{margin-left:auto;flex:none;background:transparent;border:0;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);cursor:pointer;white-space:nowrap;padding:12px 0}
+.act .alt:hover{color:var(--ink)}
+
+/* tab bar */
+.tb{flex:none;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);padding:0 4px 6px}
+.tb button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 0 10px;cursor:pointer}
+.tb .dot{width:6px;height:6px;border-radius:999px;border:1px solid var(--ink-3);background:transparent}
+.tb .lb{font-size:11px;font-weight:500;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
+.tb button.on .dot{background:var(--red);border-color:var(--red)}
+.tb button.on .lb{color:var(--ink);font-weight:700}
+.home{flex:none;display:flex;justify-content:center;padding:0 0 9px}
+.home i{display:block;width:134px;height:5px;border-radius:999px;background:var(--ink)}
+</style>
+</head>
+<body>
+<div class="sheet">
+<div class="row">
+
+  <!-- ── A · run attached ─────────────────────────────── -->
+  <div class="col">
+    <span class="cap"><b>A · Run attached</b> &nbsp;· the run is the subject</span>
+    <div class="phone" data-screen-label="Voice Log v2 · attached">
+      <div class="sb"><span>10:12</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span><svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg><span class="batt">84</span></span></div>
+      <div class="mast"><img class="mark" src="assets/logo-stacked.png" alt="Post Run Drip"><span class="r"><span class="rtop"><a class="link" href="#">Today <span>&#8599;</span></a><button class="icon" aria-label="Menu"><i></i><i></i><i></i></button></span></span></div>
+
+      <div class="body">
+        <div class="kicker"><span>Voice log</span><span>Fig. 09</span></div>
+        <div class="lede">
+          <h1 class="runttl">Log your <em>run.</em></h1>
+          <p class="dek">Tap the button to start your voice memo.</p>
+          <span class="orn"></span>
+        </div>
+        <div class="linked">
+          <div class="eyebrow"><span>Linked to</span><a href="#">Change &#8599;</a></div>
+          <p class="lrun"><b>4.43</b> mi &middot; 31:52 &middot; 7:12<i>/mi</i> &middot; Aug 20</p>
+        </div>
+        <div class="hero">
+          <button class="big" aria-label="Record"><i></i></button>
+          <span class="sub">Tap to record</span>
+        </div>
+      </div>
+
+      <div class="tb">
+        <button class="on"><span class="dot"></span><span class="lb">Log</span></button>
+        <button><span class="dot"></span><span class="lb">Train</span></button>
+        <button><span class="dot"></span><span class="lb">Trends</span></button>
+        <button><span class="dot"></span><span class="lb">Week</span></button>
+        <button><span class="dot"></span><span class="lb">Ask</span></button>
+        <button><span class="dot"></span><span class="lb">Sheet</span></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+  <!-- ── B · recording ────────────────────────────────── -->
+  <div class="col">
+    <span class="cap"><b>B · Recording</b> &nbsp;· where the screen actually lives</span>
+    <div class="phone" data-screen-label="Voice Log v2 · recording">
+      <div class="sb"><span>10:13</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span><svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg><span class="batt">84</span></span></div>
+      <div class="mast"><img class="mark" src="assets/logo-stacked.png" alt="Post Run Drip"><span class="r"><span class="rtop"><a class="link" href="#">Today <span>&#8599;</span></a><button class="icon" aria-label="Menu"><i></i><i></i><i></i></button></span><span class="live">&#9679; Recording</span></span></div>
+
+      <div class="body">
+        <div class="rechead">
+          <div class="eyebrow"><span>Thursday evening · 4.43 mi</span></div>
+          <p class="clock">00:47</p>
+          <div class="meter">
+            <i class="past" style="height:22%"></i><i class="past" style="height:48%"></i><i class="past" style="height:34%"></i><i class="past" style="height:70%"></i><i class="past" style="height:56%"></i><i class="past" style="height:88%"></i><i class="past" style="height:40%"></i><i class="past" style="height:64%"></i><i class="past" style="height:30%"></i><i class="past" style="height:76%"></i><i class="past" style="height:52%"></i><i class="past" style="height:92%"></i><i class="past" style="height:44%"></i><i class="past" style="height:68%"></i><i class="past" style="height:26%"></i><i class="past" style="height:58%"></i><i class="past" style="height:80%"></i><i class="past" style="height:36%"></i><i style="height:62%"></i><i style="height:96%"></i><i style="height:50%"></i><i style="height:72%"></i><i style="height:38%"></i><i style="height:84%"></i><i style="height:28%"></i><i style="height:60%"></i><i style="height:46%"></i><i style="height:78%"></i><i style="height:32%"></i><i style="height:66%"></i>
+          </div>
+          <p class="said">“Legs were heavy the first mile but it loosened up — last one felt easy, could have kept going<span class="cursor"></span>”</p>
+        </div>
+      </div>
+
+      <div class="act">
+        <button class="rec stop" aria-label="Stop"><i></i></button>
+        <span class="txt"><b>Stop</b><span>Saves to Thursday evening.</span></span>
+        <button class="alt">Discard</button>
+      </div>
+
+      <div class="tb">
+        <button class="on"><span class="dot"></span><span class="lb">Log</span></button>
+        <button><span class="dot"></span><span class="lb">Train</span></button>
+        <button><span class="dot"></span><span class="lb">Trends</span></button>
+        <button><span class="dot"></span><span class="lb">Week</span></button>
+        <button><span class="dot"></span><span class="lb">Ask</span></button>
+        <button><span class="dot"></span><span class="lb">Sheet</span></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+  <!-- ── C · nothing attached ─────────────────────────── -->
+  <div class="col">
+    <span class="cap"><b>C · Nothing attached</b> &nbsp;· the only state that needs a headline</span>
+    <div class="phone" data-screen-label="Voice Log v2 · empty">
+      <div class="sb"><span>10:12</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span><svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg><span class="batt">84</span></span></div>
+      <div class="mast"><img class="mark" src="assets/logo-stacked.png" alt="Post Run Drip"><span class="r"><span class="rtop"><a class="link" href="#">Today <span>&#8599;</span></a><button class="icon" aria-label="Menu"><i></i><i></i><i></i></button></span></span></div>
+
+      <div class="body">
+        <div class="empty">
+          <h2>No run attached.</h2>
+          <p>Talk anyway — or pick one of these and it lands there.</p>
+          <div class="pick">
+            <button class="pickrow"><span class="l"><span class="t">Thursday evening</span><span class="m">Aug 20 · 4.43 mi · 7:12/mi</span></span>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B6B6B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></button>
+            <button class="pickrow"><span class="l"><span class="t">Tuesday intervals</span><span class="m">Aug 18 · 6.22 mi · 5:54/mi</span></span>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B6B6B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></button>
+            <button class="pickrow"><span class="l"><span class="t">Sunday long run</span><span class="m">Aug 16 · 17.13 mi · 6:42/mi</span></span>
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#6B6B6B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 5 7 7-7 7"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="act">
+        <button class="rec" aria-label="Record"><i></i></button>
+        <span class="txt"><b>Record</b><span>Unattached note.</span></span>
+      </div>
+
+      <div class="tb">
+        <button class="on"><span class="dot"></span><span class="lb">Log</span></button>
+        <button><span class="dot"></span><span class="lb">Train</span></button>
+        <button><span class="dot"></span><span class="lb">Trends</span></button>
+        <button><span class="dot"></span><span class="lb">Week</span></button>
+        <button><span class="dot"></span><span class="lb">Ask</span></button>
+        <button><span class="dot"></span><span class="lb">Sheet</span></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

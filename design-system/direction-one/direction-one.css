@@ -1,0 +1,361 @@
+/* =============================================================
+   Post Run Drip — Direction I
+   White stock, one red, tabular figures, the athlete's own words
+   as the only prose in the interface.
+
+   Implements POST-RUN-DRIP-SYSTEM.md §1–§5 on the locked type
+   roles. Every face here is SIL Open Font License and self-hosted
+   in ./fonts — nothing in this file is licensed or remote.
+
+   Scoped under .d1 so it can never mix with the warm-paper system
+   in ../colors_and_type.css. Never use both on one surface.
+   ============================================================= */
+
+/* ---- Faces · all OFL, all local ----------------------------- */
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("fonts/InstrumentSans-Variable.ttf") format("truetype-variations");
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Schibsted Grotesk";
+  src: url("fonts/SchibstedGrotesk-Variable.ttf") format("truetype-variations");
+  font-weight: 400 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-Variable.ttf") format("truetype-variations");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Crimson Pro";
+  src: url("fonts/CrimsonPro-Variable.ttf") format("truetype-variations");
+  font-weight: 200 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/JetBrainsMono-Variable.ttf") format("truetype-variations");
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+.d1 {
+  /* ---- Type · five roles, one face each --------------------
+     Never introduce a sixth family. Inter is barred from display:
+     Inter on numerals against a tighter grotesk on headlines is
+     the contrast the whole system is built on. */
+  --font-display: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-label:   "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-prose:   "Crimson Pro", Georgia, serif;
+  --font-data:    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-serif:   "Times New Roman", Times, serif;  /* the italic dek, nothing else */
+
+  /* ---- Surfaces and ink ------------------------------------ */
+  --paper:       #FFFFFF;
+  --paper-deep:  #F2F2F2;   /* inset wells only */
+  --rule:        #EBEBEB;   /* the most-used border in the system */
+  --rule-strong: #111111;   /* 2px editorial rule under a header */
+  --ink:         #111111;
+  --ink-2:       #6B6B6B;   /* 5.3:1 — safe at 10px */
+  --ink-3:       #9A9A9A;   /* 2.8:1 — HAIRLINES AND DISABLED ONLY, never text */
+
+  /* ---- Accents ---------------------------------------------
+     One red. It points; it never fills a large surface.
+     Blue names a keyed session and real references only — if it
+     starts appearing as chips and bars everywhere it has stopped
+     meaning anything. That mistake has been made once already. */
+  --red:       #EE2B24;                  /* fills: record button, active rule, dots */
+  --red-text:  #D31F19;                  /* the same red as type, ≤13px. 5.0:1 */
+  --red-wash:  rgba(238, 43, 36, .10);
+  --session:   #1F4FA8;                  /* 7.3:1 */
+
+  /* ---- Mood · one ramp -------------------------------------
+     Green good → grey nothing → orange tired → two reds for
+     trouble. All clear 4.5:1, because a mood is always type or a
+     dot, never a large fill. */
+  --mood-energized:  #12703A;  /* 5.9:1 */
+  --mood-positive:   #1F7A41;  /* 5.2:1 */
+  --mood-neutral:    #6B6B6B;  /* 5.3:1 */
+  --mood-tired:      #A8560A;  /* 4.8:1 */
+  --mood-struggling: #B3261E;  /* pushed off brand red — see note below */
+  --mood-injured:    #8E1219;  /* 8.2:1 */
+  --mood-speed:      #5A3C78;  /* off the ramp — a session type, not a feeling */
+
+  /* Open question §2 resolved in favour of separation: struggling
+     was #C62828, close enough to brand red #EE2B24 to read as one
+     colour. #B3261E is the darker, browner step the doc named as
+     the fallback. Revert here if it ever needs to go back. */
+
+  /* ---- The machine has no colour of its own -----------------
+     Values it computed are marked by weight (500); its label sits
+     in --ink-2. AI output is never Crimson (reads as a person's
+     own conclusion) and never italic (borrows the athlete's
+     voice). These resolve to ink so older files don't break. */
+  --ai:      var(--ink);
+  --ai-text: var(--ink);
+
+  /* ---- Spacing · 8pt, 22px canonical gutter ---------------- */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-7: 32px; --space-8: 40px;
+  --space-9: 56px;
+  --gutter:  22px;
+
+  /* ---- Radii · print has no rounded corners ---------------- */
+  --r-pill:  999px;  /* record button, chips — the only generous radius */
+  --r-tight: 4px;
+  --r-none:  0;
+
+  /* ---- Depth is not part of this brand --------------------- */
+  --shadow-card:  none;
+  --shadow-press: none;
+
+  /* ---- Motion ---------------------------------------------- */
+  --ease-out: cubic-bezier(.2, .7, .2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 240ms;
+
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-data);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* =============================================================
+   Type roles
+   ============================================================= */
+
+/* Display — every headline. Sentence case, one line where possible.
+   A headline names the session; it never editorialises it. */
+.d1 .d1-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -.035em;
+  line-height: .98;
+  color: var(--ink);
+  margin: 0;
+}
+.d1 .d1-display--xl { font-size: 46px; }
+.d1 .d1-display--l  { font-size: 34px; }
+.d1 .d1-display--m  { font-size: 24px; }
+.d1 .d1-display--s  { font-size: 19px; line-height: 1.1; }
+
+/* Label — every tracked uppercase label. 9–11px only. */
+.d1 .d1-label {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.d1 .d1-label--ink { color: var(--ink); }
+.d1 .d1-label--sm  { font-size: 9px; letter-spacing: .20em; }
+
+/* Prose — anything read as sentences. The written summary, the memo. */
+.d1 .d1-prose {
+  font-family: var(--font-prose);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.48;
+  color: var(--ink);
+}
+
+/* Data — every numeral, tabular. Doubles as body/UI copy. */
+.d1 .d1-data {
+  font-family: var(--font-data);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--ink);
+}
+.d1 .d1-figure {
+  font-family: var(--font-data);
+  font-weight: 600;
+  font-size: 28px;
+  letter-spacing: -.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Accent — exactly one role: the single-line italic dek. */
+.d1 .d1-dek {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  margin: 11px 0 0;
+}
+
+/* ---- The one distinction that matters -----------------------
+   Italic mono is the athlete. Roman mono is the machine.
+   Same family, different posture — no avatar, no badge, no colour. */
+.d1 .d1-voice {
+  font-family: var(--font-mono);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.d1 .d1-machine {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+/* =============================================================
+   Structural marks — rules do the work, not cards
+   ============================================================= */
+
+/* 2px ink rule under a section header */
+.d1 .d1-rule-strong { border-top: 2px solid var(--rule-strong); }
+/* 1px hairline — the default separation everywhere */
+.d1 .d1-rule        { border-top: 1px solid var(--rule); }
+/* 2px red rule — the active state, and only the active state */
+.d1 .d1-rule-active { border-top: 2px solid var(--red); }
+
+/* Kicker — the tracked strip sitting on a 2px ink rule */
+.d1 .d1-kicker {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  border-top: 2px solid var(--rule-strong);
+  padding-top: var(--space-2);
+}
+
+/* Ornament — the short red mark under a hero headline */
+.d1 .d1-orn {
+  display: block;
+  width: 34px;
+  height: 2px;
+  background: var(--red);
+  border: 0;
+}
+
+/* =============================================================
+   Components
+   ============================================================= */
+
+/* Type chip — solid session-blue for the keyed session, hairline
+   outline for everything easy. One keyed chip per screenful. */
+.d1 .d1-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: none;
+  padding: 6px 10px 7px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-pill);
+  background: transparent;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.d1 .d1-chip--keyed {
+  background: var(--session);
+  border-color: var(--session);
+  color: #FFFFFF;
+}
+
+/* Mood pill — tracked uppercase. Six moods, no faces, no emoji. */
+.d1 .d1-mood {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.d1 .d1-mood-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  flex: none;
+}
+.d1 .is-energized  { color: var(--mood-energized);  }
+.d1 .is-positive   { color: var(--mood-positive);   }
+.d1 .is-neutral    { color: var(--mood-neutral);    }
+.d1 .is-tired      { color: var(--mood-tired);      }
+.d1 .is-struggling { color: var(--mood-struggling); }
+.d1 .is-injured    { color: var(--mood-injured);    }
+.d1 .is-energized.d1-mood-dot  { background: var(--mood-energized);  }
+.d1 .is-positive.d1-mood-dot   { background: var(--mood-positive);   }
+.d1 .is-neutral.d1-mood-dot    { background: var(--mood-neutral);    }
+.d1 .is-tired.d1-mood-dot      { background: var(--mood-tired);      }
+.d1 .is-struggling.d1-mood-dot { background: var(--mood-struggling); }
+.d1 .is-injured.d1-mood-dot    { background: var(--mood-injured);    }
+
+/* Stat tile — tracked label over a tabular Inter numeral. */
+.d1 .d1-stat { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.d1 .d1-stat__value {
+  font-family: var(--font-data);
+  font-weight: 600;
+  font-size: 21px;
+  letter-spacing: -.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.d1 .d1-stat__value i {
+  font-style: normal;
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-left: 3px;
+}
+.d1 .d1-stat__delta { font-size: 10px; font-weight: 600; letter-spacing: .02em; }
+
+/* Coach quote — the one coloured left border in the system. */
+.d1 .d1-coach {
+  border-left: 2px solid var(--red);
+  padding: 2px 0 2px var(--space-4);
+  margin: 0;
+}
+
+/* Record button — the one generous radius, the one large red fill. */
+.d1 .d1-record {
+  width: 132px; height: 132px; flex: none;
+  border: 0; border-radius: var(--r-pill);
+  background: var(--red);
+  display: flex; align-items: center; justify-content: center;
+  position: relative; cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) ease;
+}
+.d1 .d1-record::after {
+  content: ""; position: absolute; inset: -17px;
+  border-radius: var(--r-pill); border: 1px solid #F0C6C4;
+}
+.d1 .d1-record:hover  { background: var(--red-text); }
+.d1 .d1-record:active { transform: scale(.97); }
+.d1 .d1-record i { display: block; width: 46px; height: 46px; border-radius: var(--r-pill); background: #FFFFFF; }
+
+/* Every interactive target clears 44px — except chips, whose own box is
+   set by padding so the pill stays a flat lozenge instead of inflating
+   into an oval. They sit inside a 44px scroll rail, which is what the
+   finger actually hits. */
+.d1 button, .d1 a[role="button"] { min-height: 44px; }
+.d1 .d1-chip { min-height: 0; }
+.d1 .d1-chip-rail { display: flex; align-items: center; gap: 7px; min-height: 44px; }

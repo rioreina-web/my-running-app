@@ -56,8 +56,8 @@ export interface WorkoutFeaturesRow {
  * a more accurate story.
  */
 const TYPE_FALLBACK_WEIGHTS: Record<string, number> = {
-  easy: 1.0,
-  recovery: 0.7,    // matches per-segment recovery weight
+  easy: 1.0,        // recovery folded into easy (2026-06-12) — no 0.7 tier
+  recovery: 1.0,    // = easy; kept explicit so the lookup is obvious
   long_run: 1.1,    // mostly aerobic
   long: 1.1,
   strides: 1.5,

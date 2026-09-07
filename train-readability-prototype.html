@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Train tab — readability features</title>
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --rule:#E8E4E0; --deep:#E8E4DF;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A;
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --rail:#D6D0C8;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --eo:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--fb);-webkit-font-smoothing:antialiased;padding:38px 24px 70px}
+.head{max-width:1240px;margin:0 auto 22px}
+.head .k{font-family:var(--fm);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);margin-bottom:9px}
+.head h1{font-family:var(--fd);font-weight:700;font-size:31px;letter-spacing:-.01em;margin-bottom:9px}
+.head p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:800px}
+.head p b{color:var(--ink)}
+.bar{max-width:1240px;margin:0 auto 22px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:#EDE9E3;border:1px solid #D8D3CC;border-radius:12px;padding:11px 14px}
+.bar .l{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.seg{display:inline-flex;background:#DFDAD3;border-radius:9px;padding:3px;gap:3px}
+.seg button{font-family:var(--fm);font-size:11px;letter-spacing:.04em;color:var(--ink-2);background:none;border:0;
+  padding:6px 15px;border-radius:7px;cursor:pointer}
+.seg button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+.bar .n{font-size:13px;color:var(--ink-2);flex:1;min-width:250px}
+.bar .n b{color:var(--ink)}
+.wrap{display:flex;gap:34px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1240px;margin:0 auto}
+.notes{width:290px}
+.notes h3{font-family:var(--fm);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);margin:20px 0 7px}
+.notes h3:first-child{margin-top:0}
+.notes p{font-size:13px;line-height:1.55;color:var(--ink-2);margin-bottom:8px}
+.notes p b{color:var(--ink)}
+.notes .f{display:flex;gap:9px;margin-bottom:10px;font-size:13px;line-height:1.5;color:var(--ink-2)}
+.notes .f i{font-family:var(--fm);font-style:normal;font-size:10px;font-weight:600;color:var(--coral);
+  border:1px solid var(--coral);border-radius:999px;width:18px;height:18px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;margin-top:1px}
+.notes .f b{color:var(--ink);font-weight:400}
+
+/* phone */
+.phone{width:390px;height:844px;background:var(--paper);border-radius:44px;position:relative;overflow:hidden;
+  box-shadow:0 0 0 11px #14120F,0 0 0 13px #2E2A26,0 24px 56px rgba(0,0,0,.32);flex:0 0 auto}
+.cap{text-align:center;font-family:var(--fm);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);margin-top:13px}
+.sb{display:flex;justify-content:space-between;align-items:center;padding:14px 26px 2px;
+  font-family:var(--fm);font-size:12.5px;font-weight:600}
+.sb .r{display:flex;gap:6px;align-items:center;font-size:11px}
+.bat{background:#30D158;color:#fff;border-radius:4px;padding:1px 5px;font-size:10px;font-weight:700}
+.scr{position:absolute;inset:0;top:38px;bottom:0;display:flex;flex-direction:column}
+.sc{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 18px 14px;scrollbar-width:none;position:relative}
+.sc::-webkit-scrollbar{display:none}
+.eb{font-family:var(--fm);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+.h1{font-family:var(--fd);font-weight:700;font-size:33px;letter-spacing:-.015em;line-height:1.05;margin:9px 0 0}
+.tabs{display:flex;gap:0;margin-top:14px;border-bottom:1px solid var(--rule)}
+.tabs button{flex:1;background:none;border:0;padding:10px 0 9px;cursor:pointer;font-family:var(--fm);
+  font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);position:relative}
+.tabs button.on{color:var(--coral);font-weight:600}
+.tabs button.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--coral)}
+.subtabs{display:flex;margin-top:2px;border-bottom:1px solid var(--rule)}
+.subtabs button{flex:1;background:none;border:0;padding:11px 0 10px;cursor:pointer;font-family:var(--fm);
+  font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);position:relative}
+.subtabs button.on{color:var(--coral);font-weight:600}
+.subtabs button.on::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--coral)}
+
+/* ---- BLOCK grid ---- */
+.dow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) 46px;gap:4px;padding:11px 0 7px}
+.dow span{font-family:var(--fm);font-size:10px;letter-spacing:.06em;color:var(--ink-3);text-align:center}
+.dow span.mi{color:var(--ink-3)}
+.stick{position:sticky;top:0;z-index:5;background:var(--paper)}
+.stick.on{box-shadow:0 6px 10px -8px rgba(0,0,0,.18)}
+.wrow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr)) 46px;gap:4px;margin-bottom:4px}
+.dcell{background:var(--card);border:0;border-radius:11px;padding:6px 2px 5px;cursor:pointer;position:relative;
+  display:flex;flex-direction:column;align-items:center;gap:4px;min-height:92px;min-width:0;font:inherit;color:inherit;
+  box-shadow:0 1px 2px rgba(0,0,0,.03);transition:transform .15s var(--eo)}
+.dcell:hover{transform:translateY(-1px)}
+.dcell.out{opacity:.35}
+.dcell.today{box-shadow:0 0 0 2px var(--coral)}
+.dnum{font-family:var(--fm);font-size:10.5px;color:var(--ink-2);display:flex;align-items:center;gap:3px}
+.dcell.out .dnum{color:var(--ink-3)}
+.star{font-size:7.5px;color:var(--ink)}
+.tile{border-radius:9px;display:flex;align-items:center;justify-content:center;
+  font-family:var(--fm);font-weight:600;font-size:11px;color:#fff;font-variant-numeric:tabular-nums;
+  transition:width .3s var(--eo),height .3s var(--eo)}
+.tile.lt{color:var(--ink)}
+.restchip{background:var(--deep);border-radius:8px;font-family:var(--fm);font-size:8.5px;letter-spacing:.08em;
+  color:var(--ink-3);display:flex;align-items:center;justify-content:center}
+.fut{border:1.5px dashed #CFC9C1;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  color:var(--ink-3);font-family:var(--fm);font-size:12px}
+.mood{height:3px;border-radius:2px;width:20px;margin-top:auto}
+.mood.none{background:transparent}
+.wcell{background:var(--rail);border:0;border-radius:11px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;cursor:pointer;font:inherit;color:inherit;padding:8px 4px;min-width:0;
+  transition:background .15s var(--eo)}
+.wcell:hover{background:#CCC5BC}
+.wmi{font-family:var(--fm);font-weight:600;font-size:13.5px;font-variant-numeric:tabular-nums;line-height:1}
+.wu{font-family:var(--fm);font-size:8.5px;color:var(--ink-2);letter-spacing:.06em}
+.wbar{width:100%;height:4px;background:rgba(0,0,0,.09);border-radius:2px;overflow:hidden;margin-top:7px}
+.wbar i{display:block;height:100%;background:var(--ink-2);border-radius:2px;transition:width .3s var(--eo)}
+.wbar i.hot{background:var(--coral)}
+.mdiv{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:9px 0 3px;
+  font-family:var(--fm);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.mdiv::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+.legend{margin-top:16px;padding-top:13px;border-top:1px solid var(--rule)}
+.legend .lb{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+.ramp{height:9px;border-radius:3px;display:flex;overflow:hidden}
+.ramp span{flex:1}
+.rlbl{display:flex;justify-content:space-between;margin-top:5px;font-family:var(--fm);font-size:8.5px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.sizes{display:flex;align-items:flex-end;gap:7px;margin-top:4px}
+.sizes i{display:block;background:#5D93C4;border-radius:4px}
+.keyrow{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:11px}
+.keyrow span{font-family:var(--fm);font-size:9px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);
+  display:flex;align-items:center;gap:5px}
+.keyrow i{width:9px;height:9px;border-radius:2px;display:block}
+.keyrow i.dot{border-radius:999px;width:7px;height:7px}
+
+/* ---- CURRENT ---- */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);margin-top:14px}
+.stats div{padding:13px 4px;text-align:center;border-right:1px solid var(--rule)}
+.stats div:last-child{border-right:0}
+.stats b{font-family:var(--fm);font-weight:600;font-size:26px;display:block;line-height:1;font-variant-numeric:tabular-nums}
+.stats span{font-family:var(--fm);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  display:block;margin-top:7px}
+.subline{font-family:var(--fm);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2);padding:12px 0 4px}
+.today{padding:14px 0 2px}
+.today .t{font-family:var(--fm);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3)}
+.today .r{display:flex;align-items:baseline;gap:10px;margin-top:10px}
+.pill{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  padding:4px 9px;border-radius:6px;color:#fff}
+.pill.lt{color:var(--ink)}
+.today .m{font-family:var(--fd);font-weight:700;font-size:25px}
+.today .w{font-family:var(--fm);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:9px}
+.wknav{display:flex;align-items:center;gap:12px;padding:18px 0 4px}
+.wknav button{width:26px;height:26px;border:0;background:none;cursor:pointer;color:var(--ink-2);font-size:16px}
+.wknav b{font-family:var(--fm);font-size:12.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:500}
+.drow{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid var(--rule);
+  position:relative;width:100%;background:none;border-left:0;border-right:0;border-top:0;cursor:pointer;
+  font:inherit;color:inherit;text-align:left;overflow:hidden}
+.drow .vb{position:absolute;left:-18px;bottom:-1px;height:3px;background:#8FB4D4;border-radius:0 2px 2px 0;
+  transition:width .3s var(--eo);z-index:2;opacity:.85}
+.drow>*{position:relative;z-index:1}
+.drow .dw{font-family:var(--fm);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);
+  flex:0 0 34px}
+.drow .mi{font-family:var(--fd);font-weight:700;font-size:17px}
+.drow .rc{font-family:var(--fm);font-size:10px;color:var(--ink-3);letter-spacing:.06em}
+.drow .rest{font-family:var(--fb);font-style:italic;font-size:15px;color:var(--ink-3)}
+.drow .md{width:7px;height:7px;border-radius:999px;flex:0 0 auto;margin-left:auto}
+.moodpill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;
+  font-family:var(--fm);font-size:10px;letter-spacing:.08em;text-transform:uppercase;margin-top:7px}
+.moodpill i{width:5px;height:5px;border-radius:999px;display:block}
+.tot{display:flex;justify-content:space-between;align-items:flex-end;padding:16px 0 2px}
+.tot .l{font-family:var(--fm);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.tot .v{font-family:var(--fd);font-weight:700;font-size:23px}
+.tot .d{font-family:var(--fm);font-size:11px;font-weight:600;margin-left:8px}
+.tot .d.up{color:var(--mood-energized)} .tot .d.dn{color:var(--coral)}
+.spark{display:flex;align-items:flex-end;gap:2.5px;height:26px;margin-top:10px}
+.spark i{flex:1;background:#D3CCC4;border-radius:1.5px;display:block}
+.spark i.cur{background:var(--coral)}
+.sparklbl{display:flex;justify-content:space-between;margin-top:4px;font-family:var(--fm);font-size:8px;
+  letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.quote{font-family:var(--fb);font-style:italic;font-size:14px;color:var(--ink-2);padding:14px 0 4px;line-height:1.5}
+
+.tb{border-top:1px solid var(--rule);background:var(--paper);display:grid;grid-template-columns:repeat(3,1fr);
+  padding:10px 0 22px;flex:0 0 auto}
+.tb div{display:flex;flex-direction:column;align-items:center;gap:6px}
+.tb i{width:6px;height:6px;border-radius:999px;border:1.5px solid var(--ink-3);box-sizing:border-box;display:block}
+.tb div.on i{background:var(--coral);border-color:var(--coral)}
+.tb span{font-family:var(--fm);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+.tb div.on span{color:var(--ink);font-weight:600}
+.new{outline:1px dashed rgba(212,89,42,.42);outline-offset:2px;border-radius:5px}
+.drow .vb.new{outline:0}
+.drow .md.new{outline:0}
+</style></head><body>
+
+<div class="head">
+  <div class="k">Prototype · Train tab · readability pass</div>
+  <h1>Your screens, plus eight features for scanning</h1>
+  <p>Your layout, your colours, your real numbers — the block weeks reconcile to
+  <b>66.6 / 56.7 / 59.2 / 60.1 mi</b>. Nothing is moved or removed. The toggle adds eight things that make the
+  screens readable without reading every number.</p>
+</div>
+
+<div class="bar">
+  <span class="l">Readability features</span>
+  <span class="seg" id="seg">
+    <button data-v="0">Off — your app</button>
+    <button data-v="1" class="on">On</button>
+  </span>
+  <span class="n" id="note"><b>On.</b> Additions are outlined in coral dashes. Toggle to compare.</span>
+</div>
+
+<div class="wrap">
+  <div class="notes">
+    <h3>Block · what's hard to scan now</h3>
+    <p>Every tile is the same size, so <b>4.0 and 15.0 read identically</b> — you have to read all 35 numbers to find
+    the shape of a week. The four week totals are numerals with nothing to compare against.</p>
+
+    <div class="f"><i>1</i><span><b>Tile size = miles.</b> Your legend already promises “SIZE · MI RUN”. Now it's
+    actually legible — a 15-miler is visibly twice a 6.5.</span></div>
+    <div class="f"><i>2</i><span><b>Bar under the week total.</b> Turns four numerals into a shape. The heavy week
+    is obvious before you read a digit.</span></div>
+    <div class="f"><i>3</i><span><b>Sticky weekday header.</b> Scroll the block and you still know which column is
+    Saturday.</span></div>
+    <div class="f"><i>4</i><span><b>Legend for the underlines.</b> Those coral and green bars are mood — currently
+    nothing says so.</span></div>
+    <div class="f"><i>5</i><span><b>Month divider.</b> A hairline where July starts, so long blocks stay oriented.</span></div>
+
+    <h3>Current · what's hard to scan now</h3>
+    <p>Seven rows of identical weight. <b>14.4 and 6.8 look the same</b> until you read them, and 60.2 mi has nothing
+    to compare against.</p>
+
+    <div class="f"><i>6</i><span><b>Volume bar behind each row.</b> Very light, full-bleed. The week's shape reads
+    at a glance while the labels stay primary.</span></div>
+    <div class="f"><i>7</i><span><b>Total gets a delta and a sparkline.</b> 60.1 mi means nothing alone; “+0.9 vs
+    last week” and eight weeks of context mean something.</span></div>
+    <div class="f"><i>8</i><span><b>Mood dot on every row.</b> Today only Monday shows a pill, so mood looks like an
+    exception rather than a daily signal.</span></div>
+
+    <h3>Deliberately unchanged</h3>
+    <p>Colour ramp, tile shape, type, tab structure, star markers, rest chips, dashed future days. Every addition is
+    additive — nothing existing moved.</p>
+  </div>
+
+  <div>
+    <div class="phone"><div class="sb"><span>9:26</span><span class="r">▂▄▆ ⌁ <span class="bat">100</span></span></div>
+      <div class="scr">
+        <div class="sc" id="blockScroll">
+          <div style="padding-top:12px"><div class="eb">Training · Analysis</div></div>
+          <div style="padding-top:16px"><div class="eb">The block</div><div class="h1">Your training.</div></div>
+          <div class="tabs"><button>Current</button><button class="on">Calendar</button><button>History</button></div>
+          <div class="subtabs"><button>Week</button><button>Month</button><button class="on">Block</button></div>
+          <div id="stick" class="stick"><div class="dow" id="dow"></div></div>
+          <div id="grid"></div>
+          <div class="legend">
+            <div class="lb">Pace · easy to hard</div>
+            <div class="ramp" id="ramp"></div>
+            <div class="rlbl"><span>Recovery</span><span>Steady</span><span>MP</span><span>Mile</span></div>
+            <div class="lb" style="margin-top:15px">Size · mi run</div>
+            <div class="sizes" id="sizes"></div>
+            <div class="keyrow" id="keyrow"></div>
+          </div>
+        </div>
+        <div class="tb"><div><i></i><span>Log</span></div><div><i></i><span>Trends</span></div>
+          <div class="on"><i></i><span>Train</span></div></div>
+      </div>
+    </div>
+    <div class="cap">Calendar · Block</div>
+  </div>
+
+  <div>
+    <div class="phone"><div class="sb"><span>9:26</span><span class="r">▂▄▆ ⌁ <span class="bat">100</span></span></div>
+      <div class="scr">
+        <div class="sc">
+          <div style="padding-top:12px"><div class="eb">Training · Analysis</div></div>
+          <div style="padding-top:16px"><div class="eb">Week of Jul 27 · Jul 27</div><div class="h1">Your training.</div></div>
+          <div class="tabs"><button class="on">Current</button><button>Calendar</button><button>History</button></div>
+          <div class="stats"><div><b>1</b><span>Runs</span></div><div><b>0</b><span>Voice memos</span></div>
+            <div><b>8.0</b><span>Miles</span></div></div>
+          <div class="subline">0:58 hrs&nbsp;&nbsp;&nbsp;100% easy</div>
+          <div class="today"><div class="t">Today · Monday</div>
+            <div class="r"><span class="pill" style="background:#8FB4D4;color:#1A1815">Easy</span><span class="m">8.0 mi</span></div>
+            <div class="w">76° · dp 73° · heat adj −10s</div></div>
+          <div class="wknav"><button>‹</button><b>Jul 20 — 26</b><button>›</button></div>
+          <div id="wkrows"></div>
+          <div class="tot"><span class="l">Total</span><span><span class="v" id="totv">60.1 mi</span><span class="d" id="totd"></span></span></div>
+          <div id="totspark"></div>
+          <div class="quote">You logged “tired” Monday, then ran the fastest session of the block on Tuesday.</div>
+        </div>
+        <div class="tb"><div><i></i><span>Log</span></div><div><i></i><span>Trends</span></div>
+          <div class="on"><i></i><span>Train</span></div></div>
+      </div>
+    </div>
+    <div class="cap">Current</div>
+  </div>
+</div>
+
+<script id="d" type="application/json">{"days":{"2026-05-01":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":null,"rest":true,"future":false,"nig":0,"sec":0},"2026-05-02":{"mi":1.0,"blue":"#A9C7DF","zone":"Recovery","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":1130},"2026-05-03":{"mi":3.5,"blue":"#A9C7DF","zone":"Recovery","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":1765},"2026-05-04":{"mi":7.2,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3113},"2026-05-05":{"mi":9.9,"blue":"#27549B","zone":"LT","key":true,"label":"5x1mi","runs":3,"mood":"energized","rest":false,"future":false,"nig":0,"sec":3874},"2026-05-06":{"mi":8.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3680},"2026-05-07":{"mi":5.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":2159},"2026-05-08":{"mi":8.0,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3393},"2026-05-09":{"mi":13.2,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"21K long","runs":1,"mood":"energized","rest":false,"future":false,"nig":0,"sec":5394},"2026-05-10":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"positive","rest":true,"future":false,"nig":0,"sec":0},"2026-05-11":{"mi":7.3,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3076},"2026-05-12":{"mi":13.2,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Long run","runs":3,"mood":"positive","rest":false,"future":false,"nig":0,"sec":6007},"2026-05-13":{"mi":7.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":3124},"2026-05-14":{"mi":13.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Long run","runs":2,"mood":"tired","rest":false,"future":false,"nig":0,"sec":5850},"2026-05-15":{"mi":11.6,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Long run","runs":2,"mood":"struggling","rest":false,"future":false,"nig":1,"sec":6996},"2026-05-16":{"mi":13.1,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"21K long","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5241},"2026-05-17":{"mi":7.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"tired","rest":false,"future":false,"nig":1,"sec":3146},"2026-05-18":{"mi":7.5,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"tired","rest":false,"future":false,"nig":0,"sec":3292},"2026-05-19":{"mi":7.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"tired","rest":false,"future":false,"nig":1,"sec":3121},"2026-05-20":{"mi":9.4,"blue":"#27549B","zone":"LT","key":true,"label":"10x1K","runs":3,"mood":"positive","rest":false,"future":false,"nig":1,"sec":3958},"2026-05-21":{"mi":6.9,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":3066},"2026-05-22":{"mi":9.9,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":1,"sec":4241},"2026-05-23":{"mi":4.5,"blue":"#A9C7DF","zone":"Recovery","key":false,"label":"Easy","runs":3,"mood":"struggling","rest":false,"future":false,"nig":1,"sec":2478},"2026-05-24":{"mi":14.0,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"22.5K long","runs":1,"mood":"energized","rest":false,"future":false,"nig":0,"sec":5669},"2026-05-25":{"mi":8.2,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"tired","rest":false,"future":false,"nig":1,"sec":3314},"2026-05-26":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"neutral","rest":true,"future":false,"nig":0,"sec":0},"2026-05-27":{"mi":9.2,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3851},"2026-05-28":{"mi":12.4,"blue":"#5D93C4","zone":"Steady","key":true,"label":"20K steady","runs":1,"mood":"energized","rest":false,"future":false,"nig":0,"sec":4821},"2026-05-29":{"mi":7.0,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":1,"sec":2834},"2026-05-30":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"neutral","rest":true,"future":false,"nig":0,"sec":0},"2026-05-31":{"mi":3.0,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":1309},"2026-06-01":{"mi":12.1,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Long run","runs":2,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5396},"2026-06-02":{"mi":8.7,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":2,"mood":"neutral","rest":false,"future":false,"nig":1,"sec":4693},"2026-06-03":{"mi":6.8,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":2979},"2026-06-04":{"mi":8.7,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3846},"2026-06-05":{"mi":3.1,"blue":"#A9C7DF","zone":"Recovery","key":false,"label":"Easy","runs":2,"mood":"struggling","rest":false,"future":false,"nig":0,"sec":2643},"2026-06-06":{"mi":11.4,"blue":"#5D93C4","zone":"Steady","key":true,"label":"Loop x PD 18K","runs":1,"mood":"energized","rest":false,"future":false,"nig":0,"sec":4343},"2026-06-07":{"mi":4.2,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":1801},"2026-06-08":{"mi":7.9,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3473},"2026-06-09":{"mi":9.4,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":2,"mood":"positive","rest":false,"future":false,"nig":0,"sec":4081},"2026-06-10":{"mi":11.9,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Long run","runs":2,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":5265},"2026-06-11":{"mi":6.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":2702},"2026-06-12":{"mi":4.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":1842},"2026-06-13":{"mi":13.1,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"21K long","runs":1,"mood":"energized","rest":false,"future":false,"nig":0,"sec":5171},"2026-06-14":{"mi":6.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":2590},"2026-06-15":{"mi":7.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":3078},"2026-06-16":{"mi":12.1,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Long run","runs":2,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5251},"2026-06-17":{"mi":9.7,"blue":"#27549B","zone":"LT","key":true,"label":"8x1K","runs":3,"mood":"energized","rest":false,"future":false,"nig":0,"sec":3883},"2026-06-18":{"mi":7.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3106},"2026-06-19":{"mi":6.2,"blue":"#A9C7DF","zone":"Recovery","key":false,"label":"Easy","runs":2,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":2962},"2026-06-20":{"mi":13.2,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"21K long","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5547},"2026-06-21":{"mi":6.7,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":2886},"2026-06-22":{"mi":12.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Long run","runs":2,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":5307},"2026-06-23":{"mi":14.5,"blue":"#1A3679","zone":"5K","key":true,"label":"mile/1K/600 set","runs":4,"mood":"tired","rest":false,"future":false,"nig":1,"sec":6910},"2026-06-24":{"mi":8.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"tired","rest":false,"future":false,"nig":1,"sec":3621},"2026-06-25":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"struggling","rest":true,"future":false,"nig":1,"sec":0},"2026-06-26":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"struggling","rest":true,"future":false,"nig":1,"sec":0},"2026-06-27":{"mi":17.8,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"2hr / 28.6K","runs":1,"mood":"positive","rest":false,"future":false,"nig":1,"sec":7245},"2026-06-28":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"tired","rest":true,"future":false,"nig":1,"sec":0},"2026-06-29":{"mi":7.1,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":3244},"2026-06-30":{"mi":11.0,"blue":"#3F7CB5","zone":"MP","key":true,"label":"7mi fartlek 4'/2'","runs":2,"mood":"energized","rest":false,"future":false,"nig":1,"sec":4200},"2026-07-01":{"mi":12.2,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Long run","runs":2,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5213},"2026-07-02":{"mi":10.1,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":2,"mood":"neutral","rest":false,"future":false,"nig":1,"sec":4574},"2026-07-03":{"mi":6.5,"blue":"#A9C7DF","zone":"Recovery","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3120},"2026-07-04":{"mi":12.4,"blue":"#5D93C4","zone":"Steady","key":true,"label":"20K tempo","runs":1,"mood":"energized","rest":false,"future":false,"nig":0,"sec":4732},"2026-07-05":{"mi":7.3,"blue":"#74A8CC","zone":"Moderate","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":1,"sec":3109},"2026-07-06":{"mi":8.1,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3493},"2026-07-07":{"mi":12.7,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Long run","runs":2,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":5652},"2026-07-08":{"mi":8.9,"blue":"#27549B","zone":"LT","key":true,"label":"10x1K/800","runs":3,"mood":"energized","rest":false,"future":false,"nig":0,"sec":3522},"2026-07-09":{"mi":8.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3595},"2026-07-10":{"mi":4.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":1895},"2026-07-11":{"mi":15.0,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"24K long","runs":1,"mood":"energized","rest":false,"future":false,"nig":0,"sec":6154},"2026-07-12":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"positive","rest":true,"future":false,"nig":0,"sec":0},"2026-07-13":{"mi":6.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":2688},"2026-07-14":{"mi":13.0,"blue":"#1A3679","zone":"5K","key":true,"label":"1200/800/400 x3","runs":4,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5546},"2026-07-15":{"mi":7.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"tired","rest":false,"future":false,"nig":1,"sec":3045},"2026-07-16":{"mi":7.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":3094},"2026-07-17":{"mi":6.5,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"tired","rest":false,"future":false,"nig":1,"sec":2910},"2026-07-18":{"mi":13.5,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"21.7K long","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5489},"2026-07-19":{"mi":6.2,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":1,"sec":2818},"2026-07-20":{"mi":6.8,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":3160},"2026-07-21":{"mi":14.4,"blue":"#3F7CB5","zone":"MP","key":true,"label":"6x1mi","runs":4,"mood":"energized","rest":false,"future":false,"nig":1,"sec":5760},"2026-07-22":{"mi":9.8,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":4394},"2026-07-23":{"mi":7.3,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"neutral","rest":false,"future":false,"nig":0,"sec":3309},"2026-07-24":{"mi":8.8,"blue":"#12275C","zone":"Mile","key":true,"label":"8x200","runs":2,"mood":"tired","rest":false,"future":false,"nig":1,"sec":5527},"2026-07-25":{"mi":13.1,"blue":"#74A8CC","zone":"Moderate","key":true,"label":"21K long","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":5355},"2026-07-26":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":"neutral","rest":true,"future":false,"nig":1,"sec":0},"2026-07-27":{"mi":8.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Easy","runs":1,"mood":"positive","rest":false,"future":false,"nig":0,"sec":3510},"2026-07-28":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":null,"rest":false,"future":true,"nig":0,"sec":0},"2026-07-29":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":null,"rest":false,"future":true,"nig":0,"sec":0},"2026-07-30":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":null,"rest":false,"future":true,"nig":0,"sec":0},"2026-07-31":{"mi":0.0,"blue":"#8FB4D4","zone":"Easy","key":false,"label":"Rest","runs":0,"mood":null,"rest":false,"future":true,"nig":0,"sec":0}},"weeks":{"2026-04-27":{"mi":4.5,"runs":2,"acwr":null,"key":0},"2026-05-04":{"mi":51.4,"runs":8,"acwr":1.0,"key":2},"2026-05-11":{"mi":72.2,"runs":11,"acwr":1.17,"key":1},"2026-05-18":{"mi":59.3,"runs":11,"acwr":0.97,"key":2},"2026-05-25":{"mi":39.9,"runs":5,"acwr":0.72,"key":1},"2026-06-01":{"mi":55.0,"runs":10,"acwr":0.97,"key":1},"2026-06-08":{"mi":58.3,"runs":9,"acwr":1.1,"key":1},"2026-06-15":{"mi":61.8,"runs":11,"acwr":1.15,"key":2},"2026-06-22":{"mi":52.3,"runs":8,"acwr":0.92,"key":2},"2026-06-29":{"mi":66.6,"runs":10,"acwr":1.12,"key":2},"2026-07-06":{"mi":56.7,"runs":9,"acwr":0.96,"key":2},"2026-07-13":{"mi":59.2,"runs":10,"acwr":1.01,"key":2},"2026-07-20":{"mi":60.1,"runs":10,"acwr":0.99,"key":3},"2026-07-27":{"mi":8.0,"runs":1,"acwr":null,"key":0}}}</script>
+<script>
+(function(){
+"use strict";
+const D=JSON.parse(document.getElementById('d').textContent),DAYS=D.days,WEEKS=D.weeks;
+const MOOD={energized:'#2D8A4E',positive:'#4A9E6B',neutral:'#9B9590',tired:'#C4873A',struggling:'#C45A3A',injured:'#B83A4A'};
+const RAMP=['#A9C7DF','#8FB4D4','#74A8CC','#5D93C4','#3F7CB5','#27549B','#1A3679','#12275C'];
+const MON=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DOW=['M','T','W','T','F','S','S'];
+const BLOCK_START='2026-06-29',WEEK='2026-07-20',TODAY='2026-07-27';
+const MAXMI=15.2, MAXWK=Math.max(...Object.values(WEEKS).map(w=>w.mi));
+let on=true;
+const el=(t,c,h)=>{const n=document.createElement(t);if(c)n.className=c;if(h!==undefined)n.innerHTML=h;return n;};
+const P=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d));};
+const iso=d=>d.toISOString().slice(0,10);
+const add=(s,n)=>{const d=P(s);d.setUTCDate(d.getUTCDate()+n);return iso(d);};
+const light=c=>['#A9C7DF','#8FB4D4','#74A8CC'].includes(c);
+
+function block(){
+  document.getElementById('dow').innerHTML=DOW.map(d=>`<span>${d}</span>`).join('')+`<span class="mi">Mi</span>`;
+  document.getElementById('stick').classList.toggle('on',on);
+  document.getElementById('stick').style.position=on?'sticky':'static';
+  const g=document.getElementById('grid');g.innerHTML='';
+  let cur=BLOCK_START,lastMonth=P(BLOCK_START).getUTCMonth();
+  for(let wi=0;wi<5;wi++){
+    const m=P(cur).getUTCMonth();
+    if(on&&wi>0&&m!==lastMonth){
+      const dv=el('div','wrow');dv.appendChild(el('div','mdiv',MON[m]));g.appendChild(dv);
+    }
+    lastMonth=m;
+    const row=el('div','wrow');
+    for(let i=0;i<7;i++){
+      const k=add(cur,i),d=DAYS[k],dt=P(k);
+      const b=el('button','dcell'+(d&&d.future?' out':'')+(k===TODAY?' today':''));
+      let inner=`<span class="dnum">${d&&d.key?'<span class="star">★</span>':''}${dt.getUTCDate()}</span>`;
+      if(!d||d.future){ inner+=`<span class="fut" style="width:32px;height:32px">–</span>`; }
+      else if(d.rest){ inner+=`<span class="restchip" style="width:34px;height:22px">Rest</span>`; }
+      else{
+        const t=on?Math.max(.24,d.mi/MAXMI):1;
+        const w=on?(17+t*18):34, h=on?(17+t*19):34;
+        inner+=`<span class="tile${light(d.blue)?' lt':''}" style="width:${w.toFixed(0)}px;height:${h.toFixed(0)}px;background:${d.blue}">${d.mi.toFixed(1)}</span>`;
+      }
+      inner+=`<span class="mood${d&&d.mood?'':' none'}" style="background:${d&&d.mood?MOOD[d.mood]:'transparent'}"></span>`;
+      b.innerHTML=inner;row.appendChild(b);
+    }
+    const w=WEEKS[cur],b=el('button','wcell');
+    b.innerHTML=`<span class="wmi">${w?w.mi.toFixed(1):'–'}</span><span class="wu">MI</span>`+
+      (on&&w?`<span class="wbar new"><i class="${w.acwr&&w.acwr>1.08?'hot':''}" style="width:${(w.mi/MAXWK*100).toFixed(0)}%"></i></span>`:'');
+    row.appendChild(b);g.appendChild(row);
+    cur=add(cur,7);
+  }
+  document.getElementById('ramp').innerHTML=RAMP.map(c=>`<span style="background:${c}"></span>`).join('');
+  document.getElementById('sizes').innerHTML=[[20,20],[32,32],[44,44]]
+    .map(([w,h])=>`<i style="width:${w}px;height:${h}px"></i>`).join('');
+  const kr=document.getElementById('keyrow');
+  kr.innerHTML = on
+    ? `<span class="new" style="padding:2px 4px">★ Key session</span>`+
+      ['energized','positive','neutral','tired','struggling'].map(m=>
+      `<span class="new" style="padding:2px 4px"><i class="dot" style="background:${MOOD[m]}"></i>${m}</span>`).join('')
+    : '';
+}
+
+function current(){
+  const rows=document.getElementById('wkrows');rows.innerHTML='';
+  const ds=[];for(let i=0;i<7;i++){const k=add(WEEK,i);if(DAYS[k])ds.push({k,d:DAYS[k]});}
+  const mx=Math.max(...ds.map(x=>x.d.mi),1);
+  ds.forEach(({k,d})=>{
+    const b=el('button','drow');
+    const lbl=d.rest?null:(d.key?d.label:(d.mi>=11?'Long run':'Easy'));
+    const type=d.rest?'':(d.zone==='Easy'||d.zone==='Recovery'||d.zone==='Moderate')&&d.mi>=11?'Long run'
+      :d.key?(/\d+\s*x/i.test(d.label||'')?'Intervals':(d.label==='21K long'||/long/i.test(d.label||'')?'Long run':d.label))
+      :(d.mi>=11?'Long run':'Easy');
+    b.innerHTML=(on&&!d.rest?`<span class="vb new" style="width:${(18+d.mi/mx*(354-18)).toFixed(0)}px"></span>`:'')+
+      `<span class="dw">${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][P(k).getUTCDay()===0?6:P(k).getUTCDay()-1]}</span>`+
+      (d.rest?`<span class="rest">Rest</span>`
+        :`<span class="pill${light(d.blue)?' lt':''}" style="background:${d.blue}">${type}</span>
+          <span class="mi">${d.mi.toFixed(1)} mi</span>`+
+         (d.runs>1?`<span class="rc">${d.runs} runs</span>`:''))+
+      (on?`<span class="md new" style="background:${d.mood?MOOD[d.mood]:'#DCD6CE'}"></span>`:'');
+    if(!on&&d.mood==='tired'){
+      const p=el('span','moodpill');p.style.cssText='background:rgba(196,135,58,.14);color:#C4873A;margin-left:auto';
+      p.innerHTML=`<i style="background:#C4873A"></i>tired`;b.appendChild(p);
+    }
+    rows.appendChild(b);
+  });
+  const ws=Object.keys(WEEKS).sort().filter(k=>WEEKS[k].mi>15);
+  const i=ws.indexOf(WEEK),prev=i>0?WEEKS[ws[i-1]]:null,me=WEEKS[WEEK];
+  document.getElementById('totv').textContent=me.mi.toFixed(1)+' mi';
+  const dEl=document.getElementById('totd');
+  if(on&&prev){const dd=me.mi-prev.mi;dEl.className='d '+(dd>=0?'up':'dn');
+    dEl.textContent=(dd>=0?'+':'')+dd.toFixed(1)+' vs last week';dEl.classList.add('new');}
+  else{dEl.textContent='';dEl.className='d';}
+  const sp=document.getElementById('totspark');
+  if(on){const last=ws.slice(-8),mx2=Math.max(...last.map(k=>WEEKS[k].mi));
+    sp.className='new';
+    sp.innerHTML=`<div class="spark">${last.map(k=>
+      `<i class="${k===WEEK?'cur':''}" style="height:${Math.max(4,WEEKS[k].mi/mx2*26).toFixed(0)}px"></i>`).join('')}</div>
+      <div class="sparklbl"><span>8 weeks</span><span>${Math.min(...last.map(k=>WEEKS[k].mi)).toFixed(0)}–${mx2.toFixed(0)} mi</span></div>`;
+  } else {sp.className='';sp.innerHTML='';}
+}
+
+document.getElementById('seg').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;on=b.dataset.v==='1';
+  [...document.querySelectorAll('#seg button')].forEach(x=>x.classList.toggle('on',x===b));
+  document.getElementById('note').innerHTML=on
+    ?'<b>On.</b> Additions are outlined in coral dashes. Toggle to compare.'
+    :'<b>Off.</b> This is your app as it ships today.';
+  render();
+});
+function render(){block();current();}
+render();
+})();
+</script></body></html>

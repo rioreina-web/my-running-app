@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Drip Issue — share composer</title>
+<!-- Post Run Drip · share-card composer study · 2026-08-21
+     A story-like swiper the athlete builds after a run and posts to social.
+     Panels: route trace + headline stats · mile splits · photo + diary line
+             (+ optional "the workout, parsed" receipt)
+     Themes: paper (shipped system) / ink (inverted, for feeds)
+     Canvas: 4:5 (1080x1350 feed) / 9:16 (1080x1920 story)
+
+     Token sources this was measured against:
+       design-system/colors_and_type.css
+       RunningLog/RunningLog/App/DesignSystem.swift
+       RunningLog/RunningLog/Workouts/PaceSpectrum.swift
+       RunningLog/RunningLog/Workouts/RouteMapView.swift
+     Sample session: 2026-07-11 "24K long" (key-sessions-data.json, id 19269767324) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300..800;1,300..800&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* ============================================================
+   CHROME — the studio wall. Graphite, never cream, so the paper
+   cards read as paper and not as "the page".
+   ============================================================ */
+:root{
+  --chrome-bg:#E6E7E9; --chrome-panel:#FDFDFD; --chrome-well:#DEDFE2;
+  --chrome-ink:#1A1B1E; --chrome-ink-2:#585A60; --chrome-ink-3:#8B8D94;
+  --chrome-rule:#D2D4D8; --chrome-shadow:rgba(15,17,20,.16);
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+  --display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --body:"PT Serif",Georgia,"Times New Roman",serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-chrome="light"]){
+    --chrome-bg:#121316; --chrome-panel:#1B1D21; --chrome-well:#0D0E10;
+    --chrome-ink:#EFEFF1; --chrome-ink-2:#A0A2A9; --chrome-ink-3:#71737A;
+    --chrome-rule:#2B2E33; --chrome-shadow:rgba(0,0,0,.55);
+  }
+}
+*{box-sizing:border-box}
+body{background:var(--chrome-bg);color:var(--chrome-ink);font-family:var(--body);margin:0;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto;padding:36px 24px 80px}
+
+/* ---- masthead ---- */
+.masthead{display:flex;flex-direction:column;gap:10px;padding-bottom:20px;border-bottom:1px solid var(--chrome-rule)}
+.mast-strip{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--chrome-ink-3);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.mast-strip b{color:var(--chrome-ink-2);font-weight:500}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.4vw,44px);line-height:1.02;letter-spacing:-.015em;margin:0}
+h1 em{font-style:italic;color:#D4592A}
+.dek{font-size:15px;line-height:1.55;color:var(--chrome-ink-2);max-width:64ch;margin:0}
+
+/* ---- control rail ---- */
+.rail{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;padding:18px 20px;margin:22px 0 26px;background:var(--chrome-panel);border:1px solid var(--chrome-rule);border-radius:10px}
+.ctrl{display:flex;flex-direction:column;gap:8px;min-width:0}
+.ctrl-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--chrome-ink-3)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;padding:6px 11px;border-radius:999px;border:1px solid var(--chrome-rule);background:transparent;color:var(--chrome-ink-2);cursor:pointer;transition:all .18s ease;white-space:nowrap}
+.chip:hover{border-color:var(--chrome-ink-3);color:var(--chrome-ink)}
+.chip[aria-pressed="true"]{background:var(--chrome-ink);border-color:var(--chrome-ink);color:var(--chrome-panel)}
+.chip.dim[aria-pressed="true"]{background:#D4592A;border-color:#D4592A;color:#fff}
+
+/* ---- stage ---- */
+.stage{display:grid;grid-template-columns:minmax(300px,392px) 1fr;gap:36px;align-items:start}
+@media (max-width:940px){.stage{grid-template-columns:1fr}}
+
+.col-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--chrome-ink-3);margin:0 0 12px}
+.col-note{font-size:13px;line-height:1.5;color:var(--chrome-ink-2);margin:12px 0 0}
+.col-note b{color:var(--chrome-ink);font-weight:400;font-style:italic}
+
+/* ---- iPhone frame ---- */
+.phone{width:392px;max-width:100%;border-radius:46px;padding:11px;background:#0B0C0E;box-shadow:0 26px 60px -18px var(--chrome-shadow),0 0 0 1px rgba(0,0,0,.28);position:relative}
+.phone-screen{border-radius:36px;overflow:hidden;position:relative;aspect-ratio:370/800;display:flex;flex-direction:column}
+.notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:104px;height:26px;border-radius:999px;background:#0B0C0E;z-index:40}
+
+/* =============================================================
+   PRD SURFACES — everything below carries the app's own tokens.
+   [data-theme=paper] is the shipped system; [data-theme=ink] is
+   the inverted variant for feeds.
+   ============================================================= */
+.prd{
+  --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --accent:#D4592A; --accent-wash:rgba(212,89,42,.12); --accent-deep:#B84420;
+  --photo-tone:#E4DED6;
+  /* pace spectrum — slow to fast. On paper: pale sky deepening to navy. */
+  --p0:#93B9D6;--p1:#74A8CC;--p2:#578FC0;--p3:#3F7CB5;--p4:#2F66A8;
+  --p5:#27549B;--p6:#20448B;--p7:#1A3679;--p8:#142964;--p9:#0E1D4E;
+}
+.prd[data-theme="ink"]{
+  --paper:#12100E; --card:#1B1815; --paper-deep:#0B0A09; --rule:#2C2723;
+  --ink:#F4F1EC; --ink-2:#A29A91; --ink-3:#6F6862;
+  --accent:#E8764A; --accent-wash:rgba(232,118,74,.16); --accent-deep:#D4592A;
+  --photo-tone:#2A2521;
+  /* On ink the ramp inverts its luminance: dim slate (easy) brightening to
+     near-white sky (mile). Navy on black is invisible; intensity has to be
+     carried by light, not depth. */
+  --p0:#3B5570;--p1:#476781;--p2:#547A93;--p3:#628DA6;--p4:#71A0B9;
+  --p5:#82B4CC;--p6:#95C7DD;--p7:#AAD8EB;--p8:#C2E6F5;--p9:#DCF1FC;
+}
+
+/* ---- composer shell inside the phone ---- */
+.composer{flex:1;display:flex;flex-direction:column;background:var(--paper);color:var(--ink);min-height:0}
+.comp-nav{display:flex;align-items:center;justify-content:space-between;padding:44px 18px 12px;flex:none}
+.comp-nav .nav-side{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);cursor:pointer}
+.comp-nav .nav-side.act{color:var(--accent)}
+.comp-title{font-family:var(--display);font-weight:700;font-size:17px;color:var(--ink)}
+
+.deck{flex:1;min-height:0;display:flex;align-items:center;justify-content:flex-start;overflow:hidden;position:relative;touch-action:pan-y}
+.deck-rail{display:flex;align-items:center;gap:14px;transition:transform .42s cubic-bezier(.2,.7,.2,1);will-change:transform}
+.deck-slot{flex:none;transition:opacity .3s ease,transform .3s ease}
+.deck-slot[data-active="false"]{opacity:.42;transform:scale(.94)}
+
+.dots{display:flex;gap:6px;justify-content:center;align-items:center;padding:12px 0 4px;flex:none}
+.dot{width:6px;height:6px;border-radius:999px;background:var(--rule);transition:all .2s ease;cursor:pointer;border:none;padding:0}
+.dot[aria-current="true"]{background:var(--accent);width:16px}
+
+/* ---- the words block — "what do you want to say about this run?" ---- */
+.words{flex:none;border-top:1px solid var(--rule);background:var(--paper);padding:12px 16px 11px}
+.words-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:6px}
+.words-head .lbl{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.words-head .memo{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);cursor:pointer;background:none;border:none;padding:0}
+.words-prompt{font-family:var(--display);font-weight:700;font-size:15px;color:var(--ink);letter-spacing:-.01em;margin-bottom:5px}
+.words-field{font-family:var(--body);font-style:italic;font-size:12.5px;line-height:1.45;color:var(--ink);outline:none;min-height:34px;border-bottom:1px solid var(--rule);padding-bottom:6px}
+.words-field:focus{border-bottom-color:var(--accent)}
+.words-field:empty::before{content:attr(data-ph);color:var(--ink-3)}
+.words-meta{display:flex;justify-content:space-between;gap:10px;margin-top:6px;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+
+/* ---- caption preview in the delivery column ---- */
+.capbox{width:300px;flex:none;border:1px solid var(--chrome-rule);border-radius:8px;background:var(--chrome-panel);padding:14px 15px}
+.capbox .h{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--chrome-ink-3);margin-bottom:9px}
+.capbox .t{font-size:13.5px;line-height:1.55;color:var(--chrome-ink);white-space:pre-wrap;font-family:var(--body)}
+.capbox .t em{font-style:italic}
+.capbox .s{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--chrome-ink-2);margin-top:9px}
+
+.tray{flex:none;border-top:1px solid var(--rule);background:var(--paper);padding:12px 16px 8px}
+.tray-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
+.tray-row{display:flex;gap:7px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}
+.tray-row::-webkit-scrollbar{display:none}
+.panel-chip{flex:none;display:flex;align-items:center;gap:7px;padding:7px 11px 7px 8px;border-radius:999px;border:1px solid var(--rule);background:var(--card);cursor:pointer;transition:all .18s ease}
+.panel-chip .tick{width:14px;height:14px;border-radius:999px;border:1.5px solid var(--ink-3);flex:none;display:grid;place-items:center;font-size:8px;color:transparent;line-height:1}
+.panel-chip span{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.panel-chip[aria-pressed="true"]{border-color:var(--accent)}
+.panel-chip[aria-pressed="true"] .tick{border-color:var(--accent);background:var(--accent);color:#fff}
+.panel-chip[aria-pressed="true"] span{color:var(--ink)}
+
+.tabbar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px 26px;background:var(--paper)}
+.seg{display:flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden;background:var(--card)}
+.seg button{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;padding:7px 12px;border:none;background:transparent;color:var(--ink-2);cursor:pointer;transition:all .18s ease}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+.share-btn{font-family:var(--display);font-weight:600;font-size:15px;color:var(--accent);text-decoration:none;border-bottom:1.5px solid var(--accent);padding-bottom:1px;cursor:pointer;background:none;border-left:none;border-right:none;border-top:none}
+.share-btn:hover{color:var(--accent-deep);border-color:var(--accent-deep)}
+
+/* =============================================================
+   THE CARD — rendered once at base 360px wide, scaled everywhere.
+   360 : 1080 = 1 : 3, so every value here is a third of the export.
+   ============================================================= */
+.card{width:360px;flex:none;background:var(--paper);color:var(--ink);position:relative;overflow:hidden;display:flex;flex-direction:column;font-family:var(--body)}
+.card[data-canvas="45"]{height:450px}
+.card[data-canvas="916"]{height:640px}
+.scaler{transform-origin:top left}
+
+/* plate strip — the app's own masthead, kept on the card */
+.c-strip{flex:none;display:flex;justify-content:space-between;gap:10px;padding:14px 18px 0;font-family:var(--mono);font-size:7.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.c-strip b{color:var(--ink-2);font-weight:500}
+.c-body{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 18px;position:relative}
+.c-foot{flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 18px 14px;font-family:var(--mono);font-size:7.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.c-foot .mark{display:flex;align-items:center;gap:5px;color:var(--ink-2)}
+.c-foot .drip{width:4px;height:4px;border-radius:0 999px 999px 999px;background:var(--accent);transform:rotate(45deg)}
+
+.eyebrow{font-family:var(--mono);font-size:8px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.accent{color:var(--accent)}
+.display{font-family:var(--display);font-weight:700;color:var(--ink);letter-spacing:-.012em;line-height:1.02}
+.d-xl{font-size:34px}.d-l{font-size:27px}.d-m{font-size:20px}
+.rule{display:flex;align-items:center;gap:7px;margin:0}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule);flex:none}
+.quote{font-family:var(--body);font-style:italic;font-size:12.5px;line-height:1.5;color:var(--ink)}
+.coachbar{border-left:2px solid rgba(212,89,42,.5);padding-left:10px}
+.prd[data-theme="ink"] .coachbar{border-left-color:rgba(232,118,74,.5)}
+
+/* ============================================================
+   MAGAZINE FURNITURE — running head, folio, departments,
+   drop caps, columns, pull quotes, figure captions, ruled tables.
+   ============================================================ */
+.runhead{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  margin:0 18px;padding:13px 0 7px;border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:7px;font-weight:500;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.runhead b{color:var(--ink-2);font-weight:500;letter-spacing:.22em}
+
+.folio{flex:none;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:8px 18px 14px;font-family:var(--mono);font-size:7px;font-weight:500;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+.folio .pg{display:flex;align-items:center;gap:5px;color:var(--ink-2)}
+.folio .drip{width:4px;height:4px;border-radius:0 999px 999px 999px;background:var(--accent);transform:rotate(45deg)}
+
+/* cover */
+.mast{font-family:var(--display);font-weight:700;color:var(--ink);letter-spacing:-.018em;
+  line-height:.9;text-transform:uppercase;font-size:31px}
+.mast-rule{height:1.5px;background:var(--ink);margin:7px 0 6px;opacity:.85}
+.issue{font-family:var(--mono);font-size:7px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.coverline{font-family:var(--display);font-weight:700;color:var(--ink);letter-spacing:-.015em;line-height:1.02}
+.kicker{font-family:var(--mono);font-size:8px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.cdeck{font-family:var(--body);font-style:italic;line-height:1.45;color:var(--ink-2)}
+.inside{display:flex;gap:7px;flex-wrap:wrap;font-family:var(--mono);font-size:7px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);padding-top:8px;border-top:1px solid var(--rule)}
+.inside b{color:var(--ink-2);font-weight:500}
+
+/* department head */
+.dept{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.dept .name{font-family:var(--mono);font-size:8px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+.dept .sub{font-family:var(--mono);font-size:7px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+
+/* body columns + drop cap */
+.cols{column-count:2;column-gap:11px;column-rule:1px solid var(--rule);
+  font-family:var(--body);font-size:8.4px;line-height:1.52;color:var(--ink);text-align:justify;hyphens:auto}
+.cols.one{column-count:1}
+.dropcap::first-letter{float:left;font-family:var(--display);font-weight:700;font-size:30px;
+  line-height:.76;padding:2px 4px 0 0;color:var(--accent)}
+
+/* figure caption */
+.figcap{font-family:var(--body);font-style:italic;font-size:8px;line-height:1.4;color:var(--ink-3)}
+.figcap b{font-family:var(--mono);font-style:normal;font-size:7px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2);font-weight:500}
+
+/* pull quote */
+.pullq{display:flex;gap:8px;align-items:flex-start}
+.pullq .mark{font-family:var(--display);font-weight:700;font-size:40px;line-height:.72;color:var(--accent);flex:none}
+.pullq .txt{font-family:var(--body);font-style:italic;font-size:13.5px;line-height:1.38;color:var(--ink)}
+.byline{font-family:var(--mono);font-size:7.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.byline b{color:var(--ink-2);font-weight:500}
+
+/* ruled table */
+.ledger{width:100%;border-collapse:collapse}
+.ledger th{font-family:var(--mono);font-size:6.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);text-align:left;padding:0 0 5px;border-bottom:1px solid var(--ink);opacity:.9}
+.ledger th.r,.ledger td.r{text-align:right}
+.ledger td{font-family:var(--mono);font-size:10.5px;color:var(--ink);font-variant-numeric:tabular-nums;
+  padding:6px 0;border-bottom:1px solid var(--rule)}
+.ledger td.lbl{font-size:7.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.ledger tr:last-child td{border-bottom:1px solid var(--ink);opacity:1}
+
+/* sidebar (the coach, set as a magazine sidebar) */
+.sidebar{border-left:2px solid rgba(212,89,42,.5);padding:1px 0 1px 10px}
+.sidebar .h{font-family:var(--mono);font-size:7px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:4px}
+.prd[data-theme="ink"] .sidebar{border-left-color:rgba(232,118,74,.5)}
+.sidebar .t{font-family:var(--body);font-size:9px;line-height:1.45;color:var(--ink-2)}
+
+/* stat row */
+.stats{display:flex;gap:0;align-items:flex-end}
+.stat{flex:1;min-width:0}
+.stat .v{font-family:var(--mono);font-weight:600;font-size:23px;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat .v small{font-size:11px;letter-spacing:.02em;color:var(--ink-2);margin-left:2px}
+.stat .k{font-family:var(--mono);font-size:7.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-top:5px}
+.stat+.stat{padding-left:12px;border-left:1px solid var(--rule);margin-left:12px}
+
+/* route */
+.route-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;position:relative}
+.route-wrap svg{width:100%;height:100%;display:block;overflow:visible}
+.legend{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:7px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.legend .ramp{height:3px;flex:1;border-radius:999px;background:linear-gradient(90deg,var(--p0),var(--p3),var(--p6),var(--p9))}
+
+/* splits */
+.splits{flex:1;min-height:0;display:flex;align-items:flex-end;gap:2px;position:relative;padding-bottom:14px}
+.split{flex:1;position:relative;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%}
+.split .bar{width:100%;border-radius:2px 2px 0 0;transition:height .4s cubic-bezier(.2,.7,.2,1)}
+.split .n{position:absolute;bottom:-12px;font-family:var(--mono);font-size:6.5px;letter-spacing:.06em;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.avgline{position:absolute;left:0;right:0;border-top:1px dashed var(--ink-3);opacity:.75;pointer-events:none}
+.avgline b{position:absolute;left:0;top:-11px;font-family:var(--mono);font-size:6.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:500;background:var(--paper);padding-right:5px}
+.callouts{display:flex;justify-content:space-between;gap:10px}
+.callout .k{font-family:var(--mono);font-size:7px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.callout .v{font-family:var(--mono);font-weight:600;font-size:12px;color:var(--ink);font-variant-numeric:tabular-nums;margin-top:3px}
+
+/* photo */
+.photo{flex:1;min-height:0;position:relative;overflow:hidden;background:var(--photo-tone);border-radius:2px}
+.photo img{width:100%;height:100%;object-fit:cover;display:block;filter:grayscale(1) contrast(1.06) sepia(.16)}
+.photo .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--ink-3)}
+.photo .placeholder span{font-family:var(--mono);font-size:8px;letter-spacing:.14em;text-transform:uppercase}
+.photo-cap{font-family:var(--mono);font-size:7px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+
+/* receipt (parsed workout) */
+.receipt{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:0}
+.rep{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--rule)}
+.rep:last-child{border-bottom:none}
+.rep .i{font-family:var(--mono);font-size:7.5px;letter-spacing:.1em;color:var(--ink-3);width:16px;flex:none}
+.rep .track{flex:1;height:5px;border-radius:999px;background:var(--paper-deep);overflow:hidden}
+.rep .track i{display:block;height:100%;border-radius:999px}
+.rep .t{font-family:var(--mono);font-weight:600;font-size:11px;color:var(--ink);font-variant-numeric:tabular-nums;width:44px;text-align:right;flex:none}
+.rep .h{font-family:var(--mono);font-size:8px;color:var(--ink-3);font-variant-numeric:tabular-nums;width:26px;text-align:right;flex:none}
+
+/* ---- export bench ---- */
+.bench{margin-top:44px;padding-top:26px;border-top:1px solid var(--chrome-rule)}
+.bench-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.bench-head h2{font-family:var(--display);font-weight:700;font-size:24px;margin:0;letter-spacing:-.01em}
+.bench-head p{margin:0;font-size:13px;color:var(--chrome-ink-2);max-width:56ch;line-height:1.5}
+.deliver{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+.deliv{display:flex;flex-direction:column;gap:9px}
+.deliv .cap{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--chrome-ink-3)}
+.deliv .frame{box-shadow:0 12px 30px -12px var(--chrome-shadow),0 0 0 1px var(--chrome-rule);overflow:hidden;background:var(--chrome-panel)}
+
+/* ---- notes ---- */
+.notes{margin-top:48px;padding-top:26px;border-top:1px solid var(--chrome-rule);display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:26px}
+.note h3{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--chrome-ink-3);margin:0 0 9px;font-weight:500}
+.note p{margin:0 0 10px;font-size:13.5px;line-height:1.55;color:var(--chrome-ink-2)}
+.note b{color:var(--chrome-ink);font-weight:400;font-style:italic}
+.hidden-input{display:none}
+.say{width:100%;min-height:62px;resize:vertical;font-family:var(--body);font-style:italic;font-size:13px;line-height:1.5;color:var(--chrome-ink);background:var(--chrome-panel);border:1px solid var(--chrome-rule);border-radius:8px;padding:9px 11px;outline:none}
+.say:focus{border-color:#D4592A}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div class="mast-strip">
+      <span>Post Run Drip — <b>the drip issue</b> · share composer, v1 study</span>
+      <span>Fig. 1 · <b>2026-08-21</b></span>
+    </div>
+    <h1>One run, <em>one very small magazine.</em></h1>
+    <p class="dek">A story-like swiper the athlete builds in the seconds after a run — but each card is a <em>page</em>: masthead and issue number on the cover, departments and folios inside, a drop cap, two columns, a figure caption under the chart, a pull quote over the byline. It exports as a vertical post or a 2–4 page carousel. Paper or ink, feed or story.</p>
+  </div>
+
+  <div class="rail">
+    <div class="ctrl">
+      <div class="ctrl-lbl">Theme</div>
+      <div class="chips" id="themeChips">
+        <button class="chip" data-theme="paper" aria-pressed="true">Paper</button>
+        <button class="chip" data-theme="ink" aria-pressed="false">Ink</button>
+      </div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-lbl">Canvas</div>
+      <div class="chips" id="canvasChips">
+        <button class="chip" data-canvas="45" aria-pressed="true">4:5 feed</button>
+        <button class="chip" data-canvas="916" aria-pressed="false">9:16 story</button>
+      </div>
+    </div>
+    <div class="ctrl" style="flex:1;min-width:280px">
+      <div class="ctrl-lbl">Pages — tap to add or drop</div>
+      <div class="chips" id="panelChips"></div>
+    </div>
+    <div class="ctrl" style="flex:1;min-width:300px">
+      <div class="ctrl-lbl">What do you want to say about this run?</div>
+      <textarea class="say" id="sayBox" placeholder="Say it the way you'd say it out loud."></textarea>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-lbl">Photo</div>
+      <div class="chips">
+        <button class="chip" id="photoBtn">Load one ↗</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div>
+      <p class="col-lbl">In the app · the post-run composer</p>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="phone-screen prd" id="phoneSurface" data-theme="paper">
+          <div class="composer">
+            <div class="comp-nav">
+              <span class="nav-side">Cancel</span>
+              <span class="comp-title">Make an issue</span>
+              <span class="nav-side act">Next ↗</span>
+            </div>
+            <div class="deck" id="deck"><div class="deck-rail" id="deckRail"></div></div>
+            <div class="dots" id="dots"></div>
+            <div class="words">
+              <div class="words-head">
+                <span class="lbl">Your words</span>
+                <button class="memo" id="memoBtn">Pull from memo ↗</button>
+              </div>
+              <div class="words-prompt">What do you want to say about this run?</div>
+              <div class="words-field" id="wordsField" contenteditable="true" data-ph="Say it the way you'd say it out loud."></div>
+              <div class="words-meta"><span id="wordsCount"></span><span>On the cover · the dispatch · the caption</span></div>
+            </div>
+            <div class="tray">
+              <div class="tray-lbl">Pages · tap to add or drop</div>
+              <div class="tray-row" id="trayRow"></div>
+            </div>
+            <div class="tabbar">
+              <div class="seg" id="phoneSeg">
+                <button data-canvas="45" aria-pressed="true">4:5</button>
+                <button data-canvas="916" aria-pressed="false">9:16</button>
+              </div>
+              <div class="seg" id="phoneTheme">
+                <button data-theme="paper" aria-pressed="true">Paper</button>
+                <button data-theme="ink" aria-pressed="false">Ink</button>
+              </div>
+              <button class="share-btn">Share ↗</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="col-note">Swipe the deck — drag it, or use <b>← →</b>. Pages toggle in the tray; the running order is fixed, because page order is a design decision.</p>
+    </div>
+
+    <div>
+      <p class="col-lbl">What lands in the feed</p>
+      <div class="deliver" id="deliver"></div>
+      <p class="col-note" id="deliverNote"></p>
+    </div>
+  </div>
+
+  <div class="bench">
+    <div class="bench-head">
+      <h2>Both themes, side by side.</h2>
+      <p>Paper is the shipped system — a page torn out of a printed running log, which is what makes it read as <em>not another Strava screenshot</em> in a feed. Ink is the same page inverted for phones held at night; the pace ramp flips with it.</p>
+    </div>
+    <div class="deliver" id="bench"></div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>Why a magazine, not a card</h3>
+      <p>Every running app exports a map with numbers on it, and they are interchangeable because they inherit the same basemap and the same system font. A magazine has <b>furniture</b> — masthead, issue number, running head, department, folio, drop cap, figure caption, byline. None of it is decoration; each piece tells the reader what kind of object they are holding. That furniture is what can't be copied in a sprint, because copying it means owning a type system first.</p>
+    </div>
+    <div class="note">
+      <h3>The cover is not a photograph</h3>
+      <p>The system's hardest rule is <b>no images as background, ever</b>. So the cover doesn't put type over a sunrise — the art sits in a field of paper with the masthead above it and the cover line below, the way an essay cover works. The route is the art because it is the one mark unique to this run; the photograph gets its own page, in Dispatch.</p>
+    </div>
+    <div class="note">
+      <h3>The coral budget, spent once a page</h3>
+      <p>Building this cost coral three times over: department labels, the fastest split's bar, and the drop cap all wanted it. Two had to go. Department labels fell to ink-2, and the fastest bar went back to the deep end of the ramp — <b>the ramp already says "fastest"</b>, so coral there was saying it twice. The drop cap kept it, because the system names a coloured capital as the reason coral exists.</p>
+    </div>
+    <div class="note">
+      <h3>Pace colour on a dark page</h3>
+      <p>The shipped ramp deepens pale sky to navy — intensity read as depth, which works on warm paper. On ink, navy disappears and the fastest miles vanish with it. The ink ramp inverts the luminance: dim slate for easy, near-white sky for mile. <b>Same semantic, opposite direction</b> — light is the only axis a black field has.</p>
+    </div>
+    <div class="note">
+      <h3>The running order is fixed</h3>
+      <p>Pages can be added and dropped; they cannot be reordered. A magazine's running order is an editorial decision, not a reader preference, and the sequence — cover, the numbers, dispatch — is the argument the issue makes: <b>here is the run, here is what it did, here is what it felt like.</b> Shuffling it produces a worse magazine every time.</p>
+    </div>
+    <div class="note">
+      <h3>Two pages are off by default</h3>
+      <p>The Ledger is the most impressive page and the least legible in a feed — nine rep rows of monospace at 1080 px is a photograph of a spreadsheet. It earns its place on an interval day. The Last Word gives the coach note a home for athletes who want it, and is a distraction for the ones who don't. <b>Turn them on to see them.</b></p>
+    </div>
+  </div>
+</div>
+<input type="file" id="photoInput" class="hidden-input" accept="image/*">
+<script>
+/* ============================================================
+   DATA — one real session, lifted from key-sessions-data.json
+   (id 19269767324 · 2026-07-11 · "24K long" · Austin, TX).
+   Mile splits are the run's own; everything else is verbatim.
+   ============================================================ */
+const RUN = {
+  eyebrow:   "SATURDAY · LONG RUN · AUSTIN, TX",
+  headline:  "July 11th.",
+  distanceMi: 14.99,
+  splits:    [438,422,416,412,408,410,405,407,404,409,413,418,407,398,389],
+  lastFrac:  0.99,
+  avgHr: 161, maxHr: 174, elevFt: 823,
+  tempF: 78, dewF: 72, heatAdjS: 390,
+  grade: "HELD",
+  photoCap: "MILE 11 · THE DAM",
+  quote: "Legs were bricks to the dam and then something let go. Last three felt like falling downhill.",
+  coach: "A slow open and a fast close is the right shape for a long day. Don't chase mile one next week — it pays you back at thirteen.",
+  blocks: [
+    { k:"OPEN",   d:"3 mi",  s:425, hr:152 },
+    { k:"STEADY", d:"9 mi",  s:410, hr:161 },
+    { k:"CLOSE",  d:"3 mi",  s:398, hr:170 }
+  ]
+};
+
+/* ---- derived ---- */
+const totalS = RUN.splits.reduce((a,s,i)=> a + s*(i===RUN.splits.length-1?RUN.lastFrac:1), 0);
+const avgS   = totalS / RUN.distanceMi;
+const fastS  = Math.min(...RUN.splits), slowS = Math.max(...RUN.splits);
+
+const esc = t => String(t).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const pace = s => { s = Math.round(s); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); };
+const hms  = s => { s = Math.round(s); const h=Math.floor(s/3600), m=Math.floor(s%3600/60);
+                    return h ? h+":"+String(m).padStart(2,"0")+":"+String(s%60).padStart(2,"0")
+                             : m+":"+String(s%60).padStart(2,"0"); };
+
+/* ============================================================
+   ROUTE — a GPS trace drawn as an ink line, coloured by pace.
+   No basemap under it, per RouteMapView's inline treatment.
+   ============================================================ */
+const WAYPOINTS = [
+  [0.20,0.82],[0.32,0.79],[0.45,0.76],[0.57,0.72],[0.68,0.66],[0.76,0.57],[0.79,0.46],
+  [0.74,0.36],[0.65,0.30],[0.54,0.27],[0.44,0.24],[0.36,0.18],[0.30,0.12],[0.22,0.14],
+  [0.17,0.22],[0.15,0.33],[0.13,0.44],[0.16,0.55],[0.22,0.63],[0.31,0.66],[0.42,0.65],
+  [0.52,0.62],[0.60,0.56],[0.64,0.47],[0.60,0.39],[0.50,0.36],[0.40,0.38],[0.32,0.45],
+  [0.28,0.55],[0.26,0.66],[0.22,0.75],[0.20,0.82]
+];
+function rng(seed){ let s=seed>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+function catmull(pts, per){
+  const out=[], n=pts.length;
+  for(let i=0;i<n-1;i++){
+    const p0=pts[Math.max(0,i-1)], p1=pts[i], p2=pts[i+1], p3=pts[Math.min(n-1,i+2)];
+    for(let j=0;j<per;j++){
+      const t=j/per, t2=t*t, t3=t2*t;
+      out.push([
+        0.5*((2*p1[0])+(-p0[0]+p2[0])*t+(2*p0[0]-5*p1[0]+4*p2[0]-p3[0])*t2+(-p0[0]+3*p1[0]-3*p2[0]+p3[0])*t3),
+        0.5*((2*p1[1])+(-p0[1]+p2[1])*t+(2*p0[1]-5*p1[1]+4*p2[1]-p3[1])*t2+(-p0[1]+3*p1[1]-3*p2[1]+p3[1])*t3)
+      ]);
+    }
+  }
+  out.push(pts[n-1]);
+  return out;
+}
+const ROUTE = (()=>{
+  const r = rng(20260711);
+  const pts = catmull(WAYPOINTS, 22).map(p => [p[0]+(r()-0.5)*0.006, p[1]+(r()-0.5)*0.006]);
+  // cumulative length -> progress
+  let len=0; const cum=[0];
+  for(let i=1;i<pts.length;i++){ len+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]); cum.push(len); }
+  const prog = cum.map(c=>c/len);
+  // pace at each point, interpolated off the real mile splits
+  const paces = prog.map((p,i)=>{
+    const mi = p*RUN.distanceMi, k = Math.min(RUN.splits.length-1, Math.floor(mi));
+    const nxt = RUN.splits[Math.min(RUN.splits.length-1,k+1)], f = mi-k;
+    return RUN.splits[k]*(1-f) + nxt*f + (r()-0.5)*14;
+  });
+  const lo=Math.min(...paces), hi=Math.max(...paces);
+  const bucket = paces.map(v => Math.max(0, Math.min(9, Math.floor((hi-v)/(hi-lo+1e-6)*10))));
+  return { pts, prog, bucket, cum, len };
+})();
+
+function routeSVG(w,h){
+  const pad=6, P=ROUTE.pts;
+  let x0=1,x1=0,y0=1,y1=0;
+  P.forEach(p=>{ x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1]); });
+  const sc = Math.min((w-pad*2)/(x1-x0), (h-pad*2)/(y1-y0));
+  const ox = (w-(x1-x0)*sc)/2 - x0*sc, oy = (h-(y1-y0)*sc)/2 - y0*sc;
+  const X = p => (p[0]*sc+ox).toFixed(2), Y = p => (p[1]*sc+oy).toFixed(2);
+
+  let out = "", run = [P[0]], b = ROUTE.bucket[0];
+  for(let i=1;i<P.length;i++){
+    run.push(P[i]);
+    if(ROUTE.bucket[i]!==b || i===P.length-1){
+      out += '<polyline points="'+run.map(p=>X(p)+","+Y(p)).join(" ")+'" fill="none" stroke="var(--p'+b+')" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>';
+      run=[P[i]]; b=ROUTE.bucket[i];
+    }
+  }
+  // mile ticks
+  for(let m=1;m<Math.floor(RUN.distanceMi);m++){
+    const t=m/RUN.distanceMi;
+    let i=ROUTE.prog.findIndex(p=>p>=t); if(i<1) continue;
+    const a=P[i-1], c=P[i], dx=c[0]-a[0], dy=c[1]-a[1], L=Math.hypot(dx,dy)||1;
+    const nx=-dy/L*0.011, ny=dx/L*0.011;
+    out += '<line x1="'+X([c[0]-nx,c[1]-ny])+'" y1="'+Y([c[0]-nx,c[1]-ny])+'" x2="'+X([c[0]+nx,c[1]+ny])+'" y2="'+Y([c[0]+nx,c[1]+ny])+'" stroke="var(--ink-3)" stroke-width="1" opacity=".55"/>';
+  }
+  const s=P[0], f=P[P.length-1];
+  out += '<circle cx="'+X(s)+'" cy="'+Y(s)+'" r="3.2" fill="var(--paper)" stroke="var(--ink-2)" stroke-width="1.4"/>';
+  out += '<circle cx="'+X(f)+'" cy="'+Y(f)+'" r="6" fill="none" stroke="var(--accent)" stroke-width="1" opacity=".45"/>';
+  out += '<circle cx="'+X(f)+'" cy="'+Y(f)+'" r="3.2" fill="var(--accent)"/>';
+  return '<svg viewBox="0 0 '+w+' '+h+'" preserveAspectRatio="xMidYMid meet">'+out+'</svg>';
+}
+
+/* ---- default photo: a duotone horizon that survives the grayscale filter ---- */
+const DEFAULT_PHOTO = "data:image/svg+xml;utf8," + encodeURIComponent(
+ '<svg xmlns="http://www.w3.org/2000/svg" width="720" height="900" viewBox="0 0 720 900">'+
+ '<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1">'+
+ '<stop offset="0" stop-color="#8d9aa6"/><stop offset="0.55" stop-color="#c3c8ca"/><stop offset="1" stop-color="#e2ddd6"/></linearGradient>'+
+ '<linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6c7580"/><stop offset="1" stop-color="#3d444c"/></linearGradient></defs>'+
+ '<rect width="720" height="900" fill="url(#s)"/>'+
+ '<circle cx="512" cy="286" r="62" fill="#f0ece5" opacity="0.75"/>'+
+ '<path d="M0 560 L150 470 L268 545 L392 440 L520 530 L640 468 L720 512 L720 900 L0 900Z" fill="#7c848d" opacity="0.55"/>'+
+ '<path d="M0 622 L128 566 L246 626 L370 552 L498 620 L620 566 L720 604 L720 900 L0 900Z" fill="#5b636d" opacity="0.7"/>'+
+ '<rect y="650" width="720" height="250" fill="url(#w)"/>'+
+ '<path d="M0 650 Q180 690 360 656 T720 664 L720 900 L0 900Z" fill="#2f353c" opacity="0.55"/>'+
+ '<g opacity="0.35" fill="#e8e4dd"><rect x="60" y="712" width="600" height="2"/><rect x="120" y="768" width="480" height="2"/></g>'+
+ '</svg>');
+let photoSrc = DEFAULT_PHOTO;
+
+/* The athlete's own sentence. Pre-filled from the run's voice memo when there
+   is one — the prompt is an edit, not a blank page. */
+let words = RUN.quote;
+
+/* ============================================================
+   PANELS
+   ============================================================ */
+/* ============================================================
+   THE PAGES — each card is a page of a very small magazine.
+   Cover · The numbers · Dispatch · The ledger · The last word
+   ============================================================ */
+const ISSUE = { no: 143, dateLong: "Saturday, July 11, 2026", place: "Austin, Texas", month: "July 2026" };
+const BYLINE = "Maya Reina";
+
+const ORDER = ["cover","numbers","dispatch","ledger","lastword"];
+const META = {
+  cover:    { chip:"Cover",         dept:"The cover",     sub:"" },
+  numbers:  { chip:"The numbers",   dept:"The numbers",   sub:"Mile splits" },
+  dispatch: { chip:"Dispatch",      dept:"Dispatch",      sub:"Photograph + words" },
+  ledger:   { chip:"The ledger",    dept:"The ledger",    sub:"The workout, parsed" },
+  lastword: { chip:"The last word", dept:"The last word", sub:"From your coach" }
+};
+let enabled = { cover:true, numbers:true, dispatch:true, ledger:false, lastword:false };
+let canvas  = "45";
+let theme   = "paper";
+let index   = 0;
+
+const active = () => ORDER.filter(k=>enabled[k]);
+const isTall = () => canvas === "916";
+
+/* The cover has no running head — the masthead is the running head — and no
+   folio, because magazines don't number their covers. */
+function shell(key, inner, n, total){
+  if(key === "cover") return '<div class="c-body" style="padding-top:15px">'+inner+'</div>';
+  return '<div class="runhead"><span>Post run drip</span><span><b>'+ISSUE.month+'</b></span></div>'
+       + '<div class="c-body" style="padding-top:11px">'+inner+'</div>'
+       + '<div class="folio"><span>'+META[key].dept+'</span><span class="pg">'+n+'<i class="drip"></i></span></div>';
+}
+
+/* ---------- 1 · THE COVER ---------- */
+function pageCover(){
+  const tall = isTall();
+  return ''
+  + '<div class="mast" style="font-size:'+(tall?38:31)+'px">Post run drip</div>'
+  + '<div class="mast-rule"></div>'
+  + '<div class="issue">No. '+ISSUE.no+' · '+ISSUE.dateLong+' · '+ISSUE.place+'</div>'
+  + '<div class="route-wrap" style="flex:1;margin:'+(tall?10:6)+'px 0">'+routeSVG(324, tall?286:200)+'</div>'
+  + '<div class="legend" style="margin-bottom:'+(tall?14:10)+'px"><span>Easy</span><span class="ramp"></span><span>Mile</span></div>'
+  + '<div class="kicker">The long run · '+RUN.distanceMi.toFixed(2)+' mi · '+RUN.tempF+'°F</div>'
+  + '<div class="coverline" style="font-size:'+(tall?28:22)+'px;margin-top:5px">The last 3 miles were the fastest.</div>'
+  + (words.trim()
+      ? '<div class="cdeck" style="font-size:'+(tall?13:11)+'px;margin-top:'+(tall?9:7)+'px">"'+esc(words.trim())+'"</div>'
+      : '')
+  + (tall ? '<div class="inside" style="margin-top:14px"><span>Inside:</span><span><b>'
+            + active().filter(k=>k!=="cover").map(k=>META[k].dept).join(' · ')
+          + '</b></span></div>' : '')
+  + '<div class="rule" style="margin-top:'+(tall?14:11)+'px"><i></i></div>'
+  + '<div class="c-foot" style="padding:9px 0 12px">'
+    + '<span>'+RUN.distanceMi.toFixed(2)+' mi · '+pace(avgS)+' / mi · '+hms(totalS)+'</span>'
+    + '<span class="mark"><i class="drip"></i></span></div>';
+}
+
+/* ---------- 2 · THE NUMBERS ---------- */
+function splitsFigure(h){
+  const lo = fastS - 8, hi = slowS + 8;
+  const barH = v => (1 - (v-lo)/(hi-lo)) * 0.72 + 0.16;
+  const bucket = v => Math.max(0, Math.min(9, Math.floor((slowS-v)/(slowS-fastS+1e-6)*10)));
+  let bars = "";
+  RUN.splits.forEach((v,i)=>{
+    bars += '<div class="split"><div class="bar" style="height:'+(barH(v)*100).toFixed(1)+'%;background:'
+          + 'var(--p'+bucket(v)+')' + '"></div><span class="n">'+(i+1)+'</span></div>';
+  });
+  return '<div class="splits" style="'+h+'">'+bars
+       + '<div class="avgline" style="top:'+((1-barH(avgS))*100).toFixed(1)+'%"><b>avg</b></div></div>';
+}
+function pageNumbers(){
+  const tall = isTall();
+  return ''
+  + '<div class="dept"><span class="name">The numbers</span><span class="sub">'+RUN.splits.length+' miles · '+pace(avgS)+' average</span></div>'
+  + '<div class="coverline" style="font-size:'+(tall?26:20)+'px;margin-top:5px">Slow open, fast close.</div>'
+  + splitsFigure(tall ? 'flex:1;min-height:200px' : 'flex:1;min-height:120px')
+  + '<div class="figcap" style="margin-top:'+(tall?12:9)+'px"><b>Fig. 1</b> — Mile splits, seconds per mile; taller is faster. '
+    + 'The dashed line is the run’s own average of '+pace(avgS)+'. The final mile, '+pace(fastS)+', is the day’s fastest.</div>'
+  + '<div class="rule" style="margin:'+(tall?13:9)+'px 0"><i></i></div>'
+  + '<div class="cols dropcap">The first mile went out at '+pace(RUN.splits[0])+', the slowest of the day. '
+    + 'From four to twelve the run sat on '+pace(avgS)+' and never moved more than eight seconds either side of it. '
+    + 'The last three are the story: '+pace(RUN.splits[12])+', then '+pace(RUN.splits[13])+', then '+pace(RUN.splits[14])+' at the line.'
+    + (tall ? ' Heat-adjusted, that average is '+pace(RUN.heatAdjS)+' — the dew point was '+RUN.dewF
+              +' and the last half of it ran in the sun. The read on the day is '+RUN.grade.toLowerCase()+'.' : '')
+    + '</div>'
+  + (tall
+      ? '<div class="rule" style="margin-top:14px"><i></i></div><div class="callouts" style="margin-top:13px">'
+        + RUN.blocks.map(b=>'<div class="callout"><div class="k">'+b.k+' · '+b.d+'</div><div class="v">'+pace(b.s)+' /mi</div></div>').join("")
+      + '</div>'
+      : '');
+}
+
+/* ---------- 3 · DISPATCH ---------- */
+function pageDispatch(){
+  const tall = isTall();
+  return ''
+  + '<div class="dept"><span class="name">Dispatch</span><span class="sub">'+RUN.photoCap+'</span></div>'
+  + '<div class="photo" style="flex:1;margin-top:'+(tall?11:8)+'px"><img src="'+photoSrc+'" alt=""></div>'
+  + '<div class="figcap" style="margin-top:6px">Mile 11, the dam. The turn where the run changed.</div>'
+  + '<div class="rule" style="margin:'+(tall?13:9)+'px 0"><i></i></div>'
+  + (words.trim()
+      ? '<div class="pullq"><span class="mark">“</span><span class="txt" style="font-size:'+(tall?15:13)+'px">'+esc(words.trim())+'</span></div>'
+      : '<div class="eyebrow" style="color:var(--ink-3)">Your words go here</div>')
+  + '<div class="byline" style="margin-top:'+(tall?12:9)+'px">By <b>'+BYLINE+'</b> · '+ISSUE.place+'</div>'
+  + (tall
+      ? '<div class="sidebar" style="margin-bottom:4px"><div class="h">From your coach</div><div class="t">'+RUN.coach+'</div></div>'
+      : '<div class="eyebrow" style="margin-top:11px">'+RUN.distanceMi.toFixed(2)+' mi · '+pace(avgS)+' /mi · '+hms(totalS)+'</div>');
+}
+
+/* ---------- 4 · THE LEDGER ---------- */
+function pageLedger(){
+  const tall = isTall();
+  const rows = RUN.blocks.map(b =>
+    '<tr><td class="lbl">'+b.k+'</td><td class="lbl">'+b.d+'</td><td class="r">'+pace(b.s)+'</td><td class="r">'+b.hr+'</td></tr>').join("");
+  return ''
+  + '<div class="dept"><span class="name">The ledger</span><span class="sub">The run, parsed</span></div>'
+  + '<div class="coverline" style="font-size:'+(tall?26:20)+'px;margin-top:5px">Three blocks.</div>'
+  + '<div style="flex:1;display:flex;flex-direction:column;justify-content:center">'
+  + '<table class="ledger" style="margin-top:'+(tall?18:12)+'px">'
+    + '<thead><tr><th>Block</th><th>Distance</th><th class="r">Pace</th><th class="r">Avg hr</th></tr></thead>'
+    + '<tbody>'+rows+'</tbody></table>'
+  + '<div class="figcap" style="margin-top:'+(tall?11:8)+'px"><b>Fig. 2</b> — Blocks are derived from the run’s own splits, thirds by distance. '
+    + 'An interval session lists its reps here instead.</div>'
+  + '</div>'
+  + '<div class="rule"><i></i></div>'
+  + '<div class="stats" style="margin:'+(tall?15:11)+'px 0 '+(tall?8:6)+'px">'
+    + '<div class="stat"><div class="v" style="font-size:'+(tall?19:17)+'px">'+pace(avgS)+'<small>/mi</small></div><div class="k">Average</div></div>'
+    + '<div class="stat"><div class="v" style="font-size:'+(tall?19:17)+'px">'+pace(RUN.heatAdjS)+'<small>/mi</small></div><div class="k">Heat-adj</div></div>'
+    + '<div class="stat"><div class="v" style="font-size:'+(tall?19:17)+'px">'+RUN.grade+'</div><div class="k">The read</div></div>'
+  + '</div>';
+}
+
+/* ---------- 5 · THE LAST WORD ---------- */
+function pageLastWord(){
+  const tall = isTall();
+  return ''
+  + '<div class="dept"><span class="name">The last word</span><span class="sub">From your coach</span></div>'
+  + '<div style="flex:1;display:flex;flex-direction:column;justify-content:center">'
+  + '<div class="pullq" style="margin-top:'+(tall?20:14)+'px"><span class="mark">“</span>'
+    + '<span class="txt" style="font-size:'+(tall?16:13.5)+'px">'+RUN.coach+'</span></div>'
+  + '<div class="byline" style="margin-top:'+(tall?14:10)+'px">Your coach · after '+RUN.distanceMi.toFixed(2)+' mi</div>'
+  + '</div>'
+  + '<div class="rule" style="margin-bottom:'+(tall?14:10)+'px"><i></i></div>'
+  + '<div class="cols one" style="font-size:8px;color:var(--ink-3);text-align:left">'
+    + 'Set in Crimson Pro and PT Serif. Route drawn from the run’s own trace, coloured by pace. '
+    + 'Numbers computed before they were narrated. Printed after the run.</div>'
+  + '<div style="height:'+(tall?10:6)+'px"></div>';
+}
+
+const RENDER = { cover:pageCover, numbers:pageNumbers, dispatch:pageDispatch, ledger:pageLedger, lastword:pageLastWord };
+
+function cardHTML(key, n, total){
+  return '<div class="card" data-canvas="'+canvas+'">'+shell(key, RENDER[key](), n, total)+'</div>';
+}
+function cardNode(key, n, total, scale){
+  const W = 360, H = canvas === "45" ? 450 : 640;
+  const box = document.createElement("div");
+  box.style.width = (W*scale)+"px"; box.style.height = (H*scale)+"px";
+  box.style.overflow = "hidden"; box.style.flex = "none";
+  const sc = document.createElement("div");
+  sc.className = "scaler"; sc.style.transform = "scale("+scale+")";
+  sc.innerHTML = cardHTML(key, n, total);
+  box.appendChild(sc);
+  return box;
+}
+
+/* ============================================================
+   RENDER + INTERACTION
+   ============================================================ */
+const deck = document.getElementById("deck");
+const rail = document.getElementById("deckRail");
+const dots = document.getElementById("dots");
+const trayRow = document.getElementById("trayRow");
+const deliver = document.getElementById("deliver");
+const bench = document.getElementById("bench");
+const deliverNote = document.getElementById("deliverNote");
+const phoneSurface = document.getElementById("phoneSurface");
+
+let deckScale = 0.8;
+
+function renderDeck(){
+  const keys = active();
+  if(index >= keys.length) index = Math.max(0, keys.length-1);
+  const H = canvas === "45" ? 450 : 640;
+  const dw = deck.clientWidth || 348, dh = deck.clientHeight || 470;
+  deckScale = Math.min((dw*0.84)/360, (dh*0.97)/H);
+  rail.innerHTML = "";
+  keys.forEach((k,i)=>{
+    const slot = document.createElement("div");
+    slot.className = "deck-slot";
+    slot.dataset.active = String(i===index);
+    slot.appendChild(cardNode(k, i+1, keys.length, deckScale));
+    rail.appendChild(slot);
+  });
+  requestAnimationFrame(()=>positionRail(0));
+
+  dots.innerHTML = "";
+  keys.forEach((k,i)=>{
+    const b = document.createElement("button");
+    b.className = "dot"; b.setAttribute("aria-current", String(i===index));
+    b.title = META[k].chip;
+    b.onclick = ()=>{ index=i; renderDeck(); };
+    dots.appendChild(b);
+  });
+}
+function positionRail(drag){
+  drag = drag || 0;
+  const slots = [...rail.children];
+  if(!slots.length) return;
+  const dw = deck.clientWidth;
+  let x = 0;
+  for(let i=0;i<index;i++) x += slots[i].offsetWidth + 14;
+  const off = dw/2 - (x + (slots[index]?slots[index].offsetWidth:0)/2) + (drag||0);
+  rail.style.transition = drag ? "none" : "";
+  rail.style.transform = "translateX("+off+"px)";
+}
+
+function renderTray(){
+  trayRow.innerHTML = "";
+  ORDER.forEach(k=>{
+    const b = document.createElement("button");
+    b.className = "panel-chip";
+    b.setAttribute("aria-pressed", String(enabled[k]));
+    b.innerHTML = '<span class="tick">✓</span><span>'+META[k].chip+'</span>';
+    b.onclick = ()=>{
+      if(enabled[k] && active().length===1) return;   // never zero cards
+      enabled[k] = !enabled[k];
+      index = Math.max(0, active().indexOf(k));
+      if(index<0) index = 0;
+      renderAll();
+    };
+    trayRow.appendChild(b);
+  });
+}
+
+function renderDeliver(){
+  const keys = active();
+  deliver.innerHTML = "";
+  keys.forEach((k,i)=>{
+    const col = document.createElement("div");
+    col.className = "deliv";
+    const cap = document.createElement("div");
+    cap.className = "cap"; cap.textContent = (i+1)+" / "+keys.length+" · "+META[k].dept.toLowerCase();
+    const frame = document.createElement("div");
+    frame.className = "frame prd"; frame.dataset.theme = theme;
+    frame.appendChild(cardNode(k, i+1, keys.length, canvas==="45" ? 0.66 : 0.48));
+    col.appendChild(cap); col.appendChild(frame);
+    deliver.appendChild(col);
+  });
+  const box = document.createElement("div");
+  box.className = "capbox";
+  const w = words.trim();
+  box.innerHTML = '<div class="h">The caption that goes with it</div>'
+    + '<div class="t">' + (w ? '<em>"'+esc(w)+'"</em>\n\n' : '')
+    + RUN.distanceMi.toFixed(2)+' mi · '+pace(avgS)+' / mi · '+hms(totalS)+'\n'
+    + 'Austin, TX · '+RUN.tempF+'°F · dew '+RUN.dewF+'</div>'
+    + '<div class="s">Copied to the clipboard on share.</div>';
+  deliver.appendChild(box);
+
+  const px = canvas === "45" ? "1080 × 1350" : "1080 × 1920";
+  deliverNote.innerHTML = keys.length + (keys.length===1?" card":" cards") + " · <b>"+px+"</b> each · PNG, sRGB, exported at 3× from the same SwiftUI views the app already draws.";
+}
+
+function renderBench(){
+  bench.innerHTML = "";
+  const first = active()[0];
+  ["paper","ink"].forEach(t=>{
+    const col = document.createElement("div");
+    col.className = "deliv";
+    const cap = document.createElement("div");
+    cap.className = "cap"; cap.textContent = t === "paper" ? "Paper · the shipped system" : "Ink · inverted for feeds";
+    const frame = document.createElement("div");
+    frame.className = "frame prd"; frame.dataset.theme = t;
+    frame.appendChild(cardNode(first, 1, active().length, canvas==="45" ? 0.62 : 0.45));
+    col.appendChild(cap); col.appendChild(frame);
+    bench.appendChild(col);
+  });
+}
+
+function renderAll(){
+  phoneSurface.dataset.theme = theme;
+  renderTray(); renderDeck(); renderDeliver(); renderBench();
+  sync();
+}
+function sync(){
+  document.querySelectorAll('#themeChips .chip, #phoneTheme button')
+    .forEach(b=>b.setAttribute("aria-pressed", String(b.dataset.theme===theme)));
+  document.querySelectorAll('#canvasChips .chip, #phoneSeg button')
+    .forEach(b=>b.setAttribute("aria-pressed", String(b.dataset.canvas===canvas)));
+  document.querySelectorAll('#panelChips .chip')
+    .forEach(b=>b.setAttribute("aria-pressed", String(enabled[b.dataset.panel])));
+}
+
+/* ---- rail chips ---- */
+const panelChips = document.getElementById("panelChips");
+ORDER.forEach(k=>{
+  const b = document.createElement("button");
+  b.className = "chip dim"; b.dataset.panel = k; b.textContent = META[k].chip;
+  b.onclick = ()=>{ if(enabled[k] && active().length===1) return;
+                    enabled[k]=!enabled[k]; index=0; renderAll(); };
+  panelChips.appendChild(b);
+});
+document.querySelectorAll('#themeChips .chip, #phoneTheme button')
+  .forEach(b=> b.onclick = ()=>{ theme = b.dataset.theme; renderAll(); });
+document.querySelectorAll('#canvasChips .chip, #phoneSeg button')
+  .forEach(b=> b.onclick = ()=>{ canvas = b.dataset.canvas; renderAll(); });
+
+/* ---- photo ---- */
+const photoInput = document.getElementById("photoInput");
+document.getElementById("photoBtn").onclick = ()=> photoInput.click();
+photoInput.onchange = e => {
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  const fr = new FileReader();
+  fr.onload = ev => { photoSrc = ev.target.result; enabled.dispatch = true; renderAll(); };
+  fr.readAsDataURL(f);
+};
+
+/* ---- the words ---- */
+const wordsField = document.getElementById("wordsField");
+const sayBox     = document.getElementById("sayBox");
+const wordsCount = document.getElementById("wordsCount");
+
+function refreshWords(from){
+  if(from !== "field") wordsField.textContent = words;
+  if(from !== "box")   sayBox.value = words;
+  const n = words.trim().length;
+  wordsCount.textContent = n ? n + " char" : "Nothing yet";
+  renderDeck(); renderDeliver();
+}
+wordsField.addEventListener("input", ()=>{ words = wordsField.textContent; refreshWords("field"); });
+sayBox.addEventListener("input",     ()=>{ words = sayBox.value;           refreshWords("box"); });
+document.getElementById("memoBtn").onclick = ()=>{ words = RUN.quote; refreshWords(); };
+
+/* ---- swipe ---- */
+let dragging=false, startX=0, dx=0;
+deck.addEventListener("pointerdown", e=>{ dragging=true; startX=e.clientX; dx=0; deck.setPointerCapture(e.pointerId); });
+deck.addEventListener("pointermove", e=>{ if(!dragging) return; dx=e.clientX-startX; positionRail(dx); });
+function endDrag(){
+  if(!dragging) return; dragging=false;
+  const keys=active();
+  if(dx < -46 && index < keys.length-1) index++;
+  else if(dx > 46 && index > 0) index--;
+  dx=0; renderDeck();
+}
+deck.addEventListener("pointerup", endDrag);
+deck.addEventListener("pointercancel", endDrag);
+window.addEventListener("keydown", e=>{
+  const keys=active();
+  if(e.key==="ArrowRight" && index<keys.length-1){ index++; renderDeck(); }
+  if(e.key==="ArrowLeft"  && index>0){ index--; renderDeck(); }
+});
+window.addEventListener("resize", ()=>{ renderDeck(); });
+
+renderAll();
+refreshWords();
+setTimeout(renderDeck, 60);
+</script>
+</body>
+</html>

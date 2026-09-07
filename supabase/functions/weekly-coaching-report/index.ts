@@ -16,7 +16,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 
 import { requireAuthOrServiceRole, requireServiceRole } from "../_shared/auth.ts";
-import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { getActiveInjuries, buildInjuryContext } from "../_shared/injuries.ts";
 import { internalErrorResponse } from "../_shared/validation.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
@@ -127,6 +127,8 @@ Deno.serve(async (req: Request) => {
       if (!auth.isServiceRole) {
         const rlBlocked = await enforceFeatureRateLimit(userId, "weekly_review", corsHeaders);
         if (rlBlocked) return rlBlocked;
+        const monthlyCapped = await enforceMonthlyCap(userId, "weekly_review", corsHeaders);
+        if (monthlyCapped) return monthlyCapped;
       }
     }
 

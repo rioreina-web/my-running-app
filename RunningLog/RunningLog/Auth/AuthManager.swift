@@ -76,19 +76,19 @@ final class AuthManager {
                 switch event {
                 case .initialSession:
                     if let session = session {
-                        // We have a stored session — try to refresh it with a
-                        // bounded timeout so we can't hang forever on bad networks.
-                        do {
-                            let refreshed = try await self.withTimeout(seconds: 5) {
-                                try await supabase.auth.refreshSession()
-                            }
-                            self.isAuthenticated = true
-                            self.currentUserId = refreshed.user.id.uuidString.lowercased()
-                            self.userEmail = refreshed.user.email
-                        } catch {
-                            print("[Auth] Session refresh failed: \(error.localizedDescription)")
-                            self.handleRefreshFailure(existingSession: session)
-                        }
+                        // Trust the emitted session. We do NOT manually call
+                        // refreshSession() here: the client already has
+                        // autoRefreshToken=true, and Supabase rotates refresh
+                        // tokens — a manual refresh races the SDK's auto-refresh,
+                        // one of the two then fails with "Auth session missing",
+                        // and the old code responded by SIGNING OUT a perfectly
+                        // valid session. That dropped the login right before
+                        // writes (e.g. voice-memo upload), which then 403'd on
+                        // storage. The SDK auto-refreshes on demand; just adopt
+                        // the session and let it.
+                        self.isAuthenticated = true
+                        self.currentUserId = session.user.id.uuidString.lowercased()
+                        self.userEmail = session.user.email
                     } else {
                         self.isAuthenticated = false
                         self.currentUserId = nil
@@ -103,6 +103,11 @@ final class AuthManager {
                     self.isLoading = false
                     self.splashTimeoutTask?.cancel()
                 case .signedOut:
+                    // Purge any queued offline uploads + their audio before we
+                    // drop the user id. Otherwise the next account to sign in on
+                    // this device would drain the departing user's memos into
+                    // their own account (cross-account voice-memo leak).
+                    OfflineQueueManager.shared.purgeAllForSignOut()
                     self.isAuthenticated = false
                     self.currentUserId = nil
                     self.userEmail = nil
@@ -208,6 +213,11 @@ final class AuthManager {
 
     func signOut() async throws {
         try await supabase.auth.signOut()
+        // Wipe every last-known-good snapshot (journal, training-log store).
+        // Cached rows are account-scoped and validated on read, but a
+        // sign-out means this device should hold NO training data at rest —
+        // belt and suspenders.
+        DiskCache.clearAll()
     }
 
     // MARK: - Nonce Helpers

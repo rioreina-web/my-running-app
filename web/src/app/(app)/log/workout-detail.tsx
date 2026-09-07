@@ -265,11 +265,15 @@ function EffortTab({ data }: { data: WorkoutStreamData }) {
   const blocks = data.effortDistribution;
   if (!blocks.length) return <EmptyTab message="No effort data" />;
 
+  // Pace/effort = single-hue blue depth ramp (source of truth:
+  // RunningLog/Workouts/PaceSpectrum.swift). Blue = pace, warm = mood,
+  // coral = alert; the three palettes never share hues. Recovery sits
+  // below Easy, so it falls back to a warm gray rather than green.
   const effortTypes: { key: string; label: string; color: string }[] = [
-    { key: "easy", label: "Easy", color: "#4A9E6B" },
-    { key: "recovery", label: "Recovery", color: "#9B9590" },
-    { key: "moderate", label: "Moderate", color: "#C4873A" },
-    { key: "hard", label: "Hard", color: "#D4592A" },
+    { key: "easy", label: "Easy", color: "#93B9D6" },
+    { key: "recovery", label: "Recovery", color: "#B4ADA4" },
+    { key: "moderate", label: "Moderate", color: "#3F7CB5" },
+    { key: "hard", label: "Hard", color: "#1A3679" },
   ];
 
   // Aggregate blocks by type
@@ -413,8 +417,8 @@ function OverlayChart({ timeline }: { timeline: TimelinePoint[] }) {
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoverIdx(null)}
       >
-        {/* Pace line */}
-        <polyline points={pacePoints} fill="none" stroke="#D4592A" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        {/* Pace line — blue = pace (not coral, which is alert-only) */}
+        <polyline points={pacePoints} fill="none" stroke="#27549B" strokeWidth="2" vectorEffect="non-scaling-stroke" />
         {/* HR line */}
         <polyline points={hrPoints} fill="none" stroke="#C45A3A" strokeWidth="1.5" strokeOpacity="0.5" vectorEffect="non-scaling-stroke" strokeDasharray="3,2" />
 

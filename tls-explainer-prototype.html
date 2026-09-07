@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TLS explainer — Post Run Drip prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;padding:28px 20px 24px}
+.study-hd{max-width:900px;margin:0 auto 22px}
+.study-hd h1{font-family:var(--font-display);font-weight:700;font-size:26px;margin:0 0 6px}
+.study-hd p{margin:0;font-size:14px;color:#4A4540;line-height:1.55;max-width:74ch}
+.rail{display:flex;gap:22px;max-width:900px;margin:0 auto;flex-wrap:wrap;align-items:flex-start}
+.col{width:392px}
+.col-hd{margin-bottom:10px;padding:0 2px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:#6B6560;display:block;margin-bottom:4px}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 5px}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540}
+
+/* ---- sheet ---- */
+.sheet{width:392px;background:var(--paper);border-radius:22px 22px 14px 14px;
+  padding:14px 22px 28px;box-shadow:0 6px 22px rgba(0,0,0,.13);
+  border:1px solid rgba(0,0,0,.05)}
+.grabber{width:36px;height:5px;border-radius:3px;background:#C9C3BC;margin:0 auto 20px}
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.13em;
+  color:var(--ink-2);text-transform:uppercase}
+.micro{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.11em;
+  color:var(--ink-3);text-transform:uppercase}
+.lede{font-family:var(--font-body);font-size:17px;line-height:1.5;margin-top:12px}
+.rule{height:1px;background:var(--rule);margin:22px 0 0}
+
+/* ---- the ladder ---- */
+.ladder{margin-top:18px}
+.lrow{display:flex;align-items:center;gap:9px;padding:3px 0}
+.lname{font-family:var(--font-mono);font-size:10px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-2);width:58px;flex:none}
+.ltrack{display:block;flex:1;height:13px;background:var(--paper-deep);border-radius:2px;
+  overflow:hidden}
+.lfill{display:block;height:100%;border-radius:2px}
+.lmult{font-family:var(--font-mono);font-size:11px;color:var(--ink);width:36px;
+  text-align:right;flex:none}
+.lrow.hi .lname{color:var(--ink)}
+
+/* ---- worked example ---- */
+.work{margin-top:20px}
+.wrow{display:flex;align-items:baseline;font-family:var(--font-mono);font-size:12.5px;
+  padding:7px 0;border-top:1px solid var(--rule)}
+.wsw{display:block;width:8px;height:13px;border-radius:2px;margin-right:8px;flex:none;align-self:center}
+.wz{color:var(--ink-2);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;width:52px}
+.wmin{color:var(--ink);flex:1}
+.wx{color:var(--ink-3);width:52px;text-align:right}
+.wtls{color:var(--ink);width:52px;text-align:right}
+.wtot{display:flex;font-family:var(--font-mono);font-size:13px;padding:9px 0 0;
+  border-top:1px solid var(--ink-3)}
+.wtot .l{flex:1;color:var(--ink-2);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
+.wtot .v{color:var(--ink)}
+.foot{font-family:var(--font-body);font-size:13px;line-height:1.6;color:var(--ink-2);margin-top:20px}
+.foot b{font-weight:400;color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="study-hd">
+  <h1>What is TLS</h1>
+  <p>Opened by tapping the TLS number in a day panel. One idea, one graphic, one worked example
+  from the day you tapped — so the number on the card is the number being explained.</p>
+</div>
+
+<div class="rail" id="rail"></div>
+
+<script>
+/* Weights are the app's real table (TrendsZoneWeight), mirrored here only
+   because a prototype cannot import Swift. The shipped view reads the table. */
+const ZONES = [
+  { key:'easy',     label:'Easy',     color:'#93B9D6', w:1.00 },
+  { key:'moderate', label:'Moderate', color:'#74A8CC', w:1.40 },
+  { key:'steady',   label:'Steady',   color:'#578FC0', w:2.15 },
+  { key:'mp',       label:'MP',       color:'#3F7CB5', w:2.50 },
+  { key:'hmp',      label:'HMP',      color:'#2F66A8', w:3.25 },
+  { key:'10k',      label:'10K',      color:'#20448B', w:4.00 },
+  { key:'5k',       label:'5K',       color:'#1A3679', w:5.50 },
+  { key:'3k',       label:'3K',       color:'#142964', w:6.75 },
+  { key:'mile',     label:'Mile',     color:'#0E1D4E', w:8.00 },
+];
+const MAXW = 8.0;
+
+/* Tuesday, from the live screenshot: 4.3 mi HMP @ 5:21, 1.9 mi 10K @ 5:13 */
+const DAY = { label:'Tuesday', segs:[
+  { z:'hmp', min: 4.3*(5*60+21)/60 },
+  { z:'10k', min: 1.9*(5*60+13)/60 },
+]};
+DAY.segs.forEach(s => { s.zone = ZONES.find(z=>z.key===s.z); s.tls = s.min*s.zone.w; });
+DAY.total = DAY.segs.reduce((a,s)=>a+s.tls,0);
+
+const hit = new Set(DAY.segs.map(s=>s.z));
+
+function ladder(){
+  return `<div class="ladder">${ZONES.map(z=>`
+    <div class="lrow ${hit.has(z.key)?'hi':''}">
+      <span class="lname">${z.label}</span>
+      <span class="ltrack"><span class="lfill"
+        style="width:${z.w/MAXW*100}%;background:${z.color}"></span></span>
+      <span class="lmult">×${z.w.toFixed(2).replace(/\.?0+$/,'')}</span>
+    </div>`).join('')}</div>`;
+}
+
+function worked(){
+  return `<div class="work">
+    <div class="micro" style="margin-bottom:8px">Where ${DAY.label}'s ${Math.round(DAY.total)} came from</div>
+    ${DAY.segs.map(s=>`<div class="wrow">
+      <span class="wsw" style="background:${s.zone.color}"></span>
+      <span class="wz">${s.zone.label}</span>
+      <span class="wmin">${Math.round(s.min)} min</span>
+      <span class="wx">×${s.zone.w.toFixed(2).replace(/\.?0+$/,'')}</span>
+      <span class="wtls">${Math.round(s.tls)}</span>
+    </div>`).join('')}
+    <div class="wtot"><span class="l">Total</span><span class="v">${Math.round(DAY.total)} TLS</span></div>
+  </div>`;
+}
+
+const SHEET = `
+  <div class="grabber"></div>
+  <div class="eyebrow">Training load score</div>
+  <div class="lede">Minutes, weighted by how hard those minutes were.</div>
+
+  <div class="rule"></div>
+  <div class="micro" style="margin-top:16px">The cost of one minute</div>
+  ${ladder()}
+  <div class="foot" style="margin-top:14px">
+    Ten minutes easy costs <b>10</b>. The same ten minutes at 5K costs <b>55</b>.
+  </div>
+
+  <div class="rule"></div>
+  ${worked()}
+
+  <div class="rule"></div>
+  <div class="foot">TLS is for comparing one week against another. It is not a score out of
+  anything, it is not fitness, and it is not a recommendation.</div>
+`;
+
+document.getElementById('rail').innerHTML = `
+  <div class="col">
+    <div class="col-hd">
+      <span class="tag">Sheet · opened from a day</span>
+      <h2>What is TLS</h2>
+      <p>The ladder is the graphic: bar length is what a minute in that zone costs. The two zones
+      the tapped day actually used are the ones in darker type.</p>
+    </div>
+    <div class="sheet">${SHEET}</div>
+  </div>`;
+</script>
+</body>
+</html>

@@ -40,6 +40,13 @@ enum AppError: LocalizedError {
             return false
         }
     }
+
+    /// True for connectivity failures. Used to avoid double-messaging when
+    /// the standalone "No internet connection" banner is already visible.
+    var isNetwork: Bool {
+        if case .network = self { return true }
+        return false
+    }
 }
 
 // MARK: - ErrorReporter
@@ -116,10 +123,15 @@ final class ErrorReporter {
 // MARK: - ErrorBanner View
 
 struct ErrorBanner: View {
+    /// When true, connectivity errors are hidden here because the
+    /// dedicated offline banner is already on screen saying the same thing.
+    var suppressNetworkError: Bool = false
+
     @State private var errorReporter = ErrorReporter.shared
 
     var body: some View {
-        if let error = errorReporter.currentError {
+        if let error = errorReporter.currentError,
+           !(suppressNetworkError && error.isNetwork) {
             VStack(spacing: 12) {
                 HStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle.fill")

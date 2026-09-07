@@ -1,4 +1,5 @@
 // Card component for the coach roster dashboard.
+import { Check } from "lucide-react";
 //
 // Three signals live in the body:
 //   1. Mileage trend — 6-week sparkline with the current week highlighted
@@ -40,32 +41,35 @@ export interface RosterAthlete {
   wellnessFlags: WellnessFlag[];
 }
 
+// Three-palette rule: on-track is the safe zone, and safe reads NEUTRAL
+// gray, never green (green is mood-only). Slipping gets the amber warning
+// tone; off-pace is the alert — coral.
 const PACE_LABELS: Record<PaceAdherenceState, { label: string; bg: string; fg: string }> = {
   on_track: {
     label: "On pace",
-    bg: "bg-emerald-100",
-    fg: "text-emerald-700",
+    bg: "bg-bg-calendar",
+    fg: "text-text-secondary",
   },
   slipping: {
     label: "Slipping",
-    bg: "bg-amber-100",
-    fg: "text-amber-700",
+    bg: "bg-warning/12",
+    fg: "text-warning",
   },
   way_off: {
     label: "Off pace",
-    bg: "bg-rose-100",
-    fg: "text-rose-700",
+    bg: "bg-coral/12",
+    fg: "text-coral-dark",
   },
   unknown: {
     label: "No data",
-    bg: "bg-slate-100",
-    fg: "text-slate-600",
+    bg: "bg-bg-calendar",
+    fg: "text-text-tertiary",
   },
 };
 
 // Label-only — emojis dropped per the editorial style applied across
 // the roster + athlete pages. Each flag renders as a small text pill in
-// the amber-50/700 wellness palette (set by the consumer below).
+// the amber warning wash (set by the consumer below).
 const WELLNESS_META: Record<WellnessFlag, { label: string }> = {
   fatigue: { label: "Fatigue" },
   hr_drift: { label: "HR drift" },
@@ -116,7 +120,7 @@ export function AthleteRosterCard({ athlete }: { athlete: RosterAthlete }) {
                 <div
                   key={i}
                   className={`flex-1 rounded-sm ${
-                    isCurrent ? "bg-[var(--color-coral)]" : "bg-[var(--color-coral)]/30"
+                    isCurrent ? "bg-coral" : "bg-bg-calendar"
                   }`}
                   style={{ height: `${heightPct}%` }}
                   title={`${miles.toFixed(1)} mi`}
@@ -131,7 +135,7 @@ export function AthleteRosterCard({ athlete }: { athlete: RosterAthlete }) {
             {prevWeek > 0 && (
               <span
                 className={
-                  weekDelta >= 0 ? "text-emerald-600" : "text-rose-600"
+                  weekDelta >= 0 ? "text-text-secondary" : "text-warning"
                 }
               >
                 {weekDelta >= 0 ? "+" : ""}
@@ -144,20 +148,21 @@ export function AthleteRosterCard({ athlete }: { athlete: RosterAthlete }) {
         {/* Wellness flags */}
         <div className="mt-3 pt-3 border-t border-[var(--color-divider)]">
           {athlete.wellnessFlags.length === 0 ? (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-600">
-              <span>✓</span>
+            <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
+              <Check size={13} strokeWidth={2} aria-hidden />
               <span>No flags</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 flex-wrap">
               {athlete.wellnessFlags.map((flag) => {
                 const meta = WELLNESS_META[flag];
-                // Injury risk gets the rose tone — it's the strongest
-                // "look at this athlete" signal. Everything else is amber.
+                // Injury risk gets coral — the alert color, and the
+                // strongest "look at this athlete" signal. Everything
+                // else is the amber warning tone.
                 const tone =
                   flag === "injury_risk"
-                    ? "bg-rose-50 text-rose-700"
-                    : "bg-amber-50 text-amber-700";
+                    ? "bg-coral/12 text-coral-dark"
+                    : "bg-warning/12 text-warning";
                 return (
                   <span
                     key={flag}

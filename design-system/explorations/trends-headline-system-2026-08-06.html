@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The headline system · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #F5F3F0; --paper-elevated: #FAFAF8; --card: #FFFFFF;
+    --paper-deep: #E8E4DF; --rule: #E8E4E0;
+    --ink: #1A1815; --ink-2: #6B6560; --ink-3: #9B9590;
+    --coral: #D4592A;
+    --mood-energized: #2D8A4E; --mood-positive: #4A9E6B; --mood-neutral: #9B9590;
+    --mood-tired: #C4873A; --mood-struggling: #C45A3A; --mood-injured: #B83A4A;
+    --font-display: "Crimson Pro", Georgia, serif;
+    --font-body: "PT Serif", Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --shadow-card: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #E9E6E1; }
+  body {
+    font-family: var(--font-body); color: var(--ink);
+    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+    padding: 36px 24px 48px;
+    display: flex; flex-direction: column; align-items: center; gap: 30px;
+  }
+
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase;
+  }
+  .caption {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase;
+  }
+  .caption--faint { color: var(--ink-3); }
+  .ed-rule { display: flex; align-items: center; gap: 8px; margin: 18px 0 12px; }
+  .ed-rule::before, .ed-rule::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+  .ed-rule i { width: 3px; height: 3px; border-radius: 999px; background: var(--ink-3); }
+
+  /* ---------- phone ---------- */
+  .frame {
+    width: 393px; background: var(--paper); border-radius: 28px;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.14); overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .screen { padding: 18px 24px 8px; }
+  .plate {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.14em; color: var(--ink-2); text-transform: uppercase;
+    padding-bottom: 14px; border-bottom: 1px solid var(--rule);
+  }
+  .readbar { display: flex; justify-content: space-between; align-items: baseline; margin-top: 18px; }
+  .ranges { display: flex; gap: 13px; }
+  .ranges span {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase;
+    padding-bottom: 2px; border-bottom: 1.5px solid transparent;
+  }
+  .ranges span.is-active { color: var(--coral); border-bottom-color: var(--coral); }
+
+  .read-h {
+    font-family: var(--font-display); font-weight: 700; font-size: 34px;
+    letter-spacing: -0.01em; line-height: 1.05; margin-top: 10px;
+  }
+  .read-h .stop { color: var(--coral); }
+  .read-sub {
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-2); text-transform: uppercase;
+    margin-top: 10px;
+  }
+
+  .trend {
+    display: grid; grid-template-columns: 1fr auto 112px; gap: 12px;
+    align-items: center; padding: 13px 0; border-bottom: 1px solid var(--rule);
+  }
+  .trend:last-child { border-bottom: 0; }
+  .trend__label { display: block; margin-bottom: 4px; }
+  .trend__word {
+    font-family: var(--font-display); font-weight: 700; font-size: 21px;
+    letter-spacing: -0.01em; color: var(--ink); line-height: 1;
+  }
+  .trend__word .arrow {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+    color: var(--ink-3); margin-left: 6px;
+  }
+  .trend__delta {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.08em; color: var(--ink-3); text-transform: uppercase;
+    text-align: right; white-space: nowrap;
+  }
+  .trend__spark { justify-self: end; line-height: 0; }
+
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr) 44px; gap: 3px; margin-top: 8px; }
+  .cal__wd {
+    font-family: var(--font-mono); font-size: 8.5px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-3); text-transform: uppercase;
+    text-align: center; padding-bottom: 3px;
+  }
+  .cal__wd--margin { text-align: right; padding-right: 2px; }
+  .day { position: relative; height: 46px; border-radius: 4px; padding: 4px 5px; }
+  .day--out { background: transparent; }
+  .day--rest { background: var(--paper-deep); }
+  .day--run { background: var(--card); }
+  .day__date { font-family: var(--font-mono); font-size: 8.5px; font-weight: 500; color: var(--ink-3); }
+  .day--niggle .day__date { color: var(--coral); font-weight: 600; }
+  .day__mood { position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 999px; }
+  .day__mi {
+    position: absolute; left: 0; right: 0; bottom: 8px; text-align: center;
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    color: var(--ink); font-variant-numeric: tabular-nums;
+  }
+  .day__key {
+    position: absolute; left: 50%; bottom: 4px; margin-left: -1.5px;
+    width: 3px; height: 3px; border-radius: 999px; background: var(--ink);
+  }
+  .wk {
+    display: flex; flex-direction: column; align-items: flex-end; justify-content: center;
+    height: 46px; border-left: 1px solid var(--rule); padding-left: 8px;
+  }
+  .wk__mi {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1;
+  }
+  .wk__unit {
+    font-family: var(--font-mono); font-size: 7.5px; font-weight: 500;
+    letter-spacing: 0.10em; color: var(--ink-3); text-transform: uppercase; margin-top: 3px;
+  }
+  .footnote {
+    font-family: var(--font-body); font-style: italic; font-size: 11.5px;
+    color: var(--ink-3); text-align: center; margin: 14px 0;
+  }
+  .askbar {
+    background: var(--card); border-radius: 12px; box-shadow: var(--shadow-card);
+    padding: 13px 16px; display: flex; justify-content: space-between;
+    align-items: baseline; margin-bottom: 20px;
+  }
+  .askbar em { font-family: var(--font-body); font-style: italic; font-size: 14px; color: var(--ink-3); }
+  .askbar span { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); }
+  .tabs {
+    border-top: 1px solid var(--rule); background: var(--paper);
+    display: flex; justify-content: space-around; padding: 12px 0 26px;
+  }
+  .tab {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-3); text-transform: uppercase;
+  }
+  .tab i { width: 6px; height: 6px; border-radius: 999px; background: transparent; }
+  .tab.is-active { color: var(--coral); }
+  .tab.is-active i { background: var(--coral); }
+
+  /* ---------- spec sheet ---------- */
+  .sheet {
+    width: 720px; max-width: 100%; background: var(--paper);
+    border-radius: 16px; padding: 30px 34px 34px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+  }
+  .sheet h2 {
+    font-family: var(--font-display); font-weight: 700; font-size: 27px;
+    letter-spacing: -0.01em; margin-top: 8px;
+  }
+  .sheet p {
+    font-family: var(--font-body); font-size: 14px; line-height: 1.6;
+    color: var(--ink); margin-top: 10px;
+  }
+  .sheet p.dim { color: var(--ink-2); font-size: 13px; }
+
+  .swap { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 6px; }
+  .swap__col { padding: 16px 20px; }
+  .swap__col--out { background: var(--paper-deep); border-radius: 8px 0 0 8px; }
+  .swap__col--in  { background: var(--card); border-radius: 0 8px 8px 0; }
+  .swap__h {
+    font-family: var(--font-display); font-weight: 700; font-size: 21px;
+    line-height: 1.15; margin-top: 8px; letter-spacing: -0.01em;
+  }
+  .swap__col--out .swap__h { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+  .swap__why {
+    font-family: var(--font-body); font-style: italic; font-size: 12.5px;
+    color: var(--ink-2); line-height: 1.5; margin-top: 8px;
+  }
+
+  .states { margin-top: 4px; }
+  .state {
+    display: grid; grid-template-columns: 150px 1fr 118px;
+    gap: 16px; align-items: baseline;
+    padding: 13px 0; border-bottom: 1px solid var(--rule);
+  }
+  .state:last-child { border-bottom: 0; }
+  .state__when {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 500;
+    letter-spacing: 0.08em; color: var(--ink-2); text-transform: uppercase; line-height: 1.5;
+  }
+  .state__out {
+    font-family: var(--font-display); font-weight: 700; font-size: 20px;
+    letter-spacing: -0.01em; color: var(--ink);
+  }
+  .state__out .stop { color: var(--coral); }
+  .state__tmpl {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 500;
+    letter-spacing: 0.04em; color: var(--ink-3); text-align: right; line-height: 1.6;
+  }
+
+  .rules { margin-top: 4px; }
+  .rule-row {
+    display: grid; grid-template-columns: 88px 1fr; gap: 14px;
+    padding: 10px 0; border-bottom: 1px solid var(--rule); align-items: baseline;
+  }
+  .rule-row:last-child { border-bottom: 0; }
+  .rule-row b {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 600;
+    letter-spacing: 0.10em; text-transform: uppercase; color: var(--coral);
+  }
+  .rule-row b.no { color: var(--ink-3); }
+  .rule-row span { font-family: var(--font-body); font-size: 13.5px; line-height: 1.55; }
+  .rule-row em { font-style: italic; color: var(--ink-2); }
+</style>
+</head>
+<body>
+
+<!-- ============ THE SCREEN ============ -->
+<div class="frame">
+  <div class="screen">
+    <div class="plate">
+      <span>Running log — Trends</span>
+      <span>Fig. 06 · Aug 6</span>
+    </div>
+
+    <div class="readbar">
+      <span class="eyebrow">The read · Jul 8 – Aug 6</span>
+      <div class="ranges">
+        <span class="is-active">30d</span><span>3mo</span><span>6mo</span><span>1yr</span>
+      </div>
+    </div>
+
+    <h1 class="read-h">Recovery, up 11<span class="stop">.</span></h1>
+    <div class="read-sub">259 mi · 5 key · load 0.94 · calf quiet since Jul 16</div>
+
+    <div class="ed-rule"><i></i></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <span class="eyebrow">The trend</span>
+      <span class="caption caption--faint">Back half vs front half</span>
+    </div>
+
+    <div id="board">
+      <div class="trend">
+        <div><span class="eyebrow trend__label">Recovery</span>
+        <span class="trend__word">Rising<span class="arrow">↗</span></span></div>
+        <span class="trend__delta">45 · +11</span>
+        <div class="trend__spark" data-spark="recovery"></div>
+      </div>
+      <div class="trend">
+        <div><span class="eyebrow trend__label">Mood</span>
+        <span class="trend__word">Lifting<span class="arrow">↗</span></span></div>
+        <span class="trend__delta">11/30 logged</span>
+        <div class="trend__spark" data-spark="mood"></div>
+      </div>
+      <div class="trend">
+        <div><span class="eyebrow trend__label">Load</span>
+        <span class="trend__word">Easing<span class="arrow">→</span></span></div>
+        <span class="trend__delta">0.94 ACWR</span>
+        <div class="trend__spark" data-spark="load"></div>
+      </div>
+      <div class="trend">
+        <div><span class="eyebrow trend__label">Volume</span>
+        <span class="trend__word">Holding<span class="arrow">→</span></span></div>
+        <span class="trend__delta">259 mi · −1%</span>
+        <div class="trend__spark" data-spark="volume"></div>
+      </div>
+      <div class="trend">
+        <div><span class="eyebrow trend__label">Niggles</span>
+        <span class="trend__word">Quiet<span class="arrow">→</span></span></div>
+        <span class="trend__delta">2 · last Jul 16</span>
+        <div class="trend__spark" data-spark="niggles"></div>
+      </div>
+    </div>
+
+    <div class="ed-rule"><i></i></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span class="eyebrow">The month</span>
+      <span class="caption caption--faint">259 mi · 5 key · 2 niggles</span>
+    </div>
+
+    <div class="cal" id="cal"></div>
+
+    <p class="footnote">— mood tints the day · key sessions underscored · niggle dates in coral —</p>
+
+    <div class="askbar"><em>Ask about this block…</em><span>↗</span></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab"><i></i>Log</div>
+    <div class="tab is-active"><i></i>Trends</div>
+    <div class="tab"><i></i>Train</div>
+  </div>
+</div>
+
+<!-- ============ THE SPEC ============ -->
+<div class="sheet">
+  <span class="eyebrow">The headline system</span>
+  <h2>Say what moved, not how they're doing.</h2>
+  <p class="dim">The old headline was a verdict about the athlete. The new one is an observation about a number — so it can be generated by template, verified against the facts, and never flatters.</p>
+
+  <div class="ed-rule"><i></i></div>
+
+  <div class="swap">
+    <div class="swap__col swap__col--out">
+      <span class="caption caption--faint">Was · narrated</span>
+      <div class="swap__h">You’re coming back up.</div>
+      <p class="swap__why">Verdict on the person. No number, so nothing to check it against. Reads as reassurance — and if the calf flares tomorrow, it reads as a promise the app broke.</p>
+    </div>
+    <div class="swap__col swap__col--in">
+      <span class="caption">Is · templated</span>
+      <div class="swap__h">Recovery, up 11.</div>
+      <p class="swap__why">Names the signal that moved most and its number. Same information, no claim about Maya. Matches the house pattern — <em>“Pace, narrated.” “Active aches.”</em></p>
+    </div>
+  </div>
+
+  <div class="ed-rule"><i></i></div>
+
+  <span class="eyebrow">One template, every state</span>
+  <div class="states">
+    <div class="state">
+      <span class="state__when">Niggle active<br>in last 7 days</span>
+      <span class="state__out">Left calf, 3 mentions<span class="stop">.</span></span>
+      <span class="state__tmpl">{area}, {n} mentions.<br>ALERT WINS FIRST</span>
+    </div>
+    <div class="state">
+      <span class="state__when">One signal<br>moved most</span>
+      <span class="state__out">Recovery, up 11<span class="stop">.</span></span>
+      <span class="state__tmpl">{signal}, {dir} {n}.</span>
+    </div>
+    <div class="state">
+      <span class="state__when">Three or more<br>moved together</span>
+      <span class="state__out">Four signals up<span class="stop">.</span></span>
+      <span class="state__tmpl">{n} signals {dir}.</span>
+    </div>
+    <div class="state">
+      <span class="state__when">Nothing crossed<br>threshold</span>
+      <span class="state__out">A flat 30 days<span class="stop">.</span></span>
+      <span class="state__tmpl">A flat {n} days.</span>
+    </div>
+    <div class="state">
+      <span class="state__when">Under 5 runs<br>in window</span>
+      <span class="state__out">Not enough logged yet<span class="stop">.</span></span>
+      <span class="state__tmpl">EMPTY-STATE PATTERN<br>NO VERDICT ON THIN DATA</span>
+    </div>
+  </div>
+
+  <div class="ed-rule"><i></i></div>
+
+  <span class="eyebrow">The line the copy can’t cross</span>
+  <div class="rules">
+    <div class="rule-row"><b>Keep</b><span>A signal name, a direction, a numeral, a period. <em>“Load, back in band.”</em></span></div>
+    <div class="rule-row"><b>Keep</b><span>The alert case first. A live niggle outranks any good news above it.</span></div>
+    <div class="rule-row"><b class="no">Cut</b><span>Second person. <em>“You’re…”, “your body…”, “you’ve been…”</em> — the headline describes data, not Maya.</span></div>
+    <div class="rule-row"><b class="no">Cut</b><span>Trajectory promises. <em>“coming back”, “on the up”, “turning a corner”, “bouncing back”</em> — all forecast the future from 30 days of past.</span></div>
+    <div class="rule-row"><b class="no">Cut</b><span>Praise and consolation alike. <em>“strong month”, “rough patch”, “great work”</em> — observation over congratulation.</span></div>
+    <div class="rule-row"><b class="no">Cut</b><span>Any numeral not present in the fact lines. The template can only fill from computed values.</span></div>
+  </div>
+
+  <div class="ed-rule"><i></i></div>
+  <p class="dim">Net effect: the headline leaves the LLM entirely. What remains narrated is the one optional line beneath it — and the screen still reads correctly with that line switched off.</p>
+</div>
+
+<script>
+(function () {
+  var INK = "#1A1815", INK3 = "#9B9590", RULE = "#E8E4E0", DEEP = "#E8E4DF", CORAL = "#D4592A";
+  var MOODS = { energized:"#2D8A4E", positive:"#4A9E6B", neutral:"#9B9590",
+                tired:"#C4873A", struggling:"#C45A3A", injured:"#B83A4A" };
+  var MOOD_WASH = { energized:"rgba(45,138,78,0.20)", positive:"rgba(74,158,107,0.20)",
+                    neutral:"rgba(155,149,144,0.20)", tired:"rgba(196,135,58,0.22)",
+                    struggling:"rgba(196,90,58,0.22)", injured:"rgba(184,58,74,0.22)" };
+
+  var miles = [9,0,7,11,0,8,21, 8,0,7,10,6,9,22, 0,8,7,11,5,9,23, 8,0,9,12,6,0,24, 8,11];
+  var keyDays = [3,10,13,24,29];
+  var recovery = [34,33,35,36,38,40,39,38,37,39,41,40,42,41,40,42,44,43,41,44,47,45,43,42,44,46,44,43,44,45];
+  var acwr = [1.12,1.10,1.08,1.05,1.06,1.04,1.01,1.00,0.98,0.99,0.97,0.95,0.96,0.94,0.92,0.93,0.91,0.92,0.90,0.91,0.92,0.93,0.92,0.91,0.92,0.93,0.94,0.93,0.94,0.94];
+  var moodByDay = {0:"struggling",1:"struggling",2:"struggling",7:"energized",10:"struggling",13:"tired",14:"energized",19:"struggling",22:"energized",26:"tired",28:"energized"};
+  var niggleDays = [7,8];
+
+  function svgS(w,h,inner){return '<svg width="'+w+'" height="'+h+'" viewBox="0 0 '+w+" "+h+'" xmlns="http://www.w3.org/2000/svg" style="display:block">'+inner+"</svg>";}
+  function linePath(d,w,h,pad,min,max){var p=[];for(var i=0;i<d.length;i++){var x=pad+(i/(d.length-1))*(w-pad*2);var y=h-pad-((d[i]-min)/(max-min))*(h-pad*2);p.push((i?"L":"M")+x.toFixed(1)+" "+y.toFixed(1));}return p.join(" ");}
+
+  var sparks = {
+    recovery: function(){var w=112,h=28;var s='<path d="'+linePath(recovery,w,h,2,30,62)+'" fill="none" stroke="'+INK+'" stroke-width="1.4"/>';var y=h-2-((recovery[29]-30)/32)*(h-4);return svgS(w,h,s+'<circle cx="'+(w-2)+'" cy="'+y.toFixed(1)+'" r="2.4" fill="'+INK+'"/>');},
+    mood: function(){var w=112,h=28,cw=2.6,gap=(w-30*cw)/29,s="";for(var i=0;i<30;i++){var m=moodByDay[i];s+='<rect x="'+(i*(cw+gap)).toFixed(1)+'" y="9" width="'+cw+'" height="10" rx="1" fill="'+(m?MOODS[m]:DEEP)+'"/>';}return svgS(w,h,s);},
+    load: function(){var w=112,h=28;var t=h-2-((1.3-0.7)/0.7)*(h-4),b=h-2-((0.8-0.7)/0.7)*(h-4);var s='<rect x="0" y="'+t.toFixed(1)+'" width="'+w+'" height="'+(b-t).toFixed(1)+'" fill="'+DEEP+'" opacity="0.7"/>';return svgS(w,h,s+'<path d="'+linePath(acwr,w,h,2,0.7,1.4)+'" fill="none" stroke="'+INK+'" stroke-width="1.4"/>');},
+    volume: function(){var w=112,h=28,bw=2.4,gap=(w-30*bw)/29,mx=Math.max.apply(null,miles),s="";for(var i=0;i<30;i++){if(!miles[i])continue;var bh=Math.max(2,(miles[i]/mx)*(h-2));s+='<rect x="'+(i*(bw+gap)).toFixed(1)+'" y="'+(h-bh).toFixed(1)+'" width="'+bw+'" height="'+bh.toFixed(1)+'" rx="0.5" fill="'+(keyDays.indexOf(i)>=0?INK:INK3)+'" opacity="'+(keyDays.indexOf(i)>=0?1:0.55)+'"/>';}return svgS(w,h,s);},
+    niggles: function(){var w=112,h=28,s='<line x1="0" y1="14" x2="'+w+'" y2="14" stroke="'+RULE+'" stroke-width="1"/>';for(var i=0;i<niggleDays.length;i++){var x=2+(niggleDays[i]/29)*(w-4);s+='<line x1="'+x.toFixed(1)+'" y1="7" x2="'+x.toFixed(1)+'" y2="21" stroke="'+CORAL+'" stroke-width="2"/>';}return svgS(w,h,s);}
+  };
+  document.querySelectorAll("[data-spark]").forEach(function(el){ el.innerHTML = sparks[el.getAttribute("data-spark")](); });
+
+  var LEAD=2, DAYS=30, TRAIL=3;
+  function dateFor(d){var day=8+d;return day<=31?day:day-31;}
+  var html="", WD=["M","T","W","T","F","S","S"];
+  for(var w=0;w<7;w++) html+='<div class="cal__wd">'+WD[w]+"</div>";
+  html+='<div class="cal__wd cal__wd--margin">WK</div>';
+  var weekMiles=0, cell=0;
+  for(var slot=0; slot<LEAD+DAYS+TRAIL; slot++){
+    var d=slot-LEAD;
+    if(d<0||d>=DAYS){ html+='<div class="day day--out"></div>'; }
+    else {
+      var mi=miles[d], mood=moodByDay[d];
+      var cls="day "+(mi?"day--run":"day--rest")+(niggleDays.indexOf(d)>=0?" day--niggle":"");
+      var bg = mood ? ' style="background:'+MOOD_WASH[mood]+'"' : "";
+      html+='<div class="'+cls+'"'+bg+'><span class="day__date">'+dateFor(d)+"</span>";
+      if(mood) html+='<span class="day__mood" style="background:'+MOODS[mood]+'"></span>';
+      if(mi) html+='<span class="day__mi">'+mi+"</span>";
+      if(keyDays.indexOf(d)>=0) html+='<span class="day__key"></span>';
+      html+="</div>";
+      weekMiles+=mi;
+    }
+    cell++;
+    if(cell%7===0){ html+='<div class="wk"><span class="wk__mi">'+weekMiles+'</span><span class="wk__unit">mi</span></div>'; weekMiles=0; }
+  }
+  document.getElementById("cal").innerHTML = html;
+})();
+</script>
+</body>
+</html>

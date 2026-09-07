@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Log redesign — two directions · Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF;
+    --paper-deep:#E8E4DF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+    --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+    --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+    --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+    --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;-webkit-font-smoothing:antialiased}
+  body{margin:0;background:#23211E;color:var(--ink);font-family:var(--fb);padding:40px 24px 64px}
+  .deck{max-width:980px;margin:0 auto}
+  .deck > h1{font-family:var(--fd);font-weight:600;color:#F5F3F0;font-size:26px;letter-spacing:-.01em;margin:0 0 6px}
+  .deck > p.sub{font-family:var(--fm);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#9B9590;margin:0 0 36px}
+  .row{display:flex;gap:40px;flex-wrap:wrap;justify-content:center}
+  .col{flex:1 1 360px;max-width:392px}
+  .col h2{font-family:var(--fd);font-weight:600;color:#F5F3F0;font-size:18px;margin:0 0 4px}
+  .col p.note{font-family:var(--fb);font-style:italic;color:#B7B2AC;font-size:13.5px;line-height:1.5;margin:0 0 18px}
+
+  /* phone frame */
+  .phone{background:var(--paper);border-radius:34px;padding:0;overflow:hidden;
+    box-shadow:0 18px 50px rgba(0,0,0,.45);border:1px solid #000;position:relative}
+  .notch{height:30px;display:flex;align-items:center;justify-content:center}
+  .notch::after{content:"";width:96px;height:5px;border-radius:999px;background:var(--ink-3);opacity:.5}
+  .screen{padding:0 0 0 0}
+
+  /* primitives */
+  .eyebrow{font-family:var(--fm);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+  .eyebrow.coral{color:var(--coral)}
+  .meta{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-3)}
+  .disp{font-family:var(--fd);font-weight:700;color:var(--ink);letter-spacing:-.01em;line-height:1.04}
+  .quote{font-family:var(--fb);font-style:italic;line-height:1.55;color:var(--ink)}
+  .hair{height:1px;background:var(--rule)}
+  .pad{padding-left:24px;padding-right:24px}
+
+  /* plate strip */
+  .plate{display:flex;justify-content:space-between;align-items:center;padding:10px 24px;border-bottom:1px solid var(--rule)}
+  .plate .l{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2)}
+  .plate .r{font-family:var(--fm);font-size:10px;letter-spacing:.16em;color:var(--ink-3)}
+
+  /* mode toggle */
+  .mode{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--rule)}
+  .mode button{padding:14px 0 0;text-align:center;background:transparent;border:0;cursor:pointer;
+    font-family:var(--fm);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+  .mode button.on{color:var(--coral)}
+  .rail{height:2px;background:transparent;margin-top:10px}
+  .mode button.on .rail{background:var(--coral)}
+
+  /* record */
+  .recwrap{display:flex;flex-direction:column;align-items:center;gap:16px;padding:34px 24px 30px}
+  .rec{position:relative;width:120px;height:120px;display:grid;place-items:center}
+  .rec .ring{position:absolute;inset:0;border-radius:999px;border:1.5px solid rgba(212,89,42,.22);animation:pulse 1800ms ease-in-out infinite}
+  .rec .disc{width:88px;height:88px;border-radius:999px;background:var(--coral);box-shadow:0 4px 12px rgba(212,89,42,.30);display:grid;place-items:center}
+  .rec .dot{width:30px;height:30px;border-radius:999px;background:#fff}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(1.12);opacity:.12}}
+
+  /* journal row (A) */
+  .jrow{display:grid;grid-template-columns:2px 1fr;gap:14px;padding:22px 24px;border-bottom:1px solid var(--rule)}
+  .jrow .moodrail{border-radius:1px;margin:3px 0}
+  .jrow .top{display:flex;align-items:baseline;gap:12px}
+  .jrow .day{font-family:var(--fd);font-weight:700;font-size:21px;color:var(--ink);flex:1;letter-spacing:-.01em}
+  .ind{display:inline-flex;align-items:center;gap:5px;font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.08em}
+  .jrow .qt{font-family:var(--fb);font-style:italic;font-size:14.5px;line-height:1.55;color:var(--ink);margin-top:12px}
+  .jrow .mood{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.10em;text-transform:uppercase;margin-top:12px}
+
+  /* section header */
+  .shead{display:flex;justify-content:space-between;align-items:baseline;padding:18px 24px 14px;border-bottom:1px solid var(--rule)}
+
+  /* timeline (B) */
+  .weekhead{display:flex;align-items:center;gap:10px;padding:22px 24px 14px}
+  .weekhead .ln{flex:1;height:1px;background:var(--rule)}
+  .weekhead .lbl{font-family:var(--fm);font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+  .weekhead .vol{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.06em;color:var(--coral)}
+  .trow{display:grid;grid-template-columns:46px 1fr;gap:14px;padding:14px 24px 16px;position:relative}
+  .trow .date{text-align:right}
+  .trow .date .d{font-family:var(--fd);font-weight:700;font-size:22px;color:var(--ink);line-height:1}
+  .trow .date .m{font-family:var(--fm);font-size:9px;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-3);margin-top:3px}
+  .trow .head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .trow .type{font-family:var(--fd);font-weight:700;font-size:16px;color:var(--ink)}
+  .trow .mi{font-family:var(--fm);font-size:13px;font-weight:600;color:var(--coral)}
+  .trow .pace{font-family:var(--fm);font-size:11px;color:var(--ink-2)}
+  .trow .qt{font-family:var(--fb);font-style:italic;font-size:13.5px;line-height:1.5;color:var(--ink);margin-top:6px}
+  .trow .foot{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .mdot{width:7px;height:7px;border-radius:999px;display:inline-block}
+  .mlabel{font-family:var(--fm);font-size:9px;font-weight:500;letter-spacing:.10em;text-transform:uppercase}
+  .tdiv{height:1px;background:var(--rule);margin:0 24px}
+
+  /* tab bar */
+  .tabs{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--rule);padding:10px 0 16px;background:var(--paper-elevated)}
+  .tab{text-align:center;font-family:var(--fm);font-size:9px;font-weight:500;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-3)}
+  .tab.on{color:var(--coral)}
+  .tab .ic{display:block;font-size:15px;margin-bottom:4px;color:inherit}
+  .chip{font-family:var(--fm);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--coral);background:var(--coral-wash);padding:6px 10px;border-radius:999px;display:inline-flex;align-items:center;gap:5px}
+  .legend{max-width:980px;margin:40px auto 0;border-top:1px solid #3a3733;padding-top:22px}
+  .legend h3{font-family:var(--fd);font-weight:600;color:#F5F3F0;font-size:15px;margin:0 0 8px}
+  .legend p{font-family:var(--fb);color:#B7B2AC;font-size:13px;line-height:1.6;margin:0 0 6px}
+  .legend b{color:#E9E4DE;font-weight:700}
+</style>
+</head>
+<body>
+<div class="deck">
+  <h1>Log — two directions</h1>
+  <p class="sub">Post Run Drip · the runner's words lead · stats become caption</p>
+
+  <div class="row">
+
+    <!-- ============ MOCKUP A ============ -->
+    <div class="col">
+      <h2>A · Voice-first front door</h2>
+      <p class="note">Record button stays on the surface. Below it, the journal — each entry led by what you actually said, mood as a colored rail, the run data as a quiet caption.</p>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="screen">
+          <div class="plate"><span class="l">Log · voice journal</span><span class="r">Fig. 09</span></div>
+
+          <div class="mode">
+            <button class="on">Log run<div class="rail"></div></button>
+            <button>Check in<div class="rail"></div></button>
+          </div>
+
+          <div style="padding:26px 24px 6px;text-align:center">
+            <div class="disp" style="font-size:34px">Log your run.</div>
+            <div class="quote" style="font-size:14px;color:var(--ink-2);margin-top:12px">Tap the button to start your voice memo.</div>
+          </div>
+
+          <div class="recwrap">
+            <div class="rec"><div class="ring"></div><div class="disc"><div class="dot"></div></div></div>
+            <div class="eyebrow">Tap to record</div>
+          </div>
+
+          <div class="shead"><span class="eyebrow">Journal · 4 entries</span><span class="meta">↻</span></div>
+
+          <div class="jrow">
+            <div class="moodrail" style="background:var(--mood-positive)"></div>
+            <div>
+              <div class="top"><div class="day">Tuesday</div><span class="ind" style="color:var(--coral)">▶ Voice · 2:34</span></div>
+              <div class="meta" style="margin-top:5px">May 5 · Tempo · 7.0 mi · 6:18/mi</div>
+              <div class="qt">“Hit splits within two seconds either way. Felt smooth through five, then the wind picked up on the back stretch. Calf was quiet today, which I noticed.”</div>
+              <div class="mood" style="color:var(--mood-positive)">Positive</div>
+            </div>
+          </div>
+
+          <div class="jrow">
+            <div class="moodrail" style="background:var(--mood-tired)"></div>
+            <div>
+              <div class="top"><div class="day">Sunday</div><span class="ind" style="color:var(--coral)">▶ Voice · 3:18</span></div>
+              <div class="meta" style="margin-top:5px">May 3 · Long run · 18.0 mi · 7:46/mi</div>
+              <div class="qt">“Long one. Coffee then out the door at 6:30. Heavy first three miles, then it loosened up — last four were the strongest.”</div>
+              <div class="mood" style="color:var(--mood-tired)">Tired</div>
+            </div>
+          </div>
+
+          <div class="jrow">
+            <div class="moodrail" style="background:var(--mood-neutral)"></div>
+            <div>
+              <div class="top"><div class="day">Friday</div><span class="ind" style="color:var(--ink-3)">Text only</span></div>
+              <div class="meta" style="margin-top:5px">May 2 · Recovery · 4.0 mi · 8:30/mi</div>
+              <div class="qt">“Easy shakeout. Knee felt a touch warm in the first mile, settled by the second. Keeping it short today.”</div>
+              <div class="mood" style="color:var(--mood-neutral)">Neutral</div>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <div class="tab on"><span class="ic">▮</span>Log</div>
+            <div class="tab"><span class="ic">◳</span>Trends</div>
+            <div class="tab"><span class="ic">▤</span>Train</div>
+            <div class="tab"><span class="ic">◈</span>Coach</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ MOCKUP B ============ -->
+    <div class="col">
+      <h2>B · The logbook</h2>
+      <p class="note">No hero — pure scrollable record, grouped by week with mileage totals. A timeline you flip through. Recording moves to the coral chip up top. Denser, more "training diary."</p>
+      <div class="phone">
+        <div class="notch"></div>
+        <div class="screen">
+          <div class="plate"><span class="l">Log · training journal</span><span class="r">Fig. 09b</span></div>
+
+          <div class="pad" style="padding-top:18px;padding-bottom:16px;border-bottom:1px solid var(--rule)">
+            <div class="eyebrow" style="font-size:10px">Log</div>
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-top:6px">
+              <div class="disp" style="font-size:30px">All runs</div>
+              <div class="chip">● Record</div>
+            </div>
+            <div class="meta" style="margin-top:8px">38 runs · last 180 days</div>
+          </div>
+
+          <div class="weekhead"><span class="lbl">Week of May 5</span><span class="ln"></span><span class="vol">41.6 mi</span></div>
+
+          <div class="trow">
+            <div class="date"><div class="d">5</div><div class="m">Tue</div></div>
+            <div>
+              <div class="head"><span class="type">Tempo</span><span class="mi">7.0 mi</span><span class="pace">6:18/mi · 44:08</span></div>
+              <div class="qt">“Hit splits within two seconds either way. Calf was quiet today, which I noticed.”</div>
+              <div class="foot"><span class="mdot" style="background:var(--mood-positive)"></span><span class="mlabel" style="color:var(--mood-positive)">Positive</span><span class="mlabel" style="color:var(--ink-3)">· ▶ Voice</span></div>
+            </div>
+          </div>
+          <div class="tdiv"></div>
+
+          <div class="trow">
+            <div class="date"><div class="d">3</div><div class="m">Sun</div></div>
+            <div>
+              <div class="head"><span class="type">Long run</span><span class="mi">18.0 mi</span><span class="pace">7:46/mi · 2:19:48</span></div>
+              <div class="qt">“Heavy first three miles, then it loosened up — last four were the strongest of the block.”</div>
+              <div class="foot"><span class="mdot" style="background:var(--mood-tired)"></span><span class="mlabel" style="color:var(--mood-tired)">Tired</span><span class="mlabel" style="color:var(--ink-3)">· ▶ Voice</span></div>
+            </div>
+          </div>
+          <div class="tdiv"></div>
+
+          <div class="trow">
+            <div class="date"><div class="d">2</div><div class="m">Fri</div></div>
+            <div>
+              <div class="head"><span class="type">Recovery</span><span class="mi">4.0 mi</span><span class="pace">8:30/mi · 34:00</span></div>
+              <div class="qt">“Easy shakeout. Knee felt a touch warm first mile, settled by the second.”</div>
+              <div class="foot"><span class="mdot" style="background:var(--mood-neutral)"></span><span class="mlabel" style="color:var(--mood-neutral)">Neutral</span><span class="mlabel" style="color:var(--ink-3)">· Text</span></div>
+            </div>
+          </div>
+
+          <div class="weekhead"><span class="lbl">Week of Apr 28</span><span class="ln"></span><span class="vol">36.2 mi</span></div>
+
+          <div class="trow">
+            <div class="date"><div class="d">30</div><div class="m">Wed</div></div>
+            <div>
+              <div class="head"><span class="type">Intervals</span><span class="mi">8.6 mi</span><span class="pace">5K · 6×800</span></div>
+              <div class="qt">“The third rep was the keeper — felt the rhythm finally click. Quads tired tonight.”</div>
+              <div class="foot"><span class="mdot" style="background:var(--mood-positive)"></span><span class="mlabel" style="color:var(--mood-positive)">Positive</span><span class="mlabel" style="color:var(--ink-3)">· ▶ Voice</span></div>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <div class="tab on"><span class="ic">▮</span>Log</div>
+            <div class="tab"><span class="ic">◳</span>Trends</div>
+            <div class="tab"><span class="ic">▤</span>Train</div>
+            <div class="tab"><span class="ic">◈</span>Coach</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="legend">
+    <h3>What both fix</h3>
+    <p><b>Your words lead.</b> Each row renders <b>cleanedNotes ?? notes</b> — the runner's own voice — instead of the AI's coach_insight. That one swap is what turns a stats feed into a journal.</p>
+    <p><b>Stats become caption.</b> Distance, pace and type drop to a quiet mono line under the words, not the headline.</p>
+    <p><b>No AI annotation inline.</b> Honors your own IA rule — Log is pure record; insight lives on Coach &amp; Trends.</p>
+    <p><b>A vs B.</b> A keeps the voice record button on the surface (habit loop, voice-first). B is a denser week-grouped logbook with recording moved to a chip — closer to a classic training diary.</p>
+  </div>
+</div>
+</body>
+</html>

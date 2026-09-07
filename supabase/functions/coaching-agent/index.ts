@@ -21,7 +21,8 @@ import { validateLength, validateUUID, validationErrorResponse, internalErrorRes
 
 // Import shared modules
 import { getCachedResponse, cacheResponse, isCacheEnabled } from "../_shared/cache.ts";
-import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
+import { checkFeatureRateLimit, enforceMonthlyCap, shouldEnforceRateLimits } from "../_shared/rateLimit.ts";
+import { llmBudgetAllows, llmBudgetBlockedResponse } from "../_shared/llm-budget.ts";
 import {
   classifyQuery,
   getBestAvailableModel,
@@ -72,17 +73,19 @@ import {
   type FitnessSnapshot,
   type FormCheckResult,
 } from "../_shared/dataAnalysis.ts";
+import type { ZoneTable } from "../_shared/quality-volume.ts";
 import {
   type TrainingLogRow,
   type ScheduledWorkoutRow,
   type InjuryRow,
 } from "../_shared/weeklyAnalytics.ts";
 
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { buildAthleteProfileContext, type AthleteProfile } from "../_shared/athleteProfile.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { captureException, flushSentry } from "../_shared/sentry.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
 
 // System prompts live in `_shared/prompts/coaching-agent-{simple,moderate,
@@ -377,6 +380,45 @@ function buildPlanAwarenessContext(
 }
 
 /**
+ * Wrap a plain-text coaching answer in the `CoachRead` JSON shape the iOS
+ * client decodes (see RunningLog/Models/CoachRead.swift). Used for the
+ * `format: "editorial"` ask surfaces. Derives an editorial headline from
+ * the first sentence when it's short enough, and puts the rest in the
+ * paragraph. All fields the Swift model marks non-optional are populated:
+ * id, read_date, headline, paragraph, sources, confidence, generated_at.
+ */
+function toEditorialRead(text: string): Record<string, unknown> {
+  const clean = (text || "").trim();
+
+  // Split the first sentence off as a headline when it's a reasonable
+  // length; otherwise use a neutral editorial headline and keep the full
+  // text as the body.
+  let headline = "Here's what I see";
+  let body = clean;
+  const firstBreak = clean.search(/(?<=[.!?])\s/);
+  if (firstBreak > 0 && firstBreak <= 90) {
+    headline = clean.slice(0, firstBreak).replace(/[.!?]+$/, "").trim();
+    body = clean.slice(firstBreak).trim();
+  }
+  if (!body) body = clean || "I don't have enough to say yet — log a few runs and ask again.";
+
+  const now = new Date();
+  return {
+    id: crypto.randomUUID(),
+    read_date: now.toISOString().split("T")[0],
+    headline,
+    // Single plain-text segment. The Segment decoder treats a raw string
+    // as `.text`; citation chips are a future enhancement for this path.
+    paragraph: [body],
+    sources: { workouts: [], docs: [], memos: [] },
+    // Honest, non-committal confidence — this is an ad-hoc answer, not a
+    // range-backed prediction. (Predictions carry their own confidence.)
+    confidence: { level: "MEDIUM", sub: "Based on your recent training" },
+    generated_at: now.toISOString(),
+  };
+}
+
+/**
  * Parse a pace string like "7:30" or "7:30/mi" into total seconds.
  */
 function parsePaceToSeconds(pace: string): number {
@@ -411,6 +453,21 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 }
 
 const MODEL_TIMEOUT_MS = 20_000; // 20 seconds per model call
+
+// UNBOUND_USAGE (beta, 2026-08-10) — mirrors the constant of the same name in
+// `ask/index.ts`; flip both together or neither.
+//
+// This function stopped being a fallthrough on 2026-08-10. Under the Ask
+// surface's `UNBOUND_ANSWERS`, every typed question now reaches it, not just
+// the ones the analyzer registry declined. The `coaching` bucket is the
+// tightest in the app — 5/day on free tier, 50/month — because it was sized
+// for a surface an athlete touched occasionally. At one call per typed
+// question it becomes a five-question-a-day ceiling on chat, which is the
+// thing "unbound" was meant to remove.
+//
+// Unbinding the meter is NOT unbinding the guardrails: the no-medical-claims
+// and no-diagnosis rails live in this function's prompts and are untouched.
+const UNBOUND_USAGE = true;
 
 /**
  * Call Groq API (OpenAI-compatible) with timeout protection
@@ -520,26 +577,29 @@ Deno.serve(async (req: Request) => {
   try {
     // Clone request so we can read body after auth check
     const body = await req.json();
-    const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId } = body;
+    const { message, conversationId, workoutSummary, trainingPlanContext, fitnessPredictions, proactive, checkInContext, smartInsights, userId: payloadUserId, format } = body;
 
-    // Verify authenticated user from JWT.
-    // verify_jwt = true in config.toml ensures only valid Supabase JWTs
-    // (user, anon, or service_role) reach this function. If the JWT contains
-    // a user claim, use it. Otherwise fall back to payloadUserId from the body
-    // (used by iOS app which sends anon key + userId in body).
-    let userId = await getAuthenticatedUser(req);
+    // Editorial format: the iOS "ask about my training" surfaces (The Read
+    // ask bar + the Trends ask bar handoff) POST `format: "editorial"` and
+    // expect a `CoachRead`-shaped reply ({ read: {...} }) instead of the
+    // plain-text chat shape. We reuse the SAME model call + prompts and only
+    // reshape the already-generated answer into the Read envelope — so this
+    // is NOT an LLM prompt change and doesn't require eval-cassette coverage
+    // (hard rule #3). To guarantee the read shape is always what comes back,
+    // editorial requests bypass the semantic-cache and clarifying-question
+    // early returns below (both emit the plain `{ response }` shape).
+    const isEditorial = format === "editorial";
 
-    if (!userId && payloadUserId) {
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(payloadUserId)) {
-        userId = payloadUserId;
-        console.log(`Using userId from payload: ${payloadUserId}`);
-      }
-    }
-
-    if (!userId) {
-      return unauthorizedResponse(corsHeaders);
-    }
+    // Verify authenticated caller. Two legitimate caller shapes:
+    //  - End user (iOS / web): presents their own session JWT. The body
+    //    user_id, if present, must match the JWT subject.
+    //  - Service-role (cron / chained edge fn): presents the service key
+    //    and names the subject user in the body.
+    // The previous anon-key + body-userId fallback was an impersonation
+    // hole: anyone with the public anon key could act as any user. Removed.
+    const auth = await requireAuthOrServiceRole(req, payloadUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const userId = auth.userId;
 
     if (!message) {
       return new Response(
@@ -569,7 +629,10 @@ Deno.serve(async (req: Request) => {
     let rateLimit = { allowed: true, remaining: 999, resetAt: new Date(), current: 0, limit: 999 };
     let userTier = "free";
 
-    if (userId && isRateLimitEnabled() && !proactive) {
+    // H1 fix (2026-07-15): shouldEnforceRateLimits replaces isRateLimitEnabled
+    // — in production a missing Upstash env no longer bypasses the gate
+    // (checkFeatureRateLimit fails closed); local dev without Redis still skips.
+    if (userId && shouldEnforceRateLimits() && !proactive && !UNBOUND_USAGE) {
       const { data: tierData } = await supabase
         .from("user_tiers")
         .select("tier")
@@ -593,6 +656,22 @@ Deno.serve(async (req: Request) => {
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      // Hard monthly cost ceiling on the highest-cost conversational surface.
+      const monthlyCapped = await enforceMonthlyCap(userId, "coaching", corsHeaders);
+      if (monthlyCapped) return monthlyCapped;
+    }
+
+    // ── Global spend brake ──────────────────────────────────────────────
+    // Outside the block above on purpose. That block is the per-user quota
+    // and is disabled by UNBOUND_USAGE and skipped for `proactive`; this is
+    // the day's total-spend ceiling and must hold in both cases — a cron
+    // check-in storm spends real money too. Subject stays null: the
+    // per-subject ceiling is a loop detector for a single row reprocessed,
+    // so this adds no per-athlete question cap. Proactive callers are job
+    // queue work and drain after the ceiling resets at UTC midnight.
+    if (!(await llmBudgetAllows("chat", { userId }))) {
+      return llmBudgetBlockedResponse("chat", corsHeaders);
     }
 
     // ========================================================================
@@ -682,7 +761,7 @@ Deno.serve(async (req: Request) => {
     // ========================================================================
     // LAYER 3: Check semantic cache
     // ========================================================================
-    if (queryEmbedding && isCacheEnabled()) {
+    if (queryEmbedding && isCacheEnabled() && !isEditorial) {
       const cached = await getCachedResponse(queryEmbedding);
 
       if (cached) {
@@ -1075,6 +1154,16 @@ Deno.serve(async (req: Request) => {
           ? Math.ceil((new Date(plan.end_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
           : null;
 
+        // The athlete's own pace anchors. Quality volume is "MP and faster",
+        // and MP is personal — without this the analysis can't say what quality
+        // means for this runner, and reports 0 rather than guessing.
+        const { data: stateRow } = await supabase
+          .from("athlete_state")
+          .select("pace_zones")
+          .eq("user_id", userId)
+          .maybeSingle();
+        const paceZones = (stateRow?.pace_zones ?? null) as ZoneTable | null;
+
         const analysis = analyzeTrainingData({
           thisWeekLogs: thisWeekLogs as TrainingLogRow[],
           previousWeeksLogs,
@@ -1086,6 +1175,7 @@ Deno.serve(async (req: Request) => {
           targetTimeSeconds: plan?.target_time_seconds || null,
           targetDistance: plan?.target_race_distance || null,
           includeSignals: smartInsights !== false,
+          paceZones,
         });
 
         analyticsContext = analysis.context;
@@ -1180,7 +1270,9 @@ Deno.serve(async (req: Request) => {
           existingMessages[existingMessages.length - 1]?.role === "assistant" &&
           (message.length < 100 || /^\d|^yes|^no|^about|^around|^i |^my /i.test(message));
 
-        if (missingData.length >= threshold && !isLikelyAnswer) {
+        // Editorial asks want a direct answer, not a clarifying back-and-
+        // forth (the composer has no multi-turn UI) — skip this branch.
+        if (missingData.length >= threshold && !isLikelyAnswer && !isEditorial) {
           const questions = generateClarifyingQuestions(missingData, 3);
           const clarifyingResponse = buildClarifyingPrompt(message, questions, userProfile);
 
@@ -1573,7 +1665,10 @@ Coach:`;
       user_id: userId,
       role: msg.role,
       content: msg.content,
-      proactive: msg.proactive || false,
+      // NOTE: `conversation_messages` has no `proactive` column in prod —
+      // including it made every message-save 400 (chat history silently
+      // dropped). Removed. If proactive-tracking is wanted, add the column via
+      // migration first, then reinstate here.
     }));
 
     // Insert messages and capture the assistant message ID for feedback
@@ -1619,6 +1714,16 @@ Coach:`;
       `Response generated in ${processingTime}ms using ${config.provider}/${config.model} (${complexity})`
     );
 
+    // Editorial ask surfaces (iOS The Read / Trends ask bar) get the
+    // CoachRead-shaped envelope instead of the plain-text chat shape. Same
+    // generated answer, just reshaped for the editorial reply view.
+    if (isEditorial) {
+      return new Response(
+        JSON.stringify({ read: toEditorialRead(coachResponse) }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const successBody = {
       response: coachResponse,
       conversationId: finalConversationId,
@@ -1648,6 +1753,8 @@ Coach:`;
     });
   } catch (error: any) {
     console.error("Coaching agent error:", error);
+    captureException(error, { fn: "coaching-agent" });
+    await flushSentry();
     const errBody = { error: `Internal error: ${error?.message || String(error)}` };
     try {
       const supa = (globalThis as any).__supa as any;

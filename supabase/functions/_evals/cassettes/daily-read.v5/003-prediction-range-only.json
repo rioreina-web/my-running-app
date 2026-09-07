@@ -1,0 +1,25 @@
+{
+  "id": "003-prediction-range-only",
+  "prompt_name": "daily-read.v5",
+  "description": "v5 prediction discipline carried over from v4: fitness is surfaced as a RANGE carried lightly inside 'How you felt', never a single seconds-precision finish time. A bare h:mm:ss projection is a hard failure. Authored target exemplar — re-record before trusting as baseline.",
+  "vars": {},
+  "input": "## Coaching mode\nPLAN_MODE — active plan, goal marathon.\n\n=== ATHLETE STATE ===\nLevel: intermediate\nGoal: marathon 3:30 · race anchor: half 1:38\n\nTraining Load (7d): 40 mi, 6 runs — building.\n\nPredicted race times: marathon mid 3:30s (range 3:32–3:38, MEDIUM — one half anchor, no recent MP work).\n\nRecent runs:\n  2026-06-14 Long 14.0mi @ 8:30/mi — steady\n  2026-06-11 MP 6mi @ 7:58 — landed\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [d4d4d4d4-0000-0000-0000-000000000004] 2026-06-14 · 14.0mi ★quality\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["headline", "sections", "sources", "confidence"],
+    "forbidden_patterns": [
+      "\\b\\d:\\d\\d:\\d\\d\\b",
+      "(?i)\\bas an AI\\b",
+      "(?i)on track for a \\d",
+      "\"paragraph\""
+    ],
+    "required_patterns": [
+      "\"sections\"",
+      "(?i)(range|low|mid|high|3:3\\ds|3:32|3:38|somewhere)",
+      "\"confidence\""
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"Base is building — the engine's coming.\",\n  \"eyebrow\": \"Aiming at 3:30 · half says 1:38\",\n  \"sections\": [\n    { \"label\": \"The week\", \"body\": [\"Forty miles across six runs — a clean building week, nothing forced.\"] },\n    { \"label\": \"The hard days\", \"body\": [\"Wednesday's MP six at 7:58 landed right where it should this far out.\"] },\n    { \"label\": \"The long run\", \"body\": [\"Fourteen on Sunday, steady the whole way — exactly the kind of run that banks aerobic strength.\"] },\n    { \"label\": \"How you felt\", \"body\": [\"If you raced today I'd put you in the mid 3:30s, call it the 3:32–3:38 range — right around your 3:30 aim, with room to sharpen as the MP work stacks up.\"] }\n  ],\n  \"question\": null,\n  \"cant_see\": { \"eyebrow\": \"THIN MP DATA\", \"body\": \"Only one MP session and a half anchor, so the marathon read is a range, not a number.\" },\n  \"confidence\": { \"level\": \"MEDIUM\", \"sub\": \"one half anchor, no recent marathon-pace block.\" },\n  \"sources\": { \"workouts\": [\"d4d4d4d4-0000-0000-0000-000000000004\"], \"docs\": [], \"memos\": [] }\n}\n```",
+  "recorded_at": "2026-06-16T00:00:00.000Z",
+  "model": "gemini-3.1-pro-preview"
+}

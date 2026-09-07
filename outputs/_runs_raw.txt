@@ -1,0 +1,206 @@
+2026-06-20|long_run|strava|13.00|22|0|1|Y|Y|EMPTY|Aerobic run, data but no chart
+2026-06-19|interval|strava|2.63|15|8|7|Y|Y|Rep chart|Renders
+2026-06-18|easy|strava|6.96|12|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-17|easy|strava|2.38|4|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-17|recovery|strava|2.01|3|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-17|tempo|strava|5.29|14|8|6|Y|Y|Rep chart|Renders
+2026-06-16|easy|strava|5.04|6|0|0|Y|N|Rep chart|Renders
+2026-06-16|easy|strava|7.00|7|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-15|easy|strava|7.00|7|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-14|easy|strava|6.01|7|0|0|Y|N|Rep chart|Renders
+2026-06-13|long_run|strava|13.11|14|0|0|Y|N|Rep chart|Renders
+2026-06-12|easy|strava|4.01|5|0|0|Y|N|Rep chart|Renders
+2026-06-11|easy|strava|6.01|7|0|0|Y|N|Rep chart|Renders
+2026-06-10|easy|strava|7.83|8|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-10|easy|strava|4.01|5|0|0|Y|N|Rep chart|Renders
+2026-06-09|recovery|strava|1.97|4|0|0|Y|N|Rep chart|Renders
+2026-06-09|threshold|strava|7.39|10|6|0|Y|N|Rep chart|Renders
+2026-06-08|easy|strava|7.91|13|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-07|easy|strava|4.15|7|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-06|tempo|strava|11.44|19|7|0|Y|N|Rep chart|Renders
+2026-06-05|recovery|strava|0.89|5|2|0|Y|N|Rep chart|Renders
+2026-06-05|recovery|strava|2.24|9|3|0|Y|N|Rep chart|Renders
+2026-06-04|easy|strava|8.71|15|0|0|Y|N|Rep chart|Renders
+2026-06-03|easy|strava|6.85|12|0|0|Y|N|Rep chart|Renders
+2026-06-02|interval|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-06-02|easy|strava|2.06|4|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-02|threshold|strava|6.63|17|8|0|Y|N|Rep chart|Renders
+2026-06-01|easy|strava|5.81|10|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-06-01|easy|strava|6.26|11|0|0|Y|N|Rep chart|Renders
+2026-05-31|easy|strava|3.05|1|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-29|easy|strava|7.04|1|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-29|steady|voice_log|12.00|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-28|tempo|strava|12.44|21|5|0|Y|N|Rep chart|Renders
+2026-05-27|easy|strava|9.21|15|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-26|interval|auto_sync|8.20|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-05-25|easy|strava|8.19|14|1|0|Y|N|Rep chart|Renders
+2026-05-24|long_run|strava|13.99|23|1|0|Y|N|Rep chart|Renders
+2026-05-24|tempo|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-23|recovery|strava|2.01|4|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-23|recovery|strava|0.51|3|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-22|easy|strava|9.88|16|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-21|interval|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-21|easy|strava|6.90|12|0|0|Y|N|Rep chart|Renders
+2026-05-21|recovery|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-20|recovery|strava|1.96|2|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-20|intervals|strava|6.20|19|9|0|Y|N|Rep chart|Renders
+2026-05-20|recovery|strava|1.32|3|0|0|Y|N|Rep chart|Renders
+2026-05-19|easy|strava|7.03|8|0|0|Y|N|Rep chart|Renders
+2026-05-18|easy|strava|7.54|8|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-17|easy|strava|7.00|7|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-16|long_run|strava|13.10|14|0|0|Y|N|Rep chart|Renders
+2026-05-15|interval|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-15|threshold|strava|7.53|16|6|0|Y|N|Rep chart|Renders
+2026-05-15|easy|strava|4.01|5|0|0|Y|N|Rep chart|Renders
+2026-05-14|easy|strava|5.00|5|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-14|easy|strava|8.01|9|0|0|Y|N|Rep chart|Renders
+2026-05-13|interval|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-13|easy|strava|7.01|8|0|0|Y|N|Rep chart|Renders
+2026-05-12|easy|strava|4.01|5|0|0|Y|N|Rep chart|Renders
+2026-05-12|easy|strava|1.95|2|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-12|intervals|strava|7.26|20|10|0|Y|N|Rep chart|Renders
+2026-05-11|long_run|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-11|easy|strava|7.28|8|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-11|tempo|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-09|long_run|strava|13.19|14|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-08|easy|strava|8.01|9|0|0|Y|N|Rep chart|Renders
+2026-05-08|easy|voice_log|5.00|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-05-07|easy|strava|5.01|5|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-06|easy|strava|8.02|10|0|0|Y|N|Rep chart|Renders
+2026-05-05|easy|strava|2.01|3|0|0|Y|N|Rep chart|Renders
+2026-05-05|easy|strava|2.01|2|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-05|threshold|strava|5.93|7|5|0|Y|N|Rep chart|Renders
+2026-05-04|easy|strava|7.20|8|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-03|recovery|strava|3.53|4|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-05-02|recovery|strava|0.97|1|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-30|easy|strava|4.00|4|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-28|threshold|strava|9.00|19|8|0|Y|N|Rep chart|Renders
+2026-04-27|easy|strava|4.00|4|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-26|easy|voice_log|5.00|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-04-26|easy|strava|6.50|7|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-23|intervals|voice_log|4.50|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-04-23|easy|strava|9.19|10|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-22|easy|voice_log|4.05|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-04-22|easy|strava|4.01|5|0|0|Y|N|Rep chart|Renders
+2026-04-21|tempo|voice_log|5.05|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-04-21|intervals|strava|8.67|20|8|0|Y|N|Rep chart|Renders
+2026-04-20|easy|strava|6.01|7|0|0|Y|N|Rep chart|Renders
+2026-04-20|recovery|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-20|easy|voice_log|4.00|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-04-19|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-19|easy|strava|7.00|8|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-19|other|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-18|long_run|strava|12.41|13|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-17|recovery|strava|3.69|4|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-16|easy|strava|8.00|8|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-15|easy|strava|7.00|7|0|0|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-15|race|voice_log|6.20|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-15|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-14|recovery|strava|6.36|7|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-14|race|voice_log|6.20|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-13|recovery|strava|4.08|5|0|1|Y|N|Rep chart|Renders
+2026-04-12|recovery|strava|1.89|2|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-12|recovery|strava|1.71|2|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-12|race|strava|6.26|7|7|1|Y|N|Rep chart|Renders
+2026-04-11|easy|strava|4.02|5|0|1|Y|N|Rep chart|Renders
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|other|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|other|voice_log|5.00|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|other|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|intervals|strava|6.59|14|3|3|Y|N|Rep chart|Renders
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-10|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-09|easy|strava|5.90|6|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-08|easy|strava|8.07|9|0|1|Y|N|Rep chart|Renders
+2026-04-07|recovery|strava|3.00|3|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-07|recovery|strava|1.69|2|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-07|intervals|strava|5.98|13|7|7|Y|N|Rep chart|Renders
+2026-04-07|recovery|strava|2.02|3|0|1|Y|N|Rep chart|Renders
+2026-04-07|interval|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-06|easy|strava|8.16|9|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-04|interval|voice_log|6.00|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-04-04|threshold|strava|6.86|8|6|4|Y|N|Rep chart|Renders
+2026-04-04|easy|strava|3.35|4|0|1|Y|N|Rep chart|Renders
+2026-04-04|easy|strava|2.46|3|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-04-03|easy|strava|7.01|8|0|1|Y|N|Rep chart|Renders
+2026-04-03|recovery|voice_log|9.04|0|0|1|Y|Y|EMPTY|No data (voice/no GPS)
+2026-04-02|easy|strava|9.04|10|0|1|Y|N|Rep chart|Renders
+2026-04-01|easy|strava|7.44|8|0|4|Y|N|Rep chart|Renders
+2026-04-01|easy|auto_sync|4.76|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-31|recovery|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-31|interval|voice_log|11.44|0|0|0|Y|Y|EMPTY|No data (voice/no GPS)
+2026-03-31|easy|strava|4.75|5|0|5|Y|N|Rep chart|Renders
+2026-03-31|intervals|strava|10.43|15|6|8|Y|N|Rep chart|Renders
+2026-03-30|easy|strava|6.88|7|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-03-29|easy|strava|8.04|9|0|1|Y|N|Rep chart|Renders
+2026-03-28|long_run|strava|15.00|15|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-03-27|intervals|strava|7.01|20|8|9|Y|N|Rep chart|Renders
+2026-03-27|easy|strava|5.00|5|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-03-26|easy|strava|4.00|4|0|6|Y|N|Rep chart|Renders
+2026-03-25|easy|strava|7.70|8|0|5|Y|N|Rep chart|Renders
+2026-03-25|easy|strava|4.42|5|0|1|Y|N|EMPTY|Aerobic run, data but no chart
+2026-03-24|long_run|auto_sync|10.20|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-23|tempo|auto_sync|7.05|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-21|tempo|voice_log|15.03|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-20|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-20|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-20|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-20|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-20|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-20|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-20|easy|voice_log||0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-19|easy|voice_log|6.07|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-19|easy|auto_sync|5.26|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-18|tempo|auto_sync|7.15|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-17|recovery|auto_sync|1.98|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-17|tempo|voice_log|7.97|0|0|4|N|Y|Rep chart|Renders
+2026-03-16|tempo|auto_sync|8.28|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-15|easy|voice_log|4.01|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-14|long_run|voice_log|14.10|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-13|interval|voice_log|8.20|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-12|easy|auto_sync|8.01|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-11|long_run|auto_sync|10.01|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-10|interval|voice_log|7.74|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-10|tempo|auto_sync|2.65|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-09|easy|auto_sync|4.01|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-09|easy|auto_sync|7.48|0|0|0|Y|N|EMPTY|No data (voice/no GPS)
+2026-03-07|other|voice_log|6.45|0|0|3|N|Y|Rep chart|Renders
+2026-03-06|tempo|voice_log|5.44|0|0|3|N|Y|Rep chart|Renders
+2026-03-05|easy|voice_log|5.74|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-03-03|other|voice_log|6.55|0|0|4|N|Y|Rep chart|Renders
+2026-03-02|easy|voice_log|8.03|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-28|long_run|voice_log|14.02|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-25|recovery|voice_log|8.01|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-24|interval|voice_log|3.68|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-18|easy|voice_log|7.99|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-17|interval|voice_log|10.30|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-16|easy|voice_log|7.46|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-15|easy|voice_log|10.34|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-14|long_run|voice_log|13.81|0|0|2|N|Y|Rep chart|Renders
+2026-02-12|easy|voice_log|3.58|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-11|other|voice_log|9.99|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-10|easy|voice_log|1.90|0|0|1|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-10|easy|voice_log|8.44|0|0|0|N|Y|EMPTY|No data (voice/no GPS)
+2026-02-08|easy|voice_log|10.01|0|0|1|N|N|EMPTY|No data (voice/no GPS)
+2026-02-07|easy|voice_log|6.15|0|0|1|N|N|EMPTY|No data (voice/no GPS)
+2026-02-05|easy|voice_log|5.01|0|0|1|N|N|EMPTY|No data (voice/no GPS)
+2026-02-04|easy|voice_log|6.51|0|0|1|N|N|EMPTY|No data (voice/no GPS)
+2026-02-03|easy|voice_log|8.36|0|0|7|N|N|Rep chart|Renders
+2026-02-02|easy|voice_log|7.39|0|0|1|N|N|EMPTY|No data (voice/no GPS)
+2026-01-31|long_run|voice_log|13.17|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-30|easy|voice_log|8.01|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-29|easy|voice_log|9.75|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-28|easy|voice_log|4.16|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-28|easy|voice_log|8.02|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-27|easy|voice_log|8.55|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-26|easy|voice_log|10.35|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-24|long_run|voice_log|18.80|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-20|easy|voice_log|6.45|0|0|0|N|N|EMPTY|No data (voice/no GPS)
+2026-01-17|easy|voice_log|10.01|0|0|0|N|N|EMPTY|No data (voice/no GPS)

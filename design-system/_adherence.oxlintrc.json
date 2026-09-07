@@ -1,0 +1,343 @@
+{
+  "plugins": [
+    "react",
+    "import"
+  ],
+  "rules": {
+    "react/forbid-elements": [
+      "warn",
+      {
+        "forbid": []
+      }
+    ],
+    "no-restricted-imports": [
+      "warn",
+      {
+        "patterns": [
+          {
+            "group": [
+              "charts-analytics.jsx",
+              "charts-data.jsx",
+              "coach-ios-briefing.jsx",
+              "coach-ios-fixtures.jsx",
+              "coach-ios-read.jsx",
+              "coach-ios-shared.jsx",
+              "coach-ios-thread.jsx",
+              "components/CoachQuote/**",
+              "components/EditorialRule/**",
+              "components/Eyebrow/**",
+              "components/LogEntry/**",
+              "components/MoodPill/**",
+              "components/PlateStrip/**",
+              "components/StatTile/**",
+              "components/TypeChip/**",
+              "design-canvas.jsx",
+              "explorations/**",
+              "explorations/logo/**",
+              "explorations/web/plan-builder/**",
+              "fitness-predictor-ios-fixtures.jsx",
+              "fitness-predictor-ios-screen.jsx",
+              "fitness-predictor-ios.jsx",
+              "fitness-predictor-rebrand.jsx",
+              "fitness-predictor.jsx",
+              "handoff/design/**",
+              "home-charts.jsx",
+              "home.jsx",
+              "home.v1.jsx",
+              "home.v2.jsx",
+              "home.v3.jsx",
+              "home.v4.jsx",
+              "ios-frame.jsx",
+              "journal-polish.jsx",
+              "journal-redesign-v2.jsx",
+              "journal-redesign.jsx",
+              "log-details-rebrand.jsx",
+              "menu-rebrand.jsx",
+              "outputs/**",
+              "outputs/train-redesign/**",
+              "plan-charts.jsx",
+              "plan.jsx",
+              "pv-columns.jsx",
+              "pv-data.jsx",
+              "pv-ledger.jsx",
+              "pv-ring.jsx",
+              "pv-shell.jsx",
+              "pv-spectrum.jsx",
+              "pv-strip.jsx",
+              "pv-switcher.jsx",
+              "training-analysis.jsx",
+              "training-log.jsx",
+              "training-summary.jsx",
+              "tweaks-panel.jsx",
+              "ui_kits/ios_app/**",
+              "wd-redesign-charts.jsx",
+              "wd-redesign-data.jsx",
+              "wd-redesign-screens.jsx",
+              "workout-cards.jsx",
+              "workout-detail-rebrand.jsx"
+            ],
+            "message": "Import design-system components from 'index.js', not component internals."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "Literal[value=/#[0-9a-fA-F]{3,8}\\b/]",
+        "message": "Raw hex color — use a design-system color token via var()."
+      },
+      {
+        "selector": "Literal[value=/\\b\\d+px\\b/]",
+        "message": "Raw px value — use a design-system spacing token via var()."
+      },
+      {
+        "selector": "Literal[value=/font-family\\s*:\\s*(?!['\\\"]?(?:Crimson Pro|JetBrains Mono|Instrument Sans|Inter|Schibsted Grotesk))/i]",
+        "message": "Font not provided by the design system. Available: Crimson Pro, JetBrains Mono, Instrument Sans, Inter, Schibsted Grotesk."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='CoachQuote'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|style|key|ref|className|style|children)$/]",
+        "message": "<CoachQuote> doesn't accept that prop. Declared props: children, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='EditorialRule'] > JSXAttribute > JSXIdentifier[name!=/^(?:style|key|ref|className|style|children)$/]",
+        "message": "<EditorialRule> doesn't accept that prop. Declared props: style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='Eyebrow'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|coral|style|key|ref|className|style|children)$/]",
+        "message": "<Eyebrow> doesn't accept that prop. Declared props: children, coral, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='LogEntryStat'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|value|unit|key|ref|className|style|children)$/]",
+        "message": "<LogEntryStat> doesn't accept that prop. Declared props: label, value, unit."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='MoodPill'] > JSXAttribute > JSXIdentifier[name!=/^(?:mood|style|key|ref|className|style|children)$/]",
+        "message": "<MoodPill> doesn't accept that prop. Declared props: mood, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='PlateStrip'] > JSXAttribute > JSXIdentifier[name!=/^(?:surface|fig|right|style|key|ref|className|style|children)$/]",
+        "message": "<PlateStrip> doesn't accept that prop. Declared props: surface, fig, right, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='StatTile'] > JSXAttribute > JSXIdentifier[name!=/^(?:label|value|unit|delta|deltaTone|accent|coral|align|style|key|ref|className|style|children)$/]",
+        "message": "<StatTile> doesn't accept that prop. Declared props: label, value, unit, delta, deltaTone, accent, coral, align, style."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='StatTile'] > JSXAttribute[name.name='deltaTone'] > Literal[value!=/^(?:pos|neg)$/]",
+        "message": "<StatTile> deltaTone must be one of 'pos' | 'neg'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='StatTile'] > JSXAttribute[name.name='align'] > Literal[value!=/^(?:start|end)$/]",
+        "message": "<StatTile> align must be one of 'start' | 'end'."
+      },
+      {
+        "selector": "JSXOpeningElement[name.name='TypeChip'] > JSXAttribute > JSXIdentifier[name!=/^(?:children|keyed|style|key|ref|className|style|children)$/]",
+        "message": "<TypeChip> doesn't accept that prop. Declared props: children, keyed, style."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/index.js"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ],
+  "x-omelette": {
+    "components": {
+      "CoachQuote": {
+        "replaces": []
+      },
+      "EditorialRule": {
+        "replaces": []
+      },
+      "Eyebrow": {
+        "replaces": []
+      },
+      "LogEntryStat": {
+        "replaces": []
+      },
+      "MoodPill": {
+        "replaces": []
+      },
+      "PlateStrip": {
+        "replaces": []
+      },
+      "StatTile": {
+        "replaces": []
+      },
+      "TypeChip": {
+        "replaces": []
+      }
+    },
+    "tokens": [
+      "--ai",
+      "--ai-text",
+      "--border-hairline",
+      "--border-heavy",
+      "--border-red",
+      "--card",
+      "--coral",
+      "--coral-deep",
+      "--coral-light",
+      "--coral-wash",
+      "--dur-base",
+      "--dur-fast",
+      "--dur-slow",
+      "--ease-out",
+      "--ease-spring",
+      "--font-body",
+      "--font-data",
+      "--font-display",
+      "--font-label",
+      "--font-mono",
+      "--font-prose",
+      "--font-serif",
+      "--ink",
+      "--ink-2",
+      "--ink-3",
+      "--mood-energized",
+      "--mood-injured",
+      "--mood-neutral",
+      "--mood-positive",
+      "--mood-speed",
+      "--mood-struggling",
+      "--mood-tired",
+      "--paper",
+      "--paper-deep",
+      "--paper-elevated",
+      "--r-button",
+      "--r-card",
+      "--r-input",
+      "--r-pill",
+      "--r-tight",
+      "--red",
+      "--red-deep",
+      "--red-text",
+      "--red-wash",
+      "--rule",
+      "--rule-strong",
+      "--session",
+      "--shadow-card",
+      "--shadow-press",
+      "--shadow-sheet",
+      "--space-1",
+      "--space-2",
+      "--space-3",
+      "--space-4",
+      "--space-5",
+      "--space-6",
+      "--space-7",
+      "--space-8",
+      "--space-9",
+      "--success",
+      "--t-body",
+      "--t-body-sm",
+      "--t-display-l",
+      "--t-display-m",
+      "--t-display-s",
+      "--t-display-xl",
+      "--t-meta",
+      "--t-meta-sm",
+      "--tracking-caption",
+      "--tracking-display",
+      "--tracking-label",
+      "--tracking-meta",
+      "--tracking-title",
+      "--w-black",
+      "--w-bold",
+      "--w-medium",
+      "--w-regular"
+    ],
+    "tokenKinds": {
+      "--paper": "color",
+      "--paper-elevated": "color",
+      "--card": "color",
+      "--paper-deep": "color",
+      "--rule": "color",
+      "--rule-strong": "color",
+      "--ink": "color",
+      "--ink-2": "color",
+      "--ink-3": "color",
+      "--red": "color",
+      "--red-text": "font",
+      "--red-deep": "color",
+      "--red-wash": "color",
+      "--coral": "color",
+      "--coral-light": "color",
+      "--coral-deep": "color",
+      "--coral-wash": "color",
+      "--session": "color",
+      "--ai": "color",
+      "--ai-text": "font",
+      "--mood-energized": "color",
+      "--mood-positive": "color",
+      "--mood-neutral": "color",
+      "--mood-tired": "color",
+      "--mood-struggling": "color",
+      "--mood-injured": "color",
+      "--mood-speed": "color",
+      "--success": "color",
+      "--font-display": "font",
+      "--font-label": "font",
+      "--font-prose": "font",
+      "--font-data": "font",
+      "--font-mono": "font",
+      "--font-body": "font",
+      "--font-serif": "font",
+      "--t-display-xl": "spacing",
+      "--t-display-l": "spacing",
+      "--t-display-m": "spacing",
+      "--t-display-s": "spacing",
+      "--t-body": "spacing",
+      "--t-body-sm": "spacing",
+      "--t-meta": "spacing",
+      "--t-meta-sm": "spacing",
+      "--w-black": "other",
+      "--w-bold": "other",
+      "--w-medium": "other",
+      "--w-regular": "other",
+      "--tracking-display": "font",
+      "--tracking-title": "font",
+      "--tracking-label": "font",
+      "--tracking-caption": "font",
+      "--tracking-meta": "font",
+      "--space-1": "spacing",
+      "--space-2": "spacing",
+      "--space-3": "spacing",
+      "--space-4": "spacing",
+      "--space-5": "spacing",
+      "--space-6": "spacing",
+      "--space-7": "spacing",
+      "--space-8": "spacing",
+      "--space-9": "spacing",
+      "--r-pill": "spacing",
+      "--r-card": "spacing",
+      "--r-button": "spacing",
+      "--r-input": "spacing",
+      "--r-tight": "spacing",
+      "--shadow-card": "shadow",
+      "--shadow-press": "shadow",
+      "--shadow-sheet": "shadow",
+      "--border-hairline": "color",
+      "--border-heavy": "color",
+      "--border-red": "color",
+      "--ease-out": "other",
+      "--ease-spring": "other",
+      "--dur-fast": "other",
+      "--dur-base": "other",
+      "--dur-slow": "other"
+    },
+    "fontFamilies": [
+      "Crimson Pro",
+      "Instrument Sans",
+      "Inter",
+      "JetBrains Mono",
+      "Schibsted Grotesk"
+    ]
+  }
+}

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Recovery · two approaches</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,0.12);
+  --green:#2D8A4E; --amber:#C4873A; --terra:#C45A3A; --rose:#B83A4A;
+  --blue:#3F7CB5; --navy:#1A3679;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#2B2724;color:var(--ink);font-family:var(--fb);
+  display:flex;flex-direction:column;align-items:center;padding:34px 20px 60px;-webkit-font-smoothing:antialiased}
+.head{max-width:900px;text-align:center;margin-bottom:24px;color:#C9C3BC}
+.head h1{font-family:var(--fd);font-weight:700;font-size:26px;margin:0 0 6px;color:#F5F3F0}
+.head p{font-family:var(--fm);font-size:11px;letter-spacing:.06em;color:#9B9590;margin:0;line-height:1.7}
+.cols{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.col{width:420px;background:var(--paper);border-radius:20px;padding:24px 22px 26px;box-shadow:0 20px 44px rgba(0,0,0,.4)}
+.tag{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+.tag.b{color:var(--blue)}
+.col h2{font-family:var(--fd);font-weight:700;font-size:23px;margin:6px 0 4px;letter-spacing:-.01em}
+.opt{font-family:var(--fb);font-style:italic;font-size:12.5px;color:var(--ink-3);margin:0 0 6px;line-height:1.45}
+.sec{margin-top:22px}
+.eyebrow{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-bottom:9px}
+.card{background:var(--card);border-radius:12px;padding:15px 15px 16px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.mono{font-family:var(--fm);font-variant-numeric:tabular-nums}
+.cap{font-family:var(--fm);font-size:9px;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+.q{font-family:var(--fb);font-style:italic;font-size:12px;color:var(--ink-2);line-height:1.5;margin:0}
+
+/* ---- day strip ---- */
+.days{display:flex;justify-content:space-between;align-items:flex-end;gap:6px}
+.day{flex:1;text-align:center}
+.dot{width:18px;height:18px;border-radius:999px;margin:0 auto 5px}
+.dl{font-family:var(--fm);font-size:8px;color:var(--ink-3);text-transform:uppercase}
+.clear{background:var(--green)} .watch{background:var(--amber)} .hold{background:var(--terra)}
+.today-read{font-family:var(--fb);font-size:13px;line-height:1.5;color:var(--ink);margin:12px 0 0}
+.today-read b{color:var(--coral)}
+
+/* ---- convergence signals ---- */
+.state{font-family:var(--fd);font-weight:700;font-size:20px;margin:0 0 6px}
+.state.alert{color:var(--coral)}
+.sig{display:grid;grid-template-columns:70px 1fr 50px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--rule)}
+.sig:last-child{border-bottom:0}
+.sn{font-family:var(--fm);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.sv{font-family:var(--fm);font-size:11.5px;font-weight:600;color:var(--ink)}
+.sd{font-family:var(--fm);font-size:8px;color:var(--ink-3);text-transform:uppercase;margin-top:2px}
+.sr{font-family:var(--fm);font-size:8.5px;text-align:right;text-transform:uppercase}
+.sr.agree{color:var(--ink);font-weight:600} .sr.hold{color:var(--ink-3)}
+.tierlbl{font-family:var(--fm);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:12px 0 2px}
+
+/* ---- week ramp ---- */
+.ramp{display:flex;align-items:flex-end;gap:5px;height:76px;margin:4px 0 8px}
+.bar{flex:1;background:var(--ink);opacity:.28;border-radius:2px 2px 0 0;position:relative}
+.bar.spike{opacity:1;background:var(--coral)}
+.baseline{position:relative;height:0;border-top:1.5px dashed var(--ink-3)}
+.wk-read{font-family:var(--fb);font-size:12.5px;line-height:1.5;margin:8px 0 0;color:var(--ink)}
+.wk-read b{font-weight:700}
+.flag{display:inline-flex;gap:5px;align-items:center;font-family:var(--fm);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--coral);margin-top:8px}
+.flag::before{content:"";width:7px;height:7px;border-radius:2px;background:var(--coral)}
+
+/* ---- score dial (approach B) ---- */
+.dial-wrap{display:flex;align-items:center;gap:16px}
+.dialnum{font-family:var(--fd);font-weight:700;font-size:46px;line-height:1;color:var(--ink)}
+.dialnum span{font-size:18px;color:var(--ink-3)}
+.diallbl{font-family:var(--fm);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);margin-top:4px}
+.contrib{margin-top:4px}
+.crow{display:flex;align-items:center;gap:8px;margin:7px 0}
+.cname{font-family:var(--fm);font-size:9px;text-transform:uppercase;color:var(--ink-2);width:64px}
+.cbar{flex:1;height:6px;background:var(--paper-deep);border-radius:3px;overflow:hidden}
+.cbar span{display:block;height:100%;background:var(--blue);border-radius:3px}
+.cpct{font-family:var(--fm);font-size:9px;color:var(--ink-3);width:28px;text-align:right}
+
+/* ---- acwr gauge ---- */
+.gauge{position:relative;height:34px;margin:10px 0 4px}
+.track{position:absolute;top:14px;left:0;right:0;height:6px;border-radius:3px;
+  background:linear-gradient(90deg,var(--paper-deep) 0%,var(--paper-deep) 33%,#D8E4D8 33%,#D8E4D8 66%,var(--coral-wash) 66%,var(--coral-wash) 100%)}
+.sweet{position:absolute;top:8px;height:18px;border-left:1px solid var(--ink-3);border-right:1px solid var(--ink-3)}
+.needle{position:absolute;top:4px;width:2px;height:26px;background:var(--coral)}
+.gl{display:flex;justify-content:space-between;font-family:var(--fm);font-size:8px;color:var(--ink-3);margin-top:2px}
+.tradeoff{margin-top:20px;padding-top:14px;border-top:1px solid var(--rule);
+  font-family:var(--fb);font-size:12px;line-height:1.55;color:var(--ink-2)}
+.tradeoff b{color:var(--ink)}
+.warn{color:var(--terra)}
+svg{display:block}
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>Recovery · two approaches, side by side</h1>
+  <p>SAME ATHLETE · SAME WEEK · Jul 31 · Maya, deep in a hard block<br>
+     LEFT: converging signals + load-vs-your-own-baseline &nbsp;·&nbsp; RIGHT: a recovery score + ACWR</p>
+</div>
+
+<div class="cols">
+
+  <!-- ================= APPROACH A ================= -->
+  <div class="col">
+    <div class="tag">Approach A · Convergence</div>
+    <h2>No score. Signals that agree.</h2>
+    <p class="opt">Optimises for honesty: you always see <em>which</em> signal moved, and one noisy night can never move the read on its own.</p>
+
+    <!-- DAY -->
+    <div class="sec">
+      <div class="eyebrow">Day to day · push or pull today?</div>
+      <div class="card">
+        <div class="days">
+          <div class="day"><div class="dot clear"></div><div class="dl">Fri</div></div>
+          <div class="day"><div class="dot clear"></div><div class="dl">Sat</div></div>
+          <div class="day"><div class="dot watch"></div><div class="dl">Sun</div></div>
+          <div class="day"><div class="dot clear"></div><div class="dl">Mon</div></div>
+          <div class="day"><div class="dot watch"></div><div class="dl">Tue</div></div>
+          <div class="day"><div class="dot hold"></div><div class="dl">Wed</div></div>
+          <div class="day"><div class="dot watch"></div><div class="dl">Thu</div></div>
+        </div>
+        <p class="today-read"><b>Today: hold back.</b> HRV sat low and resting HR high overnight, on top of two tired days — and yesterday was your longest run in three weeks. Not a verdict, a nudge to keep today easy.</p>
+        <p class="cap" style="margin-top:10px">clear · watch · hold — a state, never a number</p>
+      </div>
+    </div>
+
+    <!-- CONVERGENCE -->
+    <div class="sec">
+      <div class="eyebrow">The convergence · this week</div>
+      <div class="card">
+        <p class="state alert">A shape worth watching.</p>
+        <div class="tierlbl">Tier 1 · your own words</div>
+        <div class="sig"><span class="sn">Niggles</span><span><span class="sv">3 mentions</span><div class="sd">3× achilles</div></span><span class="sr agree">agrees</span></div>
+        <div class="sig"><span class="sn">Mood</span><span><span class="sv">12 of 28 days</span><div class="sd">tired / struggling</div></span><span class="sr agree">agrees</span></div>
+        <div class="tierlbl">Tier 2 · overnight</div>
+        <div class="sig"><span class="sn">Resting HR</span><span><span class="sv">50.4 bpm</span><div class="sd">up vs baseline</div></span><span class="sr agree">agrees</span></div>
+        <div class="sig"><span class="sn">HRV</span><span><span class="sv">57.5 ms</span><div class="sd">down · paired w/ RHR</div></span><span class="sr agree">agrees</span></div>
+        <div class="tierlbl">Tier 3 · annotation</div>
+        <div class="sig"><span class="sn">Load</span><span><span class="sv">+36% vs base</span><div class="sd">context, never scored</div></span><span class="sr hold">context</span></div>
+        <p class="q" style="margin-top:12px">Four signals point the same way. Any one is noise; together it’s a shape. What it means is yours.</p>
+      </div>
+    </div>
+
+    <!-- WEEK -->
+    <div class="sec">
+      <div class="eyebrow">Week to week · are you overloading?</div>
+      <div class="card">
+        <div class="ramp" id="rampA"></div>
+        <p class="wk-read">This week <b>340 load-min</b> · your 8-week average is <b>250</b> — <b>+36%</b>, the steepest jump in the block.</p>
+        <div class="flag">Acute spike · Sun long run 22 mi, &gt;100% over your last 30 days</div>
+        <p class="cap" style="margin-top:12px">load vs YOUR OWN trailing baseline — no acute:chronic ratio</p>
+      </div>
+    </div>
+
+    <div class="tradeoff">
+      <b>What you give up:</b> there’s no single number to glance at. <b>What you get:</b> every read is traceable to a real signal, it’s hard to game, and it degrades honestly when the watch is missing (Tier 1 still speaks).
+    </div>
+  </div>
+
+  <!-- ================= APPROACH B ================= -->
+  <div class="col">
+    <div class="tag b">Approach B · Score &amp; ACWR</div>
+    <h2>One number. At a glance.</h2>
+    <p class="opt">Optimises for instant read: a single recovery figure and a load ratio you can check in two seconds.</p>
+
+    <!-- SCORE -->
+    <div class="sec">
+      <div class="eyebrow">Recovery score · today</div>
+      <div class="card">
+        <div class="dial-wrap">
+          <svg width="96" height="96" viewBox="0 0 96 96">
+            <circle cx="48" cy="48" r="40" fill="none" stroke="#E8E4DF" stroke-width="9"/>
+            <circle cx="48" cy="48" r="40" fill="none" stroke="#C4873A" stroke-width="9"
+              stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="70.3"
+              transform="rotate(-90 48 48)"/>
+          </svg>
+          <div>
+            <div class="dialnum">72<span>/100</span></div>
+            <div class="diallbl">Moderate</div>
+          </div>
+        </div>
+        <div class="contrib">
+          <div class="crow"><span class="cname">HRV</span><span class="cbar"><span style="width:58%"></span></span><span class="cpct">30%</span></div>
+          <div class="crow"><span class="cname">Sleep</span><span class="cbar"><span style="width:70%"></span></span><span class="cpct">22%</span></div>
+          <div class="crow"><span class="cname">Mood</span><span class="cbar"><span style="width:44%"></span></span><span class="cpct">18%</span></div>
+          <div class="crow"><span class="cname">Load</span><span class="cbar"><span style="width:38%"></span></span><span class="cpct">30%</span></div>
+        </div>
+        <p class="cap" style="margin-top:10px">weighted composite · 7-day trend below</p>
+        <svg width="100%" height="34" viewBox="0 0 340 34" style="margin-top:6px" preserveAspectRatio="none">
+          <polyline points="0,10 48,8 96,14 144,12 192,20 240,18 288,24 340,26" fill="none" stroke="#C4873A" stroke-width="2"/>
+          <circle cx="340" cy="26" r="3" fill="#C4873A"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- ACWR -->
+    <div class="sec">
+      <div class="eyebrow">Load · acute : chronic ratio</div>
+      <div class="card">
+        <div class="dial-wrap" style="align-items:baseline">
+          <div class="dialnum" style="font-size:38px">1.28</div>
+          <div class="diallbl" style="color:var(--coral)">Approaching high</div>
+        </div>
+        <div class="gauge">
+          <div class="track"></div>
+          <div class="sweet" style="left:33%;right:34%"></div>
+          <div class="needle" style="left:calc(33% + (1.28 - 0.8) / (1.6 - 0.8) * 33% )"></div>
+        </div>
+        <div class="gl"><span>0.4</span><span>0.8</span><span>1.3</span><span>1.6</span></div>
+        <p class="cap" style="margin-top:10px">sweet spot 0.8–1.3 · you’re at the top edge</p>
+      </div>
+    </div>
+
+    <!-- honesty note -->
+    <div class="sec">
+      <div class="eyebrow">Why · the contributors today</div>
+      <div class="card">
+        <p class="q">Score down from 84 on Monday. HRV suppressed, sleep short two nights, and load ratio climbing into the caution band. Ease off to bring it back up.</p>
+      </div>
+    </div>
+
+    <div class="tradeoff">
+      <b>What you get:</b> a two-second read and a familiar ACWR band. <b class="warn">What it costs:</b> the number hides which signal moved and invites chasing one bad night — and the ACWR ratio is <b class="warn">statistically discredited</b> (coupling reproduces its correlation from random data; the one RCT was null). Fast to read, weak to defend.
+    </div>
+  </div>
+
+</div>
+
+<script>
+// Approach A ramp: 12 weeks, last bar the +36% spike over the dashed baseline.
+const wk=[30,34,32,38,40,37,42,44,40,46,44,60];
+const base=Math.round(wk.slice(0,-1).reduce((a,b)=>a+b,0)/(wk.length-1)); // ~40
+const max=Math.max(...wk);
+const el=document.getElementById('rampA');
+wk.forEach((v,i)=>{
+  const b=document.createElement('div');
+  b.className='bar'+(i===wk.length-1?' spike':'');
+  b.style.height=(v/max*100)+'%';
+  el.appendChild(b);
+});
+</script>
+</body>
+</html>

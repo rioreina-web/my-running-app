@@ -17,6 +17,7 @@ import {
   formatStepDuration,
   safePaceLabel,
   safePaceRangeLabel,
+  zoneColorForStep,
   type WorkoutStep,
   type WorkoutStepBlock,
   type AthletePaceTable,
@@ -37,15 +38,17 @@ interface Props {
   activeColor?: string;
 }
 
-// Step type → stripe color. Matches the existing WORKOUT_TYPES palette
-// from workout-template-form. Keeping these as inline hex for now;
-// design-system follow-up moves them to CSS vars.
+// Step type → stripe color. THE THREE-PALETTE RULE: blue = pace, warm =
+// mood, coral = alert — so warmup/cooldown read as easy-pace blue (they're
+// run easy), recovery/rest are a neutral gray, and active steps are colored
+// by their actual pace zone (see zoneColorForStep in describeBlock). The
+// previous green warmup and coral active fills were palette violations.
 const STRIPE_COLOR: Record<string, string> = {
-  warmup:   "#C0DD97",
-  cooldown: "#C0DD97",
-  active:   "#D85A30",
-  recovery: "#9B9590",
-  rest:     "#9B9590",
+  warmup:   "var(--color-pace-easy)",
+  cooldown: "var(--color-pace-easy)",
+  active:   "var(--color-pace-mp)", // fallback; describeBlock colors per zone
+  recovery: "var(--color-text-tertiary)",
+  rest:     "var(--color-text-tertiary)",
 };
 
 function StepRow({
@@ -147,7 +150,12 @@ function describeBlock(
 } {
   const { step } = block;
   const dur = formatStepDuration(step.durationType, step.durationValue);
-  const stripeColor = STRIPE_COLOR[step.stepType] ?? STRIPE_COLOR.active;
+  // Active steps are colored by their pace zone (blue depth = intensity);
+  // warmup/cooldown/recovery/rest use the static STRIPE_COLOR mapping.
+  const stripeColor =
+    step.stepType === "active"
+      ? zoneColorForStep(step)
+      : STRIPE_COLOR[step.stepType] ?? STRIPE_COLOR.active;
   const paceLabel = safePaceLabel(
     step.paceZone,
     step.paceAdjustment,

@@ -45,10 +45,10 @@ const ESLINT_CFG = path.resolve(WEB_ROOT, "eslint.config.mjs");
 // and what it imports. Adding a new server-side caller? Add it here.
 const ALLOWED_CALLERS = [
   { file: "src/middleware.ts",                       imports: 'side-effect' },
-  { file: "src/app/api/coach/route.ts",              imports: 'SUPABASE_SERVICE_ROLE_KEY' },
-  { file: "src/app/api/assign-plan/route.ts",        imports: 'SUPABASE_SERVICE_ROLE_KEY' },
-  { file: "src/app/api/weekly-report/route.ts",      imports: 'SUPABASE_SERVICE_ROLE_KEY' },
-  { file: "src/app/api/retry-processing/route.ts",   imports: 'SUPABASE_SERVICE_ROLE_KEY' },
+  { file: "src/app/api/coach/route.ts",              imports: 'serviceRoleKey' },
+  { file: "src/app/api/assign-plan/route.ts",        imports: 'serviceRoleKey' },
+  { file: "src/app/api/weekly-report/route.ts",      imports: 'serviceRoleKey' },
+  { file: "src/app/api/retry-processing/route.ts",   imports: 'serviceRoleKey' },
 ];
 
 // ── env.server.ts structure ─────────────────────────────────
@@ -67,12 +67,23 @@ test("env.server.ts begins with `import \"server-only\"` on line 1", async () =>
   );
 });
 
-test("env.server.ts exports SUPABASE_SERVICE_ROLE_KEY", async () => {
+test("env.server.ts exports the service-role key through one audited accessor", async () => {
   const src = await readFile(ENV_SERVER, "utf8");
+  // A FUNCTION, deliberately. This pinned `export const SUPABASE_SERVICE_ROLE_KEY`
+  // until 2026-08-28, and that const's initialiser threw on IMPORT when the
+  // variable was unset — which killed `next build` for the whole site while
+  // collecting page data, not just the routes needing the key. The contract
+  // being protected is "one audited surface, never a silent empty string",
+  // and a lazy accessor keeps both while letting the build finish.
   assert.match(
     src,
+    /export\s+function\s+serviceRoleKey\s*\(/,
+    "env.server.ts must export `serviceRoleKey()` so callers have a single audited surface.",
+  );
+  assert.doesNotMatch(
+    src,
     /export\s+const\s+SUPABASE_SERVICE_ROLE_KEY\b/,
-    "env.server.ts must export const SUPABASE_SERVICE_ROLE_KEY so callers have a single audited surface.",
+    "The eager const form is what broke the production build — do not reintroduce it.",
   );
 });
 

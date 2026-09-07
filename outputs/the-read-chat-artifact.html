@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Read — live Q&A</title>
+<style>
+  :root{
+    color-scheme: light;
+    --paper:#F5F3F0; --card:#FFFFFF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-deep:#B84420;
+    --font-display:Georgia,"Times New Roman",serif;
+    --font-body:Georgia,"Times New Roman",serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:#DED9D2; font-family:var(--font-body); color:var(--ink); -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; align-items:center; padding:24px 14px 48px;}
+  .intro{max-width:420px; text-align:center; margin-bottom:20px;}
+  .intro .tag{font-family:var(--font-mono); font-size:10px; letter-spacing:0.16em; text-transform:uppercase; color:var(--coral); font-weight:500;}
+  .intro h1{font-family:var(--font-display); font-weight:700; font-size:21px; margin:8px 0 6px;}
+  .intro p{font-size:13px; line-height:1.55; color:var(--ink-2); margin:0;}
+
+  .phone{width:390px; max-width:100%; height:820px; background:var(--paper); border-radius:44px; border:1px solid #cbc5bc; box-shadow:0 18px 46px rgba(0,0,0,0.22); overflow:hidden; position:relative; display:flex; flex-direction:column;}
+  .statusbar{height:50px; flex:0 0 50px; display:flex; align-items:center; justify-content:space-between; padding:0 28px 0 30px; font-family:var(--font-mono); font-size:14px; font-weight:500;}
+  .statusbar .dots{color:var(--ink-2); font-size:12px; letter-spacing:2px;}
+  .scroll{flex:1; overflow-y:auto; padding:2px 24px 8px;}
+  .scroll::-webkit-scrollbar{width:0;}
+
+  .plate{font-family:var(--font-mono); font-size:11px; font-weight:500; letter-spacing:0.14em; color:var(--ink-2); text-transform:uppercase; padding:8px 0 4px; display:flex; justify-content:space-between;}
+  .eyebrow{font-family:var(--font-mono); font-size:11px; font-weight:500; letter-spacing:0.12em; color:var(--ink-2); text-transform:uppercase; margin:20px 0 8px;}
+  .read-p{font-family:var(--font-display); font-size:22px; line-height:1.3; font-weight:700; margin:0 0 6px; letter-spacing:-0.01em;}
+  .read-p a{color:var(--ink); text-decoration:underline; text-decoration-color:var(--coral); text-underline-offset:3px;}
+  .softq{border-left:3px solid var(--coral); padding:2px 0 2px 16px; margin:20px 0 6px; font-style:italic; font-size:18px; line-height:1.4;}
+  .byline{font-style:italic; font-size:13px; color:var(--ink-3); margin:14px 0 4px;}
+
+  .divider{display:flex; align-items:center; gap:8px; margin:24px 0 16px;}
+  .divider::before,.divider::after{content:""; flex:1; height:1px; background:var(--rule);}
+  .divider span{font-family:var(--font-mono); font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-3);}
+
+  .msg{display:flex; flex-direction:column; margin-bottom:14px; animation:rise 0.3s ease;}
+  .msg .stamp{font-family:var(--font-mono); font-size:9px; font-weight:500; letter-spacing:0.10em; color:var(--ink-3); text-transform:uppercase; margin-bottom:5px;}
+  .msg.you{align-items:flex-end;}
+  .bubble-you{max-width:84%; background:var(--card); border-radius:14px 14px 4px 14px; padding:11px 15px; font-size:14.5px; line-height:1.5; box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+  .bubble-coach{border-left:3px solid var(--coral); padding:1px 0 1px 15px; font-size:15px; line-height:1.55;}
+  .bubble-coach .cq{display:block; margin-top:10px; font-style:italic;}
+  @keyframes rise{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+  .typing{display:flex; gap:4px; padding:8px 0 8px 15px; border-left:3px solid var(--coral);}
+  .typing i{width:6px; height:6px; border-radius:50%; background:var(--ink-3); animation:blink 1.2s infinite;}
+  .typing i:nth-child(2){animation-delay:.2s;} .typing i:nth-child(3){animation-delay:.4s;}
+  @keyframes blink{0%,60%,100%{opacity:.25;} 30%{opacity:1;}}
+
+  .chips-label{font-family:var(--font-mono); font-size:9px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-3); margin:16px 0 8px;}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 4px;}
+  .chip{font-family:var(--font-display); font-size:13.5px; font-weight:700; color:var(--ink); border:1px solid var(--rule); background:var(--card); border-radius:999px; padding:7px 13px; cursor:pointer; transition:all .15s ease; line-height:1.2;}
+  .chip:hover{border-color:var(--coral); color:var(--coral);} .chip:active{transform:scale(.97);}
+
+  .inputbar{flex:0 0 auto; display:grid; grid-template-columns:1fr 40px; gap:10px; align-items:center; padding:12px 24px 24px; border-top:1px solid var(--rule); background:var(--paper);}
+  .inputbar input{background:var(--card); border-radius:20px; padding:11px 16px; font-family:var(--font-body); font-size:14.5px; color:var(--ink); border:1px solid transparent; outline:none; width:100%;}
+  .inputbar input:focus{border-color:var(--coral);}
+  .send{width:40px; height:40px; border-radius:50%; background:var(--coral); border:none; display:grid; place-items:center; cursor:pointer; transition:background .15s ease;}
+  .send:hover{background:var(--coral-deep);} .send:active{transform:scale(.95);}
+  .send svg{width:17px; height:17px; fill:#fff;}
+  .nav{flex:0 0 auto; display:flex; justify-content:space-around; padding:10px 8px 18px; border-top:1px solid var(--rule); background:var(--paper);}
+  .nav .item{display:flex; flex-direction:column; align-items:center; gap:7px; font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-3);}
+  .nav .item .dot{width:7px; height:7px; border-radius:50%; border:1.5px solid var(--ink-3);}
+  .nav .item.active{color:var(--ink); font-weight:500;}
+  .nav .item.active .dot{background:var(--coral); border-color:var(--coral);}
+</style>
+</head>
+<body>
+  <div class="intro">
+    <div class="tag">Live prototype · Post Run Drip</div>
+    <h1>The Read, now a real conversation</h1>
+    <p>Ask anything — "what's my tempo pace", "how's my fitness trending", "should I fuel differently". Coach answers live, in-voice, from a sample of Maya's training data.</p>
+  </div>
+
+  <div class="phone">
+    <div class="statusbar"><span>8:32</span><span class="dots">&#9679;&#9679;&#9679;</span></div>
+    <div class="scroll" id="scroll">
+      <div class="plate"><span>The Read · Thursday</span><span>Fig. 14</span></div>
+      <div class="eyebrow">How You Felt</div>
+      <p class="read-p">The fatigue is real right now, which makes sense given the humidity. Top-end fitness is ticking up — race today and you'd be in the 2:28 to 2:31 range, well within reach of your goal.</p>
+      <div class="softq">Are your legs feeling heavy from the heat, or is it deeper fatigue?</div>
+      <div class="byline">— posted Thursday morning · 1 min read</div>
+      <div class="divider"><span>Ask Coach</span></div>
+      <div id="thread"></div>
+      <div class="chips-label" id="chips-label">Try one, or ask your own</div>
+      <div class="chips" id="chips"></div>
+    </div>
+    <div class="inputbar">
+      <input id="input" type="text" placeholder="Ask Coach anything…" autocomplete="off" />
+      <button class="send" id="send" aria-label="Send"><svg viewBox="0 0 16 16"><path d="M2 8L13 2.5L9.5 8L13 13.5L2 8Z"/></svg></button>
+    </div>
+    <div class="nav">
+      <div class="item"><span class="dot"></span>Log</div>
+      <div class="item"><span class="dot"></span>Training</div>
+      <div class="item"><span class="dot"></span>Trends</div>
+      <div class="item active"><span class="dot"></span>The Read</div>
+      <div class="item"><span class="dot"></span>Plan</div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  var thread=document.getElementById('thread'), chipsEl=document.getElementById('chips'),
+      chipsLabel=document.getElementById('chips-label'), scroll=document.getElementById('scroll'),
+      input=document.getElementById('input'), send=document.getElementById('send');
+
+  // Sample athlete data the Coach reasons over (mock, for the demo).
+  var ATHLETE = {
+    name:"Maya",
+    profile:"Self-coached marathoner. PB 3:28, chasing a 3:16 Boston qualifier off ~40 mpw. Races going back ~2 years.",
+    fitness:"Race-today estimate 2:28–2:31 marathon range, HIGH confidence (4 recent MP workouts + a recent long run). Trend: top-end ticking up over the last 3 weeks on lower mileage than her last build.",
+    recent:"17.8 mi long run Saturday, felt easy. Fatigue elevated this week, mostly explained by humidity — easy paces ~20s/mi slower than the same efforts in April.",
+    paceZones:{
+      Easy:"8:55–9:25 /mi (range)",
+      Moderate:"8:30–8:50 /mi (range)",
+      Steady:"8:15–8:30 /mi (range)",
+      MP:"7:56 /mi",
+      HMP:"7:32 /mi",
+      "LT (what used to be called 'tempo' or 'threshold')":"7:10 /mi",
+      "10K":"6:52 /mi",
+      "5K":"6:35 /mi",
+      "3K":"6:18 /mi",
+      Mile:"5:58 /mi"
+    }
+  };
+
+  var VOICE = [
+    "You are Coach, the AI voice inside a running app called The Read. You speak to Maya, a self-coached marathoner.",
+    "RULES YOU NEVER BREAK:",
+    "1. Observe and reflect; never prescribe. You do not tell her to rest, stop, ice, take a day off, or diagnose an injury. If something sounds like an injury, you surface what she said and hand the decision back to her — you never name a condition or recommend treatment.",
+    "2. No medical claims. No nutrition or supplement prescriptions.",
+    "3. Any fitness or race prediction is a RANGE with a confidence level, never a single exact number. Never invent seconds-level precision.",
+    "4. Voice: warm, plain, encouraging but honest. Feeling first, then the data. Read life context (heat, sleep, work) when relevant. Carry her goal and race history silently — state paces/facts but don't lecture on the math.",
+    "5. Keep it to 2–4 sentences, then end with ONE short soft question on its own, wrapped in <q>…</q> tags.",
+    "6. If a question is outside what running data can see (nutrition, medical, gear specifics), give a light, genuinely useful, non-prescriptive answer and honestly note it's outside what the training data shows — still end with a soft question.",
+    "7. If asked for a pace, give the exact zone value from the data. Note the app uses zone labels (Easy/Steady/MP/HMP/LT/10K/5K…) and that 'tempo'/'threshold' map to the LT zone.",
+    "Here is Maya's current data:",
+    JSON.stringify(ATHLETE, null, 2)
+  ].join("\n");
+
+  var starter=[
+    "What's my tempo pace?",
+    "How's my fitness trending?",
+    "It's the heat, mostly",
+    "Should I be fueling differently on long runs?"
+  ];
+  var followups=[
+    "Tell me more",
+    "How does this compare to last cycle?",
+    "What should I watch this week?",
+    "What are all my pace zones?"
+  ];
+
+  function nowTime(){var d=new Date(),h=d.getHours(),m=('0'+d.getMinutes()).slice(-2),ap=h>=12?'PM':'AM';h=h%12||12;return h+':'+m+' '+ap;}
+
+  function addYou(t){var m=document.createElement('div');m.className='msg you';
+    m.innerHTML='<div class="stamp">You · '+nowTime()+'</div><div class="bubble-you"></div>';
+    m.querySelector('.bubble-you').textContent=t; thread.appendChild(m); down();}
+
+  function addTyping(){var t=document.createElement('div');t.className='msg coach';t.id='typing';
+    t.innerHTML='<div class="stamp">Coach</div><div class="typing"><i></i><i></i><i></i></div>';
+    thread.appendChild(t); down();}
+
+  function renderCoach(text){
+    var el=document.getElementById('typing'); if(el) el.remove();
+    var body=text, q='';
+    var mq=text.match(/<q>([\s\S]*?)<\/q>/i);
+    if(mq){ q=mq[1].trim(); body=text.replace(mq[0],'').trim(); }
+    var m=document.createElement('div');m.className='msg coach';
+    var html='<div class="stamp">Coach · '+nowTime()+'</div><div class="bubble-coach">'+esc(body).replace(/\n+/g,'<br>');
+    if(q) html+='<span class="cq">'+esc(q)+'</span>';
+    html+='</div>'; m.innerHTML=html; thread.appendChild(m); down();
+  }
+
+  function esc(s){var d=document.createElement('div'); d.textContent=s; return d.innerHTML;}
+  function down(){setTimeout(function(){scroll.scrollTop=scroll.scrollHeight;},30);}
+
+  function coerce(r){
+    if(r==null) return "";
+    if(typeof r==='string') return r;
+    if(r.text) return r.text;
+    if(r.answer) return r.answer;
+    if(r.content){ if(typeof r.content==='string') return r.content;
+      if(Array.isArray(r.content)) return r.content.map(function(c){return c.text||'';}).join(''); }
+    if(r.structuredContent&&r.structuredContent.text) return r.structuredContent.text;
+    try{return JSON.stringify(r);}catch(e){return String(r);}
+  }
+
+  async function ask(question){
+    addYou(question); addTyping();
+    var prompt=VOICE+"\n\nMaya asks: \""+question+"\"\n\nReply now, following every rule.";
+    try{
+      if(window.cowork&&window.cowork.askClaude){
+        var res=await window.cowork.askClaude(prompt,[ATHLETE]);
+        renderCoach(coerce(res)||"I'm here — ask me again in a moment.");
+      } else {
+        renderCoach("This live view needs to run inside Cowork to answer. Open it from the app to chat for real.<q>Want me to wire this into the app next?</q>");
+      }
+    }catch(e){
+      renderCoach("Something hiccuped reaching me just now. Give it another try.<q>Mind asking that again?</q>");
+    }
+    renderChips(followups); chipsLabel.textContent='Keep going, or ask your own';
+  }
+
+  function renderChips(list){chipsEl.innerHTML='';list.forEach(function(c){
+    var b=document.createElement('button');b.className='chip';b.textContent=c;b.onclick=function(){ask(c);};chipsEl.appendChild(b);});}
+
+  function submit(){var t=input.value.trim();if(!t)return;input.value='';ask(t);}
+  send.onclick=submit; input.addEventListener('keydown',function(e){if(e.key==='Enter')submit();});
+  renderChips(starter);
+})();
+</script>
+</body>
+</html>

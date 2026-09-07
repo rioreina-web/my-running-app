@@ -1,0 +1,29 @@
+{
+  "id": "002-continuous-block-volume-only",
+  "prompt_name": "suggest-workout-progression.v1",
+  "description": "STUB — needs recording (record.ts + GEMINI_API_KEY). Continuous MP block (7 mi @ MP inside a 10 mi workout) duplicated with only the two extend-volume candidates the deterministic generator emits (both within the +10% total-volume cap). The model must rank exactly these two ids and annotate them — it must NOT invent a rep-based candidate, suggest intensity changes, or output workout structures. Notes must read as observations for the coach, not directives to the athlete.",
+  "vars": {
+    "sourceWorkout": "Marathon-pace 7 — 2 wu · 7 mi @ MP · 1 cd",
+    "candidates": "1. extend-volume-0.5mi | A little more volume — +0.5 mi at the same effort | 2 wu · 7.5 mi @ MP · 1 cd\n2. extend-volume-1mi | A little more volume — +1 mi at the same effort | 2 wu · 8 mi @ MP · 1 cd"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "ranking"
+    ],
+    "required_patterns": [
+      "\"id\":\\s*\"extend-volume-0.5mi\"",
+      "\"id\":\\s*\"extend-volume-1mi\""
+    ],
+    "forbidden_patterns": [
+      "\"steps\"",
+      "\"paceZone\"",
+      "\"id\":\\s*\"(?!extend-volume-0\\.5mi\"|extend-volume-1mi\")",
+      "(?i)\\byou should\\b",
+      "(?i)\\b(add (reps|intervals)|pick up the pace|faster than (mp|marathon pace))\\b"
+    ]
+  },
+  "recorded_response": "{\"ranking\":[\n  {\"id\":\"extend-volume-0.5mi\",\"note\":\"Natural next step for steady, conservative volume progression.\"},\n  {\"id\":\"extend-volume-1mi\",\"note\":\"Good option if the athlete handled the previous workout well and is ready for a larger jump.\"}\n]}",
+  "recorded_at": "2026-07-15T22:43:19.318Z",
+  "model": "gemini-2.5-flash"
+}

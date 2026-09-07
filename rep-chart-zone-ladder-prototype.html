@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rep chart — the zone floor</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.12);
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);
+     -webkit-font-smoothing:antialiased;padding:32px 16px 80px}
+.wrap{max-width:460px;margin:0 auto}
+h1{font-family:var(--font-display);font-weight:600;font-size:33px;line-height:1.06;margin:0 0 9px;letter-spacing:-.015em}
+.sub{font-size:13.5px;color:var(--ink-2);margin:0;line-height:1.55}
+.rule{height:1px;background:var(--ink);opacity:.85;margin:20px 0 24px}
+.eyebrow{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.plate{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:16px 14px 14px;margin:0 0 20px}
+.plate.pick{border-color:var(--coral);box-shadow:0 0 0 3px var(--coral-wash)}
+.phead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 2px}
+.ptitle{font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-.01em}
+.tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+     padding:3px 7px;border-radius:20px;background:var(--paper-deep);color:var(--ink-2);white-space:nowrap}
+.tag.rec{background:var(--coral);color:#fff}
+.note{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin:7px 0 12px}
+.note b{color:var(--ink);font-weight:400;box-shadow:inset 0 -6px 0 var(--coral-wash)}
+.reads{margin:12px 0 0;padding-top:11px;border-top:1px solid var(--rule);font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.reads .k{font-family:var(--font-mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:4px}
+.chartbox{background:var(--paper-elevated);border-radius:8px;padding:11px 6px 5px;overflow:hidden}
+.legendrow{display:flex;align-items:center;justify-content:space-between;padding:0 8px 8px;
+           font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+svg{display:block;width:100%;height:auto}
+.callout{background:var(--paper-deep);border-radius:10px;padding:13px 15px;margin:0 0 22px;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.callout b{color:var(--ink);font-weight:700}
+.callout .lede{display:block;margin-bottom:6px}
+.steps{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;margin:0 0 22px}
+.steps .k{font-family:var(--font-mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:9px}
+.steps ol{margin:0;padding-left:17px;font-size:13px;line-height:1.6;color:var(--ink-2)}
+.steps li{margin-bottom:6px}
+.steps li:last-child{margin-bottom:0}
+.steps b{color:var(--ink);font-weight:700}
+.foot{font-size:12px;color:var(--ink-3);line-height:1.55;margin-top:6px}
+code{font-family:var(--font-mono);font-size:11.5px;background:var(--paper-deep);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">Post Run Drip · workout detail</div>
+  <h1>Don't borrow<br>their floor.<br>Build one.</h1>
+  <p class="sub">Strava's axis floor is arbitrary — whatever makes the bars fit. You have something they don't: the athlete's own zone table. Put the floor on a zone anchor and bar height stops being decoration. It becomes <em>how deep into the work you were.</em></p>
+  <div class="rule"></div>
+
+  <div class="callout">
+    <span class="lede"><b>What the chart says now.</b></span>
+    Ten reps, all sitting in the band between LT and 10K pace, two of them breaking into 10K, one slipping back toward LT at the end. That's a coaching sentence you get for free from the axis — and Strava structurally cannot print it, because their y-axis is just numbers.
+  </div>
+
+  <!-- 1 -->
+  <div class="plate pick">
+    <div class="phead"><span class="ptitle">Zone ladder</span><span class="tag rec">The one</span></div>
+    <p class="note">The y-axis is a <b>zone ladder, not a number ladder</b>. Bands are the athlete's own paces; the floor sits one anchor below the slowest rep. Bars are tall because the work genuinely was — a 5:18 rep really is most of the way from HMP to 5K, and the picture now says so. Width is distance, gap is float, ink depth is pace.</p>
+    <div class="chartbox">
+      <div class="legendrow"><span>Rep avg 5:18</span><span>Floor · HMP 5:45</span></div>
+      <svg id="c1" viewBox="0 0 400 208"></svg>
+    </div>
+    <div class="reads"><span class="k">Reads</span>“All ten in the LT–10K band. Two touched 10K. Nine slipped.”</div>
+  </div>
+
+  <!-- 2 -->
+  <div class="plate">
+    <div class="phead"><span class="ptitle">The set</span><span class="tag">Variant · maximum mass</span></div>
+    <p class="note">Same zone floor, but the reps go flush — one continuous block of ink instead of ten separate objects, so the session reads as <b>a thing you completed</b> rather than a list of attempts. Rest moves out of the plot and gets its own lane underneath, at true proportional width, where it can't fight the pace read.</p>
+    <div class="chartbox">
+      <div class="legendrow"><span>Rep avg 5:18</span><span>Float lane · 1:05 avg</span></div>
+      <svg id="c2" viewBox="0 0 400 216"></svg>
+    </div>
+    <div class="reads"><span class="k">Reads</span>Heaviest on the page. Rest fidelity moves down a level.</div>
+  </div>
+
+  <div class="steps">
+    <span class="k">The rule, so it never breaks again</span>
+    <ol>
+      <li><b>Work reps only.</b> Filter by lap role, never by a pace ratio — that's what let a 0.01 mi auto-lap own the axis.</li>
+      <li><b>Ceiling</b> = the first zone anchor faster than the fastest rep.</li>
+      <li><b>Floor</b> = step outward one zone anchor at a time until the slowest rep fills <b>at least 45%</b> of the plot. Stop at 80% so a ragged session can't balloon.</li>
+      <li><b>No zone table?</b> Fall back to a span of 5× the rep spread on round gridlines. Same feel, no semantics.</li>
+      <li><b>Hard floor on plausible pace</b> — anything faster than the athlete's mile PR never touches the scale.</li>
+    </ol>
+  </div>
+
+  <div class="callout">
+    <span class="lede"><b>Why this beats copying them.</b></span>
+    Strava's tall bars are a fitting trick — the floor means nothing, so the height means nothing, it just feels better. Here the height is earned: it's distance below your own HMP pace. Same mass on the page, but the reason the bar is tall is the reason you're proud of it. That's the version worth shipping, and it's yours.
+  </div>
+
+  <p class="foot">Zone anchors shown are a plausible table for a 5:18 athlete (HMP 5:45 · LT 5:32 · 10K 5:12 · 5K 4:58) — wire to <code>PaceZonesEngine</code>. System serif stand-in; Crimson Pro / PT Serif will read tighter in app.</p>
+
+</div>
+
+<script>
+const SW=400, AXIS_W=50, PAD_T=12, PLOT_H=150;
+const PLOT_W=SW-AXIS_W-10;
+
+const PACES=[319,310,315,317,321,318,320,319,322,319];
+const DIST =[.62,.63,.63,.62,.62,.63,.62,.62,.63,.62];
+const REST =[67,66,66,67,65,64,65,63,64,66];
+const AVG=PACES.reduce((a,b)=>a+b,0)/PACES.length;
+
+// athlete zone anchors (sec/mi), slow -> fast
+const ZONES=[{n:'MP',p:365},{n:'HMP',p:345},{n:'LT',p:332},{n:'10K',p:312},{n:'5K',p:298},{n:'3K',p:287}];
+const fast=Math.min(...PACES), slow=Math.max(...PACES);
+// ceiling: first anchor faster than the fastest rep
+const ceil_=ZONES.filter(z=>z.p<fast).sort((a,b)=>b.p-a.p)[0];
+// floor: step out until slowest rep fills >= 45%
+let floor_=null;
+for(const z of ZONES.filter(z=>z.p>slow).sort((a,b)=>a.p-b.p)){
+  const fillPct=(z.p-slow)/(z.p-ceil_.p);
+  floor_=z; if(fillPct>=0.45) break;
+}
+const A_MIN=ceil_.p, A_MAX=floor_.p, SPAN=A_MAX-A_MIN;
+const anchors=ZONES.filter(z=>z.p>=A_MIN&&z.p<=A_MAX);
+
+const fmt=s=>{s=Math.round(s);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+const STOPS=['#93B9D6','#74A8CC','#578FC0','#3F7CB5','#2F66A8','#27549B','#20448B','#1A3679','#142964','#0E1D4E'];
+function mix(a,b,t){const h=c=>[1,3,5].map(i=>parseInt(c.substr(i,2),16));const A=h(a),B=h(b);
+  return '#'+A.map((v,i)=>Math.round(v+(B[i]-v)*t).toString(16).padStart(2,'0')).join('')}
+function rampAt(t){t=Math.min(Math.max(t,0),1);const s=t*(STOPS.length-1),i=Math.min(Math.floor(s),STOPS.length-2);
+  return mix(STOPS[i],STOPS[i+1],s-i)}
+// anchored to the zone table: LT -> 10K -> 5K walk the ramp
+function paceColor(p){
+  const lo=ZONES[0].p, hi=ZONES[ZONES.length-1].p;
+  return rampAt((lo-p)/(lo-hi));
+}
+const el=(n,a)=>{const e=document.createElementNS('http://www.w3.org/2000/svg',n);for(const k in a)e.setAttribute(k,a[k]);return e};
+const MONO='ui-monospace, SF Mono, Menlo, Consolas, monospace';
+const y=p=>PAD_T+(p-A_MIN)/SPAN*PLOT_H;
+const BASE=PAD_T+PLOT_H;
+function topBar(x,y0,w,h,r){r=Math.min(r,w/2,h);
+  return `M${x} ${y0+h} L${x} ${y0+r} Q${x} ${y0} ${x+r} ${y0} L${x+w-r} ${y0} Q${x+w} ${y0} ${x+w} ${y0+r} L${x+w} ${y0+h} Z`}
+
+function zoneScaffold(g){
+  // alternating band washes between anchors
+  for(let i=0;i<anchors.length-1;i++){
+    const a=anchors[i], b=anchors[i+1];
+    g.appendChild(el('rect',{x:AXIS_W,y:y(b.p),width:PLOT_W,height:y(a.p)-y(b.p),
+      fill:'#E8E4DF','fill-opacity': i%2 ? 0.55 : 0.22}));
+  }
+  anchors.forEach(a=>{
+    g.appendChild(el('line',{x1:AXIS_W,x2:SW-10,y1:y(a.p),y2:y(a.p),stroke:'#E8E4E0','stroke-width':0.8}));
+    const t1=el('text',{x:AXIS_W-8,y:y(a.p)+1,'text-anchor':'end',fill:'#6B6560','font-family':MONO,'font-size':8.5});
+    t1.textContent=fmt(a.p); g.appendChild(t1);
+    const t2=el('text',{x:AXIS_W-8,y:y(a.p)+10,'text-anchor':'end',fill:'#9B9590','font-family':MONO,
+      'font-size':7,'letter-spacing':'.12em'});
+    t2.textContent=a.n; g.appendChild(t2);
+  });
+}
+function avgLine(g){
+  g.appendChild(el('line',{x1:AXIS_W,x2:SW-10,y1:y(AVG),y2:y(AVG),stroke:'#1A1815',
+    'stroke-width':1,'stroke-dasharray':'4 3','stroke-opacity':.45}));
+  const t=el('text',{x:SW-12,y:y(AVG)-5,'text-anchor':'end',fill:'#6B6560','font-family':MONO,
+    'font-size':8,'letter-spacing':'.1em'}); t.textContent='AVG 5:18'; g.appendChild(t);
+}
+
+// ---------- 1 · zone ladder : width=dist, gap=rest ----------
+(function(){
+  const svg=document.getElementById('c1'),g=el('g',{});svg.appendChild(g);
+  zoneScaffold(g);
+  const durs=PACES.map((p,i)=>p*DIST[i]);
+  const restUnits=REST.slice(0,-1).reduce((a,r,i)=>a+DIST[i]*(r/durs[i]),0);
+  const gap=3, sum=DIST.reduce((a,b)=>a+b,0)+restUnits;
+  const scale=(PLOT_W-gap*9)/sum;
+  let x=AXIS_W;
+  const L=[];
+  PACES.forEach((p,i)=>{const w=DIST[i]*scale;L.push({p,x,w,id:i+1});
+    x+=w+gap+(i<9?DIST[i]*(REST[i]/durs[i])*scale:0)});
+  L.forEach(r=>{
+    g.appendChild(el('path',{d:topBar(r.x,y(r.p),r.w,BASE-y(r.p),4),fill:paceColor(r.p),'fill-opacity':.92}));
+    const t=el('text',{x:r.x+r.w/2,y:BASE+12,'text-anchor':'middle',fill:'#9B9590','font-family':MONO,'font-size':8});
+    t.textContent=r.id;g.appendChild(t);
+  });
+  // float ticks in the gaps
+  for(let i=0;i<L.length-1;i++){
+    const x0=L[i].x+L[i].w+1.5, x1=L[i+1].x-1.5;
+    if(x1-x0>2.5) g.appendChild(el('line',{x1:x0,x2:x1,y1:BASE+4,y2:BASE+4,
+      stroke:'#9B9590','stroke-width':2,'stroke-opacity':.5,'stroke-linecap':'round'}));
+  }
+  avgLine(g);
+  g.appendChild(el('line',{x1:AXIS_W,x2:SW-10,y1:BASE,y2:BASE,stroke:'#1A1815','stroke-width':1,'stroke-opacity':.55}));
+  // one coral note
+  const a=L[7].x, b=L[9].x+L[9].w;
+  g.appendChild(el('line',{x1:a,x2:b,y1:BASE+24,y2:BASE+24,stroke:'#D4592A','stroke-width':1.2}));
+  const c=el('text',{x:(a+b)/2,y:BASE+35,'text-anchor':'middle',fill:'#D4592A','font-family':MONO,
+    'font-size':8,'letter-spacing':'.1em'}); c.textContent='FADE +3s'; g.appendChild(c);
+  const l=el('text',{x:AXIS_W,y:BASE+35,fill:'#9B9590','font-family':MONO,'font-size':8,'letter-spacing':'.1em'});
+  l.textContent='GAP = FLOAT'; g.appendChild(l);
+})();
+
+// ---------- 2 · the set : flush block + float lane ----------
+(function(){
+  const svg=document.getElementById('c2'),g=el('g',{});svg.appendChild(g);
+  zoneScaffold(g);
+  const sum=DIST.reduce((a,b)=>a+b,0), scale=PLOT_W/sum;
+  let x=AXIS_W; const L=[];
+  PACES.forEach((p,i)=>{const w=DIST[i]*scale;L.push({p,x,w,id:i+1});x+=w});
+  // one mass, rounded only at the outer corners
+  L.forEach((r,i)=>{
+    const h=BASE-y(r.p);
+    const d = i===0 ? topBar(r.x,y(r.p),r.w,h,4)
+            : i===L.length-1 ? topBar(r.x,y(r.p),r.w,h,4)
+            : `M${r.x} ${BASE} L${r.x} ${y(r.p)+3} Q${r.x} ${y(r.p)} ${r.x+3} ${y(r.p)} L${r.x+r.w-3} ${y(r.p)} Q${r.x+r.w} ${y(r.p)} ${r.x+r.w} ${y(r.p)+3} L${r.x+r.w} ${BASE} Z`;
+    g.appendChild(el('path',{d:d,fill:paceColor(r.p),'fill-opacity':.95}));
+    g.appendChild(el('line',{x1:r.x,x2:r.x,y1:y(r.p)+2,y2:BASE,stroke:'#FAFAF8','stroke-width':0.8,'stroke-opacity':.5}));
+    const t=el('text',{x:r.x+r.w/2,y:BASE+12,'text-anchor':'middle',fill:'#9B9590','font-family':MONO,'font-size':8});
+    t.textContent=r.id;g.appendChild(t);
+  });
+  avgLine(g);
+  g.appendChild(el('line',{x1:AXIS_W,x2:SW-10,y1:BASE,y2:BASE,stroke:'#1A1815','stroke-width':1,'stroke-opacity':.55}));
+  // float lane
+  const LY=BASE+26, maxR=Math.max(...REST);
+  const lab=el('text',{x:AXIS_W-8,y:LY+3,'text-anchor':'end',fill:'#9B9590','font-family':MONO,
+    'font-size':7,'letter-spacing':'.12em'}); lab.textContent='FLOAT'; g.appendChild(lab);
+  g.appendChild(el('line',{x1:AXIS_W,x2:SW-10,y1:LY,y2:LY,stroke:'#E8E4E0','stroke-width':1}));
+  for(let i=0;i<9;i++){
+    const bx=L[i].x+L[i].w, w=(REST[i]/maxR)*16;
+    g.appendChild(el('line',{x1:bx-w/2,x2:bx+w/2,y1:LY,y2:LY,stroke:'#6B6560','stroke-width':3.4,
+      'stroke-opacity':.55,'stroke-linecap':'round'}));
+  }
+  const l2=el('text',{x:SW-12,y:LY+16,'text-anchor':'end',fill:'#9B9590','font-family':MONO,
+    'font-size':8,'letter-spacing':'.1em'}); l2.textContent='1:03 – 1:07 · AVG 1:05'; g.appendChild(l2);
+})();
+</script>
+</body>
+</html>

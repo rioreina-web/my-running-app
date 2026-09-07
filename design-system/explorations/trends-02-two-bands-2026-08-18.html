@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post Run Drip — Section 02, two bands (LT + target MP)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --pace-lt:#27549B; --pace-mp:#3F7CB5;
+  --vol:#8C867F; --vol-soft:#C9C3BB;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DCD6CE;font-family:var(--fb);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:36px 20px 90px}
+
+.pagehead{max-width:1180px;margin:0 auto 22px}
+.pagehead .kick{font-family:var(--fm);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-2)}
+.pagehead h1{font-family:var(--fd);font-weight:700;font-size:34px;letter-spacing:-.02em;
+  line-height:1.05;margin-top:8px}
+.pagehead p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:64ch;margin-top:10px}
+.pagehead p b{color:var(--ink);font-weight:700}
+.pagehead p + p{margin-top:8px}
+
+/* ---------- control panel ---------- */
+.panel{max-width:1180px;margin:0 auto 30px;background:var(--paper-elevated);
+  border:1px solid var(--rule);border-radius:14px;padding:6px 20px 16px}
+.prow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:11px 0}
+.prow + .prow{border-top:1px solid var(--rule)}
+.ctlab{font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);width:104px;flex:none}
+.seg{display:inline-flex;background:var(--paper-deep);border-radius:9px;padding:3px;gap:2px}
+.seg button{font-family:var(--fm);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;
+  border:0;background:transparent;color:var(--ink-2);padding:7px 13px;border-radius:7px;cursor:pointer}
+.seg button:hover{color:var(--ink)}
+.seg button.on{background:var(--card);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.seg.lt button.on{color:var(--pace-lt)} .seg.mp button.on{color:var(--pace-mp)}
+.pin{font-family:var(--fm);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 4px 0 6px}
+.mono{font-family:var(--fm);font-size:12px;color:var(--ink-2);letter-spacing:.03em}
+.mono b{color:var(--ink);font-weight:600}
+.status{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--fm);font-size:11px;letter-spacing:.03em;color:var(--ink-2);
+  background:var(--card);border:1px solid var(--rule);border-radius:999px;padding:6px 12px}
+.chip b{color:var(--ink);font-weight:600}
+.chip.ok b{color:#3D7A55} .chip.bad b{color:var(--coral-deep)}
+.chip.lt{border-color:rgba(39,84,155,.28)} .chip.mp{border-color:rgba(63,124,181,.3)}
+
+/* ---------- phones ---------- */
+.grid{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(390px,1fr));
+  gap:34px 28px;justify-items:center}
+.col{width:100%;max-width:420px}
+.optlab{display:flex;align-items:baseline;gap:9px;margin-bottom:12px;flex-wrap:wrap}
+.optlab .tag{font-family:var(--fm);font-size:10px;font-weight:700;letter-spacing:.12em;
+  text-transform:uppercase;color:#fff;background:var(--ink);border-radius:4px;padding:4px 7px}
+.optlab h3{font-family:var(--fd);font-weight:700;font-size:20px;letter-spacing:-.01em}
+.optlab .sub{font-family:var(--fb);font-size:13px;color:var(--ink-2);font-style:italic}
+
+.frame{width:390px;max-width:100%;background:var(--paper);border-radius:34px;overflow:hidden;
+  box-shadow:0 20px 46px rgba(0,0,0,.18),0 2px 6px rgba(0,0,0,.07);margin:0 auto}
+.statusbar{display:flex;justify-content:space-between;align-items:center;
+  padding:13px 24px 4px;font-family:var(--fm);font-size:12.5px;font-weight:600;color:var(--ink)}
+.statusbar .right{display:flex;gap:6px;align-items:center;font-size:10.5px;color:var(--ink-2)}
+.batt{background:#34C759;color:#fff;border-radius:4px;padding:1px 5px;font-size:9.5px;font-weight:700}
+.screen{padding:14px 24px 26px}
+
+.shead{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.snum{font-family:var(--fm);font-size:11px;font-weight:600;color:var(--coral);letter-spacing:.08em}
+.shead h2{font-family:var(--fd);font-weight:700;font-size:21px;letter-spacing:-.01em}
+.verdict{font-family:var(--fb);font-size:15px;line-height:1.5;color:var(--ink);margin:8px 0 14px}
+.verdict b{font-weight:700}
+.verdict em{font-style:italic;color:var(--ink-2)}
+
+.chartwrap{position:relative;background:var(--card);border:1px solid var(--rule);
+  border-radius:12px;padding:12px 10px 8px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+
+.footstats{display:flex;margin-top:12px;border-top:1px solid var(--rule);padding-top:10px}
+.footstats div{flex:1;font-family:var(--fm);font-size:9.5px;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+.footstats div b{display:block;font-size:15px;letter-spacing:0;color:var(--ink);font-weight:600;margin-top:4px;text-transform:none}
+.footstats div.lt b{color:var(--pace-lt)}
+.footstats div.mp b{color:var(--pace-mp)}
+
+.tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .12s;
+  background:var(--ink);color:#fff;border-radius:8px;padding:8px 10px;z-index:9;
+  font-family:var(--fm);font-size:10.5px;line-height:1.5;letter-spacing:.02em;white-space:nowrap;
+  box-shadow:0 4px 14px rgba(0,0,0,.25);transform:translate(-50%,-118%)}
+.tip .d{color:#C9C3BB;letter-spacing:.1em;text-transform:uppercase;font-size:9px;display:block;margin-bottom:3px}
+.tip .b{color:#8FB4E8}
+.tip .o{color:#E9A98C}
+
+/* layout 3 */
+.bandgrp{padding:2px 0 10px}
+.bandgrp + .bandgrp{border-top:1px solid var(--rule);padding-top:12px}
+.bandtitle{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
+.bandtitle .n{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
+.bandtitle .n.lt{color:var(--pace-lt)} .bandtitle .n.mp{color:var(--pace-mp)}
+.bandtitle .a{font-family:var(--fm);font-size:9.5px;letter-spacing:.05em;color:var(--ink-3)}
+.cmprow{display:flex;align-items:center;gap:10px;padding:5px 0}
+.cmprow .k{width:52px;font-family:var(--fm);font-size:9px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);line-height:1.25}
+.cmpbar{flex:1;height:24px;position:relative;background:var(--paper-deep);border-radius:3px}
+.cmpbar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--vol-soft)}
+.cmprow.now .cmpbar i{background:var(--vol)}
+.cmpbar span{position:absolute;left:8px;top:50%;transform:translateY(-50%);
+  font-family:var(--fm);font-size:11.5px;font-weight:600;color:var(--ink)}
+.cmpbar span small{font-size:8.5px;color:var(--ink-2);letter-spacing:.08em;margin-left:3px}
+.cmppace{width:52px;text-align:right;font-family:var(--fm);font-size:14px;font-weight:600}
+.cmppace.lt{color:var(--pace-lt)} .cmppace.mp{color:var(--pace-mp)}
+.bandfoot{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+.bandfoot .pill{display:inline-flex;align-items:center;gap:6px;background:var(--paper-deep);
+  border-radius:999px;padding:4px 10px;font-family:var(--fm);font-size:9px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+.bandfoot .pill b{font-size:12px;letter-spacing:0;text-transform:none;color:var(--ink)}
+.bandfoot .pill.up b{color:var(--coral)}
+.emptyband{font-family:var(--fb);font-size:13.5px;line-height:1.45;color:var(--ink-2);
+  font-style:italic;padding:8px 0 2px}
+.emptyband b{font-style:normal;color:var(--ink)}
+
+.note{margin-top:16px;background:var(--paper-elevated);border:1px solid var(--rule);
+  border-radius:12px;padding:15px 17px}
+.note .h{font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:8px}
+.note ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+.note li{font-size:13.5px;line-height:1.45;color:var(--ink-2);padding-left:16px;position:relative}
+.note li::before{content:"";position:absolute;left:0;top:8px;width:5px;height:5px;
+  border-radius:99px;background:var(--coral)}
+.note li.warn::before{background:var(--ink-3)}
+.note li b{color:var(--ink);font-weight:700}
+
+.tablewrap{max-width:1180px;margin:44px auto 0;background:var(--paper-elevated);
+  border:1px solid var(--rule);border-radius:14px;padding:22px 24px}
+.tablewrap h4{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);margin-bottom:4px}
+.tablewrap p{font-size:13.5px;color:var(--ink-3);margin-bottom:14px}
+.tables{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:26px}
+table{border-collapse:collapse;width:100%;font-family:var(--fm);font-size:12px}
+caption{text-align:left;font-size:10px;letter-spacing:.11em;text-transform:uppercase;
+  font-weight:700;padding-bottom:8px}
+caption.lt{color:var(--pace-lt)} caption.mp{color:var(--pace-mp)}
+th{text-align:left;font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);
+  font-weight:500;padding:0 12px 8px 0;border-bottom:1px solid var(--rule)}
+td{padding:7px 12px 7px 0;border-bottom:1px solid var(--rule);color:var(--ink-2);font-variant-numeric:tabular-nums}
+td.n{color:var(--ink);font-weight:600}
+tr.out td{color:var(--ink-3)} tr.out td.n{color:var(--ink-3);font-weight:400}
+td.tagout{color:var(--coral-deep);font-size:10px;letter-spacing:.08em}
+
+.foot{max-width:1180px;margin:34px auto 0;font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.foot h5{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);margin:20px 0 6px}
+.foot b{color:var(--ink)}
+.foot code{font-family:var(--fm);font-size:11.5px;background:var(--paper-deep);padding:2px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<div class="pagehead">
+  <div class="kick">Post Run Drip · Trends · Section 02 · two bands</div>
+  <h1>One band at LT, one at your target MP</h1>
+  <p><b>Both anchors move, but they don’t mean the same thing.</b> LT is <em>measured</em> — the app derives it from your testing, so moving it is an <em>override</em>: you’re saying the derivation is wrong. MP is a <em>goal</em> — there is nothing to derive, only a race you’ve decided to run. Same control, opposite direction of authority. Each band also gets its own width.</p>
+  <p>Move the target and watch two things change at once: whether the bands stay clear of each other, and how many of your MP sessions still count as MP work at all.</p>
+</div>
+
+<div class="panel">
+  <div class="prow">
+    <span class="ctlab">Block</span>
+    <div class="seg" id="segData">
+      <button data-k="flat" class="on">Your block · LT flat</button>
+      <button data-k="build">A block that improved</button>
+    </div>
+  </div>
+  <div class="prow">
+    <span class="ctlab">LT anchor</span>
+    <div class="seg lt" id="segLTA"></div>
+    <span class="mono" id="ltRead"></span>
+  </div>
+  <div class="prow">
+    <span class="ctlab">Target MP</span>
+    <div class="seg mp" id="segMP"></div>
+    <span class="mono" id="mpRead"></span>
+  </div>
+  <div class="prow">
+    <span class="ctlab">Band width</span>
+    <span class="pin" style="color:var(--pace-lt)">LT</span>
+    <div class="seg lt" id="segLT"></div>
+    <span class="pin" style="color:var(--pace-mp)">MP</span>
+    <div class="seg mp" id="segMPW"></div>
+  </div>
+  <div class="prow">
+    <span class="ctlab">Result</span>
+    <div class="status" id="status"></div>
+  </div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="tablewrap">
+  <h4>The numbers</h4>
+  <p>Every chart above draws from these two tables. Rows marked <b>out</b> fall outside the current band and are excluded from the stats — the accessible twin.</p>
+  <div class="tables" id="tables"></div>
+</div>
+
+<div class="foot">
+  <h5>Two anchors, two different controls</h5>
+  <p><b>LT is an override.</b> The app derives it and should keep deriving it; the control exists because a derivation from a bad test, a hot week, or a stale field test is worse than a number the athlete knows. Ship it as a correction with the derived value still visible — “derived 5:20, overridden to 5:17” — so it’s never silent, and let it decay back to derived when a fresh test lands.</p>
+  <p><b>MP is an input.</b> There is no measurement to override: two athletes with identical thresholds can be racing a 2:26 and a 2:37. This should read straight off <code>TrendsBlockGoal</code> — race date and distance already live there, a target pace or goal time is the missing field — with a manual set for anyone who hasn’t entered a race.</p>
+  <p>The practical difference is what happens when they’re wrong. A wrong LT anchor makes the section mis-grade work the athlete genuinely did. A wrong MP target makes it grade that work against the wrong race — the sessions were real either way.</p>
+
+  <h5>Moving the target has two consequences, not one</h5>
+  <p><b>1 · It moves the band toward or away from LT.</b> A faster goal pushes MP up into threshold territory and the two bands start overlapping again — at LT ±3% and MP ±3%, a 5:35 target reintroduces a five-second double-count. Raising the LT anchor does the same thing from the other side. Clearance is a property of <em>both</em> anchors and <em>both</em> widths, so it has to be checked whenever any of the four changes, not set once at install.</p>
+  <p><b>2 · It changes what counts as MP work.</b> Sessions that sat comfortably in the band at a 5:47 target fall out of it at 5:35, because you weren’t running that pace. This is correct — a 5:50 segment is not marathon-pace work for a 2:26 marathoner — but it means the section can go from six sessions to zero on a single control change, and the design has to survive that. Every layout here has an empty state for exactly this reason.</p>
+
+  <h5>Separate widths, and why</h5>
+  <p>The two bands don’t deserve the same skirt. A twenty-minute tempo holds a tight pace; forty minutes of marathon pace inside a long run drifts more, especially late. A narrow LT band with a slightly wider MP band is the shape that matches how the work actually gets run — the controls above let you find it rather than assuming ±5% for both. The constraint is only that the edges must not cross.</p>
+
+  <h5>What the mockup can’t show you</h5>
+  <p>It filters <b>whole sessions</b> by their average band pace. The app filters <b>laps</b>, then applies <code>minTotalMinutes</code> and <code>minBlockMinutes</code>. So real behaviour is softer at the edges — a session near the boundary loses some minutes rather than all of them — but stricter overall, because a session can lose enough minutes to fail the gate entirely. Expect real numbers to fall further than these do.</p>
+
+  <p style="margin-top:18px;color:var(--ink-3);font-size:12.5px">SAMPLE DATA · LT sessions are the block in your screenshot, anchored at a measured 5:20. MP sessions are invented at 5:45–5:56; the app has no MP band today, so there was nothing to read. Judge the shapes, not the story.</p>
+</div>
+
+<script>
+/* ============================================================
+   Sample data — 12-week window, Mon 25 May → Sat 15 Aug 2026
+   ============================================================ */
+const T0 = Date.UTC(2026,4,25), T1 = Date.UTC(2026,7,17);
+const MARATHON_MI = 26.2188;
+
+const DATA = {
+  flat: {
+    lt:{anchor:320,label:'LT',
+      s:[['2026-05-27',11,319],['2026-05-30',26,320],['2026-06-04',25,318],
+         ['2026-06-09',18,322],['2026-06-13',20,323],['2026-06-18',14,325],
+         ['2026-06-24',16,326],['2026-07-02',24,324],['2026-07-16',27,323],
+         ['2026-07-22',24,320],['2026-07-30',22,318],['2026-08-04', 8,322],
+         ['2026-08-13',28,321]]},
+    mp:{label:'MP',
+      s:[['2026-06-06',30,349],['2026-06-20',26,351],['2026-07-05',35,350],
+         ['2026-07-19',40,348],['2026-08-01',30,352],['2026-08-15',45,347]]}
+  },
+  build: {
+    lt:{anchor:320,label:'LT',
+      s:[['2026-05-27',18,327],['2026-06-01',20,326],['2026-06-05',19,325],
+         ['2026-06-11',22,324],['2026-06-18',21,323],['2026-06-25',24,323],
+         ['2026-07-02',23,322],['2026-07-09',26,321],['2026-07-16',28,320],
+         ['2026-07-23',25,320],['2026-07-30',30,318],['2026-08-06',33,317],
+         ['2026-08-13',31,316]]},
+    mp:{label:'MP',
+      s:[['2026-06-06',24,356],['2026-06-20',28,354],['2026-07-05',34,351],
+         ['2026-07-19',40,349],['2026-08-01',38,347],['2026-08-15',50,345]]}
+  }
+};
+const LT_ANCHORS = [314,317,320,323,326];
+const MP_TARGETS = [335,341,347,353,359];
+const WIDTHS = [2,3,4,5];
+const C = {lt:'#27549B', mp:'#3F7CB5'};
+const CFG = {data:'flat', ltAnchor:320, mpTarget:347, ltW:3, mpW:3};
+
+const NS='http://www.w3.org/2000/svg';
+const pace = s => Math.floor(s/60)+':'+String(Math.round(s)%60).padStart(2,'0');
+const hms  = t => { t=Math.round(t); const h=Math.floor(t/3600), m=Math.floor((t%3600)/60);
+  return h+':'+String(m).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); };
+const md   = iso => { const d=new Date(iso+'T00:00:00Z');
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()]+' '+d.getUTCDate(); };
+
+/* One band: anchor + skirt → edges → which sessions qualify → stats on those only. */
+function band(raw, anchorSec, widthPct){
+  const fast = Math.round(anchorSec*(1-widthPct/100));
+  const slow = Math.round(anchorSec*(1+widthPct/100));
+  const all = raw.s.map(([iso,min,sec])=>({iso,min,sec,t:Date.parse(iso+'T00:00:00Z')}))
+                   .map(p=>({...p, inBand: p.sec>=fast && p.sec<=slow}));
+  const s = all.filter(p=>p.inBand);
+  const out = all.filter(p=>!p.inBand);
+  const b = {label:raw.label, anchor:anchorSec, widthPct, fast, slow, all, s, out,
+             total:all.length, empty:s.length<2};
+  if(b.empty) return b;
+
+  const n=s.length, k=Math.min(3,Math.floor(n/2));
+  const f=s.slice(0,k), l=s.slice(-k);
+  const sum=a=>a.reduce((x,y)=>x+y.min,0), avg=a=>sum(a)/a.length;
+  const mx=s.reduce((a,p)=>a+p.t,0)/n, my=s.reduce((a,p)=>a+p.sec,0)/n;
+  let num=0,den=0; s.forEach(p=>{num+=(p.t-mx)*(p.sec-my); den+=(p.t-mx)**2;});
+  const slope=den?num/den:0;
+  return {...b, groupN:k, f3:f, l3:l,
+    minutesPct:Math.round(((sum(l)-sum(f))/sum(f))*100),
+    paceDelta:s[n-1].sec-s[0].sec,
+    slopeMonth:slope*86400000*30.44,
+    avgF3:avg(f), avgL3:avg(l),
+    paceF3:f.reduce((a,p)=>a+p.sec,0)/k, paceL3:l.reduce((a,p)=>a+p.sec,0)/k,
+    fit:t=>my+slope*(t-mx)};
+}
+const model = () => ({
+  lt: band(DATA[CFG.data].lt, CFG.ltAnchor, CFG.ltW),
+  mp: band(DATA[CFG.data].mp, CFG.mpTarget,             CFG.mpW)
+});
+
+const el=(n,a={})=>{const e=document.createElementNS(NS,n);
+  for(const k in a) e.setAttribute(k,a[k]); return e;};
+function txt(t,x,y,o={}){
+  const e=el('text',{x,y,'font-family':o.f||'ui-monospace, SF Mono, Menlo, monospace',
+    'font-size':o.s||9,'fill':o.c||'#9B9590','letter-spacing':o.ls??0.8,
+    'text-anchor':o.a||'start','font-weight':o.w||400});
+  e.textContent=t; return e;}
+// LT = circle, MP = diamond. Shape is the discriminator; hue only reinforces it.
+function mark(kind,cx,cy,r,attrs){
+  if(kind==='lt') return el('circle',{cx,cy,r,...attrs});
+  return el('path',{d:`M${cx} ${cy-r*1.2}L${cx+r*1.2} ${cy}L${cx} ${cy+r*1.2}L${cx-r*1.2} ${cy}Z`,...attrs});
+}
+function sessionMark(kind,x,y,p,isLast){
+  if(!p.inBand)  // outside the band: hollow, grey, no fill — visible but not counted
+    return mark(kind,x,y,3.2,{fill:'none',stroke:'#B4ADA4','stroke-width':1.4,'stroke-dasharray':'2 1.6'});
+  return mark(kind,x,y,isLast?4.6:3.4,
+    {fill:isLast?'#D4592A':'#fff',stroke:isLast?'#fff':C[kind],
+     'stroke-width':isLast?2:1.8,'stroke-opacity':isLast?1:.75});
+}
+// Window never narrower than 15 s/mi; tick step chosen so a short lane never
+// prints six labels on top of each other.
+function paceScale(vals,minSpan=15){
+  const lo0=Math.min(...vals), hi0=Math.max(...vals);
+  const mid=(lo0+hi0)/2, span=Math.max(hi0-lo0+4,minSpan);
+  const step = span>36 ? 20 : span>18 ? 10 : 5;
+  const lo=mid-span/2, hi=mid+span/2, ticks=[];
+  for(let v=Math.ceil(lo/step)*step; v<=hi; v+=step) ticks.push(v);
+  return {lo,hi,ticks};
+}
+// A label that sits over marks/gridlines gets a surface chip behind it.
+function chipTxt(svg,t,x,y,o={}){
+  const w=t.length*(o.s||7)*0.70+10, h=(o.s||7)+7;
+  const x0 = o.a==='end' ? x-w : o.a==='middle' ? x-w/2 : x;
+  svg.appendChild(el('rect',{x:x0,y:y-h+3,width:w,height:h,rx:3,
+    fill:'#FFFFFF','fill-opacity':.86}));
+  svg.appendChild(txt(t,x,y,o));
+}
+const MONTHS=[[Date.UTC(2026,5,1),'JUN'],[Date.UTC(2026,6,1),'JUL'],[Date.UTC(2026,7,1),'AUG']];
+const trendTxt = b => b.empty ? 'NOT ENOUGH IN BAND'
+  : Math.abs(b.slopeMonth)<1 ? 'TREND · FLAT'
+  : (b.slopeMonth<0?'FASTER ':'SLOWER ')+Math.abs(b.slopeMonth).toFixed(0)+' S/MI PER MO';
+
+/* ============================================================
+   1 — Two panels, own axes
+   ============================================================ */
+function layoutStacked(m,host){
+  const W=342,H=332,padL=38,padR=12;
+  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`});
+  const X=t=>padL+((t-T0)/(T1-T0))*(W-padL-padR);
+  const tip=host.querySelector('.tip');
+
+  function panel(b,kind,y0){
+    const aTop=y0+16, aH=56, mTopY=y0+96, mH=32;
+    // scale must hold the sessions AND the band edges, so out-of-band dots stay visible
+    const ps=paceScale([...b.all.map(p=>p.sec), b.fast, b.slow]);
+    const yp=v=>aTop+((v-ps.lo)/(ps.hi-ps.lo))*aH;
+    const mTop=Math.max(10,Math.ceil(Math.max(...(b.s.length?b.s:b.all).map(p=>p.min))/10)*10);
+    const ym=v=>mTopY+mH-(v/mTop)*mH;
+
+    MONTHS.forEach(([t])=>{
+      svg.appendChild(el('line',{x1:X(t),x2:X(t),y1:aTop-6,y2:aTop+aH+5,stroke:'#F4F1ED'}));
+      svg.appendChild(el('line',{x1:X(t),x2:X(t),y1:mTopY-4,y2:mTopY+mH,stroke:'#F4F1ED'}));
+    });
+    svg.appendChild(txt(b.label+' BAND · '+pace(b.anchor)+'/MI ±'+b.widthPct+'%',padL,y0,
+      {s:8,ls:.9,c:C[kind],w:700}));
+    svg.appendChild(txt(trendTxt(b),W-padR,y0,{s:7.5,ls:.9,a:'end',c:b.empty?'#9B9590':C[kind]}));
+
+    ps.ticks.forEach(v=>{
+      svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:yp(v),y2:yp(v),stroke:'#EFEBE7'}));
+      svg.appendChild(txt(pace(v),padL-6,yp(v)+3,{a:'end',s:8.5}));
+    });
+    // the band itself, shaded, so out-of-band sessions are visibly out
+    const yF=Math.max(yp(b.fast),aTop-4), yS=Math.min(yp(b.slow),aTop+aH+4);
+    if(yS>yF) svg.appendChild(el('rect',{x:padL,y:yF,width:W-padL-padR,height:yS-yF,
+      fill:C[kind],'fill-opacity':.07}));
+    svg.appendChild(txt('FASTER',padL-6,aTop-5,{s:6.5,ls:.6,a:'end',c:'#B4ADA4'}));
+
+    if(!b.empty){
+      const tA=b.s[0].t, tB=b.s[b.s.length-1].t;
+      svg.appendChild(el('line',{x1:X(tA),x2:X(tB),y1:yp(b.fit(tA)),y2:yp(b.fit(tB)),
+        stroke:C[kind],'stroke-width':2,'stroke-linecap':'round','stroke-opacity':.9}));
+    }
+    const lastIn = b.s.length ? b.s[b.s.length-1] : null;
+    b.all.forEach(p=>svg.appendChild(sessionMark(kind,X(p.t),yp(p.sec),p,p===lastIn)));
+    if(lastIn)
+      svg.appendChild(txt(pace(lastIn.sec),X(lastIn.t)-9,yp(lastIn.sec)-9,{s:10.5,c:'#1A1815',w:600,a:'end'}));
+
+    svg.appendChild(txt('MINUTES IN BAND · '+b.s.length+' OF '+b.total+' SESSIONS',padL,mTopY-8,
+      {s:7.5,ls:1,c:'#6B6560'}));
+    [0,mTop].forEach(v=>{
+      svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:ym(v),y2:ym(v),
+        stroke:v===0?'#DDD8D2':'#EFEBE7'}));
+      svg.appendChild(txt(v,padL-6,ym(v)+3,{a:'end',s:8.5}));
+    });
+    if(b.s.length){
+      const bw=b.s.length>8?10:14;
+      b.s.forEach(p=>{
+        const last=p===lastIn;
+        svg.appendChild(el('rect',{x:X(p.t)-bw/2,y:ym(p.min),width:bw,
+          height:mTopY+mH-ym(p.min),rx:2,fill:last?'#D4592A':'#8C867F'}));
+        if(last) svg.appendChild(txt(p.min,X(p.t),ym(p.min)-5,{s:10,c:'#1A1815',w:600,a:'middle'}));
+      });
+    } else {
+      svg.appendChild(txt('NO SESSIONS IN THIS BAND',(padL+W-padR)/2,mTopY+mH/2+3,
+        {s:8.5,ls:1,a:'middle',c:'#B4ADA4'}));
+    }
+
+    b.all.forEach(p=>{
+      const r=el('rect',{x:X(p.t)-12,y:aTop-8,width:24,height:mTopY+mH+8-aTop,
+        fill:'transparent',style:'cursor:pointer'});
+      r.addEventListener('mouseenter',()=>{
+        tip.innerHTML=`<span class="d">${b.label} · ${md(p.iso)}</span>${p.min} min<br>`+
+          (p.inBand?`<span class="b">${pace(p.sec)}/mi</span>`
+                   :`<span class="o">${pace(p.sec)}/mi · outside band</span>`);
+        const box=host.querySelector('svg').getBoundingClientRect();
+        tip.style.left=(box.width*(X(p.t)/W))+'px';
+        tip.style.top =(box.height*(yp(p.sec)/H))+'px';
+        tip.style.opacity=1;});
+      r.addEventListener('mouseleave',()=>tip.style.opacity=0);
+      svg.appendChild(r);
+    });
+  }
+
+  panel(m.lt,'lt',14);
+  svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:158,y2:158,stroke:'#E8E4E0'}));
+  panel(m.mp,'mp',176);
+  MONTHS.forEach(([t,l])=>svg.appendChild(txt(l,X(t)+3,322,{s:8,ls:1})));
+  return svg;
+}
+
+/* ============================================================
+   2 — One shared pace axis
+   ============================================================ */
+function layoutShared(m,host){
+  const W=342,H=316,padL=40,padR=12;
+  const svg=el('svg',{viewBox:`0 0 ${W} ${H}`});
+  const X=t=>padL+((t-T0)/(T1-T0))*(W-padL-padR);
+  const all=[...m.lt.all,...m.mp.all];
+  const lo=Math.min(...all.map(p=>p.sec),m.lt.fast,m.mp.fast)-4;
+  const hi=Math.max(...all.map(p=>p.sec),m.lt.slow,m.mp.slow)+4;
+  const aTop=30,aH=168, Y=v=>aTop+((v-lo)/(hi-lo))*aH;
+  const bTop=232,bH=44;
+  const inAll=[...m.lt.s,...m.mp.s];
+  const mTop=Math.max(10,Math.ceil(Math.max(...(inAll.length?inAll:all).map(p=>p.min))/10)*10);
+  const ym=v=>bTop+bH-(v/mTop)*bH;
+  const tip=host.querySelector('.tip');
+
+  [['lt',m.lt],['mp',m.mp]].forEach(([k,b])=>
+    svg.appendChild(el('rect',{x:padL,y:Y(b.fast),width:W-padL-padR,height:Y(b.slow)-Y(b.fast),
+      fill:C[k],'fill-opacity':.07})));
+
+  const ov1=Math.max(m.lt.fast,m.mp.fast), ov2=Math.min(m.lt.slow,m.mp.slow);
+  if(ov2>ov1){
+    svg.appendChild(el('rect',{x:padL,y:Y(ov1),width:W-padL-padR,height:Y(ov2)-Y(ov1),
+      fill:'#D4592A','fill-opacity':.12}));
+    chipTxt(svg,'OVERLAP '+pace(ov1)+'–'+pace(ov2),W-padR-3,(Y(ov1)+Y(ov2))/2+3,
+      {s:7,ls:.9,a:'end',c:'#B84420',w:600});
+  } else {
+    const g1=m.lt.slow, g2=m.mp.fast;
+    [g1,g2].forEach(v=>svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:Y(v),y2:Y(v),stroke:'#C9C3BB'})));
+    chipTxt(svg,g2-g1<=0?'BANDS MEET AT '+pace(g1):'CLEAR '+pace(g1)+'–'+pace(g2)+' · '+(g2-g1)+'s',
+      W-padR-3,(Y(g1)+Y(g2))/2+3,{s:7,ls:.9,a:'end',c:'#6B6560',w:600});
+  }
+  MONTHS.forEach(([t])=>{
+    svg.appendChild(el('line',{x1:X(t),x2:X(t),y1:aTop-6,y2:aTop+aH+5,stroke:'#F4F1ED'}));
+    svg.appendChild(el('line',{x1:X(t),x2:X(t),y1:bTop-4,y2:bTop+bH,stroke:'#F4F1ED'}));
+  });
+
+  svg.appendChild(txt('BAND PACE · FASTER UP',padL,13,{s:7.5,ls:1,c:'#6B6560'}));
+  svg.appendChild(txt('SHADED = IN BAND',W-padR,13,{s:7.5,ls:1,a:'end'}));
+  for(let v=Math.ceil(lo/10)*10; v<=hi; v+=10){
+    svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:Y(v),y2:Y(v),stroke:'#EFEBE7'}));
+    svg.appendChild(txt(pace(v),padL-6,Y(v)+3,{a:'end',s:8.5}));
+  }
+  [['lt',m.lt],['mp',m.mp]].forEach(([k,b])=>{
+    if(!b.empty){
+      const tA=b.s[0].t,tB=b.s[b.s.length-1].t;
+      svg.appendChild(el('line',{x1:X(tA),x2:X(tB),y1:Y(b.fit(tA)),y2:Y(b.fit(tB)),
+        stroke:C[k],'stroke-width':2,'stroke-linecap':'round'}));
+    }
+    const lastIn=b.s.length?b.s[b.s.length-1]:null;
+    b.all.forEach(p=>svg.appendChild(sessionMark(k,X(p.t),Y(p.sec),p,p===lastIn)));
+  });
+
+  svg.appendChild(txt('MINUTES IN BAND',padL,bTop-8,{s:7.5,ls:1,c:'#6B6560'}));
+  [0,mTop].forEach(v=>{
+    svg.appendChild(el('line',{x1:padL,x2:W-padR,y1:ym(v),y2:ym(v),
+      stroke:v===0?'#DDD8D2':'#EFEBE7'}));
+    svg.appendChild(txt(v,padL-6,ym(v)+3,{a:'end',s:8.5}));
+  });
+  [['lt',m.lt,-4],['mp',m.mp,4]].forEach(([k,b,off])=>{
+    b.s.forEach(p=>svg.appendChild(el('rect',{x:X(p.t)-3+off,y:ym(p.min),width:6,
+      height:bTop+bH-ym(p.min),rx:1.5,fill:C[k],'fill-opacity':.75})));
+  });
+  if(!inAll.length)
+    svg.appendChild(txt('NO SESSIONS IN EITHER BAND',(padL+W-padR)/2,bTop+bH/2+3,
+      {s:8.5,ls:1,a:'middle',c:'#B4ADA4'}));
+
+  MONTHS.forEach(([t,l])=>svg.appendChild(txt(l,X(t)+3,bTop+bH+15,{s:8,ls:1})));
+  // legend carries both the shape key and each band's current width
+  let lx=padL;
+  [['lt','LT ±'+m.lt.widthPct+'%'],['mp','MP ±'+m.mp.widthPct+'%']].forEach(([k,t])=>{
+    svg.appendChild(mark(k,lx+4,H-10,3.6,{fill:C[k]}));
+    svg.appendChild(txt(t,lx+12,H-7,{s:7.5,ls:.9,c:C[k],w:600}));
+    lx += 12 + t.length*5.2 + 13;
+  });
+  svg.appendChild(mark('lt',lx+4,H-10,3.2,{fill:'none',stroke:'#B4ADA4','stroke-width':1.4,'stroke-dasharray':'2 1.6'}));
+  svg.appendChild(txt('OUT',lx+12,H-7,{s:7.5,ls:.9}));
+
+  all.forEach(p=>{
+    const isLT=m.lt.all.includes(p), b=isLT?m.lt:m.mp;
+    const r=el('circle',{cx:X(p.t),cy:Y(p.sec),r:11,fill:'transparent',style:'cursor:pointer'});
+    r.addEventListener('mouseenter',()=>{
+      tip.innerHTML=`<span class="d">${b.label} · ${md(p.iso)}</span>${p.min} min<br>`+
+        (p.inBand?`<span class="b">${pace(p.sec)}/mi</span>`
+                 :`<span class="o">${pace(p.sec)}/mi · outside band</span>`);
+      const box=host.querySelector('svg').getBoundingClientRect();
+      tip.style.left=(box.width*(X(p.t)/W))+'px';
+      tip.style.top =(box.height*(Y(p.sec)/H))+'px';
+      tip.style.opacity=1;});
+    r.addEventListener('mouseleave',()=>tip.style.opacity=0);
+    svg.appendChild(r);
+  });
+  return svg;
+}
+
+/* ============================================================
+   3 — Then vs now, per band
+   ============================================================ */
+function layoutCompare(m){
+  const wrap=document.createElement('div');
+  const avgs=[m.lt,m.mp].filter(b=>!b.empty).flatMap(b=>[b.avgF3,b.avgL3]);
+  const maxAvg=Math.max(1,...avgs);
+  const grp=(b,k)=>{
+    const head=`<div class="bandtitle">
+        <span class="n ${k}">${b.label} band</span>
+        <span class="a">${pace(b.anchor)}/mi ±${b.widthPct}% · ${b.s.length} of ${b.total} in band</span>
+      </div>`;
+    if(b.empty) return `<div class="bandgrp">${head}
+      <div class="emptyband">Fewer than two sessions fall in a ${pace(b.fast)}–${pace(b.slow)} band.
+      <b>Nothing to compare.</b> ${b.out.length?`Your ${b.out.length} ${b.label} session${b.out.length>1?'s':''} ran
+      ${pace(Math.round(b.out.reduce((a,p)=>a+p.sec,0)/b.out.length))}/mi on average.`:''}</div></div>`;
+    const row=(lab,dates,avg,pc,now)=>`
+      <div class="cmprow ${now?'now':''}">
+        <div class="k">${lab}<br>${dates}</div>
+        <div class="cmpbar"><i style="width:${Math.round(avg/maxAvg*100)}%"></i>
+          <span>${avg.toFixed(0)}<small>MIN</small></span></div>
+        <div class="cmppace ${k}">${pace(pc)}</div>
+      </div>`;
+    const up=b.minutesPct>0, fast=b.paceDelta<0, N=b.groupN;
+    return `<div class="bandgrp">${head}
+      ${row('First '+N,md(b.f3[0].iso)+'–'+md(b.f3[N-1].iso),b.avgF3,b.paceF3,false)}
+      ${row('Last '+N,md(b.l3[0].iso)+'–'+md(b.l3[N-1].iso),b.avgL3,b.paceL3,true)}
+      <div class="bandfoot">
+        <span class="pill ${up&&Math.abs(b.minutesPct)>=10?'up':''}">Time <b>${b.minutesPct>0?'+':''}${b.minutesPct}%</b></span>
+        <span class="pill ${fast&&Math.abs(b.paceDelta)>=5?'up':''}">Pace <b>${b.paceDelta>0?'+':''}${b.paceDelta} s/mi</b></span>
+        ${b.out.length?`<span class="pill">${b.out.length} out of band</span>`:''}
+      </div></div>`;
+  };
+  wrap.innerHTML = grp(m.lt,'lt') + grp(m.mp,'mp');
+  return wrap;
+}
+
+/* ============================================================
+   Assembly
+   ============================================================ */
+function verdict(m){
+  const L=m.lt, M=m.mp;
+  if(M.empty && L.empty) return `<b>Neither band has enough sessions to read.</b> <em>Widen the skirts or move the target.</em>`;
+  if(M.empty) return `<b>No marathon-pace work at ${pace(M.anchor)}/mi.</b> ${M.out.length} session${M.out.length===1?'':'s'} sat outside a ±${M.widthPct}% band around that target. <em>LT: ${L.minutesPct>0?'+':''}${L.minutesPct}% time, ${L.paceDelta>0?'+':''}${L.paceDelta}s/mi.</em>`;
+  if(L.empty) return `<b>No threshold work in a ±${L.widthPct}% band.</b> <em>MP: ${M.minutesPct>0?'+':''}${M.minutesPct}% time, ${M.paceDelta>0?'+':''}${M.paceDelta}s/mi.</em>`;
+  const moved=b=>Math.abs(b.minutesPct)>=10||Math.abs(b.paceDelta)>=5;
+  const phrase=b=>`${b.label} ${b.minutesPct>0?'+':''}${b.minutesPct}% time, ${b.paceDelta>0?'+':''}${b.paceDelta}s/mi`;
+  if(moved(M)&&!moved(L))
+    return `<b>Marathon pace is moving; threshold isn’t.</b> ${phrase(M)} against ${phrase(L)}. <em>The race-specific work is building on a flat engine.</em>`;
+  if(moved(L)&&!moved(M))
+    return `<b>Threshold is moving; marathon pace isn’t.</b> ${phrase(L)} against ${phrase(M)}. <em>The engine is growing ahead of the race-specific work.</em>`;
+  if(moved(L)&&moved(M))
+    return `<b>Both bands moved.</b> ${phrase(L)}, and ${phrase(M)}. <em>Time and speed together, in each.</em>`;
+  return `<b>Neither band moved much.</b> ${phrase(L)}, ${phrase(M)}.`;
+}
+
+const OPTIONS=[
+  {tag:'1', title:'Two panels, own axes', sub:'small multiples',
+   build:(m,h)=>layoutStacked(m,h),
+   notes:[['','<b>Each band keeps its own pace axis,</b> so an 8-second change inside LT is as readable as a 30-second change inside MP. Only layout where within-band change is legible in both.'],
+          ['','<b>Each band is shaded on its own axis,</b> so moving the MP target visibly slides the shaded zone up or down past your sessions.'],
+          ['','<b>Sessions outside the band stay drawn</b> — hollow and dashed, excluded from the stats. You can see what you ran even when it didn’t count.'],
+          ['warn','Trade-off: <b>you can’t compare the two bands to each other.</b> Two independent axes means “MP looks steeper” might just be a narrower scale.'],
+          ['warn','Trade-off: <b>it’s tall.</b> Four stacked panels is most of a phone screen.']]},
+
+  {tag:'2', title:'One shared pace axis', sub:'both bands, one plot',
+   build:(m,h)=>layoutShared(m,h),
+   notes:[['','<b>The only layout that shows the two bands in relation to each other</b> — and therefore the only one where you can see the target MP band drift toward LT as you speed up the goal.'],
+          ['','<b>Overlap is drawn, not described.</b> Set LT and MP both to ±3% and pull the target to 5:35: the coral double-count strip comes back.'],
+          ['','<b>Both skirts are visible zones,</b> so “in band” stops being an invisible rule.'],
+          ['','<b>Half the height</b> of layout 1, one axis to learn instead of two.'],
+          ['warn','Trade-off: <b>within-band change gets compressed.</b> The axis spans 40+ seconds to hold both, so LT’s 8-second story is carried by the trend line, not the dots.']]},
+
+  {tag:'3', title:'Then vs now, per band', sub:'no chart at all',
+   build:(m,h)=>layoutCompare(m),
+   notes:[['','<b>Answers the headline twice</b> — first vs last, per band, delta stated rather than inferred.'],
+          ['','<b>Says how many sessions it’s using</b> (“4 of 6 in band”), which matters most in exactly the case where the target moved and the sample shrank.'],
+          ['','<b>Degrades to a sentence</b> when a band empties, instead of an empty chart.'],
+          ['warn','Trade-off: <b>no shape, no dates, no outliers.</b> A band that got worse then recovered reads like one that never moved.'],
+          ['warn','Trade-off: <b>the comparison narrows with the sample.</b> Drop to four sessions and it becomes 2-vs-2 — two runs deciding the verdict.']]}
+];
+
+/* ---- controls ---- */
+function buildControls(){
+  document.getElementById('segLTA').innerHTML=
+    LT_ANCHORS.map(v=>`<button data-v="${v}"${v===CFG.ltAnchor?' class="on"':''}>${pace(v)}</button>`).join('');
+  const mp=document.getElementById('segMP');
+  mp.innerHTML=MP_TARGETS.map(v=>`<button data-v="${v}"${v===CFG.mpTarget?' class="on"':''}>${pace(v)}</button>`).join('');
+  const w=(id,key)=>document.getElementById(id).innerHTML=
+    WIDTHS.map(v=>`<button data-v="${v}"${v===CFG[key]?' class="on"':''}>±${v}%</button>`).join('');
+  w('segLT','ltW'); w('segMPW','mpW');
+
+  const wire=(id,fn)=>document.getElementById(id).addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    [...e.currentTarget.children].forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); fn(Number(b.dataset.v)); render();});
+  wire('segLTA',v=>CFG.ltAnchor=v);
+  wire('segMP', v=>CFG.mpTarget=v);
+  wire('segLT', v=>CFG.ltW=v);
+  wire('segMPW',v=>CFG.mpW=v);
+  document.getElementById('segData').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    [...e.currentTarget.children].forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); CFG.data=b.dataset.k; render();});
+}
+
+function render(){
+  const m=model();
+  document.getElementById('ltRead').innerHTML =
+    CFG.ltAnchor===320 ? `derived from testing · <b>as measured</b>`
+                       : `derived <b>5:20</b> · overridden to <b>${pace(CFG.ltAnchor)}</b>`;
+  document.getElementById('mpRead').innerHTML =
+    `= <b>${hms(CFG.mpTarget*MARATHON_MI)}</b> marathon · <b>${(CFG.mpTarget-CFG.ltAnchor)}s/mi</b> slower than LT`;
+
+  const gap = m.mp.fast - m.lt.slow;
+  const st=document.getElementById('status');
+  st.innerHTML = [
+    `<span class="chip lt">LT <b>${pace(m.lt.fast)}–${pace(m.lt.slow)}</b></span>`,
+    `<span class="chip mp">MP <b>${pace(m.mp.fast)}–${pace(m.mp.slow)}</b></span>`,
+    gap<0 ? `<span class="chip bad">Bands <b>${-gap}s overlap</b></span>`
+          : gap===0 ? `<span class="chip">Bands <b>meet exactly</b></span>`
+          : `<span class="chip ok">Bands <b>${gap}s clear</b></span>`,
+    `<span class="chip ${m.lt.empty?'bad':''}">LT sessions in band <b>${m.lt.s.length} of ${m.lt.total}</b></span>`,
+    `<span class="chip ${m.mp.empty?'bad':''}">MP sessions in band <b>${m.mp.s.length} of ${m.mp.total}</b></span>`
+  ].join('');
+
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  OPTIONS.forEach(o=>{
+    const col=document.createElement('div'); col.className='col';
+    col.innerHTML=`
+      <div class="optlab"><span class="tag">${o.tag}</span>
+        <h3>${o.title}</h3><span class="sub">${o.sub}</span></div>
+      <div class="frame">
+        <div class="statusbar"><span>3:56</span>
+          <span class="right">PRD <span class="batt">59</span></span></div>
+        <div class="screen">
+          <div class="shead"><span class="snum">02</span><h2>What’s actually changed</h2></div>
+          <p class="verdict">${verdict(m)}</p>
+          <div class="chartwrap"><div class="tip"></div></div>
+          <div class="footstats">
+            <div class="lt">LT ±${m.lt.widthPct}%<b>${m.lt.empty?'—':(m.lt.paceDelta>0?'+':'')+m.lt.paceDelta+' s/mi'}</b></div>
+            <div class="mp">MP ±${m.mp.widthPct}%<b>${m.mp.empty?'—':(m.mp.paceDelta>0?'+':'')+m.mp.paceDelta+' s/mi'}</b></div>
+            <div>Target MP<b>${pace(CFG.mpTarget)}</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="note"><div class="h">What it gets you</div>
+        <ul>${o.notes.map(([c,t])=>`<li class="${c}">${t}</li>`).join('')}</ul></div>`;
+    grid.appendChild(col);
+    const host=col.querySelector('.chartwrap');
+    host.appendChild(o.build(m,host));
+  });
+
+  document.getElementById('tables').innerHTML=[['lt',m.lt],['mp',m.mp]].map(([k,b])=>`
+    <table><caption class="${k}">${b.label} · anchor ${pace(b.anchor)}/mi ±${b.widthPct}% · band ${pace(b.fast)}–${pace(b.slow)}</caption>
+    <thead><tr><th>#</th><th>Date</th><th>Minutes</th><th>Band pace</th><th></th></tr></thead>
+    <tbody>${b.all.map((p,i)=>`<tr class="${p.inBand?'':'out'}"><td>${i+1}</td><td>${md(p.iso)}</td>
+      <td class="n">${p.min}</td><td class="n">${pace(p.sec)}/mi</td>
+      <td class="${p.inBand?'':'tagout'}">${p.inBand?'':'OUT'}</td></tr>`).join('')}</tbody></table>`).join('');
+}
+
+buildControls();
+render();
+</script>
+</body>
+</html>

@@ -96,8 +96,8 @@ We rely on vendors to run the Service. Each has access to only what they need an
 
 When you send a message to the coach, we send the relevant context (your recent training, paces, goals, recent voice memos) to our AI model providers to generate a response. These providers have their own retention and usage policies:
 
-- We do **not** use athlete-identifying information (email, name) when making AI calls — only internal user IDs and relevant training context.
-- We do **not** permit AI providers to use your data to train their public models. This is governed by our enterprise agreements with them.
+- We do **not** send your email address or name to AI providers. The context we send is your internal user ID plus training data. Note that free-text you write yourself — voice memo transcripts, workout notes — is sent as written, so it may contain whatever you chose to put in it.
+- `[TODO — VERIFY BEFORE PUBLISHING: we are currently on standard/pay-as-you-go API terms with our AI providers, not negotiated enterprise agreements. Confirm each provider's default training-use posture for API traffic and state it accurately here, or execute the agreements this sentence assumes. Do not publish a commitment we cannot evidence.]`
 - Providers may retain inputs and outputs briefly for abuse monitoring (typically 30 days or less), per their policies.
 
 We do not sell your data to anyone. We do not share identifiable data with advertisers or data brokers. Period.
@@ -130,7 +130,7 @@ We do **not** use your data to:
 - When you record a voice memo, the audio file is uploaded to our storage (via Supabase Storage).
 - We transcribe the audio to text using a speech-to-text service.
 - We analyze the transcript for mood, injury signals, and workout structure.
-- The audio file is retained for `[TODO: retention — e.g., 90 days]`, after which it is deleted. The transcription persists as part of your training log unless you delete the log entry.
+- `[TODO — NOT YET TRUE: no scheduled deletion of voice memo audio exists. Audio files are currently retained indefinitely until you delete the log entry or your account. Either implement the retention job and state its window here, or describe the indefinite retention accurately. Audit 2026-08-24.]` The transcription persists as part of your training log unless you delete the log entry.
 
 ### Coaching conversations
 
@@ -152,7 +152,7 @@ Metrics like ACWR, pace zones, and injury risk scores are computed from your raw
 |---|---|
 | Account info (email, profile) | Until you delete your account |
 | Training logs, workouts | Until you delete your account or individual log |
-| Voice memo audio files | `[TODO: 90 days from recording, then deleted]` |
+| Voice memo audio files | `[TODO: no deletion job implemented as of 2026-08-24 — retained until log/account deletion]` |
 | Voice memo transcripts | Same as training log |
 | Coaching conversations | `[TODO: 2 years, then archived or deleted]` |
 | Crash reports and diagnostics | `[TODO: 90 days]` |

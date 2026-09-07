@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Sheet · Post Run Drip prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Tokens — RunningLog/App/DesignSystem.swift + design-system/colors_and_type.css */
+  --bg:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --divider:#E8E4E0;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,0.12);
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --energized:#2D8A4E; --positive:#4A9E6B; --neutral:#9B9590;
+  --tired:#C4873A; --struggling:#C45A3A; --injured:#B83A4A;
+  /* 8pt grid — design-system/colors_and_type.css */
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --space-5:20px; --space-6:24px; --space-7:32px; --space-8:40px;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06);
+  --dur-fast:150ms; --ease-out:cubic-bezier(0.2,0.7,0.2,1);
+  --display:"Crimson Pro",Georgia,serif;
+  --body:"PT Serif",Georgia,serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);
+  -webkit-font-smoothing:antialiased}
+/* 393pt — iPhone width. The sheet has to survive this, so the prototype
+   is drawn at it rather than at a comfortable desktop width. */
+.phone{width:393px;margin:0 auto;padding:var(--space-6) var(--space-6) var(--space-8);
+  min-height:100vh;border-left:1px solid var(--divider);border-right:1px solid var(--divider)}
+.note-outside{max-width:560px;margin:0 auto;padding:var(--space-6)}
+
+.eyebrow{font-family:var(--mono);font-size:10px;font-weight:500;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+
+/* ── Header ─────────────────────────────────────────────── */
+h1{font-family:var(--display);font-weight:700;font-size:28px;line-height:1.1;
+  letter-spacing:-.01em;margin:var(--space-1) 0 var(--space-1)}
+.sub{font-family:var(--body);font-size:12px;color:var(--ink-3)}
+
+/* One time control. */
+.seg{display:inline-flex;background:var(--paper-deep);border-radius:8px;padding:2px;
+  margin:var(--space-5) 0 var(--space-4)}
+.seg button{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;border:0;background:transparent;color:var(--ink-2);
+  padding:var(--space-2) 11px;border-radius:6px;cursor:pointer;
+  transition:all var(--dur-fast) var(--ease-out)}
+.seg button[aria-pressed="true"]{background:var(--card);color:var(--ink);
+  box-shadow:0 1px 2px rgba(0,0,0,.07)}
+
+/* ── Totals · 2-up, never 3-up at this width ────────────── */
+.totals{display:grid;grid-template-columns:1fr 1fr;
+  border-top:1px solid var(--divider);border-bottom:1px solid var(--divider)}
+.totals div{padding:var(--space-3) 0;border-left:1px solid var(--divider);
+  padding-left:var(--space-3)}
+.totals div:first-child{border-left:0;padding-left:0}
+.totals .k{font-family:var(--mono);font-size:10px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);display:block;margin-bottom:var(--space-1)}
+.totals .v{font-family:var(--mono);font-weight:600;font-size:22px;
+  font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.totals .u{font-family:var(--mono);font-size:10px;color:var(--ink-3);
+  margin-left:3px;font-weight:500}
+.totals .k2{font-family:var(--mono);font-size:10px;color:var(--ink-3);
+  display:block;margin-top:var(--space-1);letter-spacing:.06em}
+
+/* ── Filter bar ─────────────────────────────────────────── */
+.filters{margin:var(--space-4) 0 var(--space-2)}
+.search{position:relative;display:block}
+.search input{width:100%;font-family:var(--body);font-size:14px;color:var(--ink);
+  background:var(--card);border:1px solid var(--divider);border-radius:10px;
+  padding:10px 62px 10px var(--space-3);outline:none;-webkit-appearance:none;
+  transition:border-color var(--dur-fast) var(--ease-out)}
+.search input::placeholder{color:var(--ink-3)}
+/* Suppress the native clear affordance — we ship our own labelled one. */
+.search input::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+.search input:focus{border-color:var(--ink-3)}
+/* Text button, not a glyph — the system's icon set has no magnifier and
+   README closes the glyph list at `· ↗ →`. */
+.search .clear{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  border:0;background:var(--paper-deep);color:var(--ink-2);border-radius:6px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  padding:5px var(--space-2);cursor:pointer;display:none}
+.search.has .clear{display:block}
+
+/* Horizontal scroll, not a wrap — a wrapping chip row reflows the whole
+   sheet every time a count changes width. */
+.chips{display:flex;gap:6px;overflow-x:auto;padding:var(--space-3) 0 2px;
+  scrollbar-width:none;-ms-overflow-style:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;border:1px solid var(--divider);background:var(--card);
+  color:var(--ink-2);border-radius:999px;padding:6px 11px;cursor:pointer;
+  white-space:nowrap;transition:all var(--dur-fast) var(--ease-out)}
+/* Selected is solid ink, never coral — coral is alert-only. */
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.chip .n{margin-left:5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"] .n{color:rgba(245,243,240,.55)}
+.chip:disabled{opacity:.35;cursor:default}
+
+/* Search hit, shown inline so you can see WHY a row matched. */
+.snip{font-family:var(--body);font-size:11px;font-style:italic;color:var(--ink-2);
+  margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+mark{background:var(--paper-deep);color:inherit;border-radius:2px;padding:0 1px}
+.filtered-note{font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+  color:var(--ink-3);padding:var(--space-2) 0 0}
+
+/* ── Columns · 46 + flex + 48 + 52 + 10, gap 8 ──────────── */
+.colhead,.grid{display:grid;grid-template-columns:40px 1fr 48px 52px;
+  gap:var(--space-2);align-items:baseline}
+.colhead{align-items:end;padding:var(--space-4) 0 var(--space-2);
+  border-bottom:1px solid var(--ink);position:sticky;top:0;background:var(--bg);z-index:3}
+.colhead span{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2)}
+.num{text-align:right}
+/* Grid children default to min-width:auto, so a nowrap snippet in the session
+   column pushes Mi and Pace off a 393pt screen instead of ellipsing. */
+.grid > *{min-width:0}
+
+/* ── Week header ────────────────────────────────────────── */
+.weekhead{display:flex;align-items:center;gap:var(--space-3);
+  padding:var(--space-5) 0 var(--space-2);position:sticky;top:33px;
+  background:var(--bg);z-index:2}
+.weekhead .tick{width:16px;height:1px;background:var(--ink-3);flex:none}
+.weekhead .label{font-family:var(--mono);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.weekhead .rule{flex:1;height:1px;background:var(--divider)}
+
+/* ── Row ────────────────────────────────────────────────── */
+/* Mood rides the left rule, the way JournalLogRow already does it — it keeps
+   the qualitative signal off the numeral columns. */
+.row{padding:var(--space-2) 0 var(--space-2) var(--space-3);
+  border-bottom:1px solid var(--divider);border-left:2px solid transparent;
+  margin-left:calc(-1 * var(--space-3) - 2px);cursor:pointer}
+.row.open{background:var(--card);box-shadow:var(--shadow-card);border-radius:12px;
+  padding:var(--space-3);margin:var(--space-1) calc(-1 * var(--space-3));
+  border-bottom-color:transparent;border-left-width:2px}
+.colhead{margin-left:0}
+
+.d-day{font-family:var(--display);font-weight:600;font-size:19px;
+  font-variant-numeric:tabular-nums;line-height:1}
+.d-dow{font-family:var(--mono);font-size:10px;letter-spacing:.10em;
+  text-transform:uppercase;color:var(--ink-3);display:block;margin-top:2px}
+
+.session{display:flex;align-items:baseline;gap:6px;min-width:0}
+/* Quality reads as WEIGHT, not as a glyph and not as coral.
+   Coral is alert-only; ✦ is not on the system's closed glyph list. */
+.s-name{font-family:var(--display);font-size:16px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.s-name.q{font-weight:700;color:var(--ink)}
+.s-name.f{font-weight:400;color:var(--ink-2)}
+.pieces{font-family:var(--mono);font-size:10px;color:var(--ink-3);flex:none}
+
+.v-mi{font-family:var(--mono);font-weight:600;font-size:14px;
+  font-variant-numeric:tabular-nums}
+.v-p{font-family:var(--mono);font-weight:600;font-size:12px;
+  font-variant-numeric:tabular-nums}
+.mdot{width:6px;height:6px;border-radius:50%;display:inline-block}
+
+/* ── Expanded detail ────────────────────────────────────── */
+.detail{padding:var(--space-3) 0 0;margin-top:var(--space-3);
+  border-top:1px solid var(--divider)}
+.piece{display:grid;grid-template-columns:1fr 44px 34px 46px;gap:var(--space-2);
+  align-items:baseline;padding:var(--space-1) 0}
+.piece .pn{font-family:var(--body);font-size:12px;color:var(--ink-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.piece .pv{font-family:var(--mono);font-size:11px;font-variant-numeric:tabular-nums;
+  color:var(--ink-2);text-align:right}
+.piece .folded .pn{color:var(--ink-3)}
+/* Diary quote: ink hairline. The coral left-border is the coach-quote
+   treatment and README says do not generalize it. */
+.quote{font-family:var(--body);font-style:italic;font-size:13px;line-height:1.55;
+  padding-left:var(--space-3);border-left:1px solid var(--divider);
+  margin-top:var(--space-3)}
+/* The one coral element in the cluster, and it is alert-shaped. */
+.flag{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--coral);background:var(--coral-wash);
+  padding:var(--space-1) var(--space-2);border-radius:4px;margin-top:var(--space-3)}
+/* Mood pill — tracked caps at 12% wash, per README. */
+.moodpill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;
+  padding:3px var(--space-2);margin-top:var(--space-3);
+  font-family:var(--mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase}
+.moodpill .dot{width:5px;height:5px;border-radius:50%}
+
+/* ── Empty state ────────────────────────────────────────── */
+.empty{background:var(--card);border-radius:12px;padding:var(--space-6);
+  box-shadow:var(--shadow-card);margin-top:var(--space-4)}
+.empty h3{font-family:var(--display);font-weight:600;font-size:17px;
+  margin:var(--space-2) 0 var(--space-1)}
+.empty p{font-family:var(--body);font-size:13px;color:var(--ink-2);line-height:1.55}
+
+.note-outside h2{font-family:var(--display);font-size:19px;font-weight:600;
+  margin:var(--space-2) 0 var(--space-3)}
+.note-outside p{font-family:var(--body);font-size:13px;color:var(--ink-2);
+  line-height:1.65;margin-bottom:var(--space-3)}
+.note-outside b{color:var(--ink)}
+.note-outside code{font-family:var(--mono);font-size:11.5px;background:var(--paper-deep);
+  padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="eyebrow">Log · Sheet</div>
+  <h1>Every session.</h1>
+  <div class="sub" id="sub"></div>
+
+  <div class="seg" id="range" role="group" aria-label="Range">
+    <button data-w="4">4 wk</button>
+    <button data-w="8" aria-pressed="true">8 wk</button>
+    <button data-w="12">12 wk</button>
+    <button data-w="99">All</button>
+  </div>
+
+  <div class="filters">
+    <label class="search" id="searchwrap">
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Search sessions and notes" aria-label="Search sessions and notes">
+      <button class="clear" id="qclear" type="button">Clear</button>
+    </label>
+    <div class="chips" id="chips" role="group" aria-label="Filter by tag"></div>
+  </div>
+
+  <div class="totals" id="totals"></div>
+  <div id="sheet"></div>
+</div>
+
+<div class="note-outside">
+  <div class="eyebrow">Not part of the screen</div>
+  <h2>Three decisions this draws out</h2>
+  <p><b>One row is one day, not one upload.</b> Aug 4 is five Strava activities for
+    one track workout. Tap it: the five pieces are inside, the threshold rep at
+    6:02 clearly separated from its warm&#8209;up and cooldown. Across all your
+    data, 253 upload rows are 174 days run.</p>
+  <p><b>Pace is computed, never read.</b> <code>workout_pace_per_mile</code> is
+    populated on 31 of 253 rows. Duration is there on 249. So the column is
+    derived from distance and time, and the blue ramp is anchored to the range
+    on screen rather than to fixed thresholds, which is how
+    <code>PaceSpectrum</code> works.</p>
+  <p><b>Quality is weight, not colour.</b> Threshold, interval and race days are
+    set in bold ink; filler is ink&#8209;2. Coral appears once in the whole
+    screen, on the flag that tells you a duplicate row was folded into a total.
+    Open Jul 18 to see it.</p>
+</div>
+
+<script>
+// Real rows from training_logs, 2026-06-15 → 2026-08-11 (project RunningAppMVP2).
+// Timestamps converted to the athlete's local zone (America/Chicago) at query
+// time — the column is timestamptz and grouping it in UTC puts 8 rows / 39.2 mi
+// on the wrong calendar day.
+// [localTs, miles, minutes, workout_type, mood, source, hasAudio, feltRpe, note]
+const RAW = [
+["2026-06-15 11:52",7,51,"easy",null,"strava",false,null,"Afternoon Run"],
+["2026-06-16 04:03",7,50,"easy",null,"strava",false,null,"Morning Run"],
+["2026-06-16 14:04",5.04,37,"easy",null,"strava",false,null,"Evening Run"],
+["2026-06-17 01:06",2.01,16,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-06-17 02:16",2.38,18,"easy",null,"strava",false,null,"Morning Run"],
+["2026-06-17 06:30",5.29,31,"tempo","positive","strava",true,8,"I completed a threshold session at Zilker Park today. It was a bit warm, but I adjusted well and made the best of the conditions."],
+["2026-06-18 12:25",6.96,52,"easy",null,"strava",false,null,"Afternoon Run"],
+["2026-06-19 06:55",2.63,21,"interval","positive","strava",true,8,"I completed a good speed session today. It felt pretty hard, but I ran it with Stockman, RBO, and JB."],
+["2026-06-19 08:00",3.5,28,"easy",null,"strava",false,null,"Morning Run"],
+["2026-06-20 06:36",13,92,"long_run","tired","strava",true,6,"I completed a moderate long run today. My legs felt a bit fatigued initially, so I didn't push too hard. I wanted to go farther, but decided to cut it."],
+["2026-06-21 12:16",6.72,48,"easy",null,"strava",false,null,"Lunch Run"],
+["2026-06-22 07:28",8.03,59,"easy",null,"strava",false,null,"Morning Run"],
+["2026-06-22 18:46",3.96,30,"easy",null,"strava",false,null,"Evening Run"],
+["2026-06-23 06:06",1.99,15,"easy",null,"strava",false,null,"Morning Run"],
+["2026-06-23 06:27",6.02,49,"interval","struggling","strava",true,9,"I completed a tough workout today, but the heat and humidity made it incredibly challenging. I struggled throughout the session."],
+["2026-06-23 07:29",2.53,20,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-06-23 18:24",3.98,31,"easy",null,"strava",false,null,"Evening Run"],
+["2026-06-24 08:16",7.97,60,"easy",null,"strava",false,null,"Morning Run"],
+["2026-06-27 06:37",17.77,121,"long_run",null,"strava",false,null,"Forgot to turn it off Ks again"],
+["2026-06-29 12:51",7.1,54,"easy",null,"strava",false,null,"Lunch Run"],
+["2026-06-30 06:17",4,30,"easy",null,"strava",false,null,"4 mi - WU & CD"],
+["2026-06-30 06:18",7,40,"easy",null,"strava",false,null,"7 mi fartlek"],
+["2026-07-01 09:16",8.13,58,"moderate","positive","voice_log",true,5,"I went for a moderate run and felt pretty good. My hips and everything felt solid throughout the run."],
+["2026-07-01 18:43",4.04,29,"easy",null,"strava",false,null,"Evening Run"],
+["2026-07-02 10:47",7,53,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-02 19:47",3.14,24,"easy",null,"strava",false,null,"Evening Run"],
+["2026-07-03 08:00",6.5,52,"easy",null,"strava",false,null,"Morning jog"],
+["2026-07-04 06:34",12.44,79,"long_run",null,"strava",false,null,"Morning Run"],
+["2026-07-05 09:38",7.29,52,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-06 08:08",8.1,58,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-07 08:19",8.64,64,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-07 19:00",4.03,30,"easy",null,"strava",false,null,"Evening Run"],
+["2026-07-08 06:06",1.99,16,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-08 06:28",6.41,38,"interval","struggling","strava",true,9,"I did a workout that was mostly 10 reps, though the seventh and eighth were run a bit shorter due to content creation. I was really struggling today."],
+["2026-07-08 07:17",0.58,5,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-07-09 06:56",7.99,60,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-10 08:25",4.04,32,"recovery","struggling","strava",true,9,"I felt awful and heavy on my feet, certainly not recovered. I cut my planned 8-mile run down to 4 miles, as it wasn't a great run."],
+["2026-07-11 06:35",14.99,103,"long_run","struggling","strava",true,10,"I had an extremely warm run on a hilly loop and felt like I was dying, despite trying to pace myself. I cut my planned 2 hour 15 minute run short."],
+["2026-07-13 07:53",6.01,45,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-14 06:05",2.17,18,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-07-14 06:31",5.32,33,"interval","positive","strava",true,8,"I completed three sets of a complex interval workout, running much faster than the prescribed paces, though I had aimed for four."],
+["2026-07-14 07:17",1.48,13,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-07-14 18:33",4.05,29,"easy","positive","strava",true,5,"I completed a steady four-mile run, feeling pretty decent overall despite having a couple of beers at lunch. My legs felt decently well throughout."],
+["2026-07-15 08:00",7,51,"easy",null,"strava",false,null,"Treadmill"],
+["2026-07-16 18:47",7,52,"easy",null,"strava",false,null,"Evening Run"],
+["2026-07-17 17:44",6.48,49,"easy","struggling","strava",true,7,"This wasn't a great run. My knee felt really sore, and I've been feeling generally worn down on my runs. I tried out my first pair of Hoka Clifton Pros."],
+["2026-07-18 01:38",13.49,91,"long_run",null,"strava",false,null,"Morning Run"],
+["2026-07-18 06:38",13.49,91,"long_run",null,"voice_log",false,5,"Good long run, had been feeling banged up with a sore left knee and slightly sick but felt ok"],
+["2026-07-19 09:13",6.15,47,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-20 08:18",6.81,53,"easy","tired","strava",true,4,"I felt pretty tired overall, a feeling I attribute to a gym session yesterday and a couple of drinks. Despite the general tiredness, nothing physically hurt."],
+["2026-07-21 01:05",2.01,16,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-21 02:26",1.02,8,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-07-21 06:28",7.5,43,"threshold","positive","strava",true,8,"I completed an interval workout of six miles, starting at marathon pace and dropping to half marathon pace, with .25 mile recoveries."],
+["2026-07-21 18:28",3.9,29,"easy",null,"strava",false,null,"Evening Run"],
+["2026-07-22 08:12",9.76,73,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-23 08:01",7.32,55,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-24 06:25",5.75,69,"intervals","positive","strava",true,8,"I did an easy run today, followed by 8x200m with one minute rest. These reps felt good for turnover and were definitely faster than mile pace."],
+["2026-07-24 17:03",3,23,"recovery",null,"strava",false,null,"Afternoon Run"],
+["2026-07-25 06:36",13.12,89,"long_run",null,"strava",false,null,"Morning Run"],
+["2026-07-27 07:35",8.01,59,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-28 06:06",1.99,15,"easy",null,"strava",false,null,"Morning Run"],
+["2026-07-28 06:32",5.31,34,"threshold","struggling","strava",true,8,"Had a tough interval session today. It was really hot, and I felt overheated throughout the workout."],
+["2026-07-28 07:24",1.94,16,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-07-29 17:13",7.07,50,"easy",null,"strava",false,null,"Afternoon Run"],
+["2026-07-30 07:53",9.65,72,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-07-31 17:33",5,37,"easy",null,"strava",false,null,"Afternoon Run"],
+["2026-08-01 06:06",17.01,113,"long_run","positive","strava",true,8,"Completed a challenging workout with Mark, Ryan, and Jared, including a 3-mile warm-up and a quick cool-down, totaling 17 miles."],
+["2026-08-02 09:03",7,52,"easy",null,"strava",false,null,"Morning Run"],
+["2026-08-03 07:30",7,51,"easy",null,"strava",false,null,"Morning Run"],
+["2026-08-03 18:26",4,31,"recovery",null,"strava",false,null,"Evening Run"],
+["2026-08-04 06:08",1.76,14,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-08-04 06:28",7.95,48,"threshold","tired","strava",true,7,"I ran a session with steady, easy, and fast intervals on a hilly and humid course. I felt like I wasn't moving very fast and my fitness isn't quite where I want it."],
+["2026-08-04 07:23",1,9,"recovery","tired","strava",true,3,"I did an easy cool down today. My legs felt a little tired after the previous workout."],
+["2026-08-04 17:52",3.97,30,"easy",null,"strava",false,null,"Afternoon Run"],
+["2026-08-04 18:53",1,7,"easy",null,"strava",false,null,"Evening Run"],
+["2026-08-05 08:18",6.01,47,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-08-05 19:01",4.01,30,"easy",null,"strava",false,null,"Evening Run"],
+["2026-08-06 07:48",2.21,24,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-08-06 08:15",4.15,31,"threshold","positive","strava",true,8,"I completed a threshold session today with 5x4 minute efforts and jog recovery. I managed to hold a consistent pace, though it felt slightly harder than expected."],
+["2026-08-06 08:54",1,8,"recovery","neutral","strava",true,2,"A chill cooldown around the track with JoJo. I just took it really easy."],
+["2026-08-07 08:03",7,53,"easy",null,"strava",false,null,"Morning Run"],
+["2026-08-08 06:36",18.1,120,"long_run","positive","strava",true,null,"I felt pretty comfortable on this moderate long run, taking two gels. My knee, which I noticed a little between miles 9 and 12, settled."],
+["2026-08-08 18:17",2.24,43,"recovery",null,"strava",false,null,"Evening Run"],
+["2026-08-09 16:57",6.02,42,"easy",null,"strava",false,null,"Afternoon Run"],
+["2026-08-10 07:10",9.01,64,"easy",null,"strava",false,null,"Morning Run"],
+["2026-08-10 18:05",4.02,30,"easy",null,"strava",false,null,"Evening Run"],
+["2026-08-11 06:05",2.23,20,"recovery",null,"strava",false,null,"Morning Run"],
+["2026-08-11 06:29",6.64,40,"interval","positive","strava",true,null,"Completed 10 intervals today. The conditions were hot and humid, and I felt I wasn't fully rested, but physically I felt good during the work."],
+["2026-08-11 07:32",1.34,11,"recovery",null,"strava",false,null,"Morning Run"],
+];
+
+
+// ── WorkoutLabel.display(_:) / .normalize(_:) — App/WorkoutLabel.swift ────
+const LABEL = {easy:"Easy",moderate:"Moderate",steady:"Steady",recovery:"Recovery run",
+  long_run:"Long run",long_wo:"Long run workout",threshold:"Threshold",
+  intervals:"Intervals",fartlek:"Fartlek",progression:"Progression",race:"Race",
+  cross_train:"Cross-train",strength:"Strength",rest:"Rest",hills:"Hills",
+  strides:"Strides",
+  // Pace-zone keys: retired from the offer list, still stored on live rows.
+  mp:"MP",hmp:"HMP",lt:"LT","10k":"10K","5k":"5K","3k":"3K",mile:"Mile"};
+
+function normalize(k){
+  const r=(k||"").trim().toLowerCase();
+  if(!r) return null;
+  return {interval:"intervals",longrun:"long_run",long:"long_run",longwo:"long_wo",
+    cross_training:"cross_train",crosstraining:"cross_train",crosstrain:"cross_train",
+    tempo:"threshold"}[r] || r;
+}
+function display(k){
+  const r=normalize(k);
+  if(!r) return "Run";
+  if(LABEL[r]) return LABEL[r];
+  return r.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase()); // title-cased raw
+}
+
+// Intent ranking, over NORMALIZED keys only.
+const RANK = ["recovery","easy","moderate","steady","long_run","progression",
+  "fartlek","threshold","intervals","long_wo","race"];
+const rank = k => RANK.indexOf(normalize(k));
+const QUALITY = new Set(["threshold","intervals","fartlek","progression","race","long_wo"]);
+const isQuality = k => QUALITY.has(normalize(k));
+
+const MOODS = ["energized","positive","neutral","tired","struggling","injured"];
+const moodVar = m => MOODS.includes(m) ? `var(--${m})` : "var(--neutral)";
+
+// ── PaceSpectrum ─────────────────────────────────────────────────────────
+// The ten canonical stops, verbatim from Workouts/PaceSpectrum.swift.
+// There is no absolute sec/mi → colour function in the system: the ramp is
+// POSITIONAL. On device this calls anchoredColor(paceSec:zones:) against the
+// athlete's own zone table; here we approximate with the visible range's own
+// slow/fast bounds, matching color(forPaceSec:slowSec:fastSec:).
+const STOPS = ["#93B9D6","#74A8CC","#578FC0","#3F7CB5","#2F66A8",
+               "#27549B","#20448B","#1A3679","#142964","#0E1D4E"];
+const EASY_TEXT = "#5E93BE";  // the pale stop is unreadable at 12pt
+let SLOW = 600, FAST = 360;
+
+function lerpHex(a,b,t){
+  const p=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+  const [r1,g1,b1]=p(a), [r2,g2,b2]=p(b);
+  const c=(x,y)=>Math.round(x+(y-x)*t).toString(16).padStart(2,"0");
+  return `#${c(r1,r2)}${c(g1,g2)}${c(b1,b2)}`;
+}
+function paceColor(sec){
+  if(sec==null) return "var(--ink-2)";
+  const t = Math.min(1, Math.max(0, (SLOW-sec)/(SLOW-FAST)));
+  const x = t*(STOPS.length-1), i = Math.min(STOPS.length-2, Math.floor(x));
+  const c = lerpHex(STOPS[i], STOPS[i+1], x-i);
+  return (t < 0.06) ? EASY_TEXT : c;   // small text never sits on the palest stop
+}
+// Round the TOTAL, then split. Flooring minutes and rounding the remainder
+// independently prints "7:60" whenever seconds land in [59.5, 60) — 6.1 mi in
+// 48 min does exactly that. This is the same bug shape as `DistanceFormat`'s,
+// so fix it there once and call it, never inline.
+const mmss = s => {
+  if(s==null) return null;
+  const t = Math.round(s);
+  return `${Math.floor(t/60)}:${String(t%60).padStart(2,"0")}`;
+};
+
+// ── Roll uploads into SESSIONS ───────────────────────────────────────────
+// Three steps, in order. Collapsing them loses information:
+//   1. group by LOCAL calendar day
+//   2. day-level voice/GPS dedup — LogDedup's existing rule, unchanged
+//   3. split the day into sessions by clock gap
+// Step 3 is why a row is not simply "a day": Aug 4 is a 6:08am track session
+// AND a 5:52pm double. Merging them would report one 15.7 mi threshold day
+// that never happened.
+const GPS = new Set(["strava","strava_backfill","auto_sync","garmin","vital"]);
+const SESSION_GAP_MIN = 90;   // gap from previous upload's END to next START
+
+const dayOf  = ts => ts.slice(0,10);
+const minsOf = ts => { const [h,m]=ts.slice(11).split(":").map(Number); return h*60+m; };
+
+function toSessions(rows){
+  const byDay = new Map();
+  for(const [ts,mi,mins,type,mood,src,audio,rpe,note] of rows){
+    const d = dayOf(ts);
+    if(!byDay.has(d)) byDay.set(d,[]);
+    byDay.get(d).push({ts,d,start:minsOf(ts),mi,mins,type,mood,src,audio,rpe,note});
+  }
+
+  const out=[];
+  for(const [d,dayRows] of byDay){
+    // Step 2 — LogDedup.dedupedByPhysicalWorkout(): if the day holds any
+    // GPS-source row, voice_log rows on that day mirror it and leave the
+    // TOTALS. Their words, mood and RPE survive via `spoken` below.
+    const hasGps = dayRows.some(p=>GPS.has(p.src));
+    const kept   = hasGps ? dayRows.filter(p=>GPS.has(p.src)) : dayRows;
+    const folded = dayRows.filter(p=>!kept.includes(p));
+
+    // Step 3 — split into sessions.
+    const ordered = kept.slice().sort((a,b)=>a.start-b.start);
+    const groups=[];
+    for(const p of ordered){
+      const g = groups[groups.length-1];
+      const prevEnd = g ? g[g.length-1].start + (g[g.length-1].mins||0) : null;
+      if(g && p.start - prevEnd <= SESSION_GAP_MIN) g.push(p);
+      else groups.push([p]);
+    }
+    if(!groups.length && folded.length) groups.push([]);   // voice-only day
+
+    groups.forEach((pieces,i)=>{
+      // A folded voice row attaches to the session nearest in time.
+      const mine = folded.filter(f => groups.length===1 ||
+        i === groups.reduce((best,g,j)=>{
+          const c = g.length ? g[0].start : 0;
+          const b = groups[best].length ? groups[best][0].start : 0;
+          return Math.abs(c-f.start) < Math.abs(b-f.start) ? j : best;
+        },0));
+      const all  = [...pieces,...mine];
+      const mi   = pieces.reduce((a,p)=>a+p.mi,0);
+      const mins = pieces.reduce((a,p)=>a+(p.mins||0),0);
+      const byIntent = p => p.slice().sort((a,b)=>rank(b.type)-rank(a.type));
+      const hardest = byIntent(pieces.length?pieces:all)[0];
+
+      // Mood, RPE and words belong to the session's NAMED piece, not to
+      // whichever cooldown got a memo. Walk `all` — on Jul 18 the folded
+      // voice row is the only carrier of the words.
+      const voiced = p => p && (p.mood || p.rpe!=null || p.audio || p.src==="voice_log");
+      const spoken = [hardest, ...byIntent(all)].find(voiced) || {};
+
+      out.push({d, start:hardest?.start ?? 0, mi, mins,
+        pieces, allPieces:all, dropped:mine.length,
+        type:hardest?.type, mood:spoken.mood, rpe:spoken.rpe,
+        note: (spoken.note && spoken.note.length > 26) ? spoken.note : null,
+        quality: all.some(p=>isQuality(p.type)),
+        pace: mi>0 && mins>0 ? mins*60/mi : null,
+        second: groups.length>1 && i>0});
+    });
+  }
+  // Days newest-first; sessions WITHIN a day chronological, so the date
+  // numeral leads the day block and the evening double sits under it.
+  return out.sort((a,b)=> a.d===b.d ? a.start-b.start : (a.d<b.d?1:-1));
+}
+
+// ── Monday-start weeks ───────────────────────────────────────────────────
+function mondayOf(iso){
+  const dt=new Date(iso+"T12:00:00");
+  dt.setDate(dt.getDate()-((dt.getDay()+6)%7));
+  return dt.toISOString().slice(0,10);
+}
+function weeks(items){
+  const by=new Map();
+  for(const it of items){
+    const w=mondayOf(it.d);
+    if(!by.has(w)) by.set(w,[]);
+    by.get(w).push(it);
+  }
+  return [...by.entries()].sort((a,b)=>a[0]<b[0]?1:-1);
+}
+
+// ── Tags ─────────────────────────────────────────────────────────────────
+// Tags are OR'd with each other and AND'd with the search box, which is what
+// a chip row reads as. `Key` deliberately overlaps `Threshold`/`Intervals`:
+// it is the coach's word for the same rows, and selecting both is harmless
+// under OR.
+const TAGS = [
+  {id:"key",   label:"Key",       test:it => it.quality},
+  {id:"long",  label:"Long",      test:it => ["long_run","long_wo"].includes(normalize(it.type))},
+  {id:"thr",   label:"Threshold", test:it => normalize(it.type)==="threshold"},
+  {id:"int",   label:"Intervals", test:it => normalize(it.type)==="intervals"},
+  // Only meaningful because rows are sessions — a day-grouped sheet cannot
+  // offer this filter at all.
+  {id:"dbl",   label:"Doubles",   test:it => it.second},
+];
+let TAGSEL = new Set(), Q = "";
+
+// Everything a search should reach: the session's name, its words, and the
+// words on pieces folded inside it.
+const hay = it => [display(it.type), it.note || "",
+  ...it.allPieces.map(p => (p.note||"") + " " + display(p.type))]
+  .join(" ").toLowerCase();
+
+const matchesQ    = it => !Q || hay(it).includes(Q);
+const matchesTags = it => !TAGSEL.size || TAGS.some(t => TAGSEL.has(t.id) && t.test(it));
+
+const esc = t => t.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+// The matched sentence, trimmed to one line, with the term marked.
+function snippet(it){
+  if(!Q) return "";
+  const src = [it.note, ...it.allPieces.map(p=>p.note)].filter(Boolean)
+    .find(n => n.toLowerCase().includes(Q));
+  if(!src) return "";
+  // The window opens just BEFORE the match, snapped to a word boundary — the
+  // column fits roughly 40 characters, so a centred window ellipses the term
+  // itself away and the snippet stops explaining anything.
+  const i = src.toLowerCase().indexOf(Q);
+  let from = Math.max(0, i-14);
+  if(from > 0){ const sp = src.indexOf(" ", from); if(sp > -1 && sp < i) from = sp+1; }
+  const text = (from?"…":"") + src.slice(from, i+Q.length+90).trimEnd()
+             + (i+Q.length+90 < src.length ? "…" : "");
+  const at = text.toLowerCase().indexOf(Q);
+  return `<div class="snip">${esc(text.slice(0,at))}<mark>${
+    esc(text.slice(at,at+Q.length))}</mark>${esc(text.slice(at+Q.length))}</div>`;
+}
+
+// ── Render ───────────────────────────────────────────────────────────────
+let RANGE=8, OPEN=new Set();
+const fmt = iso => {
+  const dt=new Date(iso+"T12:00:00");
+  return {day:dt.getDate(),
+    dow:dt.toLocaleDateString("en-US",{weekday:"short"}).toUpperCase(),
+    mon:dt.toLocaleDateString("en-US",{month:"short"}).toUpperCase()};
+};
+
+function rowHTML(it, key, leadsDay){
+  const f=fmt(it.d), open=OPEN.has(key), n=it.pieces.length;
+  const rule = it.mood ? `border-left-color:${moodVar(it.mood)}` : "";
+  // A day's second session gives up the date numeral for its clock time, so
+  // the day reads as one block. `leadsDay` is decided by what is VISIBLE, not
+  // by position in the day: filter to Threshold and an evening session can
+  // become the first row of its day, at which point it needs the date back.
+  const h = Math.floor(it.start/60), mm = String(it.start%60).padStart(2,"0");
+  const clock = `${((h+11)%12)+1}:${mm}${h<12?"a":"p"}`;
+  const dateCell = leadsDay
+    ? `<span class="d-day">${f.day}</span><span class="d-dow">${f.dow}</span>`
+    : `<span class="d-dow" style="margin-top:6px">${clock}</span>`;
+  return `<div class="row ${open?"open":""}" data-k="${key}" style="${rule}">
+    <div class="grid">
+      <div>${dateCell}</div>
+      <div>
+        <div class="session">
+          <span class="s-name ${it.quality?"q":"f"}">${display(it.type)}</span>
+          ${n>1?`<span class="pieces">&times;${n}</span>`:""}
+        </div>${snippet(it)}
+      </div>
+      <div class="num v-mi">${it.mi.toFixed(1)}</div>
+      <div class="num v-p" style="color:${paceColor(it.pace)}">${it.pace?mmss(it.pace):""}</div>
+    </div>
+    ${open?detailHTML(it):""}</div>`;
+}
+
+function detailHTML(it){
+  const rows = it.allPieces
+    .slice().sort((a,b)=>(a.start??0)-(b.start??0))
+    .map(p=>{
+      const pace = p.mi>0&&p.mins>0 ? p.mins*60/p.mi : null;
+      const folded = !it.pieces.includes(p);
+      return `<div class="piece ${folded?"folded":""}">
+        <div class="pn">${display(p.type)}${folded?" · folded in":""}</div>
+        <div class="pv">${p.mi.toFixed(2)}</div>
+        <div class="pv">${p.mins||""}</div>
+        <div class="pv" style="color:${paceColor(pace)};font-weight:600">${pace?mmss(pace):""}</div>
+      </div>`;}).join("");
+  const mood = it.mood
+    ? `<div class="moodpill" style="background:${moodVar(it.mood)}1F;color:${moodVar(it.mood)}">
+         <span class="dot" style="background:${moodVar(it.mood)}"></span>${it.mood}${
+         it.rpe!=null?` · rpe ${it.rpe}`:""}</div>` : "";
+  const q = it.note ? `<div class="quote">${it.note}</div>` : "";
+  const flag = it.dropped
+    ? `<div class="flag">${it.dropped} duplicate row folded in</div>` : "";
+  return `<div class="detail">
+    <div class="piece" style="padding-bottom:var(--space-2)">
+      <div class="eyebrow">Uploads</div><div class="eyebrow num">Mi</div>
+      <div class="eyebrow num">Min</div><div class="eyebrow num">Pace</div>
+    </div>${rows}${mood}${q}${flag}</div>`;
+}
+
+function render(){
+  const days = toSessions(RAW);
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-RANGE*7);
+  const cut = RANGE>50 ? "0000-00-00" : cutoff.toISOString().slice(0,10);
+  const inRange = days.filter(d=>d.d>=cut);
+
+  // The pace spectrum is calibrated on the RANGE, not on the filtered set —
+  // otherwise filtering to Threshold recolours every remaining row, and the
+  // same run reads a different colour depending on what else is on screen.
+  const paces = inRange.map(d=>d.pace).filter(Boolean).sort((a,b)=>a-b);
+  if(paces.length){ FAST = paces[0]; SLOW = paces[Math.floor(paces.length*0.92)]; }
+
+  // Chip counts respond to the search box but NOT to tag selection, so the
+  // numbers hold still while you toggle chips.
+  const searched = inRange.filter(matchesQ);
+  renderChips(searched);
+
+  const shown = searched.filter(matchesTags);
+  const filtering = TAGSEL.size>0 || !!Q;
+
+  const mi = shown.reduce((a,d)=>a+d.mi,0);
+  const uploads = shown.reduce((a,d)=>a+d.allPieces.length,0);
+  // Weeks come from the RANGE, not the matches: "threshold miles per week of
+  // training" is the useful number, not "per week that had a threshold run".
+  const wks = Math.max(1, weeks(inRange).length);
+
+  document.getElementById("totals").innerHTML = `
+    <div><span class="k">Miles</span><span class="v">${mi.toFixed(0)}</span>
+      <span class="k2">${new Set(shown.map(d=>d.d)).size} days run</span></div>
+    <div><span class="k">Avg / week</span><span class="v">${(mi/wks).toFixed(1)}<span class="u">mi</span></span>
+      <span class="k2">${uploads} uploads</span></div>`;
+  const active = TAGS.filter(t=>TAGSEL.has(t.id)).map(t=>t.label);
+  document.getElementById("sub").textContent =
+    `Last ${RANGE>50 ? "400 days" : RANGE+" weeks"}` +
+    (active.length ? ` · ${active.join(" + ")}` : "") +
+    (Q ? ` · "${Q}"` : "");
+
+  const sheet=document.getElementById("sheet");
+  if(!shown.length){
+    // Two different empty states. "No results" is a dead end unless it offers
+    // the way out, so the filtered one carries the reset.
+    sheet.innerHTML = filtering
+      ? `<div class="empty"><div class="eyebrow">No match</div>
+          <h3>Nothing matches ${active.length?active.join(" + "):""}${
+            active.length&&Q?" and ":""}${Q?`&ldquo;${esc(Q)}&rdquo;`:""}.</h3>
+          <p>Try a different tag, or search a word from a run you remember
+             writing about.</p>
+          <button class="chip" id="reset" style="margin-top:var(--space-4)">Clear filters</button>
+         </div>`
+      : `<div class="empty"><div class="eyebrow">Nothing here yet</div>
+          <h3>No sessions in this range.</h3>
+          <p>Widen the range, or connect Strava so your runs land here on their own.</p></div>`;
+    const r = document.getElementById("reset");
+    if(r) r.addEventListener("click",()=>{ TAGSEL.clear(); Q=""; document.getElementById("q").value=""; render(); });
+    return;
+  }
+
+  let html = `<div class="colhead"><span>Date</span><span>Session</span>
+    <span class="num">Mi</span><span class="num">Pace</span></div>`;
+
+  for(const [wk,list] of weeks(shown)){
+    const wmi = list.reduce((a,d)=>a+d.mi,0);
+    const wq  = list.filter(d=>d.quality).length;
+    const thisWk = mondayOf(new Date().toISOString().slice(0,10));
+    const ago = Math.round((new Date(thisWk) - new Date(wk))/(7*86400000));
+    const name = ago===0 ? "This week" : ago===1 ? "Last week"
+      : "Week of " + new Date(wk+"T12:00:00")
+          .toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    const dcount = new Set(list.map(d=>d.d)).size;
+    let head = `${name} · ${wmi.toFixed(0)} mi · ${dcount} ${dcount===1?"day":"days"}`;
+    if(wq) head += ` · ${wq} quality`;
+    html += `<div class="weekhead"><span class="tick"></span>
+      <span class="label">${head}</span><span class="rule"></span></div>`;
+    let lastDay = null;
+    html += list.map((it,i)=>{
+      const leads = it.d !== lastDay; lastDay = it.d;
+      return rowHTML(it, it.d+"#"+i, leads);
+    }).join("");
+  }
+  sheet.innerHTML = html;
+
+  sheet.querySelectorAll(".row").forEach(el=>el.addEventListener("click",()=>{
+    const k=el.dataset.k;
+    OPEN.has(k)?OPEN.delete(k):OPEN.add(k);
+    render();
+  }));
+}
+
+// Counts live on the chips because the question "do I even have threshold
+// runs in this range?" is answered before the tap, not after.
+function renderChips(pool){
+  const box = document.getElementById("chips");
+  box.innerHTML = TAGS.map(t=>{
+    const n = pool.filter(t.test).length;
+    return `<button class="chip" data-t="${t.id}" type="button"
+      ${TAGSEL.has(t.id)?'aria-pressed="true"':""} ${n?"":"disabled"}>${
+      t.label}<span class="n">${n}</span></button>`;
+  }).join("");
+  box.querySelectorAll(".chip").forEach(b=>b.addEventListener("click",()=>{
+    const id=b.dataset.t;
+    TAGSEL.has(id) ? TAGSEL.delete(id) : TAGSEL.add(id);
+    OPEN.clear(); render();
+  }));
+}
+
+const qEl = document.getElementById("q");
+qEl.addEventListener("input",()=>{
+  Q = qEl.value.trim().toLowerCase();
+  document.getElementById("searchwrap").classList.toggle("has", !!qEl.value);
+  OPEN.clear(); render();
+});
+document.getElementById("qclear").addEventListener("click",()=>{
+  qEl.value=""; Q=""; document.getElementById("searchwrap").classList.remove("has");
+  OPEN.clear(); render(); qEl.focus();
+});
+
+document.querySelectorAll("#range button").forEach(b=>{
+  b.addEventListener("click",()=>{
+    document.querySelectorAll("#range button").forEach(x=>x.removeAttribute("aria-pressed"));
+    b.setAttribute("aria-pressed","true");
+    RANGE=+b.dataset.w; OPEN.clear(); render();
+  });
+});
+render();
+</script>
+</body>
+</html>

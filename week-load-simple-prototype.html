@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Week Training Load — simple, expandable</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Post Run Drip — Foundations (mirrored from colors_and_type.css)
+   ============================================================ */
+:root{
+  --paper:#F5F3F0; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420;
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;padding:28px 20px 24px}
+
+/* ---- study chrome (not part of the app) ---- */
+.study-hd{max-width:1300px;margin:0 auto 22px}
+.study-hd h1{font-family:var(--font-display);font-weight:700;font-size:26px;margin:0 0 6px}
+.study-hd p{margin:0;font-size:14px;color:#4A4540;line-height:1.55;max-width:74ch}
+.rail{display:flex;gap:22px;align-items:flex-start;max-width:1300px;margin:0 auto;flex-wrap:wrap}
+.col{width:392px}
+.col-hd{margin-bottom:10px;padding:0 2px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:#6B6560;display:block;margin-bottom:4px}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 5px}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540}
+.phone{width:392px;background:var(--paper);border-radius:22px;padding:22px 20px 26px;
+  box-shadow:0 6px 22px rgba(0,0,0,.13);border:1px solid rgba(0,0,0,.05)}
+
+/* ---- shared type ---- */
+.micro{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.11em;
+  color:var(--ink-3);text-transform:uppercase}
+
+/* ============================================================
+   HEAD — one number and one quiet line under it. The three
+   stat columns with dividers were three headlines competing;
+   volume is the headline, the rest is context.
+   ============================================================ */
+.nav{display:flex;align-items:baseline;gap:11px;margin-bottom:14px}
+.nav .chev{font-size:13px;color:var(--ink-2)}
+.nav .rangelab{font-family:var(--font-mono);font-size:12px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink)}
+.big{font-family:var(--font-mono);font-size:30px;font-weight:600;letter-spacing:-.01em;
+  line-height:1}
+.big .u{font-size:14px;font-weight:400;color:var(--ink-2)}
+.sub{margin-top:8px}
+
+/* ============================================================
+   THE ROW — one circle a day. Area is miles. Nothing else.
+   ============================================================ */
+.week{display:flex;gap:2px;margin-top:26px}
+.day{flex:1;background:none;border:0;padding:5px 0 7px;cursor:pointer;font:inherit;
+  display:flex;flex-direction:column;align-items:center;border-radius:8px;
+  transition:background 160ms ease}
+.day:hover{background:rgba(0,0,0,.025)}
+.day[aria-expanded="true"]{background:rgba(0,0,0,.045)}
+.day .dlab{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3)}
+.day[aria-expanded="true"] .dlab{color:var(--ink)}
+.nigslot{height:11px;display:flex;align-items:flex-end;justify-content:center;margin-top:4px}
+.caret{width:9px;height:7px;background:var(--coral);clip-path:polygon(50% 0,100% 100%,0 100%)}
+.dotslot{height:52px;display:flex;align-items:center;justify-content:center}
+.dot{border-radius:50%}
+.dot.nolap{background:var(--paper-deep)}
+.restmark{width:13px;height:1px;background:var(--rule)}
+.day .dmi{font-family:var(--font-mono);font-size:12px;color:var(--ink);margin-top:5px}
+.day .dmi.rest{color:var(--ink-3)}
+.moodtick{width:15px;height:3px;border-radius:2px;margin-top:6px;background:transparent}
+
+/* ============================================================
+   THE EXPANSION — the numbers that used to be crammed into
+   the picture, written out.
+   ============================================================ */
+.panel{margin-top:16px;border-top:1px solid var(--rule);padding-top:16px}
+.p-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+.p-hd .date{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2)}
+.p-hd .open{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--coral)}
+.p-line{font-family:var(--font-mono);font-size:15px;color:var(--ink);margin-bottom:16px}
+.p-line .sep{color:var(--ink-3);padding:0 4px}
+.p-line .u{font-size:11px;color:var(--ink-2)}
+
+table.zones{width:100%;border-collapse:collapse}
+table.zones td{font-family:var(--font-mono);font-size:13px;text-align:right;
+  padding:9px 0;border-top:1px solid var(--rule)}
+table.zones td:first-child{text-align:left}
+.zc{display:flex;align-items:center;gap:8px}
+.zsw{width:8px;height:15px;border-radius:2px;flex:none}
+.zname{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+.tls-note{font-family:var(--font-body);font-style:italic;font-size:12px;color:var(--ink-3);
+  line-height:1.5;margin-top:14px}
+.p-nig{margin-top:14px;display:flex;gap:9px;align-items:flex-start}
+.p-nig .q{font-size:13.5px;line-height:1.5}
+.p-nig .cap{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--coral-deep)}
+.p-empty{font-family:var(--font-body);font-style:italic;font-size:13.5px;color:var(--ink-3);
+  line-height:1.55}
+
+/* ---- the week's pace mix, as a sentence ---- */
+.mix{margin-top:26px;padding-top:14px;border-top:1px solid var(--rule);
+  font-family:var(--font-body);font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.mix b{font-weight:400;color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="study-hd">
+  <h1>Week Training Load — one circle a day</h1>
+  <p>Cut again. One headline number, seven circles, one sentence. The stat columns, the legends,
+  the spectrum bar and its labels are all gone — the week's pace mix is now a line you read rather
+  than a chart you decode. Both frames are live: click any day.</p>
+</div>
+
+<div class="rail" id="rail"></div>
+
+<script>
+/* ============================================================
+   CANONICAL CONSTANTS — mirrored from the app
+   ============================================================ */
+const ZONES = [
+  { key:'easy',     label:'Easy',     color:'#93B9D6', weight:1.00 },
+  { key:'moderate', label:'Moderate', color:'#74A8CC', weight:1.25 },
+  { key:'steady',   label:'Steady',   color:'#578FC0', weight:1.50 },
+  { key:'mp',       label:'MP',       color:'#3F7CB5', weight:2.50 },
+  { key:'hmp',      label:'HMP',      color:'#2F66A8', weight:3.25 },
+  { key:'lt',       label:'LT',       color:'#27549B', weight:3.25 },
+  { key:'10k',      label:'10K',      color:'#20448B', weight:4.00 },
+  { key:'5k',       label:'5K',       color:'#1A3679', weight:5.50 },
+  { key:'3k',       label:'3K',       color:'#142964', weight:6.75 },
+  { key:'mile',     label:'Mile',     color:'#0E1D4E', weight:8.00 },
+];
+const Z = Object.fromEntries(ZONES.map(z=>[z.key,z]));
+const MOODS = {
+  energized:{label:'Energized',color:'#2D8A4E'}, positive:{label:'Good',color:'#4A9E6B'},
+  neutral:{label:'Neutral',color:'#9B9590'},     tired:{label:'Tired',color:'#C4873A'},
+  struggling:{label:'Struggling',color:'#C45A3A'},
+};
+
+/* ============================================================
+   THE WEEK — Aug 3–9. Wednesday came in with no lap data on
+   purpose: it is the case that used to read as a rest day the
+   athlete never took.
+   ============================================================ */
+const WEEK = { label:'AUG 3 — 9', days:[
+  { d:'MON', date:'Aug 3', mood:'tired', segments:[ {z:'easy',mi:10.0,sec:492} ] },
+  { d:'TUE', date:'Aug 4', segments:[ {z:'easy',mi:4.0,sec:500},{z:'moderate',mi:2.0,sec:438},
+                                      {z:'5k',mi:3.0,sec:322},{z:'3k',mi:1.2,sec:304} ] },
+  { d:'WED', date:'Aug 5', noLap:true, miles:6.0, minutes:50 },
+  { d:'THU', date:'Aug 6', mood:'positive',
+             niggle:{area:'achilles',side:'right',severity:'grumbling',
+                     quote:'right achilles grumbled on the first mile, fine after'},
+             segments:[ {z:'easy',mi:6.0,sec:485},{z:'mp',mi:5.0,sec:382} ] },
+  { d:'FRI', date:'Aug 7', segments:[ {z:'easy',mi:6.0,sec:514} ] },
+  { d:'SAT', date:'Aug 8', mood:'positive',
+             segments:[ {z:'easy',mi:12.0,sec:482},{z:'moderate',mi:3.0,sec:420},
+                        {z:'mp',mi:5.0,sec:378} ] },
+  { d:'SUN', date:'Aug 9', segments:[ {z:'easy',mi:8.0,sec:495} ] },
+]};
+
+function build(w){
+  const days = w.days.map(d=>{
+    const segs = (d.segments||[]).map(s=>({
+      ...s, zone:Z[s.z], minutes:s.mi*s.sec/60, load:(s.mi*s.sec/60)*Z[s.z].weight
+    })).sort((a,b)=>ZONES.findIndex(z=>z.key===a.z)-ZONES.findIndex(z=>z.key===b.z));
+    const miles   = d.noLap ? d.miles   : segs.reduce((a,s)=>a+s.mi,0);
+    const minutes = d.noLap ? d.minutes : segs.reduce((a,s)=>a+s.minutes,0);
+    return { ...d, segs, miles, minutes, load:segs.reduce((a,s)=>a+s.load,0), ran:miles>0 };
+  });
+  const miles   = days.reduce((a,d)=>a+d.miles,0);
+  const minutes = days.reduce((a,d)=>a+d.minutes,0);
+  const easyMi  = days.flatMap(d=>d.segs).filter(s=>s.z==='easy').reduce((a,s)=>a+s.mi,0);
+  return { ...w, days, miles, minutes, easyMi,
+           load:days.reduce((a,d)=>a+d.load,0),
+           maxMiles:Math.max(...days.map(d=>d.miles)),
+           maxLoad:Math.max(...days.map(d=>d.load)),
+           runDays:days.filter(d=>d.ran).length };
+}
+const W = build(WEEK);
+
+const mi1  = n => n.toFixed(1);
+const hm   = m => `${Math.floor(m/60)}:${String(Math.round(m%60)).padStart(2,'0')}`;
+const pace = (mn,mi) => { const s=Math.round(mn*60/mi);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+
+/* ============================================================
+   THE ROW
+   Area ∝ miles, so the DIAMETER goes as the square root. Scaling
+   the diameter directly would make a 20-mile day look four times
+   a 5-mile day rather than four times its area — the standard
+   way a circle chart overstates its biggest value.
+   ============================================================ */
+const MAX_DIA = 46, MIN_DIA = 11;
+/* Colour = the zone that carried the most LOAD, not the most miles.
+   Miles would make almost every day easy-blue and say nothing. */
+function markColor(d){
+  if(!d.segs.length) return 'var(--paper-deep)';
+  return d.segs.reduce((a,s)=>s.load>a.load?s:a).zone.color;
+}
+function weekRow(openIdx){
+  return `<div class="week">${W.days.map((d,i)=>{
+    const size = d.ran ? Math.max(MIN_DIA, MAX_DIA*Math.sqrt(d.miles/W.maxMiles)) : 0;
+    const mark = d.ran
+      ? `<span class="dot" style="width:${size}px;height:${size}px;background:${markColor(d)}"></span>`
+      : `<span class="restmark"></span>`;
+    return `<button class="day" aria-expanded="${i===openIdx}" data-i="${i}">
+      <span class="dlab">${d.d}</span>
+      <span class="nigslot">${d.niggle?'<span class="caret"></span>':''}</span>
+      <span class="dotslot">${mark}</span>
+      <span class="dmi ${d.ran?'':'rest'}">${d.ran?mi1(d.miles):'—'}</span>
+      <span class="moodtick" style="background:${d.mood?MOODS[d.mood].color:'transparent'}"></span>
+    </button>`;
+  }).join('')}</div>
+`;
+}
+
+/* ============================================================
+   THE EXPANSION
+   ============================================================ */
+function panel(d){
+  if(!d) return '';
+  const head = `<div class="p-hd">
+      <span class="date">${d.d} · ${d.date}</span>
+      <span class="open">Open day ↗</span>
+    </div>`;
+
+  if(!d.ran) return `<div class="panel">${head}
+    <div class="p-empty">Nothing logged, and nothing missing. The week's load is carried by the
+    other days.</div></div>`;
+
+  if(d.noLap) return `<div class="panel">${head}
+    <div class="p-line">${mi1(d.miles)}<span class="u">mi</span><span class="sep">·</span>${hm(d.minutes)}</div>
+    <div class="p-empty">This run arrived without splits, so there is no pace breakdown and no load
+    score for it. The ${mi1(d.miles)} miles still count toward the week.</div></div>`;
+
+  const rows = d.segs.map(s=>`<tr>
+      <td><span class="zc"><span class="zsw" style="background:${s.zone.color}"></span>
+        <span class="zname">${s.zone.label}</span></span></td>
+      <td>${mi1(s.mi)} mi</td>
+      <td>${pace(s.minutes,s.mi)}/mi</td>
+    </tr>`).join('');
+
+  return `<div class="panel">${head}
+    <div class="p-line">${mi1(d.miles)}<span class="u">mi</span><span class="sep">·</span>${hm(d.minutes)}<span class="sep">·</span>${Math.round(d.load)}<span class="u">TLS</span></div>
+    <table class="zones"><tbody>${rows}</tbody></table>
+    <div class="tls-note">TLS is intensity × minutes — a minute at 5K pace costs 5.5× a minute easy.</div>
+    ${d.niggle?`<div class="p-nig">
+      <span class="caret" style="margin-top:5px;flex:none"></span>
+      <span class="q"><span class="cap">${d.niggle.side} ${d.niggle.area}</span><br>
+      <em>“${d.niggle.quote}”</em></span></div>`:''}
+  </div>`;
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const state = [null, 3];   // frame 0 collapsed, frame 1 open on Thursday
+const FRAMES = [
+  { tag:'Collapsed', name:'The week',
+    blurb:'A headline, seven circles, a sentence. The tick under a day is mood, the coral caret above it is a niggle — nothing else on the surface.' },
+  { tag:'Expanded', name:'One day open',
+    blurb:'Tapping a day opens it in place: one line of numbers, the zones it was run in, and the sentence you wrote about your achilles.' },
+];
+
+function draw(){
+  document.getElementById('rail').innerHTML = FRAMES.map((f,fi)=>`
+    <div class="col">
+      <div class="col-hd"><span class="tag">${f.tag}</span><h2>${f.name}</h2><p>${f.blurb}</p></div>
+      <div class="phone" data-frame="${fi}">
+        <div class="nav"><span class="chev">‹</span>
+          <span class="rangelab">${W.label}</span><span class="chev">›</span></div>
+        <div class="big">${mi1(W.miles)}<span class="u"> mi</span></div>
+        <div class="sub micro">${W.runDays} days · ${hm(W.minutes)} · ${Math.round(W.load)} TLS</div>
+        ${weekRow(state[fi])}
+        ${state[fi]!==null?panel(W.days[state[fi]]):''}
+        <div class="mix"><b>${Math.round(W.easyMi)} of ${Math.round(W.miles)} miles easy.</b>
+          ${pace(W.minutes,W.miles)}/mi average across the week.</div>
+      </div>
+    </div>`).join('');
+
+  document.querySelectorAll('.day').forEach(btn=>{
+    btn.onclick = ()=>{
+      const fi = +btn.closest('.phone').dataset.frame;
+      const i  = +btn.dataset.i;
+      state[fi] = state[fi]===i ? null : i;   // tapping the open day closes it
+      draw();
+    };
+  });
+}
+draw();
+</script>
+</body>
+</html>

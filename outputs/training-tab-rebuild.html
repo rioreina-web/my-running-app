@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training tab — rebuild</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-deep:#B84420;
+    --sage:#A9B89A; --green:#4A9E6B;
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:radial-gradient(circle at 30% 15%, #d8d3cc, #c4bfb7);
+    font-family:var(--font-body);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    padding:48px 24px 80px;
+  }
+  .wrap{max-width:760px;margin:0 auto;}
+  .intro{text-align:center;margin-bottom:38px;}
+  .intro .kick{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b6056;}
+  .intro h1{font-family:var(--font-display);font-weight:700;font-size:29px;color:#26221d;margin-top:8px;letter-spacing:-.01em;}
+  .intro p{font-family:var(--font-body);font-style:italic;font-size:15px;color:#564f47;max-width:560px;margin:10px auto 0;line-height:1.5;}
+
+  .frame{display:flex;justify-content:center;}
+  .phone{width:392px;border-radius:46px;background:#111;padding:11px;box-shadow:0 30px 60px rgba(0,0,0,.28),0 6px 14px rgba(0,0,0,.2);}
+  .screen{width:100%;border-radius:36px;overflow:hidden;background:var(--paper);display:flex;flex-direction:column;}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:16px 28px 6px;font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--ink);}
+  .statusbar .right{font-size:12px;}
+  .body{flex:1;padding:6px 24px 0;}
+
+  .plate{display:flex;justify-content:space-between;align-items:center;padding:8px 0 12px;font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);}
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);}
+  .eyebrow.coral{color:var(--coral);}
+  .caption{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);}
+
+  .seg{display:flex;border-bottom:1px solid var(--rule);}
+  .seg div{flex:1;text-align:center;padding:11px 0;font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);border-bottom:1.5px solid transparent;margin-bottom:-1px;}
+  .seg div.on{color:var(--coral);border-bottom-color:var(--coral);}
+
+  .rule{display:flex;align-items:center;gap:8px;margin:24px 0;}
+  .rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule);}
+  .rule .dot{width:3px;height:3px;border-radius:999px;background:var(--rule);}
+
+  /* stat line */
+  .statline{display:grid;grid-template-columns:repeat(3,1fr);margin-top:18px;}
+  .statline .cell{padding:0 12px;border-right:1px solid var(--rule);}
+  .statline .cell:first-child{padding-left:0;}
+  .statline .cell:last-child{border-right:0;}
+  .statline .v{font-family:var(--font-mono);font-weight:600;font-size:27px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+  .statline .l{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);margin-top:7px;}
+
+  .hdr{display:flex;justify-content:space-between;align-items:baseline;}
+  .display{font-family:var(--font-display);font-weight:700;color:var(--ink);letter-spacing:-.014em;line-height:1.02;}
+
+  /* three-stream summary */
+  .streams{display:grid;grid-template-columns:repeat(3,1fr);margin-top:18px;}
+  .streams .cell{padding:0 14px;border-right:1px solid var(--rule);}
+  .streams .cell:first-child{padding-left:0;}
+  .streams .cell:last-child{border-right:0;}
+  .streams .v{font-family:var(--font-mono);font-weight:600;font-size:28px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;}
+  .streams .v small{font-size:13px;color:var(--ink-2);font-weight:500;}
+  .streams .l{font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-top:8px;}
+  .substrip{display:flex;gap:16px;margin-top:18px;padding-top:14px;border-top:1px solid var(--rule);}
+  .substrip span{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);}
+  .substrip b{color:var(--ink);font-weight:700;}
+  .substrip .pos{color:var(--green);font-weight:600;}
+
+  /* weekly bars */
+  .wbars{display:flex;align-items:flex-end;gap:12px;height:118px;margin-top:16px;}
+  .wcol{flex:1;display:flex;flex-direction:column;align-items:center;gap:7px;height:100%;justify-content:flex-end;}
+  .wstack{width:62%;border-radius:3px 3px 0 0;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;}
+  .wseg{width:100%;}
+  .wnum{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);font-variant-numeric:tabular-nums;}
+  .wlbl{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;color:var(--ink-3);text-transform:uppercase;}
+  .whatch{width:62%;background:repeating-linear-gradient(45deg,var(--ink-3) 0 2px,transparent 2px 6px);opacity:.45;border-radius:3px 3px 0 0;}
+
+  /* easy/hard */
+  .ehbar{height:14px;border-radius:999px;overflow:hidden;display:flex;position:relative;margin-top:14px;}
+  .ehbar .easy{background:var(--sage);}
+  .ehbar .hard{background:var(--coral);}
+  .ehtick{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);left:80%;}
+  .ehrow{display:flex;justify-content:space-between;align-items:center;margin-top:9px;}
+  .ehrow .e{font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600;}
+  .ehrow .e span{color:var(--ink-2);font-weight:500;}
+  .ehrow .t{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);letter-spacing:.06em;}
+  .ehrow .h{font-family:var(--font-mono);font-size:12px;color:var(--coral);font-weight:600;}
+
+  /* pace histogram */
+  .chart{position:relative;}
+  .grid{position:absolute;left:30px;right:0;border-top:1px solid var(--rule);}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:140px;padding-left:34px;position:relative;z-index:2;}
+  .bar{flex:1;border-radius:2px 2px 0 0;}
+  .gradaxis{height:7px;border-radius:999px;margin:9px 0 0 34px;}
+  .zonelabels{display:flex;justify-content:space-between;margin:7px 0 0 34px;}
+  .zonelabels span{font-family:var(--font-mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);}
+  .zmark{position:absolute;top:0;bottom:0;width:1px;background:var(--rule);z-index:1;}
+  .zmark .lab{position:absolute;top:-3px;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:var(--font-mono);font-size:9px;letter-spacing:.03em;}
+  .zmark .lab .z{font-weight:700;}.zmark .lab .t{color:var(--ink-2);}
+
+  /* quality sessions */
+  .qrow{display:flex;justify-content:space-between;align-items:baseline;padding:13px 0;border-bottom:1px solid var(--rule);}
+  .qrow:last-child{border-bottom:0;}
+  .qrow .d{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.08em;color:var(--ink-2);}
+  .qrow .n{font-family:var(--font-display);font-size:20px;color:var(--ink);margin-top:2px;}
+  .qrow .mi{font-family:var(--font-mono);font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;}
+
+  .goalrow{display:flex;justify-content:space-between;align-items:center;padding:18px 0 8px;}
+  .goalrow .l{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);}
+  .goalrow .c{color:var(--ink-3);}
+
+  .tabbar{display:flex;justify-content:space-around;padding:12px 8px 24px;border-top:1px solid var(--rule);background:var(--paper);}
+  .tab{display:flex;flex-direction:column;align-items:center;gap:7px;font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+  .tab .d{width:5px;height:5px;border-radius:999px;background:transparent;}
+  .tab.on{color:var(--coral);}.tab.on .d{background:var(--coral);}
+
+  .notes{max-width:680px;margin:44px auto 0;}
+  .notes h2{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#6b6056;margin-bottom:14px;}
+  .notes ul{list-style:none;display:flex;flex-direction:column;gap:11px;}
+  .notes li{font-family:var(--font-body);font-size:14.5px;line-height:1.5;padding-left:18px;position:relative;color:#3f3a33;}
+  .notes li::before{content:"";position:absolute;left:0;top:9px;width:5px;height:5px;border-radius:999px;background:var(--coral);}
+  .notes li b{font-weight:700;color:#26221d;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="intro">
+    <div class="kick">Post Run Drip · Training tab · rebuild</div>
+    <h1>The whole tab — data only, voice off.</h1>
+    <p>Everything that read like a coach talking is gone. No “hard share is creeping,” no narrated paragraphs. The Training tab is now numbers, charts and labels; the coach voice lives on The Read.</p>
+  </div>
+
+  <div class="frame">
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>5:41</span><span class="right">▪▪▪ ᯼ ▮</span></div>
+      <div class="body">
+        <div class="plate"><span>TRAINING · ANALYSIS</span></div>
+
+        <div class="seg"><div>WEEK</div><div class="on">MONTH</div><div>BLOCK</div></div>
+
+        <!-- headline + three-stream summary (factual) -->
+        <div style="margin-top:22px;" class="hdr">
+          <span class="eyebrow coral">MAY 31 – JUN 30</span>
+          <span class="caption">this month</span>
+        </div>
+        <div class="display" style="font-size:34px;margin-top:8px;">Your training.</div>
+        <div class="streams">
+          <div class="cell"><div class="v">41</div><div class="l">Runs logged</div></div>
+          <div class="cell"><div class="v">12</div><div class="l">Voice memos</div></div>
+          <div class="cell"><div class="v">245<small> mi</small></div><div class="l">Volume</div></div>
+        </div>
+        <div class="substrip">
+          <span><b>30:01</b> hrs</span>
+          <span><b>76%</b> easy</span>
+          <span><b>4</b> quality</span>
+          <span class="pos" style="margin-left:auto;">+8% vs May</span>
+        </div>
+
+        <div class="rule"><span class="dot"></span></div>
+
+        <!-- weekly volume -->
+        <div class="hdr"><span class="eyebrow">VOLUME · BY WEEK</span><span class="eyebrow">MI</span></div>
+        <div class="wbars">
+          <div class="wcol"><span class="wnum">55.0</span><div class="wstack" style="height:90%"><div class="wseg" style="height:23%;background:var(--coral)"></div><div class="wseg" style="height:77%;background:var(--sage)"></div></div><span class="wlbl">W1</span></div>
+          <div class="wcol"><span class="wnum">58.2</span><div class="wstack" style="height:95%"><div class="wseg" style="height:22%;background:var(--coral)"></div><div class="wseg" style="height:78%;background:var(--sage)"></div></div><span class="wlbl">W2</span></div>
+          <div class="wcol"><span class="wnum">61.5</span><div class="wstack" style="height:100%"><div class="wseg" style="height:24%;background:var(--coral)"></div><div class="wseg" style="height:76%;background:var(--sage)"></div></div><span class="wlbl">W3</span></div>
+          <div class="wcol"><span class="wnum">52.2</span><div class="wstack" style="height:85%"><div class="wseg" style="height:20%;background:var(--coral)"></div><div class="wseg" style="height:80%;background:var(--sage)"></div></div><span class="wlbl">W4</span></div>
+          <div class="wcol"><span class="wnum">18.1</span><div class="whatch" style="height:30%"></div><span class="wlbl">W5</span></div>
+        </div>
+
+        <div class="rule"><span class="dot"></span></div>
+
+        <!-- easy / hard -->
+        <div class="hdr"><span class="eyebrow">EASY / HARD</span><span class="eyebrow">TARGET 80 / 20</span></div>
+        <div class="ehbar"><div class="easy" style="width:76%"></div><div class="hard" style="width:24%"></div><div class="ehtick"></div></div>
+        <div class="ehrow">
+          <span class="e">76% <span>EASY</span></span>
+          <span class="t">80/20 ↑</span>
+          <span class="h">24% HARD</span>
+        </div>
+
+        <div class="rule"><span class="dot"></span></div>
+
+        <!-- volume x pace -->
+        <div class="hdr"><span class="eyebrow">VOLUME × PACE</span><span class="eyebrow">MEDIAN 7:19 /MI</span></div>
+        <div class="chart" style="margin-top:18px;">
+          <span class="caption" style="position:absolute;left:0;top:-3px;">60</span>
+          <span class="caption" style="position:absolute;left:0;top:62px;">30</span>
+          <div class="grid" style="top:0;"></div>
+          <div class="grid" style="top:66px;"></div>
+          <div class="zmark" style="left:calc(34px + (100% - 34px)*0.46);"><span class="lab"><span class="z">MP</span> <span class="t">5:43</span></span></div>
+          <div class="zmark" style="left:calc(34px + (100% - 34px)*0.62);"><span class="lab"><span class="z" style="color:var(--coral);">LT</span> <span class="t">5:28</span></span></div>
+          <div class="zmark" style="left:calc(34px + (100% - 34px)*0.78);"><span class="lab"><span class="z">5K</span> <span class="t">5:02</span></span></div>
+          <div class="bars" id="bars"></div>
+        </div>
+        <div class="gradaxis" id="axis"></div>
+        <div class="zonelabels"><span>Easy 7:31</span><span>MP</span><span>LT</span><span>Mile</span><span>Fast</span></div>
+
+        <div class="rule"><span class="dot"></span></div>
+
+        <!-- quality sessions (factual list, pace-zone labels) -->
+        <div class="hdr"><span class="eyebrow">QUALITY SESSIONS</span><span class="caption">4 this month</span></div>
+        <div style="margin-top:8px;">
+          <div class="qrow"><div><div class="d">TUE · JUN 23</div><div class="n">5K · 5 × 1km</div></div><span class="mi">6.0 mi</span></div>
+          <div class="qrow"><div><div class="d">FRI · JUN 19</div><div class="n">5K · 4 × 800</div></div><span class="mi">2.6 mi</span></div>
+          <div class="qrow"><div><div class="d">WED · JUN 17</div><div class="n">MP · 5 mi</div></div><span class="mi">5.3 mi</span></div>
+          <div class="qrow"><div><div class="d">TUE · JUN 9</div><div class="n">LT · 6 mi</div></div><span class="mi">7.4 mi</span></div>
+        </div>
+
+        <div class="goalrow"><span class="l">GOALS &amp; TARGETS <span class="c">· OPTIONAL</span></span><span class="c">›</span></div>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><span class="d"></span>LOG</div>
+        <div class="tab on"><span class="d"></span>TRAINING</div>
+        <div class="tab"><span class="d"></span>TRENDS</div>
+        <div class="tab"><span class="d"></span>THE READ</div>
+        <div class="tab"><span class="d"></span>PLAN</div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="notes">
+    <h2>What changed</h2>
+    <ul>
+      <li><b>Voice off.</b> Removed every narrated line — “hard share is creeping,” “your volume piles up around 7:19…”. Training is now data + labels only. The coach voice belongs on <b>The Read</b>.</li>
+      <li><b>One tab, one scroll.</b> Period stats → weekly volume → easy/hard → volume × pace → quality sessions → goals. Each section separated by an editorial rule, one idea each.</li>
+      <li><b>Interpretation became a number.</b> Where a sentence used to explain the pace chart, there’s now a factual “MEDIAN 7:19 /MI” in the header instead.</li>
+      <li><b>Your colors kept.</b> The pace gradient and the easy(sage)/hard(coral) split carry through; coral stays on the “hard” signal only.</li>
+      <li><b>Pace-zone labels.</b> Quality sessions read 5K / MP / LT, not the retired “Intervals / Tempo / Threshold.”</li>
+    </ul>
+  </div>
+
+</div>
+
+<script>
+  const stops = [[169,184,154],[196,176,106],[196,135,58],[196,90,58],[184,58,74],[107,74,138],[62,92,138]];
+  function grad(t){const x=t*(stops.length-1),i=Math.min(stops.length-2,Math.floor(x)),f=x-i,a=stops[i],b=stops[i+1];
+    return `rgb(${Math.round(a[0]+(b[0]-a[0])*f)},${Math.round(a[1]+(b[1]-a[1])*f)},${Math.round(a[2]+(b[2]-a[2])*f)})`;}
+  const H=[34,26,52,60,42,20,22,15,17,10,9,17,11,12,6], max=Math.max(...H), el=document.getElementById('bars');
+  H.forEach((h,i)=>{const d=document.createElement('div');d.className='bar';d.style.height=(h/max*100)+'%';d.style.background=grad(i/(H.length-1));el.appendChild(d);});
+  document.getElementById('axis').style.background='linear-gradient(90deg,'+stops.map((s,i)=>`rgb(${s[0]},${s[1]},${s[2]}) ${Math.round(i/(stops.length-1)*100)}%`).join(',')+')';
+</script>
+</body>
+</html>
