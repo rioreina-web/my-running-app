@@ -153,23 +153,9 @@ struct WorkoutRepReceiptView: View {
     private var orderedLaps: [WorkoutLapRow] { laps.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) } }
 
     private var reps: [WorkoutLapRow] {
-        // A continuous run (uniform watch auto-laps) has no rep structure — its
-        // "laps" are distance splits, not work reps. Force the whole-run path so
-        // a long / steady run is never rendered as intervals.
-        if isContinuous { return [] }
-        return orderedLaps.filter { lap in
-            guard lap.is_rest != true,
-                  let p = lap.avg_pace_sec_per_mile, p > 0,
-                  let d = lap.distance_meters, d >= 150,
-                  let s = lap.moving_time_seconds, s >= 20 else { return false }
-            // When the laps carry reliable work/rest tags (merged raw GPS laps or
-            // parsed structure), `is_rest` is authoritative — a faded/slow rep
-            // (e.g. an 11:45 mile in a hard session) is still a real rep and must
-            // be kept. The pace cap only makes sense for untagged raw laps, where
-            // we must separate a hard rep from a jog ourselves.
-            if trustRestTags { return true }
-            return p <= 370
-        }
+        WorkoutLapsService.workReps(orderedLaps,
+                                    isContinuous: isContinuous,
+                                    trustRestTags: trustRestTags)
     }
 
     /// Work-rep windows in stream time (cumulative lap durations), plus the
@@ -1650,10 +1636,22 @@ struct WorkoutRepReceiptView: View {
         //      if the watch didn't lap it, the honest record is the watch's
         //      own splits, not reps reconstructed from what you said.
         let rawHasRests = lapRows.contains { $0.is_rest == true }
-        let parsedWork = parsed.laps.filter { $0.is_rest != true }.count
+        // Counted with the same rule the screen renders by, so "the correction
+        // has a rep in it" and "the correction shows a rep" can't disagree —
+        // `is_rest != true` also counted the warm-up and the cool-down.
+        let parsedWork = WorkoutLapsService
+            .workReps(parsed.laps, isContinuous: false, trustRestTags: true).count
+        // Every branch below states BOTH flags. `isContinuous` used to be set
+        // only by the two branches that turn it on, so a reload never turned it
+        // back off — and `load()` is exactly what "Fix reps" calls on save. A
+        // run that first rendered as continuous stayed continuous, `reps`
+        // returned empty against the corrected geometry, and the correction
+        // rendered as nothing until the sheet was closed and reopened. That is
+        // the "Fix reps does nothing" report. (2026-09-07)
         if parsed.edited && parsedWork >= 1 {
             laps = parsed.laps
             trustRestTags = true
+            isContinuous = false
         } else if WorkoutLapsService.isContinuousAutoLap(lapRows) {
             laps = lapRows
             trustRestTags = false
@@ -1662,6 +1660,7 @@ struct WorkoutRepReceiptView: View {
             // The watch lapped work + rest — that IS the workout's splits.
             laps = WorkoutLapsService.mergeWorkBouts(lapRows)
             trustRestTags = true
+            isContinuous = false
         } else {
             // No recorded lap structure → continuous. `isContinuous` forces the
             // whole-run / mile-split path (see `reps`), so the chart shows the

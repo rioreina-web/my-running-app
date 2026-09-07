@@ -31,6 +31,17 @@ struct WorkoutLapRow: Decodable, Identifiable {
     var temp_f: Double?
     var dew_point_f: Double?
     var heat_adjusted_pace_sec_per_mile: Double?
+    /// What this segment IS, when something named it: `warmup` | `work_rep` |
+    /// `recovery` | `cooldown` | `steady`. Carried off `parsed_structure.blocks`
+    /// — so it is set on a hand-correction (the athlete's own verdict) and on
+    /// the parser's segmentation, and nil on a raw watch lap, which is only ever
+    /// a split with a rest flag.
+    ///
+    /// `is_rest` cannot carry this: it collapses warm-up, recovery and cool-down
+    /// into one bit, so a corrected "warm-up + 3 × 1k + cool-down" came back as
+    /// five work reps and the correction looked like it had done nothing.
+    /// (2026-09-07)
+    var role: String?
 }
 
 /// Pace zones (sec/mi) used for the dashed reference lines.
@@ -127,8 +138,16 @@ enum WorkoutLapsService {
                 let w = ordered[j]
                 let d = w.distance_meters ?? 0
                 let t = Double(w.moving_time_seconds ?? 0)
-                dist += d; time += t
-                if let hr = w.avg_heart_rate { hrWeighted += Double(hr) * max(t, 1); hrTime += max(t, 1) }
+                // A lap missing either half contributes NEITHER. `?? 0` on the
+                // time alone let a lap add its distance to the bout while its
+                // duration counted as zero, and the merged pace came out faster
+                // than every lap that went into it — a split the run never ran.
+                // Weather still carries across: it's a fact about the air, not
+                // about the lap's geometry. (2026-09-07)
+                if d > 0, t > 0 {
+                    dist += d; time += t
+                    if let hr = w.avg_heart_rate { hrWeighted += Double(hr) * t; hrTime += t }
+                }
                 if let tf = w.temp_f { temp = max(temp ?? tf, tf) }
                 if let df = w.dew_point_f { dew = max(dew ?? df, df) }
                 j += 1
@@ -165,6 +184,51 @@ enum WorkoutLapsService {
             i = j
         }
         return out
+    }
+
+    /// Which of a workout's segments are WORK REPS — the rows that earn a rep
+    /// number, and the only ones REP AVG, SPREAD and DRIFT are computed over.
+    ///
+    /// Pure, so the rule can be tested (see `WorkRepSelectionTests`) rather than
+    /// living as a closure inside a view body.
+    ///
+    /// Precedence, strictest first:
+    ///
+    ///   1. `isContinuous` — a run lapped every km/mile has no rep structure at
+    ///      all. Its "laps" are distance splits, and a long / steady run must
+    ///      never be rendered as intervals.
+    ///   2. A segment that carries a `role` has been NAMED — by the athlete in
+    ///      "Fix reps", or by the parser. Only a work rep is a rep: a warm-up or
+    ///      a cool-down is not, however fast it was run, and the heuristics
+    ///      below may not overrule the athlete's own verdict on their own run.
+    ///      (Before this, a corrected "warm-up + 3 × 1k + cool-down" came back
+    ///      as five reps with the warm-up's pace dragged into the average, so
+    ///      the correction read as ignored. 2026-09-07)
+    ///   3. `trustRestTags` — merged raw GPS laps or parsed structure, where
+    ///      `is_rest` is authoritative. A faded rep (an 11:45 mile in a hard
+    ///      session) is still a real rep and must be kept.
+    ///   4. Untagged raw laps — we must separate a hard rep from a jog
+    ///      ourselves, so the pace cap applies.
+    static func workReps(
+        _ ordered: [WorkoutLapRow],
+        isContinuous: Bool,
+        trustRestTags: Bool
+    ) -> [WorkoutLapRow] {
+        if isContinuous { return [] }
+        return ordered.filter { lap in
+            if let role = lap.role {
+                guard role == "work_rep" || role == "steady" else { return false }
+                return (lap.avg_pace_sec_per_mile ?? 0) > 0
+                    && (lap.distance_meters ?? 0) > 0
+                    && (lap.moving_time_seconds ?? 0) > 0
+            }
+            guard lap.is_rest != true,
+                  let p = lap.avg_pace_sec_per_mile, p > 0,
+                  let d = lap.distance_meters, d >= 150,
+                  let s = lap.moving_time_seconds, s >= 20 else { return false }
+            if trustRestTags { return true }
+            return p <= 370
+        }
     }
 
     /// True when the raw watch laps are uniform distance auto-laps — a
@@ -254,7 +318,8 @@ enum WorkoutLapsService {
                     is_rest: role == "recovery",
                     temp_f: nil,
                     dew_point_f: nil,
-                    heat_adjusted_pace_sec_per_mile: nil
+                    heat_adjusted_pace_sec_per_mile: nil,
+                    role: role.isEmpty ? nil : role
                 ))
             }
             return ParsedReps(laps: out, intentPattern: parsed?.intent_pattern, edited: parsed?.edited_by_user == true)
@@ -362,7 +427,8 @@ enum WorkoutLapsService {
                         is_rest: role == "recovery",
                         temp_f: nil,
                         dew_point_f: nil,
-                        heat_adjusted_pace_sec_per_mile: nil
+                        heat_adjusted_pace_sec_per_mile: nil,
+                        role: role.isEmpty ? nil : role
                     ))
                 }
             }
