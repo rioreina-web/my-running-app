@@ -174,6 +174,8 @@ Rules:
 - Use the GPS segments for the actual distances, durations and paces. If the description has MORE reps than the GPS shows (the watch missed a recovery), split the relevant WORK segment to match, dividing its distance and time proportionally.
 - Every segment is its OWN block. A jog recovery is its own block with its own pace — never a rest tacked onto a rep.
 - role MUST be exactly one of: warmup, work_rep, recovery, cooldown.
+- Everything before the first work rep is "warmup"; everything after the last is "cooldown". Never call either of those "recovery" — a recovery is the jog BETWEEN two work reps.
+- Account for every GPS segment exactly once. Total the blocks' distance and duration to the GPS total; never add distance or time the run doesn't contain.
 - distance_miles = meters / 1609.34 (number). duration_s in seconds (number). avg_pace_per_mile as "M:SS" (use null for a standing rest).
 
 Output STRICT JSON only, no markdown:

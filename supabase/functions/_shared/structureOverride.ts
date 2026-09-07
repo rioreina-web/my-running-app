@@ -159,6 +159,30 @@ export function normalizeOverride(
     throw new Error("override must contain at least one work_rep block");
   }
 
+  // A segment before any work has happened is a WARM-UP, and one after all the
+  // work is done is a COOL-DOWN. That is definitional, not inference, so it is
+  // settled here rather than left to the model — which called a 10-minute
+  // warm-up "recovery" on a real 3 × 30 min session, putting it in the
+  // RECOVERIES average as if it were a jog between reps. Only the contiguous
+  // runs at each end are touched; anything between two work reps is a recovery
+  // and stays one. A block the athlete labelled by hand already says warmup /
+  // cooldown, so this is a no-op for it. (2026-09-07)
+  const firstWork = blocks.findIndex((b) => b.role === "work_rep");
+  const lastWork = blocks.length - 1 -
+    [...blocks].reverse().findIndex((b) => b.role === "work_rep");
+  for (let i = 0; i < firstWork; i++) {
+    if (blocks[i].role !== "work_rep") {
+      blocks[i] = { ...blocks[i], role: "warmup" };
+      delete blocks[i].recovery_style;
+    }
+  }
+  for (let i = lastWork + 1; i < blocks.length; i++) {
+    if (blocks[i].role !== "work_rep") {
+      blocks[i] = { ...blocks[i], role: "cooldown" };
+      delete blocks[i].recovery_style;
+    }
+  }
+
   // Recompute the work summary from the corrected work_rep blocks so reps/pace
   // stay consistent with what the athlete actually laid out.
   const workBlocks = blocks.filter((b) => b.role === "work_rep");

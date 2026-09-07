@@ -1635,7 +1635,21 @@ struct WorkoutRepReceiptView: View {
         //      The parser NEVER supplies split geometry from the voice memo:
         //      if the watch didn't lap it, the honest record is the watch's
         //      own splits, not reps reconstructed from what you said.
-        let rawHasRests = lapRows.contains { $0.is_rest == true }
+        // Both shape questions are asked of `rawLapRows` — the WATCH's own
+        // record — never of `lapRows`, which carries the parser's `lap_roles`
+        // opinion on top. This block's own rule is "the parser is not consulted
+        // for the geometry", and feeding it the relabelled rows broke exactly
+        // that: on a run the watch lapped uniformly with NO rest laps, the
+        // parser marking a few of them warmup/recovery/cooldown pushed the rest
+        // count over `isContinuousAutoLap`'s threshold, flipped the run out of
+        // the continuous branch, and handed it to `mergeWorkBouts` — which then
+        // published rep boundaries the watch never recorded. 11 of this
+        // athlete's runs carried invented boundaries that way. `lap_roles` may
+        // still correct a LABEL (its stated job — the DB's generated `is_rest`
+        // calls every sub-200m lap a rest and hides real short reps); it may
+        // not manufacture a rep structure out of a continuous run. (2026-09-07)
+        let watchHasRests = rawLapRows.contains { $0.is_rest == true }
+        let watchLappedContinuously = WorkoutLapsService.isContinuousAutoLap(rawLapRows)
         // Counted with the same rule the screen renders by, so "the correction
         // has a rep in it" and "the correction shows a rep" can't disagree —
         // `is_rest != true` also counted the warm-up and the cool-down.
@@ -1652,11 +1666,14 @@ struct WorkoutRepReceiptView: View {
             laps = parsed.laps
             trustRestTags = true
             isContinuous = false
-        } else if WorkoutLapsService.isContinuousAutoLap(lapRows) {
-            laps = lapRows
+        } else if watchLappedContinuously {
+            // The watch's own uniform splits, as recorded. `lapRows` is passed
+            // over deliberately: on a continuous run the parser's labels have
+            // nothing to correct and everything to invent.
+            laps = rawLapRows
             trustRestTags = false
             isContinuous = true
-        } else if rawHasRests {
+        } else if watchHasRests || lapRows.contains(where: { $0.is_rest == true }) {
             // The watch lapped work + rest — that IS the workout's splits.
             laps = WorkoutLapsService.mergeWorkBouts(lapRows)
             trustRestTags = true
@@ -1665,8 +1682,8 @@ struct WorkoutRepReceiptView: View {
             // No recorded lap structure → continuous. `isContinuous` forces the
             // whole-run / mile-split path (see `reps`), so the chart shows the
             // watch's own splits and a voice-memo parse can never render here.
-            laps = lapRows
-            trustRestTags = rawHasRests
+            laps = rawLapRows
+            trustRestTags = false
             isContinuous = true
         }
 
