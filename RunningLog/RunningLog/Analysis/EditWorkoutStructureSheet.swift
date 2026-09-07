@@ -71,9 +71,11 @@ struct EditableBlock: Identifiable, Equatable {
 
 struct EditWorkoutStructureSheet: View {
     let workoutId: UUID
-    /// Current reps as the chart already loaded them (avoids a refetch). Roles
-    /// are inferred: rest laps → recovery, everything else → work rep. You then
-    /// relabel the first/last as warm-up / cool-down if needed.
+    /// Current reps as the chart already loaded them (avoids a refetch). A row
+    /// that carries its own `role` — anything already corrected or parsed —
+    /// keeps it. For a raw watch lap the role is inferred: rest laps →
+    /// recovery, everything else → work rep, and you relabel the first/last as
+    /// warm-up / cool-down.
     let initialLaps: [WorkoutLapRow]
     let initialIntent: String?
     /// Called after a successful save or restore so the caller can refresh.
@@ -379,7 +381,13 @@ struct EditWorkoutStructureSheet: View {
         let ordered = initialLaps.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
         blocks = ordered.map { lap in
             EditableBlock(
-                role: lap.is_rest == true ? .recovery : .work_rep,
+                // A segment that already carries its own role keeps it. Falling
+                // back to the is_rest bit reset every warm-up and cool-down the
+                // athlete had labelled back to WORK the moment they reopened the
+                // sheet, so the correction could never be built on. `steady` has
+                // no editor row of its own and lands on Work rep. (2026-09-07)
+                role: lap.role.flatMap(EditableBlock.Role.init(rawValue:))
+                    ?? (lap.is_rest == true ? .recovery : .work_rep),
                 distanceMeters: lap.distance_meters ?? 0,
                 durationS: Double(lap.moving_time_seconds ?? 0),
                 hr: lap.avg_heart_rate
@@ -435,6 +443,23 @@ struct EditWorkoutStructureSheet: View {
     }
 
     // MARK: Persist
+
+    /// The function's own `{"error": …}` message, when it sent one.
+    ///
+    /// `functions.invoke` throws on any non-2xx, and all three calls below
+    /// reported that as "Couldn't reach the server" — so a refusal the athlete
+    /// could act on (the daily AI limit, a block the validator rejected) read
+    /// exactly like a network blip, and a save that the server had turned down
+    /// looked like a button that did nothing. (2026-09-07)
+    private func serverMessage(_ error: Error, fallback: String) -> String {
+        guard let fnError = error as? FunctionsError,
+              case let .httpError(_, data) = fnError else { return fallback }
+        struct Body: Decodable { let error: String? }
+        guard let msg = (try? JSONDecoder().decode(Body.self, from: data))?.error,
+              !msg.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return fallback }
+        return msg
+    }
 
     /// Gemini reconciles the typed description with the current GPS segments and
     /// returns a proposed structure, which we load into the editor for review.
@@ -499,7 +524,7 @@ struct EditWorkoutStructureSheet: View {
                 if let ip = resp.proposal?.intent_pattern, !ip.isEmpty { intent = ip }
             }
         } catch {
-            errorMsg = "Couldn't reach the coach. Try again."
+            errorMsg = serverMessage(error, fallback: "Couldn't reach the coach. Try again.")
             Log.coach.error("reconcileWithAI failed: \(error)")
         }
     }
@@ -544,7 +569,7 @@ struct EditWorkoutStructureSheet: View {
                 errorMsg = resp.error ?? "Couldn't save. Try again."
             }
         } catch {
-            errorMsg = "Couldn't reach the server. Try again."
+            errorMsg = serverMessage(error, fallback: "Couldn't reach the server. Try again.")
             Log.coach.error("correct-workout-structure save failed: \(error)")
         }
     }
@@ -566,7 +591,7 @@ struct EditWorkoutStructureSheet: View {
                 errorMsg = resp.error ?? "Couldn't restore. Try again."
             }
         } catch {
-            errorMsg = "Couldn't reach the server. Try again."
+            errorMsg = serverMessage(error, fallback: "Couldn't reach the server. Try again.")
             Log.coach.error("correct-workout-structure restore failed: \(error)")
         }
     }

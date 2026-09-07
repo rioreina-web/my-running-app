@@ -57,14 +57,6 @@ Deno.serve(async (req) => {
   if ("response" in auth) return auth.response;
   const { userId, isServiceRole } = auth;
 
-  // Caught by the LLM coverage sweep (2026-07-15): this Gemini caller shipped
-  // auth-gated but with NO per-user rate limit. Shares the "parse" bucket —
-  // it's the manual structure-correction parser.
-  const rlBlocked = await enforceFeatureRateLimit(userId, "parse", corsHeaders, { isServiceRole });
-  if (rlBlocked) return rlBlocked;
-  const monthlyCapped = await enforceMonthlyCap(userId, "parse", corsHeaders, { isServiceRole });
-  if (monthlyCapped) return monthlyCapped;
-
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   // Load the row + its current structure (the base a save merges into). 404
@@ -81,6 +73,25 @@ Deno.serve(async (req) => {
   const ownerId = (row as { user_id?: string }).user_id ?? userId;
 
   const mode = typeof body.mode === "string" ? body.mode : "save";
+
+  // Caught by the LLM coverage sweep (2026-07-15): this Gemini caller shipped
+  // auth-gated but with NO per-user rate limit. Shares the "parse" bucket —
+  // it's the manual structure-correction parser.
+  //
+  // The gate covers the two modes that spend a model call: "describe" (Gemini
+  // directly) and "restore" (which fires parse-workout-structure). "save" is a
+  // validated DB write with no LLM in it, and gating it meant a day of opening
+  // workouts could exhaust the bucket and leave the athlete unable to record a
+  // hand-correction at all — the endpoint refused with a 429 the sheet could
+  // only report as "Couldn't reach the server". A correction is the athlete's
+  // verdict on their own run; it is never the thing we ration. Same shape as
+  // ingest-manual-workout, which gates its parse mode only. (2026-09-07)
+  if (mode === "describe" || mode === "restore") {
+    const rlBlocked = await enforceFeatureRateLimit(userId, "parse", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(userId, "parse", corsHeaders, { isServiceRole });
+    if (monthlyCapped) return monthlyCapped;
+  }
 
   // ── restore: discard the correction, re-derive from the stream ──
   if (mode === "restore") {
