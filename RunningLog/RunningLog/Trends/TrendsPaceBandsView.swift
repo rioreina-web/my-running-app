@@ -138,7 +138,7 @@ struct TrendsPaceBandsView: View {
                 .foregroundStyle(Color.drip.textSecondary)
                 .padding(.top, 20)
 
-            Text("One band at a time.")
+            Text("One band at a time")
                 .font(.dripDisplay(32))
                 .foregroundStyle(Color.drip.textPrimary)
                 .padding(.top, 7)

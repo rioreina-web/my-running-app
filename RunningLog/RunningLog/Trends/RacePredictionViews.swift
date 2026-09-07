@@ -303,11 +303,11 @@ struct RacePredictionTrack: View {
                     .font(.dripBody(14)).foregroundStyle(Color.drip.textSecondary)
             }
         }
-        .padding(16)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.drip.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+        .contentShape(Rectangle())
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
+        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
     }
 
     private func captionLine(_ r: ModelOfYouState.RaceRange?) -> String? {
@@ -375,7 +375,7 @@ struct RacePredictionDetailView: View {
                     Text("FITNESS · RACE-ANCHORED")
                         .font(.dripEyebrow(11)).tracking(1.3)
                         .foregroundStyle(Color.drip.coral)
-                    Text("Where the fitness points.")
+                    Text("Where the fitness points")
                         .font(.dripDisplay(26))
                         .foregroundStyle(Color.drip.textPrimary)
                 }

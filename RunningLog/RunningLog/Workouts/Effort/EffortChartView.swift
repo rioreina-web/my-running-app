@@ -39,6 +39,10 @@ struct EffortPortraitChart: View {
     /// markers when `showLaps` is on.
     var lapMarks: [TimeInterval] = []
     var showLaps: Bool = false
+    /// The watch's own recorded splits (raw laps, pre-merge). Drawn as a
+    /// stepped pace overlay when `showWatchSplits` is on — pace metric only.
+    var watchSplits: [EffortWatchSplit] = []
+    var showWatchSplits: Bool = false
     /// Authoritative elevation GAIN (ft) from the workout — the number that
     /// matters for a run, not average altitude above sea level.
     var elevationGainFt: Int? = nil
@@ -53,6 +57,14 @@ struct EffortPortraitChart: View {
     var compact: Bool = false
     /// Draw the mile x-axis. In a stack, only the bottom panel shows it.
     var showXAxis: Bool = true
+    /// Inline (inside a ScrollView) the scrub must not steal vertical swipes.
+    /// A DOUBLE-TAP arms the scrubber and only then does a drag scrub — the
+    /// same arm model as RRTelemetryPanel. Unarmed, the chart claims nothing,
+    /// so a swipe across it scrolls the page exactly as if it weren't there.
+    /// Landscape has no page to protect, so it opts out and scrubs on first
+    /// touch. (Named `holdToScrub` for its call sites; the activation is a
+    /// double-tap, not a hold — see the gestures section for why.)
+    var holdToScrub: Bool = true
     var onExpand: (() -> Void)? = nil
 
     /// The active scrub time — shared when bound, else this chart's own.
@@ -68,6 +80,8 @@ struct EffortPortraitChart: View {
     @State private var render: EffortRender?
     @State private var selectedRep: String?
     @State private var scrubT: TimeInterval?
+    /// Inline only: the scrubber is off until a double-tap arms it.
+    @State private var scrubArmed = false
 
     private var window: ClosedRange<TimeInterval> {
         let lo = samples.first?.t ?? 0
@@ -93,7 +107,7 @@ struct EffortPortraitChart: View {
             Spacer()
             Text(figure)
         }
-        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+        .font(.dripEyebrow(8.5))
         .tracking(1.4)
         .foregroundStyle(Color.drip.textSecondary)
         .padding(.bottom, 10)
@@ -105,7 +119,7 @@ struct EffortPortraitChart: View {
     private var statsRow: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(metric.axisCaption)
-                .font(.system(size: compact ? 9 : 10, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(compact ? 9 : 10))
                 .tracking(1.1)
                 .foregroundStyle(metric.color)
             Spacer()
@@ -150,7 +164,7 @@ struct EffortPortraitChart: View {
                 }
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+            .font(.dripEyebrow(8.5))
             .tracking(0.6)
             .padding(.bottom, 8)
         }
@@ -159,11 +173,11 @@ struct EffortPortraitChart: View {
     private func statPair(caption: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(value)
-                .font(.custom("CrimsonPro-Regular", size: compact ? 15 : 22).weight(.bold))
+                .font(.dripDisplay(compact ? 15 : 22))
                 .monospacedDigit()
                 .foregroundStyle(Color.drip.textPrimary)
             Text(caption)
-                .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(8.5))
                 .tracking(0.8)
                 .foregroundStyle(Color.drip.textTertiary)
         }
@@ -184,13 +198,19 @@ struct EffortPortraitChart: View {
     // MARK: Plot
 
     private var plotBlock: some View {
-        ZStack(alignment: .topLeading) {
+        let base = ZStack(alignment: .topLeading) {
             // Width probe.
             GeometryReader { geo in
                 Color.clear.preference(key: EffortWidthKey.self, value: geo.size.width)
             }
             if let r = render, plotWidth > 0 {
                 plotContent(r)
+                // Armed affordance: a coral hairline round the plot, so it's
+                // visible that the next drag scrubs rather than scrolls.
+                if scrubArmed {
+                    Path(roundedRect: plotRect, cornerRadius: 3)
+                        .stroke(Color.drip.coral.opacity(0.45), lineWidth: 1)
+                }
             } else {
                 // Loading: hold geometry, omit the trace (no spinner).
                 Rectangle().fill(Color.clear)
@@ -198,7 +218,22 @@ struct EffortPortraitChart: View {
         }
         .frame(height: plotHeight + padT + padB)
         .contentShape(Rectangle())
-        .gesture(scrubGesture)
+
+        return Group {
+            if holdToScrub {
+                // Inline, inside a ScrollView. Unarmed, the scrub drag is
+                // masked to `.subviews` — i.e. off — so the page scrolls past
+                // this chart as though it carried no gesture at all.
+                // `.subviews` and not `.none`: `.none` would also disable the
+                // rep-select taps living in the bands below.
+                base
+                    .simultaneousGesture(scrubDragGesture,
+                                         including: scrubArmed ? .all : .subviews)
+                    .simultaneousGesture(armGesture)
+            } else {
+                base.gesture(scrubGesture)
+            }
+        }
         .onPreferenceChange(EffortWidthKey.self) { w in
             let rounded = (w - padL - padR).rounded()
             if rounded != plotWidth { plotWidth = rounded }
@@ -241,6 +276,12 @@ struct EffortPortraitChart: View {
             // 4c · lap boundary markers
             if showLaps, !lapMarks.isEmpty {
                 EffortLapLines(marks: lapMarks, window: window, plot: plot)
+            }
+            // 4d · watch-split overlay — the recorded lap paces as steps, so
+            // the mile/km splits inside a merged rep stay readable (pace only).
+            if metric == .pace, showWatchSplits, !watchSplits.isEmpty {
+                EffortWatchSplitSteps(splits: watchSplits, scale: r.scale,
+                                      window: window, plot: plot)
             }
             // 5 · y-axis labels + caption
             yAxisLabels(r, plot: plot)
@@ -285,7 +326,7 @@ struct EffortPortraitChart: View {
                 }
                 if w > 26 {
                     Text(seg.label)
-                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .font(.dripStat(8.5))
                         .tracking(1.0)
                         .foregroundStyle(Color.drip.coral)
                         .offset(x: 5, y: 4)
@@ -317,7 +358,7 @@ struct EffortPortraitChart: View {
         ZStack(alignment: .topLeading) {
             // unit caption above top-left gridline
             Text(metric.axisCaption)
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(8))
                 .tracking(0.8)
                 .foregroundStyle(Color.drip.textTertiary)
                 .position(x: padL, y: plot.minY - 8)
@@ -327,7 +368,7 @@ struct EffortPortraitChart: View {
                 ForEach(r.ticks, id: \.self) { tick in
                     let y = yFor(tick, scale: r.scale, plot: plot)
                     Text(metric.format(tick))
-                        .font(.system(size: 9, weight: .regular, design: .monospaced))
+                        .font(.effortTick(9))
                         .foregroundStyle(Color.drip.textTertiary)
                         .frame(width: padL - 7, alignment: .trailing)
                         .position(x: (padL - 7) / 2, y: y)
@@ -351,7 +392,7 @@ struct EffortPortraitChart: View {
                         .position(x: x, y: plot.maxY + 2)
                     if !everySecond || mark.mile % 2 == 0 {
                         Text("\(mark.mile) MI")
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                            .font(.dripEyebrow(9))
                             .tracking(0.6)
                             .foregroundStyle(Color.drip.textTertiary)
                             .fixedSize()
@@ -374,7 +415,7 @@ struct EffortPortraitChart: View {
                 // Set vertically inside the band, reading upward, anchored clear
                 // of the x-axis mile labels below the baseline.
                 Text("\(EffortFormat.pace(stat.meanPace)) · \(Int(stat.meanHR.rounded())) BPM")
-                    .font(.system(size: 9, weight: .regular, design: .monospaced))
+                    .font(.effortTick(9))
                     .foregroundStyle(Color.drip.textSecondary)
                     .fixedSize()
                     .rotationEffect(.degrees(-90))
@@ -387,7 +428,8 @@ struct EffortPortraitChart: View {
 
     private var footer: some View {
         HStack {
-            Text("DRAG TO SCRUB · TAP A REP TO SELECT")
+            Text(holdToScrub ? "DOUBLE-TAP TO SCRUB · TAP A REP TO SELECT"
+                             : "DRAG TO SCRUB · TAP A REP TO SELECT")
             Spacer()
             if onExpand != nil {
                 Button { onExpand?() } label: {
@@ -396,7 +438,7 @@ struct EffortPortraitChart: View {
                 .buttonStyle(.plain)
             }
         }
-        .font(.system(size: 8, weight: .medium, design: .monospaced))
+        .font(.dripEyebrow(8))
         .tracking(1.0)
         .foregroundStyle(Color.drip.textTertiary)
         .padding(.top, 12)
@@ -405,18 +447,63 @@ struct EffortPortraitChart: View {
 
     // MARK: Gestures
 
+    /// Touch-to-scrub — landscape only, where there is no page scroll to steal.
     private var scrubGesture: some Gesture {
         DragGesture(minimumDistance: 0)
-            .onChanged { g in
-                let plot = plotRect
-                guard plot.width > 0 else { return }
-                let frac = min(max((g.location.x - plot.minX) / plot.width, 0), 1)
-                let t = window.lowerBound + Double(frac) * (window.upperBound - window.lowerBound)
-                if let b = sharedScrubT { b.wrappedValue = t } else { scrubT = t }
+            .onChanged { g in setScrub(atX: g.location.x) }
+            .onEnded { _ in endScrub() }
+    }
+
+    /// Double-tap arms (and places) the scrubber; double-tap again puts it
+    /// away. `SpatialTapGesture` so the crosshair lands where you tapped — the
+    /// tap IS the first placement and the drag after it only fine-tunes.
+    ///
+    /// This replaced a press-and-hold (`LongPressGesture(0.35).sequenced(
+    /// before: DragGesture(minimumDistance: 0))` attached with `.gesture`).
+    /// A sequenced gesture attached that way makes the enclosing ScrollView
+    /// wait on it, so every swipe that STARTED on a chart was held for the
+    /// press window before the page moved — and with pace/HR/elevation stacked,
+    /// nearly every swipe starts on a chart. Lengthening the hold only made the
+    /// stall longer. RRTelemetryPanel had already landed on this arm model for
+    /// exactly this reason; don't re-introduce a hold here.
+    private var armGesture: some Gesture {
+        SpatialTapGesture(count: 2)
+            .onEnded { e in
+                if scrubArmed {
+                    scrubArmed = false
+                    endScrub()
+                } else {
+                    scrubArmed = true
+                    setScrub(atX: e.location.x)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
             }
-            .onEnded { _ in
-                if let b = sharedScrubT { b.wrappedValue = nil } else { scrubT = nil }
+    }
+
+    /// The armed scrubber. `minimumDistance: 4` so the two taps that arm it
+    /// aren't swallowed as a zero-distance drag, and the crosshair is LEFT in
+    /// place on lift — the values are read after the finger is gone. A
+    /// decidedly VERTICAL drag is ignored even while armed: an armed chart must
+    /// still let the page scroll past it.
+    private var scrubDragGesture: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { v in
+                let dx = abs(v.translation.width), dy = abs(v.translation.height)
+                if dy > 24 && dy > dx { return }
+                setScrub(atX: v.location.x)
             }
+    }
+
+    private func setScrub(atX x: CGFloat) {
+        let plot = plotRect
+        guard plot.width > 0 else { return }
+        let frac = min(max((x - plot.minX) / plot.width, 0), 1)
+        let t = window.lowerBound + Double(frac) * (window.upperBound - window.lowerBound)
+        if let b = sharedScrubT { b.wrappedValue = t } else { scrubT = t }
+    }
+
+    private func endScrub() {
+        if let b = sharedScrubT { b.wrappedValue = nil } else { scrubT = nil }
     }
 
     // MARK: HR zone-colored line
@@ -541,6 +628,18 @@ struct EffortPortraitChart: View {
 
 // MARK: - Detail section: Pace + HR + Elevation stacked
 
+/// Everything the Fix reps editor needs, carried into the chart section (and
+/// down into the landscape takeover) so the athlete can correct the rep
+/// structure from the chart they're looking at. `onSaved` triggers the
+/// receipt's reload; the corrected bands then flow straight back down into
+/// whichever chart is up — the correction and the chart stay one loop.
+struct EffortFixRepsContext {
+    let workoutId: UUID
+    let laps: [WorkoutLapRow]
+    let intent: String?
+    let onSaved: () -> Void
+}
+
 /// The workout-detail telemetry section — the pace chart (spectrum fill) plus
 /// HR and elevation stacked beneath it, under one plate strip and footer. This
 /// is what mounts in `WorkoutRepReceiptView` in place of the old panel, so the
@@ -556,9 +655,15 @@ struct EffortDetailCharts: View {
     var hrZones: [RRZone] = []
     var lapMarks: [TimeInterval] = []
     var elevationGainFt: Int? = nil
+    /// The watch's recorded splits (raw laps, pre-merge) for the SPLITS overlay.
+    var watchSplits: [EffortWatchSplit] = []
+    /// Non-nil ⇒ the FIX REPS chip renders here and in the landscape takeover.
+    var fixReps: EffortFixRepsContext? = nil
 
     @State private var showLaps = false
+    @State private var showWatchSplits = false
     @State private var showLandscape = false
+    @State private var showFixReps = false
 
     private var hasHR: Bool { samples.contains { $0.hr > 0 } }
     private var hasElev: Bool {
@@ -587,14 +692,26 @@ struct EffortDetailCharts: View {
                 targetPaceSecPerMile: targetPaceSecPerMile,
                 distanceLabel: distanceLabel, durationLabel: durationLabel,
                 paceZones: paceZones, hrZones: hrZones, lapMarks: lapMarks,
-                elevationGainFt: elevationGainFt)
+                elevationGainFt: elevationGainFt,
+                watchSplits: watchSplits, fixReps: fixReps)
+        }
+        .sheet(isPresented: $showFixReps) {
+            if let fr = fixReps {
+                EditWorkoutStructureSheet(
+                    workoutId: fr.workoutId, initialLaps: fr.laps,
+                    initialIntent: fr.intent, onSaved: fr.onSaved)
+            }
         }
     }
 
     private var controlRow: some View {
         HStack(spacing: 8) {
             Spacer()
+            if !watchSplits.isEmpty {
+                chip("SPLITS", on: showWatchSplits) { showWatchSplits.toggle() }
+            }
             if !lapMarks.isEmpty { chip("LAPS", on: showLaps) { showLaps.toggle() } }
+            if fixReps != nil { chip("FIX REPS", on: false) { showFixReps = true } }
             chip("EXPAND ↗", on: false) { showLandscape = true }
         }
         .padding(.top, 10)
@@ -603,7 +720,7 @@ struct EffortDetailCharts: View {
     private func chip(_ title: String, on: Bool, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(9))
                 .tracking(1.1)
                 .foregroundStyle(on ? Color.drip.coral : Color.drip.textSecondary)
                 .padding(.horizontal, 11)
@@ -621,6 +738,7 @@ struct EffortDetailCharts: View {
             distanceLabel: distanceLabel, durationLabel: durationLabel,
             metric: metric, plotHeight: height, paceZones: paceZones,
             hrZones: hrZones, lapMarks: lapMarks, showLaps: showLaps,
+            watchSplits: watchSplits, showWatchSplits: showWatchSplits,
             elevationGainFt: elevationGainFt, showChrome: false)
     }
 
@@ -634,7 +752,7 @@ struct EffortDetailCharts: View {
             Spacer()
             Text(figure)
         }
-        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+        .font(.dripEyebrow(8.5))
         .tracking(1.4)
         .foregroundStyle(Color.drip.textSecondary)
         .padding(.bottom, 14)
@@ -642,8 +760,8 @@ struct EffortDetailCharts: View {
     }
 
     private var footer: some View {
-        Text("DRAG TO SCRUB · TAP A REP TO SELECT")
-            .font(.system(size: 8, weight: .medium, design: .monospaced))
+        Text("DOUBLE-TAP TO SCRUB · TAP A REP TO SELECT")
+            .font(.dripEyebrow(8))
             .tracking(1.0)
             .foregroundStyle(Color.drip.textTertiary)
             .padding(.top, 14)
@@ -876,7 +994,7 @@ private struct EffortClampMarks: View {
                 .stroke(Color.drip.textSecondary.opacity(0.7),
                         style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
                 Text("↓ \(EffortFormat.pace(s.pace))")
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .font(.dripEyebrow(8))
                     .tracking(0.4)
                     .foregroundStyle(Color.drip.textSecondary)
                     .fixedSize()
@@ -908,6 +1026,66 @@ private struct EffortLapLines: View {
     }
 }
 
+/// The watch's recorded splits as a stepped overlay: one horizontal rule per
+/// lap at its recorded average pace, joined by thin risers, with the split's
+/// pace printed above each step that has room. Ink, not coral — the splits are
+/// recorded facts, structure stays with the bands. This is what keeps the
+/// twelve mile splits of a 4×3mi readable after the bands are merged to rep
+/// level: the band says R2, the step says what each mile inside it ran.
+private struct EffortWatchSplitSteps: View {
+    let splits: [EffortWatchSplit]
+    let scale: EffortScale
+    let window: ClosedRange<TimeInterval>
+    let plot: CGRect
+
+    private func x(_ t: TimeInterval) -> CGFloat {
+        let span = window.upperBound - window.lowerBound
+        guard span > 0 else { return plot.minX }
+        return plot.minX + CGFloat((t - window.lowerBound) / span) * plot.width
+    }
+    private func y(_ pace: Double) -> CGFloat {
+        plot.maxY - CGFloat(scale.normalized(pace)) * plot.height
+    }
+
+    private var steps: Path {
+        Path { p in
+            var prevEnd: CGPoint? = nil
+            for s in splits {
+                let x0 = max(x(s.t0), plot.minX), x1 = min(x(s.t1), plot.maxX)
+                guard x1 > x0 else { continue }
+                let yy = y(s.paceSecPerMile)
+                // riser joining a contiguous previous step
+                if let pe = prevEnd, abs(pe.x - x0) < 2, abs(pe.y - yy) > 0.5 {
+                    p.move(to: pe)
+                    p.addLine(to: CGPoint(x: x0, y: yy))
+                }
+                p.move(to: CGPoint(x: x0, y: yy))
+                p.addLine(to: CGPoint(x: x1, y: yy))
+                prevEnd = CGPoint(x: x1, y: yy)
+            }
+        }
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            steps.stroke(Color.drip.textPrimary.opacity(0.55),
+                         style: StrokeStyle(lineWidth: 1.1, lineCap: .butt))
+            ForEach(Array(splits.enumerated()), id: \.offset) { _, s in
+                let x0 = x(s.t0), x1 = x(s.t1)
+                if x1 - x0 >= 34 {
+                    Text(EffortFormat.pace(s.paceSecPerMile))
+                        .font(.effortTick(8))
+                        .foregroundStyle(Color.drip.textPrimary.opacity(0.75))
+                        .fixedSize()
+                        .position(x: (x0 + x1) / 2,
+                                  y: max(y(s.paceSecPerMile) - 8, plot.minY + 6))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 /// HR zone bands: full-width color washes for each `rr_zones` band, with the
 /// zone id set right-aligned inside. Bands are clamped to the visible axis and
 /// skipped when thinner than a point.
@@ -933,7 +1111,7 @@ private struct EffortHRZoneBands: View {
                         .frame(width: plot.width, height: h)
                         .position(x: plot.midX, y: (top + bottom) / 2)
                     Text(z.id)
-                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .font(.dripStat(8.5))
                         .foregroundStyle(ramp)
                         .fixedSize()
                         .position(x: plot.maxX - 13,
@@ -952,7 +1130,7 @@ private struct EffortHRZoneBands: View {
                     }
                     .stroke(ramp.opacity(0.55), lineWidth: 1)
                     Text("\(z.lo)")
-                        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                        .font(.dripEyebrow(8.5))
                         .foregroundStyle(Color.drip.textTertiary)
                         .frame(width: padL - 7, alignment: .trailing)
                         .position(x: (padL - 7) / 2, y: yb)
@@ -999,19 +1177,19 @@ private struct EffortScrub: View {
     private var readout: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("\(segLabel) · \(EffortFormat.clock(point.t))")
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(8))
                 .foregroundStyle(Color.drip.textTertiary)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(metric.format(point.value))
-                    .font(.custom("CrimsonPro-Regular", size: 22).weight(.bold))
+                    .font(.dripDisplay(22))
                     .monospacedDigit()
                     .foregroundStyle(Color.drip.textPrimary)
                 Text(metric.unit)
-                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .font(.dripEyebrow(8))
                     .foregroundStyle(Color.drip.textSecondary)
             }
             Text(String(format: "MI %.2f", distanceMiles))
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(8))
                 .foregroundStyle(Color.drip.textTertiary)
         }
         .padding(EdgeInsets(top: 8, leading: 10, bottom: 9, trailing: 10))
@@ -1025,5 +1203,16 @@ private struct EffortScrub: View {
 
     private func clampX(_ cx: CGFloat) -> CGFloat {
         min(max(cx, plot.minX + 62), plot.maxX - 62)
+    }
+}
+
+extension Font {
+    /// Axis ticks and in-band readouts — regular-weight numerals, quieter
+    /// than `dripEyebrow`/`dripStat`. No such role exists in DesignSystem,
+    /// so the skin switch lives here.
+    static func effortTick(_ size: CGFloat) -> Font {
+        DripSkinStore.shared.skin == .wild
+            ? .custom(WildFace.dataRegular, size: size).monospacedDigit()
+            : .system(size: size, weight: .regular, design: .monospaced)
     }
 }

@@ -972,6 +972,7 @@ export function detectTrainingAnchors(voiceLogs: VoiceLogInput[], curveTilt = 0)
         break;
       case "progression":
       case "long_run":
+      case "long_wo":
         kind = "longRunFinish";
         break;
       default:

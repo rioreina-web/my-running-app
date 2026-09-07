@@ -59,7 +59,182 @@ extension Date {
     }
 }
 
+/// What a check-in is connected to — the read it answered and the training
+/// week it sits inside (Fig. 12). Loaded once per entry by the sheet's
+/// `.task`; both halves are best-effort so a fetch miss degrades a section,
+/// never the page.
+struct CheckInDetailContext {
+    var readQuestion: String?
+    /// "WEEK OF AUG 24–30" — names the read's week in the exchange eyebrow.
+    var weekLabel: String?
+
+    struct LedgerRow: Identifiable {
+        let id = UUID()
+        let dayLabel: String      // "SAT 29"
+        let milesText: String?    // "21.0"; nil on the check-in's own row
+        let name: String          // "Long run workout" / "This check-in"
+        let isKey: Bool           // session-blue name (a keyed session type)
+        let isSelf: Bool          // the check-in's own row, mood-coloured
+    }
+    /// The runs around the check-in (up to two before it) + its own row.
+    var rows: [LedgerRow] = []
+    /// "→ 48 h after the 21.0-miler · next read sees this before it writes"
+    var closingLine: String?
+}
+
 extension HistoryDetailSheet {
+
+    /// A Read-tab check-in is a reading on the athlete, not a session — so
+    /// this sheet drops every workout affordance for one: no RPE slider, no
+    /// LINK A RUN, no THE WORKOUT editor, no session ask, no workout-type/
+    /// stats editors. What remains is what a check-in IS: the day, the
+    /// declared mood, the athlete's words — and what it's CONNECTED to
+    /// (`checkInConnectionsSection`): the read question it answered and the
+    /// training week around it (Rio, 2026-08-31 — first it rendered as a
+    /// full workout entry, then as a page connected to nothing).
+    var isCheckInEntry: Bool { vm.currentEntry.source == "check_in" }
+
+    /// Fetch the check-in's connections. Static + supabase-direct: the
+    /// HistoryDetailViewModel is workout machinery this entry type
+    /// deliberately doesn't run.
+    static func loadCheckInContext(for entry: TrainingLog) async -> CheckInDetailContext {
+        var ctx = CheckInDetailContext()
+
+        // ── The read it answered ─────────────────────────────────────────
+        if let readId = entry.repliedToReadId {
+            // `read_date` is a DATE column — decode as String; the SDK's
+            // default decoder only parses full ISO-8601 timestamps and
+            // throws on bare dates (see feedback_supabase_swift_date_decoder).
+            struct ReadRow: Decodable {
+                let question: String?
+                let read_date: String?
+            }
+            let row: ReadRow? = try? await supabase
+                .from("daily_coaching_reads")
+                .select("question, read_date")
+                .eq("id", value: readId.uuidString)
+                .single()
+                .execute()
+                .value
+            if let row {
+                ctx.readQuestion = row.question?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if let raw = row.read_date {
+                    let f = DateFormatter()
+                    f.locale = Locale(identifier: "en_US_POSIX")
+                    f.dateFormat = "yyyy-MM-dd"
+                    if let d = f.date(from: raw) {
+                        // Name the read's Monday-start week — same convention
+                        // as the Read tab's masthead band.
+                        let cal = Calendar.current
+                        let sod = cal.startOfDay(for: d)
+                        let wd = cal.component(.weekday, from: sod)
+                        if let mon = cal.date(byAdding: .day, value: -((wd + 5) % 7), to: sod),
+                           let sun = cal.date(byAdding: .day, value: 6, to: mon) {
+                            let m1 = mon.formatted(.dateTime.month(.abbreviated)).uppercased()
+                            let m2 = sun.formatted(.dateTime.month(.abbreviated)).uppercased()
+                            let d1 = cal.component(.day, from: mon)
+                            let d2 = cal.component(.day, from: sun)
+                            ctx.weekLabel = m1 == m2
+                                ? "WEEK OF \(m1) \(d1)–\(d2)"
+                                : "WEEK OF \(m1) \(d1)–\(m2) \(d2)"
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── The training week around it ──────────────────────────────────
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: entry.displayDate)
+        let weekday = cal.component(.weekday, from: day)     // 1=Sun … 7=Sat
+        guard
+            let monday = cal.date(byAdding: .day, value: -((weekday + 5) % 7), to: day),
+            let prevMonday = cal.date(byAdding: .day, value: -7, to: monday),
+            let nextMonday = cal.date(byAdding: .day, value: 7, to: monday)
+        else { return ctx }
+
+        struct RunRow: Decodable {
+            let workoutDate: Date?
+            let miles: Double?
+            let source: String?
+            let workoutType: String?
+            enum CodingKeys: String, CodingKey {
+                case workoutDate = "workout_date"
+                case miles = "workout_distance_miles"
+                case source
+                case workoutType = "workout_type"
+            }
+        }
+        let userId = AuthManager.shared.userId
+        guard !userId.isEmpty else { return ctx }
+        let rows: [RunRow] = (try? await supabase
+            .from("training_logs")
+            .select("workout_date, workout_distance_miles, source, workout_type")
+            .eq("user_id", value: userId)
+            .gte("workout_date", value: prevMonday.ISO8601Format())
+            .lt("workout_date", value: nextMonday.ISO8601Format())
+            .execute()
+            .value) ?? []
+
+        // Same-day dedupe as the journal's week totals: a voice row whose
+        // distance matches a GPS-sourced run that day is already counted.
+        let runs = rows.filter { ($0.miles ?? 0) > 0 && $0.workoutDate != nil }
+        var gpsByDay: [Date: [Double]] = [:]
+        for r in runs where r.source != "voice_log" && r.source != "check_in" {
+            gpsByDay[cal.startOfDay(for: r.workoutDate!), default: []].append(r.miles ?? 0)
+        }
+        // Deduped runs at or before the check-in, newest first — the ledger
+        // shows the (up to) two sessions the check-in most plausibly answers
+        // for, oldest at the top, then the check-in's own row.
+        let priorRuns = runs
+            .filter { run in
+                guard let d = run.workoutDate, d <= entry.displayDate else { return false }
+                if run.source == "voice_log" || run.source == "check_in",
+                   let sameDay = gpsByDay[cal.startOfDay(for: d)],
+                   sameDay.contains(where: { abs($0 - (run.miles ?? 0)) <= 0.3 }) {
+                    return false
+                }
+                return true
+            }
+            .sorted { ($0.workoutDate ?? .distantPast) > ($1.workoutDate ?? .distantPast) }
+            .prefix(2)
+            .reversed()
+
+        let keyTypes: Set<String> = ["long_wo", "threshold", "intervals", "fartlek", "race"]
+        func dayLabel(_ d: Date) -> String {
+            d.formatted(.dateTime.weekday(.abbreviated)).uppercased()
+                + " \(cal.component(.day, from: d))"
+        }
+        for run in priorRuns {
+            guard let d = run.workoutDate else { continue }
+            let typeRaw = WorkoutLabel.display(run.workoutType)
+                .trimmingCharacters(in: .whitespaces)
+            ctx.rows.append(.init(
+                dayLabel: dayLabel(d),
+                milesText: String(format: "%.1f", run.miles ?? 0),
+                name: typeRaw.isEmpty ? "Run" : typeRaw,
+                isKey: keyTypes.contains(run.workoutType ?? ""),
+                isSelf: false
+            ))
+        }
+        ctx.rows.append(.init(
+            dayLabel: dayLabel(entry.displayDate),
+            milesText: nil,
+            name: "This check-in",
+            isKey: false,
+            isSelf: true
+        ))
+
+        if let last = priorRuns.last, let d = last.workoutDate {
+            let hours = max(1, Int((entry.displayDate.timeIntervalSince(d) / 3600).rounded()))
+            let miles = String(format: "%.1f", last.miles ?? 0)
+            ctx.closingLine = "\(hours) h after the \(miles)-miler · next read sees this before it writes"
+        } else {
+            ctx.closingLine = "next read sees this before it writes"
+        }
+        return ctx
+    }
 
     // ────────────────────────────────────────────────────────────────────
     // Editorial body
@@ -72,8 +247,9 @@ extension HistoryDetailSheet {
                 DripPlateStrip(
                     // "WORKOUT", not "JOURNAL · ENTRY DETAIL": this sheet is
                     // reached from the Runs list and reads as one session's
-                    // record. The plate names the thing, not the container.
-                    leadingBottom: "WORKOUT",
+                    // record. The plate names the thing, not the container —
+                    // and a check-in is a different thing, so it says so.
+                    leadingBottom: isCheckInEntry ? "CHECK-IN" : "WORKOUT",
                     trailingTop: vm.currentEntry.displayDate.editorialDateString,
                     trailingBottom: vm.currentEntry.displayDate.editorialTimeString
                 )
@@ -144,11 +320,21 @@ extension HistoryDetailSheet {
                         if isEditingTitleInline {
                             inlineTitleField
                         } else {
-                            editorialHeadline(headerTitle ?? vm.currentEntry.displayDate.dayOfWeekString)
-                                .contentShape(Rectangle())
-                                .onTapGesture { beginInlineTitleEdit() }
-                                .accessibilityAddTraits(.isButton)
-                                .accessibilityHint("Double tap to rename this entry")
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                editorialHeadline(headerTitle ?? vm.currentEntry.displayDate.dayOfWeekString)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { beginInlineTitleEdit() }
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityHint("Double tap to rename this entry")
+                                if isKeySession {
+                                    // The same star `JournalLogRow` and the
+                                    // calendar draw, styled by the same
+                                    // provenance — one glyph, one meaning,
+                                    // now on this sheet too.
+                                    KeySessionStar(provenance: keyProvenance, isKey: true)
+                                        .frame(width: 14, height: 14)
+                                }
+                            }
                         }
 
                         if headerTitle == nil,
@@ -179,7 +365,7 @@ extension HistoryDetailSheet {
                 // section on this sheet is separated. A card is what you reach
                 // for when a surface has no typographic system; this one has
                 // one. (2026-08-20)
-                if isEditing {
+                if isEditing, !isCheckInEntry {
                     EditorialRule()
                         .padding(.horizontal, 24)
                         .padding(.top, 24)
@@ -211,7 +397,9 @@ extension HistoryDetailSheet {
                 // A passive "LINKED · STRAVA" here would say the same word twice.
                 if vm.currentEntry.hasLinkedWorkout {
                     if showsViewDetailLink { linkedSourceRow }
-                } else if !isEditing {
+                } else if !isEditing, !isCheckInEntry {
+                    // Check-ins never offer LINK A RUN — deliberately
+                    // distance-less, they must stay invisible to run matching.
                     linkWorkoutRow
                 }
 
@@ -230,7 +418,19 @@ extension HistoryDetailSheet {
                 // what the workout was. This is the ONLY editor for
                 // `workout_notes` now: the receipt's copy stands down when
                 // embedded, and `editorialNotesComposer` is deleted.
-                if !isEditing {
+                // ── Check-in exchange — the question this reply answers.
+                // A check-in exists because the coach asked something; the
+                // memo block below is the answer, and the week ledger after
+                // it is the training that prompted the question (Fig. 12).
+                if !isEditing, isCheckInEntry {
+                    EditorialRule()
+                        .padding(.horizontal, 24)
+                        .padding(.top, 20)
+
+                    checkInExchangeSection
+                }
+
+                if !isEditing, !isCheckInEntry {
                     // `line · dot · line` — the canonical section break, in
                     // place of the plain full-width hairlines this sheet used.
                     EditorialRule()
@@ -279,6 +479,12 @@ extension HistoryDetailSheet {
                         .padding(.top, 22)
 
                     memoBlock
+                }
+
+                // ── Check-in week ledger — after the athlete's words, the
+                // training the check-in sits against. See Fig. 12.
+                if !isEditing, isCheckInEntry {
+                    checkInWeekLedger
                 }
 
                 // ── Workout detail (full analytics, inline) ──────────────
@@ -358,7 +564,7 @@ extension HistoryDetailSheet {
                 // still the safe default when she doesn't know what to ask.
                 // The insight panel below is unchanged and still owned here;
                 // the chip only opens it.
-                if !isEditing {
+                if !isEditing, !isCheckInEntry {
                     if hasInsight, showInsight, let insight = vm.coachInsight {
                         openInsightPanel(insight)
                     }
@@ -516,11 +722,121 @@ extension HistoryDetailSheet {
     // run renders an empty HStack — zero height, no gap.
     //
     // The handoff also puts a `NIGGLE · KNEE` pill here, between the mood pill
-    // and the source. It is deliberately not built yet: the pill is cheap, but
-    // it needs this sheet to read `body_mentions` (the durable niggle store),
-    // which is a data change, not a typographic one. Slot it in after the
-    // mood pill when that lands.
+    // and the source. Built 2026-09-05: `vm.fetchNiggles()` reads
+    // `body_mentions` in the sheet's `.task`, and the chips render below,
+    // between the mood pill and the source, per the handoff.
+
+    /// Key (quality) session — the same shared definition `JournalLogRow`
+    /// and the calendar read, so this sheet can no longer disagree with the
+    /// star one tap away in the feed.
+    private var isKeySession: Bool {
+        KeySessionStore.shared.isKey(on: vm.currentEntry.displayDate)
+    }
+
+    private var keyProvenance: KeySessionMark.Provenance {
+        KeySessionStore.shared.provenance(on: vm.currentEntry.displayDate)
+    }
+    /// The exchange's opening beat: "THE READ ASKED · WEEK OF …" and the
+    /// question on a NEUTRAL 2pt rule (per the left-rule rule it's a quote,
+    /// a block set apart, claiming no status — red stays on the Read's own
+    /// page). The athlete's answer is the memo block that follows.
     @ViewBuilder
+    var checkInExchangeSection: some View {
+        if let question = checkInContext?.readQuestion, !question.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                DripEyebrow(text: "THE READ ASKED"
+                    + (checkInContext?.weekLabel.map { " · \($0)" } ?? ""))
+                HStack(alignment: .top, spacing: 13) {
+                    Rectangle()
+                        .fill(Color.drip.textPrimary)
+                        .frame(width: 2)
+                    Text(question)
+                        .font(.dripBody(15).italic())
+                        .foregroundStyle(Color.drip.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+        }
+    }
+
+    /// THE WEEK IT LANDED IN — the ledger that places the check-in against
+    /// the training that caused it: up to two prior sessions (keyed names in
+    /// session-blue), then the check-in's own row, closed by one quiet line
+    /// that says where the reply goes next.
+    @ViewBuilder
+    var checkInWeekLedger: some View {
+        if let ctx = checkInContext, !ctx.rows.isEmpty {
+            EditorialRule()
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+
+            VStack(alignment: .leading, spacing: 12) {
+                DripEyebrow(text: "THE WEEK IT LANDED IN")
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(ctx.rows) { row in
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(row.dayLabel)
+                                .font(.dripStat(10))
+                                .foregroundStyle(row.isSelf
+                                    ? Color.drip.textPrimary
+                                    : Color.drip.textTertiary)
+                                .frame(width: 54, alignment: .leading)
+                            Text(row.milesText.map { "\($0) mi" } ?? "●")
+                                .font(.dripStat(row.milesText == nil ? 8 : 13))
+                                .fontWeight(.semibold)
+                                .foregroundStyle(row.isSelf
+                                    ? checkInLedgerMoodColor
+                                    : Color.drip.textPrimary)
+                                .frame(width: 52, alignment: .trailing)
+                                .monospacedDigit()
+                            Text(row.name + (row.isKey ? " ★" : ""))
+                                .font(.dripBody(13.5))
+                                .fontWeight(row.isKey || row.isSelf ? .semibold : .regular)
+                                .foregroundStyle(row.isSelf
+                                    ? checkInLedgerMoodColor
+                                    : row.isKey ? Color.drip.paceFast : Color.drip.textPrimary)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 9)
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(Color.drip.divider).frame(height: 1)
+                        }
+                    }
+                    if let closing = ctx.closingLine {
+                        HStack(spacing: 5) {
+                            Text("→").foregroundStyle(Color.drip.coral)
+                            Text(closing).foregroundStyle(Color.drip.textSecondary)
+                        }
+                        .font(.dripStat(11))
+                        .padding(.top, 10)
+                        .overlay(alignment: .top) {
+                            Rectangle().fill(Color.drip.divider).frame(height: 1)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 18)
+        }
+    }
+
+    /// The check-in row's colour — the entry's own mood, falling back to ink.
+    private var checkInLedgerMoodColor: Color {
+        switch (vm.currentEntry.mood ?? "").lowercased() {
+        case "energized": Color.drip.energized
+        case "positive": Color.drip.positive
+        case "tired": Color.drip.tired
+        case "struggling": Color.drip.struggling
+        case "injured": Color.drip.injured
+        default: Color.drip.textPrimary
+        }
+    }
+
     private var statusRow: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -541,6 +857,19 @@ extension HistoryDetailSheet {
                 .accessibilityLabel(displayedMood.map { "Mood: \($0)" } ?? "No mood recorded")
                 .accessibilityHint("Double tap to change how this run felt")
 
+                if !vm.niggles.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(vm.niggles.prefix(2)) { n in
+                            JournalNiggleChip(label: n.label)
+                        }
+                        if vm.niggles.count > 2 {
+                            Text("+\(vm.niggles.count - 2)")
+                                .font(.dripEyebrow(9))
+                                .foregroundStyle(Color.drip.textTertiary)
+                        }
+                    }
+                }
+
                 if vm.currentEntry.hasLinkedWorkout {
                     Text(sourceName)
                         .font(.dripEyebrow(9.5))
@@ -559,7 +888,11 @@ extension HistoryDetailSheet {
             // always visible rather than hidden behind a tap: mood renders a
             // pill the athlete can see is set, whereas an RPE with nowhere to
             // appear is exactly how this number stayed invisible for months.
-            EditableRPESlider(rpe: inlineRpeBinding, source: displayedRpeSource)
+            // Except on a check-in: RPE rates a session's effort, and a
+            // check-in has no session to rate.
+            if !isCheckInEntry {
+                EditableRPESlider(rpe: inlineRpeBinding, source: displayedRpeSource)
+            }
 
             if inlineSaveFailed {
                 // Coral is right — it is the alert palette. The FACE is

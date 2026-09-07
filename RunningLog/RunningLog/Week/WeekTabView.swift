@@ -166,7 +166,7 @@ struct WeekTabView: View {
         VStack(alignment: .leading, spacing: 14) {
             questionHead(
                 number: "01 · Am I getting faster?",
-                title: "Faster.",
+                title: "Faster",
                 note: "Am I doing the work at the pace I'm supposed to be doing it at?"
             )
 
@@ -265,7 +265,7 @@ struct WeekTabView: View {
         VStack(alignment: .leading, spacing: 14) {
             questionHead(
                 number: "02 · Am I absorbing the work?",
-                title: "Load and recovery.",
+                title: "Load and Recovery",
                 note: "Your own words lead. The overnight numbers corroborate — never the reverse."
             )
             loadCard(read)
@@ -425,7 +425,7 @@ struct WeekTabView: View {
         VStack(alignment: .leading, spacing: 14) {
             questionHead(
                 number: "03 · What moves the marathon?",
-                title: "The marathon.",
+                title: "The Marathon",
                 note: "Long runs, threshold volume — and the paces you don't visit."
             )
             longRunCard(read)
@@ -586,7 +586,7 @@ struct WeekTabView: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 5) {
                 WeekEyebrow(text: "The call", tint: Color.drip.coral)
-                Text("What's missing.")
+                Text("What's Missing")
                     .font(.dripDisplay(25))
                     .foregroundStyle(Color.drip.textPrimary)
                     .padding(.top, 3)

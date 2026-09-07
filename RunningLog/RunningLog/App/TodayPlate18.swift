@@ -474,9 +474,9 @@ struct TodayJournalEntry: View {
     private var headlineLine: String {
         let typeName = CoachIntent.displayName(for: log.typeKey)
         if let m = log.distanceMiles, m > 0 {
-            return "\(typeName), \(DistanceFormat.string(miles: m, unit: unit))."
+            return "\(typeName), \(DistanceFormat.string(miles: m, unit: unit))"
         }
-        return "\(typeName)."
+        return "\(typeName)"
     }
 
     private var metaLine: String? {
@@ -512,7 +512,7 @@ struct TodayTomorrowSection: View {
             }
 
             if workout.isRest {
-                Text("Rest day.")
+                Text("Rest day")
                     .font(.dripDisplay(22))
                     .foregroundStyle(Color.drip.textPrimary)
             } else {
@@ -539,9 +539,9 @@ struct TodayTomorrowSection: View {
         let name = workout.displayName
         if let m = workout.totalDistanceMiles, m > 0 {
             let str = m == m.rounded() ? String(format: "%.0f", m) : String(format: "%.1f", m)
-            return "\(name), \(str) mi."
+            return "\(name), \(str) mi"
         }
-        return "\(name)."
+        return "\(name)"
     }
 }
 

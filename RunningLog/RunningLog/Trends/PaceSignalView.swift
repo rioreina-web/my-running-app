@@ -893,7 +893,7 @@ private struct SignalDaySheet: View {
 
             if day.comp.isEmpty {
                 Text("Rest day").font(.dripDisplay(24)).foregroundStyle(Color.drip.textPrimary)
-                Text("No runs logged.").font(.dripBody(14)).foregroundStyle(Color.drip.textSecondary)
+                Text("No runs logged").font(.dripBody(14)).foregroundStyle(Color.drip.textSecondary)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(fmt(day.miles)).font(.dripDisplay(30)).foregroundStyle(Color.drip.textPrimary)

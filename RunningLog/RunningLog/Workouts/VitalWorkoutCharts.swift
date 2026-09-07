@@ -684,13 +684,18 @@ struct PaceChartCard: View {
     }
 
     private func touchGesture(viewWidth: CGFloat, totalWidth: CGFloat, offset: CGFloat) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.15)
+        // 0.35 s, not shorter: a scroll swipe rests on the glass longer than
+        // ~150 ms before moving, so a short hold ate swipes and the page felt
+        // stuck. The haptic marks the moment the chart takes the touch.
+        LongPressGesture(minimumDuration: 0.35)
             .sequenced(before: DragGesture(minimumDistance: 0))
             .onChanged { value in
                 switch value {
                 case .second(true, let drag):
                     if let drag = drag {
                         touchLocation = drag.location.x
+                    } else {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
                 default: break
                 }

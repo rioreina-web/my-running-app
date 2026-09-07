@@ -309,7 +309,10 @@ struct DripStatTile: View {
         .padding(.horizontal, 16)
         .background(Color.drip.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+        // No shadow — depth isn't part of this brand (--shadow-card: none).
+        // The white card + rounded corners stay: "cards sit on rules, not
+        // tints" per the system's own allowance, and cardBackground is
+        // plain white in both skins, so this isn't a tint violation either.
     }
 
     private var deltaColor: Color {
@@ -347,9 +350,15 @@ struct DripMoodRadio: View {
                     }
                     KitEyebrow(
                         text: mood,
-                        size: 9, em: 0.10,
+                        size: 9, em: 0.06,
                         color: active ? Color.drip.coral : Color.drip.textSecondary
                     )
+                    // "STRUGGLING" at 9pt + 0.10em overflows a fifth of a
+                    // 393pt device and wrapped to "STRUGGLIN / G" (Read tab,
+                    // 2026-08-31). One line, always — the longest label
+                    // scales down instead of breaking.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -561,7 +570,7 @@ struct DripZoneBar: View {
     ScrollView {
         VStack(alignment: .leading, spacing: 20) {
             DripSection(eyebrow: "Opening figure", eyebrowRight: "Fig. 1", first: true) {
-                Text("The 5-second view.")
+                Text("The 5-second view")
                     .font(.dripDisplay(28))
                     .foregroundStyle(Color.drip.textPrimary)
             }

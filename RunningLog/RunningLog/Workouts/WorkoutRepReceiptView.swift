@@ -61,6 +61,10 @@ struct WorkoutRepReceiptView: View {
 
     // lap data
     @State private var laps: [WorkoutLapRow] = []
+    /// The raw watch laps exactly as recorded (role-labelled, but NEVER merged
+    /// or replaced by parsed blocks). The Effort chart's SPLITS overlay reads
+    /// these, so the mile/km splits inside a merged rep stay one tap away.
+    @State private var rawWatchLaps: [WorkoutLapRow] = []
     /// Merged-bout lap_index → the watch laps that bout was joined from.
     /// Only populated on the merge path (a rep the watch recorded as one lap,
     /// or a rest, has no entry). Lets the lap table expand a rep back into
@@ -353,6 +357,40 @@ struct WorkoutRepReceiptView: View {
         return lapElapsedBounds.dropLast().map { $0.end }
     }
 
+    /// The watch's recorded splits located on the stream's elapsed clock —
+    /// geometry for the Effort chart's SPLITS overlay. Built from the RAW lap
+    /// rows (pre-merge), cumulative elapsed time first (it counts stopped
+    /// seconds, so the steps land on the stream's own axis), moving time as
+    /// the lap-only fallback. Sub-150 m button-press laps carry no split pace
+    /// worth printing and are skipped — their time still advances the clock.
+    private var effortWatchSplits: [EffortWatchSplit] {
+        let ordered = rawWatchLaps.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
+        guard ordered.count > 1 else { return [] }
+        var t = sTimes.first ?? 0
+        var out: [EffortWatchSplit] = []
+        for lap in ordered {
+            let dur = Double(lap.elapsed_time_seconds ?? lap.moving_time_seconds ?? 0)
+            let t0 = t; t += dur
+            guard dur > 0, let p = lap.avg_pace_sec_per_mile, p > 0,
+                  (lap.distance_meters ?? 0) >= 150 else { continue }
+            out.append(EffortWatchSplit(t0: t0, t1: t, paceSecPerMile: p))
+        }
+        return out
+    }
+
+    /// Fix reps, carried into the Effort charts (portrait chip + landscape
+    /// takeover) so the structure is correctable from the chart that shows it.
+    /// Same editor, same laps, same reload as the hero's own Fix reps button.
+    private var effortFixReps: EffortFixRepsContext? {
+        guard let workoutId else { return nil }
+        return EffortFixRepsContext(
+            workoutId: workoutId,
+            laps: laps,
+            intent: parsedIntent ?? prescription?.pattern,
+            onSaved: { Task { await load() } }
+        )
+    }
+
     private var maxHR: Int {
         // Per-user max HR (Settings) drives the zones — so zones are tunable per
         // athlete. Floored by REAL data: your true max can't be below a HR you've
@@ -547,17 +585,13 @@ struct WorkoutRepReceiptView: View {
             // the same voice as the JOURNAL · ENTRY DETAIL plate strip, which
             // is what this is — a section marker. Suppressed entirely when
             // embedded, where the entry has already said the date twice.
+            //
+            // The source line ("10.14 mi · 1:21:04 · Strava") that used to sit
+            // between the rule and the strip is gone: the strip below prints
+            // the first two, and the third now rides the rule itself. One
+            // number, one place. (2026-09-07)
             if placement == .standalone {
                 datestampRule
-            }
-
-            if placement == .standalone {
-                if let line = sourceLine {
-                    Text(line)
-                        .font(.dripBody(13)).italic()
-                        .foregroundStyle(Color.drip.textSecondary)
-                }
-
                 statStrip4
             }
 
@@ -607,6 +641,15 @@ struct WorkoutRepReceiptView: View {
             Rectangle()
                 .fill(Color.drip.divider)
                 .frame(height: 1)
+            // Where the run came from, at the end of the rule the date starts.
+            // Was its own italic line with the distance and time repeated
+            // alongside it. (2026-09-07)
+            if let src = summary.sourceLabel {
+                Text(src.uppercased())
+                    .font(.dripStat(9)).tracking(1.0)
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -640,19 +683,6 @@ struct WorkoutRepReceiptView: View {
             return df.string(from: d)
         }
         return repHeadline
-    }
-
-    /// "7.42 mi · 51:08 · HealthKit" — middle dots, and any part we don't have
-    /// simply isn't said.
-    private var sourceLine: String? {
-        var parts: [String] = []
-        if wrDistanceMi > 0 {
-            let d = km ? wrDistanceMi * 1.60934 : wrDistanceMi
-            parts.append(String(format: "%.2f %@", d, km ? "km" : "mi"))
-        }
-        if wrTimeSec > 0 { parts.append(clock(Int(wrTimeSec))) }
-        if let s = summary.sourceLabel { parts.append(s) }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// DISTANCE · DURATION · AVG PACE · AVG HR — the whole run, always, whether
@@ -710,8 +740,11 @@ struct WorkoutRepReceiptView: View {
     /// `WorkoutForecast.isMeaningful` uses, so the plate and the forecast agree.
     /// A "0s" cell would say less than no cell.
     private var heatAdjustSec: Int? {
+        // Keyed on the watch's rest flag, not the parser's label: the slow leg
+        // of a continuous alternation is running, it paid the heat cost, and
+        // excluding it under-reported the session's penalty.
         let deltas: [Double] = laps.compactMap { lap in
-            guard lap.is_rest != true,
+            guard lap.restForHeat != true,
                   let raw = lap.avg_pace_sec_per_mile, raw > 0,
                   let adj = lap.heat_adjusted_pace_sec_per_mile, adj > 0
             else { return nil }
@@ -760,10 +793,13 @@ struct WorkoutRepReceiptView: View {
         let signals = receiptSignals
         if !signals.isEmpty || !computedRead.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                Text("SIGNALS")
-                    .font(.dripEyebrow(11)).tracking(1.3)
-                    .foregroundStyle(Color.drip.coral)
+                // The eyebrow labels the chips. With no chips there is nothing
+                // to label, and a coral section header over a single italic
+                // sentence is a section that isn't one. (2026-09-07)
                 if !signals.isEmpty {
+                    Text("SIGNALS")
+                        .font(.dripEyebrow(11)).tracking(1.3)
+                        .foregroundStyle(Color.drip.coral)
                     FlowLayout(spacing: 8) {
                         ForEach(signals) { SignalChip(signal: $0) }
                     }
@@ -804,10 +840,10 @@ struct WorkoutRepReceiptView: View {
                              tone: abs(drift) < 5 ? .good : abs(drift) <= 10 ? .warn : .hot))
         }
 
-        // HEAT — what the conditions cost, already gated at ≥3 s/mi.
-        if let heat = heatAdjustSec {
-            out.append(.init(key: "HEAT", value: "+\(heat)s/\(km ? "km" : "mi")", tone: .warn))
-        }
+        // HEAT is NOT a chip. `ConditionsPlate` prints the identical
+        // "+14s/mi · HEAT COST" cell one row above this section in every
+        // placement, so the chip was the same measurement twice on one
+        // screen. One fact, one place. (2026-09-07)
 
         // VS PLAN — only when the note actually states a target pace. Without
         // one there is nothing to compare against, so the chip drops out
@@ -944,8 +980,6 @@ struct WorkoutRepReceiptView: View {
                 repsSummaryLine
             }
 
-            tweaksRow
-
             if hasReps {
                 // Bars + table both driven by EVERY lap (warmup → reps →
                 // recoveries → cooldown), compressed to fit the screen width.
@@ -964,6 +998,11 @@ struct WorkoutRepReceiptView: View {
                 noSplitsRow
             }
 
+            // Chart controls sit UNDER the chart. Above it, four toggles were
+            // the first thing on the splits section and the bars were the
+            // fifth. (2026-09-07)
+            if hasReps || !continuousSplits.isEmpty { tweaksRow }
+
             if workoutId != nil { fixRepsButton }
         }
     }
@@ -976,7 +1015,7 @@ struct WorkoutRepReceiptView: View {
         if continuousSplits.isEmpty { return "SPLITS" }
         return continuousFromStream
             ? "MILE SPLITS"
-            : "SPLITS · \(continuousSplits.count) \(lapsAreKm ? "KM" : "MI")"
+            : "SPLITS · \(continuousSplits.count) × 1 \(lapsAreKm ? "KM" : "MI")"
     }
 
     /// The one honest thing to say when the activity carries no laps and no
@@ -1379,7 +1418,9 @@ struct WorkoutRepReceiptView: View {
                     paceZones: PaceZonesService.shared.zones,
                     hrZones: hrZones,
                     lapMarks: effortLapMarks,
-                    elevationGainFt: climb)
+                    elevationGainFt: climb,
+                    watchSplits: effortWatchSplits,
+                    fixReps: effortFixReps)
             } else {
                 RRTelemetryPanel(times: sTimes, hr: sHR, paceSec: sPace,
                                  cadence: sCad, altFt: sAltFt,
@@ -1477,12 +1518,14 @@ struct WorkoutRepReceiptView: View {
     private var computedRead: String {
         let unit = km ? "/km" : "/mi"
         if reps.isEmpty {
-            let dist = String(format: "%.1f", km ? wrDistanceMi * 1.60934 : wrDistanceMi)
-            var s = "\(dist) \(km ? "km" : "mi") at \(rr_pace(wrPaceSec, km: km))\(unit)"
-            if let hr = wrAvgHR { s += ", average heart rate \(hr)" }
-            s += ". No rep structure to break out"
-            if let zone = timedZone { s += " — \(zone) carried the most time" }
-            return s + "."
+            // Was: "10.1 mi at 8:00/mi, average heart rate 141. No rep
+            // structure to break out — Z2 carried the most time." The first
+            // sentence read back the three numbers printed in the stat strip
+            // directly above it. Only the second half was new, so only the
+            // second half survives; with no HR to name a zone there is nothing
+            // left to say and the line drops out. (2026-09-07)
+            guard let zone = timedZone else { return "" }
+            return "No rep structure to break out — \(zone) carried the most time."
         }
         var s = "\(reps.count) reps at \(rr_pace(targetSec, km: km))\(unit)"
         if let spread = repSpreadSec { s += ", inside a \(spread)-second spread" }
@@ -1684,7 +1727,7 @@ struct WorkoutRepReceiptView: View {
 
     private func load() async {
         if let injectedLaps {
-            laps = injectedLaps; zones = injectedZones ?? .none
+            laps = injectedLaps; rawWatchLaps = injectedLaps; zones = injectedZones ?? .none
             rebuildDerived()
             expandedTrace = defaultExpandedTrace()
             loaded = true
@@ -1714,9 +1757,13 @@ struct WorkoutRepReceiptView: View {
         // rewritten; distance / pace / HR stay exactly as the watch recorded, and
         // every lap is kept. When the workout hasn't been parsed yet the map is
         // empty and we fall back to the stored `is_rest` unchanged.
+        // The rewrite is a LABEL, not a physiological claim. `db_is_rest` keeps
+        // the watch's own answer to "did she stop?", which is what the heat
+        // math must read — see `WorkoutLapRow.restForHeat`.
         let lapRows: [WorkoutLapRow] = roleByIndex.isEmpty ? rawLapRows : rawLapRows.map { row in
             guard let idx = row.lap_index, let role = roleByIndex[idx] else { return row }
             var r = row
+            r.db_is_rest = row.is_rest  // preserved before the label overwrites it
             r.is_rest = role != "rep"   // only a "rep" is work; warmup/recovery/cooldown are rest
             r.role = role               // kept so the lap table can say "wu"/"cd", not "rec"
             return r
@@ -1724,6 +1771,10 @@ struct WorkoutRepReceiptView: View {
         let parsed = await pr
         let sumVal = await sum
         summary = sumVal
+        // The recorded tape, kept aside before any merge/parse decides what
+        // `laps` becomes — the SPLITS overlay always shows what the watch laid
+        // down, whichever geometry wins below.
+        rawWatchLaps = lapRows
 
         // Rep geometry precedence — the actual splits come from the WATCH (it
         // records the laps) or from YOU (a hand-correction). The LLM parser
@@ -1794,7 +1845,10 @@ struct WorkoutRepReceiptView: View {
         // the length of a split — is what earns the short-rep heat discount.
         // Mirrors `heat_rep_length_factor_for_lap` in
         // 20260805210000_heat_intensity_scaling.sql.
-        let isIntervalGeometry = laps.contains { $0.is_rest == true }
+        // `restForHeat`, not `is_rest`: the latter now carries the parser's
+        // LABEL, and a label cannot make the athlete stand still. Reading it
+        // here charged a continuously-run alternation the short-rep discount.
+        let isIntervalGeometry = laps.contains { $0.restForHeat == true }
 
         var condTemp = lapRows.compactMap({ $0.temp_f }).max() ?? sumVal.weatherTempF
         var condDew = lapRows.compactMap({ $0.dew_point_f }).max() ?? sumVal.weatherDewF
@@ -1825,7 +1879,7 @@ struct WorkoutRepReceiptView: View {
                 // stamped), and gating the recompute on `temp_f == nil` left
                 // exactly those rows nil and the toggle inert. A stored value
                 // always wins: it's the backend's calibrated number.
-                if r.is_rest != true,
+                if r.restForHeat != true,
                    r.heat_adjusted_pace_sec_per_mile == nil,
                    let p = r.avg_pace_sec_per_mile, p > 0 {
                     r.heat_adjusted_pace_sec_per_mile = PaceCalculator

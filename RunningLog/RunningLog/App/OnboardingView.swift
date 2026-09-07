@@ -163,18 +163,18 @@ struct OnboardingView: View {
     private var welcomeStep: some View {
         VStack(alignment: .leading, spacing: 0) {
             eyebrow("WELCOME")
-            displayTitle("A quieter log\nfor serious runners.")
-            italicSub("— half training journal, half cockpit. Talk to it after a run; the coach reads the week. —")
+            displayTitle("Talk after a run.\nWatch it add up.")
+            italicSub("— an AI-driven training log: what you felt, next to what the data says. —")
 
             VStack(spacing: 0) {
-                featureRow(num: "01", title: "Voice memos.",
-                           desc: "Tap the coral button. Talk for two minutes. It transcribes, extracts a mood, and saves it to your journal.",
+                featureRow(num: "01", title: "Voice Memos",
+                           desc: "Tap the coral button. Talk for a minute or two. It transcribes, extracts a mood, and saves it to your journal.",
                            topHairline: true, bottomHairline: false)
-                featureRow(num: "02", title: "Glass-box analysis.",
-                           desc: "Pace, HR zones, splits — and the rationale behind every coaching note. No black boxes.",
+                featureRow(num: "02", title: "Pace, Narrated",
+                           desc: "Pace, HR zones, splits — and the reasoning behind every note.",
                            topHairline: true, bottomHairline: false)
-                featureRow(num: "03", title: "A coach in the room.",
-                           desc: "Reads your log every Sunday night. Ask follow-ups any time. Reasons in plain language.",
+                featureRow(num: "03", title: "The Read Tab",
+                           desc: "Open it whenever you want a look at your week. Ask follow-ups any time. Reasons in plain language.",
                            topHairline: true, bottomHairline: true)
             }
             .padding(.top, 22)
@@ -238,7 +238,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 0) {
             eyebrow("A GOAL")
             displayTitle("What are you\ntraining for?")
-            italicSub("— this anchors the coaching. You can change it any week. —")
+            italicSub("— this anchors your training. You can change it any week. —")
 
             // Distance chips
             VStack(alignment: .leading, spacing: 0) {
@@ -340,14 +340,14 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 0) {
             eyebrow("YOU'RE IN")
             displayTitle("Three habits.\nThat's the whole product.")
-            italicSub("— keep these going for a couple of weeks and the coaching gets sharp. —")
+            italicSub("— keep these going for a couple of weeks and the picture gets sharper. —")
 
             VStack(spacing: 0) {
-                tipRow(num: "01", text: "After a run, tap the coral button on the LOG tab and talk for a minute.",
+                tipRow(num: "01", text: "After a run, tap the coral button on the LOG tab and talk for a minute or two.",
                        topHairline: true, bottomHairline: false)
                 tipRow(num: "02", text: "Check the TRAIN tab in the morning. Read the day's prescription out loud if it helps.",
                        topHairline: true, bottomHairline: false)
-                tipRow(num: "03", text: "Sunday night, your coach posts a note. Read it. Reply if something is off.",
+                tipRow(num: "03", text: "Open the READ tab when you want a look at your week.",
                        topHairline: true, bottomHairline: true)
             }
             .padding(.top, 22)

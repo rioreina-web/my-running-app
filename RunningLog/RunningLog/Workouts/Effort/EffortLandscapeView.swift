@@ -22,10 +22,19 @@ struct EffortLandscapeView: View {
     var hrZones: [RRZone] = []
     var lapMarks: [TimeInterval] = []
     var elevationGainFt: Int? = nil
+    /// The watch's recorded splits (raw laps, pre-merge) for the SPLITS overlay.
+    var watchSplits: [EffortWatchSplit] = []
+    /// Non-nil ⇒ FIX REPS is available right here: the same structure editor
+    /// the receipt offers, presented over the takeover, so a wrong band count
+    /// can be corrected while it's on screen. Its save reloads the receipt and
+    /// the corrected bands re-render behind the dismissed sheet.
+    var fixReps: EffortFixRepsContext? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var scrubT: TimeInterval?
     @State private var showLaps = false
+    @State private var showWatchSplits = false
+    @State private var showFixReps = false
     @State private var selected: EffortMetric = .pace
 
     private var metrics: [EffortMetric] {
@@ -56,8 +65,10 @@ struct EffortLandscapeView: View {
                             metric: m, plotHeight: plotH,
                             paceZones: paceZones, hrZones: hrZones,
                             lapMarks: lapMarks, showLaps: showLaps,
+                            watchSplits: watchSplits, showWatchSplits: showWatchSplits,
                             elevationGainFt: elevationGainFt,
-                            showChrome: false, sharedScrubT: $scrubT, showXAxis: true)
+                            showChrome: false, sharedScrubT: $scrubT, showXAxis: true,
+                            holdToScrub: false)
                             .padding(.top, 6)
                             .tag(m)
                     }
@@ -69,15 +80,22 @@ struct EffortLandscapeView: View {
         .background(Color.drip.background.ignoresSafeArea())
         .onAppear { EffortOrientation.set(.landscape) }
         .onDisappear { EffortOrientation.set(.portrait) }
+        .sheet(isPresented: $showFixReps) {
+            if let fr = fixReps {
+                EditWorkoutStructureSheet(
+                    workoutId: fr.workoutId, initialLaps: fr.laps,
+                    initialIntent: fr.intent, onSaved: fr.onSaved)
+            }
+        }
     }
 
     private var headerBar: some View {
         HStack(spacing: 10) {
             Text("THE EFFORT")
-                .font(.custom("CrimsonPro-Regular", size: 20).weight(.bold))
+                .font(.dripDisplay(20))
                 .foregroundStyle(Color.drip.textPrimary)
             Text("\(distanceLabel) · \(durationLabel)")
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(9))
                 .tracking(1.0)
                 .foregroundStyle(Color.drip.textSecondary)
             Spacer()
@@ -85,7 +103,11 @@ struct EffortLandscapeView: View {
             ForEach(metrics, id: \.self) { m in
                 chip(shortLabel(m), on: selected == m) { selected = m }
             }
+            if !watchSplits.isEmpty {
+                chip("SPLITS", on: showWatchSplits) { showWatchSplits.toggle() }
+            }
             if !lapMarks.isEmpty { chip("LAPS", on: showLaps) { showLaps.toggle() } }
+            if fixReps != nil { chip("FIX REPS", on: false) { showFixReps = true } }
             chip("CLOSE", on: false) { dismiss() }
         }
     }
@@ -102,7 +124,7 @@ struct EffortLandscapeView: View {
     private func chip(_ title: String, on: Bool, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(.dripEyebrow(9))
                 .tracking(1.1)
                 .foregroundStyle(on ? Color.drip.coral : Color.drip.textSecondary)
                 .padding(.horizontal, 11)
@@ -117,9 +139,17 @@ struct EffortLandscapeView: View {
 /// Requests a landscape (or portrait) geometry for the presenting scene, even
 /// under rotation lock. Mirrors the pattern proven in WeekStressClockSheet —
 /// retried because the first attempt lands while the cover is still presenting.
+///
+/// The geometry request alone is not enough: the system re-evaluates it
+/// against the cover's hosting controller, which supports portrait, so the
+/// takeover could open (or be rotated back to) portrait. Narrowing
+/// `AppDelegate.orientationMask` for the cover's lifetime is what makes
+/// landscape the ONLY orientation while it is up.
 enum EffortOrientation {
     @MainActor
     static func set(_ mask: UIInterfaceOrientationMask, retries: Int = 3) {
+        AppDelegate.orientationMask = (mask == .landscape) ? .landscape : .all
+
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         guard let scene = scenes.first(where: { $0.activationState == .foregroundActive })
                         ?? scenes.first

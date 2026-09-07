@@ -57,12 +57,14 @@ surface in v1.5. Strength + mobility are deferred future products.
 
 ## Information architecture (athlete-facing)
 
-**Shipping IA (as of 2026-08-19): six-tab bottom nav — Log · Train ·
-Trends · Week · Ask · Sheet.** Mental flow: input → plan → overview →
-decision → interrogate → records. Synthesis (Coach) was retired as a tab on
-2026-07-28; the analysis half of it came back on 2026-08-05 as **Ask**,
-first as a sheet from the foot of Trends and then (2026-08-19) as its own
-tab in the slot Charts held.
+**Shipping IA (as of 2026-08-30): six-tab bottom nav — Log · Train ·
+Trends · Week · Ask · Read.** Mental flow: input → plan → overview →
+decision → interrogate → synthesis. Synthesis (Coach, The Read) was retired
+as a tab on 2026-07-28; the analysis half of it came back on 2026-08-05 as
+**Ask**, first as a sheet from the foot of Trends and then (2026-08-19) as
+its own tab in the slot Charts held. On 2026-08-30 The Read itself came
+back (`CoachReadView`, fresh tag 12), replacing the Sheet tab; `SheetTabView`
+is now unlinked in the repo, per the restore-without-rebuilding convention.
 
 > ⚠️ **This section said "three tabs" until 2026-08-19 and was wrong from
 > 2026-08-11 onward.** The Sheet landed 08-11 and Ask + Week on 08-19, and
@@ -516,7 +518,8 @@ will find the file but not tell you it's dark:
 
 | Surface | File | Status |
 |---|---|---|
-| The Read | `Coaching/Read/CoachReadView.swift` | Unlinked 2026-07-28 with the Coach tab. Intact. |
+| ~~The Read~~ | `Coaching/Read/CoachReadView.swift` | **Remounted 2026-08-30** as the Read tab (tag 12), replacing the Sheet tab. |
+| The Sheet | `App/SheetTabView.swift` | Unlinked 2026-08-30 — its tab slot went to The Read. Intact. |
 | Model of You | `Coaching/ModelOfYou/ModelOfYouView.swift` | Never mounted. |
 | Signal Lab | `Analysis/SignalLabView.swift` | Reachable only via the `lab ›` door in the Trends header. |
 | Trends v1 | `Trends/TrendsLegacyTabView.swift` | DEBUG-only, behind the `v1 ›` door. Holds the pace spectrum, threshold miles and race prediction. |

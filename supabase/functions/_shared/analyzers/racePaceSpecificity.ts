@@ -28,6 +28,7 @@
  */
 
 import { daysAgoISO, fetchLogsSince, fetchLapsByWorkout } from "./data.ts";
+import { readFloatLegs } from "../floatLegs.ts";
 import { fetchAthleteState, raceDistanceMiles, raceLabel } from "./athleteState.ts";
 import {
   fmtPaceSec,
@@ -53,7 +54,7 @@ const TITLE_DISTANCES: Array<[RegExp, string]> = [
   [/\bmile\b/i, "mile"],
 ];
 
-type GoalSource = "structured" | "athlete_state" | "title";
+type GoalSource = "structured" | "active_goal" | "athlete_state" | "title";
 
 interface ResolvedGoal {
   raceKey: string;
@@ -67,8 +68,10 @@ interface ResolvedGoal {
  *
  *   1. `user_goals.target_race_distance` + `target_time_seconds` — the proper
  *      structured home, populated by `interpret-goal`.
- *   2. `athlete_state.goal_race` + `goal_time_seconds`.
- *   3. A narrow parse of the goal's own wording.
+ *   2. `athlete_state.active_goals[].target_distance_key` + `target_time_seconds`
+ *      — where `interpret-goal`'s answer ACTUALLY lands today.
+ *   3. `athlete_state.goal_race` + `goal_time_seconds`.
+ *   4. A narrow parse of the goal's own wording.
  *
  * A NOTE ON WHY TIER 3 EXISTS AND WHY IT IS NOT ENOUGH. In practice tiers 1
  * and 2 are often empty while a goal is plainly visible in the app as free
@@ -83,13 +86,27 @@ interface ResolvedGoal {
  * Inferring the distance from the magnitude of the time would work most of the
  * time and be silently, badly wrong the rest — and a wrong goal pace
  * mis-scores every mile in the window without ever looking broken.
+ *
+ * WHY TIER 2 WAS ADDED (2026-08-30). The paragraph above was right that
+ * "sub 2:20 at CIM" needs world knowledge — but wrong that nothing had done it.
+ * `interpret-goal` resolves the goal and writes the answer into
+ * `athlete_state.active_goals[]` as `target_distance_key` / `target_time_seconds`
+ * / `target_pace_per_mile`, and this analyzer typed that array as titles ONLY.
+ * So for the one athlete with a real goal on file, the resolved marathon +
+ * 8400s sat one field away and the analyzer reported no goal. Structured beats
+ * parsed wherever it lives; tier 3's flat columns are still empty for that
+ * athlete, so this tier is the one that actually fires.
  */
 async function resolveGoal(
   ctx: AnalyzerCtx,
   state: {
     goal_race: string | null;
     goal_time_seconds: number | null;
-    active_goals: Array<{ title?: string | null }> | null;
+    active_goals: Array<{
+      title?: string | null;
+      target_distance_key?: string | null;
+      target_time_seconds?: number | null;
+    }> | null;
   } | null,
 ): Promise<{ goal: ResolvedGoal | null; sawUnparsedGoal: string | null }> {
   // Tier 1 — the structured record.
@@ -121,7 +138,19 @@ async function resolveGoal(
     }
   }
 
-  // Tier 2 — athlete_state's copy.
+  // Tier 2 — the resolved goal, where interpret-goal actually writes it.
+  for (const g of state?.active_goals ?? []) {
+    const secs = Number(g?.target_time_seconds ?? 0);
+    const key = g?.target_distance_key ?? null;
+    if (secs > 0 && key) {
+      return {
+        goal: { raceKey: key, seconds: secs, from: "active_goal", title: g?.title ?? null },
+        sawUnparsedGoal: null,
+      };
+    }
+  }
+
+  // Tier 3 — athlete_state's flat copy.
   const stateSeconds = Number(state?.goal_time_seconds ?? 0);
   if (stateSeconds > 0 && state?.goal_race) {
     return {
@@ -130,7 +159,7 @@ async function resolveGoal(
     };
   }
 
-  // Tier 3 — the wording, when it names a distance.
+  // Tier 4 — the wording, when it names a distance.
   const titles = [
     ...goals.map((g) => g.goal_title),
     ...(state?.active_goals ?? []).map((g) => g?.title ?? null),
@@ -157,6 +186,30 @@ async function resolveGoal(
   }
 
   return { goal: null, sawUnparsedGoal: titles[0] ?? null };
+}
+
+/**
+ * Rep geometry, per workout. Deliberately a local fetch: `LOG_COLUMNS` is
+ * shared by every analyzer and `parsed_structure` is large, so widening it
+ * would put a heavy column on queries that never read it.
+ */
+async function fetchBlocksByWorkout(
+  ctx: AnalyzerCtx,
+  ids: string[],
+): Promise<Map<string, unknown[]>> {
+  const out = new Map<string, unknown[]>();
+  if (ids.length === 0) return out;
+  const { data, error } = await ctx.supabase
+    .from("training_logs")
+    .select("id, parsed_structure")
+    .eq("user_id", ctx.userId)
+    .in("id", ids);
+  if (error) return out;
+  for (const row of (data ?? []) as Array<{ id: string; parsed_structure: unknown }>) {
+    const blocks = (row.parsed_structure as { blocks?: unknown } | null)?.blocks;
+    if (Array.isArray(blocks) && blocks.length > 0) out.set(row.id, blocks);
+  }
+  return out;
 }
 
 export const racePaceSpecificity: Analyzer = {
@@ -236,11 +289,14 @@ export const racePaceSpecificity: Analyzer = {
       };
     }
 
-    const lapsByWorkout = await fetchLapsByWorkout(
-      ctx.supabase,
-      ctx.userId,
-      logs.map((l) => l.id),
-    );
+    const ids = logs.map((l) => l.id);
+    const [lapsByWorkout, blocksByWorkout] = await Promise.all([
+      fetchLapsByWorkout(ctx.supabase, ctx.userId, ids),
+      fetchBlocksByWorkout(ctx, ids),
+    ]);
+    // Floats are aerobic support, not rest, so they belong in the denominator.
+    // Classified against the athlete's own MP — see `_shared/floatLegs.ts`.
+    const mpSec = Number((state?.pace_zones as { mp?: number } | null)?.mp ?? 0) || null;
 
     // Split the window in half so the share has something to move against.
     const midpoint = ctx.now.getTime() - (windowDays / 2) * 86400000;
@@ -253,28 +309,40 @@ export const racePaceSpecificity: Analyzer = {
     let logsWithLaps = 0;
 
     for (const log of logs) {
+      const blocks = blocksByWorkout.get(log.id);
       const laps = lapsByWorkout.get(log.id);
-      if (!laps || laps.length === 0) continue;
+      // `blocks` first: it covers ~50% more workouts than `running_workout_laps`
+      // (a Garmin session with no native laps has structure but no lap rows),
+      // and it carries the rep roles this needs. Laps stay as the fallback.
+      if ((!blocks || blocks.length === 0) && (!laps || laps.length === 0)) continue;
       logsWithLaps++;
       const isRecent = new Date(log.workout_date).getTime() >= midpoint;
       let sessionAtPace = 0;
 
-      for (const lap of laps) {
-        // A recovery float is not training at goal pace, no matter its clock.
-        if ((lap as { is_rest?: boolean | null }).is_rest === true) continue;
-        const meters = Number(lap.distance_meters ?? 0);
-        if (!(meters > 0)) continue;
-        const miles = meters / METERS_PER_MILE;
-
-        const pace = Number(lap.avg_pace_sec_per_mile ?? 0);
+      const add = (miles: number, pace: number | null) => {
+        if (!(miles > 0)) return;
         totalMiles += miles;
         if (isRecent) totalMilesRecent += miles;
-        if (!(pace > 0)) continue;
-
+        if (pace == null || !(pace > 0)) return;
         if (pace >= lo && pace <= hi) {
           atPaceMiles += miles;
           sessionAtPace += miles;
           if (isRecent) atPaceMilesRecent += miles;
+        }
+      };
+
+      if (blocks && blocks.length > 0) {
+        for (const leg of readFloatLegs(blocks as never[], mpSec).legs) {
+          // A true recovery is not training; a FLOAT is, and it stays in.
+          if (leg.kind === "recovery") continue;
+          add(leg.miles, leg.paceSec);
+        }
+      } else {
+        for (const lap of laps!) {
+          if ((lap as { is_rest?: boolean | null }).is_rest === true) continue;
+          const meters = Number(lap.distance_meters ?? 0);
+          if (!(meters > 0)) continue;
+          add(meters / METERS_PER_MILE, Number(lap.avg_pace_sec_per_mile ?? 0) || null);
         }
       }
       if (sessionAtPace >= 0.5) sessionsWithAtPace++;
@@ -286,9 +354,9 @@ export const racePaceSpecificity: Analyzer = {
         coverage: { sessionsUsed: logs.length, windowDays, missing: [], confidence: "low" },
         related: ["race_projection", "zone_trend"],
         empty: {
-          eyebrow: "No lap data in this window",
+          eyebrow: "No rep detail in this window",
           nudge:
-            "This reads lap splits to see which miles sat at goal pace. Runs without splits can't be counted.",
+            "This reads each run's rep structure to see which miles sat at goal pace. Runs without splits or parsed structure can't be counted.",
           cta: null,
         },
       };

@@ -46,7 +46,7 @@ struct AskBar: View {
                     .font(.dripEyebrow(10))
                     .tracking(1.3)
                     .foregroundStyle(Color.drip.coral)
-                Text("Why, and compared to what.")
+                Text("Why, and compared to what")
                     .font(.dripDisplay(21))
                     .foregroundStyle(Color.drip.textPrimary)
                 Text("This page shows the shape. Ask reads one session against its fairest match, trends a pace band across the block, or checks whether the ramp is holding — computed from your own runs, then put into words.")

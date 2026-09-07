@@ -91,7 +91,7 @@ struct ContentLibrarySidebar: View {
     private var masthead: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Menu.")
+                Text("Menu")
                     .font(.dripDisplay(30))
                     .foregroundStyle(Color.drip.textPrimary)
                 Spacer()

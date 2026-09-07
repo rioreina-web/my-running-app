@@ -220,7 +220,7 @@ struct TrainingTabView: View {
             Text(vm.scopeDateline())
                 .font(.dripEyebrow(10.5)).tracking(1.6)
                 .foregroundStyle(Color.drip.textSecondary)
-            Text("Your training.")
+            Text("Your Training")
                 .font(.dripDisplay(34))
                 .foregroundStyle(Color.drip.textPrimary)
         }

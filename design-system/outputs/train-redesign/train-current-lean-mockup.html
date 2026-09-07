@@ -1,0 +1,307 @@
+<title>Train · CURRENT — lean mockup</title>
+<style>
+  /* ————————————————————————————————————————————————
+     Page chrome tokens. The phone screens themselves are NOT themed —
+     they are artifacts of the product, which is paper-white by decree
+     (Post Run Drip). Only the review sheet around them adapts.
+     ———————————————————————————————————————————————— */
+  :root {
+    --sheet: #F7F6F3;          /* review-desk ground, a warm off-paper */
+    --sheet-ink: #191817;
+    --sheet-ink-2: #6E6A66;
+    --sheet-hair: #DEDAD4;
+    --note: #8A5A2B;           /* margin-note sepia — pencil, not product */
+    --accent: #D31F19;         /* drip red-text, chrome-side */
+    /* Product tokens — fixed, straight from colors_and_type.css */
+    --paper: #FFFFFF;
+    --paper-deep: #F2F2F2;
+    --ink: #111111;
+    --ink-2: #6B6B6B;
+    --ink-3: #9A9A9A;
+    --hair: #E5E3E0;
+    --red: #EE2B24;
+    --red-text: #D31F19;
+    --mood-tired: #A8560A;
+  }
+  :root:not([data-theme="light"]) { }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --sheet: #161412;
+      --sheet-ink: #EAE6E1;
+      --sheet-ink-2: #9B948C;
+      --sheet-hair: #33302C;
+      --note: #C99A5F;
+      --accent: #F1524C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --sheet: #161412;
+    --sheet-ink: #EAE6E1;
+    --sheet-ink-2: #9B948C;
+    --sheet-hair: #33302C;
+    --note: #C99A5F;
+    --accent: #F1524C;
+  }
+
+  body {
+    background: var(--sheet);
+    color: var(--sheet-ink);
+    font-family: "PT Serif", Georgia, "Times New Roman", serif;
+    margin: 0;
+    padding: 48px 24px 96px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; }
+
+  .eyebrow {
+    font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--sheet-ink-2);
+  }
+  h1 {
+    font-size: clamp(28px, 4vw, 40px); font-weight: 700; line-height: 1.12;
+    margin: 10px 0 14px; text-wrap: balance;
+  }
+  .lede { max-width: 62ch; font-size: 16px; color: var(--sheet-ink); margin: 0 0 8px; }
+  .lede em { color: var(--sheet-ink-2); }
+
+  /* ——— the two boards ——— */
+  .boards {
+    display: flex; flex-wrap: wrap; gap: 40px; margin-top: 44px;
+    align-items: flex-start; justify-content: center;
+  }
+  .board { width: 372px; max-width: 100%; }
+  .board-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    border-top: 2px solid var(--sheet-ink); padding-top: 10px; margin-bottom: 14px;
+  }
+  .board-title { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; }
+  .board-sub { font-size: 11px; color: var(--sheet-ink-2); font-style: italic; }
+
+  .phone {
+    background: var(--paper); color: var(--ink);
+    border: 1px solid var(--sheet-hair);
+    border-radius: 34px; padding: 22px 20px 0; overflow: hidden;
+    box-shadow: 0 18px 40px rgba(0,0,0,0.10);
+  }
+  .screen { min-height: 640px; display: flex; flex-direction: column; }
+
+  /* ——— faithful product primitives ——— */
+  .p-eyebrow { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--ink-2); }
+  .p-tert { color: var(--ink-3); }
+  .p-display { font-weight: 700; line-height: 1.02; letter-spacing: -0.01em; }
+  .stat { font-variant-numeric: tabular-nums; }
+
+  .modenav { display: flex; margin-top: 14px; }
+  .modenav span {
+    flex: 1; text-align: center; padding: 9px 0 8px;
+    font-size: 11px; letter-spacing: 0.18em; color: var(--ink-3);
+    border-bottom: 2px solid var(--hair); text-transform: uppercase;
+  }
+  .modenav .on { color: var(--red-text); border-bottom-color: var(--red); }
+
+  .sec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .sec-head .p-eyebrow { color: var(--ink-2); }
+
+  .dayrow {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 0; border-bottom: 1px solid var(--hair);
+    font-size: 15px;
+  }
+  .dayrow .d { width: 46px; flex: none; font-size: 10px; letter-spacing: 0.1em;
+               text-transform: uppercase; color: var(--ink-2); }
+  .dayrow.today .d { color: var(--red-text); font-weight: 700; }
+  .chip { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase;
+          border: 1px solid var(--hair); padding: 2px 7px; border-radius: 999px; color: var(--ink-2); }
+  .mi { font-weight: 700; font-size: 15px; }
+  .dim { color: var(--ink-3); font-style: italic; font-size: 14px; }
+  .sub { display: flex; gap: 8px; padding: 0 0 10px 56px; margin-top: -6px;
+         border-bottom: 1px solid var(--hair); font-size: 9px; letter-spacing: 0.08em;
+         text-transform: uppercase; color: var(--ink-3); }
+  .sub .mood { color: var(--mood-tired); border-left: 2px solid var(--mood-tired); padding-left: 6px; }
+  .totalrow { display: flex; justify-content: space-between; align-items: baseline; padding: 12px 0 0; }
+
+  .statstrip { display: flex; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); margin-top: 20px; }
+  .statstrip > div { flex: 1; text-align: center; padding: 12px 0; }
+  .statstrip > div + div { border-left: 1px solid var(--hair); }
+  .statstrip .v { font-size: 20px; font-weight: 700; }
+  .statstrip .l { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-top: 3px; }
+
+  .ledger { display: flex; justify-content: space-between; padding: 10px 0;
+            font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }
+  .ledger b { color: var(--ink); font-size: 11px; letter-spacing: 0; }
+  .lean .ledger { border-bottom: 1px solid var(--hair); }
+
+  .strip { display: flex; gap: 3px; align-items: flex-end; height: 46px; margin: 10px 0 6px; }
+  .strip i { flex: 1; background: var(--paper-deep); border-radius: 2px 2px 0 0; }
+  .strip i.w { background: #C7D6E4; }        /* pace-blue wash, easy end */
+  .strip i.t { background: #93B9D6; }
+
+  .footer { margin-top: auto; border-top: 1px solid var(--hair); padding: 14px 0 22px;
+            display: flex; justify-content: space-between; align-items: baseline; }
+  .footer .goal { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+  .footer .proj { font-size: 20px; font-weight: 700; }
+  .footer .link { font-size: 10px; letter-spacing: 0.12em; color: var(--red-text); text-transform: uppercase; }
+
+  /* ——— margin annotations ——— */
+  .tag {
+    display: inline-block; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 2px; margin-left: 8px; vertical-align: 2px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .tag.cut  { background: var(--accent); color: #fff; }
+  .tag.fold { background: transparent; color: var(--note); border: 1px solid var(--note); }
+  .tag.keep { background: transparent; color: var(--sheet-ink-2); border: 1px solid var(--sheet-hair); }
+  .note { font-size: 12.5px; font-style: italic; color: var(--note); margin: 6px 2px 18px; line-height: 1.45; }
+
+  /* ——— decisions ledger ——— */
+  .decisions { margin-top: 64px; }
+  .decisions h2 { font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase;
+                  border-top: 2px solid var(--sheet-ink); padding-top: 10px; }
+  .drow { display: grid; grid-template-columns: 170px 84px 1fr 74px; gap: 16px;
+          padding: 13px 0; border-bottom: 1px solid var(--sheet-hair); font-size: 14px; align-items: baseline; }
+  .drow .what { font-weight: 700; }
+  .drow .why { color: var(--sheet-ink-2); }
+  .drow .pts { text-align: right; font-variant-numeric: tabular-nums; color: var(--sheet-ink-2); font-size: 12px; }
+  .drow-head { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
+               color: var(--sheet-ink-2); border-bottom: 1px solid var(--sheet-ink); }
+  .drow-head div { font-weight: 400; }
+  @media (max-width: 640px) {
+    .drow { grid-template-columns: 1fr 74px; }
+    .drow .verdict, .drow-head .verdict { display: none; }
+    .drow .why { grid-column: 1 / -1; }
+  }
+  .kicker { max-width: 62ch; margin-top: 40px; font-size: 15px; }
+  .kicker strong { color: var(--accent); }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Post Run Drip · Design review · Train tab, CURRENT mode · Aug 31</div>
+  <h1>One question per screenful.</h1>
+  <p class="lede">This afternoon's edits already moved the week to the top and cut the
+  plate strip. The crowding that remains is structural: CURRENT still answers
+  <em>what did the week cost</em> three times — the stat strip, the TODAY card, and the
+  stress strip — before the fold. The lean board keeps every fact and deletes every
+  repeat: today folds into its own week row, and the stat strip folds into one ledger line.</p>
+
+  <div class="boards">
+    <!-- ————— BOARD A · as shipped this afternoon ————— -->
+    <div class="board">
+      <div class="board-head">
+        <span class="board-title">A · Shipped today</span>
+        <span class="board-sub">week first, strip gone</span>
+      </div>
+      <div class="phone"><div class="screen">
+        <div class="p-eyebrow">Aug 1 – Aug 31</div>
+        <div class="p-display" style="font-size:32px; margin-top:6px;">Your training.</div>
+        <div class="modenav"><span class="on">Current</span><span>Calendar</span><span>History</span></div>
+
+        <div style="margin-top:26px;">
+          <div class="sec-head"><span class="p-eyebrow">‹ This week ›</span><span class="p-eyebrow p-tert">CIM Block</span></div>
+          <div class="dayrow today"><span class="d">Mon 31</span><span class="chip">Easy</span><span class="mi stat">8.1 mi</span></div>
+          <div class="sub"><span class="mood">Tired</span><span>68° · DP 64° · Overcast</span></div>
+          <div class="dayrow"><span class="d">Tue 1</span><span class="dim">Recovery 5 planned</span></div>
+          <div class="dayrow"><span class="d">Wed 2</span><span class="dim">Threshold 8 planned</span></div>
+          <div class="dayrow"><span class="d">Thu 3</span><span class="dim">Easy 6 planned</span></div>
+          <div class="dayrow"><span class="d">Fri 4</span><span class="dim">Rest</span></div>
+          <div class="dayrow"><span class="d">Sat 5</span><span class="dim">Long run 16 planned</span></div>
+          <div class="dayrow" style="border-bottom:none;"><span class="d">Sun 6</span><span class="dim">Easy 7 planned</span></div>
+          <div class="totalrow"><span class="p-eyebrow">Total</span><span class="p-display stat" style="font-size:18px;">8.1 mi</span></div>
+        </div>
+
+        <div class="statstrip stat">
+          <div><div class="v">8.1</div><div class="l">This week</div><div class="l">Day 1/7</div></div>
+          <div><div class="v">~51</div><div class="l">On pace</div><div class="l" style="color:var(--ink-3);">−2% vs avg</div></div>
+          <div><div class="v">51.7</div><div class="l">4-wk avg</div><div class="l">Miles / wk</div></div>
+        </div>
+        <div class="ledger"><span>Longest run <b class="stat">16.0 mi</b></span><span>Easy <b class="stat">78%</b></span><span>Window <b>30 days</b></span></div>
+
+        <div style="margin-top:14px;">
+          <div class="sec-head"><span class="p-eyebrow">Today · Monday</span></div>
+          <div style="font-size:13.5px; font-style:italic; color:var(--ink-2); padding:6px 0 2px;">
+            Ran already — 8.1 easy, logged above.</div>
+        </div>
+
+        <div style="margin-top:18px;">
+          <div class="sec-head"><span class="p-eyebrow">Week stress</span><span class="p-eyebrow p-tert">By time of day</span></div>
+          <div class="strip"><i class="t" style="height:70%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i></div>
+        </div>
+
+        <div class="footer">
+          <div><div class="goal">Run sub 2:20 at CIM</div><div class="proj stat">2:26:58 <span class="p-eyebrow p-tert" style="font-weight:400;">· 97 days</span></div></div>
+          <span class="link">Trends ↗</span>
+        </div>
+      </div></div>
+      <p class="note">Better — but the fold lands mid-stat-strip, and Monday is
+      narrated twice: once as a week row, once as a TODAY card that only says
+      “logged above.”</p>
+    </div>
+
+    <!-- ————— BOARD B · lean proposal ————— -->
+    <div class="board lean">
+      <div class="board-head">
+        <span class="board-title">B · Lean proposal</span>
+        <span class="board-sub">every fact once</span>
+      </div>
+      <div class="phone"><div class="screen">
+        <div class="p-eyebrow">Aug 1 – Aug 31 <span style="color:var(--ink-3);">· CIM Block · Wk 9</span></div>
+        <div class="modenav" style="margin-top:10px;"><span class="on">Current</span><span>Calendar</span><span>History</span></div>
+
+        <div style="margin-top:24px;">
+          <div class="sec-head"><span class="p-eyebrow">‹ This week ›</span><span class="p-eyebrow p-tert">Day 1 of 7</span></div>
+          <div class="dayrow today"><span class="d">Mon 31</span><span class="chip">Easy</span><span class="mi stat">8.1 mi</span><span class="p-eyebrow p-tert" style="margin-left:auto;">Today</span></div>
+          <div class="sub"><span class="mood">Tired</span><span>68° · DP 64° · Overcast</span></div>
+          <div class="dayrow"><span class="d">Tue 1</span><span class="dim">Recovery 5 planned</span></div>
+          <div class="dayrow"><span class="d">Wed 2</span><span class="dim">Threshold 8 planned</span></div>
+          <div class="dayrow"><span class="d">Thu 3</span><span class="dim">Easy 6 planned</span></div>
+          <div class="dayrow"><span class="d">Fri 4</span><span class="dim">Rest</span></div>
+          <div class="dayrow"><span class="d">Sat 5</span><span class="dim">Long run 16 planned</span></div>
+          <div class="dayrow" style="border-bottom:none;"><span class="d">Sun 6</span><span class="dim">Easy 7 planned</span></div>
+          <div class="totalrow"><span class="p-eyebrow">Total</span><span class="p-display stat" style="font-size:18px;">8.1 mi</span></div>
+        </div>
+
+        <div class="ledger" style="margin-top:12px; border-top:1px solid var(--hair);">
+          <span>On pace <b class="stat">~51 mi</b></span>
+          <span><b class="stat">−2%</b> vs 4-wk</span>
+          <span>Easy <b class="stat">78%</b></span>
+        </div>
+
+        <div style="margin-top:20px;">
+          <div class="sec-head"><span class="p-eyebrow">Week stress</span><span class="p-eyebrow p-tert">By time of day</span></div>
+          <div class="strip"><i class="t" style="height:70%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i><i style="height:14%;"></i></div>
+        </div>
+
+        <div class="footer">
+          <div><div class="goal">Run sub 2:20 at CIM</div><div class="proj stat">2:26:58 <span class="p-eyebrow p-tert" style="font-weight:400;">· 97 days</span></div></div>
+          <span class="link">Trends ↗</span>
+        </div>
+      </div></div>
+      <p class="note">The whole answer — week, pace-vs-normal, stress shape, projection —
+      inside one screenful. Nothing was deleted from the product; three surfaces
+      were deleted from the <em>page</em>.</p>
+    </div>
+  </div>
+
+  <!-- ————— decisions ————— -->
+  <div class="decisions">
+    <h2>What moved, and why</h2>
+    <div class="drow drow-head"><div>Element</div><div class="verdict">Verdict</div><div>Why</div><div class="pts">≈ saved</div></div>
+    <div class="drow"><div class="what">“Your training.” headline<span class="tag cut">cut</span></div><div class="verdict"></div>
+      <div class="why">Same argument that removed the plate strip: the tab bar already says TRAIN. The dateline eyebrow keeps the scope; the block name moves beside it.</div><div class="pts">56 pt</div></div>
+    <div class="drow"><div class="what">TODAY section<span class="tag fold">folded</span></div><div class="verdict"></div>
+      <div class="why">Today is already a week row. Accent the row, hang the plan or the conditions readout under it. Two narrations of Monday become one.</div><div class="pts">80 pt</div></div>
+    <div class="drow"><div class="what">Stat strip + ledger<span class="tag fold">folded</span></div><div class="verdict"></div>
+      <div class="why">“This week 8.1” duplicates the TOTAL row two rows above it. What survives is the only stat the week list can’t show: on-pace, delta vs 4-wk, easy share — one hairline line.</div><div class="pts">96 pt</div></div>
+    <div class="drow"><div class="what">Week list<span class="tag keep">kept</span></div><div class="verdict"></div>
+      <div class="why">The reason the tab is opened. First position, earned this afternoon.</div><div class="pts">—</div></div>
+    <div class="drow"><div class="what">Stress strip<span class="tag keep">kept</span></div><div class="verdict"></div>
+      <div class="why">The one reading no other surface carries at a glance: when the load landed. Now fits above the fold.</div><div class="pts">—</div></div>
+    <div class="drow"><div class="what">Projection footer<span class="tag keep">kept</span></div><div class="verdict"></div>
+      <div class="why">Goal · projection · countdown, per rule 7 — with the TRENDS door beside it.</div><div class="pts">—</div></div>
+  </div>
+
+  <p class="kicker">Net: <strong>≈ 230 pt returned</strong> — the difference between the
+  stress strip living below the fold and the entire CURRENT answer fitting one
+  iPhone screen. If board B reads right, the build is small: the ledger line is a
+  restyle of the existing summary, and the today-fold reuses the week row’s
+  existing conditions sub-line.</p>
+</div>

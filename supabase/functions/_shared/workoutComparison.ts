@@ -296,6 +296,10 @@ const ADJACENT_KINDS: ReadonlyArray<ReadonlySet<WorkoutKind>> = [
   new Set<WorkoutKind>(["intervals", "fartlek"]),
   new Set<WorkoutKind>(["tempo", "progression"]),
   new Set<WorkoutKind>(["easy", "long_run", "recovery"]),
+  // A long-run workout is kin to both the plain long run (same stimulus
+  // context) and threshold work (same rep dynamics, slower band).
+  new Set<WorkoutKind>(["long_run", "long_wo"]),
+  new Set<WorkoutKind>(["long_wo", "threshold"]),
 ];
 
 export function familyMatch(

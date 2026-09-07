@@ -595,7 +595,7 @@ struct KeySessionsDetailView: View {
             Text("KEY SESSIONS · SAME EFFORT, FASTER?")
                 .font(.dripEyebrow(11)).tracking(1.3)
                 .foregroundStyle(Color.drip.coral)
-            Text("First marks on the page.")
+            Text("First marks on the page")
                 .font(.dripDisplay(26))
                 .foregroundStyle(Color.drip.textPrimary)
             Text(lowDataNarrative)

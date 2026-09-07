@@ -1039,7 +1039,7 @@ private struct WorkoutGraphsPanel: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("The whole run.")
+                Text("The Whole Run")
                     .font(.dripDisplay(18))
                     .foregroundStyle(Color.drip.textPrimary)
                 Spacer()
@@ -1050,20 +1050,20 @@ private struct WorkoutGraphsPanel: View {
             }
             .padding(.bottom, 10)
 
-            lane(title: "Pace.", hint: "FASTER ↑", points: pace,
+            lane(title: "Pace", hint: "FASTER ↑", points: pace,
                  reversed: true, area: false, showX: !hasHR && !hasElev,
                  format: { paceString($0) })
 
             if hasHR {
                 DripHairline().padding(.vertical, 8)
-                lane(title: "Heart rate.", hint: "BPM", points: hr,
+                lane(title: "Heart Rate", hint: "BPM", points: hr,
                      reversed: false, area: false, showX: !hasElev,
                      format: { "\(Int($0.rounded()))" })
             }
 
             if hasElev {
                 DripHairline().padding(.vertical, 8)
-                lane(title: "Elevation.", hint: "ROUTE · CONTEXT", points: elev,
+                lane(title: "Elevation", hint: "ROUTE · CONTEXT", points: elev,
                      reversed: false, area: true, showX: true,
                      format: { "\(Int($0.rounded()))ft" })
             }

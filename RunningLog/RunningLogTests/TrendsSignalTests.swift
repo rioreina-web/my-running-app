@@ -250,6 +250,10 @@ struct TrendsSignalReadTests {
 
 // MARK: - Recovery ledger
 
+// ORPHANED 2026-08-24: `TrendsRecoveryLedger` was removed with the recovery
+// score surface; compile-gated so the rest of this file's live suites keep
+// running. (2026-08-31)
+#if false
 @Suite("TrendsRecoveryLedger")
 struct TrendsRecoveryLedgerTests {
 
@@ -311,6 +315,7 @@ struct TrendsRecoveryLedgerTests {
         #expect(!names.contains { banned.contains($0) })
     }
 }
+#endif
 
 // MARK: - Severity
 

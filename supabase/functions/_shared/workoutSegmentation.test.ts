@@ -207,3 +207,129 @@ Deno.test("coalescing leaves a continuous progression alone (not merged)", () =>
   assertEquals(r.repCount, 5);
   assertEquals(r.workoutKind, "progression");
 });
+
+// ── Run-relative (contextual) structure ──
+//
+// Aug 29 2026 (log 16b36c27): 7 mi moderate + 4×3mi with ~half-mile floats
+// inside a 21-mile long-run workout. Every rep mile is SLOWER than the
+// absolute work gate (mp/steady midpoint), so the anchor-based pass saw only
+// the last two miles and published "1×2mi @ 5:31 (threshold)". The contextual
+// pass must read the run's own bimodal split instead. Real laps, real zones
+// (the 2026-08-30 profile: mp 338, steady≈356, moderate≈398, easy 451).
+const LIVE_ZONES: PaceZones = {
+  mile: 268, fiveK: 297, tenK: 309, hm: 323, mp: 338,
+  steady: 356, moderate: 398, easy: 451,
+};
+
+const AUG29: LapInput[] = [
+  // 7 mi moderate warm-up block (last mile includes a stop — 10:22).
+  ...[464, 433, 432, 435, 417, 411, 622].map((p, i) => (
+    { lap_index: i + 1, is_rest: false, distance_meters: 1609.34, moving_time_seconds: p, avg_pace_sec_per_mile: p }
+  )),
+  // 4×3mi (auto-lapped by mile) with ~half-mile floats between.
+  { lap_index: 8, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 370, avg_pace_sec_per_mile: 370 },
+  { lap_index: 9, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 369, avg_pace_sec_per_mile: 369 },
+  { lap_index: 10, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 368, avg_pace_sec_per_mile: 368 },
+  { lap_index: 11, is_rest: false, distance_meters: 804.72, moving_time_seconds: 228, avg_pace_sec_per_mile: 456 },
+  { lap_index: 12, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 368, avg_pace_sec_per_mile: 368 },
+  { lap_index: 13, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 367, avg_pace_sec_per_mile: 367 },
+  { lap_index: 14, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 364, avg_pace_sec_per_mile: 364 },
+  { lap_index: 15, is_rest: false, distance_meters: 760.72, moving_time_seconds: 221, avg_pace_sec_per_mile: 468 },
+  { lap_index: 16, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 362, avg_pace_sec_per_mile: 362 },
+  { lap_index: 17, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 361, avg_pace_sec_per_mile: 361 },
+  { lap_index: 18, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 358, avg_pace_sec_per_mile: 358 },
+  { lap_index: 19, is_rest: false, distance_meters: 820, moving_time_seconds: 245, avg_pace_sec_per_mile: 481 },
+  { lap_index: 20, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 349, avg_pace_sec_per_mile: 349 },
+  { lap_index: 21, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 332, avg_pace_sec_per_mile: 332 },
+  { lap_index: 22, is_rest: false, distance_meters: 1609.34, moving_time_seconds: 330, avg_pace_sec_per_mile: 330 },
+  { lap_index: 23, is_rest: false, distance_meters: 845.7, moving_time_seconds: 257, avg_pace_sec_per_mile: 489 },
+];
+
+Deno.test("contextual: 4×3mi at steady inside a 21-miler reads as 4×3mi long_wo, not 1×2mi", () => {
+  const r = segmentFromLaps(AUG29, LIVE_ZONES);
+  assertEquals(r.repCount, 4);
+  assert(r.structure!.includes("4×3mi"), `structure was: ${r.structure}`);
+  assert(r.structure!.includes("steady"), `structure was: ${r.structure}`);
+  assertEquals(r.workoutKind, "long_wo");
+  // Load math must NOT move: bout flags still come from the absolute gate.
+  assertEquals(r.bouts.filter((b) => b.isWork).length, 2);
+});
+
+Deno.test("contextual: mile reps with 400m floats in a 17-mi long run (Aug 1) grow structure", () => {
+  // Real laps from log 537ca8af: 3 mi warm-up, then mile-ish efforts at
+  // 5:56–6:24 alternating with ~400m floats at 6:57–8:35. No lap is anywhere
+  // near the MP anchor.
+  const paces: Array<[number, number, boolean]> = [
+    [1609.34, 467, false], [1609.34, 446, false], [1609.34, 456, false],
+    [99.61, 517, true],
+    [1609.34, 360, false], [401.95, 436, false], [1609.34, 378, false],
+    [1609.34, 383, false], [343.2, 450, false], [50.04, 450, true],
+    [1609.34, 359, false], [408.56, 425, false], [1609.34, 379, false],
+    [1609.34, 384, false], [401.4, 449, false], [1609.34, 362, false],
+    [405.38, 417, false], [1609.34, 374, false], [1609.34, 377, false],
+    [314.94, 465, false], [1609.34, 356, false], [399.35, 463, false],
+    [1609.34, 381, false], [1609.34, 384, false], [406.17, 515, false],
+  ];
+  const laps: LapInput[] = paces.map(([d, p, rest], i) => ({
+    lap_index: i + 1, is_rest: rest, distance_meters: d,
+    moving_time_seconds: Math.round(p * (d / 1609.344)), avg_pace_sec_per_mile: p,
+  }));
+  const r = segmentFromLaps(laps, LIVE_ZONES);
+  assertEquals(r.workoutKind, "long_wo");
+  assert(r.repCount >= 2, `repCount: ${r.repCount}`);
+  assert(r.structure != null && !r.structure.includes("mi long"), `structure was: ${r.structure}`);
+});
+
+Deno.test("contextual: an evenly-paced long run stays a plain long run", () => {
+  const paces = [408, 402, 399, 404, 396, 401, 398, 405, 400, 397, 403, 399, 402, 398, 400, 396, 401];
+  const laps: LapInput[] = paces.map((p, i) => ({
+    lap_index: i + 1, is_rest: false, distance_meters: 1609.34,
+    moving_time_seconds: p, avg_pace_sec_per_mile: p,
+  }));
+  const r = segmentFromLaps(laps, LIVE_ZONES);
+  assertEquals(r.workoutKind, "long_run");
+  assertEquals(r.repCount, 0);
+  assert(r.structure!.includes("mi long"), `structure was: ${r.structure}`);
+});
+
+Deno.test("contextual: a negative-split long run is NOT a workout (one merged block fails the 2-rep floor)", () => {
+  const paces = [432, 428, 431, 429, 430, 428, 431, 430, 386, 384, 387, 383, 385, 386, 384, 385];
+  const laps: LapInput[] = paces.map((p, i) => ({
+    lap_index: i + 1, is_rest: false, distance_meters: 1609.34,
+    moving_time_seconds: p, avg_pace_sec_per_mile: p,
+  }));
+  const r = segmentFromLaps(laps, LIVE_ZONES);
+  assertEquals(r.workoutKind, "long_run");
+  assertEquals(r.repCount, 0);
+});
+
+Deno.test("contextual: a continuous cutdown long run does not grow rep structure (May 28 false positive)", () => {
+  // Real laps (log 3baceacc): 2 km warm-up, then a continuous 17 km cutdown
+  // 6:31→5:46 with no floats, 1 km cool-down. The backfill briefly published
+  // "17×1K @ 6:17 (moderate)" — the fast side's spread (56 s/mi) dwarfed the
+  // 26 s/mi boundary gap, so this is one drifting effort, not 17 reps.
+  const paces = [451, 451, 391, 388, 396, 385, 401, 381, 385, 402, 380, 375, 375, 386, 356, 354, 346, 348, 357, 428];
+  const laps: LapInput[] = paces.map((p, i) => ({
+    lap_index: i + 1, is_rest: false, distance_meters: 1000,
+    moving_time_seconds: Math.round(p * (1000 / 1609.344)), avg_pace_sec_per_mile: p,
+  }));
+  const r = segmentFromLaps(laps, LIVE_ZONES);
+  // "1×1K @ 5:46" is the pre-existing absolute reading (one km clears the
+  // work gate) and stays; the guard only has to stop the 17-rep explosion.
+  assert(!(r.structure ?? "").includes("17×"), `structure was: ${r.structure}`);
+  assert(r.repCount <= 1, `repCount: ${r.repCount}`);
+});
+
+Deno.test("contextual: a long run with mild pace variance stays a long run (Jun 20 false positive)", () => {
+  // Real laps (log 0abe300d): 13 mi wandering 6:26–7:44 with one slower km in
+  // the middle. Was briefly read as "7mi-1K-1K-…-1K @ 6:53 (easy)".
+  const paces = [459, 420, 423, 417, 423, 410, 420, 402, 399, 414, 406, 406, 457, 420, 431, 418, 406, 406, 386, 404, 430];
+  const laps: LapInput[] = paces.map((p, i) => ({
+    lap_index: i + 1, is_rest: false, distance_meters: 1000,
+    moving_time_seconds: Math.round(p * (1000 / 1609.344)), avg_pace_sec_per_mile: p,
+  }));
+  const r = segmentFromLaps(laps, LIVE_ZONES);
+  assertEquals(r.workoutKind, "long_run");
+  assertEquals(r.repCount, 0);
+  assert(r.structure!.includes("mi long"), `structure was: ${r.structure}`);
+});

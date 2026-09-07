@@ -197,14 +197,23 @@ final class CoachChatViewModel {
                     let text = coachResponse.response
                         ?? (coachResponse.error ?? (rawBody.isEmpty ? nil : rawBody))
                     if let text, !text.isEmpty {
-                        let assistantMessage = ChatMessage(
-                            role: .assistant,
-                            content: text,
-                            sources: coachResponse.sources
-                        )
-                        messages.append(assistantMessage)
+                        if coachResponse.degraded == true {
+                            // Not an answer. Hand the question back rather than
+                            // leaving an apology in the thread where a reply
+                            // should be — the server no longer stores it either.
+                            restoreForRetry(message)
+                            appendErrorMessage(text)
+                        } else {
+                            let assistantMessage = ChatMessage(
+                                role: .assistant,
+                                content: text,
+                                sources: coachResponse.sources
+                            )
+                            messages.append(assistantMessage)
+                        }
                     } else {
-                        appendErrorMessage("Coach returned an empty response. Please try again.")
+                        restoreForRetry(message)
+                    appendErrorMessage("Coach returned an empty response. Please try again.")
                     }
                     isLoading = false
                 }
@@ -213,6 +222,7 @@ final class CoachChatViewModel {
                 Log.coach.error("Coach response decode failed: \(rawBody.prefix(300))")
                 await MainActor.run {
                     isLoading = false
+                    restoreForRetry(message)
                     appendErrorMessage("Coach returned an unexpected response. Please try again.")
                 }
             }
@@ -221,15 +231,30 @@ final class CoachChatViewModel {
             Log.coach.error("Coach request timed out")
             await MainActor.run {
                 isLoading = false
-                appendErrorMessage("Coach took too long to respond. Please try again.")
+                restoreForRetry(message)
+                    appendErrorMessage("Coach took too long to respond. Please try again.")
             }
         } catch {
             Log.coach.error("Coach call failed: \(error.localizedDescription)")
             await MainActor.run {
                 isLoading = false
-                appendErrorMessage("Couldn't reach the coach. Check your connection and try again.")
+                restoreForRetry(message)
+                    appendErrorMessage("Couldn't reach the coach. Check your connection and try again.")
             }
             ErrorReporter.shared.report(error, context: "coaching agent call")
+        }
+    }
+
+    /// Put the athlete's question back in the composer and take it out of the
+    /// thread. A failed turn should cost them nothing — retyping what they
+    /// just wrote is the part of an outage that actually stings.
+    @MainActor
+    private func restoreForRetry(_ text: String) {
+        if let last = messages.last, last.role == .user, last.content == text {
+            messages.removeLast()
+        }
+        if inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            inputText = text
         }
     }
 

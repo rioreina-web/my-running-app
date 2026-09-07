@@ -346,6 +346,19 @@ struct TrendsBlockView: View {
                 }
             }
 
+            // 04b · goal-pace convergence
+            // Renders only when a goal resolves and the window has parsed
+            // structure. No training plan required — the bands are the workout
+            // library's constants, so `activePlan == nil` still reads. Grid
+            // replaces the per-session averaging card — see
+            // GoalPaceGridDTO.swift's file header.
+            if let gp = service.goalPaceGrid, !gp.isEmpty {
+                rule
+                section(number: "05", title: "Closing on goal pace", read: nil) {
+                    card { GoalPaceGridCard(data: gp) }
+                }
+            }
+
             // 05 · one thing
             if let focus = read.focus {
                 rule
@@ -582,7 +595,7 @@ struct TrendsBlockView: View {
 
     private var empty: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("No weeks in this window.")
+            Text("No weeks in this window")
                 .font(.dripDisplay(20))
                 .foregroundStyle(Color.drip.textPrimary)
             Text("Log a run and the block starts building here.")
@@ -594,7 +607,7 @@ struct TrendsBlockView: View {
 
     private var failure: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Couldn't load your timeline.")
+            Text("Couldn't load your timeline")
                 .font(.dripDisplay(20))
                 .foregroundStyle(Color.drip.textPrimary)
             Text("Pull to try again.")

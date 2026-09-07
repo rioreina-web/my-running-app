@@ -67,6 +67,17 @@ final class DailyReadService {
     /// `workoutsById`, but for `§` doc chips.
     var docsById: [UUID: CoachingDocument] = [:]
 
+    /// The athlete's replies to TODAY's read — check-in rows stamped with
+    /// `replied_to_read_id` (migration 20260831170000). Rendered under the
+    /// Read's check-in block so the question shows its own answers. Refreshed
+    /// alongside the read, and by the view after each new reply lands.
+    var todayReplies: [CoachReadReply] = []
+
+    /// The week band under the masthead — every Read is an edition of a
+    /// week and says so (Fig. 12). Label + "WK n · m MI", computed from the
+    /// read's own week (Monday-start, same convention as the journal).
+    var readWeek: ReadWeekBand?
+
     // MARK: - Init
 
     private init() {}
@@ -105,6 +116,7 @@ final class DailyReadService {
             }
             todayRead = read
             try await hydrate(read: read)
+            await reloadReplies()
             lastError = nil
             Log.coachRead.info(
                 "Read refreshed (id=\(read.id.uuidString, privacy: .public), confidence=\(read.confidence.level.rawValue, privacy: .public))"
@@ -114,6 +126,104 @@ final class DailyReadService {
             Log.coachRead.error("refresh failed: \(error.localizedDescription)")
             throw error
         }
+    }
+
+    /// Fetch the replies stamped against today's read. Slim select — the
+    /// reply line needs a timestamp, the declared mood, and the words; it
+    /// never drags the full TrainingLog row (see TrainingLog.columns note).
+    @MainActor
+    func reloadReplies() async {
+        guard let read = todayRead else {
+            todayReplies = []
+            return
+        }
+        do {
+            let replies: [CoachReadReply] = try await supabase
+                .from("training_logs")
+                .select("id, created_at, mood, cleaned_notes, notes, audio_url, processing_status")
+                .eq("replied_to_read_id", value: read.id.uuidString)
+                .order("created_at", ascending: true)
+                .execute()
+                .value
+            todayReplies = replies
+        } catch {
+            // Replies are an annotation on the read, never a gate on it —
+            // keep whatever we had rather than blanking the list.
+            Log.coachRead.error("reloadReplies failed: \(error.localizedDescription)")
+        }
+        await loadWeekBand(for: read)
+    }
+
+    /// Compute the masthead week band for the read's own Monday-start week:
+    /// label ("THE WEEK OF AUG 24 – 30"), ISO week number, and the week's
+    /// deduped mileage. Best-effort — a fetch miss drops the mileage from
+    /// the band, never the band itself.
+    @MainActor
+    private func loadWeekBand(for read: CoachRead) async {
+        // THE WEEK A READ COVERS = the seven days ENDING on its own date.
+        // For the Sunday weekly edition that is exactly the Mon–Sun training
+        // week (Aug 24–30); for a read published any other day it is still
+        // the seven days it can actually speak about. Anchoring on the
+        // calendar week *containing* read_date instead put a Monday read on a
+        // fresh week that had barely happened yet.
+        let cal = Calendar.current
+        let end = cal.startOfDay(for: read.readDate)
+        guard
+            let start = cal.date(byAdding: .day, value: -6, to: end),
+            let afterEnd = cal.date(byAdding: .day, value: 1, to: end)
+        else { return }
+
+        let startM = start.formatted(.dateTime.month(.abbreviated)).uppercased()
+        let endM = end.formatted(.dateTime.month(.abbreviated)).uppercased()
+        let startD = cal.component(.day, from: start)
+        let endD = cal.component(.day, from: end)
+        let range = startM == endM
+            ? "\(startM) \(startD) – \(endD)"
+            : "\(startM) \(startD) – \(endM) \(endD)"
+        let wk = Calendar(identifier: .iso8601).component(.weekOfYear, from: start)
+
+        var miles: Double?
+        if let userId = AuthManager.shared.currentUserId {
+            struct Row: Decodable {
+                let workoutDate: Date?
+                let miles: Double?
+                let source: String?
+                enum CodingKeys: String, CodingKey {
+                    case workoutDate = "workout_date"
+                    case miles = "workout_distance_miles"
+                    case source
+                }
+            }
+            let rows: [Row] = (try? await supabase
+                .from("training_logs")
+                .select("workout_date, workout_distance_miles, source")
+                .eq("user_id", value: userId)
+                .gte("workout_date", value: start.ISO8601Format())
+                .lt("workout_date", value: afterEnd.ISO8601Format())
+                .execute()
+                .value) ?? []
+            // Same-day voice/GPS dedupe, same rule as the journal's week totals.
+            let runs = rows.filter { ($0.miles ?? 0) > 0 && $0.workoutDate != nil }
+            var gpsByDay: [Date: [Double]] = [:]
+            for r in runs where r.source != "voice_log" && r.source != "check_in" {
+                gpsByDay[cal.startOfDay(for: r.workoutDate!), default: []].append(r.miles ?? 0)
+            }
+            var total = 0.0
+            for r in runs {
+                if r.source == "voice_log" || r.source == "check_in",
+                   let sameDay = gpsByDay[cal.startOfDay(for: r.workoutDate!)],
+                   sameDay.contains(where: { abs($0 - (r.miles ?? 0)) <= 0.3 }) {
+                    continue
+                }
+                total += r.miles ?? 0
+            }
+            miles = total
+        }
+
+        readWeek = ReadWeekBand(
+            label: "THE WEEK OF \(range)",
+            detail: miles.map { "WK \(wk) · \(String(format: "%.1f", $0)) MI" } ?? "WK \(wk)"
+        )
     }
 
     /// Ask the coach a follow-up question. Returns a `CoachRead`-shaped
@@ -196,12 +306,23 @@ final class DailyReadService {
         //    `workout_date` decodes fine via `.value` only because it's
         //    TIMESTAMPTZ, not DATE — they are not the same path.)
         do {
+            // THE CURRENT EDITION, NOT STRICTLY TODAY'S ROW (2026-08-31).
+            // The Read is weekly: one edition, published Sunday, that the
+            // athlete converses with all week. Keying this to `read_date =
+            // today` meant Monday morning showed an empty surface and — worse
+            // — every reply stamped with `replied_to_read_id` pointed at an
+            // edition the tab had already stopped displaying, so the answers
+            // vanished the next day. Take the most recent completed read
+            // within the last 8 days instead; the window is what keeps a
+            // months-old read from resurfacing on a dormant account.
+            let windowStart = Self.dateString(daysAgo: 8)
             let response = try await supabase
                 .from("daily_coaching_reads")
                 .select("*")
                 .eq("user_id", value: userId)
-                .eq("read_date", value: today)
+                .gte("read_date", value: windowStart)
                 .eq("status", value: "completed")
+                .order("read_date", ascending: false)
                 .limit(1)
                 .execute()
             let rows = try JSONDecoder.coachRead().decode(
@@ -306,12 +427,19 @@ final class DailyReadService {
     /// and we fall through to the generate-path POST, which uses the
     /// profile-tz date and is therefore authoritative.
     private static func deviceLocalDateString() -> String {
+        dateString(daysAgo: 0)
+    }
+
+    /// `yyyy-MM-dd`, N days back in device-local time. Backs the current-
+    /// edition window in `fetchOrGenerateTodayRead`.
+    private static func dateString(daysAgo: Int) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.calendar = Calendar(identifier: .iso8601)
         f.timeZone = TimeZone.current
         f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: Date())
+        let date = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        return f.string(from: date)
     }
 }
 
@@ -326,4 +454,57 @@ private struct AnyCodingKey: CodingKey {
     init(_ s: String) { self.stringValue = s }
     init?(stringValue: String) { self.stringValue = stringValue }
     init?(intValue: Int) { return nil }
+}
+
+// MARK: - CoachReadReply
+
+/// One reply to a Read — the slim projection of a check-in row that the
+/// Read surface lists under its own question. Kept separate from
+/// `TrainingLog` so the reply fetch never widens into the full journal row.
+struct CoachReadReply: Decodable, Identifiable {
+    let id: UUID
+    let createdAt: Date
+    let mood: String?
+    let cleanedNotes: String?
+    let notes: String?
+    let audioUrl: String?
+    let processingStatus: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt = "created_at"
+        case mood
+        case cleanedNotes = "cleaned_notes"
+        case notes
+        case audioUrl = "audio_url"
+        case processingStatus = "processing_status"
+    }
+
+    /// The line the Read renders: declared mood first, then the words —
+    /// or the honest in-between states while audio is still processing.
+    var summaryLine: String {
+        let words = (cleanedNotes ?? notes ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let moodPart = (mood ?? "").trimmingCharacters(in: .whitespaces)
+        let pending = processingStatus == "pending"
+            || processingStatus == "processing"
+            || processingStatus == "uploading"
+        if pending && words.isEmpty {
+            return moodPart.isEmpty
+                ? "Transcribing…"
+                : "\(moodPart.capitalized) — transcribing…"
+        }
+        if words.isEmpty { return moodPart.capitalized }
+        if moodPart.isEmpty { return "\u{201C}\(words)\u{201D}" }
+        return "\(moodPart.capitalized) — \u{201C}\(words)\u{201D}"
+    }
+}
+
+// MARK: - ReadWeekBand
+
+/// The masthead week band — the line that makes a Read an edition of a
+/// week ("THE WEEK OF AUG 24 – 30" · "WK 35 · 74.9 MI"). See Fig. 12.
+struct ReadWeekBand: Equatable {
+    let label: String
+    let detail: String
 }

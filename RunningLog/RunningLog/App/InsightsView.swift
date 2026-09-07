@@ -60,7 +60,7 @@ struct InsightsView: View {
                 .font(.dripCaption(11))
                 .tracking(1.5)
                 .foregroundStyle(Color.drip.textTertiary)
-            Text("Where you're trending.")
+            Text("Where you're trending")
                 .font(.dripDisplay(28))
                 .foregroundStyle(Color.drip.textPrimary)
         }

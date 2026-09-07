@@ -215,7 +215,7 @@ struct FitnessPredictorView: View {
                 Spacer()
                 DripEyebrow(text: "READING ⟶ TRENDS")
             }
-            Text("Predicted times.")
+            Text("Predicted Times")
                 .font(.dripDisplay(32))
                 .foregroundStyle(Color.drip.textPrimary)
                 .padding(.top, 2)
@@ -460,7 +460,7 @@ struct FitnessPredictorView: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             DripEyebrow(text: "FORWARD READ · NOT YET RUN", coral: true)
-            Text("No prediction yet.")
+            Text("No prediction yet")
                 .font(.dripDisplay(28))
                 .foregroundStyle(Color.drip.textPrimary)
             Text("Log a few runs and a voice note — the model needs something to work with before it'll project forward.")

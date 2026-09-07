@@ -25,14 +25,22 @@
 //
 //  ONE tab, one scroll, ordered by the question being asked:
 //
-//    header → YOUR GOAL (collapsed line, tap to expand) → range segmenter
-//    (the tab's ONLY time control)
+//    header → WEEK READOUT (the 5-second line: miles · quality · key pace ·
+//    mood · niggles for the latest week with miles) → YOUR GOAL (collapsed
+//    line, tap to expand) → range segmenter (the tab's ONLY time control)
 //    1 · Load            (VolumeDetailView — week totals + acute:chronic band)
-//    2 · Pace            (PaceSignalView + the threshold-band row)
-//    3 · Key sessions    (week readout + receipt ledger + head-to-head)
-//    4 · Mood            (TrendsMoodSection — 30-day block, own stepper)
-//    4b · Goal pace grid (GoalPaceGridCard — only when a goal + structure resolve)
-//    5 · Race prediction (RacePredictionTrack)
+//    2 · Race prediction (RacePredictionTrack — what that load buys)
+//    3 · Pace            (PaceSignalView + Threshold miles behind a fold)
+//    4 · Key sessions    (receipt ledger + head-to-head behind a fold)
+//    5 · Mood            (TrendsMoodSection — always the last 30 days)
+//    6 · Goal pace grid  (GoalPaceGridCard, or a one-line empty state)
+//
+//  Reordered 2026-09-01 (design pass, "make it 9.5"): the readout moved from
+//  section 03 to the top so the tab actually delivers its 5-second read; Race
+//  prediction moved up under Load ("how much am I running" → "what does that
+//  buy me"); Threshold miles folded behind a subhead like head-to-head; the
+//  two sections that used to vanish (Threshold miles, Goal pace grid) now
+//  leave a one-line empty state so a new athlete learns they exist.
 //
 //  No recovery section (deleted 2026-08-24) and no Ask (moved to its own tab
 //  2026-08-19) — both listed above as history, not as current sections.
@@ -120,6 +128,20 @@ struct TrendsLegacyTabView: View {
     /// working once, not forever.
     @State private var showHeadToHead = false
 
+    /// Section 03's Threshold miles row, folded the same way head-to-head is
+    /// (2026-09-01). The band and its minutes are a second read inside Pace,
+    /// not the first thing the section says.
+    @State private var showThresholdMiles = false
+
+    /// The two smallest labels on the tab scale with Dynamic Type from the
+    /// house floors (`DripTypeFloor`) rather than sitting fixed at 9 and
+    /// 10pt — the WATCHING niggle line and the sub-block eyebrows were the
+    /// hardest things here to read outdoors.
+    @ScaledMetric(relativeTo: .caption2)
+    private var eyebrowSmall: CGFloat = DripTypeFloor.eyebrowSmall
+    @ScaledMetric(relativeTo: .caption2)
+    private var eyebrowSub: CGFloat = 11
+
     /// Opens the Signal Lab. Owned by the host (`TrendsTabView`) so the sheet
     /// survives this view re-rendering on scrub — the same reason the
     /// head-to-head workout sheet is hoisted. The door was v2's; it moved here
@@ -168,10 +190,12 @@ struct TrendsLegacyTabView: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)   // breathing room under the status bar
             // Clear the custom DripTabBar (~47pt bar + home-indicator
-            // gutter). Without enough bottom inset the ask bar — the last
-            // item in the scroll — sits trapped behind the tab bar and
-            // can't be tapped. Matches the bottom-clearance convention
-            // used by AnalysisView / FitnessAssessmentView.
+            // gutter) with room to spare, so the last section's foot never
+            // sits trapped behind the bar. Was sized for the Ask bar that
+            // left on 2026-08-19; kept generous on purpose — the cost of
+            // too much is a little scroll, the cost of too little is a
+            // section you can't reach. Matches AnalysisView /
+            // FitnessAssessmentView.
             .padding(.bottom, 100)
         }
         .background(Color.drip.background)
@@ -324,6 +348,24 @@ struct TrendsLegacyTabView: View {
     /// the repo (`UnifiedTrainingChart.swift`) if the vertical read is wanted.
     private var loadedContent: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // THE READOUT — the 5-second line, first. "WEEK OF AUG 31 · THIS
+            // WEEK / 42 mi · 12 quality · 7:10 /mi / mood · WATCHING: calf".
+            // It used to open section 03, four screens down, on a tab whose
+            // whole promise is a five-second read. Numbers and the athlete's
+            // own words only, so the no-generated-prose rule still holds.
+            // (2026-09-01.)
+            readout
+                .padding(.top, 18)
+
+            // NO RULES BETWEEN HERE AND THE SEGMENTER (Rio, 2026-09-01:
+            // "too many lines" / "make this a much smoother look"). The top
+            // of the tab was drawing five: a rule under the readout, the
+            // goal card's own two hairlines, a rule under the card, and a
+            // rule under the segmenter — in about 300pt. Readout, goal and
+            // segmenter are one masthead, separated by space alone, and a
+            // single rule under the segmenter closes it. `hairlines: false`
+            // on the card below is the other half of that.
+
             // 00 · YOUR GOAL — the number every section below is read
             // against, so it leads the scroll rather than closing it (Rio,
             // 2026-08-31: "put goal at the top" — reverses the initial
@@ -334,12 +376,11 @@ struct TrendsLegacyTabView: View {
             // line, and have it drop down and expand"). Moved here from
             // the Train tab; see GoalAndPacesCard's header for why it left
             // Train.
-            GoalAndPacesCard(viewModel: planVM) { goalRoute = .editGoal }
-                .padding(.top, 16)
-
-            EditorialRule().padding(.vertical, 22)
+            GoalAndPacesCard(viewModel: planVM, onEditTapped: { goalRoute = .editGoal }, hairlines: false)
+                .padding(.top, 22)
 
             segmenter
+                .padding(.top, 26)
 
             EditorialRule().padding(.vertical, 22)
 
@@ -365,11 +406,21 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
-            // 02 · PACE — where those miles fell, then how many landed at
+            // 02 · RACE PREDICTION — what that load buys. Sat last on the
+            // scroll until 2026-09-01, half behind the tab bar; it is the
+            // natural second half of the Load question and the most
+            // motivating thing on the tab, so it reads directly under it.
+            sectionHead("Race prediction", "Estimated times at your current fitness")
+            RacePredictionTrack()
+                .padding(.top, 8)
+
+            EditorialRule().padding(.vertical, 22)
+
+            // 03 · PACE — where those miles fell, then how many landed at
             // threshold. The spectrum takes its window from `range` above: it
             // no longer carries a range bar of its own, and its VOLUME /
             // WORKLOAD / MOOD tiles are gone because section 01, the band right
-            // here, and section 04 each already own one of those numbers.
+            // here, and section 05 each already own one of those numbers.
             sectionHead("Pace", "How many miles at each pace")
             PaceSignalView(
                 embedded: true,
@@ -378,24 +429,37 @@ struct TrendsLegacyTabView: View {
             )
             .padding(.top, 10)
 
-            // Absent for an athlete with no usable fitness anchor: the surface
-            // returns nothing rather than drawing a band it had to guess at.
-            // Gated on the WINDOWED payload: a 4 wk range on a quiet stretch
-            // has nothing to show, and a row of zeros reads as "you did no
-            // threshold work" rather than "nothing in this window".
-            if service.paceBands?.windowed(days: range.days).sessions.isEmpty == false {
-                subHead("Threshold miles")
-                    .padding(.top, 24)
-                paceBandsRow
-                    .padding(.top, 8)
+            // Threshold miles, behind a fold. It used to hide itself entirely
+            // when the WINDOWED payload had no sessions (a row of zeros reads
+            // as "you did no threshold work") or when no fitness anchor
+            // resolved (the band would be a guess). Both are still true of the
+            // ROW; the fold now stays, and opens onto one quiet line saying
+            // why there is nothing to draw, so the sub-block exists for a new
+            // athlete rather than appearing one day unannounced.
+            expandableSubHead("Threshold miles", isOpen: $showThresholdMiles)
+                .padding(.top, 24)
+            if showThresholdMiles {
+                Group {
+                    if let bands = service.paceBands {
+                        if bands.windowed(days: range.days).sessions.isEmpty {
+                            quietEmpty("No threshold sessions in this window. Widen the range, or check back after the next one.")
+                        } else {
+                            paceBandsRow
+                        }
+                    } else {
+                        quietEmpty("Needs a race result to anchor your threshold band. Log one and the miles in band appear here.")
+                    }
+                }
+                .padding(.top, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             EditorialRule().padding(.vertical, 22)
 
-            // 03 · KEY SESSIONS — the ledger, the week it sits in, then two
-            // side by side. Head-to-head lives here rather than as its own
-            // section: it is what you get when you want two of these sessions
-            // compared, not a separate destination.
+            // 04 · KEY SESSIONS — the ledger, then two side by side behind a
+            // fold. Head-to-head lives here rather than as its own section: it
+            // is what you get when you want two of these sessions compared,
+            // not a separate destination.
             //
             // THE DOT GRID CAME OUT, 2026-08-17 (Rio). `TrendsSessionGrid`
             // opened this section and is now unlinked — the file moved to
@@ -427,16 +491,13 @@ struct TrendsLegacyTabView: View {
             // day, and here are the weeks that broke it" — is no longer shown
             // anywhere on Trends. That read belongs to the Train calendar; if
             // it is wanted back it should go there, not here.
+            //
+            // The week readout that used to open this section now opens the
+            // TAB (2026-09-01) — it is the "where you are" line, and it was
+            // buried under three sections of evidence.
             sectionHead("Key sessions", "One line per session")
-            // The readout no longer has a scrubber above it — the grid was the
-            // only thing on this tab that set `scrubIndex` — so it states the
-            // latest week with miles and labels itself as such. It moved above
-            // the ledger: it is the "where you are" line, and the ledger under
-            // it is the record.
-            readout
-                .padding(.top, 10)
             WorkoutsAndRepsSection(style: .editorial, initialCount: 8)
-                .padding(.top, 8)
+                .padding(.top, 10)
             expandableSubHead("Two side by side", isOpen: $showHeadToHead)
                 .padding(.top, 22)
             if showHeadToHead {
@@ -447,7 +508,7 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
-            // 04 · RECOVERY WAS HERE, AND IS GONE (2026-08-24).
+            // RECOVERY WAS HERE, AND IS GONE (2026-08-24).
             //
             // The section shed three different single numbers in five days,
             // each for the same reason. First "Readiness N/100" off
@@ -466,30 +527,34 @@ struct TrendsLegacyTabView: View {
             // the window. The receipt under it was the good part, and the
             // receipt does not need a score to exist.
             //
-            // What replaced it: the nightly signals are lanes in section 04
-            // below, each against the athlete's own ±0.5 sd band, co-presented
-            // so the athlete reads across them. Co-present, never compose.
+            // What replaced it: the nightly signals are lanes in the Mood
+            // section below, each against the athlete's own ±0.5 sd band,
+            // co-presented so the athlete reads across them. Co-present,
+            // never compose.
             //
             // Mood and niggles used to live here too, as a week-by-week ribbon
-            // and a by-body-part row. Section 05 below now reads both by day,
+            // and a by-body-part row. The Mood section now reads both by day,
             // against the miles that produced them, and two mood surfaces one
             // screen apart is the contradiction this tab keeps having to fix.
             // (Rio, 2026-08-15.) `MoodDetailView` and `NigglesDetailView` are
             // still in `TrendsDetailViews.swift`, now unreferenced — the voice
             // quote was the one thing only they showed.
-
-            EditorialRule().padding(.vertical, 22)
+            //
+            // When the section left it took its content and left its rule:
+            // two `EditorialRule`s sat back to back here with 44pt of nothing
+            // between them, reading as a bug. One rule now (2026-09-01).
 
             // 05 · MOOD — thirty days of how it felt, laid against what she
             // actually ran.
             //
-            // Section 04 above reads mood by WEEK, as one input to the recovery
-            // picture. This reads it by DAY, and is the surface you come to when
-            // mood is the question rather than a symptom. It owns its own thirty
-            // day stepper rather than the segmenter's window — a mood block is
-            // thirty days by definition, and the whole read is one thirty
-            // against the thirty before it. See `TrendsMoodSection`.
-            sectionHead("Mood", "Mood, miles and niggles by day")
+            // It owns its own thirty day stepper rather than the segmenter's
+            // window — a mood block is thirty days by definition, and the
+            // whole read is one thirty against the thirty before it. That is
+            // the one exception to ONE TIME CONTROL on this tab, so the
+            // subhead says so in words: an athlete who flips the segmenter to
+            // 6 mo and sees this section not move should be told why, not
+            // left to wonder. See `TrendsMoodSection`.
+            sectionHead("Mood", "Mood, miles and niggles by day · always the last 30 days")
             TrendsMoodSection(
                 service: service,
                 days: service.days,
@@ -499,33 +564,30 @@ struct TrendsLegacyTabView: View {
 
             EditorialRule().padding(.vertical, 22)
 
-            // 05b · GOAL PACE — every non-recovery block of every candidate
+            // 06 · GOAL PACE — every non-recovery block of every candidate
             // session, calendar across / pace-vs-goal down / miles as area.
-            // Renders only when a goal resolves and the window has parsed
+            // Renders when a goal resolves and the window has parsed
             // structure; no training plan required, so `activePlan == nil`
             // still reads. Replaces the per-session averaging model
             // (GoalPaceCard) — see GoalPaceGridDTO.swift's file header.
+            //
+            // Used to vanish entirely otherwise, so a new athlete's tab was a
+            // section shorter than Rio's and they never learned this existed.
+            // The section now stays and says what fills it (2026-09-01).
+            sectionHead("Closing on goal pace", "Every key session, by pace and volume")
             if let gp = service.goalPaceGrid, !gp.isEmpty {
-                EditorialRule().padding(.vertical, 22)
-                sectionHead("Closing on goal pace", "Every key session, by pace and volume")
                 GoalPaceGridCard(data: gp)
                     .padding(.top, 8)
+            } else {
+                quietEmpty("Fills in once a goal is set and your key sessions have structure to read against it.")
+                    .padding(.top, 8)
             }
-
-            EditorialRule().padding(.vertical, 22)
-
-            // 06 · RACE PREDICTION — where the block points
-            sectionHead("Race prediction", "Estimated times at your current fitness")
-            RacePredictionTrack()
-                .padding(.top, 8)
 
             // The Ask door used to live here — `AskBar`, the analyzer chip
             // rail, answering in `AskAnswerCard`s. Removed 2026-08-19: Ask is
             // its own tab now (free-text chat, tag 10), and the cards the rail
             // produced were under-developed. `AskBar` stays in the repo,
-            // unlinked. The scroll keeps its 100pt bottom inset — it was sized
-            // for this bar, and without it the last section sits trapped
-            // behind the tab bar either way.
+            // unlinked.
         }
     }
 
@@ -616,7 +678,7 @@ struct TrendsLegacyTabView: View {
     /// another one.
     private func subHead(_ title: String) -> some View {
         Text(title.uppercased())
-            .font(.dripEyebrow(10)).tracking(1.2)
+            .font(.dripEyebrow(eyebrowSub)).tracking(1.2)
             .foregroundStyle(Color.drip.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -633,7 +695,7 @@ struct TrendsLegacyTabView: View {
         } label: {
             HStack(spacing: 8) {
                 Text(title.uppercased())
-                    .font(.dripEyebrow(10)).tracking(1.2)
+                    .font(.dripEyebrow(eyebrowSub)).tracking(1.2)
                     .foregroundStyle(Color.drip.textTertiary)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
@@ -646,6 +708,17 @@ struct TrendsLegacyTabView: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint(isOpen.wrappedValue ? "Collapse" : "Expand")
+    }
+
+    /// One quiet line where a sub-block or section has nothing to draw yet.
+    /// Deliberately not `EmptyStateView`: that is a whole-screen state with
+    /// an eyebrow and a CTA, and three of them down one scroll would shout.
+    /// This is a footnote — it says what fills the space and stops.
+    private func quietEmpty(_ text: String) -> some View {
+        Text(text)
+            .font(.dripBody(13))
+            .foregroundStyle(Color.drip.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// The head-to-head pair. Everything else on the old Fitness group — the
@@ -719,12 +792,17 @@ struct TrendsLegacyTabView: View {
                     .tracking(1.3)
                     .foregroundStyle(Color.drip.coral)
                 Spacer(minLength: 8)
+                // Surface-switchers for Rio, not features for the athlete:
+                // DEBUG builds only, so a TestFlight tester never sees a
+                // "v2 ›" door into an unfinished surface (2026-09-01).
+                #if DEBUG
                 if let onOpenLab {
                     doorChip("lab ›", action: onOpenLab)
                 }
                 if let onOpenBlock {
                     doorChip("v2 ›", action: onOpenBlock)
                 }
+                #endif
             }
 
             Text("The shape of\nyour block.")
@@ -784,11 +862,14 @@ struct TrendsLegacyTabView: View {
     private var readout: some View {
         if let week = readoutWeek {
             VStack(alignment: .leading, spacing: 5) {
+                // Secondary, not coral: the readout now sits directly under
+                // the header's coral "TRENDS · date" eyebrow, and coral is
+                // punctuation on this tab — two of it in 60pt is a shout.
                 Text("WEEK OF \(week.dateLabel.uppercased())"
                      + (readoutQualifier.map { " · \($0)" } ?? ""))
-                    .font(.dripEyebrow(10))
+                    .font(.dripEyebrow(eyebrowSmall))
                     .tracking(1.0)
-                    .foregroundStyle(Color.drip.coral)
+                    .foregroundStyle(Color.drip.textSecondary)
 
                 HStack(spacing: 6) {
                     readStat("\(Int(week.miles))", "mi")
@@ -806,7 +887,7 @@ struct TrendsLegacyTabView: View {
                     }
                     if !week.niggles.isEmpty {
                         Text("WATCHING: \(week.niggles.joined(separator: ", ").uppercased())")
-                            .font(.dripEyebrow(9))
+                            .font(.dripEyebrow(eyebrowSmall))
                             .tracking(0.8)
                             .foregroundStyle(Color.drip.injured)
                     }
@@ -820,11 +901,13 @@ struct TrendsLegacyTabView: View {
 
     private func readStat(_ value: String, _ unit: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 3) {
+            // 22, up from 16: the readout leads the tab now, and the three
+            // numbers are the read. Still well under the 32pt headline.
             Text(value)
-                .font(.dripStat(16))
+                .font(.dripStat(22))
                 .foregroundStyle(Color.drip.textPrimary)
             Text(unit)
-                .font(.dripBody(12))
+                .font(.dripBody(13))
                 .foregroundStyle(Color.drip.textSecondary)
         }
     }

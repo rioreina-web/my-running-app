@@ -16,9 +16,14 @@
 //
 
 import SwiftUI
+import Supabase
 
 struct NiggleTimelineScreen: View {
     @State private var injuryService = InjuryService()
+    /// The run being read. Set by `openRun`, presented as the same
+    /// `HistoryDetailSheet` the journal and Trends use — one workout sheet,
+    /// reached from a new place.
+    @State private var openWorkoutLog: TrainingLog?
 
     @Environment(\.openGoalEditor) private var openGoalEditor
 
@@ -54,7 +59,8 @@ struct NiggleTimelineScreen: View {
                                             ? "" : thread.dominantSide.rawValue
                                     )
                                 }
-                            }
+                            },
+                            onOpenRun: { logId in openRun(logId) }
                         )
                     }
                 }
@@ -62,8 +68,27 @@ struct NiggleTimelineScreen: View {
                 .padding(.bottom, 40)
             }
         }
+        .sheet(item: $openWorkoutLog) { log in
+            HistoryDetailSheet(entry: log, onUpdate: {})
+        }
         .task { await injuryService.fetchAll() }
         .task { await ActiveGoalStore.shared.loadIfNeeded() }
+    }
+
+    /// Loads the run a mention was recorded on and opens its sheet. Same
+    /// fetch-by-id `SignalLabView` uses for its scrubbed points.
+    private func openRun(_ id: UUID) {
+        Task {
+            let rows: [TrainingLog] = (try? await supabase
+                .from("training_logs")
+                .select(TrainingLog.columns)
+                .eq("id", value: id.uuidString.lowercased())
+                .limit(1)
+                .execute()
+                .value) ?? []
+            guard let log = rows.first else { return }
+            await MainActor.run { openWorkoutLog = log }
+        }
     }
 
     private var header: some View {
@@ -92,7 +117,7 @@ struct NiggleTimelineScreen: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Nothing mentioned yet.")
+            Text("Nothing mentioned yet")
                 .font(.dripDisplay(20))
                 .foregroundStyle(Color.drip.textPrimary)
             Text("Mention an ache in a voice memo — \u{201C}left achilles was tight this morning\u{201D} — and it lands here on its own.")

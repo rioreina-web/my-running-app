@@ -263,7 +263,7 @@ private struct RebrandDateline: View {
                     .foregroundStyle(Color.drip.textSecondary)
             }
 
-            Text("Predicted times.")
+            Text("Predicted Times")
                 .font(.dripDisplay(32))
                 .foregroundStyle(Color.drip.textPrimary)
                 .padding(.top, 4)

@@ -13,6 +13,11 @@
 //  (`AskAnswerCard`) stay in the repo, unlinked, along with the sheet that
 //  hosted them (`CoachAskSheet`). Nothing presents them as of 2026-08-19.
 //
+//  REPLACED 2026-08-31. The tab now renders `AskWildHomeView` — the
+//  composer-first Ask surface on Direction I. `AskTipsView` stays in the
+//  repo, unlinked, as `AskBar`, `AskAnswerCard` and `WelcomeCard` did before
+//  it. See `AskWildHomeView` for why the tips lost the landing slot.
+//
 //  LAZY MOUNT — READ BEFORE MOVING THIS INTO THE ZSTACK EAGERLY. Every
 //  other tab is mounted at launch and hidden with `.opacity`, which is free
 //  because none of them do anything on appear. `CoachView` is different: its
@@ -28,15 +33,13 @@ import SwiftUI
 
 struct AskTabView: View {
     var body: some View {
-        // 2026-08-19: Ask now lands on TIPS, not the chat. Three or four
-        // things that would move the athlete's goal, derived from training
-        // they have actually done — see `AskTipsView`. The free-text chat is
-        // one tap down from there.
+        // 2026-08-31: the tab lands on the composer. Tips were a landing
+        // page in front of a question box; they are now suggested pulls
+        // inside the one screen.
         //
-        // This also makes the lazy-mount flag in `MainTabView` redundant:
-        // `CoachView` is no longer constructed until the athlete taps through,
-        // so its HealthKit authorisation prompt cannot fire on tab entry, let
-        // alone at launch. The flag is harmless and stays for now.
-        AskTipsView()
+        // The lazy-mount flag in `MainTabView` stays redundant and harmless:
+        // `CoachView` is not constructed here at all any more, so its
+        // HealthKit authorisation prompt cannot fire on tab entry.
+        AskWildHomeView()
     }
 }

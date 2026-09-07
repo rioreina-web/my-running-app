@@ -46,12 +46,12 @@ struct ConditionsView: View {
                 ProgressView().tint(Color.drip.coral)
             } else if loadFailed {
                 emptyState(eyebrow: "Couldn't load",
-                           title: "The sheet didn't load.",
+                           title: "The sheet didn't load",
                            prose: "Check your connection and try again.",
                            cta: "Try again") { Task { await load() } }
             } else if sessions.isEmpty {
                 emptyState(eyebrow: "No sessions",
-                           title: "Nothing here yet.",
+                           title: "Nothing here yet",
                            prose: "Sync a run from Strava or record a voice log, "
                                 + "and it will show up here.",
                            cta: nil, action: nil)
@@ -99,7 +99,7 @@ struct ConditionsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Every session, with the weather in it.")
+            Text("Every session, with the weather in it")
                 .font(.dripDisplay(28))
                 .foregroundStyle(Color.drip.textPrimary)
                 .padding(.top, 8)

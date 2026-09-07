@@ -412,14 +412,16 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 verify_jwt = true
 
 [functions.coaching-daily-read]
-# Generates the morning Coach Read. Called by (a) the hourly pg_cron
-# dispatcher at the athlete's local 6 AM, (b) the training_logs trigger
-# after a quality session, (c) iOS pull-to-refresh on the Coach tab.
-# verify_jwt = false so service-role callers (cron + trigger) are
-# accepted; the function validates internally via
-# requireAuthOrServiceRole(), which accepts BOTH service-role bearer +
-# body user_id AND user-JWT + matching body user_id.
-verify_jwt = false
+# Generates the Coach Read. Called by (a) the hourly pg_cron dispatchers
+# (daily 06:00 local Mon–Sat, weekly Sunday 18:00 local), (b) the
+# training_logs trigger after a quality session, (c) iOS pull-to-refresh
+# on the Read tab.
+# Same claim-decode fix as parse-workout-structure / compute-workout-features
+# (2026-08-30): every cron dispatch 401'd on the exact-match path because the
+# Vault copy of the service key no longer string-equals this function's env
+# copy. verify_jwt = true so the gateway checks the signature before the
+# function decodes the role claim. User-JWT callers unchanged.
+verify_jwt = true
 
 [functions.rebuild-athlete-state]
 # Keep-warm worker for athlete_state. verify_jwt = true so the gateway

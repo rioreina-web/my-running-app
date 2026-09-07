@@ -172,6 +172,12 @@ struct TheWorkoutBlock: View {
 
     /// Was: nothing at all. A run with no description rendered no section, so
     /// there was nothing to tap and no way to acquire one.
+    ///
+    /// A line, not a box (2026-09-07). This was a full-width dashed rectangle sitting
+    /// directly above `RecordMemoCard`, which is also a full-width dashed
+    /// rectangle — two empty containers stacked, both saying "there could be
+    /// something here", before the run's actual splits. The invitation is the
+    /// same; it just stops claiming the area of a card to make it.
     private var addAffordance: some View {
         Button { showEditor = true } label: {
             HStack(spacing: 6) {
@@ -180,13 +186,8 @@ struct TheWorkoutBlock: View {
                     .font(.dripStat(9)).tracking(1.2)
             }
             .foregroundStyle(Color.drip.textTertiary)
-            .padding(.horizontal, 12).padding(.vertical, 9)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .foregroundStyle(Color.drip.divider)
-            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

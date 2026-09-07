@@ -81,7 +81,7 @@ struct HomeDayPageView: View {
                             .font(.dripEyebrow(11))
                             .tracking(1.3)
                             .foregroundStyle(Color.drip.textSecondary)
-                        Text("Rest.")
+                        Text("Rest")
                             .font(.dripDisplay(23))
                             .foregroundStyle(Color.drip.textPrimary)
                         // The empty-state pattern from
@@ -175,7 +175,7 @@ struct HomeDayHeader: View {
     static func headline(_ date: Date) -> String {
         let day = Calendar.current.component(.day, from: date)
         let ordinal = ordinalFormatter.string(from: NSNumber(value: day)) ?? "\(day)"
-        return "\(monthFormatter.string(from: date)) \(ordinal)."
+        return "\(monthFormatter.string(from: date)) \(ordinal)"
     }
 }
 
@@ -219,8 +219,8 @@ struct HomeSessionEntry: View {
 
     private var headlineLine: String {
         let name = CoachIntent.displayName(for: session.typeKey)
-        guard session.miles > 0.05 else { return "\(name)." }
-        return "\(name), \(DistanceFormat.string(miles: session.miles, unit: unit))."
+        guard session.miles > 0.05 else { return "\(name)" }
+        return "\(name), \(DistanceFormat.string(miles: session.miles, unit: unit))"
     }
 
     /// Pace is derived from miles and minutes inside `TrainingSession` —

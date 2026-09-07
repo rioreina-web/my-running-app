@@ -71,6 +71,22 @@ struct RunningLogApp: App {
                 // 5 × 2 mi @ MP session, for visual iteration without auth/data.
                 EffortPreviewScene()
                     .preferredColorScheme(.light)
+            } else if CommandLine.arguments.contains("-logRowPreview") {
+                // Redesigned JournalLogRow (2026-09-01 stat-strip pass) —
+                // seeded week, for visual iteration without auth/data.
+                LogRowPreviewScene()
+                    .preferredColorScheme(.light)
+            } else if CommandLine.arguments.contains("-voiceLogPreview") {
+                // The REAL VoiceLogView — record button, mode toggle, and
+                // all — to confirm the row redesign sits under the actual
+                // front door unchanged. Feed will show its normal
+                // sign-in/network error since there's no auth here; the
+                // top section doesn't depend on that.
+                NavigationStack {
+                    VoiceLogView()
+                }
+                .environment(CoachCheckInManager())
+                .preferredColorScheme(.light)
             } else if CommandLine.arguments.contains("-trendsV2Preview") {
                 NavigationStack {
                     // v2 rebuilt 2026-08-03: no previewMode / demoBiometrics

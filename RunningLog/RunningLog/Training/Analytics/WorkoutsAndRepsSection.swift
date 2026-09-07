@@ -719,6 +719,12 @@ struct WorkoutsAndRepsSection: View {
                     let tagged: [WorkoutLapRow] = roleByIndex.isEmpty ? rawLaps : rawLaps.map { row in
                         guard let idx = row.lap_index, let role = roleByIndex[idx] else { return row }
                         var r = row
+                        // Keep the watch's own rest flag alongside the label —
+                        // `mergeWorkBouts` reads it (`restForHeat`) to decide
+                        // whether a bout earns the short-rep heat discount, and
+                        // a label must not be able to invent a rest she never
+                        // took. Same preservation as the Rep Receipt's rewrite.
+                        r.db_is_rest = row.is_rest
                         r.is_rest = role != "rep"
                         return r
                     }
@@ -759,19 +765,27 @@ struct WorkoutsAndRepsSection: View {
         let meters = work.reduce(0.0) { $0 + ($1.distance_meters ?? 0) }
         let seconds = work.reduce(0.0) { $0 + Double($1.moving_time_seconds ?? 0) }
         guard meters > 0, seconds > 0 else { return nil }
-        let paceSec = seconds / (meters / 1609.344)
-        // Uniform per-session adjustment ratio, read off the first raw lap
-        // that carries both numbers (workout-level weather snapshot).
-        var ratio: Double?
-        for lap in raw {
-            if let r = lap.avg_pace_sec_per_mile, r > 0,
-               let a = lap.heat_adjusted_pace_sec_per_mile, a > 0 {
-                ratio = a / r
-                break
-            }
+        let miles = meters / 1609.344
+        let paceSec = seconds / miles
+        // Each bout's OWN adjustment, distance-weighted — not one lap's ratio
+        // stretched across the session. The old uniform-ratio shortcut read
+        // `heat_adjusted / raw` off the first lap that carried both and applied
+        // it to every rep, which threw away the per-lap intensity factor the
+        // backend had already computed (it scales credit by how hard the bout
+        // was, so the fast reps and the float legs do NOT share a ratio). On a
+        // 6×1K alternation that landed 0.2 s/mi off the receipt's number for
+        // the same session — small here, but it is a different quantity, and
+        // two surfaces disagreeing about one workout is how the 8-vs-16 s/mi
+        // heat bug stayed invisible.
+        let adjustedSeconds = work.reduce(0.0) { acc, lap in
+            let mi = (lap.distance_meters ?? 0) / 1609.344
+            let rawPace = lap.avg_pace_sec_per_mile ?? 0
+            let adj = lap.heat_adjusted_pace_sec_per_mile ?? 0
+            return acc + (adj > 0 ? adj : rawPace) * mi
         }
-        if let ratio, abs(paceSec * ratio - paceSec) >= 1 {
-            return RepPace(label: "○ \(fmt(paceSec * ratio))")
+        let adjustedPace = adjustedSeconds / miles
+        if adjustedPace > 0, abs(adjustedPace - paceSec) >= 1 {
+            return RepPace(label: "○ \(fmt(adjustedPace))")
         }
         return RepPace(label: fmt(paceSec))
     }

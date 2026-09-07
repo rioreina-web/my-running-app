@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ask — redesign prototype v3 · Direction I</title>
+<!-- The system itself. Zero hardcoded colour below: change a token in
+     direction-one.css and this prototype follows. -->
+<link rel="stylesheet" href="design-system/direction-one/direction-one.css">
+<style>
+/* =============================================================
+   Prototype-scoped styles. Everything reads Direction I tokens.
+   Rules do the work: no cards, no shadows, no radii except pills.
+   ============================================================= */
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:#E4E4E4}
+.d1{min-height:100vh}
+
+.page{max-width:1240px;margin:0 auto;padding:var(--space-8) var(--space-6) var(--space-9);
+  display:grid;grid-template-columns:1fr 390px;gap:var(--space-9);align-items:start}
+@media(max-width:980px){.page{grid-template-columns:1fr;gap:var(--space-7)}}
+
+/* ---------------- notes ---------------- */
+.notes{background:var(--paper);padding:var(--space-7) var(--space-7) var(--space-8)}
+.masthead{display:flex;justify-content:space-between;align-items:baseline;
+  border-bottom:2px solid var(--rule-strong);padding-bottom:var(--space-2)}
+.notes h1{font-family:var(--font-display);font-weight:700;font-size:46px;letter-spacing:-.035em;
+  line-height:.98;margin:var(--space-6) 0 0}
+.orn{width:34px;height:3px;background:var(--red);margin:var(--space-4) 0 0}
+.lede{font-family:var(--font-data);font-weight:400;font-size:15px;line-height:1.6;color:var(--ink-2);
+  max-width:62ch;margin:var(--space-4) 0 0}
+.lede b{color:var(--ink);font-weight:600}
+.notes h2{font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:-.03em;
+  margin:var(--space-8) 0 0}
+.notes p{font-family:var(--font-data);font-weight:400;font-size:14px;line-height:1.6;color:var(--ink-2);max-width:62ch}
+.notes p b{color:var(--ink);font-weight:600}
+.notes code{font-family:var(--font-mono);font-size:12px;background:var(--paper-deep);padding:1px 4px}
+.kick{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--rule-strong);
+  padding-top:var(--space-2);margin-top:var(--space-8)}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:var(--space-5);border-top:1px solid var(--rule)}
+@media(max-width:640px){.two{grid-template-columns:1fr}}
+.two > div{padding:var(--space-5) var(--space-5) var(--space-5) 0}
+.two > div + div{border-left:1px solid var(--rule);padding-left:var(--space-5)}
+.two h3{font-family:var(--font-display);font-weight:700;font-size:19px;letter-spacing:-.03em;line-height:1.1;margin:var(--space-2) 0 var(--space-2)}
+.two p{margin:0;font-size:13.5px}
+
+.moves{margin-top:var(--space-4);border-top:1px solid var(--rule)}
+.mv{display:grid;grid-template-columns:22px 1fr;gap:var(--space-3);padding:var(--space-4) 0;
+  border-bottom:1px solid var(--rule)}
+.mv .n{font-family:var(--font-data);font-weight:600;font-size:13px;color:var(--red-text);padding-top:2px;
+  font-variant-numeric:tabular-nums}
+.mv h3{font-family:var(--font-display);font-weight:700;font-size:17px;letter-spacing:-.03em;margin:0 0 var(--space-1)}
+.mv p{margin:0;font-size:13.5px}
+.mv .tap{font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--red-text);cursor:pointer;display:inline-block;margin-top:var(--space-2);
+  border-bottom:1px solid var(--red)}
+.mv .tap:hover{color:var(--ink)}
+
+/* ---------------- phone ---------------- */
+.stick{position:sticky;top:var(--space-7)}
+.phone{width:390px;background:var(--paper);border:1px solid var(--rule);overflow:hidden;
+  display:flex;flex-direction:column;height:812px}
+.screen{flex:1;overflow-y:auto;scroll-behavior:smooth}
+.screen::-webkit-scrollbar{width:0}
+.g{padding-left:var(--gutter);padding-right:var(--gutter)}
+
+/* masthead */
+.nav{position:sticky;top:0;z-index:30;background:var(--paper);border-bottom:2px solid var(--rule-strong);
+  padding:var(--space-3) var(--gutter) var(--space-2)}
+.nav .r1{display:flex;justify-content:space-between;align-items:baseline}
+.nav .t{font-family:var(--font-display);font-weight:700;font-size:22px;letter-spacing:-.035em}
+.ledger{display:flex;gap:var(--space-2);align-items:center;margin-top:var(--space-2);cursor:pointer}
+.ledger .dot{width:5px;height:5px;border-radius:var(--r-pill);background:var(--red);flex:0 0 auto}
+.ledger .lg{font-family:var(--font-data);font-weight:400;font-size:10.5px;color:var(--ink-2);
+  font-variant-numeric:tabular-nums}
+.ledger .lg b{font-weight:600;color:var(--ink)}
+.ledger .more{margin-left:auto;font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--red-text)}
+
+/* ---- hero: the question, first ---- */
+.hero{padding:var(--space-5) var(--gutter) 0}
+.hero h2{font-family:var(--font-display);font-weight:700;font-size:34px;letter-spacing:-.035em;
+  line-height:.98;margin:var(--space-2) 0 0}
+.hero .dek{font-family:var(--font-serif);font-style:italic;font-size:17px;line-height:1.4;color:var(--ink-2);
+  margin:var(--space-3) 0 0}
+.field{margin:var(--space-4) 0 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);
+  padding:var(--space-3) 0;cursor:text}
+.field .ghost{font-family:var(--font-prose);font-weight:400;font-size:20px;line-height:1.32;color:var(--ink);
+  min-height:27px}
+.field .ghost b{font-weight:400;border-right:2px solid var(--red);padding-right:1px}
+.field .hint{display:flex;justify-content:space-between;margin-top:var(--space-3)}
+
+.sect{padding:var(--space-6) var(--gutter) 0}
+.hd{display:flex;justify-content:space-between;align-items:baseline;border-top:2px solid var(--rule-strong);
+  padding-top:var(--space-2)}
+.hd .a{cursor:pointer;color:var(--red-text)}
+
+/* ---- pulls: hairline blocks, not cards ---- */
+.pull{border-bottom:1px solid var(--rule);padding:var(--space-4) 0}
+.pull.editing{border-bottom-color:var(--red)}
+.pull .top{display:flex;align-items:flex-start;gap:var(--space-2);cursor:pointer}
+.pull .tt{flex:1}
+.pull .name{font-family:var(--font-display);font-weight:700;font-size:19px;letter-spacing:-.03em;line-height:1.05}
+.pull .meta{margin-top:var(--space-1)}
+.pull .dots{font-family:var(--font-data);font-weight:600;font-size:15px;color:var(--ink-2);line-height:.7;
+  padding:var(--space-1) var(--space-2);cursor:pointer;flex:0 0 auto}
+.pull .dots:hover{color:var(--ink)}
+.pull .num{display:flex;align-items:baseline;gap:var(--space-2);margin-top:var(--space-3)}
+.pull .num .u{font-family:var(--font-data);font-weight:500;font-size:11px;color:var(--ink-2)}
+.pull .num .d{margin-left:auto;font-family:var(--font-data);font-weight:500;font-size:11px;
+  font-variant-numeric:tabular-nums}
+.d.good{color:var(--mood-positive)} .d.watch{color:var(--mood-tired)} .d.flat{color:var(--ink-2)}
+.pull .mini{margin-top:var(--space-3)}
+.pull .mini svg{display:block;width:100%;height:auto;overflow:visible}
+.pull .read{font-family:var(--font-mono);font-weight:500;font-size:12px;line-height:1.55;color:var(--ink);
+  margin-top:var(--space-3)}
+.pull .foot{display:flex;justify-content:space-between;gap:var(--space-3);margin-top:var(--space-3)}
+.pull .foot > span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pull .foot .go{flex:0 0 auto}
+.pull .foot .go{color:var(--red-text);cursor:pointer}
+
+/* ---- the editor: the one place a tint is allowed ---- */
+.editor{display:none;background:var(--paper-deep);padding:var(--space-4);margin-top:var(--space-4)}
+.pull.editing .editor{display:block}
+.erow{margin-bottom:var(--space-3)}
+.erow > .l{display:block;margin-bottom:var(--space-2)}
+.opts{display:flex;gap:var(--space-1);flex-wrap:wrap;align-items:center;min-height:44px}
+/* Chips opt out of the 44px min-height or they inflate into ovals; the rail
+   carries the hit target instead. direction-one.css:355 says exactly this. */
+.d1 .opt,.d1 .win button,.d1 .scope button,.d1 .sug .acts button,
+.d1 .ebar .rm,.d1 .ebar .dn,.d1 .ebar .mv2,.d1 .addpull,.d1 .pull .dots{min-height:0}
+.opt{font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  background:var(--paper);border:1px solid var(--rule);border-radius:var(--r-pill);
+  padding:6px 10px 7px;cursor:pointer;color:var(--ink-2);transition:var(--dur-fast) var(--ease-out)}
+.opt:hover{border-color:var(--ink-2);color:var(--ink)}
+.opt.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.erow input{width:100%;font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:-.03em;
+  color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:var(--r-none);
+  padding:9px 10px;outline:0}
+.erow input:focus{border-color:var(--ink)}
+.ebar{display:flex;gap:var(--space-2);align-items:center;border-top:1px solid #DDD;padding-top:var(--space-3)}
+.ebar .mv2{font-family:var(--font-data);font-weight:600;font-size:12px;background:var(--paper);
+  border:1px solid var(--rule);width:32px;height:30px;cursor:pointer;color:var(--ink-2)}
+.ebar .mv2:hover{border-color:var(--ink);color:var(--ink)}
+.ebar .rm{font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.18em;text-transform:uppercase;
+  background:transparent;border:1px solid var(--red);color:var(--red-text);border-radius:var(--r-pill);
+  padding:6px 11px;cursor:pointer}
+.ebar .dn{margin-left:auto;font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.18em;
+  text-transform:uppercase;background:var(--ink);color:var(--paper);border:0;border-radius:var(--r-pill);
+  padding:7px 14px;cursor:pointer}
+
+.addpull{width:100%;margin-top:var(--space-4);background:transparent;border:1px solid var(--rule);
+  border-radius:var(--r-none);padding:var(--space-3);cursor:pointer;
+  font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2)}
+.addpull:hover{border-color:var(--ink);color:var(--ink)}
+
+/* ---- suggested ---- */
+.sug{border-bottom:1px solid var(--rule);padding:var(--space-4) 0;display:flex;gap:var(--space-3);align-items:flex-start}
+.sug .bd{flex:1;min-width:0}
+.sug .name{font-family:var(--font-display);font-weight:700;font-size:17px;letter-spacing:-.03em;line-height:1.05}
+.sug .why{font-family:var(--font-mono);font-weight:500;font-size:11.5px;line-height:1.55;color:var(--ink-2);
+  margin-top:var(--space-2)}
+.sug .sp{margin-top:var(--space-3)}
+.sug .sp svg{display:block;width:100%;height:auto;overflow:visible}
+.sug .acts{display:flex;flex-direction:column;gap:var(--space-1);flex:0 0 auto}
+.sug .acts button{font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.16em;
+  text-transform:uppercase;border-radius:var(--r-pill);padding:6px 11px;cursor:pointer;
+  border:1px solid var(--rule);background:var(--paper);color:var(--ink-2)}
+.sug .acts .add{border-color:var(--red);color:var(--red-text)}
+.sug .acts button:hover{border-color:var(--ink);color:var(--ink)}
+
+/* ---- thread ---- */
+#thread{padding:0 var(--gutter) var(--space-6)}
+.turn{padding-top:var(--space-4);animation:rise var(--dur-base) var(--ease-out) both}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.asked{border-bottom:1px solid var(--rule);padding-bottom:var(--space-3)}
+.asked .qt{font-family:var(--font-prose);font-weight:400;font-size:20px;line-height:1.32;color:var(--ink);
+  margin-top:var(--space-2)}
+.ctxpill{display:inline-flex;gap:6px;align-items:center;font-family:var(--font-label);font-weight:600;
+  font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--session);
+  border:1px solid var(--session);border-radius:var(--r-pill);padding:3px 9px}
+.verdict{font-family:var(--font-display);font-weight:700;font-size:26px;letter-spacing:-.035em;line-height:1.02;
+  margin-top:var(--space-4)}
+.verdict em{font-style:normal;color:var(--red-text)}
+.because{font-family:var(--font-mono);font-weight:500;font-size:12.5px;line-height:1.6;color:var(--ink);
+  margin-top:var(--space-4)}
+.chartwrap{margin-top:var(--space-4);border-top:1px solid var(--rule);padding-top:var(--space-3)}
+.chartwrap .ctitle{display:flex;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-3)}
+.chartwrap .ctitle span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chartwrap .ctitle span:last-child{flex:0 0 auto}
+.chartwrap svg{display:block;width:100%;height:auto;overflow:visible}
+.axis{font-family:var(--font-data);font-weight:500;font-size:8.5px;fill:var(--ink-2)}
+.win{display:flex;gap:var(--space-1);margin-top:var(--space-2);align-items:center;min-height:44px}
+.win button{font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  background:transparent;border:1px solid var(--rule);border-radius:var(--r-pill);padding:5px 10px;cursor:pointer;color:var(--ink-2)}
+.win button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);margin-top:var(--space-4);border-top:1px solid var(--rule)}
+.fact{padding:var(--space-3) var(--space-3) var(--space-3) 0}
+.fact + .fact{border-left:1px solid var(--rule);padding-left:var(--space-3)}
+.fact .v{font-family:var(--font-data);font-weight:600;font-size:19px;letter-spacing:-.02em;line-height:1;
+  font-variant-numeric:tabular-nums;margin-top:var(--space-2)}
+.fact .v small{font-family:var(--font-data);font-weight:500;font-size:10px;color:var(--ink-2);letter-spacing:0;margin-left:2px}
+.fact .dl{font-family:var(--font-data);font-weight:500;font-size:10px;margin-top:var(--space-1);
+  font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.fact .dl.good{color:var(--mood-positive)} .fact .dl.watch{color:var(--mood-tired)}
+/* italic mono is the athlete */
+.quote{border-left:2px solid var(--red);padding:2px 0 2px var(--space-3);margin-top:var(--space-3)}
+.quote .qq{font-family:var(--font-mono);font-style:italic;font-weight:400;font-size:13px;line-height:1.55;color:var(--ink)}
+.quote .qm{margin-top:var(--space-2)}
+.receipts{margin-top:var(--space-4);border-top:1px solid var(--rule);padding-top:var(--space-3)}
+.receipts .head{display:flex;align-items:center;gap:var(--space-2);cursor:pointer}
+.receipts .head .conf{margin-left:auto}
+.receipts .head .car{transition:var(--dur-fast) var(--ease-out);display:inline-block}
+.receipts.open .head .car{transform:rotate(90deg)}
+.receipts .body{display:none;margin-top:var(--space-3)}
+.receipts.open .body{display:block}
+.rrow{display:grid;grid-template-columns:54px 1fr auto;gap:var(--space-2);font-family:var(--font-data);
+  font-weight:500;font-size:11px;color:var(--ink-2);padding:6px 0;border-bottom:1px solid var(--rule);
+  font-variant-numeric:tabular-nums}
+.rrow .vv{font-weight:600;color:var(--ink)}
+.rmiss{font-family:var(--font-mono);font-weight:500;font-size:11px;color:var(--mood-tired);
+  margin-top:var(--space-2);line-height:1.55}
+.next{margin-top:var(--space-4)}
+.chips{margin-top:var(--space-2);border-top:1px solid var(--rule)}
+.chip{display:flex;width:100%;justify-content:space-between;align-items:center;gap:var(--space-3);
+  font-family:var(--font-data);font-weight:500;font-size:13.5px;color:var(--ink);background:transparent;
+  border:0;border-bottom:1px solid var(--rule);border-radius:var(--r-none);padding:11px 0;cursor:pointer;
+  line-height:1.3;text-align:left;min-height:44px}
+.chip::after{content:"›";color:var(--red-text);font-weight:600;flex:0 0 auto}
+.chip:hover{color:var(--red-text)}
+.chip.act{color:var(--red-text);font-family:var(--font-label);font-weight:600;
+  font-size:9px;letter-spacing:.16em;text-transform:uppercase}
+.chip.act::after{content:""}
+.think{display:flex;gap:6px;align-items:center;margin-top:var(--space-4)}
+.think i{width:5px;height:5px;border-radius:var(--r-pill);background:var(--red);animation:pulse 1.1s infinite}
+.think i:nth-child(2){animation-delay:.18s}.think i:nth-child(3){animation-delay:.36s}
+@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}
+
+/* ---- composer ---- */
+.composer{border-top:2px solid var(--rule-strong);background:var(--paper);
+  padding:var(--space-3) var(--gutter) var(--space-3);flex:0 0 auto;position:relative}
+.cbar{display:flex;gap:var(--space-2);align-items:center;border:1px solid var(--rule);
+  border-radius:var(--r-none);padding:5px 5px 5px var(--space-3)}
+.cbar:focus-within{border-color:var(--ink)}
+.cbar input{flex:1;border:0;outline:0;background:transparent;font-family:var(--font-prose);font-weight:400;
+  font-size:18px;color:var(--ink);padding:6px 0}
+.cbar input::placeholder{color:var(--ink-3)}
+.cbar button{border:0;background:var(--ink);color:var(--paper);border-radius:var(--r-pill);
+  cursor:pointer;font-family:var(--font-data);font-weight:600;font-size:14px;flex:0 0 auto;
+  width:44px;height:44px;min-height:44px}
+.cbar button:hover{background:var(--red)}
+.scope{display:flex;gap:var(--space-1);margin-top:0;align-items:center;min-height:44px}
+.scope button{font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  background:transparent;border:1px solid var(--rule);border-radius:var(--r-pill);padding:4px 9px;cursor:pointer;color:var(--ink-2)}
+.scope button.on{border-color:var(--ink);color:var(--ink)}
+
+.toast{position:absolute;left:50%;transform:translateX(-50%) translateY(8px);bottom:78px;opacity:0;pointer-events:none;
+  background:var(--ink);color:var(--paper);font-family:var(--font-label);font-weight:600;font-size:9px;
+  letter-spacing:.16em;text-transform:uppercase;padding:9px 15px;transition:var(--dur-base) var(--ease-out);
+  z-index:60;white-space:nowrap}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+.tabbar{display:flex;border-top:1px solid var(--rule);background:var(--paper);flex:0 0 auto}
+.tabbar div{flex:1;text-align:center;padding:var(--space-3) 0 var(--space-4);border-top:2px solid transparent;
+  font-family:var(--font-label);font-weight:600;font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2)}
+.tabbar div.on{border-top-color:var(--red);color:var(--ink)}
+</style>
+</head>
+<body class="d1">
+<div class="page">
+
+<!-- ============ NOTES ============ -->
+<div class="notes">
+  <div class="masthead">
+    <span class="d1-label">Post Run Drip · Ask, redesigned</span>
+    <span class="d1-label d1-label--sm">v4 · Direction I · live data</span>
+  </div>
+
+  <h1>Ask anything.<br>Keep what's useful.</h1>
+  <div class="orn"></div>
+
+  <p class="lede"><b>Every figure on this screen was pulled from the live database on 31 Aug 2026.</b> Nothing is invented. Earlier drafts of this prototype ran on fabricated numbers — a threshold-pace series that does not exist, 33–58 mile weeks against your real 52–77, and three calf quotes I wrote myself when the niggle on file is the knee. That is a bad way to judge a surface whose whole argument is that it shows its work.</p>
+
+  <p class="lede">So the fixture is now real, and where the data is thin the prototype says so on the card rather than filling the gap. Two metrics were <b>dropped rather than faked</b>: there is no stored threshold-pace series anywhere, and <code>parsed_structure</code> holds block distances with a null pace on every one, so rep paces are derived from mile splits and labelled as derived.</p>
+
+  <p class="lede">Direction I throughout: white stock, one red, hairlines instead of cards, tabular figures, 22px gutter. This file links <code>design-system/direction-one/direction-one.css</code> and hardcodes no colour.</p>
+
+  <div class="kick"><span class="d1-label">The two jobs</span><span class="d1-label d1-label--sm">A and B</span></div>
+  <div class="two">
+    <div>
+      <span class="d1-label" style="color:var(--red-text)">A · The ask leads</span>
+      <h3>The field is the first thing on the screen</h3>
+      <p>Hero field at the top, live composer at the bottom, and a cycling example that types real questions so the range is obvious without fixing a list. Nothing is pre-selected and no menu gates the box. What the athlete types is set in Crimson, because they wrote it.</p>
+    </div>
+    <div>
+      <span class="d1-label" style="color:var(--red-text)">B · Pulls you build</span>
+      <h3>Blocks that recompute, and that you can edit</h3>
+      <p>Each pull is a live query: figure, delta, chart, one machine line, and the source behind it. Tap <code>···</code> for metric, window, comparison, chart and name, plus reorder and remove. Any answer can be pinned as one.</p>
+    </div>
+  </div>
+
+  <div class="kick"><span class="d1-label">Walk it</span><span class="d1-label d1-label--sm">each link drives the phone</span></div>
+  <div class="moves">
+    <div class="mv"><div class="n">1</div><div>
+      <h3>Open on the question, not a menu</h3>
+      <p>Hero field on top with a cycling example, composer live at the bottom. Pulls sit below the ask: visible, never in the way.</p>
+      <span class="tap" data-demo="reset">Show the opening screen</span></div></div>
+    <div class="mv"><div class="n">2</div><div>
+      <h3>Customise a pull, live</h3>
+      <p>The editor opens inside the block on the one tint the system allows, <code>--paper-deep</code>. Metric, window, compare to, chart, name, reorder, remove. Nine real metrics, and the comparisons are computable ones — window start and block mean — not the invented "last build" the earlier draft offered.</p>
+      <span class="tap" data-demo="edit">Open the editor on Weekly volume</span></div></div>
+    <div class="mv"><div class="n">3</div><div>
+      <h3>Suggested pulls carry their reason</h3>
+      <p>Three proposals, each with the observation that justifies it and a preview of the chart. Add or dismiss. Dismissing is a real answer.</p>
+      <span class="tap" data-demo="suggest">Scroll to suggested</span></div></div>
+    <div class="mv"><div class="n">4</div><div>
+      <h3>Ask freely, and the answer shows its work</h3>
+      <p>Claim, chart, figures, receipts. The machine's sentences are roman JetBrains Mono, per the one distinction the system insists on. No Crimson: that would read as a person's own conclusion.</p>
+      <span class="tap" data-demo="ramp">Ask whether the ramp is safe</span></div></div>
+    <div class="mv"><div class="n">5</div><div>
+      <h3>Any answer becomes a pull</h3>
+      <p>Ask in your own words, and if the answer is worth watching, pin it. The dashboard is the sediment of your own questions rather than a builder UI.</p>
+      <span class="tap" data-demo="pinflow">Ask, then pin it</span></div></div>
+    <div class="mv"><div class="n">6</div><div>
+      <h3>Your words come back in your voice</h3>
+      <p>Memo quotes are set in <em>italic</em> mono, and they are now your actual words from <code>cleaned_notes</code> and <code>body_mentions.verbatim_quote</code>. Italic mono is the athlete, roman mono is the machine: same family, different posture, no badge.</p>
+      <span class="tap" data-demo="knee">Ask what you have been saying</span></div></div>
+    <div class="mv"><div class="n">7</div><div>
+      <h3>Ask from the chart you are looking at</h3>
+      <p>Every chart gets one affordance, opening Ask pre-scoped to what is on screen. The context pill is blue, not red: blue names a keyed session and a real reference, which is exactly what this is.</p>
+      <span class="tap" data-demo="session">Open from Saturday's effort chart</span></div></div>
+    <div class="mv"><div class="n">8</div><div>
+      <h3>A gap is an answer with a next step</h3>
+      <p>No em-dash placeholders and no invented figures. When the data is not there, Ask names the switch that turns it on.</p>
+      <span class="tap" data-demo="hrv">Ask about HRV</span></div></div>
+  </div>
+
+  <div class="kick"><span class="d1-label">Open calls</span><span class="d1-label d1-label--sm">for you</span></div>
+  <p style="margin-top:var(--space-4)"><b>Which skin Ask ships in.</b> If Ask is built before the wild migration reaches it, it either lands in editorial and gets rebuilt, or it lands in Direction I and is the second tab on the new system. Log went first; this proposes Ask goes second.</p>
+  <p><b>Where pulls live.</b> They are on Ask here. If they earn their keep they arguably belong on Home, with Ask staying pure conversation.</p>
+  <p><b>Prose discipline.</b> Facts-first rendering keeps the narration guard absolute. Worth deciding whether the machine may ever speak a figure the analyzer did not print.</p>
+  <p><b>One deliberate deviation.</b> The phone shell keeps a hairline rectangle rather than a rounded device frame. Print has no rounded corners, and the shell is prototype chrome rather than product surface.</p>
+</div>
+
+<!-- ============ PHONE ============ -->
+<div class="stick">
+<div class="phone">
+  <div class="screen" id="screen">
+    <div class="nav">
+      <div class="r1"><div class="t">Ask</div><span class="d1-label d1-label--sm">Sun · Aug 31</span></div>
+      <div class="ledger" id="ledger">
+        <span class="dot"></span>
+        <span class="lg">Reading <b>316</b> logs · 2 yrs · 5 sources</span>
+        <span class="more">coverage</span>
+      </div>
+    </div>
+
+    <div id="home">
+      <div class="hero">
+        <span class="d1-label" style="color:var(--red-text)">Ask</span>
+        <h2>Ask anything about your training.</h2>
+        <div class="dek">In your own words, and the answer shows the rows it read.</div>
+        <div class="field" id="heroField">
+          <div class="ghost" id="ghost"><b>&nbsp;</b></div>
+          <div class="hint">
+            <span class="d1-label d1-label--sm">Tap to type</span>
+            <span class="d1-label d1-label--sm">No fixed list</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sect">
+        <div class="hd"><span class="d1-label">Your pulls</span>
+          <span class="d1-label d1-label--sm a" id="editAll">edit</span></div>
+        <div id="pulls"></div>
+        <button class="addpull" id="addPull">＋ New pull</button>
+      </div>
+
+      <div class="sect" id="sugSect" style="padding-bottom:var(--space-6)">
+        <div class="hd"><span class="d1-label">Suggested pulls</span>
+          <span class="d1-label d1-label--sm">from your data</span></div>
+        <div id="suggested"></div>
+      </div>
+    </div>
+
+    <div id="thread"></div>
+  </div>
+
+  <div class="composer">
+    <div class="toast" id="toast"></div>
+    <div class="cbar">
+      <input id="q" placeholder="Ask about your training" autocomplete="off">
+      <button id="send">↑</button>
+    </div>
+    <div class="scope">
+      <span class="d1-label d1-label--sm" style="margin-right:4px">Window</span>
+      <button class="on" data-w="12">12 weeks</button>
+      <button data-w="4">4 weeks</button>
+      <button data-w="all">Whole block</button>
+    </div>
+  </div>
+
+  <div class="tabbar">
+    <div>Log</div><div>Week</div><div>Train</div><div class="on">Ask</div><div>You</div>
+  </div>
+</div>
+</div>
+
+</div>
+
+<script>
+/* ==========================================================
+   METRICS — every pull is a live query over one of these.
+   ========================================================== */
+/* ==========================================================
+   FIXTURE — pulled from the live database on 2026-08-31.
+   Every number below is either stored or derived from stored
+   columns. Nothing here is invented. Provenance per metric is
+   in `src`; what could NOT be pulled is listed in `GAPS`.
+   ========================================================== */
+const mmss=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+const one=v=>(Math.round(v*10)/10).toString();
+const two=v=>(Math.round(v*100)/100).toFixed(2);
+const int=v=>Math.round(v).toString();
+
+// 13 complete weeks, Mon-start, Jun 1 – Aug 24 2026. The current week
+// (Aug 31, 1 run) is excluded rather than drawn as a collapse.
+const WEEKS=["Jun 1","Jun 8","Jun 15","Jun 22","Jun 29","Jul 6","Jul 13",
+             "Jul 20","Jul 27","Aug 3","Aug 10","Aug 17","Aug 24"];
+
+const METRICS={
+  weekly_miles:{ label:"Weekly volume", short:"Weekly volume", unit:"mi", fmt:one, better:"none",
+    vals:[55.0,58.3,61.5,52.3,66.6,56.8,72.6,60.2,63.0,77.4,71.4,61.7,74.9], labels:WEEKS,
+    src:"training_logs · 282 runs", ask:"ramp", chart:"bars",
+    read:"13 straight weeks over 52 miles. The block's range is 52 to 77." },
+
+  acwr:{ label:"Acute : chronic", short:"Acute : chronic", unit:"", fmt:two, better:"none",
+    vals:[0.88,1.01,1.00,0.78,1.01,0.86,1.07,1.02,0.89,1.07,0.92,0.97,0.99], labels:WEEKS,
+    src:"workout_features · 310 rows", ask:"ramp", chart:"line",
+    read:"Never once above 1.10 this block. The ramp is flat, not spiky." },
+
+  long_run_share:{ label:"Long-run share", short:"Long-run share", unit:"%", fmt:int, better:"down",
+    vals:[21,22,21,34,19,26,19,22,27,23,24,29,28], labels:WEEKS,
+    src:"longest run ÷ week total", ask:"longrun", chart:"line",
+    read:"Sat between 19% and 34%. The two highest weeks are the two 21-mile long runs." },
+
+  easy_pct:{ label:"Easy-day share", short:"Easy-day share", unit:"%", fmt:int, better:"up",
+    vals:[77,75,84,73,83,75,60,77,77,70,56,60,80], labels:WEEKS,
+    src:"workout_features · zone seconds", ask:"easy", chart:"line",
+    read:"Swings 56% to 84%. The low weeks are the weeks with two quality sessions in them." },
+
+  thr_min:{ label:"Threshold minutes", short:"Threshold minutes", unit:"min", fmt:int, better:"none",
+    vals:[4,11,10,3,0,12,0,11,5,22,23,16,8], labels:WEEKS,
+    src:"workout_features.threshold_seconds", ask:"threshold", chart:"bars",
+    read:"Two weeks at zero, then a run of 22, 23 and 16 through early August." },
+
+  sleep_h:{ label:"Sleep", short:"Sleep", unit:"h", fmt:two, better:"up",
+    vals:[5.54,6.00,5.22,5.97,6.77,6.07,6.54,6.00,6.53,6.61,5.69,5.66,6.46], labels:WEEKS,
+    src:"daily_biometrics · 178 nights", ask:"sleep", chart:"line",
+    read:"Never averaged 7 hours in a single week of this block." },
+
+  rhr:{ label:"Resting heart rate", short:"Resting HR", unit:"bpm", fmt:one, better:"down",
+    vals:[51.9,50.4,51.1,49.7,50.7,49.7,50.7,51.3,50.9,51.3,47.7,50.9,49.0], labels:WEEKS,
+    src:"daily_biometrics · 216 nights", ask:"rhr", chart:"line",
+    read:"A 4-beat band all block. The 47.7 week is the single clear outlier." },
+
+  knee:{ label:"Knee mentions", short:"Knee mentions", unit:"", fmt:int, better:"down",
+    vals:[0,0,0,0,0,0,2,0,0,0,1,2,0], labels:WEEKS,
+    src:"body_mentions · 6 of 9 rows", ask:"knee", chart:"bars",
+    read:"Six mentions since May, and the most recent one says it felt good." }
+};
+
+// Quality sessions carry their own x-axis: one point per session, not per week.
+const QSESSIONS=[
+  {d:"Jun 23",ql:96.2},{d:"Jul 8",ql:117.4},{d:"Jul 14",ql:115.1},{d:"Jul 21",ql:98.8},
+  {d:"Jul 24",ql:25.9},{d:"Jul 28",ql:99.6},{d:"Aug 4",ql:68.0},{d:"Aug 6",ql:68.7},
+  {d:"Aug 11",ql:116.0},{d:"Aug 18",ql:98.1},{d:"Aug 25",ql:134.9},{d:"Aug 29",ql:34.3}];
+METRICS.quality_load={ label:"Quality load per session", short:"Quality load", unit:"", fmt:one, better:"none",
+  vals:QSESSIONS.map(q=>q.ql), labels:QSESSIONS.map(q=>q.d),
+  src:"quality_load · 66 of 315", ask:"quality", chart:"bars",
+  read:"Saturday's long-run workout scored 34.3, the lowest of the 12." };
+
+// Aug 29, from pace_segments: 22 one-mile splits, in seconds.
+const AUG29_SPLITS=[464,434,432,437,417,411,624,370,369,368,416,365,366,413,363,361,361,416,342,328,414];
+// Reps are 3 miles with ~0.5mi floats, so mile ticks do not line up with rep
+// edges. These are the clean interior miles of each rep, averaged.
+const AUG29_REPS=[
+  {label:"1",miles:[370,369,368],sec:369},{label:"2",miles:[365,366],sec:365.5},
+  {label:"3",miles:[363,361,361],sec:361.7},{label:"4",miles:[342,328],sec:335}];
+
+const WINDOWS={"4":4,"12":12,"all":13};
+const WINLABEL={"4":"4 weeks","12":"12 weeks","all":"Whole block"};
+const COMPARE={none:"nothing",start:"window start",mean:"block mean"};
+const CHARTS={line:"Line",bars:"Bars",dots:"Dots",none:"Figure only"};
+
+let PULLS=[
+  {id:"p1",metric:"weekly_miles", name:"Weekly volume",     win:"12",cmp:"mean", chart:"bars"},
+  {id:"p2",metric:"easy_pct",     name:"Easy-day share",    win:"12",cmp:"start",chart:"line"},
+  {id:"p3",metric:"quality_load", name:"Quality load",      win:"12",cmp:"mean", chart:"bars"}
+];
+let SUGGESTED=[
+  {id:"s1",metric:"sleep_h",name:"Sleep",win:"12",cmp:"mean",chart:"line",
+   why:"You wrote “I need to focus on improving my sleep” yesterday. 178 nights are on file and nothing reads them."},
+  {id:"s2",metric:"knee",name:"Knee mentions",win:"12",cmp:"start",chart:"bars",
+   why:"6 mentions since May 24, never marked resolved. Only 3 of 9 body rows carry a side."},
+  {id:"s3",metric:"acwr",name:"Acute : chronic",win:"12",cmp:"mean",chart:"line",
+   why:"Computed on 310 workouts and never surfaced anywhere in the app."}
+];
+let editing=null, uid=10;
+
+function slice(m,win){const n=Math.min(WINDOWS[win],m.vals.length);
+  return{vals:m.vals.slice(-n),labels:m.labels.slice(-n)};}
+function fmtDiff(m,v){
+  if(m.fmt===two) return two(v)+(m.unit&&m.unit!=="%"?"":"");
+  if(m.fmt===one) return one(v);
+  return int(v)+(m.unit==="%"?"%":"");
+}
+function compute(p){
+  const m=METRICS[p.metric], s=slice(m,p.win), last=s.vals[s.vals.length-1];
+  const mean=s.vals.reduce((a,b)=>a+b,0)/s.vals.length;
+  let dtxt="", ghost=null, diff=0;
+  if(p.cmp==="start"){ diff=last-s.vals[0];
+    dtxt=(diff===0?"level":(diff>0?"+":"−")+fmtDiff(m,Math.abs(diff)))+" since "+s.labels[0]; }
+  else if(p.cmp==="mean"){ diff=last-mean; ghost=s.vals.map(()=>mean);
+    dtxt=(Math.abs(diff)<0.05?"on the mean":(diff>0?"+":"−")+fmtDiff(m,Math.abs(diff))+" vs mean"); }
+  else { dtxt=s.vals.length+" points"; }
+  const tone = p.cmp==="none"||m.better==="none" ? "flat"
+    : (diff===0 ? "flat" : ((m.better==="down"?diff<0:diff>0)?"good":"watch"));
+  return {m,s,last,mean,dtxt,ghost,tone,read:m.read};
+}
+
+/* ---------- mini charts ---------- */
+function miniLine(vals,ghost){
+  const W=310,H=44,all=vals.concat(ghost||[]);
+  let lo=Math.min(...all),hi=Math.max(...all); if(hi===lo){hi+=1;lo-=1;}
+  const pad=(hi-lo)*.22; lo-=pad; hi+=pad;
+  const X=i=>i*(W/Math.max(1,vals.length-1)), Y=v=>H-((v-lo)/(hi-lo))*H;
+  let g=`<svg viewBox="0 0 ${W} ${H}"><line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="#EBEBEB"/>`;
+  if(ghost)g+=`<path d="${ghost.map((v,i)=>(i?"L":"M")+X(i).toFixed(1)+" "+Y(v).toFixed(1)).join(" ")}" fill="none" stroke="#9A9A9A" stroke-width="1.2" stroke-dasharray="3 3"/>`;
+  g+=`<path d="${vals.map((v,i)=>(i?"L":"M")+X(i).toFixed(1)+" "+Y(v).toFixed(1)).join(" ")}" fill="none" stroke="#EE2B24" stroke-width="1.75" stroke-linejoin="round"/>`;
+  g+=`<circle cx="${W}" cy="${Y(vals[vals.length-1]).toFixed(1)}" r="3" fill="#EE2B24"/>`;
+  return g+`</svg>`;
+}
+function miniBars(vals,ghost){
+  const W=310,H=44,hi=Math.max(...vals.concat(ghost||[]))*1.1||1,bw=W/vals.length;
+  let g=`<svg viewBox="0 0 ${W} ${H}"><line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="#EBEBEB"/>`;
+  vals.forEach((v,i)=>{const h=(v/hi)*H,x=i*bw+bw*.16,w=bw*.68;
+    if(h<0.6){g+=`<line x1="${x.toFixed(1)}" y1="${H}" x2="${(x+w).toFixed(1)}" y2="${H}" stroke="#9A9A9A" stroke-width="1.5"/>`;return;}
+    g+=`<rect x="${x.toFixed(1)}" y="${(H-h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${i===vals.length-1?"#EE2B24":"#E2E2E2"}"/>`;});
+  if(ghost)g+=`<path d="${ghost.map((v,i)=>(i?"L":"M")+(i*bw+bw/2).toFixed(1)+" "+(H-(v/hi)*H).toFixed(1)).join(" ")}" fill="none" stroke="#111111" stroke-width="1.2" stroke-dasharray="3 3"/>`;
+  return g+`</svg>`;
+}
+function miniDots(vals){
+  const W=310,H=44; let lo=Math.min(...vals),hi=Math.max(...vals); if(hi===lo){hi+=1;lo-=1;}
+  const pad=(hi-lo)*.3; lo-=pad; hi+=pad;
+  let g=`<svg viewBox="0 0 ${W} ${H}"><line x1="0" y1="${H/2}" x2="${W}" y2="${H/2}" stroke="#EBEBEB"/>`;
+  vals.forEach((v,i)=>{const x=i*(W/Math.max(1,vals.length-1)),y=H-((v-lo)/(hi-lo))*H;
+    g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${i===vals.length-1?3.6:2.6}" fill="${i===vals.length-1?"#EE2B24":"#FFFFFF"}" stroke="${i===vals.length-1?"#EE2B24":"#9A9A9A"}" stroke-width="1.2"/>`;});
+  return g+`</svg>`;
+}
+function mini(p,c){
+  if(p.chart==="none")return "";
+  if(p.chart==="bars")return miniBars(c.s.vals,c.ghost);
+  if(p.chart==="dots")return miniDots(c.s.vals);
+  return miniLine(c.s.vals,c.ghost);
+}
+
+/* ---------- render pulls ---------- */
+function optRow(label,map,cur,attr,pid){
+  return `<div class="erow"><span class="l d1-label d1-label--sm">${label}</span><div class="opts">`+
+    Object.entries(map).map(([k,v])=>`<button class="opt ${k===cur?"on":""}" data-set="${attr}" data-val="${k}" data-pid="${pid}">${v}</button>`).join("")+
+    `</div></div>`;
+}
+function pullHTML(p,i){
+  const c=compute(p),m=c.m;
+  const metricMap={};Object.entries(METRICS).forEach(([k,v])=>metricMap[k]=v.short);
+  return `<div class="pull ${editing===p.id?"editing":""}" data-pid="${p.id}">
+    <div class="top" data-open="${m.ask}">
+      <div class="tt"><div class="name">${p.name}</div>
+        <div class="meta d1-label d1-label--sm">${WINLABEL[p.win]} · vs ${COMPARE[p.cmp]}</div></div>
+      <div class="dots" data-edit="${p.id}">···</div>
+    </div>
+    <div class="num"><span class="d1-figure">${m.fmt(c.last)}</span><span class="u">${m.unit}</span>
+      <span class="d ${c.tone}">${c.dtxt}</span></div>
+    ${p.chart!=="none"?`<div class="mini">${mini(p,c)}</div>`:""}
+    <div class="read">${c.read}</div>
+    <div class="foot"><span class="d1-label d1-label--sm">${m.src}</span>
+      <span class="d1-label d1-label--sm go" data-open="${m.ask}">ask about this ›</span></div>
+    <div class="editor">
+      ${optRow("Metric",metricMap,p.metric,"metric",p.id)}
+      ${optRow("Window",WINLABEL,p.win,"win",p.id)}
+      ${optRow("Compare to",COMPARE,p.cmp,"cmp",p.id)}
+      ${optRow("Chart",CHARTS,p.chart,"chart",p.id)}
+      <div class="erow"><span class="l d1-label d1-label--sm">Name</span>
+        <input value="${p.name.replace(/"/g,"&quot;")}" data-rename="${p.id}"></div>
+      <div class="ebar">
+        <button class="mv2" data-move="up" data-pid="${p.id}" ${i===0?"disabled style=opacity:.35":""}>↑</button>
+        <button class="mv2" data-move="down" data-pid="${p.id}" ${i===PULLS.length-1?"disabled style=opacity:.35":""}>↓</button>
+        <button class="rm" data-remove="${p.id}">Remove pull</button>
+        <button class="dn" data-done="1">Done</button>
+      </div>
+    </div>
+  </div>`;
+}
+function sugHTML(s){
+  const c=compute(s);
+  return `<div class="sug" data-sid="${s.id}">
+    <div class="bd"><div class="name">${s.name}</div><div class="why">${s.why}</div>
+      <div class="sp">${mini(s,c)}</div></div>
+    <div class="acts"><button class="add" data-add="${s.id}">＋ Add</button>
+      <button data-dismiss="${s.id}">Dismiss</button></div>
+  </div>`;
+}
+function renderPulls(){
+  document.getElementById("pulls").innerHTML=PULLS.map(pullHTML).join("");
+  document.getElementById("suggested").innerHTML=SUGGESTED.length?SUGGESTED.map(sugHTML).join("")
+    :`<div class="because" style="margin-top:var(--space-4)">Nothing else worth proposing from what is on file. Ask something and pin it if it is worth watching.</div>`;
+}
+
+/* ==========================================================
+   ANSWER CHARTS
+   ========================================================== */
+function lineChart(pts,opt){
+  const W=326,H=124,PL=32,PR=6,PT=8,PB=17;
+  const ys=pts.flatMap(p=>[p.y].concat(p.y2!=null?[p.y2]:[]));
+  let lo=Math.min(...ys),hi=Math.max(...ys);const pad=(hi-lo)*.28||1;lo-=pad;hi+=pad;
+  const X=i=>PL+i*((W-PL-PR)/Math.max(1,pts.length-1)), Y=v=>H-PB-((v-lo)/(hi-lo))*(H-PT-PB);
+  let g=`<svg viewBox="0 0 ${W} ${H}">`;
+  [0,.5,1].forEach(f=>{const y=PT+f*(H-PT-PB);g+=`<line x1="${PL}" y1="${y}" x2="${W-PR}" y2="${y}" stroke="#EBEBEB"/>`;});
+  g+=`<text class="axis" x="0" y="${PT+4}">${opt.fmt(hi)}</text><text class="axis" x="0" y="${H-PB}">${opt.fmt(lo)}</text>`;
+  if(pts[0].y2!=null)g+=`<path d="${pts.map((p,i)=>(i?"L":"M")+X(i).toFixed(1)+" "+Y(p.y2).toFixed(1)).join(" ")}" fill="none" stroke="#9A9A9A" stroke-width="1.3" stroke-dasharray="3 3"/>`;
+  g+=`<path d="${pts.map((p,i)=>(i?"L":"M")+X(i).toFixed(1)+" "+Y(p.y).toFixed(1)).join(" ")}" fill="none" stroke="#EE2B24" stroke-width="1.8" stroke-linejoin="round"/>`;
+  pts.forEach((p,i)=>{const last=i===pts.length-1;
+    g+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="${last?3.4:2.2}" fill="${last?"#EE2B24":"#FFFFFF"}" stroke="#EE2B24" stroke-width="1.3"/>`;});
+  pts.forEach((p,i)=>{if(i%Math.ceil(pts.length/4)===0||i===pts.length-1)
+    g+=`<text class="axis" x="${X(i).toFixed(1)}" y="${H-4}" text-anchor="middle">${p.x}</text>`;});
+  return g+`</svg>`;
+}
+function barChart(bars,unit){
+  const W=326,H=124,PL=30,PR=6,PT=12,PB=17,hi=Math.max(...bars.map(b=>b.y))*1.14,bw=(W-PL-PR)/bars.length;
+  const Y=v=>H-PB-(v/hi)*(H-PT-PB);
+  let g=`<svg viewBox="0 0 ${W} ${H}"><line x1="${PL}" y1="${H-PB}" x2="${W-PR}" y2="${H-PB}" stroke="#EBEBEB"/>`;
+  g+=`<text class="axis" x="0" y="${PT+8}">${Math.round(hi)}${unit||""}</text>`;
+  bars.forEach((b,i)=>{const x=PL+i*bw+bw*.17,w=bw*.66,y=Y(b.y);
+    g+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${(H-PB-y).toFixed(1)}" fill="${b.flag?"#EE2B24":"#E2E2E2"}"/>`;
+    if(b.flag)g+=`<text class="axis" x="${(x+w/2).toFixed(1)}" y="${(y-4).toFixed(1)}" text-anchor="middle" fill="#D31F19">${b.y}</text>`;});
+  const avg=bars.reduce((a,c)=>a+c.y,0)/bars.length;
+  g+=`<line x1="${PL}" y1="${Y(avg).toFixed(1)}" x2="${W-PR}" y2="${Y(avg).toFixed(1)}" stroke="#111111" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+  bars.forEach((b,i)=>{if(i%3===0||i===bars.length-1)
+    g+=`<text class="axis" x="${(PL+i*bw+bw/2).toFixed(1)}" y="${H-4}" text-anchor="middle">${b.x}</text>`;});
+  return g+`</svg>`;
+}
+function repChart(reps){
+  const W=326,rowH=26,H=reps.length*rowH+12;
+  const lo=Math.min(...reps.map(r=>r.sec))-14,hi=Math.max(...reps.map(r=>r.sec))+6;
+  let g=`<svg viewBox="0 0 ${W} ${H}">`;
+  reps.forEach((r,i)=>{const y=i*rowH+5,w=((hi-r.sec)/(hi-lo))*(W-94)+26;
+    g+=`<text class="axis" x="0" y="${y+12}">${r.label}</text>`;
+    g+=`<rect x="26" y="${y}" width="${(W-94).toFixed(1)}" height="16" fill="#F2F2F2"/>`;
+    g+=`<rect x="26" y="${y}" width="${w.toFixed(1)}" height="16" fill="${i===reps.length-1?"#EE2B24":"#1F4FA8"}"/>`;
+    g+=`<text class="axis" x="${W-2}" y="${y+12}" text-anchor="end" fill="#111111" style="font-weight:600">${mmss(r.sec)}</text>`;});
+  return g+`</svg>`;
+}
+
+/* ==========================================================
+   ANSWERS — every figure traced to a column
+   ========================================================== */
+const ANSWERS={
+  ramp:{ q:"Am I ramping too fast?", pin:"weekly_miles",
+    verdict:'No. <em>13 straight weeks</em> over 52 miles, and acute:chronic has never passed 1.10.',
+    because:"74.9 miles last week is the second biggest of the block behind 77.4, and the 28-day total kept climbing to 279.5 without the weekly ratio moving. That is what a flat ramp looks like: the chronic line rose with the acute one.",
+    chart:{title:["Weekly miles","dashed · mean"],build:()=>barChart(
+      METRICS.weekly_miles.vals.map((v,i)=>({x:WEEKS[i],y:v,flag:i===12})),"mi")},
+    facts:[{k:"Last full week",v:"74.9",u:"mi",d:"+13.2 vs prior",t:""},
+           {k:"Acute : chronic",v:"0.99",u:"",d:"block range 0.78–1.07",t:"good"},
+           {k:"28-day total",v:"279.5",u:"mi",d:"block high",t:""}],
+    receipts:{n:13,days:91,conf:"high",
+      rows:[["Aug 24","74.9mi · 10 runs · longest 21.0","0.99"],["Aug 17","61.7mi · 10 runs","0.97"],
+            ["Aug 10","71.4mi · 13 runs","0.92"],["Aug 3","77.4mi · 16 runs","1.07"],
+            ["Jul 27","63.0mi · 9 runs","0.89"]],
+      missing:"The Aug 3 week holds 16 runs against a 9–13 norm, which is a duplicate-merge signature rather than a training week. Mileage is filed by workout_date, and that column has a known local-time skew, so a late-evening run can land in the wrong week."},
+    next:["Which week had 16 runs?","Show me the 28-day line","What is my biggest safe next week?"]},
+
+  session:{ ctx:"Effort chart · Sat Aug 29", q:"How did Saturday's long-run workout go?",
+    verdict:'4 × 3mi inside a 21-mile run, and the last rep was <em>34 seconds</em> quicker than the first.',
+    because:"You called it “about a 6:05 pace” and the splits agree: 6:09, 6:06, 6:02, then 5:35. The one number that disagrees with how it felt is the score. At 34.3 quality load it is the lowest of the 12 quality sessions on file, well under the 89.5 average, which is worth reading as a scoring problem rather than an easy day.",
+    chart:{title:["Rep pace · derived","longer = faster"],build:()=>repChart(AUG29_REPS)},
+    quotes:[{q:"I felt comfortable and relaxed for the first three, then was able to drop the pace and push to a maximal effort on the final set. Overall, I finished feeling strong.",m:"Aug 29 · voice memo"}],
+    facts:[{k:"Total",v:"21.01",u:"mi",d:"7mi warm-up",t:""},
+           {k:"Work",v:"12.0",u:"mi",d:"4 × 3mi",t:""},
+           {k:"Quality load",v:"34.3",u:"",d:"lowest of 12",t:"watch"}],
+    receipts:{n:1,days:1,conf:"moderate",
+      rows:[["Reps","3.00, 3.00, 3.00, 3.00mi","12.0mi"],["Floats","0.50, 0.47, 0.51mi","1.48mi"],
+            ["Rep 1","miles 8–10 · 370, 369, 368s","6:09"],["Rep 3","miles 15–17 · 363, 361, 361s","6:02"],
+            ["Rep 4","miles 19–20 · 342, 328s","5:35"]],
+      missing:"Rep paces are DERIVED, not stored. parsed_structure carries the 7 block distances but pace_sec_per_mile is null on all of them, so these come from the 22 one-mile splits in pace_segments. Reps are 3 miles with half-mile floats, so mile ticks do not land on rep edges and each figure is the clean interior miles only."},
+    next:["Why did it score 34.3?","Compare to the Aug 25 intervals","Show every mile split"]},
+
+  knee:{ q:"What have I been saying about my knee?", pin:"knee",
+    verdict:'6 mentions since May, and the most recent one says it <em>felt good</em>.',
+    because:"It ran from light tightness in May to really sore in mid-July, then eased. Two of the six sit in the week your 2-week volume went from 39 to 120 miles. Nothing in the log marks it resolved, so it is still open on your record.",
+    quotes:[{q:"I also noticed some light tightness in my left knee during the run.",m:"May 24 · notes scan"},
+            {q:"This wasn't a great run. My knee felt really sore, and I've been feeling generally worn down on my runs.",m:"Jul 17 · notes scan"},
+            {q:"Everything felt pretty good except my left knee felt a little bit tight, which I've been noticing for a couple of weeks.",m:"Aug 13 · notes scan"},
+            {q:"My left ankle felt a little stiff, but my knee, which had been a concern, felt good today.",m:"Aug 21 · notes scan"}],
+    facts:[{k:"Knee rows",v:"6",u:"",d:"of 9 body rows",t:""},
+           {k:"Days since",v:"9",u:"",d:"last mention",t:"good"},
+           {k:"Status",v:"OPEN",u:"",d:"never marked clear",t:"watch"}],
+    receipts:{n:6,days:99,conf:"moderate",
+      rows:[["Aug 22","notes scan · side null","tight"],["Aug 21","notes scan · left","sore"],
+            ["Aug 13","notes scan · left","tight"],["Jul 18","notes scan · side null","sore"],
+            ["Jul 17","notes scan · side null","sore"],["May 24","notes scan · side null","tight"]],
+      missing:"Only 3 of the 9 body rows carry a side, though you say “left knee” in four of the quotes. Two May 24 rows are the same sentence extracted twice, so the count is really 5 events, not 6."},
+    next:["Mark the knee resolved","What was I running when it flared?","Show the ankle rows too"]},
+
+  easy:{ q:"Are my easy days actually easy?", pin:"easy_pct",
+    verdict:'Last week <em>80%</em> of your running time was easy. The block swings 56 to 84.',
+    because:"The low weeks are not sloppy easy days, they are weeks carrying two quality sessions. Jul 13 at 60% and Aug 10 at 56% are both double-workout weeks, so the easy share fell because the hard work rose.",
+    chart:{title:["Easy share of week","dashed · mean"],build:()=>lineChart(
+      METRICS.easy_pct.vals.map((v,i)=>({x:WEEKS[i],y:v})),{fmt:v=>Math.round(v)+"%"})},
+    facts:[{k:"Last week",v:"80",u:"%",d:"block mean 72",t:"good"},
+           {k:"Block low",v:"56",u:"%",d:"week of Aug 10",t:"watch"},
+           {k:"Zone source",v:"315",u:"rows",d:"workout_features",t:""}],
+    receipts:{n:13,days:91,conf:"moderate",
+      rows:[["Aug 24","easy 80% · 1 quality session","80"],["Aug 17","easy 60% · 2 quality","60"],
+            ["Aug 10","easy 56% · 2 quality","56"],["Jun 15","easy 84% · 0 quality","84"]],
+      missing:"This is share of TIME in the easy zone, not a check against your own easy pace. Zones come from workout_features, and only 66 of 315 rows carry a quality_load, so the quality-session attribution on the right of each row is thinner than the zone figure itself."},
+    next:["Show me the double-workout weeks","What should easy actually be?"]},
+
+  sleep:{ q:"How has my sleep been?", pin:"sleep_h",
+    verdict:'You have not averaged <em>7 hours</em> in a single week of this block.',
+    because:"The block runs 5.22 to 6.77, and you flagged it yourself yesterday. Coverage is the caveat: 178 nights of the 235 in range have a sleep figure, and the thinnest weeks are 5 nights, so a weekly average can be carried by a couple of good nights.",
+    chart:{title:["Weekly mean sleep","dashed · mean"],build:()=>lineChart(
+      METRICS.sleep_h.vals.map((v,i)=>({x:WEEKS[i],y:v})),{fmt:v=>v.toFixed(1)+"h"})},
+    quotes:[{q:"I had a good week of training and feel aerobically fitter. I finished the week feeling tired but healthy, especially after a big long run. I need to focus on improving my sleep and gym work.",m:"Aug 31 · voice memo"}],
+    facts:[{k:"Last week",v:"6.46",u:"h",d:"7 of 7 nights",t:""},
+           {k:"Block range",v:"5.2–6.8",u:"h",d:"13 weeks",t:"watch"},
+           {k:"Nights on file",v:"178",u:"",d:"of 235",t:"watch"}],
+    receipts:{n:178,days:232,conf:"moderate",
+      rows:[["Aug 24","6.46h mean · 7 nights","6.46"],["Aug 17","5.66h mean · 5 nights","5.66"],
+            ["Aug 10","5.69h mean · 6 nights","5.69"],["Jun 29","6.77h mean · 6 nights","6.77"]],
+      missing:"57 nights in range have no sleep row at all. Nothing in the app currently reads sleep against your hard days, so this is a trend, not yet an association."},
+    next:["Does sleep track with my hard weeks?","Show resting heart rate instead"]},
+
+  rhr:{ q:"What is my resting heart rate doing?", pin:"rhr",
+    verdict:'Flat. A <em>4-beat band</em> across the whole block, 47.7 to 51.9.',
+    because:"216 nights are on file, the densest signal you have. The week of Aug 10 at 47.7 is the only reading outside the band, and it is also one of the two highest-quality weeks, so it is worth a look rather than a conclusion.",
+    chart:{title:["Weekly resting HR","dashed · mean"],build:()=>lineChart(
+      METRICS.rhr.vals.map((v,i)=>({x:WEEKS[i],y:v})),{fmt:v=>v.toFixed(1)})},
+    facts:[{k:"Last week",v:"49.0",u:"bpm",d:"block mean 50.5",t:"good"},
+           {k:"Block range",v:"47.7–51.9",u:"bpm",d:"4 beats",t:""},
+           {k:"Nights on file",v:"216",u:"",d:"since Jan 11",t:"good"}],
+    receipts:{n:216,days:232,conf:"high",
+      rows:[["Aug 24","49.0 mean · 7 nights","49.0"],["Aug 17","50.9 mean · 7 nights","50.9"],
+            ["Aug 10","47.7 mean · 7 nights","47.7"],["Jun 22","49.7 mean · 7 nights","49.7"]],
+      missing:"Nothing missing on coverage. A 4-beat band over 13 weeks is close to the noise floor for a wrist reading, so read the shape, not the individual weeks."},
+    next:["What happened the week of Aug 10?","Compare against sleep"]},
+
+  threshold:{ q:"How much threshold work am I doing?", pin:"thr_min",
+    verdict:'8 minutes last week, against <em>22, 23 and 16</em> through early August.',
+    because:"Two weeks in the block are at zero. The early-August run is the only sustained stretch, and last week's long-run workout put its work into the moderate band rather than the threshold one, which is why the figure dropped while the session felt hard.",
+    chart:{title:["Threshold minutes","dashed · mean"],build:()=>barChart(
+      METRICS.thr_min.vals.map((v,i)=>({x:WEEKS[i],y:v,flag:i===12})),"min")},
+    facts:[{k:"Last week",v:"8",u:"min",d:"block mean 10",t:""},
+           {k:"Block high",v:"23",u:"min",d:"week of Aug 10",t:""},
+           {k:"Zero weeks",v:"2",u:"",d:"Jun 29, Jul 13",t:"watch"}],
+    receipts:{n:13,days:91,conf:"moderate",
+      rows:[["Aug 24","8 min · Aug 29 long-run WO","8"],["Aug 17","16 min · Aug 18 3×2mi","16"],
+            ["Aug 10","23 min · Aug 11 intervals","23"],["Aug 3","22 min · Aug 4 + Aug 6","22"]],
+      missing:"Threshold seconds are a ZONE classification, not a session label. A workout run at threshold effort but classified moderate contributes nothing here, which is exactly what happened on Aug 29."},
+    next:["Show me the Aug 29 zones","Which sessions had zero threshold?"]},
+
+  quality:{ q:"How hard have my key sessions been?", pin:"quality_load",
+    verdict:'Saturday scored <em>34.3</em>, the lowest of the 12 quality sessions on file.',
+    because:"The block mean is 89.5 and the top is 134.9 on the Aug 25 intervals. A 21-mile run with 12 miles of work landing at the bottom of the range does not match how you described it, so the score is the thing to distrust here, not the session.",
+    chart:{title:["Quality load per session","dashed · mean 89.5"],build:()=>barChart(
+      QSESSIONS.map((q,i)=>({x:q.d,y:q.ql,flag:i===QSESSIONS.length-1})))},
+    facts:[{k:"Aug 29",v:"34.3",u:"",d:"lowest of 12",t:"watch"},
+           {k:"Block mean",v:"89.5",u:"",d:"12 sessions",t:""},
+           {k:"Scored",v:"66",u:"of 315",d:"workout_features",t:"watch"}],
+    receipts:{n:12,days:91,conf:"moderate",
+      rows:[["Aug 29","21.0mi long-run WO","34.3"],["Aug 25","6.4mi intervals","134.9"],
+            ["Aug 18","6.2mi 3×2mi","98.1"],["Aug 11","6.6mi 10 intervals","116.0"],
+            ["Jul 24","5.8mi 8×200m","25.9"]],
+      missing:"Only 66 of 315 workouts carry a quality_load at all, so this is 12 sessions since June rather than every hard day. Long runs are scored under a different kind and are excluded from this series."},
+    next:["Why is Aug 29 so low?","Show long runs too"]},
+
+  longrun:{ q:"Is my long run too big a slice of the week?", pin:"long_run_share",
+    verdict:'28% last week. The block sits between <em>19% and 34%</em>.',
+    because:"The two highest weeks are the two 21-mile long runs, which is the arithmetic working rather than a problem. Both operands have been stored all along and nothing in the app has ever divided them.",
+    chart:{title:["Long-run share","dashed · mean"],build:()=>lineChart(
+      METRICS.long_run_share.vals.map((v,i)=>({x:WEEKS[i],y:v})),{fmt:v=>Math.round(v)+"%"})},
+    facts:[{k:"Last week",v:"28",u:"%",d:"21.0 of 74.9mi",t:""},
+           {k:"Block high",v:"34",u:"%",d:"week of Jun 22",t:"watch"},
+           {k:"Block mean",v:"24",u:"%",d:"13 weeks",t:""}],
+    receipts:{n:13,days:91,conf:"high",
+      rows:[["Aug 24","21.0 of 74.9mi","28%"],["Aug 17","18.0 of 61.7mi","29%"],
+            ["Jun 22","17.8 of 52.3mi","34%"],["Jun 29","12.4 of 66.6mi","19%"]],
+      missing:"Longest run is taken as the largest single logged distance. A run split across two files would understate it, and the Aug 3 week's 16 rows make that plausible somewhere in this window."},
+    next:["Show me the week of Jun 22","How does that compare to my plan?"]},
+
+  hrv:{ q:"How has my HRV been trending?",
+    verdict:'No HRV on file. <em>Nothing to trend yet.</em>',
+    because:"daily_biometrics holds 216 nights of resting heart rate and 178 of sleep since January 11. The hrv_rmssd column is empty on every one of those rows, so there is no series to read rather than a flat one.",
+    facts:[{k:"HRV nights",v:"0",u:"",d:"of 235 rows",t:"watch"},
+           {k:"Resting HR",v:"216",u:"nights",d:"since Jan 11",t:"good"},
+           {k:"Sleep",v:"178",u:"nights",d:"since Jan 11",t:"good"}],
+    receipts:{n:0,days:0,conf:"moderate",rows:[],
+      missing:"Grant HRV in Health → Sharing before the next sync. The watermark means the backfill starts from the day permission is given, so January to August will not fill in retroactively."},
+    action:"Turn on HRV",
+    next:["Trend my resting heart rate instead","How has sleep been?"]},
+
+  fallback:{ q:"",
+    verdict:'I can read that. Here is what is actually on file first.',
+    because:"Rather than guess, this is the coverage behind any answer in the window you picked. Narrow it and the answer computes against exactly those rows.",
+    facts:[{k:"Logs",v:"316",u:"",d:"282 with distance",t:""},
+           {k:"Parsed",v:"305",u:"of 316",d:"structure on file",t:"good"},
+           {k:"Quality load",v:"66",u:"of 315",d:"scored",t:"watch"}],
+    receipts:{n:316,days:753,conf:"high",rows:[
+      ["Load","stress_load 310 · acwr 310","strong"],
+      ["Structure","parsed_structure 305","strong"],
+      ["Weather","weather_actual 279","good"],
+      ["Your words","119 memos · 126 notes","good"],
+      ["RPE","felt_rpe 109","thin"],
+      ["Body","body_mentions 9","thin"]],
+      missing:"Rep PACES are nowhere on file: parsed_structure stores block distances with a null pace on every one, so any rep figure has to be derived from pace_segments. There is no stored threshold-pace series either, which is why this prototype has no LT-pace card."},
+    next:["Am I ramping too fast?","How did Saturday's workout go?","What have I been saying about my knee?"]}
+};
+
+function route(t){const s=t.toLowerCase();
+  if(/hrv|variability/.test(s))return "hrv";
+  if(/knee|ankle|niggle|said|saying|hurt|sore|body/.test(s))return "knee";
+  if(/sleep|rest|tired|recovery/.test(s))return "sleep";
+  if(/resting|heart rate|rhr|hr\b/.test(s))return "rhr";
+  if(/easy|discipline/.test(s))return "easy";
+  if(/threshold|lt\b|tempo/.test(s))return "threshold";
+  if(/quality|key session|how hard|score/.test(s))return "quality";
+  if(/long.run|long run|share/.test(s))return "longrun";
+  if(/ramp|mileage|volume|load|acwr|too fast|too much|week/.test(s))return "ramp";
+  if(/saturday|4x3|4×3|rep|session|workout|interval|split/.test(s))return "session";
+  return "fallback";}
+
+const thread=document.getElementById("thread"),home=document.getElementById("home"),
+      screen=document.getElementById("screen"),qin=document.getElementById("q"),toastEl=document.getElementById("toast");
+let win="12";
+function toast(msg){toastEl.textContent=msg;toastEl.classList.add("on");
+  clearTimeout(toast._t);toast._t=setTimeout(()=>toastEl.classList.remove("on"),1900);}
+
+function factHTML(f){return `<div class="fact"><div class="d1-label d1-label--sm">${f.k}</div>
+  <div class="v">${f.v}${f.u?`<small>${f.u}</small>`:""}</div>${f.d?`<div class="dl ${f.t||""}">${f.d}</div>`:""}</div>`;}
+
+function turnHTML(a,askedText){
+  let h=`<div class="turn"><div class="asked">`;
+  if(a.ctx)h+=`<span class="ctxpill">◧ ${a.ctx}</span>`;
+  h+=`<div class="qt">${askedText||a.q}</div></div>`;
+  h+=`<div class="verdict">${a.verdict}</div>`;
+  if(a.chart){h+=`<div class="chartwrap"><div class="ctitle"><span class="d1-label d1-label--sm">${a.chart.title[0]}</span><span class="d1-label d1-label--sm">${a.chart.title[1]||""}</span></div><div class="cvs">${a.chart.build(win)}</div></div>`;
+    if(a.windowed)h+=`<div class="win">${["12","4","all"].map(w=>`<button data-win="${w}" class="${w===win?"on":""}">${w==="all"?"All":w+" wk"}</button>`).join("")}</div>`;}
+  if(a.quotes)a.quotes.forEach(q=>{h+=`<div class="quote"><div class="qq">“${q.q}”</div><div class="qm d1-label d1-label--sm">${q.m}</div></div>`;});
+  if(a.facts)h+=`<div class="facts">${a.facts.map(factHTML).join("")}</div>`;
+  h+=`<div class="because">${a.because}</div>`;
+  const r=a.receipts;
+  h+=`<div class="receipts"><div class="head"><span class="car d1-label d1-label--sm">›</span>
+      <span class="d1-label d1-label--sm">${r.n?`${r.n} ${r.n===1?"session":"sessions"} · ${r.days} days`:"Nothing on file"}</span>
+      <span class="conf d1-label d1-label--sm" style="color:${r.conf==="high"?"var(--mood-positive)":"var(--mood-tired)"}">${r.conf}</span></div>
+      <div class="body">${r.rows.map(x=>`<div class="rrow"><span>${x[0]}</span><span>${x[1]}</span><span class="vv">${x[2]}</span></div>`).join("")}
+      <div class="rmiss">△ ${r.missing}</div></div></div>`;
+  h+=`<div class="next"><div class="d1-label d1-label--sm">Ask next</div><div class="chips">
+      ${a.pin?`<button class="chip act" data-pin="${a.pin}">＋ Pin as a pull</button>`:""}
+      ${a.action?`<button class="chip act" data-ask="${a.action}">${a.action}</button>`:""}
+      ${(a.next||[]).map(n=>`<button class="chip" data-ask="${n.replace(/"/g,"&quot;")}">${n}</button>`).join("")}
+    </div></div></div>`;
+  return h;
+}
+function ask(key,askedText){
+  home.style.display="none";
+  const t=document.createElement("div");t.className="turn";
+  t.innerHTML=`<div class="asked"><div class="qt">${askedText}</div></div>
+    <div class="think"><i></i><i></i><i></i><span class="d1-label d1-label--sm">Reading your rows</span></div>`;
+  thread.appendChild(t);
+  screen.scrollTo({top:screen.scrollHeight,behavior:"smooth"});
+  setTimeout(()=>{
+    const holder=document.createElement("div");holder.innerHTML=turnHTML(ANSWERS[key],askedText);
+    const el=holder.firstElementChild;t.replaceWith(el);
+    const nav=document.querySelector(".nav").offsetHeight;
+    screen.scrollTo({top:Math.max(0,el.getBoundingClientRect().top-screen.getBoundingClientRect().top+screen.scrollTop-nav-8),behavior:"smooth"});
+  },600);
+}
+function reset(){thread.innerHTML="";home.style.display="block";qin.value="";editing=null;renderPulls();
+  screen.scrollTo({top:0,behavior:"smooth"});}
+
+const EXAMPLES=["Am I ramping too fast?","How did Saturday's long-run workout go?",
+  "What have I been saying about my knee?","Are my easy days actually easy?",
+  "How has my sleep been?","How hard have my key sessions been?"];
+let ei=0,ci=0,del=false;const ghostEl=document.getElementById("ghost");
+setInterval(()=>{const s=EXAMPLES[ei];
+  if(!del){ci++;if(ci>s.length){del=true;return;}}
+  else{ci--;if(ci<=0){del=false;ei=(ei+1)%EXAMPLES.length;}}
+  ghostEl.innerHTML="<b>"+s.slice(0,ci).replace(/ /g,"&nbsp;")+"</b>";},55);
+
+function scrollTo_(el){const nav=document.querySelector(".nav").offsetHeight;
+  screen.scrollTo({top:Math.max(0,el.getBoundingClientRect().top-screen.getBoundingClientRect().top+screen.scrollTop-nav-8),behavior:"smooth"});}
+
+document.addEventListener("click",e=>{
+  const t=e.target;
+  const ed=t.closest("[data-edit]");
+  if(ed){editing=editing===ed.dataset.edit?null:ed.dataset.edit;renderPulls();
+    const el=document.querySelector(".pull.editing");if(el)scrollTo_(el);return;}
+  const set=t.closest("[data-set]");
+  if(set){const p=PULLS.find(x=>x.id===set.dataset.pid);p[set.dataset.set]=set.dataset.val;
+    if(set.dataset.set==="metric")p.name=METRICS[set.dataset.val].short;
+    renderPulls();return;}
+  if(t.closest("[data-done]")){editing=null;renderPulls();return;}
+  const mv=t.closest("[data-move]");
+  if(mv){const i=PULLS.findIndex(x=>x.id===mv.dataset.pid),j=mv.dataset.move==="up"?i-1:i+1;
+    if(j>=0&&j<PULLS.length){[PULLS[i],PULLS[j]]=[PULLS[j],PULLS[i]];renderPulls();}return;}
+  const rm=t.closest("[data-remove]");
+  if(rm){PULLS=PULLS.filter(x=>x.id!==rm.dataset.remove);editing=null;renderPulls();toast("Pull removed");return;}
+  const add=t.closest("[data-add]");
+  if(add){const s=SUGGESTED.find(x=>x.id===add.dataset.add);
+    PULLS.push({id:"p"+(uid++),metric:s.metric,name:s.name,win:s.win,cmp:s.cmp,chart:s.chart});
+    SUGGESTED=SUGGESTED.filter(x=>x.id!==s.id);renderPulls();toast("Added to your pulls");return;}
+  const dis=t.closest("[data-dismiss]");
+  if(dis){SUGGESTED=SUGGESTED.filter(x=>x.id!==dis.dataset.dismiss);renderPulls();return;}
+  if(t.closest("#addPull")){
+    const used=PULLS.map(p=>p.metric),free=Object.keys(METRICS).find(k=>!used.includes(k))||"lt_pace";
+    const id="p"+(uid++);PULLS.push({id,metric:free,name:METRICS[free].short,win:"12",cmp:"start",chart:"line"});
+    editing=id;renderPulls();scrollTo_(document.querySelector(".pull.editing"));return;}
+  if(t.closest("#editAll")){editing=editing?null:(PULLS[0]||{}).id;renderPulls();return;}
+  const pin=t.closest("[data-pin]");
+  if(pin){const m=pin.dataset.pin;
+    if(PULLS.some(p=>p.metric===m)){toast("Already one of your pulls");return;}
+    PULLS.push({id:"p"+(uid++),metric:m,name:METRICS[m].short,win:"12",cmp:"start",chart:METRICS[m].chart||"line"});
+    SUGGESTED=SUGGESTED.filter(s=>s.metric!==m);renderPulls();toast("Pinned to your pulls");return;}
+  const open=t.closest("[data-open]");
+  if(open){const key=open.dataset.open;ask(key,ANSWERS[key].q);return;}
+  const chip=t.closest("[data-ask]");
+  if(chip){const s=chip.dataset.ask;ask(route(s),s);return;}
+  const demo=t.closest("[data-demo]");
+  if(demo){runDemo(demo.dataset.demo);return;}
+  const rc=t.closest(".receipts .head");
+  if(rc){rc.parentElement.classList.toggle("open");return;}
+  const wb=t.closest("[data-win]");
+  if(wb){win=wb.dataset.win;const turn=wb.closest(".turn");
+    turn.querySelectorAll("[data-win]").forEach(b=>b.classList.toggle("on",b.dataset.win===win));
+    turn.querySelector(".cvs").innerHTML=ANSWERS.threshold.chart.build(win);return;}
+  if(t.closest("#heroField")){qin.focus();return;}
+  if(t.closest("#ledger")){reset();toast("261 runs · 75 quality · 192 nights · no HRV");return;}
+});
+document.addEventListener("input",e=>{const rn=e.target.closest("[data-rename]");
+  if(rn){const p=PULLS.find(x=>x.id===rn.dataset.rename);p.name=rn.value;
+    rn.closest(".pull").querySelector(".name").textContent=rn.value;}});
+
+function runDemo(d){
+  if(d==="reset"){reset();return;}
+  if(d==="edit"){reset();setTimeout(()=>{editing="p1";renderPulls();scrollTo_(document.querySelector(".pull.editing"));},260);return;}
+  if(d==="suggest"){reset();setTimeout(()=>scrollTo_(document.getElementById("sugSect")),260);return;}
+  if(d==="pinflow"){thread.innerHTML="";ask("easy",ANSWERS.easy.q);
+    setTimeout(()=>{const b=thread.querySelector("[data-pin]");if(b)b.click();},1500);
+    setTimeout(()=>reset(),2900);return;}
+  thread.innerHTML="";ask(d,ANSWERS[d].q);
+}
+document.getElementById("send").onclick=()=>{const t=qin.value.trim();if(!t)return;ask(route(t),t);qin.value="";};
+qin.addEventListener("keydown",e=>{if(e.key==="Enter")document.getElementById("send").click();});
+document.querySelectorAll(".scope button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".scope button").forEach(x=>x.classList.remove("on"));b.classList.add("on");win=b.dataset.w;});
+
+renderPulls();
+</script>
+</body>
+</html>

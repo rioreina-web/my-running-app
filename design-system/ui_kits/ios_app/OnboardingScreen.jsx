@@ -242,9 +242,9 @@ const OnboardingScreen = ({ onComplete, onSkipAll }) => {
         {step === 0 && (
           <React.Fragment>
             <div className="prd-onb__eyebrow">WELCOME</div>
-            <h1 className="prd-onb__title">A quieter log<br/>for serious runners.</h1>
+            <h1 className="prd-onb__title">Talk after a run.<br/>Watch it add up.</h1>
             <p className="prd-onb__sub">
-              — half diary, half cockpit. Talk to it after a run; the coach reads the week. —
+              — an AI-driven training log: what you felt, next to what the data says. —
             </p>
 
             <div style={{ marginTop: 22 }}>
@@ -252,21 +252,21 @@ const OnboardingScreen = ({ onComplete, onSkipAll }) => {
                 <span className="prd-onb__feature-num">01</span>
                 <div>
                   <div className="prd-onb__feature-title">Voice memos.</div>
-                  <div className="prd-onb__feature-desc">Tap the coral button. Talk for two minutes. It transcribes, extracts a mood, and saves it to your journal.</div>
+                  <div className="prd-onb__feature-desc">Tap the coral button. Talk for a minute or two. It transcribes, extracts a mood, and saves it to your journal.</div>
                 </div>
               </div>
               <div className="prd-onb__feature">
                 <span className="prd-onb__feature-num">02</span>
                 <div>
-                  <div className="prd-onb__feature-title">Glass-box analysis.</div>
-                  <div className="prd-onb__feature-desc">Pace, HR zones, splits — and the rationale behind every coaching note. No black boxes.</div>
+                  <div className="prd-onb__feature-title">Pace, narrated.</div>
+                  <div className="prd-onb__feature-desc">Pace, HR zones, splits — and the reasoning behind every note.</div>
                 </div>
               </div>
               <div className="prd-onb__feature">
                 <span className="prd-onb__feature-num">03</span>
                 <div>
-                  <div className="prd-onb__feature-title">A coach in the room.</div>
-                  <div className="prd-onb__feature-desc">Reads your log every Sunday night. Ask follow-ups any time. Reasons in plain language.</div>
+                  <div className="prd-onb__feature-title">The Read tab.</div>
+                  <div className="prd-onb__feature-desc">Open it whenever you want a look at your week. Ask follow-ups any time. Reasons in plain language.</div>
                 </div>
               </div>
             </div>
@@ -326,7 +326,7 @@ const OnboardingScreen = ({ onComplete, onSkipAll }) => {
             <div className="prd-onb__eyebrow">A GOAL</div>
             <h1 className="prd-onb__title">What are you<br/>training for?</h1>
             <p className="prd-onb__sub">
-              — this anchors the coaching. You can change it any week. —
+              — this anchors your training. You can change it any week. —
             </p>
 
             <div style={{ marginTop: 22 }}>
@@ -392,13 +392,13 @@ const OnboardingScreen = ({ onComplete, onSkipAll }) => {
             <div className="prd-onb__eyebrow">YOU'RE IN</div>
             <h1 className="prd-onb__title">Three habits.<br/>That's the whole product.</h1>
             <p className="prd-onb__sub">
-              — keep these going for a couple of weeks and the coaching gets sharp. —
+              — keep these going for a couple of weeks and the picture gets sharper. —
             </p>
 
             <div style={{ marginTop: 22 }}>
               <div className="prd-onb__tip">
                 <span className="prd-onb__tip-n">01</span>
-                <span className="prd-onb__tip-text">After a run, tap the coral button on the LOG tab and talk for a minute.</span>
+                <span className="prd-onb__tip-text">After a run, tap the coral button on the LOG tab and talk for a minute or two.</span>
               </div>
               <div className="prd-onb__tip">
                 <span className="prd-onb__tip-n">02</span>
@@ -406,7 +406,7 @@ const OnboardingScreen = ({ onComplete, onSkipAll }) => {
               </div>
               <div className="prd-onb__tip">
                 <span className="prd-onb__tip-n">03</span>
-                <span className="prd-onb__tip-text">Sunday night, your coach posts a note. Read it. Reply if something is off.</span>
+                <span className="prd-onb__tip-text">Open the READ tab when you want a look at your week.</span>
               </div>
             </div>
 

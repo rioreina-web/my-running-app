@@ -136,7 +136,7 @@ enum WeekBuilder {
             plateBlock: blockLabel(weeks: weeks),
             plateRange: rangeLabel(weekStart: weekStart),
             eyebrow: "The week ahead",
-            title: "Week of \(monthDay(weekStart)).",
+            title: "Week of \(monthDay(weekStart))",
             subtitle: subtitleLine(totalMiles: totalMiles, runCount: runCount, days: thisWeek.count),
 
             days: strip,

@@ -27,7 +27,12 @@ import os
 /// number ("±13s"), `tone` the status dot.
 struct ReceiptSignal: Identifiable {
     enum Tone { case good, warn, hot, neutral }
-    let id = UUID()
+    /// Identity is the KEY, not a fresh UUID. `receiptSignals` is recomputed
+    /// on every parent re-render; a per-instance UUID gave every chip a new
+    /// identity each time, which reset `SignalChip.explaining` and slammed the
+    /// explainer sheet shut moments after it opened. A row never shows the
+    /// same key twice, so the key is the stable identity.
+    var id: String { key }
     let key: String
     let value: String
     let tone: Tone
@@ -49,9 +54,14 @@ extension ReceiptSignal.Tone {
 ///
 /// Tapping one opens `SignalExplainer` — the chips are the densest thing on the
 /// screen, five abbreviations carrying five different calculations, and there
-/// was nowhere to learn what DRIFT or VS PLAN actually measured. The popover
-/// is the whole affordance: no help icon, no legend row, no paragraph added to
-/// the page for a reader who already knows. (2026-08-20)
+/// was nowhere to learn what DRIFT or VS PLAN actually measured. That is the
+/// whole affordance: no help icon, no legend row, no paragraph added to the
+/// page for a reader who already knows. (2026-08-20)
+///
+/// Presented as a short sheet, not an anchored popover: the receipt lives
+/// inside the history sheet and the HingePager's 3D-transformed pages, where
+/// popover anchoring silently failed — a tap produced nothing. A sheet
+/// presents from any context. (2026-08-30)
 struct SignalChip: View {
     let signal: ReceiptSignal
     @State private var explaining = false
@@ -75,9 +85,10 @@ struct SignalChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint("Explains what \(signal.key) measures")
-        .popover(isPresented: $explaining) {
+        .sheet(isPresented: $explaining) {
             SignalExplainer(signal: signal)
-                .presentationCompactAdaptation(.popover)
+                .presentationDetents([.height(240)])
+                .presentationDragIndicator(.visible)
         }
     }
 }
@@ -91,14 +102,17 @@ struct SignalExplainer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(signal.key)
-                .font(.dripEyebrow(11)).tracking(1.3)
-                .foregroundStyle(Color.drip.coral)
-            Text(signal.value)
-                .font(.dripStat(20)).monospacedDigit()
-                .foregroundStyle(Color.drip.textPrimary)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(signal.key)
+                    .font(.dripEyebrow(11)).tracking(1.3)
+                    .foregroundStyle(Color.drip.coral)
+                Spacer(minLength: 8)
+                Text(signal.value)
+                    .font(.dripStat(20)).monospacedDigit()
+                    .foregroundStyle(Color.drip.textPrimary)
+            }
             Text(Self.definition(for: signal.key))
-                .font(.dripBody(13))
+                .font(.dripBody(14))
                 .foregroundStyle(Color.drip.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 7) {
@@ -107,10 +121,11 @@ struct SignalExplainer: View {
                     .font(.dripStat(9)).tracking(0.8)
                     .foregroundStyle(Color.drip.textTertiary)
             }
+            Spacer(minLength: 0)
         }
-        .padding(18)
-        .frame(width: 268, alignment: .leading)
-        .background(Color.drip.background)
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.drip.background.ignoresSafeArea())
     }
 
     /// One sentence per chip. Keyed off the same string the chip prints, so a

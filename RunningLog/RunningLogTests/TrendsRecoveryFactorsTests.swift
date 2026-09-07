@@ -1,3 +1,9 @@
+// ORPHANED 2026-08-24: the recovery score and its whole surface were removed
+// (`TrendsRecoveryFactors.swift` and the ledger no longer exist), so this
+// suite cannot compile and was breaking the entire test target. Compile-gated
+// rather than deleted so the guarded properties stay recoverable if the
+// model ever returns. (2026-08-31)
+#if false
 import Foundation
 import Testing
 @testable import RunningLog
@@ -751,3 +757,4 @@ struct RecoveryDegradationTests {
         #expect(ledger.degradations.isEmpty)
     }
 }
+#endif

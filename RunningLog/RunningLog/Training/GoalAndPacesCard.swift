@@ -28,6 +28,14 @@ struct GoalAndPacesCard: View {
     @Bindable var viewModel: TrainingPlanViewModel
     let onEditTapped: () -> Void
 
+    /// Draw the top and bottom hairlines. On by default (the card as it was
+    /// on Train). Trends passes `false` (2026-09-01, Rio: "around goal and
+    /// such, make this a much smoother look"): there the line sits inside a
+    /// masthead — readout above, segmenter below — and boxing it in two
+    /// hairlines made five rules in 300pt. Without them it reads as the last
+    /// line of the readout, which is what it is.
+    var hairlines: Bool = true
+
     @State private var expanded = false
 
     var body: some View {
@@ -105,9 +113,9 @@ struct GoalAndPacesCard: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .padding(.vertical, 14)
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+        .padding(.vertical, hairlines ? 14 : 0)
+        .overlay(alignment: .top) { if hairlines { Rectangle().fill(Color.drip.divider).frame(height: 1) } }
+        .overlay(alignment: .bottom) { if hairlines { Rectangle().fill(Color.drip.divider).frame(height: 1) } }
     }
 
     // MARK: - Empty state
@@ -136,9 +144,9 @@ struct GoalAndPacesCard: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.vertical, 14)
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .top)
-        .overlay(Rectangle().fill(Color.drip.divider).frame(height: 1), alignment: .bottom)
+        .padding(.vertical, hairlines ? 14 : 0)
+        .overlay(alignment: .top) { if hairlines { Rectangle().fill(Color.drip.divider).frame(height: 1) } }
+        .overlay(alignment: .bottom) { if hairlines { Rectangle().fill(Color.drip.divider).frame(height: 1) } }
     }
 
     // MARK: - Pace ladder

@@ -107,7 +107,7 @@ struct TrainingAnalysisView: View {
                 .font(.dripEyebrow(11))
                 .tracking(1.3)  // 0.12em label tracking at 11pt
                 .foregroundStyle(Color.drip.textTertiary)
-            Text("Where you actually run.")
+            Text("Where you actually run")
                 .font(.dripDisplay(26))
                 .foregroundStyle(Color.drip.textPrimary)
             Text(headerSub)

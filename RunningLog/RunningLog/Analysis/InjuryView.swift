@@ -1,13 +1,32 @@
 import SwiftUI
+import Supabase
 
 // MARK: - InjuryListView
 
 struct InjuryListView: View {
     @State private var injuryService = InjuryService()
+    /// The run behind a niggle mention, opened as the same workout sheet the
+    /// journal uses.
+    @State private var openWorkoutLog: TrainingLog?
     @State private var selectedInjury: Injury?
     @State private var showAddInjury = false
 
     @Environment(\.openGoalEditor) private var openGoalEditor
+
+    /// Loads the run a mention was recorded on and opens its workout sheet.
+    private func openRun(_ id: UUID) {
+        Task {
+            let rows: [TrainingLog] = (try? await supabase
+                .from("training_logs")
+                .select(TrainingLog.columns)
+                .eq("id", value: id.uuidString.lowercased())
+                .limit(1)
+                .execute()
+                .value) ?? []
+            guard let log = rows.first else { return }
+            await MainActor.run { openWorkoutLog = log }
+        }
+    }
 
     /// Opens the detail/edit sheet for an ache. Voice aches are first promoted
     /// to a real injuries row (idempotent) so they are fully editable, just
@@ -101,7 +120,8 @@ struct InjuryListView: View {
                                             ? "" : thread.dominantSide.rawValue
                                     )
                                 }
-                            }
+                            },
+                            onOpenRun: { logId in openRun(logId) }
                         )
                             .padding(.horizontal, 20)
                     }
@@ -121,7 +141,7 @@ struct InjuryListView: View {
                     // Empty state — quieter, editorial. No big icon.
                     if injuryService.isEmpty && !injuryService.isLoading {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("No aches tracked.")
+                            Text("No aches tracked")
                                 .font(.dripDisplay(20))
                                 .foregroundStyle(Color.drip.textPrimary)
                             Text("Aches mentioned in voice memos will land here automatically. You can also add one with the + button.")
@@ -193,6 +213,11 @@ struct InjuryListView: View {
             AddInjurySheet(injuryService: injuryService)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        // The run behind a niggle mention — the same workout sheet the journal
+        // opens, reached from the timeline instead.
+        .sheet(item: $openWorkoutLog) { log in
+            HistoryDetailSheet(entry: log, onUpdate: {})
         }
     }
 }

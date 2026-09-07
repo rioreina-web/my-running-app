@@ -596,7 +596,8 @@ final class InjuryService {
                 side: NiggleSide(raw: row.side),
                 quote: row.verbatim_quote,
                 severityHint: row.severity_hint,
-                mentionedAt: date
+                mentionedAt: date,
+                trainingLogId: row.training_log_id
             )
         }
 

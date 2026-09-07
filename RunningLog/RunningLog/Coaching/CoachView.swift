@@ -45,6 +45,12 @@ struct CoachResponse: Codable {
     let cached: Bool?
     let model: String?
     let processingTime: Int?
+    /// True when the server answered 200 but every model provider failed, so
+    /// `response` carries an outage notice rather than the coach speaking.
+    /// Without it the two are indistinguishable on the client: both arrive as
+    /// 200 with prose in `response`, which is why an outage used to render as
+    /// a coach answer and stick in the thread.
+    let degraded: Bool?
 }
 
 // MARK: - RateLimitState
@@ -241,7 +247,7 @@ struct CoachView: View {
                 .font(.dripEyebrow(10))
                 .tracking(1.3)
                 .foregroundStyle(Color.drip.coral)
-            Text("Ask anything.")
+            Text("Ask Anything")
                 .font(.dripDisplay(24))
                 .foregroundStyle(Color.drip.textPrimary)
             Text("Training, a session, how the block is going, whether to back off. It reads your own runs — no menu, no fixed list of questions.")

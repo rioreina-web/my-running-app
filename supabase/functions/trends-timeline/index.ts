@@ -40,6 +40,8 @@ import {
   type PaceBandLap,
 } from "./paceBands.ts";
 import { buildBandLaps } from "./bandLaps.ts";
+import { buildGoalPace } from "./goalPace.ts";
+import { buildGoalPaceGrid } from "./goalPaceGrid.ts";
 import type { ZoneTable } from "../_shared/quality-volume.ts";
 import { fetchQualityLaps } from "../_shared/qualityLaps.ts";
 
@@ -82,12 +84,23 @@ Deno.serve(async (req: Request) => {
     // 1) Running + voice logs in the window. Prefer selecting stats_excluded
     //    (athlete trim/restore decision); fall back gracefully if the column
     //    isn't migrated yet so the endpoint never hard-fails on it.
+    // DEDUP (2026-09-01). A run logged through two paths — Strava sync AND a
+    // voice memo — lands as two rows with the same distance and duration, so
+    // every mile in it counted twice on every surface this endpoint feeds.
+    // `superseded_at` / `duplicate_of` is the marking convention this repo
+    // already uses, but until now ONLY `AskPullService` (the Ask tab) filtered
+    // on it — nothing server-side did, so marking a duplicate had no effect
+    // here. See `feedback_dedup_at_upload`: the real fix is merging at insert
+    // time via session_key; this is the read-side guard that stops already-
+    // marked duplicates from double-counting in the meantime.
     const selectLogs = (cols: string) =>
       supabase
         .from("training_logs")
         .select(cols)
         .eq("user_id", userId)
         .gte("workout_date", since)
+        .is("superseded_at", null)
+        .is("duplicate_of", null)
         .order("workout_date", { ascending: true });
 
     const primary = await selectLogs(`${LOG_COLS_BASE}, stats_excluded`);
@@ -388,6 +401,29 @@ Deno.serve(async (req: Request) => {
       console.error("[trends-timeline] pace bands skipped:", e);
     }
 
+    // ── Goal-pace convergence ────────────────────────────────────────────
+    // Every key session in one currency: percent of goal race pace. Additive
+    // and never fatal — no goal, or no parsed structure, returns null and the
+    // surface simply doesn't render. Deliberately does NOT require a training
+    // plan: the bands are the workout library's constants.
+    let goalPace: ReturnType<typeof buildGoalPace> = null;
+    try {
+      goalPace = await buildGoalPaceBlock(userId, logs, zones.mp ?? null, weatherByLog);
+    } catch (e) {
+      console.error("[trends-timeline] goal pace skipped:", e);
+    }
+
+    // The block-level replacement for the surface above: every non-recovery
+    // block of every candidate session, positioned by percent of goal pace,
+    // rather than one averaged number per workout. See goalPaceGrid.ts for
+    // why the session-level model couldn't represent a multi-pace workout.
+    let goalPaceGrid: ReturnType<typeof buildGoalPaceGrid> = null;
+    try {
+      goalPaceGrid = await buildGoalPaceGridBlock(userId, logs, weatherByLog);
+    } catch (e) {
+      console.error("[trends-timeline] goal pace grid skipped:", e);
+    }
+
     return new Response(
       JSON.stringify({
         weeks: timeline,
@@ -399,6 +435,8 @@ Deno.serve(async (req: Request) => {
         fast_segments: fastSegments,
         pace_bands: paceBands,
         band_laps: bandLaps,
+        goal_pace: goalPace,
+        goal_pace_grid: goalPaceGrid,
         generated_at: new Date().toISOString(),
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -455,6 +493,225 @@ function pickBiometricSource(rows: Array<Record<string, unknown>>): string | nul
   }
   return best;
 }
+
+/**
+ * The goal-pace block's IO. Resolution order mirrors
+ * `_shared/analyzers/racePaceSpecificity.ts` so the two surfaces can never
+ * disagree about what the goal is:
+ *   1. `user_goals.target_race_distance` + `target_time_seconds`
+ *   2. `athlete_state.active_goals[]` — where `interpret-goal` actually writes
+ *   3. `athlete_state.goal_race` + `goal_time_seconds`
+ */
+async function buildGoalPaceBlock(
+  userId: string,
+  logs: TimelineLog[],
+  mpSec: number | null,
+  weatherByLog: Map<string, FSWeather>,
+): Promise<ReturnType<typeof buildGoalPace>> {
+  const RACE_MILES: Record<string, number> = {
+    mile: 1, "5k": 3.10686, "10k": 6.21371, "15k": 9.32057, "10mile": 10,
+    half: 13.1094, half_marathon: 13.1094, marathon: 26.2188,
+  };
+  const miles = (k: string | null | undefined) =>
+    k ? RACE_MILES[k.toLowerCase().replace(/[\s-]/g, "_")] ?? null : null;
+
+  let raceKey: string | null = null;
+  let seconds = 0;
+  let source = "";
+
+  const { data: ug } = await supabase
+    .from("user_goals")
+    .select("target_race_distance, target_time_seconds, status")
+    .eq("user_id", userId)
+    .eq("status", "active");
+  for (const g of (ug ?? []) as Array<Record<string, unknown>>) {
+    const s = Number(g.target_time_seconds ?? 0);
+    if (s > 0 && g.target_race_distance) {
+      raceKey = String(g.target_race_distance);
+      seconds = s;
+      source = "user_goals";
+      break;
+    }
+  }
+
+  if (!raceKey) {
+    const { data: st } = await supabase
+      .from("athlete_state")
+      .select("goal_race, goal_time_seconds, active_goals")
+      .eq("user_id", userId)
+      .maybeSingle();
+    for (const g of ((st?.active_goals ?? []) as Array<Record<string, unknown>>)) {
+      const s = Number(g?.target_time_seconds ?? 0);
+      if (s > 0 && g?.target_distance_key) {
+        raceKey = String(g.target_distance_key);
+        seconds = s;
+        source = "active_goal";
+        break;
+      }
+    }
+    if (!raceKey && Number(st?.goal_time_seconds ?? 0) > 0 && st?.goal_race) {
+      raceKey = String(st.goal_race);
+      seconds = Number(st.goal_time_seconds);
+      source = "athlete_state";
+    }
+  }
+
+  const distMi = miles(raceKey);
+  if (!raceKey || !(seconds > 0) || !distMi) return null;
+
+  const ids = logs.map((l) => l.id);
+  if (ids.length === 0) return null;
+  const blocksByWorkout = new Map<string, unknown[]>();
+  // Chunked: `in()` on a long id list blows the URL length on a wide window.
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await supabase
+      .from("training_logs")
+      .select("id, parsed_structure")
+      .eq("user_id", userId)
+      .in("id", ids.slice(i, i + 100));
+    for (const row of (data ?? []) as Array<{ id: string; parsed_structure: unknown }>) {
+      const b = (row.parsed_structure as { blocks?: unknown } | null)?.blocks;
+      if (Array.isArray(b) && b.length > 0) blocksByWorkout.set(row.id, b);
+    }
+  }
+
+  // `FSWeather` is camelCase; `goalPace.ts` takes the wire shape. One small
+  // translation beats a second round trip for weather this function already has.
+  const wx = new Map<string, { temp_f: number | null; dew_point_f: number | null }>();
+  for (const [id, w] of weatherByLog) {
+    wx.set(id, { temp_f: w.tempF ?? null, dew_point_f: w.dewPointF ?? null });
+  }
+
+  return buildGoalPace(
+    logs.map((l) => ({
+      id: l.id,
+      workout_date: l.workout_date,
+      workout_type: (l as { workout_type?: string | null }).workout_type ?? null,
+      workout_distance_miles: l.workout_distance_miles ?? null,
+    })),
+    blocksByWorkout,
+    { race_key: raceKey, time_seconds: seconds, pace_sec_per_mile: seconds / distMi, source },
+    mpSec,
+    wx,
+  );
+}
+
+/**
+ * IO for the block-level grid. Duplicates the small goal-resolution query in
+ * `buildGoalPaceBlock` above rather than sharing it, so the two surfaces can
+ * evolve independently while the session-level model is phased out — once
+ * `goal_pace` (singular) has no more readers, delete it and this duplication
+ * goes with it.
+ *
+ * The one thing this adds that the session-level resolver didn't: race_date.
+ * `user_goals.target_date` and `active_goals[].target_date` both carry it;
+ * the flat `athlete_state.goal_race`/`goal_time_seconds` fallback has no date
+ * column, so a goal resolved from there renders with `race_date: null` — the
+ * grid still draws, it just has no right edge to size the runway against.
+ */
+async function buildGoalPaceGridBlock(
+  userId: string,
+  logs: TimelineLog[],
+  weatherByLog: Map<string, FSWeather>,
+): Promise<ReturnType<typeof buildGoalPaceGrid>> {
+  const RACE_MILES: Record<string, number> = {
+    mile: 1, "5k": 3.10686, "10k": 6.21371, "15k": 9.32057, "10mile": 10,
+    half: 13.1094, half_marathon: 13.1094, marathon: 26.2188,
+  };
+  const miles = (k: string | null | undefined) =>
+    k ? RACE_MILES[k.toLowerCase().replace(/[\s-]/g, "_")] ?? null : null;
+
+  let raceKey: string | null = null;
+  let seconds = 0;
+  let source = "";
+  let raceDate: string | null = null;
+
+  const { data: ug } = await supabase
+    .from("user_goals")
+    .select("target_race_distance, target_time_seconds, target_date, status")
+    .eq("user_id", userId)
+    .eq("status", "active");
+  for (const g of (ug ?? []) as Array<Record<string, unknown>>) {
+    const s = Number(g.target_time_seconds ?? 0);
+    if (s > 0 && g.target_race_distance) {
+      raceKey = String(g.target_race_distance);
+      seconds = s;
+      source = "user_goals";
+      raceDate = typeof g.target_date === "string" ? g.target_date.slice(0, 10) : null;
+      break;
+    }
+  }
+
+  if (!raceKey) {
+    const { data: st } = await supabase
+      .from("athlete_state")
+      .select("goal_race, goal_time_seconds, active_goals")
+      .eq("user_id", userId)
+      .maybeSingle();
+    for (const g of ((st?.active_goals ?? []) as Array<Record<string, unknown>>)) {
+      const s = Number(g?.target_time_seconds ?? 0);
+      if (s > 0 && g?.target_distance_key) {
+        raceKey = String(g.target_distance_key);
+        seconds = s;
+        source = "active_goal";
+        raceDate = typeof g.target_date === "string" ? g.target_date.slice(0, 10) : null;
+        break;
+      }
+    }
+    if (!raceKey && Number(st?.goal_time_seconds ?? 0) > 0 && st?.goal_race) {
+      raceKey = String(st.goal_race);
+      seconds = Number(st.goal_time_seconds);
+      source = "athlete_state";
+      // No date column on this fallback tier — the grid still renders.
+    }
+  }
+
+  const distMi = miles(raceKey);
+  if (!raceKey || !(seconds > 0) || !distMi) return null;
+
+  const ids = logs.map((l) => l.id);
+  if (ids.length === 0) return null;
+  const blocksByWorkout = new Map<string, unknown[]>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data } = await supabase
+      .from("training_logs")
+      .select("id, parsed_structure")
+      .eq("user_id", userId)
+      .in("id", ids.slice(i, i + 100));
+    for (const row of (data ?? []) as Array<{ id: string; parsed_structure: unknown }>) {
+      const b = (row.parsed_structure as { blocks?: unknown } | null)?.blocks;
+      if (Array.isArray(b) && b.length > 0) blocksByWorkout.set(row.id, b);
+    }
+  }
+
+  const wx = new Map<string, { temp_f: number | null; dew_point_f: number | null }>();
+  for (const [id, w] of weatherByLog) {
+    wx.set(id, { temp_f: w.tempF ?? null, dew_point_f: w.dewPointF ?? null });
+  }
+
+  return buildGoalPaceGrid(
+    logs.map((l) => ({
+      id: l.id,
+      workout_date: l.workout_date,
+      workout_type: (l as { workout_type?: string | null }).workout_type ?? null,
+      // Feeds goalPaceGrid's whole-session fallback for logs that never
+      // produced blocks — without these the run contributes no miles at all.
+      workout_distance_miles: l.workout_distance_miles ?? null,
+      workout_duration_minutes:
+        (l as { workout_duration_minutes?: number | null }).workout_duration_minutes ?? null,
+    })),
+    blocksByWorkout,
+    {
+      race_key: raceKey,
+      time_seconds: seconds,
+      pace_sec_per_mile: seconds / distMi,
+      source,
+      race_date: raceDate,
+    },
+    wx,
+  );
+}
+
 
 /**
  * The athlete's pace zones from `athlete_state.pace_zones`. Mirrors

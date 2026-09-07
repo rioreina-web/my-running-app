@@ -4,22 +4,20 @@
 //
 //  Negative Splits — journal-style training-log entry for the Log tab.
 //
-//  Where `TrainingLogPreviewRow` is the compact preview used inside the
-//  Training tab's dashboard, this row is the bigger journal page used in
-//  the Voice Log tab's feed. Matches Plate 09:
+//  Redesigned 2026-09-01 from a 6-layer stack (mood rule, headline+badge,
+//  meta line, 3-line quote, mood word, chip row) down to 3 lines, and to
+//  actually show what the entry is worth reading for:
 //
-//   │ TUESDAY                              ▶ VOICE · 2:34
-//   │ APR 16  ·  EASY  ·  8.0 MI
-//   │
-//   │ "I went for an easy run today and felt pretty
-//   │  good. My focus was on recovery, getting ready
-//   │  for the upcoming race…"
-//   │
-//   │ POSITIVE
+//   │ Monday ★                    APR 13         ▶ VOICE
+//   │ EASY · 6.2 mi · 8:45/mi · RPE 3
+//   │ "Legs felt fresh right from the first mile…"      ENERGIZED
 //
-//  The vertical rule on the left is colored by mood and gives entries a
-//  page-edge feel. Body text is italic serif, three lines visible, with
-//  curly-quote framing.
+//  The vertical rule on the left is still colored by mood — per the
+//  design system's left-rule rule, that's the one thing a leading rule
+//  is allowed to mean. Distance/pace/RPE were on the model the whole
+//  time (`formattedWorkoutDistance` etc.) but never rendered here; the
+//  old row's three-line quote is now one line, since scanning a week is
+//  this row's job — reading the full entry is the detail sheet's.
 //
 
 import SwiftUI
@@ -31,8 +29,8 @@ struct JournalLogRow: View {
     /// here can no longer disagree with the one there — which it did,
     /// constantly (KEY-SESSION-APPLY.md §"Rule 2").
     @State private var keySessions = KeySessionStore.shared
-    /// Body-part mentions on this entry — the athlete's own words, shown as
-    /// quiet chips. Detection, never diagnosis.
+    /// Body-part mentions on this entry — the athlete's own words. The row
+    /// shows only a count; the detail sheet is where they're spelled out.
     var niggles: [JournalNiggle] = []
 
     private var dayOfWeekLabel: String {
@@ -75,29 +73,25 @@ struct JournalLogRow: View {
         keySessions.provenance(on: entry.displayDate)
     }
 
-    private var distanceLabel: String? {
-        guard let s = entry.formattedWorkoutDistance else { return nil }
-        return "\(s) MI"
+    /// Stat-line parts: workout type, distance, pace, effort — whichever
+    /// exist. A rest-day text-only entry may have none of these, in which
+    /// case the line simply doesn't render.
+    private var statParts: [String] {
+        var parts: [String] = []
+        if let type = entry.workoutType, !type.isEmpty { parts.append(typeLabel) }
+        if let d = entry.formattedWorkoutDistance { parts.append("\(d) mi") }
+        let pace = entry.workoutPacePerMile ?? entry.formattedWorkoutPace
+        if let p = pace, !p.isEmpty { parts.append("\(p)/mi") }
+        if let rpe = entry.feltRpe { parts.append("RPE \(rpe)") }
+        return parts
     }
 
-    /// Human-friendly meta line: "APR 16 · EASY · 8.0 MI"
-    private var metaLine: String {
-        var parts = [dateLabel, typeLabel]
-        if let d = distanceLabel { parts.append(d) }
-        return parts.joined(separator: "  ·  ")
-    }
-
-    /// Body text, framed with curly quotes if non-empty.
-    private var bodyText: String {
+    /// One-line note preview. Full text lives in the detail sheet; this row
+    /// scans a week, it doesn't read an entry.
+    private var notePreview: String? {
         let raw = (entry.cleanedNotes?.isEmpty == false ? entry.cleanedNotes : entry.notes) ?? ""
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "—" }
-        return "\u{201C}\(trimmed)\u{201D}"
-    }
-
-    private var moodLabel: String? {
-        guard let m = entry.mood, !m.isEmpty else { return nil }
-        return m.uppercased()
+        return trimmed.isEmpty ? nil : "\u{201C}\(trimmed)\u{201D}"
     }
 
     private var moodColor: Color {
@@ -112,59 +106,22 @@ struct JournalLogRow: View {
         }
     }
 
-    /// Audio/text indicator shown in the top-right of the entry.
-    @ViewBuilder
-    private var indicator: some View {
-        if entry.source == "check_in" {
-            Text("CHECK-IN")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .tracking(0.8)
-                .foregroundStyle(Color.drip.textTertiary)
-        } else if entry.audioUrl != nil {
-            HStack(spacing: 5) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Color.drip.coral)
-                Text("VOICE")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.drip.coral)
-            }
-        } else {
-            Text("TEXT ONLY")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .tracking(0.8)
-                .foregroundStyle(Color.drip.textTertiary)
-        }
-    }
-
-    private func niggleChip(_ label: String) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(Color.drip.textTertiary).frame(width: 4, height: 4)
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .tracking(0.6)
-                .foregroundStyle(Color.drip.textSecondary)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .overlay(Capsule().stroke(Color.drip.divider, lineWidth: 1))
-    }
-
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            // Vertical mood-color rule — the page-edge accent
+            // Vertical mood-color rule — the page-edge accent. Per the design
+            // system's left-rule rule, a colored leading rule means mood and
+            // nothing else.
             Rectangle()
                 .fill(moodColor)
                 .frame(width: 2)
                 .padding(.vertical, 4)
 
-            // Body content
-            VStack(alignment: .leading, spacing: 0) {
-                // Headline row — day of week (★ marks a key session) + kind tag
+            VStack(alignment: .leading, spacing: 6) {
+                // Line 1 — identity: headline (★ marks a key session), date,
+                // source, all on one baseline.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(headlineText)
-                        .font(.dripDisplay(20))
+                        .font(.dripDisplay(18))
                         .foregroundStyle(Color.drip.textPrimary)
                         .lineLimit(1)
                     if isKeySession {
@@ -173,64 +130,56 @@ struct JournalLogRow: View {
                         KeySessionStar(provenance: keyProvenance, isKey: true)
                             .frame(width: 10, height: 10)
                     }
-                    Spacer(minLength: 12)
-                    indicator
-                }
-
-                // Date · type · distance line
-                Text(metaLine)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .padding(.top, 4)
-
-                // Body — three italic-serif lines (truncated with ellipsis)
-                Text(bodyText)
-                    .font(.system(size: 14, design: .serif).italic())
-                    .foregroundStyle(Color.drip.textPrimary)
-                    .lineSpacing(4)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 14)
-
-                // Mood footer. During the two-stage reveal (`transcribed`:
-                // the athlete's words are on the row, analysis still running)
-                // a quiet placeholder holds the mood line's spot — mood +
-                // niggle chips fill in when the status flips to completed.
-                if let mood = moodLabel {
-                    Text(mood)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .tracking(1.0)
-                        .foregroundStyle(moodColor)
-                        .padding(.top, 14)
-                } else if entry.isTranscribed {
-                    Text("ANALYZING…")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .tracking(1.0)
+                    Text(dateLabel)
+                        .font(.dripEyebrow(10))
+                        .tracking(0.8)
                         .foregroundStyle(Color.drip.textTertiary)
-                        .padding(.top, 14)
+                    Spacer(minLength: 12)
+                    LogSourceBadge(
+                        isCheckIn: entry.source == "check_in",
+                        hasAudio: entry.audioUrl != nil
+                    )
                 }
 
-                // Niggle chips — the athlete's own body-area words. No severity,
-                // no interpretation (detection, never diagnosis).
-                if !niggles.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(niggles.prefix(3)) { n in
-                            niggleChip(n.label)
-                        }
-                        if niggles.count > 3 {
-                            Text("+\(niggles.count - 3)")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color.drip.textTertiary)
-                        }
+                // Line 2 — the stat strip. Distance/pace/RPE were always on
+                // the model; they just never rendered on this row before.
+                if !statParts.isEmpty {
+                    Text(statParts.joined(separator: " · "))
+                        .font(.dripStat(13))
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+
+                // Line 3 — one-line note preview, with mood + niggle count
+                // trailing on the same line instead of stacking below it.
+                // During the two-stage reveal (`transcribed`: the athlete's
+                // words are on the row, analysis still running) the tail
+                // shows "ANALYZING…" in mood's place.
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    if let note = notePreview {
+                        Text(note)
+                            .font(.dripBody(14))
+                            .italic()
+                            .foregroundStyle(Color.drip.textPrimary)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
                     }
-                    .padding(.top, 12)
+                    Spacer(minLength: 8)
+                    if let mood = entry.mood, !mood.isEmpty {
+                        MoodBadge(mood: mood)
+                    } else if entry.isTranscribed {
+                        Text("ANALYZING…")
+                            .font(.dripEyebrow(9))
+                            .tracking(0.8)
+                            .foregroundStyle(Color.drip.textTertiary)
+                    }
+                    NiggleCountIndicator(count: niggles.count)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 22)
+        .padding(.vertical, 16)
         .contentShape(Rectangle())
     }
 }

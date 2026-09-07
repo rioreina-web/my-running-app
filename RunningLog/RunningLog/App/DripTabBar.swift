@@ -33,10 +33,11 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The canonical tabs — **Log · Train · Trends · Ask** — input → what it
-/// did → overview → why. (Ask took the fourth slot from Charts on
-/// 2026-08-19; the settled IA before either was the three-tab
-/// Log · Train · Trends.)
+/// The canonical tabs — **Log · Train · Trends · Week · Ask · Read** —
+/// input → what it did → overview → decision → why → synthesis. (Ask took
+/// the fourth slot from Charts on 2026-08-19; Read took the last slot from
+/// the Sheet on 2026-08-30; the settled IA before all of them was the
+/// three-tab Log · Train · Trends.)
 ///
 /// Raw values match the integer tags `MainTabView` uses for `selectedTab`
 /// (the bar binds to `Binding<Int>`, so tags stay stable across IA
@@ -52,9 +53,14 @@ import UIKit
 /// and `plan` (3 — Plan folded into Train's CALENDAR mode; the plan is
 /// a subset of training, not its own destination).
 ///
-/// Retired 2026-07-28: `coach` (2, The Read). `CoachReadView` stays in
-/// the repo, unlinked, so the surface can come back as its own tab or as
-/// a pushed screen without rebuilding it.
+/// Retired 2026-07-28: `coach` (2, The Read). `CoachReadView` stayed in
+/// the repo, unlinked, so the surface could come back as its own tab or as
+/// a pushed screen without rebuilding it — and on 2026-08-30 it did, as
+/// `read` (tag 12) in the slot The Sheet held. Tag 2 stays retired.
+///
+/// Retired 2026-08-30: `sheet` (9, The Sheet — the dense session table).
+/// Its slot went to `read`. `SheetTabView` stays in the repo, unlinked,
+/// per the same restore-without-rebuilding convention.
 ///
 /// Retired 2026-08-19: `instruments` (8, Charts) — replaced in its own
 /// slot by `ask`, per the IA-cost note on `sheet` below. It was the
@@ -82,13 +88,12 @@ enum DripTab: Int, CaseIterable, Identifiable {
     /// change the week only when tapped.
     ///
     /// Declared here so the bar reads Log · Train · Trends · Week · Ask ·
-    /// Sheet: Week sits between the surface that observes (Trends) and the
+    /// Read: Week sits between the surface that observes (Trends) and the
     /// surface that holds the plan (Train's calendar), because it reads the
     /// first and writes the second.
     ///
-    /// Tag 11 is fresh. 2, 3, 5, 6, 7 and 8 are retired tags, 9 is the Sheet
-    /// and 10 is Ask — reusing any of them would land old jump-to-tab call
-    /// sites here.
+    /// Tag 11 is fresh. 2, 3, 5, 6, 7, 8 and 9 are retired tags and 10 is
+    /// Ask — reusing any of them would land old jump-to-tab call sites here.
     case week = 11
     /// Ask (`AskTabView`) — the analysis surface: pick a question, get it
     /// answered from your own runs. Added 2026-08-19 in the slot Charts
@@ -99,28 +104,26 @@ enum DripTab: Int, CaseIterable, Identifiable {
     /// share `AskService.shared`, whose `loadCatalog` guards on
     /// `catalogLoaded`, so two mounted bars never double-fetch.
     ///
-    /// Tag 10 is fresh — 2, 3, 5, 6, 7 and 8 are all retired tags (see
-    /// above) and 9 is the Sheet. Reusing 7 or 8 would land old
-    /// jump-to-tab call sites here.
+    /// Tag 10 is fresh — 2, 3, 5, 6, 7, 8 and 9 are all retired tags (see
+    /// above). Reusing 7 or 8 would land old jump-to-tab call sites here.
     case ask = 10
-    /// The Sheet (`SheetTabView`) — the dense session table, added 2026-08-11.
-    /// One row per SESSION (not per day and not per upload — see
-    /// `SessionRollup.swift`), week-grouped, with tag chips and search.
+    /// The Read (`CoachReadView`) — the AI daily read, restored as a tab
+    /// 2026-08-30 in the slot The Sheet held (Sheet retired; see above).
+    /// It first shipped as `coach` (tag 2), retired 2026-07-28; the view
+    /// waited in the repo, unlinked, for exactly this restore.
     ///
-    /// Declared last so the four established tabs keep their slots and their
-    /// muscle memory. Moving it beside Log is a one-line change: move this
-    /// `case` up, never renumber it.
+    /// Declared last so the five established tabs keep their slots and
+    /// their muscle memory, the same argument the Sheet made.
     ///
-    /// Tag 9 is fresh — 2, 3, 5, 6, 7 (Read) and 8 (Charts) are all retired
-    /// tags; see above.
+    /// Tag 12 is fresh — 2 (Coach/Read), 3, 5, 6, 7 (DEBUG Read), 8
+    /// (Charts) and now 9 (Sheet) are all retired tags. Reusing 2 or 7
+    /// would land old jump-to-tab call sites here.
     ///
-    /// IA COST: the bar is five tabs as of 2026-08-19 — Log · Train ·
-    /// Trends · Ask — plus this one, in DEBUG and release alike. At 393pt
-    /// five items is ~78pt each against a 44pt minimum touch target, which
-    /// fits with room to spare now that Charts and the DEBUG Read are gone.
-    /// Adding a sixth is possible but should still be argued for: the last
-    /// two additions were both eventually spent replacing something.
-    case sheet = 9
+    /// IA COST: the bar stays six wide — Log · Train · Trends · Week ·
+    /// Ask · Read — a slot swap, not an addition, per the note above that
+    /// the last two additions were both eventually spent replacing
+    /// something. This is the Sheet's being spent.
+    case read = 12
 
     var id: Int { rawValue }
 
@@ -137,7 +140,7 @@ enum DripTab: Int, CaseIterable, Identifiable {
         case .training: "Train"
         case .ask: "Ask"
         case .week: "Week"
-        case .sheet: "Sheet"
+        case .read: "Read"
         }
     }
 

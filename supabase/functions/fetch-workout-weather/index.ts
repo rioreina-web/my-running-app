@@ -25,6 +25,7 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { adjustPace, buildWeatherJson } from "../_shared/pace-heat-adjustment.ts";
+import { altitudeFields } from "../_shared/altitude.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -37,6 +38,23 @@ interface WeatherCacheRow {
   wind_speed_mph: number | null;
   weather_code: number | null;
   fetched_at: string;
+}
+
+/** Decode the role claim of a gateway-verified JWT. See the auth note in the
+ *  handler — mirrors coaching-daily-read's helper verbatim. */
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function json(body: unknown, status = 200): Response {
@@ -157,6 +175,35 @@ function preferredHour(pref: string | null | undefined): number {
   }
 }
 
+// ── Elevation (altitude adjustment) ────────────────────────────
+//
+// Elevation is a property of the coordinate, not the hour, so it lives in a
+// module-level map (warm instances reuse it) rather than the weather_cache
+// table — no schema change needed. Open-Meteo's elevation endpoint is free
+// and keyless; a failure just means the run carries no altitude fields,
+// which every consumer treats as "unknown", never as sea level.
+const elevationByPoint = new Map<string, number | null>();
+
+async function elevationForPoint(lat: number, lon: number): Promise<number | null> {
+  const key = `${Math.round(lat * 100)},${Math.round(lon * 100)}`;
+  if (elevationByPoint.has(key)) return elevationByPoint.get(key) ?? null;
+  try {
+    const res = await fetch(
+      `https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`,
+      { signal: AbortSignal.timeout(5000) },
+    );
+    if (!res.ok) throw new Error(`elevation API ${res.status}`);
+    const data = await res.json() as { elevation?: number[] };
+    const m = Array.isArray(data.elevation) ? Number(data.elevation[0]) : NaN;
+    const value = Number.isFinite(m) ? m : null;
+    elevationByPoint.set(key, value);
+    return value;
+  } catch (err) {
+    console.warn("[fetch-workout-weather] elevation lookup failed:", err);
+    return null; // not cached — a transient failure shouldn't stick
+  }
+}
+
 /** Resolve a weather slot from a local date string + local hour. */
 async function weatherForLocal(
   supabase: SupabaseClientLike,
@@ -172,16 +219,22 @@ async function weatherForLocal(
   const hourBucket = Math.floor(
     new Date(`${dateStr}T${String(localHour).padStart(2, "0")}:00:00Z`).getTime() / 3600000,
   );
+  // Altitude rides on every weather blob, cache hit or not — elevation is
+  // per-coordinate and the weather_cache rows predate it.
+  const altitude = altitudeFields(await elevationForPoint(lat, lon));
   const cached = await getCached(supabase, latKey, lonKey, hourBucket);
-  if (cached) return cached;
+  if (cached) return { ...cached, ...altitude };
   const data = await fetchFromOpenMeteo(lat, lon, dateStr, kind);
   if (!data) return null;
   const h = extractHourData(data.hourly as OpenMeteoHourly, localHour);
   if (!h) return null;
   await setCache(supabase, latKey, lonKey, hourBucket, h);
-  return buildWeatherJson(
-    h.tempF, h.dewF, h.humidity, h.windMph, h.condition, new Date().toISOString(), h.weatherCode,
-  );
+  return {
+    ...buildWeatherJson(
+      h.tempF, h.dewF, h.humidity, h.windMph, h.condition, new Date().toISOString(), h.weatherCode,
+    ),
+    ...altitude,
+  };
 }
 
 /** Pull [lat, lon] from a run's stored GPS (first latlng sample). */
@@ -323,9 +376,27 @@ Deno.serve(async (req: Request) => {
   }
 
   const bodyUserId = typeof body.user_id === "string" ? body.user_id : undefined;
-  const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
-  if ("response" in auth) return auth.response;
-  const { userId, isServiceRole } = auth;
+  // Service-role detection by CLAIM, not string equality — the Vault copy of
+  // the key (what cron sends via net.http_post) no longer string-equals this
+  // function's env copy even though both are validly signed. Same drifted-key
+  // class and same fix as coaching-daily-read / extract-rpe /
+  // compute-workout-features. Safe because this function has no config.toml
+  // override, so the gateway verify_jwt default (true) has already checked
+  // the token's signature before we see it.
+  const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  let userId: string;
+  let isServiceRole: boolean;
+  if (bearer && isServiceRoleJWT(bearer)) {
+    if (!bodyUserId) {
+      return json({ error: "Service-role caller must specify user_id in body" }, 400);
+    }
+    userId = bodyUserId;
+    isServiceRole = true;
+  } else {
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    ({ userId, isServiceRole } = auth);
+  }
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,

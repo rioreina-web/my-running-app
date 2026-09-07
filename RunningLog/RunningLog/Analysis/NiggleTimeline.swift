@@ -73,6 +73,10 @@ struct NiggleMention: Identifiable, Equatable {
     let severityHint: String?
     /// UTC start-of-day, to line up with the bare DATE `mentioned_at`.
     let mentionedAt: Date
+    /// The run the ache was mentioned in. Nullable in the schema — a mention
+    /// can come from a standalone check-in with no workout attached — so the
+    /// tap-through to the workout sheet is offered only when it is present.
+    var trainingLogId: UUID? = nil
 }
 
 /// A row from `niggle_resolutions`. Named "positive note" rather than
@@ -109,6 +113,9 @@ struct NiggleThread: Identifiable, Equatable {
 
     var mentionCount: Int { mentions.count }
     var lastQuote: String? { mentions.last?.quote }
+    /// The run behind the newest mention that has one — what the quote block
+    /// opens. Nil when no mention in the thread came from a logged workout.
+    var latestRunId: UUID? { mentions.reversed().first { $0.trainingLogId != nil }?.trainingLogId }
 
     /// Plain-language recency. The screen never says "healed".
     var recencyLine: String {

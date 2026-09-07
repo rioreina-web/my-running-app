@@ -436,7 +436,9 @@ struct AnalysisView: View {
                 Rectangle()
                     .fill(Color.drip.coral)
                     .frame(width: 16, height: 1.5)
-                Text("COACH'S NOTES")
+                // Machine-written (see `aiAnalysisSection`), so it says AI —
+                // "Coach" is reserved for a person's input. 2026-08-31.
+                Text("AI INSIGHT")
                     .font(.dripCaption(10))
                     .foregroundStyle(Color.drip.textTertiary)
                     .tracking(2)

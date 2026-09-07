@@ -42,6 +42,7 @@
  */
 
 import { isQualityPace, type ZoneTable } from "./quality-volume.ts";
+import { contextualWorkCutoff } from "./workoutSegmentation.ts";
 import { adjustPace } from "./pace-heat-adjustment.ts";
 import { adjustPaceForGrade, combineConditions, gradeAdjustRun, type RunSegment } from "./pace-grade-adjustment.ts";
 
@@ -279,6 +280,10 @@ export interface KeySessionMetrics {
   /** Per-system breakdown; length > 1 when the session mixes systems. */
   bySystem: SystemVolume[];
   reps: FastRep[];
+  /** True when the reps were found by the run-relative fallback (no lap at
+   *  MP+): the session compares head-to-head but joins no system trend —
+   *  steady reps have no race system to trend against. */
+  contextual: boolean;
 }
 
 export interface SystemTrendPoint {
@@ -338,10 +343,30 @@ export function analyzeKeySession(
 
   // 1) Classify each lap fast (MP+) vs not, and find the fast window so warmup
   //    and cooldown (also slower than MP) don't get counted as "rest".
-  const fastFlags = laps.map((l) => {
+  let fastFlags = laps.map((l) => {
     const p = lapPaceSec(l);
     return p != null && zones.mp != null && isQualityPace(p, zones.mp);
   });
+  // No lap cleared the MP gate — a long-run workout's reps sit slower than the
+  // race anchors by design. Fall back to the run's OWN pace split (same rule
+  // that builds the structure string, so the two surfaces agree on what was a
+  // rep). Contextual sessions join `sessions[]` (the compare picker) but are
+  // kept out of the per-system trend lines — steady reps have no system.
+  let contextual = false;
+  if (!fastFlags.includes(true)) {
+    const candidatePaces = laps
+      .filter((l) => l.distance_meters >= 150 && l.moving_time_seconds >= 20)
+      .map((l) => lapPaceSec(l))
+      .filter((p): p is number => p != null && p > 0);
+    const cutoff = contextualWorkCutoff(candidatePaces);
+    if (cutoff == null) return null;
+    contextual = true;
+    fastFlags = laps.map((l) => {
+      const p = lapPaceSec(l);
+      return p != null && p > 0 && p <= cutoff &&
+        l.distance_meters >= 150 && l.moving_time_seconds >= 20;
+    });
+  }
   const firstFast = fastFlags.indexOf(true);
   const lastFast = fastFlags.lastIndexOf(true);
   if (firstFast === -1) return null;
@@ -373,6 +398,10 @@ export function analyzeKeySession(
   }
   if (cur) bouts.push(cur);
   if (bouts.length === 0) return null;
+  // A contextual "fast cluster" that merges to one block is a fast-finish or
+  // negative-split run, not a rep session — admitting it would put every
+  // strong long run in the workout picker.
+  if (contextual && bouts.length < 2) return null;
 
   // 3) Turn each bout into a FastRep with system + heat-adjusted pace.
   const weather = input.weather ?? null;
@@ -596,6 +625,7 @@ export function analyzeKeySession(
     grade,
     bySystem,
     reps,
+    contextual,
   };
 }
 
@@ -670,6 +700,9 @@ export function analyzeFastSegmentTrends(
 
   const bySystem = new Map<PaceSystem, SystemTrendPoint[]>();
   for (const s of sessions) {
+    // Run-relative sessions carry no system claim — their "MP" rep labels are
+    // only the null-fallback of `systemForPace`. Keep them off the trend lines.
+    if (s.contextual) continue;
     for (const sv of s.bySystem) {
       // Keep incidental work out of a system's trend: a run only lands on the
       // HMP line if it did a real HMP chunk, not 0.6 mi of it inside a 5K day.

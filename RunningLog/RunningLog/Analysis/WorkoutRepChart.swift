@@ -41,6 +41,42 @@ struct WorkoutLapRow: Decodable, Identifiable {
     /// Lets the lap table label a warm-up mile "wu" instead of the wrong
     /// "rec". Pass-through rows keep it; merged bouts don't need it.
     var role: String? = nil
+    /// The DB's own `is_rest`, preserved before the parser's role labels
+    /// overwrite `is_rest` (see the rewrite in `WorkoutRepReceiptView.load`).
+    /// Client-only, never selected — decodes nil, and `restForHeat` then falls
+    /// back to `is_rest`.
+    ///
+    /// Two different questions wear the same word. *Did the athlete STAND
+    /// STILL?* is a physiological fact about the run, and it is the only thing
+    /// that earns the short-rep heat discount — it lives here. *Is this the
+    /// hard part?* is a label for the chart, and it lives in `is_rest`/`role`.
+    /// An alternation workout (MP / MP+20s, run continuously) answers no to the
+    /// first and yes-ish to the second, and conflating them charged its slow
+    /// legs a rest they never took: every rep got the 0.5× short-rep factor and
+    /// the "recovery" legs lost their credit entirely, so a 16 s/mi heat cost
+    /// rendered as 8 s/mi while the Trends tab — which reads the DB straight —
+    /// showed the true number one tap away.
+    var db_is_rest: Bool? = nil
+
+    /// Did the athlete actually stop inside this lap? Heat math keys off this;
+    /// labels key off `is_rest`.
+    ///
+    /// Rest only when BOTH signals agree, because each is wrong in its own
+    /// direction and neither alone can be trusted:
+    ///
+    /// - The DB column is a heuristic — it flags any lap under 200 m as rest,
+    ///   so a genuine 200 m rep reads as rest. When the parser calls that lap
+    ///   a "rep", the parser is right.
+    /// - The parser's label is about INTENT — the slow leg of an alternation
+    ///   is a "recovery" the athlete ran at 5:56/mi without ever stopping.
+    ///   When the DB says she never stopped, the DB is right.
+    ///
+    /// Requiring agreement keeps both honest. With no parse (`db_is_rest` nil,
+    /// nothing was overwritten) the stored flag stands on its own.
+    var restForHeat: Bool? {
+        guard let db = db_is_rest else { return is_rest }
+        return db && (is_rest ?? false)
+    }
 }
 
 /// Pace zones (sec/mi) used for the dashed reference lines.
@@ -133,6 +169,12 @@ enum WorkoutLapsService {
         _ raw: [WorkoutLapRow]
     ) -> [(lap: WorkoutLapRow, members: [WorkoutLapRow])] {
         let ordered = raw.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
+        // Did this session contain a REAL rest — one the watch recorded, not one
+        // the parser's role labels invented? That, and only that, earns the
+        // short-rep heat discount. Mirrors `heat_rep_length_factor_for_lap`'s
+        // `bool_or(sib.is_rest)` in 20260805210000_heat_intensity_scaling.sql,
+        // which is why the server credits a continuous alternation in full.
+        let hasRecordedRest = ordered.contains { $0.restForHeat == true }
         var out: [(lap: WorkoutLapRow, members: [WorkoutLapRow])] = []
         var i = 0
         var idx = 0
@@ -174,10 +216,25 @@ enum WorkoutLapsService {
             // Rep-length scaling uses the MERGED distance, which is the honest
             // bout length: two auto-lapped miles re-joined into one 2 mi rep
             // earns the full adjustment, not each half's short-rep discount.
+            // A single-lap bout is not a merge — its pace and length are the
+            // lap's own, so the server's stored adjustment still describes it
+            // exactly. Prefer it. Recomputing here threw away a number that was
+            // already right AND silently dropped the intensity factor (this
+            // call passes no `thresholdPaceSeconds`), so the client disagreed
+            // with the very row it was rendering.
             let mergedHeatAdj: Double? = {
+                if members.count == 1,
+                   let stored = members[0].heat_adjusted_pace_sec_per_mile, stored > 0 {
+                    return stored
+                }
                 guard let p = mergedPace, p > 0, let t = temp, let d = dew else { return nil }
+                // Rep-length scaling only when the athlete genuinely stopped.
+                // Passing a per-lap length on a continuous run is the exact
+                // misuse `heatRepLengthFactor` warns against: a 1 km leg lands
+                // at 0.5× and halves the run's heat cost.
                 return PaceCalculator.calculateDewPointAdjustment(
-                    paceSeconds: p, temperatureF: t, dewPointF: d, distanceMiles: miles
+                    paceSeconds: p, temperatureF: t, dewPointF: d,
+                    distanceMiles: hasRecordedRest ? miles : nil
                 ).neutralEquivalentPaceSeconds
             }()
             out.append((

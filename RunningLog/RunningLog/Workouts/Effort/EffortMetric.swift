@@ -49,6 +49,20 @@ struct EffortSegment: Equatable {
     func contains(_ time: TimeInterval) -> Bool { time >= t0 && time < t1 }
 }
 
+/// One watch-recorded split — a raw lap exactly as the watch laid it down,
+/// BEFORE any bout merging — located on the stream's elapsed clock. Powers the
+/// SPLITS overlay: the chart's bands are the session's reps (4×3mi is FOUR
+/// bands), and the mile/km splits the watch recorded inside them stay one tap
+/// away as a stepped overlay instead of becoming twelve fake rep bands.
+struct EffortWatchSplit: Equatable {
+    let t0: TimeInterval
+    let t1: TimeInterval
+    /// The lap's recorded average MOVING pace. Drawn on the elapsed axis, so a
+    /// split containing a standing pause reads faster than the fill dips under
+    /// it — that is the honest difference between the tape and the clock.
+    let paceSecPerMile: Double
+}
+
 /// The four plottable metrics. Config (axis label, unit, fallback domain,
 /// direction, tick candidates, minimum span) is lifted verbatim from the
 /// handoff's metric table. Color is intentionally absent — it is a view concern.

@@ -88,7 +88,7 @@ struct WildWorkoutPickerSheet: View {
 
     private var lede: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Link a run.")
+            Text("Link a Run")
                 .font(.wildDisplay(32))
                 .tracking(32 * -0.045)
                 .foregroundStyle(Color.wild.ink)

@@ -44,7 +44,7 @@ struct HeadToHeadCard: View {
                 Text("HEAD-TO-HEAD")
                     .font(.dripEyebrow(10)).tracking(10 * 0.14)
                     .foregroundColor(Color.drip.textSecondary)
-                Text("Two sessions.")
+                Text("Two Sessions")
                     .font(.dripDisplay(26))
                     .foregroundColor(Color.drip.textPrimary)
                     .padding(.top, 4)

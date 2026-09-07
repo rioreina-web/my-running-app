@@ -118,7 +118,7 @@ struct SheetTabView: View {
                 .font(.dripEyebrow(11)).tracking(1.5)
                 .foregroundStyle(Color.drip.textTertiary)
 
-            Text("Every session.")
+            Text("Every session")
                 .font(.dripDisplay(28))
                 .foregroundStyle(Color.drip.textPrimary)
                 .padding(.top, 4)
@@ -349,7 +349,7 @@ struct SheetTabView: View {
             EmptyStateView(
                 variant: .optionalEmpty,
                 eyebrow: "No match",
-                title: "Nothing matches \(subtitleFilterPhrase).",
+                title: "Nothing matches \(subtitleFilterPhrase)",
                 cta: .init(label: "Clear filters") {
                     selectedTags.removeAll()
                     query = ""

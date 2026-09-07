@@ -367,7 +367,7 @@ struct TodayHomeView: View {
         let ordinalFormatter = NumberFormatter()
         ordinalFormatter.numberStyle = .ordinal
         let ordinal = ordinalFormatter.string(from: NSNumber(value: day)) ?? "\(day)"
-        return "\(month) \(ordinal)."
+        return "\(month) \(ordinal)"
     }
 
     /// "— eleven weeks to the marathon. —" — italic-serif race countdown.
@@ -603,7 +603,7 @@ struct TodayGoal {
         let f = DateFormatter()
         f.dateFormat = "MMM d, yyyy"
         if weeks == 0 {
-            return "Race day this week — \(f.string(from: raceDate))."
+            return "Race day this week — \(f.string(from: raceDate))"
         }
         return "\(weeks) weeks out · \(f.string(from: raceDate))"
     }

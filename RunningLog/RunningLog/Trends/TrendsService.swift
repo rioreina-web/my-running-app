@@ -52,6 +52,16 @@ final class TrendsService {
     /// the athlete has no usable fitness anchor; the threshold section then
     /// falls back to the fixed `paceBands` read.
     private(set) var bandLaps: BandLaps?
+    /// Key sessions as a percent of goal race pace, against the workout
+    /// library's own ladder. `nil` when there is no goal to measure against, no
+    /// parsed structure in the window, or against a backend predating
+    /// `goalPace.ts`. Deliberately does NOT require a training plan.
+    private(set) var goalPace: GoalPaceData?
+    /// The block-level replacement for the surface above — see
+    /// GoalPaceGridDTO.swift's file header for why the per-session model
+    /// can't represent a multi-pace workout. Both are decoded during the
+    /// transition; only the grid is mounted in the UI.
+    private(set) var goalPaceGrid: GoalPaceGridData?
     /// Implausible runs the timeline set aside (watch-not-paused etc.),
     /// undecided — surfaced to Trim or Keep. Never deleted.
     private(set) var flagged: [TrendsFlaggedRun] = []
@@ -122,6 +132,8 @@ final class TrendsService {
             fastSegments = payload.fastSegments?.toData() ?? .empty
             paceBands = payload.paceBands?.toModel()
             bandLaps = payload.bandLaps?.toModel()
+            goalPace = payload.goalPace?.toData()
+            goalPaceGrid = payload.goalPaceGrid?.toData()
             loaded = true
             lastError = nil
             Log.coach.info("Trends timeline loaded (\(self.weeks.count) weeks)")
@@ -320,6 +332,10 @@ private struct TrendsTimelinePayload: Decodable {
     /// re-widened on device. Optional for the same reason: a deploy predating
     /// `bandLaps.ts` omits it, and the section falls back to the fixed band.
     let bandLaps: BandLapsDTO?
+    /// Optional for the same reasons as the two above, plus one of its own:
+    /// the module returns null when the athlete has no resolvable goal.
+    let goalPace: GoalPaceDTO?
+    let goalPaceGrid: GoalPaceGridDTO?
 
     enum CodingKeys: String, CodingKey {
         case weeks, days, flagged, trimmed
@@ -328,6 +344,8 @@ private struct TrendsTimelinePayload: Decodable {
         case fastSegments = "fast_segments"
         case paceBands = "pace_bands"
         case bandLaps = "band_laps"
+        case goalPace = "goal_pace"
+        case goalPaceGrid = "goal_pace_grid"
     }
 }
 

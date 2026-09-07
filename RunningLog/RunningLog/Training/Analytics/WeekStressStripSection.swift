@@ -71,6 +71,13 @@ struct WeekStressStripSection: View {
     /// LOOK at this week rather than a place in the app to be somewhere.
     @State private var expanded = false
 
+    /// The pace-spectrum scale sheet, from the legend's tap trigger. The
+    /// ladder + caption used to render inline under every week that had
+    /// runs in it — permanent furniture explaining an encoding the athlete
+    /// only needs once. Behind a tap now, same as the TLS number opens
+    /// `TrainingLoadExplainer`.
+    @State private var showingScale = false
+
     /// What bar height means. Persisted, not `@State`: an athlete who thinks in
     /// miles thinks in miles every week, and making them re-pick on every launch
     /// would be a setting that pretends to be a filter.
@@ -181,7 +188,7 @@ struct WeekStressStripSection: View {
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
-                legend
+                scaleTrigger
             } else {
                 let isCurrent = vm.isCurrentWeek(vm.weekStart(weeksAgo: weekOffset))
                 EmptyStateView(
@@ -196,6 +203,7 @@ struct WeekStressStripSection: View {
             }
         }
         .padding(.top, 32)
+        .sheet(isPresented: $showingScale) { scaleSheet }
         // `refresh()` no-ops when already loaded, so arriving here after a visit
         // to Trends costs nothing; arriving here first does the fetch.
         .task { await trends.refresh() }
@@ -895,6 +903,33 @@ struct WeekStressStripSection: View {
 
     // MARK: The legend
 
+    /// Compact stand-in for the full scale ladder — a coral tap affordance,
+    /// same convention as "OPEN DAY ↗" and the TLS number. The ladder +
+    /// caption used to render inline under every week with runs in it;
+    /// that's permanent explainer furniture the athlete needs once, not
+    /// every time, and it was crowding the day panel above it.
+    private var scaleTrigger: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Hairline().padding(.top, 32)
+
+            Button { showingScale = true } label: {
+                HStack(spacing: 4) {
+                    Text("THE PACE SPECTRUM · WHAT A MINUTE COSTS")
+                        .font(.dripEyebrow(eyebrowMicro)).tracking(1.1)
+                        .foregroundStyle(Color.drip.textTertiary)
+                    Text("↗")
+                        .font(.dripEyebrow(eyebrowMicro)).tracking(1.1)
+                        .foregroundStyle(Color.drip.coral)
+                }
+                .padding(.top, 20)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("The pace spectrum — what a minute costs")
+            .accessibilityHint("Opens the pace scale")
+        }
+    }
+
     /// The ramp drawn as a LADDER: bar height is what a minute in that zone
     /// costs. Flat equal-height swatches named the colors and said nothing
     /// about intensity, which is the whole thing the chart above encodes — so
@@ -905,17 +940,33 @@ struct WeekStressStripSection: View {
     /// that keeps climbing past it, so a 200 at 4:20/mi outscores a mile rep at
     /// 4:50 instead of both flattening to 8. A ladder that simply stopped at
     /// mile would say the opposite.
-    private var legend: some View {
+    ///
+    /// Presented as a sheet from `scaleTrigger` rather than inline.
+    private var scaleSheet: some View {
+        ScrollView {
+            scaleSheetBody
+                .padding(.horizontal, 22)
+                .padding(.top, 24)
+                .padding(.bottom, 40)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color.drip.background)
+        .presentationDragIndicator(.visible)
+        .presentationDetents([.medium])
+    }
+
+    /// Broken out of `scaleSheet` — chained modifiers on top of the caption's
+    /// string concatenation was too much for the type-checker in one
+    /// expression.
+    @ViewBuilder
+    private var scaleSheetBody: some View {
         let anchorHeight: CGFloat = 44          // x8 — the mile anchor
         let ladderHeight: CGFloat = 62          // room above it for ">8"
 
-        return VStack(alignment: .leading, spacing: 0) {
-            Hairline().padding(.top, 32)
-
+        VStack(alignment: .leading, spacing: 0) {
             Text("THE PACE SPECTRUM · WHAT A MINUTE COSTS")
                 .font(.dripEyebrow(eyebrowMicro)).tracking(1.1)
                 .foregroundStyle(Color.drip.textTertiary)
-                .padding(.top, 20)
 
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(ZoneTaxonomy.ordered, id: \.self) { token in
@@ -938,15 +989,7 @@ struct WeekStressStripSection: View {
             .foregroundStyle(Color.drip.textTertiary)
             .padding(.top, 8)
 
-            Text("Color is the pace. " + metric.heightSentence
-                 + "\(fmtWeightRatio())× "
-                 + (metric == .load ? "taller than ten minutes easy."
-                                    : "what ten minutes easy costs.")
-                 + " Mile is the top anchor at ×\(fmtMultiplier(maxAnchorWeight)); "
-                 + "anything faster keeps climbing above it.")
-                .font(.system(size: 12.5, design: .serif))
-                .foregroundStyle(Color.drip.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            scaleCaption
                 .padding(.top, 12)
         }
         .accessibilityElement(children: .ignore)
@@ -955,6 +998,23 @@ struct WeekStressStripSection: View {
             + "from easy at 1 times to mile at \(fmtMultiplier(maxAnchorWeight)) "
             + "times. Faster than mile scores above that."
         )
+    }
+
+    /// The caption's string build pulled out on its own — three concatenated
+    /// segments plus a ternary is enough on its own to blow the type-checker
+    /// budget once it sits inside a modifier chain.
+    private var scaleCaption: some View {
+        let text = "Color is the pace. " + metric.heightSentence
+            + "\(fmtWeightRatio())× "
+            + (metric == .load ? "taller than ten minutes easy."
+                                : "what ten minutes easy costs.")
+            + " Mile is the top anchor at ×\(fmtMultiplier(maxAnchorWeight)); "
+            + "anything faster keeps climbing above it."
+
+        return Text(text)
+            .font(.system(size: 12.5, design: .serif))
+            .foregroundStyle(Color.drip.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The ">8" cap: a dashed stem rising off the mile bar. Sized to one

@@ -130,7 +130,7 @@ struct SignalLabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 PlateStrip(surface: "Running log — signal lab")
 
-                Text("Five signals, one athlete.")
+                Text("Five signals, one athlete")
                     .font(.dripDisplay(32))
                     .foregroundStyle(Color.drip.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)

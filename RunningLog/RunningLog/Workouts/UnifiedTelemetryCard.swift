@@ -257,13 +257,18 @@ struct TelemetryChartCanvas: View {
             .contentShape(Rectangle())
             // Long-press-then-drag so a plain vertical swipe still scrolls
             // the page (matches the old PaceChartCard touch pattern); a
-            // press-and-hold begins scrubbing.
+            // press-and-hold begins scrubbing. 0.35 s, not shorter: a scroll
+            // swipe rests on the glass longer than ~150 ms before moving, so
+            // a short hold ate swipes and the page felt stuck.
             .gesture(
-                LongPressGesture(minimumDuration: 0.12)
+                LongPressGesture(minimumDuration: 0.35)
                     .sequenced(before: DragGesture(minimumDistance: 0))
                     .onChanged { value in
                         switch value {
                         case .second(true, let drag):
+                            if drag == nil {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
                             // Guarded: @State writes are not deduped, and an
                             // unguarded assignment here would re-render the
                             // pager on every scrub frame.

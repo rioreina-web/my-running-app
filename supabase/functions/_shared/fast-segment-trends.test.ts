@@ -484,3 +484,38 @@ Deno.test("bands: a band with no reference anchor is skipped, not guessed", () =
   );
   assert(!bandTrends(trends, noLT).some((b) => b.band === "Threshold"));
 });
+
+Deno.test("contextual admission: a long-run workout with no MP+ lap still becomes a session", () => {
+  // 2 mi warm-up, then 6×1mi at steady (sub-MP by design) with ~400m floats.
+  // The MP gate sees nothing; the run's own split must admit it.
+  const laps: WorkoutLap[] = [
+    lap(M, 450), lap(M, 445),
+    lap(M, 388), lap(400, 470), lap(M, 390), lap(400, 472), lap(M, 386),
+    lap(400, 468), lap(M, 391), lap(400, 465), lap(M, 385), lap(400, 470),
+    lap(M, 389), lap(M, 452),
+  ];
+  const m = analyzeKeySession({ id: "ctx1", date: "2026-08-01", laps }, ZONES)!;
+  assert(m != null, "session must be admitted");
+  assertEquals(m.contextual, true);
+  assertEquals(m.repCount, 6);
+  // ...but it claims no system trend: steady reps have no race system.
+  const trends = analyzeFastSegmentTrends(
+    [{ id: "ctx1", date: "2026-08-01", laps }],
+    ZONES,
+  );
+  assertEquals(trends.sessions.length, 1);
+  assertEquals(trends.systems.length, 0);
+});
+
+Deno.test("contextual admission: an evenly-paced long run is still no session", () => {
+  const laps: WorkoutLap[] = Array.from({ length: 16 }, (_, i) => lap(M, 398 + (i % 5)));
+  assertEquals(analyzeKeySession({ id: "even", date: "2026-08-02", laps }, ZONES), null);
+});
+
+Deno.test("contextual admission: a fast-finish long run is still no session (one block)", () => {
+  const laps: WorkoutLap[] = [
+    ...Array.from({ length: 8 }, (_, i) => lap(M, 430 + (i % 3))),
+    ...Array.from({ length: 8 }, (_, i) => lap(M, 384 + (i % 3))),
+  ];
+  assertEquals(analyzeKeySession({ id: "negsplit", date: "2026-08-03", laps }, ZONES), null);
+});

@@ -384,7 +384,7 @@ struct LogWildView: View {
                     .foregroundStyle(Color.wild.ink2)
                     .padding(.top, 12)
             } else {
-                Text("Log your run.")
+                Text("Log Your Run")
                     .font(.wildDisplay(46))
                     .tracking(46 * -0.05)
                     .foregroundStyle(Color.wild.ink)
@@ -615,7 +615,7 @@ struct LogWildView: View {
                 selectedWorkout = effectiveWorkout
                 showComposer = true
             } label: {
-                Text("Write a note.")
+                Text("Write a Note")
                     .font(.wildDisplay(30))
                     .tracking(30 * -0.045)
                     .foregroundStyle(Color.wild.ink)
@@ -1171,7 +1171,7 @@ struct WildNoteComposerSheet: View {
 
     private var lede: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Note.")
+            Text("Note")
                 .font(.wildDisplay(34))
                 .tracking(34 * -0.045)
                 .foregroundStyle(Color.wild.ink)

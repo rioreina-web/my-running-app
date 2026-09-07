@@ -84,8 +84,8 @@ struct AskTipsView: View {
     }
 
     private var titleLine: String {
-        guard let goal = engine.goal else { return "Four things." }
-        return goal.title.isEmpty ? "\(goal.timeLabel) \(goal.raceLabel)." : "\(goal.title)."
+        guard let goal = engine.goal else { return "Four Things" }
+        return goal.title.isEmpty ? "\(goal.timeLabel) \(goal.raceLabel)" : "\(goal.title)"
     }
 
     private func goalLine(_ goal: TipGoal) -> String {
@@ -170,7 +170,7 @@ struct AskTipsView: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Nothing worth flagging.")
+            Text("Nothing worth flagging")
                 .font(.dripDisplay(21))
                 .foregroundStyle(Color.drip.textPrimary)
             Text("Either there isn't enough training on file yet, or none of the checks found a gap big enough to be worth your attention. Both are honest answers, and the second one is a good one.")

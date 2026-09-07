@@ -196,42 +196,58 @@ struct WeeklyCoachingReportSheet: View {
 
     @ViewBuilder
     private func narrativeSection(_ narrative: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Section accent bar
+        // "AI INSIGHT", not "COACH'S ANALYSIS" (2026-08-31). This narrative
+        // is written by a model in `weekly-coaching-report`; a coach is a
+        // person, and labelling machine prose with their title claims an
+        // authorship that isn't there. Surfaces carrying real coach input
+        // (JoinCoachPlanSheet, RescheduleSheet, the roster) keep saying
+        // Coach — the two are deliberately NOT interchangeable.
+        //
+        // Typography: the old build set four equal 14pt paragraphs inside a
+        // coral-bordered card — one grey slab nobody finishes reading. It
+        // now opens with a lede a size up and separates each following
+        // paragraph with a hairline, so the eye has somewhere to land. The
+        // card is gone: this system puts prose on paper (no card-on-card),
+        // and the border was a second coral in a cluster that already has
+        // its accent bar.
+        let paragraphs = narrative
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: 1)
                     .fill(Color.drip.coral)
                     .frame(width: 3, height: 14)
 
-                Text("COACH'S ANALYSIS")
+                Text("AI INSIGHT")
                     .font(.dripCaption(10))
                     .foregroundStyle(Color.drip.textTertiary)
                     .tracking(2)
             }
 
-            // Split narrative into paragraphs for better typography
-            let paragraphs = narrative
-                .replacingOccurrences(of: "\\n", with: "\n")
-                .components(separatedBy: "\n\n")
-                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            if let lede = paragraphs.first {
+                Text(lede)
+                    .font(.dripBody(17))
+                    .foregroundStyle(Color.drip.textPrimary)
+                    .lineSpacing(6)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, paragraph in
-                    Text(paragraph.trimmingCharacters(in: .whitespacesAndNewlines))
-                        .font(.dripBody(14))
+            ForEach(Array(paragraphs.dropFirst().enumerated()), id: \.offset) { _, paragraph in
+                VStack(alignment: .leading, spacing: 16) {
+                    DripHairline()
+                    Text(paragraph)
+                        .font(.dripBody(14.5))
                         .foregroundStyle(Color.drip.textPrimary)
                         .lineSpacing(5)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.drip.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Color.drip.coral.opacity(0.15), lineWidth: 1)
-            )
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

@@ -188,7 +188,11 @@ export function qualityLoadForSession(
     return { quality_load: qualityLoadForBouts(bouts, ctx), quality_kind: "quality" };
   }
 
-  if (workoutKind === "long_run") {
+  // `long_wo` (a long run with embedded sub-anchor structure) scores the same
+  // way when none of its laps cleared the work gate: the whole run is the
+  // stimulus. `quality_kind` stays "long_run" so downstream readers keep one
+  // aerobic-long bucket.
+  if (workoutKind === "long_run" || workoutKind === "long_wo") {
     const load = aerobicLoadForBouts(bouts, ctx);
     return {
       quality_load: load > 0 ? load : longRunLoadFromMinutes(durationMinutes),
