@@ -36,6 +36,7 @@ import {
 import { pickAnchorRace } from "../_shared/paces.ts";
 import type { TrainingLogRow } from "../_shared/weeklyAnalytics.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import { timingSafeEqual } from "../_shared/auth.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -91,7 +92,8 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace(/^Bearer\s+/i, "");
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const isServiceRole = token && token === serviceKey;
+    // Constant-time compare: a plain `===` leaks key length/prefix via timing.
+    const isServiceRole = !!token && !!serviceKey && timingSafeEqual(token, serviceKey);
 
     let callerCoachId: string | null = null;
 

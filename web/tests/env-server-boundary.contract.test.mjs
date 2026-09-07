@@ -46,7 +46,6 @@ const ESLINT_CFG = path.resolve(WEB_ROOT, "eslint.config.mjs");
 const ALLOWED_CALLERS = [
   { file: "src/middleware.ts",                       imports: 'side-effect' },
   { file: "src/app/api/coach/route.ts",              imports: 'serviceRoleKey' },
-  { file: "src/app/api/assign-plan/route.ts",        imports: 'serviceRoleKey' },
   { file: "src/app/api/weekly-report/route.ts",      imports: 'serviceRoleKey' },
   { file: "src/app/api/retry-processing/route.ts",   imports: 'serviceRoleKey' },
 ];
