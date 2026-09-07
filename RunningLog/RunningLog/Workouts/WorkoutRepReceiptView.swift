@@ -1586,7 +1586,6 @@ struct WorkoutRepReceiptView: View {
         }
         guard let workoutId else { loaded = true; return }
         async let l = WorkoutLapsService.fetchLaps(workoutId: workoutId)
-        async let rolesFetch = WorkoutLapsService.fetchLapRoles(workoutId: workoutId)
         async let pr = WorkoutLapsService.fetchParsedReps(workoutId: workoutId)
         async let z = WorkoutLapsService.fetchZones()
         async let ty = WorkoutLapsService.fetchType(workoutId: workoutId)
@@ -1599,92 +1598,67 @@ struct WorkoutRepReceiptView: View {
                                                     userId: AuthManager.shared.userId)
 
         let rawLapRows = await l
-        let roleByIndex = await rolesFetch
-        // Source each lap's work/rest LABEL from the parser
-        // (parsed_structure.lap_roles) rather than the DB's generated `is_rest`
-        // column — that column flags any lap under 200m as rest, which hid real
-        // sub-200m reps (a 200m interval day showed 5 of 8). The parser's
-        // velocity bout-detection labels them honestly. Only the is_rest tag is
-        // rewritten; distance / pace / HR stay exactly as the watch recorded, and
-        // every lap is kept. When the workout hasn't been parsed yet the map is
-        // empty and we fall back to the stored `is_rest` unchanged.
-        let lapRows: [WorkoutLapRow] = roleByIndex.isEmpty ? rawLapRows : rawLapRows.map { row in
-            guard let idx = row.lap_index, let role = roleByIndex[idx] else { return row }
-            var r = row
-            r.is_rest = role != "rep"   // only a "rep" is work; warmup/recovery/cooldown are rest
-            return r
-        }
+        // `parsed_structure.lap_roles` used to be read here and written over each
+        // lap's `is_rest`. It is gone. It was introduced to correct a LABEL, but
+        // the label decides which laps merge into a rep, so in practice the
+        // parser was choosing the splits — and it chose boundaries the watch
+        // never recorded on 11 of this athlete's runs. Nothing the model says
+        // reaches the geometry now. (2026-09-07)
         let parsed = await pr
         let sumVal = await sum
         summary = sumVal
 
-        // Rep geometry precedence — the actual splits come from the WATCH (it
-        // records the laps) or from YOU (a hand-correction). The LLM parser
-        // never restructures splits the watch already recorded: it re-splits
-        // continuous reps and bleeds recovery into work bouts (see
-        // `mergeWorkBouts` note). It supplies geometry only when the watch
-        // didn't lap the run at all but you described a structured workout.
+        // Where the splits come from. Two sources, and the parser is not one:
         //
-        //   1. A hand-correction always wins — this is YOU.
-        //   2. Uniform watch auto-laps → the watch's own recorded splits, as-is.
-        //   3. The watch recorded rest laps → the watch's own laps, merged
-        //      deterministically (a rep auto-split every km/mile is re-joined,
-        //      rests pass through). This is the workout as recorded; the parser
-        //      is not consulted for the geometry.
-        //   4. Otherwise → CONTINUOUS. Stream mile/km splits from the watch.
-        //      The parser NEVER supplies split geometry from the voice memo:
-        //      if the watch didn't lap it, the honest record is the watch's
-        //      own splits, not reps reconstructed from what you said.
-        // Both shape questions are asked of `rawLapRows` — the WATCH's own
-        // record — never of `lapRows`, which carries the parser's `lap_roles`
-        // opinion on top. This block's own rule is "the parser is not consulted
-        // for the geometry", and feeding it the relabelled rows broke exactly
-        // that: on a run the watch lapped uniformly with NO rest laps, the
-        // parser marking a few of them warmup/recovery/cooldown pushed the rest
-        // count over `isContinuousAutoLap`'s threshold, flipped the run out of
-        // the continuous branch, and handed it to `mergeWorkBouts` — which then
-        // published rep boundaries the watch never recorded. 11 of this
-        // athlete's runs carried invented boundaries that way. `lap_roles` may
-        // still correct a LABEL (its stated job — the DB's generated `is_rest`
-        // calls every sub-200m lap a rest and hides real short reps); it may
-        // not manufacture a rep structure out of a continuous run. (2026-09-07)
+        //   1. YOU. A hand-correction saved from "Fix reps" is the verdict, and
+        //      the only thing that may restate the run's geometry.
+        //   2. THE WATCH. Otherwise the laps are shown exactly as recorded —
+        //      one row per lap, at the distance, time, pace and HR the watch
+        //      wrote down. Nothing is merged into anything else, and no rep
+        //      boundary exists that the recording does not contain.
+        //
+        // Everything that used to sit between those two is gone: the parser's
+        // `lap_roles`, and `mergeWorkBouts` joining consecutive laps into a
+        // bout. Both produced splits the run never had. A 1200m rep the watch
+        // auto-split at the kilometre therefore reads as two rows now, which is
+        // what the watch recorded; "Fix reps" merges them if you want it as one.
+        //
+        // Whether the run has REPS at all is likewise the recording's call. The
+        // only rest signal that isn't a guess is `running_workout_laps.is_rest`,
+        // a generated column over the lap's own measurements (under 200 m, or
+        // slower than 2 m/s — a standing rest or a walk). If nothing in the run
+        // trips it, the run has no recorded rest structure and is SPLITS. It is
+        // not the app's place to decide that eight of your kilometres were a rep
+        // and the ninth was a recovery. (2026-09-07)
         let watchHasRests = rawLapRows.contains { $0.is_rest == true }
-        let watchLappedContinuously = WorkoutLapsService.isContinuousAutoLap(rawLapRows)
         // Counted with the same rule the screen renders by, so "the correction
-        // has a rep in it" and "the correction shows a rep" can't disagree —
-        // `is_rest != true` also counted the warm-up and the cool-down.
+        // has a rep in it" and "the correction shows a rep" can't disagree.
         let parsedWork = WorkoutLapsService
             .workReps(parsed.laps, isContinuous: false, trustRestTags: true).count
-        // Every branch below states BOTH flags. `isContinuous` used to be set
-        // only by the two branches that turn it on, so a reload never turned it
-        // back off — and `load()` is exactly what "Fix reps" calls on save. A
-        // run that first rendered as continuous stayed continuous, `reps`
-        // returned empty against the corrected geometry, and the correction
-        // rendered as nothing until the sheet was closed and reopened. That is
-        // the "Fix reps does nothing" report. (2026-09-07)
+        // Every branch states BOTH flags. `isContinuous` used to be set only by
+        // the branches that turn it on, so a reload never turned it back off —
+        // and `load()` is what "Fix reps" calls on save. A run that first
+        // rendered as continuous stayed continuous, `reps` came back empty
+        // against the corrected geometry, and the correction rendered as nothing
+        // until the sheet was closed and reopened. (2026-09-07)
         if parsed.edited && parsedWork >= 1 {
             laps = parsed.laps
             trustRestTags = true
             isContinuous = false
-        } else if watchLappedContinuously {
-            // The watch's own uniform splits, as recorded. `lapRows` is passed
-            // over deliberately: on a continuous run the parser's labels have
-            // nothing to correct and everything to invent.
+        } else if !watchHasRests || WorkoutLapsService.isContinuousAutoLap(rawLapRows) {
+            // No recorded rest, or uniform auto-laps: these are splits, and the
+            // whole-run path renders them as such.
             laps = rawLapRows
             trustRestTags = false
             isContinuous = true
-        } else if watchHasRests || lapRows.contains(where: { $0.is_rest == true }) {
-            // The watch lapped work + rest — that IS the workout's splits.
-            laps = WorkoutLapsService.mergeWorkBouts(lapRows)
+        } else {
+            // The recording itself marks rests, so the laps between them are
+            // reps — at the watch's own lap granularity, unmerged. The tags are
+            // measured rather than inferred, so a rep that faded to 11:45/mi is
+            // still a rep and the pace cap is skipped.
+            laps = rawLapRows
             trustRestTags = true
             isContinuous = false
-        } else {
-            // No recorded lap structure → continuous. `isContinuous` forces the
-            // whole-run / mile-split path (see `reps`), so the chart shows the
-            // watch's own splits and a voice-memo parse can never render here.
-            laps = rawLapRows
-            trustRestTags = false
-            isContinuous = true
         }
 
         // Weather lives on the raw GPS laps (running_workout_laps.temp_f /
@@ -1705,8 +1679,8 @@ struct WorkoutRepReceiptView: View {
         // 20260805210000_heat_intensity_scaling.sql.
         let isIntervalGeometry = laps.contains { $0.is_rest == true }
 
-        var condTemp = lapRows.compactMap({ $0.temp_f }).max() ?? sumVal.weatherTempF
-        var condDew = lapRows.compactMap({ $0.dew_point_f }).max() ?? sumVal.weatherDewF
+        var condTemp = rawLapRows.compactMap({ $0.temp_f }).max() ?? sumVal.weatherTempF
+        var condDew = rawLapRows.compactMap({ $0.dew_point_f }).max() ?? sumVal.weatherDewF
 
         // Nothing on the row knows the air this run happened in. `strava-sync`
         // fires the weather fetch exactly once at ingest and never retries, and

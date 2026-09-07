@@ -102,81 +102,30 @@ struct WorkRepSelectionTests {
     }
 }
 
-/// Tests for `WorkoutLapsService.mergeWorkBouts` — the deterministic re-join of
-/// consecutive work laps into one rep, which is what the splits table and the
-/// rep bars are drawn from.
-@Suite("Work-bout merge")
-struct WorkBoutMergeTests {
-
-    private func lap(
-        _ i: Int, m: Double?, s: Int?, pace: Double?, rest: Bool = false
-    ) -> WorkoutLapRow {
-        WorkoutLapRow(
-            lap_index: i,
-            distance_meters: m,
-            moving_time_seconds: s,
-            avg_pace_sec_per_mile: pace,
-            avg_heart_rate: 160,
-            is_rest: rest
-        )
-    }
-
-    /// Two auto-split kilometres re-joined into one 2k rep, at the pace the
-    /// athlete actually ran.
-    @Test func consecutiveWorkLapsJoinAtTheirRealPace() {
-        let merged = WorkoutLapsService.mergeWorkBouts([
-            lap(0, m: 1000, s: 268, pace: 431),
-            lap(1, m: 1000, s: 262, pace: 422),
-            lap(2, m: 200,  s: 90,  pace: 724, rest: true),
-        ])
-        #expect(merged.count == 2)
-        #expect(merged[0].distance_meters == 2000)
-        #expect(merged[0].moving_time_seconds == 530)
-        // 530s over 1.2427 mi = 426.4 s/mi — between the two laps, as it must be.
-        let pace = merged[0].avg_pace_sec_per_mile ?? 0
-        #expect(pace > 422 && pace < 431)
-    }
-
-    /// A merged bout can never be faster than the fastest lap inside it. A lap
-    /// whose duration didn't come through used to add its distance for free,
-    /// which is how a bout of 7:11 kilometres reported 6:13/mi.
-    @Test func aLapMissingItsDurationCannotSpeedUpTheBout() {
-        let merged = WorkoutLapsService.mergeWorkBouts([
-            lap(0, m: 1000, s: 268, pace: 431),
-            lap(1, m: 1000, s: nil, pace: nil),   // duration never ingested
-        ])
-        #expect(merged.count == 1)
-        let pace = merged[0].avg_pace_sec_per_mile ?? 0
-        #expect(pace >= 431)
-        // The bout states only the geometry it can actually account for.
-        #expect(merged[0].distance_meters == 1000)
-        #expect(merged[0].moving_time_seconds == 268)
-    }
-}
-
-/// Why `WorkoutRepReceiptView.load()` asks `isContinuousAutoLap` about the
-/// WATCH's laps and never about the parser-relabelled copy.
+/// The rule that decides whether a run has REPS at all, and where its splits
+/// come from.
 ///
-/// The 2026-09-07 report, "it still makes up its own splits": a real 3 × 30 min
-/// session was recorded by the watch as 29 uniform 1 km auto-laps with ZERO rest
-/// laps — a continuous run, by the watch's own account. The parser's `lap_roles`
-/// then marked a handful of them warmup / recovery / cooldown, `load()` fed those
-/// relabelled rows to the continuity check, the extra "rests" pushed it over the
-/// sparse-rest threshold, and the run fell through to `mergeWorkBouts`, which
-/// published three rep boundaries nothing had recorded. 11 of the athlete's runs
-/// carried invented boundaries this way.
-@Suite("Continuity is the watch's call")
-struct ContinuityProvenanceTests {
+/// The 2026-09-07 report, twice: "it still makes up its workout splits" and
+/// "it needs to just look at the splits." A real 3 × 30 min session was recorded
+/// by the watch as 29 uniform 1 km auto-laps with ZERO rest laps. Two separate
+/// mechanisms then invented a rep structure on top of it — the parser's
+/// `lap_roles` overwriting each lap's `is_rest`, and `mergeWorkBouts` joining
+/// consecutive non-rest laps into a bout. Both are gone. The splits are the
+/// laps, and the only rest signal left is `running_workout_laps.is_rest`, a
+/// generated column over the lap's own measurements.
+@Suite("Splits come from the recording")
+struct RecordedSplitsTests {
 
     private func lap(_ i: Int, m: Double, s: Int, pace: Double, rest: Bool = false) -> WorkoutLapRow {
         WorkoutLapRow(lap_index: i, distance_meters: m, moving_time_seconds: s,
                       avg_pace_sec_per_mile: pace, avg_heart_rate: 160, is_rest: rest)
     }
 
-    /// The reported run, as the watch recorded it: 29 kilometre auto-laps, no
-    /// rests. Paces are the real ones — a slower warm-up, steady middle, slower
-    /// end — so nothing but the lap tags distinguishes it from an interval day.
-    private var watchLaps: [WorkoutLapRow] {
+    /// The reported run as the watch recorded it: 29 kilometre auto-laps, no
+    /// rests. A slower warm-up, a steady middle, a slower end — nothing but the
+    /// pace distinguishes it from an interval day, which is exactly why the app
+    /// must not try.
+    private var reportedRun: [WorkoutLapRow] {
         let paces: [Double] = [465, 431, 365, 377, 375, 370, 373, 373, 365, 362,
                                430, 372, 354, 367, 377, 378, 375, 370, 365, 435,
                                386, 362, 396, 380, 373, 372, 407, 430, 481]
@@ -185,37 +134,46 @@ struct ContinuityProvenanceTests {
         }
     }
 
-    @Test func theWatchSaysContinuous() {
-        #expect(WorkoutLapsService.isContinuousAutoLap(watchLaps) == true)
+    @Test func theWatchLappedItContinuously() {
+        #expect(WorkoutLapsService.isContinuousAutoLap(reportedRun) == true)
     }
 
-    /// The same run once the parser has had its say. This is the input `load()`
-    /// used to pass, and it answers the opposite way — which is the whole bug.
-    @Test func theParsersRelabelledCopyDoesNot() {
-        let inventedRests: Set<Int> = [1, 2, 11, 20, 27, 28, 29]
-        let relabelled = watchLaps.map { row -> WorkoutLapRow in
-            var r = row
-            if let i = r.lap_index, inventedRests.contains(i) { r.is_rest = true }
-            return r
-        }
-        #expect(WorkoutLapsService.isContinuousAutoLap(relabelled) == false)
-    }
-
-    /// And it is the merge of that relabelled copy that manufactures the reps:
-    /// three bouts the watch never recorded a boundary for.
-    @Test func mergingTheRelabelledCopyManufacturesReps() {
-        let inventedRests: Set<Int> = [1, 2, 11, 20, 27, 28, 29]
-        let relabelled = watchLaps.map { row -> WorkoutLapRow in
-            var r = row
-            if let i = r.lap_index, inventedRests.contains(i) { r.is_rest = true }
-            return r
-        }
-        let merged = WorkoutLapsService.mergeWorkBouts(relabelled)
-        let reps = WorkoutLapsService.workReps(merged, isContinuous: false, trustRestTags: true)
-        #expect(reps.count == 3)
-        // Whereas the watch's own record yields no reps at all, which is the
-        // honest answer and what the screen now shows.
+    /// The load rule: nothing in the recording trips the rest column, so the run
+    /// is splits and carries no reps. Three of those laps ran under 6:10/mi and
+    /// would each have passed the work-rep pace cap on their own — the point is
+    /// that no rep boundary exists to put them behind.
+    @Test func aRunWithNoRecordedRestHasNoReps() {
+        #expect(reportedRun.contains { $0.is_rest == true } == false)
         #expect(WorkoutLapsService.workReps(
-            watchLaps, isContinuous: true, trustRestTags: false).isEmpty)
+            reportedRun, isContinuous: true, trustRestTags: false).isEmpty)
+    }
+
+    /// And when the recording DOES mark rests, the reps are the laps between
+    /// them — at the watch's own granularity, nothing joined. A 2 km rep the
+    /// watch auto-split at the kilometre is two rows, because that is what was
+    /// written down; "Fix reps" is where it becomes one.
+    @Test func recordedRestsGiveRepsAtLapGranularity() {
+        let session = [
+            lap(0, m: 1000, s: 190, pace: 306),
+            lap(1, m: 1000, s: 193, pace: 311),
+            lap(2, m: 120,  s: 90,  pace: 724, rest: true),   // under 200m → rest
+            lap(3, m: 1000, s: 195, pace: 314),
+            lap(4, m: 1000, s: 198, pace: 319),
+        ]
+        let reps = WorkoutLapsService.workReps(session, isContinuous: false, trustRestTags: true)
+        #expect(reps.count == 4)
+        #expect(reps.map { $0.distance_meters } == [1000, 1000, 1000, 1000])
+    }
+
+    /// Where the recording marks rests, the tags are measured rather than
+    /// inferred, so the pace cap is skipped and a rep that faded stays a rep.
+    @Test func aFadedRepSurvivesWhenTheRestTagsAreMeasured() {
+        let session = [
+            lap(0, m: 1609, s: 400, pace: 400),   // slower than the 370 cap
+            lap(1, m: 120,  s: 90,  pace: 724, rest: true),
+            lap(2, m: 1609, s: 705, pace: 705),   // an 11:45 mile — faded, still a rep
+        ]
+        #expect(WorkoutLapsService.workReps(
+            session, isContinuous: false, trustRestTags: true).count == 2)
     }
 }

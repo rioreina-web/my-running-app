@@ -9,9 +9,12 @@
 //  construction (it's the gaps between blocks). 18pt of chart, no axes:
 //  a column of these turns a workout list into a flip-book of the block.
 //
-//  Data path mirrors the Rep Receipt exactly: `mergeWorkBouts` for rep
-//  geometry, the same work-rep predicate, so this strip and the tap-through
-//  detail never disagree about what a rep was.
+//  Data path mirrors the Rep Receipt exactly: the laps as recorded, the same
+//  work-rep predicate, so this strip and the tap-through detail never disagree
+//  about what a rep was. It used to merge consecutive laps into bouts first;
+//  the receipt stopped doing that on 2026-09-07 (the merge invented rep
+//  boundaries on runs the watch had simply lapped every kilometre) and this
+//  followed it, or the two would have disagreed on every interval session.
 //
 //  Degradation: no zone table → per-workout bounds; a single continuous
 //  bout (nothing to compare) → the view renders empty and callers lose
@@ -35,13 +38,20 @@ struct RepDensityStrip: View {
     }
 
     private var blocks: [Block] {
-        let merged = WorkoutLapsService.mergeWorkBouts(laps)
-        let work = merged.filter { lap in
-            lap.is_rest != true
-                && (lap.avg_pace_sec_per_mile ?? 0) > 0
-                && (lap.distance_meters ?? 0) >= 150
-                && (lap.moving_time_seconds ?? 0) >= 20
-        }
+        // No recorded rest means no recorded rep structure, and a strip of one
+        // block per kilometre of a steady run would read as an interval session
+        // that never happened. The merge used to hide this by collapsing the
+        // whole run into a single block, which the `>= 2` guard then dropped;
+        // with the laps shown as recorded the gate has to be explicit.
+        guard laps.contains(where: { $0.is_rest == true }) else { return [] }
+        let work = laps
+            .sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
+            .filter { lap in
+                lap.is_rest != true
+                    && (lap.avg_pace_sec_per_mile ?? 0) > 0
+                    && (lap.distance_meters ?? 0) >= 150
+                    && (lap.moving_time_seconds ?? 0) >= 20
+            }
         return work.enumerated().map { i, lap in
             Block(id: i, weight: lap.distance_meters ?? 0, paceSec: lap.avg_pace_sec_per_mile ?? 0)
         }

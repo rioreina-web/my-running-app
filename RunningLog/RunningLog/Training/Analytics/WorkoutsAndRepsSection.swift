@@ -582,7 +582,18 @@ struct WorkoutsAndRepsSection: View {
     /// number ≥ 1 s/mi (the raw pace remains one tap away on the receipt).
     private func repPace(_ id: UUID) -> RepPace? {
         guard let raw = lapsById[id] else { return nil }
-        let work = WorkoutLapsService.mergeWorkBouts(raw).filter { lap in
+        // Was `mergeWorkBouts(raw).filter { … }`. The merge is gone app-wide
+        // (2026-09-07) — it invented rep boundaries — and it never moved this
+        // number anyway: a distance-weighted mean over joined laps equals the
+        // mean over their parts.
+        //
+        // Rest excluded by construction, which means a run whose recording marks
+        // no rest at all yields the WHOLE-RUN mean while the row above prints it
+        // as "REP PACE". Same arithmetic, entirely different claim — the point
+        // `avgPace(_:)` already makes for long runs. Say which one it is rather
+        // than letting a steady run's average pass for a work-bout pace.
+        let hasRecordedRest = raw.contains { $0.is_rest == true }
+        let work = raw.filter { lap in
             lap.is_rest != true
                 && (lap.avg_pace_sec_per_mile ?? 0) > 0
                 && (lap.distance_meters ?? 0) >= 150
@@ -602,10 +613,10 @@ struct WorkoutsAndRepsSection: View {
                 break
             }
         }
-        if let ratio, abs(paceSec * ratio - paceSec) >= 1 {
+        if let ratio, abs(paceSec * ratio - paceSec) >= 1, hasRecordedRest {
             return RepPace(label: "○ \(fmt(paceSec * ratio))")
         }
-        return RepPace(label: fmt(paceSec))
+        return RepPace(label: fmt(paceSec), isAvg: !hasRecordedRest)
     }
 
     // MARK: derived — average pace (long runs only)

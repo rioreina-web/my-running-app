@@ -11,12 +11,18 @@
 //  a long run has none to show.
 //
 //  Why a second strip and not a flag on the first (2026-08-19, Rio):
-//  `RepDensityStrip` runs `mergeWorkBouts` first, which joins every
-//  consecutive non-rest lap into one bout. That is exactly right for a rep
-//  workout (a 2 mi rep the watch auto-lapped at each mile is ONE rep) and
-//  exactly wrong for a long run — it collapsed 25 recorded mile splits on the
-//  2026-08-01 run into three flat slabs, one per water-stop pause. The shape
-//  of a long run IS its splits; merging them is throwing away the reading.
+//  `RepDensityStrip` used to join every consecutive non-rest lap into one bout
+//  before drawing. That read as right for a rep workout (a 2 mi rep the watch
+//  auto-lapped at each mile became ONE rep) and was plainly wrong for a long
+//  run — it collapsed 25 recorded mile splits on the 2026-08-01 run into three
+//  flat slabs, one per water-stop pause. The shape of a long run IS its splits;
+//  merging them threw away the reading.
+//
+//  That merge is gone app-wide as of 2026-09-07 — it was inventing rep
+//  boundaries on runs the watch had simply lapped every kilometre — so the
+//  strips no longer differ on that. They still differ on what they refuse: a
+//  rep strip draws nothing unless the recording marks rests, and it drops the
+//  rest laps, which is the wrong reading of a long run either way.
 //
 //  What it draws, and what it refuses to draw:
 //    • Splits, in recorded order. Rest/pause laps are dropped rather than
