@@ -121,18 +121,60 @@ to ink so older files don't break, but the machine gets no hue.
 
 | Never | Write |
 |---|---|
-| Six by eight hundred, held. | 6 × 800m. |
-| Eighteen miles, headwind. | 18 miles, long run. |
-| Called it at three. | Cut short at 3 miles. |
-| Sick, but out the door. | Easy 4.4 miles. |
+| Six by eight hundred, held. | 6 × 800m |
+| Eighteen miles, headwind. | 18 miles, long run |
+| Called it at three. | Cut short at 3 miles |
+| Sick, but out the door. | Easy 4.4 miles |
 
 Spelled-out numbers plus a mood-word flourish is the app writing poetry about someone
 else's run. The interface supplies the facts; the athlete supplies the feeling, in
 their own transcribed words — which keep their voice exactly as spoken.
 
+### No terminal periods
+
+Added Sep 2026. **Nothing that names something takes a period.** Not workout and
+session titles, not screen headlines, not section titles. A title is a label, not a
+sentence, and the period was making every one of them read as a statement being made
+about the athlete's run.
+
+| Was | Now |
+|---|---|
+| `4 × 2 mi @ threshold.` | `4 × 2 mi @ threshold` |
+| `16 miles, long run.` | `16 miles, long run` |
+| `Easy 4.4 miles.` | `Easy 4.4 miles` |
+| `Log your run.` | `Log Your Run` |
+| `Your week.` | `Your Week` |
+| `Load and recovery.` | `Load and Recovery` |
+
+Running prose keeps its punctuation. The read, captions, body copy and the athlete's
+own transcribed words are sentences, and are punctuated as sentences.
+
+### Case
+
+Added Sep 2026, and it **replaces the earlier "no title-case headlines" rule**, which
+is retired.
+
+**Screen and section titles are Title Case. Workout titles are not.**
+
+- Screen headlines: `Log Your Run`, `Your Week`, `Your Roster`, `Your Last 12 Weeks`,
+  `Your Training`.
+- Section and band titles: `Race Prediction`, `Key Sessions`, `Closing on Goal Pace`,
+  `The Workout`, `Niggles & Mood`, `Load and Recovery`, `What's Missing`.
+- **Workout and session titles stay exactly as written** — `4 × 2 mi @ threshold`,
+  `16 miles, long run`, `Easy 4.4 miles`. These name something the athlete did, in
+  the units they did it in. `4 × 2 Mi @ Threshold` turns the name of a session into a
+  headline about it, which is the same mistake the literary-title rule above bans.
+- Tracked uppercase labels are unchanged. That is the label role, not case.
+
+### No constructed headlines
+
+A screen headline says what the screen is. Not `The week, decided`, not
+`Who needs you today`, not `What you can't see day to day` — write `Your Week`,
+`Your Roster`, `Your Last 12 Weeks`. If a headline reads as a line someone wrote
+rather than a name for the surface, it is wrong.
+
 Also: numerals stay numerals (`5 mi`, never "five miles"). No emoji. No cheerleading.
-No exclamation points. No title-case headlines. Never "we" — the app doesn't talk
-about itself.
+No exclamation points. Never "we" — the app doesn't talk about itself.
 
 ---
 
