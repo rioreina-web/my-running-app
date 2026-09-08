@@ -87,6 +87,23 @@ struct RunningLogApp: App {
                 }
                 .environment(CoachCheckInManager())
                 .preferredColorScheme(.light)
+            } else if CommandLine.arguments.contains("-threadPreview") {
+                // The REAL TrainingThreadView against live data — the screen
+                // is four levels down (Train ▸ CURRENT ▸ the 90-day door), so
+                // this is the only way to iterate on it without tapping
+                // through every launch. Needs a signed-in simulator; with no
+                // auth it renders its own error state. Dev scaffolding —
+                // remove with the rest when the surface settles.
+                NavigationStack {
+                    // Reads the real service, so it needs a signed-in
+                    // simulator. To iterate without one, generate a local
+                    // `ThreadPreviewData.swift` fixture and pass
+                    // `preview: .previewLive` here — deliberately NOT
+                    // committed, because that fixture is 90 days of real
+                    // training memos.
+                    TrainingThreadView()
+                }
+                .preferredColorScheme(.light)
             } else if CommandLine.arguments.contains("-trendsV2Preview") {
                 NavigationStack {
                     // v2 rebuilt 2026-08-03: no previewMode / demoBiometrics
@@ -201,8 +218,10 @@ struct MainTabView: View {
             // 2026-08-19: Charts → Ask in the same slot, and the DEBUG-only
             // Read tab dropped.
             // 2026-08-30: Sheet → Read (CoachReadView, tag 12) in the same
-            // slot. The bar is Log · Train · Trends · Week · Ask · Read in
-            // DEBUG and release alike.
+            // slot.
+            // 2026-09-08: Week retired (tag 11) — removed outright, no slot
+            // swap. The bar is Log · Train · Trends · Ask · Read in DEBUG
+            // and release alike.
             ZStack {
                 // Tab 0 — Log (front door)
                 //
@@ -290,16 +309,12 @@ struct MainTabView: View {
                         .allowsHitTesting(selectedTab == 10)
                 }
 
-                // Tab 11 — WEEK. The weekly decision surface: three
-                // questions, then three glass-box proposals that only change
-                // the week when tapped. Mounted eagerly like every tab except
-                // Ask: it renders from a fixture and does nothing on appear,
-                // so hiding it with `.opacity` costs a view tree and no work.
-                // When it is wired to real services, check whether its `.task`
-                // needs the same lazy treatment `AskTabView` gets.
-                NavigationStack { WeekTabView() }
-                    .opacity(selectedTab == 11 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 11)
+                // Tab 11 — Week retired 2026-09-08. The weekly decision
+                // surface (three questions, three glass-box proposals) was
+                // removed from the bar outright and `RunningLog/Week/` was
+                // deleted (fixture-driven, never wired to a service). Restore
+                // from git history if it comes back. Tag 11 is retired — do
+                // not reuse it.
 
                 // Tab 12 — THE READ (`CoachReadView`), restored 2026-08-30
                 // in the slot The Sheet held. First shipped as Coach (tag 2,

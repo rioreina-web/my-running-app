@@ -133,12 +133,13 @@ struct TrainingTabView: View {
                         WeekStressStripSection(vm: vm, weekOffset: $weekOffset) {
                             route = .day($0)
                         }
-                        // Door to the 90-day training-load graph — the same
-                        // question as the week strip, one zoom level out.
+                        // Door to the 90-day thread — load, body and voice on
+                        // one axis. The same question as the week strip, one
+                        // zoom level out and with the words attached.
                         NavigationLink {
-                            StressRecoveryView()
+                            TrainingThreadView()
                         } label: {
-                            Text("TRAINING LOAD · 90 DAYS ↗")
+                            Text("THE THREAD · 90 DAYS ↗")
                                 .font(.dripEyebrow(10.5)).tracking(1.3)
                                 .foregroundStyle(Color.drip.coral)
                                 .frame(maxWidth: .infinity, alignment: .trailing)
