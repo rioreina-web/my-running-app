@@ -182,7 +182,14 @@ jobs:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     steps:
       - uses: actions/checkout@v4
+      # Gated on the same condition as the lint step below. Installing the CLI
+      # resolves "latest" through the GitHub API, which is rate-limited and
+      # unauthenticated here — on 2026-09-08 that failed the whole job six
+      # seconds in ("Failed to resolve latest Supabase CLI release: rate limit
+      # exceeded") while the step it installs for was going to be skipped
+      # anyway. Don't install a tool nothing is about to run.
       - uses: supabase/setup-cli@v1
+        if: ${{ env.SUPABASE_DB_URL != '' }}
         with:
           version: latest
       # Lint the linked remote database directly. Booting a local stack and
