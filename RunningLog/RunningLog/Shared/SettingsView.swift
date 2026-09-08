@@ -686,7 +686,7 @@ struct SettingsView: View {
                             Text("Enable Coach Mode")
                                 .font(.dripBody(14))
                                 .foregroundStyle(Color.drip.textPrimary)
-                            Text("Replaces the Plan tab with coach tools")
+                            Text("Replaces the Coach tab with coach tools")
                                 .font(.dripCaption(12))
                                 .foregroundStyle(Color.drip.textTertiary)
                         }

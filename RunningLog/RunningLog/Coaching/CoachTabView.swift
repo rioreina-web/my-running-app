@@ -2,7 +2,7 @@
 //  CoachTabView.swift
 //  RunningLog
 //
-//  Root view for coach mode. Replaces the Plan tab when a user activates coach mode.
+//  Root view for coach mode. Takes over the Coach tab when a user activates coach mode.
 //  Sub-tabs: Workout Library · Training Plans · Athletes
 //
 

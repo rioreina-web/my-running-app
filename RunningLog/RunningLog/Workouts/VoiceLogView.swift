@@ -226,8 +226,7 @@ struct VoiceLogView: View {
     @ViewBuilder
     private var nsCoachCheckInLine: some View {
         Button {
-            // Coach moved to tab 3 when Trends was inserted at slot 2.
-            selectedTab.wrappedValue = 3
+            selectedTab.wrappedValue = DripTab.coach.rawValue
         } label: {
             HStack(spacing: 8) {
                 Text("COACH HAS A CHECK-IN WAITING")

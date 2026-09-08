@@ -175,8 +175,11 @@ final class TrainingPlanViewModel {
             initializeSelectedWeek()
             initializeSelectedMonth()
         }
-        // If no plan was loaded, load mood data for current month
-        if activePlan == nil && !isLoadingPlan {
+        // Load logged-day data for the visible month whether or not a
+        // plan came back. Train's CALENDAR segment draws logged runs
+        // beside scheduled ones, so gating this on `activePlan == nil`
+        // left plan users with an empty-looking month.
+        if !isLoadingPlan {
             await loadMoodDataForCurrentMonth()
         }
     }
@@ -274,9 +277,12 @@ final class TrainingPlanViewModel {
             selectedMonth = 12
             selectedYear -= 1
         }
-        if activePlan == nil {
-            Task { await loadMoodDataForCurrentMonth() }
-        }
+        // Logged days are loaded per month regardless of whether a plan
+        // exists. The old `activePlan == nil` guard left the month grid
+        // showing scheduled workouts but no logged runs for anyone on a
+        // plan — wrong on Train's CALENDAR segment, which is supposed to
+        // show what happened next to what's planned.
+        Task { await loadMoodDataForCurrentMonth() }
     }
 
     func goToNextMonth() {
@@ -286,9 +292,7 @@ final class TrainingPlanViewModel {
             selectedMonth = 1
             selectedYear += 1
         }
-        if activePlan == nil {
-            Task { await loadMoodDataForCurrentMonth() }
-        }
+        Task { await loadMoodDataForCurrentMonth() }
     }
 
     func goToCurrentWeek() {
