@@ -404,7 +404,14 @@ Deno.serve(async (req) => {
     // analyze directly (manual notes take the text path). Read both from the
     // row — the outbox payload only carries id/user_id/audio_url.
     const typedNotes = ((ownerRow.notes as string | null) ?? "").trim();
-    const audioUrlStr = (ownerRow.audio_url as string | null) ?? record.audio_url ?? null;
+    // The audio pointer comes ONLY from the row the caller owns. The previous
+    // `?? record.audio_url` fallback let an athlete who owns an audio-less row
+    // (a typed note) pass another athlete's storage path in the body; the
+    // ownership check passed (their row), the fallback took the body value,
+    // and the service-role client transcribed someone else's memo into their
+    // log. Storage paths are not guessable for new uploads, but legacy
+    // objects use bare filenames and legacy public URLs live in audio_url.
+    const audioUrlStr = (ownerRow.audio_url as string | null) ?? null;
     const hasAudio = !!audioUrlStr;
     // "Already processed" short-circuit. Gated on processing_status =
     // 'completed', NOT on cleaned_notes alone: the two-stage reveal writes the

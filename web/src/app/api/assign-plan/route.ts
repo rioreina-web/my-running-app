@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { enforceRateLimit } from "@/lib/rate-limit";
-import { serviceRoleKey } from "@/lib/env.server";
 import { z } from "zod";
 
 const assignPlanSchema = z.object({
@@ -29,20 +28,31 @@ export async function POST(request: NextRequest) {
   }
   const { planTemplateId, athleteUserId, startDate, raceDate } = parsed.data;
 
+  // Forward the coach's OWN session token (same pattern as shift-day). The
+  // edge function authorizes on the JWT subject: it verifies the caller is
+  // the athlete or a coach with an active relationship to them. The previous
+  // service-role bearer had no `sub`, so the function rejected every call —
+  // and had it accepted the key, this route would have let any signed-in
+  // user assign plans to any athlete, because nothing here checks that.
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+
   try {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/subscribe-to-plan`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceRoleKey()}`,
-        apikey: serviceRoleKey(),
+        Authorization: `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({
         planTemplateId,
         athleteUserId,
         startDate,
         raceDate: raceDate || null,
-        assignedBy: user.id,
       }),
     });
 
@@ -53,6 +63,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ error: "Failed to assign plan", details: String(err) }, { status: 500 });
+    console.error("[assign-plan] upstream call failed:", err);
+    return NextResponse.json({ error: "Failed to assign plan" }, { status: 500 });
   }
 }
