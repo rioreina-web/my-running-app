@@ -14,6 +14,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which areas did this change touch? A workflow-level `paths:` filter would
+  # gate every job in the file, so the detection lives here and individual jobs
+  # consume it. Cheap: one ubuntu runner doing a git diff.
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        name: Check for iOS changes
+        run: |
+          # Anything not a pull_request (push to main, manual dispatch) builds
+          # everything — there is no base ref to diff against.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # ci.yml counts as an iOS change: edits to the build job should be
+          # validated by actually running it.
+          if git diff --name-only \
+               "${{ github.event.pull_request.base.sha }}" \
+               "${{ github.event.pull_request.head.sha }}" \
+             | grep -qE '^(RunningLog/|\.github/workflows/ci\.yml$)'; then
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ios=false" >> "$GITHUB_OUTPUT"
+          fi
+
   edge-functions:
     name: Edge functions (Deno)
     runs-on: ubuntu-latest
@@ -88,12 +120,18 @@ jobs:
   ios:
     name: iOS (Xcode)
     runs-on: macos-15
-    # iOS runners are ~10× more expensive than ubuntu. Only run when iOS files
-    # change, plus all pushes to main. Override with workflow_dispatch.
+    needs: changes
+    # iOS runners are ~10× more expensive than ubuntu, so this job is gated —
+    # but the gate is now the diff, not a label. It used to be the `ios` label
+    # alone, which no automation applied and which did not exist in the repo:
+    # every Swift-only PR silently skipped its build and reported green without
+    # having compiled. The label survives as a manual override for forcing a
+    # build on a PR that does not touch RunningLog/.
     if: |
       github.event_name == 'push' ||
-      contains(toJSON(github.event.pull_request.labels.*.name), 'ios') ||
-      github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch' ||
+      needs.changes.outputs.ios == 'true' ||
+      contains(toJSON(github.event.pull_request.labels.*.name), 'ios')
     defaults:
       run:
         working-directory: RunningLog
