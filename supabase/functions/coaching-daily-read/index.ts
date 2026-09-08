@@ -1166,13 +1166,25 @@ async function buildDailyReadContext(
     sections.push(`## Upcoming race intel\n${parts.join("\n")}`);
   }
 
-  // ── Stress & recovery scores (daily_scores, latest version) ─────────
+  // ── Training load & body signals (daily_scores, latest version) ─────
   // Rules-based, every component carries its own reason sentence. See
   // docs/SCORE_SPEC.md. Non-fatal: a failed fetch just omits the section.
+  //
+  // 2026-09-08 — THE 0-100 COMPOSITES NEVER REACH THE MODEL.
+  // `daily_scores.stress` and `.recovery` are deliberately not selected
+  // here. They failed validation (see project_recovery_score_model /
+  // the StressRecoveryView header): a 214-day replay put the composite in
+  // a 37-point strip with no relationship to felt_rpe, and the recovery
+  // half is 100-minus-deductions, so a silent day scores as a healthy one.
+  // Narrating an unvalidated number is exactly the self-graded AI layer
+  // this product forbids. What the model gets instead is what validated:
+  // fitness/fatigue in real load units, and each component's own reason
+  // sentence. Component `points` are used ONLY to decide which rows are
+  // worth showing — they are never put in the context.
   try {
     const { data: scoreRows } = await supabase
       .from("daily_scores")
-      .select("score_date, score_version, stress, recovery, recovery_confidence, stress_components, recovery_components")
+      .select("score_date, score_version, fitness, fatigue, recovery_confidence, stress_components, recovery_components")
       .eq("user_id", userId)
       .order("score_date", { ascending: false })
       .order("score_version", { ascending: false })
@@ -1181,15 +1193,17 @@ async function buildDailyReadContext(
       const latestVersion = scoreRows[0].score_version as string;
       const rows = scoreRows.filter((r) => r.score_version === latestVersion);
       const today = rows[0];
+      const round = (v: unknown) => (v == null ? null : Math.round(Number(v)));
       const trend = rows
         .slice(0, 7)
         .reverse()
-        .map((r) => `${String(r.score_date).slice(5)} S${r.stress ?? "—"}/R${r.recovery ?? "—"}`)
+        .map((r) => `${String(r.score_date).slice(5)} fit ${round(r.fitness) ?? "—"}/fat ${round(r.fatigue) ?? "—"}`)
         .join(", ");
       type Comp = { name: string; points: number; detail: string };
-      const nonZero = (arr: unknown): Comp[] =>
+      const speaking = (arr: unknown): Comp[] =>
         (Array.isArray(arr) ? (arr as Comp[]) : []).filter((c) => Number(c.points) !== 0);
-      const stressLines = nonZero(today.stress_components).map((c) => `- ${c.name} +${c.points}: ${c.detail}`);
+      // Reason sentences only — no points. See the note above.
+      const loadLines = speaking(today.stress_components).map((c) => `- ${c.name}: ${c.detail}`);
       // Outside-stress reaches the Read only when the athlete has opted in
       // via athlete_settings.share_stress_with_coach. Default: hidden.
       const { data: shareRow } = await supabase
@@ -1198,22 +1212,23 @@ async function buildDailyReadContext(
         .eq("user_id", userId)
         .maybeSingle();
       const shareStress = shareRow?.share_stress_with_coach === true;
-      const recovLines = nonZero(today.recovery_components)
+      const bodyLines = speaking(today.recovery_components)
         .filter((c) => shareStress || c.name !== "stress")
-        .map((c) => `- ${c.name} ${c.points}: ${c.detail}`);
-      const conf = today.recovery == null
-        ? "no recovery inputs recorded today"
+        .map((c) => `- ${c.name}: ${c.detail}`);
+      const coverage = today.recovery_confidence === "ok"
+        ? "Two or more body signals reported today."
         : today.recovery_confidence === "low"
-        ? "low confidence — only one recovery input present"
-        : "based on two or more inputs";
+        ? "Only ONE body signal reported today; the rest were silent. Silence is absence of data, not evidence of good recovery — do not read it as either."
+        : "No body signals reported today. Say nothing about how recovered the athlete is.";
       const parts = [
-        `Today (${today.score_date}, score v${latestVersion}): stress ${today.stress}/100, recovery ${today.recovery ?? "—"}/100 (${conf}).`,
-        `Last 7 days (S=stress, R=recovery): ${trend}`,
-        stressLines.length ? `Stress contributors:\n${stressLines.join("\n")}` : "Stress contributors: none active.",
-        recovLines.length ? `Recovery deductions:\n${recovLines.join("\n")}` : "Recovery deductions: none.",
-        "Use these numbers only when a contributor is non-zero and it changes the advice. Quote the contributor's reason sentence as-is or lightly rephrased; never invent a reason. Never call any of this an injury risk or readiness score.",
+        `Today (${today.score_date}, scorer v${latestVersion}): fitness ${round(today.fitness) ?? "—"}, fatigue ${round(today.fatigue) ?? "—"}. These are 42-day and 7-day exponential averages of session load (RPE x minutes) in arbitrary load units — they are comparable to THIS athlete's own recent values and to nothing else.`,
+        `Last 7 days: ${trend}`,
+        loadLines.length ? `What the training is asking:\n${loadLines.join("\n")}` : "What the training is asking: nothing notable.",
+        bodyLines.length ? `What the body said:\n${bodyLines.join("\n")}` : "What the body said: nothing notable.",
+        coverage,
+        "Quote a reason sentence as-is or lightly rephrased; never invent a reason. Load units are internal — do not read them out as a figure to the athlete, and never present them as a score, a percentage, or a rating out of anything. There is no stress score and no recovery score in this product; do not compute, imply, or narrate one. Never call any of this injury risk or readiness.",
       ];
-      sections.push(`## Stress and recovery scores\n${parts.join("\n")}`);
+      sections.push(`## Training load and body signals\n${parts.join("\n")}`);
     }
   } catch (e) {
     console.warn("daily_scores fetch skipped:", e);

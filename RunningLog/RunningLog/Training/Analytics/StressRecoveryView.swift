@@ -2,8 +2,7 @@
 //  StressRecoveryView.swift
 //  RunningLog
 //
-//  Step 2 of the stress/recovery-scores work (drip-scores): the 90-day
-//  graph screen, pushed from the Train tab's CURRENT mode.
+//  The 90-day training-load screen, pushed from the Train tab's CURRENT mode.
 //
 //  Reads `daily_scores` directly (RLS: athlete reads own rows). The table
 //  keys on (user_id, score_date, score_version) and old score versions are
@@ -11,19 +10,33 @@
 //  screen keeps only the LATEST version present in the window, matching
 //  the coaching-daily-read consumer.
 //
+//  2026-09-08 — THE 0-100 COMPOSITES ARE GONE FROM THIS SCREEN.
+//  `daily_scores.stress` and `.recovery` are deliberately NOT selected and
+//  have no field on `DailyScoreDay`, so no view here can render one and the
+//  model layer cannot fabricate one. This repeats the 2026-08-24 decision
+//  that deleted `TrendsRecoveryLedger`: a 214-day replay found the composite
+//  never left a 37-point strip, had no relationship with felt_rpe, and did
+//  not move ahead of the one injury in the window. A single figure also
+//  CANCELS opposing signals — "sleep fine + load enormous" and "sleep
+//  terrible + load tiny" collapse to the same value — and the recovery half
+//  is 100-minus-deductions, so silence scored identically to health.
+//
+//  What survives is what validated: the per-component reason sentences, and
+//  the two quantities that are actually modelled rather than assigned —
+//  fitness (42-day EWMA of sRPE) and fatigue (7-day EWMA), plotted in their
+//  own load units. Component `points` are read ONLY as an internal "is this
+//  notable" flag for emphasis; they are never drawn as a figure. Do not
+//  re-add a dial, a summed bar, a stacked area, a header strip, or a
+//  "days in the red" count — anything readable as one number IS the cut
+//  thing (see project_recovery_score_model's guard list).
+//
 //  Design notes:
-//  - The reference mockup asked for a rust stress line and a green
-//    recovery line. Both collide with the three-palette rule (warm = mood,
-//    green = mood, coral = alert), so the chart is monochrome editorial:
-//    ink for stress, dashed secondary for recovery, neutral sRPE bars
-//    behind, coral reserved for the selected-day marker only.
-//  - Recovery is null on days with no recovery inputs; the line breaks
-//    into a real gap there — never interpolated, never drawn as 0
-//    (TrendsMoodRead convention).
+//  - Monochrome editorial: ink for fatigue, dashed secondary for fitness,
+//    neutral sRPE bars behind, coral reserved for the selected-day marker.
 //  - Scrubbing READS; it never navigates (TrendsSignalLanes rule). The
 //    component breakdown renders inline below the chart.
 //  - Deliberately absent: ACWR and anything phrased as injury risk or
-//    readiness. The components carry their own reason sentences instead.
+//    readiness.
 //
 
 import Combine
@@ -35,20 +48,26 @@ import SwiftUI
 
 struct ScoreComponent: Decodable, Identifiable, Equatable {
     let name: String
+    /// Scorer-internal weight. Used ONLY to decide whether a row is saying
+    /// something (emphasis); never rendered as a number. See file header.
     let points: Int
     let detail: String
     var id: String { name }
+
+    var isSpeaking: Bool { points != 0 }
 }
 
 /// One scored day, already collapsed to the latest score_version.
+///
+/// No `stress` / `recovery` field by design — see the file header.
 struct DailyScoreDay: Identifiable, Equatable {
     let dateString: String        // "2026-09-01" (score_date, a DATE column)
     let date: Date
-    let stress: Int?
-    let recovery: Int?
+    let fitness: Double?          // 42-day EWMA of sRPE, load units
+    let fatigue: Double?          // 7-day EWMA of sRPE, load units
     let recoveryConfidence: String
     let srpe: Double
-    let stressComponents: [ScoreComponent]
+    let loadComponents: [ScoreComponent]
     let recoveryComponents: [ScoreComponent]
     var id: String { dateString }
 }
@@ -62,8 +81,8 @@ enum StressRecoveryService {
     private struct Row: Decodable {
         let score_date: String
         let score_version: String
-        let stress: Int?
-        let recovery: Int?
+        let fitness: Double?
+        let fatigue: Double?
         let recovery_confidence: String?
         let srpe: Double?
         let stress_components: [ScoreComponent]?
@@ -84,9 +103,10 @@ enum StressRecoveryService {
         let start = Calendar.current.date(byAdding: .day, value: -(days - 1), to: Date()) ?? Date()
         let startString = dayFormatter.string(from: start)
 
+        // `stress` and `recovery` are intentionally absent from this select.
         let response = try await supabase
             .from("daily_scores")
-            .select("score_date, score_version, stress, recovery, recovery_confidence, srpe, stress_components, recovery_components")
+            .select("score_date, score_version, fitness, fatigue, recovery_confidence, srpe, stress_components, recovery_components")
             .eq("user_id", value: userId)
             .gte("score_date", value: startString)
             .order("score_date", ascending: true)
@@ -103,11 +123,11 @@ enum StressRecoveryService {
                 return DailyScoreDay(
                     dateString: row.score_date,
                     date: d,
-                    stress: row.stress,
-                    recovery: row.recovery,
+                    fitness: row.fitness,
+                    fatigue: row.fatigue,
                     recoveryConfidence: row.recovery_confidence ?? "none",
                     srpe: row.srpe ?? 0,
-                    stressComponents: row.stress_components ?? [],
+                    loadComponents: row.stress_components ?? [],
                     recoveryComponents: row.recovery_components ?? []
                 )
             }
@@ -157,8 +177,8 @@ struct StressRecoveryView: View {
                 case .empty:
                     EmptyStateView(
                         variant: .dataPending,
-                        eyebrow: "No scores yet",
-                        title: "Scores build from your logged runs — they'll appear after the next nightly pass.",
+                        eyebrow: "Nothing plotted yet",
+                        title: "Load builds from your logged runs — it'll appear after the next nightly pass.",
                         icon: nil,
                         cta: nil
                     )
@@ -174,7 +194,7 @@ struct StressRecoveryView: View {
                     .padding(.top, 32)
                 case .loaded:
                     legend.padding(.top, 18)
-                    StressRecoveryChart(days: vm.days, selectedIndex: $vm.selectedIndex)
+                    TrainingLoadChart(days: vm.days, selectedIndex: $vm.selectedIndex)
                         .frame(height: 220)
                         .padding(.top, 10)
                     if let day = vm.selected {
@@ -195,10 +215,10 @@ struct StressRecoveryView: View {
             Text("LAST 90 DAYS")
                 .font(.dripEyebrow(10.5)).tracking(1.3)
                 .foregroundStyle(Color.drip.textTertiary)
-            Text("Stress & recovery")
+            Text("Training load")
                 .font(.dripDisplay(28))
                 .foregroundStyle(Color.drip.textPrimary)
-            Text("What the training is costing, and how the body is answering. Every number carries its reasons — tap a day to read them.")
+            Text("Fatigue rides above fitness when you're absorbing work and settles under it when you're not. Tap a day to read what the signals said.")
                 .font(.dripCaption(13))
                 .foregroundStyle(Color.drip.textSecondary)
                 .padding(.top, 2)
@@ -209,7 +229,7 @@ struct StressRecoveryView: View {
     private var loading: some View {
         VStack(spacing: 10) {
             ProgressView().tint(Color.drip.coral)
-            Text("READING SCORES")
+            Text("READING LOAD")
                 .font(.dripEyebrow(10)).tracking(1.4)
                 .foregroundStyle(Color.drip.textTertiary)
         }
@@ -219,10 +239,10 @@ struct StressRecoveryView: View {
 
     private var legend: some View {
         HStack(spacing: 16) {
-            legendItem(label: "STRESS") {
+            legendItem(label: "FATIGUE") {
                 Rectangle().fill(Color.drip.textPrimary).frame(width: 16, height: 2)
             }
-            legendItem(label: "RECOVERY") {
+            legendItem(label: "FITNESS") {
                 DashSwatch().stroke(Color.drip.textSecondary, style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
                     .frame(width: 16, height: 2)
             }
@@ -252,23 +272,30 @@ struct StressRecoveryView: View {
                     .foregroundStyle(Color.drip.textTertiary)
                 Spacer()
             }
-            HStack(alignment: .firstTextBaseline, spacing: 18) {
-                scoreStat(label: "STRESS", value: day.stress.map(String.init) ?? "—")
-                scoreStat(label: "RECOVERY", value: day.recovery.map(String.init) ?? "—")
-                if day.recovery != nil {
-                    Text(confidenceLine(day.recoveryConfidence))
-                        .font(.dripCaption(11))
-                        .foregroundStyle(Color.drip.textTertiary)
-                        .padding(.bottom, 3)
-                }
+            HStack(alignment: .firstTextBaseline, spacing: 22) {
+                loadStat(label: "FITNESS", value: day.fitness)
+                loadStat(label: "FATIGUE", value: day.fatigue)
                 Spacer()
             }
             .padding(.top, 8)
+            Text("42- and 7-day averages of session load (RPE × minutes).")
+                .font(.dripCaption(11))
+                .foregroundStyle(Color.drip.textTertiary)
+                .padding(.top, 4)
 
-            componentSection(title: "STRESS CONTRIBUTORS", components: day.stressComponents, signed: false)
-                .padding(.top, 18)
-            componentSection(title: "RECOVERY SIGNALS", components: day.recoveryComponents, signed: true)
-                .padding(.top, 16)
+            componentSection(
+                title: "WHAT THE TRAINING IS ASKING",
+                components: day.loadComponents,
+                emptyLine: "Nothing recorded for this day."
+            )
+            .padding(.top, 18)
+            componentSection(
+                title: "WHAT THE BODY SAID",
+                components: day.recoveryComponents,
+                emptyLine: "Nothing recorded for this day.",
+                footnote: coverageLine(day.recoveryConfidence)
+            )
+            .padding(.top, 16)
         }
         .padding(16)
         .background(
@@ -278,70 +305,76 @@ struct StressRecoveryView: View {
         )
     }
 
-    private func scoreStat(label: String, value: String) -> some View {
+    private func loadStat(label: String, value: Double?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.dripEyebrow(9)).tracking(1.1)
                 .foregroundStyle(Color.drip.textTertiary)
-            Text(value)
+            Text(value.map { String(Int($0.rounded())) } ?? "—")
                 .font(.dripStat(24))
                 .foregroundStyle(Color.drip.textPrimary)
         }
     }
 
-    private func confidenceLine(_ confidence: String) -> String {
+    /// How much of the body side actually spoke. Coverage, not a grade —
+    /// the point is that silence is visible as silence.
+    private func coverageLine(_ confidence: String) -> String {
         switch confidence {
-        case "low": return "low confidence — one signal"
-        case "ok": return "two or more signals"
-        default: return ""
+        case "low": return "One signal reported. The rest were silent."
+        case "ok": return "Two or more signals reported."
+        default: return "No signals reported for this day."
         }
     }
 
-    private func componentSection(title: String, components: [ScoreComponent], signed: Bool) -> some View {
+    private func componentSection(
+        title: String,
+        components: [ScoreComponent],
+        emptyLine: String,
+        footnote: String? = nil
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.dripEyebrow(9.5)).tracking(1.2)
                 .foregroundStyle(Color.drip.textTertiary)
                 .padding(.bottom, 6)
             if components.isEmpty {
-                Text("Nothing recorded for this day.")
+                Text(emptyLine)
                     .font(.dripCaption(12))
                     .foregroundStyle(Color.drip.textTertiary)
             } else {
                 ForEach(components) { c in
-                    componentRow(c, signed: signed)
+                    componentRow(c)
                     if c.id != components.last?.id {
                         Divider().overlay(Color.drip.divider)
                     }
                 }
             }
+            if let footnote {
+                Text(footnote)
+                    .font(.dripCaption(11))
+                    .foregroundStyle(Color.drip.textTertiary)
+                    .padding(.top, 8)
+            }
         }
     }
 
-    private func componentRow(_ c: ScoreComponent, signed: Bool) -> some View {
-        let active = c.points != 0
+    /// Name + its own reason sentence. No points column: the arithmetic was
+    /// the part that failed validation, the sentences were the part that
+    /// didn't (see file header).
+    private func componentRow(_ c: ScoreComponent) -> some View {
+        let speaking = c.isSpeaking
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(c.name.replacingOccurrences(of: "_", with: " ").uppercased())
                 .font(.dripEyebrow(9)).tracking(1.0)
-                .foregroundStyle(active ? Color.drip.textPrimary : Color.drip.textTertiary)
+                .foregroundStyle(speaking ? Color.drip.textPrimary : Color.drip.textTertiary)
                 .frame(width: 84, alignment: .leading)
-            Text(pointsLabel(c.points, signed: signed))
-                .font(.dripStat(12))
-                .foregroundStyle(active ? Color.drip.textPrimary : Color.drip.textTertiary)
-                .frame(width: 34, alignment: .trailing)
             Text(c.detail)
                 .font(.dripCaption(12))
-                .foregroundStyle(active ? Color.drip.textSecondary : Color.drip.textTertiary)
+                .foregroundStyle(speaking ? Color.drip.textSecondary : Color.drip.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(.vertical, 7)
-    }
-
-    private func pointsLabel(_ points: Int, signed: Bool) -> String {
-        if points == 0 { return "0" }
-        if signed { return String(points) }          // recovery deductions arrive negative
-        return "+\(points)"                          // stress contributors are additive
     }
 }
 
@@ -358,15 +391,25 @@ private struct DashSwatch: Shape {
 // MARK: - Chart
 
 /// Hand-rolled per house convention (there is no BarMark anywhere in this
-/// app): sRPE bars behind, stress line in ink, recovery line dashed with
-/// true gaps where recovery is null, coral rule on the selected day.
-private struct StressRecoveryChart: View {
+/// app): sRPE bars behind, fatigue in ink, fitness dashed, coral rule on the
+/// selected day. Both lines share one axis in load units — they are the same
+/// quantity at two time constants, which is the whole point of the picture.
+private struct TrainingLoadChart: View {
     let days: [DailyScoreDay]
     @Binding var selectedIndex: Int?
 
     private let topPad: CGFloat = 6
     private let bottomPad: CGFloat = 18   // room for month labels
-    private let leftPad: CGFloat = 26     // y labels
+    private let leftPad: CGFloat = 34     // y labels (load units run to 3-4 digits)
+
+    /// Axis top: the largest curve value in the window, rounded up to a
+    /// readable step. Never a fixed 100 — these are load units, not a score.
+    private var axisMax: Double {
+        let peak = days.compactMap { max($0.fitness ?? 0, $0.fatigue ?? 0) }.max() ?? 0
+        guard peak > 0 else { return 100 }
+        let step: Double = peak > 400 ? 100 : (peak > 150 ? 50 : 20)
+        return (peak / step).rounded(.up) * step
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -374,18 +417,19 @@ private struct StressRecoveryChart: View {
             let h = geo.size.height
             let plotH = h - topPad - bottomPad
             let maxSrpe = max(days.map(\.srpe).max() ?? 1, 1)
+            let top = axisMax
 
             ZStack(alignment: .topLeading) {
-                gridlines(w: w, h: h)
+                gridlines(w: w, h: h, top: top)
                 bars(w: w, plotH: plotH, maxSrpe: maxSrpe)
-                recoveryPath(w: w, plotH: plotH)
+                curve(w: w, plotH: plotH, top: top) { $0.fitness }
                     .stroke(Color.drip.textSecondary,
                             style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [3, 3]))
-                stressPath(w: w, plotH: plotH)
+                curve(w: w, plotH: plotH, top: top) { $0.fatigue }
                     .stroke(Color.drip.textPrimary,
                             style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 if let i = selectedIndex, days.indices.contains(i) {
-                    selectionMark(i: i, w: w, h: h, plotH: plotH)
+                    selectionMark(i: i, w: w, h: h, plotH: plotH, top: top)
                 }
                 monthLabels(w: w, h: h)
             }
@@ -416,8 +460,8 @@ private struct StressRecoveryChart: View {
         return leftPad + cw * (CGFloat(i) + 0.5)
     }
 
-    private func yScore(_ v: Double, plotH: CGFloat) -> CGFloat {
-        topPad + plotH * CGFloat(1 - v / 100)
+    private func yLoad(_ v: Double, plotH: CGFloat, top: Double) -> CGFloat {
+        topPad + plotH * CGFloat(1 - v / max(top, 1))
     }
 
     private func index(atX x: CGFloat, width: CGFloat) -> Int {
@@ -429,10 +473,10 @@ private struct StressRecoveryChart: View {
 
     // MARK: layers
 
-    private func gridlines(w: CGFloat, h: CGFloat) -> some View {
+    private func gridlines(w: CGFloat, h: CGFloat, top: Double) -> some View {
         ZStack(alignment: .topLeading) {
-            ForEach([0.0, 50.0, 100.0], id: \.self) { v in
-                let y = yScore(v, plotH: h - topPad - bottomPad)
+            ForEach([0.0, top / 2, top], id: \.self) { v in
+                let y = yLoad(v, plotH: h - topPad - bottomPad, top: top)
                 Path { p in
                     p.move(to: CGPoint(x: leftPad, y: y))
                     p.addLine(to: CGPoint(x: w, y: y))
@@ -461,31 +505,25 @@ private struct StressRecoveryChart: View {
         }
     }
 
-    private func stressPath(w: CGFloat, plotH: CGFloat) -> Path {
+    /// One curve, breaking into a real gap wherever the day has no value —
+    /// never interpolated, never drawn as 0 (TrendsMoodRead convention).
+    private func curve(
+        w: CGFloat,
+        plotH: CGFloat,
+        top: Double,
+        value: (DailyScoreDay) -> Double?
+    ) -> Path {
         Path { p in
             var started = false
             for i in days.indices {
-                guard let s = days[i].stress else { started = false; continue }
-                let pt = CGPoint(x: colX(i, w), y: yScore(Double(s), plotH: plotH))
+                guard let v = value(days[i]) else { started = false; continue }
+                let pt = CGPoint(x: colX(i, w), y: yLoad(v, plotH: plotH, top: top))
                 if !started { p.move(to: pt); started = true } else { p.addLine(to: pt) }
             }
         }
     }
 
-    /// Recovery breaks into a real gap wherever the day had no recovery
-    /// inputs — never interpolated, never drawn as 0.
-    private func recoveryPath(w: CGFloat, plotH: CGFloat) -> Path {
-        Path { p in
-            var started = false
-            for i in days.indices {
-                guard let r = days[i].recovery else { started = false; continue }
-                let pt = CGPoint(x: colX(i, w), y: yScore(Double(r), plotH: plotH))
-                if !started { p.move(to: pt); started = true } else { p.addLine(to: pt) }
-            }
-        }
-    }
-
-    private func selectionMark(i: Int, w: CGFloat, h: CGFloat, plotH: CGFloat) -> some View {
+    private func selectionMark(i: Int, w: CGFloat, h: CGFloat, plotH: CGFloat, top: Double) -> some View {
         let x = colX(i, w)
         return ZStack {
             Path { p in
@@ -493,10 +531,10 @@ private struct StressRecoveryChart: View {
                 p.addLine(to: CGPoint(x: x, y: topPad + plotH))
             }
             .stroke(Color.drip.coral.opacity(0.55), lineWidth: 1)
-            if let s = days[i].stress {
+            if let f = days[i].fatigue {
                 Circle().fill(Color.drip.coral)
                     .frame(width: 5, height: 5)
-                    .position(x: x, y: yScore(Double(s), plotH: plotH))
+                    .position(x: x, y: yLoad(f, plotH: plotH, top: top))
             }
         }
     }
