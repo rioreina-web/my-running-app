@@ -25,8 +25,9 @@ import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.
 import {
   classifyQuery,
   getBestAvailableModel,
-  getModelConfig,
+  getFallbackConfig,
   getModelIdentifier,
+  isRetryableModelError,
   noteTruncationIfCapped,
   type RouterConfig,
   type QueryComplexity,
@@ -413,6 +414,16 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 const MODEL_TIMEOUT_MS = 20_000; // 20 seconds per model call
 
 /**
+ * What the runner sees when every model provider failed. Kept as a
+ * constant so the cache-poisoning guard in LAYER 8 recognises it exactly
+ * rather than matching on a copy of its first few words.
+ */
+const PROVIDERS_DOWN_MESSAGE =
+  "I'm having trouble connecting to my AI backend right now. " +
+  "This is temporary — please try again in a minute. " +
+  "In the meantime, your training data is safe and I'll have a full analysis ready when I'm back online.";
+
+/**
  * Call Groq API (OpenAI-compatible) with timeout protection
  */
 async function callGroq(
@@ -443,7 +454,11 @@ async function callGroq(
   if (!response.ok) {
     const errorText = await response.text();
     console.error(`Groq API error: ${response.status}`, errorText);
-    throw new Error(`Groq API error: ${response.status}`);
+    // Carry the status so the caller can tell "retry in 2s" (429, 5xx)
+    // apart from "this will never work" (404 retired model, 401 bad key).
+    const error = new Error(`Groq API error: ${response.status}`) as Error & { status: number };
+    error.status = response.status;
+    throw error;
   }
 
   const data = await response.json();
@@ -1464,67 +1479,77 @@ Coach:`;
     // ========================================================================
     // LAYER 7: Call the appropriate model (with fallback)
     // ========================================================================
-    let coachResponse: string;
+    let modelResponse: string | undefined;
+    // The config that actually produced the answer. Starts as the routed
+    // one and is reassigned if we fail over to the other provider, so
+    // logging, usage_tracking and the response body all describe the model
+    // the runner really got — not the one we hoped to use.
+    let actualConfig: RouterConfig = config;
     // Widen from the router's `"groq" | "gemini"` union to include the
-    // post-retry fallback state — used by the cache-poisoning guard at
-    // line ~1514 to avoid caching error responses as if they were real.
+    // post-retry fallback state — used by the cache-poisoning guard below
+    // to avoid caching error responses as if they were real.
     let actualProvider: "groq" | "gemini" | "fallback" = config.provider;
 
-    // Retry wrapper: tries a model call, waits 2s, retries once before giving up
+    async function callProvider(cfg: RouterConfig): Promise<string> {
+      if (cfg.provider === "gemini") {
+        return await callGemini(fullPrompt, cfg);
+      }
+      // Groq rejects prompts over ~32K chars (413). Truncate keeping the most
+      // recent/most relevant context — the USER MESSAGE and the tail of the
+      // assembled prompt (where recent workouts + state live). Drops older
+      // history first.
+      const MAX_PROMPT_CHARS = 28000;
+      const truncatedPrompt = fullPrompt.length > MAX_PROMPT_CHARS
+        ? "...(earlier context truncated)...\n\n" + fullPrompt.slice(-MAX_PROMPT_CHARS)
+        : fullPrompt;
+      return await callGroq(truncatedPrompt, cfg);
+    }
+
+    // Tries a model call, waits 2s, retries once. Permanent failures (a
+    // retired model, a bad key) skip the retry — two seconds of latency
+    // buys nothing when the second attempt fails identically.
     async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
       try {
         return await fn();
       } catch (firstError: any) {
         console.warn(`${label} attempt 1 failed: ${firstError?.message || firstError}`);
+        if (!isRetryableModelError(firstError)) throw firstError;
         await new Promise((r) => setTimeout(r, 2000));
         return await fn();
       }
     }
 
-    try {
-      // TEMPORARY: Gemini free-tier quota is exhausted. Route everything through
-      // Groq until billing is set up on Gemini API.
-      // Original routing preserved below for restoration.
-      const FORCE_GROQ = false;
+    // Primary provider, then the other one. Either provider can be the
+    // primary — before 2026-09-08 only Gemini had a fallback, so when Groq
+    // started 404ing on a retired model every simple query died there
+    // instead of finishing on Gemini.
+    const fallbackConfig = getFallbackConfig(config);
+    const attempts = fallbackConfig ? [config, fallbackConfig] : [config];
 
-      if (FORCE_GROQ || config.provider === "groq") {
-        // Groq rejects prompts over ~32K chars (413). Truncate keeping the most
-        // recent/most relevant context — the USER MESSAGE and the tail of the
-        // assembled prompt (where recent workouts + state live). Drops older
-        // history first.
-        const MAX_PROMPT_CHARS = 28000;
-        const truncatedPrompt = fullPrompt.length > MAX_PROMPT_CHARS
-          ? "...(earlier context truncated)...\n\n" + fullPrompt.slice(-MAX_PROMPT_CHARS)
-          : fullPrompt;
-        const useLargeGroq = FORCE_GROQ && complexity !== "simple";
-        const groqCfg = useLargeGroq
-          ? { ...getModelConfig("simple"), model: "llama-3.3-70b-versatile", maxTokens: 800 }
-          : (config.provider === "groq" ? config : getModelConfig("simple"));
-        console.log(`Calling Groq ${groqCfg.model} (forced=${FORCE_GROQ}, prompt=${truncatedPrompt.length} chars)...`);
-        actualProvider = "groq";
-        coachResponse = await withRetry(() => callGroq(truncatedPrompt, groqCfg), "Groq");
-      } else {
-        // Try Gemini first, fall back to Groq on rate limit or timeout
-        try {
-          console.log("Calling Gemini for coaching query...");
-          coachResponse = await withRetry(() => callGemini(fullPrompt, config), "Gemini");
-        } catch (geminiError: any) {
-          const errorMessage = geminiError?.message || String(geminiError);
-          console.log(`Gemini failed after retry (${errorMessage}), falling back to Groq...`);
-          actualProvider = "groq";
-          const groqConfig = getModelConfig("simple");
-          coachResponse = await withRetry(() => callGroq(fullPrompt, groqConfig), "Groq-fallback");
-        }
+    for (const [index, cfg] of attempts.entries()) {
+      const label = index === 0
+        ? `${cfg.provider}/${cfg.model}`
+        : `${cfg.provider}/${cfg.model} (fallback)`;
+      try {
+        console.log(`Calling ${label} for coaching query (prompt=${fullPrompt.length} chars)...`);
+        modelResponse = await withRetry(() => callProvider(cfg), label);
+        actualConfig = cfg;
+        actualProvider = cfg.provider;
+        break;
+      } catch (modelError: any) {
+        console.error(`${label} failed: ${modelError?.message || modelError}`);
       }
-    } catch (modelError: any) {
-      // Both models failed after retries — return a graceful degradation response
-      const errMsg = modelError?.message || String(modelError);
-      console.error("All model providers failed after retries:", errMsg);
-      actualProvider = "fallback";
-      coachResponse = "I'm having trouble connecting to my AI backend right now. " +
-        "This is temporary — please try again in a minute. " +
-        "In the meantime, your training data is safe and I'll have a full analysis ready when I'm back online.";
     }
+
+    if (modelResponse === undefined) {
+      // Every provider failed — return a graceful degradation response.
+      console.error(
+        `All model providers failed after retries: [${attempts.map((c) => `${c.provider}/${c.model}`).join(", ")}]`,
+      );
+      actualProvider = "fallback";
+    }
+
+    const coachResponse: string = modelResponse ?? PROVIDERS_DOWN_MESSAGE;
 
     const outputTokens = estimateTokens(coachResponse);
 
@@ -1534,7 +1559,7 @@ Coach:`;
     // every similar future query return "AI backend unavailable" forever.
     // ========================================================================
     const isFallback = actualProvider === "fallback"
-      || coachResponse.startsWith("I'm having trouble connecting to my AI backend");
+      || coachResponse === PROVIDERS_DOWN_MESSAGE;
     if (!proactive && !isFallback && queryEmbedding && isCacheEnabled()) {
       await cacheResponse(queryEmbedding, message, coachResponse, complexity);
     }
@@ -1589,7 +1614,7 @@ Coach:`;
       supabase.from("usage_tracking").insert({
         user_id: userId,
         feature: proactive ? "coaching_proactive" : "coaching",
-        model_used: getModelIdentifier(complexity),
+        model_used: getModelIdentifier(complexity, actualConfig),
         input_tokens: inputTokens,
         output_tokens: outputTokens,
         cached: false,
@@ -1616,7 +1641,7 @@ Coach:`;
     const processingTime = Date.now() - startTime;
 
     console.log(
-      `Response generated in ${processingTime}ms using ${config.provider}/${config.model} (${complexity})`
+      `Response generated in ${processingTime}ms using ${actualProvider === "fallback" ? "fallback/none" : `${actualConfig.provider}/${actualConfig.model}`} (${complexity})`
     );
 
     const successBody = {
@@ -1624,7 +1649,7 @@ Coach:`;
       conversationId: finalConversationId,
       messageId: assistantMessageId,
       model: complexity,
-      provider: config.provider,
+      provider: actualProvider,
       cached: false,
       remaining: proactive ? rateLimit.remaining : rateLimit.remaining - 1,
       proactive: proactive || false,
