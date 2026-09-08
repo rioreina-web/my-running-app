@@ -8,6 +8,8 @@ function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.includes(pathname)) return true;
   if (pathname.startsWith("/blog/")) return true;
   if (pathname.startsWith("/studio/")) return true;
+  // Athlete-site mockup — static mock data, no account behind it.
+  if (pathname === "/mockup" || pathname.startsWith("/mockup/")) return true;
   return false;
 }
 
