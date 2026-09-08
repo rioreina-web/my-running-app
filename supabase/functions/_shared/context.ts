@@ -236,9 +236,23 @@ function getMonday(date: Date): Date {
  * Build a focused "this week" training summary
  * Only includes workouts from Monday to now
  */
-export function buildThisWeekContext(logs: TrainingLog[] | ExtendedTrainingLog[]): string {
+export function buildThisWeekContext(
+  logs: TrainingLog[] | ExtendedTrainingLog[],
+  timeZone?: string,
+): string {
   if (!logs || logs.length === 0) {
     return "No training data available.";
+  }
+
+  // Weekday labels in the athlete's timezone (see buildTrainingPeriodDocument
+  // for why). The Monday boundary itself still uses server time — a few hours
+  // of skew at the week edge, vs. every label being wrong for evening asks.
+  let tzOpt: { timeZone?: string } = {};
+  if (timeZone) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone });
+      tzOpt = { timeZone };
+    } catch { /* bad tz string — fall back to server time */ }
   }
 
   const now = new Date();
@@ -276,9 +290,13 @@ export function buildThisWeekContext(logs: TrainingLog[] | ExtendedTrainingLog[]
   // Build daily breakdown
   const dailyBreakdown = sortedLogs.map((log) => {
     const logDate = getLogDate(log);
-    const dayName = logDate.toLocaleDateString("en-US", { weekday: "long" });
+    const dayName = logDate.toLocaleDateString("en-US", { weekday: "long", ...tzOpt });
     const distance = log.workout_distance_miles?.toFixed(1) || "?";
-    const duration = log.workout_duration_minutes ? `${Math.round(log.workout_duration_minutes)} min` : "";
+    let duration = log.workout_duration_minutes ? `${Math.round(log.workout_duration_minutes)} min` : "";
+    if (log.workout_distance_miles && log.workout_duration_minutes) {
+      const paceSec = Math.round((log.workout_duration_minutes * 60) / log.workout_distance_miles);
+      duration += ` (${Math.floor(paceSec / 60)}:${String(paceSec % 60).padStart(2, "0")}/mi session avg)`;
+    }
     const mood = log.mood ? ` [${log.mood}]` : "";
     const note = (log as ExtendedTrainingLog).cleaned_notes || log.notes;
     const noteSnippet = note ? `: ${note.slice(0, 80)}${note.length > 80 ? "..." : ""}` : "";
@@ -333,6 +351,34 @@ export interface ExtendedTrainingLog {
   workout_type?: string;
   workout_pace_per_mile?: string;
   pace_segments?: Array<{ effort: string; distance_miles: number; pace_per_mile: string; duration_seconds: number; avg_heart_rate?: number }>;
+  /** Observer-parsed execution structure — the trustworthy within-run view
+   *  (pace_segments effort labels are classifier output and unreliable). */
+  parsed_structure?: {
+    pattern?: string | null;
+    blocks?: Array<{
+      role?: string;
+      rep_num?: number | null;
+      distance_miles?: number | string;
+      duration_s?: number | string;
+      avg_pace_per_mile?: string;
+      avg_hr?: number | null;
+    }> | null;
+  } | null;
+  /** Conditions at run time (fetch-workout-weather). `adjustment_pct` is the
+   *  heat model's pace cost as a fraction — the ONLY licensed basis for an
+   *  "effort-equivalent" pace, computed here in code, never by the model. */
+  weather_actual?: {
+    temp_f?: number;
+    dew_point_f?: number;
+    humidity?: number;
+    heat_category?: string;
+    adjustment_pct?: number;
+    /** Elevation above sea level at the run's location (fetch-workout-weather
+     *  via Open-Meteo). Absent = unknown, NOT sea level. */
+    elevation_ft?: number;
+    /** Altitude credit fraction from _shared/altitude.ts. */
+    altitude_adjustment_pct?: number;
+  } | null;
   mood?: string;
   cleaned_notes?: string;
   notes?: string;
@@ -360,11 +406,27 @@ export interface ExtendedTrainingLog {
  */
 export function buildTrainingPeriodDocument(
   logs: ExtendedTrainingLog[],
-  periodMonths: number = 3
+  periodMonths: number = 3,
+  timeZone?: string,
 ): string {
   if (!logs || logs.length === 0) {
     return "\nNo training history available for this period.";
   }
+
+  // All displayed dates use the ATHLETE's timezone, not the server's (UTC).
+  // Without this, an evening question lands after UTC midnight and the model
+  // is told "today" is tomorrow — it then calls this morning's run
+  // "yesterday" (shipped 2026-09-01, 8:49 PM Austin ask).
+  const tz = (() => {
+    if (!timeZone) return undefined;
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone });
+      return timeZone;
+    } catch {
+      return undefined;
+    }
+  })();
+  const tzOpt = tz ? { timeZone: tz } : {};
 
   const now = new Date();
   const fourWeeksAgo = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000);
@@ -478,27 +540,92 @@ export function buildTrainingPeriodDocument(
       return `${weekLabel}: ${data.runs} runs, ${data.miles.toFixed(1)} mi, avg pace ${avgPaceWeek}, moods: ${moodSummary}${noteSummary}`;
     });
 
-  // Get all recent runs with full detail — workout type, pace segments, notes
+  // Format a seconds-per-mile value as "M:SS/mi".
+  const fmtSecPace = (sec: number): string => {
+    const m = Math.floor(sec / 60);
+    const s = Math.round(sec % 60);
+    return `${m}:${s.toString().padStart(2, "0")}/mi`;
+  };
+
+  // Get all recent runs with full detail — workout type, structure, notes.
+  //
+  // Every line leads with the SESSION AVERAGE pace (total distance over total
+  // time) explicitly labeled, because the model reading this document cannot
+  // be trusted to aggregate: given a bare list of segment paces it will pick
+  // one and present it as the run's pace (that exact failure shipped —
+  // 2026-09-01, a recovery jog with two 25s strides was reported as a
+  // "1.6-mile interval session at 5:36/mi" when the true average was 8:27).
+  // Within-run detail is still included, but labeled as parts of one run and
+  // preferring parsed_structure (Observer output) over pace_segments
+  // (classifier labels, unreliable).
   const recentNotes = sortedRecent
     .map((log) => {
       const logDate = new Date(log.workout_date || log.created_at);
-      const dayName = logDate.toLocaleDateString("en-US", { weekday: "short" });
-      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      const dayName = logDate.toLocaleDateString("en-US", { weekday: "short", ...tzOpt });
+      const dateStr = logDate.toLocaleDateString("en-US", { month: "short", day: "numeric", ...tzOpt });
       const distance = log.workout_distance_miles ? `${log.workout_distance_miles.toFixed(1)}mi` : "";
       const type = log.workout_type ? log.workout_type.replace(/_/g, " ").toUpperCase() : "";
-      const pace = (log.workout_distance_miles && log.workout_duration_minutes)
-        ? formatPace(log.workout_duration_minutes, log.workout_distance_miles)
-        : "";
+      const paceSecNum = (log.workout_distance_miles && log.workout_duration_minutes)
+        ? Math.round((log.workout_duration_minutes * 60) / log.workout_distance_miles)
+        : null;
+      const pace = paceSecNum != null ? `${fmtSecPace(paceSecNum)} (session avg)` : "";
       const mood = log.mood ? ` [${log.mood}]` : "";
 
       let line = `${dayName} ${dateStr}: ${type} ${distance} @ ${pace}${mood}`;
 
-      // Add pace segment detail for workouts that have it
-      if (log.pace_segments && log.pace_segments.length > 1) {
+      // Conditions + effort-equivalent pace, computed HERE from the heat and
+      // altitude models' adjustment fractions so the model never derives its
+      // own. The two credits combine multiplicatively.
+      const wa = log.weather_actual;
+      if (wa && (typeof wa.temp_f === "number" || typeof wa.elevation_ft === "number")) {
+        const bits: string[] = [];
+        if (typeof wa.temp_f === "number") bits.push(`${Math.round(wa.temp_f)}°F`);
+        if (typeof wa.dew_point_f === "number") bits.push(`dew ${Math.round(wa.dew_point_f)}°F`);
+        if (wa.heat_category && wa.heat_category !== "ideal") {
+          bits.push(String(wa.heat_category).replace(/_/g, " "));
+        }
+        const altPct = typeof wa.altitude_adjustment_pct === "number" ? wa.altitude_adjustment_pct : 0;
+        if (typeof wa.elevation_ft === "number" && altPct > 0) {
+          bits.push(`${wa.elevation_ft.toLocaleString("en-US")}ft altitude`);
+        }
+        if (bits.length > 0) line += ` | conditions: ${bits.join(", ")}`;
+        const heatPct = typeof wa.adjustment_pct === "number" && wa.adjustment_pct > 0
+          ? wa.adjustment_pct
+          : 0;
+        if ((heatPct > 0 || altPct > 0) && paceSecNum != null) {
+          const adjSec = Math.round(paceSecNum * (1 - heatPct) * (1 - altPct));
+          const causes = heatPct > 0 && altPct > 0
+            ? "in cool conditions at sea level"
+            : heatPct > 0
+            ? "in cool conditions"
+            : "at sea level";
+          line += ` — effort-equivalent ≈${fmtSecPace(adjSec)} ${causes}`;
+        }
+      }
+
+      // Within-run structure. parsed_structure first (source of truth for rep
+      // structure); pace_segments only as fallback. Either way the label says
+      // these are parts of one run, never the run's pace.
+      const blocks = log.parsed_structure?.blocks;
+      if (Array.isArray(blocks) && blocks.length > 1) {
+        const parts = blocks
+          .map((b) => {
+            const role = b.role === "work_rep"
+              ? `rep${b.rep_num != null ? ` ${b.rep_num}` : ""}`
+              : (b.role ?? "part");
+            const d = Number(b.distance_miles);
+            const dStr = Number.isFinite(d) && d > 0 ? ` ${d.toFixed(2)}mi` : "";
+            const p = b.avg_pace_per_mile ? ` @ ${b.avg_pace_per_mile}/mi` : "";
+            const hr = b.avg_hr ? ` ${b.avg_hr}bpm` : "";
+            return `${role}${dStr}${p}${hr}`;
+          })
+          .join(", ");
+        line += `\n  Within-run parts (segment paces of THIS one run — not the run's pace): ${parts}`;
+      } else if (log.pace_segments && log.pace_segments.length > 1) {
         const segs = log.pace_segments
           .map(s => `${s.effort}: ${s.distance_miles.toFixed(1)}mi @ ${s.pace_per_mile}/mi${s.avg_heart_rate ? ` ${s.avg_heart_rate}bpm` : ""}`)
           .join(", ");
-        line += ` | Segments: ${segs}`;
+        line += `\n  Within-run parts (segment paces of THIS one run — not the run's pace): ${segs}`;
       }
 
       // Voice memo context (what the runner said + what the AI extracted)
@@ -599,9 +726,22 @@ export function buildTrainingPeriodDocument(
   let document = `
 === TRAINING ANALYSIS (Weighted: Recent > Historical) ===
 
+Today's date: ${now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", ...tzOpt })}.
+
 ⚠️ IMPORTANT: Weight the RECENT TRAINING section most heavily when giving advice.
 The last 3-4 weeks best reflects current fitness, fatigue, and training patterns.
 Historical data provides context but should not override recent trends.
+
+NUMBER RULES (hard — a wrong number is worse than no number):
+- The pace OF a run is its "(session avg)" figure — total distance over total
+  time. A "Within-run parts" list shows pieces of ONE run; never present a
+  part's pace as the run's pace, and never average part paces yourself.
+- For heat, altitude, or conditions questions, use only the "effort-equivalent"
+  figure printed on a run's line. If a run has none, say the adjusted figure is
+  not computed — do not estimate one.
+- Only state pace figures that appear in this context, verbatim.
+- Date each run by the date printed on its line. Only call a run "today" or
+  "yesterday" if that matches today's date above.
 
 `;
 

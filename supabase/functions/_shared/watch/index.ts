@@ -31,6 +31,8 @@ export const ALL_WATCHES: readonly Watch[] = [
 
 export * from "./types.ts";
 export * from "./backtest.ts";
+export * from "./metrics.ts";
+export * from "./authored.ts";
 export { buildWatchContext, type WatchStateInput } from "./context.ts";
 export { easyDayDiscipline, niggleFlare, recoveryTrend };
 

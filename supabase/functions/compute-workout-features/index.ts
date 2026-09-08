@@ -451,6 +451,29 @@ function costSampleFor(
   };
 }
 
+// Service-role detection by CLAIM, not string equality. The Vault copy of the
+// key (what net.http_post dispatchers send) no longer string-equals this
+// function's env copy even though both are validly signed — the same drift
+// that 401'd every dispatched parse-workout-structure job (measured
+// 2026-08-10) hit the 2026-08-30 quality_load backfill here with
+// {"error":"Authentication required"}. Safe because verify_jwt = true: the
+// gateway has already checked the signature before we ever see the token.
+// Same fix as parse-workout-structure / extract-rpe / the drain-* functions.
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -465,9 +488,24 @@ Deno.serve(async (req) => {
     // (user JWT + user_id in body; the helper 403s on a mismatch) and ops
     // scripts (service-role key + user_id; the helper 400s if it's missing).
     // Same pattern as its sibling correct-workout-structure.
-    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
-    if ("response" in auth) return auth.response;
-    const { userId: user_id } = auth;
+    let user_id: string;
+    const authHeader = req.headers.get("Authorization") ?? "";
+    const bearer = authHeader.startsWith("Bearer ")
+      ? authHeader.slice("Bearer ".length).trim()
+      : "";
+    if (bearer && isServiceRoleJWT(bearer)) {
+      if (typeof bodyUserId !== "string" || bodyUserId.length === 0) {
+        return new Response(
+          JSON.stringify({ error: "Service-role caller must specify user_id in body" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      user_id = bodyUserId;
+    } else {
+      const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+      if ("response" in auth) return auth.response;
+      ({ userId: user_id } = auth);
+    }
 
     const cols = "id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, pace_segments, workout_type, workout_notes, mood, source, felt_rpe, weather_actual";
 

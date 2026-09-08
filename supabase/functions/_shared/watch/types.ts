@@ -139,6 +139,25 @@ export interface WatchContext {
     workoutType: string;
     /** Needed to tell an easy day from a warmup fragment. */
     distanceMiles?: number | null;
+    /**
+     * Average HR over the easy portion, from `workout_features`. Present on
+     * ~90% of this athlete's rows, so an HR-ceiling watch is real rather than
+     * aspirational — but still optional, and absent means gap, never zero.
+     */
+    avgHeartRate?: number | null;
+  }> | null;
+
+  /**
+   * Every run in the window, easy or not — newest-first.
+   *
+   * Distinct from `easyRuns`, which is filtered and pace-focused. Metrics
+   * about the *shape* of a week (mileage jumps, stretches without a day off)
+   * need the whole picture, including the sessions the pace watches ignore.
+   */
+  allRuns?: Array<{
+    date: string;
+    distanceMiles: number | null;
+    workoutType: string;
   }> | null;
 
   /** athlete_state.niggle_recurrence. */
