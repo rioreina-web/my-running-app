@@ -3,12 +3,16 @@
 //  RunningLog
 //
 //  Today's session, set as an editorial headline rather than a card.
-//  Four things only:
+//  Three things only:
 //
-//      TODAY · WED · APR 29                            11 MI · MP
+//      TODAY · WED · APR 29
 //      Marathon-pace 11.
 //      2 MI WU  ·  8 MI @ MP  ·  1 MI CD
 //      Mark complete ↗
+//
+//  The right-hand meta eyebrow ("11 MI · MP") is gone. It restated the
+//  headline directly beneath it — same distance, same workout type, one
+//  abbreviated and one spelled out. The headline says it better.
 //
 //  Coral discipline: the coral eyebrow ("TODAY · WED · APR 29") and the
 //  coral "Mark complete ↗" link belong to the same cluster — they
@@ -39,18 +43,11 @@ struct TrainingTodayHero: View {
     @ViewBuilder
     private func session(_ workout: ScheduledWorkout) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Eyebrow row — coral left, neutral right.
-            HStack(alignment: .firstTextBaseline) {
-                Text(todayEyebrow)
-                    .font(.dripEyebrow(11))
-                    .tracking(1.3)
-                    .foregroundStyle(Color.drip.coral)
-                Spacer(minLength: 12)
-                Text(metaEyebrow(workout))
-                    .font(.dripEyebrow(11))
-                    .tracking(1.3)
-                    .foregroundStyle(Color.drip.textSecondary)
-            }
+            // Coral date eyebrow.
+            Text(todayEyebrow)
+                .font(.dripEyebrow(11))
+                .tracking(1.3)
+                .foregroundStyle(Color.drip.coral)
 
             // Editorial headline — `<type sentence-case> <distance>.`
             Text(headline(workout))
@@ -112,15 +109,6 @@ struct TrainingTodayHero: View {
         return "TODAY  ·  \(f.string(from: Date()).uppercased())"
     }
 
-    private func metaEyebrow(_ workout: ScheduledWorkout) -> String {
-        var parts: [String] = []
-        if let miles = workout.workout?.totalDistanceMiles, miles > 0 {
-            parts.append("\(Int(miles.rounded())) MI")
-        }
-        parts.append(typeShortLabel(workout.workoutType))
-        return parts.joined(separator: "  ·  ")
-    }
-
     /// Sentence-case workout type for the headline. Per the handoff
     /// voice spec: `Marathon-pace 11.`, `Tempo 8.`, `Long run 20.`,
     /// `Easy 6.`, `Recovery 4.`
@@ -146,22 +134,6 @@ struct TrainingTodayHero: View {
         case .strides:       return "Strides"
         case .strength:      return "Strength"
         case .crossTraining: return "Cross training"
-        }
-    }
-
-    private func typeShortLabel(_ t: ScheduledWorkoutType) -> String {
-        switch t {
-        case .rest:          return "REST"
-        case .easy:          return "EASY"
-        case .tempo:         return "TEMPO"
-        case .intervals:     return "INTV"
-        case .longRun:       return "LONG"
-        case .recovery:      return "RECOV"
-        case .race:          return "RACE"
-        case .progression:   return "PROG"
-        case .strides:       return "STRIDE"
-        case .strength:      return "STR"
-        case .crossTraining: return "XT"
         }
     }
 

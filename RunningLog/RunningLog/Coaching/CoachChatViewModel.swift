@@ -229,7 +229,7 @@ final class CoachChatViewModel {
                 isLoading = false
                 appendErrorMessage("Couldn't reach the coach. Check your connection and try again.")
             }
-            ErrorReporter.shared.report(error, context: "coaching agent call")
+            await ErrorReporter.shared.report(error, context: "coaching agent call")
         }
     }
 

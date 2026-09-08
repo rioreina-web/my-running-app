@@ -668,7 +668,6 @@ final class VoiceLogViewModel {
 
             } catch {
                 Log.app.error("Processing attempt \(attempt) failed: \(error)")
-
                 // Not every failure of THIS call is a failure of the memo.
                 //
                 // The audio is already uploaded and the row is enqueued in
@@ -692,7 +691,7 @@ final class VoiceLogViewModel {
                     return await pollForCompletion(recordId: record.id, maxWait: 60)
                 }
 
-                ErrorReporter.shared.report(error, context: "process voice log")
+                await ErrorReporter.shared.report(error, context: "process voice log")
 
                 if attempt < maxRetries {
                     let delay = Double(1 << attempt)
@@ -803,7 +802,7 @@ final class VoiceLogViewModel {
                 try await Task.sleep(nanoseconds: pollInterval)
             } catch {
                 Log.app.error("Poll error: \(error)")
-                ErrorReporter.shared.report(error, context: "retry processing")
+                await ErrorReporter.shared.report(error, context: "retry processing")
             }
         }
         return false

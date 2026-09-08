@@ -42,7 +42,7 @@ class ContentLibraryService {
             return response
         } catch {
             Log.content.error("Failed to fetch content library: \(error)")
-            ErrorReporter.shared.report(error, context: "ContentLibraryService.fetchVideos: Failed to fetch content library for category \(category.rawValue)")
+            await ErrorReporter.shared.report(error, context: "ContentLibraryService.fetchVideos: Failed to fetch content library for category \(category.rawValue)")
             await MainActor.run {
                 isLoading = false
                 errorMessage = "Failed to load videos"
@@ -65,7 +65,7 @@ class ContentLibraryService {
                 .value
         } catch {
             Log.content.error("Failed to fetch featured videos: \(error)")
-            ErrorReporter.shared.report(error, context: "ContentLibraryService.fetchFeaturedVideos: Failed to fetch featured videos")
+            await ErrorReporter.shared.report(error, context: "ContentLibraryService.fetchFeaturedVideos: Failed to fetch featured videos")
             return []
         }
     }
@@ -91,7 +91,7 @@ class ContentLibraryService {
             return counts
         } catch {
             Log.content.error("Failed to fetch category counts: \(error)")
-            ErrorReporter.shared.report(error, context: "ContentLibraryService.fetchCategoryCounts: Failed to fetch category counts")
+            await ErrorReporter.shared.report(error, context: "ContentLibraryService.fetchCategoryCounts: Failed to fetch category counts")
             return [:]
         }
     }
