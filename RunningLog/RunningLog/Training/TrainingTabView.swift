@@ -55,9 +55,9 @@ struct TrainingTabView: View {
 
     /// Segment persisted across tab switches. Deep-linking back to
     /// Train returns the user to wherever they left off.
-    @AppStorage("training.tab.segment") private var segmentRaw: String = TrainingTabSegment.week.rawValue
+    @AppStorage("training.tab.segment") private var segmentRaw: String = TrainingTabSegment.current.rawValue
     private var segment: TrainingTabSegment {
-        TrainingTabSegment(rawValue: segmentRaw) ?? .week
+        TrainingTabSegment(rawValue: segmentRaw) ?? .current
     }
     private var segmentBinding: Binding<TrainingTabSegment> {
         Binding(
@@ -72,8 +72,11 @@ struct TrainingTabView: View {
     /// Today's workout shown in the DayDetailSheet (Mark complete flow).
     @State private var selectedScheduledWorkout: ScheduledWorkout?
 
-    /// Navigation flag for the week-strip "VIEW PLAN ↗" link, which
-    /// pushes TrainingPlanView. The header used to carry a second link
+    /// Navigation flag for the links that push TrainingPlanView: the
+    /// week strip's "VIEW PLAN ↗" on CURRENT and the no-plan nudge's
+    /// "BROWSE PLANS ↗" on CALENDAR. Those two never render at the
+    /// same time, so a single flag keeps SwiftUI's destination
+    /// resolution unambiguous. The header used to carry a third link
     /// to the same destination; it was cut as duplication.
     @State private var showPlan = false
 
@@ -112,8 +115,9 @@ struct TrainingTabView: View {
                 WeekBlockSegmenter(segment: segmentBinding)
 
                 switch segment {
-                case .week:  weekView
-                case .block: blockView
+                case .current:  weekView
+                case .calendar: calendarView
+                case .history:  blockView
                 }
 
                 Spacer().frame(height: 32)
@@ -146,7 +150,7 @@ struct TrainingTabView: View {
         .refreshable { await loadAll() }
     }
 
-    // MARK: - WEEK view
+    // MARK: - CURRENT view
 
     @ViewBuilder
     private var weekView: some View {
@@ -205,7 +209,87 @@ struct TrainingTabView: View {
         }
     }
 
-    // MARK: - BLOCK view
+    // MARK: - CALENDAR view
+
+    /// The month grid — what happened and what's planned, together.
+    ///
+    /// This is where the old Plan tab went. `MonthCalendarView` already
+    /// draws logged days (mood + distance) alongside scheduled ones and
+    /// keeps its plan-range shading and summary bar behind
+    /// `activePlan != nil`, so the grid reads correctly for a
+    /// self-coached athlete with no plan at all — `activePlan == nil`
+    /// is a state here, not a failure.
+    ///
+    /// Taps route into the two sheets this view already owns: a
+    /// scheduled day opens `DayDetailSheet`, a logged day opens
+    /// `HistoryDetailSheet`.
+    @ViewBuilder
+    private var calendarView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer().frame(height: 22)
+
+            // MonthCalendarView carries its own 20pt gutter, so cancel
+            // the parent's 24pt to keep the grid on the design's margin
+            // instead of double-padding it to 44pt.
+            MonthCalendarView(
+                viewModel: trainingPlanVM,
+                onDayTap: { workout in
+                    selectedScheduledWorkout = workout
+                },
+                onLogDayTap: { day in
+                    openLogEntry(forDayOfMonth: day)
+                }
+            )
+            .padding(.horizontal, -24)
+
+            if trainingPlanVM.activePlan == nil {
+                Spacer().frame(height: 22)
+                EditorialRule()
+                Spacer().frame(height: 16)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("NO PLAN")
+                        .font(.dripEyebrow(11))
+                        .tracking(1.3)
+                        .foregroundStyle(Color.drip.textSecondary)
+
+                    Text("The month still fills in from what you run. Add a plan when you want the week laid out ahead of you.")
+                        .font(.system(size: 14, design: .serif).italic())
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button { showPlan = true } label: {
+                        Text("BROWSE PLANS ↗")
+                            .font(.dripEyebrow(11))
+                            .tracking(1.3)
+                            .foregroundStyle(Color.drip.coral)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 2)
+                }
+            }
+        }
+    }
+
+    /// Resolve a tapped calendar day to its log entry and open the
+    /// history sheet. Goes back to the service rather than filtering
+    /// `trainingLogs`, which only holds the 40 most recent rows and so
+    /// misses older months once the athlete pages back.
+    private func openLogEntry(forDayOfMonth day: Int) {
+        var components = DateComponents()
+        components.year = trainingPlanVM.selectedYear
+        components.month = trainingPlanVM.selectedMonth
+        components.day = day
+        guard let date = Calendar.current.date(from: components) else { return }
+
+        Task {
+            let entries = await trainingPlanVM.loadLogEntries(for: date)
+            guard let first = entries.first else { return }
+            await MainActor.run { selectedLogEntry = first }
+        }
+    }
+
+    // MARK: - HISTORY view
 
     @ViewBuilder
     private var blockView: some View {

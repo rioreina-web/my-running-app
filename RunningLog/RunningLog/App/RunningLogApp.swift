@@ -77,7 +77,7 @@ struct MainTabView: View {
             // icons — see design-system/ui_kits/ios_app/Primitives.jsx::TabBar
             // and Post Run Drip Design System/ui_kits/ios_app/tokens.css.
             //
-            // Routing: all 5 tab views render simultaneously in a ZStack
+            // Routing: all 4 tab views render simultaneously in a ZStack
             // and we toggle `.opacity` + `.allowsHitTesting` based on
             // `selectedTab`. This matches the system TabView's behaviour
             // (each tab's `@State` and scroll position survive a swap)
@@ -89,7 +89,7 @@ struct MainTabView: View {
             // independently; this just stops the cancellations from
             // happening in the first place.)
             //
-            // Cost: 5 view trees alive at once instead of 1. Acceptable
+            // Cost: 4 view trees alive at once instead of 1. Acceptable
             // for the user-visible win and avoids the refetch storm
             // (loadActivePlan / fitness-prediction / scheduled-workouts
             // each previously refired on every tab re-entry).
@@ -112,31 +112,32 @@ struct MainTabView: View {
                 .opacity(selectedTab == 0 ? 1 : 0)
                 .allowsHitTesting(selectedTab == 0)
 
-                // Tab 1 — Train
-                NavigationStack { TrainingTabView() }
+                // Tab 1 — Trends
+                NavigationStack { TrendsTabView() }
                     .opacity(selectedTab == 1 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 1)
 
-                // Tab 2 — Trends
-                NavigationStack { TrendsTabView() }
+                // Tab 2 — Train. The former Plan tab now lives here as
+                // the CALENDAR segment, so the plan is a subset of Train
+                // rather than a peer of it.
+                NavigationStack { TrainingTabView() }
                     .opacity(selectedTab == 2 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 2)
 
-                // Tab 3 — Coach
-                NavigationStack { CoachReadView() }
-                    .opacity(selectedTab == 3 ? 1 : 0)
-                    .allowsHitTesting(selectedTab == 3)
-
-                // Tab 4 — Plan (or Coach in coach mode)
+                // Tab 3 — Coach. Coach mode swaps the athlete's AI Read
+                // for the coach's own workspace: a coach doesn't need a
+                // daily read written for their athlete. Keeping this on
+                // one tag is what holds the bar at four tabs in both
+                // modes.
                 NavigationStack {
                     if isCoachMode {
                         CoachTabView()
                     } else {
-                        TrainingPlanView()
+                        CoachReadView()
                     }
                 }
-                .opacity(selectedTab == 4 ? 1 : 0)
-                .allowsHitTesting(selectedTab == 4)
+                .opacity(selectedTab == 3 ? 1 : 0)
+                .allowsHitTesting(selectedTab == 3)
             }
             .safeAreaInset(edge: .bottom) {
                 DripTabBar(selected: $selectedTab)

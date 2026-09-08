@@ -33,15 +33,18 @@ import UIKit
 
 // MARK: - DripTab
 
-/// The five canonical tabs. Raw values match the integer tags the
-/// existing `MainTabView` already uses for `selectedTab` — the bar binds
-/// to `Binding<Int>` so no host refactor is required.
+/// The four canonical tabs. Raw values are the integer tags
+/// `MainTabView` uses for `selectedTab` — the bar binds to
+/// `Binding<Int>` so no host refactor is required.
+///
+/// Order is the target IA: input → overview → detail → synthesis.
+/// Plan is deliberately absent; it lives inside Train as the CALENDAR
+/// segment (see `TrainingTabView`).
 enum DripTab: Int, CaseIterable, Identifiable {
     case log = 0
-    case train = 1
-    case trends = 2
+    case trends = 1
+    case train = 2
     case coach = 3
-    case plan = 4
 
     var id: Int { rawValue }
 
@@ -50,10 +53,9 @@ enum DripTab: Int, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .log: "Log"
-        case .train: "Train"
         case .trends: "Trends"
+        case .train: "Train"
         case .coach: "Coach"
-        case .plan: "Plan"
         }
     }
 
@@ -70,8 +72,7 @@ enum DripTab: Int, CaseIterable, Identifiable {
 /// - `badged`: tabs that should display a 6pt coral notification dot.
 ///   Wire from your host based on whatever signal you want to surface
 ///   (e.g. `coachViewModel.unreadCount > 0 ? [.coach] : []`).
-/// - `disabled`: tabs that should render dimmed and reject taps. Useful
-///   for gating `.plan` until a plan exists, etc.
+/// - `disabled`: tabs that should render dimmed and reject taps.
 struct DripTabBar: View {
     @Binding var selected: Int
     var badged: Set<DripTab> = []
@@ -219,11 +220,11 @@ private struct DripTabPressStyle: ButtonStyle {
     PreviewHost(initial: 3)
 }
 
-#Preview("Coach badged, Plan disabled") {
+#Preview("Coach badged, Train disabled") {
     PreviewHost(
         initial: 1,
         badged: [.coach],
-        disabled: [.plan]
+        disabled: [.train]
     )
 }
 

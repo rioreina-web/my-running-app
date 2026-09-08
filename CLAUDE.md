@@ -83,10 +83,10 @@ Train · Coach.** Mental flow: input → overview → detail → synthesis.
   anchors and goals silently. Maya can ask Coach to read her journey
   through specific lenses ("how does fitness compare to last cycle?").
 
-**Code as of 2026-05-28 ships 5 tabs** (`Log · Train · Trends · Coach ·
-Plan`, in `RunningLog/App/RunningLogApp.swift:60-140`). The target 4-tab
-IA is the Phase 3 deliverable in Maya's roadmap — Plan collapses into
-Train. See `outputs/maya-product-roadmap-2026-05-28.md` for sequencing.
+**Code ships the 4-tab IA as of 2026-09-08** (`Log · Trends · Train ·
+Coach`, in `RunningLog/RunningLog/App/RunningLogApp.swift`). Plan is
+gone as a tab; it lives inside Train as the CALENDAR segment. See
+`outputs/maya-product-roadmap-2026-05-28.md` for the rest of Phase 3.
 
 ## Where things live
 
@@ -291,7 +291,7 @@ map significantly — most tabs and many sheets now have a JSX side.
 | `TrainingScreen.jsx` (+ unresolved `TrainA/B/C.jsx` variations + `TrainingScreen.v1.jsx`) | `RunningLog/Training/TrainingTabView.swift` (drifted — see below) |
 | `TrendsScreen.jsx` | `RunningLog/Trends/TrendsTabView.swift` |
 | `CoachScreen.jsx` | `RunningLog/Coaching/CoachTabView.swift` + `Coaching/CoachView.swift` |
-| `RunsScreen.jsx` *(design's 5th tab)* | *(iOS 5th tab is `Plan`; both are out in the target 4-tab IA — see below)* |
+| `RunsScreen.jsx` *(design's 5th tab)* | *(no iOS tab — the nav is 4 tabs; runs are read in Log and Train)* |
 
 **Standalone screens & key sheets:**
 
@@ -314,25 +314,28 @@ question is settled.
 
 ### IA — current state vs. target (read before touching nav)
 
-**Current code:** iOS ships **5 tabs** (`Log · Train · Trends · Coach
-· Plan`) in `RunningLog/App/RunningLogApp.swift:60-140`.
+**Current code:** iOS ships the target **4 tabs** (`Log · Trends ·
+Train · Coach`) in `RunningLog/RunningLog/App/RunningLogApp.swift`.
+Tab tags live on the `DripTab` enum in `App/DripTabBar.swift` — use
+`DripTab.<case>.rawValue` rather than an integer literal when jumping
+tabs, so a future reorder can't silently retarget the jump.
+
+Train carries a three-way segmenter (`Training/WeekBlockSegmenter.swift`):
+**CURRENT** (today-anchored), **CALENDAR** (month grid of logged +
+scheduled days, via `Training/MonthCalendarView.swift`), **HISTORY**
+(longer-arc analytics). The old Plan tab's root, `TrainingPlanView`,
+is still reachable as a push from Train — it is no longer a tab.
+
+Coach mode (`isCoachMode`) now takes over the **Coach** tab rather than
+the removed Plan tab, which holds the bar at four tabs in both modes.
 
 **Design system:** Documents a 5-tab nav (`LOG · TRAIN · TRENDS · COACH
-· RUNS`) — slightly different (Runs vs Plan as the 5th).
+· RUNS`). The JSX is stale on nav — code is the 4-tab reference now.
 
-**Target IA as of 2026-05-28:** **4 tabs — `Log · Trends · Train ·
-Coach`.** Plan collapses into Train as a subset (calendar mode shows
-past + planned together; coach-issued plans layer in for athletes on
-plans). Runs as a separate tab is also out. The 4-tab nav reflects
-Maya's needs (input → overview → detail → synthesis) and aligns the
-product with the journey-centric framing.
-
-Phase 3 of Maya's roadmap untethers Train from `activePlan` and ships
-the 4-tab nav. See `outputs/maya-product-roadmap-2026-05-28.md`.
-
-**Until Phase 3 lands**, code still ships 5 tabs. Don't add new
-surfaces to the soon-to-be-removed Plan tab. Don't build "Runs" as
-a separate tab.
+**Still open from Phase 3:** `TrainingPlanView` itself continues to gate
+its content on `activePlan != nil`, so the deeper "untether Train from
+`activePlan`" work is only partly done — the CALENDAR segment draws with
+no plan, that screen does not. Don't build "Runs" as a separate tab.
 
 ### Known iOS drift from the spec
 
