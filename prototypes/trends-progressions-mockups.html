@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Post Run Drip — Trends progressions (mockups)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400..800;1,400&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-tired:#C4873A;
+  --pace-easy:#93B9D6; --pace-steady:#578FC0; --pace-mp:#3F7CB5; --pace-lt:#27549B; --pace-5k:#1A3679; --pace-mile:#0E1D4E;
+  --pace-easy-text:#5E93BE;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif; --fm:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:#2A2622;color:var(--ink);font-family:var(--fb);-webkit-font-smoothing:antialiased;display:flex;justify-content:center;min-height:100vh;padding:34px 16px;}
+.phone{position:relative;width:392px;max-width:100%;height:840px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.4);overflow:hidden;flex-shrink:0;}
+@media(max-width:430px){ body{padding:0;} .phone{border:0;border-radius:0;height:100vh;} }
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:28px;background:#14110E;border-radius:0 0 18px 18px;z-index:40;}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:13px 26px 4px;font-family:var(--fm);font-size:12px;color:var(--ink);font-weight:600;}
+.statusbar .mid{color:var(--ink-2);font-size:10px;letter-spacing:.14em;}
+.screen{height:calc(100% - 44px - 62px);overflow-y:auto;padding:8px 20px 30px;scrollbar-width:none;}
+.screen::-webkit-scrollbar{width:0;}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:62px;background:var(--paper);border-top:1px solid var(--rule);display:grid;grid-template-columns:repeat(5,1fr);z-index:30;}
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;}
+.tab .d{width:6px;height:6px;border-radius:999px;border:1.5px solid var(--ink-3);}
+.tab.on .d{background:var(--coral);border-color:var(--coral);}
+.tab span{font-family:var(--fm);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);}
+.tab.on span{color:var(--ink);font-weight:600;}
+
+.eyebrow{font-family:var(--fm);font-size:10.5px;font-weight:500;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);}
+.eyebrow.coral{color:var(--coral);}
+.plate{display:flex;justify-content:space-between;font-family:var(--fm);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);padding-top:4px;}
+.plate b{color:var(--ink);font-weight:600;}
+.hero{margin-top:14px;}
+.hero h1{font-family:var(--fd);font-weight:700;font-size:32px;line-height:1.04;letter-spacing:-.01em;margin-top:6px;}
+.hero .sub{font-family:var(--fb);font-style:italic;font-size:14px;color:var(--ink-2);margin-top:8px;line-height:1.45;}
+.rule{display:flex;align-items:center;gap:8px;margin:22px 0 4px;}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule);}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule);}
+.sec{margin-top:18px;}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;}
+.sec h2{font-family:var(--fd);font-weight:700;font-size:22px;letter-spacing:-.01em;margin-top:4px;}
+.num{font-family:var(--fm);font-size:9.5px;color:var(--ink-3);letter-spacing:.1em;}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:16px;margin-top:12px;}
+.read{font-family:var(--fb);font-size:13px;line-height:1.55;color:var(--ink);margin-top:12px;}
+.read b{color:var(--coral-deep);font-weight:700;}
+.read .q{font-family:var(--fd);font-style:italic;font-size:13px;color:var(--ink-2);margin-top:7px;}
+svg.chart{width:100%;display:block;overflow:visible;}
+.big{font-family:var(--fm);font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink);}
+.metric-row{display:flex;justify-content:space-between;align-items:baseline;}
+.metric-row .lab{font-family:var(--fm);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+.delta{font-family:var(--fm);font-size:11px;font-weight:600;color:var(--mood-energized);}
+
+/* PR board */
+.pr{display:grid;grid-template-columns:60px 1fr 84px;gap:10px;align-items:center;padding:12px 0;border-bottom:1px solid var(--rule);}
+.pr:last-child{border-bottom:0;}
+.pr .pd{font-family:var(--fm);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);}
+.pr .pt{font-family:var(--fm);font-weight:600;font-size:19px;color:var(--ink);font-variant-numeric:tabular-nums;}
+.pr .pm{font-family:var(--fm);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin-top:3px;display:flex;gap:6px;align-items:center;}
+.chip{font-family:var(--fm);font-size:8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--coral);padding:2px 6px;border-radius:999px;}
+
+/* consistency */
+.stat3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;}
+.stat3 .s{background:var(--paper-elevated);border-radius:10px;padding:10px 12px;}
+.stat3 .s .l{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+.stat3 .s .v{font-family:var(--fm);font-weight:600;font-size:20px;color:var(--ink);margin-top:5px;font-variant-numeric:tabular-nums;}
+.grid{display:grid;grid-template-columns:32px repeat(7,1fr);gap:3px;}
+.grid .h{font-family:var(--fm);font-size:8px;color:var(--ink-3);text-align:center;text-transform:uppercase;padding-bottom:2px;}
+.grid .wl{font-family:var(--fm);font-size:7.5px;color:var(--ink-3);display:flex;align-items:center;}
+.cellx{aspect-ratio:1;border-radius:3px;background:var(--paper-deep);}
+.legend{display:flex;gap:11px;margin-top:12px;flex-wrap:wrap;}
+.legend span{font-family:var(--fm);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);display:inline-flex;align-items:center;gap:5px;}
+.legend i{width:9px;height:9px;border-radius:2px;display:inline-block;}
+.foot{text-align:center;font-family:var(--fm);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:26px;}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>7:24</span><span class="mid">POST RUN DRIP</span><span>&#9679;&#9679;&#9679;</span></div>
+  <div class="screen" id="screen"></div>
+  <div class="tabbar">
+    <div class="tab"><div class="d"></div><span>Log</span></div>
+    <div class="tab"><div class="d"></div><span>Training</span></div>
+    <div class="tab on"><div class="d"></div><span>Trends</span></div>
+    <div class="tab"><div class="d"></div><span>Read</span></div>
+    <div class="tab"><div class="d"></div><span>Plan</span></div>
+  </div>
+</div>
+
+<script>
+const fmt=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+
+/* 1 · EFFICIENCY — easy pace @ 145 bpm (sec/mi), 12 wk */
+const EFF=[540,537,534,531,528,531,535,533,528,523,519,515,512,509,507,505]; // 16 wk; mid bump = summer heat
+function efficiency(){
+  const w=328,h=132,ml=6,mr=10,mt=12,mb=18,pw=w-ml-mr,ph=h-mt-mb;
+  const min=Math.min(...EFF)-4,max=Math.max(...EFF)+4,x=i=>ml+(i/(EFF.length-1))*pw,y=v=>mt+((v-min)/(max-min))*ph;
+  let grid="";[Math.round(min+4),Math.round((min+max)/2),Math.round(max-4)].forEach(v=>{grid+=`<line x1="${ml}" y1="${y(v).toFixed(1)}" x2="${ml+pw}" y2="${y(v).toFixed(1)}" stroke="#EFEBE6"/><text x="${ml}" y="${(y(v)-3).toFixed(1)}" font-family="var(--fm)" font-size="8" fill="#B7AFA8">${fmt(v)}</text>`;});
+  const path=EFF.map((v,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const area=`M ${x(0).toFixed(1)} ${mt+ph} `+EFF.map((v,i)=>`L ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ")+` L ${(x(EFF.length-1)).toFixed(1)} ${mt+ph} Z`;
+  return `<div class="metric-row" style="margin-bottom:10px;"><div><span class="lab">Easy pace @ 145 bpm · now</span><div class="big" style="font-size:26px;">${fmt(EFF[EFF.length-1])}<span style="font-size:12px;color:var(--ink-3);"> /mi</span></div></div><div style="text-align:right;"><span class="delta">▲ ${EFF[0]-EFF[EFF.length-1]} s/mi faster</span><div class="lab" style="margin-top:4px;">since week 1 · through a hot July</div></div></div>
+  <svg class="chart" viewBox="0 0 ${w} ${h}"><path d="${area}" fill="var(--coral-wash)"/>${grid}<path d="${path}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(EFF.length-1).toFixed(1)}" cy="${y(EFF[EFF.length-1]).toFixed(1)}" r="3.5" fill="var(--coral)"/><text x="${ml}" y="${h-3}" font-family="var(--fm)" font-size="8" fill="#9B9590">WK 1</text><text x="${ml+pw}" y="${h-3}" text-anchor="end" font-family="var(--fm)" font-size="8" fill="var(--coral)">NOW</text></svg>`;
+}
+
+/* 2 · BEST EFFORTS — rolling PRs */
+const PRS=[
+  {d:"1 mile",  t:"5:58",   set:"wk 9",  pr:false, spark:[382,378,374,370,366,363,360,358], invert:true},
+  {d:"5K",      t:"20:34",  set:"wk 11", pr:true,  spark:[1290,1284,1272,1264,1256,1248,1240,1234], invert:true},
+  {d:"10K",     t:"43:12",  set:"wk 6",  pr:false, spark:[2720,2705,2690,2678,2665,2652,2642,2636], invert:true},
+  {d:"Half",    t:"1:37:40",set:"Apr 6", pr:false, spark:[5980,5940,5905,5882,5868,5860], invert:true},
+  {d:"Longest", t:"16.0 mi",set:"wk 12", pr:true,  spark:[12,13,14,13,15,16], invert:false}
+];
+function spark(data,invert){
+  const w=80,h=26,min=Math.min(...data),max=Math.max(...data)||1,rng=(max-min)||1;
+  const x=i=>(i/(data.length-1))*w, y=v=>invert?((v-min)/rng)*(h-6)+3:h-3-((v-min)/rng)*(h-6);
+  const p=data.map((v,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:80px;height:26px;"><path d="${p}" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(data.length-1).toFixed(1)}" cy="${y(data[data.length-1]).toFixed(1)}" r="2.6" fill="var(--coral)"/></svg>`;
+}
+function bestEfforts(){
+  return PRS.map(r=>`<div class="pr"><div class="pd">${r.d}</div><div><div class="pt">${r.t}</div><div class="pm">${r.pr?`<span class="chip">New PR</span>`:``}<span>Best · ${r.set}</span></div></div><div style="justify-self:end;">${spark(r.spark,r.invert)}</div></div>`).join("");
+}
+
+/* 3 · DURABILITY — long-run distance + final-third fade */
+const LR=[{wk:2,mi:12,fade:22},{wk:3,mi:13,fade:18},{wk:4,mi:14,fade:15},{wk:5,mi:13,fade:16},{wk:6,mi:15,fade:9},{wk:8,mi:16,fade:11},{wk:9,mi:15,fade:4},{wk:10,mi:17,fade:6},{wk:12,mi:16,fade:-3}];
+function durability(){
+  const w=328,h=160,ml=26,mr=14,pw=w-ml-mr,n=LR.length,x=i=>ml+(i/(n-1))*pw;
+  const dT=10,dH=46,dMax=18,yD=v=>dT+dH-(v/dMax)*dH;
+  const fT=86,fH=52,fMax=26,fMin=-8,yF=v=>fT+((fMax-v)/(fMax-fMin))*fH;
+  let bars="";LR.forEach((r,i)=>{const bw=pw/n*0.5,bx=x(i)-bw/2;bars+=`<rect x="${bx.toFixed(1)}" y="${yD(r.mi).toFixed(1)}" width="${bw.toFixed(1)}" height="${(dT+dH-yD(r.mi)).toFixed(1)}" rx="1.5" fill="var(--pace-steady)" opacity="0.5"/><text x="${x(i).toFixed(1)}" y="${(yD(r.mi)-3).toFixed(1)}" text-anchor="middle" font-family="var(--fm)" font-size="7.5" fill="#6B6560">${r.mi}</text>`;});
+  const zero=yF(0),fpath=LR.map((r,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${yF(r.fade).toFixed(1)}`).join(" ");
+  const dots=LR.map((r,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${yF(r.fade).toFixed(1)}" r="${r.fade<=0?3.5:2.6}" fill="${r.fade<=0?'var(--coral)':'#1A1815'}" stroke="#fff" stroke-width="1"/>`).join("");
+  return `<div class="metric-row" style="margin-bottom:8px;"><div><span class="lab">Final third vs first third · last long run</span><div class="big" style="font-size:24px;">−3s<span style="font-size:12px;color:var(--ink-3);"> /mi</span></div></div><div style="text-align:right;"><span class="delta">negative split · 16 mi</span></div></div>
+  <svg class="chart" viewBox="0 0 ${w} ${h}"><text x="${ml}" y="${dT-2}" font-family="var(--fm)" font-size="7.5" fill="#9B9590">LONG-RUN MILES</text>${bars}<text x="${ml}" y="${fT-4}" font-family="var(--fm)" font-size="7.5" fill="#9B9590">FADE · LOWER = STRONGER FINISH</text><line x1="${ml}" y1="${zero.toFixed(1)}" x2="${ml+pw}" y2="${zero.toFixed(1)}" stroke="#9B9590" stroke-width="1" stroke-dasharray="2 3" opacity=".7"/><text x="${ml+pw}" y="${(zero-3).toFixed(1)}" text-anchor="end" font-family="var(--fm)" font-size="7" fill="#6B6560">even</text><path d="${fpath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${dots}<text x="${ml}" y="${h-3}" font-family="var(--fm)" font-size="8" fill="#9B9590">WK ${LR[0].wk}</text><text x="${ml+pw}" y="${h-3}" text-anchor="end" font-family="var(--fm)" font-size="8" fill="var(--coral)">NOW</text></svg>`;
+}
+
+/* 4 · CONSISTENCY — 12 wk × 7 day heatmap */
+const WEEK_LABELS=["4/20","4/27","5/4","5/11","5/18","5/25","6/1","6/8","6/15","6/22","6/29","7/6"];
+function consistency(){
+  const base=["rest","quality","easy","quality","easy","rest","long"];
+  const M=[];for(let w=0;w<12;w++){const row=base.slice();if([2,6,9].includes(w))row[5]="easy";if(w===5){row[1]="miss";row[3]="easy";}if(w===7)row[4]="miss";if(w===11){row[5]="plan";row[6]="plan";}M.push(row);}
+  const col={easy:"var(--pace-easy)",quality:"var(--pace-lt)",long:"var(--pace-steady)"};
+  let head=`<div class="h"></div>`+["M","T","W","T","F","S","S"].map(d=>`<div class="h">${d}</div>`).join("");
+  let cells="";M.forEach((row,w)=>{cells+=`<div class="wl">${WEEK_LABELS[w]}</div>`;row.forEach(r=>{let st="";if(col[r])st=`background:${col[r]}`;else if(r==="rest")st=`background:var(--paper-deep)`;else if(r==="miss")st=`background:transparent;border:1px solid var(--coral);`;else if(r==="plan")st=`background:transparent;border:1px dashed var(--ink-3);`;cells+=`<div class="cellx" style="${st}"></div>`;});});
+  return `<div class="stat3"><div class="s"><div class="l">On plan</div><div class="v">11<span style="font-size:12px;color:var(--ink-3);">/12 wk</span></div></div><div class="s"><div class="l">Compliance</div><div class="v">94<span style="font-size:12px;color:var(--ink-3);">%</span></div></div><div class="s"><div class="l">Run streak</div><div class="v">38<span style="font-size:12px;color:var(--ink-3);"> d</span></div></div></div>
+  <div class="grid">${head}${cells}</div>
+  <div class="legend"><span><i style="background:var(--pace-easy)"></i>Easy</span><span><i style="background:var(--pace-lt)"></i>Quality</span><span><i style="background:var(--pace-steady)"></i>Long</span><span><i style="background:var(--paper-deep)"></i>Rest</span><span><i style="border:1px solid var(--coral)"></i>Missed</span></div>`;
+}
+
+/* 5 · EASY DISCIPLINE — easy pace vs zone band */
+const EZ=[545,547,544,548,545,549,552,550,547,545,543,547,545,548,546,544],EZ_LO=530,EZ_HI=566,EZ_TGT=548;
+function easyDiscipline(){
+  const w=328,h=132,ml=6,mr=10,mt=12,mb=16,pw=w-ml-mr,ph=h-mt-mb;
+  const min=EZ_LO-8,max=EZ_HI+8,x=i=>ml+(i/(EZ.length-1))*pw,y=v=>mt+((v-min)/(max-min))*ph;
+  const band=`<rect x="${ml}" y="${y(EZ_LO).toFixed(1)}" width="${pw}" height="${(y(EZ_HI)-y(EZ_LO)).toFixed(1)}" fill="var(--pace-easy)" opacity="0.16"/>`;
+  const tgt=`<line x1="${ml}" y1="${y(EZ_TGT).toFixed(1)}" x2="${ml+pw}" y2="${y(EZ_TGT).toFixed(1)}" stroke="var(--pace-easy-text)" stroke-width="1" stroke-dasharray="3 3" opacity=".8"/>`;
+  const path=EZ.map((v,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  return `<div class="metric-row" style="margin-bottom:8px;"><div><span class="lab">Easy run pace · holding</span><div class="big" style="font-size:24px;">${fmt(EZ[EZ.length-1])}<span style="font-size:12px;color:var(--ink-3);"> /mi</span></div></div><div style="text-align:right;"><span class="delta" style="color:var(--pace-easy-text);">inside the zone</span><div class="lab" style="margin-top:4px;">target ${fmt(EZ_TGT)}</div></div></div>
+  <svg class="chart" viewBox="0 0 ${w} ${h}">${band}<text x="${ml+2}" y="${(y(EZ_LO)-4).toFixed(1)}" font-family="var(--fm)" font-size="7" fill="var(--pace-easy-text)">EASY ZONE ${fmt(EZ_LO)}–${fmt(EZ_HI)}</text>${tgt}<path d="${path}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(EZ.length-1).toFixed(1)}" cy="${y(EZ[EZ.length-1]).toFixed(1)}" r="3.5" fill="var(--coral)"/><text x="${ml}" y="${h-3}" font-family="var(--fm)" font-size="8" fill="#9B9590">WK 1</text><text x="${ml+pw}" y="${h-3}" text-anchor="end" font-family="var(--fm)" font-size="8" fill="var(--coral)">NOW</text></svg>`;
+}
+
+/* 6 · TOTAL VOLUME — cumulative miles */
+const WKVOL=[41,43,44,50,49,38,46,52,56,53,48,26];
+function milesBank(){
+  let run=0;const cum=WKVOL.map(v=>run+=v),total=cum[cum.length-1];
+  const w=328,h=120,ml=8,mr=10,mt=12,mb=16,pw=w-ml-mr,ph=h-mt-mb;
+  const max=Math.ceil(total/100)*100,x=i=>ml+(i/(cum.length-1))*pw,y=v=>mt+ph-(v/max)*ph;
+  const line=cum.map((v,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const area=`M ${x(0).toFixed(1)} ${mt+ph} `+cum.map((v,i)=>`L ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ")+` L ${x(cum.length-1).toFixed(1)} ${mt+ph} Z`;
+  let grid="";[0,max/2,max].forEach(v=>{grid+=`<line x1="${ml}" y1="${y(v).toFixed(1)}" x2="${ml+pw}" y2="${y(v).toFixed(1)}" stroke="#EFEBE6"/><text x="${ml}" y="${(y(v)-2).toFixed(1)}" font-family="var(--fm)" font-size="7.5" fill="#B7AFA8">${v}</text>`;});
+  return `<div class="metric-row" style="margin-bottom:8px;"><div><span class="lab">This build</span><div class="big" style="font-size:30px;">${total}<span style="font-size:13px;color:var(--ink-3);"> mi</span></div></div><div style="text-align:right;"><div class="big" style="font-size:18px;color:var(--ink-2);">1,840</div><div class="lab" style="margin-top:2px;">this year</div></div></div>
+  <svg class="chart" viewBox="0 0 ${w} ${h}"><path d="${area}" fill="var(--pace-steady)" opacity="0.14"/>${grid}<path d="${line}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${x(cum.length-1).toFixed(1)}" cy="${y(total).toFixed(1)}" r="3.5" fill="var(--coral)"/><text x="${ml}" y="${h-3}" font-family="var(--fm)" font-size="8" fill="#9B9590">WK 1</text><text x="${ml+pw}" y="${h-3}" text-anchor="end" font-family="var(--fm)" font-size="8" fill="var(--coral)">NOW</text></svg>`;
+}
+
+/* E · EFFORT (conditions-aware) — per run */
+const EFF_RUN={label:"Thu · LT 6 mi", cond:"74°F · 68°F dew", raw:"7:30", neutral:"7:19", score:138, base:128, heat:8, hills:2};
+function effortRun(){
+  const w=328,tot=EFF_RUN.score,parts=[["base",EFF_RUN.base,"var(--pace-steady)"],["heat",EFF_RUN.heat,"var(--coral)"],["hills",EFF_RUN.hills,"var(--ink-2)"]];
+  let x=0;const bar=parts.map(([n,v,c])=>{const wpx=v/tot*w,seg=`<rect x="${x.toFixed(1)}" y="0" width="${wpx.toFixed(1)}" height="18" fill="${c}"/>`;x+=wpx;return seg;}).join("");
+  return `<div class="metric-row" style="margin-bottom:12px;"><div><span class="lab">Effort · conditions-aware</span><div class="big" style="font-size:34px;">${EFF_RUN.score}</div><div class="lab" style="margin-top:2px;">${EFF_RUN.label} · ${EFF_RUN.cond} · humid</div></div><div style="text-align:right;"><span class="lab">Pace → neutral</span><div class="big" style="font-size:16px;">${EFF_RUN.raw}→${EFF_RUN.neutral}</div><div class="lab" style="margin-top:2px;">heat gave back 11 s/mi</div></div></div>
+  <svg class="chart" viewBox="0 0 ${w} 18" style="border-radius:4px;overflow:hidden;">${bar}</svg>
+  <div class="legend" style="margin-top:10px;"><span><i style="background:var(--pace-steady)"></i>Pace × time · ${EFF_RUN.base}</span><span><i style="background:var(--coral)"></i>Heat +${EFF_RUN.heat}</span><span><i style="background:var(--ink-2)"></i>Hills +${EFF_RUN.hills}</span></div>`;
+}
+/* E · weekly EFFORT LOAD (12 wk, vs 4-wk chronic) */
+const EFFORT_WK=[290,305,300,360,350,270,330,380,415,395,350,190];
+function effortLoad(){
+  const w=328,h=132,ml=6,mr=10,mt=12,mb=18,pw=w-ml-mr,ph=h-mt-mb,n=EFFORT_WK.length;
+  const max=Math.max(...EFFORT_WK)+20,y=v=>mt+ph-(v/max)*ph,x=i=>ml+(i+0.5)*(pw/n);
+  const chronic=EFFORT_WK.map((_,i)=>{const s=EFFORT_WK.slice(Math.max(0,i-3),i+1);return s.reduce((a,b)=>a+b,0)/s.length;});
+  const bw=pw/n*0.6;
+  const bars=EFFORT_WK.map((v,i)=>{const now=i===n-1,spike=v>chronic[i]*1.32;return `<rect x="${(x(i)-bw/2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(mt+ph-y(v)).toFixed(1)}" rx="1.5" fill="${now?'var(--pace-lt)':spike?'var(--coral)':'var(--pace-steady)'}" opacity="${now?1:0.72}"/>`;}).join("");
+  const cpath=chronic.map((v,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  return `<div class="metric-row" style="margin-bottom:8px;"><div><span class="lab">Effort load · this week</span><div class="big" style="font-size:26px;">190</div></div><div style="text-align:right;"><span class="delta" style="color:var(--pace-easy-text);">backing off</span><div class="lab" style="margin-top:4px;">taper · vs 350 chronic</div></div></div>
+  <svg class="chart" viewBox="0 0 ${w} ${h}">${bars}<path d="${cpath}" fill="none" stroke="var(--ink)" stroke-width="1.4" stroke-dasharray="3 2" opacity=".6"/><text x="${ml}" y="${h-3}" font-family="var(--fm)" font-size="8" fill="#9B9590">WK 1</text><text x="${ml+pw}" y="${h-3}" text-anchor="end" font-family="var(--fm)" font-size="8" fill="var(--coral)">NOW</text></svg>`;
+}
+/* E · FELT vs MEASURED (12 wk, normalized) */
+const MEASURED=[55,58,57,70,68,50,64,74,80,76,66,40], FELT=[52,56,58,78,80,54,62,72,78,74,60,34];
+function feltVsMeasured(){
+  const w=328,h=134,ml=6,mr=10,mt=12,mb=18,pw=w-ml-mr,ph=h-mt-mb,n=MEASURED.length;
+  const y=v=>mt+ph-(v/100)*ph,x=i=>ml+(i/(n-1))*pw;
+  let shade="";for(let i=0;i<n-1;i++){if(FELT[i]>MEASURED[i]||FELT[i+1]>MEASURED[i+1]){shade+=`<path d="M ${x(i).toFixed(1)} ${y(MEASURED[i]).toFixed(1)} L ${x(i+1).toFixed(1)} ${y(MEASURED[i+1]).toFixed(1)} L ${x(i+1).toFixed(1)} ${y(FELT[i+1]).toFixed(1)} L ${x(i).toFixed(1)} ${y(FELT[i]).toFixed(1)} Z" fill="var(--coral-wash)"/>`;}}
+  const mpath=MEASURED.map((v,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const fpath=FELT.map((v,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  return `<div class="metric-row" style="margin-bottom:8px;"><div><span class="lab">Felt vs measured</span><div class="big" style="font-size:18px;">Aligned now</div></div><div style="text-align:right;font-family:var(--fm);font-size:9px;color:var(--ink-2);"><span style="color:var(--ink);">▬ measured</span><br><span style="color:var(--coral);">▬ felt</span></div></div>
+  <svg class="chart" viewBox="0 0 ${w} ${h}">${shade}<path d="${mpath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="${fpath}" fill="none" stroke="var(--coral)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity=".92"/><text x="${ml}" y="${h-3}" font-family="var(--fm)" font-size="8" fill="#9B9590">WK 1</text><text x="${ml+pw}" y="${h-3}" text-anchor="end" font-family="var(--fm)" font-size="8" fill="var(--coral)">NOW</text></svg>`;
+}
+
+function render(){
+  let bank=0;WKVOL.forEach(v=>bank+=v);
+  document.getElementById("screen").innerHTML=`
+    <div class="plate"><span><b>RUNNING LOG</b> — TRENDS · PROGRESS</span><span>FIG. E1–3 · P1–6</span></div>
+    <div class="hero"><div class="eyebrow coral">Trends · progress</div><h1>Proof it's working.</h1>
+      <div class="sub">An effort model plus six progressions — ways to watch the build beyond a race prediction. Sample data, Maya's marathon block.</div></div>
+
+    <div class="rule" style="margin-top:20px;"><i></i></div>
+    <div class="eyebrow coral">The effort model · new</div>
+    <div class="sec" style="margin-top:8px;"><div class="sec-head"><span class="eyebrow">E1 · Per run</span><span class="num">CONDITIONS-AWARE</span></div>
+      <h2>What the run really cost.</h2><div class="card">${effortRun()}</div>
+      <div class="read">Effort adjusts your pace for <b>heat and hills</b> before it scores the run — this humid threshold session cost <b>138</b>, the heat alone adding 8. Same watch pace, harder day.<div class="q">Built on your intensity ladder + the dew-point model you already have.</div></div></div>
+
+    <div class="rule"><i></i></div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">E2 · Load</span><span class="num">WEEKLY EFFORT</span></div>
+      <h2>The load, honestly.</h2><div class="card">${effortLoad()}</div>
+      <div class="read">Weekly Effort load against your 4-week chronic line — <b>building through the peak, backing off now</b>. A conditions-aware replacement for raw ACWR.<div class="q">Spikes go coral; the taper is the drop on the right.</div></div></div>
+
+    <div class="rule"><i></i></div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">E3 · Felt vs measured</span><span class="num">EFFORT vs RPE</span></div>
+      <h2>When it felt harder than it was.</h2><div class="card">${feltVsMeasured()}</div>
+      <div class="read">Your voice-log effort tracked the measured number — except <b>weeks 4–5</b>, where it felt harder (shaded). That gap is early fatigue, and it's gone now.<div class="q">The quant and the qual, on one axis.</div></div></div>
+
+    <div class="rule" style="margin-top:24px;"><i></i></div>
+    <div class="eyebrow coral">The progressions</div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">1 · Efficiency</span><span class="num">PACE @ 145 BPM</span></div>
+      <h2>Same effort, more pace.</h2><div class="card">${efficiency()}</div>
+      <div class="read">At the same heart rate you're running <b>35 s/mi faster</b> than week one — even through a hot July, where the mid-block bump shows the heat, not lost fitness. The engine is growing, whatever the race calendar says.<div class="q">The truest fitness signal — and it shows on ordinary easy days.</div></div></div>
+
+    <div class="rule"><i></i></div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">2 · Best efforts</span><span class="num">ROLLING PRs</span></div>
+      <h2>Faster than you've ever been.</h2><div class="card">${bestEfforts()}</div>
+      <div class="read">Your <b>5K and long run</b> are both bests this month, measured against two years of history.<div class="q">Nothing lands like a record you didn't go chasing.</div></div></div>
+
+    <div class="rule"><i></i></div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">3 · Durability</span><span class="num">LONG-RUN FADE</span></div>
+      <h2>Holding pace when it's hard.</h2><div class="card">${durability()}</div>
+      <div class="read">The long runs are getting longer and the fade is nearly gone — last week you <b>negative-split 16 miles</b>. That's marathon-specific fitness.<div class="q">Can you run when you're tired at mile 20? Here's the answer, building.</div></div></div>
+
+    <div class="rule"><i></i></div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">4 · Consistency</span><span class="num">12 WEEKS</span></div>
+      <h2>You showed up.</h2><div class="card">${consistency()}</div>
+      <div class="read"><b>Eleven of twelve weeks</b> on plan, one down week by choice. Consistency like this is the best predictor you'll toe the line ready.<div class="q">Honest even in a down week — which speed metrics never are.</div></div></div>
+
+    <div class="rule"><i></i></div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">5 · Easy discipline</span><span class="num">EASY vs ZONE</span></div>
+      <h2>Your easy stayed easy.</h2><div class="card">${easyDiscipline()}</div>
+      <div class="read">As you got fitter your easy miles <b>didn't creep faster</b> — they held inside the zone. That discipline is what keeps the niggles quiet.<div class="q">The classic self-coached trap, avoided.</div></div></div>
+
+    <div class="rule"><i></i></div>
+    <div class="sec"><div class="sec-head"><span class="eyebrow">6 · Total volume</span><span class="num">CUMULATIVE</span></div>
+      <h2>It adds up.</h2><div class="card">${milesBank()}</div>
+      <div class="read"><b>${bank} miles</b> this build. The work is already done — the race just collects on it.<div class="q">Big number, going up. Zero interpretation required.</div></div></div>
+
+    <div class="foot">Prototype · sample data · AI advises, never acts</div>`;
+}
+render();
+</script>
+</body>
+</html>

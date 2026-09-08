@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training stress · 7 days × 24 hours — Post Run Drip prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Post Run Drip — Foundations (mirrored from colors_and_type.css)
+   ============================================================ */
+:root{
+  --paper:#F5F3F0; --paper-deep:#E8E4DF; --rule:#E8E4E0; --card:#FFFFFF;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420;
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;padding:28px 20px 40px}
+
+/* ---- study chrome (not part of the app) ---- */
+.study-hd{max-width:1320px;margin:0 auto 24px}
+.study-hd h1{font-family:var(--font-display);font-weight:700;font-size:27px;margin:0 0 7px}
+.study-hd p{margin:0 0 8px;font-size:14px;color:#4A4540;line-height:1.55;max-width:78ch}
+.study-hd .k{font-family:var(--font-mono);font-size:11.5px;color:#4A4540}
+.rail{display:flex;gap:24px;align-items:flex-start;max-width:1320px;margin:0 auto;flex-wrap:wrap}
+.col-hd{margin-bottom:11px;padding:0 2px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:#6B6560;display:block;margin-bottom:4px}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 5px}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540;max-width:56ch}
+.frame{background:var(--paper);border-radius:22px;padding:20px 18px 24px;
+  box-shadow:0 6px 22px rgba(0,0,0,.13);border:1px solid rgba(0,0,0,.05)}
+.col--phone{width:392px} .col--phone .frame{width:392px}
+.col--wide{width:748px}  .col--wide .frame{width:748px;padding:22px 22px 26px}
+
+/* ---- shared type ---- */
+.micro{font-family:var(--font-mono);font-size:9.5px;font-weight:500;letter-spacing:.11em;
+  color:var(--ink-3);text-transform:uppercase}
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.13em;
+  color:var(--ink-2);text-transform:uppercase}
+
+/* ============================================================
+   HEAD
+   ============================================================ */
+.nav{display:flex;align-items:baseline;gap:10px;margin-bottom:13px}
+.nav .chev{font-size:13px;color:var(--ink-3)}
+.nav .rangelab{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink)}
+.nav .spacer{flex:1}
+.toggle{font-family:var(--font-mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-2);background:none;border:1px solid var(--rule);border-radius:999px;
+  padding:4px 9px;cursor:pointer;transition:all 150ms ease}
+.toggle:hover{border-color:var(--ink-3);color:var(--ink)}
+.toggle[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.big{font-family:var(--font-mono);font-size:31px;font-weight:600;letter-spacing:-.01em;line-height:1}
+.big .u{font-size:13px;font-weight:400;color:var(--ink-2);letter-spacing:0}
+.sub{margin-top:7px}
+
+/* ============================================================
+   THE CHART — 7 lanes, one per day, 24 hours across
+   ============================================================ */
+.chart{margin-top:22px}
+
+/* hour axis */
+.axis{display:flex;align-items:center;margin-bottom:7px}
+.axis .gut{flex:none}
+.axis .track{position:relative;flex:1;height:11px}
+.axis .hlab{position:absolute;top:0;font-family:var(--font-mono);font-size:9px;
+  letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase;transform:translateX(-50%);
+  white-space:nowrap}
+.axis .hlab.edge-l{transform:none} .axis .hlab.edge-r{transform:translateX(-100%)}
+
+/* a day lane */
+.lane{display:flex;align-items:flex-end;position:relative}
+.lane + .lane{margin-top:7px}  /* headroom for the niggle caret above a lane */
+.lane .gut{flex:none;display:flex;flex-direction:column;align-items:flex-start;
+  justify-content:flex-end;padding-bottom:5px}
+.lane .dlab{font-family:var(--font-mono);font-size:10px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);line-height:1}
+.lane.is-today .dlab{color:var(--ink)}
+.lane .track{position:relative;flex:1;border-bottom:1px solid var(--rule)}
+.lane.is-future .track{border-bottom:1px dashed var(--rule)}
+.lane .tail{flex:none;text-align:right;padding-bottom:5px;padding-left:7px}
+.lane .dtls{font-family:var(--font-mono);font-size:11px;color:var(--ink);line-height:1;
+  font-variant-numeric:tabular-nums}
+.lane .dtls.zero{color:var(--ink-3)}
+
+/* gridlines live inside the track, behind the runs */
+.grid{position:absolute;inset:0;pointer-events:none}
+.grid .gl{position:absolute;top:0;bottom:0;width:1px;background:var(--rule);opacity:.75}
+.grid .gl.noon{background:var(--paper-deep);opacity:1}
+.nowline{position:absolute;top:-2px;bottom:0;width:1px;background:var(--ink-3);opacity:.55}
+.nowline::before{content:"";position:absolute;top:-2px;left:-1.5px;width:4px;height:4px;
+  border-radius:50%;background:var(--ink-3)}
+
+/* a run block: width = duration, sub-bar height = what a minute costs */
+.run{position:absolute;bottom:0;display:flex;align-items:flex-end;background:none;border:0;
+  padding:0;cursor:pointer;font:inherit;border-radius:1px}
+.run:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.run .seg{height:100%;flex:none}
+.run:hover{filter:brightness(1.08)}
+.run.is-open{box-shadow:0 0 0 1.5px var(--ink)}
+/* ran, but no laps: an outline, not a fill. A solid block would be a
+   height — i.e. a claim about intensity — and there is no such claim
+   to make. The width is still true, because duration is known. */
+.run.nolap{background:repeating-linear-gradient(135deg,
+    var(--paper-deep) 0 3px, transparent 3px 6px);
+  border:1px dashed var(--ink-3);border-radius:2px}
+
+/* rest lane: the word sits centred in the lane, not at midnight —
+   a rest day happens at no particular hour */
+.restword{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);
+  font-family:var(--font-mono);font-size:9px;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3)}
+
+/* the niggle caret — the only coral in the chart. It sits ABOVE the lane
+   pointing down at the run, never on top of a pace fill: coral drawn over
+   the spectrum would read as coral commenting on pace. */
+.nig{position:absolute;width:0;height:0;
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid var(--coral);transform:translateX(-50%)}
+
+/* mood tick sits in the gutter under the day label */
+.moodtick{width:13px;height:2.5px;border-radius:2px;margin-top:5px;background:transparent}
+
+/* ============================================================
+   THE FOOTPRINT — where the week's load actually lands
+   ============================================================ */
+.footprint{display:flex;align-items:flex-end;margin-top:14px;padding-top:12px;
+  border-top:1px solid var(--rule)}
+.footprint .track{position:relative;flex:1;height:26px;display:flex;align-items:flex-end}
+.footprint .hb{flex:1;background:var(--ink);opacity:.16;border-radius:1px 1px 0 0;
+  margin-right:1px;min-height:1px}
+.footprint .hb.peak{opacity:.42}
+.fp-note{font-family:var(--font-body);font-size:13px;line-height:1.55;color:var(--ink-2);
+  margin-top:9px}
+.fp-note b{font-weight:400;color:var(--ink)}
+
+/* ============================================================
+   THE DETAIL PANEL
+   ============================================================ */
+.panel{margin-top:16px;border-top:1px solid var(--rule);padding-top:15px}
+.p-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px;gap:10px}
+.p-hd .when{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-2)}
+.p-hd .open{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--coral);flex:none}
+.p-line{font-family:var(--font-mono);font-size:15px;color:var(--ink);margin-bottom:4px;
+  font-variant-numeric:tabular-nums}
+.p-line .sep{color:var(--ink-3);padding:0 5px}
+.p-line .u{font-size:11px;color:var(--ink-2)}
+.p-upload{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:13px}
+table.zones{width:100%;border-collapse:collapse}
+table.zones td{font-family:var(--font-mono);font-size:12.5px;text-align:right;
+  padding:8px 0;border-top:1px solid var(--rule);font-variant-numeric:tabular-nums}
+table.zones td:first-child{text-align:left}
+table.zones tr.tot td{border-top:1px solid var(--ink-3);color:var(--ink)}
+table.zones tr.tot td:first-child{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink-2)}
+.zc{display:flex;align-items:center;gap:8px}
+.zsw{width:8px;border-radius:1px;flex:none}
+.zname{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+.zx{color:var(--ink-3)}
+.tls-note{font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--ink-3);
+  line-height:1.5;margin-top:13px}
+.p-nig{margin-top:13px;display:flex;gap:9px;align-items:flex-start}
+.p-nig .caret{width:0;height:0;border-left:4.5px solid transparent;border-right:4.5px solid transparent;
+  border-bottom:6px solid var(--coral);margin-top:6px;flex:none}
+.p-nig .cap{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--coral-deep)}
+.p-nig .q{font-size:13.5px;line-height:1.5}
+.p-empty{font-family:var(--font-body);font-size:13.5px;color:var(--ink-2);line-height:1.55}
+.p-empty .eb{display:block;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+
+/* ============================================================
+   THE LEGEND — teaches colour and height in one graphic
+   ============================================================ */
+.legend{margin-top:20px;padding-top:14px;border-top:1px solid var(--rule)}
+.lg-bars{display:flex;align-items:flex-end;gap:2px;height:40px;margin-top:9px;
+  border-bottom:1px solid var(--rule)}
+.lg-bars .b{flex:1;border-radius:1px 1px 0 0}
+.lg-labs{display:flex;gap:2px;margin-top:5px}
+.lg-labs span{flex:1;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--ink-3);text-align:center;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.lg-note{font-family:var(--font-body);font-size:12.5px;line-height:1.55;color:var(--ink-2);
+  margin-top:10px}
+.lg-note b{font-weight:400;color:var(--ink)}
+</style>
+</head>
+<body>
+
+<div class="study-hd">
+  <h1>Training stress · seven days, twenty-four hours</h1>
+  <p>Every run sits at the hour it actually started. Its <b>width</b> is how long it lasted, its
+  <b>height</b> is what a minute at that pace costs, and its <b>colour</b> is the pace spectrum —
+  so the <b>area</b> of every block is its training load score. A long easy run is a wide low slab.
+  A 5K session is a narrow spike. You can compare them by eye because they are drawn in the same
+  units.</p>
+  <p class="k">Both frames are live · click any run · toggle the axis between 24 hours and the hours
+  you actually train</p>
+</div>
+
+<div class="rail" id="rail"></div>
+
+<script>
+/* ============================================================
+   CANONICAL CONSTANTS — mirrored from the app.
+
+   Colours are PaceSpectrum (pace-spectrum-mockup.html).
+   Weights are TrendsZoneWeight as mirrored in
+   week-load-simple-prototype.html, which is the most recently
+   edited copy in the repo.
+
+   ⚠️ The repo currently holds TWO different weight tables:
+      week-load-simple-prototype.html  moderate 1.25  steady 1.50
+      tls-explainer-prototype.html     moderate 1.40  steady 2.15
+   and the explainer omits LT entirely. They cannot both be right.
+   Whichever wins, the shipped view must read the Swift table
+   (TrendsZoneWeight.table) rather than carry a third copy.
+   ============================================================ */
+const ZONES = [
+  { key:'easy',     label:'Easy',     color:'#93B9D6', weight:1.00 },
+  { key:'moderate', label:'Mod',      color:'#74A8CC', weight:1.25 },
+  { key:'steady',   label:'Steady',   color:'#578FC0', weight:1.50 },
+  { key:'mp',       label:'MP',       color:'#3F7CB5', weight:2.50 },
+  { key:'hmp',      label:'HMP',      color:'#2F66A8', weight:3.25 },
+  { key:'lt',       label:'LT',       color:'#27549B', weight:3.25 },
+  { key:'10k',      label:'10K',      color:'#20448B', weight:4.00 },
+  { key:'5k',       label:'5K',       color:'#1A3679', weight:5.50 },
+  { key:'3k',       label:'3K',       color:'#142964', weight:6.75 },
+  { key:'mile',     label:'Mile',     color:'#0E1D4E', weight:8.00 },
+];
+const Z = Object.fromEntries(ZONES.map(z=>[z.key,z]));
+const ZI = Object.fromEntries(ZONES.map((z,i)=>[z.key,i]));
+const MAXW = 8.00;
+
+const MOODS = {
+  energized:{label:'Energized',color:'#2D8A4E'}, positive:{label:'Good',color:'#4A9E6B'},
+  neutral:{label:'Neutral',color:'#9B9590'},     tired:{label:'Tired',color:'#C4873A'},
+  struggling:{label:'Struggling',color:'#C45A3A'}, injured:{label:'Injured',color:'#B83A4A'},
+};
+
+/* ============================================================
+   TWO WEEKS OF DATA
+
+   `at` is the run's START time, local to the athlete — not the
+   upload timestamp. `up` is when the file arrived. They differ
+   by hours in normal use (watch syncs on the couch that night),
+   which is exactly why position uses `at`. The upload time is
+   still shown, in the panel, because "why did this appear now"
+   is a real question — it just isn't a spatial one.
+   ============================================================ */
+const WEEK_DONE = {
+  label:'AUG 3 — 9', todayIdx:null, days:[
+  { d:'MON', date:'Aug 3',  runs:[] },
+  { d:'TUE', date:'Aug 4',  mood:'positive', runs:[
+      { at:'06:05', up:'20:41', segs:[ {z:'easy',mi:3.0,sec:508},{z:'moderate',mi:2.0,sec:438},
+                                       {z:'5k',mi:3.0,sec:322},{z:'3k',mi:1.2,sec:304},
+                                       {z:'easy',mi:1.5,sec:545} ] },
+      { at:'17:40', up:'18:12', segs:[ {z:'easy',mi:4.0,sec:520} ] },
+  ]},
+  { d:'WED', date:'Aug 5',  runs:[
+      { at:'06:20', up:'06:58', noLap:true, mi:6.0, min:50 },
+  ]},
+  { d:'THU', date:'Aug 6',  mood:'tired',
+    niggle:{area:'achilles',side:'right',severity:'grumbling',
+            quote:'right achilles grumbled the first mile, fine after'},
+    runs:[
+      { at:'05:52', up:'21:03', segs:[ {z:'easy',mi:2.0,sec:498},{z:'mp',mi:5.0,sec:382},
+                                       {z:'easy',mi:4.0,sec:512} ] },
+  ]},
+  { d:'FRI', date:'Aug 7',  mood:'neutral', runs:[
+      { at:'12:15', up:'12:49', segs:[ {z:'easy',mi:6.0,sec:514} ] },
+  ]},
+  { d:'SAT', date:'Aug 8',  mood:'positive', runs:[
+      { at:'07:30', up:'19:26', segs:[ {z:'easy',mi:9.0,sec:492},{z:'moderate',mi:3.0,sec:420},
+                                       {z:'mp',mi:5.0,sec:378},{z:'easy',mi:3.0,sec:530} ] },
+  ]},
+  { d:'SUN', date:'Aug 9',  mood:'energized', runs:[
+      { at:'08:10', up:'08:44', segs:[ {z:'easy',mi:8.0,sec:495} ] },
+  ]},
+]};
+
+/* Current week — Tuesday is today at 14:40, so Wed→Sun are future
+   lanes. This is the state the athlete sees five days out of seven. */
+const WEEK_NOW = {
+  label:'AUG 10 — 16', todayIdx:1, nowMin:14*60+40, days:[
+  { d:'MON', date:'Aug 10', mood:'positive', runs:[
+      { at:'06:15', up:'07:02', segs:[ {z:'easy',mi:8.0,sec:498} ] },
+  ]},
+  { d:'TUE', date:'Aug 11', runs:[
+      { at:'06:02', up:'13:55', segs:[ {z:'easy',mi:2.5,sec:505},{z:'hmp',mi:4.3,sec:321},
+                                       {z:'10k',mi:1.9,sec:313},{z:'easy',mi:1.8,sec:540} ] },
+  ]},
+  { d:'WED', date:'Aug 12', future:true, runs:[] },
+  { d:'THU', date:'Aug 13', future:true, runs:[] },
+  { d:'FRI', date:'Aug 14', future:true, runs:[] },
+  { d:'SAT', date:'Aug 15', future:true, runs:[] },
+  { d:'SUN', date:'Aug 16', future:true, runs:[] },
+]};
+
+/* ============================================================
+   BUILD
+   ============================================================ */
+const toMin = t => { const [h,m]=t.split(':').map(Number); return h*60+m; };
+const clock = t => { const [h,m]=t.split(':').map(Number);
+  const ap = h<12?'am':'pm'; const hh = h%12===0?12:h%12;
+  return `${hh}:${String(m).padStart(2,'0')}${ap}`; };
+const mi1  = n => n.toFixed(1);
+const hm   = m => `${Math.floor(m/60)}:${String(Math.round(m%60)).padStart(2,'0')}`;
+const pace = (mn,mi) => { const s=Math.round(mn*60/mi);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+const x1   = n => n.toFixed(2).replace(/\.?0+$/,'');
+
+function build(week){
+  const days = week.days.map(day=>{
+    const runs = day.runs.map(r=>{
+      if(r.noLap){
+        return { ...r, startMin:toMin(r.at), minutes:r.min, miles:r.mi, load:0, segs:[] };
+      }
+      /* Merge repeated zones (an easy warm-up and an easy cool-down are the
+         same zone), then order by the taxonomy. Chronological order inside a
+         run is a different chart — this one is about composition. */
+      const merged = {};
+      r.segs.forEach(s=>{
+        const minutes = s.mi*s.sec/60;
+        const m = merged[s.z] ||= { z:s.z, zone:Z[s.z], miles:0, minutes:0 };
+        m.miles += s.mi; m.minutes += minutes;
+      });
+      const segs = Object.values(merged)
+        .map(s=>({ ...s, load:s.minutes*s.zone.weight }))
+        .sort((a,b)=>ZI[a.z]-ZI[b.z]);
+      const minutes = segs.reduce((a,s)=>a+s.minutes,0);
+      return { ...r, segs, startMin:toMin(r.at), minutes,
+               miles:segs.reduce((a,s)=>a+s.miles,0),
+               load:segs.reduce((a,s)=>a+s.load,0) };
+    }).sort((a,b)=>a.startMin-b.startMin);
+
+    return { ...day, runs,
+             miles:runs.reduce((a,r)=>a+r.miles,0),
+             minutes:runs.reduce((a,r)=>a+r.minutes,0),
+             load:runs.reduce((a,r)=>a+r.load,0),
+             ran:runs.length>0 };
+  });
+
+  /* Load per hour-of-day, summed across the week. A run that straddles two
+     hours is split between them in proportion to the minutes it spends in
+     each — booking the whole run to its start hour would put a two-hour
+     long run entirely at 7am and lie about the 8 o'clock hour. */
+  const byHour = Array(24).fill(0);
+  days.flatMap(d=>d.runs).filter(r=>!r.noLap).forEach(r=>{
+    const rate = r.load / r.minutes;                       // TLS per minute
+    let cursor = r.startMin, left = r.minutes;
+    while(left > 0.01){
+      const h = Math.floor(cursor/60) % 24;
+      const room = 60 - (cursor%60);
+      const take = Math.min(room, left);
+      byHour[h] += take*rate;
+      cursor += take; left -= take;
+    }
+  });
+
+  return { ...week, days, byHour,
+           miles:days.reduce((a,d)=>a+d.miles,0),
+           minutes:days.reduce((a,d)=>a+d.minutes,0),
+           load:days.reduce((a,d)=>a+d.load,0),
+           maxDayLoad:Math.max(...days.map(d=>d.load), 1),
+           runDays:days.filter(d=>d.ran).length };
+}
+
+/* ============================================================
+   THE AXIS
+
+   Default is the literal ask: midnight to midnight. But 24 hours
+   is mostly empty for every runner alive — at 330pt of phone
+   width a one-hour run is 14pt, a tick. So the axis can also
+   crop to the hours this week actually contains, padded out to
+   whole hours, which roughly doubles the resolution without
+   changing a single value. Neither view is more true; the wide
+   one shows habit, the cropped one shows the runs.
+   ============================================================ */
+const FULL = { from:0, to:1440 };
+function fitted(W){
+  const runs = W.days.flatMap(d=>d.runs);
+  if(!runs.length) return FULL;
+  const lo = Math.min(...runs.map(r=>r.startMin));
+  const hi = Math.max(...runs.map(r=>r.startMin+r.minutes));
+  const from = Math.max(0,    Math.floor((lo-30)/60)*60);
+  const to   = Math.min(1440, Math.ceil ((hi+30)/60)*60);
+  return (to-from) < 240 ? { from:Math.max(0,to-240), to } : { from, to };
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+const LANE_H  = 34;    // px at the top of the height scale (= weight 8.00)
+const MIN_SEG = 3;     // px floor so an easy sliver stays visible
+const MIN_RUN = 9;     // px floor on total run width — see note in the copy
+const GUT     = 34;    // day-label gutter
+const TAIL    = 42;    // trailing TLS number
+
+function hourLabels(ax){
+  const span = ax.to-ax.from;
+  const step = span > 720 ? 360 : span > 360 ? 180 : 120;
+  const out = [];
+  for(let m=Math.ceil(ax.from/step)*step; m<=ax.to; m+=step){
+    const h = (m/60)%24;
+    const lab = h===0 ? '12a' : h===12 ? 'NOON' : h<12 ? `${h}a` : `${h-12}p`;
+    const pct = (m-ax.from)/span*100;
+    const cls = pct<3 ? 'edge-l' : pct>97 ? 'edge-r' : '';
+    out.push(`<span class="hlab ${cls}" style="left:${pct}%">${lab}</span>`);
+  }
+  return out.join('');
+}
+
+function gridlines(ax){
+  const span = ax.to-ax.from; const out=[];
+  for(let m=Math.ceil(ax.from/180)*180; m<=ax.to; m+=180){
+    if(m===ax.from||m===ax.to) continue;
+    const h=(m/60)%24;
+    out.push(`<span class="gl ${h===12?'noon':''}" style="left:${(m-ax.from)/span*100}%"></span>`);
+  }
+  return `<div class="grid">${out.join('')}</div>`;
+}
+
+function runBlock(r, di, ri, ax, openKey){
+  const span = ax.to-ax.from;
+  const left = (r.startMin-ax.from)/span*100;
+  const wPct = r.minutes/span*100;
+  const key  = `${di}-${ri}`;
+  const open = key===openKey;
+
+  if(r.noLap){
+    return `<button class="run nolap ${open?'is-open':''}" data-k="${key}"
+      style="left:${left}%;width:max(${MIN_RUN}px,${wPct}%);height:14px"
+      aria-label="${clock(r.at)}, ${mi1(r.mi)} miles, no lap data"></button>`;
+  }
+  const segs = r.segs.map(s=>{
+    const h = Math.max(MIN_SEG, s.zone.weight/MAXW*LANE_H);
+    return `<span class="seg" style="width:${s.minutes/r.minutes*100}%;height:${h}px;
+      background:${s.zone.color}"></span>`;
+  }).join('');
+  const top = Math.max(...r.segs.map(s=>Math.max(MIN_SEG,s.zone.weight/MAXW*LANE_H)));
+  return `<button class="run ${open?'is-open':''}" data-k="${key}"
+    style="left:${left}%;width:max(${MIN_RUN}px,${wPct}%);height:${top}px"
+    aria-label="${clock(r.at)}, ${mi1(r.miles)} miles, ${Math.round(r.load)} T L S"
+    >${segs}</button>`;
+}
+
+function lanes(W, ax, openKey){
+  return W.days.map((d,di)=>{
+    const isToday = di===W.todayIdx;
+    const cls = `lane${isToday?' is-today':''}${d.future?' is-future':''}`;
+    /* The caret hangs directly over the run it refers to — 3px above that
+       run's tallest segment, not floating at the top of the lane where it
+       could be read as belonging to the day above. */
+    const nigRun = d.niggle && d.runs.length ? d.runs[0] : null;
+    const nigTop = nigRun && !nigRun.noLap
+      ? Math.max(...nigRun.segs.map(s=>Math.max(MIN_SEG,s.zone.weight/MAXW*LANE_H))) : 14;
+    const nig = nigRun
+      ? `<span class="nig" style="left:${(nigRun.startMin-ax.from)/(ax.to-ax.from)*100}%;
+           bottom:${nigTop+3}px"></span>`
+      : '';
+    const now = isToday && W.nowMin!=null && W.nowMin>=ax.from && W.nowMin<=ax.to
+      ? `<span class="nowline" style="left:${(W.nowMin-ax.from)/(ax.to-ax.from)*100}%"></span>` : '';
+    const body = d.future
+      ? ''
+      : d.ran
+        ? d.runs.map((r,ri)=>runBlock(r,di,ri,ax,openKey)).join('')
+        : `<span class="restword">Rest</span>`;
+    const tls = d.future ? '' : d.load>0 ? Math.round(d.load)
+              : `<span class="dtls zero">0</span>`;
+    return `<div class="${cls}">
+      <span class="gut" style="width:${GUT}px">
+        <span class="dlab">${d.d}</span>
+        <span class="moodtick" style="background:${d.mood?MOODS[d.mood].color:'transparent'}"></span>
+      </span>
+      <span class="track" style="height:${LANE_H+4}px">
+        ${gridlines(ax)}${now}${body}${nig}
+      </span>
+      <span class="tail" style="width:${TAIL}px">
+        ${typeof tls==='string'?tls:`<span class="dtls">${tls}</span>`}
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function footprint(W, ax){
+  const peak = Math.max(...W.byHour, 1);
+  const from = Math.floor(ax.from/60), to = Math.ceil(ax.to/60);
+  const bars = [];
+  for(let h=from; h<to; h++){
+    const v = W.byHour[h%24];
+    bars.push(`<span class="hb ${v>=peak*0.999?'peak':''}"
+      style="height:${Math.max(1, v/peak*26)}px"></span>`);
+  }
+  /* The sentence under it, computed rather than written, so it cannot
+     drift from the bars above it. */
+  const total = W.byHour.reduce((a,b)=>a+b,0) || 1;
+  const before9 = W.byHour.slice(0,9).reduce((a,b)=>a+b,0);
+  const peakH = W.byHour.indexOf(Math.max(...W.byHour));
+  const hlab = h => h===0?'midnight':h===12?'noon':h<12?`${h}am`:`${h-12}pm`;
+  return `<div class="footprint">
+      <span class="gut" style="width:${GUT}px"><span class="micro">LOAD</span></span>
+      <span class="track">${bars.join('')}</span>
+      <span class="tail" style="width:${TAIL}px"></span>
+    </div>
+    <div class="fp-note"><b>${Math.round(before9/total*100)}% of the week's load landed before
+    9am.</b> The heaviest hour was ${hlab(peakH)}.</div>`;
+}
+
+/* ---- the panel ------------------------------------------------ */
+function panel(W, openKey){
+  if(!openKey) return '';
+  const [di,ri] = openKey.split('-').map(Number);
+  const d = W.days[di], r = d.runs[ri];
+  if(!r) return '';
+
+  const head = `<div class="p-hd">
+      <span class="when">${d.d} ${d.date} · started ${clock(r.at)}</span>
+      <span class="open">Open run ↗</span>
+    </div>`;
+
+  if(r.noLap) return `<div class="panel">${head}
+    <div class="p-line">${mi1(r.mi)}<span class="u">mi</span><span class="sep">·</span>${hm(r.min)}</div>
+    <div class="p-upload">Uploaded ${clock(r.up)}</div>
+    <div class="p-empty"><span class="eb">No lap data</span>
+    This run arrived without splits, so there is no pace breakdown and no load score for it.
+    The ${mi1(r.mi)} miles still count toward the week.</div></div>`;
+
+  const rows = r.segs.map(s=>{
+    const h = Math.max(MIN_SEG, s.zone.weight/MAXW*LANE_H);
+    return `<tr>
+      <td><span class="zc"><span class="zsw" style="height:${h}px;background:${s.zone.color}"></span>
+        <span class="zname">${s.zone.label}</span></span></td>
+      <td>${Math.round(s.minutes)} min</td>
+      <td>${pace(s.minutes,s.miles)}/mi</td>
+      <td class="zx">×${x1(s.zone.weight)}</td>
+      <td>${Math.round(s.load)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="panel">${head}
+    <div class="p-line">${mi1(r.miles)}<span class="u">mi</span><span class="sep">·</span>${hm(r.minutes)}<span class="sep">·</span>${Math.round(r.load)}<span class="u">TLS</span></div>
+    <div class="p-upload">Uploaded ${clock(r.up)}${
+      toMin(r.up)-toMin(r.at) > 240 ? ` — ${Math.round((toMin(r.up)-toMin(r.at))/60)}h after the run` : ''
+    }</div>
+    <table class="zones"><tbody>${rows}
+      <tr class="tot"><td>Total</td><td>${hm(r.minutes)}</td><td></td><td></td>
+        <td>${Math.round(r.load)}</td></tr>
+    </tbody></table>
+    <div class="tls-note">Each row is minutes × what a minute at that pace costs. The bar heights
+    in the chart are those same multipliers, which is why area is load.</div>
+    ${d.niggle?`<div class="p-nig"><span class="caret"></span>
+      <span class="q"><span class="cap">${d.niggle.side} ${d.niggle.area}</span><br>
+      <em>“${d.niggle.quote}”</em></span></div>`:''}
+  </div>`;
+}
+
+/* ---- the legend ----------------------------------------------- */
+function legend(){
+  const bars = ZONES.map(z=>`<span class="b"
+    style="height:${z.weight/MAXW*40}px;background:${z.color}"></span>`).join('');
+  const labs = ZONES.map(z=>`<span>${z.label}</span>`).join('');
+  return `<div class="legend">
+    <span class="micro">The pace spectrum · height is what one minute costs</span>
+    <div class="lg-bars">${bars}</div>
+    <div class="lg-labs">${labs}</div>
+    <div class="lg-note">Ten minutes easy costs <b>10</b>. The same ten minutes at 5K costs
+    <b>55</b>. That ratio is the bar heights, so a block's area is its load — no second scale
+    to learn.</div>
+  </div>`;
+}
+
+/* ============================================================
+   FRAMES
+   ============================================================ */
+const FRAMES = [
+  { id:'phone', cls:'col--phone', W:build(WEEK_DONE), tag:'iPhone · a finished week',
+    name:'Seven days, twenty-four hours',
+    blurb:'Tuesday is a double — a session at 6:05 and four easy in the evening. Wednesday came in without laps. Monday was off. The coral caret marks the day a niggle was logged; it is the only coral on the surface.' },
+  { id:'wide',  cls:'col--wide',  W:build(WEEK_NOW), tag:'Landscape · the week in progress',
+    name:'Same chart, room to breathe',
+    blurb:'Today is Tuesday at 2:40pm — the grey hairline. Wednesday onward are dashed: not empty, just not yet. With this much width the zone composition inside a session becomes legible without opening it.' },
+];
+const state = { phone:{ ax:'full', open:'1-0' }, wide:{ ax:'full', open:null } };
+
+function draw(){
+  document.getElementById('rail').innerHTML = FRAMES.map(f=>{
+    const W  = f.W;
+    const st = state[f.id];
+    const ax = st.ax==='full' ? FULL : fitted(W);
+    return `<div class="col ${f.cls}">
+      <div class="col-hd"><span class="tag">${f.tag}</span><h2>${f.name}</h2><p>${f.blurb}</p></div>
+      <div class="frame" data-f="${f.id}">
+        <div class="nav">
+          <span class="chev">‹</span>
+          <span class="rangelab">${W.label}</span>
+          <span class="chev">›</span>
+          <span class="spacer"></span>
+          <button class="toggle" data-ax="full" aria-pressed="${st.ax==='full'}">24 h</button>
+          <button class="toggle" data-ax="fit"  aria-pressed="${st.ax==='fit'}">Fit</button>
+        </div>
+        <div class="big">${Math.round(W.load)}<span class="u"> TLS</span></div>
+        <div class="sub micro">${W.runDays} running days · ${mi1(W.miles)} mi · ${hm(W.minutes)}</div>
+        <div class="chart">
+          <div class="axis">
+            <span class="gut" style="width:${GUT}px"></span>
+            <span class="track">${hourLabels(ax)}</span>
+            <span class="tail" style="width:${TAIL}px"></span>
+          </div>
+          ${lanes(W, ax, st.open)}
+          ${footprint(W, ax)}
+        </div>
+        ${panel(W, st.open)}
+        ${legend()}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.querySelectorAll('.run').forEach(b=>{
+    b.onclick = () => {
+      const f = b.closest('.frame').dataset.f;
+      state[f].open = state[f].open===b.dataset.k ? null : b.dataset.k;
+      draw();
+    };
+  });
+  document.querySelectorAll('.toggle').forEach(b=>{
+    b.onclick = () => {
+      const f = b.closest('.frame').dataset.f;
+      state[f].ax = b.dataset.ax;
+      draw();
+    };
+  });
+}
+draw();
+</script>
+</body>
+</html>

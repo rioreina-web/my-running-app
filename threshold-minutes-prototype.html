@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post Run Drip · Threshold Minutes</title><style>
+:root{--paper:#F5F3F0;--card:#FFF;--rule:#E8E4E0;--ink:#1A1815;--ink-2:#6B6560;--ink-3:#9B9590;--coral:#D4592A;
+--font-display:"Crimson Pro",Georgia,serif;--font-body:"PT Serif",Georgia,serif;
+--font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);line-height:1.55;
+-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:40px 24px 70px}
+.strip{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+color:var(--ink-2);display:flex;justify-content:space-between;border-bottom:1px solid var(--rule);
+padding-bottom:10px;margin-bottom:34px}
+.eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+color:var(--ink-2);margin:0 0 14px}
+.hero{font-family:var(--font-mono);font-weight:600;font-size:96px;line-height:.9;
+font-variant-numeric:tabular-nums;letter-spacing:-.03em;margin:0}
+.hero span{font-size:30px;color:var(--ink-2);letter-spacing:0}
+.sub{font-family:var(--font-display);font-size:22px;font-weight:600;margin:14px 0 0}
+.band{font-family:var(--font-mono);font-size:13px;color:var(--ink-2);margin-top:10px;letter-spacing:.02em}
+.band b{color:var(--ink);font-weight:600}
+p{margin:0 0 14px;max-width:64ch}
+h2{font-family:var(--font-display);font-weight:700;font-size:23px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:22px;margin:26px 0}
+.rowk{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--rule);
+border:1px solid var(--rule);border-radius:12px;overflow:hidden;margin:26px 0}
+.k{background:var(--card);padding:16px 14px}
+.k .v{font-family:var(--font-mono);font-weight:600;font-size:23px;display:block;margin-bottom:6px;
+font-variant-numeric:tabular-nums}
+.k .l{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase;color:var(--ink-2)}
+.toggle{display:inline-flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden;margin-bottom:16px}
+.toggle button{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase;
+padding:7px 15px;border:0;background:var(--card);color:var(--ink-2);cursor:pointer}
+.toggle button[aria-pressed="true"]{background:#12294F;color:#fff}
+.scale{position:relative;height:52px;margin:22px 0 6px}
+.scale .track{position:absolute;left:0;right:0;top:22px;height:3px;background:var(--rule);border-radius:2px}
+.scale .fill{position:absolute;top:18px;height:11px;background:#12294F;opacity:.16;border-radius:3px}
+.scale .tick{position:absolute;top:12px;width:2px;height:23px;background:#12294F}
+.scale .lab{position:absolute;top:38px;font-family:var(--font-mono);font-size:10px;color:var(--ink-2);
+transform:translateX(-50%);white-space:nowrap}
+.scale .cap{position:absolute;top:-4px;font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;
+color:var(--ink-3);transform:translateX(-50%);text-transform:uppercase}
+.cap2{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;text-transform:uppercase;
+color:var(--ink-3);margin-top:12px}
+code{font-family:var(--font-mono);font-size:11.5px;background:#E8E4DF;padding:1px 4px;border-radius:3px}
+</style></head><body><div class="wrap">
+<div class="strip"><span>Post Run Drip</span><span>Threshold minutes</span><span>Week of 27 Jul</span></div>
+
+<p class="eyebrow">Time in the threshold band this week</p>
+<p class="hero" id="hero">58<span> min</span></p>
+<p class="sub" id="sublabel">Heat-adjusted pace</p>
+<p class="band">Band <b>5:07</b> &ndash; <b>5:55</b> /mi &nbsp;·&nbsp;
+5% faster to 10% slower than HMP <b>5:23</b></p>
+
+<div class="scale">
+  <div class="track"></div>
+  <div class="fill" style="left:18%;right:22%"></div>
+  <div class="tick" style="left:18%"></div>
+  <div class="tick" style="left:78%"></div>
+  <div class="tick" style="left:40%;background:#D4592A"></div>
+  <div class="cap" style="left:18%">5% faster</div>
+  <div class="cap" style="left:40%;color:#D4592A">HMP</div>
+  <div class="cap" style="left:78%">10% slower</div>
+  <div class="lab" style="left:18%">5:07</div>
+  <div class="lab" style="left:40%">5:23</div>
+  <div class="lab" style="left:78%">5:55</div>
+</div>
+
+<div class="rowk">
+  <div class="k"><span class="v" id="k4">24 min</span><span class="l">4-week average</span></div>
+  <div class="k"><span class="v" id="kall">17 min</span><span class="l">19-week average</span></div>
+  <div class="k"><span class="v">165 bpm</span><span class="l">HR in band</span></div>
+</div>
+
+<div class="card">
+<div class="toggle" role="group" aria-label="Pace basis">
+  <button id="bAdj" aria-pressed="true" onclick="setMode('adj')">Heat-adjusted</button>
+  <button id="bRaw" aria-pressed="false" onclick="setMode('raw')">Raw pace</button>
+</div>
+<svg viewBox="0 0 900 220" width="100%" role="img" aria-label="Minutes inside the threshold band, by week"><line x1="60" y1="129.4" x2="880" y2="129.4" stroke="#E8E4E0"/><text x="52" y="132.4" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#9B9590">20</text><line x1="60" y1="84.9" x2="880" y2="84.9" stroke="#E8E4E0"/><text x="52" y="87.9" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#9B9590">40</text><line x1="60" y1="40.3" x2="880" y2="40.3" stroke="#E8E4E0"/><text x="52" y="43.3" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#9B9590">60</text><line x1="60" y1="174.0" x2="880" y2="174.0" stroke="#9B9590"/><text x="52" y="177.0" text-anchor="end" font-family="var(--font-mono)" font-size="9" fill="#9B9590">0</text><rect class="adj" x="68.6" y="174.0" width="25.9" height="0.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-03-23 · 0.0 min in band of 513 min total</title></rect><rect class="adj" x="111.8" y="67.0" width="25.9" height="107.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-03-30 · 48.0 min in band of 606 min total</title></rect><text class="adj" x="124.7" y="61.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">48</text><rect class="adj" x="154.9" y="69.5" width="25.9" height="104.5" rx="3" fill="#12294F" style="display:"><title>week of 2026-04-06 · 46.9 min in band of 402 min total</title></rect><text class="adj" x="167.9" y="63.5" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">47</text><rect class="adj" x="198.1" y="174.0" width="25.9" height="0.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-04-13 · 0.0 min in band of 424 min total</title></rect><rect class="adj" x="241.3" y="174.0" width="25.9" height="0.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-04-20 · 0.0 min in band of 450 min total</title></rect><rect class="adj" x="284.4" y="133.7" width="25.9" height="40.3" rx="3" fill="#12294F" style="display:"><title>week of 2026-04-27 · 18.1 min in band of 170 min total</title></rect><text class="adj" x="297.4" y="127.7" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">18</text><rect class="adj" x="327.6" y="162.0" width="25.9" height="12.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-05-04 · 5.4 min in band of 345 min total</title></rect><text class="adj" x="340.5" y="156.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">5</text><rect class="adj" x="370.7" y="129.4" width="25.9" height="44.6" rx="3" fill="#12294F" style="display:"><title>week of 2026-05-11 · 20.0 min in band of 557 min total</title></rect><text class="adj" x="383.7" y="123.4" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">20</text><rect class="adj" x="413.9" y="165.8" width="25.9" height="8.2" rx="3" fill="#12294F" style="display:"><title>week of 2026-05-18 · 3.7 min in band of 414 min total</title></rect><text class="adj" x="426.8" y="159.8" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">4</text><rect class="adj" x="457.1" y="133.4" width="25.9" height="40.6" rx="3" fill="#12294F" style="display:"><title>week of 2026-05-25 · 18.2 min in band of 324 min total</title></rect><text class="adj" x="470.0" y="127.4" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">18</text><rect class="adj" x="500.2" y="126.5" width="25.9" height="47.5" rx="3" fill="#12294F" style="display:"><title>week of 2026-06-01 · 21.3 min in band of 428 min total</title></rect><text class="adj" x="513.2" y="120.5" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">21</text><rect class="adj" x="543.4" y="123.9" width="25.9" height="50.1" rx="3" fill="#12294F" style="display:"><title>week of 2026-06-08 · 22.5 min in band of 419 min total</title></rect><text class="adj" x="556.3" y="117.9" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">22</text><rect class="adj" x="586.5" y="151.9" width="25.9" height="22.1" rx="3" fill="#12294F" style="display:"><title>week of 2026-06-15 · 9.9 min in band of 445 min total</title></rect><text class="adj" x="599.5" y="145.9" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">10</text><rect class="adj" x="629.7" y="158.0" width="25.9" height="16.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-06-22 · 7.2 min in band of 385 min total</title></rect><text class="adj" x="642.6" y="152.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">7</text><rect class="adj" x="672.8" y="174.0" width="25.9" height="0.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-06-29 · 0.0 min in band of 470 min total</title></rect><rect class="adj" x="716.0" y="160.2" width="25.9" height="13.8" rx="3" fill="#12294F" style="display:"><title>week of 2026-07-06 · 6.2 min in band of 405 min total</title></rect><text class="adj" x="728.9" y="154.2" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">6</text><rect class="adj" x="759.2" y="174.0" width="25.9" height="0.0" rx="3" fill="#12294F" style="display:"><title>week of 2026-07-13 · 0.0 min in band of 427 min total</title></rect><rect class="adj" x="802.3" y="100.9" width="25.9" height="73.1" rx="3" fill="#12294F" style="display:"><title>week of 2026-07-20 · 32.8 min in band of 458 min total</title></rect><text class="adj" x="815.3" y="94.9" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">33</text><rect class="adj" x="845.5" y="43.6" width="25.9" height="130.4" rx="3" fill="#12294F" style="display:"><title>week of 2026-07-27 · 58.5 min in band of 447 min total</title></rect><text class="adj" x="858.4" y="37.6" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:">58</text><rect class="raw" x="68.6" y="174.0" width="25.9" height="0.0" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-03-23 · 0.0 min in band of 513 min total</title></rect><rect class="raw" x="111.8" y="32.9" width="25.9" height="141.1" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-03-30 · 63.3 min in band of 606 min total</title></rect><text class="raw" x="124.7" y="26.9" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">63</text><rect class="raw" x="154.9" y="69.5" width="25.9" height="104.5" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-04-06 · 46.9 min in band of 402 min total</title></rect><text class="raw" x="167.9" y="63.5" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">47</text><rect class="raw" x="198.1" y="174.0" width="25.9" height="0.0" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-04-13 · 0.0 min in band of 424 min total</title></rect><rect class="raw" x="241.3" y="174.0" width="25.9" height="0.0" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-04-20 · 0.0 min in band of 450 min total</title></rect><rect class="raw" x="284.4" y="120.3" width="25.9" height="53.7" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-04-27 · 24.1 min in band of 170 min total</title></rect><text class="raw" x="297.4" y="114.3" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">24</text><rect class="raw" x="327.6" y="138.1" width="25.9" height="35.9" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-05-04 · 16.1 min in band of 345 min total</title></rect><text class="raw" x="340.5" y="132.1" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">16</text><rect class="raw" x="370.7" y="143.2" width="25.9" height="30.8" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-05-11 · 13.8 min in band of 557 min total</title></rect><text class="raw" x="383.7" y="137.2" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">14</text><rect class="raw" x="413.9" y="165.8" width="25.9" height="8.2" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-05-18 · 3.7 min in band of 414 min total</title></rect><text class="raw" x="426.8" y="159.8" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">4</text><rect class="raw" x="457.1" y="133.4" width="25.9" height="40.6" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-05-25 · 18.2 min in band of 324 min total</title></rect><text class="raw" x="470.0" y="127.4" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">18</text><rect class="raw" x="500.2" y="126.5" width="25.9" height="47.5" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-06-01 · 21.3 min in band of 428 min total</title></rect><text class="raw" x="513.2" y="120.5" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">21</text><rect class="raw" x="543.4" y="123.9" width="25.9" height="50.1" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-06-08 · 22.5 min in band of 419 min total</title></rect><text class="raw" x="556.3" y="117.9" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">22</text><rect class="raw" x="586.5" y="151.9" width="25.9" height="22.1" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-06-15 · 9.9 min in band of 445 min total</title></rect><text class="raw" x="599.5" y="145.9" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">10</text><rect class="raw" x="629.7" y="150.6" width="25.9" height="23.4" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-06-22 · 10.5 min in band of 385 min total</title></rect><text class="raw" x="642.6" y="144.6" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">10</text><rect class="raw" x="672.8" y="174.0" width="25.9" height="0.0" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-06-29 · 0.0 min in band of 470 min total</title></rect><rect class="raw" x="716.0" y="139.5" width="25.9" height="34.5" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-07-06 · 15.5 min in band of 405 min total</title></rect><text class="raw" x="728.9" y="133.5" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">16</text><rect class="raw" x="759.2" y="165.3" width="25.9" height="8.7" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-07-13 · 3.9 min in band of 427 min total</title></rect><text class="raw" x="772.1" y="159.3" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">4</text><rect class="raw" x="802.3" y="100.9" width="25.9" height="73.1" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-07-20 · 32.8 min in band of 458 min total</title></rect><text class="raw" x="815.3" y="94.9" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">33</text><rect class="raw" x="845.5" y="68.1" width="25.9" height="105.9" rx="3" fill="#8FB3CE" style="display:none"><title>week of 2026-07-27 · 47.5 min in band of 447 min total</title></rect><text class="raw" x="858.4" y="62.1" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815" style="display:none">48</text><text x="81.6" y="192.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#9B9590">03-23</text><text x="211.1" y="192.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#9B9590">04-13</text><text x="340.5" y="192.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#9B9590">05-04</text><text x="470.0" y="192.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#9B9590">05-25</text><text x="599.5" y="192.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#9B9590">06-15</text><text x="728.9" y="192.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#9B9590">07-06</text><text x="858.4" y="192.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#9B9590">07-27</text><text x="470.0" y="210.0" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#6B6560">MINUTES IN BAND, PER WEEK</text></svg>
+<div class="cap2">Heat-adjusted uses <code>heat_adjusted_pace_sec_per_mile</code>, already stored per lap.</div>
+</div>
+
+<h2>Session density, the same way &mdash; as a ratio.</h2>
+<p>Rest duration alone doesn't say much: 60s after a 400m rep is loose, 60s after a 1000m rep is
+tight. The number that travels is <strong>work&nbsp;:&nbsp;rest</strong>.</p>
+<div class="rowk">
+  <div class="k"><span class="v">2.9 : 1</span><span class="l">Last session · 28 Jul</span></div>
+  <div class="k"><span class="v">2.9 : 1</span><span class="l">July average</span></div>
+  <div class="k"><span class="v">0.9 : 1</span><span class="l">Late Mar / Apr average</span></div>
+</div>
+<p>Same rep pace, roughly triple the density. On 28 Jul you ran 7&nbsp;&times;&nbsp;1150m at
+5:15/mi off <strong>77s</strong> recoveries. On 7 Apr you ran 7&nbsp;&times;&nbsp;1200m at 5:05/mi
+off <strong>234s</strong>. Nearly the same session; a third of the rest.</p>
+
+<h2>Why the two numbers differ.</h2>
+<p>On raw pace this week reads <strong>48 min</strong>. Heat-adjusted it reads
+<strong>58 min</strong> &mdash; 11 minutes of work that a 72&deg;F dew point had pushed
+out the slow edge of the band. The adjustment moves work <em>into</em> the band in hot weeks and
+<em>out</em> of it in cool ones: the week of 30 Mar goes the other way, 63 raw down to 48 adjusted.</p>
+<p>Two weeks read zero on both &mdash; 13 and 20 Apr. Not missing data: on 18 Apr your laps ran
+6:29&ndash;6:39/mi (slower than the 6:07 edge) and on 21 Apr they ran 4:47&ndash;5:13/mi (faster than
+the 5:17 edge). That second one is 5K-rep work, and the 5% fast edge is doing exactly its job by
+refusing to count it as threshold.</p>
+
+<h2>What good looks like.</h2>
+<p>You've averaged <strong>17 min</strong> a week across the window with a range
+of 0 to 59. The last two weeks &mdash; 33 and 59 &mdash; are the strongest block since early April,
+and they came at 165&ndash;166 bpm rather than the 169 you needed in March.</p>
+
+<p class="cap2">Supabase RunningAppMVP2 · 1,348 laps · band from fitness_snapshots, weekly</p>
+</div>
+<script>
+const ADJ=[0.0, 48.0, 46.9, 0.0, 0.0, 18.1, 5.4, 20.0, 3.7, 18.2, 21.3, 22.5, 9.9, 7.2, 0.0, 6.2, 0.0, 32.8, 58.5], RAW=[0.0, 63.3, 46.9, 0.0, 0.0, 24.1, 16.1, 13.8, 3.7, 18.2, 21.3, 22.5, 9.9, 10.5, 0.0, 15.5, 3.9, 32.8, 47.5];
+const m=(a)=>a.reduce((x,y)=>x+y,0)/a.length;
+function setMode(mode){
+  document.querySelectorAll('.adj').forEach(e=>e.style.display = mode==='adj'?'':'none');
+  document.querySelectorAll('.raw').forEach(e=>e.style.display = mode==='raw'?'':'none');
+  document.getElementById('bAdj').setAttribute('aria-pressed', mode==='adj');
+  document.getElementById('bRaw').setAttribute('aria-pressed', mode==='raw');
+  const a = mode==='adj'?ADJ:RAW;
+  document.getElementById('hero').innerHTML = Math.round(a[a.length-1])+'<span> min</span>';
+  document.getElementById('sublabel').textContent = mode==='adj'?'Heat-adjusted pace':'Raw pace';
+  document.getElementById('k4').textContent = Math.round(m(a.slice(-4)))+' min';
+  document.getElementById('kall').textContent = Math.round(m(a))+' min';
+}
+</script>
+</body></html>

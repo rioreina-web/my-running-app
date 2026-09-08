@@ -1,0 +1,34 @@
+{
+  "id": "007-caveat-null-when-nothing-to-flag",
+  "prompt_name": "ask-narration.v1",
+  "description": "The prompt: use null when nothing genuinely needs flagging, and do not invent a caveat to fill the field. Clean data, deep sample, no holes in coverage. A manufactured hedge here is noise that trains the athlete to ignore the caveat line everywhere else.",
+  "vars": {
+    "question": "Am I ramping too fast?",
+    "factLines": "Acute : chronic ratio: 1.04 (in band)\nLast complete week: 47.2 mi\n4-week average: 46.0 mi (+3%)\nMonotony · 7 day: 1.6\nCoverage: 42 sessions over 49 days (high confidence)",
+    "confidence": "high"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "text",
+      "caveat"
+    ],
+    "required_patterns": [
+      "\"caveat\"\\s*:\\s*null"
+    ],
+    "forbidden_patterns": [
+      "!",
+      "(?m)^\\s*[-*•]\\s",
+      "(?m)^#{1,6}\\s",
+      "\\*\\*",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\bacute[- ]to[- ]chronic\\b",
+      "(?i)\\bis calculated\\b",
+      "(?i)\\bthis (metric|ratio|number) (means|measures|represents)\\b",
+      "(?i)\\bdivided by\\b"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

@@ -15,7 +15,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
+import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { adjustPace, buildWeatherJson, heatCategoryLabel } from "../_shared/pace-heat-adjustment.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
@@ -93,10 +93,12 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Auth: accept JWT or service-role with user_id in body (for trigger calls)
-    let userId = await getAuthenticatedUser(req);
-    if (!userId && bodyUserId) userId = bodyUserId;
-    if (!userId) return unauthorizedResponse(corsHeaders);
+    // Auth: a user JWT acts for its own subject (body user_id must match);
+    // only the service-role key (trigger calls) may name the user. The old
+    // `userId ?? bodyUserId` fallback let the public anon key act as anyone.
+    const auth = await requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+    if ("response" in auth) return auth.response;
+    const userId = auth.userId;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -108,6 +110,7 @@ Deno.serve(async (req: Request) => {
       .from("training_logs")
       .select("id, user_id, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, mood, cleaned_notes")
       .eq("id", training_log_id)
+      .eq("user_id", userId)
       .single();
 
     if (logErr || !log) {
@@ -246,7 +249,7 @@ Deno.serve(async (req: Request) => {
 // ── Delta Computation ──────────────────────────────────────────
 
 function computeDelta(log: any, scheduled: any | null, weather: Record<string, any> | null = null): ReconciliationDelta {
-  const qualityTypes = new Set(["tempo", "intervals", "long_run", "race", "progression"]);
+  const qualityTypes = new Set(["threshold", "tempo", "intervals", "interval", "fartlek", "long_run", "long_wo", "race", "progression"]);
 
   // No scheduled workout — this was an unplanned run
   if (!scheduled) {

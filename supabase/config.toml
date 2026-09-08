@@ -421,6 +421,37 @@ verify_jwt = true
 # body user_id AND user-JWT + matching body user_id.
 verify_jwt = false
 
+[functions.rebuild-athlete-state]
+# Keep-warm worker for athlete_state. verify_jwt = true so the gateway
+# validates the JWT signature; the function then confirms role=service_role
+# by decoding the claim (robust to service-key/Vault drift — unlike the
+# exact-key match that 403'd the drain crons).
+verify_jwt = true
+
+[functions.compute-fitness-snapshot]
+# Server-side writer for fitness_snapshots (replaces the client-only iOS
+# writer as the freshness guarantee). Same auth posture as
+# rebuild-athlete-state: gateway validates the JWT signature, the function
+# confirms role=service_role by decoding the claim. Fanned out per active
+# athlete by the nightly cron just before the athlete-state rebuild.
+verify_jwt = true
+
+# ── Async enrichment drains (pg_cron, every minute) ──
+# verify_jwt = true so the gateway validates the JWT signature; each drain
+# then confirms role=service_role by decoding the claim (isServiceRoleJWT),
+# mirroring rebuild-athlete-state. This replaces the brittle exact-key match
+# against SUPABASE_SERVICE_ROLE_KEY that 403'd the pipeline from 2026-06-11
+# when the function-env key rotated away from the Vault copy. Robust to any
+# future key rotation.
+[functions.drain-voice-processing-jobs]
+verify_jwt = true
+
+[functions.drain-coach-insight-jobs]
+verify_jwt = true
+
+[functions.drain-coachable-moment-jobs]
+verify_jwt = true
+
 [functions.build-pace-profile]
 # Upserts athlete_pace_profiles from the latest fitness_snapshots row.
 # verify_jwt = true so only authenticated callers (user JWT or anon/service
@@ -461,19 +492,16 @@ verify_jwt = true
 [functions.subscribe-to-plan]
 verify_jwt = false
 
-[functions.assess-fitness]
-verify_jwt = false
+# Removed 2026-08-24: assess-fitness, log-manual-workout and log-training no
+# longer exist under supabase/functions. Their `verify_jwt = false` entries
+# outlived them, which made the unauthenticated surface read three functions
+# larger than it is on every audit. Delete the entry when you delete the
+# function.
 
 [functions.build-athlete-profile]
 verify_jwt = false
 
 [functions.generate-training-plan]
-verify_jwt = false
-
-[functions.log-manual-workout]
-verify_jwt = false
-
-[functions.log-training]
 verify_jwt = false
 
 [functions.parse-training-plan]
@@ -482,8 +510,21 @@ verify_jwt = false
 [functions.parse-training-week]
 verify_jwt = false
 
+# verify_jwt = true (2026-08-10, was false). The gateway now validates the JWT
+# signature, which is the precondition for reading the role claim inside the
+# function instead of string-comparing SUPABASE_SERVICE_ROLE_KEY. The Vault copy
+# of the service key no longer string-equals the function-env copy — the same
+# drift that 401'd the drains on 2026-06-11 and every dispatch_rpe_extraction
+# call on 2026-08-07 — so the exact-match path rejects the workout-parse
+# dispatcher outright. Same fix drain-*, extract-rpe, rebuild-athlete-state and
+# compute-fitness-snapshot already carry.
+#
+# Safe for every caller: iOS sends a user JWT, and strava-sync /
+# process-training-memo / vital-webhook / correct-workout-structure / the
+# dispatch_workout_parse cron all send the service key, which is itself a
+# validly signed JWT. Nothing calls this anonymously.
 [functions.parse-workout-structure]
-verify_jwt = false
+verify_jwt = true
 
 [functions.process-training-memo]
 verify_jwt = false
@@ -492,4 +533,44 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.weekly-coaching-report]
+verify_jwt = false
+
+[functions.trends-timeline]
+# Read-only Trends timeline (mileage/intensity/pace/mood/niggles). Dual-mode
+# auth handled in-function by requireAuthOrServiceRole, so the gateway does not
+# pre-verify — matches the weekly-coaching-report / coaching-daily-read pattern.
+verify_jwt = false
+
+[functions.run-hr-trace]
+# Per-minute heart-rate traces for the runs currently on screen. Athlete-only:
+# there is no service-role caller and no cross-user path, so the gateway
+# verifies the JWT and the function scopes every read to that user's own rows.
+# Left at the default rather than copying trends-timeline's dual-mode opt-out —
+# an endpoint that reads raw sensor streams should not skip a check it does not
+# need to skip.
+verify_jwt = true
+
+[functions.vital-webhook]
+# verify_jwt = false — MANDATORY, not a preference. Junction/Vital posts these
+# webhooks server-to-server and sends NO Supabase JWT of any kind, so a gateway
+# that pre-verifies rejects every delivery with 401 before the function runs.
+# The function is not unauthenticated: it verifies the Svix signature
+# (svix-id/svix-timestamp/svix-signature) against VITAL_WEBHOOK_SECRET with a
+# 5-minute replay window, which is the check that actually protects this route.
+#
+# This entry was missing until 2026-08-18, so the deployed function inherited
+# the `true` default and contradicted its own file header. Nothing had noticed
+# because no athlete has ever completed a Junction connection — the first one
+# to try would have silently received zero webhooks.
+verify_jwt = false
+
+[functions.mcp]
+# The MCP connector — the analyzer registry exposed to the athlete's own
+# Claude. verify_jwt = false because the caller is Anthropic's servers, which
+# send neither a Supabase JWT nor a custom Authorization header (Claude's
+# custom-connector UI cannot set one). The credential is instead a path
+# segment the athlete pastes, checked inside the function against
+# `mcp_access_tokens` (sha256, never plaintext). Scope is read-only: every
+# analyzer query is .eq("user_id"), nothing in _shared/analyzers writes, and
+# the only insert is the analysis_queries audit row. See functions/mcp/README.md.
 verify_jwt = false

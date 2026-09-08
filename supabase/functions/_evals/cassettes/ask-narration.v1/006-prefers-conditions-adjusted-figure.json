@@ -1,0 +1,36 @@
+{
+  "id": "006-prefers-conditions-adjusted-figure",
+  "prompt_name": "ask-narration.v1",
+  "description": "The prompt says: where a conditions-adjusted or conditions-neutral figure exists, treat it as the fairer read and prefer it over the raw one. This is the difference between telling a runner they got slower over a hot summer and telling them they held on. Guards the clause that stops a good block reading as a bad one.",
+  "vars": {
+    "question": "Was that pace real, or was it the heat?",
+    "factLines": "Actual pace · 90 days: 6:03/mi\nCool-weather equivalent: 5:54/mi (−9s)\nWhat the conditions were worth: 9 s/mi\nAverage dew point: 71°F (adjustment applied)\nCoverage: 24 sessions over 90 days (high confidence) — the heat adjustment is a model, not a measurement",
+    "confidence": "high"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "text",
+      "caveat"
+    ],
+    "required_patterns": [
+      "5:54|9"
+    ],
+    "forbidden_patterns": [
+      "!",
+      "(?m)^\\s*[-*•]\\s",
+      "(?m)^#{1,6}\\s",
+      "\\*\\*",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\byou('ve| have) (gotten|got) slower\\b",
+      "(?i)\\b(losing|lost) fitness\\b",
+      "(?i)\\bacute[- ]to[- ]chronic\\b",
+      "(?i)\\bis calculated\\b",
+      "(?i)\\bthis (metric|ratio|number) (means|measures|represents)\\b",
+      "(?i)\\bdivided by\\b"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

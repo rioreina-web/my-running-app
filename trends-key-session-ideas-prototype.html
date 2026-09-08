@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends — key sessions & paces · idea set</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --green:#2D8A4E; --sage:#4A9E6B; --amber:#C4873A; --terra:#C45A3A; --plum:#6B4A8A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;line-height:1.55}
+.wrap{max-width:840px;margin:0 auto;padding:32px 24px 96px}
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;
+  color:var(--ink-2);text-transform:uppercase}
+.eyebrow--coral{color:var(--coral)}
+.plate{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;color:var(--ink-2);
+  text-transform:uppercase;display:flex;justify-content:space-between;border-bottom:1px solid var(--rule);
+  padding-bottom:10px;margin-bottom:32px;flex-wrap:wrap;gap:8px}
+h1{font-family:var(--font-display);font-weight:700;font-size:40px;line-height:1.05;
+  letter-spacing:-.01em;margin:0 0 12px}
+h2{font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1.1;margin:0 0 6px}
+.lede{font-size:16px;color:var(--ink-2);max-width:60ch;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:26px 26px 22px;
+  margin:22px 0;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+.card--warn{background:var(--paper-elevated);border-style:dashed}
+.rank{display:inline-flex;align-items:center;gap:8px;margin-bottom:14px}
+.rank__n{font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:.1em;
+  background:var(--coral-wash);color:var(--coral-deep);padding:4px 9px;border-radius:999px}
+.rank__tag{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);border:1px solid var(--rule);padding:3px 8px;border-radius:999px}
+.hero{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:18px 0 6px}
+.hero__num{font-family:var(--font-mono);font-weight:600;font-size:44px;line-height:1;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+.hero__num--coral{color:var(--coral)}
+.hero__num--green{color:var(--green)}
+.hero__unit{font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.say{font-family:var(--font-body);font-size:17px;line-height:1.5;margin:10px 0 20px;max-width:56ch}
+.say em{font-style:italic;color:var(--coral-deep)}
+.note{border-top:1px solid var(--rule);margin-top:20px;padding-top:16px;font-size:13.5px;color:var(--ink-2)}
+.note b{color:var(--ink);font-weight:700}
+.note p{margin:0 0 9px}
+.note p:last-child{margin-bottom:0}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);margin:4px 0 14px}
+.legend i{display:inline-block;width:16px;height:2px;vertical-align:middle;margin-right:6px}
+.legend .dotmark{width:8px;height:8px;border-radius:999px}
+svg{display:block;width:100%;height:auto;overflow:visible}
+.tbl{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:11.5px;margin-top:6px}
+.tbl th{text-align:left;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);
+  padding:6px 8px 6px 0;border-bottom:1px solid var(--rule);font-size:10px}
+.tbl td{padding:6px 8px 6px 0;border-bottom:1px solid var(--rule);color:var(--ink);
+  font-variant-numeric:tabular-nums}
+.tbl td.mut{color:var(--ink-3)}
+.hr{display:flex;align-items:center;gap:8px;margin:44px 0 28px}
+.hr::before,.hr::after{content:"";flex:1;height:1px;background:var(--rule)}
+.hr__dot{width:3px;height:3px;border-radius:999px;background:var(--ink-3)}
+.kicker{font-family:var(--font-display);font-size:20px;font-weight:600;margin:0 0 4px}
+.pillrow{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 4px}
+.pill{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  padding:4px 9px;border-radius:999px;border:1px solid var(--rule);color:var(--ink-2)}
+.pill--on{background:var(--coral);border-color:var(--coral);color:#fff}
+.foot{margin-top:48px;font-size:13px;color:var(--ink-3);border-top:1px solid var(--rule);padding-top:18px}
+code{font-family:var(--font-mono);font-size:12px;background:var(--paper-deep);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="plate">
+  <span>Post Run Drip · Trends</span>
+  <span>Key sessions &amp; paces — idea set</span>
+  <span>Rio · 21 sessions · May 5 – Jul 25 2026</span>
+</div>
+
+<h1>Four trends that survive<br>an Austin summer.</h1>
+<p class="lede">Every chart here is drawn from your own <code>key-sessions-data.json</code> — 21 classified
+sessions across 12 weeks. Ordered by how much each one actually tells an athlete, best first.
+The last card is the one to <em>not</em> ship, and why.</p>
+
+<!-- ═══════════ IDEA 1 ═══════════ -->
+<div class="card">
+  <div class="rank">
+    <span class="rank__n">IDEA 01</span>
+    <span class="rank__tag">strongest signal</span>
+    <span class="rank__tag">already computed</span>
+  </div>
+  <h2>True Pace</h2>
+  <p class="lede">The pace you'd have run on a normal morning. Ship this as the default line and put the
+  watch pace behind it as a ghost.</p>
+
+  <div class="hero">
+    <span class="hero__num hero__num--coral" id="h1a">—</span>
+    <span class="hero__unit">sec/mi &nbsp;the watch says you got slower</span>
+  </div>
+  <div class="hero">
+    <span class="hero__num hero__num--green" id="h1b">—</span>
+    <span class="hero__unit">sec/mi &nbsp;true pace says you got faster</span>
+  </div>
+
+  <p class="say">Your dew point went from <b>64°F to 72°F</b> across these 12 weeks. Same fitness, heavier
+  air. <em>Untouched, the trend line is a weather chart wearing your name.</em></p>
+
+  <div class="legend">
+    <span><i style="background:var(--ink-3)"></i>Watch pace</span>
+    <span><i style="background:var(--coral)"></i>True pace (heat-adjusted)</span>
+    <span><i class="dotmark" style="background:var(--paper-deep);border:1px solid var(--ink-3)"></i>Dew point</span>
+    <span>Thick line = fitted trend · 7 interval sessions</span>
+  </div>
+  <div id="c1"></div>
+
+  <div class="note">
+    <p><b>How it reads to an athlete.</b> One line, one unit they already know, and a sentence:
+    “On a 64° morning you'd have run this at 5:07/mi.”</p>
+    <p><b>Why it's honest.</b> Over the window, watch pace slopes <b id="s1a">—</b> sec/mi per 4 weeks on
+    interval days — slower. Heat-adjusted slopes <b id="s1b">—</b> — faster. Same runs, opposite verdict.
+    Only one of them is about you.</p>
+    <p><b>What it needs.</b> <code>heatAdjPaceSecMi</code> already exists on every session. The weather in
+    this file is station climatology; wiring <code>fetch-workout-weather</code> per session is the only
+    real work left.</p>
+  </div>
+</div>
+
+<!-- ═══════════ IDEA 2 ═══════════ -->
+<div class="card">
+  <div class="rank">
+    <span class="rank__n">IDEA 02</span>
+    <span class="rank__tag">weather-proof</span>
+    <span class="rank__tag">works from run #1</span>
+  </div>
+  <h2>Finish Strength</h2>
+  <p class="lede">Second half versus first half, in seconds per mile. Below the line means you finished
+  faster than you started.</p>
+
+  <div class="hero">
+    <span class="hero__num" id="h2a">—</span>
+    <span class="hero__unit">sec/mi &nbsp;worst fade, first half of the block</span>
+  </div>
+  <div class="hero">
+    <span class="hero__num hero__num--green" id="h2b">—</span>
+    <span class="hero__unit">sec/mi &nbsp;worst fade, second half</span>
+  </div>
+
+  <p class="say">This is the one metric heat can't touch — both halves ran in the same weather, on the
+  same legs. <em>Your blow-ups stopped. That's the story of your summer.</em></p>
+
+  <div class="legend">
+    <span><i class="dotmark" style="background:var(--green)"></i>Negative split</span>
+    <span><i class="dotmark" style="background:var(--sage)"></i>Held</span>
+    <span><i class="dotmark" style="background:var(--amber)"></i>Eased</span>
+    <span><i class="dotmark" style="background:var(--terra)"></i>Faded</span>
+  </div>
+  <div id="c2"></div>
+
+  <div class="note">
+    <p><b>How it reads to an athlete.</b> You already have the vocabulary —
+    <b>NEGATIVE SPLIT / HELD / EASED / FADED</b>. Four words, no coaching degree required. The chart is
+    just those words placed on a zero line.</p>
+    <p><b>Why it's honest.</b> Long-run fade slopes <b id="s2a">—</b> sec/mi per 4 weeks, intervals
+    <b id="s2b">—</b>. More importantly the <i>range</i> collapsed: your worst long run in the first half
+    of the block gave up <b>+37 sec/mi</b> over the second half; your worst in the second half gave up
+    <b>+19</b>, and the three long runs since then all landed inside <b>±14</b>.</p>
+    <p><b>The honest caveat.</b> The label <i>mix</i> barely moved — 6 of 9 held-or-better early,
+    6 of 10 late. What improved is the size of the bad days, not their count. Show magnitude, not a
+    “% of good sessions” score, or the chart will claim something the data doesn't.</p>
+  </div>
+</div>
+
+<!-- ═══════════ IDEA 3 ═══════════ -->
+<div class="card">
+  <div class="rank">
+    <span class="rank__n">IDEA 03</span>
+    <span class="rank__tag">fixes a real bug</span>
+    <span class="rank__tag">needs the pace ladder</span>
+  </div>
+  <h2>Against Your Ladder</h2>
+  <p class="lede">Every rep session scored as seconds faster or slower than the pace that rep length
+  <i>should</i> be run at. One axis, every session type.</p>
+
+  <p class="say">Right now a naive “interval pace” line runs from <b>4:14/mi</b> to <b>5:28/mi</b> —
+  and none of that is fitness. It's rep length. <em>8×200 and 6×1mi are not the same question.</em></p>
+
+  <div class="legend"><span><i style="background:var(--ink-3);opacity:.6"></i>Raw rep pace — the broken version</span></div>
+  <div id="c3a"></div>
+
+  <p class="say" style="margin-top:24px">Score each session against the ladder instead, and the noise
+  goes away. Now a dot below the line means <b>you beat what that session asked for</b>.</p>
+
+  <div class="legend">
+    <span><i class="dotmark" style="background:var(--coral)"></i>Faster than ladder</span>
+    <span><i class="dotmark" style="background:var(--ink-3)"></i>Slower than ladder</span>
+  </div>
+  <div id="c3b"></div>
+  <div id="t3"></div>
+
+  <div class="note">
+    <p><b>How it reads to an athlete.</b> “You ran your 1K reps 4 seconds off target, your 200s 11 seconds
+    under.” No comparison across session types is ever implied.</p>
+    <p><b>Why it matters architecturally.</b> This is the consumer <code>pace-system-rework.md</code> has
+    been waiting for. <code>derivePaceTableFromGoal()</code> becomes the one place a target comes from, and
+    Trends becomes a fourth caller alongside <code>/pace-chart</code>, the plan builder and
+    <code>subscribe-to-plan</code>. One ladder, finally earning its keep.</p>
+    <p><b>Ladder used below is illustrative</b> — anchored on your 1:08 half (5:11/mi) and hand-set per rep
+    length for this mock. Replace with the real derivation before shipping.</p>
+  </div>
+</div>
+
+<!-- ═══════════ IDEA 4 ═══════════ -->
+<div class="card">
+  <div class="rank">
+    <span class="rank__n">IDEA 04</span>
+    <span class="rank__tag">day-one metric</span>
+    <span class="rank__tag">zero fitness math</span>
+  </div>
+  <h2>The Rhythm</h2>
+  <p class="lede">Did the hard session actually happen this week? Nothing else on this page works for a
+  brand-new beta user. This does, immediately.</p>
+
+  <div class="hero">
+    <span class="hero__num hero__num--coral" id="h4a">—</span>
+    <span class="hero__unit">straight weeks with 2+ key sessions</span>
+  </div>
+
+  <p class="say">Early May through mid-June you were averaging <b>1.3</b> key sessions a week.
+  Since June 15: <b>2.2</b>. <em>Quality share of your volume went from 6% to 20% — on the same mileage.</em></p>
+
+  <div class="legend">
+    <span><i class="dotmark" style="background:var(--coral)"></i>Key session</span>
+    <span><i style="background:var(--paper-deep);height:8px"></i>Weekly km</span>
+  </div>
+  <div id="c4"></div>
+
+  <div class="note">
+    <p><b>How it reads to an athlete.</b> A streak. The single most legible number in fitness apps, and the
+    only one here that means anything in a user's first three weeks.</p>
+    <p><b>Why it's honest.</b> Your weekly volume is flat — 64 to 116 km, no trend. What changed is the
+    <i>shape</i>: <code>qualityPct</code> went <b>6.4% → 19.2%</b> while mileage sat still. A volume chart
+    shows nothing happened. This shows exactly what happened.</p>
+    <p><b>Watch out.</b> Streaks punish taper weeks and injury. Cap the message at “rhythm,” never
+    “don't break the chain.”</p>
+  </div>
+</div>
+
+<div class="hr"><span class="hr__dot"></span></div>
+
+<!-- ═══════════ ANTI-PATTERN ═══════════ -->
+<div class="card card--warn">
+  <div class="rank">
+    <span class="rank__n">DON'T SHIP</span>
+    <span class="rank__tag">looks great, lies</span>
+  </div>
+  <h2>Meters per heartbeat</h2>
+  <p class="lede">The obvious efficiency metric — distance covered per beat. It's already in your data as
+  <code>mPerBeat</code>, and it's a trap in July.</p>
+
+  <div class="hero">
+    <span class="hero__num" style="color:var(--terra)" id="h5a">—</span>
+    <span class="hero__unit">% change on long runs, May → July</span>
+  </div>
+
+  <p class="say">A beta user opens the app after a good block of training and reads
+  <em>“your efficiency is down 1.6%.”</em> They're not less fit. It was 69°F in May and 78°F with a 72°
+  dew point in July, and heat raises heart rate at any given pace.</p>
+
+  <div class="legend">
+    <span><i class="dotmark" style="background:var(--terra)"></i>Long runs</span>
+    <span><i class="dotmark" style="background:var(--plum)"></i>Interval days</span>
+  </div>
+  <div id="c5"></div>
+
+  <div class="note">
+    <p><b>The tell.</b> Interval days went <b>+1.6%</b> over the same window while long runs went
+    <b>−1.6%</b>. Real aerobic change doesn't split by session type — heat exposure does. Long runs sit in
+    the sun for two hours; 1K reps at 6:30am don't.</p>
+    <p><b>If you want it anyway,</b> heat-adjust the pace side before dividing, or ship decoupling
+    (<code>hrDriftPct</code>) instead — it's a within-run ratio, so the weather cancels out the same way
+    fade does.</p>
+  </div>
+</div>
+
+<div class="hr"><span class="hr__dot"></span></div>
+
+<p class="kicker">If you build one</p>
+<p class="lede" style="max-width:62ch">Build <b>Finish Strength</b>. It works on day one, needs no weather
+service, no pace ladder and no fitness model, it's immune to the single biggest confounder in your data,
+and it's the only place your numbers currently show unambiguous improvement. <b>True Pace</b> is the one
+that makes every <i>other</i> chart in the app stop lying — do it second, and the rest inherit it.</p>
+
+<div class="foot">
+  Source: <code>key-sessions-data.json</code>, generated 2026-07-27 · 21 classified sessions,
+  19 trend-eligible · weeks of 2026-05-04 → 2026-07-20. Weather is station climatology for Austin TX
+  (May 28 in Fayetteville AR), not per-session observation.
+</div>
+
+</div>
+<script>
+const SESSIONS=[{"date": "2026-05-05", "kind": "intervals", "label": "5x1mi", "km": 9.54, "raw": 317.2, "adj": 306.7, "fade": 5.0, "drift": 2.45, "mpb": 1.78, "hr": 165.2, "dew": 64, "temp": 69.0, "grade": "EASED", "elig": true, "reps": 5, "replen": 1609}, {"date": "2026-05-09", "kind": "long", "label": "21K long", "km": 21.22, "raw": 412.1, "adj": 398.4, "fade": 37.0, "drift": 4.98, "mpb": 1.54, "hr": 152.0, "dew": 64, "temp": 69.2, "grade": "FADED", "elig": true, "reps": null, "replen": null}, {"date": "2026-05-16", "kind": "long", "label": "21K long", "km": 21.09, "raw": 402.8, "adj": 389.4, "fade": -7.6, "drift": 2.21, "mpb": 1.54, "hr": 156.0, "dew": 64, "temp": 69.2, "grade": "NEGATIVE SPLIT", "elig": true, "reps": null, "replen": null}, {"date": "2026-05-20", "kind": "intervals", "label": "10x1K", "km": 9.98, "raw": 307.6, "adj": 297.4, "fade": 0.0, "drift": 2.07, "mpb": 1.87, "hr": 167.1, "dew": 64, "temp": 69.0, "grade": "HELD", "elig": true, "reps": 9, "replen": 1000}, {"date": "2026-05-24", "kind": "long", "label": "22.5K long", "km": 22.52, "raw": 408.8, "adj": 393.0, "fade": 2.7, "drift": 3.87, "mpb": 1.47, "hr": 161.0, "dew": 64, "temp": 74.6, "grade": "HELD", "elig": true, "reps": null, "replen": null}, {"date": "2026-05-28", "kind": "long", "label": "20K steady", "km": 20.02, "raw": 386.9, "adj": 376.1, "fade": -26.6, "drift": -3.45, "mpb": 1.57, "hr": 159.0, "dew": 60, "temp": 67.9, "grade": "NEGATIVE SPLIT", "elig": true, "reps": null, "replen": null}, {"date": "2026-06-06", "kind": "long", "label": "Loop x PD 18K", "km": 18.4, "raw": 379.4, "adj": 362.3, "fade": 8.7, "drift": 6.24, "mpb": 1.55, "hr": 164.0, "dew": 70, "temp": 75.0, "grade": "EASED", "elig": true, "reps": null, "replen": null}, {"date": "2026-06-13", "kind": "long", "label": "21K long", "km": 21.09, "raw": 392.2, "adj": 374.6, "fade": -11.0, "drift": -1.35, "mpb": 1.52, "hr": 162.0, "dew": 70, "temp": 75.0, "grade": "NEGATIVE SPLIT", "elig": true, "reps": null, "replen": null}, {"date": "2026-06-17", "kind": "intervals", "label": "8x1K", "km": 8.51, "raw": 314.0, "adj": 299.9, "fade": -6.4, "drift": 1.22, "mpb": 1.81, "hr": 167.0, "dew": 70, "temp": 75.0, "grade": "NEGATIVE SPLIT", "elig": true, "reps": 8, "replen": 1000}, {"date": "2026-06-20", "kind": "long", "label": "21K long", "km": 21.33, "raw": 417.5, "adj": 398.7, "fade": 8.1, "drift": 2.97, "mpb": 1.53, "hr": 151.0, "dew": 70, "temp": 75.0, "grade": "EASED", "elig": true, "reps": null, "replen": null}, {"date": "2026-06-23", "kind": "intervals", "label": "mile/1K/600 set", "km": 9.68, "raw": 309.2, "adj": 295.3, "fade": -38.1, "drift": 6.74, "mpb": 1.89, "hr": 154.3, "dew": 70, "temp": 75.0, "grade": "NEGATIVE SPLIT", "elig": true, "reps": 8, "replen": 850}, {"date": "2026-06-27", "kind": "long", "label": "2hr / 28.6K", "km": 28.6, "raw": 405.4, "adj": 387.2, "fade": 19.0, "drift": 7.25, "mpb": 1.49, "hr": 160.0, "dew": 70, "temp": 75.0, "grade": "FADED", "elig": true, "reps": null, "replen": null}, {"date": "2026-06-30", "kind": "fartlek", "label": "7mi fartlek 4'/2'", "km": 11.27, "raw": 342.9, "adj": 327.5, "fade": 0, "drift": 0, "mpb": null, "hr": null, "dew": 70, "temp": 75.0, "grade": "HELD", "elig": false, "reps": null, "replen": null}, {"date": "2026-07-04", "kind": "tempo", "label": "20K tempo", "km": 20.01, "raw": 375.5, "adj": 356.7, "fade": -14.5, "drift": 0.38, "mpb": 1.54, "hr": 167.0, "dew": 72, "temp": 78.0, "grade": "NEGATIVE SPLIT", "elig": true, "reps": null, "replen": null}, {"date": "2026-07-08", "kind": "intervals", "label": "10x1K/800", "km": 10.31, "raw": 315.1, "adj": 299.3, "fade": 6.1, "drift": 1.89, "mpb": 1.85, "hr": 164.5, "dew": 72, "temp": 78.0, "grade": "EASED", "elig": true, "reps": 10, "replen": 968}, {"date": "2026-07-11", "kind": "long", "label": "24K long", "km": 24.12, "raw": 410.0, "adj": 389.5, "fade": -0.3, "drift": 4.23, "mpb": 1.46, "hr": 161.0, "dew": 72, "temp": 78.0, "grade": "HELD", "elig": true, "reps": null, "replen": null}, {"date": "2026-07-14", "kind": "intervals", "label": "1200/800/400 x3", "km": 8.57, "raw": 301.1, "adj": 286.0, "fade": -11.7, "drift": 1.36, "mpb": 1.89, "hr": 165.3, "dew": 72, "temp": 78.0, "grade": "NEGATIVE SPLIT", "elig": true, "reps": 9, "replen": 804}, {"date": "2026-07-18", "kind": "long", "label": "21.7K long", "km": 21.7, "raw": 401.8, "adj": 381.7, "fade": -13.3, "drift": -1.35, "mpb": 1.52, "hr": 158.0, "dew": 72, "temp": 78.0, "grade": "NEGATIVE SPLIT", "elig": true, "reps": null, "replen": null}, {"date": "2026-07-21", "kind": "intervals", "label": "6x1mi", "km": 12.07, "raw": 327.8, "adj": 311.4, "fade": -3.0, "drift": 2.53, "mpb": 1.77, "hr": 164.2, "dew": 72, "temp": 78.0, "grade": "HELD", "elig": true, "reps": 6, "replen": 1609}, {"date": "2026-07-24", "kind": "intervals", "label": "8x200", "km": 9.26, "raw": 254.1, "adj": 241.4, "fade": -8.0, "drift": 27.56, "mpb": 2.79, "hr": 132.6, "dew": 72, "temp": 78.0, "grade": "NEGATIVE SPLIT", "elig": false, "reps": 8, "replen": 200}, {"date": "2026-07-25", "kind": "long", "label": "21K long", "km": 21.11, "raw": 411.3, "adj": 390.7, "fade": 5.5, "drift": 3.06, "mpb": 1.54, "hr": 152.0, "dew": 72, "temp": 78.0, "grade": "EASED", "elig": true, "reps": null, "replen": null}];
+const WEEKS=[{"w": "2026-05-04", "km": 82.6, "runs": 8, "keys": 2, "qpct": 18.8, "acwr": 1.0}, {"w": "2026-05-11", "km": 116.1, "runs": 11, "keys": 1, "qpct": 6.4, "acwr": 1.17}, {"w": "2026-05-18", "km": 95.5, "runs": 11, "keys": 2, "qpct": 17.7, "acwr": 0.97}, {"w": "2026-05-25", "km": 64.3, "runs": 5, "keys": 1, "qpct": 10.9, "acwr": 0.72}, {"w": "2026-06-01", "km": 88.6, "runs": 10, "keys": 1, "qpct": 7.2, "acwr": 0.97}, {"w": "2026-06-08", "km": 93.7, "runs": 9, "keys": 1, "qpct": 7.9, "acwr": 1.1}, {"w": "2026-06-15", "km": 99.4, "runs": 11, "keys": 2, "qpct": 15.6, "acwr": 1.15}, {"w": "2026-06-22", "km": 84.1, "runs": 8, "keys": 2, "qpct": 20.0, "acwr": 0.92}, {"w": "2026-06-29", "km": 107.2, "runs": 10, "keys": 2, "qpct": 21.9, "acwr": 1.12}, {"w": "2026-07-06", "km": 91.4, "runs": 9, "keys": 2, "qpct": 19.8, "acwr": 0.96}, {"w": "2026-07-13", "km": 95.2, "runs": 10, "keys": 2, "qpct": 15.5, "acwr": 1.01}, {"w": "2026-07-20", "km": 96.9, "runs": 10, "keys": 3, "qpct": 19.2, "acwr": 0.99}];
+/* ── helpers ─────────────────────────────────────────────── */
+const NS = 'http://www.w3.org/2000/svg';
+const day = d => (new Date(d + 'T00:00:00') - new Date('2026-05-05T00:00:00')) / 864e5;
+const mmss = s => { const r = Math.round(s); return Math.floor(r/60) + ':' + String(r%60).padStart(2,'0'); };
+const md = d => { const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const p = d.split('-'); return m[+p[1]-1] + ' ' + (+p[2]); };
+const el = (t, a) => { const n = document.createElementNS(NS, t); for (const k in a) n.setAttribute(k, a[k]); return n; };
+
+function svg(id, w, h) {
+  const s = el('svg', { viewBox: `0 0 ${w} ${h}`, role: 'img' });
+  document.getElementById(id).appendChild(s);
+  return s;
+}
+function slope(xs, ys) {
+  const n = xs.length, mx = xs.reduce((a,b)=>a+b,0)/n, my = ys.reduce((a,b)=>a+b,0)/n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (xs[i]-mx)*(ys[i]-my); den += (xs[i]-mx)**2; }
+  return den ? num/den : 0;
+}
+function txt(s, x, y, str, cls, extra) {
+  const t = el('text', Object.assign({ x, y, 'font-family':'ui-monospace,SF Mono,Menlo,monospace',
+    'font-size':10, fill:'#9B9590', 'letter-spacing':'.06em' }, extra||{}));
+  t.textContent = str; s.appendChild(t); return t;
+}
+
+const ELIG = SESSIONS.filter(s => s.elig);
+const GRADE_C = { 'NEGATIVE SPLIT':'#2D8A4E', 'HELD':'#4A9E6B', 'EASED':'#C4873A', 'FADED':'#C45A3A' };
+
+/* ── IDEA 1 · true pace vs watch pace ────────────────────── */
+(function () {
+  const W = 800, H = 300, L = 52, R = 92, T = 18, B = 62;
+  const G = ELIG.filter(s => s.kind === 'intervals').sort((a,b)=>a.date<b.date?-1:1);
+  const s = svg('c1', W, H);
+  const x0 = 0, x1 = 82;
+  const all = G.flatMap(d => [d.raw, d.adj]);
+  const lo = Math.min(...all) - 8, hi = Math.max(...all) + 8;
+  const X = v => L + (v - x0) / (x1 - x0) * (W - L - R);
+  const Y = v => T + (v - lo) / (hi - lo) * (H - T - B);
+
+  // y grid (slower = lower on chart is confusing; keep faster = higher)
+  for (let v = Math.ceil(lo/10)*10; v <= hi; v += 10) {
+    s.appendChild(el('line', { x1:L, x2:W-R, y1:Y(v), y2:Y(v), stroke:'#E8E4E0', 'stroke-width':1 }));
+    txt(s, L-8, Y(v)+3, mmss(v), null, { 'text-anchor':'end' });
+  }
+  txt(s, L-8, T-6, 'FASTER ↑', null, { 'text-anchor':'end', fill:'#C4C0BB', 'font-size':9 });
+
+  const path = (key, color, ghost) => {
+    let d = '';
+    G.forEach((g,i) => { d += (i ? 'L' : 'M') + X(day(g.date)) + ' ' + Y(g[key]); });
+    s.appendChild(el('path', { d, fill:'none', stroke:color, 'stroke-width': ghost?1.2:2,
+      'stroke-dasharray':'4 3', opacity: ghost?.5:.45, 'stroke-linejoin':'round' }));
+    G.forEach(g => s.appendChild(el('circle', { cx:X(day(g.date)), cy:Y(g[key]), r: ghost?3:4.5,
+      fill: ghost?'#F5F3F0':color, stroke:color, 'stroke-width':1.5 })));
+    // fitted trend — this is the claim
+    const xs = G.map(g=>day(g.date)), ys = G.map(g=>g[key]);
+    const m = slope(xs, ys), mx = xs.reduce((a,b)=>a+b,0)/xs.length, my = ys.reduce((a,b)=>a+b,0)/ys.length;
+    s.appendChild(el('line', { x1:X(x0), y1:Y(my+m*(x0-mx)), x2:X(x1), y2:Y(my+m*(x1-mx)),
+      stroke:color, 'stroke-width':3, 'stroke-linecap':'round' }));
+    txt(s, X(x1)+4, Y(my+m*(x1-mx))+3, (m*28>0?'+':'') + (m*28).toFixed(1) + 's/4wk',
+      null, { 'font-size':10, fill:color, 'font-weight':600 });
+  };
+  path('raw', '#9B9590', true);
+  path('adj', '#D4592A');
+
+  // dew strip
+  const dy = H - B + 26;
+  txt(s, L-8, dy+3, 'DEW', null, { 'text-anchor':'end' });
+  G.forEach(g => {
+    const x = X(day(g.date));
+    const r = 3 + (g.dew - 60) / 12 * 6;
+    s.appendChild(el('circle', { cx:x, cy:dy, r, fill:'#E8E4DF', stroke:'#9B9590', 'stroke-width':1 }));
+  });
+  G.forEach((g,i) => {
+    if (i % 2 === 0 || i === G.length-1)
+      txt(s, X(day(g.date)), H-B+12, md(g.date), null, { 'text-anchor':'middle', 'font-size':9 });
+  });
+  txt(s, W-R+6, dy+3, G[0].dew + '° → ' + G[G.length-1].dew + '°F', null, { 'font-size':9.5, fill:'#6B6560' });
+
+  const iv = ELIG.filter(d => d.kind === 'intervals');
+  const ix = iv.map(d => day(d.date)/28);
+  const sr = slope(ix, iv.map(d=>d.raw)), sa = slope(ix, iv.map(d=>d.adj));
+  document.getElementById('h1a').textContent = (sr>0?'+':'') + sr.toFixed(1);
+  document.getElementById('h1b').textContent = sa.toFixed(1);
+  document.getElementById('s1a').textContent = (sr>0?'+':'') + sr.toFixed(2);
+  document.getElementById('s1b').textContent = sa.toFixed(2);
+})();
+
+/* ── IDEA 2 · finish strength ────────────────────────────── */
+(function () {
+  const W = 800, H = 300, L = 52, R = 16, T = 26, B = 60;
+  const G = ELIG.slice().sort((a,b)=>a.date<b.date?-1:1);
+  const s = svg('c2', W, H);
+  const lo = -42, hi = 42;
+  const X = i => L + (i + .5) / G.length * (W - L - R);
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const zero = Y(0);
+
+  for (let v = -40; v <= 40; v += 20) {
+    s.appendChild(el('line', { x1:L, x2:W-R, y1:Y(v), y2:Y(v),
+      stroke: v===0 ? '#1A1815' : '#E8E4E0', 'stroke-width': v===0?1.5:1 }));
+    txt(s, L-8, Y(v)+3, (v>0?'+':'') + v, null, { 'text-anchor':'end' });
+  }
+  txt(s, L-8, T-8, 'FADED ↑', null, { 'text-anchor':'end', 'font-size':9, fill:'#C45A3A' });
+  txt(s, L-8, H-B+16, '↓ FINISHED FASTER', null, { 'text-anchor':'end', 'font-size':9, fill:'#2D8A4E' });
+
+  const bw = (W - L - R) / G.length * .52;
+  G.forEach((g,i) => {
+    const x = X(i), y = Y(g.fade), c = GRADE_C[g.grade] || '#9B9590';
+    s.appendChild(el('rect', { x: x - bw/2, y: Math.min(y, zero), width: bw,
+      height: Math.max(2, Math.abs(y - zero)), fill: c, rx: 2, opacity: .9 }));
+    s.appendChild(el('circle', { cx:x, cy:y, r:3.5, fill:c }));
+    if (Math.abs(g.fade) > 15)
+      txt(s, x, g.fade > 0 ? y - 9 : y + 15, (g.fade>0?'+':'') + Math.round(g.fade),
+        null, { 'text-anchor':'middle', 'font-size':10, fill:c, 'font-weight':600 });
+    txt(s, x, H - B + 14, md(g.date).replace(' ', ' '), null,
+      { 'text-anchor':'end', 'font-size':8.5, transform:`rotate(-52 ${x} ${H-B+14})` });
+  });
+
+  const lg = ELIG.filter(d => d.kind === 'long').sort((a,b)=>a.date<b.date?-1:1);
+  const iv = ELIG.filter(d => d.kind === 'intervals');
+  const half = Math.ceil(lg.length / 2);
+  document.getElementById('h2a').textContent = '+' + Math.max(...lg.slice(0,half).map(d=>d.fade)).toFixed(0);
+  document.getElementById('h2b').textContent = '+' + Math.max(...lg.slice(half).map(d=>d.fade)).toFixed(0);
+  document.getElementById('s2a').textContent =
+    slope(lg.map(d=>day(d.date)/28), lg.map(d=>d.fade)).toFixed(1);
+  document.getElementById('s2b').textContent =
+    slope(iv.map(d=>day(d.date)/28), iv.map(d=>d.fade)).toFixed(1);
+})();
+
+/* ── IDEA 3 · against the ladder ─────────────────────────── */
+const LADDER = { 200:252, 804:289, 850:292, 968:295, 1000:296, 1609:308 };
+(function () {
+  const G = SESSIONS.filter(d => d.replen).sort((a,b)=>a.date<b.date?-1:1);
+
+  /* 3a — the broken raw line */
+  (function () {
+    const W = 800, H = 190, L = 52, R = 16, T = 18, B = 40;
+    const s = svg('c3a', W, H);
+    const lo = 235, hi = 340;
+    const X = i => L + (i + .5) / G.length * (W - L - R);
+    const Y = v => T + (v - lo) / (hi - lo) * (H - T - B);
+    for (let v = 240; v <= 340; v += 20) {
+      s.appendChild(el('line', { x1:L, x2:W-R, y1:Y(v), y2:Y(v), stroke:'#E8E4E0' }));
+      txt(s, L-8, Y(v)+3, mmss(v), null, { 'text-anchor':'end' });
+    }
+    let d = '';
+    G.forEach((g,i) => { d += (i?'L':'M') + X(i) + ' ' + Y(g.raw); });
+    s.appendChild(el('path', { d, fill:'none', stroke:'#9B9590', 'stroke-width':2, opacity:.7 }));
+    G.forEach((g,i) => {
+      s.appendChild(el('circle', { cx:X(i), cy:Y(g.raw), r:4, fill:'#F5F3F0', stroke:'#9B9590', 'stroke-width':1.5 }));
+      txt(s, X(i), Y(g.raw) - 11, g.label.length > 11 ? g.replen + 'm' : g.label,
+        null, { 'text-anchor':'middle', 'font-size':9, fill:'#6B6560' });
+      txt(s, X(i), H - B + 14, md(g.date), null, { 'text-anchor':'middle', 'font-size':8.5 });
+    });
+  })();
+
+  /* 3b — deviation from ladder */
+  (function () {
+    const W = 800, H = 210, L = 52, R = 16, T = 26, B = 44;
+    const s = svg('c3b', W, H);
+    const dev = G.map(g => g.adj - LADDER[g.replen]);
+    const lo = -14, hi = 8;
+    const X = i => L + (i + .5) / G.length * (W - L - R);
+    const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+    const zero = Y(0);
+    for (let v = -12; v <= 6; v += 6) {
+      s.appendChild(el('line', { x1:L, x2:W-R, y1:Y(v), y2:Y(v),
+        stroke: v===0?'#1A1815':'#E8E4E0', 'stroke-width': v===0?1.5:1 }));
+      txt(s, L-8, Y(v)+3, (v>0?'+':'') + v + 's', null, { 'text-anchor':'end' });
+    }
+    txt(s, L+4, zero-6, 'LADDER TARGET', null, { 'font-size':9, fill:'#6B6560' });
+    const bw = (W - L - R) / G.length * .4;
+    G.forEach((g,i) => {
+      const v = dev[i], x = X(i), y = Y(v), c = v < 0 ? '#D4592A' : '#9B9590';
+      s.appendChild(el('rect', { x:x-bw/2, y:Math.min(y,zero), width:bw,
+        height:Math.max(2, Math.abs(y-zero)), fill:c, rx:2, opacity:.85 }));
+      s.appendChild(el('circle', { cx:x, cy:y, r:3.5, fill:c }));
+      txt(s, x, v < 0 ? y + 14 : y - 8, (v>0?'+':'') + v.toFixed(1),
+        null, { 'text-anchor':'middle', 'font-size':9.5, fill:c, 'font-weight':600 });
+      txt(s, x, H - B + 14, g.replen + 'm', null, { 'text-anchor':'middle', 'font-size':9, fill:'#6B6560' });
+      txt(s, x, H - B + 26, md(g.date), null, { 'text-anchor':'middle', 'font-size':8.5 });
+    });
+  })();
+
+  /* table */
+  const rows = G.map(g => `<tr><td class="mut">${md(g.date)}</td><td>${g.label}</td>
+    <td class="mut">${g.replen}m</td><td>${mmss(g.raw)}</td><td>${mmss(g.adj)}</td>
+    <td class="mut">${mmss(LADDER[g.replen])}</td>
+    <td style="color:${g.adj-LADDER[g.replen] < 0 ? '#D4592A' : '#6B6560'};font-weight:600">
+      ${(g.adj-LADDER[g.replen] > 0 ? '+' : '')}${(g.adj-LADDER[g.replen]).toFixed(1)}s</td></tr>`).join('');
+  document.getElementById('t3').innerHTML = `<table class="tbl">
+    <tr><th>Date</th><th>Session</th><th>Rep</th><th>Watch</th><th>True</th><th>Ladder</th><th>vs ladder</th></tr>
+    ${rows}</table>`;
+})();
+
+/* ── IDEA 4 · the rhythm ─────────────────────────────────── */
+(function () {
+  const W = 800, H = 250, L = 52, R = 16, T = 22, B = 52;
+  const s = svg('c4', W, H);
+  const maxKm = 125;
+  const bandTop = T, bandH = 74;               // key-session dots
+  const chartTop = T + bandH + 22, chartH = H - B - chartTop;
+  const X = i => L + (i + .5) / WEEKS.length * (W - L - R);
+  const bw = (W - L - R) / WEEKS.length * .56;
+
+  // volume bars
+  WEEKS.forEach((w,i) => {
+    const h = w.km / maxKm * chartH;
+    s.appendChild(el('rect', { x:X(i)-bw/2, y:chartTop+chartH-h, width:bw, height:h,
+      fill:'#E8E4DF', rx:2 }));
+    txt(s, X(i), chartTop+chartH-h-6, Math.round(w.km), null,
+      { 'text-anchor':'middle', 'font-size':9, fill:'#9B9590' });
+    txt(s, X(i), H-B+14, md(w.w), null, { 'text-anchor':'middle', 'font-size':8.5 });
+    txt(s, X(i), H-B+26, w.qpct.toFixed(0)+'%', null,
+      { 'text-anchor':'middle', 'font-size':9, fill: w.qpct>=15?'#D4592A':'#C4C0BB', 'font-weight':600 });
+  });
+  txt(s, L-8, chartTop+chartH+3, 'KM', null, { 'text-anchor':'end' });
+  txt(s, L-8, H-B+26, 'QUAL', null, { 'text-anchor':'end' });
+
+  // key session dots, stacked
+  txt(s, L-8, bandTop+14, 'KEY', null, { 'text-anchor':'end' });
+  WEEKS.forEach((w,i) => {
+    for (let k = 0; k < 3; k++) {
+      const filled = k < w.keys;
+      s.appendChild(el('circle', { cx:X(i), cy:bandTop + 10 + k*22, r: filled?7:4,
+        fill: filled ? '#D4592A' : 'none', stroke: filled ? 'none' : '#E8E4E0', 'stroke-width':1.5 }));
+    }
+  });
+  s.appendChild(el('line', { x1:L, x2:W-R, y1:bandTop+bandH+2, y2:bandTop+bandH+2, stroke:'#E8E4E0' }));
+
+  let run = 0;
+  for (let i = WEEKS.length - 1; i >= 0 && WEEKS[i].keys >= 2; i--) run++;
+  document.getElementById('h4a').textContent = run;
+})();
+
+/* ── ANTI-PATTERN · meters per beat ──────────────────────── */
+(function () {
+  const W = 800, H = 230, L = 52, R = 16, T = 20, B = 44;
+  const s = svg('c5', W, H);
+  const G = ELIG.filter(d => d.mpb != null).sort((a,b)=>a.date<b.date?-1:1);
+  const lo = 1.40, hi = 1.95;
+  const X = v => L + v / 82 * (W - L - R);
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  for (let v = 1.4; v <= 1.95; v += .1) {
+    s.appendChild(el('line', { x1:L, x2:W-R, y1:Y(v), y2:Y(v), stroke:'#E8E4E0' }));
+    txt(s, L-8, Y(v)+3, v.toFixed(1), null, { 'text-anchor':'end' });
+  }
+  const series = (kind, color) => {
+    const P = G.filter(d => d.kind === kind);
+    let d = '';
+    P.forEach((g,i) => { d += (i?'L':'M') + X(day(g.date)) + ' ' + Y(g.mpb); });
+    s.appendChild(el('path', { d, fill:'none', stroke:color, 'stroke-width':2, opacity:.45 }));
+    P.forEach(g => s.appendChild(el('circle', { cx:X(day(g.date)), cy:Y(g.mpb), r:4, fill:color })));
+    // trend
+    const xs = P.map(g=>day(g.date)), ys = P.map(g=>g.mpb);
+    const m = slope(xs, ys), mx = xs.reduce((a,b)=>a+b,0)/xs.length, my = ys.reduce((a,b)=>a+b,0)/ys.length;
+    s.appendChild(el('line', { x1:X(0), y1:Y(my + m*(0-mx)), x2:X(82), y2:Y(my + m*(82-mx)),
+      stroke:color, 'stroke-width':1.5, 'stroke-dasharray':'5 4' }));
+  };
+  series('long', '#C45A3A');
+  series('intervals', '#6B4A8A');
+  [0,20,40,60,80].forEach(d => txt(s, X(d), H-B+14,
+    md(new Date(new Date('2026-05-05T00:00:00').getTime()+d*864e5).toISOString().slice(0,10)),
+    null, { 'text-anchor':'middle', 'font-size':8.5 }));
+  txt(s, L-8, T-6, 'm / BEAT', null, { 'text-anchor':'end', 'font-size':9, fill:'#C4C0BB' });
+
+  const lg = ELIG.filter(d=>d.kind==='long' && d.mpb!=null).sort((a,b)=>a.date<b.date?-1:1);
+  const h = Math.floor(lg.length/2);
+  const avg = a => a.reduce((x,y)=>x+y,0)/a.length;
+  const pct = (avg(lg.slice(h).map(d=>d.mpb)) / avg(lg.slice(0,h).map(d=>d.mpb)) - 1) * 100;
+  document.getElementById('h5a').textContent = pct.toFixed(1);
+})();
+</script>
+</body></html>

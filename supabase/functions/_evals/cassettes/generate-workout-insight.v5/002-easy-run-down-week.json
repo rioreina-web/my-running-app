@@ -1,0 +1,37 @@
+{
+  "id": "002-easy-run-down-week",
+  "prompt_name": "generate-workout-insight.v5",
+  "description": "Easy run that came in a touch quick, during a planned down week. Tests that context CHANGES the read: on a down week a slightly-hot easy day isn't worth scolding, and the model shouldn't manufacture concern. Confirms v5 doesn't turn into a load status report. recorded_response left empty — run _evals/record.ts with GEMINI_API_KEY to capture.",
+  "vars": {
+    "workoutType": "easy",
+    "distance": "5.0",
+    "pace": "7:18",
+    "duration": "36",
+    "mood": "neutral",
+    "athleteNotes": "Easy shakeout, legs a little flat.",
+    "pacesBlock": "## Athlete's training paces\n- Easy: 7:30-8:00/mi\n- Threshold: 5:18/mi",
+    "classificationLine": "Avg 7:18/mi is just under the easy band (7:30-8:00) — slightly quick for easy.",
+    "splitsBlock": "",
+    "prescribedBlock": "",
+    "progressionBlock": "",
+    "athleteState": "## Training context\n- Training load: backing off, -31% vs chronic, down week\n- Fitness: holding\n- Recent: deliberate down week after a 3-week build; one easy day logged",
+    "recentSummary": "18 mi, 0 quality sessions (down week)."
+  },
+  "input": "",
+  "rubric": {
+    "must_parse_as_json": false,
+    "forbidden_pattern_groups": ["action_bans", "stop_training_bans"],
+    "forbidden_patterns": [
+      "(?i)\\b(keep it up|great job|awesome)\\b",
+      "[!]",
+      "[\\x{1F300}-\\x{1FAFF}\\x{2600}-\\x{27BF}]"
+    ],
+    "required_patterns": [
+      "(?i)(easy|down week|recover)"
+    ],
+    "notes_for_grader": "Should note the pace was a touch quick for easy but frame it as low-stakes because it's a down week — context softens the read. Should NOT over-praise, should NOT escalate the slightly-fast easy into a problem. 2-4 sentences, coach voice."
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-pro"
+}

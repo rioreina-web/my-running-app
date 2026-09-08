@@ -1,0 +1,181 @@
+--- a/RunningLog/RunningLog/Trends/TrendsSignalModels.swift
++++ b/RunningLog/RunningLog/Trends/TrendsSignalModels.swift
+@@ -304,11 +304,30 @@
+ 
+     var currentRecovery: Int { buckets.last?.recovery ?? 0 }
+ 
++    /// The most common value, ties broken toward the **most recent** entry.
++    ///
++    /// `values` must arrive oldest → newest. Every caller builds it by walking
++    /// `days` in order, which they already do.
++    ///
++    /// The tie-break used to be alphabetical (`a.key > b.key`), which is not a
++    /// property of the athlete's week at all — it resolved a 3–3 split between
++    /// "positive" and "tired" to "positive" because P sorts before T. The
++    /// cheerier word won on spelling, every time, silently. It also disagreed
++    /// with the server, which has always broken mood ties toward the latest
++    /// reading. One rule now, in both places: the more recent one wins.
+     static func modal(_ values: [String]) -> String? {
+         guard !values.isEmpty else { return nil }
+         var counts: [String: Int] = [:]
+-        for v in values { counts[v, default: 0] += 1 }
+-        return counts.max { a, b in a.value == b.value ? a.key > b.key : a.value < b.value }?.key
++        var lastSeen: [String: Int] = [:]
++        for (i, v) in values.enumerated() {
++            counts[v, default: 0] += 1
++            lastSeen[v] = i
++        }
++        return counts.max { a, b in
++            a.value == b.value
++                ? (lastSeen[a.key] ?? -1) < (lastSeen[b.key] ?? -1)
++                : a.value < b.value
++        }?.key
+     }
+ }
+ 
+@@ -785,14 +804,27 @@
+             ? "\(TrendsSignalBuilder.labelWithYear(firstDay.date)) – \(TrendsSignalBuilder.labelWithYear(lastDay.date))"
+             : "\(TrendsSignalBuilder.shortLabel(firstDay.date)) – \(TrendsSignalBuilder.shortLabel(lastDay.date))"
+ 
+-        // Back half vs front half.
++        // Back half vs front half, compared as PER-DAY rates.
++        //
++        // Not a mean over buckets. The window almost never ends on a Sunday, so
++        // at week grain the final bucket holds whatever part of this week has
++        // happened so far — on the 6-month window that is routinely a 2- or
++        // 3-day stub. A plain bucket mean booked that stub as a full week and
++        // dragged the back-half average down by roughly a twelfth, which
++        // understated every real climb and could flip the headline outright
++        // when the true delta sat near the ±8% boundary below.
++        //
++        // Dividing by days makes bucket size irrelevant: a partial week
++        // contributes exactly the days it holds and no more. At day grain
++        // every `dayCount` is 1, so this is arithmetically identical to the
++        // mean it replaces — the 30-day and 3-month windows do not move.
+         let half = set.buckets.count / 2
+         let front = Array(set.buckets.prefix(half))
+         let back = Array(set.buckets.suffix(set.buckets.count - half))
+-        let milesFront = mean(front.map(\.miles))
+-        let milesBack = mean(back.map(\.miles))
+-        let recFront = mean(front.map { Double($0.recovery) })
+-        let recBack = mean(back.map { Double($0.recovery) })
++        let milesFront = perDay(front) { $0.miles }
++        let milesBack = perDay(back) { $0.miles }
++        let recFront = dayWeightedMean(front) { Double($0.recovery) }
++        let recBack = dayWeightedMean(back) { Double($0.recovery) }
+         let dMiles = milesFront > 0 ? (milesBack - milesFront) / milesFront * 100 : 0
+         let dRec = recBack - recFront
+ 
+@@ -932,8 +964,32 @@
+         return out
+     }
+ 
+-    private static func mean(_ values: [Double]) -> Double {
+-        values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
++    /// Summed total ÷ summed days. For bucket fields that hold a TOTAL —
++    /// `miles`, which a week bucket sums across its days.
++    ///
++    /// Internal rather than private so `TrendsSignalTests` can pin the
++    /// arithmetic directly; the partial-week bug it fixes is invisible in the
++    /// headline string until the delta happens to cross a threshold.
++    static func perDay(
++        _ buckets: [TrendsBucket],
++        _ total: (TrendsBucket) -> Double
++    ) -> Double {
++        let days = buckets.reduce(0) { $0 + $1.dayCount }
++        guard days > 0 else { return 0 }
++        return buckets.reduce(0) { $0 + total($1) } / Double(days)
++    }
++
++    /// Mean weighted by days. For bucket fields that are already an AVERAGE —
++    /// `recovery`, which a week bucket stores as the mean of its own days.
++    /// Averaging those again unweighted would give a 3-day week the same say
++    /// as a 7-day one.
++    static func dayWeightedMean(
++        _ buckets: [TrendsBucket],
++        _ value: (TrendsBucket) -> Double
++    ) -> Double {
++        let days = buckets.reduce(0) { $0 + $1.dayCount }
++        guard days > 0 else { return 0 }
++        return buckets.reduce(0) { $0 + value($1) * Double($1.dayCount) } / Double(days)
+     }
+ 
+     private static func signed(_ v: Double) -> String {
+--- a/RunningLog/RunningLogTests/TrendsSignalTests.swift
++++ b/RunningLog/RunningLogTests/TrendsSignalTests.swift
+@@ -70,6 +70,75 @@
+         let set = TrendsSignalBuilder.build(days: days, keySessions: [], window: .oneYear)
+         #expect(set.buckets.allSatisfy { $0.mood == nil })
+     }
++
++    /// The tie-break was alphabetical, which is a fact about spelling and not
++    /// about the athlete: a 2–2 week between "positive" and "tired" always
++    /// resolved to "positive" because P sorts before T. It also disagreed with
++    /// the server, which breaks mood ties toward the latest reading.
++    @Test("a tied week takes the more recent mood, not the alphabetical one")
++    func tieGoesToTheMoreRecentDay() {
++        #expect(TrendsBucketSet.modal(["positive", "positive", "tired", "tired"]) == "tired")
++        // ...and the same tie the other way round is not decided by spelling.
++        #expect(TrendsBucketSet.modal(["tired", "tired", "positive", "positive"]) == "positive")
++    }
++
++    @Test("a clear majority still wins regardless of order")
++    func majorityBeatsRecency() {
++        #expect(TrendsBucketSet.modal(["tired", "tired", "tired", "positive"]) == "tired")
++    }
++}
++
++// MARK: - The read: back half vs front half
++
++@Suite("TrendsRead half-vs-half")
++struct TrendsReadHalvesTests {
++
++    private func bucket(miles: Double, recovery: Int, days: Int) -> TrendsBucket {
++        TrendsBucket(
++            startISO: "2026-08-03", date: Date(timeIntervalSince1970: 0), label: "Aug 3",
++            miles: miles, keyCount: 0, longCount: 0, channel: .easy, qualityLoad: 0,
++            mood: nil, niggles: [], recovery: recovery, isWeekStart: true, dayCount: days
++        )
++    }
++
++    /// The window almost never ends on a Sunday, so at week grain the last
++    /// bucket is a partial week. A mean over buckets counted that stub as a
++    /// full week and pulled the back-half average down.
++    @Test("a 3-day stub week does not depress a per-day rate")
++    func partialWeekCountsOnlyTheDaysItHolds() {
++        // Two full weeks at 7 mi/day, then a 3-day stub at the same rate.
++        let halves = [
++            bucket(miles: 49, recovery: 60, days: 7),
++            bucket(miles: 49, recovery: 60, days: 7),
++            bucket(miles: 21, recovery: 60, days: 3),
++        ]
++        // The old bucket mean read (49 + 49 + 21) / 3 = 39.7 "per week".
++        #expect(TrendsRead.perDay(halves) { $0.miles } == 7.0)
++    }
++
++    /// Recovery arrives already averaged per week, so it needs weighting by
++    /// days rather than re-averaging — otherwise a 1-day stub speaks as loudly
++    /// as the 7-day week beside it.
++    @Test("recovery is weighted by days, not by buckets")
++    func recoveryIsDayWeighted() {
++        let halves = [
++            bucket(miles: 0, recovery: 60, days: 7),
++            bucket(miles: 0, recovery: 20, days: 1),
++        ]
++        // Unweighted this was (60 + 20) / 2 = 40 — a single day dragging the
++        // average down 20 points.
++        #expect(TrendsRead.dayWeightedMean(halves) { Double($0.recovery) } == 55.0)
++    }
++
++    /// At day grain every `dayCount` is 1, so the 30-day and 3-month windows
++    /// must be arithmetically unchanged by this.
++    @Test("day grain is unchanged")
++    func dayGrainMatchesAPlainMean() {
++        let ds = [bucket(miles: 4, recovery: 50, days: 1),
++                  bucket(miles: 8, recovery: 70, days: 1)]
++        #expect(TrendsRead.perDay(ds) { $0.miles } == 6.0)
++        #expect(TrendsRead.dayWeightedMean(ds) { Double($0.recovery) } == 60.0)
++    }
+ }
+ 
+ // MARK: - key + long

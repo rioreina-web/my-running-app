@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { RecoveryHashRedirect } from "@/components/recovery-hash-redirect";
 
 export const metadata: Metadata = {
   title: "Post Run Drip — A running log",
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-bg-base text-text-primary font-body">
+      <RecoveryHashRedirect />
       <Header />
       <main>
         <Hero />

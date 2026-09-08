@@ -8,7 +8,7 @@
 //   See: adaptive-plan-loop-prompts.md § Prompt 1.6
 import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0";
 import { getAuthenticatedUser, unauthorizedResponse } from "../_shared/auth.ts";
-import { checkFeatureRateLimit, isRateLimitEnabled } from "../_shared/rateLimit.ts";
+import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { validateLength, validationErrorResponse, internalErrorResponse } from "../_shared/validation.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
@@ -304,15 +304,13 @@ Deno.serve(async (req: Request) => {
       return unauthorizedResponse(corsHeaders);
     }
 
-    if (isRateLimitEnabled()) {
-      const rateLimit = await checkFeatureRateLimit(userId, "parse");
-      if (!rateLimit.allowed) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded", remaining: 0, resetAt: rateLimit.resetAt.toISOString() }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-    }
+    // H1 fix (2026-07-15): the old `if (isRateLimitEnabled())` guard skipped
+    // ALL rate limiting when the Upstash env was missing — in production too.
+    // enforceFeatureRateLimit is dev-permissive but fails closed in prod.
+    const rlBlocked = await enforceFeatureRateLimit(userId, "parse", corsHeaders);
+    if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(userId, "parse", corsHeaders);
+    if (monthlyCapped) return monthlyCapped;
 
     const body: ParseRequest = await req.json();
 

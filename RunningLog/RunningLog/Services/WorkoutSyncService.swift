@@ -22,11 +22,29 @@ final class WorkoutSyncService {
         defer { isSyncing = false }
 
         do {
-            // Fetch existing training_logs for the last 90 days
+            // Fetch existing training_logs for the last 90 days.
+            //
+            // Dedup only needs date/distance/source — NOT the full row. A bare
+            // select() pulls every column, including the large `external_streams`
+            // telemetry JSONB for every run in the window, which blows past the
+            // statement timeout (500) and fails the whole sync. Select only the
+            // three columns the dedup loop reads, scoped by user_id so the
+            // (user_id, workout_date) index can serve it.
+            struct ExistingLogRow: Decodable {
+                let workoutDate: Date?
+                let workoutDistanceMiles: Double?
+                let source: String?
+                enum CodingKeys: String, CodingKey {
+                    case workoutDate = "workout_date"
+                    case workoutDistanceMiles = "workout_distance_miles"
+                    case source
+                }
+            }
             let cutoff = Calendar.current.date(byAdding: .day, value: -90, to: Date()) ?? Date()
-            let existingLogs: [TrainingLog] = try await supabase
+            let existingLogs: [ExistingLogRow] = try await supabase
                 .from("training_logs")
-                .select()
+                .select("workout_date, workout_distance_miles, source")
+                .eq("user_id", value: userId)
                 .gte("workout_date", value: ISO8601DateFormatter().string(from: cutoff))
                 .execute()
                 .value
@@ -76,7 +94,11 @@ final class WorkoutSyncService {
 
                     // Fetch Vital stream and compute pace segments
                     var segments: [PaceSegment]?
-                    var workoutType: String
+                    // Optional: `classifyWorkout` now declines to guess when it
+                    // has no splits to reason from, and NULL is a valid state —
+                    // the server's lap geometry fills it in on the next compute
+                    // pass and outranks anything written from here.
+                    var workoutType: String?
                     var vitalStream: VitalWorkoutStream?
                     if let streamId = workout.vitalWorkoutId {
                         vitalStream = await VitalManager.shared.fetchWorkoutStream(workoutId: streamId)
@@ -166,22 +188,64 @@ final class WorkoutSyncService {
     }
 
     /// Remove auto_sync entry when a voice log is created for the same workout.
+    ///
+    /// Previously this deleted EVERY auto_sync row within ±5 minutes of the
+    /// voice log's workout time, ignored the `distance` argument entirely, and
+    /// had no user scope (relying solely on RLS). On a doubles day, or when a
+    /// watch+phone pair landed two near-simultaneous syncs, it silently
+    /// deleted the wrong workout — corrupting training history, ACWR, and
+    /// volume. Now we fetch candidates scoped to the current user, then delete
+    /// only the row that also matches on distance (±0.2 mi).
     @MainActor
     func removeAutoSyncEntry(forWorkoutDate date: Date, distance: Double) async {
+        guard let userId = AuthManager.shared.currentUserId else {
+            Log.coach.error("removeAutoSyncEntry: no authenticated user — skipping")
+            return
+        }
+
+        struct Candidate: Codable {
+            let id: UUID
+            let workoutDistanceMiles: Double?
+            enum CodingKeys: String, CodingKey {
+                case id
+                case workoutDistanceMiles = "workout_distance_miles"
+            }
+        }
+
         do {
             let windowStart = date.addingTimeInterval(-300)
             let windowEnd = date.addingTimeInterval(300)
             let fmt = ISO8601DateFormatter()
 
-            try await supabase
+            let candidates: [Candidate] = try await supabase
                 .from("training_logs")
-                .delete()
+                .select("id, workout_distance_miles")
+                .eq("user_id", value: userId)
                 .eq("source", value: "auto_sync")
                 .gte("workout_date", value: fmt.string(from: windowStart))
                 .lte("workout_date", value: fmt.string(from: windowEnd))
                 .execute()
+                .value
 
-            Log.coach.debug("Removed auto_sync entry for workout at \(date)")
+            // Match on distance so a second, genuinely different run in the
+            // same 10-minute window is never collateral damage.
+            let toDelete = candidates.filter { abs(($0.workoutDistanceMiles ?? -999) - distance) < 0.2 }
+
+            guard !toDelete.isEmpty else {
+                Log.coach.debug("removeAutoSyncEntry: no distance-matching auto_sync row for \(date)")
+                return
+            }
+
+            for row in toDelete {
+                try await supabase
+                    .from("training_logs")
+                    .delete()
+                    .eq("user_id", value: userId)
+                    .eq("id", value: row.id.uuidString)
+                    .execute()
+            }
+
+            Log.coach.debug("Removed \(toDelete.count) auto_sync entry(ies) for workout at \(date)")
         } catch {
             Log.coach.error("Failed to remove auto_sync entry: \(error.localizedDescription)")
         }
@@ -216,13 +280,19 @@ final class WorkoutSyncService {
             }
         }
 
+        /// Pace segments only. This backfill used to re-derive `workout_type`
+        /// from the segments' own `effort` tags and write it back — but those
+        /// tags are assigned RELATIVE TO THE RUN'S OWN AVERAGE (see
+        /// classifyEffort), so every split of a steady run reads "steady"
+        /// regardless of how hard it actually was, and re-typing off them
+        /// re-labelled easy runs as quality on a backfill the athlete never
+        /// asked for. Typing is the geometry pass's job now — it compares real
+        /// laps against the athlete's actual pace zones.
         struct UpdatePayload: Codable {
             let paceSegments: [PaceSegment]
-            let workoutType: String
 
             enum CodingKeys: String, CodingKey {
                 case paceSegments = "pace_segments"
-                case workoutType = "workout_type"
             }
         }
 
@@ -268,9 +338,7 @@ final class WorkoutSyncService {
                 let overallPace = parsePaceString(row.workoutPacePerMile ?? "0:00")
 
                 let segments = classifyPaceSplits(paceSplits, overallPace: overallPace)
-                let workoutType = deriveWorkoutType(from: segments, distance: row.workoutDistanceMiles ?? 0)
-
-                let payload = UpdatePayload(paceSegments: segments, workoutType: workoutType)
+                let payload = UpdatePayload(paceSegments: segments)
 
                 do {
                     try await supabase
@@ -446,12 +514,28 @@ final class WorkoutSyncService {
     // MARK: - Fallback Classification
 
     /// Fallback classification when stream data is unavailable.
-    /// Uses distance and pace relative to the run's own data.
-    private func classifyWorkout(distance: Double, pace: Double) -> String {
+    ///
+    /// Returns nil on purpose for anything that isn't a plain distance call.
+    ///
+    /// This used to guess a session type from absolute pace — `< 7:00 → interval`,
+    /// `< 8:00 → tempo`. Those cutoffs are only meaningful for a runner whose
+    /// easy pace is slower than 8:00/mi. For this athlete (easy anchor 7:03/mi)
+    /// essentially every easy run is sub-8:00, so the heuristic called them all
+    /// `tempo` — and because the row is written before Strava syncs, that guess
+    /// became the value every later writer had to fight. 2026-08-26's 8.22 mi
+    /// easy run at 7:51/mi is the worked example; it reached the athlete's
+    /// screen as "Threshold".
+    ///
+    /// The deeper problem is that this function runs precisely when there are
+    /// no usable splits — i.e. when there is no evidence to classify from. So
+    /// it no longer invents one. Distance alone still supports two honest
+    /// calls, and those are kept; everything else is left NULL for the server's
+    /// lap geometry to fill in once Strava lands (it outranks `device` on the
+    /// authority ladder, so it will). An untyped run for a few minutes is much
+    /// cheaper than a wrong one that sticks.
+    private func classifyWorkout(distance: Double, pace: Double) -> String? {
         if distance >= 10 { return "long_run" }
-        if pace > 0, pace < 420 { return "interval" }
-        if pace > 0, pace < 480 { return "tempo" }
         if distance < 4 { return "recovery" }
-        return "easy"
+        return nil
     }
 }

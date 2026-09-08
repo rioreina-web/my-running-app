@@ -1,0 +1,889 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Post Run Drip · white + red rebrand study · 2026-08-21
+     Accent × surface × type-system comparison over Log / Trends / Workout Detail.
+     Palette source of truth this was measured against:
+       design-system/colors_and_type.css
+       RunningLog/RunningLog/App/DesignSystem.swift
+       RunningLog/RunningLog/Workouts/PaceSpectrum.swift
+       web/src/app/globals.css                                              -->
+</head>
+<body>
+<title>Post Run Drip in Red</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400..900;1,400..900&family=Crimson+Pro:ital,wght@0,300..800;1,300..800&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap">
+
+<style>
+/* ============================================================
+   CHROME — the studio wall. Deliberately graphite, never cream,
+   so the white app screens read as white and not as "the page".
+   ============================================================ */
+:root{
+  --chrome-bg:#E6E7E9; --chrome-panel:#FDFDFD; --chrome-well:#DEDFE2;
+  --chrome-ink:#1A1B1E; --chrome-ink-2:#585A60; --chrome-ink-3:#8B8D94;
+  --chrome-rule:#D2D4D8; --chrome-shadow:rgba(15,17,20,.16);
+  --ok:#2D7D4E; --warn:#B07514; --bad:#B3303F;
+  --ui-accent:#C1121F;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+  --display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --body:"PT Serif",Georgia,"Times New Roman",serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --chrome-bg:#121316; --chrome-panel:#1B1D21; --chrome-well:#0D0E10;
+    --chrome-ink:#EFEFF1; --chrome-ink-2:#A0A2A9; --chrome-ink-3:#71737A;
+    --chrome-rule:#2B2E33; --chrome-shadow:rgba(0,0,0,.55);
+    --ok:#5FBE85; --warn:#D9A244; --bad:#E3707D;
+  }
+}
+:root[data-theme="dark"]{
+  --chrome-bg:#121316; --chrome-panel:#1B1D21; --chrome-well:#0D0E10;
+  --chrome-ink:#EFEFF1; --chrome-ink-2:#A0A2A9; --chrome-ink-3:#71737A;
+  --chrome-rule:#2B2E33; --chrome-shadow:rgba(0,0,0,.55);
+  --ok:#5FBE85; --warn:#D9A244; --bad:#E3707D;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--chrome-bg); color:var(--chrome-ink);
+  font-family:var(--body); margin:0;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1240px;margin:0 auto;padding:40px 24px 72px}
+
+/* ---- masthead ---- */
+.masthead{display:flex;flex-direction:column;gap:10px;padding-bottom:22px;border-bottom:1px solid var(--chrome-rule)}
+.mast-strip{
+  font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--chrome-ink-3);display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.mast-strip b{color:var(--chrome-ink-2);font-weight:500}
+h1{
+  font-family:var(--display);font-weight:700;font-size:clamp(30px,4.6vw,46px);
+  line-height:1.02;letter-spacing:-.015em;margin:0;text-wrap:balance;
+}
+h1 em{font-style:italic;color:var(--ui-accent);transition:color .35s ease}
+.dek{font-size:15px;line-height:1.55;color:var(--chrome-ink-2);max-width:62ch;margin:0}
+
+/* ---- control rail ---- */
+.rail{
+  display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;
+  padding:20px 22px;margin:22px 0 26px;
+  background:var(--chrome-panel);border:1px solid var(--chrome-rule);border-radius:10px;
+}
+.ctrl{display:flex;flex-direction:column;gap:9px;min-width:0}
+.ctrl-lbl{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--chrome-ink-3)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  padding:7px 11px 7px 8px;border-radius:6px;border:1px solid var(--chrome-rule);
+  background:transparent;color:var(--chrome-ink-2);cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;
+  transition:border-color .18s,color .18s,background .18s;
+}
+.chip:hover{color:var(--chrome-ink);border-color:var(--chrome-ink-3)}
+.chip:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.chip[aria-pressed="true"]{background:var(--chrome-ink);color:var(--chrome-panel);border-color:var(--chrome-ink)}
+.sw{width:13px;height:13px;border-radius:3px;flex:0 0 auto;border:1px solid rgba(0,0,0,.14)}
+.sw-a{
+  width:13px;height:13px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  font-size:13px;line-height:1;color:currentColor;
+}
+.chip .base{font-weight:600}
+.chip small{font-size:9px;opacity:.62;letter-spacing:.06em}
+
+/* ---- verdict banner ---- */
+.verdict{
+  display:flex;gap:14px;align-items:flex-start;
+  padding:14px 18px;border-radius:8px;margin-bottom:30px;
+  border:1px solid var(--chrome-rule);background:var(--chrome-panel);
+  border-left:3px solid var(--vcolor,var(--chrome-ink-3));
+}
+.verdict .vtag{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--vcolor,var(--chrome-ink-2));font-weight:600;padding-top:2px;white-space:nowrap;
+}
+.verdict .vtext{font-size:14px;line-height:1.55;color:var(--chrome-ink-2);margin:0}
+.verdict .vtext b{color:var(--chrome-ink);font-weight:400;font-family:var(--display);font-size:15.5px}
+
+/* ---- phone shelf ---- */
+.typenote{
+  margin:-16px 0 28px;padding-left:14px;border-left:2px solid var(--ui-accent);
+  font-size:14px;line-height:1.6;color:var(--chrome-ink-2);max-width:74ch;
+  transition:border-color .35s ease;
+}
+.typenote b{font-family:var(--display);font-size:15.5px;color:var(--chrome-ink);font-weight:400}
+.shelf{display:flex;gap:26px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+.slot{display:flex;flex-direction:column;gap:11px;align-items:center}
+.slot-cap{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--chrome-ink-3);
+}
+.slot-cap b{color:var(--chrome-ink-2);font-weight:500}
+
+/* ============================================================
+   THE APP — Post Run Drip, tokens intact. Only --paper / --card /
+   --rule / --ink* / --accent* are swapped by the controls.
+   ============================================================ */
+.phone{
+  width:328px;height:672px;border-radius:34px;flex:0 0 auto;
+  background:var(--paper);
+  box-shadow:0 1px 2px var(--chrome-shadow),0 16px 40px -14px var(--chrome-shadow);
+  border:1px solid var(--chrome-rule);
+  overflow:hidden;display:flex;flex-direction:column;
+  transition:background .35s ease;
+  --paper:#FAFAF9; --card:#FFFFFF; --deep:#F0F0EE; --rule:#E8E8E6;
+  --ink:#151517; --ink-2:#5F5E62; --ink-3:#97969B;
+  --accent:#C1121F; --accent-deep:#960D18; --accent-wash:rgba(193,18,31,.11);
+  --card-border:1px solid transparent; --card-shadow:0 2px 8px rgba(0,0,0,.06);
+  --f-display:"Crimson Pro",Georgia,serif; --f-voice:"PT Serif",Georgia,serif;
+  --f-label:var(--mono); --f-num:var(--mono);
+  --disp-weight:700; --disp-track:-.012em; --disp-case:none; --disp-scale:1;
+  --voice-style:italic; --label-weight:500; --label-track:.12em;
+  color:var(--ink);
+}
+.notch{height:26px;flex:0 0 auto;display:flex;align-items:flex-end;justify-content:center;padding-bottom:3px}
+.notch span{width:74px;height:4px;border-radius:99px;background:var(--ink-3);opacity:.3}
+
+.plate{
+  display:flex;justify-content:space-between;gap:12px;padding:6px 20px 0;
+  font-family:var(--f-label);font-size:8.5px;font-weight:var(--label-weight);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);
+}
+.plate .strong{color:var(--ink)}
+.plate div{display:flex;flex-direction:column;gap:1px}
+.plate .r{text-align:right}
+
+.screen{flex:1;overflow-y:auto;padding:12px 20px 20px;scrollbar-width:thin}
+.screen::-webkit-scrollbar{width:4px}
+.screen::-webkit-scrollbar-thumb{background:var(--rule);border-radius:99px}
+
+.eyebrow{font-family:var(--f-label);font-size:9px;font-weight:var(--label-weight);letter-spacing:var(--label-track);text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.acc{color:var(--accent)}
+.disp{font-family:var(--f-display);font-weight:var(--disp-weight);color:var(--ink);letter-spacing:var(--disp-track);text-transform:var(--disp-case);line-height:1.04;margin:0}
+.d34{font-size:calc(33px*var(--disp-scale))}.d24{font-size:calc(23px*var(--disp-scale))}
+.d21{font-size:calc(20px*var(--disp-scale))}.d19{font-size:calc(18px*var(--disp-scale))}
+.sub-it{font-family:var(--f-voice);font-style:var(--voice-style);font-size:12.5px;color:var(--ink-3)}
+.meta{font-family:var(--f-label);font-size:9px;font-weight:var(--label-weight);letter-spacing:var(--label-track);text-transform:uppercase;color:var(--ink-2)}
+.stat{font-family:var(--f-num);font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1}
+.quote{font-family:var(--f-voice);font-style:var(--voice-style);font-size:13px;line-height:1.5;color:var(--ink);margin:0}
+.sec{display:flex;flex-direction:column;gap:5px;margin-top:17px}
+.sec:first-child{margin-top:0}
+.sec-hd{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.erule{display:flex;align-items:center;gap:7px;margin:15px 0}
+.erule::before,.erule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.erule i{width:3px;height:3px;border-radius:99px;background:var(--rule);display:block}
+.card{background:var(--card);border-radius:12px;padding:13px 14px;border:var(--card-border);box-shadow:var(--card-shadow);transition:background .35s,border-color .35s}
+.hair{height:1px;background:var(--rule);margin:13px 0}
+
+/* accent-bearing components */
+.btn-rec{
+  width:100%;padding:13px;border:0;border-radius:10px;cursor:pointer;
+  background:var(--accent);color:#fff;font-family:var(--f-display);font-weight:600;font-size:15px;
+  text-transform:var(--disp-case);letter-spacing:var(--disp-track);
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  transition:background .2s;
+}
+.btn-rec:hover{background:var(--accent-deep)}
+.btn-rec:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.btn-rec i{width:9px;height:9px;border-radius:99px;background:#fff;display:block;flex:0 0 auto}
+.link-acc{font-family:var(--f-display);font-weight:600;font-size:12.5px;text-transform:var(--disp-case);color:var(--accent);border-bottom:1px solid var(--accent);padding-bottom:1px;cursor:pointer;white-space:nowrap}
+.coach-q{
+  font-family:var(--f-voice);font-style:var(--voice-style);font-size:13px;line-height:1.5;color:var(--ink);
+  padding-left:11px;border-left:2px solid var(--accent);margin:2px 0 0;opacity:.98;
+}
+.pill{display:inline-flex;padding:3px 8px;border-radius:99px;font-family:var(--f-label);font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.pill-acc{background:var(--accent-wash);color:var(--accent)}
+.niggle{display:flex;align-items:center;gap:7px;margin-top:8px}
+.niggle .dotrow{display:flex;gap:3px}
+.niggle .dotrow b{width:4px;height:4px;border-radius:99px;background:var(--ink-3);opacity:.35;display:block}
+.niggle .dotrow b.on{background:var(--accent);opacity:1}
+
+/* mood radio */
+.moods{display:flex;justify-content:space-between;gap:4px;padding-top:6px}
+.mood{display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:none;border:0;padding:3px 0;font:inherit}
+.mood .md{width:13px;height:13px;border-radius:99px;border:1.5px solid var(--ink-3);position:relative;box-sizing:border-box}
+.mood .mn{font-family:var(--f-label);font-size:8px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+.mood[aria-checked="true"] .md{border-color:var(--accent)}
+.mood[aria-checked="true"] .md::after{content:"";position:absolute;inset:2px;border-radius:99px;background:var(--accent)}
+.mood[aria-checked="true"] .mn{color:var(--accent)}
+.mood:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+
+/* tab bar — six tabs, matching DripTab in DripTabBar.swift */
+.tabs{
+  flex:0 0 auto;display:grid;grid-template-columns:repeat(6,1fr);
+  border-top:1px solid var(--rule);background:var(--paper);
+  padding:8px 4px 11px;transition:background .35s;
+}
+.tab{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:0;cursor:pointer;padding:0;font:inherit}
+.tab .td{width:5px;height:5px;border-radius:99px;border:1.5px solid var(--ink-3);box-sizing:border-box}
+.tab .tl{font-family:var(--f-label);font-size:8px;font-weight:var(--label-weight);letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+.tab[aria-selected="true"] .td{background:var(--accent);border-color:var(--accent)}
+.tab[aria-selected="true"] .tl{color:var(--ink);font-weight:600}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
+
+/* splits table */
+.splits{width:100%;border-collapse:collapse;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.splits th{text-align:left;font-family:var(--f-label);font-size:8px;font-weight:var(--label-weight);letter-spacing:.1em;color:var(--ink-2);text-transform:uppercase;padding:5px 3px;border-bottom:1px solid var(--rule)}
+.splits td{padding:6px 3px;border-bottom:1px solid var(--rule);font-size:11px;color:var(--ink);font-weight:600}
+.splits td:first-child{color:var(--ink-2);font-weight:500}
+.splits tr.fast td{color:var(--accent)}
+.splits .bar{display:inline-block;height:5px;border-radius:99px;background:var(--ink-3);opacity:.35;vertical-align:middle}
+.splits tr.fast .bar{background:var(--accent);opacity:1}
+
+/* pace ramp — blue, untouched by the rebrand. That is the point. */
+.ramp{display:flex;height:13px;border-radius:3px;overflow:hidden;margin-top:7px}
+.ramp span{flex:1}
+.ramp-key{display:flex;justify-content:space-between;margin-top:4px}
+
+/* zone bar */
+.zbar{display:flex;height:11px;border-radius:3px;overflow:hidden;margin-top:8px}
+
+/* stat grid */
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:7px}
+.tile{background:var(--card);border-radius:11px;padding:11px 12px;border:var(--card-border);box-shadow:var(--card-shadow);display:flex;flex-direction:column;gap:7px;transition:background .35s,border-color .35s}
+.tile .tv{font-family:var(--f-num);font-weight:600;font-size:23px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1;display:flex;align-items:baseline;gap:4px}
+.tile .tu{font-size:9px;color:var(--ink-2)}
+.tile .tdl{font-family:var(--f-label);font-size:9px;font-weight:var(--label-weight);letter-spacing:.1em;text-transform:uppercase}
+
+/* race strip */
+.race{display:grid;grid-template-columns:repeat(5,1fr);padding-top:9px}
+.race div{display:flex;flex-direction:column;align-items:center;gap:3px;border-right:1px solid var(--rule);padding:0 2px}
+.race div:last-child{border-right:0}
+.race .rl{font-family:var(--f-label);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.race .rv{font-family:var(--f-num);font-weight:600;font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* ---- diagnostics ---- */
+.diag{margin-top:44px}
+.diag-hd{display:flex;justify-content:space-between;align-items:baseline;gap:14px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--chrome-rule)}
+.diag-hd h2{font-family:var(--display);font-weight:700;font-size:25px;letter-spacing:-.01em;margin:0}
+.diag-hd p{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--chrome-ink-3);margin:0}
+.tblwrap{overflow-x:auto;margin-top:18px}
+table.d{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;min-width:640px}
+table.d th{
+  font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--chrome-ink-3);text-align:left;padding:0 12px 9px 0;font-weight:500;white-space:nowrap;
+}
+table.d th.num,table.d td.num{text-align:right;padding-right:14px}
+table.d td{padding:10px 12px 10px 0;border-top:1px solid var(--chrome-rule);font-size:13.5px;color:var(--chrome-ink-2)}
+table.d td.nm{font-family:var(--display);font-size:15px;color:var(--chrome-ink);display:flex;align-items:center;gap:9px}
+table.d td.num{font-family:var(--mono);font-size:12px;color:var(--chrome-ink)}
+table.d tr.on td{background:color-mix(in srgb,var(--ui-accent) 7%,transparent)}
+.tag{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;white-space:nowrap}
+.t-ok{color:var(--ok)}.t-warn{color:var(--warn)}.t-bad{color:var(--bad)}
+.foot{
+  margin-top:34px;padding-top:20px;border-top:1px solid var(--chrome-rule);
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));gap:24px;
+}
+.foot section{display:flex;flex-direction:column;gap:7px}
+.foot h3{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--chrome-ink-3);margin:0;font-weight:500}
+.foot p{margin:0;font-size:13.5px;line-height:1.6;color:var(--chrome-ink-2)}
+.foot code{font-family:var(--mono);font-size:11.5px;color:var(--chrome-ink);background:var(--chrome-well);padding:1px 5px;border-radius:3px}
+
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01ms !important;animation-duration:.01ms !important}}
+@media (max-width:720px){.wrap{padding:26px 14px 52px}.rail{gap:20px}}
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="mast-strip">
+      <span><b>POST RUN DRIP</b> — REBRAND STUDY · WHITE + RED</span>
+      <span id="stampSurface">FIG. 01 · 5 ACCENTS × 4 SURFACES</span>
+    </div>
+    <h1>What the app looks like <em id="mastAccent">in red</em>.</h1>
+    <p class="dek">Three axes, one screen set. Accent and surface change colour only — the six mood colours and the blue pace ramp never move, which is the constraint under test. The type switch is the separate question: the editorial serif you specced, the athletic grotesk you already shipped, or that grotesk with the serif voice removed. Cream + Coral + Editorial is the control.</p>
+  </header>
+
+  <div class="rail">
+    <div class="ctrl">
+      <span class="ctrl-lbl" id="accLbl">Accent</span>
+      <div class="chips" role="group" aria-labelledby="accLbl" id="accentChips"></div>
+    </div>
+    <div class="ctrl">
+      <span class="ctrl-lbl" id="surLbl">Surface</span>
+      <div class="chips" role="group" aria-labelledby="surLbl" id="surfaceChips"></div>
+    </div>
+    <div class="ctrl">
+      <span class="ctrl-lbl" id="typLbl">Type system</span>
+      <div class="chips" role="group" aria-labelledby="typLbl" id="typeChips"></div>
+    </div>
+  </div>
+
+  <div class="verdict" id="verdict">
+    <span class="vtag" id="vtag">—</span>
+    <p class="vtext" id="vtext">—</p>
+  </div>
+
+  <p class="typenote" id="typenote"></p>
+
+  <div class="shelf">
+
+    <!-- ============ LOG ============ -->
+    <div class="slot">
+      <div class="phone" id="p1">
+        <div class="notch"><span></span></div>
+        <div class="plate">
+          <div><span class="strong">RUNNING LOG</span><span>— LOG · VOICE + JOURNAL</span></div>
+          <div class="r"><span class="strong">FIG. 18</span><span>CHICAGO BLOCK · WK 7</span></div>
+        </div>
+        <div class="screen">
+          <div class="sec">
+            <span class="eyebrow acc">FRIDAY</span>
+            <h2 class="disp d34">August 21st.</h2>
+            <span class="sub-it">— nine weeks to Chicago. —</span>
+          </div>
+
+          <div style="height:14px"></div>
+          <button class="btn-rec"><i></i>Record a voice log</button>
+          <div style="height:6px"></div>
+          <div class="sec-hd"><span class="eyebrow">OR TYPE IT INSTEAD</span><span class="link-acc">Manual entry</span></div>
+
+          <div class="erule"><i></i></div>
+
+          <div class="sec">
+            <span class="eyebrow">TODAY</span>
+            <h3 class="disp d21">How are you feeling?</h3>
+            <div class="moods" role="radiogroup" aria-label="Mood">
+              <button class="mood" role="radio" aria-checked="false" data-m="energized"><span class="md"></span><span class="mn">Energ</span></button>
+              <button class="mood" role="radio" aria-checked="true"  data-m="positive"><span class="md"></span><span class="mn">Positive</span></button>
+              <button class="mood" role="radio" aria-checked="false" data-m="neutral"><span class="md"></span><span class="mn">Neutral</span></button>
+              <button class="mood" role="radio" aria-checked="false" data-m="tired"><span class="md"></span><span class="mn">Tired</span></button>
+              <button class="mood" role="radio" aria-checked="false" data-m="struggling"><span class="md"></span><span class="mn">Strug</span></button>
+            </div>
+          </div>
+
+          <div class="erule"><i></i></div>
+
+          <div class="sec">
+            <div class="sec-hd"><span class="eyebrow">THURSDAY · AUG 20</span><span class="pill" data-mood="positive">POSITIVE</span></div>
+            <h3 class="disp d24">Threshold, 8.2 mi.</h3>
+            <span class="meta">7:12 / MI &nbsp;·&nbsp; 59 MIN &nbsp;·&nbsp; 4 × 1.5 MI</span>
+            <p class="quote" style="margin-top:9px">"Third rep was the one — settled into it instead of forcing it. Right calf tight on the cooldown, nothing sharp."</p>
+            <div class="niggle">
+              <span class="pill pill-acc">RIGHT CALF</span>
+              <span class="dotrow" aria-label="mentioned twice in 14 days"><b></b><b></b><b class="on"></b><b></b><b></b><b></b><b class="on"></b><b></b><b></b><b></b></span>
+              <span class="meta" style="font-size:8px">2× / 14D</span>
+            </div>
+          </div>
+
+          <div class="hair"></div>
+
+          <div class="sec">
+            <div class="sec-hd"><span class="eyebrow">WEDNESDAY · AUG 19</span><span class="pill" data-mood="tired">TIRED</span></div>
+            <h3 class="disp d24">Easy, 5.0 mi.</h3>
+            <span class="meta">8:47 / MI &nbsp;·&nbsp; 44 MIN</span>
+            <p class="quote" style="margin-top:9px">"Slept badly. Kept it genuinely easy, which took some discipline."</p>
+          </div>
+
+          <div class="hair"></div>
+
+          <div class="sec">
+            <div class="sec-hd"><span class="eyebrow">TUESDAY · AUG 18</span><span class="pill" data-mood="energized">ENERGIZED</span></div>
+            <h3 class="disp d24">Long run, 16.0 mi.</h3>
+            <span class="meta">8:21 / MI &nbsp;·&nbsp; 2:14 &nbsp;·&nbsp; LAST 4 AT MP</span>
+          </div>
+        </div>
+        <div class="tabs" role="tablist" aria-label="App tabs">
+          <button class="tab" role="tab" aria-selected="true"><span class="td"></span><span class="tl">Log</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Train</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Trends</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Week</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Ask</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Sheet</span></button>
+        </div>
+      </div>
+      <span class="slot-cap"><b>LOG</b> — accent on record, niggle, eyebrow</span>
+    </div>
+
+    <!-- ============ TRENDS ============ -->
+    <div class="slot">
+      <div class="phone" id="p2">
+        <div class="notch"><span></span></div>
+        <div class="plate">
+          <div><span class="strong">RUNNING LOG</span><span>— TRENDS · THE 5-SECOND VIEW</span></div>
+          <div class="r"><span class="strong">FIG. 22</span><span>26-WEEK ARC</span></div>
+        </div>
+        <div class="screen">
+          <div class="sec">
+            <span class="eyebrow acc">MARATHON BLOCK · WEEK 7 OF 16</span>
+            <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
+              <h2 class="disp d34">3:19</h2>
+              <span class="meta">MEDIUM CONF.</span>
+            </div>
+            <span class="sub-it">— lifetime PB 3:28, Grandma's 2025. —</span>
+          </div>
+
+          <div style="height:12px"></div>
+          <div class="card">
+            <div class="sec-hd" style="margin-bottom:5px">
+              <span class="meta">FITNESS · 26 WEEKS</span>
+              <span class="meta" data-mood-text="energized">↗ TRENDING UP</span>
+            </div>
+            <svg viewBox="0 0 280 74" preserveAspectRatio="none" style="width:100%;height:74px;display:block" aria-label="Fitness curve trending up over 26 weeks">
+              <path id="fitLine" d="M 0 62 L 23 58 L 47 60 L 70 52 L 93 54 L 117 46 L 140 44 L 163 38 L 187 40 L 210 30 L 233 26 L 256 20 L 280 16"
+                    fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--ink)"/>
+              <line x1="117" y1="6" x2="117" y2="70" stroke="currentColor" stroke-width="1" stroke-dasharray="2 3" style="color:var(--ink-3)" opacity="0.55"/>
+              <circle cx="117" cy="46" r="3" fill="var(--paper)" stroke="var(--ink)" stroke-width="1.5"/>
+              <circle cx="280" cy="16" r="3.5" fill="var(--accent)"/>
+            </svg>
+            <div class="sec-hd" style="margin-top:3px">
+              <span class="meta" style="font-size:8px">26W AGO</span>
+              <span class="meta" style="font-size:8px">RACE ANCHOR</span>
+              <span class="meta acc-text" style="font-size:8px;color:var(--accent)">NOW</span>
+            </div>
+          </div>
+
+          <div class="tiles">
+            <div class="tile">
+              <span class="meta" style="font-size:8.5px">VOLUME · 7D</span>
+              <span class="tv">47.2<span class="tu">MI</span></span>
+              <span class="tdl" data-mood-text="energized">+3.1 VS 4W AVG</span>
+            </div>
+            <div class="tile">
+              <span class="meta" style="font-size:8.5px">ACWR</span>
+              <span class="tv">1.08</span>
+              <span class="tdl" style="color:var(--ink-2)">IN RANGE</span>
+            </div>
+          </div>
+
+          <div class="sec">
+            <span class="eyebrow">PACE SPECTRUM · 30 DAYS</span>
+            <div class="ramp" id="ramp"></div>
+            <div class="ramp-key">
+              <span class="meta" style="font-size:8px">EASY</span>
+              <span class="meta" style="font-size:8px">LT</span>
+              <span class="meta" style="font-size:8px">MILE</span>
+            </div>
+          </div>
+
+          <div class="erule"><i></i></div>
+
+          <div class="sec">
+            <div class="sec-hd"><span class="eyebrow">NIGGLES</span><span class="link-acc">See timeline</span></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:6px">
+              <span class="pill pill-acc">RIGHT CALF · 2×</span>
+              <span class="pill" style="background:var(--deep);color:var(--ink-2)">LEFT ARCH · 1×</span>
+            </div>
+            <p class="quote" style="margin-top:10px;font-size:12.5px">"Right calf tight on the cooldown, nothing sharp."</p>
+          </div>
+
+          <div class="erule"><i></i></div>
+
+          <div class="sec">
+            <div class="sec-hd"><span class="eyebrow">RACE EQUIVALENTS</span><span class="eyebrow">MEDIUM CONF.</span></div>
+            <div class="race">
+              <div><span class="rl">MILE</span><span class="rv">5:38</span></div>
+              <div><span class="rl">5K</span><span class="rv">18:44</span></div>
+              <div><span class="rl">10K</span><span class="rv">38:52</span></div>
+              <div><span class="rl">HALF</span><span class="rv">1:26</span></div>
+              <div><span class="rl">FULL</span><span class="rv">3:19</span></div>
+            </div>
+          </div>
+
+          <div style="height:10px"></div>
+          <div class="sec-hd"><span class="eyebrow">GOAL · 3:16 BQ</span><span class="link-acc">Edit goal</span></div>
+        </div>
+        <div class="tabs" role="tablist" aria-label="App tabs">
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Log</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Train</span></button>
+          <button class="tab" role="tab" aria-selected="true"><span class="td"></span><span class="tl">Trends</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Week</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Ask</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Sheet</span></button>
+        </div>
+      </div>
+      <span class="slot-cap"><b>TRENDS</b> — red vs the blue pace ramp</span>
+    </div>
+
+    <!-- ============ WORKOUT DETAIL ============ -->
+    <div class="slot">
+      <div class="phone" id="p3">
+        <div class="notch"><span></span></div>
+        <div class="plate">
+          <div><span class="strong">RUNNING LOG</span><span>— WORKOUT · DETAIL</span></div>
+          <div class="r"><span class="strong">FIG. 23</span><span>THU 08.20.26</span></div>
+        </div>
+        <div class="screen">
+          <div class="sec">
+            <span class="eyebrow acc">THURSDAY · AUG 20</span>
+            <h2 class="disp d34">Threshold,<br>8.2 mi.</h2>
+            <span class="meta" style="margin-top:3px">7:12 / MI &nbsp;·&nbsp; 59:04 &nbsp;·&nbsp; 4 × 1.5 MI @ LT</span>
+          </div>
+
+          <div style="height:12px"></div>
+          <p class="coach-q">Hold the effort, not the pace. Rep three is where the session actually starts.</p>
+          <div class="sec-hd" style="margin-top:7px">
+            <span class="meta" style="font-size:8px">SELF-COACHED · PLAN NOTE</span>
+            <span class="pill" data-mood="positive">POSITIVE</span>
+          </div>
+
+          <div class="erule"><i></i></div>
+
+          <div class="sec">
+            <span class="eyebrow">TIME IN ZONE</span>
+            <div class="zbar" id="zbar"></div>
+            <div class="sec-hd" style="margin-top:5px">
+              <span class="meta" style="font-size:8px">EASY 41%</span>
+              <span class="meta" style="font-size:8px">STEADY 12%</span>
+              <span class="meta" style="font-size:8px">LT 47%</span>
+            </div>
+          </div>
+
+          <div style="height:15px"></div>
+          <div class="sec">
+            <div class="sec-hd"><span class="eyebrow">SPLITS</span><span class="eyebrow">FASTEST IN ACCENT</span></div>
+            <table class="splits">
+              <thead><tr><th>REP</th><th>DIST</th><th>PACE</th><th style="width:74px">SHAPE</th></tr></thead>
+              <tbody>
+                <tr><td>WU</td><td>1.5</td><td>8:38</td><td><span class="bar" style="width:26px"></span></td></tr>
+                <tr><td>1</td><td>1.5</td><td>6:41</td><td><span class="bar" style="width:58px"></span></td></tr>
+                <tr><td>2</td><td>1.5</td><td>6:38</td><td><span class="bar" style="width:61px"></span></td></tr>
+                <tr class="fast"><td>3</td><td>1.5</td><td>6:31</td><td><span class="bar" style="width:68px"></span></td></tr>
+                <tr><td>4</td><td>1.5</td><td>6:36</td><td><span class="bar" style="width:63px"></span></td></tr>
+                <tr><td>CD</td><td>0.7</td><td>9:02</td><td><span class="bar" style="width:20px"></span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="erule"><i></i></div>
+
+          <div class="sec">
+            <span class="eyebrow">VOICE LOG · TRANSCRIBED</span>
+            <p class="quote" style="margin-top:7px">"Third rep was the one — settled into it instead of forcing it. Right calf tight on the cooldown, nothing sharp. Legs felt better than two weeks ago at the same effort."</p>
+            <div class="niggle">
+              <span class="pill pill-acc">RIGHT CALF</span>
+              <span class="meta" style="font-size:8px">SURFACED, NOT INTERPRETED</span>
+            </div>
+          </div>
+
+          <div class="hair"></div>
+          <div class="sec-hd"><span class="eyebrow">HR EFFICIENCY</span><span class="link-acc">Ask about this</span></div>
+        </div>
+        <div class="tabs" role="tablist" aria-label="App tabs">
+          <button class="tab" role="tab" aria-selected="true"><span class="td"></span><span class="tl">Log</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Train</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Trends</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Week</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Ask</span></button>
+          <button class="tab" role="tab" aria-selected="false"><span class="td"></span><span class="tl">Sheet</span></button>
+        </div>
+      </div>
+      <span class="slot-cap"><b>DETAIL</b> — accent as data, not decoration</span>
+    </div>
+
+  </div>
+
+  <!-- ============ DIAGNOSTICS ============ -->
+  <div class="diag">
+    <div class="diag-hd">
+      <h2>The audit</h2>
+      <p id="diagStamp">MEASURED AGAINST THE CURRENT SURFACE</p>
+    </div>
+
+    <div class="tblwrap">
+      <table class="d">
+        <caption class="ctrl-lbl" style="text-align:left;padding:14px 0 8px">Accent candidates</caption>
+        <thead>
+          <tr>
+            <th>Accent</th><th>Hex</th>
+            <th class="num">L*</th>
+            <th class="num">Gap vs "injured"</th>
+            <th class="num">As 15px text</th>
+            <th>Verdict</th>
+          </tr>
+        </thead>
+        <tbody id="accentRows"></tbody>
+      </table>
+    </div>
+
+    <div class="tblwrap">
+      <table class="d">
+        <caption class="ctrl-lbl" style="text-align:left;padding:22px 0 8px">Slow-end pace legibility — must read as colour, not unpainted paper</caption>
+        <thead>
+          <tr><th>Zone</th><th>Hex</th><th class="num">On cream (today)</th><th class="num">On this surface</th><th>Change</th></tr>
+        </thead>
+        <tbody id="paceRows"></tbody>
+      </table>
+    </div>
+
+    <div class="foot">
+      <section>
+        <h3>What moves</h3>
+        <p>Four values in <code>DesignSystem.swift</code>, the same four in <code>globals.css</code>, and <code>colors_and_type.css</code> to keep the design folder honest. Roughly 25 lines across three files.</p>
+      </section>
+      <section>
+        <h3>What the type costs</h3>
+        <p>Colour alone reflows nothing. Swapping the display face touches ~32 <code>dripDisplay</code> callsites; dropping PT&nbsp;Serif touches every <code>dripBody</code> and <code>dripCaption</code> — about 900 hardcoded point sizes that will shift line breaks.</p>
+      </section>
+      <section>
+        <h3>What still needs hunting</h3>
+        <p>66 hardcoded colours in 14 Swift files and 250 in 21 web files bypass the tokens. They keep the old coral until someone walks them.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- colour math (WCAG 2.1 + CIE L*) ---------- */
+  function rgb(h){h=h.replace("#","");return [0,2,4].map(function(i){return parseInt(h.substr(i,2),16);});}
+  function lin(c){c/=255;return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
+  function lum(h){var p=rgb(h);return 0.2126*lin(p[0])+0.7152*lin(p[1])+0.0722*lin(p[2]);}
+  function contrast(a,b){var x=lum(a),y=lum(b);if(x<y){var t=x;x=y;y=t;}return (x+0.05)/(y+0.05);}
+  function labL(h){
+    var p=rgb(h);
+    function f(c){c/=255;return c<=0.04045?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
+    var Y=0.2126729*f(p[0])+0.7151522*f(p[1])+0.0721750*f(p[2]);
+    var e=216/24389,k=24389/27;
+    var fy=Y>e?Math.cbrt(Y):(k*Y+16)/116;
+    return 116*fy-16;
+  }
+  function rgba(h,a){var p=rgb(h);return "rgba("+p[0]+","+p[1]+","+p[2]+","+a+")";}
+
+  /* ---------- the palettes ---------- */
+  var MOODS={energized:"#2D8A4E",positive:"#4A9E6B",neutral:"#9B9590",tired:"#C4873A",struggling:"#C45A3A",injured:"#B83A4A"};
+  var INJURED_L=labL(MOODS.injured);
+
+  var PACE=[
+    {z:"Easy",h:"#93B9D6"},{z:"Moderate",h:"#74A8CC"},{z:"Steady",h:"#578FC0"},
+    {z:"MP",h:"#3F7CB5"},{z:"HMP",h:"#2F66A8"},{z:"LT",h:"#27549B"},
+    {z:"10K",h:"#20448B"},{z:"5K",h:"#1A3679"},{z:"3K",h:"#142964"},{z:"Mile",h:"#0E1D4E"}
+  ];
+
+  var ACCENTS=[
+    {id:"coral",  name:"Coral",   sub:"today",  base:"#D4592A", deep:"#B84420"},
+    {id:"brick",  name:"Brick",   sub:"",       base:"#B33A2B", deep:"#8C2A1E"},
+    {id:"scarlet",name:"Scarlet", sub:"",       base:"#E63946", deep:"#C42A36"},
+    {id:"crimson",name:"Crimson", sub:"",       base:"#C1121F", deep:"#960D18"},
+    {id:"oxblood",name:"Oxblood", sub:"",       base:"#8B1E3F", deep:"#6B1430"}
+  ];
+
+  var SURFACES=[
+    {id:"cream", name:"Cream",     sub:"today", paper:"#F5F3F0", card:"#FFFFFF", deep:"#E8E4DF", rule:"#E8E4E0", ink:"#1A1815", ink2:"#6B6560", ink3:"#9B9590", border:false},
+    {id:"offw",  name:"Off-white", sub:"warm→neutral", paper:"#FAFAF9", card:"#FFFFFF", deep:"#F0F0EE", rule:"#E8E8E6", ink:"#151517", ink2:"#5F5E62", ink3:"#97969B", border:false},
+    {id:"cool",  name:"Cool white",sub:"", paper:"#F8F9FB", card:"#FFFFFF", deep:"#EDEFF3", rule:"#E5E8EC", ink:"#141519", ink2:"#5C5E65", ink3:"#93959D", border:false},
+    {id:"pure",  name:"Pure white",sub:"needs borders", paper:"#FFFFFF", card:"#FFFFFF", deep:"#F4F4F3", rule:"#E9E9E7", ink:"#151517", ink2:"#5F5E62", ink3:"#97969B", border:true}
+  ];
+
+  /* Three type systems. "Athletic" stands in for the heavy grotesk already
+     shipping on Log — Archivo is the closest Google-hosted grotesk, so treat it
+     as a proxy for the real face, not a recommendation of Archivo itself. */
+  var GROTESK='"Archivo","Helvetica Neue",Helvetica,Arial,sans-serif';
+  var TYPES=[
+    {id:"editorial", name:"Editorial", sub:"the spec", glyph:"Aa",
+      display:'"Crimson Pro",Georgia,serif', weight:700, track:"-.012em", tcase:"none", scale:1,
+      voice:'"PT Serif",Georgia,serif', vstyle:"italic",
+      label:"var(--mono)", lweight:500, ltrack:".12em"},
+    {id:"athletic", name:"Athletic", sub:"shipping now", glyph:"Aa",
+      display:GROTESK, weight:800, track:"-.03em", tcase:"uppercase", scale:.9,
+      voice:'"PT Serif",Georgia,serif', vstyle:"italic",
+      label:GROTESK, lweight:700, ltrack:".08em"},
+    {id:"allsans", name:"All sans", sub:"voice dropped", glyph:"Aa",
+      display:GROTESK, weight:800, track:"-.03em", tcase:"uppercase", scale:.9,
+      voice:GROTESK, vstyle:"normal",
+      label:GROTESK, lweight:700, ltrack:".08em"}
+  ];
+
+  var state={accent:"crimson", surface:"offw", type:"athletic"};
+  function A(){return ACCENTS.filter(function(a){return a.id===state.accent;})[0];}
+  function S(){return SURFACES.filter(function(s){return s.id===state.surface;})[0];}
+  function T(){return TYPES.filter(function(t){return t.id===state.type;})[0];}
+
+  /* ---------- chip rails: built once, so keyboard focus survives a toggle ---------- */
+  function buildChips(el,items,key,swatch){
+    items.forEach(function(it){
+      var b=document.createElement("button");
+      b.type="button"; b.className="chip"; b.dataset.id=it.id;
+      b.setAttribute("aria-pressed","false");
+      var sw=document.createElement("span");
+      sw.className="sw"; sw.style.background=swatch(it);
+      var nm=document.createElement("span");
+      nm.className="base"; nm.textContent=it.name;
+      b.appendChild(sw); b.appendChild(nm);
+      if(it.sub){var sm=document.createElement("small"); sm.textContent=it.sub; b.appendChild(sm);}
+      b.addEventListener("click",function(){ state[key]=it.id; render(); });
+      el.appendChild(b);
+    });
+  }
+  function syncChips(el,key){
+    Array.prototype.forEach.call(el.querySelectorAll(".chip"),function(b){
+      b.setAttribute("aria-pressed", b.dataset.id===state[key] ? "true":"false");
+    });
+  }
+  function buildTypeChips(el,items){
+    items.forEach(function(it){
+      var b=document.createElement("button");
+      b.type="button"; b.className="chip"; b.dataset.id=it.id;
+      b.setAttribute("aria-pressed","false");
+      var g=document.createElement("span");
+      g.className="sw-a"; g.textContent=it.glyph;
+      g.style.fontFamily=it.display; g.style.fontWeight=it.weight;
+      var nm=document.createElement("span");
+      nm.className="base"; nm.textContent=it.name;
+      var sm=document.createElement("small"); sm.textContent=it.sub;
+      b.appendChild(g); b.appendChild(nm); b.appendChild(sm);
+      b.addEventListener("click",function(){ state.type=it.id; render(); });
+      el.appendChild(b);
+    });
+  }
+  var accEl=document.getElementById("accentChips"),
+      surEl=document.getElementById("surfaceChips"),
+      typEl=document.getElementById("typeChips");
+  buildChips(accEl,ACCENTS,"accent",function(i){return i.base;});
+  buildChips(surEl,SURFACES,"surface",function(i){return i.paper;});
+  buildTypeChips(typEl,TYPES);
+
+  /* ---------- static fills that don't depend on state ---------- */
+  var ramp=document.getElementById("ramp");
+  PACE.forEach(function(p){
+    var s=document.createElement("span");
+    s.style.background=p.h; s.title=p.z+" · "+p.h;
+    ramp.appendChild(s);
+  });
+  var zbar=document.getElementById("zbar");
+  [["#93B9D6",41],["#578FC0",12],["#27549B",47]].forEach(function(z){
+    var s=document.createElement("span");
+    s.style.background=z[0]; s.style.width=z[1]+"%"; s.style.display="block";
+    zbar.appendChild(s);
+  });
+
+  /* ---------- render ---------- */
+  function render(){
+    var a=A(), s=S(), t=T();
+
+    /* chips */
+    syncChips(accEl,"accent"); syncChips(surEl,"surface"); syncChips(typEl,"type");
+
+    /* chrome accent follows the choice */
+    document.documentElement.style.setProperty("--ui-accent",a.base);
+    document.getElementById("mastAccent").textContent =
+      a.id==="coral" ? "today" : "in "+a.name.toLowerCase();
+    document.getElementById("stampSurface").textContent =
+      "FIG. 01 · "+a.name.toUpperCase()+" ON "+s.name.toUpperCase()+" · "+t.name.toUpperCase();
+    document.getElementById("diagStamp").textContent =
+      "MEASURED ON "+s.name.toUpperCase()+" · "+s.paper;
+
+    /* paint the three phones */
+    ["p1","p2","p3"].forEach(function(id){
+      var ph=document.getElementById(id), st=ph.style;
+      st.setProperty("--paper",s.paper);
+      st.setProperty("--card",s.card);
+      st.setProperty("--deep",s.deep);
+      st.setProperty("--rule",s.rule);
+      st.setProperty("--ink",s.ink);
+      st.setProperty("--ink-2",s.ink2);
+      st.setProperty("--ink-3",s.ink3);
+      st.setProperty("--accent",a.base);
+      st.setProperty("--accent-deep",a.deep);
+      st.setProperty("--accent-wash",rgba(a.base,0.11));
+      st.setProperty("--card-border", s.border ? "1px solid "+s.rule : "1px solid transparent");
+      st.setProperty("--card-shadow", s.border ? "none" : "0 2px 8px rgba(0,0,0,.06)");
+      st.setProperty("--f-display",t.display);
+      st.setProperty("--f-voice",t.voice);
+      st.setProperty("--f-label",t.label);
+      st.setProperty("--voice-style",t.vstyle);
+      st.setProperty("--disp-weight",t.weight);
+      st.setProperty("--disp-track",t.track);
+      st.setProperty("--disp-case",t.tcase);
+      st.setProperty("--disp-scale",t.scale);
+      st.setProperty("--label-weight",t.lweight);
+      st.setProperty("--label-track",t.ltrack);
+    });
+
+    /* mood pills + mood-coloured text stay fixed — that is the decision under test */
+    Array.prototype.forEach.call(document.querySelectorAll("[data-mood]"),function(el){
+      var c=MOODS[el.dataset.mood];
+      el.style.color=c; el.style.background=rgba(c,0.13);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-mood-text]"),function(el){
+      el.style.color=MOODS[el.dataset.moodText];
+    });
+
+    /* ---- verdict ---- */
+    var gap=INJURED_L-labL(a.base);
+    var txt=contrast(a.base,s.paper);
+    var v=document.getElementById("verdict"), vt=document.getElementById("vtag"), vx=document.getElementById("vtext");
+    var col,tag,msg;
+    if(a.id==="coral"){
+      col="var(--bad)"; tag="Control";
+      msg="<b>This is the app today.</b> Coral sits at L*"+labL(a.base).toFixed(0)+" — <em>lighter</em> than the \"injured\" mood at L*"+INJURED_L.toFixed(0)+", so alert and mood already compete, and at "+txt.toFixed(2)+":1 the coral links fall below the 4.5:1 text minimum. Both are pre-existing, and both get fixed by going darker.";
+    } else if(gap>=8 && txt>=4.5){
+      col="var(--ok)"; tag="Clears both";
+      msg="<b>"+a.name+" holds.</b> It sits "+gap.toFixed(0)+" L* below the darkest mood, so nothing competes with it as an alert, and at "+txt.toFixed(2)+":1 it passes as link text — which today's coral does not.";
+    } else if(gap>=8){
+      col="var(--warn)"; tag="Mood ok, text fails";
+      msg="<b>"+a.name+" separates from the moods</b> ("+gap.toFixed(0)+" L* below \"injured\") but reads at only "+txt.toFixed(2)+":1 as 15px text, under the 4.5:1 minimum. Fine as a fill, wrong for links.";
+    } else if(gap>0){
+      col="var(--warn)"; tag="Too close";
+      msg="<b>"+a.name+" sits only "+gap.toFixed(0)+" L* below \"injured\"</b> ("+MOODS.injured+"). On a niggle card the alert and the mood read as the same colour at a glance. Text contrast is fine at "+txt.toFixed(2)+":1.";
+    } else {
+      col="var(--bad)"; tag="Collides";
+      msg="<b>"+a.name+" is lighter than the \"injured\" mood</b> — it fails the rule you set. Alert and mood share a hue family and now share a lightness, so the palette has no way to tell them apart.";
+    }
+    v.style.setProperty("--vcolor",col); vt.textContent=tag; vx.innerHTML=msg;
+
+    /* ---- type note ---- */
+    var TNOTE={
+      editorial:"<b>The spec, as written.</b> Crimson Pro is an old-style book serif — it was drawn for the cream-paper, warm-coral world. Against a signal red it reads as a different register: literary where the colour is athletic. Nothing here reflows, which is its real argument.",
+      athletic:"<b>What you already shipped.</b> Heavy grotesk display, PT Serif italic held back for the human voice — the transcript, the coach note, the \"nine weeks to Chicago\" line. That split is doing real work: sans is the machine talking, serif is Maya talking. Keep it.",
+      allsans:"<b>The serif removed.</b> Same grotesk, but the voice lines go sans too. Watch the transcript and the coach note — they stop reading as somebody's words and start reading as more UI. This is what the product loses if the serif goes entirely."
+    };
+    document.getElementById("typenote").innerHTML=TNOTE[t.id];
+
+    /* ---- accent table ---- */
+    var rows="";
+    ACCENTS.forEach(function(x){
+      var L=labL(x.base), g=INJURED_L-L, t=contrast(x.base,s.paper);
+      var cls,label;
+      if(g>=8&&t>=4.5){cls="t-ok";label="Clears both";}
+      else if(g>=8){cls="t-warn";label="Text fails";}
+      else if(g>0){cls="t-warn";label="Too close";}
+      else{cls="t-bad";label="Collides";}
+      rows+='<tr class="'+(x.id===state.accent?"on":"")+'">'+
+        '<td class="nm"><span class="sw" style="background:'+x.base+'"></span>'+x.name+(x.sub?' <span class="tag" style="color:var(--chrome-ink-3)">'+x.sub+'</span>':'')+'</td>'+
+        '<td style="font-family:var(--mono);font-size:12px">'+x.base+'</td>'+
+        '<td class="num">'+L.toFixed(1)+'</td>'+
+        '<td class="num">'+(g>0?"+":"")+g.toFixed(1)+'</td>'+
+        '<td class="num">'+t.toFixed(2)+':1</td>'+
+        '<td><span class="tag '+cls+'">'+label+'</span></td></tr>';
+    });
+    document.getElementById("accentRows").innerHTML=rows;
+
+    /* ---- pace table ---- */
+    var prows="";
+    PACE.slice(0,4).forEach(function(p){
+      var was=contrast(p.h,"#F5F3F0"), now=contrast(p.h,s.paper);
+      var d=now-was;
+      var cls=d>0.01?"t-ok":(d<-0.01?"t-bad":"");
+      var lbl=Math.abs(d)<0.01?"unchanged":(d>0?"+"+d.toFixed(2)+" clearer":d.toFixed(2)+" fainter");
+      prows+='<tr><td class="nm"><span class="sw" style="background:'+p.h+'"></span>'+p.z+'</td>'+
+        '<td style="font-family:var(--mono);font-size:12px">'+p.h+'</td>'+
+        '<td class="num">'+was.toFixed(2)+':1</td>'+
+        '<td class="num">'+now.toFixed(2)+':1</td>'+
+        '<td><span class="tag '+cls+'">'+lbl+'</span></td></tr>';
+    });
+    document.getElementById("paceRows").innerHTML=prows;
+  }
+
+  /* mood radio is live, so the accent can be seen selecting */
+  document.addEventListener("click",function(e){
+    var m=e.target.closest ? e.target.closest(".mood") : null;
+    if(!m) return;
+    Array.prototype.forEach.call(m.parentNode.querySelectorAll(".mood"),function(x){
+      x.setAttribute("aria-checked","false");
+    });
+    m.setAttribute("aria-checked","true");
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

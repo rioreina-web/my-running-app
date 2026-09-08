@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Voice Log · Refined" subtitle="The shipped voice-log layout with coral restored to one accent and the record cluster balanced" viewport="470x960" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Voice Log · Refined</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face{font-family:"Crimson Pro";src:url("fonts/CrimsonPro-Variable.ttf") format("truetype-variations");font-weight:200 900;font-display:swap}
+@font-face{font-family:"PT Serif";src:url("fonts/PTSerif-Regular.ttf") format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"PT Serif";src:url("fonts/PTSerif-Italic.ttf") format("truetype");font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("fonts/JetBrainsMono-VariableFont_wght.ttf") format("truetype-variations");font-weight:100 800;font-display:swap}
+:root{--paper:#F5F3F0;--card:#FFFFFF;--rule:#E8E4E0;--ink:#1A1815;--ink-2:#6B6560;--ink-3:#9B9590;--coral:#D4592A;--coral-deep:#B84420;--display:"Crimson Pro",Georgia,serif;--body:"PT Serif",Georgia,serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#C7C3BD;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.stage{min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:28px 20px}
+.phone{width:393px;height:852px;flex:none;background:var(--paper);color:var(--ink);font-family:var(--body);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 26px 70px rgba(0,0,0,.3),0 0 0 11px #0C0C0C,0 0 0 12px #2C2C2C}
+a{color:var(--ink)}a:hover{color:var(--coral-deep)}
+button{font-family:var(--body)}
+.mono{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap}
+
+/* status bar */
+.sb{height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:15px;font-weight:600}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+.sb .bars i{width:3px;background:var(--ink);border-radius:1px;display:block}
+.sb .bars i:nth-child(1){height:4px}.sb .bars i:nth-child(2){height:6px}.sb .bars i:nth-child(3){height:9px}.sb .bars i:nth-child(4){height:11px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:var(--ink);color:#fff;border-radius:4px;font-size:10px;font-weight:700;padding:0 4px}
+
+/* top chrome — flat, hairline instead of drop shadow */
+.top{flex:none;padding:4px 22px 14px;display:flex;align-items:center;justify-content:space-between}
+.burger{width:46px;height:46px;border-radius:999px;background:var(--card);border:1px solid var(--rule);display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 12px;cursor:pointer}
+.burger i{display:block;height:2px;border-radius:2px;background:var(--ink)}
+.today{height:46px;border-radius:999px;background:var(--card);border:1px solid var(--rule);display:flex;align-items:center;gap:11px;padding:0 18px 0 15px;cursor:pointer;text-decoration:none}
+.today .lb{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;color:var(--ink)}
+
+/* plate strip */
+.plate{flex:none;padding:2px 22px 12px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--rule)}
+.plate .l{display:flex;flex-direction:column;gap:3px}
+.plate .l span:first-child{color:var(--ink)}
+.plate .l span:last-child,.plate .fig{color:var(--ink-2)}
+
+/* tabs — active label is ink; coral is the rule only */
+.tabs{flex:none;display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--rule)}
+.tab{height:56px;background:transparent;border:0;border-bottom:2px solid transparent;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;color:var(--ink-3);cursor:pointer}
+.tab.on{color:var(--ink);border-bottom-color:var(--coral)}
+
+/* headline */
+.head{flex:none;padding:32px 22px 26px;text-align:center;border-bottom:1px solid var(--rule)}
+.h1{font-family:var(--display);font-weight:700;font-size:37px;line-height:1.04;letter-spacing:-.01em;margin:0}
+.dek{font-family:var(--body);font-style:italic;font-size:15px;line-height:1.45;color:var(--ink-2);margin:11px 0 0}
+
+/* linked-to */
+.linked{flex:none;padding:15px 22px 17px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:6px}
+.linked .r{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.linked .lab{color:var(--ink-2)}
+.linked .act{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--ink-3);padding-bottom:2px}
+.linked .act:hover{color:var(--coral-deep);border-bottom-color:var(--coral-deep)}
+.linked .note{font-family:var(--body);font-style:italic;font-size:14px;color:var(--ink-2)}
+
+/* record — cluster centred in its own space */
+.rec-wrap{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:0 22px}
+.rec{width:116px;height:116px;flex:none;border-radius:999px;background:var(--coral);border:0;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 12px rgba(212,89,42,.3);transition:transform 150ms cubic-bezier(.2,.7,.2,1),background 150ms ease}
+.rec:hover{background:var(--coral-deep)}
+.rec:active{transform:scale(.98)}
+.rec i{display:block;width:40px;height:40px;border-radius:999px;background:#fff}
+.rec-wrap .cap{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
+
+/* tab bar */
+.tb{flex:none;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);padding:0 4px 18px}
+.tb button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:8px;padding:13px 0 11px;cursor:pointer}
+.tb .dot{width:7px;height:7px;border-radius:999px;border:1px solid var(--ink-3);background:transparent}
+.tb .lb{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
+.tb button.on .dot{background:var(--coral);border-color:var(--coral)}
+.tb button.on .lb{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="phone" data-screen-label="Voice Log · Refined">
+
+  <div class="sb">
+    <span>10:02</span>
+    <span class="g">
+      <span class="bars"><i></i><i></i><i></i><i></i></span>
+      <svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#1A1815"/></svg>
+      <span class="batt">85</span>
+    </span>
+  </div>
+
+  <div class="top">
+    <button class="burger" aria-label="Menu"><i></i><i></i><i></i></button>
+    <a class="today" href="#">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#1A1815" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4.4"/><path d="M18.4 12h2.2M12 18.4v2.2M5.6 12H3.4M12 5.6V3.4M16.52 16.52l1.56 1.56M7.48 16.52l-1.56 1.56M7.48 7.48 5.92 5.92M16.52 7.48l1.56-1.56"/></svg>
+      <span class="lb">Today &#8599;</span>
+    </a>
+  </div>
+
+  <div class="plate">
+    <span class="l"><span class="mono">Running Log</span><span class="mono">— Log · v1 Voice Log</span></span>
+    <span class="mono fig">Fig. 09</span>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on">Log run</button>
+    <button class="tab">Check in</button>
+  </div>
+
+  <div class="head">
+    <h1 class="h1">Log your run.</h1>
+    <p class="dek">Tap the button to start your voice memo.</p>
+  </div>
+
+  <div class="linked">
+    <div class="r">
+      <span class="mono lab">Linked to</span>
+      <a class="act" href="#">Link a run &#8599;</a>
+    </div>
+    <span class="note">Optional — attach to a recent run.</span>
+  </div>
+
+  <div class="rec-wrap">
+    <button class="rec" aria-label="Tap to record"><i></i></button>
+    <span class="cap">Tap to record</span>
+  </div>
+
+  <div class="tb">
+    <button class="on"><span class="dot"></span><span class="lb">Log</span></button>
+    <button><span class="dot"></span><span class="lb">Train</span></button>
+    <button><span class="dot"></span><span class="lb">Trends</span></button>
+    <button><span class="dot"></span><span class="lb">Week</span></button>
+    <button><span class="dot"></span><span class="lb">Ask</span></button>
+    <button><span class="dot"></span><span class="lb">Sheet</span></button>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

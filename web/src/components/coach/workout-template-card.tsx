@@ -3,10 +3,15 @@ import {
   estimatedWorkoutMiles,
   totalWorkoutDurationMinutes,
   workoutHasTimeBasedSegment,
+  headlineZone,
+  zoneLabelShort,
+  stepZones,
+  PACE_ZONE_COLORS,
   type WorkoutStep,
   type PaceZone,
 } from "./workout-helpers";
 import { WorkoutStructure } from "./workout-structure";
+import { prettyCustomWorkoutType } from "@/lib/utils";
 
 interface WorkoutTemplate {
   id: string;
@@ -134,18 +139,35 @@ export function WorkoutTemplateCard({
       ? Math.round(computedMinutes)
       : null;
 
+  // Pace-zone label (10-zone taxonomy) derived from the steps: a tempo run
+  // reads "LT", an interval set "5K", a long run "Long". Falls back to the
+  // legacy workout_type label only when a workout has no steps to read.
+  // "tempo"/"threshold" survive as stored data, never as new UI copy.
+  const zone = headlineZone(steps);
+  const typeLabel = zone
+    ? zoneLabelShort(zone)
+    : TYPE_LABEL[template.workout_type] ??
+      prettyCustomWorkoutType(template.workout_type) ??
+      template.workout_type;
+  // Quality zones present, for the footer's zone-dot tags (blue = pace).
+  const dotZones = stepZones(steps);
+
   // Soft tinted pill background derived from the workout-type color.
   // The card itself stays white; color only shows as a chip + on the
   // structure stripes inside, so the page reads as a calm grid of
   // workouts rather than a wall of color blocks (the previous design's
   // biggest readability problem).
-  const typeLabel = TYPE_LABEL[template.workout_type] ?? template.workout_type;
 
   return (
-    <Link
-      href={`/coach-portal/workouts/${template.id}/edit`}
-      className="block bg-white border border-[var(--color-divider)] rounded-xl overflow-hidden hover:border-[var(--color-text-tertiary)] transition-colors"
-    >
+    <div className="relative block bg-white border border-[var(--color-divider)] rounded-xl overflow-hidden hover:border-[var(--color-text-tertiary)] transition-colors">
+      {/* Whole-card click target for editing. An overlay link (rather than
+          wrapping the card in <Link>) so the Duplicate action below can be
+          its own link — nested anchors are invalid HTML. */}
+      <Link
+        href={`/coach-portal/workouts/${template.id}/edit`}
+        className="absolute inset-0 z-0"
+        aria-label={`Edit ${template.name}`}
+      />
       {/* Header — pill + ref code, then the name. Replaces the previous
           colored-bleed header that drowned out everything else. */}
       <div className="px-4 pt-4 pb-2.5">
@@ -163,7 +185,7 @@ export function WorkoutTemplateCard({
             {refNum}
           </span>
         </div>
-        <h3 className="text-[15px] font-semibold leading-tight text-[var(--color-text-primary)]">
+        <h3 className="font-display text-[17px] font-bold leading-tight text-[var(--color-text-primary)]">
           {template.name}
         </h3>
         {/* Inline stat row — distance and duration as one mono line
@@ -216,6 +238,25 @@ export function WorkoutTemplateCard({
         </div>
       ) : null}
 
+      {/* Zone-dot tags — the quality zones this workout touches, derived
+          from its steps (blue = pace). Only shows when there's quality
+          work; a pure easy run has no dots. */}
+      {dotZones.length > 0 && (
+        <div className="flex items-center gap-2.5 px-4 py-1.5 border-t border-[var(--color-divider)]">
+          {dotZones.map((z) => (
+            <span key={z} className="flex items-center gap-1">
+              <span
+                className="w-1.5 h-1.5 rounded-full"
+                style={{ background: PACE_ZONE_COLORS[z] }}
+              />
+              <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
+                {zoneLabelShort(z)}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-[var(--color-divider)] bg-[var(--color-bg-elevated)]">
         <div className="flex gap-1.5 flex-wrap">
@@ -233,12 +274,24 @@ export function WorkoutTemplateCard({
             </span>
           )}
         </div>
-        {template.use_count > 0 && (
-          <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
-            used {template.use_count}×
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {template.use_count > 0 && (
+            <span className="font-mono text-[10px] text-[var(--color-text-tertiary)]">
+              used {template.use_count}×
+            </span>
+          )}
+          {/* Duplicate — opens the editor pre-filled with a clone. Nothing
+              writes to the DB until the coach saves. Sits above the overlay
+              link (z-10) so it wins the click. */}
+          <Link
+            href={`/coach-portal/workouts/new?from=${template.id}`}
+            className="relative z-10 font-mono text-[10px] uppercase tracking-wider text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] transition-colors"
+            title={`Duplicate "${template.name}" into a new template`}
+          >
+            duplicate
+          </Link>
+        </div>
       </div>
-    </Link>
+    </div>
   );
 }

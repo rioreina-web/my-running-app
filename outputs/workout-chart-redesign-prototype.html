@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Workout · Unified Telemetry — Post Run Drip</title>
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+    --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-light:#E8764A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+    --hr:#D4592A;        /* coral  — heart rate */
+    --pace:#6B4A8A;      /* plum   — pace */
+    --cad:#6B6560;       /* gray   — cadence */
+    --elev:#4A9E6B;      /* sage   — elevation */
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    background:#D8D4CE; color:var(--ink);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    display:flex; justify-content:center; padding:24px 12px; min-height:100vh;
+  }
+  /* phone frame */
+  .phone{
+    width:390px; max-width:100%; background:var(--paper);
+    border-radius:34px; overflow:hidden; box-shadow:0 12px 40px rgba(0,0,0,0.22);
+    position:relative;
+  }
+  .statusbar{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 22px 4px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600;}
+  .statusbar .dots{opacity:.8;}
+  .body{padding:6px 18px 28px;}
+
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;
+    letter-spacing:.12em;color:var(--ink-2);text-transform:uppercase;}
+  .eyebrow.coral{color:var(--coral);}
+  .toprow{display:flex;justify-content:space-between;padding:4px 0 0;}
+  .link{font-family:var(--font-body);font-size:13px;color:var(--coral);cursor:pointer;}
+
+  h1.display{font-family:var(--font-display);font-weight:700;font-size:32px;
+    letter-spacing:-0.01em;line-height:1.05;margin-top:6px;}
+  .subline{font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--ink-2);margin-top:2px;}
+
+  .hairline{height:1px;background:var(--rule);margin:12px 0;}
+
+  /* section eyebrow row */
+  .secrow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
+
+  /* toggle chips */
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin:4px 0 10px;}
+  .chip{
+    display:inline-flex;align-items:center;gap:6px;
+    font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;padding:6px 11px;border-radius:999px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--card);color:var(--ink-3);
+    transition:all .15s cubic-bezier(.2,.7,.2,1);user-select:none;
+  }
+  @media (hover:hover){ .chip:hover{border-color:var(--ink-3);} }
+  .chip:active{transform:scale(.96);}
+  .chip .swatch{width:9px;height:9px;border-radius:3px;background:currentColor;opacity:.35;transition:opacity .15s;}
+  .chip.on{color:var(--ink);background:var(--paper-elevated);border-color:var(--ink-3);}
+  .chip.on .swatch{opacity:1;}
+  .chip[data-m="hr"].on{border-color:var(--hr);}   .chip[data-m="hr"] .swatch{color:var(--hr);}
+  .chip[data-m="pace"].on{border-color:var(--pace);} .chip[data-m="pace"] .swatch{color:var(--pace);}
+  .chip[data-m="cad"].on{border-color:var(--cad);}  .chip[data-m="cad"] .swatch{color:var(--cad);}
+  .chip[data-m="elev"].on{border-color:var(--elev);}.chip[data-m="elev"] .swatch{color:var(--elev);}
+
+  /* chart card */
+  .chartcard{position:relative;background:var(--card);border:1px solid var(--rule);
+    border-radius:12px;padding:12px 10px 8px;box-shadow:0 2px 8px rgba(0,0,0,0.05);}
+  .chartwrap{position:relative;width:100%;}
+  canvas{display:block;width:100%;touch-action:none;cursor:crosshair;}
+
+  /* floating scrub tooltip */
+  .tip{position:absolute;top:6px;pointer-events:none;opacity:0;transform:translateY(-2px);
+    transition:opacity .12s ease;z-index:7;min-width:104px;
+    background:rgba(26,24,21,0.94);backdrop-filter:blur(6px);border-radius:9px;
+    padding:7px 9px;box-shadow:0 6px 18px rgba(0,0,0,.22);}
+  .tip.show{opacity:1;transform:translateY(0);}
+  .tip .tiphead{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;color:#C9C4BD;
+    text-transform:uppercase;margin-bottom:5px;white-space:nowrap;}
+  .tip .tiprow{display:flex;align-items:center;gap:6px;margin:2px 0;white-space:nowrap;}
+  .tip .tiprow .d{width:7px;height:7px;border-radius:2px;flex:none;}
+  .tip .tiprow .k{font-family:var(--font-mono);font-size:9px;color:#9B9590;letter-spacing:.04em;
+    text-transform:uppercase;flex:1;}
+  .tip .tiprow .v{font-family:var(--font-mono);font-size:11px;font-weight:600;color:#FFF;
+    font-variant-numeric:tabular-nums;}
+
+  /* expand button */
+  .expandbtn{position:absolute;top:8px;right:8px;z-index:6;width:30px;height:30px;
+    border-radius:8px;border:1px solid var(--rule);background:rgba(255,255,255,.85);
+    backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .expandbtn svg{width:15px;height:15px;stroke:var(--ink-2);}
+
+  /* zoom-out pill (shown when zoomed into a rep) */
+  .zoombar{display:none;align-items:center;gap:8px;margin:8px 2px 0;}
+  .zoombar.show{display:flex;}
+  .zoompill{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--coral);border:1px solid var(--coral);
+    border-radius:999px;padding:5px 12px;cursor:pointer;background:var(--coral-wash);}
+  .zoomlabel{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);letter-spacing:.04em;}
+
+  /* live readout */
+  .readout{display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:10px;}
+  .ro{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;
+    border-right:1px solid var(--rule);}
+  .ro:last-child{border-right:0;}
+  .ro .lab{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+  .ro .val{font-family:var(--font-mono);font-weight:600;font-size:16px;font-variant-numeric:tabular-nums;color:var(--ink);}
+  .ro .val.dim{color:var(--ink-3);}
+  .ro .un{font-family:var(--font-mono);font-size:8.5px;color:var(--ink-3);}
+  .ro.hr .val{color:var(--hr);} .ro.pace .val{color:var(--pace);}
+  .ro.cad .val{color:var(--cad);} .ro.elev .val{color:var(--elev);}
+
+  .scrubmeta{text-align:center;font-family:var(--font-mono);font-size:10px;color:var(--ink-2);
+    letter-spacing:.06em;margin-top:9px;height:13px;}
+
+  .caption{font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--ink);
+    line-height:1.5;margin-top:14px;}
+  .hint{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-3);letter-spacing:.05em;
+    text-align:center;margin-top:8px;text-transform:uppercase;}
+
+  /* fullscreen overlay */
+  .fs{position:fixed;inset:0;background:var(--paper);z-index:50;display:none;
+    flex-direction:column;padding:18px;}
+  .fs.show{display:flex;}
+  .fs>*{width:100%;max-width:860px;margin-left:auto;margin-right:auto;}
+  .fs .fshead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .fs .fstitle{font-family:var(--font-display);font-weight:700;font-size:22px;}
+  .fs .fsclose{font-family:var(--font-mono);font-size:12px;color:var(--coral);cursor:pointer;
+    border:1px solid var(--coral);border-radius:999px;padding:6px 14px;letter-spacing:.06em;text-transform:uppercase;}
+  .fs .chips{margin-bottom:8px;}
+  .fs .chartcard{flex:0 0 auto;}
+  .fs .readout{margin-top:14px;}
+  .fs .rotnote{font-family:var(--font-mono);font-size:10px;color:var(--ink-3);text-align:center;
+    margin-top:14px;letter-spacing:.06em;text-transform:uppercase;}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="statusbar">
+    <span>1:35</span>
+    <span class="dots">●●● ⌃ ▮</span>
+  </div>
+
+  <div class="body">
+    <div class="toprow">
+      <span class="link">‹ Back</span>
+      <span class="link">Share</span>
+    </div>
+
+    <div style="margin-top:10px;">
+      <span class="eyebrow coral">TUESDAY&nbsp;&nbsp;·&nbsp;&nbsp;6×800 INTERVALS</span>
+      <h1 class="display">May 5</h1>
+      <div class="subline">6.9 mi · 51:06 · grade-adjusted 7:18/mi</div>
+    </div>
+
+    <div class="hairline"></div>
+
+    <div class="secrow">
+      <span class="eyebrow">TELEMETRY&nbsp;&nbsp;·&nbsp;&nbsp;ONE CHART</span>
+      <span class="eyebrow" style="color:var(--ink-3);">TAP A REP&nbsp;·&nbsp;DRAG TO SCRUB</span>
+    </div>
+
+    <!-- toggle chips -->
+    <div class="chips" id="chips">
+      <span class="chip on" data-m="hr"><span class="swatch"></span>Heart rate</span>
+      <span class="chip on" data-m="pace"><span class="swatch"></span>Pace</span>
+      <span class="chip" data-m="cad"><span class="swatch"></span>Cadence</span>
+      <span class="chip" data-m="elev"><span class="swatch"></span>Elevation</span>
+    </div>
+
+    <div class="chartcard">
+      <div class="expandbtn" id="expandBtn" title="Expand">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>
+        </svg>
+      </div>
+      <div class="chartwrap">
+        <canvas id="chart"></canvas>
+        <div class="tip" id="tip"></div>
+      </div>
+    </div>
+
+    <div class="zoombar" id="zoombar">
+      <span class="zoompill" id="zoomout">‹ Full run</span>
+      <span class="zoomlabel" id="zoomlabel"></span>
+    </div>
+
+    <!-- live readout -->
+    <div class="readout" id="readout">
+      <div class="ro hr"><span class="lab">HR</span><span class="val" data-r="hr">143</span><span class="un">bpm avg</span></div>
+      <div class="ro pace"><span class="lab">Pace</span><span class="val" data-r="pace">7:24</span><span class="un">/mi avg</span></div>
+      <div class="ro cad"><span class="lab">Cadence</span><span class="val dim" data-r="cad">176</span><span class="un">spm avg</span></div>
+      <div class="ro elev"><span class="lab">Elev</span><span class="val dim" data-r="elev">+219</span><span class="un">ft total</span></div>
+    </div>
+    <div class="scrubmeta" id="scrubmeta">Averages over full session</div>
+
+    <p class="caption">"Climbed early, came home fast. Reps held tight to 5K pace, recoveries dropped HR clean each time. Aerobic-strong."</p>
+    <div class="hint">Reps shaded · per-mile splits ticked along the base</div>
+  </div>
+</div>
+
+<!-- fullscreen -->
+<div class="fs" id="fs">
+  <div class="fshead">
+    <span class="fstitle">May 5 · Telemetry</span>
+    <span class="fsclose" id="fsclose">Close ✕</span>
+  </div>
+  <div class="chips" id="chipsFs">
+    <span class="chip on" data-m="hr"><span class="swatch"></span>Heart rate</span>
+    <span class="chip on" data-m="pace"><span class="swatch"></span>Pace</span>
+    <span class="chip" data-m="cad"><span class="swatch"></span>Cadence</span>
+    <span class="chip" data-m="elev"><span class="swatch"></span>Elevation</span>
+  </div>
+  <div class="chartcard">
+    <div class="chartwrap">
+      <canvas id="chartFs"></canvas>
+      <div class="tip" id="tipFs"></div>
+    </div>
+  </div>
+  <div class="readout" id="readoutFs">
+    <div class="ro hr"><span class="lab">HR</span><span class="val" data-r="hr">143</span><span class="un">bpm avg</span></div>
+    <div class="ro pace"><span class="lab">Pace</span><span class="val" data-r="pace">7:24</span><span class="un">/mi avg</span></div>
+    <div class="ro cad"><span class="lab">Cadence</span><span class="val dim" data-r="cad">176</span><span class="un">spm avg</span></div>
+    <div class="ro elev"><span class="lab">Elev</span><span class="val dim" data-r="elev">+219</span><span class="un">ft total</span></div>
+  </div>
+  <div class="scrubmeta" id="scrubmetaFs">Averages over full session</div>
+  <div class="rotnote">Drag anywhere to scrub · tap a shaded rep to zoom</div>
+</div>
+
+<script>
+/* ============================================================
+   Synthetic run data — 6×800m interval session, ~51 min.
+   Each metric is a procedurally generated time series that
+   resembles the screenshot (rep spikes, HR sawtooth, climbs).
+   ============================================================ */
+const N = 612;                 // samples
+const TOTAL_SEC = 51*60 + 6;   // 51:06
+const TOTAL_MI  = 6.9;
+
+// Rep structure: warmup, then 6 hard reps with recoveries, cooldown.
+// Each entry: [startFrac, endFrac] of the run.
+const REPS = [
+  [0.150,0.205],[0.255,0.310],[0.360,0.415],
+  [0.470,0.525],[0.585,0.640],[0.700,0.755]
+];
+function inRep(f){ for(let i=0;i<REPS.length;i++){ if(f>=REPS[i][0]&&f<=REPS[i][1]) return i; } return -1; }
+function repProx(f){ // 0..1 ramp around reps for smooth HR
+  let best=0;
+  for(const [a,b] of REPS){
+    const c=(a+b)/2,w=(b-a)/2+0.05;
+    const d=Math.abs(f-c)/w; best=Math.max(best,Math.max(0,1-d));
+  } return best;
+}
+function noise(seed){ const x=Math.sin(seed*12.9898)*43758.5453; return x-Math.floor(x)-0.5; }
+
+const data={hr:[],pace:[],cad:[],elev:[],dist:[],time:[]};
+let elev=120;
+for(let i=0;i<N;i++){
+  const f=i/(N-1);
+  const r=inRep(f), prox=repProx(f);
+  // HEART RATE bpm
+  let hr=108 + prox*68 + noise(i)*4;
+  if(f<0.12) hr=100+f/0.12*22+noise(i)*3;     // warmup ramp
+  if(f>0.80) hr=150-(f-0.80)/0.20*34+noise(i)*4; // cooldown
+  data.hr.push(hr);
+  // PACE sec/mi (lower=faster). reps ~4:50(290s) easy ~9:10(550s) recov ~8:30
+  let pace = r>=0 ? 286 + noise(i)*8 : 540 + noise(i*1.7)*22 - prox*120;
+  if(f<0.12) pace=560-f/0.12*30;
+  if(f>0.80) pace=545+noise(i)*18;
+  pace=Math.max(270,Math.min(610,pace));
+  data.pace.push(pace);
+  // CADENCE spm
+  let cad = 150 + prox*34 + noise(i*2.3)*5;
+  if(f<0.12) cad=150+f/0.12*8;
+  if(f>0.80) cad=160+noise(i)*5;
+  data.cad.push(cad);
+  // ELEVATION ft — climb early, descend home
+  const slope = (f<0.42? 1.0 : -0.55) ;
+  elev += slope*(0.85+noise(i*3.1)*0.7);
+  data.elev.push(elev);
+  // axes
+  data.time.push(f*TOTAL_SEC);
+  data.dist.push(f*TOTAL_MI);
+}
+// normalize elevation so min≈80
+const emin=Math.min(...data.elev); const shift=80-emin;
+data.elev=data.elev.map(v=>v+shift);
+
+// per-mile split markers (distance fraction of each whole mile)
+const SPLITS=[];
+for(let m=1;m<=Math.floor(TOTAL_MI);m++) SPLITS.push(m/TOTAL_MI);
+
+const META={
+  hr:  {color:getCss('--hr'),  min:Math.min(...data.hr)-4,  max:Math.max(...data.hr)+4,  fmt:v=>Math.round(v),       unit:'bpm', fill:false},
+  pace:{color:getCss('--pace'),min:270, max:610, invert:true, fmt:v=>fmtPace(v), unit:'/mi', fill:false},
+  cad: {color:getCss('--cad'), min:Math.min(...data.cad)-6, max:Math.max(...data.cad)+6, fmt:v=>Math.round(v),       unit:'spm', fill:false},
+  elev:{color:getCss('--elev'),min:Math.min(...data.elev)-10,max:Math.max(...data.elev)+20, fmt:v=>Math.round(v),    unit:'ft',  fill:true}
+};
+function getCss(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function fmtPace(sec){ const m=Math.floor(sec/60),s=Math.round(sec%60); return m+':'+String(s).padStart(2,'0'); }
+function fmtTime(sec){ const m=Math.floor(sec/60),s=Math.round(sec%60); return m+':'+String(s).padStart(2,'0'); }
+
+/* ============================================================
+   Chart controller (shared by inline + fullscreen instances)
+   ============================================================ */
+function makeChart(canvas, opts){
+  const ctx=canvas.getContext('2d');
+  const state={
+    active:{hr:true,pace:true,cad:false,elev:false},
+    view:[0,1],            // visible fraction window [a,b]
+    zoomRep:-1,
+    scrub:null,            // fraction or null
+    dpr:Math.max(1,window.devicePixelRatio||1)
+  };
+  let W=0,H=0,PAD={l:36,r:12,t:18,b:28};
+  const PRIORITY=['hr','pace','cad','elev'];
+  function leadMetric(){ for(const m of PRIORITY) if(state.active[m]) return m; return null; }
+  function smoothStroke(pts){
+    if(pts.length<2) return;
+    ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);
+    for(let i=1;i<pts.length-1;i++){
+      const xc=(pts[i][0]+pts[i+1][0])/2, yc=(pts[i][1]+pts[i+1][1])/2;
+      ctx.quadraticCurveTo(pts[i][0],pts[i][1],xc,yc);
+    }
+    const n=pts.length;ctx.lineTo(pts[n-1][0],pts[n-1][1]);
+  }
+
+  function resize(){
+    const cssW=canvas.clientWidth || canvas.parentElement.clientWidth;
+    const ratio=opts.ratio||0.62;            // height = width * ratio (landscape)
+    let cssH=Math.round(cssW*ratio);
+    if(opts.maxH) cssH=Math.min(cssH,opts.maxH);
+    if(opts.minH) cssH=Math.max(cssH,opts.minH);
+    canvas.style.height=cssH+'px';
+    canvas.width=cssW*state.dpr;
+    canvas.height=cssH*state.dpr;
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0);
+    W=cssW; H=cssH;
+    draw();
+  }
+
+  function xOf(f){ const [a,b]=state.view; return PAD.l + ( (f-a)/(b-a) )*(W-PAD.l-PAD.r); }
+  function yOf(val,m){ const mm=META[m]; let t=(val-mm.min)/(mm.max-mm.min); if(mm.invert)t=1-t;
+    const top=PAD.t, bot=H-PAD.b; return bot-t*(bot-top); }
+  function idxRange(){ const [a,b]=state.view; return [Math.floor(a*(N-1)), Math.ceil(b*(N-1))]; }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    const [a,b]=state.view;
+    const top=PAD.t, bot=H-PAD.b;
+    const lead=leadMetric();
+
+    // horizontal gridlines + y-axis labels (keyed to the lead metric)
+    const ticks=[0,0.25,0.5,0.75,1];
+    ctx.textAlign='right';ctx.textBaseline='middle';
+    ctx.font='500 8.5px '+getCss('--font-mono');
+    ticks.forEach(t=>{
+      const y=bot - t*(bot-top);
+      ctx.strokeStyle=getCss('--rule');ctx.globalAlpha=t===0?1:0.55;ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(PAD.l,y);ctx.lineTo(W-PAD.r,y);ctx.stroke();ctx.globalAlpha=1;
+      if(lead){
+        const mm=META[lead];
+        const val = mm.invert ? mm.max - t*(mm.max-mm.min) : mm.min + t*(mm.max-mm.min);
+        ctx.fillStyle=mm.color;ctx.globalAlpha=0.85;
+        ctx.fillText(mm.fmt(val), PAD.l-6, y);ctx.globalAlpha=1;
+      }
+    });
+    // axis unit caption
+    if(lead){
+      ctx.save();ctx.translate(10,(top+bot)/2);ctx.rotate(-Math.PI/2);
+      ctx.textAlign='center';ctx.fillStyle=META[lead].color;ctx.globalAlpha=0.7;
+      ctx.font='600 8px '+getCss('--font-mono');
+      ctx.fillText(lead.toUpperCase()+' · '+META[lead].unit, 0, 0);ctx.globalAlpha=1;ctx.restore();
+    }
+
+    // rep shading
+    REPS.forEach((rp,i)=>{
+      if(rp[1]<a||rp[0]>b) return;
+      const x0=xOf(Math.max(rp[0],a)), x1=xOf(Math.min(rp[1],b));
+      ctx.fillStyle='rgba(212,89,42,0.09)';
+      ctx.fillRect(x0,top,x1-x0,bot-top);
+      ctx.fillStyle=getCss('--coral');ctx.globalAlpha=0.8;
+      ctx.font='600 8.5px '+getCss('--font-mono');ctx.textAlign='center';ctx.textBaseline='alphabetic';
+      if(x1-x0>14) ctx.fillText('R'+(i+1),(x0+x1)/2,top+10);ctx.globalAlpha=1;
+    });
+
+    // split ticks + mile labels along base
+    ctx.textBaseline='alphabetic';
+    SPLITS.forEach((sf,i)=>{
+      if(sf<a||sf>b)return;
+      const x=xOf(sf);
+      ctx.strokeStyle=getCss('--ink-3');ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(x,bot);ctx.lineTo(x,bot+4);ctx.stroke();
+      ctx.fillStyle=getCss('--ink-3');ctx.font='500 8px '+getCss('--font-mono');
+      ctx.textAlign='center';ctx.fillText((i+1)+'mi',x,bot+14);
+    });
+
+    // metric layers — fills first, then smoothed lines
+    const [i0,i1]=idxRange();
+    const step=Math.max(1,Math.round((i1-i0)/240)); // cap point count for smooth perf
+    function pointsFor(m){const p=[];for(let i=i0;i<=i1;i+=step)p.push([xOf(i/(N-1)),yOf(data[m][i],m)]);
+      const lx=xOf(i1/(N-1));if(p.length&&p[p.length-1][0]<lx-0.5)p.push([lx,yOf(data[m][i1],m)]);return p;}
+    ['elev','cad','pace','hr'].forEach(m=>{
+      if(!state.active[m]||!META[m].fill)return;
+      const p=pointsFor(m);
+      smoothStroke(p);ctx.lineTo(p[p.length-1][0],bot);ctx.lineTo(p[0][0],bot);ctx.closePath();
+      ctx.fillStyle='rgba(74,158,107,0.12)';ctx.fill();
+    });
+    ['elev','cad','pace','hr'].forEach(m=>{
+      if(!state.active[m])return;
+      smoothStroke(pointsFor(m));
+      ctx.strokeStyle=META[m].color;ctx.lineWidth=(m===lead)?2.4:1.6;
+      ctx.lineJoin='round';ctx.lineCap='round';
+      ctx.globalAlpha=(m===lead||m==='hr'||m==='pace')?1:0.78;ctx.stroke();ctx.globalAlpha=1;
+    });
+
+    // scrub line + dots
+    if(state.scrub!=null && state.scrub>=a && state.scrub<=b){
+      const x=xOf(state.scrub);
+      ctx.strokeStyle=getCss('--ink');ctx.globalAlpha=0.3;ctx.lineWidth=1;
+      ctx.setLineDash([3,3]);
+      ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,bot);ctx.stroke();
+      ctx.setLineDash([]);ctx.globalAlpha=1;
+      const si=Math.round(state.scrub*(N-1));
+      ['elev','cad','pace','hr'].forEach(m=>{
+        if(!state.active[m])return;
+        const y=yOf(data[m][si],m);
+        ctx.beginPath();ctx.arc(x,y,3.8,0,7);ctx.fillStyle=META[m].color;ctx.fill();
+        ctx.lineWidth=1.8;ctx.strokeStyle=getCss('--card');ctx.stroke();
+      });
+    }
+  }
+
+  const AVG={hr:'143',pace:'7:24',cad:'176',elev:'+219'};
+  function updateReadout(){
+    const si = state.scrub!=null ? Math.round(state.scrub*(N-1)) : null;
+    // bottom readout = session averages, always
+    opts.readout.querySelectorAll('.val').forEach(el=>{
+      const m=el.dataset.r, on=state.active[m];
+      el.parentElement.style.opacity=on?1:0.4;
+      el.textContent=AVG[m]; el.classList.toggle('dim',!on);
+    });
+    // floating tooltip = live values at scrub point
+    const tip=opts.tip;
+    if(tip){
+      if(si!=null){
+        let rows='';
+        PRIORITY.forEach(m=>{ if(!state.active[m])return;
+          rows+='<div class="tiprow"><span class="d" style="background:'+META[m].color+'"></span>'+
+                '<span class="k">'+m+'</span><span class="v">'+META[m].fmt(data[m][si])+'</span></div>';});
+        tip.innerHTML='<div class="tiphead">'+data.dist[si].toFixed(2)+' mi · '+fmtTime(data.time[si])+'</div>'+rows;
+        tip.classList.add('show');
+        const x=xOf(state.scrub);
+        const tw=tip.offsetWidth||108;
+        let left=x+10; if(left+tw>W-4) left=x-tw-10; left=Math.max(PAD.l,left);
+        tip.style.left=left+'px';
+      } else { tip.classList.remove('show'); }
+    }
+    if(opts.scrubmeta) opts.scrubmeta.textContent = si!=null
+      ? 'Live · '+data.dist[si].toFixed(2)+' mi'
+      : 'Session averages · drag chart for live values';
+  }
+
+  // scrubbing
+  function pointerFrac(ev){
+    const rect=canvas.getBoundingClientRect();
+    const px=(ev.touches?ev.touches[0].clientX:ev.clientX)-rect.left;
+    const [a,b]=state.view;
+    let f=a + ( (px-PAD.l)/(W-PAD.l-PAD.r) )*(b-a);
+    return Math.max(a,Math.min(b,f));
+  }
+  let dragging=false, moved=false, downF=0;
+  function down(ev){dragging=true;moved=false;downF=pointerFrac(ev);state.scrub=downF;draw();updateReadout();}
+  function move(ev){if(!dragging)return;ev.preventDefault();const f=pointerFrac(ev);if(Math.abs(f-downF)>0.005)moved=true;state.scrub=f;draw();updateReadout();}
+  function up(ev){
+    dragging=false;
+    if(!moved){ // treat as tap → zoom into rep if tapped inside one (only when in full view)
+      if(state.zoomRep<0){
+        const r=inRep(downF);
+        if(r>=0){ zoomToRep(r); return; }
+      }
+    }
+  }
+  canvas.addEventListener('mousedown',down);window.addEventListener('mousemove',move);window.addEventListener('mouseup',up);
+  canvas.addEventListener('touchstart',down,{passive:false});canvas.addEventListener('touchmove',move,{passive:false});canvas.addEventListener('touchend',up);
+
+  function zoomToRep(r){
+    state.zoomRep=r;
+    const [a,b]=REPS[r]; const pad=(b-a)*0.6;
+    state.view=[Math.max(0,a-pad),Math.min(1,b+pad)];
+    state.scrub=(a+b)/2;
+    if(opts.zoombar){opts.zoombar.classList.add('show');
+      opts.zoomlabel.textContent='Rep '+(r+1)+' · 800m · zoomed';}
+    draw();updateReadout();
+  }
+  function zoomOut(){
+    state.zoomRep=-1;state.view=[0,1];state.scrub=null;
+    if(opts.zoombar)opts.zoombar.classList.remove('show');
+    draw();updateReadout();
+  }
+  if(opts.zoomout)opts.zoomout.addEventListener('click',zoomOut);
+
+  function setActive(m,on){state.active[m]=on;draw();updateReadout();}
+
+  window.addEventListener('resize',resize);
+  // initial
+  requestAnimationFrame(()=>{resize();updateReadout();});
+  return {state,setActive,zoomOut,resize,draw,updateReadout,zoomToRep};
+}
+
+/* ---- wire chips to a chart, mirroring the on/off classes ---- */
+function wireChips(container, chart){
+  container.querySelectorAll('.chip').forEach(chip=>{
+    chip.addEventListener('click',()=>{
+      const m=chip.dataset.m;
+      const on=!chip.classList.contains('on');
+      chip.classList.toggle('on',on);
+      chart.setActive(m,on);
+    });
+  });
+}
+
+/* ---- instantiate inline chart ---- */
+const inlineChart=makeChart(document.getElementById('chart'),{
+  ratio:0.6, minH:200, maxH:260,
+  tip:document.getElementById('tip'),
+  readout:document.getElementById('readout'),
+  scrubmeta:document.getElementById('scrubmeta'),
+  zoombar:document.getElementById('zoombar'),
+  zoomout:document.getElementById('zoomout'),
+  zoomlabel:document.getElementById('zoomlabel')
+});
+wireChips(document.getElementById('chips'),inlineChart);
+
+/* ---- fullscreen ---- */
+let fsChart=null;
+const fs=document.getElementById('fs');
+document.getElementById('expandBtn').addEventListener('click',()=>{
+  fs.classList.add('show');
+  if(!fsChart){
+    fsChart=makeChart(document.getElementById('chartFs'),{
+      ratio:0.5, maxH:Math.round(window.innerHeight*0.6),
+      tip:document.getElementById('tipFs'),
+      readout:document.getElementById('readoutFs'),
+      scrubmeta:document.getElementById('scrubmetaFs')
+    });
+    // sync active layers from inline
+    Object.keys(inlineChart.state.active).forEach(m=>{
+      const on=inlineChart.state.active[m];
+      fsChart.setActive(m,on);
+      const c=document.querySelector('#chipsFs .chip[data-m="'+m+'"]');
+      if(c)c.classList.toggle('on',on);
+    });
+    wireChips(document.getElementById('chipsFs'),fsChart);
+  }
+  setTimeout(()=>fsChart.resize(),30);
+});
+document.getElementById('fsclose').addEventListener('click',()=>fs.classList.remove('show'));
+</script>
+</body>
+</html>

@@ -19,15 +19,31 @@
  * Auth: service role (called by Postgres trigger) or authenticated user.
  */
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { adjustPaceForHeat } from "../_shared/pace-heat.ts";
 import { fetchWeather } from "../_shared/weather.ts";
 
 import { corsHeaders } from "../_shared/cors.ts";
+import { timingSafeEqual } from "../_shared/auth.ts";
 const DEFAULT_TOLERANCE_SECONDS = 5;
 const HARD_STEP_TYPES = new Set(["active"]); // warmup / recovery / cooldown excluded
 
-Deno.serve(async (req: Request) => {
+/**
+ * Test seam. Defaults to the real client, so `Deno.serve` below is unchanged.
+ *
+ * Auth is NOT injectable on purpose: this endpoint's gate is a shared secret
+ * read from the environment, and a test that stubbed the comparison would be
+ * asserting nothing. The tests set RECONCILE_SHARED_SECRET instead and drive
+ * the real branch.
+ */
+export interface ReconcileLogDeps {
+  buildClient?: () => SupabaseClient;
+}
+
+export async function handleReconcileLog(
+  req: Request,
+  deps: ReconcileLogDeps = {},
+): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   // Shared-secret auth. Trigger sends the secret (stored in Vault) as the
@@ -36,7 +52,7 @@ Deno.serve(async (req: Request) => {
   // verification for new-format sb_secret_* keys.
   const expectedSecret = Deno.env.get("RECONCILE_SHARED_SECRET") ?? "";
   const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!expectedSecret || bearer !== expectedSecret) {
+  if (!expectedSecret || !timingSafeEqual(bearer, expectedSecret)) {
     return new Response(JSON.stringify({ error: "Authentication required" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -48,10 +64,12 @@ Deno.serve(async (req: Request) => {
     const trainingLogId: string | undefined = body?.training_log_id;
     if (!trainingLogId) return errorResponse(400, "training_log_id required");
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = deps.buildClient
+      ? deps.buildClient()
+      : createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
 
     // 1. Load the training_log.
     const { data: log, error: logErr } = await supabase
@@ -160,7 +178,9 @@ Deno.serve(async (req: Request) => {
     console.error("[reconcile-log] unhandled", err);
     return errorResponse(500, String(err));
   }
-});
+}
+
+Deno.serve((req) => handleReconcileLog(req));
 
 // ── Helpers ────────────────────────────────────────────────────────
 

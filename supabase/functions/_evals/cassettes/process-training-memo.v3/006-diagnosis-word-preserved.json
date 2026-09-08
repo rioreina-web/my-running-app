@@ -1,0 +1,28 @@
+{
+  "id": "006-diagnosis-word-preserved",
+  "prompt_name": "process-training-memo.v3",
+  "description": "v2's wedge-defining diagnosis-word behavior preserved under v3. The athlete uses a diagnosis word ('my ITBS is back'); v3 must keep 'ITBS' only inside their_words, set the soreness location to anatomy ('IT band'), never emit a diagnosis in coach_insight, and NOT create a memory_candidate from the condition. Hard rule #2 end to end.",
+  "vars": {
+    "coachAnchorContext": "",
+    "recentContext": ""
+  },
+  "input": "\n\n## Audio Transcript (from groq)\n\"Easy 4 miles. My ITBS is flaring up again, that same outside-of-the-knee tightness around mile 3. Nothing sharp, just annoying. Have you had this before?\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["transcription", "cleaned_notes", "mood", "coach_insight", "extracted_data", "memory_candidates"],
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "\"mood\":\\s*\"(?!(energized|positive|neutral|tired|struggling|injured)\")[^\"]*\"",
+      "(?i)\"location\":\\s*\"[^\"]*(itbs|iliotibial band syndrome|tendinitis|tendinopathy|fasciitis)",
+      "(?i)\"category\"\\s*:\\s*\"(injury|health|medical)\""
+    ],
+    "required_patterns": [
+      "\"soreness\"\\s*:\\s*\\[",
+      "(?i)it ?band",
+      "\"memory_candidates\"\\s*:\\s*\\[\\s*\\]"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

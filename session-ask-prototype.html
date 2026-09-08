@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Ask — one box, one answer</title>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FAFAF8; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.10); --positive:#4A9E6B;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DAD6D0;font-family:var(--fb);color:var(--ink);padding:26px 16px 70px;-webkit-font-smoothing:antialiased}
+
+h1{font-family:var(--fd);font-size:27px;font-weight:700;text-align:center;letter-spacing:-.01em}
+.sub{text-align:center;font-size:13.5px;color:#5c5750;margin:6px auto 24px;max-width:660px;line-height:1.55}
+
+.stage{display:flex;gap:22px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1300px;margin:0 auto}
+.col{width:378px}
+.coltitle{font-family:var(--fm);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#4a4540;margin:0 0 4px 4px}
+.colnote{font-size:12.5px;color:#5c5750;margin:0 0 10px 4px;line-height:1.5;min-height:54px}
+
+.phone{background:var(--paper);border-radius:26px;box-shadow:0 8px 30px rgba(0,0,0,.16);overflow:hidden;border:1px solid #cfcac4}
+.chrome{display:flex;justify-content:space-between;padding:12px 14px 6px}
+.nchip{background:#fff;border-radius:999px;padding:7px 16px;font-size:14px}
+.nchip.l{color:var(--coral)} .nchip.r{color:var(--ink)}
+.pad{padding:8px 22px 26px}
+
+.faded{opacity:.42;pointer-events:none}
+.pacehead{display:flex;justify-content:space-between;align-items:baseline}
+.pacehead .l{font-family:var(--fd);font-size:16px;font-weight:600;letter-spacing:.02em;color:#2a2a4a}
+.pacehead .r{font-family:var(--fd);font-size:22px;font-weight:700}
+.pacehead .r small{font-family:var(--fm);font-size:8px;letter-spacing:.12em;color:var(--ink-3);margin-left:3px}
+.spark{height:62px;margin-top:8px}
+.rowlink{display:flex;justify-content:space-between;align-items:center;font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);padding:13px 0;border-top:1px solid var(--rule)}
+.rowlink .c{color:var(--coral)}
+
+.insightrow{display:flex;align-items:center;gap:9px;padding:13px 16px;margin-top:14px;border:1px solid var(--rule);border-radius:10px}
+.insightrow .sp{color:var(--coral);font-size:12px}
+.insightrow .lb{font-family:var(--fm);font-size:10px;letter-spacing:.12em;text-transform:uppercase;flex:1}
+.insightrow .ar{color:var(--ink-3);font-size:12px}
+
+/* ── the box ── */
+.askblock{margin-top:16px;padding-top:16px;border-top:1px solid var(--rule)}
+.abhead{display:flex;align-items:baseline;gap:7px}
+.abhead .sp{color:var(--coral);font-size:11px}
+.abhead .t{font-family:var(--fm);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink)}
+.abhead .n{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-left:auto}
+
+.askbar{display:flex;gap:8px;align-items:center;margin-top:11px;background:var(--card);
+  border:1px solid var(--rule);border-radius:999px;padding:5px 5px 5px 15px;transition:.15s}
+.askbar:focus-within{border-color:var(--ink-2)}
+.askbar input{flex:1;border:0;outline:0;background:transparent;font-family:var(--fb);font-size:14px;color:var(--ink);padding:9px 0}
+.askbar input::placeholder{color:var(--ink-3)}
+.askbar button{border:0;background:var(--paper-deep);color:var(--ink-3);border-radius:999px;width:32px;height:32px;cursor:pointer;font-size:15px;line-height:1;transition:.15s;flex:0 0 auto}
+.askbar.live button{background:var(--ink);color:var(--paper)}
+.askbar.live button:hover{background:var(--coral)}
+
+.rail{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.chip{font-family:var(--fm);font-size:10px;letter-spacing:.04em;color:var(--ink);background:var(--card);
+  border:1px solid var(--rule);border-radius:999px;padding:7px 12px;cursor:pointer;transition:.14s;line-height:1.3;text-align:left}
+.chip:hover{border-color:var(--ink-3)}
+.chip.read{border-color:rgba(212,89,42,.4);background:var(--coral-wash)}
+.chip.read b{color:var(--coral);font-weight:500;margin-right:5px}
+.more{font-family:var(--fm);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);
+  background:none;border:0;cursor:pointer;margin-top:12px;padding:0}
+
+/* ── the sheet ── */
+.sheet{background:var(--paper);border-radius:22px 22px 0 0;box-shadow:0 -6px 30px rgba(0,0,0,.14);border:1px solid #cfcac4;border-bottom:0;overflow:hidden}
+.grab{width:34px;height:4px;border-radius:9px;background:#d3cec8;margin:9px auto 0}
+.sheetpad{padding:14px 20px 26px}
+.xrow{display:flex;justify-content:space-between;align-items:center}
+.x{font-size:15px;color:var(--ink-2)}
+.sheethead{margin-top:12px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+.sheethead .eb{font-family:var(--fm);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--coral)}
+.sheethead .qt{font-family:var(--fd);font-size:23px;font-weight:700;line-height:1.2;margin-top:6px;letter-spacing:-.01em}
+
+.prose{font-size:15px;line-height:1.7;color:var(--ink);margin-top:15px}
+.prose + .prose{margin-top:12px}
+.prose b{font-weight:400;background:linear-gradient(transparent 68%,var(--coral-wash) 68%)}
+.src{margin-top:18px;padding-top:12px;border-top:1px solid var(--rule);
+  font-family:var(--fm);font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);line-height:1.65}
+.followups{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+
+.load{display:flex;align-items:center;gap:9px;padding:26px 4px;font-family:var(--fm);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--coral);animation:pulse 1.1s infinite}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+.dashed{border:1px dashed #d9d4ce;border-radius:10px;padding:12px 14px;margin-top:15px;
+  font-family:var(--fm);font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);line-height:1.7}
+
+/* legend */
+.legend{max-width:1300px;margin:36px auto 0;background:var(--paper);border-radius:14px;padding:24px 26px;border:1px solid #cfcac4}
+.legend h2{font-family:var(--fd);font-size:21px;font-weight:700;margin-bottom:6px}
+.legend h3{font-family:var(--fm);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);margin:22px 0 8px}
+.legend p{font-size:13.5px;line-height:1.68;color:#3c3833;max-width:90ch;margin-bottom:9px}
+.legend li{font-size:13.5px;line-height:1.64;margin-left:19px;margin-bottom:7px;max-width:90ch}
+.legend code{font-family:var(--fm);font-size:11.5px;background:#eee9e3;padding:1px 5px;border-radius:3px}
+.legend .kill{color:#8a3f22}
+table{border-collapse:collapse;margin-top:10px;font-size:13px;width:100%;max-width:900px}
+th,td{text-align:left;padding:8px 12px 8px 0;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.55}
+th{font-family:var(--fm);font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+</style>
+</head>
+<body>
+
+<h1>The session ask box</h1>
+<p class="sub">One field, a few questions, one prose answer. No fact grid, no chart, no "that analyzer isn't built" — it answers as well as it can with what it has. Type in the field or tap a chip; the right column is live.</p>
+
+<div class="stage">
+
+  <!-- ══ BEFORE ══ -->
+  <div class="col">
+    <p class="coltitle">Before · today</p>
+    <p class="colnote">One row, one question, and the app picks it. If the paragraph doesn't answer what she actually wondered, there's nowhere to go.</p>
+    <div class="phone">
+      <div class="chrome"><span class="nchip l">Edit</span><span class="nchip r">Done</span></div>
+      <div class="pad">
+        <div class="faded">
+          <div class="pacehead"><span class="l">PACE</span><span class="r">6:22<small>AVG</small> &nbsp;4:36<small>BEST</small></span></div>
+          <svg class="spark" viewBox="0 0 320 62" preserveAspectRatio="none"><polyline fill="none" stroke="#2a2a4a" stroke-width="1.4" points="2,22 14,30 26,18 38,34 50,12 62,28 74,20 86,38 98,26 110,52 122,52 134,52 140,8 152,30 164,18 176,36 188,22 200,44 212,30 224,52 236,52 244,14 256,26 268,20 280,34 292,26 304,40 316,44"/></svg>
+          <div class="rowlink"><span>ROUTE</span><span>6.22 MI &nbsp;›</span></div>
+          <div class="rowlink"><span>VS. YOUR LAST SIMILAR SESSION</span><span class="c">COMPARE ↗</span></div>
+        </div>
+        <div class="insightrow"><span class="sp">✦</span><span class="lb">Read the insight</span><span class="ar">→</span></div>
+        <div style="height:40px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ THE BOX ══ -->
+  <div class="col">
+    <p class="coltitle">After · the box</p>
+    <p class="colnote">Fifteen questions, five on the rail. These five because it's a rep session with splits, heart rate and weather — a long run surfaces different ones. Tap <b>More questions</b>.</p>
+    <div class="phone">
+      <div class="chrome"><span class="nchip l">Edit</span><span class="nchip r">Done</span></div>
+      <div class="pad">
+        <div class="faded">
+          <div class="pacehead"><span class="l">PACE</span><span class="r">6:22<small>AVG</small> &nbsp;4:36<small>BEST</small></span></div>
+          <svg class="spark" viewBox="0 0 320 62" preserveAspectRatio="none"><polyline fill="none" stroke="#2a2a4a" stroke-width="1.4" points="2,22 14,30 26,18 38,34 50,12 62,28 74,20 86,38 98,26 110,52 122,52 134,52 140,8 152,30 164,18 176,36 188,22 200,44 212,30 224,52 236,52 244,14 256,26 268,20 280,34 292,26 304,40 316,44"/></svg>
+          <div class="rowlink"><span>ROUTE</span><span>6.22 MI &nbsp;›</span></div>
+          <div class="rowlink"><span>VS. YOUR LAST SIMILAR SESSION</span><span class="c">COMPARE ↗</span></div>
+        </div>
+
+        <div class="askblock">
+          <div class="abhead"><span class="sp">✦</span><span class="t">Ask this session</span><span class="n">Aug 18</span></div>
+          <div class="askbar" id="bar">
+            <input id="fld" placeholder="Ask anything about this run…" autocomplete="off">
+            <button id="go">↑</button>
+          </div>
+          <div class="rail">
+            <button class="chip read" data-a="read"><b>✦</b>What's the read on this session?</button>
+            <button class="chip" data-a="held">Did I hold the pace across the reps?</button>
+            <button class="chip" data-a="hard">How hard was this, really?</button>
+            <button class="chip" data-a="vslast">How does this compare to the last one like it?</button>
+            <button class="chip" data-a="heat">Was that pace real, or was it the conditions?</button>
+          </div>
+          <div class="rail" id="rest" style="display:none">
+            <button class="chip" data-a="fit">Was this the right session for where I am right now?</button>
+            <button class="chip" data-a="knee">Is there anything here worth paying attention to?</button>
+            <button class="chip" data-a="next">What should the next one look like?</button>
+            <button class="chip" data-a="generic">Did I run this the way it was written?</button>
+            <button class="chip" data-a="generic">Did I start too fast?</button>
+            <button class="chip" data-a="generic">Was my heart rate where it should have been?</button>
+            <button class="chip" data-a="generic">How much did the hills cost me?</button>
+            <button class="chip" data-a="generic">Could I have run this a month ago?</button>
+            <button class="chip" data-a="generic">Does this get me closer to my goal pace?</button>
+          </div>
+          <button class="more" id="more">More questions ⌄</button>
+        </div>
+        <div style="height:26px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ THE ANSWER ══ -->
+  <div class="col">
+    <p class="coltitle">After · the answer</p>
+    <p class="colnote">Prose, and a line saying what it read. That line is a string, not a computation — it costs nothing and it's the difference between analytical and guessing.</p>
+    <div class="phone">
+      <div class="chrome"><span class="nchip l">Edit</span><span class="nchip r">Done</span></div>
+      <div style="height:52px;background:linear-gradient(var(--paper),#e3ded8)"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sheetpad">
+          <div class="xrow"><span class="x">✕</span></div>
+          <div class="sheethead">
+            <div class="eb">Ask · Aug 18 · 6.22 mi</div>
+            <div class="qt" id="qt">Tap a question →</div>
+          </div>
+          <div id="slot">
+            <div class="dashed">Nothing asked yet. Tap a chip in the middle column, or type in the field and press ↑.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const A = {
+  read: {
+    q: "What's the read on this session?",
+    p: ["Six point two two at 6:22 with two full stops in it — that's a rep session, and the shape of the pace line says you ran it the way it was written. First block averaged <b>5:28</b>, third came back to <b>5:31</b> after the second dipped to <b>5:24</b>. Three seconds of drift across twenty-eight minutes of work is control, not fade.",
+        "The thing worth noticing: your fastest split of the day, <b>4:36</b>, sits inside rep two — and rep two is also where the trace is jaggiest. You found that pace by overshooting it rather than settling into it. Rep one and rep three are the honest ones."],
+    s: "Read from this session's laps, your zones as of Aug 18, and the conditions at 6:29 AM.",
+    f: ["Was that pace real, or the heat?", "What should the next one look like?"]
+  },
+  held: {
+    q: "Did I hold the pace across the reps?",
+    p: ["Yes, and more evenly than the average suggests. <b>5:28 · 5:24 · 5:31</b> — a three-second spread, with the slow one last, which is the right way round for a warm morning.",
+        "Rep two is the outlier, not rep three. It's four seconds under the other two and it's the noisiest stretch of the trace. If the session was written at 5:25, you ran it correctly and then some."],
+    s: "Read from this session's three work blocks and the recovery between them.",
+    f: ["Was rep two too fast?", "What should the next one look like?"]
+  },
+  heat: {
+    q: "Was that pace real, or the heat?",
+    p: ["A bit of both, and the heat's share is smaller than it felt. At <b>71°F</b> with a <b>64°F</b> dew point this sat just over the line where your own runs start to show a cost — and across your last three months that cost has averaged around <b>six seconds a mile</b>.",
+        "So the cool-morning version of 6:22 is somewhere near <b>6:16</b>. Not nothing, but not enough to explain a rep session you held to a three-second spread. You ran well and it was warm."],
+    s: "Read from this session's conditions and 34 runs across the last 90 days.",
+    f: ["Did I hold the pace across the reps?"]
+  },
+  next: {
+    q: "What should the next one look like?",
+    p: ["You're eight weeks out from Indy at <b>46 miles</b> a week, in a build phase, and your goal pace sits about <b>four seconds a mile</b> ahead of where your current fitness reads. That's the frame this session sits in.",
+        "The case for leaving it alone: three seconds across three reps, slowest one last, in heat. That's a session at the right difficulty, and repeating it in cooler air would tell you something clean.",
+        "The case for more: you said you could have held another rep, and rep two says your legs agreed. A fourth block at 5:28 is the smaller step; holding three and tightening the spread to a second is the other one — and with four seconds to find before Indy, the second is the one that closes it.",
+        "Which fits is a conversation with whoever writes your training. I can tell you what this session shows, not what your plan should do."],
+    s: "Read from this session, your athlete state as of Aug 20, and your last six weeks.",
+    f: ["How's my threshold looking right now?"]
+  },
+  knee: {
+    q: "Should I be worried about the knee?",
+    p: ["I can't tell you whether something's wrong — that's a question for someone who can look at it. What I can tell you is what your own logs say.",
+        "The left knee has come up <b>three times</b> in the last six weeks, all three on rep sessions, none on long runs. It didn't come up in this one's memo. That pattern — effort-linked, not distance-linked, and quiet today — is the useful thing to bring to a physio, and it's worth mentioning if it shows up a fourth time."],
+    s: "Read from your memos across the last 42 days. Quotes are verbatim, never paraphrased.",
+    f: ["What keeps coming up in this block?"]
+  }
+};
+
+A.hard = {
+  q: "How hard was this, really?",
+  p: ["Harder than the average pace makes it look, and about right for what it was. Twenty-eight minutes of work sat in your threshold band, with the reps averaging <b>162 bpm</b> — the top of where you've been holding threshold all block.",
+      "The recoveries are the tell. You came down to <b>6:00</b> pace and stayed there both times rather than jogging them out, which means the session cost you more than three reps of work on their own would. Call it a solid quality day, not a max effort."],
+  s: "Read from this session's laps and heart rate, and your zones as of Aug 18.",
+  f: ["Did I hold the pace across the reps?", "What should the next one look like?"]
+};
+A.vslast = {
+  q: "How does this compare to the last one like it?",
+  p: ["Against Aug 11 — the closest match in the last six weeks — you were about <b>four seconds a mile</b> quicker at a slightly lower heart rate, and it was five degrees warmer. That's the shape of a session going well.",
+      "The more interesting difference is the spread. On Aug 11 your reps ran 5:31, 5:26, 5:38 — a twelve-second range. Today it's three. Same fitness, better execution."],
+  s: "Read from this session, Aug 11's session, and the conditions for both.",
+  f: ["Could I have run this a month ago?"]
+};
+A.fit = {
+  q: "Was this the right session for where I am right now?",
+  p: ["Yes, and the timing is the strongest part. You're in a build phase, eight weeks out, running <b>46 miles</b> a week against a 28-day average of 42 — a ramp you've held steady rather than spiked. Your last hard day was Thursday, so this landed four days after it.",
+      "A three-by-threshold session at that spacing, in that phase, is the ordinary right answer. Nothing here suggests you reached for it early or left it too long."],
+  s: "Read from this session and your athlete state as of Aug 20 — phase, volume, load vs chronic, spacing between hard days.",
+  f: ["What should the next one look like?"]
+};
+A.generic = {
+  q: "Ask this one in the app",
+  p: ["This chip is here to show the full set of fifteen. The five on the rail above are the ones this particular session can answer well — a rep session with splits, heart rate and weather.",
+      "A long run would surface different ones. An easy run with no heart rate would surface fewer. That gating is in <code>session-questions.ts</code>, and it's why the rail never offers a question the answer would have to apologise for."],
+  s: "Not a real answer — a note about how the list is chosen.",
+  f: null
+};
+
+const TYPED = {
+  p: ["Holding back isn't quite what the trace shows. What it shows is a session you ran three seconds slower on the third rep than the first — and three seconds across twenty-eight minutes of work, on a warm morning, is inside the noise rather than a fade.",
+      "Where you did leave something is rep two. Your fastest split of the day sits in it, and so does the jaggiest stretch of the pace line. That's a rep you found by overshooting rather than by settling into. Rep one and rep three describe your current threshold honestly; rep two describes a good day."],
+  s: "Read from this session's laps and your last six weeks.",
+  f: ["Did I hold the pace across the reps?", "What should the next one look like?"]
+};
+
+function render(a){
+  const slot = document.getElementById('slot');
+  document.getElementById('qt').textContent = a.q;
+  slot.innerHTML = `<div class="load"><span class="dot"></span>Thinking…</div>`;
+  setTimeout(() => {
+    slot.innerHTML =
+      a.p.map(x=>`<p class="prose">${x}</p>`).join('') +
+      `<div class="src">${a.s}</div>` +
+      (a.f ? `<div class="followups">${a.f.map(f=>`<button class="chip">${f}</button>`).join('')}</div>` : '');
+  }, 640);
+}
+
+document.querySelectorAll('.chip[data-a]').forEach(c =>
+  c.addEventListener('click', () => render(A[c.dataset.a])));
+
+const more = document.getElementById('more'), rest = document.getElementById('rest');
+more.addEventListener('click', () => {
+  const open = rest.style.display !== 'none';
+  rest.style.display = open ? 'none' : 'flex';
+  more.textContent = open ? 'More questions ⌄' : 'Fewer questions ⌃';
+});
+
+const fld = document.getElementById('fld'), bar = document.getElementById('bar');
+fld.addEventListener('input', () => bar.classList.toggle('live', fld.value.trim().length > 0));
+function send(){
+  const v = fld.value.trim(); if (!v) return;
+  render(Object.assign({}, TYPED, {q: v}));
+  fld.value = ''; bar.classList.remove('live');
+}
+document.getElementById('go').addEventListener('click', send);
+fld.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+</script>
+
+<!-- ══ LEGEND ══ -->
+<div class="legend">
+  <h2>One path, and why that's the smaller build</h2>
+  <p>The first version of this split the questions into two rails — <i>about this run</i> and <i>against the block</i> — because only one analyzer in the registry accepts a workout id. That's an accurate description of the plumbing and a bad thing to show an athlete. She asked a question. The job is to answer it.</p>
+  <p>So: <b>one rail, one path, one answer.</b> Every question — tapped or typed — goes to the same endpoint with this session's context attached, and comes back as prose. It answers as well as it can with what it has, and says at the bottom what it read.</p>
+
+  <h3 class="kill">What got cut, and what that saves</h3>
+  <table>
+    <tr><th>Cut</th><th>Why</th></tr>
+    <tr><td>The chart (<code>series</code> → <code>AskChart</code>)</td><td>The session sheet is already three charts deep by the time she reaches the box. A fourth answers a question she didn't ask, and it's the most expensive thing on the response.</td></tr>
+    <tr><td>The fact grid</td><td>Four tiles of numbers she just scrolled past. The prose can say the number.</td></tr>
+    <tr><td>The two-tier rail</td><td>Told her about our plumbing. See above.</td></tr>
+    <tr><td>"This analyzer isn't built"</td><td>Never show an athlete a coverage gap she didn't ask about. Answer worse, don't refuse.</td></tr>
+    <tr><td>Chip → analyzer id binding</td><td>Chips are now just prefilled questions. Same path as typing. One code path instead of two.</td></tr>
+  </table>
+  <p style="margin-top:12px">What got cut is <b>rendering</b>, not knowing. The context going into the answer gets richer, not thinner — see below.</p>
+
+  <h3>What stays, because it's free</h3>
+  <p>The one line at the bottom — <i>"Read from this session's laps, your zones as of Aug 18, and the conditions at 6:29 AM"</i> — is a string assembled from what the context builder actually loaded. It's not a computation and not a model output. It costs nothing and it's most of what made the old coverage row worth having.</p>
+
+  <h3>It has to know the athlete, not just the run</h3>
+  <p>A box that answers <i>"was I holding back?"</i> without knowing her volume, her phase, her goal and her history writes something fluent and useless. That failure is already on record in this repo — the old insight sent the chat agent a bare <code>distance | duration | pace</code> line and got back <i>"I need more info — what's your weekly mileage?"</i></p>
+  <p>The block that fixes it <b>already exists</b>: <code>loadAthleteStateBlock</code> in <code>generate-workout-insight</code>. It reads seventeen columns of <code>athlete_state</code> in one query — volume, fitness as ranges rather than point times, declared races, training phase, the goal and the seconds-per-mile gap to it, load versus chronic, niggles surfaced but never diagnosed, behavioural patterns, recent training. It's complete and well-judged. It's just private to one function.</p>
+  <p>Phase B lifts it into <code>_shared/context.ts</code> and gives it to this box too. That's a move, not a design — which is why it's its own commit. Notice the "next one" answer above: the goal, the phase and the mileage are doing the work in the first paragraph. Without them it's just a paragraph about three splits.</p>
+  <p>One thing that comes with it: knowing the athlete better means <code>niggle_recurrence</code> sits in context on every turn, and a model handed the same flashcard forever raises it forever. That's diagnosed in <code>ASK-V2-CONVERSATION.md §3</code>, and the fix is a watermark in state rather than an instruction in the prompt. Ship without it; it's server-side if the knee starts turning up uninvited.</p>
+
+  <h3>The fifteen, and why only five show</h3>
+  <p>Full list and the gating in <code>session-questions.ts</code>. Every question is offered only when the session can answer it — <i>"did I hold the pace across the reps?"</i> on a steady six-miler produces a paragraph explaining there were no reps, which reads as the app not knowing what it's looking at. A shorter honest rail beats a longer one with two dead entries.</p>
+  <table>
+    <tr><th>Intent</th><th>Questions</th><th>Gated on</th></tr>
+    <tr><td>The read</td><td>What's the read on this session?</td><td>Always. Pinned first — the old row's job, and the safe default when she doesn't know what to ask.</td></tr>
+    <tr><td>Execution</td><td>Did I run this the way it was written? · Did I hold the pace across the reps? · Did I fade in the back half? · Did I start too fast?</td><td>A prescription, ≥2 reps, splits. <i>Back half</i> is withheld on easy runs — late drift is normal there, and offering the question invites the wrong answer.</td></tr>
+    <tr><td>Effort</td><td>Was this actually easy? · How hard was this, really? · Was my heart rate where it should have been?</td><td>Heart rate or splits. <i>Actually easy</i> only on easy and recovery runs — probably the most useful question in the set.</td></tr>
+    <tr><td>Conditions</td><td>Was that pace real, or was it the conditions? · How much did the hills cost me?</td><td>Weather captured; elevation stream present.</td></tr>
+    <tr><td>Comparison</td><td>How does this compare to the last one like it? · Could I have run this a month ago?</td><td>A comparable prior exists; quality session only.</td></tr>
+    <tr><td>Fit</td><td>Was this the right session for where I am right now? · Does this get me closer to my goal pace?</td><td>Always; goal + quality. These two lean hardest on athlete state — they're the questions that most reward getting §5.4 right.</td></tr>
+    <tr><td>Body</td><td>Is there anything here worth paying attention to?</td><td>She mentioned something, or a body mention is open. <b>Never offered unprompted on a clean session</b> — inviting a worry question on a good run is its own kind of harm.</td></tr>
+    <tr><td>Next</td><td>What should the next one look like?</td><td>Quality or long runs.</td></tr>
+  </table>
+  <p style="margin-top:12px">The picker fills the four slots after <i>the read</i> <b>one intent at a time</b> before any intent gets a second. Without that pass, any session with splits fills the rail with four execution questions — each individually relevant, collectively a worse rail.</p>
+
+  <h3>Where the agility actually lives</h3>
+  <ul>
+    <li><b>The questions come from the server.</b> The list ships on the response, not in the binary. Changing what a long run asks versus a rep session is a config edit and a deploy — not an App Store release and a week of review. This is the single most valuable decision here and it costs one field. The instinct to "just hardcode the five" removes the only cheap lever this surface has.</li>
+    <li><b>Every question is logged.</b> <code>analysis_queries</code> already records them. Ship prose-first, read a month of what people actually type, then build computation for the top five. That's a far better way to choose the next analyzer than guessing from a registry doc.</li>
+    <li><b>The computed layer is additive later.</b> If a question turns out to be worth grounding in real math, that analyzer's facts get handed to the same prose call as context. The UI never changes — the answer just gets more accurate. Nothing built now has to be torn out.</li>
+  </ul>
+
+  <h3>The one trade-off, stated plainly</h3>
+  <p>Prose answers are not number-guarded. Layer-2 narration over analyzer facts can't speak a number that isn't in <code>facts</code>; a conversational answer can. That guard isn't being removed — it's just not on this path.</p>
+  <p>Worth being clear that this is <b>not a new exposure</b>: the insight paragraph this box replaces is already pure prose over a session context, generated for every voice memo, with no number guard at all. The box gives the athlete the choice of question and stops generating unasked. On the numbers, it's the same risk it already ships with.</p>
+</div>
+</body>
+</html>

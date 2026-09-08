@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Page Turn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&family=Martian+Mono:wght@400;600&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap">
+
+<style>
+/* ---------- gallery chrome tokens ---------- */
+:root{
+  --wall:#E7E7EA; --panel:#F4F4F6; --rule:#D2D3D8; --rule-soft:#DEDFE3;
+  --ink:#16181D; --ink-2:#5C616C; --ink-3:#8A8F9A;
+  --wax:#B87516; --wax-fill:rgba(226,168,58,.16);
+  --shadow:0 1px 2px rgba(18,20,25,.07),0 12px 32px rgba(18,20,25,.10);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --wall:#15171B; --panel:#1D2026; --rule:#2E323A; --rule-soft:#262A31;
+  --ink:#ECEDF0; --ink-2:#9AA0AB; --ink-3:#6E7480;
+  --wax:#F2C14E; --wax-fill:rgba(242,193,78,.13);
+  --shadow:0 1px 2px rgba(0,0,0,.5),0 18px 44px rgba(0,0,0,.45);
+}}
+:root[data-theme="dark"]{
+  --wall:#15171B; --panel:#1D2026; --rule:#2E323A; --rule-soft:#262A31;
+  --ink:#ECEDF0; --ink-2:#9AA0AB; --ink-3:#6E7480;
+  --wax:#F2C14E; --wax-fill:rgba(242,193,78,.13);
+  --shadow:0 1px 2px rgba(0,0,0,.5),0 18px 44px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--wall);color:var(--ink);
+  font-family:"Instrument Sans",-apple-system,BlinkMacSystemFont,sans-serif;font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px;}
+
+.masthead{padding:60px 0 36px;border-bottom:1px solid var(--rule);}
+.kicker{font-family:"Martian Mono",monospace;font-size:10px;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--wax);margin:0 0 18px;}
+.masthead h1{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;
+  font-size:clamp(2.3rem,5.5vw,3.6rem);line-height:1.03;letter-spacing:-.03em;margin:0 0 18px;
+  text-wrap:balance;max-width:15ch;}
+.standfirst{font-size:1.0625rem;line-height:1.65;color:var(--ink-2);max-width:62ch;margin:0;}
+.standfirst strong{color:var(--ink);font-weight:600;}
+
+.sec{padding:52px 0;border-bottom:1px solid var(--rule);}
+.sec:last-of-type{border-bottom:0;}
+.sec-head h2{font-family:"Bricolage Grotesque",sans-serif;font-weight:600;font-size:1.4rem;
+  letter-spacing:-.02em;margin:0 0 8px;}
+.sec-head p{margin:0 0 30px;color:var(--ink-2);max-width:64ch;font-size:.9375rem;}
+
+/* ---------- the lab ---------- */
+.lab{display:grid;gap:40px;align-items:start;}
+@media(min-width:900px){.lab{grid-template-columns:372px minmax(0,1fr);}
+  .controls{max-width:430px;}
+  .stagewrap{position:sticky;top:24px;}}
+
+.controls{display:flex;flex-direction:column;gap:22px;}
+.cgroup{border:1px solid var(--rule);border-radius:12px;background:var(--panel);padding:16px 18px;}
+.clabel{font-family:"Martian Mono",monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3);margin:0 0 12px;}
+.segs{display:flex;flex-wrap:wrap;gap:6px;}
+.segs button{
+  font-family:"Instrument Sans",sans-serif;font-size:.8125rem;font-weight:500;
+  padding:7px 12px;border:1px solid var(--rule);border-radius:99px;background:transparent;
+  color:var(--ink-2);cursor:pointer;transition:background .15s,color .15s,border-color .15s;
+}
+.segs button:hover{color:var(--ink);border-color:var(--ink-3);}
+.segs button[aria-pressed="true"]{background:var(--ink);color:var(--wall);border-color:var(--ink);}
+.segs button:focus-visible{outline:2px solid var(--wax);outline-offset:2px;}
+
+.styleinfo{margin-top:14px;padding-top:14px;border-top:1px solid var(--rule-soft);}
+.styleinfo h4{font-family:"Bricolage Grotesque",sans-serif;font-size:.9375rem;font-weight:600;margin:0 0 6px;letter-spacing:-.01em;}
+.styleinfo p{margin:0 0 10px;font-size:.8438rem;line-height:1.55;color:var(--ink-2);}
+.costline{display:flex;align-items:center;gap:8px;font-family:"Martian Mono",monospace;
+  font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);}
+.pill{padding:3px 8px;border-radius:99px;font-weight:600;}
+.pill.easy{background:rgba(45,138,78,.15);color:#2D8A4E;}
+.pill.med{background:var(--wax-fill);color:var(--wax);}
+.pill.hard{background:rgba(230,57,70,.14);color:#D3323E;}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pill.easy{background:rgba(95,190,133,.16);color:#5FBE85;}
+  :root:not([data-theme="light"]) .pill.hard{background:rgba(227,112,125,.16);color:#E3707D;}}
+
+.switch{display:flex;align-items:center;justify-content:space-between;gap:14px;cursor:pointer;}
+.switch span{font-size:.875rem;color:var(--ink-2);}
+.switch input{appearance:none;width:40px;height:23px;border-radius:99px;background:var(--rule);
+  position:relative;cursor:pointer;transition:background .2s;flex:0 0 40px;margin:0;}
+.switch input::after{content:"";position:absolute;top:2.5px;left:2.5px;width:18px;height:18px;
+  border-radius:99px;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3);}
+.switch input:checked{background:var(--wax);}
+.switch input:checked::after{transform:translateX(17px);}
+.switch input:focus-visible{outline:2px solid var(--wax);outline-offset:2px;}
+
+.hint{font-size:.8125rem;color:var(--ink-3);margin:0;}
+.hint kbd{font-family:"IBM Plex Mono",monospace;font-size:.75rem;background:var(--rule);
+  padding:2px 6px;border-radius:4px;color:var(--ink-2);}
+
+/* ---------- device ---------- */
+.stagewrap{display:flex;flex-direction:column;align-items:center;gap:16px;}
+.device{background:#0A0A0C;padding:10px;border-radius:44px;box-shadow:var(--shadow);}
+.stage{
+  width:352px;height:704px;border-radius:34px;overflow:hidden;position:relative;
+  /* clip-path as well as overflow: `overflow:hidden` does not clip 3D-transformed
+     descendants to a border-radius, so the turning sheet escapes the corners. */
+  clip-path:inset(0 round 34px);
+  background:#F0F0EE;perspective:1500px;perspective-origin:50% 45%;
+  touch-action:pan-y;cursor:grab;user-select:none;
+}
+.stage.grabbing{cursor:grabbing;}
+.page{
+  position:absolute;inset:0;background:#FAFAF9;color:#0D1016;
+  transform-origin:left center;backface-visibility:hidden;
+  will-change:transform,opacity;overflow:hidden;
+  display:flex;flex-direction:column;
+}
+.page .inner{flex:1;overflow:hidden;padding:26px 24px 0;}
+/* gutter shadow — only when paper depth is on */
+.page .gutter{position:absolute;top:0;bottom:0;left:0;width:26px;pointer-events:none;opacity:0;
+  background:linear-gradient(to right,rgba(13,16,22,.20),rgba(13,16,22,0));}
+.page .edge{position:absolute;top:0;bottom:0;right:0;width:16px;pointer-events:none;opacity:0;
+  background:linear-gradient(to left,rgba(13,16,22,.13),rgba(13,16,22,0));}
+.paper .page .gutter,.paper .page .edge{opacity:1;}
+.page .veil{position:absolute;inset:0;background:#0D1016;opacity:0;pointer-events:none;}
+
+/* ---------- app typography inside the phone ---------- */
+.pfolio{display:flex;justify-content:space-between;align-items:center;padding:14px 24px 18px;
+  font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#8F95A1;}
+.pfolio b{color:#0D1016;font-weight:500;}
+.pfolio .rail{display:flex;gap:4px;}
+.pfolio .rail i{width:16px;height:2px;background:#E6E7EA;}
+.pfolio .rail i.on{background:#E63946;}
+
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:#8F95A1;}
+.disp{font-family:"Crimson Pro",Georgia,serif;font-weight:700;letter-spacing:-.012em;color:#0D1016;line-height:1.04;}
+.serif{font-family:"PT Serif",Georgia,serif;color:#0D1016;}
+.mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;}
+.rule{height:1px;background:#E6E7EA;margin:16px 0;}
+.rule.thick{height:2px;background:#0D1016;}
+
+.mood{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:8.5px;letter-spacing:.12em;
+  text-transform:uppercase;padding:3px 8px;border:1px solid #4A9E6B;color:#2D8A4E;border-radius:2px;}
+.measures{display:flex;gap:0;margin-top:20px;}
+.measures div{flex:1;border-left:1px solid #E6E7EA;padding-left:11px;}
+.measures div:first-child{border-left:0;padding-left:0;}
+.measures s{display:block;text-decoration:none;font-family:"IBM Plex Mono",monospace;font-size:8px;
+  letter-spacing:.13em;text-transform:uppercase;color:#8F95A1;margin-bottom:4px;}
+.measures u{display:block;text-decoration:none;font-family:"Crimson Pro",serif;font-weight:700;
+  font-size:26px;font-variant-numeric:tabular-nums;color:#0D1016;line-height:1;}
+.quote{font-family:"PT Serif",Georgia,serif;font-style:italic;font-size:16px;line-height:1.6;color:#0D1016;}
+.reps{width:100%;border-collapse:collapse;font-family:"IBM Plex Mono",monospace;font-size:11px;font-variant-numeric:tabular-nums;}
+.reps th{text-align:left;font-weight:400;font-size:8px;letter-spacing:.13em;text-transform:uppercase;
+  color:#8F95A1;padding:0 0 7px;border-bottom:1px solid #0D1016;}
+.reps td{padding:8px 0;border-bottom:1px solid #E6E7EA;color:#0D1016;}
+.reps td.r,.reps th.r{text-align:right;}
+.bars{display:flex;align-items:flex-end;gap:5px;height:64px;margin:18px 0 6px;}
+.bars i{flex:1;background:#E63946;border-radius:1px 1px 0 0;}
+.bars i.easy{background:#C9CCD2;}
+.askbox{border:1px solid #E6E7EA;background:#fff;border-radius:3px;padding:12px 13px;
+  font-family:"PT Serif",serif;font-size:13px;color:#8F95A1;display:flex;justify-content:space-between;align-items:center;}
+.askbox b{font-family:"IBM Plex Mono",monospace;font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;color:#E63946;font-weight:500;}
+.ledger{width:100%;border-collapse:collapse;font-size:11.5px;}
+.ledger th{text-align:left;font-family:"IBM Plex Mono",monospace;font-weight:400;font-size:7.5px;
+  letter-spacing:.13em;text-transform:uppercase;color:#8F95A1;padding:0 0 7px;border-bottom:1px solid #0D1016;}
+.ledger td{padding:7px 0;border-bottom:1px solid #E6E7EA;font-family:"PT Serif",serif;color:#0D1016;}
+.ledger td.m,.ledger th.m{text-align:right;font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;}
+.ledger td.d,.ledger th.d{width:34px;font-family:"IBM Plex Mono",monospace;color:#8F95A1;font-size:10px;}
+.tot{display:flex;justify-content:space-between;margin-top:14px;padding-top:11px;border-top:2px solid #0D1016;
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#0D1016;
+  font-variant-numeric:tabular-nums;}
+
+/* ---------- table ---------- */
+.tbl-scroll{overflow-x:auto;border:1px solid var(--rule);border-radius:12px;background:var(--panel);}
+table.cmp{border-collapse:collapse;width:100%;min-width:700px;font-size:.875rem;}
+table.cmp th,table.cmp td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--rule-soft);vertical-align:top;}
+table.cmp thead th{font-family:"Martian Mono",monospace;font-size:9.5px;font-weight:600;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-3);border-bottom:1px solid var(--rule);white-space:nowrap;}
+table.cmp tbody th{font-weight:600;color:var(--ink);white-space:nowrap;font-size:.8125rem;}
+table.cmp td{color:var(--ink-2);}
+table.cmp tbody tr:last-child th,table.cmp tbody tr:last-child td{border-bottom:0;}
+
+.footnote{margin-top:28px;padding:18px 20px;border-left:2px solid var(--wax);background:var(--wax-fill);border-radius:0 8px 8px 0;}
+.footnote p{margin:0;font-size:.875rem;line-height:1.6;color:var(--ink-2);}
+.footnote p+p{margin-top:10px;}
+.footnote b{color:var(--ink);font-weight:600;}
+.footnote code{font-family:"IBM Plex Mono",monospace;font-size:.8125em;background:rgba(128,128,128,.16);padding:1px 5px;border-radius:4px;color:var(--ink);}
+footer{padding:36px 0 68px;color:var(--ink-3);font-size:.8125rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="kicker">Post Run Drip · Interaction Study · 21 Aug 2026</p>
+  <h1>How the page should turn</h1>
+  <p class="standfirst">Your journal is already four pages — <strong>The session</strong>, <strong>In your words</strong>, <strong>The workout</strong>, <strong>The read</strong>. What's missing is the feel: right now it slides flat like a carousel. Four turns below, on real pages. Everything is in your <em>current</em> palette on purpose, so you're judging the motion and not a colour change at the same time.</p>
+</header>
+
+<section class="sec">
+  <div class="sec-head">
+    <h2>The turn lab</h2>
+    <p>Drag the page sideways, use <kbd>←</kbd> <kbd>→</kbd>, or tap the left and right thirds. Switch turn styles and toggle the paper depth while you're mid-deck — the page keeps its place.</p>
+  </div>
+
+  <div class="lab">
+    <div class="stagewrap">
+      <div class="device">
+        <div class="stage paper" id="stage" tabindex="0" role="group" aria-roledescription="page deck" aria-label="Journal pages"></div>
+      </div>
+      <p class="hint">Page <span id="folioLive" aria-live="polite">1 of 4 — The session</span></p>
+    </div>
+    <div class="controls">
+      <div class="cgroup">
+        <p class="clabel">Deck</p>
+        <div class="segs" id="deckSegs">
+          <button data-deck="log" aria-pressed="true">Voice log · one session</button>
+          <button data-deck="sheet" aria-pressed="false">Sheet · month spreads</button>
+        </div>
+      </div>
+
+      <div class="cgroup">
+        <p class="clabel">Turn style</p>
+        <div class="segs" id="styleSegs">
+          <button data-style="slide" aria-pressed="false">Slide</button>
+          <button data-style="paper" aria-pressed="true">Paper slide</button>
+          <button data-style="hinge" aria-pressed="false">Hinge</button>
+          <button data-style="stack" aria-pressed="false">Stack</button>
+        </div>
+        <div class="styleinfo" id="styleInfo"></div>
+      </div>
+
+      <div class="cgroup">
+        <p class="clabel">Paper depth</p>
+        <label class="switch">
+          <span>Gutter shadow, receding page, sheet edge</span>
+          <input type="checkbox" id="depthToggle" checked>
+        </label>
+        <p class="hint" style="margin-top:10px">Turn it off to see the same motion with no skeuomorphism. Hinge always needs it — a fold with no shadow reads as a glitch.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="sec">
+  <div class="sec-head">
+    <h2>What each turn costs in SwiftUI</h2>
+    <p>This is the part that decides it. Three of these four are small additions to the pager you already have. One is a rewrite.</p>
+  </div>
+
+  <div class="tbl-scroll">
+    <table class="cmp">
+      <thead><tr><th>Turn</th><th>Reads as</th><th>How it's built</th><th>Cost</th></tr></thead>
+      <tbody>
+        <tr>
+          <th>Slide</th>
+          <td>A carousel. Clean, but nothing says "page".</td>
+          <td>What you ship today — <code>.scrollTargetBehavior(.paging)</code>, untouched.</td>
+          <td>Already done</td>
+        </tr>
+        <tr>
+          <th>Paper slide</th>
+          <td>A magazine. The leaving page falls behind the spine.</td>
+          <td><code>.scrollTransition</code> on the existing pager — offset, scale and a gutter overlay. No new gesture code.</td>
+          <td>~40 lines, one file</td>
+        </tr>
+        <tr>
+          <th>Hinge</th>
+          <td>A book. Unmistakably a turn, and the most memorable.</td>
+          <td><code>rotation3DEffect</code> anchored <code>.leading</code>, driven by a manual <code>DragGesture</code> — which means giving up <code>.scrollTargetBehavior(.paging)</code> and hand-rolling velocity, rubber-banding and the turn-lock.</td>
+          <td>Rewrites the pager</td>
+        </tr>
+        <tr>
+          <th>Stack</th>
+          <td>A deck of cards being dealt. Modern, app-like.</td>
+          <td><code>.scrollTransition</code> plus a z-index flip. Same mechanic as paper slide, different numbers.</td>
+          <td>~40 lines, one file</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footnote">
+    <p><b>The one thing to fix first, whichever you pick.</b> You have two pagers running in opposite directions. <code>HistoryDetailPager</code> is book order — oldest first, today last. <code>HomeDayPager</code> is newspaper order — today is the front page and turning goes back in time. Your own <code>PAGED-HOME-APPLY.md</code> flags this as open question §8.1. Once the turn <em>looks</em> like paper, that contradiction stops being a detail and starts being a bug people feel: back-in-time is left in one surface and right in the other.</p>
+    <p><b>The Sheet needs page breaks before it needs a turn.</b> One month per spread, as you chose — August is a page, July is a page. It gives every page a headline and a footing total, and turning the Sheet becomes turning back through your training year.</p>
+  </div>
+</section>
+
+<footer>Real content — Threshold 8.2 mi, Thursday 20 August 2026, and the August ledger. Palette and type unchanged from the shipping app.</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STYLE_INFO = {
+    slide:{t:"Slide",d:"Flat lateral motion, nothing behind it. Honest and quick, but the page reads as a slide in a carousel rather than a sheet of paper.",c:"Already shipping",k:"easy"},
+    paper:{t:"Paper slide",d:"The leaving page slows to 60% and sinks behind the spine while the arriving sheet comes in at full speed. A gutter shadow falls across the binding edge.",c:"~40 lines",k:"easy"},
+    hinge:{t:"Hinge",d:"The sheet rotates on the spine and lifts off the page beneath it. The most physical of the four, and the only one that reads unmistakably as turning rather than sliding.",c:"Rewrites the pager",k:"hard"},
+    stack:{t:"Stack",d:"The arriving page deals over the top with a cast shadow; the page underneath dims and recedes. Modern and app-like rather than papery.",c:"~40 lines",k:"med"}
+  };
+
+  var DECKS = {
+    log:[
+      {label:"The session", html:
+        '<div class="eyebrow">Thursday · 20 August 2026</div>'+
+        '<div class="disp" style="font-size:40px;margin:10px 0 12px">Threshold,<br>8.2 mi.</div>'+
+        '<span class="mood">Positive</span>'+
+        '<div class="measures">'+
+          '<div><s>Pace</s><u>7:12</u></div><div><s>Time</s><u>59:00</u></div><div><s>Load</s><u>142</u></div>'+
+        '</div>'+
+        '<div class="rule"></div>'+
+        '<p class="serif" style="font-size:15px;line-height:1.62;margin:0">Four by a mile and a half at threshold, with the last one held together on feel rather than the watch. The session you were meant to run.</p>'+
+        '<div class="rule"></div>'+
+        '<div class="eyebrow" style="margin-bottom:9px">Where it sat</div>'+
+        '<div class="bars"><i class="easy" style="height:22%"></i><i style="height:74%"></i><i class="easy" style="height:26%"></i><i style="height:80%"></i><i class="easy" style="height:24%"></i><i style="height:86%"></i><i class="easy" style="height:28%"></i><i style="height:92%"></i><i class="easy" style="height:34%"></i></div>'+
+        '<div class="eyebrow">Warm · rep · float, ×4 · cool</div>'},
+      {label:"In your words", html:
+        '<div class="eyebrow">In your words · voice log, 2:41</div>'+
+        '<div class="rule thick" style="margin:12px 0 20px"></div>'+
+        '<p class="quote" style="margin:0 0 18px">"Third rep was the one — settled into it instead of forcing it. First two I was chasing the number and it felt like work."</p>'+
+        '<p class="quote" style="margin:0 0 18px">"Right calf tight on the cooldown. Nothing sharp, just aware of it. Same one as the tempo two weeks ago."</p>'+
+        '<p class="quote" style="margin:0">"Would run that session again tomorrow."</p>'+
+        '<div class="rule"></div>'+
+        '<div class="eyebrow" style="color:#B83A4A">Flagged · right calf · 2× in 14 days</div>'},
+      {label:"The workout", html:
+        '<div class="eyebrow">The workout · 4 × 1.5 mi</div>'+
+        '<div class="disp" style="font-size:26px;margin:10px 0 18px">Even, then braver.</div>'+
+        '<table class="reps">'+
+          '<tr><th>Rep</th><th class="r">Pace</th><th class="r">HR</th><th class="r">Float</th></tr>'+
+          '<tr><td>1</td><td class="r">7:18</td><td class="r">168</td><td class="r">2:00</td></tr>'+
+          '<tr><td>2</td><td class="r">7:15</td><td class="r">171</td><td class="r">2:00</td></tr>'+
+          '<tr><td>3</td><td class="r">7:09</td><td class="r">174</td><td class="r">2:00</td></tr>'+
+          '<tr><td>4</td><td class="r">7:06</td><td class="r">177</td><td class="r">—</td></tr>'+
+        '</table>'+
+        '<div class="rule"></div>'+
+        '<div class="measures">'+
+          '<div><s>Temp</s><u>61°</u></div><div><s>Wind</s><u>7mph</u></div><div><s>Dew</s><u>54°</u></div>'+
+        '</div>'+
+        '<div class="rule"></div>'+
+        '<p class="serif" style="font-size:13.5px;line-height:1.6;color:#585D68;margin:0">Twelve seconds of negative split across four reps, with heart rate climbing nine beats. Controlled, not ragged.</p>'},
+      {label:"The read", html:
+        '<div class="eyebrow">The read · from your coach</div>'+
+        '<div class="rule thick" style="margin:12px 0 20px"></div>'+
+        '<p class="serif" style="font-size:15.5px;line-height:1.66;margin:0 0 16px">This is the third threshold session in a row where you have gone faster in the back half. That pattern is worth more than any single pace.</p>'+
+        '<p class="serif" style="font-size:15.5px;line-height:1.66;margin:0 0 18px">The calf is the thing to watch. Twice in fourteen days is not an injury, but it is a note.</p>'+
+        '<div class="rule"></div>'+
+        '<div class="eyebrow" style="margin-bottom:10px">Against 6 August</div>'+
+        '<div class="measures">'+
+          '<div><s>Pace</s><u>−9s</u></div><div><s>HR</s><u>−3</u></div><div><s>Load</s><u>+11</u></div>'+
+        '</div>'+
+        '<div style="height:20px"></div>'+
+        '<div class="askbox"><span>Ask about this session…</span><b>Ask</b></div>'}
+    ],
+    sheet:[
+      {label:"August 2026", html:
+        '<div class="eyebrow">Sheet · every session</div>'+
+        '<div class="disp" style="font-size:38px;margin:8px 0 4px">August.</div>'+
+        '<div class="eyebrow" style="margin-bottom:18px">Marathon block · weeks 5–8</div>'+
+        '<table class="ledger">'+
+          '<tr><th class="d">Day</th><th>Session</th><th class="m">Mi</th><th class="m">Pace</th></tr>'+
+          '<tr><td class="d">21</td><td>Rest</td><td class="m">—</td><td class="m">—</td></tr>'+
+          '<tr><td class="d">20</td><td>Threshold, 4 × 1.5</td><td class="m">8.2</td><td class="m">7:12</td></tr>'+
+          '<tr><td class="d">19</td><td>Easy</td><td class="m">5.0</td><td class="m">8:47</td></tr>'+
+          '<tr><td class="d">18</td><td>Long run, 4 @ MP</td><td class="m">16.0</td><td class="m">8:21</td></tr>'+
+          '<tr><td class="d">16</td><td>Easy + strides</td><td class="m">6.1</td><td class="m">8:39</td></tr>'+
+          '<tr><td class="d">14</td><td>Tempo, 5 mi</td><td class="m">9.0</td><td class="m">7:26</td></tr>'+
+          '<tr><td class="d">13</td><td>Easy</td><td class="m">5.4</td><td class="m">8:52</td></tr>'+
+          '<tr><td class="d">11</td><td>Long run</td><td class="m">14.0</td><td class="m">8:34</td></tr>'+
+          '<tr><td class="d">09</td><td>Intervals, 8 × 800</td><td class="m">7.8</td><td class="m">6:58</td></tr>'+
+          '<tr><td class="d">06</td><td>Threshold, 4 × 1.5</td><td class="m">8.1</td><td class="m">7:21</td></tr>'+
+        '</table>'+
+        '<div class="tot"><span>10 sessions</span><span>79.6 mi</span></div>'},
+      {label:"July 2026", html:
+        '<div class="eyebrow">Sheet · every session</div>'+
+        '<div class="disp" style="font-size:38px;margin:8px 0 4px">July.</div>'+
+        '<div class="eyebrow" style="margin-bottom:18px">Marathon block · weeks 1–4</div>'+
+        '<table class="ledger">'+
+          '<tr><th class="d">Day</th><th>Session</th><th class="m">Mi</th><th class="m">Pace</th></tr>'+
+          '<tr><td class="d">30</td><td>Long run</td><td class="m">13.0</td><td class="m">8:41</td></tr>'+
+          '<tr><td class="d">28</td><td>Threshold, 3 × 1.5</td><td class="m">7.4</td><td class="m">7:28</td></tr>'+
+          '<tr><td class="d">26</td><td>Easy</td><td class="m">5.2</td><td class="m">8:58</td></tr>'+
+          '<tr><td class="d">23</td><td>Hills, 10 × 45s</td><td class="m">6.6</td><td class="m">8:12</td></tr>'+
+          '<tr><td class="d">21</td><td>Long run</td><td class="m">12.0</td><td class="m">8:46</td></tr>'+
+          '<tr><td class="d">19</td><td>Easy</td><td class="m">4.8</td><td class="m">9:04</td></tr>'+
+          '<tr><td class="d">16</td><td>Tempo, 4 mi</td><td class="m">7.5</td><td class="m">7:34</td></tr>'+
+          '<tr><td class="d">13</td><td>Long run</td><td class="m">11.0</td><td class="m">8:52</td></tr>'+
+          '<tr><td class="d">10</td><td>Easy + strides</td><td class="m">5.5</td><td class="m">8:56</td></tr>'+
+        '</table>'+
+        '<div class="tot"><span>9 sessions</span><span>73.0 mi</span></div>'},
+      {label:"June 2026", html:
+        '<div class="eyebrow">Sheet · every session</div>'+
+        '<div class="disp" style="font-size:38px;margin:8px 0 4px">June.</div>'+
+        '<div class="eyebrow" style="margin-bottom:18px">Base · before the block</div>'+
+        '<table class="ledger">'+
+          '<tr><th class="d">Day</th><th>Session</th><th class="m">Mi</th><th class="m">Pace</th></tr>'+
+          '<tr><td class="d">28</td><td>Long run</td><td class="m">10.0</td><td class="m">9:02</td></tr>'+
+          '<tr><td class="d">25</td><td>Easy</td><td class="m">5.0</td><td class="m">9:14</td></tr>'+
+          '<tr><td class="d">22</td><td>Fartlek, 30 min</td><td class="m">6.0</td><td class="m">8:24</td></tr>'+
+          '<tr><td class="d">19</td><td>Easy</td><td class="m">4.5</td><td class="m">9:20</td></tr>'+
+          '<tr><td class="d">15</td><td>Long run</td><td class="m">9.0</td><td class="m">9:08</td></tr>'+
+          '<tr><td class="d">12</td><td>Easy</td><td class="m">4.2</td><td class="m">9:26</td></tr>'+
+          '<tr><td class="d">08</td><td>Easy + strides</td><td class="m">5.0</td><td class="m">9:11</td></tr>'+
+        '</table>'+
+        '<div class="tot"><span>7 sessions</span><span>43.7 mi</span></div>'}
+    ]
+  };
+
+  var stage = document.getElementById('stage');
+  var folioLive = document.getElementById('folioLive');
+  var styleInfo = document.getElementById('styleInfo');
+  var depthToggle = document.getElementById('depthToggle');
+
+  var deck = 'log', style = 'paper', cur = 0, drag = 0, W = 352, els = [];
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function pages(){ return DECKS[deck]; }
+
+  function build(){
+    stage.innerHTML = '';
+    els = pages().map(function(p){
+      var el = document.createElement('article');
+      el.className = 'page';
+      el.innerHTML = '<div class="inner">'+p.html+'</div>'+
+        '<div class="pfolio"><span>Post Run Drip</span><b></b><span class="rail"></span></div>'+
+        '<div class="gutter"></div><div class="edge"></div><div class="veil"></div>';
+      stage.appendChild(el);
+      return el;
+    });
+    // folio text + rail per page
+    els.forEach(function(el,i){
+      el.querySelector('.pfolio b').textContent = pages()[i].label;
+      var rail = el.querySelector('.rail');
+      pages().forEach(function(_,j){
+        var t = document.createElement('i'); if(j===i) t.className='on'; rail.appendChild(t);
+      });
+    });
+    cur = Math.min(cur, pages().length-1);
+    apply(true);
+  }
+
+  function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+
+  function apply(snap){
+    var pos = cur + drag;                       // continuous page position
+    var n = els.length;
+    for(var i=0;i<n;i++){
+      var el = els[i], p = i - pos;             // 0 = centred, +1 = one to the right
+      var tf = '', op = 1, z = n - i, veil = 0, showGutter = true;
+
+      if(style==='slide'){
+        tf = 'translate3d('+(p*W)+'px,0,0)';
+        z = n - i;
+      }
+      else if(style==='paper'){
+        if(p < 0){                              // already turned — recedes behind the spine
+          var k = clamp(-p,0,1);
+          tf = 'translate3d('+(p*W*0.62)+'px,0,0) scale('+(1-0.05*k)+')';
+          veil = 0.16*k;
+        } else {
+          tf = 'translate3d('+(p*W)+'px,0,0)';
+        }
+        z = n - i;
+      }
+      else if(style==='hinge'){
+        var q = -p;                             // how far past this sheet we are
+        if(q <= 0){ tf = 'rotateY(0deg)'; }
+        else if(q < 1){
+          tf = 'rotateY('+(-q*180)+'deg)';
+          veil = 0.34*q;
+        } else { tf = 'rotateY(-180deg)'; op = 0; }
+        z = n - i;
+      }
+      else if(style==='stack'){
+        if(p <= 0){                             // underneath, dimming back
+          var s = clamp(-p,0,1);
+          tf = 'translate3d(0,0,0) scale('+(1-0.07*s)+')';
+          veil = 0.22*s;
+          showGutter = false;
+        } else {
+          tf = 'translate3d('+(p*W)+'px,0,0)';
+          showGutter = false;
+        }
+        z = n + i;                              // arriving page rides on top
+      }
+
+      el.style.transition = snap && !reduce
+        ? 'transform .46s cubic-bezier(.22,.75,.28,1), opacity .3s linear'
+        : (snap ? 'none' : 'none');
+      el.style.transform = tf;
+      el.style.opacity = op;
+      el.style.zIndex = z;
+      el.querySelector('.veil').style.opacity = veil;
+      var g = el.querySelector('.gutter');
+      g.style.display = showGutter ? 'block' : 'none';
+      // stack casts its shadow on the arriving sheet's leading edge instead
+      el.style.boxShadow = (style==='stack' && p>0.02) ? '-14px 0 34px rgba(13,16,22,.30)'
+                         : (style==='hinge' && p<0 && p>-1) ? '10px 0 30px rgba(13,16,22,.26)' : 'none';
+    }
+    var idx = Math.round(pos);
+    folioLive.textContent = (idx+1)+' of '+n+' — '+pages()[clamp(idx,0,n-1)].label;
+  }
+
+  function go(delta){
+    cur = clamp(cur+delta, 0, els.length-1);
+    drag = 0; apply(true);
+  }
+
+  /* ---------- drag ---------- */
+  var down = false, x0 = 0, moved = false;
+  stage.addEventListener('pointerdown', function(e){
+    down = true; moved = false; x0 = e.clientX;
+    stage.setPointerCapture(e.pointerId); stage.classList.add('grabbing');
+  });
+  stage.addEventListener('pointermove', function(e){
+    if(!down) return;
+    var dx = e.clientX - x0;
+    if(Math.abs(dx) > 3) moved = true;
+    var d = -dx / W;
+    // rubber-band at the ends
+    if(cur + d < 0) d = -cur + (cur+d)*0.32;
+    if(cur + d > els.length-1) d = (els.length-1-cur) + (cur+d-(els.length-1))*0.32;
+    drag = d; apply(false);
+  });
+  function release(){
+    if(!down) return;
+    down = false; stage.classList.remove('grabbing');
+    var step = drag > 0.22 ? 1 : (drag < -0.22 ? -1 : 0);
+    drag = 0; go(step);
+  }
+  stage.addEventListener('pointerup', function(e){
+    var wasMoved = moved;
+    var rect = stage.getBoundingClientRect();
+    var rel = (e.clientX - rect.left) / rect.width;
+    release();
+    if(!wasMoved){ go(rel > 0.62 ? 1 : (rel < 0.38 ? -1 : 0)); }
+  });
+  stage.addEventListener('pointercancel', release);
+  stage.addEventListener('lostpointercapture', release);
+
+  stage.addEventListener('keydown', function(e){
+    if(e.key === 'ArrowRight'){ e.preventDefault(); go(1); }
+    if(e.key === 'ArrowLeft'){ e.preventDefault(); go(-1); }
+  });
+  document.addEventListener('keydown', function(e){
+    if(document.activeElement === stage) return;
+    if(e.key === 'ArrowRight'){ go(1); }
+    if(e.key === 'ArrowLeft'){ go(-1); }
+  });
+
+  /* ---------- controls ---------- */
+  function setSegs(container, attr, val){
+    container.querySelectorAll('button').forEach(function(b){
+      b.setAttribute('aria-pressed', String(b.dataset[attr] === val));
+    });
+  }
+  document.getElementById('deckSegs').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    deck = b.dataset.deck; cur = 0; setSegs(this,'deck',deck); build();
+  });
+  document.getElementById('styleSegs').addEventListener('click', function(e){
+    var b = e.target.closest('button'); if(!b) return;
+    style = b.dataset.style; setSegs(this,'style',style);
+    if(style === 'hinge'){ depthToggle.checked = true; stage.classList.add('paper'); }
+    renderInfo(); apply(true);
+  });
+  depthToggle.addEventListener('change', function(){
+    stage.classList.toggle('paper', this.checked);
+    if(style === 'hinge' && !this.checked){ this.checked = true; stage.classList.add('paper'); }
+  });
+
+  function renderInfo(){
+    var s = STYLE_INFO[style];
+    styleInfo.innerHTML = '<h4>'+s.t+'</h4><p>'+s.d+'</p>'+
+      '<div class="costline"><span class="pill '+s.k+'">'+s.c+'</span></div>';
+  }
+
+  renderInfo();
+  build();
+})();
+</script>
+</body>
+</html>

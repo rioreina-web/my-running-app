@@ -2,8 +2,12 @@
  * Redis-backed sliding-window rate limiter using Upstash.
  *
  * Shared across all Vercel instances — works correctly under autoscale.
- * Falls back to a permissive no-op if UPSTASH_REDIS_REST_URL is not set
- * (local dev without Redis).
+ *
+ * Missing Upstash config is a no-op in LOCAL DEV ONLY. In production it
+ * fails CLOSED — see `shouldEnforce` below. This mirrors the edge-function
+ * limiter (`supabase/functions/_shared/rateLimit.ts`,
+ * `shouldEnforceRateLimits`); the two layers are one policy and should stay
+ * recognisably the same.
  *
  * Keeps the same `checkRateLimit(key, limit, windowMs)` signature so
  * call sites don't need to change.
@@ -16,11 +20,35 @@ import { Redis } from "@upstash/redis";
 // Cache of Ratelimit instances keyed by "limit:windowMs"
 const limiters = new Map<string, Ratelimit>();
 
-const redisConfigured =
-  !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN;
+// Read per call, not once at module load: a module-scope const freezes the
+// value at import time, which makes the behaviour untestable and depends on
+// import order relative to env setup.
+function redisConfigured(): boolean {
+  return (
+    !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
+  );
+}
+
+/**
+ * Should the limiter gate at all?
+ *
+ *   dev  + no Redis   → skip (local development stays frictionless)
+ *   prod + no Redis   → enforce, and `checkRateLimit` denies (fail closed)
+ *   Redis configured  → enforce normally, anywhere
+ *
+ * Before 2026-09-03 an unset UPSTASH_REDIS_REST_URL meant "allow everything"
+ * in every environment, so a deploy missing those two Vercel variables
+ * silently removed the limits from all six API routes at once. Those routes
+ * fan out to LLM-backed edge functions using the service-role key, which
+ * bypasses the edge functions' own per-user quotas — so this was the only
+ * ceiling on that spend, and it failed open.
+ */
+function shouldEnforce(): boolean {
+  return redisConfigured() || process.env.NODE_ENV === "production";
+}
 
 function getLimiter(limit: number, windowMs: number): Ratelimit | null {
-  if (!redisConfigured) return null;
+  if (!redisConfigured()) return null;
 
   const cacheKey = `${limit}:${windowMs}`;
   let rl = limiters.get(cacheKey);
@@ -55,7 +83,17 @@ export async function checkRateLimit(
   const rl = getLimiter(limit, windowMs);
 
   if (!rl) {
-    // No Redis configured (local dev) — allow everything
+    if (shouldEnforce()) {
+      // Production with no Redis: deny rather than hand out a blank cheque.
+      // A misconfigured deploy becomes loud 429s on the first request
+      // instead of an unmetered bill.
+      console.error(
+        "[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN unset in production — " +
+          "denying request (fail-closed). Set both to restore service.",
+      );
+      return { allowed: false, retryAfterMs: windowMs };
+    }
+    // Local dev without Redis — allow everything.
     return { allowed: true };
   }
 

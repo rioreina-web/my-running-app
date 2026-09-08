@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends — Pace Signal (phone prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A; --mood-injured:#B83A4A;
+  --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06); --shadow-press:0 1px 2px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:40px 24px 80px;display:flex;justify-content:center}
+
+/* phone chassis */
+.phone{width:392px;height:838px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative;flex-shrink:0}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:30px;background:#14110E;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:14px 28px 6px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen{height:calc(838px - 46px - 64px);overflow-y:auto;padding:8px 20px 26px}
+.screen::-webkit-scrollbar{width:0}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .dot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .dot{background:var(--coral)}
+.tab span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--coral)}
+
+/* type */
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display-l{font-family:var(--font-display);font-weight:700;font-size:27px;line-height:1.04;letter-spacing:-.01em}
+
+/* tiles */
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.tile{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:10px 10px}
+.tile .lab{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+.tile .val{font-family:var(--font-mono);font-weight:600;font-size:18px;color:var(--ink);margin-top:6px;font-variant-numeric:tabular-nums;line-height:1}
+.tile .val .u{font-size:10px;color:var(--ink-3);margin-left:2px}
+.tile .sub{font-family:var(--font-body);font-size:10px;color:var(--ink-2);margin-top:4px}
+.tile .sub.coral{color:var(--coral)}
+.dot{display:inline-block;width:7px;height:7px;border-radius:999px;vertical-align:baseline;margin-right:4px}
+
+/* segmenter */
+.seg{display:flex;background:var(--paper-deep);border-radius:10px;padding:3px;gap:2px;margin-top:18px}
+.seg button{flex:1;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:transparent;border:0;padding:8px 0;border-radius:8px;cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-press);font-weight:600}
+
+/* chart */
+.chartwrap{position:relative;margin-top:12px;touch-action:none}
+svg.chart{width:100%;display:block;overflow:visible}
+.section-h{font-family:var(--font-mono);font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);margin-top:6px}
+.note{font-family:var(--font-body);font-style:italic;font-size:11.5px;color:var(--ink-3);margin:8px 2px 2px;line-height:1.45}
+.zonekey{margin:12px 2px 0}
+.sk-bar{height:12px;border-radius:6px;width:100%}
+.sk-labels{position:relative;height:13px;margin-top:6px}
+.sk-labels span{position:absolute;top:0;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+
+.readout{position:absolute;top:0;left:0;pointer-events:none;background:var(--ink);color:#fff;border-radius:8px;padding:8px 10px;font-family:var(--font-mono);font-size:9.5px;line-height:1.55;letter-spacing:.02em;opacity:0;transition:opacity .1s;white-space:nowrap;z-index:20;box-shadow:0 6px 18px rgba(0,0,0,.25);transform:translate(-50%,-100%)}
+.readout b{color:#fff;font-weight:700}
+.readout .seg-row{display:flex;justify-content:space-between;gap:12px}
+.readout .mood{color:#F0C9A0;text-transform:uppercase}
+.readout .q{font-family:var(--font-body);font-style:italic;font-size:10px;color:#F3ECE4;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,.2);white-space:normal;max-width:180px}
+
+/* the read */
+.read{background:var(--paper-elevated);border:1px solid var(--rule);border-left:2px solid var(--coral);border-radius:10px;padding:14px 15px;margin-top:20px}
+.read .body{font-family:var(--font-body);font-size:13px;line-height:1.55;color:var(--ink);margin-top:7px}
+.read .q{font-family:var(--font-body);font-style:italic;font-size:12.5px;color:var(--ink-2);margin-top:9px}
+.rule{display:flex;align-items:center;gap:8px;margin:18px 0 6px}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>9:41</span><span>THE&nbsp;SIGNAL</span><span>&#9679;&#9679;&#9679;</span></div>
+  <div class="screen">
+    <div style="margin-top:4px">
+      <div class="eyebrow coral">TRENDS</div>
+      <div class="display-l" style="margin-top:6px">Where your<br>miles live.</div>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="seg" id="seg">
+      <button class="on" data-v="spectrum">Spectrum</button>
+      <button data-v="time">Over&nbsp;Time</button>
+    </div>
+
+    <!-- SPECTRUM VIEW -->
+    <div id="view-spectrum">
+      <div class="section-h" style="margin-top:16px">30&nbsp;DAYS</div>
+      <div class="chartwrap">
+        <svg id="dist" class="chart" viewBox="0 0 330 258" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="readout" id="roD"></div>
+      </div>
+      <div class="note">Every mile you ran in the last 30 days, sorted by pace. A tall pale base at the easy end with a small dark tail is the shape you want.</div>
+    </div>
+
+    <!-- OVER TIME VIEW -->
+    <div id="view-time" style="display:none">
+      <div class="section-h" style="margin-top:16px">12&nbsp;WEEKS</div>
+      <div class="chartwrap">
+        <svg id="chart" class="chart" viewBox="0 0 330 300" preserveAspectRatio="xMidYMid meet"></svg>
+        <div class="readout" id="roC"></div>
+      </div>
+      <div class="zonekey" id="zonekey"></div>
+      <div class="note">Each bar = a week's volume, stacked by pace — every block is miles at that pace, colored on the spectrum (pale easy → navy fast). Below: training load, mood, and niggles. Tap a bar for the week.</div>
+    </div>
+
+    <div class="read">
+      <div class="eyebrow coral">THE&nbsp;READ</div>
+      <div class="body" id="readBody"></div>
+      <div class="q" id="readQ"></div>
+    </div>
+
+    <div class="rule"><i></i></div>
+    <div class="note" style="text-align:center;font-style:normal;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase">Prototype · sample data · AI advises, never acts</div>
+  </div>
+
+  <div class="tabbar">
+    <div class="tab"><div class="dot"></div><span>Log</span></div>
+    <div class="tab active"><div class="dot"></div><span>Trends</span></div>
+    <div class="tab"><div class="dot"></div><span>Train</span></div>
+    <div class="tab"><div class="dot"></div><span>Coach</span></div>
+  </div>
+</div>
+
+<script>
+const NS="http://www.w3.org/2000/svg";
+function el(nm,a,t){const e=document.createElementNS(NS,nm);for(const k in a)e.setAttribute(k,a[k]);if(t!=null)e.textContent=t;return e;}
+const paceStr=s=>Math.floor(s/60)+":"+String(Math.round(s%60)).padStart(2,"0");
+
+/* zones — single-hue blue depth ramp (pace = intensity). Source: PaceSpectrum.swift */
+const ZONES=[{z:"Easy",color:"#93B9D6"},{z:"Moderate",color:"#74A8CC"},{z:"Steady",color:"#578FC0"},{z:"MP",color:"#3F7CB5"},{z:"HMP",color:"#2F66A8"},{z:"LT",color:"#27549B"},{z:"10K",color:"#20448B"},{z:"5K",color:"#1A3679"},{z:"3K",color:"#142964"},{z:"Mile",color:"#0E1D4E"}];
+const EASY_TEXT="#5E93BE"; /* legibility-darkened Easy, small text only */
+const ZI=Object.fromEntries(ZONES.map((z,i)=>[z.z,i]));
+const MOOD_COLOR={energized:"#2D8A4E",positive:"#4A9E6B",neutral:"#9B9590",tired:"#C4873A",struggling:"#C45A3A",injured:"#B83A4A"};
+
+/* gradient — blue pace ramp, pale sky (easy) → navy (fastest) */
+const GRAD=[[0,[147,185,214]],[0.111,[116,168,204]],[0.222,[87,143,192]],[0.333,[63,124,181]],[0.444,[47,102,168]],[0.556,[39,84,155]],[0.667,[32,68,139]],[0.778,[26,54,121]],[0.889,[20,41,100]],[1,[14,29,78]]];
+function gradAt(f){f=Math.max(0,Math.min(1,f));for(let i=1;i<GRAD.length;i++){if(f<=GRAD[i][0]){const a=GRAD[i-1],b=GRAD[i],t=(f-a[0])/(b[0]-a[0]);const c=a[1].map((v,j)=>Math.round(v+(b[1][j]-v)*t));return`rgb(${c[0]},${c[1]},${c[2]})`;}}return`rgb(${GRAD.at(-1)[1].join(",")})`;}
+
+/* ---- distribution data ---- */
+const P_SLOW=525,P_FAST=330,NB=18,STEP=(P_SLOW-P_FAST)/NB;
+const BUCKET_MI=[8,44,52,40,20,9,7,12,5,13,4,6,9,3,5,3,2,2];
+const ANCHORS=[{z:"EASY",p:510,c:"#5E93BE"},{z:"MP",p:445,c:"#3F7CB5"},{z:"LT",p:420,c:"#27549B"},{z:"5K",p:392,c:"#1A3679"}];
+const AXIS=[{t:"EASY",p:521},{t:"MP",p:445},{t:"LT",p:420},{t:"MILE",p:360},{t:"FAST",p:334}];
+const tot30=BUCKET_MI.reduce((a,b)=>a+b,0), easy30=BUCKET_MI.slice(0,5).reduce((a,b)=>a+b,0);
+
+/* ---- weekly data ---- */
+const WEEKS=[
+  {w:"May 4",acwr:0.98,mood:"energized",nig:0,part:null,quote:"Legs felt springy — good week back.",quality:["Steady"],targetVol:41},
+  {w:"May 11",acwr:1.02,mood:"positive",nig:0,part:null,quote:"Solid week. Sleeping well.",quality:["MP"],targetVol:43},
+  {w:"May 18",acwr:1.05,mood:"positive",nig:0,part:null,quote:"Long run clicked — negative split.",quality:["Steady"],targetVol:44},
+  {w:"May 25",acwr:1.34,mood:"tired",nig:0,part:null,quote:"Bumped the miles. Wiped by Friday.",quality:["MP"],targetVol:50},
+  {w:"Jun 1",acwr:1.31,mood:"struggling",nig:2,part:"calf",quote:"Rough week — tired legs, calf naggy.",quality:[],targetVol:49},
+  {w:"Jun 8",acwr:0.86,mood:"neutral",nig:1,part:"calf",quote:"Took it easy. Needed the reset.",quality:["Moderate"],targetVol:38},
+  {w:"Jun 15",acwr:1.04,mood:"positive",nig:0,part:null,quote:"Coming back — tempo felt smooth.",quality:["LT"],targetVol:46},
+  {w:"Jun 22",acwr:1.16,mood:"positive",nig:0,part:null,quote:"Best long run in a while.",quality:["MP","HMP"],targetVol:52},
+  {w:"Jun 29",acwr:1.18,mood:"energized",nig:0,part:null,quote:"Flying. Splits dropping on their own.",quality:["5K","3K"],targetVol:56},
+  {w:"Jul 6",acwr:1.09,mood:"tired",nig:1,part:"foot",quote:"Track was hard — foot cranky after.",quality:["10K"],targetVol:53},
+  {w:"Jul 13",acwr:0.88,mood:"positive",nig:0,part:null,quote:"Taper legs feel weird but fresh.",quality:["HMP"],targetVol:44},
+  {w:"Jul 20",acwr:0.79,mood:"energized",nig:0,part:null,quote:"Ready. Calm. Race Saturday.",quality:["MP"],targetVol:32}
+];
+const r1=x=>Math.round(x*10)/10;
+const WZ=[],WTOTAL=[];
+WEEKS.forEach(wk=>{const z={},add=(zn,mi)=>{if(mi>0)z[zn]=r1((z[zn]||0)+mi);};let rem=wk.targetVol;const longD=Math.max(10,Math.round(wk.targetVol*0.30));add(wk.targetVol>=50?"Moderate":"Easy",longD);rem-=longD;wk.quality.forEach(q=>{const total=(q==="MP"||q==="HMP")?8:6,shell=(q==="MP"||q==="HMP")?3:2.5;add("Easy",shell);add(q,total-shell);rem-=total;});add("Easy",Math.max(0,r1(rem)));WZ.push(z);WTOTAL.push(r1(Object.values(z).reduce((a,b)=>a+b,0)));});
+const L=11,totalNig=WEEKS.reduce((a,b)=>a+b.nig,0);
+
+/* ---- tiles ---- */
+const tiles=[
+  {lab:"30-DAY MI",val:tot30,u:"",sub:Math.round(easy30/tot30*100)+"% easy"},
+  {lab:"WORKLOAD",val:WEEKS[L].acwr.toFixed(2),u:"",sub:(WEEKS[L].acwr<=1.3&&WEEKS[L].acwr>=0.8)?"safe zone":"outside",coral:!(WEEKS[L].acwr<=1.3&&WEEKS[L].acwr>=0.8)},
+  {lab:"MOOD",mood:WEEKS[L].mood}
+];
+document.getElementById("tiles").innerHTML=tiles.map(t=>{let v=t.mood?`<div class="val" style="font-size:13px;color:${MOOD_COLOR[t.mood]}"><span class="dot" style="background:${MOOD_COLOR[t.mood]}"></span>${t.mood}</div>`:`<div class="val">${t.val}${t.u?`<span class="u">${t.u}</span>`:""}</div>`;return`<div class="tile"><div class="lab">${t.lab}</div>${v}<div class="sub ${t.coral?"coral":""}">${t.sub||"&nbsp;"}</div></div>`;}).join("");
+/* zone key rendered as a continuous pace spectrum (pale easy → navy fast) */
+(function(){
+  const grad="linear-gradient(90deg,"+ZONES.map(z=>z.color).join(",")+")";
+  const marks=[{t:"EASY",i:0},{t:"MP",i:3},{t:"LT",i:5},{t:"5K",i:7},{t:"MILE",i:9}];
+  const labels=marks.map(m=>{const f=m.i/9*100;const pos=m.i===0?"left:0":(m.i===9?"right:0":`left:${f}%;transform:translateX(-50%)`);return`<span style="${pos}">${m.t}</span>`;}).join("");
+  document.getElementById("zonekey").innerHTML=`<div class="sk-bar" style="background:${grad}"></div><div class="sk-labels">${labels}</div>`;
+})();
+document.getElementById("readBody").innerHTML=`Your distribution is well-shaped — a deep base of easy miles at the pale end, clean bumps at <b>MP</b>, <b>LT</b> and <b>5K</b>, little grey-zone junk between. Over 12 weeks the load stayed mostly in the safe band; week 4's jump was the one spike, and the calf followed it.`;
+document.getElementById("readQ").textContent="Does the easy end still feel easy — or are your easy miles creeping faster than they should?";
+
+/* ---- DISTRIBUTION chart ---- */
+const dist=document.getElementById("dist"),roD=document.getElementById("roD");
+(function(){
+  const W=330,H=258,M={l:30,r:12,t:44,b:56};const pw=W-M.l-M.r,ph=H-M.t-M.b;
+  const xPace=p=>M.l+((P_SLOW-p)/(P_SLOW-P_FAST))*pw;
+  const miMax=60,yMi=v=>M.t+ph-(v/miMax)*ph,bw=(pw/NB)*0.76;
+  [0,30,60].forEach(v=>{dist.appendChild(el("line",{x1:M.l,y1:yMi(v),x2:M.l+pw,y2:yMi(v),stroke:v===0?"#E0DAD3":"#EFEBE6",'stroke-width':1}));dist.appendChild(el("text",{x:M.l-6,y:yMi(v)+3,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':8,fill:"#9B9590"},v===60?"60 MI":String(v)));});
+  [445,420,392].forEach(p=>dist.appendChild(el("line",{x1:xPace(p),y1:M.t-4,x2:xPace(p),y2:M.t+ph,stroke:"#ECE7E1",'stroke-width':1})));
+  BUCKET_MI.forEach((mi,i)=>{const cP=P_SLOW-(i+0.5)*STEP,f=(P_SLOW-cP)/(P_SLOW-P_FAST),x=xPace(cP)-bw/2,y=yMi(mi);const bar=el("rect",{x,y,width:bw,height:M.t+ph-y,rx:1.5,fill:gradAt(f),style:"cursor:pointer"});const pLo=cP+STEP/2,pHi=cP-STEP/2;
+    bar.addEventListener("mousemove",e=>{roD.innerHTML=`<b>${paceStr(pHi)}–${paceStr(pLo)}</b> /mi<div class="seg-row"><span>miles</span><b>${mi}</b></div><div class="seg-row"><span>share</span><b>${Math.round(mi/tot30*100)}%</b></div>`;posRO(roD,e,dist);});
+    bar.addEventListener("mouseleave",()=>roD.style.opacity=0);dist.appendChild(bar);});
+  ANCHORS.forEach(a=>{const x=xPace(a.p);dist.appendChild(el("text",{x,y:M.t-24,'text-anchor':"middle",'font-family':"var(--font-display)",'font-size':13,'font-weight':700,fill:a.c},a.z));dist.appendChild(el("text",{x,y:M.t-11,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':9,fill:"#6B6560"},paceStr(a.p)));});
+  const defs=el("defs",{}),lg=el("linearGradient",{id:"sg",x1:"0",y1:"0",x2:"1",y2:"0"});GRAD.forEach(s=>lg.appendChild(el("stop",{offset:(s[0]*100)+"%",'stop-color':`rgb(${s[1].join(",")})`})));defs.appendChild(lg);dist.appendChild(defs);
+  const gy=M.t+ph+14;dist.appendChild(el("rect",{x:M.l,y:gy,width:pw,height:12,rx:6,fill:"url(#sg)"}));
+  AXIS.forEach(a=>dist.appendChild(el("text",{x:xPace(a.p),y:gy+27,'text-anchor':"middle",'font-family':"var(--font-body)",'font-size':11,fill:"#9B9590",'letter-spacing':".04em"},a.t)));
+})();
+
+/* ---- OVER TIME chart ---- */
+const chart=document.getElementById("chart"),roC=document.getElementById("roC");
+(function(){
+  const W=330,M={l:26,r:22};const plotW=W-M.l-M.r,colW=plotW/12,cx=i=>M.l+colW*i+colW/2;
+  const A={t:14,h:140},B={t:170,h:48},C={t:236,h:44};
+  const volMax=Math.max(...WTOTAL)+4,yVol=v=>A.t+A.h-(v/volMax)*A.h;
+  const aMin=0.6,aMax=1.5,yAcwr=v=>B.t+B.h-((v-aMin)/(aMax-aMin))*B.h;
+  const path=(pts,a)=>{const d=pts.map((p,idx)=>(idx?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");return el("path",Object.assign({d,fill:"none"},a));};
+  chart.appendChild(el("text",{x:M.l-6,y:A.t-4,'text-anchor':"start",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"MILES/WK"));
+  [20,40].forEach(v=>{chart.appendChild(el("line",{x1:M.l,y1:yVol(v),x2:M.l+plotW,y2:yVol(v),stroke:"#EFEBE6",'stroke-width':1}));chart.appendChild(el("text",{x:M.l-5,y:yVol(v)+3,'text-anchor':"end",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#B7AFA8"},v));});
+  chart.appendChild(el("line",{x1:M.l,y1:A.t+A.h,x2:M.l+plotW,y2:A.t+A.h,stroke:"#E0DAD3",'stroke-width':1}));
+  // each week's bar = miles stacked by pace zone (units), colored on the blue ramp — darker = faster
+  WEEKS.forEach((wk,i)=>{const bw=colW*0.60,x=cx(i)-bw/2;let cur=0;
+    ZONES.forEach(zn=>{const mi=WZ[i][zn.z];if(!mi)return;const yt=yVol(cur+mi),yb=yVol(cur);chart.appendChild(el("rect",{x,y:yt,width:bw,height:yb-yt,fill:zn.color,stroke:"#FAFAF8",'stroke-width':0.6}));cur+=mi;});
+    const hit=el("rect",{x:M.l+colW*i,y:A.t,width:colW,height:A.h+C.t-A.t+C.h,fill:"transparent",style:"cursor:pointer"});
+    hit.addEventListener("mousemove",e=>tipWeek(e,i));hit.addEventListener("mouseleave",()=>roC.style.opacity=0);chart.appendChild(hit);});
+  // workload
+  chart.appendChild(el("text",{x:M.l-6,y:B.t-3,'text-anchor':"start",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"WORKLOAD"));
+  chart.appendChild(el("rect",{x:M.l,y:yAcwr(1.3),width:plotW,height:yAcwr(0.8)-yAcwr(1.3),fill:"rgba(107,101,96,0.10)"}));
+  [0.8,1.3].forEach(v=>chart.appendChild(el("line",{x1:M.l,y1:yAcwr(v),x2:M.l+plotW,y2:yAcwr(v),stroke:"#9B9590",'stroke-width':1,'stroke-dasharray':"2 3",opacity:.7})));
+  [0.8,1.3].forEach(v=>chart.appendChild(el("text",{x:M.l+plotW+3,y:yAcwr(v)+3,'font-family':"var(--font-mono)",'font-size':7,fill:"#6B6560"},v.toFixed(1))));
+  chart.appendChild(path(WEEKS.map((d,i)=>[cx(i),yAcwr(d.acwr)]),{stroke:"#1A1815",'stroke-width':2,'stroke-linecap':"round",'stroke-linejoin':"round"}));
+  WEEKS.forEach((d,i)=>{const out=!(d.acwr>=0.8&&d.acwr<=1.3);chart.appendChild(el("circle",{cx:cx(i),cy:yAcwr(d.acwr),r:out?3.5:2.4,fill:out?"#D4592A":"#1A1815",stroke:"#fff",'stroke-width':1.2}));});
+  // mood + niggles
+  chart.appendChild(el("text",{x:M.l-6,y:C.t+11,'text-anchor':"start",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590",'letter-spacing':".06em"},"MOOD"));
+  WEEKS.forEach((d,i)=>{const x=cx(i)-colW*0.30,w=colW*0.60;chart.appendChild(el("rect",{x,y:C.t,width:w,height:15,rx:2.5,fill:MOOD_COLOR[d.mood]}));
+    if(d.nig>0){chart.appendChild(el("circle",{cx:cx(i),cy:C.t+27,r:5.5,fill:"#D4592A"}));chart.appendChild(el("text",{x:cx(i),y:C.t+29.5,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':7.5,'font-weight':700,fill:"#fff"},d.nig));}});
+  [0,3,6,9,11].forEach(i=>chart.appendChild(el("text",{x:cx(i),y:C.t+42,'text-anchor':"middle",'font-family':"var(--font-mono)",'font-size':7.5,fill:"#9B9590"},WEEKS[i].w)));
+})();
+
+function tipWeek(e,i){const d=WEEKS[i],mc=MOOD_COLOR[d.mood];const segs=ZONES.filter(z=>WZ[i][z.z]).map(z=>`<div class="seg-row"><span style="color:${z.color}">${z.z}</span><b>${WZ[i][z.z]}</b></div>`).join("");
+  roC.innerHTML=`<b>${d.w.toUpperCase()}</b> · <span class="mood">${d.mood}</span><div class="seg-row"><span>vol</span><b>${Math.round(WTOTAL[i])} mi</b></div><div class="seg-row"><span>load</span><b style="color:${(d.acwr>=0.8&&d.acwr<=1.3)?'#fff':'#E8764A'}">${d.acwr.toFixed(2)}</b></div>${segs}${d.nig>0?`<div style="color:#E8764A;margin-top:3px">▲ ${d.part} niggle</div>`:""}<div class="q">"${d.quote}"</div>`;
+  posRO(roC,e,chart);}
+function posRO(ro,e,svg){const wrap=svg.closest(".chartwrap").getBoundingClientRect();let x=e.clientX-wrap.left,y=e.clientY-wrap.top-10;ro.style.left=Math.max(60,Math.min(x,wrap.width-60))+"px";ro.style.top=Math.max(46,y)+"px";ro.style.opacity=1;}
+
+/* segmenter */
+document.getElementById("seg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;[...document.querySelectorAll("#seg button")].forEach(x=>x.classList.toggle("on",x===b));const v=b.dataset.v;document.getElementById("view-spectrum").style.display=v==="spectrum"?"":"none";document.getElementById("view-time").style.display=v==="time"?"":"none";});
+</script>
+</body>
+</html>

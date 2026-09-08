@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recovery card redesign — Post Run Drip · 2026-08-05</title>
+<style>
+  :root {
+    --paper: #F5F3F0; --paper-elevated: #FAFAF8; --card: #FFFFFF;
+    --paper-deep: #E8E4DF; --rule: #E8E4E0;
+    --ink: #1A1815; --ink-2: #6B6560; --ink-3: #9B9590;
+    --coral: #D4592A; --coral-wash: rgba(212,89,42,0.12);
+    --mood-energized: #2D8A4E; --mood-positive: #4A9E6B; --mood-neutral: #9B9590;
+    --mood-tired: #C4873A; --mood-struggling: #C45A3A; --mood-injured: #B83A4A;
+    --font-display: "Crimson Pro", Georgia, "Times New Roman", serif;
+    --font-body: "PT Serif", Georgia, serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    padding: 32px 16px 80px;
+  }
+  .frame { max-width: 400px; margin: 0 auto; }
+  .plate-strip {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.14em; color: var(--ink-2); text-transform: uppercase;
+    display: flex; justify-content: space-between; margin-bottom: 24px;
+  }
+  h1 { font-family: var(--font-display); font-weight: 700; font-size: 28px;
+       letter-spacing: -0.01em; line-height: 1.1; margin-bottom: 6px; }
+  .intro { font-size: 13px; color: var(--ink-2); line-height: 1.5; margin-bottom: 20px; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.12em; color: var(--ink-2); text-transform: uppercase;
+  }
+  /* state switcher */
+  .states { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 22px; }
+  .states button {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.10em;
+    text-transform: uppercase; border: 1px solid var(--rule); background: var(--card);
+    color: var(--ink-2); padding: 7px 11px; border-radius: 999px; cursor: pointer;
+  }
+  .states button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+  /* ---- the card ---- */
+  .card {
+    background: var(--paper-elevated); border: 1px solid var(--rule);
+    border-radius: 12px; padding: 20px 18px 16px;
+  }
+  .card .section-eyebrow { display:flex; justify-content:space-between; align-items:baseline; }
+  .headline { display: flex; align-items: baseline; gap: 12px; margin-top: 10px; }
+  .score { font-family: var(--font-mono); font-weight: 600; font-size: 46px;
+           line-height: 1; font-variant-numeric: tabular-nums; }
+  .band-word { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+               letter-spacing: 0.15em; text-transform: uppercase; }
+  .delta { margin-left: auto; font-family: var(--font-mono); font-size: 9px;
+           letter-spacing: 0.09em; color: var(--ink-2); text-transform: uppercase; }
+
+  /* gauge: proportional bands + a marker. Track is quiet; only the occupied
+     band carries its colour; the marker is ink (coral only in Flat = alert). */
+  .gauge { margin-top: 16px; }
+  .gauge-track { position: relative; height: 6px; border-radius: 3px; overflow: visible;
+                 display: flex; }
+  .gauge-seg { height: 100%; }
+  .gauge-seg:first-child { border-radius: 3px 0 0 3px; }
+  .gauge-seg:last-child { border-radius: 0 3px 3px 0; }
+  .gauge-marker { position: absolute; top: -5px; width: 2px; height: 16px;
+                  background: var(--ink); border-radius: 1px; }
+  .gauge-marker::after { content: ""; position: absolute; top: -4px; left: -2px;
+                  width: 6px; height: 6px; border-radius: 999px; background: inherit; }
+  .gauge-labels { display: flex; margin-top: 8px; }
+  .gauge-labels span { font-family: var(--font-mono); font-size: 7.5px;
+                  letter-spacing: 0.06em; color: var(--ink-3); text-transform: uppercase; }
+
+  /* factor groups */
+  .group-eyebrow { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.14em;
+                   color: var(--ink-3); text-transform: uppercase; margin: 14px 0 0; }
+  .rows { border-bottom: 1px solid var(--rule); }
+  .row { display: flex; align-items: center; gap: 8px; padding: 9px 0;
+         border-top: 1px solid var(--rule); }
+  .row .who { flex: 1; min-width: 0; }
+  .row .name { font-family: var(--font-display); font-weight: 600; font-size: 14px; }
+  .row .evidence { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.06em;
+                   color: var(--ink-3); text-transform: uppercase; margin-top: 3px; }
+  /* diverging bar on a FIXED scale (±18) so -6 is the same length every day */
+  .bar { width: 78px; height: 14px; position: relative; flex: none; }
+  .bar .mid { position: absolute; left: 50%; top: 0; width: 1px; height: 14px;
+              background: var(--rule); }
+  .bar .fill { position: absolute; top: 3px; height: 8px; border-radius: 2px; opacity: 0.75; }
+  .row .pts { font-family: var(--font-mono); font-weight: 600; font-size: 12px;
+              width: 34px; text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+  .pos { color: var(--mood-energized); } .neg { color: var(--mood-struggling); }
+  .zero { color: var(--ink-3); }
+  .pos-bg { background: var(--mood-energized); } .neg-bg { background: var(--mood-struggling); }
+
+  .arith { display: flex; justify-content: space-between; align-items: baseline;
+           margin-top: 11px; gap: 8px; }
+  .arith .line { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.09em;
+                 color: var(--ink-2); text-transform: uppercase; }
+  .arith .total { font-family: var(--font-mono); font-weight: 600; font-size: 14px; }
+
+  /* coverage — the cheap confidence line from the Daily Read design */
+  .coverage { margin-top: 12px; font-family: var(--font-mono); font-size: 8.5px;
+              letter-spacing: 0.05em; color: var(--ink-3); text-transform: uppercase;
+              line-height: 1.6; }
+  .coverage b { color: var(--ink-2); font-weight: 600; }
+
+  .notes { margin-top: 28px; }
+  .notes h2 { font-family: var(--font-display); font-size: 18px; font-weight: 700;
+              margin: 18px 0 6px; }
+  .notes p { font-size: 13px; color: var(--ink-2); line-height: 1.55; margin-bottom: 8px; }
+  .notes .drip-quote { font-style: italic; color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="plate-strip"><span>TRENDS · 08.2026</span><span>PLATE R2</span></div>
+  <h1>Recovery Score, re-set.</h1>
+  <p class="intro">Same receipt, four changes: the gauge is <em>proportional</em> and carries a
+  <em>marker</em> (you can see where you sit, and Flat is honestly the widest band);
+  factor bars share one fixed scale so −6 is the same length every day; the rows group
+  by <em>where the evidence came from</em> — your words lead, the watch corroborates;
+  and a coverage line says how much of the model had data today. Tap the states.</p>
+
+  <div class="states" id="states"></div>
+  <div id="card"></div>
+
+  <div class="notes">
+    <h2>What changed, and why</h2>
+    <p><b>1 · The gauge earns its place.</b> The shipped strip is four equal quarters with
+    no marker — it reads as decoration. Proportional widths tell the truth about the scale
+    (Flat spans 8–45, nearly half of it) and the ink marker gives the number a home. The
+    marker goes coral only in Flat — coral is alert, and that's the only alert state.</p>
+    <p><b>2 · Bars you can compare across days.</b> The shipped bars scale to each day's
+    biggest factor, so the same −6 draws long on a quiet day and short on a loud one.
+    Fixed ±18 scale (the mood ceiling) makes yesterday's receipt comparable to today's.</p>
+    <p><b>3 · Grouped rows.</b> With seven factors the flat list buries the design's own
+    hierarchy. WORDS / RUNS / NIGHTS makes the evidence tiers visible — and quietly
+    explains why an HRV dip can't outshout a logged "tired."</p>
+    <p><b>4 · The coverage line.</b> From the Daily Read design §2f: a read from 3 of 7
+    inputs shouldn't look identical to one from 7 of 7. Confidence changes tone, never
+    the number.</p>
+    <p class="drip-quote">Still counted, never prescribed — no instruction appears
+    anywhere on the card.</p>
+  </div>
+</div>
+
+<script>
+const BANDS = [
+  { name: "Flat",   lo: 8,  hi: 45, color: "var(--mood-struggling)" },
+  { name: "Worn",   lo: 45, hi: 60, color: "var(--mood-tired)" },
+  { name: "Steady", lo: 60, hi: 75, color: "var(--mood-neutral)" },
+  { name: "Clear",  lo: 75, hi: 96, color: "var(--mood-positive)" },
+];
+const SCALE_MIN = 8, SCALE_MAX = 96, BAR_CEIL = 18;
+
+const STATES = {
+  "words + runs (today)": {
+    delta: "LEVEL VS YESTERDAY",
+    coverage: "<b>5 of 5</b> live inputs had data · words-and-runs read — connect the night pipeline for the full model",
+    groups: [
+      { label: "Your words", rows: [
+        ["Mood", "TIRED · POSITIVE · 4 DAYS IN 7", -4],
+        ["Body mentions", "NONE IN 14 DAYS", 0],
+      ]},
+      { label: "Your runs", rows: [
+        ["Recent load", "21 MI OVER 3 DAYS", -3],
+        ["Load", "IN LINE WITH YOUR 8-WK AVERAGE", 5],
+        ["Clear days", "CLEAR 2 DAYS AGO", 5],
+      ]},
+    ],
+  },
+  "full model · 7 rows": {
+    delta: "+4 VS YESTERDAY",
+    coverage: "<b>7 of 7</b> inputs had data · full read — words, runs and nights all speaking",
+    groups: [
+      { label: "Your words", rows: [
+        ["Mood", "POSITIVE · 5 DAYS IN 7", 6],
+        ["Body mentions", "NONE IN 14 DAYS", 0],
+        ["Sleep", "GOOD · LOGGED", 4],
+      ]},
+      { label: "Your runs", rows: [
+        ["Recent load", "18 MI OVER 3 DAYS · 1 CLEAR", -2],
+        ["Load", "IN LINE WITH YOUR 8-WK AVERAGE", 5],
+        ["Clear days", "CLEAR TODAY", 5],
+      ]},
+      { label: "Your nights", rows: [
+        ["Overnight", "OVERNIGHT NUMBERS SETTLED", 3],
+      ]},
+    ],
+  },
+  "a hard week": {
+    delta: "−6 VS YESTERDAY",
+    coverage: "<b>7 of 7</b> inputs had data · the words and the watch agree",
+    groups: [
+      { label: "Your words", rows: [
+        ["Mood", "TIRED · STRUGGLING · 3 DAYS IN 7", -9],
+        ["Achilles", "MENTIONED TODAY · 2 IN 14 D", -6],
+        ["Sleep", "ROUGH · LOGGED", -6],
+      ]},
+      { label: "Your runs", rows: [
+        ["Recent load", "35 MI OVER 3 DAYS", -7],
+        ["Load", "26% OVER YOUR 8-WK AVERAGE", -5],
+        ["Clear days", "16 DAYS SINCE ONE CLEAR", -3],
+      ]},
+      { label: "Your nights", rows: [
+        ["Overnight", "7-DAY HRV DOWN, RESTING HR UP", -6],
+      ]},
+    ],
+  },
+  "a clear day — now reachable": {
+    delta: "+3 VS YESTERDAY",
+    coverage: "<b>7 of 7</b> inputs had data · full read",
+    groups: [
+      { label: "Your words", rows: [
+        ["Mood", "ENERGIZED · 5 DAYS IN 7", 11],
+        ["Body mentions", "NONE IN 14 DAYS", 0],
+        ["Sleep", "GOOD · LOGGED", 4],
+      ]},
+      { label: "Your runs", rows: [
+        ["Recent load", "NOTHING IN THE LAST 3 DAYS", 6],
+        ["Load", "IN LINE WITH YOUR 8-WK AVERAGE", 5],
+        ["Clear days", "CLEAR TODAY", 5],
+      ]},
+      { label: "Your nights", rows: [
+        ["Overnight", "OVERNIGHT NUMBERS SETTLED", 3],
+      ]},
+    ],
+  },
+};
+
+function bandOf(score) {
+  if (score < 45) return BANDS[0];
+  if (score < 60) return BANDS[1];
+  if (score < 75) return BANDS[2];
+  return BANDS[3];
+}
+function render(stateName) {
+  const s = STATES[stateName];
+  const rows = s.groups.flatMap(g => g.rows);
+  const raw = 50 + rows.reduce((a, r) => a + r[2], 0);
+  const score = Math.min(96, Math.max(8, raw));
+  const band = bandOf(score);
+  const pct = v => ((v - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * 100;
+
+  const segs = BANDS.map(b => {
+    const on = b === band;
+    return `<div class="gauge-seg" style="width:${pct(b.hi) - pct(b.lo)}%;
+      background:${b.color}; opacity:${on ? 0.9 : 0.16};"></div>`;
+  }).join("");
+  const markerColor = band.name === "Flat" ? "var(--coral)" : "var(--ink)";
+  const labels = BANDS.map(b =>
+    `<span style="width:${pct(b.hi) - pct(b.lo)}%;">${b.name}</span>`).join("");
+
+  const groupsHtml = s.groups.map(g => `
+    <div class="group-eyebrow">${g.label}</div>
+    <div class="rows">${g.rows.map(r => {
+      const cls = r[2] > 0 ? "pos" : r[2] < 0 ? "neg" : "zero";
+      const bg = r[2] > 0 ? "pos-bg" : "neg-bg";
+      const half = 39, w = Math.min(1, Math.abs(r[2]) / BAR_CEIL) * half;
+      const fill = r[2] === 0 ? "" :
+        `<div class="fill ${bg}" style="width:${w}px; left:${r[2] > 0 ? half : half - w}px;"></div>`;
+      return `<div class="row">
+        <div class="who"><div class="name">${r[0]}</div>
+          <div class="evidence">${r[1]}</div></div>
+        <div class="bar"><div class="mid"></div>${fill}</div>
+        <div class="pts ${cls}">${r[2] > 0 ? "+" : ""}${r[2]}</div>
+      </div>`;
+    }).join("")}</div>`).join("");
+
+  const terms = rows.map(r => `${r[2] >= 0 ? "+" : "−"} ${Math.abs(r[2])}`).join(" ");
+
+  document.getElementById("card").innerHTML = `
+  <div class="card">
+    <div class="section-eyebrow">
+      <span class="eyebrow">02 · Recovery score</span>
+      <span class="eyebrow" style="font-size:9px; color:var(--ink-3);">SCORED AT THE WINDOW'S LAST DAY</span>
+    </div>
+    <div class="headline">
+      <span class="score" style="color:${band.color}">${score}</span>
+      <span class="band-word" style="color:${band.color}">${band.name}</span>
+      <span class="delta">${s.delta}</span>
+    </div>
+    <div class="gauge">
+      <div class="gauge-track">${segs}
+        <div class="gauge-marker" style="left:calc(${pct(score)}% - 1px); background:${markerColor};"></div>
+      </div>
+      <div class="gauge-labels">${labels}</div>
+    </div>
+    ${groupsHtml}
+    <div class="arith">
+      <div class="line">STARTS AT 50 ${terms} =</div>
+      <div class="total" style="color:${band.color}">${score}</div>
+    </div>
+    <div class="coverage">${s.coverage}<br>
+    LOAD IS MEASURED AGAINST YOUR OWN 8-WEEK AVERAGE, NOT AN ACUTE:CHRONIC RATIO ·
+    YOUR WORDS LEAD, THE WATCH CORROBORATES · TODAY'S RUN COUNTS TOMORROW</div>
+  </div>`;
+}
+
+const holder = document.getElementById("states");
+Object.keys(STATES).forEach((k, i) => {
+  const b = document.createElement("button");
+  b.textContent = k;
+  if (i === 0) b.classList.add("on");
+  b.onclick = () => {
+    holder.querySelectorAll("button").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    render(k);
+  };
+  holder.appendChild(b);
+});
+render(Object.keys(STATES)[0]);
+</script>
+</body>
+</html>

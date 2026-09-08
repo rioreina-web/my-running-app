@@ -1,0 +1,24 @@
+{
+  "id": "002-easy-run-stays-one-block",
+  "prompt_name": "parse-workout-structure.v2",
+  "description": "Negative control for the merge rule: a continuous easy run with NO recoveries must stay ONE steady block and read as 'easy' — the work-bout segmenter returns a single continuous bout, and the parser must not invent reps from pace wobble. Guards against over-segmentation.",
+  "vars": {
+    "distanceMiles": "6.00",
+    "durationMinutes": "48.0",
+    "moodLabel": "neutral",
+    "workoutNotesBlock": "\"easy 6mi\"",
+    "voiceTranscriptBlock": "(none)",
+    "workBoutsBlock": "Bout 1: 9.66 km / 6.00 mi in 48:00 @ 4:58/km (8:00/mi) — by distance ≈ 5k, by time ≈ 30'",
+    "timelineStr": "0s d=0.0mi pace=8:10 hr=132\n600s d=1.25mi pace=8:00 hr=140\n1200s d=2.5mi pace=7:58 hr=143\n1800s d=3.75mi pace=8:02 hr=145\n2400s d=5.0mi pace=7:59 hr=146"
+  },
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["type", "blocks", "confidence"],
+    "required_patterns": [
+      "\"type\":\\s*\"easy\""
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

@@ -1,0 +1,159 @@
+<!doctype html>
+<!-- @dsCard group="Screens" name="Voice log · canonical" subtitle="Haas hero, preloaded run with a ruled switcher" viewport="1330x1010" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · Voice Log · Neue Haas</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="styles.css">
+<style>
+/* Tokens come from styles.css. Local role aliases only. */
+:root{--sans:var(--font-label);--serif:var(--font-serif);--mono:var(--font-mono);--display:var(--font-display)}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#C6C6C6;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.sheet{padding:30px 28px 40px}
+.row{display:flex;gap:34px;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px;flex:none;width:393px}
+.cap{font-family:var(--sans);font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#4A4A4A;line-height:1.4}
+.cap b{color:#111}
+.phone{width:393px;height:852px;flex:none;background:var(--paper);color:var(--ink);font-family:var(--sans);border-radius:46px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 22px 60px rgba(0,0,0,.28),0 0 0 10px #0C0C0C,0 0 0 11px #2C2C2C}
+a{color:var(--ink)}a:hover{color:var(--red-text)}
+button{font-family:var(--sans)}
+
+.sb{height:54px;flex:none;padding:0 30px 0 34px;display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:700}
+.sb .g{display:flex;align-items:center;gap:6px}
+.sb .bars{display:flex;align-items:flex-end;gap:2px;height:11px}
+.sb .bars i{width:3px;background:var(--ink);border-radius:1px;display:block}
+.sb .bars i:nth-child(1){height:4px}.sb .bars i:nth-child(2){height:6px}.sb .bars i:nth-child(3){height:9px}.sb .bars i:nth-child(4){height:11px}
+.sb .batt{display:flex;align-items:center;justify-content:center;min-width:29px;height:16px;background:var(--ink);color:#fff;border-radius:4px;font-size:10px;font-weight:700;padding:0 4px}
+.mast{flex:none;padding:10px 22px 18px;border-bottom:1px solid var(--rule);display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.mast .mark{height:58px;width:auto;display:block;flex:none}
+.mast .r{display:flex;flex-direction:column;align-items:flex-end;gap:10px;padding-top:2px}
+.mast .rtop{display:flex;align-items:center;gap:2px}
+.icon{width:44px;height:44px;margin-right:-10px;background:transparent;border:0;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 10px;cursor:pointer}
+.icon i{display:block;height:2px;border-radius:2px;background:var(--ink)}
+.link{height:44px;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;text-decoration:none}
+
+.body{flex:1;min-height:0;display:flex;flex-direction:column;padding:26px 22px 0;overflow:hidden}
+.kicker{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:2px solid var(--ink);padding-top:8px}
+.kicker span{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.kicker span:first-child{color:var(--ink)}
+.eyebrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.eyebrow span{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.eyebrow a{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);text-decoration:none;border-bottom:1px solid var(--ink-2);padding-bottom:2px;white-space:nowrap}
+
+/* hero headline — Bebas Neue */
+.h{font-family:var(--display);font-weight:700;letter-spacing:-.035em;margin:0;color:var(--ink)}
+.dek{font-family:var(--serif);font-style:italic;font-size:17px;line-height:1.4;color:var(--ink-2);margin:11px 0 0}
+.orn{display:block;width:34px;height:2px;background:var(--red)}
+
+.lede{border-bottom:1px solid var(--rule)}
+.linked{padding:16px 0 16px;border-bottom:1px solid var(--rule)}
+.sel{display:flex;align-items:center;gap:12px;margin-top:12px}
+.sel .figure{font-family:var(--display);font-size:34px;font-weight:700;letter-spacing:-.035em;line-height:.9;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sel .figure i{font-style:normal;font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-left:4px;vertical-align:2px}
+.sel .meta{display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--ink-2);font-variant-numeric:tabular-nums;min-width:0;white-space:nowrap}
+.sel .meta b{font-family:var(--sans);font-size:13px;font-weight:700;letter-spacing:-.01em;color:var(--ink);white-space:nowrap}
+.sel .badge{margin-left:auto;font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:#fff;background:var(--ink);padding:4px 7px 5px;white-space:nowrap}
+.rail{display:flex;gap:7px;margin-top:14px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.rail::-webkit-scrollbar{display:none}
+.chip{flex:none;background:transparent;border:1px solid var(--rule);border-radius:999px;padding:7px 11px 8px;cursor:pointer;font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;display:flex;align-items:baseline;gap:5px;transition:border-color 120ms ease,color 120ms ease}
+.chip em{font-style:normal;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+.chip:hover{border-color:var(--ink-3);color:var(--ink)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip.on em{color:#fff}
+.chip.none{letter-spacing:.14em}
+
+/* v1 · centred */
+.v1 .lede{padding:6px 0 26px;text-align:center}
+.v1 .h{font-size:46px;line-height:.98}
+.v1 .orn{margin:20px auto 0}
+
+/* v2 · left, stacked, figure hanging */
+.v2 .lede{padding:20px 0 22px}
+.v2 .h{font-size:74px;line-height:.82;letter-spacing:.004em}
+.v2 .h span{display:block}
+.v2 .h .red{color:var(--red)}
+.v2 .dek{margin-top:16px;max-width:26ch}
+.v2 .linked{border-top:0}
+
+/* v3 · headline with mono rail + inline pull figure */
+.v3 .lede{padding:20px 0 22px;display:grid;grid-template-columns:1fr auto;align-items:end;gap:14px}
+.v3 .h{font-size:66px;line-height:.84;letter-spacing:.004em}
+.v3 .rail{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2);writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;padding-bottom:4px}
+.v3 .dek{grid-column:1/-1;margin-top:4px}
+.v3 .pull{display:flex;align-items:flex-end;gap:8px;margin-top:12px}
+.v3 .pull b{font-family:var(--display);font-size:38px;line-height:.8;letter-spacing:.01em;font-weight:700}
+.v3 .pull span{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);padding-bottom:4px}
+
+/* record */
+.hero{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:24px 0 30px}
+.hero .big{width:132px;height:132px;flex:none;border-radius:999px;background:var(--red);border:0;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;transition:transform 150ms cubic-bezier(.2,.7,.2,1),background 150ms ease}
+.hero .big::after{content:"";position:absolute;inset:-17px;border-radius:999px;border:1px solid #F0C6C4}
+.hero .big:hover{background:#D31F19}
+.hero .big:active{transform:scale(.97)}
+.hero .big i{display:block;width:46px;height:46px;border-radius:999px;background:#fff}
+.hero .sub{font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2);text-align:center;white-space:nowrap}
+
+.tb{flex:none;display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--rule);padding:0 4px 6px}
+.tb button{background:transparent;border:0;display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 0 10px;cursor:pointer}
+.tb .dot{width:6px;height:6px;border-radius:999px;border:1px solid var(--ink-3);background:transparent}
+.tb .lb{font-size:11px;font-weight:500;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap;color:var(--ink-2)}
+.tb button.on .dot{background:var(--red);border-color:var(--red)}
+.tb button.on .lb{color:var(--ink);font-weight:700}
+.home{flex:none;display:flex;justify-content:center;padding:0 0 9px}
+.home i{display:block;width:134px;height:5px;border-radius:999px;background:var(--ink)}
+</style>
+</head>
+<body>
+<div class="sheet">
+<div class="row">
+
+  <div class="col">
+    <span class="cap"><b>Log run</b> &nbsp;· Neue Haas Grotesk hero</span>
+    <div class="phone v1" data-screen-label="Voice Log · Bebas 1">
+      <div class="sb"><span>10:12</span><span class="g"><span class="bars"><i></i><i></i><i></i><i></i></span><svg width="16" height="12" viewBox="0 0 16 12" fill="none"><path d="M8 11.2 .5 3.6a10.5 10.5 0 0 1 15 0L8 11.2Z" fill="#111"/></svg><span class="batt">84</span></span></div>
+      <div class="mast"><img class="mark" src="assets/logo-stacked.png" alt="Post Run Drip"><span class="r"><span class="rtop"><a class="link" href="#">Today <span>&#8599;</span></a><button class="icon" aria-label="Menu"><i></i><i></i><i></i></button></span></span></div>
+      <div class="body">
+        <div class="lede">
+          <h1 class="h">Log your run.</h1>
+          <p class="dek">Tap the button to start your voice memo.</p>
+        </div>
+        <div class="linked">
+          <div class="eyebrow"><span>Linked to</span><a href="#">All runs &#8599;</a></div>
+          <div class="sel">
+            <span class="figure">4.43<i>mi</i></span>
+            <span class="meta"><b>Yesterday evening</b>31:52 &middot; 7:12/mi</span>
+            <span class="badge">Latest</span>
+          </div>
+          <div class="rail">
+            <button class="chip on">Aug 20 <em>4.43</em></button>
+            <button class="chip">Aug 18 <em>6.20</em></button>
+            <button class="chip">Aug 16 <em>3.10</em></button>
+            <button class="chip">Aug 15 <em>8.02</em></button>
+            <button class="chip none">None</button>
+          </div>
+        </div>
+        <div class="hero">
+          <button class="big" aria-label="Record"><i></i></button>
+          <span class="sub">Tap to record</span>
+        </div>
+      </div>
+      <div class="tb">
+        <button class="on"><span class="dot"></span><span class="lb">Log</span></button>
+        <button><span class="dot"></span><span class="lb">Train</span></button>
+        <button><span class="dot"></span><span class="lb">Trends</span></button>
+        <button><span class="dot"></span><span class="lb">Week</span></button>
+        <button><span class="dot"></span><span class="lb">Ask</span></button>
+        <button><span class="dot"></span><span class="lb">Sheet</span></button>
+      </div>
+      <div class="home"><i></i></div>
+    </div>
+  </div>
+
+</div>
+</div>
+</body>
+</html>

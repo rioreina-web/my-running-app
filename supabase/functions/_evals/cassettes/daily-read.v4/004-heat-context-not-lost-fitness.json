@@ -1,0 +1,25 @@
+{
+  "id": "004-heat-context-not-lost-fitness",
+  "prompt_name": "daily-read.v4",
+  "description": "A recent run was slow, but the Conditions section shows it was hot (heat-adjusted pace much faster than actual). The Read MUST use the conditions to explain the slow pace as heat, NOT read it as lost fitness or a fitness decline. It should reference the heat/temperature/conditions; it must NOT claim fitness dropped or the athlete is slowing down / losing form based on that run.",
+  "vars": {},
+  "input": "## Coaching mode\nSELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening; one good question per Read at most. No invented targets.\n\n=== ATHLETE STATE ===\nLevel: intermediate\n\nTraining Load (7d): 36 mi, 5 runs (1 hard, 4 easy)\n28d avg: 40 mpw\nVolume × Intensity load (7d): 64 weighted-min · 28d: 268\nTime in zone (7d): easy 78% · moderate 6% · threshold 10% · hard 6% (pyramidal)\n\nRecent runs (trust user notes + work pace over avg pace):\n  2026-06-11 Easy 6.0mi @ 9:12/mi — \"felt awful, so humid\"\n  2026-06-09 Easy 6.5mi @ 8:40/mi\n  2026-06-07 LT 5.0mi work @ 7:08/mi\n\nConditions (don't read heat as lost fitness):\n  2026-06-11: 84°F, dew 73°F — ran 9:12/mi, heat-adjusted 8:34/mi (7.1% slower from heat)\n\n## Citable workouts (cite by the bracketed id ONLY)\n- [77777777-7777-7777-7777-777777777777] 2026-06-11 · 6.0mi (55m)\n- [88888888-8888-8888-8888-888888888888] 2026-06-07 · 5.0mi (36m) ★quality\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "headline",
+      "paragraph",
+      "sources",
+      "confidence"
+    ],
+    "forbidden_patterns": [
+      "(?i)\\b(losing fitness|lost fitness|fitness (is )?(dropping|declining|slipping|down)|getting slower|slowing down|out of shape|detrain)\\b"
+    ],
+    "required_patterns": [
+      "(?i)\\b(heat|humid|humidity|hot|84|dew|conditions|weather)\\b"
+    ]
+  },
+  "recorded_response": "```json\n{\n  \"headline\": \"Navigating the heat this week.\",\n  \"paragraph\": \"Your LT work on June 7th came in strong at 7:08/mi over 5 miles {\\\"workout_id\\\":\\\"88888888-8888-8888-8888-888888888888\\\"}. That session accounted for most of your quality this week, which saw 36 miles total across five runs. The 6-mile easy run on June 11th {\\\"workout_id\\\":\\\"77777777-7777-7777-7777-777777777777\\\"} was a different story, with 84°F and high humidity making the 9:12/mi pace feel like 8:34/mi. Your note about feeling awful that day tracks with the conditions. This week's load of 64 weighted-minutes is lighter than your 28-day average of 268, which might be a good reset given the heat. How are you feeling after that hot run?\",\n  \"confidence\": {\n    \"level\": \"MEDIUM\",\n    \"sub\": \"Some recent activity, but limited historical data.\"\n  },\n  \"sources\": [\n    \"88888888-8888-8888-8888-888888888888\",\n    \"77777777-7777-7777-7777-777777777777\"\n  ]\n}\n```",
+  "recorded_at": "2026-06-12T22:14:35.731Z",
+  "model": "gemini-2.5-flash"
+}

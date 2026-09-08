@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Note composer · Direction I</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;700&family=Schibsted+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Crimson+Pro:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#FFFFFF; --paper-deep:#F2F2F2; --rule:#EBEBEB; --rule-strong:#111111;
+  --ink:#111111; --ink2:#6B6B6B; --ink3:#9A9A9A;
+  --red:#EE2B24; --red-text:#D31F19; --session:#1F4FA8;
+  --display:"Instrument Sans",system-ui,sans-serif;
+  --label:"Schibsted Grotesk",system-ui,sans-serif;
+  --data:"Inter",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+  --prose:"Crimson Pro",Georgia,serif;
+  --dek:"Times New Roman",Times,Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#E4E4E4; color:var(--ink);
+  font-family:var(--data);
+  padding:40px 24px 72px;
+  -webkit-font-smoothing:antialiased;
+}
+.page-head{max-width:1320px;margin:0 auto 40px}
+.page-head .eyebrow{
+  font-family:var(--label);font-weight:600;font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);
+}
+.page-head h1{
+  font-family:var(--display);font-weight:700;font-size:38px;
+  letter-spacing:-.045em;margin-top:10px;
+}
+.page-head p{
+  font-family:var(--dek);font-style:italic;font-size:18px;
+  color:#444;margin-top:10px;max-width:64ch;line-height:1.45;
+}
+.rail{
+  display:flex;gap:34px;justify-content:center;align-items:flex-start;
+  flex-wrap:wrap;max-width:1320px;margin:0 auto;
+}
+.slot{width:393px;flex:0 0 auto}
+.slot > figcaption{margin-top:16px}
+.slot .cap-label{
+  font-family:var(--label);font-weight:700;font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;
+}
+.cap-label.bad{color:var(--red-text)}
+.cap-label.good{color:var(--ink)}
+.slot .cap-body{
+  font-family:var(--dek);font-style:italic;font-size:15px;line-height:1.5;
+  color:#3A3A3A;margin-top:7px;
+}
+
+/* ---------- phone shell ---------- */
+.phone{
+  width:393px;height:852px;background:var(--paper);
+  border-radius:44px;overflow:hidden;position:relative;
+  box-shadow:0 1px 2px rgba(0,0,0,.14),0 18px 44px rgba(0,0,0,.20);
+}
+.statusbar{
+  height:54px;display:flex;align-items:flex-end;justify-content:space-between;
+  padding:0 30px 6px;font-family:var(--data);font-weight:600;font-size:15px;
+}
+.statusbar .glyphs{display:flex;gap:6px;align-items:center;color:var(--ink)}
+.bat{
+  width:26px;height:13px;border:1.4px solid var(--ink);border-radius:4px;
+  position:relative;
+}
+.bat::after{content:"";position:absolute;left:1.4px;top:1.4px;bottom:1.4px;width:70%;background:#2ECC5B;border-radius:2px}
+
+/* ---------- shared type ---------- */
+.lab{
+  font-family:var(--label);font-weight:600;font-size:10px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);
+}
+.lab.ink{color:var(--ink)}
+.lab.red{color:var(--red-text)}
+.lab.dim{color:var(--ink3)}
+.rule{height:1px;background:var(--rule)}
+.rule.strong{height:2px;background:var(--rule-strong)}
+.disp{font-family:var(--display);font-weight:700;letter-spacing:-.045em;color:var(--ink)}
+.dek{font-family:var(--dek);font-style:italic;color:var(--ink2)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ---------- keyboard ---------- */
+.keyboard{background:#D1D3D9;padding:8px 3px 6px;user-select:none}
+.kb-sugg{
+  height:42px;display:flex;align-items:center;
+  border-bottom:.5px solid #BCBEC4;margin-bottom:8px;
+}
+.kb-sugg span{
+  flex:1;text-align:center;font-family:var(--data);font-size:16px;color:#101114;
+}
+.kb-sugg span + span{border-left:.5px solid #BCBEC4}
+.kb-row{display:flex;justify-content:center;gap:6px;margin-bottom:9px}
+.key{
+  background:#FCFCFE;border-radius:5px;height:42px;flex:1;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--data);font-size:21px;color:#101114;
+  box-shadow:0 1px 0 rgba(0,0,0,.28);
+}
+.key.wide{flex:1.5;font-size:15px;background:#ADB3BE;box-shadow:0 1px 0 rgba(0,0,0,.22)}
+.key.space{flex:5}
+.kb-row.indent{padding:0 18px}
+.kb-bottom{height:34px;display:flex;align-items:center;justify-content:center}
+.kb-bottom .bar{width:140px;height:5px;border-radius:3px;background:#101114}
+
+/* ---------- BEFORE phone ---------- */
+.before-body{height:calc(852px - 54px);display:flex;flex-direction:column;background:var(--paper)}
+.nav{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 20px 12px;
+}
+.pillbtn{
+  background:var(--paper);border-radius:999px;padding:11px 16px;
+  box-shadow:0 1px 5px rgba(0,0,0,.10);display:flex;align-items:center;gap:11px;
+}
+.burger{display:flex;flex-direction:column;gap:4px}
+.burger i{display:block;width:19px;height:2.4px;background:var(--red);border-radius:2px}
+.clipped{
+  overflow:hidden;height:44px;display:flex;align-items:flex-end;justify-content:center;
+}
+.clipped .disp{font-size:44px;line-height:.9}
+.before-lede{padding:0 22px 16px;text-align:center}
+.before-lede .dek{font-size:17px;display:block;margin-top:12px}
+.before-lede .uploading{
+  display:block;margin-top:10px;font-family:var(--prose);font-size:17px;color:var(--ink2);
+}
+.linked{padding:16px 22px}
+.linked-top{display:flex;justify-content:space-between;align-items:center}
+.linked-main{display:flex;align-items:center;gap:12px;margin-top:12px}
+.linked-main .fig{
+  font-family:var(--data);font-weight:600;font-size:32px;letter-spacing:-.035em;
+  font-variant-numeric:tabular-nums;
+}
+.linked-main .day{font-family:var(--display);font-weight:700;font-size:13px;letter-spacing:-.02em}
+.linked-main .meta{font-family:var(--mono);font-size:11px;color:var(--ink2);margin-top:3px}
+.badge{
+  background:var(--ink);color:#fff;font-family:var(--label);font-weight:600;
+  font-size:9px;letter-spacing:.14em;text-transform:uppercase;padding:5px 8px;
+}
+.chips{display:flex;gap:7px;margin-top:14px;overflow:hidden}
+.chip{
+  border:1px solid var(--rule);border-radius:999px;padding:9px 14px;white-space:nowrap;
+  font-family:var(--mono);font-size:12px;color:var(--ink2);
+}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.squeeze{background:var(--paper-deep);padding:14px 22px;flex:1;min-height:0}
+.squeeze-top{display:flex;justify-content:space-between;align-items:center}
+.tabbar{
+  display:flex;justify-content:space-between;padding:10px 20px 6px;
+  border-top:1px solid var(--rule);background:var(--paper);position:relative;
+}
+.tab{display:flex;flex-direction:column;align-items:center;gap:7px}
+.tab .dot{width:7px;height:7px;border-radius:50%;border:1.4px solid var(--ink3)}
+.tab.on .dot{background:var(--red);border-color:var(--red)}
+.tab .lab{font-size:10px}
+.tab.on .lab{color:var(--ink)}
+.done-float{
+  position:absolute;right:14px;top:-6px;background:var(--paper);
+  border-radius:999px;padding:13px 26px;box-shadow:0 2px 9px rgba(0,0,0,.16);
+  font-family:var(--data);font-size:17px;color:var(--red-text);
+}
+.collide{
+  position:absolute;inset:0;border:2px dashed var(--red);border-radius:6px;
+  pointer-events:none;
+}
+
+/* ---------- AFTER: sheet ---------- */
+.dimmed{position:absolute;inset:0;background:var(--paper)}
+.dimmed .scrim{position:absolute;inset:0;background:rgba(17,17,17,.34)}
+.sheet{
+  position:absolute;left:0;right:0;bottom:0;top:12px;
+  background:var(--paper);border-radius:14px 14px 0 0;overflow:hidden;
+  display:flex;flex-direction:column;
+  box-shadow:0 -2px 18px rgba(0,0,0,.13);
+}
+.grabber{height:16px;display:flex;align-items:center;justify-content:center}
+.grabber i{width:38px;height:5px;border-radius:3px;background:#D6D6D6;display:block}
+.sheet-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:6px 22px 14px;
+}
+.sheet-lede{padding:20px 22px 18px}
+.sheet-lede .disp{font-size:34px;display:block}
+.sheet-lede .dek{font-size:16px;display:block;margin-top:8px}
+.sheet-linked{
+  padding:13px 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+}
+.sheet-linked .who{display:flex;align-items:baseline;gap:8px;min-width:0}
+.sheet-linked .who .n{
+  font-family:var(--data);font-weight:600;font-size:15px;
+  font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+}
+.sheet-linked .who .t{
+  font-family:var(--mono);font-size:11px;color:var(--ink2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.write{flex:1;min-height:0;padding:20px 22px 0;position:relative;overflow:hidden}
+.write .ph{font-family:var(--prose);font-size:20px;line-height:1.5;color:var(--ink3)}
+.write .typed{font-family:var(--prose);font-size:20px;line-height:1.5;color:var(--ink)}
+.caret{
+  display:inline-block;width:2px;height:21px;background:var(--red);
+  vertical-align:-4px;margin-left:1px;
+}
+.sheet-foot{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:13px 22px;
+}
+.measure{
+  position:absolute;left:0;right:0;
+  border-top:1px dashed var(--session);border-bottom:1px dashed var(--session);
+  pointer-events:none;
+}
+.measure span{
+  position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  background:var(--session);color:#fff;font-family:var(--label);font-weight:700;
+  font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:4px 7px;border-radius:3px;
+}
+
+/* ---------- notes ---------- */
+.notes{max-width:860px;margin:64px auto 0}
+.notes h2{
+  font-family:var(--display);font-weight:700;font-size:24px;letter-spacing:-.04em;
+  margin-bottom:6px;
+}
+.notes .sub{
+  font-family:var(--label);font-weight:600;font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink2);
+}
+.notes ol{margin:20px 0 0;padding-left:0;list-style:none;counter-reset:n}
+.notes li{
+  counter-increment:n;position:relative;padding:16px 0 16px 46px;
+  border-top:1px solid #CFCFCF;
+}
+.notes li::before{
+  content:counter(n,decimal-leading-zero);position:absolute;left:0;top:18px;
+  font-family:var(--mono);font-size:12px;color:var(--red-text);
+}
+.notes li b{
+  display:block;font-family:var(--display);font-weight:700;font-size:16px;
+  letter-spacing:-.02em;margin-bottom:5px;
+}
+.notes li span{
+  font-family:var(--dek);font-style:italic;font-size:16px;line-height:1.55;color:#333;
+}
+.notes li code{
+  font-family:var(--mono);font-size:12.5px;font-style:normal;
+  background:#D8D8D8;padding:1px 5px;border-radius:3px;
+}
+@media (max-width:900px){ .rail{gap:56px} }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <div class="eyebrow">Post Run Drip · Direction I · 24 Aug 2026</div>
+  <h1>Typing a note.</h1>
+  <p>The composer moves out of the record button's slot and onto its own sheet. The slot was never the problem to patch — a full-viewport page inside a scroll view cannot win against the keyboard, and the tab bar takes another 50pt off the top of what's left.</p>
+</header>
+
+<div class="rail">
+
+  <!-- ============ BEFORE ============ -->
+  <figure class="slot">
+    <div class="phone">
+      <div class="statusbar">
+        <span>1:54</span>
+        <span class="glyphs"><span style="font-size:13px">⁝⁝⁝</span><span style="font-size:13px">◗</span><span class="bat"></span></span>
+      </div>
+      <div class="before-body">
+        <div class="nav">
+          <div class="pillbtn"><div class="burger"><i></i><i></i><i></i></div></div>
+          <div class="pillbtn"><span style="font-size:17px">⚙</span><span class="lab ink">Today ↗</span></div>
+        </div>
+        <div class="clipped"><span class="disp">Log your run.</span></div>
+        <div class="before-lede">
+          <span class="dek">Tap the button to start your voice memo.</span>
+          <span class="uploading">Uploading…</span>
+        </div>
+        <div class="rule"></div>
+        <div class="linked">
+          <div class="linked-top"><span class="lab">Linked to</span><span class="lab ink" style="border-bottom:1px solid var(--ink2);padding-bottom:2px">All runs ↗</span></div>
+          <div class="linked-main">
+            <span class="fig">10.01</span><span class="lab">mi</span>
+            <div style="flex:1">
+              <div class="day">Today morning</div>
+              <div class="meta">1:11:35 · 7:09/mi</div>
+            </div>
+            <span class="badge">Latest</span>
+          </div>
+          <div class="chips">
+            <span class="chip on">AUG 24&nbsp; 10.01</span>
+            <span class="chip">AUG 22&nbsp; 18.01</span>
+            <span class="chip">AUG 21&nbsp; 7.47</span>
+          </div>
+        </div>
+        <div class="rule"></div>
+        <div class="squeeze" style="position:relative">
+          <div class="squeeze-top"><span class="lab">Note · today</span><span class="lab dim">Save ↗</span></div>
+          <div class="collide"></div>
+        </div>
+        <div class="tabbar">
+          <div class="tab on"><span class="dot"></span><span class="lab">Log</span></div>
+          <div class="tab"><span class="dot"></span><span class="lab">Train</span></div>
+          <div class="tab"><span class="dot"></span><span class="lab">Trends</span></div>
+          <div class="tab"><span class="dot"></span><span class="lab">Week</span></div>
+          <div class="tab"><span class="dot"></span><span class="lab">Ask</span></div>
+          <div class="tab"><span class="dot"></span><span class="lab">Sheet</span></div>
+          <div class="done-float">Done</div>
+        </div>
+        <div class="keyboard">
+          <div class="kb-sugg"><span>I</span><span>The</span><span>I'm</span></div>
+          <div class="kb-row"><i class="key">Q</i><i class="key">W</i><i class="key">E</i><i class="key">R</i><i class="key">T</i><i class="key">Y</i><i class="key">U</i><i class="key">I</i><i class="key">O</i><i class="key">P</i></div>
+          <div class="kb-row indent"><i class="key">A</i><i class="key">S</i><i class="key">D</i><i class="key">F</i><i class="key">G</i><i class="key">H</i><i class="key">J</i><i class="key">K</i><i class="key">L</i></div>
+          <div class="kb-row"><i class="key wide">⇧</i><i class="key">Z</i><i class="key">X</i><i class="key">C</i><i class="key">V</i><i class="key">B</i><i class="key">N</i><i class="key">M</i><i class="key wide">⌫</i></div>
+          <div class="kb-row"><i class="key wide">123</i><i class="key space"></i><i class="key wide">↵</i></div>
+          <div class="kb-bottom"><span class="bar"></span></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>
+      <div class="cap-label bad">Before · what ships today</div>
+      <div class="cap-body">The writing surface is the dashed box: a 44pt sliver holding a label and a Save link, with no room for the text itself. The headline is clipped, “Uploading…” is still on screen from the last memo, the tab bar never leaves, and the keyboard's Done button sits on top of it.</div>
+    </figcaption>
+  </figure>
+
+  <!-- ============ AFTER · empty ============ -->
+  <figure class="slot">
+    <div class="phone">
+      <div class="dimmed">
+        <div class="statusbar">
+          <span>1:54</span>
+          <span class="glyphs"><span style="font-size:13px">⁝⁝⁝</span><span style="font-size:13px">◗</span><span class="bat"></span></span>
+        </div>
+        <div class="before-lede" style="padding-top:40px">
+          <span class="disp" style="font-size:44px">Log your run.</span>
+        </div>
+        <div class="scrim"></div>
+      </div>
+
+      <div class="sheet">
+        <div class="grabber"><i></i></div>
+        <div class="sheet-bar">
+          <span class="lab">Cancel</span>
+          <span class="lab dim">Save ↗</span>
+        </div>
+        <div class="rule"></div>
+
+        <div class="sheet-lede">
+          <span class="disp">Note.</span>
+          <span class="dek">Write a note about your run.</span>
+        </div>
+        <div class="rule"></div>
+
+        <div class="sheet-linked">
+          <div class="who">
+            <span class="n">10.01 mi</span>
+            <span class="t">Today morning · 7:09/mi</span>
+          </div>
+          <span class="lab ink" style="white-space:nowrap">Change ↗</span>
+        </div>
+        <div class="rule"></div>
+
+        <div class="write">
+          <span class="ph">How did the run feel?</span><span class="caret"></span>
+          <div class="measure" style="top:0;bottom:0"><span>319 pt to write in</span></div>
+        </div>
+
+        <div class="rule"></div>
+        <div class="sheet-foot">
+          <span class="lab">Record instead ↗</span>
+          <span class="lab dim">Mon · Aug 24</span>
+        </div>
+
+        <div class="keyboard">
+          <div class="kb-sugg"><span>I</span><span>The</span><span>I'm</span></div>
+          <div class="kb-row"><i class="key">Q</i><i class="key">W</i><i class="key">E</i><i class="key">R</i><i class="key">T</i><i class="key">Y</i><i class="key">U</i><i class="key">I</i><i class="key">O</i><i class="key">P</i></div>
+          <div class="kb-row indent"><i class="key">A</i><i class="key">S</i><i class="key">D</i><i class="key">F</i><i class="key">G</i><i class="key">H</i><i class="key">J</i><i class="key">K</i><i class="key">L</i></div>
+          <div class="kb-row"><i class="key wide">⇧</i><i class="key">Z</i><i class="key">X</i><i class="key">C</i><i class="key">V</i><i class="key">B</i><i class="key">N</i><i class="key">M</i><i class="key wide">⌫</i></div>
+          <div class="kb-row"><i class="key wide">123</i><i class="key space"></i><i class="key wide">↵</i></div>
+          <div class="kb-bottom"><span class="bar"></span></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>
+      <div class="cap-label good">After · opened, empty</div>
+      <div class="cap-body">Same keyboard, same phone. The writing surface is now the largest thing on screen — a little over twice what the slot could give. No tab bar to collide with, and Save is visibly inert until there are words to save.</div>
+    </figcaption>
+  </figure>
+
+  <!-- ============ AFTER · typing ============ -->
+  <figure class="slot">
+    <div class="phone">
+      <div class="dimmed">
+        <div class="statusbar">
+          <span>1:56</span>
+          <span class="glyphs"><span style="font-size:13px">⁝⁝⁝</span><span style="font-size:13px">◗</span><span class="bat"></span></span>
+        </div>
+        <div class="before-lede" style="padding-top:40px">
+          <span class="disp" style="font-size:44px">Log your run.</span>
+        </div>
+        <div class="scrim"></div>
+      </div>
+
+      <div class="sheet">
+        <div class="grabber"><i></i></div>
+        <div class="sheet-bar">
+          <span class="lab">Cancel</span>
+          <span class="lab red">Save ↗</span>
+        </div>
+        <div class="rule"></div>
+
+        <div class="sheet-lede">
+          <span class="disp">Note.</span>
+          <span class="dek">Write a note about your run.</span>
+        </div>
+        <div class="rule"></div>
+
+        <div class="sheet-linked">
+          <div class="who">
+            <span class="n">10.01 mi</span>
+            <span class="t">Today morning · 7:09/mi</span>
+          </div>
+          <span class="lab ink" style="white-space:nowrap">Change ↗</span>
+        </div>
+        <div class="rule"></div>
+
+        <div class="write">
+          <span class="typed">Legs were heavy the first two miles and I nearly turned it into an easy day. Settled around 7:05 after the bridge and it stopped feeling like work. Left calf tight on the downhills — not painful, just there.</span><span class="caret"></span>
+        </div>
+
+        <div class="rule"></div>
+        <div class="sheet-foot">
+          <span class="lab">Record instead ↗</span>
+          <span class="lab dim">Mon · Aug 24</span>
+        </div>
+
+        <div class="keyboard">
+          <div class="kb-sugg"><span>there</span><span>there.</span><span>then</span></div>
+          <div class="kb-row"><i class="key">Q</i><i class="key">W</i><i class="key">E</i><i class="key">R</i><i class="key">T</i><i class="key">Y</i><i class="key">U</i><i class="key">I</i><i class="key">O</i><i class="key">P</i></div>
+          <div class="kb-row indent"><i class="key">A</i><i class="key">S</i><i class="key">D</i><i class="key">F</i><i class="key">G</i><i class="key">H</i><i class="key">J</i><i class="key">K</i><i class="key">L</i></div>
+          <div class="kb-row"><i class="key wide">⇧</i><i class="key">Z</i><i class="key">X</i><i class="key">C</i><i class="key">V</i><i class="key">B</i><i class="key">N</i><i class="key">M</i><i class="key wide">⌫</i></div>
+          <div class="kb-row"><i class="key wide">123</i><i class="key space"></i><i class="key wide">↵</i></div>
+          <div class="kb-bottom"><span class="bar"></span></div>
+        </div>
+      </div>
+    </div>
+    <figcaption>
+      <div class="cap-label good">After · mid-entry</div>
+      <div class="cap-body">Four lines of Crimson Pro and still room below. Save has gone red because there is something to save. The note is set in prose, not mono — mono italic is reserved for a transcript, which is the machine quoting you; this is you writing.</div>
+    </figcaption>
+  </figure>
+
+</div>
+
+<section class="notes">
+  <div class="sub">Decisions in this draft</div>
+  <h2>What changed, and why.</h2>
+  <ol>
+    <li><b>The composer gets its own sheet.</b><span>This reverses the call in <code>LOG-WILD-APPLY.md</code> §6d, which put the composer in the record button's slot so “Type a note instead” wouldn't look like a dead button. That reasoning was right about the symptom and the sheet keeps the cure — it opens instantly on tap. But the slot sits at the bottom of a full-viewport page inside a scroll view, which is a fight with the keyboard that cannot be won by adjusting padding.</span></li>
+    <li><b>Linked run stays, compressed to one line.</b><span>You still need to know where the note lands, and “Change ↗” still opens the picker. It does not need the 32pt figure and the chip rail twice — that block is already doing its job on the screen underneath.</span></li>
+    <li><b>Save is a state, not a button.</b><span>Grey until the field has non-whitespace, then the one red. It's the same “verb + arrow” pattern as <code>Mark complete ↗</code> in the design system, so nothing new to learn.</span></li>
+    <li><b>“Record instead ↗” moves to the footer.</b><span>Still there, still quiet, but out of the writing surface. In the current build it sits under the text field where it competes with the thing you are typing into.</span></li>
+    <li><b>No “Uploading…” in the composer.</b><span>That status belongs to the voice path. It appears in the lede on the screen behind, which is where a memo upload actually is.</span></li>
+    <li><b>Crimson Pro for the note body.</b><span>Prose is what the athlete wrote. Italic JetBrains Mono is a transcript — the machine quoting you back. The system separates those two and this is the writing case.</span></li>
+    <li><b>Open question — the date stamp.</b><span>The footer currently reads <code>Mon · Aug 24</code>. If a note should be attachable to a past day without going through the run picker, that stamp wants to be tappable and this draft does not handle it.</span></li>
+  </ol>
+</section>
+
+</body>
+</html>

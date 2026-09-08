@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Post Run Drip — Signals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --bar:#CFC9C2; --bar-soft:#DFDAD4; --graphite:#6B6560;
+  --m-positive:#4A9E6B; --m-neutral:#9B9590; --m-tired:#C4873A; --m-struggling:#C45A3A;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#DCD6CE;font-family:var(--fb);color:var(--ink);
+  -webkit-font-smoothing:antialiased;padding:40px 20px 80px;display:flex;
+  flex-direction:column;align-items:center;gap:22px}
+
+.frame{width:390px;background:var(--paper);border-radius:38px;overflow:hidden;
+  box-shadow:0 24px 60px rgba(0,0,0,.20),0 2px 6px rgba(0,0,0,.08)}
+.statusbar{display:flex;justify-content:space-between;align-items:center;
+  padding:14px 26px 6px;font-family:var(--fm);font-size:13px;font-weight:600}
+.statusbar .right{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--ink-2)}
+.screen{padding:8px 20px 26px}
+
+.eyebrow{font-family:var(--fm);font-size:10.5px;font-weight:500;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3)}
+
+/* ---------- head ---------- */
+.head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.head h1{font-family:var(--fd);font-weight:700;font-size:29px;letter-spacing:-.02em}
+
+/* ---------- what moved ---------- */
+.moved{background:var(--card);border:1px solid var(--rule);border-left:2.5px solid var(--coral);
+  border-radius:10px;padding:14px 15px 13px;margin-bottom:8px}
+.moved.quiet{border-left-color:var(--ink-3)}
+.moved .eyebrow{margin-bottom:9px;display:block}
+.moved ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.moved li{font-size:15px;line-height:1.42}
+.moved li b{font-weight:700}
+.moved li .ev{display:block;font-family:var(--fm);font-size:10.5px;letter-spacing:.05em;
+  color:var(--ink-3);text-transform:uppercase;margin-top:3px}
+.moved .none{font-size:15px;line-height:1.45;color:var(--ink-2)}
+
+/* ---------- filter ---------- */
+.filter{display:flex;gap:6px;margin:14px 0 4px}
+.filter button{font-family:var(--fm);font-size:10px;letter-spacing:.10em;text-transform:uppercase;
+  border:1px solid var(--rule);background:var(--card);color:var(--ink-2);
+  border-radius:999px;padding:6px 12px;cursor:pointer;font-weight:600}
+.filter button.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* ---------- signal cards ---------- */
+.card{background:var(--card);border:1px solid var(--rule);border-radius:11px;
+  padding:12px 13px 9px;margin-top:9px}
+.card.absent{background:transparent;border-style:dashed}
+.card .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:2px}
+.card .name{font-family:var(--fm);font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-2);font-weight:600}
+.card .val{font-family:var(--fd);font-size:19px;font-weight:700;letter-spacing:-.01em;line-height:1}
+.card .val.dim{color:var(--ink-3);font-size:13px;font-family:var(--fb);font-weight:400}
+.card .ref{font-family:var(--fm);font-size:10px;letter-spacing:.05em;color:var(--ink-3);
+  text-transform:uppercase;margin-bottom:7px}
+.card .ref .out{color:var(--coral-deep);font-weight:600}
+.card svg{display:block;width:100%;height:auto;overflow:visible}
+.card .absentcopy{font-size:13.5px;line-height:1.45;color:var(--ink-3);padding:3px 0 5px}
+
+/* ---------- scrub readout ---------- */
+.readout{position:sticky;top:0;z-index:5;background:var(--paper);
+  padding:9px 0 8px;margin-top:2px;border-bottom:1px solid var(--rule)}
+.readout .day{font-family:var(--fm);font-size:10.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--coral-deep);font-weight:600}
+.readout .line{font-size:14.5px;line-height:1.45;margin-top:3px;color:var(--ink)}
+.readout.idle .line{color:var(--ink-3)}
+
+.axis{display:flex;justify-content:space-between;margin-top:7px;padding:0 1px;
+  font-family:var(--fm);font-size:9.5px;letter-spacing:.06em;color:var(--ink-3);text-transform:uppercase}
+
+.note{width:390px;font-size:13px;line-height:1.55;color:#4A443E;padding:0 6px}
+.note b{font-weight:700;color:#241F1A}
+.note code{font-family:var(--fm);font-size:11.5px;background:rgba(0,0,0,.05);padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="statusbar"><span>3:47</span><span class="right">TRENDS</span></div>
+  <div class="screen">
+
+    <div class="head">
+      <h1>Signals</h1>
+      <span class="eyebrow" id="range"></span>
+    </div>
+
+    <div id="moved"></div>
+
+    <div class="readout idle" id="readout">
+      <span class="day" id="rday">LAST 30 DAYS</span>
+      <div class="line" id="rline">Drag across any chart to read one day.</div>
+    </div>
+
+    <div class="filter">
+      <button id="f-moved">Only what moved</button>
+      <button id="f-all" class="on">All signals</button>
+    </div>
+
+    <div id="cards"></div>
+
+    <div class="axis" id="axis"></div>
+
+  </div>
+</div>
+
+<div class="note">
+  <b>Real data</b> — your last 30 days from <code>training_logs</code>,
+  <code>daily_biometrics</code> and <code>body_mentions</code>. Baselines are the
+  28 days behind the window: resting HR <b>50.6 ± 2.38 bpm</b>, sleep
+  <b>6h 20m ± 62 min</b>. No composite, no score. Every card is one variable
+  against that athlete's own usual range.
+</div>
+
+<script>
+// ── The window: 30 days of real data ─────────────────────────────────────────
+const DAYS = [
+  {d:"2026-07-26",mi:0,   tls:0,   mood:null,        rhr:55,  sl:239, ng:null},
+  {d:"2026-07-27",mi:8.0, tls:58,  mood:null,        rhr:53,  sl:null,ng:null},
+  {d:"2026-07-28",mi:9.2, tls:132, mood:"struggling",rhr:51,  sl:null,ng:null},
+  {d:"2026-07-29",mi:7.1, tls:52,  mood:null,        rhr:47,  sl:530, ng:null},
+  {d:"2026-07-30",mi:9.7, tls:74,  mood:null,        rhr:55,  sl:344, ng:null},
+  {d:"2026-07-31",mi:5.0, tls:37,  mood:null,        rhr:49,  sl:390, ng:null},
+  {d:"2026-08-01",mi:17.0,tls:140, mood:"positive",  rhr:51,  sl:257, ng:null},
+  {d:"2026-08-02",mi:7.0, tls:51,  mood:null,        rhr:50,  sl:439, ng:null},
+  {d:"2026-08-03",mi:11.0,tls:81,  mood:null,        rhr:50,  sl:372, ng:null},
+  {d:"2026-08-04",mi:15.7,tls:151, mood:"tired",     rhr:47,  sl:337, ng:null},
+  {d:"2026-08-05",mi:6.0, tls:47,  mood:null,        rhr:51,  sl:394, ng:null},
+  {d:"2026-08-06",mi:11.4,tls:140, mood:"positive",  rhr:50,  sl:404, ng:null},
+  {d:"2026-08-07",mi:7.0, tls:53,  mood:null,        rhr:52,  sl:403, ng:null},
+  {d:"2026-08-08",mi:20.3,tls:195, mood:"positive",  rhr:54,  sl:null,ng:null},
+  {d:"2026-08-09",mi:6.0, tls:44,  mood:null,        rhr:55,  sl:469, ng:null},
+  {d:"2026-08-10",mi:13.0,tls:94,  mood:null,        rhr:43,  sl:381, ng:null},
+  {d:"2026-08-11",mi:10.2,tls:146, mood:"positive",  rhr:47,  sl:286, ng:null},
+  {d:"2026-08-12",mi:8.0, tls:60,  mood:null,        rhr:45,  sl:431, ng:null},
+  {d:"2026-08-13",mi:15.0,tls:142, mood:"neutral",   rhr:49,  sl:285, ng:"knee"},
+  {d:"2026-08-14",mi:4.0, tls:29,  mood:null,        rhr:52,  sl:null,ng:null},
+  {d:"2026-08-15",mi:4.0, tls:31,  mood:null,        rhr:51,  sl:254, ng:null},
+  {d:"2026-08-16",mi:17.1,tls:181, mood:"struggling",rhr:47,  sl:410, ng:null},
+  {d:"2026-08-17",mi:14.0,tls:103, mood:"tired",     rhr:48,  sl:372, ng:null},
+  {d:"2026-08-18",mi:10.3,tls:130, mood:"struggling",rhr:52,  sl:383, ng:null},
+  {d:"2026-08-19",mi:0,   tls:0,   mood:null,        rhr:52,  sl:365, ng:null},
+  {d:"2026-08-20",mi:4.4, tls:32,  mood:"tired",     rhr:50,  sl:460, ng:null},
+  {d:"2026-08-21",mi:7.5, tls:54,  mood:"neutral",   rhr:50,  sl:197, ng:"ankle, knee"},
+  {d:"2026-08-22",mi:18.0,tls:164, mood:"neutral",   rhr:null,sl:null,ng:"ankle, knee"},
+  {d:"2026-08-23",mi:0,   tls:0,   mood:null,        rhr:null,sl:null,ng:null},
+  {d:"2026-08-24",mi:10.0,tls:72,  mood:null,        rhr:null,sl:null,ng:null},
+];
+
+// Baselines: the 28 days BEHIND this window, from daily_biometrics.
+const BASE = { rhr:{mean:50.6, sd:2.38, n:28}, sl:{mean:380, sd:62.1, n:27} };
+const BAND = 0.5;   // ±0.5 sd — "inside your usual range"
+const SPAN = 2.5;   // half the chart's vertical reach, in sd. Fixed, never fitted.
+
+const N = DAYS.length, W = 326, PAD = 1;
+const z = (v,b) => (v - b.mean) / b.sd;
+const hhmm = m => `${Math.floor(m/60)}h ${String(Math.round(m%60)).padStart(2,"0")}m`;
+const nice = iso => { const [,mo,da] = iso.split("-");
+  return ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+mo] + " " + +da; };
+const slot = W / N, bw = Math.max(4, slot * 0.6);
+const cx = i => PAD + i * slot + slot / 2;
+
+// ── What moved ───────────────────────────────────────────────────────────────
+// Only signals currently outside the athlete's own band. Observation, never
+// instruction: no should, must, rest, risk, recovered, ready.
+function whatMoved(){
+  const out = [], last7 = DAYS.slice(-7);
+
+  // A single night far outside the band is a fact worth naming on its own —
+  // a 7-day mean would average it away.
+  let worst = null;
+  for (const day of last7.concat(DAYS.slice(-14,-7))) {
+    if (day.sl == null) continue;
+    const s = z(day.sl, BASE.sl);
+    if (Math.abs(s) >= 2 && (!worst || Math.abs(s) > Math.abs(worst.s))) worst = {day, s};
+  }
+  if (worst) out.push({
+    text:`One night at <b>${hhmm(worst.day.sl)}</b> on ${nice(worst.day.d)}.`,
+    ev:`${Math.abs(worst.s).toFixed(1)} sd ${worst.s<0?"below":"above"} your usual ${hhmm(BASE.sl.mean)}`
+  });
+
+  // Seven-day direction, the window `overnight` reads. One night can't say.
+  for (const [key,label,fmt] of [["rhr","Resting HR",v=>`${v.toFixed(0)} bpm`],
+                                 ["sl","Sleep",v=>hhmm(v)]]) {
+    const vals = last7.map(d=>d[key]).filter(v=>v!=null);
+    if (vals.length < 3) continue;
+    const mean = vals.reduce((a,b)=>a+b,0)/vals.length, s = z(mean, BASE[key]);
+    if (Math.abs(s) >= BAND) out.push({
+      text:`<b>${label}</b> has averaged ${fmt(mean)} across ${vals.length} of the last 7 nights, ${s>0?"above":"below"} your usual.`,
+      ev:`${fmt(BASE[key].mean)} usual · ${Math.abs(s).toFixed(1)} sd out`
+    });
+  }
+
+  // Silence from a channel is a fact about the DATA, not about the athlete —
+  // and it is the one thing a chart of the readings cannot show.
+  const stale = [["sl","sleep"],["rhr","resting HR"]]
+    .map(([k,label])=>({k,label,gap:staleness(k)}))
+    .filter(x=>x.gap != null && x.gap >= 2);
+  if (stale.length) {
+    const gap = Math.min(...stale.map(x=>x.gap));
+    out.push({
+      text:`No <b>${stale.map(x=>x.label).join(" or ")}</b> ${stale.length>1?"readings":"reading"} for ${gap} nights.`,
+      ev:`newest is ${nice(last(stale[0].k).d)} · nothing to place against your usual since`
+    });
+  }
+
+  // Body mentions are the athlete's own words. Surface them, never diagnose.
+  const ng = DAYS.slice(-10).filter(d=>d.ng);
+  if (ng.length) {
+    const areas = [...new Set(ng.flatMap(d=>d.ng.split(", ")))].join(" and ");
+    out.push({ text:`<b>${areas[0].toUpperCase()+areas.slice(1)}</b> mentioned on ${ng.length} of the last 10 days.`,
+               ev:ng.map(d=>nice(d.d)).join(" · ") });
+  }
+  return out;
+}
+
+function renderMoved(){
+  const items = whatMoved(), el = document.getElementById("moved");
+  if (!items.length) {
+    el.className = "moved quiet";
+    el.innerHTML = `<span class="eyebrow">Nothing outside your usual</span>
+      <div class="none">Every signal is inside the range it normally sits in. Nothing to look at today.</div>`;
+    return;
+  }
+  el.className = "moved";
+  el.innerHTML = `<span class="eyebrow">What moved</span><ul>` +
+    items.map(i=>`<li>${i.text}<span class="ev">${i.ev}</span></li>`).join("") + `</ul>`;
+}
+
+// ── Charts ───────────────────────────────────────────────────────────────────
+// A deviation chart: the athlete's own baseline down the middle, the ±0.5 sd
+// band around it, one mark per night. Missing nights draw a GAP — a night with
+// no reading and an average night are different facts.
+//
+// Both directions are drawn identically and in graphite. A resting HR above
+// your usual is not "bad"; it is above your usual, and one night cannot say
+// which of a dozen reasons put it there.
+function deviationChart(key, H){
+  const mid = H/2, half = H/2;
+  const y = s => mid - Math.max(-1, Math.min(1, s/SPAN)) * half;
+  const bandH = (BAND/SPAN) * half;
+  let s = `<rect x="0" y="${mid-bandH}" width="${W}" height="${bandH*2}" fill="var(--paper-deep)" opacity=".55"/>`;
+  s += `<line x1="0" y1="${mid}" x2="${W}" y2="${mid}" stroke="var(--rule)" stroke-width="1"/>`;
+  DAYS.forEach((day,i)=>{
+    const v = day[key]; if (v == null) return;
+    const dev = z(v, BASE[key]), yy = y(dev), inBand = Math.abs(dev) < BAND;
+    const top = Math.min(yy, mid), h = Math.max(1.5, Math.abs(yy - mid));
+    s += `<rect x="${cx(i)-bw/2}" y="${top}" width="${bw}" height="${h}" rx="1.5"
+            fill="var(--graphite)" opacity="${inBand?.26:.9}"/>`;
+    if (Math.abs(dev) > SPAN)
+      s += `<line x1="${cx(i)-bw/2}" y1="${dev>0?top-2.5:top+h+2.5}" x2="${cx(i)+bw/2}"
+              y2="${dev>0?top-2.5:top+h+2.5}" stroke="var(--graphite)" stroke-width="1.2" stroke-dasharray="2 2"/>`;
+  });
+  return s;
+}
+
+function barChart(key, H, colour){
+  const peak = Math.max(...DAYS.map(d=>d[key]||0)) || 1;
+  let s = `<line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="var(--rule)" stroke-width="1"/>`;
+  DAYS.forEach((day,i)=>{
+    const v = day[key]||0; if (!v) return;
+    const h = Math.max(1.5, v/peak*H);
+    s += `<rect x="${cx(i)-bw/2}" y="${H-h}" width="${bw}" height="${h}" rx="1.5" fill="${colour}"/>`;
+  });
+  return s;
+}
+
+function moodChart(H){
+  const c = {positive:"var(--m-positive)",neutral:"var(--m-neutral)",
+             tired:"var(--m-tired)",struggling:"var(--m-struggling)"};
+  const side = Math.min(bw, H);
+  return DAYS.map((day,i)=> day.mood
+    ? `<rect x="${cx(i)-side/2}" y="${(H-side)/2}" width="${side}" height="${side}" rx="2.5" fill="${c[day.mood]}"/>`
+    : `<rect x="${cx(i)-side/2}" y="${(H-side)/2}" width="${side}" height="${side}" rx="2.5"
+         fill="none" stroke="var(--rule)" stroke-width="1"/>`).join("");
+}
+
+function niggleChart(H){
+  const mid = H/2;
+  return `<line x1="0" y1="${mid}" x2="${W}" y2="${mid}" stroke="var(--rule)" stroke-width="1"/>` +
+    DAYS.map((day,i)=> day.ng
+      ? `<circle cx="${cx(i)}" cy="${mid}" r="4.5" fill="var(--coral)"/>` : "").join("");
+}
+
+// ── Cards ────────────────────────────────────────────────────────────────────
+const last = k => { for (let i=DAYS.length-1;i>=0;i--) if (DAYS[i][k]!=null) return DAYS[i]; return null; };
+
+// How many days back the newest reading is. A value from three nights ago
+// presented as today's is the exact dishonesty this surface exists to avoid,
+// so the card stamps it rather than letting the number stand bare.
+const staleness = k => { const d = last(k); if (!d) return null; return N-1 - DAYS.indexOf(d); };
+const stamp = k => { const n = staleness(k);
+  return (n == null || n === 0) ? "" :
+    ` <span style="font-size:10.5px;font-family:var(--fm);letter-spacing:.06em;color:var(--coral-deep)">${nice(last(k).d).toUpperCase()}</span>`; };
+
+// Rolling 7-day load sums across the window, so "a big week" is measured
+// against this athlete's own weeks rather than a constant.
+function loadZ(){
+  const sums = [];
+  for (let i=6;i<N;i++) sums.push(DAYS.slice(i-6,i+1).reduce((a,d)=>a+d.tls,0));
+  const mean = sums.reduce((a,b)=>a+b,0)/sums.length;
+  const sd = Math.sqrt(sums.reduce((a,b)=>a+(b-mean)*(b-mean),0)/sums.length);
+  return { now: sums[sums.length-1], mean, sd, z: sd ? (sums[sums.length-1]-mean)/sd : 0 };
+}
+
+function sevenDayZ(key){
+  const vals = DAYS.slice(-7).map(d=>d[key]).filter(v=>v!=null);
+  if (vals.length < 3) return null;
+  return z(vals.reduce((a,b)=>a+b,0)/vals.length, BASE[key]);
+}
+
+const CARDS = [
+  { id:"tls", name:"Training load", H:46,
+    moved:()=>Math.abs(loadZ().z) >= BAND,
+    value:()=>`${loadZ().now} <span style="font-size:11px;color:var(--ink-3)">TLS · 7 DAYS</span>`,
+    ref:()=>{ const l = loadZ();
+      return `${DAYS.slice(-7).reduce((a,d)=>a+d.mi,0).toFixed(1)} miles · usual week ${Math.round(l.mean)} · ` +
+        (Math.abs(l.z)<BAND ? "in line with your usual"
+          : `<span class="out">${Math.abs(l.z).toFixed(1)} sd ${l.z>0?"over":"under"}</span>`); },
+    svg:()=>barChart("tls",46,"var(--bar)") },
+
+  { id:"sl", name:"Sleep", H:46,
+    moved:()=>Math.abs(sevenDayZ("sl")||0) >= BAND || DAYS.slice(-10).some(d=>d.sl!=null && Math.abs(z(d.sl,BASE.sl))>=2),
+    value:()=>{ const d=last("sl"); return d ? hhmm(d.sl) + stamp("sl") : "—"; },
+    ref:()=>{ const s=sevenDayZ("sl");
+      return `usual ${hhmm(BASE.sl.mean)} ± ${Math.round(BASE.sl.sd)}m · ` +
+        (s==null ? "too few nights to place" :
+         Math.abs(s)<BAND ? "7-day mean inside your usual"
+                          : `<span class="out">7-day mean ${Math.abs(s).toFixed(1)} sd ${s>0?"above":"below"}</span>`); },
+    svg:()=>deviationChart("sl",46) },
+
+  { id:"rhr", name:"Resting HR", H:40,
+    moved:()=>Math.abs(sevenDayZ("rhr")||0) >= BAND,
+    value:()=>{ const d=last("rhr"); return d ? `${d.rhr} <span style="font-size:11px;color:var(--ink-3)">BPM</span>` + stamp("rhr") : "—"; },
+    ref:()=>{ const s=sevenDayZ("rhr");
+      return `usual ${BASE.rhr.mean} ± ${BASE.rhr.sd} bpm · ` +
+        (s==null ? "too few nights to place" :
+         Math.abs(s)<BAND ? "7-day mean inside your usual"
+                          : `<span class="out">7-day mean ${Math.abs(s).toFixed(1)} sd ${s>0?"above":"below"}</span>`); },
+    svg:()=>deviationChart("rhr",40) },
+
+  { id:"mood", name:"Mood", H:22,
+    moved:()=>false,
+    value:()=>{ const d=last("mood"); return d ? `<span style="font-size:15px">${d.mood}</span>` : "—"; },
+    ref:()=>`${DAYS.filter(d=>d.mood).length} of 30 days carry a mood — it comes from runs, so rest days are blank`,
+    svg:()=>moodChart(22) },
+
+  { id:"ng", name:"Body mentions", H:16,
+    moved:()=>DAYS.slice(-10).some(d=>d.ng),
+    value:()=>{ const d=last("ng"); return d ? `<span style="font-size:15px">${d.ng}</span>` : "none"; },
+    ref:()=>`${DAYS.filter(d=>d.ng).length} days in 30 · your words, not a diagnosis`,
+    svg:()=>niggleChart(16) },
+
+  { id:"hrv", name:"HRV", absent:true, moved:()=>false,
+    copy:"No readings yet. Apple Health has supplied resting HR and sleep since 6 Aug and zero HRV — this card fills itself in the first night one lands." },
+];
+
+function renderCards(onlyMoved){
+  document.getElementById("cards").innerHTML = CARDS.filter(c=>{
+    if (!onlyMoved) return true;
+    return typeof c.moved === "function" ? c.moved() : !!c.moved;
+  }).map(c=>{
+    if (c.absent) return `<div class="card absent"><div class="top">
+        <span class="name">${c.name}</span><span class="val dim">no data</span></div>
+        <div class="absentcopy">${c.copy}</div></div>`;
+    return `<div class="card"><div class="top">
+        <span class="name">${c.name}</span><span class="val">${c.value()}</span></div>
+        <div class="ref">${c.ref()}</div>
+        <svg viewBox="0 0 ${W} ${c.H}" data-h="${c.H}">${c.svg()}
+          <line class="cursor" x1="0" y1="0" x2="0" y2="${c.H}" stroke="var(--coral)"
+                stroke-width="1.2" opacity="0"/></svg></div>`;
+  }).join("");
+}
+
+// ── Scrub: one pointer, every chart, one sentence ────────────────────────────
+function readDay(i){
+  const d = DAYS[i], p = [];
+  p.push(d.mi > 0 ? `${d.mi} miles` : "no run");
+  if (d.tls) p.push(`${d.tls} TLS`);
+  if (d.mood) p.push(`felt ${d.mood}`);
+  if (d.sl != null) { const s = z(d.sl,BASE.sl);
+    p.push(`slept ${hhmm(d.sl)}${Math.abs(s)>=BAND?` (${Math.abs(s).toFixed(1)} sd ${s>0?"above":"below"} usual)`:""}`); }
+  if (d.rhr != null) { const s = z(d.rhr,BASE.rhr);
+    p.push(`resting HR ${d.rhr}${Math.abs(s)>=BAND?` (${Math.abs(s).toFixed(1)} sd ${s>0?"above":"below"} usual)`:""}`); }
+  if (d.ng) p.push(`mentioned ${d.ng}`);
+  return p.join(" · ");
+}
+
+function bind(){
+  const wrap = document.getElementById("cards");
+  const move = e => {
+    const svg = wrap.querySelector("svg"); if (!svg) return;
+    const r = svg.getBoundingClientRect();
+    const x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) / r.width * W;
+    const i = Math.max(0, Math.min(N-1, Math.floor((x - PAD) / slot)));
+    wrap.querySelectorAll("svg").forEach(s=>{
+      const c = s.querySelector(".cursor");
+      c.setAttribute("x1", cx(i)); c.setAttribute("x2", cx(i)); c.setAttribute("opacity", ".85");
+    });
+    document.getElementById("readout").className = "readout";
+    document.getElementById("rday").textContent = nice(DAYS[i].d).toUpperCase();
+    document.getElementById("rline").textContent = readDay(i);
+  };
+  const clear = () => {
+    wrap.querySelectorAll(".cursor").forEach(c=>c.setAttribute("opacity","0"));
+    document.getElementById("readout").className = "readout idle";
+    document.getElementById("rday").textContent = "LAST 30 DAYS";
+    document.getElementById("rline").textContent = "Drag across any chart to read one day.";
+  };
+  wrap.addEventListener("pointermove", move);
+  wrap.addEventListener("pointerdown", move);
+  wrap.addEventListener("pointerleave", clear);
+  wrap.addEventListener("touchmove", e=>{ e.preventDefault(); move(e); }, {passive:false});
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+document.getElementById("range").textContent = nice(DAYS[0].d) + " – " + nice(DAYS[N-1].d);
+document.getElementById("axis").innerHTML =
+  [0, 7, 14, 21, N-1].map(i=>`<span>${nice(DAYS[i].d)}</span>`).join("");
+renderMoved();
+renderCards(false);
+bind();
+
+document.getElementById("f-moved").onclick = function(){
+  this.classList.add("on"); document.getElementById("f-all").classList.remove("on");
+  renderCards(true); bind();
+};
+document.getElementById("f-all").onclick = function(){
+  this.classList.add("on"); document.getElementById("f-moved").classList.remove("on");
+  renderCards(false); bind();
+};
+</script>
+</body>
+</html>

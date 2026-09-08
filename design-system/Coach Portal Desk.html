@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coach Portal — The Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Schibsted+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;1,400&family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════
+   COACH PORTAL · THE DESK
+   A redesign of web/src/app/(app)/coach-portal.
+
+   Two skins, toggled top-right:
+     EDITORIAL — the tokens RunningLog renders on your phone today
+                 (DesignSystem.swift, non-wild branch).
+     DIRECTION I — the locked system in colors_and_type.css / the
+                 `wild` branch of DripTheme.swift.
+   Same layout, same data. Only the tokens move.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ---- EDITORIAL · live iOS values, DesignSystem.swift ------------- */
+:root,
+[data-skin="editorial"] {
+  --paper:          #FAFAF9;
+  --card:           #FFFFFF;
+  --paper-elevated: #FFFFFF;
+  --paper-deep:     #F0F0EE;
+  --rule:           #E6E7EA;
+  --rule-strong:    #0D1016;
+
+  --ink:            #0D1016;
+  --ink-2:          #585D68;
+  --ink-3:          #8F95A1;
+
+  --red:            #E63946;
+  --red-text:       #C42A36;
+  --red-wash:       rgba(230, 57, 70, 0.09);
+
+  --session:        #1F4FA8;
+
+  --mood-energized: #2D8A4E;
+  --mood-positive:  #4A9E6B;
+  --mood-neutral:   #9B9590;
+  --mood-tired:     #C4873A;
+  --mood-struggling:#C45A3A;
+  --mood-injured:   #B83A4A;
+
+  --font-display: "Crimson Pro", Georgia, serif;
+  --font-label:   ui-monospace, "SF Mono", Menlo, monospace;
+  --font-prose:   "PT Serif", Georgia, serif;
+  --font-data:    ui-monospace, "SF Mono", Menlo, monospace;
+  --font-body:    "PT Serif", Georgia, serif;
+  --font-mono:    ui-monospace, "SF Mono", Menlo, monospace;
+  --font-accent:  "PT Serif", Georgia, serif;
+
+  --display-weight: 700;
+  --display-case:   none;
+  --display-track:  -0.02em;
+  --radius:         3px;
+}
+
+/* ---- DIRECTION I · colors_and_type.css, the locked system -------- */
+[data-skin="wild"] {
+  --paper:          #FFFFFF;
+  --card:           #FFFFFF;
+  --paper-elevated: #FAFAFA;
+  --paper-deep:     #F2F2F2;
+  --rule:           #EBEBEB;
+  --rule-strong:    #111111;
+
+  --ink:            #111111;
+  --ink-2:          #6B6B6B;
+  --ink-3:          #9A9A9A;
+
+  --red:            #EE2B24;
+  --red-text:       #D31F19;
+  --red-wash:       rgba(238, 43, 36, 0.10);
+
+  --session:        #1F4FA8;
+
+  --mood-energized: #12703A;
+  --mood-positive:  #1F7A41;
+  --mood-neutral:   #6B6B6B;
+  --mood-tired:     #A8560A;
+  --mood-struggling:#B3261E;
+  --mood-injured:   #8E1219;
+
+  --font-display: "Instrument Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-label:   "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-prose:   "Crimson Pro", Georgia, serif;
+  --font-data:    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-body:    "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-accent:  "Times New Roman", Times, serif;
+
+  --display-weight: 900;
+  --display-case:   uppercase;
+  --display-track:  -0.04em;
+  --radius:         0px;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---- shared type roles ------------------------------------------- */
+.eyebrow {
+  font-family: var(--font-label);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.eyebrow--red { color: var(--red-text); }
+.display {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  text-transform: var(--display-case);
+  letter-spacing: var(--display-track);
+  line-height: 1;
+  color: var(--ink);
+  margin: 0;
+}
+.stat {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.prose {
+  font-family: var(--font-prose);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  margin: 0;
+}
+.voice {
+  font-family: var(--font-mono);
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink);
+  line-height: 1.55;
+}
+.rule       { height: 1px; background: var(--rule); border: 0; margin: 0; }
+.rule--ink  { height: 2px; background: var(--rule-strong); }
+
+/* ---- page shell -------------------------------------------------- */
+.shell { max-width: 1180px; margin: 0 auto; padding: 0 28px 72px; }
+
+/* Plate strip — surface name, the way every iOS screen opens */
+.plate {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 14px 0 12px;
+  border-bottom: 1px solid var(--rule);
+  position: sticky; top: 0; background: var(--paper); z-index: 20;
+}
+.plate__left { display: flex; align-items: center; gap: 10px; }
+.plate__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); }
+
+.skinbar { display: flex; gap: 0; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.skinbar button {
+  font-family: var(--font-label); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 6px 11px; border: 0; cursor: pointer;
+  background: transparent; color: var(--ink-2);
+}
+.skinbar button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* Nav — roster first. The portal currently lands on the plan library. */
+.nav { display: flex; align-items: stretch; gap: 26px; border-bottom: 2px solid var(--rule-strong); }
+.nav a {
+  font-family: var(--font-label); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-3); text-decoration: none;
+  padding: 13px 0 11px; border-bottom: 3px solid transparent; margin-bottom: -2px;
+}
+.nav a[aria-current] { color: var(--ink); border-bottom-color: var(--red); }
+.nav a:hover { color: var(--ink); }
+.nav__count { font-family: var(--font-data); font-size: 10px; color: var(--ink-3); margin-left: 5px; }
+
+/* Masthead */
+.masthead { padding: 34px 0 6px; display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; flex-wrap: wrap; }
+.masthead h1 { font-size: 46px; }
+.masthead__dek { font-family: var(--font-accent); font-style: italic; font-size: 15px; color: var(--ink-2); margin: 9px 0 0; }
+.masthead__tally { display: flex; gap: 30px; }
+.tally__n { font-family: var(--font-data); font-size: 27px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1; display: block; }
+.tally__n--red { color: var(--red-text); }
+
+/* Section head */
+.sec { margin-top: 44px; }
+.sec__head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding-bottom: 8px; border-bottom: 2px solid var(--rule-strong); }
+.sec__note { font-family: var(--font-accent); font-style: italic; font-size: 12.5px; color: var(--ink-3); }
+
+/* ---- Decisions --------------------------------------------------- */
+.decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 0; }
+.decision { padding: 20px 22px 18px; border-bottom: 1px solid var(--rule); border-left: 2px solid var(--red); background: var(--card); }
+.decision + .decision { border-left: 2px solid var(--red); }
+@media (min-width: 760px) { .decision:nth-child(odd) { border-right: 1px solid var(--rule); } }
+.decision__top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.decision__q { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 19px; letter-spacing: -0.015em; line-height: 1.2; margin: 0; }
+.decision__why { margin-top: 9px; }
+.evidence { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chip {
+  font-family: var(--font-label); font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 4px 8px; border: 1px solid var(--rule); border-radius: var(--radius);
+  color: var(--ink-2); background: var(--paper-deep); white-space: nowrap;
+}
+.chip--session { color: var(--session); border-color: var(--session); background: transparent; }
+.actions { display: flex; gap: 8px; margin-top: 15px; }
+.btn {
+  font-family: var(--font-label); font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 9px 15px; border-radius: var(--radius); cursor: pointer;
+  border: 1px solid var(--ink); background: var(--ink); color: var(--paper);
+}
+.btn--ghost { background: transparent; color: var(--ink); border-color: var(--rule); }
+.btn--ghost:hover { border-color: var(--ink); }
+
+/* ---- Roster ledger ----------------------------------------------- */
+/* A ledger, not a card grid: rules do the work, rows scan vertically. */
+.ledger { width: 100%; }
+.lrow {
+  display: grid;
+  grid-template-columns: 22px minmax(180px, 1.4fr) 118px 104px 116px minmax(150px, 1.5fr) 74px;
+  align-items: center; gap: 16px;
+  padding: 15px 8px 15px 0;
+  border-bottom: 1px solid var(--rule);
+  text-decoration: none; color: inherit;
+}
+.lrow--head { padding: 9px 8px 8px 0; border-bottom: 1px solid var(--rule); }
+.lrow:not(.lrow--head):hover { background: var(--paper-elevated); }
+.lrow--flag { border-left: 2px solid var(--red); padding-left: 12px; margin-left: -14px; }
+
+.mark { width: 7px; height: 7px; border-radius: 50%; justify-self: center; }
+.mark--red { background: var(--red); }
+
+.who__name { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 20px; letter-spacing: -0.015em; line-height: 1.1; }
+.who__plan { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); margin-top: 5px; display: block; }
+.mood-rule { height: 2px; width: 26px; margin-top: 7px; background: var(--mood-neutral); }
+
+/* 6-week volume — bars, ink only. Volume is not pace and not mood. */
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 30px; }
+.spark i { flex: 1; background: var(--ink-3); display: block; min-height: 2px; }
+.spark i:last-child { background: var(--ink); }
+
+.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+.num__unit { font-size: 10px; font-weight: 500; color: var(--ink-3); margin-left: 2px; }
+.sub { font-family: var(--font-label); font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); margin-top: 4px; display: block; }
+.sub--red { color: var(--red-text); }
+
+.adh { font-family: var(--font-label); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.adh--ok   { color: var(--ink-2); }
+.adh--slip { color: var(--mood-tired); }
+.adh--off  { color: var(--red-text); }
+.adh--none { color: var(--ink-3); }
+
+.flags { display: flex; flex-direction: column; gap: 5px; }
+.flag { font-family: var(--font-label); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.flag--red { color: var(--red-text); }
+.flags .voice { color: var(--ink-2); }
+
+.last { font-family: var(--font-data); font-size: 11px; color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* All-clear */
+.clear { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 34px; padding: 14px 0 0; }
+.clear__row { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.clear__name { font-family: var(--font-display); font-weight: var(--display-weight); font-size: 15px; letter-spacing: -0.01em; white-space: nowrap; }
+.clear__row .eyebrow { grid-column: 1; grid-row: 2; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; }
+.clear__meta { font-family: var(--font-data); font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+
+.foot { margin-top: 54px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.foot p { font-family: var(--font-accent); font-style: italic; font-size: 12.5px; color: var(--ink-3); margin: 0; }
+
+@media (max-width: 900px) {
+  .lrow { grid-template-columns: 18px 1fr 90px; row-gap: 10px; }
+  .lrow > .spark, .lrow > .adh, .lrow > .flags, .lrow--head > * { display: none; }
+  .lrow--head { display: none; }
+}
+</style>
+</head>
+<body data-skin="editorial">
+<div class="shell">
+
+  <!-- PLATE STRIP ------------------------------------------------- -->
+  <div class="plate">
+    <div class="plate__left">
+      <span class="plate__dot"></span>
+      <span class="eyebrow">Coach · The Desk</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:18px">
+      <span class="eyebrow">Thu · Aug 25 · 7:12 AM</span>
+      <div class="skinbar" role="group" aria-label="Skin">
+        <button aria-pressed="true"  onclick="setSkin('editorial',this)">Editorial</button>
+        <button aria-pressed="false" onclick="setSkin('wild',this)">Direction I</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NAV — roster first ------------------------------------------ -->
+  <nav class="nav">
+    <a href="#" aria-current="page">Roster<span class="nav__count">8</span></a>
+    <a href="#">Plans<span class="nav__count">5</span></a>
+    <a href="#">Library<span class="nav__count">42</span></a>
+  </nav>
+
+  <!-- MASTHEAD ----------------------------------------------------- -->
+  <header class="masthead">
+    <div>
+      <h1 class="display">The desk</h1>
+      <p class="masthead__dek">Three athletes need a decision before their next session.</p>
+    </div>
+    <div class="masthead__tally">
+      <div>
+        <span class="tally__n tally__n--red">3</span>
+        <span class="eyebrow" style="margin-top:6px;display:block">Flagged</span>
+      </div>
+      <div>
+        <span class="tally__n">8</span>
+        <span class="eyebrow" style="margin-top:6px;display:block">Active</span>
+      </div>
+      <div>
+        <span class="tally__n">312</span>
+        <span class="eyebrow" style="margin-top:6px;display:block">Miles this wk</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- DECISIONS ---------------------------------------------------- -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow eyebrow--red">Waiting on you · 2</span>
+      <span class="sec__note">Every call cites the sessions behind it.</span>
+    </div>
+
+    <div class="decisions">
+      <article class="decision">
+        <div class="decision__top">
+          <h2 class="decision__q">Cut Sarah's Sunday long run to 14?</h2>
+          <span class="eyebrow eyebrow--red">Before Sun</span>
+        </div>
+        <p class="prose decision__why">
+          Third week of build, and Tuesday's tempo came in 11 s/mi off target at the same
+          heat-adjusted effort. She logged a left calf mention Monday and again Wednesday.
+        </p>
+        <div class="evidence">
+          <span class="chip chip--session">Tue · 5 mi @ HMP · +11 s</span>
+          <span class="chip">Sun · 18 mi · held</span>
+          <span class="chip">Niggle · L calf ×2</span>
+        </div>
+        <div class="actions">
+          <button class="btn">Cut to 14</button>
+          <button class="btn btn--ghost">Hold at 18</button>
+        </div>
+      </article>
+
+      <article class="decision">
+        <div class="decision__top">
+          <h2 class="decision__q">Marcus has missed 4 of 6 sessions.</h2>
+          <span class="eyebrow eyebrow--red">9 days quiet</span>
+        </div>
+        <p class="prose decision__why">
+          No logs since Aug 16. His plan assumes 42 mi/wk and he is at 11. Either the block
+          restarts from where he is, or it pauses.
+        </p>
+        <div class="evidence">
+          <span class="chip">Last log · Aug 16</span>
+          <span class="chip">Wk 7 · 11 / 42 mi</span>
+        </div>
+        <div class="actions">
+          <button class="btn">Rebuild the week</button>
+          <button class="btn btn--ghost">Pause plan</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ROSTER -------------------------------------------------------- -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow">Roster · attention first</span>
+      <span class="sec__note">6-week volume, this week against plan.</span>
+    </div>
+
+    <div class="ledger">
+      <div class="lrow lrow--head">
+        <span></span>
+        <span class="eyebrow">Athlete</span>
+        <span class="eyebrow">6 wk</span>
+        <span class="eyebrow">This week</span>
+        <span class="eyebrow">Pace vs plan</span>
+        <span class="eyebrow">Signals</span>
+        <span class="eyebrow" style="text-align:right">Last run</span>
+      </div>
+
+      <a class="lrow lrow--flag" href="#">
+        <span class="mark mark--red"></span>
+        <span>
+          <span class="who__name">Sarah Whitmore</span>
+          <span class="who__plan">Sub-3:15 marathon · wk 9 / 16</span>
+          <span class="mood-rule" style="background:var(--mood-tired)"></span>
+        </span>
+        <span class="spark" aria-label="6 week volume">
+          <i style="height:52%"></i><i style="height:64%"></i><i style="height:71%"></i>
+          <i style="height:88%"></i><i style="height:96%"></i><i style="height:61%"></i>
+        </span>
+        <span>
+          <span class="num">38<span class="num__unit">mi</span></span>
+          <span class="sub sub--red">−14 vs plan</span>
+        </span>
+        <span class="adh adh--off">+11 s/mi</span>
+        <span class="flags">
+          <span class="flag flag--red">L calf · 2 mentions</span>
+          <span class="voice">"legs felt flat the whole way"</span>
+        </span>
+        <span class="last">Yest.</span>
+      </a>
+
+      <a class="lrow lrow--flag" href="#">
+        <span class="mark mark--red"></span>
+        <span>
+          <span class="who__name">Marcus Adeyemi</span>
+          <span class="who__plan">Base build · wk 7 / 12</span>
+          <span class="mood-rule" style="background:var(--ink-3)"></span>
+        </span>
+        <span class="spark">
+          <i style="height:80%"></i><i style="height:76%"></i><i style="height:70%"></i>
+          <i style="height:44%"></i><i style="height:22%"></i><i style="height:9%"></i>
+        </span>
+        <span>
+          <span class="num">11<span class="num__unit">mi</span></span>
+          <span class="sub sub--red">−31 vs plan</span>
+        </span>
+        <span class="adh adh--none">No data</span>
+        <span class="flags">
+          <span class="flag flag--red">4 of 6 sessions missed</span>
+        </span>
+        <span class="last">9 d</span>
+      </a>
+
+      <a class="lrow lrow--flag" href="#">
+        <span class="mark mark--red"></span>
+        <span>
+          <span class="who__name">Dani Okonkwo</span>
+          <span class="who__plan">10K sharpening · wk 4 / 8</span>
+          <span class="mood-rule" style="background:var(--mood-struggling)"></span>
+        </span>
+        <span class="spark">
+          <i style="height:40%"></i><i style="height:55%"></i><i style="height:68%"></i>
+          <i style="height:79%"></i><i style="height:92%"></i><i style="height:99%"></i>
+        </span>
+        <span>
+          <span class="num">51<span class="num__unit">mi</span></span>
+          <span class="sub sub--red">ACWR 1.62</span>
+        </span>
+        <span class="adh adh--ok">On target</span>
+        <span class="flags">
+          <span class="flag flag--red">Load ramp · 3 wks up</span>
+          <span class="voice">"tired but the reps came easy"</span>
+        </span>
+        <span class="last">2 d</span>
+      </a>
+
+      <a class="lrow" href="#">
+        <span></span>
+        <span>
+          <span class="who__name">Priya Raman</span>
+          <span class="who__plan">First marathon · wk 11 / 18</span>
+          <span class="mood-rule" style="background:var(--mood-positive)"></span>
+        </span>
+        <span class="spark">
+          <i style="height:58%"></i><i style="height:62%"></i><i style="height:70%"></i>
+          <i style="height:66%"></i><i style="height:74%"></i><i style="height:78%"></i>
+        </span>
+        <span>
+          <span class="num">44<span class="num__unit">mi</span></span>
+          <span class="sub">+2 vs plan</span>
+        </span>
+        <span class="adh adh--slip">+7 s/mi</span>
+        <span class="flags">
+          <span class="voice">"long run went better than expected"</span>
+        </span>
+        <span class="last">Today</span>
+      </a>
+
+      <a class="lrow" href="#">
+        <span></span>
+        <span>
+          <span class="who__name">Tom Berrigan</span>
+          <span class="who__plan">Sub-40 10K · wk 6 / 10</span>
+          <span class="mood-rule" style="background:var(--mood-energized)"></span>
+        </span>
+        <span class="spark">
+          <i style="height:44%"></i><i style="height:50%"></i><i style="height:57%"></i>
+          <i style="height:61%"></i><i style="height:59%"></i><i style="height:66%"></i>
+        </span>
+        <span>
+          <span class="num">33<span class="num__unit">mi</span></span>
+          <span class="sub">On plan</span>
+        </span>
+        <span class="adh adh--ok">On target</span>
+        <span class="flags">
+          <span class="flag">6 × 800m held to 2:58</span>
+        </span>
+        <span class="last">1 d</span>
+      </a>
+    </div>
+  </section>
+
+  <!-- ALL CLEAR ------------------------------------------------------ -->
+  <section class="sec">
+    <div class="sec__head">
+      <span class="eyebrow">Nothing to decide · 3</span>
+      <span class="sec__note">On plan, logging, no signals.</span>
+    </div>
+    <div class="clear">
+      <div class="clear__row">
+        <span class="clear__name">Ana Ferreira</span>
+        <span class="eyebrow">Half build · wk 3 / 12</span>
+        <span class="clear__meta">29 mi · today</span>
+      </div>
+      <div class="clear__row">
+        <span class="clear__name">Kwame Boateng</span>
+        <span class="eyebrow">Off-season</span>
+        <span class="clear__meta">22 mi · 1 d</span>
+      </div>
+      <div class="clear__row">
+        <span class="clear__name">Lena Hartmann</span>
+        <span class="eyebrow">Sub-1:30 half · wk 8 / 14</span>
+        <span class="clear__meta">41 mi · today</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <p>Prototype · design-system/Coach Portal Desk.html · tokens read from DesignSystem.swift and colors_and_type.css</p>
+  </div>
+</div>
+
+<script>
+function setSkin(skin, btn) {
+  document.body.dataset.skin = skin;
+  for (const b of btn.parentNode.children) b.setAttribute('aria-pressed', String(b === btn));
+}
+</script>
+</body>
+</html>

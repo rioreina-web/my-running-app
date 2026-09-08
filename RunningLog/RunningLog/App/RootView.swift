@@ -26,9 +26,15 @@ struct RootView: View {
                     }
                 }
             } else if !auth.isAuthenticated {
+                // Pre-auth surfaces get the status bar band painted here.
+                // `MainTabView` paints its own, one level further in, so the
+                // error / offline banners can still bleed into the notch on
+                // top of it — see the comment on its `.dripStatusBarScrim()`.
                 SignInView()
+                    .dripStatusBarScrim()
             } else if !hasCompletedOnboarding {
                 OnboardingView()
+                    .dripStatusBarScrim()
             } else {
                 MainTabView()
             }

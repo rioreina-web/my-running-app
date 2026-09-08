@@ -1,0 +1,219 @@
+<!doctype html>
+<!-- @dsCard group="Foundations" name="System demo · type & colour" subtitle="Both directions side by side — every family and every colour, in use" viewport="1420x1980" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Post Run Drip · system demo</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="broadsheet/broadsheet.css">
+<style>
+html,body{margin:0;padding:0;background:#DEDCD6}
+.page{width:1420px;box-sizing:border-box;padding:34px 34px 44px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
+.dir{box-sizing:border-box;padding:28px 30px 34px;display:flex;flex-direction:column}
+/* Direction I lives on the white page it designs for; II on newsprint. */
+.one{background:var(--paper);color:var(--ink);font-family:var(--font-body)}
+.two{background:var(--bs-paper);color:var(--bs-ink);font-family:var(--bs-text)}
+a{text-decoration:none}
+.one a{color:var(--session)}.one a:hover{color:var(--red-text)}
+.two a{color:var(--bs-cold)}.two a:hover{color:var(--bs-hot-text)}
+
+.hd{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding-top:9px}
+.one .hd{border-top:2px solid var(--ink)}
+.two .hd{border-top:3px solid var(--bs-rule-ink)}
+.one .hd .n{font-family:var(--font-label);font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink)}
+.two .hd .n{font-family:var(--bs-label);font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--bs-hot-text)}
+.one .hd .r,.two .hd .r{font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;white-space:nowrap}
+.one .hd .r{font-family:var(--font-data);color:var(--ink-2)}
+.two .hd .r{font-family:var(--bs-label);color:var(--bs-ink-3)}
+.one h1{font-family:var(--font-display);font-size:44px;font-weight:700;letter-spacing:-.04em;line-height:1;margin:18px 0 0}
+.two h1{font-family:var(--bs-display);font-size:50px;font-weight:400;letter-spacing:-.02em;line-height:.94;margin:18px 0 0}
+.two h1 em{font-style:italic}
+.one .why{font-family:var(--font-serif);font-style:italic;font-size:17px;line-height:1.4;color:var(--ink-2);margin:11px 0 0;max-width:40ch}
+.two .why{font-family:var(--bs-text);font-style:italic;font-size:18px;line-height:1.4;color:var(--bs-ink-2);margin:12px 0 0;max-width:38ch}
+
+.sec{margin-top:32px}
+.one .sec>.lbl{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2);display:block;border-top:1px solid var(--rule);padding-top:9px;margin-bottom:14px}
+.two .sec>.lbl{font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--bs-ink-3);display:block;border-top:1px solid var(--bs-rule);padding-top:9px;margin-bottom:14px}
+
+/* type ladder */
+.row{display:grid;grid-template-columns:130px 1fr;gap:18px;align-items:baseline;padding:13px 0}
+.one .row{border-bottom:1px solid var(--rule)}
+.two .row{border-bottom:1px solid var(--bs-rule)}
+.row:last-child{border-bottom:0}
+.meta{display:flex;flex-direction:column;gap:4px}
+.one .meta b{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink)}
+.two .meta b{font-family:var(--bs-label);font-size:10px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--bs-ink)}
+.one .meta span{font-family:var(--font-data);font-size:11px;font-weight:500;color:var(--ink-2);line-height:1.35}
+.two .meta span{font-family:var(--bs-data);font-size:11px;color:var(--bs-ink-2);line-height:1.35}
+.one .meta i{font-style:normal;font-family:var(--font-mono);font-size:10px;color:var(--ink-3)}
+.two .meta i{font-style:normal;font-family:var(--bs-data);font-size:10px;color:var(--bs-ink-3)}
+
+.sp-display-1{font-family:var(--font-display);font-size:34px;font-weight:700;letter-spacing:-.038em;line-height:1}
+.sp-label-1{font-family:var(--font-label);font-size:11px;font-weight:600;letter-spacing:.19em;text-transform:uppercase;color:var(--ink-2)}
+.sp-prose-1{font-family:var(--font-prose);font-size:20px;line-height:1.48;margin:0;text-wrap:pretty}
+.sp-data-1{font-family:var(--font-data);font-size:25px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.sp-data-1 i{font-style:normal;font-size:11px;font-weight:500;color:var(--ink-2);margin-left:2px}
+.sp-mono-1{font-family:var(--font-mono);font-style:italic;font-size:14px;line-height:1.55;margin:0}
+.sp-serif-1{font-family:var(--font-serif);font-style:italic;font-size:17px;color:var(--ink-2)}
+.sp-ai-1{font-family:var(--font-mono);font-size:13px;letter-spacing:-.005em;line-height:1.72;margin:7px 0 0}
+.sp-ai-1 u{text-decoration:none;font-weight:500;color:var(--ink)}
+.sp-ailabel-1{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.sp-desk-2{font-family:var(--bs-data);font-size:13px;line-height:1.7;letter-spacing:-.01em;margin:7px 0 0}
+.sp-desk-2 u{text-decoration:none;font-weight:500;color:var(--bs-ink)}
+.sp-desklabel-2{font-family:var(--bs-label);font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink-2);white-space:nowrap}
+
+.sp-display-2{font-family:var(--bs-display);font-size:34px;line-height:1;letter-spacing:-.02em}
+.sp-text-2{font-family:var(--bs-text);font-size:18px;line-height:1.5;margin:0;text-wrap:pretty}
+.sp-label-2{font-family:var(--bs-label);font-size:11px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink-2)}
+.sp-data-2{font-family:var(--bs-data);font-size:24px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.sp-data-2 i{font-style:normal;font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink-3);margin-left:3px}
+
+/* colour */
+.sw{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sw .c{display:flex;flex-direction:column;gap:6px}
+.sw .c i{display:block;height:58px;border:1px solid rgba(0,0,0,.05)}
+.one .sw .c b{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--ink)}
+.two .sw .c b{font-family:var(--bs-label);font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--bs-ink)}
+.one .sw .c span{font-family:var(--font-mono);font-size:10px;color:var(--ink-2)}
+.two .sw .c span{font-family:var(--bs-data);font-size:10px;color:var(--bs-ink-2)}
+.rule-note{margin-top:14px;font-size:12px;line-height:1.55}
+.one .rule-note{font-family:var(--font-data);color:var(--ink-2)}
+.two .rule-note{font-family:var(--bs-text);font-style:italic;font-size:13px;color:var(--bs-ink-2)}
+.rule-note b{font-weight:600;font-style:normal}
+.one .rule-note b{color:var(--ink)}
+.two .rule-note b{color:var(--bs-ink)}
+
+/* applied strip */
+.applied{margin-top:16px;padding:20px}
+.one .applied{background:var(--paper-deep)}
+.two .applied{background:var(--bs-paper-3)}
+.applied .kick{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+.applied h3{margin:0}
+.one .applied h3{font-family:var(--font-display);font-size:27px;font-weight:700;letter-spacing:-.035em;line-height:1}
+.two .applied h3{font-family:var(--bs-display);font-size:29px;line-height:.98;letter-spacing:-.018em}
+.applied .nums{display:flex;gap:0;margin-top:14px}
+.applied .nums div{flex:1;display:flex;flex-direction:column;gap:5px;padding-right:12px}
+.one .applied .nums div{border-right:1px solid var(--rule)}
+.two .applied .nums div{border-right:1px solid var(--bs-rule)}
+.applied .nums div:last-child{border-right:0}
+.one .applied .nums b{font-family:var(--font-label);font-size:9px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;color:var(--ink-2)}
+.two .applied .nums b{font-family:var(--bs-label);font-size:9px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;color:var(--bs-ink-3)}
+.one .applied .nums span{font-family:var(--font-data);font-size:19px;font-weight:600;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.two .applied .nums span{font-family:var(--bs-data);font-size:19px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.applied p{margin:13px 0 0}
+.chip{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.one .chip{font-family:var(--font-label);font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#fff;background:var(--session);padding:4px 8px 5px}
+.two .chip{font-family:var(--bs-label);font-size:9px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#fff;background:var(--bs-cold);padding:4px 8px 5px}
+.foot{margin-top:auto;padding-top:26px;font-size:11px;line-height:1.5}
+.one .foot{font-family:var(--font-data);color:var(--ink-3)}
+.two .foot{font-family:var(--bs-label);letter-spacing:.13em;text-transform:uppercase;font-size:10px;color:var(--bs-ink-3)}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ==================== DIRECTION I ==================== -->
+  <section class="dir one">
+    <div class="hd"><span class="n">Direction I &middot; the product</span><span class="r">Locked &middot; Aug 2026</span></div>
+    <h1>White page, one red, five roles.</h1>
+    <p class="why">A modern sports product that stays out of the way. Numbers are the loudest thing on screen; the serif appears only where a person is reading sentences.</p>
+
+    <div class="sec">
+      <span class="lbl">Families</span>
+      <div class="row"><div class="meta"><b>Display</b><span>Neue Haas Grotesk Display &middot; 700</span><i>--font-display</i></div><div class="sp-display-1">Recovery.</div></div>
+      <div class="row"><div class="meta"><b>Label</b><span>Akzidenz-Grotesk &middot; 600</span><i>--font-label</i></div><div class="sp-label-1">Summary &middot; Linked to &middot; Add the workout</div></div>
+      <div class="row"><div class="meta"><b>Prose</b><span>Crimson Pro &middot; 400</span><i>--font-prose</i></div><p class="sp-prose-1">Managed an easy run. The ankle was stiff for a mile, the knee finally felt like nothing at all.</p></div>
+      <div class="row"><div class="meta"><b>Data</b><span>Inter &middot; 500/600 &middot; tabular</span><i>--font-data</i></div><div class="sp-data-1">7.47<i>mi</i> &nbsp; 53:51 &nbsp; 7:13<i>/mi</i></div></div>
+      <div class="row"><div class="meta"><b>Mono &middot; athlete</b><span>JetBrains Mono &middot; <em style="font-style:italic">italic</em></span><i>--font-mono</i></div><p class="sp-mono-1">&mdash; hills felt fine, hamstring did not &mdash;</p></div>
+      <div class="row"><div class="meta"><b>Mono &middot; machine</b><span>JetBrains Mono &middot; roman</span><i>--font-mono &middot; roman</i></div><div><span class="sp-ailabel-1">The read &middot; load 25.4 of 32 mi</span><p class="sp-ai-1">Three easy days after Tuesday. Hold Sunday at <u>7:40&ndash;7:55 /mi</u> and the week still lands on <u>32 mi</u>.</p></div></div>
+      <div class="row"><div class="meta"><b>Accent</b><span>Times &middot; italic &middot; one line only</span><i>--font-serif</i></div><div class="sp-serif-1">Tap the button to start your voice memo.</div></div>
+    </div>
+
+    <div class="sec">
+      <span class="lbl">Colour</span>
+      <div class="sw">
+        <div class="c"><i style="background:var(--paper)"></i><b>Paper</b><span>#FFFFFF</span></div>
+        <div class="c"><i style="background:var(--paper-deep)"></i><b>Well</b><span>#F2F2F2</span></div>
+        <div class="c"><i style="background:var(--rule)"></i><b>Rule</b><span>#EBEBEB</span></div>
+        <div class="c"><i style="background:var(--ink)"></i><b>Ink</b><span>#111111</span></div>
+        <div class="c"><i style="background:var(--ink-2)"></i><b>Ink 2 &middot; 5.3:1</b><span>#6B6B6B</span></div>
+        <div class="c"><i style="background:var(--ink-3)"></i><b>Ink 3 &middot; hairline</b><span>#9A9A9A</span></div>
+        <div class="c"><i style="background:var(--red)"></i><b>Red &middot; fills</b><span>#EE2B24</span></div>
+        <div class="c"><i style="background:var(--red-text)"></i><b>Red text &middot; 5.0:1</b><span>#D31F19</span></div>
+        <div class="c"><i style="background:var(--session)"></i><b>Session &middot; 7.3:1</b><span>#1F4FA8</span></div>
+        <div class="c"><i style="background:var(--mood-tired)"></i><b>Mood &middot; tired</b><span>#8F5D06</span></div>
+      </div>
+      <p class="rule-note"><b>One red.</b> It fills the record button and section rules, and drops to #D31F19 the moment it becomes type. Blue names a keyed session and nothing else. The machine gets no colour at all &mdash; roman mono and a heavier weight on computed values do that work. Ink 3 is hairlines, never text.</p>
+    </div>
+
+    <div class="sec">
+      <span class="lbl">In use</span>
+      <div class="applied">
+        <div class="kick"><span class="sp-label-1" style="color:var(--red-text)">Friday 21 Aug</span><span class="chip">Intervals</span></div>
+        <h3>6 &times; 800m.</h3>
+        <div class="nums">
+          <div><b>Dist</b><span>7.47</span></div>
+          <div><b>Time</b><span>53:51</span></div>
+          <div><b>Pace</b><span>7:13</span></div>
+        </div>
+        <p class="sp-prose-1" style="font-size:18px">Legs turned over better than Tuesday. The last two reps were the fastest, which almost never happens.</p>
+      </div>
+    </div>
+
+    <p class="foot">styles.css &rarr; colors_and_type.css &middot; Haas and Akzidenz are licensed and fall back to Helvetica Neue until the files land</p>
+  </section>
+
+  <!-- ==================== DIRECTION II ==================== -->
+  <section class="dir two">
+    <div class="hd"><span class="n">Direction II &middot; Broadsheet</span><span class="r">Parallel &middot; Aug 2026</span></div>
+    <h1>Newsprint, one hot ink, <em>a serif that shouts.</em></h1>
+    <p class="why">The same app run as a printed sports weekly. The athlete&rsquo;s words are the article, not a caption, and the page has air where the product was tight.</p>
+
+    <div class="sec">
+      <span class="lbl">Families</span>
+      <div class="row"><div class="meta"><b>Display</b><span>Instrument Serif</span><i>--bs-display</i></div><div class="sp-display-2">Eighteen miles, headwind.</div></div>
+      <div class="row"><div class="meta"><b>Text</b><span>Newsreader &middot; 400 / italic</span><i>--bs-text</i></div><p class="sp-text-2">Felt strong through fourteen and then the hills took over. Held the effort rather than the pace.</p></div>
+      <div class="row"><div class="meta"><b>Label</b><span>Archivo Narrow &middot; 600</span><i>--bs-label</i></div><div class="sp-label-2">Voice log &middot; Filed against &middot; This week</div></div>
+      <div class="row"><div class="meta"><b>Data</b><span>IBM Plex Mono &middot; 500</span><i>--bs-data</i></div><div class="sp-data-2">18.04<i>mi</i> &nbsp; 2:16:41 &nbsp; 7:35<i>/mi</i></div></div>
+      <div class="row"><div class="meta"><b>The desk</b><span>IBM Plex Mono &middot; roman &middot; 400</span><i>--bs-data &middot; roman</i></div><div><span class="sp-desklabel-2">The desk &middot; week 213</span><p class="sp-desk-2">Three easy days after Tuesday. Hold Sunday at <u>7:40&ndash;7:55</u> and the week still lands on <u>32 mi</u>.</p></div></div>
+    </div>
+
+    <div class="sec">
+      <span class="lbl">Colour</span>
+      <div class="sw">
+        <div class="c"><i style="background:var(--bs-paper)"></i><b>Paper</b><span>#F7F5EF</span></div>
+        <div class="c"><i style="background:var(--bs-paper-2)"></i><b>Paper 2</b><span>#F1EEE5</span></div>
+        <div class="c"><i style="background:var(--bs-paper-3)"></i><b>Paper 3</b><span>#E7E3D6</span></div>
+        <div class="c"><i style="background:var(--bs-rule)"></i><b>Rule</b><span>#D9D4C4</span></div>
+        <div class="c"><i style="background:var(--bs-ink)"></i><b>Ink</b><span>#14120E</span></div>
+        <div class="c"><i style="background:var(--bs-ink-2)"></i><b>Ink 2 &middot; 6.4:1</b><span>#5A5548</span></div>
+        <div class="c"><i style="background:var(--bs-ink-3)"></i><b>Ink 3 &middot; 4.6:1</b><span>#8C8676</span></div>
+        <div class="c"><i style="background:var(--bs-ink-4)"></i><b>Ink 4 &middot; hairline</b><span>#B9B3A2</span></div>
+        <div class="c"><i style="background:var(--bs-hot)"></i><b>Hot &middot; fills</b><span>#D8341F</span></div>
+        <div class="c"><i style="background:var(--bs-hot-text)"></i><b>Hot text &middot; 5.2:1</b><span>#B82612</span></div>
+        <div class="c"><i style="background:var(--bs-cold)"></i><b>Cold &middot; 9.1:1</b><span>#1B3A6B</span></div>
+        <div class="c"><i style="background:var(--bs-hot-wash)"></i><b>Hot wash</b><span>#F4E2DA</span></div>
+      </div>
+      <p class="rule-note"><b>Two inks, as a press runs them.</b> Hot red for the record button, section rules and drop caps; desk blue for keyed sessions and links. Paper is never white &mdash; the warm stock is what makes it read as printed.</p>
+    </div>
+
+    <div class="sec">
+      <span class="lbl">In use</span>
+      <div class="applied">
+        <div class="kick"><span class="sp-label-2" style="color:var(--bs-hot-text);font-weight:700">Sunday 16 Aug</span><span class="chip">Long run</span></div>
+        <h3>Eighteen miles, <em style="font-style:italic">headwind.</em></h3>
+        <div class="nums">
+          <div><b>Dist</b><span>18.04</span></div>
+          <div><b>Time</b><span>2:16:41</span></div>
+          <div><b>Pace</b><span>7:35</span></div>
+        </div>
+        <p class="sp-text-2" style="font-size:17px">Held the effort rather than the pace, which is what the plan asked for, and finished with something left.</p>
+      </div>
+    </div>
+
+    <p class="foot">broadsheet/broadsheet.css &middot; scoped --bs-* &middot; all four faces are free webfonts</p>
+  </section>
+
+</div>
+</body>
+</html>

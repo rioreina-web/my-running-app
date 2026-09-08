@@ -10,6 +10,11 @@
 #   2. Function inventory: the set of edge functions in prod equals the
 #      set of function directories in the repo (no dark functions, no
 #      zombies).
+#   3. Function content: each deployed function's bundle byte-matches the
+#      repo source it claims to be. Inventory alone misses the common case
+#      — the function exists in both places but prod runs an older build.
+#      (2026-08-06: 41 of 55 deployed functions were stale, worst by 112
+#      days, while inventory looked clean.)
 #
 # Uses the same secrets as deploy.yml. On drift, the run fails and opens
 # (or updates) an issue labeled `drift`.
@@ -59,6 +64,18 @@ jobs:
           set -e
           supabase functions list --project-ref "$PROJECT_REF" --output json > /tmp/remote_functions.json
           python3 .github/scripts/check_function_drift.py
+
+      # Runs even when the inventory check failed — the two answer different
+      # questions and you want both in one run log, not one per fix cycle.
+      - name: Check function content
+        id: function_content
+        if: ${{ !cancelled() }}
+        run: |
+          set -e
+          test -f /tmp/remote_functions.json || \
+            supabase functions list --project-ref "$PROJECT_REF" --output json > /tmp/remote_functions.json
+          python3 .github/scripts/check_function_content_drift.py \
+            --project-ref "$PROJECT_REF" --verbose
 
       - name: Open drift issue on failure
         if: failure()

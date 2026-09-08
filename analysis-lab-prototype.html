@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analysis Lab — five signals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --card:#FFFFFF; --deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-wash:rgba(212,89,42,.10);
+  --m-positive:#4A9E6B; --m-neutral:#9B9590; --m-tired:#C4873A;
+  --m-struggling:#C45A3A; --m-injured:#B83A4A;
+  --z1:#C9D6E8; --z2:#9FB6DA; --z3:#7191C7; --z4:#4A6BAE; --z5:#2E4780;
+  --fd:"Crimson Pro",Georgia,serif; --fb:"PT Serif",Georgia,serif;
+  --fm:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--fb);
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:880px;margin:0 auto;padding:40px 24px 80px}
+
+.strip{font-family:var(--fm);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);display:flex;justify-content:space-between;border-bottom:1px solid var(--rule);
+  padding-bottom:10px}
+.strip b{color:var(--coral);font-weight:500}
+h1.display{font-family:var(--fd);font-weight:700;font-size:44px;letter-spacing:-.01em;
+  line-height:1.05;margin:26px 0 0}
+.lede{font-size:16px;line-height:1.65;color:var(--ink-2);max-width:64ch;margin:16px 0 0}
+.lede b{color:var(--ink)}
+
+/* sticky signal nav */
+nav.sig{position:sticky;top:0;z-index:50;background:var(--paper);display:flex;gap:6px;
+  flex-wrap:wrap;padding:14px 0 12px;margin-top:26px;border-bottom:1px solid var(--rule)}
+nav.sig a{font-family:var(--fm);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-2);background:var(--card);border:1px solid var(--rule);border-radius:999px;
+  padding:6px 12px;text-decoration:none}
+nav.sig a b{color:var(--coral);font-weight:500;margin-right:5px}
+nav.sig a:hover{color:var(--ink);border-color:var(--ink-3)}
+
+.eyebrow{font-family:var(--fm);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-2);margin:64px 0 0;display:block}
+.eyebrow b{color:var(--coral);font-weight:500}
+h2{font-family:var(--fd);font-weight:700;font-size:30px;letter-spacing:-.01em;line-height:1.1;
+  margin:10px 0 0;max-width:26ch}
+.sub{font-size:14.5px;line-height:1.6;color:var(--ink-2);max-width:66ch;margin:12px 0 0}
+.sub b{color:var(--ink)}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+  background:var(--rule);border:1px solid var(--rule);border-radius:12px;overflow:hidden;
+  margin:22px 0 0}
+.kpi{background:var(--card);padding:15px 14px 13px}
+.kpi .v{font-family:var(--fm);font-weight:600;font-size:24px;line-height:1;
+  font-variant-numeric:tabular-nums;display:block}
+.kpi .v small{font-size:13px;color:var(--ink-2)}
+.kpi .k{font-family:var(--fm);font-size:8.5px;letter-spacing:.1em;color:var(--ink-3);
+  text-transform:uppercase;display:block;margin-top:8px;line-height:1.4}
+
+.card{background:var(--card);border:1px solid var(--rule);border-radius:12px;
+  padding:16px 16px 12px;margin-top:14px}
+.card canvas{display:block;cursor:crosshair}
+.read{font-family:var(--fm);font-size:10px;letter-spacing:.04em;color:var(--ink-3);
+  min-height:18px;margin-bottom:8px;line-height:1.4}
+.read b{color:var(--ink);font-weight:600}
+.read em{color:var(--coral);font-style:normal;font-weight:600}
+.leg{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;padding-top:9px;
+  border-top:1px solid var(--rule)}
+.leg span{font-family:var(--fm);font-size:9px;color:var(--ink-2);letter-spacing:.04em;
+  display:flex;align-items:center;gap:5px}
+.leg i{width:14px;height:2px;display:inline-block}
+.leg i.sq{width:9px;height:9px;border-radius:2px}
+.leg i.dash{background:repeating-linear-gradient(90deg,var(--ink) 0 3px,transparent 3px 6px)}
+.cap{font-family:var(--fm);font-size:10px;letter-spacing:.05em;color:var(--ink-3);
+  line-height:1.6;margin:10px 0 0;max-width:80ch}
+
+.said{font-size:14px;line-height:1.55;color:var(--ink-2);margin:16px 0 0;max-width:66ch;
+  border-left:2px solid var(--coral);padding-left:13px}
+.said b{color:var(--ink)}
+
+/* pill toggle (02) */
+.tog{display:inline-flex;border:1px solid var(--rule);border-radius:999px;overflow:hidden;
+  margin-top:18px;background:var(--card)}
+.tog button{font-family:var(--fm);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-2);background:transparent;border:0;padding:8px 15px;cursor:pointer}
+.tog button[aria-pressed="true"]{background:var(--ink);color:#FAFAF8}
+
+.foot{margin-top:76px;padding-top:18px;border-top:1px solid var(--rule);max-width:76ch}
+.foot p{font-size:12.5px;color:var(--ink-2);line-height:1.65;margin:0 0 8px}
+@media(max-width:700px){h1.display{font-size:32px}h2{font-size:24px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="strip"><span>Post Run Drip</span><b>Analysis Lab &middot; prototype</b><span>04 Aug 2026</span></div>
+<h1 class="display">Five signals, one athlete.</h1>
+<p class="lede">The metrics that survived the feasibility audit, promoted from findings to
+instruments. Every chart below is <b>interactive</b> &mdash; move across it and the readout gives
+the exact session. Same block as the Trends page (4 May &ndash; 26 July) plus the fresher
+threshold work through 1 August. All paces heat-neutral unless marked raw.</p>
+
+<nav class="sig">
+  <a href="#s1"><b>01</b>HR drift &middot; long runs</a>
+  <a href="#s2"><b>02</b>Threshold pace</a>
+  <a href="#s3"><b>03</b>HR efficiency</a>
+  <a href="#s4"><b>04</b>Mood &times; volume &times; load</a>
+  <a href="#s5"><b>05</b>Heat impact</a>
+</nav>
+
+<!-- ================= 01 · HR DRIFT ================= -->
+<span class="eyebrow" id="s1"><b>Signal 01</b> &middot; HR drift over long runs</span>
+<h2>Drift is real, and it rides the dew point.</h2>
+<p class="sub">Decoupling: how much more your heart cost per unit of speed in the second half of a
+long run than the first. Under <b>5%</b> is aerobically steady. Above it, the engine was working
+harder to hold the same output &mdash; fatigue, heat, or both.</p>
+
+<div class="kpis" id="k1"></div>
+<div class="card">
+  <div class="read" id="r1"></div>
+  <canvas id="c1"></canvas>
+  <div class="leg">
+    <span><i class="sq" style="background:var(--deep)"></i>Steady 0&ndash;5%</span>
+    <span><i class="sq" style="background:#1A1815;border-radius:99px"></i>In the band</span>
+    <span><i class="sq" style="background:var(--coral);border-radius:99px"></i>Over 5%</span>
+    <span><i class="dash"></i>Fitted trend</span>
+  </div>
+</div>
+<p class="cap">Long runs and the 20K tempo, 4 May &ndash; 26 July. Drift = second-half HR-to-speed
+ratio against first-half, moving samples only, gradient held under &plusmn;4%.</p>
+<p class="said">The two red sessions are the two biggest days &mdash; the 2-hour run (27 Jun,
+<b>+7.3%</b>) and the 18K in 70&deg; dew (6 Jun, <b>+6.2%</b>). Every negative-split long run
+sits at or below zero. The trend line creeps up as summer arrives &mdash; which is why signal 05
+exists.</p>
+
+<!-- ================= 02 · THRESHOLD PACE ================= -->
+<span class="eyebrow" id="s2"><b>Signal 02</b> &middot; Threshold pace</span>
+<h2>The band work is holding at 5:16 through July heat.</h2>
+<p class="sub">Every session since late March with meaningful time inside the HMP band
+(<b>5:05&ndash;5:53</b>, from weekly <code style="font-family:var(--fm);font-size:12px">fitness_snapshots</code>).
+The audit found the +10% slow edge lets long-run cruising in &mdash; toggle the HR floor to see
+the honest series.</p>
+
+<div class="tog" role="group" aria-label="Session filter">
+  <button id="tAll" aria-pressed="true" onclick="setTh('all')">All 19 sessions</button>
+  <button id="tFloor" aria-pressed="false" onclick="setTh('floor')">HR floor 160 &middot; workouts only</button>
+</div>
+
+<div class="kpis" id="k2"></div>
+<div class="card">
+  <div class="read" id="r2"></div>
+  <canvas id="c2"></canvas>
+  <div class="leg">
+    <span><i class="sq" style="background:var(--z4);border-radius:99px"></i>Threshold work</span>
+    <span><i class="sq" style="background:var(--z1);border-radius:99px"></i>Excluded by the floor</span>
+    <span><i class="sq" style="background:rgba(53,103,143,.12);border:1px solid rgba(53,103,143,.35)"></i>HMP band</span>
+    <span><i class="dash"></i>Trend, kept sessions</span>
+    <span>size = minutes in band</span>
+  </div>
+</div>
+<p class="cap">Heat-neutral pace of the in-band miles, sized by minutes. 31 Mar &ndash; 1 Aug.</p>
+<p class="said" id="said2"></p>
+
+<!-- ================= 03 · HR EFFICIENCY ================= -->
+<span class="eyebrow" id="s3"><b>Signal 03</b> &middot; HR efficiency</span>
+<h2>Metres per heartbeat is flat. In this heat, flat is a win.</h2>
+<p class="sub">Distance bought per beat at quality effort. It should fall as dew point climbs
+&mdash; the heart spends beats on cooling. It hasn&rsquo;t. Reps and long runs are two different
+instruments, so they get two lines, one axis.</p>
+
+<div class="kpis" id="k3"></div>
+<div class="card">
+  <div class="read" id="r3"></div>
+  <canvas id="c3"></canvas>
+  <div class="leg">
+    <span><i class="sq" style="background:var(--z5);border-radius:99px"></i>Rep sessions</span>
+    <span><i class="sq" style="background:var(--z2);border-radius:99px"></i>Long &amp; tempo</span>
+    <span><i class="dash"></i>Fitted trend per series</span>
+  </div>
+</div>
+<p class="cap">19 key sessions with heart-rate streams. The fartlek (30 Jun) is manual entry
+&mdash; no HR, so no dot; the gap is drawn, not smoothed over.</p>
+<p class="said">Rep efficiency <b>1.78 &rarr; 1.77</b> m/beat May to July; long runs
+<b>1.54 &rarr; 1.54</b>. Holding efficiency while dew point climbed eight degrees is the same
+finding as signal 05 wearing different clothes: the engine is fine, the weather is expensive.</p>
+
+<!-- ================= 04 · MOOD × VOLUME × LOAD ================= -->
+<span class="eyebrow" id="s4"><b>Signal 04</b> &middot; Mood &times; volume &times; training load</span>
+<h2>Mood doesn&rsquo;t follow the load score.</h2>
+<p class="sub">Three lanes, one 12-week axis. The load score is an individual number per week:
+every mile counts once, every quality mile counts <b>three times</b> &mdash; sum, not average, so
+a big week can&rsquo;t hide behind an easy one. Mood stays a word, never a number; it gets a lane,
+not a score.</p>
+
+<div class="kpis" id="k4"></div>
+<div class="card">
+  <div class="read" id="r4"></div>
+  <canvas id="c4"></canvas>
+  <div class="leg">
+    <span><i style="background:var(--ink)"></i>Load score</span>
+    <span><i class="sq" style="background:#DCD6CE"></i>Miles</span>
+    <span><i class="sq" style="background:var(--z4)"></i>Quality miles</span>
+    <span><i class="sq" style="background:var(--m-positive)"></i>Mood lane</span>
+    <span><i class="sq" style="background:var(--m-injured);transform:rotate(45deg)"></i>Niggle</span>
+  </div>
+</div>
+<p class="cap">Drag across a week to read all three lanes at once. Load score =
+miles + 2 &times; quality miles.</p>
+<p class="said">The three <b>struggling</b> weeks average a load of <b>78</b>; the four
+<b>positive</b> weeks average <b>81</b> &mdash; and the single biggest score of the block
+(<b>96</b>, week of 29 Jun) was a positive week. Whatever mood is tracking, it isn&rsquo;t the
+score. It tracks the calendar: both knee weeks and two of three struggling weeks sit inside the
+no-day-off streaks from the Trends page.</p>
+
+<!-- ================= 05 · HEAT IMPACT ================= -->
+<span class="eyebrow" id="s5"><b>Signal 05</b> &middot; Heat impact</span>
+<h2>Your summer wasn&rsquo;t a fitness decline.</h2>
+<p class="sub">The dew-point correction, applied to all 20 key sessions. Top chart: what the heat
+charged you, per session &mdash; raw pace in coral, the same run heat-neutral in navy. Bottom:
+the charge against the dew point it happened in.</p>
+
+<div class="kpis" id="k5"></div>
+<div class="card">
+  <div class="read" id="r5a"></div>
+  <canvas id="c5a"></canvas>
+  <div class="leg">
+    <span><i class="sq" style="background:var(--coral);border-radius:99px"></i>Raw &middot; what the watch said</span>
+    <span><i class="sq" style="background:var(--z5);border-radius:99px"></i>Heat-neutral &middot; same run</span>
+  </div>
+</div>
+<div class="card">
+  <div class="read" id="r5b"></div>
+  <canvas id="c5b"></canvas>
+  <div class="leg">
+    <span><i class="sq" style="background:#1A1815;border-radius:99px"></i>One session</span>
+    <span><i class="dash"></i>Fitted trend</span>
+  </div>
+</div>
+<p class="cap">Penalty = raw minus heat-neutral, sec/mi. Weather is climatology-estimated in this
+sandbox; production reads per-session values from fetch-workout-weather.</p>
+<p class="said">Raw, July&rsquo;s intervals read <b>11 s/mi slower</b> than May&rsquo;s. Heat-neutral,
+they&rsquo;re <b>faster</b> &mdash; 4:46 best in July against 4:57 in May. The season charged
+15&ndash;20 s/mi and the correction hands it back; without it every summer chart lies to you.</p>
+
+<div class="foot">
+  <span style="font-family:var(--fm);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)">Provenance</span>
+  <p style="margin-top:8px">Sessions, drift, efficiency and weather from the 27 Jul trends dataset
+  (20 key sessions, Strava laps + streams); threshold band sessions from the 2 Aug audit against
+  <code style="font-family:var(--fm);font-size:11px">fitness_snapshots</code>; weekly volume and mood
+  from <code style="font-family:var(--fm);font-size:11px">training_logs</code>, deduplicated. Felt
+  RPE is still 0 of 274 logs &mdash; the sixth signal this page is waiting on.</p>
+</div>
+
+</div>
+
+<script>
+/* ---------------- data (baked from existing prototypes) ---------------- */
+const SESS = [
+{d:"2026-05-05",kind:"intervals",label:"5x1mi",raw:317,heat:307,qmi:5.0,hr:165,drift:2.45,fade:5.0,mpb:1.78,tempF:69,dewF:64},
+{d:"2026-05-09",kind:"long",label:"21K long",raw:412,heat:398,qmi:4.62,hr:152,drift:4.98,fade:37.0,mpb:1.54,tempF:69,dewF:64},
+{d:"2026-05-16",kind:"long",label:"21K long",raw:403,heat:389,qmi:4.59,hr:156,drift:2.21,fade:-7.6,mpb:1.54,tempF:69,dewF:64},
+{d:"2026-05-20",kind:"intervals",label:"10x1K",raw:308,heat:297,qmi:5.59,hr:167,drift:2.07,fade:0.0,mpb:1.87,tempF:69,dewF:64},
+{d:"2026-05-24",kind:"long",label:"22.5K long",raw:409,heat:393,qmi:4.9,hr:161,drift:3.87,fade:2.7,mpb:1.47,tempF:75,dewF:64},
+{d:"2026-05-28",kind:"long",label:"20K steady",raw:387,heat:376,qmi:4.36,hr:159,drift:-3.45,fade:-26.6,mpb:1.57,tempF:68,dewF:60},
+{d:"2026-06-06",kind:"long",label:"Loop x PD 18K",raw:379,heat:362,qmi:4.0,hr:164,drift:6.24,fade:8.7,mpb:1.55,tempF:75,dewF:70},
+{d:"2026-06-13",kind:"long",label:"21K long",raw:392,heat:375,qmi:4.59,hr:162,drift:-1.35,fade:-11.0,mpb:1.52,tempF:75,dewF:70},
+{d:"2026-06-17",kind:"intervals",label:"8x1K",raw:314,heat:300,qmi:4.97,hr:167,drift:1.22,fade:-6.4,mpb:1.81,tempF:75,dewF:70},
+{d:"2026-06-20",kind:"long",label:"21K long",raw:418,heat:399,qmi:4.64,hr:151,drift:2.97,fade:8.1,mpb:1.53,tempF:75,dewF:70},
+{d:"2026-06-23",kind:"intervals",label:"mile/1K/600 set",raw:309,heat:295,qmi:4.23,hr:154,drift:6.74,fade:-38.1,mpb:1.89,tempF:75,dewF:70},
+{d:"2026-06-27",kind:"long",label:"2hr / 28.6K",raw:405,heat:387,qmi:6.22,hr:160,drift:7.25,fade:19.0,mpb:1.49,tempF:75,dewF:70},
+{d:"2026-06-30",kind:"fartlek",label:"7mi fartlek 4'/2'",raw:343,heat:327,qmi:5.25,hr:null,drift:null,fade:0,mpb:null,tempF:75,dewF:70},
+{d:"2026-07-04",kind:"tempo",label:"20K tempo",raw:376,heat:357,qmi:9.33,hr:167,drift:0.38,fade:-14.5,mpb:1.54,tempF:78,dewF:72},
+{d:"2026-07-08",kind:"intervals",label:"10x1K/800",raw:315,heat:299,qmi:6.01,hr:164,drift:1.89,fade:6.1,mpb:1.85,tempF:78,dewF:72},
+{d:"2026-07-11",kind:"long",label:"24K long",raw:410,heat:390,qmi:5.24,hr:161,drift:4.23,fade:-0.3,mpb:1.46,tempF:78,dewF:72},
+{d:"2026-07-14",kind:"intervals",label:"1200/800/400 x3",raw:301,heat:286,qmi:4.5,hr:165,drift:1.36,fade:-11.7,mpb:1.89,tempF:78,dewF:72},
+{d:"2026-07-18",kind:"long",label:"21.7K long",raw:402,heat:382,qmi:4.72,hr:158,drift:-1.35,fade:-13.3,mpb:1.52,tempF:78,dewF:72},
+{d:"2026-07-21",kind:"intervals",label:"6x1mi",raw:328,heat:311,qmi:6.0,hr:164,drift:2.53,fade:-3.0,mpb:1.77,tempF:78,dewF:72},
+{d:"2026-07-25",kind:"long",label:"21K long",raw:411,heat:391,qmi:4.59,hr:152,drift:3.06,fade:5.5,mpb:1.54,tempF:78,dewF:72}
+];
+
+const BAND = {lo:305, hi:353};
+const THRESH = [
+{d:"2026-03-31",bmi:3.0,bmin:16,raw:318,adj:313,hr:168,dew:63,long:false},
+{d:"2026-04-04",bmi:6.0,bmin:32,raw:322,adj:314,hr:168,dew:69,long:false},
+{d:"2026-04-07",bmi:2.9,bmin:15,raw:316,adj:316,hr:164,dew:46,long:false},
+{d:"2026-04-12",bmi:6.0,bmin:32,raw:318,adj:311,hr:158,dew:67,long:false},
+{d:"2026-04-28",bmi:3.2,bmin:18,raw:339,adj:327,hr:168,dew:74,long:false},
+{d:"2026-05-05",bmi:1.0,bmin:5,raw:326,adj:320,hr:168,dew:66,long:false},
+{d:"2026-05-15",bmi:2.5,bmin:14,raw:332,adj:326,hr:149,dew:61,long:false},
+{d:"2026-05-16",bmi:1.0,bmin:6,raw:372,adj:364,hr:166,dew:67,long:true},
+{d:"2026-05-24",bmi:0.6,bmin:4,raw:354,adj:354,hr:173,dew:null,long:true},
+{d:"2026-05-28",bmi:3.1,bmin:18,raw:352,adj:352,hr:169,dew:null,long:false},
+{d:"2026-06-02",bmi:1.2,bmin:7,raw:320,adj:320,hr:176,dew:null,long:false},
+{d:"2026-06-06",bmi:2.5,bmin:15,raw:354,adj:354,hr:169,dew:null,long:true},
+{d:"2026-06-09",bmi:4.0,bmin:22,raw:337,adj:337,hr:164,dew:null,long:false},
+{d:"2026-06-17",bmi:1.9,bmin:10,raw:320,adj:320,hr:168,dew:null,long:false},
+{d:"2026-06-23",bmi:1.2,bmin:7,raw:347,adj:338,hr:160,dew:77,long:false},
+{d:"2026-07-08",bmi:1.1,bmin:6,raw:325,adj:320,hr:165,dew:73,long:false},
+{d:"2026-07-21",bmi:6.0,bmin:33,raw:328,adj:320,hr:166,dew:70,long:false},
+{d:"2026-07-28",bmi:6.5,bmin:35,raw:319,adj:316,hr:165,dew:73,long:false},
+{d:"2026-08-01",bmi:4.0,bmin:24,raw:359,adj:351,hr:163,dew:72,long:true}
+];
+
+const WEEKS = [
+{ws:"2026-05-04",mi:56.4,q:9.62,rest:1,acwr:1.0, mood:["injured"],nig:null},
+{ws:"2026-05-11",mi:72.2,q:4.59,rest:0,acwr:1.28,mood:["struggling"],nig:null},
+{ws:"2026-05-18",mi:57.3,q:10.49,rest:0,acwr:0.89,mood:["tired"],nig:"knee tight"},
+{ws:"2026-05-25",mi:60.1,q:4.36,rest:1,acwr:0.97,mood:["positive"],nig:null},
+{ws:"2026-06-01",mi:55.0,q:4.0, rest:0,acwr:0.89,mood:["tired"],nig:null},
+{ws:"2026-06-08",mi:58.2,q:4.59,rest:0,acwr:0.95,mood:[],nig:null},
+{ws:"2026-06-15",mi:61.5,q:9.61,rest:0,acwr:1.07,mood:["positive"],nig:null},
+{ws:"2026-06-22",mi:52.2,q:10.45,rest:3,acwr:0.89,mood:["struggling"],nig:null},
+{ws:"2026-06-29",mi:66.6,q:14.58,rest:0,acwr:1.17,mood:["positive"],nig:null},
+{ws:"2026-07-06",mi:56.8,q:11.26,rest:1,acwr:0.95,mood:["struggling"],nig:null},
+{ws:"2026-07-13",mi:59.2,q:9.21,rest:0,acwr:1.0, mood:["positive","struggling"],nig:"knee sore"},
+{ws:"2026-07-20",mi:60.2,q:10.59,rest:1,acwr:1.03,mood:["tired","positive"],nig:null}
+];
+const score = w => Math.round(w.mi + 2*w.q);
+
+/* ---------------- helpers ---------------- */
+const CSS_ = getComputedStyle(document.documentElement);
+const C = n => CSS_.getPropertyValue(n).trim();
+const RAMP = ['--z1','--z2','--z3','--z4','--z5'].map(C);
+const MON = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'];
+const mmss = s => { s = Math.round(s); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
+const sd = iso => { const [,m,d] = iso.split('-'); return `${MON[+m]} ${+d}`; };
+const T = iso => +new Date(iso);
+
+function fit(cv, cssH){
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.parentElement.clientWidth - 32;
+  cv.style.width = w+'px'; cv.style.height = cssH+'px';
+  cv.width = Math.round(w*dpr); cv.height = Math.round(cssH*dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,w,cssH);
+  return {g,w,h:cssH};
+}
+const axis = (g,x,y,t,align)=>{ g.font='9px ui-monospace,monospace'; g.fillStyle=C('--ink-3');
+  g.textAlign=align||'left'; g.textBaseline='top'; g.fillText(t,x,y); };
+function lsq(pts){ // pts: [{x,y}] → {a,b} for y = a + b·x
+  const n = pts.length, sx = pts.reduce((p,q)=>p+q.x,0), sy = pts.reduce((p,q)=>p+q.y,0);
+  const sxx = pts.reduce((p,q)=>p+q.x*q.x,0), sxy = pts.reduce((p,q)=>p+q.x*q.y,0);
+  const b = (n*sxy - sx*sy)/(n*sxx - sx*sx), a = (sy - b*sx)/n;
+  return {a,b};
+}
+function trendLine(g, X, Y, pts, x0, x1){
+  if(pts.length < 3) return;
+  const {a,b} = lsq(pts);
+  g.save(); g.setLineDash([3,4]); g.strokeStyle = C('--ink'); g.lineWidth = 1.2;
+  g.beginPath(); g.moveTo(X(x0), Y(a + b*x0)); g.lineTo(X(x1), Y(a + b*x1)); g.stroke();
+  g.restore();
+  return {a,b};
+}
+function wire(cv, draw){
+  const at = e => { const r = cv.getBoundingClientRect();
+    return (e.touches ? e.touches[0].clientX : e.clientX) - r.left; };
+  ['mousemove','touchmove','touchstart'].forEach(ev =>
+    cv.addEventListener(ev, e => { draw(at(e)); if(ev!=='mousemove') e.preventDefault(); },
+      {passive:false}));
+  ['mouseleave','touchend'].forEach(ev => cv.addEventListener(ev, ()=>draw()));
+}
+const kpi = (v,k) => `<div class="kpi"><span class="v">${v}</span><span class="k">${k}</span></div>`;
+const nearest = (S, X, hoverX, cap=28) => {
+  let hit=null, best=1e9;
+  if(hoverX!=null) S.forEach(s=>{ const dx=Math.abs(X(s.d||s.ws)-hoverX);
+    if(dx<best){best=dx;hit=s;} });
+  return best>cap ? null : hit;
+};
+
+/* ================= 01 · HR DRIFT ================= */
+const D1 = SESS.filter(s => (s.kind==='long'||s.kind==='tempo') && s.drift!=null);
+function draw1(hoverX){
+  const {g,w,h} = fit(document.getElementById('c1'), 210);
+  const pad={l:40,r:14,t:12,b:20};
+  const t0=T('2026-05-02'), t1=T('2026-07-28');
+  const X=d=>pad.l+(w-pad.l-pad.r)*((T(d))-t0)/(t1-t0);
+  const lo=-5, hi=8.5;
+  const Y=v=>pad.t+(h-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+
+  g.fillStyle='rgba(232,228,223,.7)'; g.fillRect(pad.l, Y(5), w-pad.l-pad.r, Y(0)-Y(5));
+  g.font='9px ui-monospace,monospace'; g.fillStyle=C('--ink-3');
+  g.textAlign='right'; g.textBaseline='middle';
+  [-4,0,5,8].forEach(v=>g.fillText(v+'%', pad.l-6, Y(v)));
+  g.strokeStyle=C('--rule'); g.lineWidth=1;
+  g.beginPath(); g.moveTo(pad.l, Math.round(Y(0))+.5); g.lineTo(w-pad.r, Math.round(Y(0))+.5); g.stroke();
+
+  trendLine(g, X_=>X_ , Y, [], 0, 0); // noop guard
+  const pts = D1.map(s=>({x:T(s.d), y:s.drift}));
+  const {b} = lsq(pts);
+  g.save(); g.setLineDash([3,4]); g.strokeStyle=C('--ink'); g.lineWidth=1.2;
+  const {a} = lsq(pts);
+  g.beginPath(); g.moveTo(X('2026-05-04'), Y(a+b*T('2026-05-04')));
+  g.lineTo(X('2026-07-26'), Y(a+b*T('2026-07-26'))); g.stroke(); g.restore();
+
+  const hit = nearest(D1, X, hoverX);
+  D1.forEach(s=>{
+    g.beginPath(); g.arc(X(s.d), Y(s.drift), s===hit?6:4.5, 0, Math.PI*2);
+    g.fillStyle = s.drift>5 ? C('--coral') : C('--ink');
+    if(s===hit){ g.fillStyle=C('--ink'); }
+    g.fill();
+    if(s===hit){ g.beginPath(); g.arc(X(s.d), Y(s.drift), 6, 0, Math.PI*2);
+      g.strokeStyle=C('--paper'); g.lineWidth=2; g.stroke(); }
+  });
+  [['2026-05-04','MAY 4','left'],['2026-06-15','JUN 15','center'],['2026-07-26','JUL 26','right']]
+    .forEach(([d,lb,al])=>axis(g, X(d), h-pad.b+6, lb, al));
+
+  const el=document.getElementById('r1');
+  el.innerHTML = hit
+    ? `<b>${sd(hit.d).toUpperCase()}</b> · ${hit.label.toUpperCase()} · DRIFT <b>${hit.drift>0?'+':''}${hit.drift.toFixed(1)}%</b> · ${hit.hr} BPM AVG · DEW ${hit.dewF}°`
+    : `${D1.length} LONG-EFFORT SESSIONS · MEAN <b>+2.4%</b> · <em>2 OVER THE 5% LINE</em>`;
+}
+
+/* ================= 02 · THRESHOLD ================= */
+let thMode='all';
+function setTh(m){ thMode=m;
+  document.getElementById('tAll').setAttribute('aria-pressed', m==='all');
+  document.getElementById('tFloor').setAttribute('aria-pressed', m==='floor');
+  draw2(); k2(); said2();
+}
+const kept = s => !(s.long || s.hr < 160);
+function draw2(hoverX){
+  const {g,w,h} = fit(document.getElementById('c2'), 230);
+  const pad={l:40,r:14,t:10,b:20};
+  const t0=T('2026-03-28'), t1=T('2026-08-04');
+  const X=d=>pad.l+(w-pad.l-pad.r)*((T(d))-t0)/(t1-t0);
+  const pLo=300, pHi=372;
+  const Y=p=>pad.t+(h-pad.t-pad.b)*((p-pLo)/(pHi-pLo));
+
+  g.fillStyle='rgba(53,103,143,.10)';
+  g.fillRect(pad.l, Y(BAND.lo), w-pad.l-pad.r, Y(BAND.hi)-Y(BAND.lo));
+  g.font='9px ui-monospace,monospace'; g.fillStyle=C('--ink-3');
+  g.textAlign='right'; g.textBaseline='middle';
+  [305,320,340,353,368].forEach(p=>g.fillText(mmss(p), pad.l-6, Y(p)));
+
+  const floor = thMode==='floor';
+  const active = floor ? THRESH.filter(kept) : THRESH;
+  const pts = (floor ? active : THRESH.filter(s=>!s.long)).map(s=>({x:T(s.d), y:s.adj}));
+  const {a,b} = lsq(pts);
+  g.save(); g.setLineDash([3,4]); g.strokeStyle=C('--ink'); g.lineWidth=1.2;
+  g.beginPath(); g.moveTo(X('2026-03-31'), Y(a+b*T('2026-03-31')));
+  g.lineTo(X('2026-08-01'), Y(a+b*T('2026-08-01'))); g.stroke(); g.restore();
+
+  const hit = nearest(THRESH, X, hoverX, 22);
+  const maxM = Math.max(...THRESH.map(s=>s.bmin));
+  THRESH.forEach(s=>{
+    const excl = floor && !kept(s);
+    const r = 3.5 + 7*Math.sqrt(s.bmin/maxM);
+    g.beginPath(); g.arc(X(s.d), Y(s.adj), r, 0, Math.PI*2);
+    g.fillStyle = s===hit ? C('--ink') : ((s.long || excl) ? RAMP[0] : RAMP[3]);
+    g.globalAlpha = excl && s!==hit ? .55 : 1;
+    g.fill(); g.globalAlpha = 1;
+  });
+  [['2026-04-01','APR','left'],['2026-05-15','MAY','center'],['2026-06-15','JUN','center'],
+   ['2026-08-01','AUG 1','right']].forEach(([d,lb,al])=>axis(g, X(d), h-pad.b+6, lb, al));
+
+  const el=document.getElementById('r2');
+  if(hit){
+    el.innerHTML = `<b>${sd(hit.d).toUpperCase()}</b> · ${hit.bmin} MIN / ${hit.bmi.toFixed(1)} MI IN BAND ·
+      ADJ <b>${mmss(hit.adj)}</b>${hit.raw!==hit.adj?` (RAW ${mmss(hit.raw)})`:''} · ${hit.hr} BPM` +
+      (hit.long?' · <em>LONG-RUN CRUISING</em>':'') +
+      (floor && !kept(hit) && !hit.long ? ' · <em>UNDER THE HR FLOOR</em>' : '');
+  } else {
+    const mins = active.reduce((p,q)=>p+q.bmin,0);
+    const slope = (b*30*864e5).toFixed(1); // sec per month
+    el.innerHTML = `${active.length} SESSIONS COUNTED · <b>${mins} MIN IN BAND</b> ·
+      TREND <b>${slope>0?'+':''}${slope} S/MI PER MONTH</b>`;
+  }
+}
+function k2(){
+  const floor = thMode==='floor';
+  const A = floor ? THRESH.filter(kept) : THRESH;
+  const mins = A.reduce((p,q)=>p+q.bmin,0);
+  const workouts = A.filter(s=>!s.long);
+  const best = workouts.reduce((p,q)=>q.adj<p.adj?q:p);
+  const latest = workouts[workouts.length-1];
+  document.getElementById('k2').innerHTML =
+    kpi(A.length, floor?'sessions kept':'sessions in band') +
+    kpi(mins+'<small> min</small>', 'total time in band') +
+    kpi(mmss(best.adj), 'best adjusted · '+sd(best.d)) +
+    kpi(mmss(latest.adj), 'latest · '+sd(latest.d));
+}
+function said2(){
+  document.getElementById('said2').innerHTML = thMode==='all'
+    ? `Four of the nineteen are long runs, not workouts &mdash; their steady miles land at
+       5:51&ndash;6:04 adjusted, inside a band whose slow edge is 5:53. That&rsquo;s <b>49 minutes
+       of credited threshold that wasn&rsquo;t</b>. Flip the toggle: the HR floor removes them
+       without touching a single honest session.`
+    : `With the floor on, the series tightens to <b>5:11&ndash;5:38</b> and the trend goes flat
+       &mdash; threshold pace has not moved since March, through a 26&deg; dew-point swing. The
+       floor beats tightening the band edge because it survives a hot day where pace alone
+       wouldn&rsquo;t.`;
+}
+
+/* ================= 03 · EFFICIENCY ================= */
+const D3 = SESS.filter(s=>s.mpb!=null);
+const isRep = s => s.kind==='intervals';
+function draw3(hoverX){
+  const {g,w,h} = fit(document.getElementById('c3'), 210);
+  const pad={l:40,r:52,t:12,b:20};
+  const t0=T('2026-05-02'), t1=T('2026-07-28');
+  const X=d=>pad.l+(w-pad.l-pad.r)*((T(d))-t0)/(t1-t0);
+  const lo=1.40, hi=1.95;
+  const Y=v=>pad.t+(h-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+
+  g.font='9px ui-monospace,monospace'; g.fillStyle=C('--ink-3');
+  g.textAlign='right'; g.textBaseline='middle';
+  [1.45,1.60,1.75,1.90].forEach(v=>{ g.fillText(v.toFixed(2), pad.l-6, Y(v));
+    g.strokeStyle=C('--rule'); g.beginPath(); g.moveTo(pad.l, Math.round(Y(v))+.5);
+    g.lineTo(w-pad.r, Math.round(Y(v))+.5); g.stroke(); });
+
+  const series = [
+    {name:'REPS', col:RAMP[4], S:D3.filter(isRep)},
+    {name:'LONG', col:RAMP[1], S:D3.filter(s=>!isRep(s))}
+  ];
+  const hit = nearest(D3, X, hoverX);
+  series.forEach(sr=>{
+    const pts = sr.S.map(s=>({x:T(s.d), y:s.mpb}));
+    const {a,b} = lsq(pts);
+    g.save(); g.setLineDash([3,4]); g.strokeStyle=sr.col; g.lineWidth=1.2;
+    g.beginPath(); g.moveTo(X('2026-05-04'), Y(a+b*T('2026-05-04')));
+    g.lineTo(X('2026-07-26'), Y(a+b*T('2026-07-26'))); g.stroke(); g.restore();
+    sr.S.forEach(s=>{
+      g.beginPath(); g.arc(X(s.d), Y(s.mpb), s===hit?6:4.5, 0, Math.PI*2);
+      g.fillStyle = s===hit ? C('--ink') : sr.col; g.fill();
+      if(s===hit){ g.beginPath(); g.arc(X(s.d), Y(s.mpb), 6, 0, Math.PI*2);
+        g.strokeStyle=C('--paper'); g.lineWidth=2; g.stroke(); }
+    });
+    const last = sr.S[sr.S.length-1];
+    g.font='600 9px ui-monospace,monospace'; g.fillStyle=sr.col==RAMP[1]?C('--z3'):sr.col;
+    g.textAlign='left'; g.textBaseline='middle';
+    g.fillText(`${sr.name} ${last.mpb.toFixed(2)}`, X(last.d)+10, Y(last.mpb));
+  });
+  [['2026-05-04','MAY 4','left'],['2026-06-15','JUN 15','center'],['2026-07-26','JUL 26','right']]
+    .forEach(([d,lb,al])=>axis(g, X(d), h-pad.b+6, lb, al));
+
+  const el=document.getElementById('r3');
+  el.innerHTML = hit
+    ? `<b>${sd(hit.d).toUpperCase()}</b> · ${hit.label.toUpperCase()} ·
+       <b>${hit.mpb.toFixed(2)} M/BEAT</b> · ${hit.hr} BPM · DEW ${hit.dewF}°`
+    : `19 SESSIONS · REPS AVG <b>1.83</b> · LONG AVG <b>1.52</b> · BOTH TRENDS FLAT`;
+}
+
+/* ================= 04 · MOOD × VOLUME × LOAD ================= */
+const MC = () => ({positive:C('--m-positive'), neutral:C('--m-neutral'), tired:C('--m-tired'),
+  struggling:C('--m-struggling'), injured:C('--m-injured')});
+function draw4(hoverX){
+  const {g,w,h} = fit(document.getElementById('c4'), 250);
+  const pad={l:40,r:14,t:10,b:18};
+  const bw=(w-pad.l-pad.r)/WEEKS.length;
+  const colX=i=>pad.l+bw*i;
+  const Tk={load:{y:pad.t,h:88}, vol:{y:pad.t+104,h:76}, mood:{y:pad.t+192,h:14}, nig:{y:pad.t+212,h:12}};
+  const mc = MC();
+
+  let hit=null;
+  if(hoverX!=null){ const i=Math.floor((hoverX-pad.l)/bw);
+    if(i>=0 && i<WEEKS.length) hit=i; }
+
+  if(hit!=null){ g.fillStyle='rgba(26,24,21,.055)';
+    g.fillRect(colX(hit), pad.t-2, bw, Tk.nig.y+Tk.nig.h-pad.t+4); }
+
+  // lane 1: load score line
+  const scores = WEEKS.map(score);
+  const sLo=55, sHi=100;
+  const SY=v=>Tk.load.y+Tk.load.h*(1-(v-sLo)/(sHi-sLo));
+  g.font='9px ui-monospace,monospace'; g.fillStyle=C('--ink-3');
+  g.textAlign='right'; g.textBaseline='middle';
+  [60,80,100].forEach(v=>g.fillText(v, pad.l-6, SY(v)));
+  g.textAlign='left'; g.fillText('LOAD SCORE', pad.l, Tk.load.y-4);
+  g.beginPath();
+  scores.forEach((v,i)=>{ const x=colX(i)+bw/2, y=SY(v); i?g.lineTo(x,y):g.moveTo(x,y); });
+  g.strokeStyle=C('--ink'); g.lineWidth=1.7; g.lineJoin='round'; g.stroke();
+  scores.forEach((v,i)=>{ g.beginPath(); g.arc(colX(i)+bw/2, SY(v), i===hit?4.4:3, 0, Math.PI*2);
+    g.fillStyle=C('--ink'); g.fill(); });
+
+  // lane 2: volume bars with quality inside
+  const maxMi=Math.max(...WEEKS.map(k=>k.mi))*1.06;
+  const VY=v=>Tk.vol.y+Tk.vol.h*(1-v/maxMi);
+  g.fillStyle=C('--ink-3'); g.textAlign='left';
+  g.font='9px ui-monospace,monospace'; g.fillText('MILES · QUALITY', pad.l, Tk.vol.y-4);
+  g.strokeStyle=C('--rule'); g.beginPath();
+  g.moveTo(pad.l, Math.round(Tk.vol.y+Tk.vol.h)+.5); g.lineTo(w-pad.r, Math.round(Tk.vol.y+Tk.vol.h)+.5); g.stroke();
+  WEEKS.forEach((k,i)=>{
+    const x=colX(i)+bw*.2, bwid=bw*.6;
+    g.fillStyle='#DCD6CE'; g.fillRect(x, VY(k.mi), bwid, Tk.vol.y+Tk.vol.h-VY(k.mi));
+    g.fillStyle=RAMP[3]; g.fillRect(x, VY(k.q), bwid, Tk.vol.y+Tk.vol.h-VY(k.q));
+  });
+
+  // lane 3: mood
+  g.fillStyle=C('--ink-3'); g.fillText('MOOD', pad.l, Tk.mood.y-4);
+  WEEKS.forEach((k,i)=>{
+    const m=k.mood, x=colX(i)+bw*.16, bwid=bw*.68;
+    if(!m.length){ g.fillStyle='#E4E0DB'; g.fillRect(x, Tk.mood.y+4, bwid, 5); return; }
+    if(m.length===1){ g.fillStyle=mc[m[0]]; g.fillRect(x, Tk.mood.y, bwid, Tk.mood.h-2); }
+    else { g.fillStyle=mc[m[0]]; g.fillRect(x, Tk.mood.y, bwid, (Tk.mood.h-2)/2);
+           g.fillStyle=mc[m[1]]; g.fillRect(x, Tk.mood.y+(Tk.mood.h-2)/2, bwid, (Tk.mood.h-2)/2); }
+  });
+
+  // lane 4: niggles
+  WEEKS.forEach((k,i)=>{
+    if(!k.nig) return;
+    const x=colX(i)+bw/2, y=Tk.nig.y+Tk.nig.h/2;
+    g.beginPath(); g.moveTo(x,y-5); g.lineTo(x+4.5,y); g.lineTo(x,y+5); g.lineTo(x-4.5,y);
+    g.closePath(); g.fillStyle=C('--m-injured'); g.fill();
+  });
+
+  WEEKS.forEach((k,i)=>{ if(i%4) return;
+    axis(g, colX(i)+bw/2, h-pad.b+4, sd(k.ws).toUpperCase(), 'center'); });
+
+  const el=document.getElementById('r4');
+  if(hit==null){
+    el.innerHTML = `12 WEEKS · PEAK SCORE <b>96</b> (POSITIVE WEEK) ·
+      STRUGGLING AVG <b>78</b> · POSITIVE AVG <b>81</b>`;
+  } else {
+    const k=WEEKS[hit];
+    const bits=[`<b>WK OF ${sd(k.ws).toUpperCase()}</b>`, `SCORE <b>${score(k)}</b>`,
+      `${k.mi} MI (${k.q.toFixed(1)} QUALITY)`, `ACWR ${k.acwr.toFixed(2)}`,
+      k.rest?`${k.rest} OFF`:'<em>NO DAY OFF</em>'];
+    if(k.mood.length) bits.push(k.mood.join('/').toUpperCase());
+    if(k.nig) bits.push(`<em>${k.nig.toUpperCase()}</em>`);
+    el.innerHTML = bits.join(' · ');
+  }
+}
+
+/* ================= 05 · HEAT ================= */
+function draw5a(hoverX){
+  const {g,w,h} = fit(document.getElementById('c5a'), 220);
+  const pad={l:40,r:14,t:12,b:20};
+  const t0=T('2026-05-02'), t1=T('2026-07-28');
+  const X=d=>pad.l+(w-pad.l-pad.r)*((T(d))-t0)/(t1-t0);
+  const pLo=280, pHi=425;
+  const Y=p=>pad.t+(h-pad.t-pad.b)*((p-pLo)/(pHi-pLo));
+
+  g.font='9px ui-monospace,monospace'; g.fillStyle=C('--ink-3');
+  g.textAlign='right'; g.textBaseline='middle';
+  [290,330,370,410].forEach(p=>g.fillText(mmss(p), pad.l-6, Y(p)));
+
+  const hit = nearest(SESS, X, hoverX, 16);
+  SESS.forEach(s=>{
+    const x=X(s.d), on=s===hit;
+    g.strokeStyle=on?C('--ink-2'):C('--rule'); g.lineWidth=on?1.6:1.2;
+    g.beginPath(); g.moveTo(x, Y(s.raw)); g.lineTo(x, Y(s.heat)); g.stroke();
+    g.beginPath(); g.arc(x, Y(s.raw), on?4.6:3.4, 0, Math.PI*2);
+    g.fillStyle=C('--coral'); g.fill();
+    g.beginPath(); g.arc(x, Y(s.heat), on?4.6:3.4, 0, Math.PI*2);
+    g.fillStyle=RAMP[4]; g.fill();
+  });
+  [['2026-05-04','MAY 4','left'],['2026-06-15','JUN 15','center'],['2026-07-26','JUL 26','right']]
+    .forEach(([d,lb,al])=>axis(g, X(d), h-pad.b+6, lb, al));
+
+  const el=document.getElementById('r5a');
+  el.innerHTML = hit
+    ? `<b>${sd(hit.d).toUpperCase()}</b> · ${hit.label.toUpperCase()} · RAW ${mmss(hit.raw)} →
+       NEUTRAL <b>${mmss(hit.heat)}</b> · <em>PENALTY ${hit.raw-hit.heat} S/MI</em> ·
+       ${Math.round(hit.tempF)}° / DEW ${hit.dewF}°`
+    : `EACH PAIR IS ONE SESSION — CORAL IS WHAT THE WATCH SAID, NAVY THE SAME RUN HEAT-NEUTRAL`;
+}
+function draw5b(hoverX){
+  const {g,w,h} = fit(document.getElementById('c5b'), 190);
+  const pad={l:40,r:14,t:14,b:22};
+  const dLo=58, dHi=74;
+  const X=v=>pad.l+(w-pad.l-pad.r)*((v-dLo)/(dHi-dLo));
+  const pen = s => s.raw-s.heat;
+  const lo=8, hi=22;
+  const Y=v=>pad.t+(h-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+
+  g.font='9px ui-monospace,monospace'; g.fillStyle=C('--ink-3');
+  g.textAlign='right'; g.textBaseline='middle';
+  [10,15,20].forEach(v=>{ g.fillText(v+'s', pad.l-6, Y(v));
+    g.strokeStyle=C('--rule'); g.beginPath(); g.moveTo(pad.l, Math.round(Y(v))+.5);
+    g.lineTo(w-pad.r, Math.round(Y(v))+.5); g.stroke(); });
+
+  const pts = SESS.map(s=>({x:s.dewF, y:pen(s)}));
+  const {a,b} = lsq(pts);
+  g.save(); g.setLineDash([3,4]); g.strokeStyle=C('--ink'); g.lineWidth=1.2;
+  g.beginPath(); g.moveTo(X(59), Y(a+b*59)); g.lineTo(X(73), Y(a+b*73)); g.stroke(); g.restore();
+
+  let hit=null,best=1e9;
+  if(hoverX!=null) SESS.forEach(s=>{ const dx=Math.abs(X(s.dewF)-hoverX);
+    if(dx<best){best=dx;hit=s;} });
+  if(best>30) hit=null;
+  SESS.forEach(s=>{
+    g.beginPath(); g.arc(X(s.dewF)+(T(s.d)%7)-3, Y(pen(s)), s===hit?5.6:4, 0, Math.PI*2);
+    g.fillStyle=C('--ink'); g.globalAlpha=s===hit?1:.75; g.fill(); g.globalAlpha=1;
+  });
+  [60,64,68,72].forEach(v=>axis(g, X(v), h-pad.b+6, v+'° DEW', 'center'));
+
+  const el=document.getElementById('r5b');
+  el.innerHTML = hit
+    ? `<b>${sd(hit.d).toUpperCase()}</b> · DEW ${hit.dewF}° · PENALTY <b>${pen(hit)} S/MI</b>`
+    : `PENALTY vs DEW POINT · <b>+${(b*10).toFixed(1)} S/MI PER 10° OF DEW</b>`;
+}
+
+/* ================= kpis + boot ================= */
+function k1(){
+  document.getElementById('k1').innerHTML =
+    kpi('+2.1<small>%</small>','mean drift · may') +
+    kpi('+2.8<small>%</small>','mean drift · july') +
+    kpi('+7.3<small>%</small>','worst · 2hr run, jun 27') +
+    kpi('12','long efforts measured');
+}
+function k3(){
+  document.getElementById('k3').innerHTML =
+    kpi('1.83','reps · m per beat, avg') +
+    kpi('1.52','long · m per beat, avg') +
+    kpi('&plusmn;0.01','change over the block') +
+    kpi('+8&deg;','dew point, may → july');
+}
+function k4(){
+  document.getElementById('k4').innerHTML =
+    kpi('96','peak load score · wk jun 29') +
+    kpi('78','avg score · struggling wks') +
+    kpi('81','avg score · positive wks') +
+    kpi('11<small> / 12</small>','weeks with a mood log');
+}
+function k5(){
+  const pens = SESS.map(s=>s.raw-s.heat);
+  const mean = Math.round(pens.reduce((p,q)=>p+q,0)/pens.length);
+  document.getElementById('k5').innerHTML =
+    kpi(mean+'<small> s/mi</small>','mean heat penalty') +
+    kpi(Math.max(...pens)+'<small> s/mi</small>','worst · jul, 72° dew') +
+    kpi('60&rarr;72&deg;','dew point range') +
+    kpi('20','sessions corrected');
+}
+function boot(){
+  k1(); k2(); k3(); k4(); k5(); said2();
+  draw1(); draw2(); draw3(); draw4(); draw5a(); draw5b();
+  wire(document.getElementById('c1'), draw1);
+  wire(document.getElementById('c2'), draw2);
+  wire(document.getElementById('c3'), draw3);
+  wire(document.getElementById('c4'), draw4);
+  wire(document.getElementById('c5a'), draw5a);
+  wire(document.getElementById('c5b'), draw5b);
+}
+document.fonts.ready.then(boot);
+let rt; addEventListener('resize', ()=>{ clearTimeout(rt); rt=setTimeout(boot,150); });
+</script>
+</body>
+</html>

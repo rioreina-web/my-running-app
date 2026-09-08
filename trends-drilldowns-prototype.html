@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trends — drill-down charts</title>
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,0.12);
+  --energized:#2D8A4E; --positive:#4A9E6B; --neutral:#9B9590; --tired:#C4873A; --struggling:#C45A3A; --injured:#B83A4A; --plum:#6B4A8A;
+  --font-display:"Crimson Pro",Georgia,"Times New Roman",serif;
+  --font-body:"PT Serif",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --shadow-card:0 2px 8px rgba(0,0,0,0.06);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#E4E0DA;color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased;padding:36px 24px 80px}
+.head{max-width:1100px;margin:0 auto 30px}
+.head .kicker{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral);margin-bottom:10px}
+.head h1{font-family:var(--font-display);font-weight:700;font-size:32px;letter-spacing:-.01em;margin-bottom:8px}
+.head p{font-size:15px;line-height:1.55;color:var(--ink-2);max-width:780px}
+.head p b{color:var(--ink)}
+.rail{display:flex;gap:30px;justify-content:center;align-items:flex-start;flex-wrap:wrap;max-width:1200px;margin:0 auto}
+.col-note{width:300px;max-width:100%}
+.col-note h3{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--coral);margin:20px 0 8px}
+.col-note h3:first-child{margin-top:0}
+.col-note p{font-size:13.5px;line-height:1.55;color:var(--ink-2);margin-bottom:8px}
+.col-note p b{color:var(--ink)}
+
+/* phone */
+.phone{width:392px;height:840px;background:var(--paper);border-radius:44px;border:11px solid #14110E;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;position:relative;flex-shrink:0}
+.notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:150px;height:30px;background:#14110E;border-radius:0 0 18px 18px;z-index:40}
+.statusbar{position:relative;z-index:30;display:flex;justify-content:space-between;align-items:center;padding:14px 28px 4px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.screen-wrap{height:calc(840px - 44px - 64px);overflow:hidden;position:relative}
+.screen{position:absolute;inset:0;overflow-y:auto;padding:6px 20px 28px;display:none}
+.screen.active{display:block}
+.screen::-webkit-scrollbar{width:0}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:64px;background:var(--paper);border-top:1px solid var(--rule);display:flex;z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px}
+.tab .dot{width:5px;height:5px;border-radius:999px;background:transparent}
+.tab.active .dot{background:var(--coral)}
+.tab span{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tab.active span{color:var(--coral)}
+
+/* type */
+.eyebrow{font-family:var(--font-mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+.eyebrow.coral{color:var(--coral)}
+.display-l{font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1.04;letter-spacing:-.01em}
+.display-m{font-family:var(--font-display);font-weight:700;font-size:21px;line-height:1.1}
+.body{font-family:var(--font-body);font-size:15px;line-height:1.56}
+.body-sm{font-family:var(--font-body);font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+.quote{font-family:var(--font-body);font-style:italic;font-size:14px;line-height:1.5}
+.stat{font-family:var(--font-mono);font-weight:600;font-variant-numeric:tabular-nums}
+.rule{display:flex;align-items:center;gap:8px;margin:18px 0}
+.rule::before,.rule::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule i{width:3px;height:3px;border-radius:999px;background:var(--rule)}
+.pill{display:inline-block;font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
+.pill.coral{color:var(--coral-deep);background:var(--coral-wash)}
+.pill.green{color:var(--energized);background:rgba(45,138,78,.12)}
+.axis{font-family:var(--font-mono);font-size:8.5px;fill:var(--ink-3);letter-spacing:.04em}
+.clbl{font-family:var(--font-mono);font-size:9px;fill:var(--ink-2)}
+.insight{border-left:2px solid rgba(212,89,42,.5);padding-left:13px;margin:14px 0}
+
+/* overview tappable track */
+.track{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:13px 14px 10px;margin-bottom:10px;cursor:pointer;box-shadow:var(--shadow-card)}
+.track:hover{background:var(--paper-elevated)}
+.track .thead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px}
+.track .tstat{font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600}
+.chev{color:var(--ink-3);font-family:var(--font-mono)}
+
+/* detail */
+.back{display:inline-flex;align-items:center;gap:6px;background:none;border:0;color:var(--coral);font-family:var(--font-display);font-weight:600;font-size:15px;cursor:pointer;padding:4px 0;margin-bottom:6px}
+.tiles{display:flex;gap:8px;margin:14px 0}
+.tile{flex:1;background:var(--card);border-radius:12px;box-shadow:var(--shadow-card);padding:11px 12px}
+.tile .tl{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tile .tv{font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--ink);margin-top:5px}
+.tile .tu{font-family:var(--font-body);font-size:11px;color:var(--ink-2)}
+.legend{display:flex;flex-wrap:wrap;gap:5px 12px;margin:8px 0 2px}
+.legend span{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-2);display:flex;align-items:center;gap:5px}
+.sw{width:9px;height:9px;border-radius:999px;display:inline-block}
+.srow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--rule);padding:9px 2px;cursor:pointer}
+.srow:hover{background:var(--paper-elevated)}
+.srow.sel{background:var(--coral-wash)}
+.srow .sd{font-family:var(--font-mono);font-size:10px;color:var(--coral);width:48px;flex-shrink:0}
+.qcard{background:var(--card);border-radius:12px;box-shadow:var(--shadow-card);padding:13px;margin-bottom:9px}
+svg{display:block}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <div class="kicker">Post Run Drip · Trends · drill-down exploration</div>
+  <h1>Tap a track, go deeper</h1>
+  <p>The overview is still one shared timeline — but each band is now <b>tappable</b> and opens a full detail screen with a chart built for that dimension: volume against its load band, key sessions as a pace-progression with rep splits, mood as a daily ribbon, niggles as recurrence swimlanes. <b>Click any track</b> below; use <b>Back</b> to return. Fonts are web fallbacks for Crimson Pro / PT Serif.</p>
+</div>
+
+<div class="rail">
+<div class="phone">
+  <div class="notch"></div>
+  <div class="statusbar"><span>1:04</span><span>5G ▰▰▰</span></div>
+  <div class="screen-wrap">
+
+    <!-- ===================== OVERVIEW ===================== -->
+    <section class="screen active" id="s-overview">
+      <div style="padding-top:6px">
+        <div class="eyebrow coral">Trends · Mon · Jun 15</div>
+        <div class="display-l" style="margin:8px 0 4px">The shape of<br>your block.</div>
+        <div class="body-sm">Advanced · base phase · tap any track to go deeper</div>
+      </div>
+
+      <div style="height:14px"></div>
+
+      <!-- VOLUME track -->
+      <button class="track" onclick="go('volume')">
+        <div class="thead"><span class="eyebrow">Volume · intensity</span><span class="tstat">53 mpw <span class="chev">›</span></span></div>
+        <svg viewBox="0 0 330 64" width="100%" height="64">
+          <g fill="#DDD7CF">
+            <rect x="6" y="34" width="18" height="30"/><rect x="32" y="30" width="18" height="34"/><rect x="58" y="36" width="18" height="28"/>
+            <rect x="84" y="24" width="18" height="40"/><rect x="110" y="20" width="18" height="44"/><rect x="136" y="30" width="18" height="34"/>
+            <rect x="162" y="16" width="18" height="48"/><rect x="188" y="12" width="18" height="52"/><rect x="214" y="22" width="18" height="42"/>
+            <rect x="240" y="10" width="18" height="54"/><rect x="266" y="14" width="18" height="50"/><rect x="292" y="11" width="18" height="53"/>
+          </g>
+          <g fill="#6B6560">
+            <rect x="6" y="34" width="18" height="8"/><rect x="32" y="30" width="18" height="9"/><rect x="58" y="36" width="18" height="7"/>
+            <rect x="84" y="24" width="18" height="11"/><rect x="110" y="20" width="18" height="13"/><rect x="136" y="30" width="18" height="9"/>
+            <rect x="162" y="16" width="18" height="14"/><rect x="188" y="12" width="18" height="16"/><rect x="214" y="22" width="18" height="12"/>
+            <rect x="240" y="10" width="18" height="17"/><rect x="266" y="14" width="18" height="16"/><rect x="292" y="11" width="18" height="17"/>
+          </g>
+        </svg>
+      </button>
+
+      <!-- KEY SESSIONS track -->
+      <button class="track" onclick="go('sessions')">
+        <div class="thead"><span class="eyebrow">Key sessions · pace</span><span class="tstat">6:41 LT <span class="chev">›</span></span></div>
+        <svg viewBox="0 0 330 56" width="100%" height="56">
+          <polyline points="15,40 100,34 185,24 300,14" fill="none" stroke="var(--coral)" stroke-width="1.6" opacity=".4"/>
+          <circle cx="15" cy="40" r="4" fill="var(--coral)"/><circle cx="100" cy="34" r="4" fill="var(--coral)"/>
+          <circle cx="185" cy="24" r="4" fill="var(--coral)"/><circle cx="300" cy="14" r="4" fill="var(--coral)"/>
+        </svg>
+      </button>
+
+      <!-- MOOD track -->
+      <button class="track" onclick="go('mood')">
+        <div class="thead"><span class="eyebrow">Mood</span><span class="tstat">mostly positive <span class="chev">›</span></span></div>
+        <svg viewBox="0 0 330 22" width="100%" height="22" id="ov-mood"></svg>
+      </button>
+
+      <!-- NIGGLES track -->
+      <button class="track" onclick="go('niggles')">
+        <div class="thead"><span class="eyebrow">Niggles · in your own words</span><span class="tstat">2 watched <span class="chev">›</span></span></div>
+        <svg viewBox="0 0 330 26" width="100%" height="26">
+          <line x1="6" y1="13" x2="324" y2="13" stroke="#F0ECE6"/>
+          <circle cx="214" cy="13" r="4" fill="none" stroke="var(--injured)" stroke-width="1.6"/>
+          <circle cx="266" cy="13" r="4" fill="none" stroke="var(--injured)" stroke-width="1.6"/>
+          <circle cx="292" cy="13" r="4.6" fill="var(--injured)"/>
+        </svg>
+      </button>
+
+      <div class="rule"><i></i></div>
+      <div class="insight"><div class="body">Your achilles mentions all land in the three highest-mileage weeks. Open <b>Niggles</b> to see the recurrence, or <b>Volume</b> for the load behind it.</div></div>
+    </section>
+
+    <!-- ===================== VOLUME DETAIL ===================== -->
+    <section class="screen" id="s-volume">
+      <button class="back" onclick="go('overview')">‹ Trends</button>
+      <div class="eyebrow coral">Training volume · 16 weeks</div>
+      <div class="display-m" style="margin:6px 0 2px">Building, in control.</div>
+
+      <div class="tiles">
+        <div class="tile"><div class="tl">This wk</div><div class="tv">53</div><div class="tu">mpw</div></div>
+        <div class="tile"><div class="tl">4-wk avg</div><div class="tv">51</div><div class="tu">mpw</div></div>
+        <div class="tile"><div class="tl">Peak</div><div class="tv">54</div><div class="tu">mpw</div></div>
+        <div class="tile"><div class="tl">ACWR</div><div class="tv">1.12</div><div class="tu">in range</div></div>
+      </div>
+
+      <div class="eyebrow" style="margin-bottom:6px">Weekly volume + 4-wk average</div>
+      <svg viewBox="0 0 330 150" width="100%" height="150">
+        <text x="2" y="12" class="axis">54 MPW</text>
+        <line x1="0" y1="120" x2="330" y2="120" stroke="var(--rule)"/>
+        <!-- bars: easy base + quality cap -->
+        <g id="vol-bars"></g>
+        <!-- rolling avg line -->
+        <polyline id="vol-roll" fill="none" stroke="var(--ink)" stroke-width="1.6" opacity=".6"/>
+        <text x="2" y="138" class="axis">MAR</text><text x="290" y="138" class="axis">JUN</text>
+      </svg>
+      <div class="legend">
+        <span><i class="sw" style="background:#DDD7CF;border-radius:2px"></i>Easy miles</span>
+        <span><i class="sw" style="background:#6B6560;border-radius:2px"></i>Quality miles</span>
+        <span><i class="sw" style="background:#1A1815;border-radius:2px"></i>4-wk avg</span>
+      </div>
+
+      <div class="eyebrow" style="margin:16px 0 6px">Load balance · acute : chronic</div>
+      <svg viewBox="0 0 330 50" width="100%" height="50">
+        <!-- track -->
+        <rect x="6" y="20" width="318" height="10" rx="3" fill="#EFEbE5"/>
+        <!-- sweet spot 0.8–1.3 over a 0.6–1.6 scale -->
+        <rect x="69.6" y="20" width="159" height="10" fill="rgba(45,138,78,.18)"/>
+        <!-- marker at 1.12 -->
+        <g><line x1="171.4" y1="14" x2="171.4" y2="36" stroke="var(--coral)" stroke-width="2"/><text x="171.4" y="11" class="clbl" text-anchor="middle" fill="#D4592A">1.12</text></g>
+        <text x="6" y="46" class="axis">0.6</text><text x="69" y="46" class="axis">0.8</text><text x="222" y="46" class="axis">1.3 SWEET SPOT</text><text x="318" y="46" class="axis" text-anchor="end">1.6</text>
+      </svg>
+      <div class="insight"><div class="body">+16% over your 8-week norm, ACWR 1.12 — inside the safe band. The ramp is steady; no down week deeper than 12%.</div></div>
+    </section>
+
+    <!-- ===================== KEY SESSIONS DETAIL ===================== -->
+    <section class="screen" id="s-sessions">
+      <button class="back" onclick="go('overview')">‹ Trends</button>
+      <div class="eyebrow coral">Key sessions · pace progression</div>
+      <div class="display-m" style="margin:6px 0 2px">The engine is growing.</div>
+
+      <div class="eyebrow" style="margin:14px 0 4px">Pace at the same effort, by type</div>
+      <svg viewBox="0 0 330 130" width="100%" height="130">
+        <line x1="0" y1="108" x2="330" y2="108" stroke="var(--rule)"/>
+        <!-- faster = higher. dots colored by type -->
+        <!-- threshold(ink) progression -->
+        <polyline points="20,70 150,58 290,40" fill="none" stroke="#1A1815" stroke-width="1.2" opacity=".25"/>
+        <circle cx="20" cy="70" r="4.5" fill="#1A1815"/><text x="20" y="62" class="axis" text-anchor="middle">6:52</text>
+        <circle cx="150" cy="58" r="4.5" fill="#1A1815"/><text x="150" y="50" class="axis" text-anchor="middle">6:46</text>
+        <circle cx="290" cy="40" r="4.5" fill="#1A1815"/><text x="290" y="32" class="axis" text-anchor="middle">6:41</text>
+        <!-- intervals(coral) -->
+        <circle cx="80" cy="34" r="4.5" fill="var(--coral)"/><text x="80" y="26" class="axis" text-anchor="middle">5:08</text>
+        <circle cx="225" cy="28" r="4.5" fill="var(--coral)"/><text x="225" y="20" class="axis" text-anchor="middle">5:06</text>
+        <!-- MP(plum) -->
+        <circle cx="120" cy="88" r="4.5" fill="#6B4A8A"/><circle cx="255" cy="82" r="4.5" fill="#6B4A8A"/>
+        <text x="6" y="124" class="axis">MAY 5</text><text x="285" y="124" class="axis">JUN 9</text>
+      </svg>
+      <div class="legend">
+        <span><i class="sw" style="background:#1A1815"></i>Threshold</span>
+        <span><i class="sw" style="background:#D4592A"></i>Intervals</span>
+        <span><i class="sw" style="background:#6B4A8A"></i>MP</span>
+      </div>
+
+      <div class="eyebrow" style="margin:16px 0 4px">Sessions · tap to see the reps</div>
+      <div id="sess-list"></div>
+
+      <div class="eyebrow" style="margin:16px 0 6px" id="rep-title">Reps · 9×1K @ 5K · Tue Jun 9</div>
+      <svg viewBox="0 0 330 90" width="100%" height="90" id="rep-chart"></svg>
+      <div class="body-sm" id="rep-note" style="margin-top:6px">Even splits, +0.5% fade — controlled. HR drift 4.3%.</div>
+    </section>
+
+    <!-- ===================== MOOD DETAIL ===================== -->
+    <section class="screen" id="s-mood">
+      <button class="back" onclick="go('overview')">‹ Trends</button>
+      <div class="eyebrow coral">Mood · from your voice logs</div>
+      <div class="display-m" style="margin:6px 0 2px">Steady, with a Thursday dip.</div>
+
+      <div class="eyebrow" style="margin:14px 0 6px">Daily · last 8 weeks</div>
+      <svg viewBox="0 0 330 150" width="100%" height="150" id="mood-grid"></svg>
+      <div class="legend" style="margin-top:8px">
+        <span><i class="sw" style="background:#2D8A4E"></i>Energized</span>
+        <span><i class="sw" style="background:#4A9E6B"></i>Positive</span>
+        <span><i class="sw" style="background:#C4873A"></i>Tired</span>
+        <span><i class="sw" style="background:#C45A3A"></i>Struggling</span>
+        <span><i class="sw" style="background:#EFEbE5"></i>No log</span>
+      </div>
+
+      <div class="eyebrow" style="margin:16px 0 6px">Distribution</div>
+      <div id="mood-dist"></div>
+
+      <div class="insight"><div class="body">Energy reads high on Tuesdays, dips Thursdays — the day after your long run, every week this block.</div>
+      <div class="quote" style="margin-top:8px">"Heavy and short on patience today — nothing in the legs."<span class="body-sm"> — Thu, Jun 11</span></div></div>
+    </section>
+
+    <!-- ===================== NIGGLES DETAIL ===================== -->
+    <section class="screen" id="s-niggles">
+      <button class="back" onclick="go('overview')">‹ Trends</button>
+      <div class="eyebrow coral">Niggles · recurrence <span class="pill coral" style="margin-left:4px">Surface, don't diagnose</span></div>
+      <div class="display-m" style="margin:6px 0 2px">Two things, watched.</div>
+
+      <div class="eyebrow" style="margin:14px 0 6px">By body part · 12 weeks</div>
+      <svg viewBox="0 0 330 120" width="100%" height="120" id="nig-lanes"></svg>
+      <div class="legend" style="margin-top:6px">
+        <span><i class="sw" style="border:1.5px solid #B83A4A;background:transparent"></i>Tight</span>
+        <span><i class="sw" style="background:rgba(184,58,74,.5)"></i>Sore</span>
+        <span><i class="sw" style="background:#B83A4A"></i>Sharp</span>
+      </div>
+
+      <div class="eyebrow" style="margin:16px 0 8px">In your words</div>
+      <div class="qcard">
+        <div style="display:flex;justify-content:space-between"><span class="body" style="font-weight:700">Right achilles</span><span class="eyebrow">Jun 9</span></div>
+        <div class="quote" style="margin-top:5px">"Achilles barked the first mile, settled after."</div>
+        <div class="body-sm" style="margin-top:5px">Context: +18% load the 2 weeks before.</div>
+      </div>
+      <div class="qcard">
+        <div style="display:flex;justify-content:space-between"><span class="body" style="font-weight:700">Left hip</span><span class="eyebrow">Jun 2</span></div>
+        <div class="quote" style="margin-top:5px">"A little tight on the long run, nothing sharp."</div>
+      </div>
+      <div class="body-sm" style="font-style:italic;margin-top:4px">Surfaced from what you said, never interpreted. If anything gets sharper, see a clinician.</div>
+    </section>
+
+  </div>
+  <div class="tabbar">
+    <div class="tab"><span class="dot"></span><span>Log</span></div>
+    <div class="tab"><span class="dot"></span><span>Training</span></div>
+    <div class="tab active"><span class="dot"></span><span>Trends</span></div>
+    <div class="tab"><span class="dot"></span><span>The Read</span></div>
+    <div class="tab"><span class="dot"></span><span>Plan</span></div>
+  </div>
+</div>
+
+<div class="col-note">
+  <h3>Why these charts</h3>
+  <p><b>Volume</b> — the bars answer "how much," but the new bits answer "is it safe": a 4-week average line and an <b>ACWR band</b> showing where this week sits against the 0.8–1.3 sweet spot.</p>
+  <p><b>Key sessions</b> — a pace-progression plot, colored by workout type so threshold/interval/MP trends don't blur together, plus a tap-through to the <b>rep splits</b> of any session.</p>
+  <p><b>Mood</b> — a daily ribbon (not weekly dots) makes the day-after-long-run dip visible, with a distribution and the verbatim quote behind it.</p>
+  <p><b>Niggles</b> — <b>recurrence swimlanes</b>, one row per body part, severity-encoded, with the load context and the athlete's own words. Surface, never diagnose.</p>
+
+  <h3>Drill-down model</h3>
+  <p>Every overview track is a button → a full detail screen, Back returns. The overview stays the signature shared timeline; depth lives one tap away.</p>
+
+  <h3>Try it</h3>
+  <p>Tap <b>Key sessions</b>, then tap a session in the list to swap the rep-split chart.</p>
+</div>
+</div>
+
+<script>
+const MOODS={energized:'#2D8A4E',positive:'#4A9E6B',neutral:'#9B9590',tired:'#C4873A',struggling:'#C45A3A',injured:'#B83A4A',none:'#EFEbE5'};
+const NS='http://www.w3.org/2000/svg';
+function el(t,a){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+function go(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById('s-'+id).classList.add('active');document.querySelector('#s-'+id).scrollTop=0;}
+
+// ---- overview mood ribbon (12 wk dominant) ----
+(function(){
+  const moods=['positive','positive','tired','positive','energized','tired','struggling','positive','energized','positive','tired','energized'];
+  const svg=document.getElementById('ov-mood');const n=moods.length;const slot=318/n;
+  moods.forEach((m,i)=>{svg.appendChild(el('circle',{cx:6+slot*(i+0.5),cy:11,r:4,fill:MOODS[m]}));});
+})();
+
+// ---- volume detail bars + rolling avg ----
+(function(){
+  const miles=[38,41,43,40,46,48,44,50,52,49,53,53,51,54,52,53];
+  const q=[8,9,10,9,12,13,10,14,15,13,16,16,14,17,15,16];
+  const max=56, base=120, h=104;
+  const g=document.getElementById('vol-bars');const n=miles.length;const pad=6;const slot=(330-pad*2)/n;const bw=slot*0.6;
+  miles.forEach((m,i)=>{
+    const cx=pad+slot*(i+0.5);const th=m/max*h;const qh=q[i]/max*h;
+    g.appendChild(el('rect',{x:cx-bw/2,y:base-th,width:bw,height:th-qh,fill:'#DDD7CF'}));
+    g.appendChild(el('rect',{x:cx-bw/2,y:base-th,width:bw,height:qh,fill:'#6B6560'}));
+  });
+  // rolling 4wk avg
+  let pts=[];for(let i=0;i<n;i++){const s=Math.max(0,i-3);const seg=miles.slice(s,i+1);const avg=seg.reduce((a,b)=>a+b,0)/seg.length;const cx=pad+slot*(i+0.5);pts.push(cx+','+(base-avg/max*h).toFixed(1));}
+  document.getElementById('vol-roll').setAttribute('points',pts.join(' '));
+})();
+
+// ---- sessions list + rep chart ----
+const SESSIONS=[
+  {d:'Jun 9',t:'9×1K @ 5K',type:'intervals',reps:[308,309,306,307,309,307,309,307,306],note:'Even splits, +0.5% fade — controlled. HR drift 4.3%.'},
+  {d:'Jun 2',t:'LT 6 mi @ 6:41',type:'threshold',reps:[404,402,401,402,401,401],note:'Cruise threshold — rock steady, no drift to speak of.'},
+  {d:'May 24',t:'4×1mi @ 5:17',type:'threshold',reps:[319,317,318,316],note:'Slight negative split. Strong control late.'},
+  {d:'May 12',t:'MP 10 mi @ 7:02',type:'MP',reps:[424,422,423,421,422,423,421,420,421,419],note:'Marathon-pace simulation — held to the end.'},
+];
+function fmt(s){return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function renderSessions(){
+  const list=document.getElementById('sess-list');list.innerHTML='';
+  SESSIONS.forEach((s,i)=>{
+    const b=document.createElement('button');b.className='srow'+(i===0?' sel':'');b.onclick=()=>selectSession(i);
+    b.innerHTML='<span class="sd">'+s.d+'</span><span class="body" style="flex:1">'+s.t+'</span><span class="chev" style="color:var(--ink-3)">›</span>';
+    list.appendChild(b);
+  });
+}
+function selectSession(i){
+  document.querySelectorAll('#sess-list .srow').forEach((r,j)=>r.classList.toggle('sel',j===i));
+  const s=SESSIONS[i];
+  document.getElementById('rep-title').textContent='Reps · '+s.t+' · '+s.d;
+  document.getElementById('rep-note').textContent=s.note;
+  const svg=document.getElementById('rep-chart');svg.innerHTML='';
+  const reps=s.reps;const n=reps.length;const pad=6;const slot=(330-pad*2)/n;const bw=Math.min(slot*0.6,22);
+  const mn=Math.min(...reps),mx=Math.max(...reps);const span=Math.max(mx-mn,1);const top=10,bot=72;
+  reps.forEach((r,k)=>{const cx=pad+slot*(k+0.5);
+    // faster (low) = taller bar
+    const norm=(mx-r)/span;const hgt=14+norm*46;
+    svg.appendChild(el('rect',{x:cx-bw/2,y:bot-hgt,width:bw,height:hgt,fill:'var(--coral)',opacity:0.85,rx:1}));
+    const tx=el('text',{x:cx,y:bot+12,class:'axis','text-anchor':'middle'});tx.textContent=fmt(r);svg.appendChild(tx);
+  });
+  svg.appendChild(el('line',{x1:0,y1:bot,x2:330,y2:bot,stroke:'var(--rule)'}));
+}
+renderSessions();selectSession(0);
+
+// ---- mood daily grid (8 weeks × 7 days) ----
+(function(){
+  const svg=document.getElementById('mood-grid');
+  const seq=['energized','positive','tired','struggling'];
+  // generate 8 weeks of plausible daily moods with Thursday dips, some no-logs
+  const weeks=8, days=7;const cell=Math.min((330-40)/days,30);const gap=4;const x0=34,y0=6;
+  const dayLbl=['M','T','W','T','F','S','S'];
+  dayLbl.forEach((d,j)=>{const t=el('text',{x:x0+j*(cell+gap)+cell/2,y:0+12,class:'axis','text-anchor':'middle'});t.textContent=d;svg.appendChild(t);});
+  for(let wk=0;wk<weeks;wk++){
+    const yl=el('text',{x:2,y:y0+16+wk*(cell+gap)+cell/2,class:'axis'});yl.textContent='W'+(wk+1);svg.appendChild(yl);
+    for(let d=0;d<days;d++){
+      let m;
+      if(d===3) m='tired';                 // Thursday dip
+      else if(d===6) m='energized';        // Sunday long run good
+      else if((wk+d)%5===0) m='positive';
+      else if((wk*d)%4===0) m='none';
+      else m=seq[(wk+d)%seq.length];
+      if(d===3 && wk%3===0) m='struggling';
+      const cx=x0+d*(cell+gap), cy=y0+16+wk*(cell+gap);
+      svg.appendChild(el('rect',{x:cx,y:cy,width:cell,height:cell,rx:3,fill:MOODS[m]}));
+    }
+  }
+})();
+
+// ---- mood distribution bars ----
+(function(){
+  const dist=[['Energized',12,'#2D8A4E'],['Positive',18,'#4A9E6B'],['Tired',14,'#C4873A'],['Struggling',4,'#C45A3A']];
+  const wrap=document.getElementById('mood-dist');const max=Math.max(...dist.map(d=>d[1]));
+  dist.forEach(([name,v,c])=>{
+    const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:6px';
+    row.innerHTML='<span class="eyebrow" style="width:74px">'+name+'</span>'+
+      '<div style="flex:1;height:10px;background:#EFEbE5;border-radius:3px;overflow:hidden"><div style="width:'+(v/max*100)+'%;height:100%;background:'+c+'"></div></div>'+
+      '<span class="stat" style="font-size:11px;width:18px;text-align:right">'+v+'</span>';
+    wrap.appendChild(row);
+  });
+})();
+
+// ---- niggle swimlanes ----
+(function(){
+  const svg=document.getElementById('nig-lanes');
+  const lanes=[
+    {name:'R achilles',marks:[{w:6,s:'tight'},{w:8,s:'sore'},{w:10,s:'sore'},{w:11,s:'sharp'}]},
+    {name:'L hip',marks:[{w:0,s:'tight'},{w:10,s:'tight'}]},
+  ];
+  const n=12;const x0=70,xe=320;const slot=(xe-x0)/n;
+  // week axis
+  ['MAR','APR','MAY','JUN'].forEach((m,i)=>{const t=el('text',{x:x0+i*3*slot,y:112,class:'axis'});t.textContent=m;svg.appendChild(t);});
+  lanes.forEach((ln,i)=>{
+    const y=24+i*42;
+    const lbl=el('text',{x:4,y:y+4,class:'clbl'});lbl.textContent=ln.name;svg.appendChild(lbl);
+    svg.appendChild(el('line',{x1:x0,y1:y,x2:xe,y2:y,stroke:'#F0ECE6'}));
+    ln.marks.forEach(mk=>{
+      const cx=x0+slot*(mk.w+0.5);
+      if(mk.s==='tight') svg.appendChild(el('circle',{cx,cy:y,r:4,fill:'none',stroke:'#B83A4A','stroke-width':1.5}));
+      else if(mk.s==='sore') svg.appendChild(el('circle',{cx,cy:y,r:4.4,fill:'rgba(184,58,74,.5)'}));
+      else svg.appendChild(el('circle',{cx,cy:y,r:5.2,fill:'#B83A4A'}));
+    });
+  });
+})();
+</script>
+</body>
+</html>

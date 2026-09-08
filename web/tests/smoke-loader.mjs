@@ -2,8 +2,8 @@
 // matching path under `src/`. Designed for use with `module.register()`
 // from a register script — see `smoke-register.mjs`.
 
-import { pathToFileURL } from "node:url";
-import { resolve as resolvePath } from "node:path";
+import { pathToFileURL, fileURLToPath } from "node:url";
+import { resolve as resolvePath, dirname } from "node:path";
 import { existsSync } from "node:fs";
 
 let SRC_ROOT = "";
@@ -29,5 +29,27 @@ export async function resolve(specifier, context, nextResolve) {
       }
     }
   }
+
+  // Relative, extensionless imports between src modules (e.g. a pure module
+  // importing "./workout-helpers"). Node's ESM resolver requires an explicit
+  // extension; the Next.js/webpack build doesn't, so we bridge the gap by
+  // trying the same .ts/.tsx candidates against the importer's directory.
+  if (
+    (specifier.startsWith("./") || specifier.startsWith("../")) &&
+    context.parentURL &&
+    !/\.[cm]?[jt]sx?$/.test(specifier)
+  ) {
+    const parentDir = dirname(fileURLToPath(context.parentURL));
+    for (const ext of [".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+      const candidate = resolvePath(parentDir, specifier + ext);
+      if (existsSync(candidate)) {
+        return {
+          url: pathToFileURL(candidate).href,
+          shortCircuit: true,
+        };
+      }
+    }
+  }
+
   return nextResolve(specifier, context);
 }

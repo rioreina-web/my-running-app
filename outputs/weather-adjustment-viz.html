@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weather-adjusted pace — viz (real data)</title>
+<style>
+  :root{
+    --paper:#F5F3F0; --card:#FFFFFF; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+    --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+    --amber:#C4873A; --rose:#B83A4A; --green:#2D8A4E; --teal:#2f7d8a; --plum:#6B4A8A;
+    --font-display:"Crimson Pro",Georgia,serif; --font-body:"PT Serif",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;padding:34px 20px 70px}
+  .sheet{max-width:760px;margin:0 auto}
+  .eyebrow{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--coral)}
+  h1{font-family:var(--font-display);font-weight:600;font-size:36px;line-height:1.04;margin:7px 0 4px;letter-spacing:-.015em}
+  .sub{font-size:13.5px;color:var(--ink-2);margin:0}
+  .panel{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:20px 18px 16px;margin-top:18px}
+  .panel .lbl{font-family:var(--font-mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+  .panel .cap{font-size:12.5px;color:var(--ink-2);margin:0 0 12px}
+  svg{display:block;width:100%;height:auto;overflow:visible}
+
+  .cond{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 16px}
+  .chip{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;background:var(--paper-deep);
+    border-radius:999px;padding:6px 11px;color:var(--ink-2)}
+  .chip b{color:var(--ink)}
+  .chip.hot{background:rgba(196,135,58,.18);color:#8a5a14}
+
+  .big{display:flex;align-items:baseline;gap:14px;margin:6px 0 2px;flex-wrap:wrap}
+  .big .actual{font-family:var(--font-display);font-weight:600;font-size:34px;letter-spacing:-.01em}
+  .big .arrow{color:var(--ink-3);font-size:20px}
+  .big .adj{font-family:var(--font-display);font-weight:600;font-size:34px;color:var(--coral);letter-spacing:-.01em}
+  .big .delta{font-family:var(--font-mono);font-size:12px;color:var(--coral-deep);background:var(--coral-wash);border-radius:999px;padding:4px 10px}
+  .big small{font-family:var(--font-body);font-size:13px;color:var(--ink-2);font-weight:400}
+
+  .toggle-row{display:flex;align-items:center;gap:11px;margin:2px 0 14px}
+  .tg-label{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+  .tg{position:relative;width:74px;height:26px;border-radius:999px;border:1px solid var(--rule);
+    background:var(--paper-deep);cursor:pointer;padding:0}
+  .tg .knob{position:absolute;top:2px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;
+    box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s,background .18s}
+  .tg .tg-state{position:absolute;top:7px;right:9px;font-family:var(--font-mono);font-size:9px;letter-spacing:.1em;color:var(--ink-2)}
+  .tg.on{background:var(--coral-wash);border-color:rgba(212,89,42,.45)}
+  .tg.on .knob{transform:translateX(48px);background:var(--coral)}
+  .tg.on .tg-state{left:12px;right:auto;color:var(--coral-deep)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-family:var(--font-mono);font-size:10px;color:var(--ink-2)}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+  .legend i.ghost{background:transparent;border:1.5px dashed var(--coral)}
+
+  .takeaway{background:var(--coral-wash);border:1px solid rgba(212,89,42,.22);border-radius:12px;padding:14px 16px;margin-top:18px;font-size:14.5px;line-height:1.5}
+  .takeaway b{color:var(--coral-deep)}
+  .note{background:#fff;border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:8px;padding:12px 14px;margin-top:16px;font-size:13px;line-height:1.5;color:#33302b}
+  .note b{color:#8a5a14}
+  .foot{font-size:11.5px;color:var(--ink-3);line-height:1.5;margin-top:22px}
+  code{font-family:var(--font-mono);font-size:11.5px;background:#efeae1;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="eyebrow">Weather-adjusted &middot; don't read heat as lost fitness</div>
+  <h1>Your 5:07 reps were ~5:01 fitness.</h1>
+  <p class="sub">May 20 &middot; 9&times;1K &middot; recorded in 67&deg;F air at a 67&deg;F dew point</p>
+
+  <!-- HERO: actual vs cool-equivalent -->
+  <div class="panel">
+    <div class="cond">
+      <span class="chip">Temp <b>67&deg;F</b></span>
+      <span class="chip hot">Dew point <b>67&deg;F</b></span>
+      <span class="chip">Temp + dew <b>134</b></span>
+      <span class="chip hot">Heat load <b>hot / humid</b></span>
+    </div>
+    <div class="toggle-row">
+      <span class="tg-label">Heat adjustment</span>
+      <button id="tg" class="tg on" role="switch" aria-checked="true" onclick="toggleAdj()">
+        <span class="knob"></span><span class="tg-state">ON</span>
+      </button>
+    </div>
+    <div class="big">
+      <span class="actual">5:07<small>/mi recorded</small></span>
+      <span id="arrow" class="arrow">&rarr;</span>
+      <span id="adj" class="adj">5:01<small>/mi cool-equiv</small></span>
+      <span id="delta" class="delta">&minus;6 s/mi &middot; 2.0%</span>
+    </div>
+    <p class="cap">Each bar = a 1K rep as run; the dashed marker is its cool-air equivalent (~6 s/mi quicker). Same effort, cooler day.</p>
+    <svg id="reps" viewBox="0 0 720 230" role="img" aria-label="recorded vs weather-adjusted reps"></svg>
+    <div class="legend">
+      <span><i style="background:var(--coral)"></i>recorded pace</span>
+      <span><i class="ghost"></i>cool-air equivalent</span>
+      <span style="color:var(--ink-3)">dashed lines = your 5K / 10K pace</span>
+    </div>
+  </div>
+
+  <!-- DEW POINT SCALE -->
+  <div class="panel">
+    <div class="lbl">Dew point &rarr; pace cost</div>
+    <p class="cap">Dew point is the real driver — it's how much the air can still cool you. Above ~65&deg;F it bites; in the 70s a hard effort can cost 8&ndash;14 s/mi.</p>
+    <svg id="gauge" viewBox="0 0 720 96" role="img" aria-label="dew point impact scale"></svg>
+  </div>
+
+  <!-- 3-WEEK DEW STRIP -->
+  <div class="panel">
+    <div class="lbl">You trained through a furnace</div>
+    <p class="cap">Daily dew point, last 3 weeks. Shaded by pace cost. This is why apparent pace stalled &mdash; the air changed, not your fitness.</p>
+    <svg id="strip" viewBox="0 0 720 180" role="img" aria-label="dew point over three weeks"></svg>
+  </div>
+
+  <div class="takeaway">
+    <b>Read effort, not the clock.</b> Across mid-May your dew points ran 63&ndash;75&deg;F. Adjusted for it, your 5:07 reps are ~5:01 — drifting from 10K toward 5K pace. The flat-looking weeks were a heat tax on a fitness line that's actually still climbing.
+  </div>
+
+  <div class="note">
+    <b>Bug this surfaced:</b> the heat adjustment is computed and stored (≈0.02&ndash;0.04) but as a <i>fraction</i>, while the app reads it as a <i>percent</i> (<code>heat_adjustment_pct &gt;= 2</code>). So every run currently shows ~0% / "no heat effect." A ×100 (or a single unit fix) turns this whole view on.
+  </div>
+
+  <p class="foot">Real data — <code>running_workout_laps</code> temp_f / dew_point_f for athlete 03857bf3. Model: pace cost from temp+dew-point load (transparent banded heuristic; matches the stored values ×100). Anchored to the existing product principle "don't read heat as lost fitness."</p>
+
+</div>
+
+<script>
+  const f=p=>{p=Math.round(p);return `${Math.floor(p/60)}:${String(p%60).padStart(2,'0')}`;};
+  // ---- May 20 reps (recorded sec/mi) + 2% cool-equiv ----
+  const recorded=[307,309,306,307,309,307,309,307,306];
+  const ADJ=0.02;
+  const ZONES=[{n:"5K 5:02",p:302,c:"#B84420"},{n:"10K 5:14",p:314,c:"#9B9590"}];
+  let adjOn=true;
+  function renderReps(on){
+    const W=720,H=230,padL=44,padR=44; const pt=18,pb=34;
+    const plotW=W-padL-padR, plotH=H-pt-pb;
+    const pMin=296,pMax=320;
+    const yP=p=>pt+(p-pMin)/(pMax-pMin)*plotH;
+    const n=recorded.length, slot=plotW/n, bw=slot*0.5;
+    const xC=i=>padL+slot*i+slot/2;
+    let s="";
+    ZONES.forEach(z=>{const y=yP(z.p);
+      s+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${z.c}" stroke-width="1" stroke-dasharray="4 4" opacity="0.5"/>`;
+      s+=`<text x="${W-padR+3}" y="${y+3}" font-family="var(--font-mono)" font-size="8.5" fill="${z.c}">${z.n}</text>`;});
+    recorded.forEach((p,i)=>{
+      const y=yP(p), h=pt+plotH-y, x=xC(i)-bw/2;
+      s+=`<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="2.5" fill="#D4592A"/>`;
+      if(on){
+        const adj=p*(1-ADJ), ya=yP(adj);
+        s+=`<line x1="${x-3}" y1="${ya}" x2="${x+bw+3}" y2="${ya}" stroke="#D4592A" stroke-width="1.5" stroke-dasharray="3 2"/>`;
+        s+=`<text x="${xC(i)}" y="${ya-5}" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="#B84420">${f(adj)}</text>`;
+      } else {
+        s+=`<text x="${xC(i)}" y="${y-5}" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="#6B6560">${f(p)}</text>`;
+      }
+      s+=`<text x="${xC(i)}" y="${pt+plotH+14}" text-anchor="middle" font-family="var(--font-mono)" font-size="8.5" fill="#9B9590">${i+1}</text>`;
+    });
+    s+=`<text x="6" y="${pt+8}" font-family="var(--font-mono)" font-size="8" fill="#9B9590">faster</text>`;
+    document.getElementById("reps").innerHTML=s;
+  }
+  function toggleAdj(){
+    adjOn=!adjOn;
+    const btn=document.getElementById("tg");
+    btn.classList.toggle("on",adjOn);
+    btn.setAttribute("aria-checked",adjOn);
+    btn.querySelector(".tg-state").textContent=adjOn?"ON":"OFF";
+    for(const id of ["arrow","adj","delta"]) document.getElementById(id).style.display=adjOn?"":"none";
+    document.querySelector(".cap").textContent = adjOn
+      ? "Each bar = a 1K rep as run; the dashed marker is its cool-air equivalent (~6 s/mi quicker). Same effort, cooler day."
+      : "Pace exactly as recorded — heat adjustment off. Flip it on to see the cool-air equivalent.";
+    renderReps(adjOn);
+  }
+  renderReps(adjOn);
+
+  // ---- dew point gauge ----
+  (function(){
+    const W=720,H=96,padL=20,padR=20,y=44,h=16;
+    const dMin=45,dMax=78, plotW=W-padL-padR;
+    const x=d=>padL+(d-dMin)/(dMax-dMin)*plotW;
+    const bands=[
+      {a:45,b:55,c:"#cfe0d6",t:"ideal"},
+      {a:55,b:60,c:"#e6e2c0",t:"fine"},
+      {a:60,b:65,c:"#ecd9b0",t:"noticeable"},
+      {a:65,b:70,c:"#e6b98a",t:"hard 6–10 s/mi"},
+      {a:70,b:75,c:"#dd9a6a",t:"heavy 10–14 s/mi"},
+      {a:75,b:78,c:"#c9744a",t:"oppressive"},
+    ];
+    let s="";
+    bands.forEach(bd=>{const x1=x(bd.a),x2=x(bd.b);
+      s+=`<rect x="${x1}" y="${y}" width="${x2-x1}" height="${h}" fill="${bd.c}"/>`;
+      s+=`<text x="${(x1+x2)/2}" y="${y+h+13}" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="#6B6560">${bd.a}&ndash;${bd.b}</text>`;
+    });
+    // labels above for the spicy bands
+    s+=`<text x="${x(67.5)}" y="${y-20}" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="#8a5a14">6–10 s/mi</text>`;
+    s+=`<text x="${x(72.5)}" y="${y-8}" text-anchor="middle" font-family="var(--font-mono)" font-size="8" fill="#8a5a14">10–14 s/mi</text>`;
+    // marker at 67 (May 20)
+    const mx=x(67);
+    s+=`<line x1="${mx}" y1="${y-4}" x2="${mx}" y2="${y+h+4}" stroke="#1A1815" stroke-width="2"/>`;
+    s+=`<circle cx="${mx}" cy="${y-4}" r="3.5" fill="#1A1815"/>`;
+    s+=`<text x="${mx}" y="${y+h+30}" text-anchor="middle" font-family="var(--font-mono)" font-size="9" fill="#1A1815">May 20 · 67&deg; dew</text>`;
+    document.getElementById("gauge").innerHTML=s;
+  })();
+
+  // ---- 3-week dew strip ----
+  (function(){
+    // [date, temp, dew]
+    const D=[
+      ["5/3",55,53],["5/4",62,55],["5/5",69,66],["5/6",77,75],["5/7",73,70],
+      ["5/8",60,57],["5/9",72,70],["5/11",65,63],["5/12",68,63],["5/13",68,63],
+      ["5/14",76,60],["5/15",76,64],["5/16",71,68],["5/17",75,73],["5/18",77,75],
+      ["5/19",85,71],["5/20",67,67],["5/21",71,70]
+    ];
+    const W=720,H=180,padL=30,padR=14,pt=14,pb=34, plotW=W-padL-padR, plotH=H-pt-pb;
+    const dMin=48,dMax=78;
+    const y=v=>pt+(1-(v-dMin)/(dMax-dMin))*plotH;
+    const n=D.length, slot=plotW/n, bw=slot*0.62;
+    const xC=i=>padL+slot*i+slot/2;
+    function adjPct(t,dew){const sdt=t+dew; if(sdt<110)return 0.5; if(sdt<120)return 1; if(sdt<130)return 1.5; if(sdt<140)return 2; if(sdt<150)return 3; if(sdt<160)return 4; return 5;}
+    function col(dew){ if(dew<60)return"#cfe0d6"; if(dew<65)return"#ecd9b0"; if(dew<70)return"#e6b98a"; if(dew<75)return"#dd9a6a"; return"#c9744a"; }
+    let s="";
+    // dew=65 reference line ("starts to bite")
+    const yref=y(65);
+    s+=`<line x1="${padL}" y1="${yref}" x2="${W-padR}" y2="${yref}" stroke="#C4873A" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>`;
+    s+=`<text x="${padL-4}" y="${yref+3}" text-anchor="end" font-family="var(--font-mono)" font-size="7.5" fill="#C4873A">65&deg;</text>`;
+    D.forEach((d,i)=>{
+      const dew=d[2], yy=y(dew), hh=pt+plotH-yy, x=xC(i)-bw/2;
+      s+=`<rect x="${x}" y="${yy}" width="${bw}" height="${hh}" rx="2" fill="${col(dew)}"/>`;
+      s+=`<text x="${xC(i)}" y="${yy-4}" text-anchor="middle" font-family="var(--font-mono)" font-size="7.5" fill="#6B6560">${dew}</text>`;
+      if(i%2===0||d[0]==="5/20") s+=`<text x="${xC(i)}" y="${pt+plotH+13}" text-anchor="middle" font-family="var(--font-mono)" font-size="7" fill="#9B9590">${d[0]}</text>`;
+    });
+    s+=`<text x="${padL-4}" y="${pt+6}" text-anchor="end" font-family="var(--font-mono)" font-size="7.5" fill="#9B9590">dew &deg;F</text>`;
+    document.getElementById("strip").innerHTML=s;
+  })();
+</script>
+</body>
+</html>

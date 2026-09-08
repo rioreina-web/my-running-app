@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recovery · two axes — Post Run Drip prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A;
+  --struggling:#C45A3A; --tired:#C4873A; --neutral:#9B9590; --positive:#4A9E6B;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;padding:30px 20px 40px}
+.hd{max-width:940px;margin:0 auto 24px}
+.hd h1{font-family:var(--font-display);font-weight:700;font-size:27px;margin:0 0 7px}
+.hd p{margin:0;font-size:14px;color:#4A4540;line-height:1.55;max-width:76ch}
+.rail{display:flex;gap:24px;max-width:940px;margin:0 auto;flex-wrap:wrap;align-items:flex-start}
+.col{width:392px}
+.col-hd{margin-bottom:11px;padding:0 2px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:#6B6560;display:block;margin-bottom:4px}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 5px}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540}
+
+.sheet{width:392px;background:var(--paper);border-radius:20px;
+  padding:22px 22px 8px;box-shadow:0 6px 22px rgba(0,0,0,.13);
+  border:1px solid rgba(0,0,0,.05)}
+
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.13em;
+  color:var(--ink-2);text-transform:uppercase}
+.sub{font-size:13px;color:var(--ink-3);margin-top:3px}
+.micro{font-family:var(--font-mono);font-size:9px;font-weight:500;letter-spacing:.11em;
+  color:var(--ink-3);text-transform:uppercase}
+
+/* the read */
+.sentence{font-family:var(--font-body);font-size:16px;line-height:1.5;margin:18px 0 0}
+
+/* two axes */
+.axes{display:flex;gap:14px;align-items:stretch;margin-top:16px}
+.axis{flex:1}
+.axis .lab{font-family:var(--font-mono);font-size:9px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--ink-3)}
+.axis .val{display:flex;align-items:baseline;gap:4px;margin-top:5px}
+.axis .num{font-family:var(--font-display);font-weight:700;font-size:30px;line-height:1}
+.axis .unit{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-2)}
+.axis .note{font-size:10px;color:var(--ink-3);margin-top:5px;line-height:1.35}
+.vrule{width:1px;background:var(--rule)}
+
+.hr{height:1px;background:var(--rule);margin-top:16px}
+
+/* chunks */
+.chunk{border-bottom:1px solid var(--rule)}
+.chunk-hd{display:flex;align-items:baseline;gap:10px;padding:13px 0;cursor:default}
+.chunk-hd .t{font-family:var(--font-mono);font-size:10px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--ink-2)}
+.chunk-hd .v{margin-left:auto;font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;
+  text-transform:uppercase}
+.chunk-hd .chev{font-size:10px;color:var(--ink-3)}
+.chunk-body{padding-bottom:14px}
+.lead{font-size:14px;margin:0 0 10px}
+.row{display:flex;align-items:baseline;gap:10px;padding:7px 0;border-top:1px solid var(--rule)}
+.row .l{font-family:var(--font-mono);font-size:9px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3)}
+.row .r{margin-left:auto;font-size:11px;color:var(--ink-2);text-align:right}
+.frow{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-top:1px solid var(--rule)}
+.frow .nm{font-size:13px}
+.frow .ev{font-family:var(--font-mono);font-size:9px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:2px}
+.frow .pt{margin-left:auto;font-family:var(--font-display);font-weight:700;font-size:14px}
+.neg{color:var(--coral)} .pos{color:var(--positive)} .zero{color:var(--ink-3)}
+.note{font-family:var(--font-mono);font-size:9px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--ink-3);margin-top:12px;line-height:1.55}
+.cta{margin-top:12px;padding:11px 13px;background:var(--paper-deep);border-radius:10px}
+.cta .q{font-size:12.5px;margin:0 0 8px}
+.pills{display:flex;gap:7px}
+.pill{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  padding:6px 12px;border-radius:20px;background:#fff;border:1px solid var(--rule);color:var(--ink-2)}
+
+.legend{max-width:940px;margin:26px auto 0;font-size:12.5px;color:#4A4540;line-height:1.6}
+.legend b{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+@media (max-width:900px){ .rail{flex-direction:column} .col,.sheet{width:100%} }
+</style>
+</head>
+<body>
+
+<div class="hd">
+  <h1>Recovery, rebuilt as two axes</h1>
+  <p>Left: what the section looks like closed — one sentence, two numbers, three folded chunks.
+     Right: the same section with all three chunks opened. Numbers are Rio's real factor values
+     from the 18 Aug screenshot; the percentile is illustrative until it runs against the live history.</p>
+</div>
+
+<div class="rail">
+
+  <!-- ─────────── COLLAPSED ─────────── -->
+  <div class="col">
+    <div class="col-hd">
+      <span class="tag">Default state</span>
+      <h2>Closed</h2>
+      <p>Every chunk keeps its headline value while folded, so the section still reports without being opened.</p>
+    </div>
+    <div class="sheet">
+      <div class="eyebrow">Recovery</div>
+      <div class="sub">Where you stand today</div>
+
+      <p class="sentence">A big block, and your own signals are following it down.</p>
+
+      <div class="axes">
+        <div class="axis">
+          <div class="lab">Load</div>
+          <div class="val"><span class="num">+14</span><span class="unit">% vs usual</span></div>
+          <div class="note">what training is asking</div>
+        </div>
+        <div class="vrule"></div>
+        <div class="axis">
+          <div class="lab">Body</div>
+          <div class="val"><span class="num" style="color:var(--tired)">34</span><span class="unit">Worn</span></div>
+          <div class="note">below your usual</div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <div class="chunk"><div class="chunk-hd">
+        <span class="t">Training load</span><span class="v">+14% vs usual</span><span class="chev">⌄</span>
+      </div></div>
+      <div class="chunk"><div class="chunk-hd">
+        <span class="t">How you're absorbing it</span><span class="v" style="color:var(--tired)">34 · 3 of 4 inputs</span><span class="chev">⌄</span>
+      </div></div>
+      <div class="chunk"><div class="chunk-hd">
+        <span class="t">How this was measured</span><span class="v" style="color:var(--ink-3)">TLS · partial read</span><span class="chev">⌄</span>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- ─────────── EXPANDED ─────────── -->
+  <div class="col">
+    <div class="col-hd">
+      <span class="tag">All three open</span>
+      <h2>Tapped</h2>
+      <p>Each chunk carries what used to be shouted at the same volume as everything else.</p>
+    </div>
+    <div class="sheet">
+      <div class="eyebrow">Recovery</div>
+      <div class="sub">Where you stand today</div>
+
+      <p class="sentence">A big block, and your own signals are following it down.</p>
+
+      <div class="axes">
+        <div class="axis">
+          <div class="lab">Load</div>
+          <div class="val"><span class="num">+14</span><span class="unit">% vs usual</span></div>
+          <div class="note">what training is asking</div>
+        </div>
+        <div class="vrule"></div>
+        <div class="axis">
+          <div class="lab">Body</div>
+          <div class="val"><span class="num" style="color:var(--tired)">34</span><span class="unit">Worn</span></div>
+          <div class="note">below your usual</div>
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <!-- LOAD -->
+      <div class="chunk">
+        <div class="chunk-hd"><span class="t">Training load</span><span class="v">+14% vs usual</span><span class="chev">⌃</span></div>
+        <div class="chunk-body">
+          <p class="lead">14% over your usual</p>
+          <div class="row"><span class="l">Hard sessions</span><span class="r">6 in 28 days · one every 4.2 days</span></div>
+          <div class="note">Measured in TLS — weighted training minutes, so a mile of intervals counts
+            heavier than a mile of jogging. Your last 7 days against your own last 42, as a
+            difference rather than a ratio.</div>
+        </div>
+      </div>
+
+      <!-- BODY -->
+      <div class="chunk">
+        <div class="chunk-hd"><span class="t">How you're absorbing it</span><span class="v" style="color:var(--tired)">34 · 3 of 4 inputs</span><span class="chev">⌃</span></div>
+        <div class="chunk-body">
+          <p class="lead">Higher than 34% of your last 180 days</p>
+          <div class="frow"><div><div class="nm">Mood</div><div class="ev">struggling · neutral · positive · 3 days in 7</div></div><span class="pt neg">−7</span></div>
+          <div class="frow"><div><div class="nm">Body mentions</div><div class="ev">right knee · quiet 4 d · 1 in 14 d</div></div><span class="pt neg">−3</span></div>
+          <div class="frow"><div><div class="nm">Sleep</div><div class="ev">sleeping ~76 min under your average</div></div><span class="pt neg">−3</span></div>
+          <div class="frow"><div><div class="nm">Overnight</div><div class="ev">resting HR inside your usual range · no HRV data</div></div><span class="pt zero">0</span></div>
+          <div class="cta">
+            <p class="q">How was last night?</p>
+            <div class="pills"><span class="pill">Rough</span><span class="pill">OK</span><span class="pill">Good</span></div>
+          </div>
+          <div class="note">Running on: sleep from duration, not your rating · resting HR only, no HRV</div>
+        </div>
+      </div>
+
+      <!-- METHOD -->
+      <div class="chunk">
+        <div class="chunk-hd"><span class="t">How this was measured</span><span class="v" style="color:var(--ink-3)">TLS · partial read</span><span class="chev">⌃</span></div>
+        <div class="chunk-body">
+          <p class="lead">Partial read</p>
+          <div class="row"><span class="l">Load</span><span class="r">TLS · weighted training minutes</span></div>
+          <div class="row"><span class="l">Body</span><span class="r">3 of 4 channels · ranked against 180 of your own days</span></div>
+          <div class="row"><span class="l">History</span><span class="r">204 days</span></div>
+          <div class="note">Two axes, never added together. Load says what training is asking; Body
+            ranks today's signals against your own history, so 50 is your own median day and every
+            band stays reachable. Your words lead, the watch corroborates. Today's run counts tomorrow.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <p><b>What changed in the logic.</b> The old card summed demand and supply into one 0–100.
+  That made a 39 ambiguous (big block feeling fine, or barely running feeling awful?), put the score
+  on a fiction of a scale (real range 8–77 drawn on a 0–100 gauge), and let a missing channel lower
+  the roof until <i>Clear</i> was arithmetically unreachable — which the card then had to apologise
+  for in four clauses of 9pt uppercase.</p>
+  <p><b>Now.</b> <i>Load</i> is the Banister difference in real units. <i>Body</i> is today's supply
+  channels ranked against this athlete's own trailing 180 days, so 50 is their own median, both ends
+  are reachable by construction, and a missing channel narrows confidence instead of lowering a
+  ceiling. The headline is the <i>quadrant</i> — computed on every ledger since 6 Aug and never once
+  rendered on this tab.</p>
+</div>
+
+</body>
+</html>

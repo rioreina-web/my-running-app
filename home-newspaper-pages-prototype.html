@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home · Page-turn</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#E8E4DF;
+  --rule:#E8E4E0; --rule-strong:#D8D2CB;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A; --coral-deep:#B84420; --coral-wash:rgba(212,89,42,.12);
+  --mood-energized:#2D8A4E; --mood-positive:#4A9E6B; --mood-neutral:#9B9590;
+  --mood-tired:#C4873A; --mood-struggling:#C45A3A;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --ease-out:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{background:#DEDAD4;font-family:var(--font-body);color:var(--ink);
+     padding:40px 16px 72px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.stage-note{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:#8A837B;text-align:center;max-width:390px;line-height:1.7}
+
+.phone{width:390px;height:844px;background:var(--paper);border-radius:38px;overflow:hidden;
+  box-shadow:0 18px 50px rgba(0,0,0,.18);display:flex;flex-direction:column;touch-action:pan-y}
+
+/* plate strip — the app's running head */
+.plate{flex:none;display:flex;justify-content:space-between;align-items:baseline;
+  padding:16px 24px 10px;border-bottom:1px solid var(--ink)}
+.plate span{font-family:var(--font-mono);font-size:9px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--ink-2)}
+.plate .fig{color:var(--ink-3);letter-spacing:.14em}
+
+/* ── Pager ─────────────────────────────────────────────────────── */
+.stack{flex:1;position:relative;overflow:hidden;cursor:grab}
+.stack.dragging{cursor:grabbing}
+.track{display:flex;height:100%;will-change:transform}
+.track.animate{transition:transform 320ms var(--ease-out)}
+.page{width:390px;flex:none;height:100%;display:flex;flex-direction:column;
+  background:var(--paper);position:relative}
+.page+.page::before{content:"";position:absolute;left:0;top:0;bottom:0;width:14px;
+  background:linear-gradient(to right,rgba(26,24,21,.07),rgba(26,24,21,0));pointer-events:none}
+.body{flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;padding:22px 24px 8px}
+.body::-webkit-scrollbar{display:none}
+
+/* folio + tabs */
+.folio{flex:none;display:flex;align-items:center;gap:10px;
+  padding:10px 24px;border-top:1px solid var(--rule);background:var(--paper)}
+.ticks{display:flex;align-items:center;gap:5px}
+.ticks i{width:13px;height:2px;background:var(--rule-strong);display:block;cursor:pointer;
+  transition:background 150ms var(--ease-out)}
+.ticks i.on{background:var(--coral)}
+.folio .lbl{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3)}
+.folio .wk{margin-left:auto;font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3)}
+.tabs{flex:none;display:grid;grid-template-columns:repeat(4,1fr);
+  border-top:1px solid var(--rule);padding:12px 0 20px;background:var(--paper)}
+.tabs div{text-align:center;font-family:var(--font-mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3)}
+.tabs div.on{color:var(--coral)}
+
+/* ── Editorial atoms ───────────────────────────────────────────── */
+.eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:.12em;
+  color:var(--ink-2);text-transform:uppercase}
+.eyebrow--coral{color:var(--coral)}
+.caption{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.10em;
+  color:var(--ink-3);text-transform:uppercase}
+.rule-mark{display:flex;align-items:center;gap:8px;margin:20px 0}
+.rule-mark::before,.rule-mark::after{content:"";flex:1;height:1px;background:var(--rule)}
+.rule-mark i{width:3px;height:3px;border-radius:999px;background:var(--rule-strong)}
+.sec{margin-top:22px}
+.sec .hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+h1.day{font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1;
+  letter-spacing:-.02em;margin-top:6px}
+h1.day .period{color:var(--coral)}
+.sub{font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--ink-3);margin-top:8px}
+h2.head{font-family:var(--font-display);font-weight:700;font-size:23px;letter-spacing:-.01em;line-height:1.1}
+.metaline{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;color:var(--ink-2);
+  text-transform:uppercase;margin-top:7px}
+.quote{font-family:var(--font-body);font-style:italic;font-size:14.5px;line-height:1.55;
+  color:var(--ink);margin-top:11px}
+.coach{padding-left:12px;border-left:2px solid rgba(212,89,42,.5)}
+.link{font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--coral);
+  text-decoration:none;border-bottom:1px solid rgba(212,89,42,.35);padding-bottom:1px}
+.mood-dot{display:inline-block;width:5px;height:5px;border-radius:999px;vertical-align:middle;
+  margin-right:5px;position:relative;top:-1px}
+
+/* mood radio */
+.moods{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+.moods button{font-family:var(--font-mono);font-size:9px;letter-spacing:.10em;text-transform:uppercase;
+  padding:7px 11px;border-radius:999px;border:1px solid var(--rule-strong);background:transparent;
+  color:var(--ink-2);cursor:pointer;transition:all 150ms var(--ease-out)}
+.moods button[aria-pressed="true"]{border:1.5px solid var(--coral);color:var(--ink);background:var(--coral-wash)}
+
+/* small ledger */
+.ledger{margin-top:14px;border-top:1px solid var(--ink)}
+.ledger .r{display:flex;justify-content:space-between;align-items:baseline;
+  padding:9px 0;border-bottom:1px solid var(--rule)}
+.ledger .r span:first-child{font-family:var(--font-mono);font-size:10px;letter-spacing:.10em;
+  text-transform:uppercase;color:var(--ink-2)}
+.ledger .r b{font-family:var(--font-mono);font-weight:600;font-size:13px;font-variant-numeric:tabular-nums}
+.empty{font-family:var(--font-body);font-style:italic;font-size:14px;color:var(--ink-3);
+  line-height:1.55;margin-top:10px}
+.turn-hint{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;
+  font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+</style>
+</head>
+<body>
+
+<div class="stage-note">Post Run Drip · home, one day per page · drag or ← → to turn back through the week</div>
+
+<div class="phone">
+  <div class="plate"><span>Log · training journal</span><span class="fig">Fig. 18</span></div>
+
+  <div class="stack" id="stack">
+    <div class="track" id="track">
+
+      <!-- ══ TODAY ══════════════════════════════════════════════ -->
+      <article class="page" data-day="Tue · Aug 18" data-tag="Today">
+        <div class="body">
+          <div class="eyebrow eyebrow--coral">Tuesday</div>
+          <h1 class="day">August 18th<span class="period">.</span></h1>
+          <div class="sub">— nine weeks to the marathon. —</div>
+
+          <div class="rule-mark"><i></i></div>
+
+          <div class="sec">
+            <div class="hd"><span class="eyebrow eyebrow--coral">From your coach</span></div>
+            <p class="quote coach">Second of three interval days this cycle. Hold the splits, don't chase them — the heat will take its cut either way.</p>
+            <div class="hd" style="margin:10px 0 0"><span class="caption">2 days ago</span><a class="link" href="#" style="font-size:12px;color:var(--ink-2);border-bottom-color:var(--rule-strong)">Mark read</a></div>
+          </div>
+
+          <div class="sec">
+            <div class="eyebrow">Today</div>
+            <h2 class="head" style="margin-top:8px">How are you feeling?</h2>
+            <div class="moods">
+              <button aria-pressed="false">Energized</button>
+              <button aria-pressed="false">Positive</button>
+              <button aria-pressed="false">Neutral</button>
+              <button aria-pressed="false">Tired</button>
+              <button aria-pressed="true">Struggling</button>
+            </div>
+          </div>
+
+          <div class="rule-mark"><i></i></div>
+
+          <div class="sec" style="margin-top:0">
+            <div class="hd"><span class="eyebrow">Today's session</span><a class="link" href="#">Read it ↗</a></div>
+            <h2 class="head">Intervals, 6.2 mi.</h2>
+            <div class="metaline">5:54 / mi &nbsp;·&nbsp; 37 min &nbsp;·&nbsp;
+              <span style="color:var(--mood-struggling)"><i class="mood-dot" style="background:var(--mood-struggling)"></i>Struggling</span></div>
+            <p class="quote">“I struggled a lot with today's 3×2 mile workout. It was hot and humid, and I've been feeling a bit worn down…”</p>
+          </div>
+
+          <div class="sec">
+            <div class="hd"><span class="eyebrow eyebrow--coral">Tomorrow</span><span class="caption">From your coach</span></div>
+            <h2 class="head">Easy, 6 miles.</h2>
+            <div class="metaline">All of it conversational · no hills</div>
+            <p class="quote coach">Nothing to prove tomorrow. If the throat is still there, take the day.</p>
+          </div>
+
+          <div class="turn-hint">Turn back through the week <span>→</span></div>
+        </div>
+      </article>
+
+      <!-- ══ MONDAY · REST ══════════════════════════════════════ -->
+      <article class="page" data-day="Mon · Aug 17" data-tag="Rest">
+        <div class="body">
+          <div class="eyebrow">Monday</div>
+          <h1 class="day">August 17th<span class="period">.</span></h1>
+          <div class="sub">— rest, as prescribed. —</div>
+
+          <div class="rule-mark"><i></i></div>
+
+          <div class="sec" style="margin-top:0">
+            <div class="eyebrow">The day</div>
+            <h2 class="head" style="margin-top:8px">Rest.</h2>
+            <p class="empty">No run logged. When you take one, it lands here.</p>
+            <div class="metaline" style="margin-top:14px">
+              <span style="color:var(--mood-tired)"><i class="mood-dot" style="background:var(--mood-tired)"></i>Tired</span>
+              &nbsp;·&nbsp; Logged 9:12 pm</div>
+          </div>
+
+          <div class="rule-mark"><i></i></div>
+
+          <div class="sec" style="margin-top:0">
+            <div class="eyebrow">The week so far</div>
+            <div class="ledger">
+              <div class="r"><span>Runs</span><b>3</b></div>
+              <div class="r"><span>Miles</span><b>28.4</b></div>
+              <div class="r"><span>Time</span><b>3:41</b></div>
+              <div class="r"><span>Quality</span><b>1 of 2</b></div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="hd"><span class="eyebrow eyebrow--coral">Tomorrow</span><span class="caption">From your coach</span></div>
+            <h2 class="head">3 × 2 mi.</h2>
+            <div class="metaline">2 mi WU · 3 × 2 mi at 5:30 / mi · 2 min jog · 1 mi CD</div>
+            <p class="quote coach">Hold the splits, don't chase them.</p>
+          </div>
+        </div>
+      </article>
+
+      <!-- ══ SUNDAY · LONG RUN ══════════════════════════════════ -->
+      <article class="page" data-day="Sun · Aug 16" data-tag="Long run">
+        <div class="body">
+          <div class="eyebrow">Sunday</div>
+          <h1 class="day">August 16th<span class="period">.</span></h1>
+          <div class="sub">— the long one. —</div>
+
+          <div class="rule-mark"><i></i></div>
+
+          <div class="sec" style="margin-top:0">
+            <div class="hd"><span class="eyebrow">The session</span><a class="link" href="#">Read it ↗</a></div>
+            <h2 class="head">Long run, 16 mi.</h2>
+            <div class="metaline">7:12 / mi &nbsp;·&nbsp; 1:55 &nbsp;·&nbsp;
+              <span style="color:var(--mood-tired)"><i class="mood-dot" style="background:var(--mood-tired)"></i>Tired</span></div>
+            <p class="quote">“Legs were heavy from mile 11. Held the pace but it cost more than it should have.”</p>
+          </div>
+
+          <div class="sec">
+            <div class="eyebrow">Pace, by quarter</div>
+            <svg id="spark" viewBox="0 0 342 92" width="100%" height="92" role="img" aria-label="Pace across four quarters of the long run"></svg>
+            <div class="ledger" style="margin-top:6px">
+              <div class="r"><span>Q1 · 4 mi</span><b>7:04</b></div>
+              <div class="r"><span>Q2 · 4 mi</span><b>7:06</b></div>
+              <div class="r"><span>Q3 · 4 mi</span><b>7:14</b></div>
+              <div class="r"><span>Q4 · 4 mi</span><b>7:24</b></div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <!-- ══ SATURDAY · EASY ════════════════════════════════════ -->
+      <article class="page" data-day="Sat · Aug 15" data-tag="Easy">
+        <div class="body">
+          <div class="eyebrow">Saturday</div>
+          <h1 class="day">August 15th<span class="period">.</span></h1>
+          <div class="sub">— shakeout before the long one. —</div>
+
+          <div class="rule-mark"><i></i></div>
+
+          <div class="sec" style="margin-top:0">
+            <div class="hd"><span class="eyebrow">The session</span><a class="link" href="#">Read it ↗</a></div>
+            <h2 class="head">Easy, 6 mi.</h2>
+            <div class="metaline">7:48 / mi &nbsp;·&nbsp; 47 min &nbsp;·&nbsp;
+              <span style="color:var(--mood-positive)"><i class="mood-dot" style="background:var(--mood-positive)"></i>Positive</span></div>
+            <p class="quote">“Easy felt easy for the first time in a week. Kept it honest, no hills.”</p>
+          </div>
+
+          <div class="rule-mark"><i></i></div>
+
+          <div class="sec" style="margin-top:0">
+            <div class="hd"><span class="eyebrow">Fitness · 12 weeks</span><span class="caption">Predicted marathon</span></div>
+            <svg id="fit" viewBox="0 0 342 96" width="100%" height="96" role="img" aria-label="Predicted marathon time trending down over twelve weeks"></svg>
+            <div class="hd" style="margin-top:8px">
+              <span class="caption">12 w ago · 3:22</span>
+              <span class="caption" style="color:var(--coral)">Now · 3:15</span>
+            </div>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </div>
+
+  <div class="folio">
+    <div class="ticks" id="ticks"></div>
+    <div class="lbl" id="folioLbl">Tue · Aug 18</div>
+    <div class="wk">Week 33</div>
+  </div>
+
+  <div class="tabs">
+    <div class="on">Today</div><div>Train</div><div>Trends</div><div>Log</div>
+  </div>
+</div>
+
+<div class="stage-note">Swipe or drag left to turn back a day · ← → keys also work</div>
+
+<script>
+/* ── page turning ───────────────────────────────────────────────── */
+const track=document.getElementById('track'), stack=document.getElementById('stack');
+const pages=[...track.children], PW=390, TURN=0.22;
+let page=0, dragging=false, locked=null, x0=0, y0=0, dx=0, t0=0;
+
+const ticks=document.getElementById('ticks');
+ticks.innerHTML=pages.map(()=>'<i></i>').join('');
+const tickEls=[...ticks.children];
+
+function place(offset=0,animate=true){
+  track.classList.toggle('animate',animate);
+  track.style.transform=`translate3d(${-page*PW+offset}px,0,0)`;
+}
+function paint(){
+  tickEls.forEach((t,i)=>t.classList.toggle('on',i===page));
+  const p=pages[page];
+  document.getElementById('folioLbl').textContent=`${p.dataset.day} · ${p.dataset.tag}`;
+  pages.forEach(p=>p.querySelector('.body').scrollTop=0);
+}
+function go(n){
+  const next=Math.max(0,Math.min(pages.length-1,n));
+  if(next!==page){page=next;paint();}
+  place(0,true);
+}
+stack.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='mouse'&&e.button!==0) return;
+  dragging=true;locked=null;x0=e.clientX;y0=e.clientY;dx=0;t0=performance.now();
+  stack.classList.add('dragging');stack.setPointerCapture(e.pointerId);
+});
+stack.addEventListener('pointermove',e=>{
+  if(!dragging) return;
+  const mx=e.clientX-x0, my=e.clientY-y0;
+  if(locked===null){
+    if(Math.abs(mx)<6&&Math.abs(my)<6) return;
+    locked=Math.abs(mx)>Math.abs(my)?'x':'y';
+  }
+  if(locked!=='x') return;
+  dx=mx;
+  if((page===0&&dx>0)||(page===pages.length-1&&dx<0)) dx*=0.32;
+  place(dx,false);
+});
+function release(){
+  if(!dragging) return;
+  dragging=false;stack.classList.remove('dragging');
+  const v=dx/Math.max(1,performance.now()-t0);
+  if(locked==='x'&&(Math.abs(dx)>PW*TURN||Math.abs(v)>0.5)) go(page+(dx<0?1:-1));
+  else place(0,true);
+  dx=0;locked=null;
+}
+stack.addEventListener('pointerup',release);
+stack.addEventListener('pointercancel',release);
+stack.addEventListener('pointerleave',release);
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight') go(page+1);
+  if(e.key==='ArrowLeft') go(page-1);
+});
+tickEls.forEach((t,i)=>t.addEventListener('click',()=>go(i)));
+
+/* ── mood radio ─────────────────────────────────────────────────── */
+document.querySelectorAll('.moods button').forEach(b=>{
+  b.addEventListener('click',()=>{
+    b.closest('.moods').querySelectorAll('button').forEach(o=>o.setAttribute('aria-pressed','false'));
+    b.setAttribute('aria-pressed','true');
+  });
+});
+
+/* ── small charts ───────────────────────────────────────────────── */
+const fmt=s=>Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
+function bars(id,vals,labels){
+  const W=342,H=92,padL=30,padR=6,padT=10,padB=18,cw=W-padL-padR,ch=H-padT-padB;
+  const max=Math.max(...vals)+6, min=Math.min(...vals)-6;
+  const y=v=>padT+ch*((v-min)/(max-min));
+  const gap=cw/vals.length, bw=gap*0.5;
+  let g='';
+  g+=`<line x1="${padL}" x2="${W-padR}" y1="${padT+ch}" y2="${padT+ch}" stroke="#1A1815" stroke-width="1"/>`;
+  vals.forEach((v,i)=>{
+    const x=padL+gap*i+(gap-bw)/2, top=y(v), h=(padT+ch)-top;
+    g+=`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(2,h).toFixed(1)}"
+        fill="#1A1815" opacity="${(0.34+0.30*(1-(v-min)/(max-min))).toFixed(2)}"/>`;
+    g+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-5}" text-anchor="middle" font-family="ui-monospace,Menlo,monospace"
+        font-size="8.5" letter-spacing="0.08em" fill="#9B9590">${labels[i]}</text>`;
+  });
+  g+=`<text x="${padL-6}" y="${(y(min+6)+3).toFixed(1)}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8.5" fill="#9B9590">${fmt(min+6)}</text>`;
+  g+=`<text x="${padL-6}" y="${(y(max-6)+3).toFixed(1)}" text-anchor="end" font-family="ui-monospace,Menlo,monospace" font-size="8.5" fill="#9B9590">${fmt(max-6)}</text>`;
+  document.getElementById(id).innerHTML=g;
+}
+bars('spark',[424,426,434,444],['Q1','Q2','Q3','Q4']);
+
+(function fitness(){
+  const W=342,H=96,padL=6,padR=6,padT=12,padB=14,cw=W-padL-padR,ch=H-padT-padB;
+  const v=[202,201.5,200,199,198.5,197,196.5,196,195.5,195.5,195,195]; // predicted marathon, minutes
+  const max=Math.max(...v)+1, min=Math.min(...v)-1;
+  const y=t=>padT+ch*((t-min)/(max-min));
+  const pts=v.map((t,i)=>[padL+cw*i/(v.length-1), y(t)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  let g=`<path d="${d} L ${padL+cw} ${padT+ch} L ${padL} ${padT+ch} Z" fill="rgba(26,24,21,0.045)"/>`;
+  g+=`<path d="${d}" fill="none" stroke="#1A1815" stroke-width="1.4" stroke-linejoin="round"/>`;
+  g+=`<circle cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="3" fill="#D4592A"/>`;
+  g+=`<line x1="${padL}" x2="${W-padR}" y1="${padT+ch}" y2="${padT+ch}" stroke="#E8E4E0" stroke-width="1"/>`;
+  document.getElementById('fit').innerHTML=g;
+})();
+
+paint(); place(0,false);
+</script>
+</body>
+</html>

@@ -29,6 +29,12 @@ struct CoachRead: Codable, Identifiable, Equatable {
     let id: UUID
     let readDate: Date
     let headline: String
+    // v5 sectioned narrative. Optional + backward-compatible: pre-v5 rows have
+    // null columns and decode fine, falling back to `paragraph`. When
+    // `sections` is present, the narrative screen renders these instead.
+    let eyebrow: String?
+    let sections: [Section]?
+    let question: String?
     let paragraph: [Segment]
     let cantSee: CantSee?
     let sources: Sources
@@ -40,12 +46,83 @@ struct CoachRead: Codable, Identifiable, Equatable {
         case id
         case readDate = "read_date"
         case headline
+        case eyebrow
+        case sections
+        case question
         case paragraph
         case cantSee = "cant_see"
         case sources
         case confidence
         case aiModel = "ai_model"
         case generatedAt = "generated_at"
+    }
+
+    /// True when the row carries a v5 sectioned narrative worth rendering.
+    var hasSections: Bool { (sections?.isEmpty == false) }
+
+    // MARK: - Section (v5)
+
+    /// One labeled editorial section: "The week", "The hard days",
+    /// "The long run", "How you felt", "One thing". `body` is an ordered
+    /// mix of prose and inline tap-through refs.
+    struct Section: Codable, Equatable {
+        let label: String
+        let body: [SectionSegment]
+    }
+
+    /// One segment of a v5 section body. JSON variants:
+    ///   - raw string                                  → `.text`
+    ///   - `{"text": "...", "workout_id": "<uuid>"}`   → `.workout` (tappable)
+    ///   - `{"text": "...", "niggle": "right achilles"}` → `.niggle` (tappable)
+    /// Unlike the legacy `Segment`, refs carry their own display `text`.
+    enum SectionSegment: Codable, Equatable {
+        case text(String)
+        case workout(text: String, workoutId: UUID)
+        case niggle(text: String, bodyPart: String)
+
+        private enum Key: String, CodingKey {
+            case text
+            case workoutId = "workout_id"
+            case niggle
+        }
+
+        init(from decoder: Decoder) throws {
+            if let single = try? decoder.singleValueContainer(),
+               let raw = try? single.decode(String.self) {
+                self = .text(raw)
+                return
+            }
+            let k = try decoder.container(keyedBy: Key.self)
+            let text = (try? k.decode(String.self, forKey: .text)) ?? ""
+            if k.contains(.workoutId),
+               let id = try? k.decode(UUID.self, forKey: .workoutId) {
+                self = .workout(text: text, workoutId: id)
+                return
+            }
+            if k.contains(.niggle),
+               let part = try? k.decode(String.self, forKey: .niggle) {
+                self = .niggle(text: text, bodyPart: part)
+                return
+            }
+            // Unknown ref shape — degrade to its text so the prose still reads.
+            self = .text(text)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            switch self {
+            case .text(let raw):
+                var s = encoder.singleValueContainer()
+                try s.encode(raw)
+            case .workout(let text, let id):
+                var k = encoder.container(keyedBy: Key.self)
+                try k.encode(text, forKey: .text)
+                try k.encode(id, forKey: .workoutId)
+            case .niggle(let text, let part):
+                var k = encoder.container(keyedBy: Key.self)
+                try k.encode(text, forKey: .text)
+                try k.encode(part, forKey: .niggle)
+            }
+        }
     }
 
     // MARK: - Segment
@@ -124,6 +201,48 @@ struct CoachRead: Codable, Identifiable, Equatable {
     struct CantSee: Codable, Equatable {
         let eyebrow: String
         let body: String
+    }
+
+    /// Build a CoachRead from a plain answer string — the client-side mirror
+    /// of the edge function's `toEditorialRead`. Used as a fallback when the
+    /// ask endpoint returns its chat envelope ({ response: "..." }) rather than
+    /// the editorial { read } shape, so the ask surface still renders.
+    static func fromPlainText(_ text: String) -> CoachRead {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var headline = "Here's what I see"
+        var body = clean
+        // Peel the first sentence off as a headline when it's short enough.
+        var earliest: Range<String.Index>?
+        for terminator in [". ", "! ", "? "] {
+            if let r = clean.range(of: terminator),
+               earliest == nil || r.lowerBound < earliest!.lowerBound {
+                earliest = r
+            }
+        }
+        if let r = earliest,
+           clean.distance(from: clean.startIndex, to: r.lowerBound) <= 90 {
+            headline = String(clean[..<r.lowerBound])
+            body = String(clean[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+        }
+        if body.isEmpty {
+            body = clean.isEmpty
+                ? "I don't have enough to say yet — log a few runs and ask again."
+                : clean
+        }
+        return CoachRead(
+            id: UUID(),
+            readDate: Date(),
+            headline: headline,
+            eyebrow: nil,
+            sections: nil,
+            question: nil,
+            paragraph: [.text(body)],
+            cantSee: nil,
+            sources: Sources(workouts: [], docs: [], memos: []),
+            confidence: Confidence(level: .medium, sub: "Based on your recent training"),
+            aiModel: nil,
+            generatedAt: Date()
+        )
     }
 
     // MARK: - Sources

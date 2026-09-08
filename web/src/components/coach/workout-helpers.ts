@@ -29,6 +29,34 @@ export interface PaceZoneOption {
   description: string;
 }
 
+// ── Pace-zone colors (web mirror of PaceSpectrum.swift) ──
+//
+// THE THREE-PALETTE RULE: blue = pace, warm = mood, coral = alert. These
+// map each pace zone to a stop on the single-hue blue depth ramp, defined
+// as CSS custom properties in web/src/app/globals.css (`--color-pace-*`).
+// Source of truth for the hex values: RunningLog/Workouts/PaceSpectrum.swift.
+//
+// Two zones share a stop by design: `longRun` reads as `moderate` (its band
+// overlaps moderate) and `recovery` reads as `easy` (the palest sky — there
+// is no dedicated recovery stop, and recovery miles sit at the base of the
+// ramp alongside easy). This matches the prototype's ZONES color mapping in
+// prototypes/adaptive-plan-builder.html. Never emit a green or coral fill
+// here — those palettes are mood and alert only.
+export const PACE_ZONE_COLORS: Record<PaceZone, string> = {
+  recovery:  "var(--color-pace-easy)",
+  easy:      "var(--color-pace-easy)",
+  longRun:   "var(--color-pace-moderate)",
+  moderate:  "var(--color-pace-moderate)",
+  steady:    "var(--color-pace-steady)",
+  mp:        "var(--color-pace-mp)",
+  hm:        "var(--color-pace-hmp)",
+  threshold: "var(--color-pace-lt)",
+  tenK:      "var(--color-pace-10k)",
+  fiveK:     "var(--color-pace-5k)",
+  threeK:    "var(--color-pace-3k)",
+  mile:      "var(--color-pace-mile)",
+};
+
 // `longRun` is intentionally NOT in this list (May 2026): the LR band
 // (85–75% MP) overlaps Moderate and Easy, and coaches found it confusing
 // to prescribe. The four core aerobic zones (Steady/Moderate/Easy/Recovery)
@@ -178,6 +206,273 @@ export function estimatedWorkoutMiles(
   return steps.reduce((sum, s) => sum + estimatedStepMiles(s, athletePaces), 0);
 }
 
+// ── Zone-mile aggregation (for the pace-colored mileage ramp) ────────────
+//
+// Buckets a week's placed workout miles by pace zone, so the Plan-setup
+// ramp can render each week as a stacked bar (easy fill at the base,
+// deeper-blue quality miles stacked on top). Ported from the prototype's
+// `weekZoneMiles` / `nearestZoneKey` (prototypes/adaptive-plan-builder.html);
+// the prototype is the design reference when it disagrees with this code.
+
+/** Miles-per-zone for one or more workouts. A partial map — a zone with no
+ *  placed miles is simply absent. */
+export type ZoneMiles = Partial<Record<PaceZone, number>>;
+
+/**
+ * The pace zone whose reference (or athlete) pace is closest to a given
+ * exact seconds-per-mile pace. Used to color a step that pins an absolute
+ * pace ("5:45/mi") instead of naming a zone. Mirrors the prototype's
+ * `nearestZoneKey`.
+ */
+export function nearestZoneKey(
+  paceSecPerMile: number,
+  athletePaces?: AthletePaceTable,
+): PaceZone {
+  let best: PaceZone = "fiveK";
+  let bestDelta = Infinity;
+  for (const opt of PACE_ZONES) {
+    const zoneSec = athletePaces?.[opt.value] ?? REFERENCE_PACE_SEC_PER_MILE[opt.value];
+    const delta = Math.abs(zoneSec - paceSecPerMile);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = opt.value;
+    }
+  }
+  return best;
+}
+
+/**
+ * The pace zone a step reads as — for coloring, zone dots, and labels:
+ *   - an exact pinned pace wins (mirrors how miles are computed:
+ *     estimatedSegmentMiles prefers exactPaceSecPerMile), mapped to its
+ *     nearest zone.
+ *   - `longRun` is preserved (its own structural zone) — callers that need
+ *     a ramp color fold it into `moderate` themselves.
+ *   - a named, resolvable zone is used as-is.
+ *   - anything unresolvable falls to `easy` (the aerobic base).
+ */
+export function zoneForStep(step: WorkoutStep, athletePaces?: AthletePaceTable): PaceZone {
+  if (step.exactPaceSecPerMile && step.exactPaceSecPerMile > 0) {
+    return nearestZoneKey(step.exactPaceSecPerMile, athletePaces);
+  }
+  if (step.paceZone === "longRun") return "longRun";
+  if (hasResolvableZone(step.paceZone)) return step.paceZone;
+  return "easy";
+}
+
+/** A step's color on the single-hue blue pace ramp. `longRun` shares the
+ *  `moderate` stop (no dedicated long-run blue). Never returns green/coral. */
+export function zoneColorForStep(step: WorkoutStep, athletePaces?: AthletePaceTable): string {
+  return PACE_ZONE_COLORS[zoneForStep(step, athletePaces)];
+}
+
+/**
+ * Sum a week's placed workout miles into per-zone buckets. Each argument is
+ * one workout's steps; a step's estimated miles (distance, or pace × time
+ * for time-based segments) land wholesale in that step's zone — matching the
+ * prototype, which counts a rep set's recovery jog as part of the quality
+ * session rather than splitting it out.
+ *
+ * The caller adds the "easy fill" (a week's target mid-mileage minus the
+ * placed total) when rendering, so this returns only what's actually placed.
+ */
+export function weekZoneMiles(
+  stepGroups: WorkoutStep[][],
+  athletePaces?: AthletePaceTable,
+): ZoneMiles {
+  const out: ZoneMiles = {};
+  for (const steps of stepGroups) {
+    for (const step of steps) {
+      const miles = estimatedStepMiles(step, athletePaces);
+      if (!miles || miles <= 0) continue;
+      // Fold longRun into moderate for the ramp — it shares moderate's blue
+      // stop and moderate is a stacking zone (longRun is not in PACE_ZONES).
+      const z = zoneForStep(step, athletePaces);
+      const zone: PaceZone = z === "longRun" ? "moderate" : z;
+      out[zone] = (out[zone] ?? 0) + miles;
+    }
+  }
+  return out;
+}
+
+/** Total placed miles across a ZoneMiles map. */
+export function totalZoneMiles(zoneMiles: ZoneMiles): number {
+  return Object.values(zoneMiles).reduce((sum, mi) => sum + (mi ?? 0), 0);
+}
+
+// ── 10-zone workout labels, dots & estimated line ───────────────────────
+//
+// The library and builder describe a workout by its pace zones, not the
+// legacy workout_type ("tempo"/"intervals"). A tempo run is `LT 6 mi`; an
+// interval set is `5K 5×1km`. Ported in intent from the prototype's
+// `instZones` / `instSummary` (prototypes/workout-builder.html).
+
+// Intensity rank (higher = harder). Slow → fast, with longRun sitting just
+// above easy. Used to pick a workout's "headline" zone for its label.
+const ZONE_INTENSITY_RANK: Record<PaceZone, number> = {
+  recovery: 0,
+  easy: 1,
+  longRun: 2,
+  moderate: 3,
+  steady: 4,
+  mp: 5,
+  hm: 6,
+  threshold: 7,
+  tenK: 8,
+  fiveK: 9,
+  threeK: 10,
+  mile: 11,
+};
+
+// Aerobic base zones — not counted as "quality" for zone-dot tags.
+const BASE_ZONES = new Set<PaceZone>(["recovery", "easy", "longRun"]);
+
+/** Short display label for a zone, with the structural `longRun` → "Long".
+ *  Everything else uses the canonical short name ("MP", "LT", "5K", …). */
+export function zoneLabelShort(zone: PaceZone): string {
+  if (zone === "longRun") return "Long";
+  return paceShort(zone);
+}
+
+function trimMiles(mi: number): string {
+  return Number.isInteger(mi) ? `${mi}` : mi.toFixed(1);
+}
+
+// A step's distance as a compact bare label: "800m", "1km", "6 mi", or a
+// clock for time-based reps ("2:00").
+function stepDistLabel(seg: {
+  durationType: WorkoutStep["durationType"];
+  durationValue: number;
+}): string {
+  switch (seg.durationType) {
+    case "distance_meters":
+      return seg.durationValue % 1000 === 0
+        ? `${seg.durationValue / 1000}km`
+        : `${seg.durationValue}m`;
+    case "distance_km":
+      return `${trimMiles(seg.durationValue)}km`;
+    case "distance_miles":
+      return `${trimMiles(seg.durationValue)} mi`;
+    case "time_seconds":
+      return formatStepSeconds(seg.durationValue);
+  }
+}
+
+// A step's pace shorthand for the estimated line: an exact pinned pace shows
+// as "5:45/mi", otherwise the zone's short label.
+function stepPaceShort(step: WorkoutStep, athletePaces?: AthletePaceTable): string {
+  if (step.exactPaceSecPerMile && step.exactPaceSecPerMile > 0) {
+    return `${formatPaceSecPerMile(step.exactPaceSecPerMile)}/mi`;
+  }
+  return zoneLabelShort(zoneForStep(step, athletePaces));
+}
+
+/**
+ * Distinct quality zones present in a workout, in step order, excluding the
+ * aerobic base (recovery/easy/longRun) and non-running steps. Drives the
+ * zone-dot tags on library cards. Mirrors the prototype's `instZones`.
+ */
+export function stepZones(steps: WorkoutStep[], athletePaces?: AthletePaceTable): PaceZone[] {
+  const out: PaceZone[] = [];
+  for (const s of steps) {
+    if (s.stepType !== "active") continue;
+    const z = zoneForStep(s, athletePaces);
+    if (BASE_ZONES.has(z)) continue;
+    if (!out.includes(z)) out.push(z);
+  }
+  return out;
+}
+
+/**
+ * A workout's 10-zone label, derived from its steps:
+ *   - a rep set → "5K 5×1km", "3K 4×800m"
+ *   - a single main block → "MP 7 mi", "LT 6 mi", "Long 16 mi"
+ * The headline is the hardest active block (ties go to the rep set). Returns
+ * null when there are no steps — callers fall back to the legacy type label.
+ */
+// The "headline" block of a workout — the hardest active block, with ties
+// going to a rep set. Shared by workoutZoneLabel and headlineZone.
+function headlineBlock(
+  blocks: WorkoutStepBlock[],
+  athletePaces?: AthletePaceTable,
+): WorkoutStepBlock | null {
+  let headline: WorkoutStepBlock | null = null;
+  let headlineRank = -1;
+  for (const b of blocks) {
+    const rank = ZONE_INTENSITY_RANK[zoneForStep(b.step, athletePaces)];
+    if (rank > headlineRank || (rank === headlineRank && b.kind === "reps")) {
+      headlineRank = rank;
+      headline = b;
+    }
+  }
+  return headline;
+}
+
+/** The single zone that best characterizes a workout (its hardest block).
+ *  Used for the library card's pace pill. Null when there are no steps. */
+export function headlineZone(
+  steps: WorkoutStep[],
+  athletePaces?: AthletePaceTable,
+): PaceZone | null {
+  if (!steps || steps.length === 0) return null;
+  const { blocks } = groupStepsIntoSections(steps);
+  const headline = headlineBlock(blocks, athletePaces);
+  return headline ? zoneForStep(headline.step, athletePaces) : null;
+}
+
+export function workoutZoneLabel(
+  steps: WorkoutStep[],
+  athletePaces?: AthletePaceTable,
+): string | null {
+  if (!steps || steps.length === 0) return null;
+  const { blocks } = groupStepsIntoSections(steps);
+  if (blocks.length === 0) return null;
+
+  const headline = headlineBlock(blocks, athletePaces);
+  if (!headline) return null;
+
+  const short = stepPaceShort(headline.step, athletePaces);
+  if (headline.kind === "reps") {
+    const reps = headline.repeats ?? 2;
+    return `${short} ${reps}×${stepDistLabel(headline.step)}`;
+  }
+  const miles = estimatedStepMiles(headline.step, athletePaces);
+  return miles > 0 ? `${short} ${trimMiles(miles)} mi` : short;
+}
+
+/**
+ * The mono "estimated" one-liner for a workout — "2 wu · 6 × 800m @ 5K · 2 cd".
+ * Warmup/cooldown collapse to their mileage; each middle block reads as its
+ * reps/distance @ zone. Mirrors the prototype's `instSummary`. Returns null
+ * for an empty workout.
+ */
+export function describeWorkoutLine(
+  steps: WorkoutStep[],
+  athletePaces?: AthletePaceTable,
+): string | null {
+  if (!steps || steps.length === 0) return null;
+  const { warmup, blocks, cooldown } = groupStepsIntoSections(steps);
+  const parts: string[] = [];
+
+  const wuMiles = estimatedWorkoutMiles(warmup, athletePaces);
+  if (warmup.length > 0 && wuMiles > 0) parts.push(`${trimMiles(wuMiles)} wu`);
+
+  for (const b of blocks) {
+    const short = stepPaceShort(b.step, athletePaces);
+    if (b.kind === "reps") {
+      const reps = b.repeats ?? 2;
+      parts.push(`${reps} × ${stepDistLabel(b.step)} @ ${short}`);
+    } else {
+      parts.push(`${stepDistLabel(b.step)} @ ${short}`);
+    }
+  }
+
+  const cdMiles = estimatedWorkoutMiles(cooldown, athletePaces);
+  if (cooldown.length > 0 && cdMiles > 0) parts.push(`${trimMiles(cdMiles)} cd`);
+
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 // ── Duration helpers ─────────────────────────────────────
 
 // Per-athlete pace table (seconds per mile, keyed by pace zone). When the
@@ -190,22 +485,27 @@ export type AthletePaceTable = Partial<Record<PaceZone, number>>;
 // only as a fallback when no athlete pace table is available. Callers that
 // rely on this should label the output as
 // "est. for reference runner — personalized on save".
-// Reference paces for a ~3:15 marathoner (MP 7:30). Derived from the same
-// ladder as derivePaceTableFromGoal, so the editor's ranges stay self-consistent
-// whether the coach set a goal time or not.
+// Reference paces for a ~3:16 marathoner (MP 7:30). These are the exact output
+// of `derivePaceTableFromGoal(450, "marathon")`, frozen as a literal (the
+// derivation is defined later in this file, so it can't be called at this
+// module-eval point without a TDZ error). A dev-mode assertion beside
+// derivePaceTableFromGoal re-derives and warns on any drift — the previous
+// literal had silently kept the pre-2026-06 ladder (MP/0.765 training bands +
+// fixed MP−offset race zones, incl. the LT-should-be-1hr-pace bug) after the
+// derivation itself was fixed.
 export const REFERENCE_PACE_SEC_PER_MILE: Record<PaceZone, number> = {
-  recovery: 10 * 60 + 43, // MP / 0.70 (range: 75–65% MP speed)
-  easy:      9 * 60 + 49, // MP / 0.765
+  recovery: 11 * 60 + 32, // MP / 0.65
+  easy:     10 * 60 + 0,  // MP / 0.75
   longRun:   9 * 60 + 23, // MP / 0.80
-  moderate:  8 * 60 + 34, // MP / 0.875
-  steady:    8 * 60 + 6, // MP / 0.925
+  moderate:  8 * 60 + 49, // MP / 0.85
+  steady:    7 * 60 + 54, // MP / 0.95
   mp:        7 * 60 + 30, // anchor
-  hm:        7 * 60 + 15, // MP − 15s
-  threshold: 7 * 60 + 10, // MP − 20s
-  tenK:      6 * 60 + 50, // MP − 40s
-  fiveK:     6 * 60 + 30, // MP − 60s
-  threeK:    6 * 60 + 10, // MP − 80s
-  mile:      5 * 60 + 50, // MP − 100s
+  hm:        7 * 60 + 10, // ratio-derived
+  threshold: 7 * 60 + 1,  // 1-hour pace (interp 10K↔HM)
+  tenK:      6 * 60 + 51, // ratio-derived
+  fiveK:     6 * 60 + 36, // ratio-derived
+  threeK:    6 * 60 + 20, // ratio-derived
+  mile:      5 * 60 + 57, // ratio-derived
 };
 
 export const REFERENCE_RUNNER_LABEL = "est. for reference runner — personalized on save";
@@ -297,7 +597,7 @@ export function unitShort(t: WorkoutStep["durationType"]): string {
   switch (t) {
     case "distance_miles":  return " mi";
     case "distance_km":     return " km";
-    case "distance_meters": return " m";
+    case "distance_meters": return " meters";
     case "time_seconds":    return "s";
   }
 }
@@ -402,17 +702,24 @@ const RACE_DISTANCE_MI: Record<RaceKey, number> = {
   marathon: 26.21875,
 };
 
-// Map the `derivePaceTableFromGoal` raceDistance string argument to the
-// ratio-table key. Unknown values default to marathon (same as the old
-// fallback behavior).
+// Normalize a race-distance string to the ratio-table key. Ported verbatim
+// from edge `paces.ts:raceKeyForInput` — the previous web version exact-matched
+// only 5 lowercase strings and silently defaulted everything else (incl. "5K",
+// "HM", "3k", "10mi") to marathon, so an uppercased or aliased goal derived a
+// wildly wrong pace table with no error. Lowercase + trim + full alias set.
 function raceKeyForInput(raceDistance: string): RaceKey {
-  switch (raceDistance) {
-    case "half_marathon": return "half";
-    case "10k":           return "tenK";
-    case "5k":            return "fiveK";
-    case "mile":          return "mile";
-    case "marathon":
-    default:              return "marathon";
+  const k = raceDistance.toLowerCase().trim();
+  switch (k) {
+    case "marathon": case "m":                              return "marathon";
+    case "half_marathon": case "half-marathon": case "half":
+    case "hm":                                              return "half";
+    case "10k": case "tenk":                                return "tenK";
+    case "10mi": case "10_mi": case "tenmi":                return "tenMi";
+    case "5k": case "fivek":                                return "fiveK";
+    case "3k": case "threek":                               return "threeK";
+    case "1500m": case "1500":                              return "1500m";
+    case "mile": case "1mi": case "one_mile":               return "mile";
+    default:                                                return "marathon";
   }
 }
 
@@ -614,6 +921,19 @@ if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
     if (!approx(actual, expected, 3)) {
       console.warn(
         `[derivePaceTableFromGoal] ${label} drifted: expected ~${expected}s, got ${actual.toFixed(1)}s (2:20 marathon reference case)`,
+      );
+    }
+  }
+
+  // REFERENCE_PACE_SEC_PER_MILE is a frozen copy of this derivation at the
+  // reference runner (MP 7:30). If the ladder changes and the literal isn't
+  // regenerated, warn — this is exactly the drift that let the old fallback
+  // table keep the pre-2026-06 ladder after the derivation was fixed.
+  const ref = derivePaceTableFromGoal(450 /* 7:30/mi MP */, "marathon");
+  for (const zone of Object.keys(ref) as PaceZone[]) {
+    if (!approx(REFERENCE_PACE_SEC_PER_MILE[zone], ref[zone], 0.6)) {
+      console.warn(
+        `[REFERENCE_PACE_SEC_PER_MILE] ${zone} drifted from derivePaceTableFromGoal(450): literal ${REFERENCE_PACE_SEC_PER_MILE[zone]}s vs derived ${ref[zone].toFixed(1)}s — regenerate the literal.`,
       );
     }
   }
@@ -878,6 +1198,255 @@ export function groupStepsIntoSections(steps: WorkoutStep[]): WorkoutSections {
   }
 
   return { warmup, blocks, cooldown };
+}
+
+// ── Progression candidates (smart duplicate) ────────────────────────────
+//
+// Deterministic generator behind the "Suggested progressions" strip in the
+// duplicate-workout flow. Given a source workout's steps, produce a small
+// closed set of valid next-step variants. Design rules (see CLAUDE.md —
+// "AI advises, never acts"; constrained selection, not free generation):
+//
+//   - The generator is PURE and deterministic — same steps in, same
+//     candidates out, no LLM involved. The optional LLM layer
+//     (suggest-workout-progression edge function) may only reorder and
+//     annotate these candidates; it never invents structures.
+//   - The pace zone NEVER changes. Progression is achieved through reps,
+//     rep distance, recovery density, or total volume — not intensity.
+//   - The closed move set: +1 rep · next rung on the rep-distance ladder ·
+//     reduced recovery · +total volume capped at ≤10%.
+
+export type ProgressionMoveKind =
+  | "add_rep"
+  | "extend_rep"
+  | "reduce_recovery"
+  | "extend_volume";
+
+export interface ProgressionCandidate {
+  /** Stable id, e.g. "add-rep", "extend-rep-1200m". The LLM annotation
+   *  layer references candidates by this id and is validated against it. */
+  id: string;
+  kind: ProgressionMoveKind;
+  /** Short human label — "One more rep at the same pace". */
+  label: string;
+  /** Structure one-liner of the mutated workout ("2 wu · 6 × 1km @ 5K · 2 cd"),
+   *  null for degenerate inputs. */
+  detail: string | null;
+  /** The mutated steps. Same shape the step editor consumes. */
+  steps: WorkoutStep[];
+}
+
+// Canonical rep-distance menu (meters). A rep progresses to the next rung —
+// 800 → 1000 → 1200 → 1600 — never to an arbitrary distance.
+const REP_DISTANCE_LADDER_METERS = [200, 300, 400, 600, 800, 1000, 1200, 1600, 2000, 3200];
+
+// Total-volume increase ceiling for the extend_volume move (hard cap; the
+// candidate is dropped rather than emitted over the cap).
+const MAX_PROGRESSION_VOLUME_RATIO = 1.10;
+
+// Recovery reductions: one deterministic notch, floored so a candidate can
+// never propose a degenerate recovery (e.g. 5s standing rest between 1k reps).
+const RECOVERY_TIME_CUT_SECONDS = 15;   // 90s jog → 75s jog
+const MIN_RECOVERY_SECONDS = 30;
+const RECOVERY_DISTANCE_CUT_METERS = 100; // 400m jog → 300m jog
+const MIN_RECOVERY_METERS = 100;
+
+function cloneStep(s: WorkoutStep): WorkoutStep {
+  return {
+    ...s,
+    paceAdjustment: s.paceAdjustment ? { ...s.paceAdjustment } : undefined,
+    recovery: s.recovery
+      ? {
+          ...s.recovery,
+          paceAdjustment: s.recovery.paceAdjustment
+            ? { ...s.recovery.paceAdjustment }
+            : undefined,
+        }
+      : undefined,
+  };
+}
+
+function cloneSteps(steps: WorkoutStep[]): WorkoutStep[] {
+  return steps.map(cloneStep);
+}
+
+// A segment's distance in meters, or null for time-based segments.
+function segmentMeters(seg: {
+  durationType: WorkoutStep["durationType"];
+  durationValue: number;
+}): number | null {
+  switch (seg.durationType) {
+    case "distance_meters": return seg.durationValue;
+    case "distance_km":     return seg.durationValue * 1000;
+    case "distance_miles":  return seg.durationValue * RACE_DISTANCE_CONSTANTS.meterPerMile;
+    case "time_seconds":    return null;
+  }
+}
+
+/**
+ * The index of the step a progression should act on: the hardest active
+ * step by zone intensity, ties going to a rep set (matches how
+ * `headlineBlock` picks a workout's headline). Returns -1 when the workout
+ * has no active steps to progress.
+ */
+export function progressionTargetIndex(steps: WorkoutStep[]): number {
+  let best = -1;
+  let bestRank = -1;
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (s.stepType !== "active") continue;
+    const rank = ZONE_INTENSITY_RANK[zoneForStep(s)];
+    const isReps = (s.repeats ?? 1) > 1;
+    const bestIsReps = best >= 0 && (steps[best].repeats ?? 1) > 1;
+    if (rank > bestRank || (rank === bestRank && isReps && !bestIsReps)) {
+      bestRank = rank;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Generate 0–4 deterministic progression candidates for a workout.
+ *
+ * Rep workouts (target step has `repeats > 1`) can yield:
+ *   1. add_rep         — one more rep, same everything else (5×1k → 6×1k)
+ *   2. extend_rep      — next rung on the rep-distance ladder (800 → 1000)
+ *   3. reduce_recovery — one notch tighter between reps (90s → 75s,
+ *                        400m → 300m), floored at 30s / 100m
+ *
+ * Continuous workouts (single main block) can yield up to two
+ *   extend_volume variants — the main block extended by a clean increment
+ *   (0.5 / 1 unit) keeping TOTAL workout volume within +10%.
+ *
+ * Invariants, enforced by construction and pinned by tests:
+ *   - `paceZone` (and recovery pace zone) is never modified.
+ *   - Steps other than the target are byte-identical clones.
+ *   - Deterministic order: add_rep · extend_rep · reduce_recovery ·
+ *     extend_volume(s). At most 4 candidates.
+ */
+export function generateProgressionCandidates(
+  steps: WorkoutStep[],
+  athletePaces?: AthletePaceTable,
+): ProgressionCandidate[] {
+  if (!steps || steps.length === 0) return [];
+  const targetIdx = progressionTargetIndex(steps);
+  if (targetIdx === -1) return [];
+
+  const target = steps[targetIdx];
+  const isRepSet = (target.repeats ?? 1) > 1;
+  const out: ProgressionCandidate[] = [];
+
+  const emit = (
+    id: string,
+    kind: ProgressionMoveKind,
+    label: string,
+    mutate: (t: WorkoutStep) => void,
+  ) => {
+    const next = cloneSteps(steps);
+    mutate(next[targetIdx]);
+    out.push({
+      id,
+      kind,
+      label,
+      detail: describeWorkoutLine(next, athletePaces),
+      steps: next,
+    });
+  };
+
+  if (isRepSet) {
+    const reps = target.repeats!;
+
+    // 1. One more rep.
+    emit("add-rep", "add_rep", "One more rep at the same pace", (t) => {
+      t.repeats = reps + 1;
+    });
+
+    // 2. Next rung on the rep-distance ladder. Only when the current rep
+    //    distance sits exactly on a rung (float-tolerant) — off-menu reps
+    //    (e.g. 1 mi) don't ladder, so the move is simply not offered.
+    const meters = segmentMeters(target);
+    if (meters !== null && target.durationType !== "distance_miles") {
+      const rung = REP_DISTANCE_LADDER_METERS.findIndex(
+        (m) => Math.abs(m - meters) < 1,
+      );
+      if (rung !== -1 && rung + 1 < REP_DISTANCE_LADDER_METERS.length) {
+        const nextMeters = REP_DISTANCE_LADDER_METERS[rung + 1];
+        const asKm = target.durationType === "distance_km" && nextMeters % 1000 === 0;
+        emit(
+          `extend-rep-${nextMeters}m`,
+          "extend_rep",
+          "Longer reps at the same pace",
+          (t) => {
+            if (asKm) {
+              t.durationType = "distance_km";
+              t.durationValue = nextMeters / 1000;
+            } else {
+              t.durationType = "distance_meters";
+              t.durationValue = nextMeters;
+            }
+          },
+        );
+      }
+    }
+
+    // 3. Tighter recovery — one notch, floored.
+    const rec = target.recovery;
+    if (rec) {
+      if (rec.durationType === "time_seconds") {
+        const nextSec = Math.max(MIN_RECOVERY_SECONDS, rec.durationValue - RECOVERY_TIME_CUT_SECONDS);
+        if (nextSec < rec.durationValue) {
+          emit("reduce-recovery", "reduce_recovery", "Tighter recovery between reps", (t) => {
+            t.recovery = { ...t.recovery!, durationValue: nextSec };
+          });
+        }
+      } else {
+        const recMeters = segmentMeters(rec);
+        if (recMeters !== null && recMeters > MIN_RECOVERY_METERS) {
+          const nextMeters = Math.max(MIN_RECOVERY_METERS, recMeters - RECOVERY_DISTANCE_CUT_METERS);
+          emit("reduce-recovery", "reduce_recovery", "Tighter recovery between reps", (t) => {
+            t.recovery = {
+              ...t.recovery!,
+              durationType: "distance_meters",
+              durationValue: nextMeters,
+            };
+          });
+        }
+      }
+    }
+  } else if (target.durationType !== "time_seconds") {
+    // Continuous main block: extend total volume by a clean increment,
+    // hard-capped at +10% of TOTAL workout volume. Offer up to two sizes
+    // (both within the cap) so the coach picks the step, not us.
+    const baseTotal = estimatedWorkoutMiles(steps, athletePaces);
+    if (baseTotal > 0) {
+      const increments =
+        target.durationType === "distance_miles" || target.durationType === "distance_km"
+          ? [0.5, 1]
+          : [400, 800]; // meters
+      const unitLabel =
+        target.durationType === "distance_miles" ? "mi"
+        : target.durationType === "distance_km" ? "km"
+        : "m";
+      for (const inc of increments) {
+        const next = cloneSteps(steps);
+        next[targetIdx].durationValue = target.durationValue + inc;
+        const newTotal = estimatedWorkoutMiles(next, athletePaces);
+        // Epsilon absorbs float noise at exactly the cap boundary.
+        if (newTotal <= baseTotal * MAX_PROGRESSION_VOLUME_RATIO + 1e-9) {
+          out.push({
+            id: `extend-volume-${inc}${unitLabel}`,
+            kind: "extend_volume",
+            label: `A little more volume — +${inc} ${unitLabel} at the same effort`,
+            detail: describeWorkoutLine(next, athletePaces),
+            steps: next,
+          });
+        }
+      }
+    }
+  }
+
+  return out.slice(0, 4);
 }
 
 // Parse a coach-entered pace string like "5:45" or "5:45/mi" into seconds/mile.

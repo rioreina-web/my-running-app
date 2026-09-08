@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Long Run · Scrollable Trace — Post Run Drip</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@500;600;700&family=PT+Serif:ital,wght@0,400;1,400;0,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F5F3F0; --paper-elevated:#FAFAF8; --card:#FFFFFF; --paper-deep:#ECE8E2;
+    --rule:#E6E1DB; --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+    --coral:#D4592A; --coral-wash:rgba(212,89,42,0.10);
+    --hr:#D4592A;            /* coral — heart rate (matches the app) */
+    --pace:#12224E;          /* navy  — pace (blue = pace) */
+    --font-display:"Crimson Pro",Georgia,serif;
+    --font-body:"PT Serif",Georgia,serif;
+    --font-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    background:#D8D4CE; color:var(--ink);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    display:flex; flex-wrap:wrap; gap:22px; justify-content:center; padding:26px 12px; min-height:100vh;
+  }
+  .phone{width:390px; background:var(--paper); border-radius:34px; overflow:hidden; box-shadow:0 14px 44px rgba(0,0,0,0.24);}
+  .statusbar{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 22px 4px;font-family:var(--font-mono);font-size:12px;color:var(--ink);font-weight:600;}
+  .body{padding:8px 18px 30px;}
+
+  .rail{display:flex;justify-content:space-between;font-family:var(--font-mono);
+    font-size:10.5px;letter-spacing:.16em;color:var(--ink-3);text-transform:uppercase;
+    padding-bottom:12px;border-bottom:1px solid var(--rule);}
+  .eyebrow{font-family:var(--font-mono);font-size:11px;font-weight:500;
+    letter-spacing:.14em;color:var(--ink-2);text-transform:uppercase;}
+  .eyebrow.coral{color:var(--coral);}
+  h1.display{font-family:var(--font-display);font-weight:700;font-size:33px;
+    letter-spacing:-0.01em;line-height:1.04;margin-top:8px;}
+  .subline{font-family:var(--font-body);font-style:italic;font-size:13px;color:var(--ink-2);margin-top:3px;}
+
+  .stats{display:flex;margin:16px 0 6px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);}
+  .stat{flex:1;padding:11px 4px;text-align:center;position:relative;}
+  .stat + .stat::before{content:"";position:absolute;left:0;top:12px;bottom:12px;width:1px;background:var(--rule);}
+  .stat .lab{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;color:var(--ink-3);text-transform:uppercase;}
+  .stat .val{font-family:var(--font-mono);font-size:16px;font-weight:600;margin-top:3px;color:var(--ink);}
+  .stat .val.coral{color:var(--coral);}
+  .stat .val .u{font-size:9px;color:var(--ink-3);font-weight:500;}
+  .stat .sub{font-family:var(--font-mono);font-size:8.5px;color:var(--ink-3);margin-top:2px;letter-spacing:.04em;}
+  .pausednote{font-family:var(--font-mono);font-size:10px;color:var(--ink-2);letter-spacing:.03em;
+    margin:2px 0 4px;display:flex;align-items:center;gap:6px;}
+  .pausednote b{color:var(--coral);font-weight:600;}
+
+  .sechead{display:flex;justify-content:space-between;align-items:baseline;margin:22px 0 6px;}
+  .sechead .t{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;color:var(--ink-2);text-transform:uppercase;}
+  .sechead .r{font-family:var(--font-mono);font-size:10px;letter-spacing:.06em;color:var(--coral);text-transform:uppercase;}
+
+  /* fixed summary row */
+  .summary{display:flex;gap:20px;font-family:var(--font-mono);margin:2px 2px 8px;}
+  .summary .grp{display:flex;align-items:baseline;gap:6px;}
+  .summary .sw{width:10px;height:10px;border-radius:3px;transform:translateY(1px);}
+  .summary .big{font-family:var(--font-display);font-size:22px;font-weight:600;}
+  .summary .cap{font-size:9px;color:var(--ink-3);letter-spacing:.05em;text-transform:uppercase;}
+
+  /* BEFORE crammed strip */
+  .before{background:var(--paper-deep);border:1px dashed #CFC8BF;border-radius:12px;padding:9px 11px;margin:6px 0 14px;}
+  .before .lbl{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.06em;color:var(--ink-3);
+    text-transform:uppercase;display:flex;justify-content:space-between;margin-bottom:5px;}
+  .before .lbl b{color:#B0392A;font-weight:600;}
+
+  /* scrollable chart */
+  .chartcard{position:relative;background:var(--card);border:1px solid var(--rule);border-radius:14px;overflow:hidden;}
+  .plotrow{position:relative;height:432px;}
+  .gutter{position:absolute;left:0;top:0;width:42px;height:432px;background:var(--card);z-index:3;
+    border-right:1px solid var(--rule);}
+  .gutter .tag{position:absolute;left:6px;font-family:var(--font-mono);font-size:9px;font-weight:600;
+    letter-spacing:.08em;text-transform:uppercase;}
+  .gutter .tk{position:absolute;right:5px;font-family:var(--font-mono);font-size:9px;color:var(--ink-3);transform:translateY(-50%);}
+  .scroller{position:absolute;left:42px;right:0;top:0;height:432px;overflow-x:auto;overflow-y:hidden;}
+  .scroller svg{display:block;}
+  .scroller::-webkit-scrollbar{height:7px;}
+  .scroller::-webkit-scrollbar-thumb{background:#CFC8BF;border-radius:4px;}
+  .scroller::-webkit-scrollbar-track{background:transparent;}
+  .fade{position:absolute;right:0;top:0;width:26px;height:420px;pointer-events:none;z-index:4;
+    background:linear-gradient(90deg,rgba(255,255,255,0),var(--card));}
+  .swipe{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;color:var(--coral);
+    text-transform:uppercase;text-align:right;margin:6px 4px 0;}
+
+  .caption{font-family:var(--font-body);font-style:italic;font-size:13.5px;line-height:1.5;color:var(--ink);margin-top:6px;}
+  .caption .c{color:var(--coral);font-style:normal;}
+  .flag{display:inline-block;font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;
+    color:var(--coral);border:1px solid var(--coral);border-radius:999px;padding:2px 8px;text-transform:uppercase;margin-top:10px;}
+
+  .note{max-width:390px;font-family:var(--font-body);font-size:13px;color:#3a3630;line-height:1.55;}
+  .note h2{font-family:var(--font-display);font-size:19px;font-weight:700;margin-bottom:6px;}
+  .note .k{font-family:var(--font-mono);font-size:11px;color:var(--ink-2);}
+  .note ul{margin:8px 0 0 2px;list-style:none;}
+  .note li{padding-left:16px;position:relative;margin-bottom:7px;}
+  .note li::before{content:"";position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%;background:var(--coral);}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="statusbar"><span>9:41</span><span>Long run · Sun</span></div>
+  <div class="body">
+    <div class="rail"><span>Workout · Long Run</span><span>Fig. 23</span></div>
+
+    <div style="margin-top:14px;">
+      <div class="eyebrow coral">Sunday · Long Run</div>
+      <h1 class="display">24.0 km continuous</h1>
+      <div class="subline">One effort, start to finish — two brief stops along the way.</div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="lab">Avg pace</div><div class="val coral">7:16<span class="u"> /mi</span></div><div class="sub">moving</div></div>
+      <div class="stat"><div class="lab">Distance</div><div class="val">14.9<span class="u"> mi</span></div><div class="sub">24.0 km</div></div>
+      <div class="stat"><div class="lab">Avg HR</div><div class="val">152<span class="u"> bpm</span></div><div class="sub">Z2–Z3</div></div>
+      <div class="stat"><div class="lab">Time</div><div class="val">1:48:15</div><div class="sub">moving</div></div>
+    </div>
+    <div class="pausednote">Elapsed 1:56:28 &nbsp;·&nbsp; <b>paused 8:13</b> across 2 stops</div>
+
+    <div class="sechead"><span class="t">The Effort</span><span class="r">scroll →</span></div>
+
+    <div class="summary">
+      <div class="grp"><span class="sw" style="background:var(--hr)"></span><span class="big" style="color:var(--hr)">152</span><span class="cap">bpm avg · 170 max</span></div>
+      <div class="grp"><span class="sw" style="background:var(--pace)"></span><span class="big" style="color:var(--pace)">7:16</span><span class="cap">/mi avg · 6:54 best</span></div>
+    </div>
+
+    <!-- BEFORE: the crammed version -->
+    <div class="before">
+      <div class="lbl"><span>Now — 24 km jammed into one width</span><b>unreadable</b></div>
+      <svg id="beforeSvg" width="100%" viewBox="0 0 336 54" preserveAspectRatio="none"></svg>
+    </div>
+
+    <!-- AFTER: wide, scrollable -->
+    <div class="chartcard">
+      <div class="plotrow">
+        <div class="gutter" id="gutter"></div>
+        <div class="scroller" id="scroller"></div>
+        <div class="fade"></div>
+      </div>
+    </div>
+    <div class="swipe">swipe for all 24 km →</div>
+
+    <div class="sechead"><span class="t">The Read</span></div>
+    <div class="caption">
+      Run in 75&deg;F with a <span class="c">73&deg; dew point</span> — sticky air for a long effort.
+      You settled after the early regroup and negative-split it, drifting from 7:50s down to 7:00s
+      while heart rate climbed 133 &rarr; 170. The two stops (7:24 regroup, 0:49 water) sit
+      <em>outside</em> your moving pace now.
+    </div>
+    <span class="flag">Continuous run · no rep structure</span>
+  </div>
+</div>
+
+<!-- explainer -->
+<div class="note">
+  <h2>What changed</h2>
+  <div class="k">long-run-chart-redesign · v2 · 2026-07-12</div>
+  <ul>
+    <li><b>The chart scrolls right.</b> Every km gets real width (~42px), so 24 km lays out ~1000px wide and you swipe through it — instead of the whole run crushed into one screen. Roughly 6–7 km on screen at a time. HR, pace, and the km-split bars scroll together on one shared distance axis; the y-axis stays pinned on the left.</li>
+    <li><b>No more fake reps.</b> Read as one continuous 24 km effort. The 7:24 regroup and 0:49 water break are marked as <b>pauses</b> on the trace, not rep boundaries — the "3 REPS", R1·R2·R3 bands, and per-rep HR recovery are gone.</li>
+    <li><b>Moving vs elapsed, both shown.</b> Headline is moving (7:16/mi · 1:48:15); elapsed (1:56:28) and paused (8:13) noted right below.</li>
+    <li><b>Split bars ride along.</b> Bottom lane = one bar per km, faster = taller, aligned under the trace so you can tie a fast km to its HR.</li>
+  </ul>
+</div>
+
+<script>
+(function(){
+  const KM=24.0, STEP=0.1, N=Math.round(KM/STEP)+1;
+  const pauses=[{km:2.0,label:"PAUSED 7:24"},{km:16.0,label:"0:49"}];
+
+  function noise(x,L){let v=0;for(const [a,f,p] of L)v+=a*Math.sin(x*f+p);return v;}
+  function segPace(km){if(km<2)return 472;if(km<16)return 436;return 421;}
+  function segHR(km){if(km<2)return 118+(133-118)*(km/2);if(km<16)return 143+(163-143)*((km-2)/14);return 163+(171-163)*((km-16)/8);}
+  function hill(km){return 22*Math.exp(-Math.pow((km-9)/1.4,2))+16*Math.exp(-Math.pow((km-19)/1.2,2));}
+  const dist=[],paceRaw=[],hrRaw=[];
+  for(let i=0;i<N;i++){const km=i*STEP;dist.push(km);
+    paceRaw.push(segPace(km)+hill(km)+noise(km,[[13,2.1,.3],[8,.7,1.1],[5,5.3,2.0]]));
+    hrRaw.push(segHR(km)+noise(km,[[2.6,1.7,.5],[1.5,.5,2.0]])+0.5*Math.sin(km*6));}
+  function smooth(a,w){const o=[],h=w>>1;for(let i=0;i<a.length;i++){let s=0,c=0;for(let j=i-h;j<=i+h;j++)if(j>=0&&j<a.length){s+=a[j];c++;}o.push(s/c);}return o;}
+  const paceS=smooth(paceRaw,11), hrS=smooth(hrRaw,9);
+  function paceFmt(sec){const m=Math.floor(sec/60),s=Math.round(sec%60);return m+":"+String(s).padStart(2,"0");}
+
+  const NS="http://www.w3.org/2000/svg";
+  function el(t,a){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+  function dstr(pts){return pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");}
+  function lerp(c1,c2,t){const a=[1,3,5].map(i=>parseInt(c1.slice(i,i+2),16)),b=[1,3,5].map(i=>parseInt(c2.slice(i,i+2),16));return"#"+a.map((v,i)=>Math.round(v+(b[i]-v)*t).toString(16).padStart(2,"0")).join("");}
+
+  // ---- BEFORE crammed ----
+  (function(){const svg=document.getElementById("beforeSvg"),W=336,H=54,pad=3;
+    [[0,2],[2.4,16],[16.4,24]].forEach(([a,b])=>svg.appendChild(el("rect",{x:pad+(a/KM)*(W-2*pad),y:0,width:((b-a)/KM)*(W-2*pad),height:H,fill:"#D4592A","fill-opacity":0.06})));
+    function raw(arr,lo,hi,c){const pts=arr.map((v,i)=>{const x=pad+(i/(N-1))*(W-2*pad);const f=Math.max(0,Math.min(1,(v-lo)/(hi-lo)));return[x,H-3-f*(H-6)];});svg.appendChild(el("path",{d:dstr(pts),fill:"none",stroke:c,"stroke-width":0.6,"stroke-opacity":0.7}));}
+    raw(hrRaw,112,175,"#D4592A"); raw(paceRaw.map(p=>520-p),520-490,520-405,"#12224E");})();
+
+  // ---- AFTER: wide scrollable multi-lane ----
+  const perKm=42, padL=10, padR=22, H=432;
+  const innerW=padL+perKm*KM+padR;
+  const sec={
+    hr:  {top:14, h:126, lo:112, hi:178, invert:false, color:"#D4592A", area:true,
+          ticks:[130,150,170], fmt:v=>String(v), tag:"HR", tagColor:"#D4592A",
+          zones:[{lo:112,hi:138,c:"#8FA88C"},{lo:138,hi:158,c:"#C9B25E"},{lo:158,hi:178,c:"#D4592A"}]},
+    pace:{top:168,h:126, lo:405, hi:494, invert:true, color:"#12224E", area:false,
+          ticks:[420,450,480], fmt:paceFmt, tag:"PACE", tagColor:"#12224E"},
+    spl: {top:318,h:86, tag:"KM", tagColor:"#6B6560"}
+  };
+  const xKm=km=>padL+perKm*km;
+  function yIn(s,v){let f=(v-s.lo)/(s.hi-s.lo);f=Math.max(0,Math.min(1,f));return s.top+(s.invert?f:1-f)*s.h;}
+
+  const svg=el("svg",{width:innerW,height:H,viewBox:`0 0 ${innerW} ${H}`});
+
+  // vertical km gridlines through hr+pace+spl, labels at bottom
+  const gridTop=sec.hr.top-4, gridBot=sec.spl.top+sec.spl.h;
+  for(let km=0;km<=KM;km++){
+    const x=xKm(km), major=(km%4===0);
+    svg.appendChild(el("line",{x1:x,y1:gridTop,x2:x,y2:gridBot,stroke:major?"#E4DED6":"#F1ECE5","stroke-width":major?1:0.8}));
+    if(km%2===0){const t=el("text",{x:x,y:H-8,"text-anchor":"middle","font-family":"var(--font-mono)","font-size":10,fill:"#9B9590"});t.textContent=km;svg.appendChild(t);}
+  }
+  const kmU=el("text",{x:innerW-6,y:H-8,"text-anchor":"end","font-family":"var(--font-mono)","font-size":9,fill:"#BDB6AD"});kmU.textContent="KM";svg.appendChild(kmU);
+
+  // horizontal tick gridlines inside hr + pace
+  [sec.hr,sec.pace].forEach(s=>s.ticks.forEach(v=>{const y=yIn(s,v);svg.appendChild(el("line",{x1:padL,y1:y,x2:innerW-padR,y2:y,stroke:"#F2EEE8","stroke-width":1}));}));
+
+  // HR zone bands
+  sec.hr.zones.forEach(z=>{const yhi=yIn(sec.hr,z.hi),ylo=yIn(sec.hr,z.lo);svg.appendChild(el("rect",{x:padL,y:Math.min(yhi,ylo),width:innerW-padL-padR,height:Math.abs(ylo-yhi),fill:z.c,"fill-opacity":0.08}));});
+
+  // pause markers across hr+pace
+  pauses.forEach(p=>{const x=xKm(p.km);
+    svg.appendChild(el("line",{x1:x,y1:sec.hr.top-4,x2:x,y2:sec.pace.top+sec.pace.h,stroke:"#C9A96A","stroke-width":1.3,"stroke-dasharray":"3 3"}));
+    const t=el("text",{x:x+4,y:sec.hr.top+8,"font-family":"var(--font-mono)","font-size":8.5,fill:"#A9852F"});t.textContent=p.label;svg.appendChild(t);});
+
+  // traces
+  function trace(s,arr){const pts=arr.map((v,i)=>[xKm(dist[i]),yIn(s,v)]);
+    if(s.area)svg.appendChild(el("path",{d:dstr(pts)+` L ${xKm(KM)} ${s.top+s.h} L ${padL} ${s.top+s.h} Z`,fill:s.color,"fill-opacity":0.06}));
+    svg.appendChild(el("path",{d:dstr(pts),fill:"none",stroke:s.color,"stroke-width":2.4,"stroke-linejoin":"round","stroke-linecap":"round"}));}
+  trace(sec.hr,hrS); trace(sec.pace,paceS);
+
+  // splits bars (per km, faster=taller, blue depth)
+  const per=[];for(let k=0;k<KM;k++){const seg=paceS.filter((v,i)=>dist[i]>=k&&dist[i]<k+1);per.push(seg.reduce((a,b)=>a+b,0)/seg.length);}
+  const plo=Math.min(...per),phi=Math.max(...per);
+  per.forEach((p,k)=>{const fast=(phi-p)/(phi-plo);const bh=10+fast*(sec.spl.h-14);const col=lerp("#AEC6DE","#12224E",fast);
+    svg.appendChild(el("rect",{x:xKm(k)+2,y:sec.spl.top+sec.spl.h-bh,width:perKm-4,height:bh,rx:2,fill:col}));});
+
+  document.getElementById("scroller").appendChild(svg);
+
+  // ---- fixed gutter (y-axis) ----
+  const g=document.getElementById("gutter");
+  function tag(s){const d=document.createElement("div");d.className="tag";d.textContent=s.tag;d.style.top=(s.top-11)+"px";d.style.color=s.tagColor;g.appendChild(d);}
+  [sec.hr,sec.pace,sec.spl].forEach(tag);
+  [sec.hr,sec.pace].forEach(s=>s.ticks.forEach(v=>{const d=document.createElement("div");d.className="tk";d.textContent=s.fmt(v);d.style.top=yIn(s,v)+"px";g.appendChild(d);}));
+})();
+</script>
+</body>
+</html>

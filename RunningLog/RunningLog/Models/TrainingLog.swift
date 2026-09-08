@@ -19,6 +19,59 @@ struct PaceSegment: Codable, Identifiable {
         case pacePerMile = "pace_per_mile"
         case avgHeartRate = "avg_heart_rate"
     }
+
+    init(effort: String, distanceMiles: Double, durationSeconds: Double,
+         pacePerMile: String, avgHeartRate: Int?) {
+        self.effort = effort
+        self.distanceMiles = distanceMiles
+        self.durationSeconds = durationSeconds
+        self.pacePerMile = pacePerMile
+        self.avgHeartRate = avgHeartRate
+    }
+
+    /// Decodes leniently. Rep-shaped segments written by the structure parser
+    /// carry only `{effort, pace_per_mile, distance_miles}` — no duration. A
+    /// strict decode there throws, and because the journal decodes all 50 rows
+    /// as one array, a single such segment empties the entire feed. Duration is
+    /// recoverable from pace × distance, so recover it instead of failing.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        effort = (try? c.decode(String.self, forKey: .effort)) ?? "easy"
+        distanceMiles = (try? c.decode(Double.self, forKey: .distanceMiles)) ?? 0
+        pacePerMile = (try? c.decode(String.self, forKey: .pacePerMile)) ?? ""
+        avgHeartRate = try? c.decodeIfPresent(Int.self, forKey: .avgHeartRate)
+
+        if let seconds = try? c.decode(Double.self, forKey: .durationSeconds) {
+            durationSeconds = seconds
+        } else if let paceSec = PaceSegment.paceSeconds(from: pacePerMile), distanceMiles > 0 {
+            durationSeconds = paceSec * distanceMiles
+        } else {
+            durationSeconds = 0
+        }
+    }
+
+    /// "M:SS" (or "H:MM:SS") per-mile pace → seconds. nil if unparseable.
+    static func paceSeconds(from pace: String) -> Double? {
+        let parts = pace.split(separator: ":").compactMap { Double($0) }
+        guard parts.count >= 2 else { return nil }
+        return parts.count == 3
+            ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+            : parts[0] * 60 + parts[1]
+    }
+}
+
+// MARK: - Lossy row decoding
+
+/// Wraps a row so a decode failure yields `nil` instead of throwing. Decoding a
+/// list as `[TrainingLog]` is all-or-nothing: one malformed row anywhere in the
+/// page throws and the caller sees an empty feed plus an error. Decode as
+/// `[Failable<TrainingLog>]` and `compactMap` so a bad row costs one row.
+struct Failable<T: Decodable>: Decodable {
+    let value: T?
+
+    init(from decoder: Decoder) throws {
+        value = try? T(from: decoder)
+    }
 }
 
 // MARK: - TrainingLog
@@ -45,6 +98,28 @@ struct TrainingLog: Codable, Identifiable {
     let vitalWorkoutId: String?
     let paceSegments: [PaceSegment]?
     let parsedStructure: ParsedStructure?
+    /// Optional athlete-authored entry title. Shown as the journal entry
+    /// header when set; the entry falls back to the day-of-week/date when
+    /// this is nil or empty. Defaulted so existing memberwise-init call
+    /// sites (and tests) keep compiling without passing it.
+    var title: String? = nil
+
+    /// How hard the session felt, 1–10.
+    ///
+    /// Proposed by `extract-rpe` reading the voice memo, and correctable on the
+    /// workout-detail slider — `rpeSource` records which of the two it was.
+    /// Nil is meaningful and must render as "not set": the extractor is
+    /// instructed to return null rather than guess when the memo says nothing
+    /// about effort, so a nil here is an honest absence, not a missing read.
+    /// Defaulted for the same reason as `title` — existing memberwise-init call
+    /// sites (and tests) keep compiling without passing it.
+    var feltRpe: Int? = nil
+
+    /// Provenance of `feltRpe`: `"llm"` (read out of the memo) or `"athlete"`
+    /// (set on the slider). Once this is `"athlete"` the number is frozen
+    /// against re-extraction — the guard lives in `supabase/functions/extract-rpe`,
+    /// which is otherwise idempotent and would overwrite it on the next dispatch.
+    var rpeSource: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -68,7 +143,45 @@ struct TrainingLog: Codable, Identifiable {
         case vitalWorkoutId = "vital_workout_id"
         case paceSegments = "pace_segments"
         case parsedStructure = "parsed_structure"
+        case title
+        case feltRpe = "felt_rpe"
+        case rpeSource = "rpe_source"
     }
+
+    /// Every column this struct decodes — and nothing else. ALWAYS pass this
+    /// to `.select(...)` when fetching `training_logs`; never use a bare
+    /// `.select()`. A bare select is `SELECT *`, which drags the
+    /// `external_streams` JSONB blob (per-second GPS/HR/cadence streams, up
+    /// to ~2 MB per run) across the wire on every fetch — the app never
+    /// decodes it, so it's pure wasted transfer and was the single largest
+    /// source of screen-load lag (see PERF-AUDIT-2026-08-10.md, finding #1).
+    static let columns = """
+        id, created_at, audio_url, notes, cleaned_notes, mood, workout_date, \
+        workout_distance_miles, workout_duration_minutes, processing_status, \
+        processing_error, processing_attempts, transcript_url, coach_insight, \
+        workout_notes, workout_pace_per_mile, workout_type, source, \
+        vital_workout_id, pace_segments, parsed_structure, title, felt_rpe, \
+        rpe_source
+        """
+
+    /// Trimmed title if the athlete set a non-empty one, else nil. Views use
+    /// this to decide whether to show a custom header or fall back to the date.
+    var displayTitle: String? {
+        guard let t = title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// The workout itself, as a concise journal title, when the athlete hasn't
+    /// set their own. Uses the workout-type label ("Intervals", "Easy", "Long
+    /// Run") — clean and reliable, and editable if they want something sharper
+    /// ("8×200m"). nil for a row with no workout type (a pure voice memo / rest
+    /// day), where the header falls back to the day-of-week.
+    var workoutTitle: String? { workoutTypeLabel }
+
+    /// The header shown for this entry: the athlete's own title, else the
+    /// workout, else the day-of-week (resolved by the view).
+    var resolvedTitle: String? { displayTitle ?? workoutTitle }
 
     // MARK: - Source
 
@@ -82,12 +195,134 @@ struct TrainingLog: Codable, Identifiable {
         processingStatus == "pending" || processingStatus == "processing"
     }
 
+    /// Two-stage reveal: the transcript is on the row (`cleanedNotes` holds the
+    /// athlete's raw words) but the AI analysis (mood, niggles, structure) is
+    /// still running. The journal renders these as normal entries — the words
+    /// appear ~6-9s in; the analysis fills in when the status flips to
+    /// `completed`.
+    var isTranscribed: Bool {
+        processingStatus == "transcribed"
+    }
+
+    /// Still somewhere in the pipeline (queued, processing, or transcribed-but-
+    /// unanalyzed). Used by stale-retry sweeps — NOT by row rendering, which
+    /// deliberately treats `transcribed` as displayable.
+    var isInFlight: Bool {
+        isPending || isTranscribed
+    }
+
     var isFailed: Bool {
         processingStatus == "failed"
     }
 
     var isCompleted: Bool {
         processingStatus == "completed"
+    }
+
+    // MARK: - Failure Classification
+
+    /// Why a voice memo failed to process. Derived from `processingError`
+    /// text so we can show the user the right recovery copy without a
+    /// schema change. Network failures mean "we couldn't reach the
+    /// server" (recording is safe, retry when back online); transcription
+    /// failures mean the audio uploaded but the AI couldn't process it.
+    enum FailureKind {
+        case network
+        case transcription
+        /// Our AI provider is unfunded / over quota. Nothing is wrong with the
+        /// memo and nothing the athlete does helps — the queue retries on its
+        /// own until the provider is back. Distinct from `.network`, which is
+        /// about *their* connection and is worth a manual retry.
+        case serviceOutage
+        case unknown
+    }
+
+    /// Written by process-training-memo when the model provider is exhausted.
+    /// Must stay in sync with `PROVIDER_EXHAUSTED_MARKER` in
+    /// `supabase/functions/_shared/provider-errors.ts`.
+    private static let providerOutageMarker = "provider_unavailable"
+
+    var failureKind: FailureKind {
+        guard isFailed else { return .unknown }
+        let error = (processingError ?? "").lowercased()
+
+        // Checked FIRST and on an exact marker, not prose: the provider's own
+        // error text is long, changes without notice, and trips several of the
+        // heuristics below (it names a URL, carries a status code). The marker
+        // is ours, so this branch stays correct when their wording moves.
+        if error.contains(Self.providerOutageMarker) {
+            return .serviceOutage
+        }
+
+        let networkSignals = [
+            "network", "timeout", "timed out", "connection", "offline",
+            "unreachable", "could not connect", "failed to fetch",
+            "download", "dns", "socket", "econn", "502", "503", "504",
+            "gateway"
+        ]
+        if networkSignals.contains(where: { error.contains($0) }) {
+            return .network
+        }
+
+        let transcriptionSignals = [
+            "transcri", "audio", "gemini", "parse", "json", "mood",
+            "missing", "empty", "analysis", "response", "no speech",
+            "inaudible", "format"
+        ]
+        if transcriptionSignals.contains(where: { error.contains($0) }) {
+            return .transcription
+        }
+
+        return .unknown
+    }
+
+    /// Short, human headline for the failed card. No jargon, no error codes.
+    var failureHeadline: String {
+        switch failureKind {
+        case .network:
+            return "Couldn't reach the server"
+        case .transcription:
+            return "Couldn't process this memo"
+        case .serviceOutage:
+            return "Analysis is running behind"
+        case .unknown:
+            return "Processing failed"
+        }
+    }
+
+    /// One reassuring line: the recording is safe, here's what to do.
+    var failureDetail: String {
+        switch failureKind {
+        case .network:
+            return "Your recording is saved. Check your connection, then tap to retry."
+        case .transcription:
+            return "The audio uploaded but we couldn't transcribe it. Tap to try again."
+        case .serviceOutage:
+            return "Your recording is safe. We'll finish this on our end — nothing for you to do."
+        case .unknown:
+            return "Your recording is saved. Tap to retry."
+        }
+    }
+
+    /// Verb on the retry control, matched to what actually failed.
+    var retryActionLabel: String {
+        switch failureKind {
+        case .network:
+            return "Retry upload"
+        case .transcription, .unknown:
+            return "Retry transcription"
+        case .serviceOutage:
+            return "Waiting on analysis"
+        }
+    }
+
+    /// Whether to offer a manual retry at all. False during a provider outage:
+    /// the queue is already retrying on a timer, and a tap the athlete makes
+    /// cannot succeed any sooner. Offering one there is the bug this fixes —
+    /// a memo sat dead for seven hours behind a "Tap to try again" that was
+    /// never going to work until billing was topped up (2026-08-13).
+    var offersManualRetry: Bool {
+        failureKind != .serviceOutage
     }
 
     // MARK: - Workout Info
@@ -130,18 +365,29 @@ struct TrainingLog: Codable, Identifiable {
         return String(format: "%d:%02d", paceMinutes, paceSeconds)
     }
 
+    /// Delegates to `WorkoutLabel` (2026-08-07). This was the fourth switch
+    /// over `workout_type` in the app — `WorkoutLabel.swift` was written to be
+    /// the last one and this copy survived it, missing the whole race-pace half
+    /// of the taxonomy (MP / HMP / LT / 10K / 5K / 3K / Mile all fell through
+    /// to `nil`, so a run typed with any of them showed no title at all).
+    ///
+    /// The `nil` for a `nil`/blank type is preserved deliberately —
+    /// `resolvedTitle` falls back to the weekday on nil, and
+    /// `WorkoutLabel.display` returns "Run" rather than nil, which would title
+    /// every untyped entry "Run".
     var workoutTypeLabel: String? {
-        guard let type = workoutType else { return nil }
-        switch type {
-        case "easy": return "Easy"
-        case "tempo": return "Tempo"
-        case "interval": return "Intervals"
-        case "long_run": return "Long Run"
-        case "recovery": return "Recovery"
-        case "race": return "Race"
-        case "other": return "Workout"
-        default: return nil
-        }
+        guard let type = workoutType?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !type.isEmpty
+        else { return nil }
+        return WorkoutLabel.display(type)
+    }
+
+    // MARK: - Manual entry
+
+    /// True for workouts the athlete typed in by hand (vs. HealthKit/Strava/
+    /// voice). Only manual rows are editable in ManualWorkoutView.
+    var isManual: Bool {
+        source == "manual"
     }
 }
 

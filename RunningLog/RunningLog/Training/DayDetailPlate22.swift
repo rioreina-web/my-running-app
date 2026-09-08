@@ -84,7 +84,10 @@ struct DD22Header: View {
         let f = DateFormatter()
         f.dateFormat = "EEEE"
         let weekday = f.string(from: workout.date).uppercased()
-        return "\(weekday)  ·  PLAN"
+        // PM sessions (the second run of a double) carry an explicit tag so a
+        // doubled day reads unambiguously; a lone morning run needs none.
+        let sessionTag = workout.session > 1 ? "  ·  PM" : ""
+        return "\(weekday)  ·  PLAN\(sessionTag)"
     }
 
     private var dateLine: String {
@@ -228,12 +231,21 @@ struct DD22CoachNote: View {
 struct DD22ActionStrip: View {
     let workout: ScheduledWorkout
     let isExporting: Bool
+    /// True when this is a coach-issued workout (coach_locked source or a
+    /// coach-templated plan). Flips the builder link's label from
+    /// "Edit workout" to "Customize" — same builder, honest label.
+    var isCoachIssued: Bool = false
     let onMarkComplete: () -> Void
     let onSkip: () -> Void
     let onSwap: () -> Void
     let onRestructure: () -> Void
     let onReschedule: () -> Void
     let onExport: () -> Void
+    /// Opens WorkoutBuilderSheet (structured step editor). Optional so
+    /// legacy call sites compile unchanged.
+    var onEditWorkout: (() -> Void)? = nil
+    /// Opens the duplicate-to-day picker.
+    var onDuplicate: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -267,7 +279,23 @@ struct DD22ActionStrip: View {
                     .foregroundStyle(Color.drip.positive)
             }
 
-            // Secondary actions — small monospaced text links.
+            // Secondary actions — small monospaced text links. Two rows:
+            // shape-the-workout links first, day-level links second.
+            if onEditWorkout != nil || onDuplicate != nil {
+                HStack(spacing: 0) {
+                    if let onEditWorkout {
+                        actionLink(isCoachIssued ? "Customize" : "Edit workout", action: onEditWorkout)
+                    }
+                    if onEditWorkout != nil && onDuplicate != nil {
+                        middot()
+                    }
+                    if let onDuplicate {
+                        actionLink("Duplicate to another day", action: onDuplicate)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+
             HStack(spacing: 0) {
                 actionLink("Skip", action: onSkip)
                 middot()

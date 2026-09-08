@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it's landing · mood against training — Post Run Drip prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F5F3F0; --paper-deep:#E8E4DF; --rule:#E8E4E0;
+  --ink:#1A1815; --ink-2:#6B6560; --ink-3:#9B9590;
+  --coral:#D4592A;
+  --energized:#2D8A4E; --positive:#4A9E6B; --neutral:#9B9590;
+  --tired:#C4873A; --struggling:#C45A3A; --injured:#B83A4A;
+  --graphite:#8A8580; --graphite-deep:#5F5A55;
+  --font-display:"Crimson Pro",Georgia,serif;
+  --font-body:"PT Serif",Georgia,serif;
+  --font-mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:#DEDAD4;color:var(--ink);font-family:var(--font-body);
+  -webkit-font-smoothing:antialiased;padding:34px 20px 48px}
+
+.page{max-width:900px;margin:0 auto}
+.page h1{font-family:var(--font-display);font-weight:700;font-size:29px;margin:0 0 9px;letter-spacing:-.01em}
+.page .lede{margin:0 0 6px;font-size:14.5px;line-height:1.6;color:#3E3A36;max-width:74ch}
+.page .lede em{font-style:italic;color:var(--ink)}
+.tagline{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);margin:0 0 20px}
+
+.rail{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start;margin-top:26px}
+.col{width:398px}
+.col-hd{margin-bottom:11px;padding:0 2px}
+.col-hd .tag{font-family:var(--font-mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-2);display:block;margin-bottom:5px}
+.col-hd .tag.mock{color:var(--coral)}
+.col-hd h2{font-family:var(--font-display);font-weight:700;font-size:19px;margin:0 0 5px}
+.col-hd p{margin:0;font-size:12.5px;line-height:1.5;color:#4A4540}
+
+/* ---- the sheet ------------------------------------------------------- */
+.sheet{width:398px;background:var(--paper);border-radius:20px;padding:22px 22px 20px;
+  box-shadow:0 6px 22px rgba(0,0,0,.13);border:1px solid rgba(0,0,0,.05)}
+
+.eyebrow{font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3)}
+.range{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px}
+.range .dates{font-family:var(--font-mono);font-size:11px;color:var(--ink-2)}
+.step{font-family:var(--font-mono);font-size:13px;color:var(--ink-3);letter-spacing:.18em}
+
+/* headline */
+.head{display:flex;align-items:baseline;gap:10px;margin-bottom:7px}
+.head .n{font-family:var(--font-display);font-weight:700;font-size:52px;line-height:.9;color:var(--coral)}
+.head .of{font-family:var(--font-display);font-weight:700;font-size:20px;line-height:1.15;max-width:17ch}
+.qual{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--tired);margin-bottom:14px;line-height:1.55}
+.qual.ok{color:var(--ink-2)}
+.said{border-left:2px solid var(--rule);padding-left:12px;margin:0 0 18px;
+  font-family:var(--font-display);font-size:17px;line-height:1.42;font-weight:400}
+
+/* chart */
+.chart{border:1px solid var(--rule);border-radius:12px;padding:14px 12px 10px;background:#FBFAF8}
+.chart .hint{font-family:var(--font-mono);font-size:9px;letter-spacing:.06em;color:var(--ink-3);
+  margin:0 0 12px;line-height:1.5}
+.cols{display:flex;align-items:flex-end;gap:3px;height:112px}
+.day{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;height:100%}
+.key{height:9px;display:flex;align-items:flex-start;justify-content:center}
+.key i{display:block;width:5px;height:5px;background:var(--ink);transform:rotate(45deg)}
+.bar{background:var(--graphite);border-radius:1.5px 1.5px 0 0;min-height:1px}
+.bar.k{background:var(--graphite-deep)}
+.foot{height:9px;margin-top:1.5px;border-radius:0 0 1.5px 1.5px;background:var(--paper-deep)}
+.foot.none{background:transparent;border-bottom:1.5px dotted #CFC9C2;height:7.5px}
+.axis{display:flex;gap:3px;margin-top:7px}
+.axis span{flex:1;text-align:center;font-family:var(--font-mono);font-size:8px;color:var(--ink-3)}
+
+/* split rows */
+.splitH{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);margin:22px 0 10px}
+.row{padding:9px 0;border-top:1px solid var(--rule)}
+.row:last-child{border-bottom:1px solid var(--rule)}
+.row .top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.row .name{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.row .name b{color:var(--ink);font-weight:500}
+.cells{display:flex;gap:3px;flex-shrink:0}
+.cells i{display:block;width:15px;height:15px;border-radius:2px;background:var(--paper-deep)}
+.cells i.none{background:transparent;border:1px dashed #CFC9C2}
+.row .tail{margin:6px 0 0;font-size:13px;line-height:1.45;color:#4A4540}
+.row .tail b{font-weight:700;color:var(--ink)}
+
+/* legend + notes */
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px}
+.legend span{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:9px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.legend i{width:9px;height:9px;border-radius:2px;display:block}
+
+.notes{max-width:900px;margin:38px auto 0;background:var(--paper);border-radius:16px;padding:22px 24px;
+  box-shadow:0 4px 16px rgba(0,0,0,.08)}
+.notes h3{font-family:var(--font-display);font-size:18px;font-weight:700;margin:0 0 12px}
+.notes table{width:100%;border-collapse:collapse;font-size:13.5px}
+.notes td{padding:9px 10px 9px 0;vertical-align:top;border-top:1px solid var(--rule);line-height:1.5}
+.notes tr:first-child td{border-top:none}
+.notes td.a{width:44%;color:var(--ink-2)}
+.notes td.b{color:var(--ink)}
+.notes td.b b{font-weight:700}
+.notes p.fine{font-size:12px;color:var(--ink-2);line-height:1.55;margin:16px 0 0}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>How it&rsquo;s landing</h1>
+  <p class="lede">Mood counts feelings today &mdash; <em>2 of 14 days struggling</em>. This reads it as a <strong>response</strong> instead: how the training landed, one day later.</p>
+  <p class="tagline">Trends &middot; section replaces MOOD &middot; real data 4&ndash;17 Aug 2026</p>
+
+  <div class="rail" id="rail"></div>
+
+  <div class="notes">
+    <h3>What changed</h3>
+    <table>
+      <tr><td class="a"><em>2 of 14 days struggling or worse</em></td>
+          <td class="b"><b>How many hard days cost you the next one.</b> A fixed denominator of 14 only got worse the more you logged.</td></tr>
+      <tr><td class="a"><code>tired</code> dropped from the low count</td>
+          <td class="b"><b>Tired is scored against context.</b> After a key day it is training landing. On an easy day it is the trend you want.</td></tr>
+      <tr><td class="a">Four lanes and a chip rail</td>
+          <td class="b"><b>One lane.</b> Mood is a colour foot on the mileage bar &mdash; you can&rsquo;t read one without the other.</td></tr>
+      <tr><td class="a">A census of six labels, biggest bar <em>NO LOG&nbsp;8d</em></td>
+          <td class="b"><b>Three buckets:</b> the key day, the day after, everything else.</td></tr>
+    </table>
+    <p class="fine">Left panel is your real 4&ndash;17&nbsp;Aug export. Right panel fills in the nine unlogged days so the read can fire &mdash; those moods are invented. Bars are flat graphite: no lap breakdown is drawn, so no pace ramp is guessed.</p>
+  </div>
+</div>
+
+<script>
+const MOOD = {energized:'var(--energized)', positive:'var(--positive)', neutral:'var(--neutral)',
+              tired:'var(--tired)', struggling:'var(--struggling)', injured:'var(--injured)'};
+
+// Real day rows, 4–17 Aug 2026, from post-run-drip-training-2026-08-17.xlsx
+// (Walk sessions excluded from mileage; same-day sessions summed.)
+const DAYS = [
+  {d:'4',  mi:15.7, key:true,  label:'Intervals + easy'},
+  {d:'5',  mi:10.0, key:false, label:'Easy ×2'},
+  {d:'6',  mi:7.4,  key:true,  label:'Threshold 5×4′'},
+  {d:'7',  mi:7.0,  key:false, label:'Easy'},
+  {d:'8',  mi:18.1, key:true,  label:'Long run'},
+  {d:'9',  mi:6.0,  key:false, label:'Easy'},
+  {d:'10', mi:13.0, key:false, label:'Easy ×2'},
+  {d:'11', mi:10.2, key:true,  label:'10 × intervals'},
+  {d:'12', mi:12.0, key:false, label:'Easy ×2'},
+  {d:'13', mi:13.0, key:false, label:'Easy + recovery'},
+  {d:'14', mi:2.0,  key:false, label:'Recovery ×2'},
+  {d:'15', mi:4.0,  key:false, label:'Easy'},
+  {d:'16', mi:17.1, key:true,  label:'Long run'},
+  {d:'17', mi:6.0,  key:false, label:'Easy'},
+];
+
+// As logged — the five moods in the export all sit on key days.
+const AS_LOGGED = ['tired',null,'positive',null,'positive',null,null,'positive',null,null,null,null,'struggling',null];
+// Illustrative: the same fortnight with every day logged.
+const FILLED    = ['tired','tired','positive','neutral','positive','tired','neutral','positive','tired','neutral','positive','neutral','struggling','struggling'];
+
+const KEY_IDX   = DAYS.map((x,i)=>x.key?i:-1).filter(i=>i>=0);          // 0,2,4,7,12
+const AFTER_IDX = KEY_IDX.map(i=>i+1).filter(i=>i<DAYS.length);         // 1,3,5,8,13
+const OTHER_IDX = DAYS.map((_,i)=>i).filter(i=>!KEY_IDX.includes(i) && !AFTER_IDX.includes(i));
+
+const MAX = Math.max(...DAYS.map(d=>d.mi));
+
+function chart(moods){
+  const cols = DAYS.map((day,i)=>{
+    const m = moods[i];
+    const h = Math.round(76 * day.mi / MAX);
+    return `<div class="day" title="${day.d} Aug · ${day.mi} mi · ${day.label}${m?' · '+m:' · not logged'}">
+      <div class="key">${day.key?'<i></i>':''}</div>
+      <div class="bar ${day.key?'k':''}" style="height:${h}px"></div>
+      <div class="foot ${m?'':'none'}" ${m?`style="background:${MOOD[m]}"`:''}></div>
+    </div>`;
+  }).join('');
+  const axis = DAYS.map((d,i)=>`<span>${(i%3===0)?d.d:''}</span>`).join('');
+  return `<div class="chart">
+    <p class="hint">Bar = miles &nbsp;·&nbsp; strip underneath = how the day came back &nbsp;·&nbsp; ◆ key session &nbsp;·&nbsp; dotted = unlogged</p>
+    <div class="cols">${cols}</div><div class="axis">${axis}</div></div>`;
+}
+
+function cells(idx, moods){
+  return `<div class="cells">${idx.map(i=>{
+    const m = moods[i];
+    return m ? `<i style="background:${MOOD[m]}" title="${DAYS[i].d} Aug · ${m}"></i>`
+             : `<i class="none" title="${DAYS[i].d} Aug · not logged"></i>`;
+  }).join('')}</div>`;
+}
+
+function row(name, idx, moods, tail){
+  const logged = idx.filter(i=>moods[i]).length;
+  return `<div class="row">
+    <div class="top"><span class="name"><b>${name}</b> &middot; ${logged} of ${idx.length} logged</span>${cells(idx,moods)}</div>
+    <p class="tail">${tail}</p></div>`;
+}
+
+function sheet(o){
+  return `<div class="sheet">
+    <div class="range"><span class="dates">4 Aug – 17 Aug</span><span class="step">‹ ›</span></div>
+    <div class="head"><span class="n">${o.n}</span><span class="of">${o.of}</span></div>
+    <p class="qual ${o.ok?'ok':''}">${o.qual}</p>
+    <p class="said">${o.said}</p>
+    ${chart(o.moods)}
+    <p class="splitH">Mood, by what the day asked for</p>
+    ${o.rows}
+    <div class="legend">
+      ${['positive','neutral','tired','struggling'].map(m=>
+        `<span><i style="background:${MOOD[m]}"></i>${m}</span>`).join('')}
+      <span><i style="border:1px dashed #CFC9C2"></i>not logged</span>
+    </div>
+  </div>`;
+}
+
+const real = sheet({
+  n:'0 of 5', of:'hard days have a next-day answer',
+  qual:'Not enough to read &middot; every mood sits on the hard day itself',
+  said:'You log the session, not what it cost.',
+  moods: AS_LOGGED,
+  rows:
+    row('The key day', KEY_IDX, AS_LOGGED,
+      'Three <b>positive</b>, one <b>tired</b>, one <b>struggling</b>.') +
+    row('The day after', AFTER_IDX, AS_LOGGED,
+      'Empty. This row is the read.') +
+    row('Every other day', OTHER_IDX, AS_LOGGED,
+      'Also empty. All 14 days were run &mdash; none of these are rest.')
+});
+
+const filled = sheet({
+  n:'4 of 5', of:'hard days cost you the next one',
+  qual:'Tired or worse the morning after &middot; was 2 of 5 before', ok:true,
+  said:'Both long runs cost you the next day. So did two of the three interval sessions.',
+  moods: FILLED,
+  rows:
+    row('The key day', KEY_IDX, FILLED,
+      'Unchanged. Mood on the session is the weakest fatigue signal you have.') +
+    row('The day after', AFTER_IDX, FILLED,
+      '<b>Four of five tired or worse.</b> The row that moved.') +
+    row('Every other day', OTHER_IDX, FILLED,
+      'Steady. Fatigue is tracking the training, not sitting under everything.')
+});
+
+document.getElementById('rail').innerHTML = `
+  <div class="col">
+    <div class="col-hd"><span class="tag">As logged &middot; your real export</span>
+      <h2>The honest read</h2>
+      <p>Five moods, all on key days. It names the gap rather than guess.</p></div>
+    ${real}
+  </div>
+  <div class="col">
+    <div class="col-hd"><span class="tag mock">Illustrative &middot; unlogged days filled in</span>
+      <h2>The read working</h2>
+      <p>Same fortnight, nine moods invented so the read can fire.</p></div>
+    ${filled}
+  </div>`;
+</script>
+</body>
+</html>

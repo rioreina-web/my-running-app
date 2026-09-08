@@ -67,8 +67,9 @@ const MODEL_CONFIG: Record<QueryComplexity, RouterConfig> = {
  * C.6 — call this with the provider's finish reason after a completion.
  * Logs a grep-able marker when a response hit the output-token cap, so
  * cap-induced truncation is visible in function logs before anyone
- * raises a limit. (Sentry isn't wired in edge functions; the marker
- * string is the counter. Search logs for "prompt_response_truncated".)
+ * raises a limit. (Search logs for "prompt_response_truncated". Sentry IS
+ * now wired for edge-function ERRORS via _shared/sentry.ts — 2026-07-16 —
+ * but truncation is a soft signal, so it stays a log marker.)
  */
 export function noteTruncationIfCapped(
   finishReason: string | null | undefined,

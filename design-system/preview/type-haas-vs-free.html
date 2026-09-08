@@ -1,0 +1,159 @@
+<!doctype html>
+<!-- @dsCard group="Foundations" name="Haas vs the free grotesks" subtitle="Why Instrument Sans carries the headline — measured against the licensed face" viewport="1180x1870" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Haas vs the free grotesks</title>
+<link rel="stylesheet" href="../styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700&family=Instrument+Sans:wght@400;600;700&family=Schibsted+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#DEDCD6}
+.page{width:1180px;box-sizing:border-box;padding:36px 38px 46px;background:var(--paper);color:var(--ink);font-family:var(--font-data)}
+a{color:var(--session);text-decoration:none}a:hover{color:var(--red-text)}
+.hd{border-top:2px solid var(--ink);padding-top:10px;display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+.hd b{font-family:var(--font-label);font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase}
+.hd span{font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+h1{font-family:var(--font-display);font-size:42px;font-weight:700;letter-spacing:-.04em;line-height:1;margin:20px 0 0}
+.dek{font-family:var(--font-serif);font-style:italic;font-size:18px;line-height:1.4;color:var(--ink-2);margin:12px 0 0;max-width:56ch}
+
+.sec{margin-top:38px}
+.lbl{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-2);display:block;border-top:1px solid var(--rule);padding-top:9px;margin-bottom:6px}
+
+.spec{display:grid;grid-template-columns:132px 1fr 210px;gap:22px;align-items:center;padding:18px 0;border-bottom:1px solid var(--rule)}
+.spec .who{display:flex;flex-direction:column;gap:4px}
+.spec .who b{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.17em;text-transform:uppercase}
+.spec .who span{font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.spec .who span.real{color:var(--red-text);font-weight:600}
+.spec .who span.w{font-family:var(--font-data);font-size:11px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.spec .who span.w--best{color:var(--session);font-weight:600}
+.spec .big{font-size:46px;font-weight:700;letter-spacing:-.04em;line-height:1;white-space:nowrap}
+.spec .small{display:flex;flex-direction:column;gap:7px}
+.spec .small .cap{font-size:11px;font-weight:600;letter-spacing:.19em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.spec .small .num{font-size:19px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.f-haas{font-family:"Neue Haas Grotesk Display Pro",sans-serif}
+.f-helv{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}
+.f-inter{font-family:"Inter",sans-serif}
+.f-schib{font-family:"Schibsted Grotesk",sans-serif}
+.f-instr{font-family:"Instrument Sans",sans-serif}
+.f-arch{font-family:"Archivo",sans-serif}
+
+/* overlay: Haas in ink, candidate in red at 45% on top */
+.ov{display:grid;grid-template-columns:repeat(2,1fr);gap:26px;margin-top:16px}
+.ov .box{border:1px solid var(--rule);padding:20px 22px 22px;position:relative}
+.ov .box>b{font-family:var(--font-label);font-size:10px;font-weight:600;letter-spacing:.17em;text-transform:uppercase;color:var(--ink-2);display:block;margin-bottom:14px}
+.stackwrap{position:relative;height:64px}
+.stackwrap span{position:absolute;top:0;left:0;font-size:54px;font-weight:700;letter-spacing:-.04em;line-height:1;white-space:nowrap}
+.stackwrap .base{color:var(--ink)}
+.stackwrap .cand{color:var(--red);opacity:.45}
+.ov .note{font-size:12px;line-height:1.6;color:var(--ink-2);margin:14px 0 0}
+.ov .note em{font-style:normal;color:var(--ink);font-weight:600}
+
+.tell{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:16px;border-top:1px solid var(--ink)}
+.tell .g{padding:16px 14px 18px;border-right:1px solid var(--rule);display:flex;flex-direction:column;gap:10px}
+.tell .g:last-child{border-right:0}
+.tell .g>b{font-family:var(--font-label);font-size:9px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-2)}
+.tell .pair{display:flex;align-items:baseline;gap:14px}
+.tell .pair span{font-size:52px;font-weight:700;letter-spacing:-.03em;line-height:1}
+.tell .pair .h{color:var(--ink)}
+.tell .pair .i{color:var(--session)}
+.tell .g p{font-size:11px;line-height:1.55;color:var(--ink-2);margin:0}
+
+.verdict{margin-top:22px;background:var(--paper-deep);padding:20px 24px 22px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.verdict h3{font-family:var(--font-display);font-size:22px;font-weight:700;letter-spacing:-.035em;margin:0 0 8px}
+.verdict p{font-family:var(--font-prose);font-size:17px;line-height:1.45;margin:0;text-wrap:pretty}
+.verdict .r{font-size:12px;line-height:1.6;color:var(--ink-2)}
+.verdict .r b{color:var(--ink);font-weight:600}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="hd"><b>Type &middot; substitution test</b><span>Decision record &middot; Aug 2026</span></div>
+  <h1>Why the headline is Instrument Sans.</h1>
+  <p class="dek">Haas Display is a licensed Monotype face and the only files going free are rips, so it is out. These are the measurements that picked its replacement &mdash; the Haas row was captured while the real file was briefly installed.</p>
+
+  <div class="sec">
+    <span class="lbl">Same words, same size, same tracking &mdash; measured width of &ldquo;Recovery.&rdquo; at 46px/700</span>
+    <div class="spec">
+      <span class="who"><b>Neue Haas</b><span class="real">Licensed &mdash; not shipping</span><span class="w">190 px &middot; baseline</span></span>
+      <span class="big f-haas">Recovery.</span>
+      <span class="small f-haas"><span class="cap">Summary &middot; linked to</span><span class="num">7.47 mi &middot; 7:13 /mi</span></span>
+    </div>
+    <div class="spec">
+      <span class="who"><b>Helvetica Neue</b><span>The old fallback</span><span class="w">199 px &middot; +4.6%</span></span>
+      <span class="big f-helv">Recovery.</span>
+      <span class="small f-helv"><span class="cap">Summary &middot; linked to</span><span class="num">7.47 mi &middot; 7:13 /mi</span></span>
+    </div>
+    <div class="spec">
+      <span class="who"><b>Inter</b><span>Free &middot; Google</span><span class="w">210 px &middot; +10.3%</span></span>
+      <span class="big f-inter">Recovery.</span>
+      <span class="small f-inter"><span class="cap">Summary &middot; linked to</span><span class="num">7.47 mi &middot; 7:13 /mi</span></span>
+    </div>
+    <div class="spec">
+      <span class="who"><b>Schibsted Grotesk</b><span>Free &middot; Google</span><span class="w">210 px &middot; +10.5%</span></span>
+      <span class="big f-schib">Recovery.</span>
+      <span class="small f-schib"><span class="cap">Summary &middot; linked to</span><span class="num">7.47 mi &middot; 7:13 /mi</span></span>
+    </div>
+    <div class="spec">
+      <span class="who"><b>Instrument Sans</b><span class="real">Now the display face</span><span class="w w--best">196 px &middot; +3.1%</span></span>
+      <span class="big f-instr">Recovery.</span>
+      <span class="small f-instr"><span class="cap">Summary &middot; linked to</span><span class="num">7.47 mi &middot; 7:13 /mi</span></span>
+    </div>
+    <div class="spec">
+      <span class="who"><b>Archivo</b><span>Free &middot; the old system</span><span class="w">202 px &middot; +5.9%</span></span>
+      <span class="big f-arch">Recovery.</span>
+      <span class="small f-arch"><span class="cap">Summary &middot; linked to</span><span class="num">7.47 mi &middot; 7:13 /mi</span></span>
+    </div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">Overlaid on Haas &mdash; ink is Haas, red is the candidate</span>
+    <div class="ov">
+      <div class="box">
+        <b>Haas &times; Helvetica Neue</b>
+        <div class="stackwrap"><span class="base f-haas">Recovery.</span><span class="cand f-helv">Recovery.</span></div>
+        <p class="note">Near-identical widths &mdash; they share a skeleton. <em>Haas sits marginally narrower with a smaller period and a slightly higher crossbar on the e.</em> This is why the fallback held up for weeks without anyone noticing.</p>
+      </div>
+      <div class="box">
+        <b>Haas &times; Inter</b>
+        <div class="stackwrap"><span class="base f-haas">Recovery.</span><span class="cand f-inter">Recovery.</span></div>
+        <p class="note">The widest pair on the page: Inter sets 10.3% longer at the same size, on a bigger x-height with more open apertures. <em>An Inter headline needs roughly 9% less size to occupy the same line.</em> It reads as software; Haas reads as print.</p>
+      </div>
+      <div class="box">
+        <b>Haas &times; Instrument Sans</b>
+        <div class="stackwrap"><span class="base f-haas">Recovery.</span><span class="cand f-instr">Recovery.</span></div>
+        <p class="note">The closest free match by measure &mdash; <em>+3.1%, less than a third of Inter&rsquo;s drift</em>. Squarer bowls and a flatter terminal on the y, but in a phone masthead the line breaks in the same place, which is the thing that actually matters.</p>
+      </div>
+      <div class="box">
+        <b>Haas &times; Archivo</b>
+        <div class="stackwrap"><span class="base f-haas">Recovery.</span><span class="cand f-arch">Recovery.</span></div>
+        <p class="note">Closer on measure than Inter or Schibsted (+5.9%), so the objection is not width. <em>It is era.</em> Archivo is the face this system spent a phase wearing while it looked like every other 2026 product &mdash; a character argument, not a metric one.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <span class="lbl">Where to look &mdash; ink is Haas, blue is Inter</span>
+    <div class="tell">
+      <div class="g"><b>R &mdash; the leg</b><div class="pair"><span class="h f-haas">R</span><span class="i f-inter">R</span></div><p>Haas kicks the leg out straight from the bowl. Inter curves it, which softens the whole word.</p></div>
+      <div class="g"><b>a &mdash; the aperture</b><div class="pair"><span class="h f-haas">a</span><span class="i f-inter">a</span></div><p>Haas closes the aperture tight. Inter opens it for small-size legibility &mdash; the single biggest tell.</p></div>
+      <div class="g"><b>G &mdash; the spur</b><div class="pair"><span class="h f-haas">G</span><span class="i f-inter">G</span></div><p>Haas has a vertical spur. Inter drops it entirely, so caps rows read flatter.</p></div>
+      <div class="g"><b>1 &mdash; the numeral</b><div class="pair"><span class="h f-haas">1</span><span class="i f-inter">1</span></div><p>Inter's flag and foot serif make figures unambiguous. This is why <b>Inter still owns the data role</b>.</p></div>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <div>
+      <h3>The decision.</h3>
+      <p>Haas earned its place at display size and nowhere else &mdash; and at 46px, Instrument Sans holds the same line for free. What the system actually needed was one tight grotesk on the headline against tabular Inter on the numbers.</p>
+    </div>
+    <div class="r">
+      <p><b>The licence did fall through</b>, so this is now the decision: Instrument Sans on the headline, at the same size and tracking. It sets 3.1% wider than Haas &mdash; the smallest drift of any free face here, and close enough that lines break in the same place. Schibsted Grotesk looks right in character but measures the widest on the page (+10.5%), so it takes the labels instead, where width costs nothing.</p>
+      <p style="margin-top:10px"><b>Never as a display substitute:</b> Inter. Keeping Inter on the numerals and Haas on the headline is the contrast this system is built on &mdash; collapsing both into Inter is how the type stops meaning anything. Archivo is ruled out on era, not measure.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

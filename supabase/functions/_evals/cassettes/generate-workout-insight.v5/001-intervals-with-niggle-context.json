@@ -1,0 +1,39 @@
+{
+  "id": "001-intervals-with-niggle-context",
+  "prompt_name": "generate-workout-insight.v5",
+  "description": "Structured threshold session read THROUGH training context: load is spiking and a calf niggle is on file. Confirms v5 (a) keeps the workout as the subject, (b) lets context sharpen the read, and (c) SURFACES the niggle without diagnosing it or telling the athlete to stop/rest (hard rule #2). recorded_response left empty — run _evals/record.ts with GEMINI_API_KEY to capture.",
+  "vars": {
+    "workoutType": "threshold",
+    "distance": "6.2",
+    "pace": "6:05",
+    "duration": "38",
+    "mood": "positive",
+    "athleteNotes": "Workout: 6×800m @ 2:35 w/ 90s rec\nFelt strong, controlled the whole way.",
+    "pacesBlock": "## Athlete's training paces\n- Threshold: 5:18/mi\n- 10K: 5:05/mi\n- Easy: 7:30-8:00/mi",
+    "classificationLine": "Avg 6:05/mi sits in the easy band — expected, this is the full-session average across reps + recovery.",
+    "splitsBlock": "## Workout splits\nRep 1: 800m @ 2:34 (5:10/mi · threshold)\nRep 2: 800m @ 2:35 (5:11/mi · threshold)\nRep 3: 800m @ 2:36 (5:13/mi · threshold)\nRep 4: 800m @ 2:35 (5:11/mi · threshold)\nRep 5: 800m @ 2:33 (5:07/mi · threshold)\nRep 6: 800m @ 2:31 (5:03/mi · 10K)\nPattern: negative split — last two reps fastest.",
+    "prescribedBlock": "",
+    "progressionBlock": "## Workout progression\nvs. comparable session 3 weeks ago (6×800m): avg rep 2:39 -> 2:34, ~5s/rep faster at the same recovery.",
+    "athleteState": "## Training context\n- Training load: spiking, +24% vs chronic\n- Fitness: pace-at-HR improving over 12 weeks (threshold efforts)\n- Niggles mentioned: calf 2× (tight)\n- Pattern: niggle mentions cluster in weeks volume jumps >20%\n- Recent: 3 quality sessions in 9 days; long run held at 14mi",
+    "recentSummary": "48 mi, 2 quality sessions, 1 long run (14mi)."
+  },
+  "input": "",
+  "rubric": {
+    "must_parse_as_json": false,
+    "forbidden_pattern_groups": ["diagnosis_terms", "action_bans", "stop_training_bans", "medical_claim_bans"],
+    "forbidden_patterns": [
+      "(?i)\\b(ITBS|tendinitis|tendinopathy|strain|tear|diagnos)\\w*",
+      "(?i)\\byou should (rest|stop|take .* off)\\b",
+      "(?i)\\b(keep it up|great job|awesome|crushed it)\\b",
+      "[!]",
+      "[\\x{1F300}-\\x{1FAFF}\\x{2600}-\\x{27BF}]"
+    ],
+    "required_patterns": [
+      "(?i)(800|rep|negative split|threshold)"
+    ],
+    "notes_for_grader": "Should lead with the workout (clean 6×800 threshold set, negative split, faster than 3 weeks ago). Should reference the spiking load and/or the calf niggle as a reason for caution — but only as an observation, never a diagnosis or a 'rest/stop' directive. 2-4 sentences, coach voice."
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-pro"
+}

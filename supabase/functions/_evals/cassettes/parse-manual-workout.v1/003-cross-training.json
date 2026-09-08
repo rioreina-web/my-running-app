@@ -1,0 +1,20 @@
+{
+  "id": "003-cross-training",
+  "prompt_name": "parse-manual-workout.v1",
+  "description": "Cross-training classification. A bike session must read as activity=cross_training (so it stays out of running-fitness math downstream), capture duration, and leave distance null. mood inferred only if conveyed.",
+  "vars": {},
+  "input": "\n\n## Athlete's note\n\"easy spin on the bike for half an hour, recovery day\"",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": ["activity", "workout_type", "distance_miles", "duration_minutes"],
+    "required_patterns": [
+      "\"activity\":\\s*\"cross_training\""
+    ],
+    "forbidden_patterns": [
+      "\"distance_miles\":\\s*[0-9]"
+    ]
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}
