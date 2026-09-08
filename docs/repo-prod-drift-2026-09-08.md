@@ -148,9 +148,10 @@ Whichever way the merge lands, `?? record.audio_url` must not come back.
 `process-training-memo.v1/v2/v3`. Production runs **v6**. Versions v4, v5 and
 v6 were authored, deployed and are processing athlete voice memos today, and
 none was ever committed, reviewed against `docs/coaching/principles.md`, or
-covered by a cassette. `process-training-memo` is not a golden family, so CI
-warns rather than blocks — which is exactly why this went unnoticed for three
-generations. The eval harness's one recorded `process-training-memo` cassette
+covered by a cassette. They were never going to be caught: the prompts were
+edited outside the repo entirely, and the CI gate that would have flagged them
+is switched off anyway (§5.4). The eval harness's one recorded
+`process-training-memo` cassette
 tests a prompt version that no longer runs anywhere.
 
 All three are now committed, so they are at least reviewable.
@@ -164,7 +165,23 @@ store-compliance and privacy-erasure issue, not just a bug.
 `verify_jwt = true` — but a security-relevant decision implemented twice will
 drift. Consolidate on the shared helper.
 
-**5.4 — `_shared/` has no single truth in production.** Each deployment
+**5.4 — The eval-coverage gate is switched off, and `CLAUDE.md` says it
+isn't.** `.github/workflows/ci.yml` carries `if: false` on the `eval-gate`
+job, disabled 2026-06-16 on the reasoning that the harness "isn't built out
+yet." So hard rule #3 — *"Golden prompts don't ship without recorded eval
+cassettes … CI blocks otherwise"* — **is not enforced by anything**. The
+golden families it names (`daily-read`, `injury-analysis`, `reschedule-plan`,
+`coaching-agent-*`) are the athlete-facing, safety-baitable surfaces, and the
+gate that is supposed to protect them has been inert for three months. This
+PR's own run shows it: three prompt files added, gate skipped.
+
+This is the mechanism behind §5.1. The gate script and the record-evals
+workflow are both intact — only the `if:` is off. Either re-enable it (and
+accept that the golden families need cassettes recorded first) or amend
+`CLAUDE.md` so the rule doesn't describe a control that does not exist.
+Documented-but-absent is the worst of the three states.
+
+**5.5 — `_shared/` has no single truth in production.** Each deployment
 bundles whatever `_shared/` the deployer had locally, so live functions run
 *different versions of the same shared module*. `workBouts.ts` alone was found
 at three different revisions across four bundles. Only deploying from a
@@ -201,7 +218,9 @@ Ordered. Items 1–2 are the ones that affect users today.
 5. **Deploy the reconciled functions** — now safe to do from a committed SHA,
    which it was not before this pass.
 6. `supabase db push` for the two pending migrations from PR #13.
-7. **Stop deploying from laptops.** Everything in this document is downstream
+7. **Decide what hard rule #3 actually is** (§5.4) — re-enable the `eval-gate`
+   job, or amend `CLAUDE.md`. Right now the rule reads as enforced and is not.
+8. **Stop deploying from laptops.** Everything in this document is downstream
    of that one habit. The `Deploy` workflow already enforces committed-SHA
    deploys; it needs its six GitHub secrets set, and then it should be the
    only path. Until it is, this document goes stale the day it is written.
