@@ -182,7 +182,15 @@ jobs:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     steps:
       - uses: actions/checkout@v4
+      # Gated on the same secret as the lint step below. Without this the job
+      # could not be the no-op its comment promises: it installed the CLI
+      # unconditionally, and `version: latest` resolves the release through an
+      # unauthenticated GitHub API call that is rate-limited on shared runners.
+      # That is exactly how this job went red on 2026-09-08 in a PR containing
+      # no migrations — it failed at install, before any lint ran, on a
+      # database it was never going to reach.
       - uses: supabase/setup-cli@v1
+        if: ${{ env.SUPABASE_DB_URL != '' }}
         with:
           version: latest
       # Lint the linked remote database directly. Booting a local stack and
