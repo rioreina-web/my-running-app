@@ -15,6 +15,7 @@ it). Verify that once; rotate on any suspected exposure.
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | all functions | service-role: **high** | Injected by platform; service-role key bypasses RLS — never expose to clients. |
 | `GEMINI_API_KEY` | 16 functions + eval harness | **high** (spend) | The main LLM key. Covered by the daily spend alert; hard cap = GCloud billing (checklist #1, still open). |
 | `GROQ_API_KEY` | coaching-agent, process-training-memo | **high** (spend) | Transcription/fast-path. |
+| `GROQ_SIMPLE_MODEL` | `_shared/router.ts` (coaching-agent) | low | **Optional.** Groq model ID for the coach's simple tier. Unset (the default) = simple questions run on Gemini. Set it only to a model the Groq account can actually call — a retired ID here is what caused the 2026-09-08 coach outage. Verify with `curl -H "Authorization: Bearer $GROQ_API_KEY" https://api.groq.com/openai/v1/models` before setting. |
 | `OPENAI_API_KEY` | process-training-memo | **high** (spend) | Whisper fallback. |
 | `ALLOWED_ORIGIN` | every function via `_shared/cors.ts` | medium | **Required in prod** — new cors.ts throws on import when unset (fail-closed). Smoke test verifies. |
 | `UPSTASH_REDIS_URL` / `UPSTASH_REDIS_TOKEN` | `_shared/rateLimit.ts` (all rate-limited fns) | medium | If unset, rate limiting **fails closed** (denies). Verify set in prod — open checklist item #6. |

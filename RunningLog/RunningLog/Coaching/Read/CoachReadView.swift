@@ -8,7 +8,13 @@
 //
 //    Plate strip → Dateline → Byline → Headline → ReadProse →
 //    Signature → CantSeeBlock (if present) → SourcesPanel →
-//    ConfidenceBar → Editorial rule → Ask bar (pinned).
+//    ConfidenceBar → Editorial rule → Follow-ups → Ask bar (pinned).
+//
+//  The ask bar posts through `CoachChatViewModel` — the same view model
+//  the Coach chat uses, so rate limits, auth failures and provider
+//  errors surface identically on both surfaces. Replies render in the
+//  Read's editorial register (eyebrow + prose), not as chat bubbles:
+//  this page is a column of a magazine, not a messaging thread.
 //
 //  Data comes from `DailyReadService.shared`, which already
 //  refreshes on app launch + foreground. Pull-to-refresh forces a
@@ -28,12 +34,25 @@ struct CoachReadView: View {
     @State private var selectedWorkoutId: UUID?
     @State private var selectedDocId: UUID?
 
-    // Ask-bar local state. Submit handler is a placeholder in v1 —
-    // Phase 4.2 wires it into `service.ask()` and the reply view.
+    // Ask-bar local state. `chat` owns the follow-up exchange below the
+    // Read; `askText` is just the field's buffer until submit hands it
+    // over.
     @State private var askText = ""
-    @State private var showingAskComingSoon = false
+    @State private var chat = CoachChatViewModel()
+
+    /// Anchor for the auto-scroll that brings a new reply into view.
+    private static let conversationEndID = "coach-read-conversation-end"
 
     var body: some View {
+        ScrollViewReader { proxy in
+            scrollBody
+                .onChange(of: chat.messages.count) {
+                    withAnimation { proxy.scrollTo(Self.conversationEndID, anchor: .bottom) }
+                }
+        }
+    }
+
+    private var scrollBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if let read = service.todayRead {
@@ -72,6 +91,11 @@ struct CoachReadView: View {
                     // on a brand-new account before refresh has fired.
                     skeleton
                 }
+
+                followUps
+                Color.clear
+                    .frame(height: 1)
+                    .id(Self.conversationEndID)
             }
             .padding(.horizontal, 24)
             .padding(.top, 16)
@@ -95,10 +119,16 @@ struct CoachReadView: View {
                 DocDetailSheet(doc: doc)
             }
         }
-        .alert("Ask the coach — coming soon", isPresented: $showingAskComingSoon) {
-            Button("OK") { askText = "" }
+        .alert(
+            "Daily limit reached",
+            isPresented: Binding(
+                get: { chat.showRateLimitAlert },
+                set: { chat.showRateLimitAlert = $0 }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
         } message: {
-            Text("Question replies ship in the next update.")
+            Text(chat.rateLimitMessage)
         }
     }
 
@@ -230,6 +260,48 @@ struct CoachReadView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Follow-ups
+
+    /// The question-and-answer exchange below the Read. Editorial
+    /// register: an eyebrow names the speaker, the words carry the
+    /// weight. No bubbles, no avatars.
+    @ViewBuilder
+    private var followUps: some View {
+        if !chat.messages.isEmpty || chat.isLoading {
+            VStack(alignment: .leading, spacing: 20) {
+                ForEach(chat.messages) { message in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(message.role == .user ? "YOU ASKED" : "YOUR COACH")
+                            .font(.dripStat(11))
+                            .tracking(1.3) // 0.12em × 11pt — section eyebrow
+                            .foregroundStyle(
+                                message.role == .user
+                                    ? Color.drip.textSecondary
+                                    : Color.drip.coral
+                            )
+
+                        Text(message.content)
+                            .font(.dripBody(message.role == .user ? 17 : 16))
+                            .italic(message.role == .user)
+                            .foregroundStyle(Color.drip.textPrimary)
+                            .lineSpacing(message.role == .user ? 2 : 5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+
+                if chat.isLoading {
+                    Text("READING YOUR LOG…")
+                        .font(.dripStat(11))
+                        .tracking(1.3)
+                        .foregroundStyle(Color.drip.textTertiary)
+                }
+            }
+            .padding(.bottom, 24)
+        }
+    }
+
     // MARK: - States
 
     private var skeleton: some View {
@@ -285,29 +357,18 @@ struct CoachReadView: View {
                 .font(.dripBody(15))
                 .foregroundStyle(Color.drip.textPrimary)
                 .submitLabel(.send)
-                .onSubmit {
-                    // Phase 4.2 will replace this with the real
-                    // service.ask() → CoachReplyView push.
-                    if !askText.trimmingCharacters(in: .whitespaces).isEmpty {
-                        showingAskComingSoon = true
-                    }
-                }
+                .onSubmit { submitAsk() }
 
             Button {
-                if !askText.trimmingCharacters(in: .whitespaces).isEmpty {
-                    showingAskComingSoon = true
-                }
+                submitAsk()
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 26))
-                    .foregroundStyle(
-                        askText.trimmingCharacters(in: .whitespaces).isEmpty
-                            ? Color.drip.textTertiary
-                            : Color.drip.coral
-                    )
+                    .foregroundStyle(canSubmitAsk ? Color.drip.coral : Color.drip.textTertiary)
             }
             .buttonStyle(.plain)
-            .disabled(askText.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(!canSubmitAsk)
+            .accessibilityLabel("Send question to coach")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -321,6 +382,24 @@ struct CoachReadView: View {
                     alignment: .top
                 )
         )
+    }
+
+    private var canSubmitAsk: Bool {
+        !askText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !chat.isLoading
+    }
+
+    /// Hand the question to the chat view model. It owns the request,
+    /// the rate-limit state and the error copy — this view only clears
+    /// the field so the runner can see their question land.
+    @MainActor
+    private func submitAsk() {
+        guard canSubmitAsk else { return }
+        chat.inputText = askText.trimmingCharacters(in: .whitespacesAndNewlines)
+        askText = ""
+        // The Read already carries the athlete's context server-side, so
+        // the client-built summaries the Coach tab passes are redundant
+        // here; the agent rebuilds them from `userId` either way.
+        chat.sendMessage(workoutSummary: "", planContext: "", fitnessPredictions: "")
     }
 
     // MARK: - Sheet routing

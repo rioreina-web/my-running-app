@@ -2,11 +2,18 @@
  * Multi-Model Query Router
  *
  * Routes queries to the optimal model based on complexity:
- * - Simple (60%): Groq Llama 3.1 8B - fast, cheap ($0.05/1M tokens)
+ * - Simple (60%): Groq (opt-in, see GROQ_SIMPLE_MODEL) else Gemini Flash
  * - Moderate (30%): Gemini Flash - balanced ($0.60/1M tokens)
  * - Complex (10%): Gemini Flash + high tokens - best reasoning
  *
- * Cost savings: ~40% reduction vs single-model approach
+ * The simple tier is Gemini by default. Groq is a cost optimisation the
+ * deployment opts into by setting GROQ_SIMPLE_MODEL to a model ID the
+ * account can actually call — Groq retires model IDs on its own schedule,
+ * and a hard-coded one is a silent outage waiting to happen. On
+ * 2026-09-08 `llama-3.1-8b-instant` started returning
+ * `404 model_not_found` in prod, which took the whole simple tier (~60%
+ * of coach questions) down: every one of them fell through to the
+ * "I'm having trouble connecting to my AI backend" message.
  */
 
 export type QueryComplexity = "simple" | "moderate" | "complex";
@@ -20,17 +27,35 @@ export interface RouterConfig {
   costPer1kTokens: number;
 }
 
+const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+
+/**
+ * Groq model ID for the simple tier, or null when Groq is not opted in.
+ * Read per-call (not captured at module load) so flipping the secret in
+ * the Supabase dashboard takes effect on the next cold start without a
+ * redeploy.
+ */
+function groqSimpleModel(): string | null {
+  const model = Deno.env.get("GROQ_SIMPLE_MODEL")?.trim();
+  return model ? model : null;
+}
+
 // Multi-model configuration
 const MODEL_CONFIG: Record<QueryComplexity, RouterConfig> = {
-  // Simple: Groq Llama - fastest, cheapest
+  // Simple: default Gemini Flash. Overridden by the Groq config below
+  // when GROQ_SIMPLE_MODEL is set — see getModelConfig().
   // Best for: definitions, general knowledge, quick facts
   simple: {
-    model: "llama-3.1-8b-instant",
-    provider: "groq",
-    baseUrl: "https://api.groq.com/openai/v1",
-    apiKeyEnv: "GROQ_API_KEY",
-    maxTokens: 400,
-    costPer1kTokens: 0.00005, // $0.05/1M tokens
+    model: "gemini-2.5-flash",
+    provider: "gemini",
+    baseUrl: GEMINI_BASE_URL,
+    apiKeyEnv: "GEMINI_API_KEY",
+    // 1000, not the 400 this tier used on Groq: 2.5 Flash spends thinking
+    // tokens inside the same budget, so a 400 cap can be consumed entirely
+    // by thinking and return an empty answer. Same reasoning as moderate.
+    maxTokens: 1000,
+    costPer1kTokens: 0.0006,
   },
 
   // Moderate: Gemini Flash - balanced quality/cost
@@ -38,7 +63,7 @@ const MODEL_CONFIG: Record<QueryComplexity, RouterConfig> = {
   moderate: {
     model: "gemini-2.5-flash",
     provider: "gemini",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    baseUrl: GEMINI_BASE_URL,
     apiKeyEnv: "GEMINI_API_KEY",
     // C.6 (2026-06-10): cap lowered 2000 → 1000. Most coach responses run
     // 300-600 output tokens; the cap is the worst-case cost bound, not a
@@ -55,7 +80,7 @@ const MODEL_CONFIG: Record<QueryComplexity, RouterConfig> = {
   complex: {
     model: "gemini-2.5-flash",
     provider: "gemini",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    baseUrl: GEMINI_BASE_URL,
     apiKeyEnv: "GEMINI_API_KEY",
     // C.6 (2026-06-10): 3000 → 2000 (thinking-token headroom; see above).
     maxTokens: 2000,
@@ -236,7 +261,74 @@ export function classifyQuery(
  * Get model configuration for complexity level
  */
 export function getModelConfig(complexity: QueryComplexity): RouterConfig {
+  if (complexity === "simple") {
+    const groqModel = groqSimpleModel();
+    if (groqModel) {
+      return {
+        model: groqModel,
+        provider: "groq",
+        baseUrl: GROQ_BASE_URL,
+        apiKeyEnv: "GROQ_API_KEY",
+        maxTokens: 400,
+        costPer1kTokens: 0.00005, // $0.05/1M tokens
+      };
+    }
+  }
   return MODEL_CONFIG[complexity];
+}
+
+/**
+ * The config to try when `config` fails — the *other* provider, so one
+ * provider being down (bad key, retired model, quota exhausted) degrades
+ * latency instead of costing the runner their answer.
+ *
+ * Returns null when there is nothing left to try: the other provider has
+ * no key configured, or both tiers already resolve to the same provider.
+ */
+export function getFallbackConfig(config: RouterConfig): RouterConfig | null {
+  if (config.provider === "groq") {
+    // Groq only ever backs the simple tier, and moderate is the cheapest
+    // Gemini config — with enough output budget for 2.5 Flash's thinking.
+    if (!isProviderAvailable("gemini")) return null;
+    return MODEL_CONFIG.moderate;
+  }
+
+  // Gemini failed. Groq is only usable if the deployment opted in.
+  const groqModel = groqSimpleModel();
+  if (!groqModel || !isProviderAvailable("groq")) return null;
+  return {
+    model: groqModel,
+    provider: "groq",
+    baseUrl: GROQ_BASE_URL,
+    apiKeyEnv: "GROQ_API_KEY",
+    // Roomier than the simple tier's 400: this is standing in for a
+    // moderate/complex answer, which is longer than a quick fact.
+    maxTokens: 800,
+    costPer1kTokens: 0.00005,
+  };
+}
+
+/**
+ * True when an error from a model provider is worth retrying — a timeout,
+ * a network blip, a 429, a 5xx. A 404 for a retired model or a 401 for a
+ * bad key returns false: retrying those just burns two seconds before
+ * failing the same way, when the right move is to fail over immediately.
+ */
+export function isRetryableModelError(error: unknown): boolean {
+  const status = modelErrorStatus(error);
+  if (status === null) return true; // timeout / network / unknown — retry
+  if (status === 408 || status === 429) return true;
+  return status >= 500;
+}
+
+/** HTTP status carried by a provider error, if we can recover one. */
+function modelErrorStatus(error: unknown): number | null {
+  const withStatus = error as { status?: unknown } | null;
+  if (typeof withStatus?.status === "number") return withStatus.status;
+  // The Gemini SDK only puts the status in the message text.
+  const match = String((error as { message?: string })?.message ?? error)
+    .match(/\b(4\d\d|5\d\d)\b/);
+  return match ? Number(match[1]) : null;
 }
 
 /**
@@ -250,7 +342,11 @@ export function isProviderAvailable(provider: "groq" | "gemini"): boolean {
 }
 
 /**
- * Get best available model with fallback logic
+ * Get best available model with fallback logic.
+ *
+ * This picks between providers on *configuration* (is a key set?). The
+ * runtime failure case — a key that exists but the call fails — is
+ * handled by the caller retrying with `getFallbackConfig()`.
  */
 export function getBestAvailableModel(
   preferredComplexity: QueryComplexity
@@ -262,43 +358,29 @@ export function getBestAvailableModel(
     return { complexity: preferredComplexity, config };
   }
 
-  // Fallback logic
-  if (preferredComplexity === "simple" && !isProviderAvailable("groq")) {
-    // Groq unavailable, fall back to Gemini for simple queries
-    console.log("Groq unavailable, falling back to Gemini for simple query");
-    if (isProviderAvailable("gemini")) {
-      return {
-        complexity: "moderate",
-        config: getModelConfig("moderate"),
-      };
-    }
-  }
-
-  if (
-    (preferredComplexity === "moderate" || preferredComplexity === "complex") &&
-    !isProviderAvailable("gemini")
-  ) {
-    // Gemini unavailable, fall back to Groq
-    console.log("Gemini unavailable, falling back to Groq");
-    if (isProviderAvailable("groq")) {
-      return {
-        complexity: "simple",
-        config: getModelConfig("simple"),
-      };
-    }
+  const fallback = getFallbackConfig(config);
+  if (fallback) {
+    console.log(
+      `${config.provider} unavailable, falling back to ${fallback.provider} for ${preferredComplexity} query`,
+    );
+    // The tier keeps its name — it still describes how much context the
+    // query earns. Only the model serving it changed.
+    return { complexity: preferredComplexity, config: fallback };
   }
 
   // No providers available
   throw new Error(
-    "No AI providers configured. Set GROQ_API_KEY and/or GEMINI_API_KEY"
+    "No AI providers configured. Set GEMINI_API_KEY (and optionally GROQ_API_KEY + GROQ_SIMPLE_MODEL)"
   );
 }
 
 /**
  * Format model identifier for logging/tracking
  */
-export function getModelIdentifier(complexity: QueryComplexity): string {
-  const config = MODEL_CONFIG[complexity];
+export function getModelIdentifier(
+  complexity: QueryComplexity,
+  config: RouterConfig = getModelConfig(complexity),
+): string {
   return `${complexity}-${config.provider}-${config.model}`;
 }
 
@@ -310,6 +392,6 @@ export function estimateCost(
   inputTokens: number,
   outputTokens: number
 ): number {
-  const config = MODEL_CONFIG[complexity];
+  const config = getModelConfig(complexity);
   return ((inputTokens + outputTokens) / 1000) * config.costPer1kTokens;
 }
