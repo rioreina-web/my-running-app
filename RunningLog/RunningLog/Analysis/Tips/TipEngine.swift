@@ -52,7 +52,11 @@ final class TipEngine {
 
     /// From `user_goals` — the athlete's own goal, which exists whether or not
     /// they ever built a plan. `training_plans` is deliberately not consulted.
-    private static func fetchGoal() async -> TipGoal? {
+    ///
+    /// Not private: the Train tab's GOAL GAP block reads the same record so an
+    /// athlete without a plan still gets a fitness figure. One loader, one
+    /// query shape — see TrainingAnalyticsViewModel.loadPlanAndGoals.
+    static func fetchGoal() async -> TipGoal? {
         struct Row: Decodable {
             let goal_title: String?
             let target_race_distance: String?

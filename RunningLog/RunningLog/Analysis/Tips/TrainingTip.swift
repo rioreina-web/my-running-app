@@ -70,6 +70,25 @@ struct TipGoal {
         }
     }
 
+    /// The `RaceDistance` case this goal corresponds to, when it maps to one.
+    ///
+    /// `target_race_distance` is deliberately open free text — athletes target
+    /// 50k, relays, odd local races — so anything unrecognised returns nil
+    /// rather than being coerced to the nearest case. The `raceMiles` and
+    /// `racePaceToken` defaults above fall back to marathon because a tip is
+    /// better than no tip; a *predicted finish time* is not, so this one
+    /// refuses to guess.
+    var raceDistanceEnum: RaceDistance? {
+        switch raceDistance.lowercased() {
+        case "marathon", "full": .marathon
+        case "half", "half_marathon", "half marathon", "hm": .halfMarathon
+        case "10k": .tenK
+        case "5k": .fiveK
+        case "mile", "1500m": .mile1500
+        default: nil
+        }
+    }
+
     var raceLabel: String {
         switch raceDistance.lowercased() {
         case "marathon": "marathon"

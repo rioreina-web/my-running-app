@@ -684,8 +684,14 @@ final class TrainingAnalyticsViewModel {
         plannedMilesByDay = byDay
         gridWeeksCache = nil   // planned data arrived — force a recompute
 
+        // Read the athlete's own goal record directly rather than via
+        // TipEngine.shared, whose refresh is driven by Trends and Week — Train
+        // must not depend on another tab having loaded first.
+        let tipGoal = await TipEngine.fetchGoal()
+
         goals = Self.buildGoals(plan: planService.activePlan,
                                 goal: planService.activeGoal,
+                                tipGoal: tipGoal,
                                 snapshot: snapshot,
                                 avgWeekMiles: averageWeeklyMiles())
         if let plan = planService.activePlan, let total = planTotalWeeks {
@@ -1753,21 +1759,58 @@ final class TrainingAnalyticsViewModel {
 
     // MARK: Static label helpers
 
-    private static func buildGoals(plan: TrainingPlan?, goal: UserGoal?, snapshot: FitnessSnapshot?, avgWeekMiles: Double) -> GoalsSummary? {
-        guard plan != nil || goal != nil else { return nil }
-        let raceGoal = goal?.goalTitle.uppercased() ?? plan?.name.uppercased() ?? "RACE GOAL"
-        // Current fitness prediction for the goal distance.
-        var current = "—"
-        var gap = "—"
-        if let plan, let snapshot {
-            let predicted = predictedSeconds(for: plan.raceDistance, snapshot: snapshot)
-            current = formatClock(predicted)
-            let target = plan.targetTimeSeconds
-            if target > 0 {
-                let delta = predicted - Double(target)
-                gap = delta > 0 ? "+\(formatClock(delta)) TO TARGET" : "ON TARGET"
-            }
+    private static func buildGoals(plan: TrainingPlan?,
+                                   goal: UserGoal?,
+                                   tipGoal: TipGoal?,
+                                   snapshot: FitnessSnapshot?,
+                                   avgWeekMiles: Double) -> GoalsSummary? {
+        guard plan != nil || goal != nil || tipGoal != nil else { return nil }
+        let raceGoal = goal?.goalTitle.uppercased()
+            ?? plan?.name.uppercased()
+            ?? tipGoal?.title.uppercased()
+            ?? "RACE GOAL"
+
+        // What the fitness figure is measured against: distance to predict,
+        // time to compare it to. An imported plan wins when there is one,
+        // because it is the more explicit statement of intent — but a plan is
+        // NOT required to know how fast you are. `user_goals` carries the same
+        // two facts (target_race_distance / target_time_seconds, added
+        // 20260620210000) for athletes who never imported one, and this block
+        // used to read `"—"` for all of them. activePlan == nil is a
+        // first-class state, not a failure mode.
+        let anchor: (distance: RaceDistance, targetSeconds: Int)?
+        if let plan {
+            anchor = (distance: plan.raceDistance, targetSeconds: plan.targetTimeSeconds)
+        } else if let tipGoal, let distance = tipGoal.raceDistanceEnum {
+            anchor = (distance: distance, targetSeconds: tipGoal.targetSeconds)
+        } else {
+            anchor = nil
         }
+
+        let current: String
+        let gap: String
+
+        switch (anchor, snapshot) {
+        case let (target?, snap?):
+            let predicted = predictedSeconds(for: target.distance, snapshot: snap)
+            // Never a bare projection: the tier rides with the number (hard
+            // rule #7). The lifetime PR that rule also asks for is not plumbed
+            // into this surface yet — tracked, not silently dropped.
+            current = "\(formatClock(predicted)) · \(snap.confidence.uppercased())"
+            if target.targetSeconds > 0 {
+                let delta = predicted - Double(target.targetSeconds)
+                gap = delta > 0 ? "+\(formatClock(delta)) TO TARGET" : "ON TARGET"
+            } else {
+                gap = "Add a goal time"
+            }
+        case (nil, _):
+            current = "Add a race distance and goal time"
+            gap = "Set a goal time first"
+        case (_?, nil):
+            current = "Not enough training logged yet"
+            gap = "Waiting on a fitness estimate"
+        }
+
         let weeklyTarget: String? = avgWeekMiles > 0
             ? "\(Int(avgWeekMiles.rounded())) MI / WK CURRENT"
             : nil
