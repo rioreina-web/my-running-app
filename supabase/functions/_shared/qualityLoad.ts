@@ -183,21 +183,44 @@ export function qualityLoadForSession(
   ctx?: LoadContext | null,
 ): { quality_load: number | null; quality_kind: string | null } {
   const hasWork = bouts.some((b) => b.isWork && b.seconds > 0);
+  const isLong = workoutKind === "long_run" || workoutKind === "long_wo";
 
-  if (hasWork) {
-    return { quality_load: qualityLoadForBouts(bouts, ctx), quality_kind: "quality" };
-  }
-
-  // `long_wo` (a long run with embedded sub-anchor structure) scores the same
-  // way when none of its laps cleared the work gate: the whole run is the
-  // stimulus. `quality_kind` stays "long_run" so downstream readers keep one
-  // aerobic-long bucket.
-  if (workoutKind === "long_run" || workoutKind === "long_wo") {
+  // ⚠️  A LONG RUN IS SCORED OVER ITS WHOLE SELF — CHECKED BEFORE `hasWork`.
+  //
+  // This order is the fix for 2026-08-29: a 21-mile run with 4 x 3mi at
+  // marathon pace scored 34.3. Four short surges cleared the work gate, the
+  // 18.5 miles of MP work did not (MP sits slower than this athlete's
+  // threshold band), so the session took the work branch and was scored on
+  // 5.5 minutes of surge. It landed under the key-session floor and the
+  // block's biggest workout never appeared in the grid. With no work detected
+  // at all it would have scored ~205.
+  //
+  // Testing `hasWork` first meant a scrap of detected structure could REPLACE
+  // a long run's aerobic stimulus with that scrap — finding structure made
+  // the session worth six times less. On a long run the easy miles are not
+  // warmup to be excluded; they are the stimulus, which is what the branch
+  // below always said.
+  //
+  // `aerobicLoadForBouts` already weights every bout by its own zone, so a
+  // long run with real MP work outscores the same run plodded without any
+  // special casing. It is also a strict superset of `qualityLoadForBouts`
+  // (same bouts, plus the rest, all positive weights), so there is no case
+  // where the work reading would have been the larger of the two — this is an
+  // ordering fix, not a choice between two numbers.
+  //
+  // Scoped to long runs on purpose. `intervals`/`threshold` must keep scoring
+  // work bouts only, or a rep session's warmup, floats and cooldown get
+  // booked as quality — the exact averaging bug this module was built to fix.
+  if (isLong) {
     const load = aerobicLoadForBouts(bouts, ctx);
     return {
       quality_load: load > 0 ? load : longRunLoadFromMinutes(durationMinutes),
       quality_kind: "long_run",
     };
+  }
+
+  if (hasWork) {
+    return { quality_load: qualityLoadForBouts(bouts, ctx), quality_kind: "quality" };
   }
 
   return { quality_load: null, quality_kind: null };

@@ -210,6 +210,54 @@ Deno.test("quality session scores its WORK bouts only, warmup excluded", () => {
   assertEquals(quality_load, Math.round((1200 * 5.5 / 60) * 10) / 10);
 });
 
+Deno.test("a scrap of work never lowers a long run below its aerobic score", () => {
+  // The 2026-08-29 session, in shape: a 21-mile run whose 4 x 3mi at marathon
+  // pace did NOT clear the work gate, but where four short surges did. Before
+  // the floor, this scored only the surges (34.3 in prod) and fell under the
+  // key-session floor of 25-42 — the block's biggest workout vanished.
+  const surges = [
+    easyBout(9000),                 // 150 min of running, not flagged as work
+    workBout(80, "mile"),
+    workBout(80, "mile"),
+    workBout(80, "mile"),
+    workBout(90, "mile"),
+  ];
+  const { quality_load, quality_kind } = qualityLoadForSession("long_wo", surges, 165);
+
+  // Work-only would be ~30. The whole run is worth far more, and wins.
+  const workOnly = qualityLoadForBouts(surges);
+  if (quality_load === null || quality_load <= workOnly) {
+    throw new Error(`scored ${quality_load}, expected more than work-only ${workOnly}`);
+  }
+  assertEquals(quality_kind, "long_run");
+  assertEquals(quality_load, aerobicLoadForBouts(surges));
+});
+
+Deno.test("a long run is scored aerobically even when work IS detected", () => {
+  // aerobicLoadForBouts is a strict superset of qualityLoadForBouts, so for a
+  // long run there is never a case where the work reading should win. The
+  // whole run is the stimulus; the branch order encodes that.
+  const bouts = [easyBout(600), workBout(3600, "5k"), easyBout(600)];
+  const { quality_load, quality_kind } = qualityLoadForSession("long_wo", bouts, 80);
+  assertEquals(quality_kind, "long_run");
+  assertEquals(quality_load, aerobicLoadForBouts(bouts));
+});
+
+Deno.test("the floor is scoped to long runs — an easy run with strides is untouched", () => {
+  // The trap this whole module warns about. If the aerobic floor ever leaks
+  // out of the long-run branch, every easy day scores its whole duration and
+  // the calendar stars everything.
+  const { quality_load, quality_kind } = qualityLoadForSession(
+    "easy",
+    [easyBout(2400), workBout(120, "mile")],
+    45,
+  );
+  assertEquals(quality_kind, "quality");
+  if (quality_load === null || quality_load >= 25) {
+    throw new Error(`easy run with strides scored ${quality_load}, expected below 25`);
+  }
+});
+
 Deno.test("a stride set scores real work but stays under the floor", () => {
   // 6 × 20s strides. Scores something — it IS work — but nowhere near 25.
   const { quality_load, quality_kind } = qualityLoadForSession(
