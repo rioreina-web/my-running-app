@@ -591,7 +591,7 @@ export async function rebuildAthleteState(
     // across tenants, so we require an exact match.
     supabase
       .from("user_goals")
-      .select("goal_title, target_date, user_id")
+      .select("goal_title, target_date, user_id, target_race_distance, target_time_seconds")
       .eq("status", "active")
       .eq("user_id", userId)
       .not("user_id", "is", null)
@@ -1896,7 +1896,7 @@ export async function rebuildAthleteState(
     trajectory_reason: trajectoryReason,
     // Show future goals + recently-past goals (≤ 30 days) so coach can reference
     // goal pace and gap even if target date just slipped.
-    active_goals: ((goalsRes.data ?? []) as Array<{goal_title: string; target_date: string; user_id: string | null}>)
+    active_goals: ((goalsRes.data ?? []) as Array<{goal_title: string; target_date: string; user_id: string | null; target_race_distance?: string | null; target_time_seconds?: number | null}>)
       // Redundant defense: the query is already .eq('user_id', userId), but
       // drop anything without a real match client-side too.
       .filter((g) => g.user_id === userId)
@@ -1923,16 +1923,47 @@ export async function rebuildAthleteState(
           [/\b5\s*k\b/i, "5K", 3.1069],
           [/\bmile\b/i, "mile", 1.0],
         ];
-        let distKey: string | null = null;
-        let distMi = 0;
-        for (const [re, key, mi] of distancePatterns) {
-          if (re.test(titleLower)) { distKey = key; distMi = mi; break; }
+        // STRUCTURED COLUMNS FIRST (2026-09-08). `interpret-goal` writes
+        // `target_race_distance` / `target_time_seconds` onto this very row,
+        // and the SELECT above never asked for them — so this function
+        // re-derived both by regex from the title and every downstream surface
+        // inherited that guess. One unparseable title blanked the goal on The
+        // Read, workout insight and session-ask simultaneously. The regex is
+        // now the FALLBACK, kept for goals that were never interpreted.
+        //
+        // NOTE the vocabulary: `distKey` must stay "5K"/"10K"/"half"/
+        // "marathon"/"mile", because `predKey` below and
+        // `analyzers/racePaceSpecificity.ts` both switch on these exact
+        // strings. Do not lowercase them here. `_shared/goal.ts` is the place
+        // that normalizes across the codebase's two casing systems.
+        const structuredDistances: Record<string, [string, number]> = {
+          marathon: ["marathon", 26.2188],
+          half: ["half", 13.1094],
+          half_marathon: ["half", 13.1094],
+          "10k": ["10K", 6.2137],
+          tenk: ["10K", 6.2137],
+          "5k": ["5K", 3.1069],
+          fivek: ["5K", 3.1069],
+          mile: ["mile", 1.0],
+        };
+        const structured = structuredDistances[
+          String(g.target_race_distance ?? "").toLowerCase().trim().replace(/[\s-]+/g, "_")
+        ] ?? null;
+
+        let distKey: string | null = structured?.[0] ?? null;
+        let distMi = structured?.[1] ?? 0;
+        if (!distKey) {
+          for (const [re, key, mi] of distancePatterns) {
+            if (re.test(titleLower)) { distKey = key; distMi = mi; break; }
+          }
         }
 
         // Parse time: "sub 15", "break 3:00", "1:30", "sub-1:30", "sub 3"
-        let targetSec: number | null = null;
+        // Structured column first, same reasoning as the distance above.
+        let targetSec: number | null =
+          Number(g.target_time_seconds ?? 0) > 0 ? Number(g.target_time_seconds) : null;
         const timeMatch = g.goal_title.match(/(?:sub[-\s]*|break[-\s]*|under[-\s]*)?(\d{1,2}):(\d{2})(?::(\d{2}))?|sub[-\s]*(\d{1,3})(?:\s*min)?/i);
-        if (timeMatch) {
+        if (targetSec == null && timeMatch) {
           if (timeMatch[1] && timeMatch[2]) {
             if (timeMatch[3]) {
               targetSec = parseInt(timeMatch[1]) * 3600 +

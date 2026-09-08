@@ -844,6 +844,48 @@ async function goalFor(title: string, snapshot?: Row) {
   return state.active_goals[0];
 }
 
+/**
+ * Structured columns beat the title parse (2026-09-08).
+ *
+ * `interpret-goal` writes `target_race_distance` / `target_time_seconds` onto
+ * the same `user_goals` row, and this builder used to ignore them and re-derive
+ * both by regex. These two tests pin the fix: the columns win when present, and
+ * a title the regex CANNOT read still resolves when the columns are there.
+ */
+async function goalForRow(row: Record<string, unknown>) {
+  const db: DB = {
+    user_goals: [
+      { user_id: REAL_USER, target_date: GOAL_FUTURE, status: "active", ...row },
+    ],
+  };
+  const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+  return state.active_goals[0];
+}
+
+Deno.test("goal structured: the columns win over what the title says", async () => {
+  // Title says a half; the structured record says marathon. The record wins.
+  const g = await goalForRow({
+    goal_title: "sub 1:30 half",
+    target_race_distance: "marathon",
+    target_time_seconds: 8400,
+  });
+  assertEquals(g.target_distance_key, "marathon");
+  assertEquals(g.target_time_seconds, 8400);
+  assertEquals(g.target_pace_per_mile, "5:20");
+});
+
+Deno.test("goal structured: a title the regex cannot read still resolves", async () => {
+  // No distance word, no alias — the parse gives up, the columns do not.
+  const g = await goalForRow({
+    goal_title: "Chase the standard in Valencia",
+    target_race_distance: "half",
+    target_time_seconds: 4200,
+  });
+  assertEquals(g.target_distance_key, "half");
+  assertEquals(g.target_time_seconds, 4200);
+  assertEquals(g.target_pace_per_mile, "5:20");
+});
+
 Deno.test("goal parse: 'sub 2:20 at CIM' is 2h20m for the marathon, not 140 seconds", async () => {
   const g = await goalFor("Run sub 2:20 at CIM");
   assertEquals(g.target_distance_key, "marathon", "CIM must resolve to the marathon distance");
