@@ -35,6 +35,12 @@ import {
   type SessionInput as FitnessSessionInput,
 } from "./fitnessSignal.ts";
 import { oneHourPaceSecPerMile } from "./paces.ts";
+import { resolveGoalFrom, type GoalRow } from "./goal.ts";
+import {
+  specificVolumeOverWindow,
+  type RungKey,
+  type SessionInput,
+} from "./specificVolume.ts";
 import { rowsForAiContext, withheldCount } from "./aiSourcePolicy.ts";
 import { formatPace, formatTime, formatTimeDelta } from "./shared/format.ts";
 import { buildMoodTrend, type MoodLogRow } from "./builders/buildMoodTrend.ts";
@@ -366,6 +372,36 @@ export interface AthleteState {
   }>;
 
   /**
+   * Goal-anchored specific volume — the athlete's work laid on their own
+   * ladder of support, as a percentage of GOAL RACE SPEED.
+   *
+   * The headline (`best_session_miles`) is the biggest SINGLE session's volume
+   * in the specific rung, because the coach's targets are session volumes
+   * ("10-15 miles at goal marathon pace", "6-9 miles" for a half) — a race
+   * asks for one effort, not a month's accumulation. `buckets` carries the
+   * same number per four-week block so the funnel's shape is visible: early in
+   * a block the work sits further from goal pace on BOTH sides, and converges
+   * as the race approaches.
+   *
+   * Null when no goal resolves — this is the first field in the state that
+   * cannot exist without one. Reports only; it does not judge whether the
+   * volume is right, and the athlete may be following a coach's plan.
+   */
+  specific_volume: {
+    goal_race: string;
+    goal_pace_per_mile: string;
+    weeks_to_race: number | null;
+    window_days: number;
+    best_session_miles: number;
+    best_session_date: string | null;
+    longest_block_miles: number;
+    sessions_with_specific_work: number;
+    ladder_miles: Record<RungKey, number>;
+    buckets: Array<{ start: string; end: string; best_session_miles: number; specific_miles: number }>;
+    suspect_sessions: number;
+  } | null;
+
+  /**
    * Qualitative life signal rolled up from voice-memo `extracted_data` —
    * sleep, work/life stress, fatigue trail, illness, travel, motivation,
    * felt_vs_looked, avg RPE. The athlete's own labels, verbatim; surface,
@@ -632,7 +668,7 @@ export async function rebuildAthleteState(
     // back to 168d at its call site so its observed-easy baseline is unchanged.
     supabase
       .from("training_logs")
-      .select("id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, source, parsed_structure, cleaned_notes, notes, workout_notes")
+      .select("id, workout_date, workout_distance_miles, workout_duration_minutes, workout_pace_per_mile, workout_type, mood, source, parsed_structure, weather_actual, cleaned_notes, notes, workout_notes")
       .eq("user_id", userId)
       .gte("workout_date", new Date(now.getTime() - 365 * 86400000).toISOString())
       .gt("workout_distance_miles", 0)
@@ -1636,6 +1672,95 @@ export async function rebuildAthleteState(
     console.warn("[AthleteState] fitness-signal computation failed:", err);
   }
 
+  // ── Specific volume: the ONLY goal-anchored measurement in this builder.
+  //    Everything else here describes what the athlete did; this describes it
+  //    relative to what they are training FOR. Uses the shared resolver so the
+  //    goal pace here can never disagree with the goal pace elsewhere. ──
+  const SPECIFIC_WINDOW_DAYS = 112; // 16 weeks — a block, in four buckets
+  const SPECIFIC_BUCKET_DAYS = 28;
+  let specificVolume: AthleteState["specific_volume"] = null;
+  try {
+    const goalNow = resolveGoalFrom({
+      userGoals: (goalsRes.data ?? []) as GoalRow[],
+      activeGoals: [],
+      plan: plan
+        ? {
+          name: plan.name as string | null,
+          target_race_distance: plan.target_race_distance as string | null,
+          target_time_seconds: plan.target_time_seconds as number | null,
+          end_date: plan.end_date as string | null,
+        }
+        : null,
+      stateGoalRace: null,
+      stateGoalTimeSeconds: null,
+    }, now.toISOString().slice(0, 10));
+
+    const goalPace = goalNow.goal?.pacePerMileSeconds ?? null;
+    if (goalNow.goal && goalPace && goalPace > 0) {
+      const toSession = (r: Record<string, unknown>): SessionInput => {
+        const ps = r.parsed_structure as Record<string, unknown> | null;
+        const raw = Array.isArray(ps?.blocks) ? ps!.blocks as Array<Record<string, unknown>> : [];
+        const wx = r.weather_actual as Record<string, unknown> | null;
+        return {
+          id: String(r.id ?? ""),
+          date: String(r.workout_date ?? "").slice(0, 10),
+          totalRunMiles: Number(r.workout_distance_miles ?? 0) || null,
+          adjustmentPct: Number(wx?.adjustment_pct ?? 0) || 0,
+          blocks: raw.map((b) => ({
+            role: (b.role as string | null) ?? null,
+            distanceMiles: Number(b.distance_miles ?? 0),
+            avgPacePerMile: (b.avg_pace_per_mile as string | null) ?? null,
+          })),
+        };
+      };
+
+      const all = ((blockHistoryRes.data ?? []) as Array<Record<string, unknown>>)
+        .filter((r) => {
+          const t = r.workout_date ? new Date(String(r.workout_date)).getTime() : 0;
+          return t > 0 && t >= now.getTime() - SPECIFIC_WINDOW_DAYS * 86400000;
+        })
+        .map(toSession);
+
+      const window = specificVolumeOverWindow(all, goalPace);
+
+      // Four-week buckets, oldest first, so the funnel reads left to right.
+      const buckets: AthleteState["specific_volume"] extends null ? never
+        : NonNullable<AthleteState["specific_volume"]>["buckets"] = [];
+      const nBuckets = Math.floor(SPECIFIC_WINDOW_DAYS / SPECIFIC_BUCKET_DAYS);
+      for (let i = nBuckets - 1; i >= 0; i--) {
+        const endMs = now.getTime() - i * SPECIFIC_BUCKET_DAYS * 86400000;
+        const startMs = endMs - SPECIFIC_BUCKET_DAYS * 86400000;
+        const inBucket = all.filter((sx) => {
+          const t = new Date(`${sx.date}T00:00:00Z`).getTime();
+          return t >= startMs && t < endMs;
+        });
+        const w = specificVolumeOverWindow(inBucket, goalPace);
+        buckets.push({
+          start: new Date(startMs).toISOString().slice(0, 10),
+          end: new Date(endMs).toISOString().slice(0, 10),
+          best_session_miles: w.bestSessionMiles,
+          specific_miles: w.totalSpecificMiles,
+        });
+      }
+
+      specificVolume = {
+        goal_race: goalNow.goal.raceLabel,
+        goal_pace_per_mile: formatPace(goalPace),
+        weeks_to_race: goalNow.goal.weeksToRace,
+        window_days: SPECIFIC_WINDOW_DAYS,
+        best_session_miles: window.bestSessionMiles,
+        best_session_date: window.bestSessionDate,
+        longest_block_miles: window.longestBlockMiles,
+        sessions_with_specific_work: window.sessionsWithSpecificWork,
+        ladder_miles: window.miles,
+        buckets,
+        suspect_sessions: window.suspectSessions.length,
+      };
+    }
+  } catch (err) {
+    console.warn("[AthleteState] specific-volume computation failed:", err);
+  }
+
   // ── v2 Phase D: pattern layer (the coach's edge — noticing, not just
   //    reporting). Each rule is a pure function over data already joined
   //    above, emitting a plain-language statement + the numbers behind it.
@@ -2063,6 +2188,7 @@ export async function rebuildAthleteState(
     fitness_signal: fitnessSignal,
     life_context: lifeContext,
     patterns: patterns,
+    specific_volume: specificVolume,
     data_gaps: dataGaps,
 
     last_updated_at: new Date().toISOString(),
@@ -2580,6 +2706,51 @@ export function stateToPromptContext(
         }
       }
     }
+  });
+
+  // Specific work against the goal. The one goal-anchored block in the state.
+  //
+  // THE GUARDRAIL IS PART OF THE CONTENT. The coach was explicit: never
+  // encourage an athlete to run more volume, and never counter a coach who may
+  // have written the session. So the numbers ship with an instruction not to
+  // turn them into a prescription. Same posture as the niggle lines above —
+  // surface, don't direct.
+  section("specific_volume", 5, (lines) => {
+    const sv = state.specific_volume;
+    if (!sv) return;
+
+    const runway = sv.weeks_to_race != null ? `, ${sv.weeks_to_race} weeks out` : "";
+    lines.push(`\nSpecific work vs the goal (${sv.goal_race} @ ${sv.goal_pace_per_mile}/mi${runway}):`);
+    lines.push(
+      `  Biggest SINGLE session at 95-105% of goal speed: ${sv.best_session_miles} mi` +
+        (sv.best_session_date ? ` (${sv.best_session_date})` : ""),
+    );
+    lines.push(`  Longest continuous piece at that pace: ${sv.longest_block_miles} mi`);
+
+    if (sv.buckets.length > 0) {
+      const series = sv.buckets.map((b) => `${b.best_session_miles}`).join(" → ");
+      lines.push(`  Best session by 4-week block, oldest to newest: ${series} mi`);
+    }
+
+    const m = sv.ladder_miles;
+    lines.push(
+      `  Where the work sat (${sv.window_days}d, miles): base ${m.base} · support ${m.support} · ` +
+        `specific ${m.specific} · speed ${m.speed} · power ${m.power}`,
+    );
+
+    if (sv.suspect_sessions > 0) {
+      lines.push(
+        `  (${sv.suspect_sessions} session(s) excluded — the lap parse was too coarse to trust.)`,
+      );
+    }
+
+    lines.push(
+      `→ Percentages are of goal SPEED, so a lower percent is a SLOWER pace. ` +
+        `These are MEASUREMENTS, not targets. Do NOT tell the athlete to do more ` +
+        `work or more volume — they may be following a coach's plan, and pushing ` +
+        `more quality is how people get hurt. If something here is worth saying, ` +
+        `state what the numbers show and ask about it; never prescribe a session.`,
+    );
   });
 
   // Patterns — pre-computed coach observations. Narrate at most one or

@@ -845,6 +845,87 @@ async function goalFor(title: string, snapshot?: Row) {
 }
 
 /**
+ * Specific volume — the wiring test (2026-09-08).
+ *
+ * `specificVolume.test.ts` covers the ladder math. This covers the GLUE: that
+ * `parsed_structure.blocks` and `weather_actual.adjustment_pct` are actually
+ * read out of the row shape the database stores, that the goal pace comes from
+ * the shared resolver, and that the block is null rather than wrong when there
+ * is no goal to anchor on.
+ */
+function specificLog(id: string, daysAgo: number, runMi: number, blocks: unknown[]) {
+  return {
+    id,
+    user_id: REAL_USER,
+    workout_date: new Date(Date.now() - daysAgo * 86400000).toISOString(),
+    workout_distance_miles: runMi,
+    workout_duration_minutes: runMi * 6,
+    workout_type: "threshold",
+    source: "strava",
+    parsed_structure: { blocks },
+    weather_actual: { adjustment_pct: 0 },
+  };
+}
+
+const CIM_GOAL_ROW = {
+  user_id: REAL_USER,
+  goal_title: "Run sub 2:20 at CIM",
+  target_race_distance: "marathon",
+  target_time_seconds: 8400,
+  target_date: GOAL_FUTURE,
+  status: "active",
+};
+
+Deno.test("specific volume: reads real block rows and reports the best session", async () => {
+  const db: DB = {
+    user_goals: [CIM_GOAL_ROW],
+    training_logs: [
+      // 2 x 3mi at goal pace inside a 12-miler = 6 specific miles.
+      specificLog("big", 10, 12, [
+        { role: "work_rep", distance_miles: 3, avg_pace_per_mile: "5:20" },
+        { role: "recovery", distance_miles: 0.5, avg_pace_per_mile: "7:30" },
+        { role: "work_rep", distance_miles: 3, avg_pace_per_mile: "5:22" },
+      ]),
+      // A smaller session, and a long steady run that is NOT specific work.
+      specificLog("small", 20, 8, [
+        { role: "work_rep", distance_miles: 2, avg_pace_per_mile: "5:18" },
+      ]),
+      specificLog("steady", 30, 18, [
+        { role: "long_run", distance_miles: 18, avg_pace_per_mile: "6:17" },
+      ]),
+    ],
+  };
+
+  const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+  const sv = state.specific_volume;
+  assert(sv, "specific_volume must be populated when a goal resolves");
+  assertEquals(sv.goal_pace_per_mile, "5:20");
+  assertEquals(sv.best_session_miles, 6);
+  assert(
+    sv.best_session_date && /^\d{4}-\d{2}-\d{2}$/.test(sv.best_session_date),
+    "best session must carry a plain YYYY-MM-DD date",
+  );
+  assertEquals(sv.longest_block_miles, 3);
+  assertEquals(sv.sessions_with_specific_work, 2);
+  // The 18-miler at 85% of goal speed is support, not specific — and it is not
+  // a lesser session. "The marathon's a distance before it's a pace."
+  assertEquals(sv.ladder_miles.specific, 8);
+  assert(sv.ladder_miles.support >= 18 || sv.ladder_miles.base >= 18);
+  // Four 4-week buckets over the 16-week window.
+  assertEquals(sv.buckets.length, 4);
+});
+
+Deno.test("specific volume: null without a goal, never a guess", async () => {
+  const db: DB = {
+    training_logs: [
+      specificLog("big", 10, 12, [{ role: "work_rep", distance_miles: 3, avg_pace_per_mile: "5:20" }]),
+    ],
+  };
+  const state = await getOrBuildAthleteState(buildFakeClient(db), REAL_USER);
+  assertEquals(state.specific_volume, null);
+});
+
+/**
  * Structured columns beat the title parse (2026-09-08).
  *
  * `interpret-goal` writes `target_race_distance` / `target_time_seconds` onto

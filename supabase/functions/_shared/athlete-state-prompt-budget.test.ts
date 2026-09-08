@@ -65,6 +65,7 @@ function baseState(over: Partial<AthleteState> = {}): AthleteState {
     fitness_signal: null,
     life_context: null,
     patterns: [],
+    specific_volume: null,
     data_gaps: [],
     last_updated_at: new Date().toISOString(),
     last_updated_by: "test",
