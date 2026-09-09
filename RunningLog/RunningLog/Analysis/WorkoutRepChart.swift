@@ -31,6 +31,17 @@ struct WorkoutLapRow: Decodable, Identifiable {
     var temp_f: Double?
     var dew_point_f: Double?
     var heat_adjusted_pace_sec_per_mile: Double?
+    /// What this segment IS, when something named it: `warmup` | `work_rep` |
+    /// `recovery` | `cooldown` | `steady`. Carried off `parsed_structure.blocks`
+    /// — so it is set on a hand-correction (the athlete's own verdict) and on
+    /// the parser's segmentation, and nil on a raw watch lap, which is only ever
+    /// a split with a rest flag.
+    ///
+    /// `is_rest` cannot carry this: it collapses warm-up, recovery and cool-down
+    /// into one bit, so a corrected "warm-up + 3 × 1k + cool-down" came back as
+    /// five work reps and the correction looked like it had done nothing.
+    /// (2026-09-07)
+    var role: String?
 }
 
 /// Pace zones (sec/mi) used for the dashed reference lines.
@@ -102,75 +113,62 @@ enum WorkoutLapsService {
         }
     }
 
-    /// Build clean rep geometry from the raw `running_workout_laps` table, which
-    /// already carries GPS-measured distance/time/pace per bout. Consecutive work
-    /// laps with no rest between them are ONE rep — e.g. a 1200m that the watch
-    /// auto-split at 1000m (a 1000m lap + a 204m lap) becomes a single 1204m rep.
-    /// Rest laps pass through between reps so the recovery/slot logic still works.
-    /// Deterministic and trustworthy, unlike the LLM `parse_structure`, which can
-    /// bleed recovery into work reps and corrupt the distances and paces.
-    static func mergeWorkBouts(_ raw: [WorkoutLapRow]) -> [WorkoutLapRow] {
-        let ordered = raw.sorted { ($0.lap_index ?? 0) < ($1.lap_index ?? 0) }
-        var out: [WorkoutLapRow] = []
-        var i = 0
-        var idx = 0
-        while i < ordered.count {
-            if ordered[i].is_rest == true {
-                var rest = ordered[i]; rest.lap_index = idx
-                out.append(rest); idx += 1; i += 1
-                continue
+    // `mergeWorkBouts` was here. It joined consecutive non-rest laps into one
+    // "rep", which is how a run the watch lapped every kilometre acquired rep
+    // boundaries it never had. Nothing merges laps any more: the splits are the
+    // laps, and an athlete who wants two of them as one rep says so in "Fix
+    // reps", where merging is a swipe. (2026-09-07)
+
+    /// Which of a workout's segments are WORK REPS — the rows that earn a rep
+    /// number, and the only ones REP AVG, SPREAD and DRIFT are computed over.
+    ///
+    /// Pure, so the rule can be tested (see `WorkRepSelectionTests`) rather than
+    /// living as a closure inside a view body.
+    ///
+    /// Precedence, strictest first:
+    ///
+    ///   1. `isContinuous` — a run lapped every km/mile has no rep structure at
+    ///      all. Its "laps" are distance splits, and a long / steady run must
+    ///      never be rendered as intervals.
+    ///   2. A segment that carries a `role` has been NAMED — by the athlete in
+    ///      "Fix reps", or by the parser. Only a work rep is a rep: a warm-up or
+    ///      a cool-down is not, however fast it was run, and the heuristics
+    ///      below may not overrule the athlete's own verdict on their own run.
+    ///      (Before this, a corrected "warm-up + 3 × 1k + cool-down" came back
+    ///      as five reps with the warm-up's pace dragged into the average, so
+    ///      the correction read as ignored. 2026-09-07)
+    ///   3. `trustRestTags` — a parsed structure, or watch laps on a run whose
+    ///      own recording marks rests, where `is_rest` is authoritative. A faded
+    ///      rep (an 11:45 mile in a hard session) is still a real rep and the
+    ///      pace cap below must not discard it.
+    ///   4. Untagged raw laps — we must separate a hard rep from a jog
+    ///      ourselves, so the pace cap applies.
+    static func workReps(
+        _ ordered: [WorkoutLapRow],
+        isContinuous: Bool,
+        trustRestTags: Bool
+    ) -> [WorkoutLapRow] {
+        if isContinuous { return [] }
+        return ordered.filter { lap in
+            if let role = lap.role {
+                guard role == "work_rep" || role == "steady" else { return false }
+                return (lap.avg_pace_sec_per_mile ?? 0) > 0
+                    && (lap.distance_meters ?? 0) > 0
+                    && (lap.moving_time_seconds ?? 0) > 0
             }
-            var dist = 0.0, time = 0.0, hrWeighted = 0.0, hrTime = 0.0
-            var temp: Double? = nil, dew: Double? = nil
-            var j = i
-            while j < ordered.count, ordered[j].is_rest != true {
-                let w = ordered[j]
-                let d = w.distance_meters ?? 0
-                let t = Double(w.moving_time_seconds ?? 0)
-                dist += d; time += t
-                if let hr = w.avg_heart_rate { hrWeighted += Double(hr) * max(t, 1); hrTime += max(t, 1) }
-                if let tf = w.temp_f { temp = max(temp ?? tf, tf) }
-                if let df = w.dew_point_f { dew = max(dew ?? df, df) }
-                j += 1
-            }
-            let miles = dist / 1609.344
-            let mergedPace: Double? = miles > 0 ? time / miles : nil
-            // The merged bout is a NEW split — its pace is the joined pace and
-            // its length is the joined length, so the constituent laps' stored
-            // heat-adjusted paces no longer describe it. Recompute here rather
-            // than dropping it: leaving this nil is what made HEAT-ADJ inert on
-            // every workout the watch lapped with rests (the toggle stayed
-            // enabled — temp/dew survive the merge — but had nothing to show).
-            // Rep-length scaling uses the MERGED distance, which is the honest
-            // bout length: two auto-lapped miles re-joined into one 2 mi rep
-            // earns the full adjustment, not each half's short-rep discount.
-            let mergedHeatAdj: Double? = {
-                guard let p = mergedPace, p > 0, let t = temp, let d = dew else { return nil }
-                return PaceCalculator.calculateDewPointAdjustment(
-                    paceSeconds: p, temperatureF: t, dewPointF: d, distanceMiles: miles
-                ).neutralEquivalentPaceSeconds
-            }()
-            out.append(WorkoutLapRow(
-                lap_index: idx,
-                distance_meters: dist > 0 ? dist : nil,
-                moving_time_seconds: time > 0 ? Int(time) : nil,
-                avg_pace_sec_per_mile: mergedPace,
-                avg_heart_rate: hrTime > 0 ? Int((hrWeighted / hrTime).rounded()) : nil,
-                is_rest: false,
-                temp_f: temp,
-                dew_point_f: dew,
-                heat_adjusted_pace_sec_per_mile: mergedHeatAdj
-            ))
-            idx += 1
-            i = j
+            guard lap.is_rest != true,
+                  let p = lap.avg_pace_sec_per_mile, p > 0,
+                  let d = lap.distance_meters, d >= 150,
+                  let s = lap.moving_time_seconds, s >= 20 else { return false }
+            if trustRestTags { return true }
+            return p <= 370
         }
-        return out
     }
 
     /// True when the raw watch laps are uniform distance auto-laps — a
     /// continuous run lapped every km/mile, with at most the occasional pause.
     /// These are the athlete's OWN recorded splits and must be shown as-is: a
-    /// steady / long run must never be merged or LLM-parsed into fake "reps".
+    /// steady / long run must never be re-cut into fake "reps".
     ///
     /// Distinguished from an interval session (where short work laps alternate
     /// with a recovery after nearly every rep) by requiring the rest / pause
@@ -254,7 +252,8 @@ enum WorkoutLapsService {
                     is_rest: role == "recovery",
                     temp_f: nil,
                     dew_point_f: nil,
-                    heat_adjusted_pace_sec_per_mile: nil
+                    heat_adjusted_pace_sec_per_mile: nil,
+                    role: role.isEmpty ? nil : role
                 ))
             }
             return ParsedReps(laps: out, intentPattern: parsed?.intent_pattern, edited: parsed?.edited_by_user == true)
@@ -264,32 +263,10 @@ enum WorkoutLapsService {
         }
     }
 
-    /// Per-lap DESCRIPTIVE labels from the parser (`parsed_structure.lap_roles`):
-    /// `lap_index → "warmup" | "rep" | "recovery" | "cooldown"`. The splits view
-    /// uses these to decide a lap's work/rest label instead of the DB's generated
-    /// `is_rest` column, which flagged any sub-200m lap as rest and hid real reps.
-    /// This changes only the LABEL — never a split's distance/pace/HR — and every
-    /// lap is kept. Empty map when the workout hasn't been parsed yet (caller then
-    /// falls back to the stored `is_rest`).
-    static func fetchLapRoles(workoutId: UUID) async -> [Int: String] {
-        struct Role: Decodable { var lap_index: Int?; var role: String? }
-        struct Parsed: Decodable { var lap_roles: [Role]? }
-        struct Row: Decodable { var parsed_structure: Parsed? }
-        do {
-            let rows: [Row] = try await supabase
-                .from("training_logs").select("parsed_structure")
-                .eq("id", value: workoutId.uuidString).limit(1).execute().value
-            guard let roles = rows.first?.parsed_structure?.lap_roles else { return [:] }
-            var map: [Int: String] = [:]
-            for r in roles {
-                if let i = r.lap_index, let role = r.role { map[i] = role.lowercased() }
-            }
-            return map
-        } catch {
-            Log.coach.error("WorkoutLapsService.fetchLapRoles failed: \(error)")
-            return [:]
-        }
-    }
+    // `fetchLapRoles` was here. It read `parsed_structure.lap_roles` and the
+    // caller wrote those over each lap's `is_rest`. Billed as a label-only fix,
+    // it decided which laps merged into a rep — so the model, not the watch,
+    // was choosing the splits. Removed with the merge it fed. (2026-09-07)
 
     /// One-shot detail read: parsed reps, prescription (notes + pattern),
     /// coach insight and workout type in a SINGLE `training_logs` round-trip.
@@ -362,7 +339,8 @@ enum WorkoutLapsService {
                         is_rest: role == "recovery",
                         temp_f: nil,
                         dew_point_f: nil,
-                        heat_adjusted_pace_sec_per_mile: nil
+                        heat_adjusted_pace_sec_per_mile: nil,
+                        role: role.isEmpty ? nil : role
                     ))
                 }
             }

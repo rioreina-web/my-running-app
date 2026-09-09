@@ -57,14 +57,6 @@ Deno.serve(async (req) => {
   if ("response" in auth) return auth.response;
   const { userId, isServiceRole } = auth;
 
-  // Caught by the LLM coverage sweep (2026-07-15): this Gemini caller shipped
-  // auth-gated but with NO per-user rate limit. Shares the "parse" bucket —
-  // it's the manual structure-correction parser.
-  const rlBlocked = await enforceFeatureRateLimit(userId, "parse", corsHeaders, { isServiceRole });
-  if (rlBlocked) return rlBlocked;
-  const monthlyCapped = await enforceMonthlyCap(userId, "parse", corsHeaders, { isServiceRole });
-  if (monthlyCapped) return monthlyCapped;
-
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   // Load the row + its current structure (the base a save merges into). 404
@@ -81,6 +73,25 @@ Deno.serve(async (req) => {
   const ownerId = (row as { user_id?: string }).user_id ?? userId;
 
   const mode = typeof body.mode === "string" ? body.mode : "save";
+
+  // Caught by the LLM coverage sweep (2026-07-15): this Gemini caller shipped
+  // auth-gated but with NO per-user rate limit. Shares the "parse" bucket —
+  // it's the manual structure-correction parser.
+  //
+  // The gate covers the two modes that spend a model call: "describe" (Gemini
+  // directly) and "restore" (which fires parse-workout-structure). "save" is a
+  // validated DB write with no LLM in it, and gating it meant a day of opening
+  // workouts could exhaust the bucket and leave the athlete unable to record a
+  // hand-correction at all — the endpoint refused with a 429 the sheet could
+  // only report as "Couldn't reach the server". A correction is the athlete's
+  // verdict on their own run; it is never the thing we ration. Same shape as
+  // ingest-manual-workout, which gates its parse mode only. (2026-09-07)
+  if (mode === "describe" || mode === "restore") {
+    const rlBlocked = await enforceFeatureRateLimit(userId, "parse", corsHeaders, { isServiceRole });
+    if (rlBlocked) return rlBlocked;
+    const monthlyCapped = await enforceMonthlyCap(userId, "parse", corsHeaders, { isServiceRole });
+    if (monthlyCapped) return monthlyCapped;
+  }
 
   // ── restore: discard the correction, re-derive from the stream ──
   if (mode === "restore") {
@@ -163,6 +174,8 @@ Rules:
 - Use the GPS segments for the actual distances, durations and paces. If the description has MORE reps than the GPS shows (the watch missed a recovery), split the relevant WORK segment to match, dividing its distance and time proportionally.
 - Every segment is its OWN block. A jog recovery is its own block with its own pace — never a rest tacked onto a rep.
 - role MUST be exactly one of: warmup, work_rep, recovery, cooldown.
+- Everything before the first work rep is "warmup"; everything after the last is "cooldown". Never call either of those "recovery" — a recovery is the jog BETWEEN two work reps.
+- Account for every GPS segment exactly once. Total the blocks' distance and duration to the GPS total; never add distance or time the run doesn't contain.
 - distance_miles = meters / 1609.34 (number). duration_s in seconds (number). avg_pace_per_mile as "M:SS" (use null for a standing rest).
 
 Output STRICT JSON only, no markdown:
