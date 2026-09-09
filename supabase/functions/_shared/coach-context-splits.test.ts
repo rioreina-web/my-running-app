@@ -174,7 +174,14 @@ Deno.test("parsed blocks map roles to warmup/work/cooldown with Rep labels", () 
   ];
   const out = splitsFromParsedBlocks(blocks);
   assertEquals(out.map((s) => s.label), ["warmup", "Rep 1", "recovery", "Rep 2", "cooldown"]);
-  assertEquals(out.map((s) => s.effortKind), ["warmup", "work", "unknown", "work", "cooldown"]);
+  // The recovery block is "rest", NOT "unknown". This assertion said "unknown"
+  // until 2026-09-08, pinning a bug: `formatSplitsBlock` counts "unknown" as
+  // work for pattern detection, so a recovery leg got averaged into the reps.
+  // That is how a 4x3mi with half-mile floats reported "Fade — second half
+  // averaged 67 sec/mi slower" for what was actually a negative-split cutdown.
+  // A block's role is known here — the parser wrote it — so nothing should
+  // reach "unknown". See the mapping in _shared/coach-context.ts.
+  assertEquals(out.map((s) => s.effortKind), ["warmup", "work", "rest", "work", "cooldown"]);
 });
 
 // ── laps-based pace_segments (2026-08-20) ────────────────────────────────

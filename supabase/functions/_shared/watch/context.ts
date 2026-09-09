@@ -90,6 +90,8 @@ export interface WatchStateInput {
      */
     distance_miles?: number | null;
     duration_minutes?: number | null;
+    /** From workout_features.easy_effort_avg_hr / avg_heart_rate. */
+    avg_heart_rate?: number | null;
   }> | null;
   load_distribution?: {
     zone_pct_7d?: { easy: number; moderate: number; threshold: number; hard: number } | null;
@@ -173,8 +175,18 @@ export function buildWatchContext(
         deriveAveragePace(w.distance_miles ?? null, w.duration_minutes ?? null),
       workoutType: w.type ?? "easy",
       distanceMiles: w.distance_miles ?? null,
+      avgHeartRate: w.avg_heart_rate ?? null,
     }))
     .filter((w) => w.paceSecPerMile !== null);
+
+  // Unfiltered, for metrics about the shape of a week rather than a run.
+  const allRuns = recent
+    .filter((w) => w.date)
+    .map((w) => ({
+      date: w.date,
+      distanceMiles: w.distance_miles ?? null,
+      workoutType: w.type ?? "",
+    }));
 
   const band = (
     z: { paceFast?: number; paceSlow?: number } | null | undefined,
@@ -195,6 +207,7 @@ export function buildWatchContext(
     easyBand,
     moderateBand,
     easyRuns,
+    allRuns,
     niggles: state.niggle_recurrence ?? null,
     upcomingQualityWithinDays: nextQualityWithinDays(state.upcoming_workouts, now),
   };
