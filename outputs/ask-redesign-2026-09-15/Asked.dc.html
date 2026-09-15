@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@500;600;700&amp;family=PT+Serif:ital,wght@0,400;0,700;1,400&amp;display=swap">
+  <style>
+/* Post Run Drip tokens — lifted from design-system/colors_and_type.css + ui_kits/ios_app/tokens.css */
+html { background: #F5F3F0; }
+body { margin: 0; font-family: "PT Serif", Georgia, "Times New Roman", serif; color: #1A1815; -webkit-font-smoothing: antialiased; }
+a { color: #D4592A; text-decoration: none; } a:hover { color: #B84420; }
+.eyebrow { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #6B6560; }
+.eyebrow--coral { color: #D4592A; }
+.caption { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; color: #6B6560; font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.display { font-family: "Crimson Pro", Georgia, "Times New Roman", serif; font-weight: 700; color: #1A1815; letter-spacing: -0.01em; line-height: 1.05; margin: 0; }
+.body { font-family: "PT Serif", Georgia, serif; font-size: 15px; line-height: 1.55; color: #1A1815; margin: 0; }
+.quote { font-family: "PT Serif", Georgia, serif; font-style: italic; line-height: 1.5; color: #1A1815; margin: 0; }
+.plate-strip { display: flex; justify-content: space-between; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 0.14em; color: #6B6560; text-transform: uppercase; padding: 12px 24px 0 24px; }
+.e-rule { display: flex; align-items: center; gap: 8px; }
+.e-rule::before, .e-rule::after { content: ""; flex: 1; height: 1px; background: #E8E4E0; }
+.e-rule .dot { width: 3px; height: 3px; border-radius: 999px; background: #E8E4E0; }
+.card { background: #FFFFFF; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.chip { font-family: "Crimson Pro", Georgia, serif; font-size: 13px; font-weight: 500; color: #1A1815; border: 1px solid #E8E4E0; background: #FFFFFF; border-radius: 999px; padding: 6px 12px; white-space: nowrap; line-height: 1.2; }
+.chip--active { border: 1.5px solid #D4592A; color: #D4592A; padding: 5.5px 11.5px; }
+.ev { display: inline-block; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.10em; color: #D4592A; background: rgba(212,89,42,0.12); border-radius: 4px; padding: 1px 6px; white-space: nowrap; vertical-align: baseline; }
+.coach-quote { font-family: "PT Serif", Georgia, serif; font-style: italic; font-size: 14px; color: #1A1815; line-height: 1.5; padding-left: 12px; border-left: 2px solid rgba(212,89,42,0.5); margin: 0; }
+.cant-see { font-family: "PT Serif", Georgia, serif; font-style: italic; font-size: 14px; color: #6B6560; line-height: 1.5; padding-left: 12px; border-left: 2px solid #9B9590; margin: 0; }
+.ask-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px 14px 16px; background: #FFFFFF; border-top: 1px solid #E8E4E0; }
+.ask-bar .field { flex: 1; font-family: "PT Serif", Georgia, serif; font-size: 15px; color: #9B9590; }
+.tab-bar { background: #F5F3F0; border-top: 1px solid #E8E4E0; padding: 10px 0 12px 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tab { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.tab .tdot { width: 6px; height: 6px; border-radius: 999px; background: transparent; border: 1.5px solid #9B9590; box-sizing: border-box; }
+.tab.is-active .tdot { background: #D4592A; border-color: #D4592A; }
+.tab .tlbl { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 10px; letter-spacing: 0.12em; color: #6B6560; text-transform: uppercase; }
+.tab.is-active .tlbl { color: #1A1815; font-weight: 600; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hairline { height: 1px; background: #E8E4E0; width: 100%; }
+.src-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 16px; background: #FAFAF8; border: 1px solid rgba(212,89,42,0.18); border-radius: 12px; }
+.icon { width: 20px; height: 20px; stroke: #6B6560; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.send { width: 26px; height: 26px; border-radius: 999px; background: #D4592A; display: grid; place-items: center; }
+.send--idle { background: #9B9590; }
+.send svg { width: 14px; height: 14px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  </style>
+</helmet>
+<div style="width: 390px; min-height: 1000px; background: #F5F3F0; display: flex; flex-direction: column; box-sizing: border-box;">
+  <div class="plate-strip">
+    <div style="display: flex; flex-direction: column; gap: 2px;">
+      <span style="color: #1A1815;">RUNNING LOG</span>
+      <span>— COACH · ASKED</span>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 2px; text-align: right;">
+      <span style="color: #1A1815;">FIG. 18</span>
+      <span>ASK · 09.2026</span>
+    </div>
+  </div>
+
+  <div style="flex: 1; padding: 16px 24px 24px 24px; display: flex; flex-direction: column; gap: 20px;">
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div class="row">
+        <span class="eyebrow">ASKED · LAST 30 DAYS</span>
+        <span class="eyebrow" style="color: #9B9590;">← ASK</span>
+      </div>
+      <h1 class="display" style="font-size: 32px;">Your questions.</h1>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      <span class="chip chip--active">All</span>
+      <span class="chip">Niggles</span>
+      <span class="chip">Fitness</span>
+      <span class="chip">Recovery</span>
+      <span class="chip">Compare</span>
+    </div>
+
+    <div style="display: flex; flex-direction: column;">
+      <div class="hairline"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px; padding: 14px 0;">
+        <div class="row"><span class="caption">TUE SEP 15 · COMPARE</span><span class="mono" style="font-size: 14px; color: #9B9590;">↗</span></div>
+        <p class="display" style="font-size: 17px; font-weight: 600; line-height: 1.2;">How does this block compare to the Houston build?</p>
+        <p class="quote" style="font-size: 13px; color: #6B6560;">Same volume, quicker legs.</p>
+      </div>
+      <div class="hairline"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px; padding: 14px 0;">
+        <div class="row"><span class="caption">TUE SEP 15 · NIGGLES</span><span class="mono" style="font-size: 14px; color: #9B9590;">↗</span></div>
+        <p class="display" style="font-size: 17px; font-weight: 600; line-height: 1.2;">My right hamstring's been bothering me on the long runs.</p>
+        <p class="quote" style="font-size: 13px; color: #6B6560;">Achy, and only after mile 12. Worth watching, not worth fearing.</p>
+      </div>
+      <div class="hairline"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px; padding: 14px 0;">
+        <div class="row"><span class="caption">THU SEP 10 · FITNESS · ◆ MP TUE</span><span class="mono" style="font-size: 14px; color: #9B9590;">↗</span></div>
+        <p class="display" style="font-size: 17px; font-weight: 600; line-height: 1.2;">Was Tuesday's MP session actually marathon pace, or was I forcing it?</p>
+        <p class="quote" style="font-size: 13px; color: #6B6560;">Marathon pace, held honestly. Heart rate says so.</p>
+      </div>
+      <div class="hairline"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px; padding: 14px 0;">
+        <div class="row"><span class="caption">SUN SEP 6 · RECOVERY</span><span class="mono" style="font-size: 14px; color: #9B9590;">↗</span></div>
+        <p class="display" style="font-size: 17px; font-weight: 600; line-height: 1.2;">Read this week through the recovery lens.</p>
+        <p class="quote" style="font-size: 13px; color: #6B6560;">Three short nights, one long run. The order matters.</p>
+      </div>
+      <div class="hairline"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px; padding: 14px 0;">
+        <div class="row"><span class="caption">MON AUG 31 · FITNESS</span><span class="mono" style="font-size: 14px; color: #9B9590;">↗</span></div>
+        <p class="display" style="font-size: 17px; font-weight: 600; line-height: 1.2;">Are the long runs getting easier or am I just slowing down?</p>
+        <p class="quote" style="font-size: 13px; color: #6B6560;">Easier. Same pace, lower heart rate, lighter words.</p>
+      </div>
+      <div class="hairline"></div>
+
+      <div style="display: flex; flex-direction: column; gap: 5px; padding: 14px 0;">
+        <div class="row"><span class="caption">SAT AUG 22 · COMPARE</span><span class="mono" style="font-size: 14px; color: #9B9590;">↗</span></div>
+        <p class="display" style="font-size: 17px; font-weight: 600; line-height: 1.2;">Where was I at this point before Houston?</p>
+        <p class="quote" style="font-size: 13px; color: #6B6560;">Two miles a week lighter, and no tempo yet.</p>
+      </div>
+      <div class="hairline"></div>
+    </div>
+
+    <p class="quote" style="font-size: 12px; color: #9B9590;">Every answer stays with the log it was read from. Open one to see what the coach was looking at.</p>
+
+    <div style="flex: 1;"></div>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>

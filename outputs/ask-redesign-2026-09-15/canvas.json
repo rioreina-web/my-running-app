@@ -1,0 +1,15 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",    "title": "1 · Ask (Coach tab)",       "x": 0,    "y": 0, "w": 390, "h": 844 },
+    { "file": "Compose.dc.html", "title": "2 · Writing a question",    "x": 480,  "y": 0, "w": 390, "h": 844 },
+    { "file": "Reply.dc.html",   "title": "3 · The reply",             "x": 960,  "y": 0, "w": 390, "h": 1180 },
+    { "file": "Clarify.dc.html", "title": "4 · One question first",    "x": 1440, "y": 0, "w": 390, "h": 960 },
+    { "file": "Asked.dc.html",   "title": "5 · Asked (history)",       "x": 1920, "y": 0, "w": 390, "h": 1000 }
+  ],
+  "annotations": [
+    { "id": "why", "x": 0, "y": -230, "w": 390, "text": "WHAT CHANGED\n\nToday the Ask bar is a single text field under the Read that opens a 'coming soon' alert. This makes asking the front door of the Coach tab, per the May 28 decision: Coach is an analyst you query, not a daily editor.\n\nThree things make questions better: point them at something (a run, this block, a lens), show what the coach will read before you send, and answer in the Read format with sources and a confidence line." },
+    { "id": "flow", "x": 480, "y": -150, "w": 390, "text": "FLOW\n\n1 → tap a lens, a noticed pattern, or write.\n2 → attach a run (◆) or a scope; see exactly what the coach will read.\n3 → reply as an editorial paragraph: evidence chips, what it can't see, sources, confidence, follow-ups.\n4 → when the question is ambiguous the coach asks one narrowing question instead of guessing (principles.md: 'ask, don't answer')." },
+    { "id": "voice", "x": 1440, "y": -150, "w": 390, "text": "VOICE RULES HELD\n\nNo prescriptions, no diagnoses, no 'you should'. Soft question at the end of every reply. Goal and race anchors carried silently. Coral appears once per cluster. All copy is sample text written for Maya (3:28 PB, chasing 3:16); real answers come from her log." }
+  ],
+  "launch": { "view": "canvas" }
+}
