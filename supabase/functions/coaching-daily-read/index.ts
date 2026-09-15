@@ -37,46 +37,25 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v2.ts";
+import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v3.ts";
 import { getModelConfig } from "../_shared/router.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import {
+  type CantSee,
+  type Confidence,
+  type DailyReadPayload,
+  type ParagraphSegment,
+  type Sources,
+  formatWeeklyVolume,
+  isRunningType,
+  parseModelResponse,
+  validateRead,
+  weekdayName,
+  weeklyRunningVolume,
+} from "../_shared/daily-read-shape.ts";
 
-// ── Types matching the daily_coaching_reads JSON columns ─────────────
-
-type ParagraphSegment =
-  | string
-  | { workout_id: string }
-  | { doc_id: string };
-
-interface CantSee {
-  eyebrow: string;
-  body: string;
-}
-
-interface MemoSource {
-  label: string;
-  excerpt: string;
-  log_id: string;
-}
-
-interface Sources {
-  workouts: string[];
-  docs: string[];
-  memos: MemoSource[];
-}
-
-interface Confidence {
-  level: "HIGH" | "MEDIUM" | "LOW";
-  sub: string;
-}
-
-interface DailyReadPayload {
-  headline: string;
-  paragraph: ParagraphSegment[];
-  cant_see: CantSee | null;
-  sources: Sources;
-  confidence: Confidence;
-}
+/** Which prompt version this function renders with. Bump here + in the cassette dir. */
+const PROMPT_NAME = "daily-read.v3";
 
 interface RequestBody {
   user_id?: string;
@@ -181,6 +160,10 @@ Deno.serve(async (req) => {
       existing.status === "completed" &&
       triggeredBy !== "workout_trigger"
     ) {
+      // Rows written before the v3 `questions` column landed have no
+      // array; the iOS decoder tolerates a missing key, but normalize
+      // here so every response carries the full v3 shape.
+      if (!Array.isArray(existing.questions)) existing.questions = [];
       return jsonResponse(200, { read: existing, cached: true });
     }
 
@@ -195,7 +178,7 @@ Deno.serve(async (req) => {
     }
 
     // ── 3. Build the context bundle ──────────────────────────────────
-    const context = await buildDailyReadContext(supabase, userId);
+    const context = await buildDailyReadContext(supabase, userId, readDate);
 
     // ── 4. Call Gemini ───────────────────────────────────────────────
     const modelConfig = getModelConfig("complex"); // creative + extended context
@@ -207,11 +190,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    const systemPrompt = loadPrompt("daily-read.v2", {});
+    const systemPrompt = loadPrompt(PROMPT_NAME, {});
     const fullPrompt = `${systemPrompt}\n\n${context.contextBlock}\n\nGenerate today's Read for this athlete.`;
 
     let raw: string;
-    let modelId = modelConfig.model;
+    const modelId = modelConfig.model;
     try {
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({
@@ -263,8 +246,17 @@ Deno.serve(async (req) => {
       return jsonResponse(502, { error: "Model returned unparseable JSON" });
     }
 
-    // ── 6. Validate + strip invalid citations ────────────────────────
-    const validated = validateCitations(parsed, context);
+    // ── 6. Validate + strip invalid citations, normalize shape ───────
+    const { payload: validated, report } = validateRead(parsed, context);
+    if (report.droppedWorkoutCitations > 0) {
+      console.warn(`daily-read: stripped ${report.droppedWorkoutCitations} invalid workout citation(s)`);
+    }
+    if (report.droppedDocCitations > 0) {
+      console.warn(`daily-read: stripped ${report.droppedDocCitations} invalid doc citation(s)`);
+    }
+    if (report.droppedQuestions > 0) {
+      console.warn(`daily-read: dropped ${report.droppedQuestions} malformed/extra question(s)`);
+    }
 
     // ── 7. Update the row to completed ───────────────────────────────
     const completed = await markCompleted(
@@ -327,6 +319,8 @@ interface DailyReadRow {
   status: "pending" | "completed" | "failed";
   headline: string | null;
   paragraph: ParagraphSegment[];
+  /** v3 soft questions. Absent on rows written before the column landed. */
+  questions?: string[];
   cant_see: CantSee | null;
   sources: Sources;
   confidence: Confidence | Record<string, never>;
@@ -407,27 +401,47 @@ async function markCompleted(
   payload: DailyReadPayload,
   aiModel: string,
 ): Promise<DailyReadRow | null> {
-  const { data, error } = await supabase
-    .from("daily_coaching_reads")
-    .update({
-      status: "completed",
-      headline: payload.headline,
-      paragraph: payload.paragraph,
-      cant_see: payload.cant_see,
-      sources: payload.sources,
-      confidence: payload.confidence,
-      ai_model: aiModel,
-      generated_at: new Date().toISOString(),
-      error_message: null,
-    })
-    .eq("id", rowId)
-    .select("*")
-    .single();
+  const base = {
+    status: "completed",
+    headline: payload.headline,
+    paragraph: payload.paragraph,
+    cant_see: payload.cant_see,
+    sources: payload.sources,
+    confidence: payload.confidence,
+    ai_model: aiModel,
+    generated_at: new Date().toISOString(),
+    error_message: null,
+  };
+
+  const attempt = async (row: Record<string, unknown>) =>
+    await supabase
+      .from("daily_coaching_reads")
+      .update(row)
+      .eq("id", rowId)
+      .select("*")
+      .single();
+
+  let { data, error } = await attempt({ ...base, questions: payload.questions });
+
+  // Deploy-order safety net: if this function ships before the
+  // `questions` column migration (20260915120000) has been pushed,
+  // Postgres answers 42703 (undefined_column). Fall back to writing the
+  // v2 shape so the athlete still gets a Read; the questions are lost
+  // for that row only. Loud in the logs so it doesn't stay that way.
+  if (error && /questions/.test(error.message) && /column|42703/i.test(error.message + (error.code ?? ""))) {
+    console.error(
+      "daily-read: `questions` column missing — run `supabase db push` for 20260915120000_daily_coaching_reads_questions. Writing v2 shape.",
+    );
+    ({ data, error } = await attempt(base));
+  }
+
   if (error) {
     console.error("daily-read: mark completed failed:", error.message);
     return null;
   }
-  return data as DailyReadRow;
+  const row = data as DailyReadRow;
+  if (row && !Array.isArray(row.questions)) row.questions = [];
+  return row;
 }
 
 // ── Context fetch ────────────────────────────────────────────────────
@@ -443,9 +457,18 @@ interface DailyReadContext {
   validMemoLogIds: Set<string>;
 }
 
+/**
+ * Build the context the v3 prompt reads. Beyond the raw rows, this
+ * pre-computes the facts the Read is supposed to be *about* — weekly
+ * running volume in trend form, the quality sessions with their paces,
+ * today's date, and yesterday's questions — so the model spends its
+ * effort on the sentence, not the arithmetic. Every number the prompt
+ * is allowed to quote should be visible somewhere in this block.
+ */
 async function buildDailyReadContext(
   supabase: SupabaseClient,
   userId: string,
+  readDate: string,
 ): Promise<DailyReadContext> {
   const lookbackDate = new Date();
   lookbackDate.setDate(lookbackDate.getDate() - TRAINING_LOG_LOOKBACK_DAYS);
@@ -518,9 +541,21 @@ async function buildDailyReadContext(
       .eq("status", "active")
       .limit(1)
       .maybeSingle(),
+
+    // 7. The most recent completed Read before today — so the coach
+    //    doesn't ask the same question two days running and can carry
+    //    a thread ("yesterday I said X").
+    supabase
+      .from("daily_coaching_reads")
+      .select("read_date, headline, questions")
+      .eq("user_id", userId)
+      .eq("status", "completed")
+      .lt("read_date", readDate)
+      .order("read_date", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
-  // deno-lint-ignore no-explicit-any
   const extract = <T,>(idx: number, fallback: T): T => {
     const r = settled[idx];
     if (r.status !== "fulfilled") {
@@ -545,11 +580,13 @@ async function buildDailyReadContext(
   const memos = extract<any[]>(5, []);
   // deno-lint-ignore no-explicit-any
   const coachRel = extract<any>(6, null);
+  // deno-lint-ignore no-explicit-any
+  const previousRead = extract<any>(7, null);
 
-  // Compute coaching mode — drives the editorial register in the v2
+  // Compute coaching mode — drives the editorial register in the
   // prompt. Three states:
   //   PLAN_MODE       — athlete has an active training_plans row.
-  //                     License to evaluate execution against targets.
+  //                     License to compare execution against targets.
   //   COACHED_MODE    — athlete has an active coach but no uploaded
   //                     plan. Describe-only; defer training decisions
   //                     to the coach. The most-conservative register.
@@ -578,19 +615,23 @@ async function buildDailyReadContext(
   // ── Render the context block the model reads ────────────────────
   const sections: string[] = [];
 
-  // Coaching mode goes FIRST. The v2 prompt's first read-through is
-  // this line — it determines whether prescriptive language is on
-  // the table for the rest of the Read.
+  // Coaching mode goes FIRST. The prompt's first read-through is this
+  // line — it determines whether comparing against a target is on the
+  // table for the rest of the Read.
   const modeNote =
     coachingMode === "PLAN_MODE"
-      ? "PLAN_MODE — the athlete has an uploaded training plan with a goal race. Evaluate execution against the plan. Prescriptive language is allowed."
+      ? "PLAN_MODE — the athlete has an uploaded training plan with a goal race. You may compare execution against the plan's targets and name what the plan has scheduled. You still observe; the plan prescribes."
       : coachingMode === "COACHED_MODE"
-        ? "COACHED_MODE — the athlete is working with a coach but the program is not in the app. Describe what's happening; defer training decisions to the coach. Do NOT invent target paces, race predictions, or upcoming-workout guidance."
-        : "SELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening; one good question per Read at most. No invented targets.";
+        ? "COACHED_MODE — the athlete is working with a coach but the program is not in the app. Describe what's happening; hand training decisions to the coach. Do NOT invent target paces, race predictions, or upcoming-workout guidance."
+        : "SELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening. No invented targets. One or two soft questions.";
   sections.push(`## Coaching mode\n${modeNote}`);
 
+  // Today — so "this week" / "yesterday" / "Sunday's long run" are
+  // grounded on the athlete's calendar, not the server's.
+  sections.push(`## Today\n${readDate} (${weekdayName(readDate)}). Weeks start Monday.`);
+
   if (athleteStateBlock) {
-    sections.push(`## Athlete state\n${athleteStateBlock}`);
+    sections.push(`## Athlete state (anchors and goals here are for YOUR reading only — never say them back to the athlete)\n${athleteStateBlock}`);
   }
 
   if (activePlan) {
@@ -604,21 +645,37 @@ async function buildDailyReadContext(
     ]
       .filter(Boolean)
       .join(" · ");
-    sections.push(`## Goal race\n${planLine}`);
+    sections.push(`## Goal race (silent — shapes what you notice, never spoken back)\n${planLine}`);
+  }
+
+  // Weekly running volume — pre-computed so the model can speak in
+  // trend terms ("third week above 40") without summing 30 rows.
+  // Running only: cross-training is a different kind of stress (Q23).
+  const volume = weeklyRunningVolume(logs, readDate, 6);
+  const hasAnyVolume = volume.some((w) => w.runs > 0);
+  if (hasAnyVolume) {
+    sections.push(
+      `## Weekly running volume (most recent first; running only, cross-training excluded)\n${formatWeeklyVolume(volume)}`,
+    );
   }
 
   if (logs.length > 0) {
-    const lines = logs.slice(0, 30).map((l) => {
-      const dist = l.workout_distance_miles ? `${Number(l.workout_distance_miles).toFixed(1)}mi` : "—";
-      const type = (l.workout_type ?? "run") as string;
-      const pace = l.workout_pace_per_mile ? ` @ ${l.workout_pace_per_mile}/mi` : "";
-      const dur = l.workout_duration_minutes ? ` (${l.workout_duration_minutes}m)` : "";
-      const mood = l.mood ? ` · mood:${l.mood}` : "";
-      const quality = QUALITY_WORKOUT_TYPES.has(type.toLowerCase()) ? " ★" : "";
-      return `- [${l.id}] ${l.workout_date ?? l.created_at?.slice(0, 10)} · ${type}${quality} · ${dist}${pace}${dur}${mood}`;
-    });
+    // Quality sessions get their own short list — the Read's story is
+    // told through these, and a compact view with paces side by side
+    // is how a coach would actually scan the block.
+    const quality = logs
+      .filter((l) => QUALITY_WORKOUT_TYPES.has(String(l.workout_type ?? "").toLowerCase()))
+      .slice(0, 12)
+      .map((l) => describeLog(l));
+    if (quality.length > 0) {
+      sections.push(
+        `## Quality sessions (last ${TRAINING_LOG_LOOKBACK_DAYS} days — the story of the block; cite by the bracketed id)\n${quality.join("\n")}`,
+      );
+    }
+
+    const lines = logs.slice(0, 30).map((l) => describeLog(l));
     sections.push(
-      `## Recent runs (most recent first — cite by the bracketed id)\n${lines.join("\n")}`,
+      `## Recent runs (most recent first — cite by the bracketed id; ★ = quality, ✕ = not running)\n${lines.join("\n")}`,
     );
   } else {
     sections.push(
@@ -628,13 +685,28 @@ async function buildDailyReadContext(
 
   if (memos.length > 0) {
     const lines = memos.map((m) => {
-      const excerpt = String(m.cleaned_notes ?? "").slice(0, 200).replace(/\s+/g, " ").trim();
+      const excerpt = String(m.cleaned_notes ?? "").slice(0, 240).replace(/\s+/g, " ").trim();
       const mood = m.mood ? ` · mood:${m.mood}` : "";
       return `- [${m.id}] ${m.created_at?.slice(0, 10)}${mood}: "${excerpt}"`;
     });
     sections.push(
-      `## Recent voice memos (last ${VOICE_MEMO_LOOKBACK_DAYS} days — surface in sources.memos only, never cite inline)\n${lines.join("\n")}`,
+      `## Recent voice memos (last ${VOICE_MEMO_LOOKBACK_DAYS} days). Read these for FEELING and LIFE CONTEXT — weather, sleep, stress, niggles. Paraphrase in the paragraph; never quote them back. A short verbatim excerpt may go in sources.memos only.\n${lines.join("\n")}`,
     );
+  } else {
+    sections.push(
+      `## Recent voice memos\nNone in the last ${VOICE_MEMO_LOOKBACK_DAYS} days — skip the FEELING sentence and start with the work.`,
+    );
+  }
+
+  if (previousRead) {
+    const prevQs = Array.isArray(previousRead.questions)
+      ? (previousRead.questions as unknown[]).map(String).filter((q) => q.trim().length > 0)
+      : [];
+    const parts = [`${previousRead.read_date}: "${previousRead.headline ?? ""}"`];
+    if (prevQs.length > 0) {
+      parts.push(`Questions asked then (ask something different today):\n${prevQs.map((q) => `- ${q}`).join("\n")}`);
+    }
+    sections.push(`## Your previous Read\n${parts.join("\n")}`);
   }
 
   if (weeklyReports.length > 0) {
@@ -670,131 +742,21 @@ async function buildDailyReadContext(
   return { contextBlock, validWorkoutIds, validDocIds, validMemoLogIds };
 }
 
-// ── Model output parsing & validation ────────────────────────────────
-
-function parseModelResponse(raw: string): DailyReadPayload {
-  // Models sometimes wrap JSON in ```json fences despite responseMimeType.
-  const cleaned = raw
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```\s*$/i, "")
-    .trim();
-  const obj = JSON.parse(cleaned) as Partial<DailyReadPayload>;
-
-  if (typeof obj.headline !== "string") {
-    throw new Error("Missing or invalid headline");
-  }
-  if (!Array.isArray(obj.paragraph)) {
-    throw new Error("Missing or invalid paragraph array");
-  }
-  if (!obj.sources || typeof obj.sources !== "object") {
-    throw new Error("Missing sources object");
-  }
-  if (!obj.confidence || typeof obj.confidence !== "object") {
-    throw new Error("Missing confidence object");
-  }
-
-  return {
-    headline: obj.headline,
-    paragraph: obj.paragraph as ParagraphSegment[],
-    cant_see: (obj.cant_see ?? null) as CantSee | null,
-    sources: {
-      workouts: Array.isArray(obj.sources.workouts) ? obj.sources.workouts : [],
-      docs: Array.isArray(obj.sources.docs) ? obj.sources.docs : [],
-      memos: Array.isArray(obj.sources.memos) ? obj.sources.memos : [],
-    },
-    confidence: {
-      level: (obj.confidence.level ?? "LOW") as Confidence["level"],
-      sub: typeof obj.confidence.sub === "string" ? obj.confidence.sub : "",
-    },
-  };
-}
-
-/**
- * Strip any citation that doesn't point at a known id, in BOTH the
- * paragraph segments and the sources block. Returns a sanitized
- * payload and emits one console.warn per dropped citation.
- */
-function validateCitations(
-  payload: DailyReadPayload,
-  ctx: DailyReadContext,
-): DailyReadPayload {
-  const cleanedParagraph: ParagraphSegment[] = [];
-  let droppedWorkouts = 0;
-  let droppedDocs = 0;
-
-  for (const seg of payload.paragraph) {
-    if (typeof seg === "string") {
-      cleanedParagraph.push(seg);
-      continue;
-    }
-    if (seg && typeof seg === "object" && "workout_id" in seg) {
-      if (ctx.validWorkoutIds.has(seg.workout_id)) {
-        cleanedParagraph.push(seg);
-      } else {
-        droppedWorkouts++;
-      }
-      continue;
-    }
-    if (seg && typeof seg === "object" && "doc_id" in seg) {
-      if (ctx.validDocIds.has(seg.doc_id)) {
-        cleanedParagraph.push(seg);
-      } else {
-        droppedDocs++;
-      }
-      continue;
-    }
-    // Unknown segment shape — drop quietly. The prompt forbids anything
-    // other than the three documented variants.
-  }
-
-  if (droppedWorkouts > 0) {
-    console.warn(
-      `daily-read: stripped ${droppedWorkouts} invalid workout citation(s) from paragraph`,
-    );
-  }
-  if (droppedDocs > 0) {
-    console.warn(
-      `daily-read: stripped ${droppedDocs} invalid doc citation(s) from paragraph`,
-    );
-  }
-
-  // Filter sources to known ids, and dedupe.
-  const sources: Sources = {
-    workouts: dedupe(payload.sources.workouts.filter((id) => ctx.validWorkoutIds.has(id))),
-    docs: dedupe(payload.sources.docs.filter((id) => ctx.validDocIds.has(id))),
-    memos: payload.sources.memos
-      .filter((m) => m && typeof m === "object" && ctx.validMemoLogIds.has(m.log_id))
-      .map((m) => ({
-        label: String(m.label ?? "").slice(0, 80),
-        excerpt: String(m.excerpt ?? "").slice(0, 400),
-        log_id: m.log_id,
-      })),
-  };
-
-  // Auto-populate sources.workouts/docs from paragraph if the model
-  // didn't echo them back — common with structured-output models.
-  for (const seg of cleanedParagraph) {
-    if (typeof seg === "object" && "workout_id" in seg && !sources.workouts.includes(seg.workout_id)) {
-      sources.workouts.push(seg.workout_id);
-    }
-    if (typeof seg === "object" && "doc_id" in seg && !sources.docs.includes(seg.doc_id)) {
-      sources.docs.push(seg.doc_id);
-    }
-  }
-
-  return {
-    headline: payload.headline.trim(),
-    paragraph: cleanedParagraph,
-    cant_see: payload.cant_see,
-    sources,
-    confidence: payload.confidence,
-  };
-}
-
-function dedupe<T>(arr: T[]): T[] {
-  return Array.from(new Set(arr));
+/** One training_log row as the bracketed-id line the prompt cites from. */
+// deno-lint-ignore no-explicit-any
+function describeLog(l: any): string {
+  const dist = l.workout_distance_miles ? `${Number(l.workout_distance_miles).toFixed(1)}mi` : "—";
+  const type = (l.workout_type ?? "run") as string;
+  const pace = l.workout_pace_per_mile ? ` @ ${l.workout_pace_per_mile}/mi` : "";
+  const dur = l.workout_duration_minutes ? ` (${l.workout_duration_minutes}m)` : "";
+  const mood = l.mood ? ` · mood:${l.mood}` : "";
+  const marker = QUALITY_WORKOUT_TYPES.has(type.toLowerCase())
+    ? " ★"
+    : isRunningType(type)
+      ? ""
+      : " ✕";
+  const date = l.workout_date ?? l.created_at?.slice(0, 10);
+  return `- [${l.id}] ${date} (${date ? weekdayName(String(date).slice(0, 10)).slice(0, 3) : "—"}) · ${type}${marker} · ${dist}${pace}${dur}${mood}`;
 }
 
 // ── Formatters ──────────────────────────────────────────────────────

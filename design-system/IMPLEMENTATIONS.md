@@ -19,7 +19,7 @@ read from this file, this file is out of date.
 | `workout-cards.jsx` (A/B/C/D) | — | `Workouts/WorkoutDetailPlate23.swift` (= direction A) | A on iOS as Plate 23; B/C/D not picked |
 | `fitness-predictor.jsx` | — | **none** | **no iOS view exists yet** (only `FitnessPredictorService` backend) |
 | `explorations/web/plan-builder/` (A/B/C) | — | n/a (web only) | direction not picked |
-| `Coach iOS.html` (Direction A · The Read) — **missing from this folder** | — | `Coaching/Read/CoachReadView.swift` + `Coaching/Read/*` primitives | shipped to code · parity NOT verified (built from prompts doc only; pixel reference never delivered). See `outputs/coach-read-design-drift.md` for the drift fix log. |
+| `Coach iOS.html` (Direction A · The Read) — **missing from this folder** | — | `Coaching/Read/CoachReadView.swift` + `Coaching/Read/*` primitives | shipped to code · parity NOT verified (pixel reference never delivered). Reshaped 2026-09-15 to the decided minimal format (eyebrow · headline · paragraph · soft questions · basis) — see `outputs/coach-read-clarity-2026-09-15.md`; older token drift log in `outputs/coach-read-design-drift.md`. |
 
 ## ui_kits/ios_app/ → iOS Swift files
 

@@ -1,5 +1,13 @@
 # Coach Read — design system drift
 
+> **Update 2026-09-15.** The page was reshaped in the clarity pass
+> (`coach-read-clarity-2026-09-15.md`): the plate strip, dateline,
+> byline and signature line this audit measures are gone, and the
+> standalone `ConfidenceBar` is folded into `SourcesPanel`. Items 1-2
+> below are moot; 5-6 are fixed on `CoachReadView`, `SourcesPanel` and
+> `SoftQuestionsBlock` and still open on `EvidenceChip`, `DocChip`,
+> `CantSeeBlock`, `DocDetailSheet`. Items 3-4, 7 are unchanged.
+
 **Why this exists:** I built `CoachReadView` and its components from the
 textual descriptions in `coach-the-read-prompts.md` without ever
 consulting `Post Run Drip Design System/`. This is the drift audit

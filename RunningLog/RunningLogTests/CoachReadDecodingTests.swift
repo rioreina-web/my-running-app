@@ -33,6 +33,10 @@ struct CoachReadDecodingTests {
             { "doc_id": "bbbbbbbb-1111-1111-1111-111111111111" },
             " on aerobic support says this is the phase to hold steady, not push."
           ],
+          "questions": [
+            "How did Sunday's 16 feel next to the one three weeks ago?",
+            "Is the right hamstring getting your attention, or are we both just noticing it?"
+          ],
           "cant_see": {
             "eyebrow": "NO SLEEP DATA",
             "body": "Watch isn't syncing sleep this week — I'm guessing on recovery."
@@ -91,6 +95,10 @@ struct CoachReadDecodingTests {
             return
         }
 
+        // Soft questions (v3).
+        #expect(read.questions.count == 2)
+        #expect(read.questions[0].hasPrefix("How did Sunday's 16 feel"))
+
         // cantSee block.
         #expect(read.cantSee?.eyebrow == "NO SLEEP DATA")
         #expect(read.cantSee?.body.contains("guessing on recovery") == true)
@@ -138,6 +146,49 @@ struct CoachReadDecodingTests {
         #expect(read.cantSee == nil)
         #expect(read.aiModel == nil)
         #expect(read.confidence.level == .medium)
+        // Pre-v3 row: no `questions` key at all → empty array, not a throw.
+        #expect(read.questions.isEmpty)
+    }
+
+    // MARK: - questions (v3)
+
+    @Test("questions: null decodes as an empty array")
+    func questionsNullDecodesEmpty() throws {
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "read_date": "2026-09-15",
+          "headline": "Quiet week, on purpose.",
+          "paragraph": ["Recovery week."],
+          "questions": null,
+          "sources": { "workouts": [], "docs": [], "memos": [] },
+          "confidence": { "level": "MEDIUM", "sub": "3 runs, no memos" },
+          "generated_at": "2026-09-15T13:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        let read = try JSONDecoder.coachRead().decode(CoachRead.self, from: json)
+        #expect(read.questions.isEmpty)
+    }
+
+    @Test("questions: a non-string element fails decoding")
+    func questionsMustBeStrings() {
+        let json = """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "read_date": "2026-09-15",
+          "headline": "x.",
+          "paragraph": [],
+          "questions": [{ "workout_id": "aaaaaaaa-1111-1111-1111-111111111111" }],
+          "sources": { "workouts": [], "docs": [], "memos": [] },
+          "confidence": { "level": "LOW", "sub": "x" },
+          "generated_at": "2026-09-15T06:00:00Z"
+        }
+        """.data(using: .utf8)!
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder.coachRead().decode(CoachRead.self, from: json)
+        }
     }
 
     // MARK: - Empty-state (new account)
@@ -178,6 +229,7 @@ struct CoachReadDecodingTests {
                 .text(" and a doc: "),
                 .doc(docId: UUID(uuidString: "bbbbbbbb-1111-1111-1111-111111111111")!),
             ],
+            questions: ["How did the 16 feel?"],
             cantSee: .init(eyebrow: "X", body: "y"),
             sources: .init(
                 workouts: [UUID(uuidString: "aaaaaaaa-1111-1111-1111-111111111111")!],
@@ -201,6 +253,7 @@ struct CoachReadDecodingTests {
         #expect(decoded.id == original.id)
         #expect(decoded.headline == original.headline)
         #expect(decoded.paragraph.count == 4)
+        #expect(decoded.questions == ["How did the 16 feel?"])
         #expect(decoded.sources.workouts == original.sources.workouts)
         #expect(decoded.confidence.level == .high)
 

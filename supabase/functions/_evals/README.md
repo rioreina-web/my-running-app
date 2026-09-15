@@ -22,6 +22,7 @@ real provider and is run manually or on a schedule.
 | `process-training-memo.v1` (Niggles classifier) | 3 | **stubs** — rubrics pinned, awaiting `record.ts` to fill `recorded_response` | ✓ |
 | `coaching-agent-{simple,moderate,complex,proactive}.v1` | 0 | — | ✓ (cassettes TODO) |
 | `reschedule-plan.v1` | 0 | — | ✓ (cassettes TODO) |
+| `daily-read.v3` (Coach Read) | 5 | **stubs** — v3 shape rubrics + `daily-read-v3-shape` custom check pinned; record before flipping prod traffic | ✓ |
 
 Target by end of W2.1: 20 cassettes for `coaching-agent`, 15 for
 `injury-analysis`, 10 for `process-training-memo`, 10 for `reschedule-plan`.

@@ -1,0 +1,64 @@
+{
+  "id": "003-hot-humid-tempo-life-context",
+  "prompt_name": "daily-read.v3",
+  "description": "Life-context test (voice principle 8). Today's tempo came in at 7:41 against a block trend of 7:30-7:31, and the memo explains why: 88°F and humid at 6am. The Read MUST attribute the slower pace to conditions, not to fitness — mention heat/humidity/temperature explicitly — and MUST NOT read it as a fitness dip, a bad session, or a reason for concern. 'A 7:41 tempo at 88 degrees is not a slow tempo' is the register. Feeling sentence should reflect 'brutal / soaked' without quoting.",
+  "vars": {},
+  "input": "\n\n## Coaching mode\nSELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening. No invented targets. One or two soft questions.\n\n## Today\n2026-09-15 (Tuesday). Weeks start Monday.\n\n## Athlete state (anchors and goals here are for YOUR reading only — never say them back to the athlete)\nRunner: Maya. Marathon PB 3:28:14 (Houston, 2025-01-19). Goal: 3:16 marathon, race 2026-12-06. Baseline ~40 mpw. Two years of race history on file. Easy pace trend: 8:35 → 8:22 over last 4 weeks.\n\n## Weekly running volume (most recent first; running only, cross-training excluded)\n- Week of 2026-09-14: 11.2 mi · 2 runs (this week so far)\n- Week of 2026-09-07: 42.1 mi · 5 runs\n- Week of 2026-08-31: 41.0 mi · 5 runs\n- Week of 2026-08-24: 40.6 mi · 5 runs\n- Week of 2026-08-17: 36.2 mi · 4 runs\n- Week of 2026-08-10: 33.0 mi · 4 runs\n\n## Quality sessions (last 60 days — the story of the block; cite by the bracketed id)\n- [aaaaaaaa-0001-4000-8000-000000000001] 2026-09-15 (Tue) · tempo ★ · 6.0mi @ 7:41/mi (46m) · mood:tired\n- [aaaaaaaa-0003-4000-8000-000000000003] 2026-09-13 (Sun) · long_run ★ · 16.0mi @ 8:41/mi (139m) · mood:positive\n- [aaaaaaaa-0006-4000-8000-000000000006] 2026-09-08 (Tue) · tempo ★ · 6.0mi @ 7:30/mi · mood:positive\n- [aaaaaaaa-0009-4000-8000-000000000009] 2026-09-01 (Tue) · tempo ★ · 6.0mi @ 7:31/mi · mood:neutral\n\n## Recent runs (most recent first — cite by the bracketed id; ★ = quality, ✕ = not running)\n- [aaaaaaaa-0001-4000-8000-000000000001] 2026-09-15 (Tue) · tempo ★ · 6.0mi @ 7:41/mi (46m) · mood:tired\n- [aaaaaaaa-0003-4000-8000-000000000003] 2026-09-13 (Sun) · long_run ★ · 16.0mi @ 8:41/mi (139m) · mood:positive\n- [aaaaaaaa-0006-4000-8000-000000000006] 2026-09-08 (Tue) · tempo ★ · 6.0mi @ 7:30/mi · mood:positive\n- [aaaaaaaa-0009-4000-8000-000000000009] 2026-09-01 (Tue) · tempo ★ · 6.0mi @ 7:31/mi · mood:neutral\n- [aaaaaaaa-0002-4000-8000-000000000002] 2026-09-14 (Mon) · easy · 5.2mi @ 8:22/mi · mood:positive\n- [aaaaaaaa-0004-4000-8000-000000000004] 2026-09-11 (Thu) · easy · 7.0mi @ 8:25/mi\n\n## Recent voice memos (last 14 days). Read these for FEELING and LIFE CONTEXT — weather, sleep, stress, niggles. Paraphrase in the paragraph; never quote them back. A short verbatim excerpt may go in sources.memos only.\n- [cccccccc-0001-4000-8000-000000000001] 2026-09-15 · mood:tired: \"Brutal out there. 88 degrees at 6am and humid, shirt was soaked by the first rep. Held what I could. Not reading anything into the splits.\"\n- [cccccccc-0002-4000-8000-000000000002] 2026-09-13 · mood:positive: \"Sixteen, cool morning, felt like fall. Easy.\"\n\n## Knowledge docs (cite by the bracketed id when one grounds a claim)\n- [bbbbbbbb-0001-4000-8000-000000000001] Aerobic support through a build block (training principles)\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "headline",
+      "paragraph",
+      "questions",
+      "sources",
+      "confidence"
+    ],
+    "forbidden_pattern_groups": [
+      "diagnosis_terms",
+      "action_bans",
+      "stop_training_bans",
+      "medical_claim_bans"
+    ],
+    "forbidden_patterns": [
+      "(?i)\\b3:16\\b",
+      "(?i)\\b3:28\\b",
+      "(?i)\\bBQ\\b",
+      "(?i)\\bboston\\b",
+      "(?i)\\bpersonal (best|record)\\b",
+      "(?i)\\bPR\\b",
+      "(?i)\\bACWR\\b",
+      "%",
+      "(?i)\\brace[- ]equivalen",
+      "(?i)\\bratio\\b",
+      "(?i)\\bpredict",
+      "(?i)\\bprojected\\b",
+      "(?i)\\byou should\\b",
+      "(?i)\\byou need to\\b",
+      "(?i)\\bmake sure (to|you)\\b",
+      "(?i)\\bI('d| would)? (recommend|suggest)\\b",
+      "(?i)\\btry to\\b",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\bbased on (your|the) data\\b",
+      "(?i)\\bthe app\\b",
+      "(?i)\\bI notice that\\b",
+      "(?i)\\bfeel free to\\b",
+      "(?i)\\blet me know\\b",
+      "(?i)\\b(crush|grind|beast mode|you('ve| have) got this|you got this|champion|unleash|warrior)\\b",
+      "(?i)\\b(great job|solid work|well done|keep it up|amazing|incredible|impressive)\\b",
+      "!",
+      "(?i)\\b(fitness (is )?(slipping|declining|dropping|down))\\b",
+      "(?i)\\b(off|bad|poor|disappointing|rough) (session|tempo|day)\\b",
+      "(?i)\\bslower than (target|it should)\\b",
+      "(?i)\\bconcern(ing|ed)?\\b",
+      "(?i)\\bworr(y|ied|ying)\\b"
+    ],
+    "required_patterns": [
+      "(?i)\\b(heat|hot|humid|humidity|88|degrees|°)",
+      "7:41"
+    ],
+    "custom_check": "daily-read-v3-shape"
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}
