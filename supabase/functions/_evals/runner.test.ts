@@ -48,6 +48,10 @@ Deno.test("eval: process-training-memo.v1 cassettes pass rubric", async () => {
   await runSuite("process-training-memo.v1");
 });
 
+Deno.test("eval: daily-read.v3 cassettes pass rubric", async () => {
+  await runSuite("daily-read.v3");
+});
+
 Deno.test("eval: reschedule-plan.v1 cassettes pass rubric", async () => {
   await runSuite("reschedule-plan.v1");
 });

@@ -306,7 +306,7 @@ map significantly — most tabs and many sheets now have a JSX side.
 | `WeeklyReviewScreen.jsx` | `RunningLog/Coaching/WeeklyCoachingReportSheet.swift` |
 | `Sheets.jsx` | *(collection — various iOS sheets across `App/`, `Workouts/`, `Training/`)* |
 | `SettingsSheets.jsx` | *(sidebar menu sheets — no single iOS file; menu opens from the global hamburger in `RunningLogApp.swift`)* |
-| (no JSX yet) | `RunningLog/Coaching/Read/CoachReadView.swift` — see `outputs/coach-read-design-drift.md` |
+| (no JSX yet) | `RunningLog/Coaching/Read/CoachReadView.swift` — layout + content shape in `outputs/coach-read-clarity-2026-09-15.md`; older token drift in `outputs/coach-read-design-drift.md` |
 | (no JSX yet) | `RunningLog/Training/DayDetailPlate22.swift` (Plate 22 · day detail sheet) |
 
 Don't port `TrainingScreen.jsx` into Swift until the A/B/C variation
@@ -380,6 +380,9 @@ parity is hard (and the three-thing fix path) in
   **CI now enforces the gate (2026-06-11):** a PR that modifies a file in
   `_shared/prompts/` fails unless `_evals/cassettes/<prompt>/` exists
   (`.github/scripts/check_eval_coverage.py`).
+  **`daily-read.v3` (2026-09-15):** 5 stubs + `daily-read-v3-shape`
+  custom check checked in; not yet recorded. Record before pointing
+  prod traffic at v3. See `outputs/coach-read-clarity-2026-09-15.md`.
 - **Edge function consolidation pending.** ~39 functions; `parse-*` ×4
   could collapse to one router-dispatched parser. New code should not
   add to overlap clusters.
@@ -526,7 +529,11 @@ Highlights:
 - **Touch a Coach Read prompt** → Read the Coach voice principles
   section in `outputs/maya-data-aware-journey-2026-05-28.md`. Feeling
   first. Warm encouragement. Reads life context. Anchors silent.
-  Soft questions, not directives.
+  Soft questions, not directives. The current prompt is
+  `_shared/prompts/daily-read.v3.ts`; its fixed shape (headline →
+  feeling → work → volume → watch → questions) is documented in
+  `outputs/coach-read-clarity-2026-09-15.md`. Pure parse/validate
+  logic lives in `_shared/daily-read-shape.ts` (unit-tested offline).
 
 ## Files worth knowing about
 

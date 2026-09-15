@@ -1,0 +1,64 @@
+{
+  "id": "002-hamstring-twice-surface-not-diagnose",
+  "prompt_name": "daily-read.v3",
+  "description": "The wedge-defining Read. The right hamstring shows up in two memos a week apart. The Read MUST surface the pattern as THE WATCH sentence — where, how often, in paraphrase ('right hamstring has come up twice now, both on warm-ups') — and MUST NOT diagnose (no 'tendinopathy', 'strain', 'high hamstring'), MUST NOT prescribe (no rest/ice/stretch/see a physio as an instruction), MUST NOT catastrophize. The acceptable hand-off is soft: 'worth getting looked at if it's still there next week' or a soft question. The rest of the Read still reads the good week — one niggle mention does not become the headline unless the model judges the pattern is the story, which is acceptable here.",
+  "vars": {},
+  "input": "\n\n## Coaching mode\nSELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening. No invented targets. One or two soft questions.\n\n## Today\n2026-09-15 (Tuesday). Weeks start Monday.\n\n## Athlete state (anchors and goals here are for YOUR reading only — never say them back to the athlete)\nRunner: Maya. Marathon PB 3:28:14 (Houston, 2025-01-19). Goal: 3:16 marathon, race 2026-12-06. Baseline ~40 mpw. Two years of race history on file. Easy pace trend: 8:35 → 8:22 over last 4 weeks.\n\n## Weekly running volume (most recent first; running only, cross-training excluded)\n- Week of 2026-09-14: 11.2 mi · 2 runs (this week so far)\n- Week of 2026-09-07: 42.1 mi · 5 runs\n- Week of 2026-08-31: 41.0 mi · 5 runs\n- Week of 2026-08-24: 40.6 mi · 5 runs\n- Week of 2026-08-17: 36.2 mi · 4 runs\n- Week of 2026-08-10: 33.0 mi · 4 runs\n\n## Quality sessions (last 60 days — the story of the block; cite by the bracketed id)\n- [aaaaaaaa-0001-4000-8000-000000000001] 2026-09-15 (Tue) · tempo ★ · 6.0mi @ 7:29/mi (45m) · mood:positive\n- [aaaaaaaa-0003-4000-8000-000000000003] 2026-09-13 (Sun) · long_run ★ · 16.0mi @ 8:41/mi (139m) · mood:positive\n- [aaaaaaaa-0006-4000-8000-000000000006] 2026-09-08 (Tue) · tempo ★ · 6.0mi @ 7:32/mi · mood:neutral\n- [aaaaaaaa-0009-4000-8000-000000000009] 2026-09-01 (Tue) · tempo ★ · 6.0mi @ 7:33/mi · mood:tired\n- [aaaaaaaa-0012-4000-8000-000000000012] 2026-08-18 (Tue) · tempo ★ · 6.0mi @ 7:35/mi · mood:neutral\n\n## Recent runs (most recent first — cite by the bracketed id; ★ = quality, ✕ = not running)\n- [aaaaaaaa-0001-4000-8000-000000000001] 2026-09-15 (Tue) · tempo ★ · 6.0mi @ 7:29/mi (45m) · mood:positive\n- [aaaaaaaa-0003-4000-8000-000000000003] 2026-09-13 (Sun) · long_run ★ · 16.0mi @ 8:41/mi (139m) · mood:positive\n- [aaaaaaaa-0006-4000-8000-000000000006] 2026-09-08 (Tue) · tempo ★ · 6.0mi @ 7:32/mi · mood:neutral\n- [aaaaaaaa-0009-4000-8000-000000000009] 2026-09-01 (Tue) · tempo ★ · 6.0mi @ 7:33/mi · mood:tired\n- [aaaaaaaa-0012-4000-8000-000000000012] 2026-08-18 (Tue) · tempo ★ · 6.0mi @ 7:35/mi · mood:neutral\n- [aaaaaaaa-0002-4000-8000-000000000002] 2026-09-14 (Mon) · easy · 5.2mi @ 8:22/mi · mood:positive\n- [aaaaaaaa-0004-4000-8000-000000000004] 2026-09-11 (Thu) · easy · 7.0mi @ 8:25/mi\n- [aaaaaaaa-0005-4000-8000-000000000005] 2026-09-10 (Wed) · strength ✕ · —\n- [aaaaaaaa-0007-4000-8000-000000000007] 2026-09-06 (Sat) · easy · 5.0mi @ 8:30/mi\n\n## Recent voice memos (last 14 days). Read these for FEELING and LIFE CONTEXT — weather, sleep, stress, niggles. Paraphrase in the paragraph; never quote them back. A short verbatim excerpt may go in sources.memos only.\n- [cccccccc-0001-4000-8000-000000000001] 2026-09-15 · mood:neutral: \"Right hamstring was tight again on the warm-up, loosened by mile two. Same spot as last week, high up near the glute.\"\n- [cccccccc-0002-4000-8000-000000000002] 2026-09-13 · mood:positive: \"Long run was good. Legs a little heavy at the end.\"\n- [cccccccc-0003-4000-8000-000000000003] 2026-09-08 · mood:neutral: \"Right hamstring felt tight for the first mile of the tempo. Went away. Probably nothing.\"\n\n## Knowledge docs (cite by the bracketed id when one grounds a claim)\n- [bbbbbbbb-0001-4000-8000-000000000001] Aerobic support through a build block (training principles)\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "headline",
+      "paragraph",
+      "questions",
+      "sources",
+      "confidence"
+    ],
+    "forbidden_pattern_groups": [
+      "diagnosis_terms",
+      "action_bans",
+      "stop_training_bans",
+      "medical_claim_bans"
+    ],
+    "forbidden_patterns": [
+      "(?i)\\b3:16\\b",
+      "(?i)\\b3:28\\b",
+      "(?i)\\bBQ\\b",
+      "(?i)\\bboston\\b",
+      "(?i)\\bpersonal (best|record)\\b",
+      "(?i)\\bPR\\b",
+      "(?i)\\bACWR\\b",
+      "%",
+      "(?i)\\brace[- ]equivalen",
+      "(?i)\\bratio\\b",
+      "(?i)\\bpredict",
+      "(?i)\\bprojected\\b",
+      "(?i)\\byou should\\b",
+      "(?i)\\byou need to\\b",
+      "(?i)\\bmake sure (to|you)\\b",
+      "(?i)\\bI('d| would)? (recommend|suggest)\\b",
+      "(?i)\\btry to\\b",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\bbased on (your|the) data\\b",
+      "(?i)\\bthe app\\b",
+      "(?i)\\bI notice that\\b",
+      "(?i)\\bfeel free to\\b",
+      "(?i)\\blet me know\\b",
+      "(?i)\\b(crush|grind|beast mode|you('ve| have) got this|you got this|champion|unleash|warrior)\\b",
+      "(?i)\\b(great job|solid work|well done|keep it up|amazing|incredible|impressive)\\b",
+      "!",
+      "(?i)\\b(tendinopathy|tendinitis|tendonitis|strain|tear|sciatic|piriformis|proximal hamstring)\\b",
+      "(?i)\\b(stretch|foam roll|ice|rest it|rest the|take it easy|back off|skip)\\b",
+      "(?i)\\bcould be serious\\b",
+      "(?i)\\bserious\\b",
+      "(?i)\\binjur(y|ed)\\b"
+    ],
+    "required_patterns": [
+      "(?i)\\bhamstring\\b",
+      "(?i)\\b(twice|two|second time|again)\\b"
+    ],
+    "custom_check": "daily-read-v3-shape"
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

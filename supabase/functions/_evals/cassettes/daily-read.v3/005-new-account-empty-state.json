@@ -1,0 +1,63 @@
+{
+  "id": "005-new-account-empty-state",
+  "prompt_name": "daily-read.v3",
+  "description": "Brand-new account: zero runs, zero memos. The prompt fixes the copy exactly — headline 'Nothing to read yet.', one-sentence paragraph, empty questions array, cant_see eyebrow 'NEW ACCOUNT', confidence LOW. Guards against the model inventing a training history, asking a question of someone it has never seen run, or padding the Read out to look substantial.",
+  "vars": {},
+  "input": "\n\n## Coaching mode\nSELF_COACHED_MODE — no plan and no coach in the app. Describe what's happening. No invented targets. One or two soft questions.\n\n## Today\n2026-09-15 (Tuesday). Weeks start Monday.\n\n## Recent runs\nNo logged workouts in the last 60 days.\n\n## Recent voice memos\nNone in the last 14 days — skip the FEELING sentence and start with the work.\n\nGenerate today's Read for this athlete.",
+  "rubric": {
+    "must_parse_as_json": true,
+    "json_required_keys": [
+      "headline",
+      "paragraph",
+      "questions",
+      "sources",
+      "confidence"
+    ],
+    "forbidden_pattern_groups": [
+      "diagnosis_terms",
+      "action_bans",
+      "stop_training_bans",
+      "medical_claim_bans"
+    ],
+    "forbidden_patterns": [
+      "(?i)\\b3:16\\b",
+      "(?i)\\b3:28\\b",
+      "(?i)\\bBQ\\b",
+      "(?i)\\bboston\\b",
+      "(?i)\\bpersonal (best|record)\\b",
+      "(?i)\\bPR\\b",
+      "(?i)\\bACWR\\b",
+      "%",
+      "(?i)\\brace[- ]equivalen",
+      "(?i)\\bratio\\b",
+      "(?i)\\bpredict",
+      "(?i)\\bprojected\\b",
+      "(?i)\\byou should\\b",
+      "(?i)\\byou need to\\b",
+      "(?i)\\bmake sure (to|you)\\b",
+      "(?i)\\bI('d| would)? (recommend|suggest)\\b",
+      "(?i)\\btry to\\b",
+      "(?i)\\bas an AI\\b",
+      "(?i)\\bbased on (your|the) data\\b",
+      "(?i)\\bthe app\\b",
+      "(?i)\\bI notice that\\b",
+      "(?i)\\bfeel free to\\b",
+      "(?i)\\blet me know\\b",
+      "(?i)\\b(crush|grind|beast mode|you('ve| have) got this|you got this|champion|unleash|warrior)\\b",
+      "(?i)\\b(great job|solid work|well done|keep it up|amazing|incredible|impressive)\\b",
+      "!",
+      "\\d:\\d\\d",
+      "(?i)\\b(tempo|long run|mile|miles|mpw)\\b",
+      "\"level\":\\s*\"(HIGH|MEDIUM)\""
+    ],
+    "required_patterns": [
+      "(?i)nothing to read yet",
+      "(?i)\"eyebrow\":\\s*\"NEW ACCOUNT\"",
+      "\"questions\":\\s*\\[\\s*\\]"
+    ],
+    "custom_check": "daily-read-v3-shape"
+  },
+  "recorded_response": "",
+  "recorded_at": "",
+  "model": "gemini-2.5-flash"
+}

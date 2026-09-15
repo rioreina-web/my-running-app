@@ -2,20 +2,29 @@
 //  SourcesPanel.swift
 //  RunningLog
 //
-//  The expandable Sources panel at the bottom of a Coach Read.
-//  Lists every workout and doc the Read cited (rendered as expanded
-//  EvidenceChip / DocChip cards), plus voice memos that informed the
-//  Read but never appear inline (`♪` MemoChip — verbatim athlete
-//  quote with the mono label eyebrow). Wrapped in a DisclosureGroup
-//  so the panel collapses when the athlete doesn't need it.
+//  The "what this read is based on" footer of a Coach Read. One
+//  collapsed row answers two questions at a glance — *what did the
+//  coach look at?* and *how sure is it?* — and expands to show the
+//  evidence itself:
 //
-//  Phase 3.4 of coach-the-read-prompts.md.
+//      READ FROM · 5 WORKOUTS · 2 MEMOS              ▪▪▫ MEDIUM
+//      ▸ "6 runs and 3 memos, latest yesterday"      (confidence sub)
+//        [workout cards] [doc cards] [memo excerpts]
+//
+//  Folding confidence into this header (it used to be its own
+//  `ConfidenceBar` row) keeps the page to one line of footer chrome
+//  and puts the level next to the evidence that earned it.
+//
+//  Workouts and docs render as expanded EvidenceChip / DocChip cards;
+//  voice memos render as `♪` MemoChip rows — the athlete's own words,
+//  verbatim, so she can see what the paragraph paraphrased.
 //
 
 import SwiftUI
 
 struct SourcesPanel: View {
     let sources: CoachRead.Sources
+    let confidence: CoachRead.Confidence
     let workouts: [UUID: TrainingLog]
     let docs: [UUID: CoachingDocument]
     @Binding var selectedWorkoutId: UUID?
@@ -23,19 +32,22 @@ struct SourcesPanel: View {
 
     @State private var isExpanded = false
 
-    private var totalCount: Int {
-        sources.workouts.count + sources.docs.count + sources.memos.count
-    }
-
     var body: some View {
-        // Top + bottom hairline borders match the design mock.
         VStack(spacing: 0) {
-            Divider()
-                .background(Color.drip.divider)
+            Hairline()
 
             DisclosureGroup(isExpanded: $isExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
-                    // Workouts — expanded chip cards.
+                    // Why this confidence level — plain clause from the
+                    // prompt ("6 runs and 3 memos, latest yesterday").
+                    if !confidence.sub.isEmpty {
+                        Text(confidence.sub)
+                            .font(.dripBody(13))
+                            .italic()
+                            .foregroundStyle(Color.drip.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     ForEach(sources.workouts, id: \.self) { id in
                         if let workout = workouts[id] {
                             EvidenceChip.expanded(
@@ -45,7 +57,6 @@ struct SourcesPanel: View {
                         }
                     }
 
-                    // Docs — expanded chip cards.
                     ForEach(sources.docs, id: \.self) { id in
                         if let doc = docs[id] {
                             DocChip.expanded(
@@ -55,38 +66,86 @@ struct SourcesPanel: View {
                         }
                     }
 
-                    // Voice memos — ♪ chip, sources-only.
                     ForEach(sources.memos, id: \.logId) { memo in
                         MemoChip(memo: memo)
                     }
                 }
                 .padding(.vertical, 12)
             } label: {
-                Text(headerText)
-                    .font(.dripStat(10))
-                    .foregroundStyle(Color.drip.textSecondary)
-                    .tracking(1.2) // 0.12em × 10pt — section eyebrow
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(alignment: .center, spacing: 12) {
+                    Text(headerText)
+                        .font(.dripEyebrow(10))
+                        .foregroundStyle(Color.drip.textSecondary)
+                        .tracking(1.2) // 0.12em × 10pt — section eyebrow
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 8)
+
+                    ConfidencePips(level: confidence.level)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .tint(Color.drip.textSecondary)
             .padding(.horizontal, 4)
             .padding(.vertical, 10)
 
-            Divider()
-                .background(Color.drip.divider)
+            Hairline()
         }
     }
 
-    /// Mono header line: "SOURCES · N · WORKOUTS, KNOWLEDGE, VOICE MEMOS".
-    /// The category list trims to whatever's actually present so we
-    /// don't claim categories we have zero of.
+    /// "READ FROM · 5 WORKOUTS · 2 MEMOS · 1 DOC". Only the kinds that
+    /// are actually present; "READ FROM · NOTHING YET" on an empty Read.
     private var headerText: String {
         var parts: [String] = []
-        if !sources.workouts.isEmpty { parts.append("WORKOUTS") }
-        if !sources.docs.isEmpty { parts.append("KNOWLEDGE") }
-        if !sources.memos.isEmpty { parts.append("VOICE MEMOS") }
-        let kinds = parts.isEmpty ? "" : " · " + parts.joined(separator: ", ")
-        return "SOURCES · \(totalCount)\(kinds)"
+        if !sources.workouts.isEmpty {
+            parts.append(count(sources.workouts.count, "WORKOUT"))
+        }
+        if !sources.memos.isEmpty {
+            parts.append(count(sources.memos.count, "MEMO"))
+        }
+        if !sources.docs.isEmpty {
+            parts.append(count(sources.docs.count, "DOC"))
+        }
+        if parts.isEmpty { return "READ FROM · NOTHING YET" }
+        return "READ FROM · " + parts.joined(separator: " · ")
+    }
+
+    private func count(_ n: Int, _ noun: String) -> String {
+        n == 1 ? "1 \(noun)" : "\(n) \(noun)S"
+    }
+}
+
+// MARK: - ConfidencePips
+
+/// Three small rectangles + a mono level label. HIGH = 3 filled,
+/// MEDIUM = 2, LOW = 1. Coral is the one accent in this cluster.
+private struct ConfidencePips: View {
+    let level: CoachRead.Confidence.Level
+
+    private var filledCount: Int {
+        switch level {
+        case .high:   return 3
+        case .medium: return 2
+        case .low:    return 1
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 4) {
+            ForEach(0..<3, id: \.self) { i in
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(i < filledCount ? Color.drip.coral : Color.drip.divider)
+                    .frame(width: 12, height: 4)
+            }
+            Text(level.rawValue)
+                .font(.dripEyebrow(10))
+                .foregroundStyle(Color.drip.coral)
+                .tracking(1.0) // 0.10em × 10pt — pill/caption tracking
+                .padding(.leading, 4)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Confidence \(level.rawValue.lowercased())")
     }
 }
 
@@ -94,7 +153,7 @@ struct SourcesPanel: View {
 
 /// Voice-memo source row. Mono "♪ <label>" eyebrow + italic verbatim
 /// excerpt of what the athlete said. Non-interactive in v1 — tapping
-/// the original voice log is future work.
+/// through to the original voice log is future work.
 private struct MemoChip: View {
     let memo: CoachRead.Sources.Memo
 
@@ -102,7 +161,7 @@ private struct MemoChip: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("♪ \(memo.label.uppercased())")
-                    .font(.dripStat(10))
+                    .font(.dripEyebrow(10))
                     .foregroundStyle(Color.drip.textSecondary)
                     .tracking(1.2) // 0.12em × 10pt
 
@@ -152,6 +211,7 @@ private struct SourcesPanelPreviewHost: View {
                     ),
                 ]
             ),
+            confidence: .init(level: .medium, sub: "4 runs and 1 memo, latest yesterday"),
             workouts: [w1: Self.mockWorkout(id: w1)],
             docs: [d1: Self.mockDoc(id: d1)],
             selectedWorkoutId: $selectedWorkout,
