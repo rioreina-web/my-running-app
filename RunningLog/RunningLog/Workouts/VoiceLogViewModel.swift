@@ -13,6 +13,19 @@ final class VoiceLogViewModel {
     var statusMessage = ""
     var showSuccessAnimation = false
 
+    /// Logs the app is actively watching for server-side completion. The
+    /// journal card reads this to tell "we're still on it" apart from
+    /// "we stopped looking — tap to check again."
+    var watchingLogIds: Set<UUID> = []
+
+    /// How long to keep watching a freshly uploaded memo before handing
+    /// the athlete a manual "Check again". Covers p90 server latency
+    /// (~5 min) with headroom.
+    private static let watchWindow: TimeInterval = 10 * 60
+
+    /// Processing states the server will not move off on its own.
+    private static let terminalStatuses: Set<String> = ["completed", "failed", "not_required"]
+
     // MARK: - Upload Audio
 
     @MainActor
@@ -76,41 +89,18 @@ final class VoiceLogViewModel {
 
             await loadHistory()
 
-            // Processing is handled server-side by a DB trigger (pg_net calls
-            // the edge function automatically on INSERT). iOS just polls for
-            // completion so the UI auto-updates.
+            // Processing is handled server-side by the voice-processing
+            // outbox (a DB trigger enqueues; a once-a-minute cron drains).
+            // iOS watches for completion so the UI auto-updates.
             if let insertedLog = response.first {
-                let capturedRecordId = insertedLog.id.uuidString
                 let capturedUserId = userId
-                Task { [weak self] in
-                    // Poll every 3s for up to 60s
-                    for _ in 0..<20 {
-                        try? await Task.sleep(for: .seconds(3))
-                        struct StatusRow: Decodable { let processing_status: String }
-                        let result: [StatusRow]? = try? await supabase
-                            .from("training_logs")
-                            .select("processing_status")
-                            .eq("id", value: capturedRecordId)
-                            .execute()
-                            .value
-                        let status = result?.first?.processing_status ?? "pending"
-                        if status == "completed" || status == "failed" {
-                            await MainActor.run {
-                                _ = Task { await self?.loadHistory() }
-                            }
-                            // Compute workout features after successful processing
-                            if status == "completed" {
-                                _ = try? await callEdgeFunction(
-                                    name: "compute-workout-features",
-                                    body: ["user_id": capturedUserId]
-                                )
-                            }
-                            return
-                        }
-                    }
-                    // Timed out — refresh anyway
-                    await MainActor.run {
-                        _ = Task { await self?.loadHistory() }
+                watchProcessing(recordId: insertedLog.id) { status in
+                    // Compute workout features after successful processing
+                    if status == "completed" {
+                        _ = try? await callEdgeFunction(
+                            name: "compute-workout-features",
+                            body: ["user_id": capturedUserId]
+                        )
                     }
                 }
             }
@@ -179,32 +169,10 @@ final class VoiceLogViewModel {
 
             await loadHistory()
 
-            // Processing is handled server-side by a DB trigger (pg_net calls
-            // process-check-in automatically on INSERT). iOS just polls for
-            // completion so the UI auto-updates.
-            let capturedId = recordId.uuidString
-            Task { [weak self] in
-                for _ in 0..<20 {
-                    try? await Task.sleep(for: .seconds(3))
-                    struct StatusRow: Decodable { let processing_status: String }
-                    let result: [StatusRow]? = try? await supabase
-                        .from("training_logs")
-                        .select("processing_status")
-                        .eq("id", value: capturedId)
-                        .execute()
-                        .value
-                    let status = result?.first?.processing_status ?? "pending"
-                    if status == "completed" || status == "failed" {
-                        await MainActor.run {
-                            _ = Task { await self?.loadHistory() }
-                        }
-                        return
-                    }
-                }
-                await MainActor.run {
-                    _ = Task { await self?.loadHistory() }
-                }
-            }
+            // Processing is handled server-side by the voice-processing
+            // outbox (a DB trigger enqueues; a once-a-minute cron drains).
+            // iOS watches for completion so the UI auto-updates.
+            watchProcessing(recordId: recordId)
         } catch {
             Log.app.error("Failed to upload check-in: \(error)")
             statusMessage = "Error: \(error.localizedDescription)"
@@ -305,6 +273,96 @@ final class VoiceLogViewModel {
         }
     }
 
+
+    // MARK: - Watch Processing
+
+    /// Poll a just-uploaded log until the server marks it done, then
+    /// refresh the journal so the card flips on its own.
+    ///
+    /// Sizing matters here. Processing runs through the voice-processing
+    /// outbox: a DB trigger enqueues the job, a once-a-minute cron drains
+    /// it, and only then does transcription + the LLM pass run. Measured
+    /// end-to-end latency is ~2 min at the median and ~5 min at p90. The
+    /// previous 60s cutoff expired before most memos finished — and
+    /// because nothing re-fetched afterwards, a memo that had completed
+    /// server-side kept showing "Processing with AI..." until the athlete
+    /// found the small refresh button. That is the "stuck memo" bug.
+    ///
+    /// Cadence backs off so a fast memo still updates near-instantly
+    /// without the long tail hammering the API: every 3s for the first
+    /// 30s, every 5s out to 2 min, every 15s to the deadline.
+    @MainActor
+    func watchProcessing(
+        recordId: UUID,
+        then onCompleted: ((String) async -> Void)? = nil
+    ) {
+        guard !watchingLogIds.contains(recordId) else { return }
+        watchingLogIds.insert(recordId)
+
+        Task { [weak self] in
+            let startedAt = Date()
+            var status = "pending"
+
+            while Date().timeIntervalSince(startedAt) < Self.watchWindow {
+                let elapsed = Date().timeIntervalSince(startedAt)
+                let interval: Duration =
+                    elapsed < 30 ? .seconds(3)
+                    : elapsed < 120 ? .seconds(5)
+                    : .seconds(15)
+
+                try? await Task.sleep(for: interval)
+                if Task.isCancelled { break }
+
+                if let fetched = await Self.fetchProcessingStatus(recordId: recordId) {
+                    status = fetched
+                }
+                if Self.terminalStatuses.contains(status) { break }
+            }
+
+            await self?.stopWatching(recordId: recordId)
+            await onCompleted?(status)
+        }
+    }
+
+    /// Re-check a single log on demand — backs the "Check again" action on
+    /// a memo whose watch window already closed.
+    @MainActor
+    func checkAgain(log: TrainingLog) async {
+        statusMessage = "Checking..."
+        let status = await Self.fetchProcessingStatus(recordId: log.id)
+        await loadHistory()
+
+        if let status, Self.terminalStatuses.contains(status) {
+            statusMessage = ""
+        } else {
+            statusMessage = "Still processing. This can take a few minutes."
+            watchProcessing(recordId: log.id)
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                if self.statusMessage.hasPrefix("Still processing") {
+                    self.statusMessage = ""
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func stopWatching(recordId: UUID) async {
+        watchingLogIds.remove(recordId)
+        await loadHistory()
+    }
+
+    private static func fetchProcessingStatus(recordId: UUID) async -> String? {
+        struct StatusRow: Decodable { let processing_status: String? }
+        let rows: [StatusRow]? = try? await supabase
+            .from("training_logs")
+            .select("processing_status")
+            .eq("id", value: recordId.uuidString)
+            .limit(1)
+            .execute()
+            .value
+        return rows?.first?.processing_status
+    }
 
     // MARK: - Retry Processing
 

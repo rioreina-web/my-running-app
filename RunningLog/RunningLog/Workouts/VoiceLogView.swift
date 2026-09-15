@@ -10,6 +10,7 @@ import SwiftUI
 struct VoiceLogView: View {
     @Environment(CoachCheckInManager.self) private var checkInManager
     @Environment(\.selectedTab) private var selectedTab
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var healthKitManager = HealthKitManager()
     @State private var viewModel = VoiceLogViewModel()
     @State private var isRecording = false
@@ -151,6 +152,21 @@ struct VoiceLogView: View {
                 let workouts = await healthKitManager.fetchRecentRunningWorkouts(limit: 20)
                 await MainActor.run { healthKitManager.recentWorkouts = workouts }
                 await viewModel.loadHistory()
+            }
+        }
+        // All five tabs stay alive in a ZStack, so `onAppear` fires once
+        // for the life of the app — switching tabs never re-fetches. A
+        // memo that finishes while the athlete is on another tab (or
+        // while the app is backgrounded) would otherwise keep showing
+        // "Processing with AI..." with nothing to refresh it.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task { await viewModel.loadHistory() }
+            }
+        }
+        .onChange(of: selectedTab.wrappedValue) { _, newTab in
+            if newTab == 0 {
+                Task { await viewModel.loadHistory() }
             }
         }
         .animation(.spring(response: 0.4), value: viewModel.statusMessage)
@@ -549,9 +565,12 @@ struct VoiceLogView: View {
             LazyVStack(spacing: 0) {
                 ForEach(Array(viewModel.historyLogs.enumerated()), id: \.element.id) { idx, log in
                     if log.isPending || log.isFailed {
-                        ProcessingLogCard(log: log) {
-                            Task { await viewModel.retryProcessing(log: log) }
-                        }
+                        ProcessingLogCard(
+                            log: log,
+                            isWatching: viewModel.watchingLogIds.contains(log.id),
+                            onRetry: { Task { await viewModel.retryProcessing(log: log) } },
+                            onCheckAgain: { Task { await viewModel.checkAgain(log: log) } }
+                        )
                         .padding(.horizontal, 24)
                         .padding(.vertical, 8)
                     } else {
@@ -697,7 +716,25 @@ struct VoiceLogView: View {
 
 struct ProcessingLogCard: View {
     let log: TrainingLog
+    /// True while the app is actively polling this log for completion.
+    /// False means the watch window closed and the athlete needs a way
+    /// to ask again rather than staring at a spinner that never resolves.
+    var isWatching: Bool = false
     let onRetry: () -> Void
+    var onCheckAgain: () -> Void = {}
+
+    /// Server-side processing is queue-driven (once-a-minute drain) plus
+    /// transcription and an LLM pass, so a couple of minutes is normal,
+    /// not a failure. Past this point the copy says so out loud instead
+    /// of showing an unchanging spinner.
+    private var isSlow: Bool {
+        Date().timeIntervalSince(log.createdAt) > 45
+    }
+
+    private var processingMessage: String {
+        isSlow ? "Still processing. This usually takes a couple of minutes."
+               : "Processing with AI..."
+    }
 
     private var dateString: String {
         let date = log.workoutDate ?? log.createdAt
@@ -736,13 +773,31 @@ struct ProcessingLogCard: View {
             }
 
             if log.isPending {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .tint(Color.drip.coral)
-                    Text("Processing with AI...")
-                        .font(.dripCaption(11))
-                        .foregroundStyle(Color.drip.coral)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .tint(Color.drip.coral)
+                        Text(processingMessage)
+                            .font(.dripCaption(11))
+                            .foregroundStyle(Color.drip.coral)
+                    }
+
+                    // The watch window has closed — the memo may well be
+                    // done on the server. Give the athlete a way to ask
+                    // instead of leaving the spinner running forever.
+                    if !isWatching && isSlow {
+                        Button(action: onCheckAgain) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("Check again")
+                                    .font(.dripCaption(11))
+                            }
+                            .foregroundStyle(Color.drip.textSecondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             } else if log.isFailed {
                 Button(action: onRetry) {

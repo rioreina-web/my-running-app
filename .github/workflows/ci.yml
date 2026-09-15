@@ -1,7 +1,13 @@
 name: CI
 
 on:
+  # `labeled` matters: the ios job below opts in via an 'ios' label, but the
+  # default pull_request types (opened/synchronize/reopened) mean a label
+  # added after the PR opens never re-evaluates that condition — the job
+  # stays skipped until the next push. Listing the defaults explicitly is
+  # required once `types` is set at all.
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
   # The ios job's `if:` offers workflow_dispatch as a manual override; without
