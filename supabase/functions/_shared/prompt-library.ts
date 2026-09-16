@@ -65,6 +65,7 @@ import { TEMPLATE as RACE_READINESS_V1 } from "./prompts/race-readiness.v1.ts";
 import { TEMPLATE as RESCHEDULE_PLAN_V1 } from "./prompts/reschedule-plan.v1.ts";
 import { TEMPLATE as RESCHEDULE_PLAN_V2 } from "./prompts/reschedule-plan.v2.ts";
 import { TEMPLATE as SESSION_ASK_V1 } from "./prompts/session-ask.v1.ts";
+import { TEMPLATE as SESSION_ASK_V2 } from "./prompts/session-ask.v2.ts";
 import { TEMPLATE as SUGGEST_WORKOUT_PROGRESSION_V1 } from "./prompts/suggest-workout-progression.v1.ts";
 import { TEMPLATE as TRAINING_ANALYSIS_V1 } from "./prompts/training-analysis.v1.ts";
 import { TEMPLATE as WORKOUT_COMPARISON_VERDICT_V1 } from "./prompts/workout-comparison-verdict.v1.ts";
@@ -113,6 +114,7 @@ const REGISTRY: Record<string, string> = {
   "reschedule-plan.v1": RESCHEDULE_PLAN_V1,
   "reschedule-plan.v2": RESCHEDULE_PLAN_V2,
   "session-ask.v1": SESSION_ASK_V1,
+  "session-ask.v2": SESSION_ASK_V2,
   "suggest-workout-progression.v1": SUGGEST_WORKOUT_PROGRESSION_V1,
   "training-analysis.v1": TRAINING_ANALYSIS_V1,
   "workout-comparison-verdict.v1": WORKOUT_COMPARISON_VERDICT_V1,

@@ -232,7 +232,7 @@ Deno.serve(async (req: Request) => {
     const sessionPresent = present.has("session");
     const blank = (v: string, ok: boolean) => (ok ? v : "");
 
-    const prompt = loadPrompt("session-ask.v1", {
+    const prompt = loadPrompt("session-ask.v2", {
       question,
       workoutType: session.parts.workoutType,
       distance: session.parts.distance,
@@ -326,7 +326,7 @@ Deno.serve(async (req: Request) => {
       suggested,
       rail_size: RAIL_SIZE,
       training_log_id: trainingLogId,
-      model: "session-ask.v1",
+      model: "session-ask.v2",
       provider: "gemini",
       processingTime: Date.now() - startTime,
     });

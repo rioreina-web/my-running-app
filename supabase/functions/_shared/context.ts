@@ -18,6 +18,7 @@ import {
   splitsFromExtractedIntervals,
   splitsFromParsedBlocks,
   isQualityWorkoutType,
+  repProfileFromLaps,
   type WorkoutSplit,
 } from "./coach-context.ts";
 import { firstAthleteNote } from "./athleteNoteText.ts";
@@ -1445,15 +1446,7 @@ export async function buildSessionBlock(
     new Date(log.workout_date).getTime() - 28 * 86400000,
   );
 
-  const priorPromise = (log.workout_type && log.workout_distance_miles && executedPaceSec)
-    ? findSimilarPriorWorkout(supabase, userId, {
-        workoutType: log.workout_type,
-        distanceMiles: log.workout_distance_miles,
-        paceSecPerMile: executedPaceSec,
-      }, new Date(log.workout_date))
-    : Promise.resolve(null);
-
-  const [recentRes, coachCtx, prior, lapsRes, keySessionLine] = await Promise.all([
+  const [recentRes, coachCtx, lapsRes, keySessionLine] = await Promise.all([
     supabase
       .from("training_logs")
       .select(
@@ -1465,7 +1458,6 @@ export async function buildSessionBlock(
       .order("workout_date", { ascending: false })
       .limit(40),
     loadCoachContext(supabase, userId),
-    priorPromise,
     supabase
       .from("running_workout_laps")
       .select("lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, avg_heart_rate, is_rest")
@@ -1478,6 +1470,25 @@ export async function buildSessionBlock(
 
   const recent = (recentRes.data ?? []) as RecentRow[];
   const laps = (lapsRes.data ?? []) as TrainingLap[];
+
+  // The prior lookup now runs AFTER the laps land rather than alongside them:
+  // for a quality session it matches on this session's rep structure, which
+  // isn't known until the laps are read. That costs one sequential round trip
+  // on a path that then waits seconds on Gemini, and buys a comparison against
+  // the right workout — see `findSimilarPriorWorkout`.
+  const currentRepProfile = isQualityWorkoutType(log.workout_type)
+    ? repProfileFromLaps(laps)
+    : null;
+
+  const prior = (log.workout_type && log.workout_distance_miles && executedPaceSec)
+    ? await findSimilarPriorWorkout(supabase, userId, {
+        workoutType: log.workout_type,
+        distanceMiles: log.workout_distance_miles,
+        paceSecPerMile: executedPaceSec,
+        repProfile: currentRepProfile,
+        weather: (log.weather_actual ?? null) as Record<string, unknown> | null,
+      }, new Date(log.workout_date))
+    : null;
 
   // "Last 7 days:" must keep meaning 7 days even though `recent` spans 28.
   const sevenDayCutoff = new Date(
@@ -1534,6 +1545,8 @@ export async function buildSessionBlock(
           workoutType: log.workout_type,
           distanceMiles: log.workout_distance_miles,
           paceSecPerMile: executedPaceSec,
+          repProfile: currentRepProfile,
+          weather: (log.weather_actual ?? null) as Record<string, unknown> | null,
         },
         prior,
       )?.block ?? "")

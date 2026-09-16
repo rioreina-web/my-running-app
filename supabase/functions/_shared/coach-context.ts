@@ -307,6 +307,255 @@ export interface ExecutedSummary {
   }>;
 }
 
+
+// ── Rep profile — the shape of a quality session ─────────
+
+/**
+ * The lap row shape both the matcher and the profiler read. Structurally the
+ * `running_workout_laps` select used in `buildSessionBlock`.
+ */
+export interface LapLite {
+  lap_index?: number | null;
+  distance_meters?: number | string | null;
+  moving_time_seconds?: number | null;
+  avg_pace_sec_per_mile?: number | string | null;
+  avg_heart_rate?: number | null;
+  is_rest?: boolean | null;
+}
+
+/**
+ * What a quality session actually IS: a set of work reps, their pace, their
+ * spread, what they cost, and how long the recoveries were.
+ *
+ * The overall distance and average pace of a rep session are artifacts of how
+ * long the athlete stood around between reps. Rio's 2026-09-15 12×800m reads
+ * 7:06/mi overall and 5:14/mi on the reps; the 10×1K five weeks earlier reads
+ * 6:00/mi overall and 5:18/mi on the reps. Compared on session averages the
+ * newer session looks 66 sec/mi slower. Compared on reps it is 4 sec/mi
+ * faster. Only one of those two readings is about running.
+ */
+export interface RepProfile {
+  /** Reps in the PRIMARY set (the largest same-distance cluster). */
+  repCount: number;
+  /** Representative (median) rep distance, in miles. */
+  repDistanceMi: number;
+  /** Human label for that distance — "800m", "1K", "1mi", "0.35 mi". */
+  repLabel: string;
+  /** Median recovery between primary-set reps, in seconds. Null if unknown. */
+  restSec: number | null;
+  /** Mean of the primary set's rep paces. THE number for a quality session. */
+  avgPaceSec: number;
+  fastestPaceSec: number;
+  slowestPaceSec: number;
+  /** Mean pace of the first / second half of the set. Null when < 4 reps. */
+  firstHalfPaceSec: number | null;
+  secondHalfPaceSec: number | null;
+  avgHr: number | null;
+  lastRepHr: number | null;
+  /** Miles covered by the primary set's work reps only. */
+  totalWorkMi: number;
+  /** Other sets in the session — e.g. a trailing 2×200m. */
+  extraSets: Array<{ count: number; label: string }>;
+}
+
+/**
+ * Name a rep distance the way a runner would. Snaps to the standard track and
+ * road distances within 4% — GPS puts an 800m rep anywhere from 790 to 815 m,
+ * and "12×800m" is what the athlete ran even when the watch says 802.
+ * Anything that doesn't snap falls back to miles, which is always honest.
+ */
+export function describeRepDistance(meters: number): string {
+  const SNAPS: Array<[number, string]> = [
+    [200, "200m"], [300, "300m"], [400, "400m"], [500, "500m"],
+    [600, "600m"], [800, "800m"], [1000, "1K"], [1200, "1200m"],
+    [1609.34, "1mi"], [1600, "1600m"], [2000, "2K"], [2414, "1.5mi"],
+    [3000, "3K"], [3218.7, "2mi"], [5000, "5K"],
+  ];
+  for (const [target, label] of SNAPS) {
+    if (Math.abs(meters - target) <= target * 0.04) return label;
+  }
+  return `${(meters / 1609.34).toFixed(2)} mi`;
+}
+
+/** Median of a non-empty numeric array. */
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
+}
+
+interface NormalizedLap {
+  lapIndex: number;
+  distMi: number;
+  distM: number;
+  paceSec: number;
+  hr?: number;
+}
+
+/**
+ * Normalize work laps into a comparable shape. Shared with `splitsFromLaps`'s
+ * first pass: drop rests, drop sub-50m GPS-noise fragments, derive pace from
+ * moving time when the stored column is missing.
+ */
+function normalizeWorkLaps(laps: LapLite[]): NormalizedLap[] {
+  const out: NormalizedLap[] = [];
+  const work = [...laps]
+    .filter((l) => l.is_rest !== true)
+    .sort((a, b) => (a.lap_index ?? 0) - (b.lap_index ?? 0));
+  for (const l of work) {
+    const meters = typeof l.distance_meters === "number"
+      ? l.distance_meters
+      : parseFloat(String(l.distance_meters ?? "0"));
+    if (!Number.isFinite(meters)) continue;
+    const distMi = meters / 1609.34;
+    if (!distMi || distMi < 0.05) continue;
+    let paceSec = typeof l.avg_pace_sec_per_mile === "number"
+      ? l.avg_pace_sec_per_mile
+      : parseFloat(String(l.avg_pace_sec_per_mile ?? ""));
+    if ((!paceSec || !Number.isFinite(paceSec)) && l.moving_time_seconds && distMi > 0) {
+      paceSec = l.moving_time_seconds / distMi;
+    }
+    if (!paceSec || !Number.isFinite(paceSec) || paceSec <= 0) continue;
+    out.push({
+      lapIndex: l.lap_index ?? out.length,
+      distMi,
+      distM: meters,
+      paceSec,
+      hr: typeof l.avg_heart_rate === "number" ? l.avg_heart_rate : undefined,
+    });
+  }
+  return out;
+}
+
+/**
+ * Group work laps into sets by distance: sort by distance, then cut wherever
+ * consecutive distances jump by more than 15%. Wide enough to absorb GPS
+ * scatter on a 400m rep, narrow enough to keep 600m and 1K apart.
+ *
+ * SORT FIRST, then split. The obvious greedy version — walk the laps in lap
+ * order and drop each into the first cluster it is near — is order-dependent
+ * and wrong on real data. Rio's 2026-08-25 alternates 1K and 600m reps and
+ * opens with a short 874m rep; greedy clustering anchors a cluster on that 874
+ * and then swallows the 1004s into it one at a time as the running median
+ * drifts, inventing a set nobody ran. Sorting removes the ordering entirely.
+ *
+ * Deliberately distance-based, never pace-based: a fading set is still one
+ * set, and the last rep of a 12×800 does not become its own block because the
+ * athlete hung on for it.
+ */
+function clusterByDistance(laps: NormalizedLap[]): NormalizedLap[][] {
+  const sorted = [...laps].sort((a, b) => a.distM - b.distM);
+  const clusters: NormalizedLap[][] = [];
+  let current: NormalizedLap[] = [];
+  for (const lap of sorted) {
+    const prev = current[current.length - 1];
+    if (prev && lap.distM > prev.distM * 1.15) {
+      clusters.push(current);
+      current = [];
+    }
+    current.push(lap);
+  }
+  if (current.length > 0) clusters.push(current);
+  return clusters;
+}
+
+/**
+ * Build a `RepProfile` from a session's laps, or null when the laps don't
+ * describe a rep session (fewer than 3 work reps in the primary set).
+ *
+ * The PRIMARY set is the largest cluster by rep count, ties broken by total
+ * distance. For Rio's 12×800m + 2×200m that is the twelve 800s: the strides
+ * on the end are a different question and averaging them in drags the rep
+ * pace from 5:14 to 5:06, a number she never ran.
+ */
+export function repProfileFromLaps(laps: LapLite[] | null | undefined): RepProfile | null {
+  if (!Array.isArray(laps) || laps.length === 0) return null;
+  const work = normalizeWorkLaps(laps);
+  if (work.length < 3) return null;
+
+  const clusters = clusterByDistance(work);
+  const primary = clusters.reduce((best, c) => {
+    if (c.length !== best.length) return c.length > best.length ? c : best;
+    const sum = (xs: NormalizedLap[]) => xs.reduce((t, x) => t + x.distM, 0);
+    return sum(c) > sum(best) ? c : best;
+  }, clusters[0]);
+  if (primary.length < 3) return null;
+
+  const inOrder = [...primary].sort((a, b) => a.lapIndex - b.lapIndex);
+  const paces = inOrder.map((l) => l.paceSec);
+  const avgPaceSec = paces.reduce((t, p) => t + p, 0) / paces.length;
+
+  // Halves: only meaningful with enough reps to have a shape. An odd count
+  // puts the middle rep in neither half, so the two halves stay equal-sized
+  // and the comparison isn't skewed by which side the extra rep lands on.
+  let firstHalfPaceSec: number | null = null;
+  let secondHalfPaceSec: number | null = null;
+  if (paces.length >= 4) {
+    const half = Math.floor(paces.length / 2);
+    const mean = (xs: number[]) => xs.reduce((t, x) => t + x, 0) / xs.length;
+    firstHalfPaceSec = mean(paces.slice(0, half));
+    secondHalfPaceSec = mean(paces.slice(-half));
+  }
+
+  const hrs = inOrder.map((l) => l.hr).filter((h): h is number => typeof h === "number");
+  const lastHr = inOrder[inOrder.length - 1].hr;
+
+  // Recovery: the rest laps that sit BETWEEN two primary-set reps. A rest lap
+  // after the last rep is the walk to the car, not a recovery.
+  const restById = new Map<number, number>();
+  for (const l of laps) {
+    if (l.is_rest !== true) continue;
+    const idx = l.lap_index;
+    const secs = l.moving_time_seconds;
+    if (typeof idx === "number" && typeof secs === "number" && secs > 0) restById.set(idx, secs);
+  }
+  const firstIdx = inOrder[0].lapIndex;
+  const lastIdx = inOrder[inOrder.length - 1].lapIndex;
+  const rests = [...restById.entries()]
+    .filter(([idx]) => idx > firstIdx && idx < lastIdx)
+    .map(([, secs]) => secs);
+  // Median, not mean: one long stop to retie a shoe should not turn a 60-second
+  // recovery into a 75-second one.
+  const restSec = rests.length > 0 ? Math.round(median(rests)) : null;
+
+  const extraSets = clusters
+    .filter((c) => c !== primary && c.length >= 1)
+    .map((c) => ({ count: c.length, label: describeRepDistance(median(c.map((x) => x.distM))) }));
+
+  return {
+    repCount: inOrder.length,
+    repDistanceMi: median(inOrder.map((l) => l.distMi)),
+    repLabel: describeRepDistance(median(inOrder.map((l) => l.distM))),
+    restSec,
+    avgPaceSec,
+    fastestPaceSec: Math.min(...paces),
+    slowestPaceSec: Math.max(...paces),
+    firstHalfPaceSec,
+    secondHalfPaceSec,
+    avgHr: hrs.length > 0 ? Math.round(hrs.reduce((t, h) => t + h, 0) / hrs.length) : null,
+    lastRepHr: typeof lastHr === "number" ? lastHr : null,
+    totalWorkMi: inOrder.reduce((t, l) => t + l.distMi, 0),
+    extraSets,
+  };
+}
+
+/**
+ * One-line weather summary for the progression block. The full
+ * `formatConditionsBlock` already covers TODAY in detail including the heat
+ * model; here the job is only to let the reader see that two sessions were or
+ * weren't run in comparable air.
+ */
+export function summarizeWeatherLine(wx: Record<string, unknown> | null | undefined): string {
+  if (!wx || typeof wx !== "object") return "";
+  const temp = Number(wx.temp_f);
+  const dew = Number(wx.dew_point_f);
+  if (!Number.isFinite(temp) || !Number.isFinite(dew)) return "";
+  const cat = String(wx.heat_category ?? "").replace(/_/g, " ");
+  const bits = [`${Math.round(temp)}°F`, `${Math.round(dew)}°F dew point`];
+  if (cat) bits.push(cat);
+  return bits.join(", ");
+}
+
 // ── Workout progression — find similar prior + compare ───
 
 /**
@@ -332,32 +581,75 @@ function familyFor(workoutType: string | null | undefined): string[] | null {
   return [t]; // unknown type — match exactly
 }
 
+/**
+ * Types searched by the SHAPE pass. Wider than any one family on purpose: a
+ * 10×1K logged `threshold` and a 10×1K logged `intervals` are the same session
+ * wearing two labels, and the athlete's label for a rep session is not stable
+ * enough to gate a comparison on. The family fallback below stays narrow.
+ */
+const QUALITY_SEARCH_TYPES = [
+  "intervals", "interval", "tempo", "threshold", "progression", "speed", "workout",
+];
+
 export interface PriorWorkout {
   date: string;          // ISO date
   daysAgo: number;
   workoutType: string;
   distanceMiles: number;
   paceSecPerMile: number;
+  /** Rep structure, when the prior has laps and is a rep session. */
+  repProfile?: RepProfile | null;
+  /**
+   * How this prior was chosen. `shape` means its reps match the current
+   * session's; `family` means nothing matched on shape and this is the closest
+   * session of the same kind. The block labels the second case so the model
+   * doesn't compare a 12×800 to a 5×2mi as though they were the same workout.
+   */
+  matchedOn?: "shape" | "family";
+  /** `weather_actual` for the prior, for the conditions comparison. */
+  weather?: Record<string, unknown> | null;
 }
 
 export interface CurrentWorkout {
   workoutType: string;
   distanceMiles: number;
   paceSecPerMile: number;
+  /** Rep structure of the session being asked about. Drives the shape pass. */
+  repProfile?: RepProfile | null;
+  weather?: Record<string, unknown> | null;
 }
 
+/** Rep distances within ±25% are the same kind of rep. 800m ↔ 1K qualifies. */
+const REP_DISTANCE_TOLERANCE = 0.25;
+
 /**
- * Find the most-similar prior workout in the same family.
+ * Find the most-similar prior workout.
  *
- * Search window: 14-90 days ago. Below 14 days is usually the previous
- * session of the same block (less interesting for progression); beyond
- * 90 days the comparison is weaker because fitness has likely shifted.
+ * ── Quality sessions (intervals / threshold / tempo) ──
  *
- * Distance gate: prior must be within ±50% of current distance. A 4mi
- * tempo isn't a useful comparison for an 8mi tempo (different session
- * shape).
+ * Matched on SESSION SHAPE, not total distance. A rep session's total distance
+ * and average pace are artifacts of the recoveries: Rio's 2026-09-15 12×800m
+ * covers 6.72 mi at 7:06/mi, and the 10×1K five weeks earlier covers 6.64 mi
+ * at 6:00/mi. Those totals are a hair apart and the paces are a minute apart,
+ * and neither fact is about how fast she ran. The reps were 5:14 and 5:18.
  *
- * Selection: smallest distance delta wins. Ties broken by recency.
+ * So the shape pass reads `running_workout_laps`, builds a `RepProfile` for
+ * each candidate, and prefers priors whose reps are within ±25% of the current
+ * rep distance — with rep count and recovery length as secondary terms.
+ *
+ * The 14-day floor is dropped for these. It exists to stop an easy run being
+ * compared to the same easy run from the same week, which is not a progression
+ * question. Quality sessions are the opposite: they are the ones an athlete
+ * repeats weekly on purpose, and last Tuesday's 12×800 is the single most
+ * useful thing to hold today's against.
+ *
+ * When nothing matches on shape, falls back to the family+distance match below
+ * and marks the result `matchedOn: "family"` so the block can say so.
+ *
+ * ── Everything else ──
+ *
+ * Unchanged: same family, 14–90 days ago, within ±50% distance, smallest
+ * distance delta wins, recency breaks ties.
  */
 export async function findSimilarPriorWorkout(
   supabase: SupabaseClient,
@@ -370,79 +662,166 @@ export async function findSimilarPriorWorkout(
   if (!current.distanceMiles || current.distanceMiles <= 0) return null;
   if (!current.paceSecPerMile || current.paceSecPerMile <= 0) return null;
 
+  // Shape matching needs BOTH a quality session and a rep structure to match
+  // against. A caller that doesn't build a `repProfile` gets the original
+  // family+distance behaviour unchanged, rather than a quality session with
+  // the distance gate removed and nothing put in its place.
+  const useShape = isQualityWorkoutType(current.workoutType) && !!current.repProfile;
   const lookbackStart = new Date(currentDate.getTime() - 90 * 86400000).toISOString();
-  const lookbackEnd = new Date(currentDate.getTime() - 14 * 86400000).toISOString();
+  // Shape-matched sessions compare against anything before today; everything
+  // else keeps the 14-day floor. See the docstring.
+  const lookbackEnd = useShape
+    ? currentDate.toISOString()
+    : new Date(currentDate.getTime() - 14 * 86400000).toISOString();
 
-  const minDist = current.distanceMiles * 0.5;
-  const maxDist = current.distanceMiles * 1.5;
+  type Row = {
+    id: string;
+    workout_date: string;
+    workout_type: string;
+    workout_distance_miles: number;
+    workout_pace_per_mile: string | null;
+    workout_duration_minutes: number | null;
+    weather_actual?: Record<string, unknown> | null;
+  };
+
+  const paceOf = (row: Row): number | null =>
+    parsePace(row.workout_pace_per_mile)
+      ?? deriveAveragePace(row.workout_distance_miles, row.workout_duration_minutes);
+
+  const daysAgoOf = (row: Row): number =>
+    Math.round((currentDate.getTime() - new Date(row.workout_date).getTime()) / 86400000);
 
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("training_logs")
-      .select("workout_date, workout_type, workout_distance_miles, workout_pace_per_mile, workout_duration_minutes")
+      .select(
+        "id, workout_date, workout_type, workout_distance_miles, workout_pace_per_mile, workout_duration_minutes, weather_actual",
+      )
       .eq("user_id", userId)
-      .in("workout_type", family)
+      .in("workout_type", useShape ? QUALITY_SEARCH_TYPES : family)
       .gte("workout_date", lookbackStart)
-      .lte("workout_date", lookbackEnd)
-      .gte("workout_distance_miles", minDist)
-      .lte("workout_distance_miles", maxDist)
+      .lt("workout_date", lookbackEnd)
       .order("workout_date", { ascending: false })
       .limit(20);
+
+    // The distance gate is the non-quality path's whole similarity test. For
+    // quality sessions it is the thing being replaced — gating on it would
+    // throw away a 6×1K that happens to total four miles.
+    if (!useShape) {
+      query = query
+        .gte("workout_distance_miles", current.distanceMiles * 0.5)
+        .lte("workout_distance_miles", current.distanceMiles * 1.5);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.warn("findSimilarPriorWorkout: query error", error.message);
       return null;
     }
 
-    type Row = {
-      workout_date: string;
-      workout_type: string;
-      workout_distance_miles: number;
-      workout_pace_per_mile: string | null;
-      workout_duration_minutes: number | null;
-    };
-
     const candidates = (data ?? []) as Row[];
     if (candidates.length === 0) return null;
 
-    // Score each candidate. Smaller distance delta = better. Recency is
-    // tiebreak — closer in time wins when distance match is similar.
-    let best: { row: Row; score: number; daysAgo: number } | null = null;
-    for (const row of candidates) {
-      const paceSec = parsePace(row.workout_pace_per_mile)
-        ?? deriveAveragePace(row.workout_distance_miles, row.workout_duration_minutes);
-      if (paceSec == null) continue;
+    // ── Shape pass ──
+    if (useShape && current.repProfile) {
+      // One batched laps read for every candidate rather than one per
+      // candidate: ≤20 sessions × ~30 laps is a few hundred narrow rows, and
+      // the alternative is twenty round trips inside a request budget.
+      const ids = candidates.map((c) => c.id);
+      const { data: lapRows, error: lapErr } = await supabase
+        .from("running_workout_laps")
+        .select("workout_id, lap_index, distance_meters, moving_time_seconds, avg_pace_sec_per_mile, avg_heart_rate, is_rest")
+        .in("workout_id", ids)
+        .order("lap_index", { ascending: true });
 
-      const distDelta = Math.abs(row.workout_distance_miles - current.distanceMiles) / current.distanceMiles;
-      const daysAgo = Math.round(
-        (currentDate.getTime() - new Date(row.workout_date).getTime()) / 86400000,
-      );
-      // Lower score = better. Distance delta dominates; recency adds a
-      // small penalty (0.001 per day) so 21-days-ago beats 70-days-ago
-      // when distance match is identical.
-      const score = distDelta + daysAgo * 0.001;
-      if (!best || score < best.score) {
-        best = { row, score, daysAgo };
+      if (lapErr) {
+        console.warn("findSimilarPriorWorkout: laps query error", lapErr.message);
+      } else {
+        const byWorkout = new Map<string, LapLite[]>();
+        for (const row of (lapRows ?? []) as Array<LapLite & { workout_id: string }>) {
+          const list = byWorkout.get(row.workout_id) ?? [];
+          list.push(row);
+          byWorkout.set(row.workout_id, list);
+        }
+
+        const cur = current.repProfile;
+        let best: { row: Row; profile: RepProfile; score: number } | null = null;
+
+        for (const row of candidates) {
+          const profile = repProfileFromLaps(byWorkout.get(row.id));
+          if (!profile) continue;
+          if (paceOf(row) == null) continue;
+
+          const repDelta = Math.abs(profile.repDistanceMi - cur.repDistanceMi) / cur.repDistanceMi;
+          if (repDelta > REP_DISTANCE_TOLERANCE) continue;
+
+          // Rep distance dominates. Rep count and recovery length are the
+          // secondary terms — a 12×800 off 60s is a closer sibling to a
+          // 12×800 off 60s than to a 6×800 off 3:00, even though all three
+          // are "800m reps". Recency only breaks what is otherwise a tie.
+          const countDelta = Math.abs(profile.repCount - cur.repCount) / Math.max(cur.repCount, 1);
+          const restDelta = (profile.restSec != null && cur.restSec != null && cur.restSec > 0)
+            ? Math.abs(profile.restSec - cur.restSec) / cur.restSec
+            : 0;
+          const score = repDelta * 3 + countDelta + restDelta * 0.5 + daysAgoOf(row) * 0.001;
+
+          if (!best || score < best.score) best = { row, profile, score };
+        }
+
+        if (best) {
+          return {
+            date: best.row.workout_date,
+            daysAgo: daysAgoOf(best.row),
+            workoutType: best.row.workout_type,
+            distanceMiles: best.row.workout_distance_miles,
+            paceSecPerMile: paceOf(best.row)!,
+            repProfile: best.profile,
+            matchedOn: "shape",
+            weather: best.row.weather_actual ?? null,
+          };
+        }
       }
     }
 
+    // ── Family fallback ──
+    // Nothing matched on shape (or this isn't a quality session). Narrow back
+    // to the real family and pick on distance, as before.
+    const pool = useShape
+      ? candidates.filter((c) => family.includes((c.workout_type ?? "").toLowerCase()))
+      : candidates;
+
+    let best: { row: Row; score: number } | null = null;
+    for (const row of pool) {
+      if (paceOf(row) == null) continue;
+      const distDelta = Math.abs(row.workout_distance_miles - current.distanceMiles) / current.distanceMiles;
+      // Lower score = better. Distance delta dominates; recency adds a
+      // small penalty (0.001 per day) so 21-days-ago beats 70-days-ago
+      // when distance match is identical.
+      const score = distDelta + daysAgoOf(row) * 0.001;
+      if (!best || score < best.score) best = { row, score };
+    }
+
     if (!best) return null;
-    const finalPaceSec = parsePace(best.row.workout_pace_per_mile)
-      ?? deriveAveragePace(best.row.workout_distance_miles, best.row.workout_duration_minutes);
+    const finalPaceSec = paceOf(best.row);
     if (finalPaceSec == null) return null;
 
     return {
       date: best.row.workout_date,
-      daysAgo: best.daysAgo,
+      daysAgo: daysAgoOf(best.row),
       workoutType: best.row.workout_type,
       distanceMiles: best.row.workout_distance_miles,
       paceSecPerMile: finalPaceSec,
+      repProfile: null,
+      matchedOn: "family",
+      weather: best.row.weather_actual ?? null,
     };
   } catch (err) {
     console.warn("findSimilarPriorWorkout: error", err);
     return null;
   }
 }
+
 
 export interface ProgressionComparison {
   block: string;
@@ -476,6 +855,161 @@ const FAST_WORKOUT_TYPES = new Set([
 const LONG_EFFORT_DISTANCE_MI = 12;
 
 /**
+ * Noise floors for the rep-level comparison. Below these, two sessions are the
+ * same session and saying otherwise invents a trend: GPS alone moves a 6-mile
+ * rep total by a tenth, and 2 sec/mi is inside the scatter of two honest reps
+ * at the same effort.
+ */
+const REP_PACE_NOISE_SEC = 3;
+const WORK_DISTANCE_NOISE_MI = 0.3;
+
+/** Describe a first-half→second-half rep-pace change, or null when unknowable. */
+function describeRepHalves(p: RepProfile): string | null {
+  if (p.firstHalfPaceSec == null || p.secondHalfPaceSec == null) return null;
+  const delta = p.secondHalfPaceSec - p.firstHalfPaceSec;
+  const shape = Math.abs(delta) < REP_PACE_NOISE_SEC
+    ? "even"
+    : delta > 0
+      ? `faded ${Math.round(delta)} sec/mi`
+      : `negative split, ${Math.round(Math.abs(delta))} sec/mi faster`;
+  return `First half ${formatPace(p.firstHalfPaceSec)}/mi → second half ${formatPace(p.secondHalfPaceSec)}/mi (${shape})`;
+}
+
+/** "12×800m off 1:07 rest (+2×200m)" */
+function describeStructure(p: RepProfile): string {
+  const head = `${p.repCount}×${p.repLabel}`;
+  const rest = p.restSec != null ? ` off ${formatHms(p.restSec)} rest` : "";
+  const extra = p.extraSets.length > 0
+    ? ` (+${p.extraSets.map((s) => `${s.count}×${s.label}`).join(", ")})`
+    : "";
+  return `${head}${rest}${extra}`;
+}
+
+/**
+ * Rep spread, computed from the SAME rounded seconds the block prints for
+ * fastest and slowest. Rounding the raw difference instead gives "fastest 5:11,
+ * slowest 5:17 (7 sec/mi spread)" — arithmetic the reader can see is wrong,
+ * which costs more credibility than the half-second of precision is worth.
+ */
+function repSpreadSec(p: RepProfile): number {
+  return Math.round(p.slowestPaceSec) - Math.round(p.fastestPaceSec);
+}
+
+/** The five bullets describing one session's reps. */
+function repLines(p: RepProfile, weather: Record<string, unknown> | null | undefined): string[] {
+  const spread = repSpreadSec(p);
+  const lines = [
+    `- Rep pace: ${formatPace(p.avgPaceSec)}/mi avg · fastest ${formatPace(p.fastestPaceSec)}, ` +
+      `slowest ${formatPace(p.slowestPaceSec)} (${spread} sec/mi spread)`,
+  ];
+  const halves = describeRepHalves(p);
+  if (halves) lines.push(`- ${halves}`);
+  if (p.avgHr != null) {
+    const last = p.lastRepHr != null ? `, ${p.lastRepHr} bpm on the last rep` : "";
+    lines.push(`- Rep HR: ${p.avgHr} bpm avg${last}`);
+  }
+  lines.push(`- Work: ${p.totalWorkMi.toFixed(2)} mi across ${p.repCount} reps`);
+  const wx = summarizeWeatherLine(weather);
+  if (wx) lines.push(`- Conditions: ${wx}`);
+  return lines;
+}
+
+/**
+ * The rep-level progression block — what a quality session comparison should
+ * have been saying all along.
+ *
+ * Overall distance and average pace are DELIBERATELY ABSENT. For a rep session
+ * they measure the recoveries: Rio's 12×800m on 2026-09-15 reads 7:06/mi
+ * overall against 6:00/mi for the 10×1K on 08-11, which presents a session
+ * whose reps were 4 sec/mi FASTER as a minute-per-mile collapse. Printing both
+ * the honest number and the misleading one just invites the model to quote the
+ * misleading one, so only the reps are here.
+ */
+function formatRepProgressionBlock(
+  current: CurrentWorkout,
+  prior: PriorWorkout,
+  cur: RepProfile,
+  pri: RepProfile,
+): ProgressionComparison {
+  const weeksAgo = Math.round(prior.daysAgo / 7);
+  const whenLabel = prior.daysAgo <= 10 ? `${prior.daysAgo} days ago` : `${weeksAgo} weeks ago`;
+  const priorDate = prior.date.slice(0, 10);
+
+  const lines = [
+    "## Workout progression (rep-level)",
+    "Both are quality sessions, so this compares the WORK REPS. A rep session's",
+    "overall distance and average pace describe how long the recoveries were, not",
+    "how fast the athlete ran, and are deliberately not shown here.",
+    "",
+    `Today — ${describeStructure(cur)}`,
+    ...repLines(cur, current.weather),
+    "",
+    `Most similar prior — ${describeStructure(pri)} (${whenLabel}, ${priorDate}, ${prior.workoutType})`,
+    ...repLines(pri, prior.weather),
+  ];
+
+  // ── Deltas, with the noise floor applied ──
+  const paceDelta = cur.avgPaceSec - pri.avgPaceSec;   // negative = faster today
+  const distDelta = cur.totalWorkMi - pri.totalWorkMi;
+  const deltas: string[] = [];
+
+  deltas.push(
+    Math.abs(paceDelta) < REP_PACE_NOISE_SEC
+      ? "rep pace the same (within noise)"
+      : `rep pace ${Math.round(Math.abs(paceDelta))} sec/mi ${paceDelta < 0 ? "faster" : "slower"}`,
+  );
+
+  deltas.push(`rep spread ${repSpreadSec(cur)} vs ${repSpreadSec(pri)} sec/mi`);
+
+  if (cur.avgHr != null && pri.avgHr != null) {
+    const hrDelta = cur.avgHr - pri.avgHr;
+    deltas.push(
+      hrDelta === 0
+        ? "rep HR the same"
+        : `rep HR ${hrDelta > 0 ? "+" : ""}${hrDelta} bpm`,
+    );
+  }
+
+  deltas.push(
+    Math.abs(distDelta) < WORK_DISTANCE_NOISE_MI
+      ? "work distance the same (within noise)"
+      : `work distance ${distDelta > 0 ? "+" : ""}${distDelta.toFixed(1)} mi`,
+  );
+
+  lines.push("", `Delta (today vs that session): ${deltas.join(" · ")}`);
+
+  // A same-pace rep is a different achievement at a different rep length. Say
+  // so rather than letting the model quietly treat 800s and 1Ks as equivalent.
+  const repRatio = Math.abs(cur.repDistanceMi - pri.repDistanceMi) / pri.repDistanceMi;
+  if (repRatio > 0.05) {
+    const longer = cur.repDistanceMi > pri.repDistanceMi;
+    lines.push(
+      `Note: the reps are a different length (${cur.repLabel} vs ${pri.repLabel}). Holding a pace over ` +
+        `a ${longer ? "longer" : "shorter"} rep is a ${longer ? "bigger" : "smaller"} ask — weigh the comparison accordingly.`,
+    );
+  }
+
+  if (prior.matchedOn === "family") {
+    lines.push(
+      "Note: closest, different shape — no prior session matched this one's rep structure, so this is the nearest session of the same kind. Compare with that in mind.",
+    );
+  }
+
+  // Improvement/regression read off the REPS. Faster reps, or the same pace
+  // held with less fade, is the session getting better; the overall pace has
+  // no vote.
+  const fadeOf = (p: RepProfile) =>
+    p.firstHalfPaceSec != null && p.secondHalfPaceSec != null
+      ? p.secondHalfPaceSec - p.firstHalfPaceSec
+      : 0;
+  const fadeDelta = fadeOf(cur) - fadeOf(pri);
+  const hasImprovement = paceDelta <= -REP_PACE_NOISE_SEC || fadeDelta <= -REP_PACE_NOISE_SEC;
+  const hasRegression = paceDelta >= REP_PACE_NOISE_SEC || fadeDelta >= REP_PACE_NOISE_SEC;
+
+  return { block: lines.join("\n"), hasImprovement, hasRegression };
+}
+
+/**
  * Format the progression block for the LLM.
  *
  * Always evaluates when:
@@ -489,11 +1023,20 @@ const LONG_EFFORT_DISTANCE_MI = 12;
  *
  * Returns null only when the block is filtered as noise, never for
  * quality sessions or long efforts.
+ *
+ * REP SESSIONS TAKE A DIFFERENT PATH. When both sides carry a `RepProfile`,
+ * this delegates to `formatRepProgressionBlock` and the session-level distance
+ * and average pace never appear — see that function for why they are worse
+ * than useless here.
  */
 export function formatProgressionBlock(
   current: CurrentWorkout,
   prior: PriorWorkout,
 ): ProgressionComparison | null {
+  if (current.repProfile && prior.repProfile) {
+    return formatRepProgressionBlock(current, prior, current.repProfile, prior.repProfile);
+  }
+
   const distDeltaMi = current.distanceMiles - prior.distanceMiles;
   const distDeltaPct = (distDeltaMi / prior.distanceMiles) * 100;
   const paceDeltaSec = current.paceSecPerMile - prior.paceSecPerMile;
@@ -525,9 +1068,18 @@ export function formatProgressionBlock(
   const lines = [
     `## Workout progression`,
     `Today: ${current.distanceMiles.toFixed(1)} mi ${current.workoutType} @ ${formatPace(current.paceSecPerMile)}/mi`,
-    `Most similar prior ${prior.workoutType} (${whenLabel}, ${prior.date}): ${prior.distanceMiles.toFixed(1)} mi @ ${formatPace(prior.paceSecPerMile)}/mi`,
+    `Most similar prior ${prior.workoutType} (${whenLabel}, ${prior.date.slice(0, 10)}): ${prior.distanceMiles.toFixed(1)} mi @ ${formatPace(prior.paceSecPerMile)}/mi`,
     `Delta: ${distLine}, ${paceLine}`,
   ];
+
+  // A quality session that reached the family fallback has no rep structure to
+  // compare — either this session or the prior one has no usable laps. Say so
+  // rather than letting a 12×800 be read against a 5×2mi as like-for-like.
+  if (isFastEffort && prior.matchedOn === "family") {
+    lines.push(
+      "Note: closest, different shape — no prior session matched this one's rep structure, so this is the nearest session of the same kind. These are session averages, which for a rep session largely reflect recovery length; do not read the pace delta as a change in fitness.",
+    );
+  }
 
   // When the block fires for a quality/long session but the deltas are
   // tiny, give the LLM a cue so it doesn't over-claim "real progression."
