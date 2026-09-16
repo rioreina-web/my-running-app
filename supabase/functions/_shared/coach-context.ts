@@ -22,6 +22,7 @@
  */
 
 import { fetchAndComputePaceZones, PaceZones, PaceAnchor, PaceRange } from "./pace-engine.ts";
+import { lapRoles } from "./shared/workBouts.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ── Public surface ───────────────────────────────────────
@@ -721,12 +722,20 @@ export function splitsFromParsedBlocks(
       ? parseInt(paceParts[0], 10) * 60 + parseInt(paceParts[1], 10)
       : NaN;
     if (!dist || dist <= 0 || !isFinite(paceSec)) continue;
+    // A block's role is KNOWN here — the parser wrote it — so none of them
+    // should fall through to "unknown", which `formatSplitsBlock` counts as
+    // work for pattern detection. A "recovery" block landing in that bucket is
+    // how a 4x3mi with half-mile floats reported "Fade — second half averaged
+    // 67 sec/mi slower": the 10:22 recovery jog got averaged into the second
+    // half of the work reps. The session was a negative-split cutdown.
     const effortKind: WorkoutSplit["effortKind"] = role === "warmup"
       ? "warmup"
       : role === "cooldown"
       ? "cooldown"
       : role === "work_rep"
       ? "work"
+      : role === "recovery" || role === "rest" || role === "float"
+      ? "rest"
       : "unknown";
     if (effortKind === "work") workIndex += 1;
     out.push({
@@ -840,6 +849,87 @@ export function splitsFromLaps(
     avgHeartRate: c.hr,
     effortKind: "work" as const,
   }));
+}
+
+/**
+ * The athlete's ACTUAL WATCH SPLITS, each lap kept as its own row, with the
+ * role `lapRoles` assigns it.
+ *
+ * Prefer this over anything derived. A lap press is a measurement; a "rep" is
+ * an inference drawn on top of one, and every number computed on merged reps
+ * is computed on a unit the watch never recorded. On a 4x3mi the merged view
+ * reports three miles at 6:09 — it cannot tell you whether that was
+ * 6:09/6:09/6:09 or 6:25/6:10/5:52, and it reported the closing rep of that
+ * session (5:49/5:32/5:30) as a flat 5:37.
+ *
+ * `splitsFromLaps` is the older reader and labels every kept lap "Rep N",
+ * which turns warm-up miles and floats into reps. This one carries roles, so
+ * pattern detection runs on the twelve real rep miles and nothing else.
+ */
+export function splitsFromLapsWithRoles(
+  laps: Array<{
+    lap_index?: number | null;
+    distance_meters?: number | string | null;
+    moving_time_seconds?: number | null;
+    avg_pace_sec_per_mile?: number | string | null;
+    avg_heart_rate?: number | null;
+    is_rest?: boolean | null;
+  }> | null | undefined,
+): WorkoutSplit[] {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+  const ordered = [...laps].sort((a, b) => (a.lap_index ?? 0) - (b.lap_index ?? 0));
+
+  const roles = lapRoles(
+    ordered.map((l, i) => ({
+      lap_index: l.lap_index ?? i,
+      distance: typeof l.distance_meters === "number"
+        ? l.distance_meters
+        : parseFloat(String(l.distance_meters ?? "0")),
+      moving_time: l.moving_time_seconds ?? 0,
+    })),
+  );
+  const roleFor = new Map(roles.map((r) => [r.lap_index, r.role]));
+
+  const out: WorkoutSplit[] = [];
+  let repNum = 0;
+  for (const [i, l] of ordered.entries()) {
+    const meters = typeof l.distance_meters === "number"
+      ? l.distance_meters
+      : parseFloat(String(l.distance_meters ?? "0"));
+    const distMi = Number.isFinite(meters) ? meters / 1609.34 : 0;
+    if (!distMi || distMi < 0.05) continue; // GPS-noise fragment, not a lap
+    let paceSec = typeof l.avg_pace_sec_per_mile === "number"
+      ? l.avg_pace_sec_per_mile
+      : parseFloat(String(l.avg_pace_sec_per_mile ?? ""));
+    if ((!paceSec || !Number.isFinite(paceSec)) && l.moving_time_seconds && distMi > 0) {
+      paceSec = l.moving_time_seconds / distMi;
+    }
+    if (!paceSec || !Number.isFinite(paceSec) || paceSec <= 0) continue;
+
+    const role = l.is_rest === true ? "recovery" : (roleFor.get(l.lap_index ?? i) ?? "rep");
+    const effortKind: WorkoutSplit["effortKind"] = role === "rep"
+      ? "work"
+      : role === "warmup"
+      ? "warmup"
+      : role === "cooldown"
+      ? "cooldown"
+      : "rest";
+    if (effortKind === "work") repNum += 1;
+    out.push({
+      label: effortKind === "work"
+        ? `Rep ${repNum}`
+        : effortKind === "warmup"
+        ? "Warmup"
+        : effortKind === "cooldown"
+        ? "Cooldown"
+        : "Recovery",
+      distanceMiles: distMi,
+      paceSecPerMile: Math.round(paceSec),
+      avgHeartRate: typeof l.avg_heart_rate === "number" ? l.avg_heart_rate : undefined,
+      effortKind,
+    });
+  }
+  return out;
 }
 
 /**

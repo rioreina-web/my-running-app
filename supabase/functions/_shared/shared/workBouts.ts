@@ -40,6 +40,22 @@ export interface WorkBout {
   avg_vel_ms: number;
   avg_pace_per_mile: string; // "M:SS"
   avg_pace_per_km: string;   // "M:SS"
+  /**
+   * The laps this bout was assembled from, when it came from watch laps.
+   *
+   * A rep's average hides how it was run: 3 miles at 6:09 is a different
+   * session depending on whether it was 6:09/6:09/6:09 or 6:25/6:10/5:52.
+   * Merging continuous work into one rep is right — a 3-mile rep is one rep,
+   * not three — but the mile splits inside it are the part a coach reads, and
+   * they were being discarded at this boundary.
+   *
+   * Absent for stream-derived bouts, which have no lap presses to split on.
+   */
+  splits?: Array<{
+    distance_m: number;
+    duration_s: number;
+    avg_pace_per_mile: string;
+  }>;
 }
 
 export interface Recovery {
@@ -787,7 +803,11 @@ export function boutsFromLaps(
   );
   const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
 
-  const cls: Segment[] = norm.map((l) => (l.vel < recoveryThreshold ? "recovery" : "work"));
+  // Same two-stage classification as `lapRoles`, so the detected bouts and the
+  // per-lap roles cannot disagree about what was a rep.
+  const globalWork = norm.map((l) => l.vel >= recoveryThreshold);
+  const refinedWork = stripRamps(norm, demoteLocalRecoveries(norm, globalWork));
+  const cls: Segment[] = refinedWork.map((w) => (w ? "work" : "recovery"));
 
   // Merge consecutive same-class laps.
   type Group = { seg: Segment; laps: typeof norm };
@@ -830,6 +850,15 @@ export function boutsFromLaps(
         avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
         avg_pace_per_mile: pace(secPerMile),
         avg_pace_per_km: pace(secPerKm),
+        // Only worth carrying when the bout is more than one lap; a single-lap
+        // bout's "splits" would just restate its own average.
+        splits: g.laps.length > 1
+          ? g.laps.map((l) => ({
+            distance_m: Math.round(l.dist_m),
+            duration_s: Math.round(l.dur_s),
+            avg_pace_per_mile: pace(l.vel > 0 ? 1609.34 / l.vel : 0),
+          }))
+          : undefined,
       });
     } else {
       // A recovery before any work is a warmup, not a separator — skip it.
@@ -852,6 +881,78 @@ export function boutsFromLaps(
   }
 
   return { segments, workVelMs: Math.round(workVel * 100) / 100 };
+}
+
+/**
+ * The whole run as ONE continuous effort, built from the athlete's OWN LAPS —
+ * every recorded split kept as a split of that effort.
+ *
+ * The unstructured case still has splits in it. When a run turns out not to be
+ * a session, the caller used to fall back to the GPS segmenter and store a
+ * single reconstructed block — a 7.02-mile "rep" whose duration disagreed with
+ * the watch by 26 seconds, while the twelve kilometre splits the watch actually
+ * recorded went nowhere (2026-09-05). The run being unstructured is not a
+ * reason to stop reporting what the watch measured; it is only a reason not to
+ * call any part of it a rep.
+ *
+ * So: one bout spanning every lap, its distance and duration SUMMED from the
+ * laps (never re-derived from the stream), and `splits` carrying each recorded
+ * lap verbatim. Returns [] when there are no usable laps — then, and only then,
+ * does the caller have nothing but GPS to work from.
+ */
+export function singleBoutFromLaps(
+  laps: LapInput[],
+  streams?: RawStreams,
+): BoutOrRecovery[] {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+  const norm = laps
+    .map((l) => {
+      const dist_m = Number(l.distance ?? 0);
+      const dur_s = Number(l.moving_time ?? l.elapsed_time ?? 0);
+      const stop_s = Math.max(0, Number(l.elapsed_time ?? dur_s) - dur_s);
+      const declaredVel = Number(l.average_speed ?? 0);
+      const vel = declaredVel > 0 ? declaredVel : dur_s > 0 ? dist_m / dur_s : 0;
+      return { dist_m, dur_s, stop_s, vel, start_index: l.start_index, end_index: l.end_index };
+    })
+    // Fragments are dropped from the SHAPE of a session but not from its
+    // totals — a 0.19mi closing lap is running the athlete did.
+    .filter((l) => l.dist_m > 0 && l.dur_s > 0 && isFinite(l.vel));
+  if (norm.length === 0) return [];
+
+  const distance_m = norm.reduce((a, l) => a + l.dist_m, 0);
+  const duration_s = norm.reduce((a, l) => a + l.dur_s, 0);
+  const stopped_s = Math.round(norm.reduce((a, l) => a + l.stop_s, 0));
+  const avg_vel_ms = duration_s > 0 ? distance_m / duration_s : 0;
+  const time = streams?.time ?? [];
+  const tAt = (idx?: number) => (idx != null && idx >= 0 && idx < time.length ? time[idx] : undefined);
+  const start_s = tAt(norm[0].start_index) ?? 0;
+  const end_s = tAt(norm[norm.length - 1].end_index) ?? start_s + duration_s;
+
+  return [{
+    kind: "work",
+    index: 1,
+    start_s,
+    end_s,
+    duration_s,
+    stopped_s,
+    start_m: 0,
+    end_m: Math.round(distance_m),
+    distance_m: Math.round(distance_m),
+    avg_vel_ms: Math.round(avg_vel_ms * 100) / 100,
+    avg_pace_per_mile: pace(avg_vel_ms > 0 ? 1609.34 / avg_vel_ms : 0),
+    avg_pace_per_km: pace(avg_vel_ms > 0 ? 1000 / avg_vel_ms : 0),
+    // A split's pace is its OWN recorded distance over its OWN recorded time —
+    // not the provider's rounded `average_speed`, which lands a second off the
+    // number the lap table shows the athlete. Same two measurements, same
+    // arithmetic, same answer on every surface.
+    splits: norm.length > 1
+      ? norm.map((l) => ({
+        distance_m: Math.round(l.dist_m),
+        duration_s: Math.round(l.dur_s),
+        avg_pace_per_mile: pace(l.dist_m > 0 ? l.dur_s / (l.dist_m / 1609.34) : 0),
+      }))
+      : undefined,
+  }];
 }
 
 /** Count the work bouts in a segment list (caller's reliability gate). */
@@ -1151,11 +1252,126 @@ export type LapRole = "warmup" | "rep" | "recovery" | "cooldown";
  * "warmup", after the last are "cooldown", and easy laps between reps are
  * "recovery". Keyed by the lap's own `lap_index` so the client joins 1:1.
  */
-export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: LapRole }> {
-  if (!Array.isArray(laps) || laps.length === 0) return [];
+/**
+ * How much slower than its neighbours a lap must be to be read as a recovery
+ * despite clearing the global work/recovery line. A half-mile float run at
+ * 7:35 between 6:08 miles is ~19% slower; a warm-up mile inside a warm-up ramp
+ * is ~7% slower than the mile after it. 15% sits between the two.
+ */
+const LOCAL_RECOVERY_CONTRAST = 0.15;
+
+/** Work laps either side of `i` used to establish "what the reps are doing here". */
+const LOCAL_WINDOW = 2;
+
+/**
+ * Demote laps that clear the global work line but are plainly a recovery in
+ * context.
+ *
+ * A single global velocity threshold cannot separate a float from a warm-up
+ * mile when they are run at the same speed — and on a real 4x3mi session they
+ * are: warm-up 6:51-7:44, floats 7:35-8:00. Worse, the bimodal search that
+ * picks the line is dominated by whichever gap is largest, so one very slow
+ * transition lap (10:22) captured the boundary at 9:08/mi and every 7:35 float
+ * scored as work. The session collapsed from 4 reps into 2, and the warm-up was
+ * reported as a 6-mile "rep" at 7:12.
+ *
+ * What actually distinguishes a float is LOCAL: it sits between much faster
+ * laps. That is the signal used here. Laps at the very start or end have no
+ * work on one side and are left to the caller's warm-up/cool-down handling.
+ */
+export function demoteLocalRecoveries(
+  laps: Array<{ vel: number }>,
+  isWork: boolean[],
+): boolean[] {
+  const out = [...isWork];
+  // Computed from the ORIGINAL classification so the result cannot depend on
+  // the order laps happen to be visited in.
+  const workIdx = isWork.map((w, i) => (w ? i : -1)).filter((i) => i >= 0);
+  if (workIdx.length < 3) return out;
+
+  for (const i of workIdx) {
+    const before = workIdx.filter((j) => j < i).slice(-LOCAL_WINDOW);
+    const after = workIdx.filter((j) => j > i).slice(0, LOCAL_WINDOW);
+    // Needs work on BOTH sides — otherwise this is a lead-in or a run-out, and
+    // the caller's bracketing owns it.
+    if (before.length === 0 || after.length === 0) continue;
+    const neighbours = [...before, ...after].map((j) => laps[j].vel);
+    const localWork = median(neighbours);
+    if (localWork <= 0) continue;
+    if (laps[i].vel <= localWork * (1 - LOCAL_RECOVERY_CONTRAST)) out[i] = false;
+  }
+  return out;
+}
+
+/**
+ * The velocity the session's actual work was run at, taken from the FASTER half
+ * of the work laps. Using the plain median would fold a long warm-up into the
+ * baseline — on a 6-mile warm-up plus 12 miles of reps, half the "work" laps
+ * are the warm-up.
+ */
+function coreWorkVelocity(vels: number[]): number {
+  if (vels.length === 0) return 0;
+  const sorted = [...vels].sort((a, b) => a - b);
+  const top = sorted.slice(Math.floor(sorted.length / 2));
+  return median(top.length ? top : sorted);
+}
+
+/** Below this share of the core work velocity, a leading/trailing lap is a ramp. */
+const RAMP_VEL_FRAC = 0.93;
+
+/**
+ * Strip the warm-up and cool-down ramps off the ends of the work set.
+ *
+ * A warm-up is running, so every velocity threshold calls it work. It is
+ * recognised instead by being materially slower than what the session's reps
+ * were actually run at. Both ends walk INWARD and stop at the first lap already
+ * at work speed — sweeping the whole array instead would demote slow interior
+ * miles and cut a hilly steady run into invented reps.
+ *
+ * Shared by `lapRoles` and `boutsFromLaps` so the roles and the detected bouts
+ * cannot disagree. Without it in `boutsFromLaps`, a 0.53mi cool-down merged
+ * into the final rep of a 4x3 and reported it as 3.53mi at 6:00 — hiding a
+ * 5:37 last rep, the whole point of the session.
+ */
+function stripRamps(laps: Array<{ vel: number }>, isWork: boolean[]): boolean[] {
+  const out = [...isWork];
+  const coreVel = coreWorkVelocity(laps.filter((_, i) => out[i]).map((l) => l.vel));
+  if (coreVel <= 0) return out;
+  const rampCut = coreVel * RAMP_VEL_FRAC;
+  for (let i = 0; i < laps.length; i++) {
+    if (!out[i]) continue;
+    if (laps[i].vel >= rampCut) break;
+    out[i] = false;
+  }
+  for (let i = laps.length - 1; i >= 0; i--) {
+    if (!out[i]) continue;
+    if (laps[i].vel >= rampCut) break;
+    out[i] = false;
+  }
+  return out;
+}
+
+/** One lap, reduced to what the role classifier actually reasons about. */
+interface RoleRow {
+  lap_index: number;
+  vel: number;
+  dur_s: number;
+  valid: boolean;
+  isFragment: boolean;
+}
+
+/**
+ * Split the laps into work / not-work — the shared core of `lapRoles` and
+ * `lapStructureIsDegenerate`, so a verdict about the shape of a session and the
+ * labels drawn on its splits can never be computed two different ways.
+ *
+ * Returns null when there is too little to separate reps from rest (fewer than
+ * two usable laps) — the caller decides what to do with a run it cannot read.
+ */
+function classifyLapWork(laps: LapInput[]): { rows: RoleRow[]; isWork: boolean[] } | null {
   const o = DEFAULTS;
 
-  const rows = laps.map((l, i) => {
+  const rows: RoleRow[] = laps.map((l, i) => {
     const dist_m = Number(l.distance ?? 0);
     const dur_s = Number(l.moving_time ?? l.elapsed_time ?? 0);
     const declaredVel = Number(l.average_speed ?? 0);
@@ -1171,11 +1387,8 @@ export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: Lap
   // boutsFromLaps, so the labels agree with the detected structure.
   const normRows = rows.filter((r) => r.valid && !r.isFragment);
   const normVels = normRows.map((r) => r.vel);
-  if (normVels.length < 2) {
-    // Too little to separate reps from rest — don't guess; call each valid lap a
-    // rep (the list still shows every lap regardless of label).
-    return rows.map((r) => ({ lap_index: r.lap_index, role: "rep" as LapRole }));
-  }
+  if (normVels.length < 2) return null;
+
   const moving = normVels.filter((v) => v > o.standingVelMs);
   const sortedVel = [...moving].sort((a, b) => a - b);
   const anchor = sortedVel[Math.min(sortedVel.length - 1, Math.floor(sortedVel.length * 0.9))];
@@ -1188,7 +1401,94 @@ export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: Lap
   });
   const recoveryThreshold = adaptiveBoundary ?? o.recoveryFrac * workVel;
 
-  const isWork = rows.map((r) => r.valid && !r.isFragment && r.vel >= recoveryThreshold);
+  const globalWork = rows.map((r) => r.valid && !r.isFragment && r.vel >= recoveryThreshold);
+  // Floats that cleared the global line but are a recovery in context.
+  let isWork = demoteLocalRecoveries(rows, globalWork);
+
+  // Bracket the ramps. A warm-up is work-classified by any velocity line — it
+  // is running — so it has to be recognised by being materially slower than
+  // what the session's reps were actually run at. Without this the six warm-up
+  // miles of a 4x3 stayed "rep" and were reported as a 6-mile rep at 7:12.
+  isWork = stripRamps(rows, isWork);
+
+  return { rows, isWork };
+}
+
+/**
+ * A lead-in shorter than this share of the work is not a warm-up — it is a GPS
+ * fragment, or the athlete simply left the door running.
+ */
+const LEAD_IN_WARMUP_FRAC = 0.25;
+
+/**
+ * Is this lap set's "structure" an artifact of a steady run that simply STARTED
+ * QUICK?
+ *
+ * A cool-down is a TAIL. It is what you jog after the work, and it is shorter
+ * than the work — that is what makes it a cool-down rather than the run itself.
+ * So the shape below is not a session at any threshold:
+ *
+ *     lap 1-2  fast     ← "the reps"
+ *     lap 3-12 easy     ← "the cool-down", 5.8 miles of it
+ *
+ * A recovery run whose first kilometre came out at 6:38 while the other ten ran
+ * ~7:55 cleared the velocity boundary honestly — there really were two speeds in
+ * it — and every lap after the second was then labelled "cooldown", so the splits
+ * table read `1, cd, cd, cd, cd, cd, cd, cd, cd, cd, cd` and the parser reported
+ * a 1.24-mile rep at 6:38 on a run the athlete had called easy (2026-09-05).
+ *
+ * The test is structural, not a tuned threshold — all three must hold:
+ *   • the work is ONE contiguous block (no reps, no recoveries between them),
+ *   • essentially nothing precedes it — a real session warms up first, and this
+ *     one starts at the door,
+ *   • and the easy running after it OUTLASTS it.
+ *
+ * A sandwiched tempo (2mi warm-up / 2mi tempo / 2mi jog) has a warm-up and fails
+ * the second test. 8x400 with a long cool-down has many work blocks and fails the
+ * first. Only the fast-start-then-settle run matches, and for that run the honest
+ * answer is that it has no structure at all.
+ *
+ * Deliberately asymmetric: a long lead-in before work at the END is a warm-up or
+ * a progression run, which is real training, so it is left alone.
+ */
+export function lapStructureIsDegenerate(laps: LapInput[]): boolean {
+  if (!Array.isArray(laps) || laps.length === 0) return false;
+  const classified = classifyLapWork(laps);
+  if (!classified) return false;
+  const { rows, isWork } = classified;
+
+  const firstWork = isWork.indexOf(true);
+  const lastWork = isWork.lastIndexOf(true);
+  if (firstWork < 0) return false;                 // no work at all — nothing to disbelieve
+  if (lastWork === rows.length - 1) return false;  // nothing trailing it: no "cool-down"
+  for (let i = firstWork; i <= lastWork; i++) {
+    if (!isWork[i]) return false;                  // reps + recoveries: a real structure
+  }
+
+  const secs = (from: number, to: number) =>
+    rows.slice(from, to).reduce((a, r) => a + (r.dur_s > 0 ? r.dur_s : 0), 0);
+  const workSec = secs(firstWork, lastWork + 1);
+  if (workSec <= 0) return false;
+  const leadSec = secs(0, firstWork);
+  const tailSec = secs(lastWork + 1, rows.length);
+
+  return leadSec < LEAD_IN_WARMUP_FRAC * workSec && tailSec > workSec;
+}
+
+export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: LapRole }> {
+  if (!Array.isArray(laps) || laps.length === 0) return [];
+
+  const classified = classifyLapWork(laps);
+  // Too little to separate reps from rest, or a "structure" that is really a
+  // steady run with a quick start — don't guess; call each lap a rep (the list
+  // still shows every lap regardless of label, and no lap is greyed as rest or
+  // captioned with a cool-down that never happened).
+  if (!classified || lapStructureIsDegenerate(laps)) {
+    const flat = classified?.rows ?? laps.map((l, i) => ({ lap_index: l.lap_index ?? i }));
+    return flat.map((r) => ({ lap_index: r.lap_index, role: "rep" as LapRole }));
+  }
+  const { rows, isWork } = classified;
+
   const firstWork = isWork.indexOf(true);
   const lastWork = isWork.lastIndexOf(true);
 
@@ -1201,7 +1501,6 @@ export function lapRoles(laps: LapInput[]): Array<{ lap_index: number; role: Lap
     return { lap_index: r.lap_index, role };
   });
 }
-
 /**
  * Render detected bouts as a compact, model-readable block for the parser
  * prompt. Empty string when nothing was detected (caller substitutes "(none)").
@@ -1225,6 +1524,17 @@ export function formatWorkBouts(segments: BoutOrRecovery[]): string {
       lines.push(
         `Bout ${s.index}: ${km} km / ${mi} mi in ${dur} @ ${s.avg_pace_per_km}/km (${s.avg_pace_per_mile}/mi) — by distance ≈ ${distSnap}, by time ≈ ${timeSnap}`,
       );
+      // The mile-by-mile inside the rep. An average says a 3-mile rep was 6:09;
+      // these say whether it was held or built.
+      if (s.splits && s.splits.length > 1) {
+        const parts = s.splits.map((sp) => {
+          const spMi = sp.distance_m / 1609.34;
+          // Label anything that is not ~a mile so a 0.5 leg is not read as one.
+          const tag = Math.abs(spMi - 1) < 0.08 ? "" : ` (${spMi.toFixed(2)}mi)`;
+          return `${sp.avg_pace_per_mile}${tag}`;
+        });
+        lines.push(`  splits: ${parts.join(" · ")}`);
+      }
     } else {
       const mmss = `${Math.floor(s.duration_s / 60)}:${String(Math.round(s.duration_s % 60)).padStart(2, "0")}`;
       lines.push(`  ↳ recovery: ${mmss} ${s.style}`);

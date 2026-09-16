@@ -19,8 +19,11 @@
  * trusted to the LLM.
  */
 
-/** Closed severity vocabulary, highest-priority first. */
-export const SEVERITY_HINT_VALUES = ["sharp", "pain", "sore", "tight"] as const;
+/** Closed severity vocabulary, highest-priority first. 'none' is the
+ * explicit all-clear ("legs feel fine") — written only from structured
+ * all-clear signals, never sniffed from free text, so it has no entry in
+ * SEVERITY_HINTS below. */
+export const SEVERITY_HINT_VALUES = ["sharp", "pain", "sore", "tight", "none"] as const;
 export type SeverityHint = typeof SEVERITY_HINT_VALUES[number];
 
 /**
@@ -60,6 +63,7 @@ export const BODY_AREAS: Record<string, string[]> = {
   "top of foot": ["top of foot", "top of the foot", "top of my foot", "dorsal foot"],
   "toe": ["toe", "toes", "big toe", "sesamoid"],
   "knee": ["knee", "knees", "kneecap", "patella", "patellar"],
+  "legs": ["legs", "leg"],
   "quad": ["quad", "quads", "quadricep", "quadriceps", "thigh", "front of thigh"],
   "hamstring": ["hamstring", "hamstrings", "hammy", "hammies", "back of thigh"],
   "adductor": ["adductor", "adductors", "inner thigh", "groin muscle"],
@@ -174,8 +178,8 @@ export function severityHintFromText(text: string | null | undefined): SeverityH
   return null;
 }
 
-/** Severity ordering for "worst wins" comparisons. sharp > pain > sore > tight. */
-export const SEVERITY_ORDER: Record<string, number> = { sharp: 4, pain: 3, sore: 2, tight: 1 };
+/** Severity ordering for "worst wins" comparisons. sharp > pain > sore > tight > none. */
+export const SEVERITY_ORDER: Record<string, number> = { sharp: 4, pain: 3, sore: 2, tight: 1, none: 0 };
 
 /** True when `area` is a canonical key in the closed body vocabulary. */
 export function isKnownBodyArea(area: string): boolean {

@@ -47,6 +47,11 @@ import {
   type PromptBlock,
 } from "../_shared/context.ts";
 import {
+  findUnlicensedPaces,
+  licensedTimeTokens,
+  paceCorrectionNote,
+} from "../_shared/pace-guard.ts";
+import {
   isComplexQuery,
   getQueryType,
   getQueryThreshold,
@@ -557,22 +562,11 @@ Deno.serve(async (req: Request) => {
   }
 
   const startTime = Date.now();
-  // DEBUG: log every entry so we can see if Supabase gateway is blocking requests
-  try {
-    const supa = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-    const hasAuth = !!req.headers.get("Authorization");
-    const authPrefix = (req.headers.get("Authorization") || "").slice(0, 30);
-    await supa.from("debug_coach_log").insert({
-      user_id: "entry-point",
-      request_body: { hasAuth, authPrefix, method: req.method, url: req.url },
-      response_body: null,
-      response_status: 0,
-      ms: 0,
-    });
-  } catch (_) {}
+  // Security audit 2026-09-03: an unauthenticated entry-point probe used to
+  // write to debug_coach_log here, BEFORE any auth check — so any caller
+  // holding the public anon key could append rows at will, and each row
+  // stored the first 30 characters of the caller's Authorization header.
+  // Both are removed: the request is logged after authentication instead.
 
   try {
     // Clone request so we can read body after auth check
@@ -623,6 +617,26 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Security audit 2026-09-03: this client is service-role, so it bypasses
+    // RLS. A well-formed conversationId belonging to ANOTHER athlete would
+    // otherwise load their history into this caller's prompt. Bind the id to
+    // the caller before it is used anywhere. 404 (not 403) so the endpoint
+    // does not confirm that someone else's conversation exists.
+    if (conversationId) {
+      const { data: ownedConv } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("id", conversationId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (!ownedConv) {
+        return new Response(
+          JSON.stringify({ error: "Conversation not found" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // ========================================================================
     // LAYER 1: Rate Limiting (skip for proactive check-ins)
     // ========================================================================
@@ -632,7 +646,12 @@ Deno.serve(async (req: Request) => {
     // H1 fix (2026-07-15): shouldEnforceRateLimits replaces isRateLimitEnabled
     // — in production a missing Upstash env no longer bypasses the gate
     // (checkFeatureRateLimit fails closed); local dev without Redis still skips.
-    if (userId && shouldEnforceRateLimits() && !proactive && !UNBOUND_USAGE) {
+    // Security audit 2026-09-03: `proactive` arrives in the request body, so a
+    // user JWT could set it and skip the quota entirely. Proactive check-ins
+    // are cron/service-role only, so the bypass is gated on the AUTHENTICATED
+    // caller rather than on a field the caller controls.
+    const proactiveFromService = !!proactive && auth.isServiceRole;
+    if (userId && shouldEnforceRateLimits() && !proactiveFromService && !UNBOUND_USAGE) {
       const { data: tierData } = await supabase
         .from("user_tiers")
         .select("tier")
@@ -762,7 +781,7 @@ Deno.serve(async (req: Request) => {
     // LAYER 3: Check semantic cache
     // ========================================================================
     if (queryEmbedding && isCacheEnabled() && !isEditorial) {
-      const cached = await getCachedResponse(queryEmbedding);
+      const cached = await getCachedResponse(queryEmbedding, userId);
 
       if (cached) {
         await supabase.from("usage_tracking").insert({
@@ -812,7 +831,7 @@ Deno.serve(async (req: Request) => {
     const settled = await Promise.allSettled([
       supabase
         .from("training_logs")
-        .select("id, created_at, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, pace_segments, mood, cleaned_notes, notes, coach_insight, workout_notes, extracted_data, weather_actual, weather_adjusted_pace_delta_seconds_per_mile")
+        .select("id, created_at, workout_date, workout_distance_miles, workout_duration_minutes, workout_type, workout_pace_per_mile, pace_segments, parsed_structure, mood, cleaned_notes, notes, coach_insight, workout_notes, extracted_data, weather_actual, weather_adjusted_pace_delta_seconds_per_mile")
         .eq("user_id", userId)
         .or(`workout_date.gte.${threeMonthsAgo.toISOString()},and(workout_date.is.null,created_at.gte.${threeMonthsAgo.toISOString()})`)
         .order("workout_date", { ascending: false, nullsFirst: false })
@@ -825,7 +844,7 @@ Deno.serve(async (req: Request) => {
         .not("user_id", "is", null)
         .order("target_date", { ascending: true }),
       conversationId
-        ? supabase.from("conversation_messages").select("role, content").eq("conversation_id", conversationId).order("created_at", { ascending: false }).limit(50)
+        ? supabase.from("conversation_messages").select("role, content").eq("conversation_id", conversationId).eq("user_id", userId).order("created_at", { ascending: false }).limit(50)
         : Promise.resolve({ data: null }),
       queryEmbedding
         ? supabase.rpc("match_coaching_documents", {
@@ -910,6 +929,16 @@ Deno.serve(async (req: Request) => {
             .order("created_at", { ascending: false })
             .limit(5)
         : Promise.resolve({ data: [] }),
+      // Athlete timezone — anchors "today" and weekday labels in the training
+      // context. Without it an evening question lands after UTC midnight and
+      // the model calls this morning's run "yesterday".
+      userId
+        ? supabase
+            .from("athlete_settings")
+            .select("timezone")
+            .eq("user_id", userId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ]);
 
     // Extract results — use empty defaults for any query that failed
@@ -931,6 +960,7 @@ Deno.serve(async (req: Request) => {
     const pendingAdjustmentsResult = { data: extract<any[]>(11, []) };
     const raceIntelResult = { data: extract<any[]>(12, []) };
     const aiInsightsResult = { data: extract<any[]>(13, []) };
+    const athleteTimezone = (extract<{ timezone?: string } | null>(14, null))?.timezone || undefined;
 
     // Log any failed queries for debugging
     settled.forEach((r, i) => {
@@ -1289,7 +1319,8 @@ Deno.serve(async (req: Request) => {
             await supabase
               .from("conversations")
               .update({ updated_at: new Date().toISOString() })
-              .eq("id", finalConversationId);
+              .eq("id", finalConversationId)
+              .eq("user_id", userId);
           }
           if (finalConversationId) {
             await supabase.from("conversation_messages").insert([
@@ -1324,6 +1355,7 @@ Deno.serve(async (req: Request) => {
     // ========================================================================
     let complexity: QueryComplexity;
     let config: RouterConfig;
+    let providerFailure: string | null = null;
 
     if (proactive && checkInContext) {
       // Proactive check-ins always use moderate tier for empathy
@@ -1359,7 +1391,10 @@ Deno.serve(async (req: Request) => {
     if (!isCoachInsightRequest) {
       // Always build "this week" context for this-week queries
       if (isThisWeek) {
-        thisWeekContext = buildThisWeekContext((logsResult.data || []) as ExtendedTrainingLog[]);
+        thisWeekContext = buildThisWeekContext(
+          (logsResult.data || []) as ExtendedTrainingLog[],
+          athleteTimezone,
+        );
       }
 
       if (complexity === "simple") {
@@ -1369,7 +1404,8 @@ Deno.serve(async (req: Request) => {
         // Moderate/Complex queries: full training period document (3 months)
         trainingContext = buildTrainingPeriodDocument(
           (logsResult.data || []) as ExtendedTrainingLog[],
-          3 // 3 months of data
+          3, // 3 months of data
+          athleteTimezone,
         );
       }
 
@@ -1561,6 +1597,10 @@ Coach:`;
     // post-retry fallback state — used by the cache-poisoning guard at
     // line ~1514 to avoid caching error responses as if they were real.
     let actualProvider: "groq" | "gemini" | "fallback" = config.provider;
+    // What was ACTUALLY sent (Groq truncates) — the pace guard licenses
+    // against this, and its correction retry rebuilds from it.
+    let sentPrompt = fullPrompt;
+    let sentConfig: RouterConfig = config;
 
     // Retry wrapper: tries a model call, waits 2s, retries once before giving up
     async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
@@ -1594,6 +1634,8 @@ Coach:`;
           : (config.provider === "groq" ? config : getModelConfig("simple"));
         console.log(`Calling Groq ${groqCfg.model} (forced=${FORCE_GROQ}, prompt=${truncatedPrompt.length} chars)...`);
         actualProvider = "groq";
+        sentPrompt = truncatedPrompt;
+        sentConfig = groqCfg;
         coachResponse = await withRetry(() => callGroq(truncatedPrompt, groqCfg), "Groq");
       } else {
         // Try Gemini first, fall back to Groq on rate limit or timeout
@@ -1605,6 +1647,7 @@ Coach:`;
           console.log(`Gemini failed after retry (${errorMessage}), falling back to Groq...`);
           actualProvider = "groq";
           const groqConfig = getModelConfig("simple");
+          sentConfig = groqConfig;
           coachResponse = await withRetry(() => callGroq(fullPrompt, groqConfig), "Groq-fallback");
         }
       }
@@ -1612,10 +1655,62 @@ Coach:`;
       // Both models failed after retries — return a graceful degradation response
       const errMsg = modelError?.message || String(modelError);
       console.error("All model providers failed after retries:", errMsg);
+      // Kept so the response log can NAME the provider failure. Function logs
+      // are not always retrievable after the fact, and without this the only
+      // trace of an outage is the athlete seeing the apology.
+      providerFailure = errMsg;
       actualProvider = "fallback";
       coachResponse = "I'm having trouble connecting to my AI backend right now. " +
         "This is temporary — please try again in a minute. " +
         "In the meantime, your training data is safe and I'll have a full analysis ready when I'm back online.";
+    }
+
+    // ========================================================================
+    // LAYER 7.5: Pace readback guard (_shared/pace-guard.ts)
+    //
+    // The conversational answer is the one surface where a wrong number can
+    // reach the athlete unchecked (Ask's narration is guarded; this wasn't).
+    // Verify every pace claim in the reply against paces actually present in
+    // the prompt; on violation, retry once with the offenders named. Runs
+    // BEFORE Layer 8 so an unverified answer is never cached.
+    // ========================================================================
+    if (actualProvider !== "fallback") {
+      try {
+        const licensed = licensedTimeTokens(sentPrompt + "\n" + message);
+        const offenders = findUnlicensedPaces(coachResponse, licensed);
+        if (offenders.length > 0) {
+          console.warn(
+            `pace-guard: unlicensed pace claims [${offenders.join(", ")}] — retrying with correction`,
+          );
+          const marker = /\b(Coach|Answer):\s*$/;
+          const correctedPrompt = marker.test(sentPrompt)
+            ? sentPrompt.replace(marker, (m) => `${paceCorrectionNote(offenders)}\n\n${m}`)
+            : sentPrompt + paceCorrectionNote(offenders);
+          const retryResponse = actualProvider === "groq"
+            ? await callGroq(correctedPrompt, sentConfig)
+            : await callGemini(correctedPrompt, sentConfig);
+          const stillBad = findUnlicensedPaces(retryResponse, licensed);
+          if (stillBad.length === 0) {
+            coachResponse = retryResponse;
+            console.log("pace-guard: retry clean — serving corrected answer");
+          } else {
+            // Serve the cleaner draft, but this is the prompt-drift alarm:
+            // a rising rate here means the context labeling has stopped
+            // carrying the numbers the model wants to say.
+            if (stillBad.length < offenders.length) coachResponse = retryResponse;
+            console.error(
+              `pace-guard: still unlicensed after retry [${stillBad.join(", ")}] — serving best effort`,
+            );
+            captureException(
+              new Error(`pace-guard violation persisted: ${stillBad.join(", ")}`),
+              { fn: "coaching-agent", stage: "pace-guard" },
+            );
+          }
+        }
+      } catch (guardErr) {
+        // The guard must never cost the athlete their answer.
+        console.error("pace-guard: check failed, serving unguarded response", guardErr);
+      }
     }
 
     const outputTokens = estimateTokens(coachResponse);
@@ -1628,7 +1723,7 @@ Coach:`;
     const isFallback = actualProvider === "fallback"
       || coachResponse.startsWith("I'm having trouble connecting to my AI backend");
     if (!proactive && !isFallback && queryEmbedding && isCacheEnabled()) {
-      await cacheResponse(queryEmbedding, message, coachResponse, complexity);
+      await cacheResponse(queryEmbedding, message, coachResponse, complexity, userId);
     }
 
     // ========================================================================
@@ -1642,7 +1737,18 @@ Coach:`;
       { role: "user", content: message, timestamp: new Date().toISOString() },
       { role: "assistant", content: coachResponse, timestamp: new Date().toISOString() },
     ];
-    const newMessages = proactive ? proactiveMessages : normalMessages;
+    // A fallback is an outage notice, not an answer. Storing it as an
+    // assistant turn corrupts the thread twice over: the athlete's history
+    // shows an apology where a reply should be, and `compressConversationHistory`
+    // feeds that apology back into the NEXT prompt as something the coach
+    // said. The athlete's own message is still saved — their words are the
+    // thing that must never be lost — so a retry has the question on file.
+    const degradedMessages = [
+      { role: "user", content: message, timestamp: new Date().toISOString() },
+    ];
+    const newMessages = isFallback
+      ? degradedMessages
+      : (proactive ? proactiveMessages : normalMessages);
 
     // Save messages to normalized table
     let convIdForSave = conversationId;
@@ -1657,7 +1763,8 @@ Coach:`;
       await supabase
         .from("conversations")
         .update({ updated_at: new Date().toISOString() })
-        .eq("id", convIdForSave);
+        .eq("id", convIdForSave)
+        .eq("user_id", userId);
     }
 
     const messageRows = newMessages.map((msg: any) => ({
@@ -1733,7 +1840,10 @@ Coach:`;
       cached: false,
       remaining: proactive ? rateLimit.remaining : rateLimit.remaining - 1,
       proactive: proactive || false,
-      feedbackEnabled: !isCoachInsightRequest,
+      feedbackEnabled: !isCoachInsightRequest && !isFallback,
+      // The client cannot otherwise tell an outage from a reply: both arrive
+      // as 200 with prose in `response`.
+      degraded: isFallback,
       processingTime,
     };
 
@@ -1744,6 +1854,7 @@ Coach:`;
         request_body: { message, hasConvId: !!conversationId, smartInsights, proactive: !!proactive },
         response_body: successBody,
         response_status: 200,
+        error: providerFailure,
         ms: Date.now() - startTime,
       });
     } catch (_) { /* don't block on logging */ }
@@ -1755,7 +1866,12 @@ Coach:`;
     console.error("Coaching agent error:", error);
     captureException(error, { fn: "coaching-agent" });
     await flushSentry();
-    const errBody = { error: `Internal error: ${error?.message || String(error)}` };
+    // Security audit 2026-09-03: the raw exception message used to be handed
+    // back to the caller. Upstream errors here quote table names, column
+    // lists and provider payloads, which is free reconnaissance. The detail
+    // still reaches the logs and Sentry; the response body does not carry it.
+    const errDetail = String(error?.message || error);
+    const errBody = { error: "Internal error" };
     try {
       const supa = (globalThis as any).__supa as any;
       if (supa) {
@@ -1764,7 +1880,7 @@ Coach:`;
           request_body: null,
           response_body: errBody,
           response_status: 500,
-          error: errBody.error,
+          error: errDetail,
           ms: Date.now() - startTime,
         });
       }

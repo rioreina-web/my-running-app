@@ -84,6 +84,7 @@ export type WorkoutKind =
   | "fartlek"
   | "progression"
   | "long_run"
+  | "long_wo"
   | "easy"
   | "recovery"
   | "race";
@@ -545,7 +546,16 @@ function finalize(
 
   // Coalesce auto-lap-fragmented continuous efforts into true reps. Zone-time
   // buckets above stay per-lap (time-in-zone is unaffected by rep grouping).
-  const reps = coalesceReps(bouts, anchors);
+  const absoluteReps = coalesceReps(bouts, anchors);
+  // Run-relative fallback: a long-run workout's reps are slower than the
+  // athlete's race anchors BY DESIGN (4×3mi at steady inside a 21-miler), so
+  // the absolute WORK_ZONES gate can't see them. When the run itself is
+  // clearly bimodal and the absolute pass caught little of the fast side,
+  // structure is read from the run's own pace split instead. Zone-time
+  // buckets, bout flags and load math are untouched — a steady mile is still
+  // steady time; only the STRUCTURE reading changes.
+  const contextual = contextualReps(bouts, anchors, absoluteReps);
+  const reps = contextual ?? absoluteReps;
   const intensityScore = totalSeconds > 0 ? weightedSum / totalSeconds : 0;
 
   const repPacesNum = reps.map((r) => r.paceSecPerMile).filter((p) => p > 0);
@@ -561,7 +571,9 @@ function finalize(
     ? null
     : fadePct < -1 ? "negative split" : fadePct > 1.5 ? "faded" : "even";
 
-  const { workoutKind, structure } = classifySession(bouts, reps, totalMeters);
+  const { workoutKind, structure } = contextual
+    ? classifyContextualSession(bouts, contextual, totalMeters)
+    : classifySession(bouts, reps, totalMeters);
 
   return {
     source,
@@ -672,6 +684,114 @@ function mergeRun(run: Bout[], anchors: ZoneAnchor[]): Bout {
     isRest: false,
     isRep: seconds >= MIN_REP_SECONDS && distanceMeters >= MIN_REP_METERS,
   };
+}
+
+// ── Run-relative (contextual) structure ──
+
+// The split between "rep" and "float/background" read off the run's own laps.
+// Both thresholds are gaps in sec/mi: the boundary gap is between the two
+// adjacent sorted paces at the cluster edge, the mean gap between the cluster
+// averages. 45 s/mi keeps a negative-split long run (~30-40 s/mi halves) from
+// reading as a workout; real embedded structure separates by far more (the
+// 2026-08-29 session: reps ~6:00, floats ~7:45).
+const CTX_MIN_BOUNDARY_GAP_SEC = 25;
+const CTX_MIN_MEAN_GAP_SEC = 45;
+// The fast cluster must be a real workout's worth of running, and meaningfully
+// more than the absolute pass already caught — otherwise the anchors' reading
+// stands.
+const CTX_MIN_FAST_METERS = METERS_PER_MILE * 2;
+
+/**
+ * Find the pace (sec/mi) separating a run's fast cluster from its aerobic
+ * background, from the run's own laps — no zone anchors involved. Returns the
+ * midpoint of the largest qualifying gap, or null when the run has no bimodal
+ * split (even pacing, a progression's continuum, a single outlier lap).
+ * Exported for `fast-segment-trends`, so the trends picker and the structure
+ * string agree on what counted as a rep.
+ */
+export function contextualWorkCutoff(paces: number[]): number | null {
+  const v = paces.filter((p) => isFinite(p) && p > 0).sort((a, b) => a - b);
+  if (v.length < 5) return null;
+  let best: { gap: number; cut: number } | null = null;
+  // Both sides need ≥2 laps: a lone fast lap is a stray (a downhill mile, a
+  // segment hunt), a lone slow lap is a water stop — neither defines a cluster.
+  for (let i = 2; i <= v.length - 2; i++) {
+    const gap = v[i] - v[i - 1];
+    if (gap < CTX_MIN_BOUNDARY_GAP_SEC) continue;
+    if (mean(v.slice(i)) - mean(v.slice(0, i)) < CTX_MIN_MEAN_GAP_SEC) continue;
+    // A cluster is only a cluster if it is TIGHTER than its distance to the
+    // background: the boundary gap must dominate the fast side's own spread.
+    // Real embedded reps sit on a target (Aug 29: spread 40 s/mi vs a 41 s/mi
+    // gap to the floats); a continuous run with drifty pacing — a cutdown, a
+    // long run wandering 6:26–7:11 — has more spread than gap and must not
+    // grow rep structure (the 2026-05-28 and 2026-06-20 false positives).
+    if (gap < 0.6 * (v[i - 1] - v[0])) continue;
+    if (!best || gap > best.gap) best = { gap, cut: (v[i - 1] + v[i]) / 2 };
+  }
+  return best?.cut ?? null;
+}
+
+/**
+ * The run-relative rep set, or null when the absolute pass's reading stands.
+ * Fires only when the run splits into two real pace clusters AND the fast
+ * cluster is both ≥2 mi and more than double what the absolute gate caught —
+ * so a session whose reps genuinely sit at race pace never changes, and an
+ * evenly-paced or negative-split run never grows structure. Adjacency still
+ * rules: consecutive fast laps merge into one rep (`coalesceReps`), so a
+ * fast-finish long run collapses to a single block and is rejected by the
+ * ≥2-rep floor rather than read as a workout.
+ */
+function contextualReps(
+  bouts: Bout[],
+  anchors: ZoneAnchor[],
+  absoluteReps: Bout[],
+): Bout[] | null {
+  const candidates = bouts.filter((b) =>
+    !b.isRest && b.paceSecPerMile > 0 &&
+    b.seconds >= MIN_REP_SECONDS && b.distanceMeters >= MIN_REP_METERS
+  );
+  if (candidates.length < 5) return null;
+  const cutoff = contextualWorkCutoff(candidates.map((b) => b.paceSecPerMile));
+  if (cutoff == null) return null;
+  const fast = new Set(candidates.filter((b) => b.paceSecPerMile <= cutoff));
+  let fastMeters = 0;
+  for (const b of fast) fastMeters += b.distanceMeters;
+  const absoluteMeters = absoluteReps.reduce((s, b) => s + b.distanceMeters, 0);
+  if (fastMeters < CTX_MIN_FAST_METERS) return null;
+  if (fastMeters <= 2 * absoluteMeters) return null;
+  // Shadow bout list with the contextual work flags; the caller's bouts stay
+  // untouched (their flags drive load/quality math, which this pass must not
+  // move). `coalesceReps` then applies the same adjacency + uniformity rules
+  // real reps get.
+  const shadow = bouts.map((b) =>
+    fast.has(b)
+      ? { ...b, isWork: true, isRest: false, isRep: true }
+      : { ...b, isWork: false, isRep: false }
+  );
+  const reps = coalesceReps(shadow, anchors);
+  return reps.length >= 2 ? reps : null;
+}
+
+/**
+ * Classification when the contextual pass fired. A long session with embedded
+ * sub-anchor structure is a long-run workout — `long_wo`, matching the offered
+ * label taxonomy — NOT `long_run` (whose consumers assume a continuous aerobic
+ * effort: decoupling, aerobic-only load) and not `threshold`/`intervals`
+ * (whose consumers assume race-pace work). Shorter sessions fall through to
+ * the normal tree over the contextual reps. The structure string names the
+ * reps' own dominant zone ("4×3mi @ 5:58 (steady)") — never a race-pace label
+ * the reps didn't run at.
+ */
+function classifyContextualSession(
+  bouts: Bout[],
+  reps: Bout[],
+  totalMeters: number,
+): { workoutKind: WorkoutKind; structure: string | null } {
+  const structure = structureString(reps, zoneLabel(dominantZone(reps)));
+  const totalMiles = totalMeters / METERS_PER_MILE;
+  if (totalMiles >= 11) return { workoutKind: "long_wo", structure };
+  const { workoutKind } = classifySession(bouts, reps, totalMeters);
+  return { workoutKind, structure };
 }
 
 /**

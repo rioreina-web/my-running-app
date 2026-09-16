@@ -965,11 +965,21 @@ export async function rebuildAthleteState(
       ? userNotesRaw.slice(0, 300)
       : null;
 
+    // Session average derived from distance + duration when the stored pace
+    // column is empty (which is the usual case — only a handful of rows carry
+    // workout_pace_per_mile). Without it the prompt has no citable whole-run
+    // pace and the model is left to invent one.
+    const distMi = (l.workout_distance_miles as number) || 0;
+    const durMin = (l.workout_duration_minutes as number) || 0;
+    const derivedPace = distMi > 0 && durMin > 0
+      ? formatPace(Math.round((durMin * 60) / distMi))
+      : null;
+
     return {
       date: (l.workout_date as string)?.split("T")[0] ?? "",
       type: parsedType ?? (l.workout_type as string) ?? "unknown",
       miles: Math.round(((l.workout_distance_miles as number) || 0) * 10) / 10,
-      pace: (l.workout_pace_per_mile as string) ?? null,
+      pace: (l.workout_pace_per_mile as string) ?? derivedPace,
       mood: (l.mood as string) ?? null,
       structure_pattern: parsedPattern ?? null,
       equivalent_race: parsedEq ? `${parsedEq["distance_key"]} @ ${parsedEq["pace_per_mile"]}/mi` : null,
@@ -2668,7 +2678,10 @@ export function stateToPromptContext(
         const parts: string[] = [];
         if (w.structure_pattern) parts.push(w.structure_pattern);
         if (w.work_pace && !w.structure_pattern) parts.push(`work @ ${w.work_pace}`);
-        if (!w.structure_pattern && !w.work_pace && w.pace) parts.push(`@ ${w.pace} avg`);
+        // Session avg always rides along, labeled — it's the only correct
+        // number for "what pace was that run", and if it isn't printed the
+        // model can't cite it (or worse, invents one from the work pace).
+        if (w.pace) parts.push(`session avg ${w.pace}`);
         const headline = parts.length > 0 ? ` — ${parts.join(" | ")}` : "";
         const equiv = w.equivalent_race ? ` (≈ ${w.equivalent_race})` : "";
         const mood = w.mood ? ` [${w.mood}]` : "";

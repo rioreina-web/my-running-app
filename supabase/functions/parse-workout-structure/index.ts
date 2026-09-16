@@ -19,7 +19,7 @@ import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.24.0"
 import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
-import { detectWorkBouts, boutsFromLaps, workBoutCount, formatWorkBouts, lapRoles, structureHasSpeedContrast, type WorkBout, type BoutOrRecovery, type LapInput } from "../_shared/shared/workBouts.ts";
+import { detectWorkBouts, boutsFromLaps, workBoutCount, formatWorkBouts, lapRoles, lapStructureIsDegenerate, singleBoutFromLaps, structureHasSpeedContrast, type WorkBout, type BoutOrRecovery, type LapInput } from "../_shared/shared/workBouts.ts";
 import { isUserEdited } from "../_shared/structureOverride.ts";
 import { isProviderExhaustedText } from "../_shared/provider-errors.ts";
 
@@ -298,14 +298,55 @@ Deno.serve(async (req) => {
     const activityAvgVel = lapAverageVelocity(rawLaps, row);
     const lapsBlurStructure = lapWork <= 1 && gpsWork >= 2 &&
       structureHasSpeedContrast(gpsBouts, activityAvgVel);
+    // …and the laps have to describe a SESSION before they get to supply one.
+    // A steady run that started quick — one fast block at the door, then easy
+    // running for the rest of the hour — clears every velocity threshold
+    // honestly and still isn't a workout: it produced a "1.24mi rep at 6:38"
+    // plus a 5.78-mile "cooldown" on a run the athlete had called an easy
+    // recovery run (2026-09-05). See lapStructureIsDegenerate.
+    const lapsAreASession = lapWork >= 1 && !lapStructureIsDegenerate(rawLaps);
     // With no usable laps the GPS pass is all there is — but it still has to
     // clear the same bar before we call a run a workout. Below it, the run is
     // reported as the single continuous effort it was.
-    const gpsIsAWorkout = lapWork >= 1 || structureHasSpeedContrast(gpsBouts, activityAvgVel);
-    const useLaps = lapWork >= 1 && !lapsBlurStructure;
-    const workBouts = useLaps ? lapBouts : gpsIsAWorkout ? gpsBouts : mergeToSingleBout(gpsBouts);
-    const geometrySource = useLaps ? "watch_laps" : gpsBouts.length ? "detectWorkBouts" : "model";
+    const gpsIsAWorkout = lapsAreASession || structureHasSpeedContrast(gpsBouts, activityAvgVel);
+    const useLaps = lapsAreASession && !lapsBlurStructure;
+    // THE SPLITS ARE THE WATCH'S. A run that turns out to have no session in it
+    // still has splits — the ones the athlete's watch recorded — and they are
+    // the record. Falling through to the GPS segmenter here stored a
+    // reconstructed 7.02-mile block whose duration disagreed with the watch by
+    // 26 seconds while the twelve recorded kilometre splits went nowhere
+    // (2026-09-05). So the GPS pass only supplies geometry when there are no
+    // laps at all, or in the one case it is allowed to override them
+    // (`lapsBlurStructure` — the watch auto-lapped a real session into flat
+    // splits). Everything else is built from the laps: their structure when
+    // they encode one, otherwise the whole run as a single continuous effort
+    // with every recorded split kept on it.
+    const lapsOnly = singleBoutFromLaps(rawLaps, streams ?? undefined);
+    const usingLapsOnly = !useLaps && !lapsBlurStructure && lapsOnly.length > 0;
+    const workBouts = useLaps
+      ? lapBouts
+      : lapsBlurStructure
+      ? gpsBouts
+      : usingLapsOnly
+      ? lapsOnly
+      : gpsIsAWorkout
+      ? gpsBouts
+      : mergeToSingleBout(gpsBouts);
+    // A run with no session in it has NO REPS. The single block is the run —
+    // calling it a "work_rep" is the same invention as the phantom cool-down,
+    // one layer up: it put an easy 7-miler into every surface that counts reps,
+    // and the coach context read it back as "rep 1, 7.02mi @ 7:42".
+    const unstructured = usingLapsOnly || (!useLaps && !lapsBlurStructure && !gpsIsAWorkout);
+    const geometrySource = useLaps || (!lapsBlurStructure && lapsOnly.length)
+      ? "watch_laps"
+      : gpsBouts.length
+      ? "detectWorkBouts"
+      : "model";
     const workBoutsBlock = formatWorkBouts(workBouts);
+    // Per-lap labels, computed ONCE and reused for both the warmup/cooldown
+    // blocks and the write-back — two calls could not disagree, but one call
+    // makes that structural rather than a thing to keep true by hand.
+    const perLapRoles = rawLaps.length ? lapRoles(rawLaps) : [];
 
     // 3) Prompt Gemini Flash
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
@@ -365,20 +406,46 @@ Deno.serve(async (req) => {
     // the qualitative fields it's actually good at: type, intent_pattern, target
     // pace, rep labels, rest_format, subjective, equivalent_race_pace.
     if (workBouts.length) {
-      parsed.blocks = blocksFromBouts(workBouts, streams);
-      const work = workBouts.filter((s): s is WorkBout => s.kind === "work");
+      parsed.blocks = blocksFromBouts(workBouts, streams, { unstructured });
+      const work = unstructured
+        ? []
+        : workBouts.filter((s): s is WorkBout => s.kind === "work");
       const totalWorkM = work.reduce((a, b) => a + b.distance_m, 0);
       const totalWorkS = work.reduce((a, b) => a + b.duration_s, 0);
       parsed.work = parsed.work ?? {};
       parsed.work.reps = work.length;
       parsed.work.total_work_distance_mi = Math.round((totalWorkM / 1609.34) * 100) / 100;
-      parsed.work.actual_pace_per_mile = totalWorkM > 0
+      // No work means no work pace. The run's own average is on the row; it is
+      // not a rep pace and must not be readable as one.
+      parsed.work.actual_pace_per_mile = unstructured
+        ? null
+        : totalWorkM > 0
         ? formatPace(Math.round(totalWorkS / (totalWorkM / 1609.34)))
         : (parsed.work.actual_pace_per_mile ?? null);
       // The model's execution_quality was judged against its own corrupted
       // paces; null it rather than assert a stale verdict. (A future pass can
       // recompute it from the deterministic actual-vs-target comparison.)
       if (parsed.work.execution_quality) parsed.work.execution_quality = null;
+
+      // 4a-ii) WARMUP / COOLDOWN BLOCKS (2026-09-01).
+      //
+      // blocksFromBouts only knows about the work-bout window it was handed —
+      // it has no representation for whatever happened before the first bout
+      // or after the last one, so a "7-mile warmup + 4x3mi + cooldown" run
+      // wrote 12mi (plus float recoveries) to `blocks` and simply dropped the
+      // other ~9 real miles. Not misclassified — absent. `lap_roles` already
+      // correctly tags those laps "warmup"/"cooldown" (it's a pure labeling
+      // pass over ALL laps), so build the missing blocks from the same laps
+      // and roles rather than re-deriving boundaries a third way. Gated on
+      // `useLaps`: GPS-only geometry has no per-lap role labels to trust here,
+      // and mixing a GPS-timed bout structure with lap-timed warmup/cooldown
+      // risks the two disagreeing about where the workout actually starts.
+      if (useLaps && rawLaps.length) {
+        const wcBlocks = warmupCooldownBlocksFromLaps(rawLaps, perLapRoles);
+        const warmup = wcBlocks.filter((b) => b.role === "warmup");
+        const cooldown = wcBlocks.filter((b) => b.role === "cooldown");
+        parsed.blocks = [...warmup, ...(parsed.blocks as Array<Record<string, unknown>>), ...cooldown];
+      }
     }
 
     // 4b-ii) DETERMINISTIC GEOMETRY GUARD (2026-08-17).
@@ -425,8 +492,8 @@ Deno.serve(async (req) => {
     // chart can label each row while showing the watch's own numbers as-is. This
     // never merges, drops, or re-paces a split — it only names it. Keyed by
     // lap_index so the client joins 1:1 against running_workout_laps.
-    if (rawLaps.length) {
-      parsed.lap_roles = lapRoles(rawLaps);
+    if (perLapRoles.length) {
+      parsed.lap_roles = perLapRoles;
     }
 
     parsed.parsed_at = new Date().toISOString();
@@ -625,18 +692,34 @@ function formatPace(secPerMile: number): string {
 function blocksFromBouts(
   segments: BoutOrRecovery[],
   streams: Record<string, any> | null,
+  opts: { unstructured?: boolean } = {},
 ): Array<Record<string, unknown>> {
   const blocks: Array<Record<string, unknown>> = [];
   let lastEndS = 0;
   for (const s of segments) {
     if (s.kind === "work") {
       blocks.push({
-        role: "work_rep",
-        rep_num: s.index,
+        // "steady" when the run held one effort throughout — a role the block
+        // schema already declares. A rep is a thing you did on purpose; an
+        // easy run is not one rep of anything.
+        role: opts.unstructured ? "steady" : "work_rep",
+        rep_num: opts.unstructured ? null : s.index,
         distance_miles: Math.round((s.distance_m / 1609.34) * 100) / 100,
         duration_s: Math.round(s.duration_s),
         avg_pace_per_mile: s.avg_pace_per_mile,
         avg_hr: avgHrOverWindow(streams, s.start_s, s.end_s),
+        // The laps the watch actually recorded inside this effort, verbatim.
+        // An average says a 3-mile rep was 6:09; these say whether it was held
+        // or built — and on an unstructured run they are the only splits there
+        // are. Present only when the geometry came from the athlete's laps;
+        // a GPS-segmented bout has none and must not pretend otherwise.
+        recorded_splits: s.splits?.length
+          ? s.splits.map((sp) => ({
+            distance_miles: Math.round((sp.distance_m / 1609.34) * 100) / 100,
+            duration_s: sp.duration_s,
+            avg_pace_per_mile: sp.avg_pace_per_mile,
+          }))
+          : undefined,
       });
       lastEndS = s.end_s;
     } else {
@@ -663,6 +746,44 @@ function blocksFromBouts(
     }
   }
   return blocks;
+}
+
+/**
+ * Warmup/cooldown blocks built from the athlete's own watch laps, using the
+ * SAME per-lap role labels `lap_roles` already assigns — never a second,
+ * independent guess at where the workout "really" starts. A lap carries its
+ * own real distance/duration (unlike GPS-derived bouts, which only cover the
+ * work-bout window), so this is exact, not reconstructed.
+ *
+ * Only called when `useLaps` is true (see call site) — GPS-only geometry has
+ * no per-lap roles to trust here.
+ */
+function warmupCooldownBlocksFromLaps(
+  laps: LapInput[],
+  roles: Array<{ lap_index: number; role: string }>,
+): Array<Record<string, unknown>> {
+  const roleByIndex = new Map(roles.map((r) => [r.lap_index, r.role]));
+  const out: Array<Record<string, unknown>> = [];
+  for (const target of ["warmup", "cooldown"] as const) {
+    const matching = laps.filter((l, i) => roleByIndex.get(l.lap_index ?? i) === target);
+    if (!matching.length) continue;
+    const distance_m = matching.reduce((a, l) => a + Number(l.distance ?? 0), 0);
+    const duration_s = matching.reduce((a, l) => a + Number(l.moving_time ?? l.elapsed_time ?? 0), 0);
+    const distance_miles = distance_m / 1609.34;
+    if (distance_miles <= 0 || duration_s <= 0) continue;
+    const hrLaps = matching.filter((l) => Number(l.average_heartrate ?? 0) > 0);
+    const avg_hr = hrLaps.length
+      ? Math.round(hrLaps.reduce((a, l) => a + Number(l.average_heartrate), 0) / hrLaps.length)
+      : null;
+    out.push({
+      role: target,
+      distance_miles: Math.round(distance_miles * 100) / 100,
+      duration_s: Math.round(duration_s),
+      avg_pace_per_mile: formatPace(Math.round(duration_s / distance_miles)),
+      avg_hr,
+    });
+  }
+  return out;
 }
 
 function avgHrOverWindow(

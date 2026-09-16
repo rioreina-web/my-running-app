@@ -39,8 +39,21 @@ import { requireAuthOrServiceRole } from "../_shared/auth.ts";
 import { enforceFeatureRateLimit, enforceMonthlyCap } from "../_shared/rateLimit.ts";
 import { llmBudgetAllows, llmBudgetBlockedResponse, reportLlmUsage } from "../_shared/llm-budget.ts";
 import { loadPrompt } from "../_shared/prompt-library.ts";
+import {
+  findUnlicensedPaces,
+  licensedTimeTokens,
+  paceCorrectionNote,
+} from "../_shared/pace-guard.ts";
 import { RESPONSE_SCHEMA } from "../_shared/prompts/daily-read.v5.ts";
 import { getOrBuildAthleteState, stateToPromptContext } from "../_shared/athlete-state.ts";
+import {
+  ALL_WATCHES,
+  buildWatchContext,
+  runWatches,
+  watchFromRow,
+  type WatchRow,
+  type WatchStateInput,
+} from "../_shared/watch/index.ts";
 
 // ── Types matching the daily_coaching_reads JSON columns ─────────────
 
@@ -157,6 +170,55 @@ export interface DailyReadDeps {
   budgetAllows?: (userId: string) => Promise<boolean>;
 }
 
+// Service-role detection by CLAIM, not string equality. The Vault copy of the
+// key (what the cron dispatchers send via net.http_post) no longer
+// string-equals this function's env copy even though both are validly signed —
+// the same drift that 401'd every dispatched parse-workout-structure job. Here
+// it silently killed every cron-dispatched Read from the drift onward (401
+// before the pending-row insert, so not even a failed row landed; found
+// 2026-08-30 when the Sunday weekly dispatch returned "Authentication
+// required"). Safe because verify_jwt = true: the gateway has already checked
+// the signature before we ever see the token. Same fix as
+// parse-workout-structure / extract-rpe / compute-workout-features / drain-*.
+function isServiceRoleJWT(token: string): boolean {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return false;
+    const b64 = seg.replace(/-/g, "+").replace(/_/g, "/")
+      .padEnd(Math.ceil(seg.length / 4) * 4, "=");
+    const payload = JSON.parse(atob(b64)) as { role?: string; exp?: number };
+    if (payload.role !== "service_role") return false;
+    if (typeof payload.exp === "number" && payload.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Default auth: claim-decoded service-role bypass first, then the shared
+ *  exact-match helper for user JWTs. Injectable via `deps.resolveAuth`. */
+async function resolveAuthWithClaimDecode(
+  req: Request,
+  bodyUserId: string | undefined,
+): Promise<{ response: Response } | { userId: string; isServiceRole: boolean }> {
+  const authHeader = req.headers.get("Authorization") ?? "";
+  const bearer = authHeader.startsWith("Bearer ")
+    ? authHeader.slice("Bearer ".length).trim()
+    : "";
+  if (bearer && isServiceRoleJWT(bearer)) {
+    if (typeof bodyUserId !== "string" || bodyUserId.length === 0) {
+      return {
+        response: new Response(
+          JSON.stringify({ error: "Service-role caller must specify user_id in body" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        ),
+      };
+    }
+    return { userId: bodyUserId, isServiceRole: true };
+  }
+  return requireAuthOrServiceRole(req, bodyUserId, corsHeaders);
+}
+
 export async function handleCoachingDailyRead(
   req: Request,
   deps: DailyReadDeps = {},
@@ -188,9 +250,10 @@ export async function handleCoachingDailyRead(
     );
   }
 
-  const auth = await (deps.resolveAuth ??
-    ((r: Request, u: string | undefined) =>
-      requireAuthOrServiceRole(r, u, corsHeaders)))(req, body.user_id);
+  const auth = await (deps.resolveAuth ?? resolveAuthWithClaimDecode)(
+    req,
+    body.user_id,
+  );
   if ("response" in auth) return auth.response;
   const { userId, isServiceRole } = auth;
 
@@ -318,6 +381,7 @@ export async function handleCoachingDailyRead(
     // schema-less path is the fallback for models that reject `anyOf`.
     const generateRaw = async (
       useSchema: boolean,
+      extraNote = "",
     ): Promise<{ text: string; inputTokens: number; outputTokens: number }> => {
       const model = genAI.getGenerativeModel({
         model: modelConfig.model,
@@ -335,7 +399,7 @@ export async function handleCoachingDailyRead(
           ...(useSchema ? { responseSchema: RESPONSE_SCHEMA as any } : {}),
         },
       });
-      const result = await model.generateContent(fullPrompt);
+      const result = await model.generateContent(fullPrompt + extraNote);
       // deno-lint-ignore no-explicit-any
       const usage = (result.response as any)?.usageMetadata ?? {};
       return {
@@ -389,6 +453,60 @@ export async function handleCoachingDailyRead(
         console.warn(
           `daily-read: parse attempt ${attempt + 1}/${MAX_ATTEMPTS} failed: ${lastErr}`,
         );
+      }
+    }
+
+    // ── 5.5 Pace readback guard (_shared/pace-guard.ts) ──────────────
+    // Same contract as coaching-agent's LAYER 7.5: every M:SS/mi-shaped
+    // claim in the read must be a pace that actually appears in the prompt
+    // (session avgs, work paces, zone paces are all printed there). An
+    // unlicensed pace means the model did arithmetic of its own — one
+    // corrective re-roll, then serve the cleaner draft and alarm.
+    if (parsed !== null) {
+      const readProse = (p: DailyReadPayload): string => {
+        const segs: string[] = [p.headline ?? "", p.eyebrow ?? "", p.question ?? ""];
+        if (p.cant_see) segs.push(p.cant_see.body);
+        for (const s of p.sections ?? []) {
+          for (const seg of s.body ?? []) {
+            segs.push(typeof seg === "string" ? seg : seg.text);
+          }
+        }
+        return segs.join("\n");
+      };
+      try {
+        const licensed = licensedTimeTokens(fullPrompt);
+        const offenders = findUnlicensedPaces(readProse(parsed), licensed);
+        if (offenders.length > 0) {
+          console.warn(
+            `daily-read pace-guard: unlicensed pace claims [${offenders.join(", ")}] — one corrective re-roll`,
+          );
+          try {
+            const gen = await generateRaw(true, paceCorrectionNote(offenders));
+            totalInputTokens += gen.inputTokens;
+            totalOutputTokens += gen.outputTokens;
+            const reparsed = parseModelResponse(gen.text);
+            const stillBad = findUnlicensedPaces(readProse(reparsed), licensed);
+            if (stillBad.length === 0) {
+              parsed = reparsed;
+              console.log("daily-read pace-guard: re-roll clean — serving corrected read");
+            } else {
+              if (stillBad.length < offenders.length) parsed = reparsed;
+              console.error(
+                `daily-read pace-guard: still unlicensed after re-roll [${stillBad.join(", ")}] — serving best effort`,
+              );
+              captureException(
+                new Error(`daily-read pace-guard violation persisted: ${stillBad.join(", ")}`),
+                { fn: "coaching-daily-read", stage: "pace-guard" },
+              );
+            }
+          } catch (rerollErr) {
+            // Re-roll failing (API error, unparseable JSON) must not cost the
+            // read — serve the original draft.
+            console.error("daily-read pace-guard: re-roll failed, serving original", rerollErr);
+          }
+        }
+      } catch (guardErr) {
+        console.error("daily-read pace-guard: check failed, serving unguarded read", guardErr);
       }
     }
 
@@ -760,11 +878,161 @@ async function buildDailyReadContext(
 
   // Athlete state — the canonical "who is this runner" snapshot.
   let athleteStateBlock = "";
+  let athleteState: Awaited<ReturnType<typeof getOrBuildAthleteState>> | null = null;
   try {
-    const state = await getOrBuildAthleteState(supabase, userId);
-    athleteStateBlock = stateToPromptContext(state);
+    athleteState = await getOrBuildAthleteState(supabase, userId);
+    athleteStateBlock = stateToPromptContext(athleteState);
   } catch (err) {
     console.warn("daily-read: athlete-state build failed:", err);
+  }
+
+  // ── Standing watches ────────────────────────────────────────────────
+  // The conditions a PERSON asked to have watched, plus the three built-in
+  // ones. `_shared/watch/` has been complete and tested since it was
+  // written and had exactly zero consumers — this is its first.
+  //
+  // Why the Read is the right consumer: a watch is a standing question, and
+  // the Read is the surface that answers standing questions weekly. The
+  // check is arithmetic (see watch/authored.ts — the model is nowhere in
+  // it); all the model does is word a finding that already carries its own
+  // evidence.
+  //
+  // ATTRIBUTION IS LOAD-BEARING. A coach-authored watch carries the coach's
+  // authority, not the app's, and the prompt is told to say so. Presenting
+  // "your coach asked me to watch X" as the app's own observation is the
+  // Coach-is-not-AI error in its most misleading form.
+  //
+  // Cooldown (`cooldown_days`, default 7) is deliberately NOT enforced here:
+  // it belongs to a dispatcher that does not exist yet, and the Read is
+  // weekly, so cadence already satisfies the common case. Do not write
+  // `fired_count`/`last_fired_at` from this path — a read can be regenerated
+  // and would inflate the counter that exists to tell an athlete a watch is
+  // set wrong.
+  let watchesBlock = "";
+  try {
+    if (athleteState) {
+      const ctx = buildWatchContext(
+        { ...(athleteState as unknown as WatchStateInput), user_id: userId },
+        new Date(),
+      );
+
+      // The Supabase client carries no generated types here, so `.data`
+      // infers to a union with GenericStringError. Narrow it once, the same
+      // way weekly-coaching-report does.
+      interface WatchDbRow extends WatchRow {
+        author_user_id: string | null;
+        author_coach_id: string | null;
+        muted_until: string | null;
+      }
+      const { data: watchRowsRaw } = await supabase
+        .from("watches")
+        .select(
+          "id, label, metric, comparison, threshold, window_days, min_observations, " +
+            "cooldown_days, severity, suggested_action, source_sentence, enabled, " +
+            "author_user_id, author_coach_id, muted_until",
+        )
+        .eq("athlete_user_id", userId)
+        .eq("enabled", true);
+      const watchRows = (watchRowsRaw ?? []) as unknown as WatchDbRow[];
+
+      const now = Date.now();
+      const active = watchRows.filter((r) => {
+        const muted = r.muted_until ? Date.parse(r.muted_until) : 0;
+        return !(muted && muted > now);
+      });
+
+      // watchFromRow keys the Watch on the ROW id, so a finding's watch_id
+      // maps straight back to its author.
+      const authorById = new Map<string, "coach" | "athlete">(
+        active.map((r) => [
+          r.id,
+          r.author_coach_id ? "coach" as const : "athlete" as const,
+        ]),
+      );
+      const labelById = new Map<string, string>(
+        active.map((r) => [r.id, r.label]),
+      );
+
+      const authored = active.map((r) => watchFromRow(r));
+      const sweep = runWatches(ctx, [...ALL_WATCHES, ...authored]);
+
+      const lines: string[] = [];
+      for (const f of sweep.findings) {
+        const who = authorById.get(f.watch_id);
+        const attribution = who === "coach"
+          ? "YOUR COACH asked for this watch"
+          : who === "athlete"
+          ? "THE ATHLETE asked for this watch"
+          : "a standing watch in the app";
+        const label = labelById.get(f.watch_id) ?? f.watch_id;
+        lines.push(
+          `- FIRED · ${label} (${attribution}; severity ${f.severity}, ` +
+            `confidence ${f.confidence})\n  ${f.headline}\n  ${f.detail}\n` +
+            `  numbers: ${f.evidence.join("; ")}` +
+            (f.defer_to_human ? `\n  This one is a person's call, not a plan edit.` : ""),
+        );
+      }
+      // Gaps are listed but never as reassurance — see WatchGap's own note.
+      for (const g of sweep.gaps) {
+        const label = labelById.get(g.watch_id) ?? g.watch_id;
+        lines.push(`- CANNOT SEE · ${label}: ${g.gap}`);
+      }
+
+      if (lines.length > 0) {
+        watchesBlock = lines.join("\n");
+      }
+      console.log(
+        `[daily-read] watches: ${active.length} authored, ` +
+          `${sweep.findings.length} fired, ${sweep.gaps.length} gaps, ` +
+          `${sweep.clear.length} clear`,
+      );
+    }
+  } catch (err) {
+    console.warn("daily-read: watch sweep failed:", err);
+  }
+
+  // Replies to the most recent read — the check-in loop (migration
+  // 20260831170000). Every read ends with a soft question; the Read tab's
+  // check-in block stamps each answer with replied_to_read_id. Handing the
+  // exchange to the model is the whole point of the link: the next read is
+  // written knowing its last question was answered, so it can acknowledge
+  // ("you said the tiredness lingered") instead of re-asking. Two sequential
+  // fetches, deliberately outside the Promise.allSettled batch above — the
+  // second is keyed on the first's row id. Best-effort; a miss costs the
+  // section, never the read.
+  let readRepliesBlock = "";
+  try {
+    const { data: lastRead } = await supabase
+      .from("daily_coaching_reads")
+      .select("id, read_date, question")
+      .eq("user_id", userId)
+      .eq("status", "completed")
+      .order("read_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastRead?.id) {
+      const { data: replies } = await supabase
+        .from("training_logs")
+        .select("created_at, mood, cleaned_notes, notes")
+        .eq("user_id", userId)
+        .eq("replied_to_read_id", lastRead.id as string)
+        .order("created_at", { ascending: true })
+        .limit(10);
+      if (replies && replies.length > 0) {
+        const lines = replies.map((r) => {
+          const day = String(r.created_at ?? "").slice(0, 10);
+          const mood = r.mood ? `[${r.mood}]` : "";
+          const words = String(r.cleaned_notes ?? r.notes ?? "").slice(0, 300);
+          return `- ${day} ${mood} ${words}`.trim();
+        });
+        const q = lastRead.question
+          ? `Your ${lastRead.read_date} read asked: "${lastRead.question}"\n`
+          : "";
+        readRepliesBlock = `${q}The athlete answered:\n${lines.join("\n")}`;
+      }
+    }
+  } catch (err) {
+    console.warn("daily-read: read-replies fetch failed:", err);
   }
 
   const validWorkoutIds = new Set<string>(logs.map((l) => l.id as string));
@@ -799,6 +1067,25 @@ async function buildDailyReadContext(
 
   if (athleteStateBlock) {
     sections.push(`## Athlete state\n${athleteStateBlock}`);
+  }
+
+  if (watchesBlock) {
+    sections.push(
+      `## Standing watches (conditions someone asked to have watched)\n` +
+        `ATTRIBUTE THESE. A watch marked "YOUR COACH asked for this watch" is the ` +
+        `coach's instruction and must be reported as theirs — never as your own ` +
+        `observation. One marked "THE ATHLETE asked for this watch" is something ` +
+        `they asked you to keep an eye on; say so. Use ONLY the numbers on the ` +
+        `\`numbers:\` line — they are the arithmetic the watch actually ran. A ` +
+        `"CANNOT SEE" line is a blind spot, NOT an all-clear: never report it as ` +
+        `things being fine.\n${watchesBlock}`,
+    );
+  }
+
+  if (readRepliesBlock) {
+    sections.push(
+      `## Replies to your last read (the athlete answered your question — acknowledge what they said instead of re-asking it; their own words below are quotable)\n${readRepliesBlock}`,
+    );
   }
 
   if (activePlan) {
@@ -877,6 +1164,74 @@ async function buildDailyReadContext(
     const course = r.course_data as Record<string, unknown> | null;
     if (course?.course_description) parts.push(String(course.course_description));
     sections.push(`## Upcoming race intel\n${parts.join("\n")}`);
+  }
+
+  // ── Training load & body signals (daily_scores, latest version) ─────
+  // Rules-based, every component carries its own reason sentence. See
+  // docs/SCORE_SPEC.md. Non-fatal: a failed fetch just omits the section.
+  //
+  // 2026-09-08 — THE 0-100 COMPOSITES NEVER REACH THE MODEL.
+  // `daily_scores.stress` and `.recovery` are deliberately not selected
+  // here. They failed validation (see project_recovery_score_model /
+  // the StressRecoveryView header): a 214-day replay put the composite in
+  // a 37-point strip with no relationship to felt_rpe, and the recovery
+  // half is 100-minus-deductions, so a silent day scores as a healthy one.
+  // Narrating an unvalidated number is exactly the self-graded AI layer
+  // this product forbids. What the model gets instead is what validated:
+  // fitness/fatigue in real load units, and each component's own reason
+  // sentence. Component `points` are used ONLY to decide which rows are
+  // worth showing — they are never put in the context.
+  try {
+    const { data: scoreRows } = await supabase
+      .from("daily_scores")
+      .select("score_date, score_version, fitness, fatigue, recovery_confidence, stress_components, recovery_components")
+      .eq("user_id", userId)
+      .order("score_date", { ascending: false })
+      .order("score_version", { ascending: false })
+      .limit(8);
+    if (Array.isArray(scoreRows) && scoreRows.length > 0) {
+      const latestVersion = scoreRows[0].score_version as string;
+      const rows = scoreRows.filter((r) => r.score_version === latestVersion);
+      const today = rows[0];
+      const round = (v: unknown) => (v == null ? null : Math.round(Number(v)));
+      const trend = rows
+        .slice(0, 7)
+        .reverse()
+        .map((r) => `${String(r.score_date).slice(5)} fit ${round(r.fitness) ?? "—"}/fat ${round(r.fatigue) ?? "—"}`)
+        .join(", ");
+      type Comp = { name: string; points: number; detail: string };
+      const speaking = (arr: unknown): Comp[] =>
+        (Array.isArray(arr) ? (arr as Comp[]) : []).filter((c) => Number(c.points) !== 0);
+      // Reason sentences only — no points. See the note above.
+      const loadLines = speaking(today.stress_components).map((c) => `- ${c.name}: ${c.detail}`);
+      // Outside-stress reaches the Read only when the athlete has opted in
+      // via athlete_settings.share_stress_with_coach. Default: hidden.
+      const { data: shareRow } = await supabase
+        .from("athlete_settings")
+        .select("share_stress_with_coach")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const shareStress = shareRow?.share_stress_with_coach === true;
+      const bodyLines = speaking(today.recovery_components)
+        .filter((c) => shareStress || c.name !== "stress")
+        .map((c) => `- ${c.name}: ${c.detail}`);
+      const coverage = today.recovery_confidence === "ok"
+        ? "Two or more body signals reported today."
+        : today.recovery_confidence === "low"
+        ? "Only ONE body signal reported today; the rest were silent. Silence is absence of data, not evidence of good recovery — do not read it as either."
+        : "No body signals reported today. Say nothing about how recovered the athlete is.";
+      const parts = [
+        `Today (${today.score_date}, scorer v${latestVersion}): fitness ${round(today.fitness) ?? "—"}, fatigue ${round(today.fatigue) ?? "—"}. These are 42-day and 7-day exponential averages of session load (RPE x minutes) in arbitrary load units — they are comparable to THIS athlete's own recent values and to nothing else.`,
+        `Last 7 days: ${trend}`,
+        loadLines.length ? `What the training is asking:\n${loadLines.join("\n")}` : "What the training is asking: nothing notable.",
+        bodyLines.length ? `What the body said:\n${bodyLines.join("\n")}` : "What the body said: nothing notable.",
+        coverage,
+        "Quote a reason sentence as-is or lightly rephrased; never invent a reason. Load units are internal — do not read them out as a figure to the athlete, and never present them as a score, a percentage, or a rating out of anything. There is no stress score and no recovery score in this product; do not compute, imply, or narrate one. Never call any of this injury risk or readiness.",
+      ];
+      sections.push(`## Training load and body signals\n${parts.join("\n")}`);
+    }
+  } catch (e) {
+    console.warn("daily_scores fetch skipped:", e);
   }
 
   const contextBlock = sections.join("\n\n");

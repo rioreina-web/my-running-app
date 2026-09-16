@@ -46,7 +46,9 @@ final class KeychainAuthStorage: AuthLocalStorage, Sendable {
                 kSecAttrService as String: service,
                 kSecAttrAccount as String: key,
                 kSecValueData as String: value,
-                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+                // ThisDeviceOnly: the refresh token must not ride along in iCloud
+                // Keychain / encrypted backups onto another device.
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             ]
             let status = SecItemAdd(addQuery as CFDictionary, nil)
             guard status == errSecSuccess else {
